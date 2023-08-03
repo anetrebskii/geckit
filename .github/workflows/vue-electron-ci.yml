@@ -38,7 +38,7 @@ jobs:
         run: npm run lint
 
       - name: Build Electron app
-        run: npm run electron:build
+        run: npm run electron:build -- --publish=never
 
       - name: Upload artifact
         uses: actions/upload-artifact@v2
