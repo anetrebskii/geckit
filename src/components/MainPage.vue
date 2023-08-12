@@ -3,7 +3,7 @@
     <button @click="callOpenAI('fix')">Update text and copy</button>
     <p>{{ text }}</p>
   </div>
-</template>
+</template> 
 
 <script>
 import { Configuration, OpenAIApi } from "openai";

@@ -1,11 +1,12 @@
 'use strict'
 
-import { app, protocol, BrowserWindow, globalShortcut, clipboard } from 'electron'
+import { app, protocol, BrowserWindow, globalShortcut, clipboard, Menu, nativeImage, Tray } from 'electron'
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
 import installExtension, { VUEJS3_DEVTOOLS } from 'electron-devtools-installer'
 const isDevelopment = process.env.NODE_ENV !== 'production'
 const path = require('path')
 
+let myTray = null;
 // Scheme must be registered before the app is ready
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { secure: true, standard: true } }
@@ -28,10 +29,6 @@ async function createWindow() {
     }
   })
 
-
-
-
-
   if (process.env.WEBPACK_DEV_SERVER_URL) {
     // Load the url of the dev server if in development mode
     await win.loadURL(process.env.WEBPACK_DEV_SERVER_URL)
@@ -48,6 +45,40 @@ async function createWindow() {
     win.webContents.send('shortcut-pressed', { text: text });
     win.show();
   });
+
+  // Create the tray icon
+  const icon = nativeImage.createFromPath('src/assets/TrayTemplate.png')
+  console.log(icon.getSize());
+  // icon.resize({width:16});
+  icon.setTemplateImage(true);
+  
+  myTray = new Tray(icon)
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Settings',      
+      click: () => {
+        // Create a new BrowserWindow for settings
+        let settingsWindow = new BrowserWindow({
+          width: 400,
+          height: 300,
+          webPreferences: {
+            preload: path.resolve(__dirname, 'preload.js'),
+            // Use pluginOptions.nodeIntegration, leave this alone
+            // See nklayman.github.io/vue-cli-plugin-electron-builder/guide/security.html#node-integration for more info
+            nodeIntegration: true, // process.env.ELECTRON_NODE_INTEGRATION,
+          }
+        })
+        settingsWindow.loadURL('app://./index.html')
+      }
+    },
+    {
+      label: 'Quit',
+      role: 'quit'
+    }
+  ])
+
+  myTray.setToolTip('This is my Electron app.')
+  myTray.setContextMenu(contextMenu)
 
   if (!ret) {
     console.log('registration failed');
