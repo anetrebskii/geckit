@@ -61,7 +61,6 @@ module.exports = {
       '@typescript-eslint/prefer-const': 'error',
       '@typescript-eslint/no-unused-vars': 'warn',
       '@typescript-eslint/space-before-function-paren': ['error', 'never'],
-      'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 1, maxBOF: 1 }],
     },
   };
   
