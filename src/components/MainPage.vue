@@ -16,7 +16,7 @@ export default {
   },
   methods: {
     async callOpenAI(buttonType) {
-      const apiKey = window.electron.settings().openAPIKey;
+      const apiKey = window.localStorage.getItem("openApi");
 
       const context = buttonType === "fix"
         ? "You're a helpful assistant who refines and adjusts my text for clarity."
