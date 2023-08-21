@@ -1,6 +1,7 @@
 <template>
   <div>
-    <button @click="callOpenAI('fix')">Update text and copy</button>
+    <button @click="callOpenAI('fix')">Update text and copy</button>    
+    <button @click="callOpenAI('translate')">Translate text and copy</button>
     <p>{{ text }}</p>
   </div>
 </template> 
@@ -20,7 +21,7 @@ export default {
 
       const context = buttonType === "fix"
         ? "You're a helpful assistant who refines and adjusts my text for clarity."
-        : "You are helpful test assistent who sends me only the fixed and concise version of the sent text."
+        : "Translate the text from English to Russian or opposite"
 
       const configuration = new Configuration({
         apiKey: apiKey,
