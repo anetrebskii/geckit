@@ -1,7 +1,10 @@
 <template>
   <div>
-    <button @click="callOpenAI('fix')">Update text and copy</button>    
-    <button @click="callOpenAI('translate')">Translate text and copy</button>
+    <button @click="callOpenAI('Only adjusts my text for clarity.')">Fix text and copy</button>    
+    &nbsp;
+    <button @click="callOpenAI('Only translate the text from English to Russian or opposite')">Translate text and copy</button>
+    &nbsp;
+    <button @click="callOpenAI('Generate concise reply')">Generate reply and copy</button>    
     <p>{{ text }}</p>
   </div>
 </template> 
@@ -16,12 +19,8 @@ export default {
     };
   },
   methods: {
-    async callOpenAI(buttonType) {
+    async callOpenAI(context) {
       const apiKey = window.localStorage.getItem("openApi");
-
-      const context = buttonType === "fix"
-        ? "You're a helpful assistant who refines and adjusts my text for clarity."
-        : "Translate the text from English to Russian or opposite"
 
       const configuration = new Configuration({
         apiKey: apiKey,
