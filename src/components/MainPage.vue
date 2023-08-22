@@ -1,11 +1,21 @@
 <template>
+  <div style="text-align: center;">
+    <van-button type="primary" @click="callOpenAI('Only adjusts my text for clarity.')">Fix text and copy</van-button>
+    &nbsp;
+    <van-button type="primary"
+      @click="callOpenAI('Only translate the text from English to Russian or opposite')">Translate text and
+      copy</van-button>
+    &nbsp;
+    <van-button type="primary" @click="callOpenAI('Generate concise reply')">Generate reply and copy</van-button>
+
+  </div>
   <div>
-    <button @click="callOpenAI('Only adjusts my text for clarity.')">Fix text and copy</button>    
-    &nbsp;
-    <button @click="callOpenAI('Only translate the text from English to Russian or opposite')">Translate text and copy</button>
-    &nbsp;
-    <button @click="callOpenAI('Generate concise reply')">Generate reply and copy</button>    
-    <p>{{ text }}</p>
+    <p style="white-space: pre-wrap;">
+    <pre>
+        {{ text }}
+      </pre>
+    </p>
+
   </div>
 </template> 
 
@@ -31,12 +41,12 @@ export default {
       try {
         const completion = await openai.createChatCompletion({
           messages: [
-            { role: "system", content: context},
+            { role: "system", content: context },
             { role: "user", content: this.text }
-            ],
+          ],
           max_tokens: 1000,
           model: "gpt-3.5-turbo",
-        });        
+        });
         this.text = completion.data.choices[0].message.content;
       } catch (err) {
         this.text = "Error fetching data from OpenAI";

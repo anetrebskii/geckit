@@ -1,6 +1,6 @@
 {
   "name": "GeckIt",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",
@@ -17,6 +17,7 @@
     "fs": "^0.0.1-security",
     "openai": "^3.3.0",
     "path": "^0.12.7",
+    "vant": "^4.6.6",
     "vue": "^3.2.13",
     "vue-router": "^4.2.4"
   },

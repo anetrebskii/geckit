@@ -1,11 +1,12 @@
 <template>
   <div>
-    <input
-      v-model="apiInput"
-      @input="handleInput"
-      :class="{ saved: isSaved }"
-    />
+    <van-form>
+    <van-cell-group inset>
+      <van-field v-model="apiInput" label="OpenAI Key" :class="{ saved: isSaved }" placeholder="Text" />
+    </van-cell-group>
     <i v-if="isSaved" class="tick-icon">&#10003;</i>
+    <van-button round block type="primary" @click="handleInput">Save</van-button>
+  </van-form>
   </div>
 </template>
 
