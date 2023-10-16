@@ -1,21 +1,28 @@
 <template>
-  <div style="text-align: center;">
-    <van-button type="primary" @click="callOpenAI('Only adjusts my text for clarity.')">Fix text and copy</van-button>
-    &nbsp;
-    <van-button type="primary"
-      @click="callOpenAI('Only translate the text from English to Russian or opposite')">Translate text and
-      copy</van-button>
-    &nbsp;
-    <van-button type="primary" @click="callOpenAI('Generate concise reply')">Generate reply and copy</van-button>
+  <div class="van-doc-markdown-body">
+    <van-row justify="center">
+      <van-col>
+        <div class="van-doc-card">
+          <van-space>
 
-  </div>
-  <div>
-    <p style="white-space: pre-wrap;">
-    <pre>
+            <van-button type="primary" @click="callOpenAI('Only adjusts my text or question for clarity.')">Fix text and
+              copy</van-button>
+            <van-button type="primary"
+              @click="callOpenAI('Only translate the text from English to Russian or opposite')">Translate text and
+              copy</van-button>
+            <van-button type="primary" @click="callOpenAI('Generate concise reply')">Generate reply and copy</van-button>
+
+          </van-space>
+        </div>
+      </van-col>
+    </van-row>
+    <van-row>
+      <van-col span="24">
+        <pre style="white-space: pre-wrap;">
         {{ text }}
       </pre>
-    </p>
-
+      </van-col>
+    </van-row>
   </div>
 </template> 
 
