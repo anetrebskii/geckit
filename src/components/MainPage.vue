@@ -5,10 +5,10 @@
         <div class="van-doc-card">
           <van-space>
 
-            <van-button type="primary" @click="callOpenAI('Only adjusts my text or question for clarity.')">Fix text and
+            <van-button type="primary" @click="callOpenAI('Only fix mistakes in my text')">Fix text and
               copy</van-button>
             <van-button type="primary"
-              @click="callOpenAI('Only translate the text from English to Russian or opposite')">Translate text and
+              @click="callOpenAI('Translate the text from English to Russian or opposite')">Translate text and
               copy</van-button>
             <van-button type="primary" @click="callOpenAI('Generate concise reply')">Generate reply and copy</van-button>
 
