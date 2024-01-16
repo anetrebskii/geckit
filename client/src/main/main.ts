@@ -22,7 +22,6 @@ import {
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
-import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 
 class AppUpdater {
@@ -94,9 +93,8 @@ const createWindow = async () => {
 
   mainWindow = new BrowserWindow({
     show: false,
-    width: 1024,
-    height: 728,
     icon: getAssetPath('icon.png'),
+    useContentSize: true,
     webPreferences: {
       preload: app.isPackaged
         ? path.join(__dirname, 'preload.js')
@@ -117,6 +115,19 @@ const createWindow = async () => {
     }
   });
 
+  mainWindow.webContents.on('did-finish-load', () => {
+    setTimeout(() => {
+      if (!mainWindow) {
+        throw new Error('"mainWindow" is not defined');
+      }
+
+      // const s = mainWindow.getContentBounds();
+
+      // const size = mainWindow.getBrowserView().getBounds();
+      // mainWindow.setSize(size[0], size[1]);
+    }, 2000);
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -132,8 +143,8 @@ const createWindow = async () => {
     console.log('registration failed');
   }
 
-  const menuBuilder = new MenuBuilder(mainWindow);
-  menuBuilder.buildMenu();
+  // const menuBuilder = new MenuBuilder(mainWindow);
+  // menuBuilder.buildMenu();
 
   // Open urls in the user's browser
   mainWindow.webContents.setWindowOpenHandler((edata) => {
@@ -156,8 +167,8 @@ async function createTray() {
       click: () => {
         // Create a new BrowserWindow for settings
         const settingsWindow = new BrowserWindow({
-          width: 400,
-          height: 300,
+          useContentSize: true,
+          resizable: false,
           webPreferences: {
             preload: app.isPackaged
               ? path.join(__dirname, 'preload.js')
