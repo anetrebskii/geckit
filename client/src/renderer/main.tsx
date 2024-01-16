@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { OpenAI } from 'openai';
+import Button from '@mui/material/Button';
+import { Box, TextField } from '@mui/material';
 
 export default function Main() {
   const [text, setText] = useState<string>('');
+  const [newText, setNewText] = useState<string>('');
 
   useEffect(() => {
     // console.log(window.api);
     (window.electron.ipcRenderer as any).on('shortcut-pressed', (args: any) => {
       setText(args.text);
+      setNewText('');
     });
   });
 
@@ -25,7 +29,7 @@ export default function Main() {
 
     const openai = new OpenAI({
       apiKey,
-      dangerouslyAllowBrowser: true
+      dangerouslyAllowBrowser: true,
     });
 
     try {
@@ -37,7 +41,7 @@ export default function Main() {
         max_tokens: 1000,
         model: 'gpt-3.5-turbo',
       });
-      setText(completion.choices[0].message.content as string);
+      setNewText(completion.choices[0].message.content as string);
     } catch (err) {
       setText('Error fetching data from OpenAI');
       console.error('OpenAI API Error:', err);
@@ -47,27 +51,49 @@ export default function Main() {
   };
 
   return (
-    <>
-      <div>
-        <button
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: '1fr',
+        gap: 1,
+        gridTemplateRows: '1fr auto 1fr',
+      }}
+    >
+      <Box sx={{ gridColumn: '1', gridRow: '1' }}>
+        <TextField
+          multiline
+          aria-label="maximum height"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={5}
+          sx={{ width: 1 }}
+        />
+      </Box>
+      <Box sx={{ gridColumn: '1', gridRow: '2' }}>
+        <Button
           type="button"
+          variant="contained"
           onClick={() => handleClick('Only fix mistakes in my text')}
         >
           Fix and copy
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="contained"
           onClick={() =>
             handleClick(
-              'Translate the text from English to Russian or opposite',
+              `Translate the text from ${window.localStorage.getItem(
+                'lang1',
+              )} to ${window.localStorage.getItem('lang2')} or opposite`,
             )
           }
         >
-          Fix and copy
-        </button>
-      </div>
-
-      <pre style={{ whiteSpace: 'pre-wrap' }}>{text}</pre>
-    </>
+          Traslate and copy
+        </Button>
+      </Box>
+      <Box sx={{ gridColumn: '1', gridRow: '3' }}>
+        <TextField multiline value={newText} sx={{ width: 1 }} rows={5} />
+      </Box>
+    </Box>
   );
 }
