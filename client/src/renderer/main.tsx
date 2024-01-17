@@ -15,9 +15,9 @@ export default function Main() {
     });
   });
 
-  const copyToClipboard = async () => {
+  const copyToClipboard = async (txt: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(txt);
       // alert("Text copied to clipboard!");
     } catch (err) {
       console.error('Failed to copy text: ', err);
@@ -32,6 +32,7 @@ export default function Main() {
       dangerouslyAllowBrowser: true,
     });
 
+    let newTextTmp: string = '';
     try {
       const completion = await openai.chat.completions.create({
         messages: [
@@ -41,13 +42,14 @@ export default function Main() {
         max_tokens: 1000,
         model: 'gpt-3.5-turbo',
       });
-      setNewText(completion.choices[0].message.content as string);
+      newTextTmp = completion.choices[0].message.content as string;
     } catch (err) {
-      setText('Error fetching data from OpenAI');
+      newTextTmp = 'Error fetching data from OpenAI';
       console.error('OpenAI API Error:', err);
     }
 
-    copyToClipboard();
+    setNewText(newTextTmp);
+    copyToClipboard(newTextTmp);
   };
 
   return (
@@ -59,7 +61,7 @@ export default function Main() {
         gridTemplateRows: '1fr auto 1fr',
       }}
     >
-      <Box sx={{ gridColumn: '1', gridRow: '1' }}>
+      <Box>
         <TextField
           multiline
           aria-label="maximum height"
@@ -69,14 +71,15 @@ export default function Main() {
           sx={{ width: 1 }}
         />
       </Box>
-      <Box sx={{ gridColumn: '1', gridRow: '2' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'left', gap: 1 }}>
         <Button
           type="button"
           variant="contained"
           onClick={() => handleClick('Only fix mistakes in my text')}
         >
-          Fix and copy
+          Correct
         </Button>
+
         <Button
           type="button"
           variant="contained"
@@ -88,10 +91,18 @@ export default function Main() {
             )
           }
         >
-          Traslate and copy
+          Traslate
+        </Button>
+
+        <Button
+          type="button"
+          variant="contained"
+          onClick={() => handleClick('Explain')}
+        >
+          Explain
         </Button>
       </Box>
-      <Box sx={{ gridColumn: '1', gridRow: '3' }}>
+      <Box>
         <TextField multiline value={newText} sx={{ width: 1 }} rows={5} />
       </Box>
     </Box>
