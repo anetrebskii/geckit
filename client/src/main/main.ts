@@ -32,20 +32,20 @@ class AppUpdater {
   }
 }
 
-const isDevelopment = process.env.NODE_ENV !== 'production';
 const path = require('path');
 
 let myTray = null;
 
-const baseUrl = isDevelopment
-  ? 'http://localhost:54112/#'
-  : 'app://./index.html#';
+const RESOURCES_PATH = app.isPackaged
+  ? path.join(process.resourcesPath, 'assets')
+  : path.join(__dirname, '../../assets');
 
-const baseAssetsPath = isDevelopment
-  ? path.resolve(__dirname, '../../assets')
-  : path.resolve(__dirname, 'assets');
+const getAssetPath = (...paths: string[]): string => {
+  return path.join(RESOURCES_PATH, ...paths);
+};
 
 let mainWindow: BrowserWindow | null = null;
+let settingsWindow: BrowserWindow | null = null;
 
 ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
@@ -82,14 +82,6 @@ const createWindow = async () => {
   if (isDebug) {
     await installExtensions();
   }
-
-  const RESOURCES_PATH = app.isPackaged
-    ? path.join(process.resourcesPath, 'assets')
-    : path.join(__dirname, '../../assets');
-
-  const getAssetPath = (...paths: string[]): string => {
-    return path.join(RESOURCES_PATH, ...paths);
-  };
 
   mainWindow = new BrowserWindow({
     show: false,
@@ -159,14 +151,18 @@ const createWindow = async () => {
 
 async function createTray() {
   // Create the tray icon
-  const icon = nativeImage.createFromPath(`${baseAssetsPath}/TrayTemplate.png`);
+  const icon = nativeImage.createFromPath(getAssetPath('TrayTemplate.png'));
   myTray = new Tray(icon);
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Settings',
       click: () => {
         // Create a new BrowserWindow for settings
-        const settingsWindow = new BrowserWindow({
+        if (settingsWindow && !settingsWindow.isDestroyed()) {
+          settingsWindow.show();
+          return;
+        }
+        settingsWindow = new BrowserWindow({
           useContentSize: true,
           resizable: false,
           webPreferences: {
@@ -178,7 +174,8 @@ async function createTray() {
             nodeIntegration: true, // process.env.ELECTRON_NODE_INTEGRATION,
           },
         });
-        settingsWindow.loadURL(`${baseUrl}/settings`);
+
+        settingsWindow.loadURL(resolveHtmlPath('index.html', 'settings'));
       },
     },
     {
