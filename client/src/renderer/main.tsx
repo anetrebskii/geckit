@@ -18,7 +18,6 @@ export default function Main() {
   const copyToClipboard = async (txt: string) => {
     try {
       await navigator.clipboard.writeText(txt);
-      // alert("Text copied to clipboard!");
     } catch (err) {
       console.error('Failed to copy text: ', err);
     }
