@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { OpenAI } from 'openai';
-import Button from '@mui/material/Button';
 import { Box, Snackbar, TextField } from '@mui/material';
+import { LoadingButton } from '@mui/lab';
 
 export default function Main() {
   const [text, setText] = useState<string>('');
   const [newText, setNewText] = useState<string>('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [loading, setLoading] = useState('');
 
   useEffect(() => {
     // console.log(window.api);
@@ -25,7 +26,8 @@ export default function Main() {
     }
   };
 
-  const handleClick = async (context: string) => {
+  const handleClick = async (btn: string, context: string) => {
+    await setLoading(btn);
     const apiKey = window.localStorage.getItem('openApi') as string;
 
     const openai = new OpenAI({
@@ -51,6 +53,7 @@ export default function Main() {
 
     setNewText(newTextTmp);
     copyToClipboard(newTextTmp);
+    await setLoading('');
   };
 
   return (
@@ -74,19 +77,24 @@ export default function Main() {
         />
       </Box>
       <Box sx={{ display: 'flex', justifyContent: 'left', gap: 1 }}>
-        <Button
+        <LoadingButton
           type="button"
+          loading={loading === 'correct'}
+          disabled={!!loading}
           variant="contained"
-          onClick={() => handleClick('Only fix mistakes in my text')}
+          onClick={() => handleClick('correct', 'Only fix mistakes in my text')}
         >
           Correct
-        </Button>
+        </LoadingButton>
 
-        <Button
+        <LoadingButton
           type="button"
+          loading={loading === 'translate'}
+          disabled={!!loading}
           variant="contained"
           onClick={() =>
             handleClick(
+              'translate',
               `Translate the text from ${window.localStorage.getItem(
                 'lang1',
               )} to ${window.localStorage.getItem('lang2')} or opposite`,
@@ -94,15 +102,17 @@ export default function Main() {
           }
         >
           Traslate
-        </Button>
+        </LoadingButton>
 
-        <Button
+        <LoadingButton
           type="button"
+          loading={loading === 'explain'}
+          disabled={!!loading}
           variant="contained"
-          onClick={() => handleClick('Explain')}
+          onClick={() => handleClick('explain', 'Explain')}
         >
           Explain
-        </Button>
+        </LoadingButton>
       </Box>
       <Box>
         <TextField multiline value={newText} sx={{ width: 1 }} rows={5} />
