@@ -9,7 +9,17 @@ import { ThemeProvider } from '@emotion/react';
 import { createTheme } from '@mui/material';
 
 export default function App() {
-  const theme = createTheme();
+  const theme = createTheme({
+    palette: {
+      primary: {
+        main: '#33b746',
+        contrastText: '#FFF',
+      },
+    },
+    shape: {
+      borderRadius: 10,
+    },
+  });
   return (
     <ThemeProvider theme={theme}>
       <HashRouter>
