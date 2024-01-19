@@ -34,7 +34,7 @@ export default function SettingsPage() {
         p: 2,
         display: 'flex',
         flexDirection: 'column',
-        gap: 1,
+        gap: 2,
       }}
     >
       <Box sx={{ gridRow: '1' }}>

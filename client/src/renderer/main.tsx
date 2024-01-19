@@ -61,7 +61,8 @@ export default function Main() {
       sx={{
         display: 'grid',
         gridTemplateColumns: '1fr',
-        gap: 1,
+        gap: 2,
+        p: 2,
         gridTemplateRows: '1fr auto 1fr',
       }}
     >
@@ -115,14 +116,21 @@ export default function Main() {
         </LoadingButton>
       </Box>
       <Box>
-        <TextField multiline value={newText} sx={{ width: 1 }} rows={5} />
-        <Snackbar
-          open={snackbarOpen}
-          autoHideDuration={6000}
-          onClose={() => setSnackbarOpen(false)}
-          message="Text copied"
+        <TextField
+          multiline
+          value={newText}
+          sx={{ width: 1 }}
+          rows={5}
+          label="Updated text"
         />
       </Box>
+      <Snackbar
+        open={snackbarOpen}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        autoHideDuration={6000}
+        onClose={() => setSnackbarOpen(false)}
+        message="Updated text copied"
+      />
     </Box>
   );
 }
