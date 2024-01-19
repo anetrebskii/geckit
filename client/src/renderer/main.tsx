@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { OpenAI } from 'openai';
 import Button from '@mui/material/Button';
-import { Box, TextField } from '@mui/material';
+import { Box, Snackbar, TextField } from '@mui/material';
 
 export default function Main() {
   const [text, setText] = useState<string>('');
   const [newText, setNewText] = useState<string>('');
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
 
   useEffect(() => {
     // console.log(window.api);
@@ -18,6 +19,7 @@ export default function Main() {
   const copyToClipboard = async (txt: string) => {
     try {
       await navigator.clipboard.writeText(txt);
+      setSnackbarOpen(true);
     } catch (err) {
       console.error('Failed to copy text: ', err);
     }
@@ -67,6 +69,7 @@ export default function Main() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={5}
+          label="Select text and press Cmd+C, Cmd+D"
           sx={{ width: 1 }}
         />
       </Box>
@@ -103,6 +106,12 @@ export default function Main() {
       </Box>
       <Box>
         <TextField multiline value={newText} sx={{ width: 1 }} rows={5} />
+        <Snackbar
+          open={snackbarOpen}
+          autoHideDuration={6000}
+          onClose={() => setSnackbarOpen(false)}
+          message="Text copied"
+        />
       </Box>
     </Box>
   );
