@@ -32,8 +32,6 @@ class AppUpdater {
   }
 }
 
-const path = require('path');
-
 let myTray = null;
 
 const RESOURCES_PATH = app.isPackaged
