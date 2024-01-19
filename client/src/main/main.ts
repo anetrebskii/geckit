@@ -162,7 +162,10 @@ async function createTray() {
         }
         settingsWindow = new BrowserWindow({
           useContentSize: true,
-          resizable: false,
+          minimizable: false,
+          maximizable: false,
+          height: 400,
+          width: 400,
           webPreferences: {
             preload: app.isPackaged
               ? path.join(__dirname, 'preload.js')
