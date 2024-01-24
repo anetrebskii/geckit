@@ -14,8 +14,6 @@ export default function Workspace() {
       setText(args.text);
       setNewText('');
     });
-
-    window.electron.ipcRenderer as any;
   });
 
   const copyToClipboard = async (txt: string) => {
