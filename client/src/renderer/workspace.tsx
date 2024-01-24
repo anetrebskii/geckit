@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { OpenAI } from 'openai';
 import { Box, Snackbar, TextField } from '@mui/material';
 import { LoadingButton } from '@mui/lab';
+import { CmdOrCtrl } from './services/os_helper';
 
 export default function Workspace() {
   const [text, setText] = useState<string>('');
@@ -72,7 +73,7 @@ export default function Workspace() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={5}
-          label="Select text and press Cmd+C, Cmd+D"
+          label={`Select text and press ${CmdOrCtrl}+C, ${CmdOrCtrl}+D`}
           sx={{ width: 1 }}
         />
       </Box>
