@@ -16,13 +16,11 @@ import {
   ipcMain,
   globalShortcut,
   clipboard,
-  nativeImage,
-  Tray,
-  Menu,
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import { resolveHtmlPath } from './util';
+import trackEvent from './analytics';
 
 class AppUpdater {
   constructor() {
@@ -31,8 +29,6 @@ class AppUpdater {
     autoUpdater.checkForUpdatesAndNotify();
   }
 }
-
-let myTray = null;
 
 const RESOURCES_PATH = app.isPackaged
   ? path.join(process.resourcesPath, 'assets')
@@ -43,7 +39,6 @@ const getAssetPath = (...paths: string[]): string => {
 };
 
 let mainWindow: BrowserWindow | null = null;
-let settingsWindow: BrowserWindow | null = null;
 
 ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
@@ -84,6 +79,9 @@ const createWindow = async () => {
   mainWindow = new BrowserWindow({
     show: false,
     icon: getAssetPath('icon.png'),
+    height: 450,
+    minHeight: 450,
+    maximizable: false,
     useContentSize: true,
     webPreferences: {
       preload: app.isPackaged
@@ -105,33 +103,22 @@ const createWindow = async () => {
     }
   });
 
-  mainWindow.webContents.on('did-finish-load', () => {
-    setTimeout(() => {
-      if (!mainWindow) {
-        throw new Error('"mainWindow" is not defined');
-      }
+  // mainWindow.webContents.on('did-finish-load', () => {
+  //   setTimeout(() => {
+  //     if (!mainWindow) {
+  //       throw new Error('"mainWindow" is not defined');
+  //     }
 
-      // const s = mainWindow.getContentBounds();
+  //     // const s = mainWindow.getContentBounds();
 
-      // const size = mainWindow.getBrowserView().getBounds();
-      // mainWindow.setSize(size[0], size[1]);
-    }, 2000);
-  });
+  //     // const size = mainWindow.getBrowserView().getBounds();
+  //     // mainWindow.setSize(size[0], size[1]);
+  //   }, 2000);
+  // });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-
-  // Register a global shortcut
-  const ret = globalShortcut.register('CommandOrControl+C+D', () => {
-    const text = clipboard.readText('selection');
-    mainWindow!.webContents.send('shortcut-pressed', { text });
-    mainWindow!.show();
-  });
-
-  if (!ret) {
-    console.log('registration failed');
-  }
 
   // const menuBuilder = new MenuBuilder(mainWindow);
   // menuBuilder.buildMenu();
@@ -142,52 +129,12 @@ const createWindow = async () => {
     return { action: 'deny' };
   });
 
+  mainWindow.setMenu(null);
+
   // Remove this if your app does not use auto updates
   // eslint-disable-next-line
   new AppUpdater();
 };
-
-async function createTray() {
-  // Create the tray icon
-  const icon = nativeImage.createFromPath(getAssetPath('TrayTemplate.png'));
-  myTray = new Tray(icon);
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Settings',
-      click: () => {
-        // Create a new BrowserWindow for settings
-        if (settingsWindow && !settingsWindow.isDestroyed()) {
-          settingsWindow.show();
-          return;
-        }
-        settingsWindow = new BrowserWindow({
-          useContentSize: true,
-          minimizable: false,
-          maximizable: false,
-          height: 400,
-          width: 400,
-          webPreferences: {
-            preload: app.isPackaged
-              ? path.join(__dirname, 'preload.js')
-              : path.join(__dirname, '../../.erb/dll/preload.js'),
-            // Use pluginOptions.nodeIntegration, leave this alone
-            // See nklayman.github.io/vue-cli-plugin-electron-builder/guide/security.html#node-integration for more info
-            nodeIntegration: true, // process.env.ELECTRON_NODE_INTEGRATION,
-          },
-        });
-
-        settingsWindow.loadURL(resolveHtmlPath('index.html', 'settings'));
-      },
-    },
-    {
-      label: 'Quit',
-      role: 'quit',
-    },
-  ]);
-
-  myTray.setToolTip('This is my Electron app.');
-  myTray.setContextMenu(contextMenu);
-}
 
 /**
  * Add event listeners...
@@ -205,11 +152,21 @@ app
   .whenReady()
   .then(() => {
     createWindow();
-    createTray();
     app.on('activate', () => {
       // On macOS it's common to re-create a window in the app when the
       // dock icon is clicked and there are no other windows open.
       if (mainWindow === null) createWindow();
+    });
+
+    // Register a global shortcut
+    globalShortcut.register('CommandOrControl+C+D', () => {
+      trackEvent('shortcutPressed');
+      if (mainWindow === null) {
+        createWindow();
+      }
+      const text = clipboard.readText('selection');
+      mainWindow!.webContents.send('shortcut-pressed', { text });
+      mainWindow!.show();
     });
   })
   .catch(console.log);

@@ -1,8 +1,12 @@
-import { Box, Button, FormControl, TextField } from '@mui/material';
+import { Box, Button, FormControl, TextField, Typography } from '@mui/material';
 import { useState } from 'react';
 import LanguageSelector from './language_selector';
 
-export default function SettingsPage() {
+interface SettingsProps {
+  onClose: () => void;
+}
+
+export default function Settings({ onClose }: SettingsProps) {
   const [key, setKey] = useState(() => {
     return window.localStorage.getItem('openApi') as string;
   });
@@ -22,7 +26,7 @@ export default function SettingsPage() {
       await window.localStorage.setItem('openApi', key);
       await window.localStorage.setItem('lang1', lang1);
       await window.localStorage.setItem('lang2', lang2);
-      window.close();
+      onClose();
     } catch (error) {
       console.error('Failed to save OpenAI API:', error);
     }
@@ -37,6 +41,9 @@ export default function SettingsPage() {
         gap: 2,
       }}
     >
+      <Typography id="transition-modal-title" variant="h6" component="h2">
+        Settings
+      </Typography>
       <Box sx={{ gridRow: '1' }}>
         <TextField
           label="Open AI Key"
