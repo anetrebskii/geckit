@@ -110,9 +110,21 @@ export default function Workspace() {
           loading={loading === 'explain'}
           disabled={!!loading}
           variant="contained"
-          onClick={() => handleClick('explain', 'Explain')}
+          onClick={() =>
+            handleClick('explain', 'Explain what was meant in the text')
+          }
         >
           Explain
+        </LoadingButton>
+
+        <LoadingButton
+          type="button"
+          loading={loading === 'chat'}
+          disabled={!!loading}
+          variant="contained"
+          onClick={() => handleClick('chat', 'You are helpful assistant')}
+        >
+          Chat
         </LoadingButton>
       </Box>
       <Box>
