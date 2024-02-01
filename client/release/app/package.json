@@ -1,12 +1,12 @@
 {
   "name": "geckit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "",
   "license": "MIT",
   "author": {
     "name": "Alex Netrebskii",
     "email": "aleks.netrebskii@gmail.com",
-    "url": "https://github.com/electron-react-boilerplate"
+    "url": "https://github.com/anetrebskii"
   },
   "main": "./dist/main/main.js",
   "scripts": {
