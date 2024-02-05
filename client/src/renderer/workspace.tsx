@@ -3,6 +3,7 @@ import { OpenAI } from 'openai';
 import { Box, Snackbar, TextField } from '@mui/material';
 import { LoadingButton } from '@mui/lab';
 import { CmdOrCtrl } from './services/os_helper';
+import { getUserContext } from './services/user_context';
 
 export default function Workspace() {
   const [text, setText] = useState<string>('');
@@ -28,10 +29,10 @@ export default function Workspace() {
 
   const handleClick = async (btn: string, context: string) => {
     await setLoading(btn);
-    const apiKey = window.localStorage.getItem('openApi') as string;
+    const userContext = getUserContext();
 
     const openai = new OpenAI({
-      apiKey,
+      apiKey: userContext.settings.openAiKey,
       dangerouslyAllowBrowser: true,
     });
 
@@ -42,13 +43,13 @@ export default function Workspace() {
           { role: 'system', content: context },
           { role: 'user', content: text },
         ],
-        max_tokens: 1000,
-        model: 'gpt-3.5-turbo',
+        max_tokens: 3000,
+        model: userContext.settings.openAiModel,
       });
       newTextTmp = completion.choices[0].message.content as string;
     } catch (err) {
-      newTextTmp = 'Error fetching data from OpenAI';
-      console.error('OpenAI API Error:', err);
+      newTextTmp = `OpenAI API Error: ${err}`;
+      console.error(newTextTmp);
     }
 
     setNewText(newTextTmp);
