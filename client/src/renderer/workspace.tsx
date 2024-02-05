@@ -10,6 +10,7 @@ export default function Workspace() {
   const [newText, setNewText] = useState<string>('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [loading, setLoading] = useState('');
+  const userContext = getUserContext();
 
   useEffect(() => {
     window.electron.ipcRenderer.on('shortcut-pressed', (args: any) => {
@@ -84,7 +85,12 @@ export default function Workspace() {
           loading={loading === 'correct'}
           disabled={!!loading}
           variant="contained"
-          onClick={() => handleClick('correct', 'Only fix mistakes in my text')}
+          onClick={() =>
+            handleClick(
+              'correct',
+              'Only fix mistakes in my text and provide a correct version',
+            )
+          }
         >
           Correct
         </LoadingButton>
@@ -97,9 +103,7 @@ export default function Workspace() {
           onClick={() =>
             handleClick(
               'translate',
-              `Translate the text from ${window.localStorage.getItem(
-                'lang1',
-              )} to ${window.localStorage.getItem('lang2')} or opposite`,
+              `Translate the text from ${userContext.settings.nativateLanguage} to ${userContext.settings.secondLanguage} or opposite`,
             )
           }
         >
