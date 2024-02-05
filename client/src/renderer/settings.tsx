@@ -56,7 +56,7 @@ export default function Settings({ onClose }: SettingsProps) {
       <Box>
         <FormControl sx={{ width: 1 }} variant="outlined">
           <LanguageSelector
-            label="Language 1"
+            label="Native Language"
             value={lang1}
             onChange={(e: any) => setLang1(e)}
           />
@@ -65,7 +65,7 @@ export default function Settings({ onClose }: SettingsProps) {
       <Box>
         <FormControl sx={{ width: 1 }} variant="outlined">
           <LanguageSelector
-            label="Language 2"
+            label="Second Language"
             value={lang2}
             onChange={(e: any) => setLang2(e)}
           />
