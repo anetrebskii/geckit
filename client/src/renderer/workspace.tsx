@@ -97,6 +97,18 @@ export default function Workspace() {
 
         <LoadingButton
           type="button"
+          loading={loading === 'improve'}
+          disabled={!!loading}
+          variant="contained"
+          onClick={() =>
+            handleClick('improve', 'Correct it and make it sounds better')
+          }
+        >
+          Improve
+        </LoadingButton>
+
+        <LoadingButton
+          type="button"
           loading={loading === 'translate'}
           disabled={!!loading}
           variant="contained"
