@@ -60,7 +60,7 @@ export default function Hero() {
               data-aos-delay="200"
             >
               Empowering you with easy access to AI functions in any
-              application, right at your fingertips.{" "}
+              application, right at your fingertips
             </p>
             <div className="max-w-xs mx-auto sm:max-w-none sm:flex sm:justify-center">
               <div data-aos="fade-up" data-aos-delay="400">

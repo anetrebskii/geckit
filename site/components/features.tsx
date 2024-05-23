@@ -6,7 +6,7 @@ export default function Features() {
 
           {/* Section header */}
           <div className="max-w-3xl mx-auto text-center pb-12 md:pb-20">
-            <h2 className="h2 mb-4 text-gray-950">Most AI users spend a lot of their time forming queries and applying the responses.</h2>
+            <h2 className="h2 mb-4 text-gray-950">Most AI users spend a lot of their time forming queries and applying the responses</h2>
             <p className="text-xl text-gray-800">Save you time! GeckIt is an AI application that works with any text on the computer. It edits, corrects, translates, and explains the text you select.</p>
           </div>
 
