@@ -29,6 +29,12 @@
       "request": "launch",
       "command": "npm run dev",
       "cwd": "${workspaceFolder}/site",
+    },
+    {
+      "name": "Next.js: Landing Debug",
+      "type": "chrome",
+      "url": "http://localhost:3000",
+      "cwd": "${workspaceFolder}/site"
     }
   ],
   "compounds": [
@@ -37,6 +43,13 @@
       "configurations": [
         "Electron: Main",
         "Electron: Renderer"
+      ]
+    },
+    {
+      "name": "Landing: All",
+      "configurations": [
+        "Next.js: Landing Dev",
+        "Next.js: Landing Debug"
       ]
     }
   ]
