@@ -66,7 +66,7 @@ export default function Hero() {
               <div data-aos="fade-up" data-aos-delay="400">
                 <a
                   className="btn text-white bg-green-600 hover:bg-green-700 w-full mb-4 sm:w-auto sm:mb-0"
-                  href="#0"
+                  href="/download"
                 >
                   Download
                 </a>
