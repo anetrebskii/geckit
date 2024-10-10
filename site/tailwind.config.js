@@ -38,6 +38,7 @@ module.exports = {
       },
       fontFamily: {
         'sans': ['Roboto'],
+        noah: ["Noah Text", "sans-serif"],
         roboto: ["Roboto", "sans-serif"],
         inter: ["var(--font-inter)", "sans-serif"],
         "architects-daughter": [
