@@ -30,7 +30,6 @@ export default function Workspace() {
 
   const handleClick = async (btn: string, context: string) => {
     await setLoading(btn);
-    const userContext = getUserContext();
 
     const openai = new OpenAI({
       apiKey: userContext.settings.openAiKey,

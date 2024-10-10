@@ -21,14 +21,14 @@ export function Welcome({ onClose }: WelcomeProps) {
         Hello there!
       </Typography>
       <Typography id="spring-modal-description" sx={{ mt: 2 }}>
-        I'm Gecko, your nimble text assistant. Have you noticed how quick I am?
-        I'm here to make sure you can keep up with me! With just a few clicks,
+        I am Gecko, your nimble text assistant. Have you noticed how quick I am?
+        I am here to make sure you can keep up with me! With just a few clicks,
         you can swiftly correct or translate any text across all your
-        applications. Let's speed through your edits together!
+        applications. Let&apos;s speed through your edits together!
       </Typography>
       {/* <Box sx={{position: cen}}> */}
       <Button sx={{ width: 1, mt: 2 }} onClick={onClose}>
-        Let's start
+        Let&apos;s start
       </Button>
       {/* </Box> */}
     </Box>
