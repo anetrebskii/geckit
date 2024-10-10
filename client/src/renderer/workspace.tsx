@@ -42,7 +42,7 @@ export default function Workspace() {
       const completion = await openai.chat.completions.create({
         messages: [
           { role: 'system', content: context },
-          { role: 'user', content: text },
+          { role: 'user', content: `Text: ${text}` },
         ],
         max_tokens: 3000,
         model: userContext.settings.openAiModel,
@@ -115,7 +115,7 @@ export default function Workspace() {
           onClick={() =>
             handleClick(
               'translate',
-              `Translate the text from ${userContext.settings.nativateLanguage} to ${userContext.settings.secondLanguage} or opposite`,
+              `Translate the text from ${userContext.settings.nativateLanguage} to ${userContext.settings.secondLanguage} or opposite. Return only translated version.`,
             )
           }
         >
