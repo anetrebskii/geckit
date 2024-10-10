@@ -30,8 +30,8 @@ export function getUserContext(): UserContext {
 
   const result: UserContext = {
     ...DefaultUserContext,
-    ...JSON.parse(userContextText)
-  }
+    ...JSON.parse(userContextText),
+  };
   return result;
 }
 
