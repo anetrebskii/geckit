@@ -27,7 +27,7 @@
       "name": "Next.js: Landing Dev",
       "type": "node-terminal",
       "request": "launch",
-      "command": "npm run dev",
+      "command": "nvm use && npm run dev",
       "cwd": "${workspaceFolder}/site",
     },
     {
