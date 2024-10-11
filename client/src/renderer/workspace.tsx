@@ -87,7 +87,7 @@ export default function Workspace() {
           onClick={() =>
             handleClick(
               'correct',
-              'Only fix mistakes in my text and provide a correct version',
+              'Only fix mistakes in my text. Return only a corrected version without any other text and comments.',
             )
           }
         >
@@ -100,7 +100,10 @@ export default function Workspace() {
           disabled={!!loading}
           variant="contained"
           onClick={() =>
-            handleClick('improve', 'Correct it and make it sounds better')
+            handleClick(
+              'improve',
+              'Correct it and make it sounds better and more native. Return only a corrected version without any other text and comments.',
+            )
           }
         >
           Improve
@@ -114,7 +117,7 @@ export default function Workspace() {
           onClick={() =>
             handleClick(
               'translate',
-              `Translate the text from ${userContext.settings.nativateLanguage} to ${userContext.settings.secondLanguage} or opposite. Return only translated version.`,
+              `Translate the text from ${userContext.settings.nativateLanguage} to ${userContext.settings.secondLanguage} or opposite. Return only a translated version without any other text and comments.`,
             )
           }
         >
