@@ -2,7 +2,6 @@ type UserSettings = {
   nativateLanguage: string | undefined;
   secondLanguage: string | undefined;
   openAiKey: string | undefined;
-  openAiModel: string;
 };
 
 export interface UserContext {
@@ -18,7 +17,6 @@ const DefaultUserContext: UserContext = {
     nativateLanguage: undefined,
     secondLanguage: undefined,
     openAiKey: undefined,
-    openAiModel: 'gpt-3.5-turbo',
   },
 };
 

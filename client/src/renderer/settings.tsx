@@ -2,7 +2,6 @@ import { Box, Button, FormControl, TextField, Typography } from '@mui/material';
 import { useState } from 'react';
 import LanguageSelector from './language_selector';
 import { getUserContext, setUserContext } from './services/user_context';
-import ModelSelector from './model_selector';
 
 interface SettingsProps {
   onClose: () => void;
@@ -10,9 +9,6 @@ interface SettingsProps {
 
 export default function Settings({ onClose }: SettingsProps) {
   const [key, setKey] = useState(() => getUserContext().settings.openAiKey);
-  const [model, setModel] = useState(
-    () => getUserContext().settings.openAiModel,
-  );
   const [lang1, setLang1] = useState(
     () => getUserContext().settings.nativateLanguage,
   );
@@ -31,7 +27,6 @@ export default function Settings({ onClose }: SettingsProps) {
           openAiKey: key,
           nativateLanguage: lang1,
           secondLanguage: lang2,
-          openAiModel: model,
         },
       });
       onClose();
@@ -59,13 +54,6 @@ export default function Settings({ onClose }: SettingsProps) {
           value={key}
           sx={{ width: 1 }}
           onChange={textChangeHandler}
-        />
-      </Box>
-      <Box sx={{ gridRow: '1' }}>
-        <ModelSelector
-          label="Open AI model"
-          value={model}
-          onChange={(e: any) => setModel(e)}
         />
       </Box>
       <Box>

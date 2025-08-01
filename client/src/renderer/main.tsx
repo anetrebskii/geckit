@@ -32,24 +32,9 @@ export default function Main() {
 
   return (
     <>
-      <AppBar
-        position="fixed"
-        color="transparent"
-        sx={{ top: 'auto', bottom: 0 }}
-      >
-        <Toolbar variant="dense">
-          <IconButton
-            edge="start"
-            color="inherit"
-            aria-label="menu"
-            sx={{ mr: 2 }}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <SettingsIcon />
-          </IconButton>
-        </Toolbar>
-      </AppBar>
-      <Workspace />
+      <Workspace 
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
 
       <Modal
         open={welcomeOpen}
