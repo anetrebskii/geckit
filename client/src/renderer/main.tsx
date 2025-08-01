@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Box, IconButton, Modal, AppBar, Toolbar, Fade } from '@mui/material';
-import SettingsIcon from '@mui/icons-material/Settings';
+import { Box, Modal, Fade } from '@mui/material';
 import Settings from './settings';
 import Workspace from './workspace';
 import { getUserContext, setUserContext } from './services/user_context';
@@ -32,7 +31,7 @@ export default function Main() {
 
   return (
     <>
-      <Workspace 
+      <Workspace
         onOpenSettings={() => setSettingsOpen(true)}
       />
 

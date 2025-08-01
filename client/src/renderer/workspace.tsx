@@ -10,7 +10,6 @@ import {
   ListItemText,
   Typography,
   IconButton,
-  Divider,
   Card,
   CardContent,
   Chip,
@@ -33,7 +32,6 @@ import {
   ArrowDropDown as ArrowDropDownIcon,
   AutoAwesome as AutoAwesomeIcon,
   ContentCopy as ContentCopyIcon,
-  Clear as ClearIcon,
   DeleteSweep as DeleteSweepIcon,
 } from '@mui/icons-material';
 import { CmdOrCtrl } from './services/os_helper';
@@ -67,7 +65,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [quickActionsAnchorEl, setQuickActionsAnchorEl] = useState<null | HTMLElement>(null);
+  const [quickActionsAnchorEl, setQuickActionsAnchorEl] =
+    useState<null | HTMLElement>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [customActionOpen, setCustomActionOpen] = useState(false);
   const [customInstruction, setCustomInstruction] = useState('');
@@ -117,7 +116,13 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
   useEffect(() => {
     const originalError = console.error;
     console.error = (...args) => {
-      if (args[0] && typeof args[0] === 'string' && args[0].includes('ResizeObserver loop completed with undelivered notifications')) {
+      if (
+        args[0] &&
+        typeof args[0] === 'string' &&
+        args[0].includes(
+          'ResizeObserver loop completed with undelivered notifications',
+        )
+      ) {
         return; // Suppress this specific error
       }
       originalError.apply(console, args);
@@ -131,7 +136,12 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
   // Handle ResizeObserver errors globally
   useEffect(() => {
     const handleResizeObserverError = (event: ErrorEvent) => {
-      if (event.message && event.message.includes('ResizeObserver loop completed with undelivered notifications')) {
+      if (
+        event.message &&
+        event.message.includes(
+          'ResizeObserver loop completed with undelivered notifications',
+        )
+      ) {
         event.preventDefault();
         return false;
       }
@@ -291,14 +301,11 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     if (currentChatId) {
       setChats((prev) =>
         prev.map((chat) =>
-          chat.id === currentChatId
-            ? { ...chat, messages: [] }
-            : chat,
+          chat.id === currentChatId ? { ...chat, messages: [] } : chat,
         ),
       );
     }
   };
-
 
   const eraseAllChatHistory = () => {
     // Clear localStorage
@@ -460,10 +467,12 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     let prompt = '';
     switch (action) {
       case 'grammar':
-        prompt = '\n\n[Please correct any grammar and spelling mistakes in the text above]';
+        prompt =
+          '\n\n[Please correct any grammar and spelling mistakes in the text above]';
         break;
       case 'improve':
-        prompt = '\n\n[Please improve this text to make it sound more professional and native]';
+        prompt =
+          '\n\n[Please improve this text to make it sound more professional and native]';
         break;
       case 'translate':
         prompt = `\n\n[Please translate this text from ${
@@ -473,7 +482,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
         } or vice versa]`;
         break;
       case 'explain':
-        prompt = '\n\n[Please explain what this text means and provide context]';
+        prompt =
+          '\n\n[Please explain what this text means and provide context]';
         break;
     }
 
@@ -681,7 +691,9 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
   // Global keyboard shortcut handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isInInputField = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      const isInInputField =
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement;
 
       // Quick Actions with Cmd/Ctrl + numbers (works from anywhere if there's text)
       if ((e.metaKey || e.ctrlKey) && inputMessage.trim() && !loading) {
@@ -756,8 +768,6 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     scrollToBottom();
   }, [chats, currentChatId]);
 
-
-
   const currentChat = getCurrentChat();
 
   return (
@@ -777,9 +787,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
         }}
         elevation={3}
       >
-
-
-                {/* Toggle button at top of sidebar */}
+        {/* Toggle button at top of sidebar */}
         <Box
           sx={{
             p: 1,
@@ -800,23 +808,25 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
                 bgcolor: 'background.paper',
                 borderRadius: '4px',
                 boxShadow: 1,
-                '&:hover': { boxShadow: 2 }
+                '&:hover': { boxShadow: 2 },
               }}
             >
               {sidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
             </IconButton>
           </Tooltip>
-                    {!sidebarCollapsed && (
+          {!sidebarCollapsed && (
             <>
-              <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'black' }}>
+              <Typography
+                variant="h6"
+                sx={{ fontWeight: 'bold', color: 'black' }}
+              >
                 GeckIt
               </Typography>
-
             </>
           )}
         </Box>
 
-                {/* Sidebar content when collapsed */}
+        {/* Sidebar content when collapsed */}
         {sidebarCollapsed && (
           <Box
             sx={{
@@ -841,10 +851,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
               </IconButton>
             </Tooltip>
             <Tooltip title="Settings">
-              <IconButton
-                onClick={onOpenSettings}
-                size="small"
-              >
+              <IconButton onClick={onOpenSettings} size="small">
                 <SettingsIcon />
               </IconButton>
             </Tooltip>
@@ -896,12 +903,11 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
                   New Chat
                 </Button>
               </Tooltip>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <Box
+                sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}
+              >
                 <Tooltip title="Settings">
-                  <IconButton
-                    onClick={onOpenSettings}
-                    size="small"
-                  >
+                  <IconButton onClick={onOpenSettings} size="small">
                     <SettingsIcon />
                   </IconButton>
                 </Tooltip>
@@ -991,7 +997,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           }}
           elevation={1}
         >
-                    <Box>
+          <Box>
             <Typography variant="h6">
               {currentChat?.title || 'Select or create a chat'}
             </Typography>
@@ -1001,19 +1007,22 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
               </Typography>
             )}
           </Box>
-                    <Tooltip title="Erase all chat history">
+          <Tooltip title="Erase all chat history">
             <span>
               <IconButton
                 size="small"
                 onClick={eraseAllChatHistory}
-                disabled={chats.length <= 1 && (!currentChat || currentChat.messages.length === 0)}
+                disabled={
+                  chats.length <= 1 &&
+                  (!currentChat || currentChat.messages.length === 0)
+                }
                 sx={{
                   p: 0.5,
                   bgcolor: 'background.paper',
                   borderRadius: '4px',
                   boxShadow: 1,
                   '&:hover': { boxShadow: 2, bgcolor: 'error.light' },
-                  '&:disabled': { opacity: 0.5 }
+                  '&:disabled': { opacity: 0.5 },
                 }}
               >
                 <DeleteSweepIcon fontSize="small" />
@@ -1036,7 +1045,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
               }}
             >
               <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-                                <Box
+                <Box
                   sx={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -1062,11 +1071,13 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
                     ) : (
                       <IconButton
                         size="small"
-                        onClick={() => copyToClipboard(message.content, message.id)}
+                        onClick={() =>
+                          copyToClipboard(message.content, message.id)
+                        }
                         sx={{
                           p: 0.5,
                           opacity: 0.7,
-                          '&:hover': { opacity: 1 }
+                          '&:hover': { opacity: 1 },
                         }}
                       >
                         <ContentCopyIcon fontSize="small" />
@@ -1096,7 +1107,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           <div ref={messagesEndRef} />
         </Box>
 
-                {/* Input area */}
+        {/* Input area */}
         <Paper
           sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}
           elevation={1}
@@ -1148,41 +1159,91 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
             }}
           >
             <MenuItem onClick={() => handleQuickAction('grammar')}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                }}
+              >
                 <span>Correct Grammar</span>
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
                   {CmdOrCtrl}+1
                 </Typography>
               </Box>
             </MenuItem>
             <MenuItem onClick={() => handleQuickAction('improve')}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                }}
+              >
                 <span>Improve Text</span>
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
                   {CmdOrCtrl}+2
                 </Typography>
               </Box>
             </MenuItem>
             <MenuItem onClick={() => handleQuickAction('translate')}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                }}
+              >
                 <span>Translate</span>
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
                   {CmdOrCtrl}+3
                 </Typography>
               </Box>
             </MenuItem>
             <MenuItem onClick={() => handleQuickAction('explain')}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                }}
+              >
                 <span>Explain</span>
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
                   {CmdOrCtrl}+4
                 </Typography>
               </Box>
             </MenuItem>
             <MenuItem onClick={() => handleQuickAction('custom')}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                }}
+              >
                 <span>Custom</span>
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 2 }}
+                >
                   {CmdOrCtrl}+0
                 </Typography>
               </Box>
@@ -1229,8 +1290,13 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
                 <Typography variant="h6" component="h2" sx={{ mb: 2 }}>
                   Custom Action
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Provide custom instructions for what you want to do with the text:
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mb: 2 }}
+                >
+                  Provide custom instructions for what you want to do with the
+                  text:
                 </Typography>
                 <TextField
                   fullWidth
@@ -1250,7 +1316,9 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
                     }
                   }}
                 />
-                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+                <Box
+                  sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}
+                >
                   <Button
                     variant="outlined"
                     onClick={() => {
@@ -1274,8 +1342,6 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           </Modal>
         </Paper>
       </Box>
-
-
     </Box>
   );
 }
