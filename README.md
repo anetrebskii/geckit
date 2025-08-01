@@ -1,5 +1,8 @@
 # GeckIt
 
+## Run in MacOS
+xattr -d com.apple.quarantine /Applications/GeckIt.app
+
 ## Project setup
 ```
 npm install
