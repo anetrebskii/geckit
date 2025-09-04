@@ -377,8 +377,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           role: msg.role,
           content: msg.content,
         })),
-        max_tokens: 3000,
-        model: selectedModel || 'gpt-3.5-turbo',
+        model: selectedModel || 'gpt-5-nano',
       });
 
       const assistantMessage: Message = {
@@ -468,22 +467,22 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     switch (action) {
       case 'grammar':
         prompt =
-          '\n\n[Please correct any grammar and spelling mistakes in the text above]';
+          '\n\n[Please correct any grammar and spelling mistakes in the text above. Provide only corrected message in the reply without quotas.]';
         break;
       case 'improve':
         prompt =
-          '\n\n[Please improve this text to make it sound more professional and native]';
+          '\n\n[Please improve this text to make it sound more professional and native. Provide only corrected message in the reply without quotas.]';
         break;
       case 'translate':
         prompt = `\n\n[Please translate this text from ${
           userContext.settings.nativateLanguage || 'English'
         } to ${
           userContext.settings.secondLanguage || 'Spanish'
-        } or vice versa]`;
+        } or vice versa. Provide only translated message in the reply without quotas.]`;
         break;
       case 'explain':
         prompt =
-          '\n\n[Please explain what this text means and provide context]';
+          '\n\n[Please explain what this text means and provide context. Provide only explained message in the reply without quotas.]';
         break;
     }
 
@@ -540,8 +539,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           role: msg.role,
           content: msg.content,
         })),
-        max_tokens: 3000,
-        model: selectedModel || 'gpt-3.5-turbo',
+        model: selectedModel || 'gpt-5-nano',
       });
 
       const assistantMessage: Message = {
@@ -639,8 +637,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           role: msg.role,
           content: msg.content,
         })),
-        max_tokens: 3000,
-        model: selectedModel || 'gpt-3.5-turbo',
+        model: selectedModel || 'gpt-5-nano',
       });
 
       const assistantMessage: Message = {
