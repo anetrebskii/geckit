@@ -14,9 +14,6 @@ permissions:
 
 jobs:
   publish:
-    # To enable auto publishing to github, update your electron publisher
-    # config in package.json > "build" and remove the conditional below
-
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -24,7 +21,13 @@ jobs:
 
     strategy:
       matrix:
-        os: [macos-latest]
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
 
     steps:
       - name: Checkout git repo
@@ -45,7 +48,7 @@ jobs:
 
       - name: Publish releases
         env:
-          # # These values are used for auto updates signing
+          # These values are used for auto updates signing (macOS)
           # APPLE_ID: ${{ secrets.APPLE_ID }}
           # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
           # CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -53,4 +56,4 @@ jobs:
           # This is used for uploading release assets to github
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npm exec electron-builder -- --publish always --win --mac --linux
+          npm exec electron-builder -- --publish always --${{ matrix.platform }}
