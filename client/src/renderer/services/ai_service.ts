@@ -29,6 +29,9 @@ interface SendMessageResponse {
   error?: string;
 }
 
+// Maximum number of messages to send to the AI (sliding window)
+const MAX_CONTEXT_MESSAGES = 20;
+
 // OpenAI models
 export const OPENAI_MODELS = [
   'gpt-3.5-turbo',
@@ -89,18 +92,39 @@ export function getDefaultModelForProvider(provider: AIProvider): string {
 }
 
 /**
+ * Trim messages to maintain a sliding window of recent context
+ * Keeps system messages and the most recent user/assistant messages
+ */
+function trimMessagesToContext(messages: ChatMessage[]): ChatMessage[] {
+  // Separate system messages from chat messages
+  const systemMessages = messages.filter((m) => m.role === 'system');
+  const chatMessages = messages.filter((m) => m.role !== 'system');
+
+  // Keep only the most recent messages (sliding window)
+  const maxChatMessages = MAX_CONTEXT_MESSAGES - systemMessages.length;
+  const trimmedChatMessages = chatMessages.slice(-maxChatMessages);
+
+  // Return system messages first, then recent chat messages
+  return [...systemMessages, ...trimmedChatMessages];
+}
+
+/**
  * Send a chat message via IPC to the main process
  * This avoids CORS issues as the API call is made from Node.js
+ * Messages are trimmed to maintain max 20 messages (sliding window)
  */
 export async function sendChatMessage(
   config: AIConfig,
   modelId: string,
   messages: ChatMessage[],
 ): Promise<string> {
+  // Trim messages to max context size (keeps most recent)
+  const trimmedMessages = trimMessagesToContext(messages);
+
   const request: SendMessageRequest = {
     config,
     modelId,
-    messages,
+    messages: trimmedMessages,
   };
 
   const response: SendMessageResponse = await window.electron.ai.chat(request);
