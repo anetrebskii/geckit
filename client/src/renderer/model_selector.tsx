@@ -1,30 +1,27 @@
 import * as React from 'react';
 import TextField from '@mui/material/TextField';
 import Autocomplete from '@mui/material/Autocomplete';
+import { AIProvider, getModelsForProvider } from './services/ai_service';
 
-const models = [
-  'gpt-3.5-turbo',
-  'gpt-4-turbo-preview',
-  'gpt-4-0125-preview',
-  'gpt-4o',
-  'gpt-4o-mini',
-  'gpt-4o-mini-search-preview',
-  'gpt-4o-search-preview',
-  'o1',
-  'o1-mini',
-  'o3',
-  'o3-mini',
-  'o3-pro',
-  'gpt-4.1',
-  'gpt-4.1-mini',
-  'gpt-4.1-nano',
-  'gpt-5-mini',
-  'gpt-5',
-  'gpt-5-nano',
-];
+interface ModelSelectorProps {
+  label: string;
+  onChange?: (value: string) => void;
+  value: string;
+  provider?: AIProvider;
+}
 
-export default function ModelSelector({ label, onChange, value }: any) {
+export default function ModelSelector({
+  label,
+  onChange,
+  value,
+  provider = 'openai',
+}: ModelSelectorProps) {
   const id = React.useId();
+  const models = React.useMemo(
+    () => getModelsForProvider(provider),
+    [provider],
+  );
+
   return (
     <Autocomplete
       disablePortal
@@ -39,7 +36,7 @@ export default function ModelSelector({ label, onChange, value }: any) {
       }}
       onChange={(e, v) => {
         if (onChange) {
-          onChange(v);
+          onChange(v || '');
         }
       }}
       sx={{ width: 1 }}
