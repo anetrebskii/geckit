@@ -54,18 +54,23 @@ export const OPENAI_MODELS = [
   'gpt-5-nano',
 ];
 
-// Anthropic (Claude) models
+// Anthropic (Claude) models - from https://platform.claude.com/docs/en/about-claude/models/overview
 export const ANTHROPIC_MODELS = [
-  // Claude 4.5 series (Latest - 2025)
-  'claude-opus-4-5-20251124',
+  // Claude 4.5 series (Latest - recommended)
   'claude-sonnet-4-5-20250929',
-  'claude-haiku-4-5-20251015',
-  // Claude 3.5 series (2024)
-  'claude-3-5-sonnet-20241022',
+  'claude-haiku-4-5-20251001',
+  'claude-opus-4-5-20251101',
+  'claude-opus-4-1-20250805',
+  // Claude 4.5 aliases (auto-update to latest snapshot)
+  'claude-sonnet-4-5',
+  'claude-haiku-4-5',
+  'claude-opus-4-5',
+  'claude-opus-4-1',
+  // Legacy models (Claude 4 and 3.x)
+  'claude-sonnet-4-20250514',
+  'claude-opus-4-20250514',
+  'claude-3-7-sonnet-20250219',
   'claude-3-5-haiku-20241022',
-  // Claude 3 series (Legacy)
-  'claude-3-opus-20240229',
-  'claude-3-sonnet-20240229',
   'claude-3-haiku-20240307',
 ];
 
@@ -85,7 +90,7 @@ export function getDefaultModelForProvider(provider: AIProvider): string {
     case 'openai':
       return 'gpt-4o-mini';
     case 'anthropic':
-      return 'claude-sonnet-4-5-20250929';
+      return 'claude-sonnet-4-5'; // Best balance of intelligence, speed, and cost
     default:
       return 'gpt-4o-mini';
   }
