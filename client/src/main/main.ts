@@ -77,8 +77,10 @@ const installExtensions = async () => {
     .catch(console.log);
 };
 
+const enableDevtoolsExtensions = process.env.ENABLE_DEVTOOLS === 'true';
+
 const createWindow = async () => {
-  if (isDebug) {
+  if (isDebug && enableDevtoolsExtensions) {
     await installExtensions();
   }
 
