@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { OpenAI } from 'openai';
 import {
   Box,
   Paper,
@@ -37,6 +36,13 @@ import {
 import { CmdOrCtrl } from './services/os_helper';
 import { getUserContext } from './services/user_context';
 import ModelSelector from './model_selector';
+import {
+  sendChatMessage,
+  getDefaultModelForProvider,
+  getProviderDisplayName,
+  AIProvider,
+  AIConfig,
+} from './services/ai_service';
 
 interface Message {
   id: string;
@@ -50,6 +56,7 @@ interface Chat {
   title: string;
   messages: Message[];
   model: string;
+  provider: AIProvider;
   createdAt: Date;
 }
 
@@ -153,12 +160,22 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     };
   }, []);
 
-  // Initialize selected model with default value
+  // Get current provider from user context
+  const currentProvider = userContext.settings.aiProvider || 'openai';
+
+  // Track previous provider to detect changes
+  const prevProviderRef = useRef(currentProvider);
+
+  // Initialize or update selected model when provider changes
   useEffect(() => {
-    if (!selectedModel) {
-      setSelectedModel('gpt-3.5-turbo');
+    const providerChanged = prevProviderRef.current !== currentProvider;
+    
+    if (!selectedModel || providerChanged) {
+      setSelectedModel(getDefaultModelForProvider(currentProvider));
     }
-  }, []);
+    
+    prevProviderRef.current = currentProvider;
+  }, [currentProvider]);
 
   // Load chats from localStorage on component mount
   useEffect(() => {
@@ -181,7 +198,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
             id: Date.now().toString(),
             title: 'New Chat',
             messages: [],
-            model: selectedModel || 'gpt-3.5-turbo',
+            model: selectedModel || getDefaultModelForProvider(currentProvider),
+            provider: currentProvider,
             createdAt: new Date(),
           };
           setChats([newChat]);
@@ -195,7 +213,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           id: Date.now().toString(),
           title: 'New Chat',
           messages: [],
-          model: selectedModel || 'gpt-3.5-turbo',
+          model: selectedModel || getDefaultModelForProvider(currentProvider),
+          provider: currentProvider,
           createdAt: new Date(),
         };
         setChats([newChat]);
@@ -207,13 +226,14 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
         id: Date.now().toString(),
         title: 'New Chat',
         messages: [],
-        model: selectedModel || 'gpt-3.5-turbo',
+        model: selectedModel || getDefaultModelForProvider(currentProvider),
+        provider: currentProvider,
         createdAt: new Date(),
       };
       setChats([newChat]);
       setCurrentChatId(newChat.id);
     }
-  }, [selectedModel]);
+  }, [selectedModel, currentProvider]);
 
   // Save chats to localStorage whenever chats change
   useEffect(() => {
@@ -253,7 +273,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
       id: Date.now().toString(),
       title: 'New Chat',
       messages: [],
-      model: selectedModel,
+      model: selectedModel || getDefaultModelForProvider(currentProvider),
+      provider: currentProvider,
       createdAt: new Date(),
     };
     setChats((prev) => [newChat, ...prev]);
@@ -270,7 +291,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           id: Date.now().toString(),
           title: 'New Chat',
           messages: [],
-          model: selectedModel,
+          model: selectedModel || getDefaultModelForProvider(currentProvider),
+          provider: currentProvider,
           createdAt: new Date(),
         };
         setCurrentChatId(newChat.id);
@@ -316,7 +338,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
       id: Date.now().toString(),
       title: 'New Chat',
       messages: [],
-      model: selectedModel || 'gpt-3.5-turbo',
+      model: selectedModel || getDefaultModelForProvider(currentProvider),
+      provider: currentProvider,
       createdAt: new Date(),
     };
 
@@ -362,28 +385,30 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     setLoading(true);
 
     try {
-      const openai = new OpenAI({
-        apiKey: userContext.settings.openAiKey,
-        dangerouslyAllowBrowser: true,
-      });
+      const aiConfig: AIConfig = {
+        provider: currentProvider,
+        openAiKey: userContext.settings.openAiKey,
+        anthropicKey: userContext.settings.anthropicKey,
+      };
 
       const currentChat = chats.find((c) => c.id === chatId);
       const messages = currentChat
         ? [...currentChat.messages, userMessage]
         : [userMessage];
 
-      const completion = await openai.chat.completions.create({
-        messages: messages.map((msg) => ({
+      const responseText = await sendChatMessage(
+        aiConfig,
+        selectedModel || getDefaultModelForProvider(currentProvider),
+        messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
         })),
-        model: selectedModel || 'gpt-5-nano',
-      });
+      );
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: completion.choices[0].message.content || 'No response',
+        content: responseText || 'No response',
         timestamp: new Date(),
       };
 
@@ -402,7 +427,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `OpenAI API Error: ${err}`,
+        content: `${getProviderDisplayName(currentProvider)} API Error: ${err}`,
         timestamp: new Date(),
       };
 
@@ -524,28 +549,30 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     setLoading(true);
 
     try {
-      const openai = new OpenAI({
-        apiKey: userContext.settings.openAiKey,
-        dangerouslyAllowBrowser: true,
-      });
+      const aiConfig: AIConfig = {
+        provider: currentProvider,
+        openAiKey: userContext.settings.openAiKey,
+        anthropicKey: userContext.settings.anthropicKey,
+      };
 
       const currentChat = chats.find((c) => c.id === chatId);
       const messages = currentChat
         ? [...currentChat.messages, userMessage]
         : [userMessage];
 
-      const completion = await openai.chat.completions.create({
-        messages: messages.map((msg) => ({
+      const responseText = await sendChatMessage(
+        aiConfig,
+        selectedModel || getDefaultModelForProvider(currentProvider),
+        messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
         })),
-        model: selectedModel || 'gpt-5-nano',
-      });
+      );
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: completion.choices[0].message.content || 'No response',
+        content: responseText || 'No response',
         timestamp: new Date(),
       };
 
@@ -564,7 +591,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `OpenAI API Error: ${err}`,
+        content: `${getProviderDisplayName(currentProvider)} API Error: ${err}`,
         timestamp: new Date(),
       };
 
@@ -622,28 +649,30 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     setLoading(true);
 
     try {
-      const openai = new OpenAI({
-        apiKey: userContext.settings.openAiKey,
-        dangerouslyAllowBrowser: true,
-      });
+      const aiConfig: AIConfig = {
+        provider: currentProvider,
+        openAiKey: userContext.settings.openAiKey,
+        anthropicKey: userContext.settings.anthropicKey,
+      };
 
       const currentChat = chats.find((c) => c.id === chatId);
       const messages = currentChat
         ? [...currentChat.messages, userMessage]
         : [userMessage];
 
-      const completion = await openai.chat.completions.create({
-        messages: messages.map((msg) => ({
+      const responseText = await sendChatMessage(
+        aiConfig,
+        selectedModel || getDefaultModelForProvider(currentProvider),
+        messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
         })),
-        model: selectedModel || 'gpt-5-nano',
-      });
+      );
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: completion.choices[0].message.content || 'No response',
+        content: responseText || 'No response',
         timestamp: new Date(),
       };
 
@@ -662,7 +691,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `OpenAI API Error: ${err}`,
+        content: `${getProviderDisplayName(currentProvider)} API Error: ${err}`,
         timestamp: new Date(),
       };
 
@@ -921,11 +950,19 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
                     <TuneIcon />
                   </IconButton>
                 </Tooltip>
-                <Chip
-                  label={selectedModel || 'No model'}
-                  size="small"
-                  variant="outlined"
-                />
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                  <Chip
+                    label={getProviderDisplayName(currentProvider)}
+                    size="small"
+                    color="primary"
+                    variant="filled"
+                  />
+                  <Chip
+                    label={selectedModel || 'No model'}
+                    size="small"
+                    variant="outlined"
+                  />
+                </Box>
               </Box>
               <Collapse in={showModelSelector}>
                 <Box sx={{ mt: 2 }}>
@@ -933,6 +970,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
                     label="Select Model"
                     value={selectedModel}
                     onChange={setSelectedModel}
+                    provider={currentProvider}
                   />
                 </Box>
               </Collapse>
@@ -1000,7 +1038,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
             </Typography>
             {currentChat && (
               <Typography variant="caption" color="text.secondary">
-                Model: {currentChat.model || selectedModel}
+                {getProviderDisplayName(currentProvider)} • {selectedModel || currentChat.model}
               </Typography>
             )}
           </Box>

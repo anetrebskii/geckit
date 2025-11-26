@@ -21,6 +21,7 @@ import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import { resolveHtmlPath } from './util';
 import trackEvent from './analytics';
+import { sendChatMessage, SendMessageRequest } from './ai_service';
 
 class AppUpdater {
   constructor() {
@@ -44,6 +45,11 @@ ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
   console.log(msgTemplate(arg));
   event.reply('ipc-example', msgTemplate('pong'));
+});
+
+// Handle AI chat requests from renderer - bypasses CORS issues
+ipcMain.handle('ai-chat', async (_event, request: SendMessageRequest) => {
+  return sendChatMessage(request);
 });
 
 if (process.env.NODE_ENV === 'production') {

@@ -22,6 +22,10 @@ const electronHandler = {
       ipcRenderer.once(channel, (_event, ...args) => func(...args));
     },
   },
+  // AI chat handler - calls main process to avoid CORS issues with Anthropic API
+  ai: {
+    chat: (request: unknown) => ipcRenderer.invoke('ai-chat', request),
+  },
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);

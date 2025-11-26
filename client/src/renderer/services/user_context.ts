@@ -1,7 +1,11 @@
+import { AIProvider } from './ai_service';
+
 type UserSettings = {
   nativateLanguage: string | undefined;
   secondLanguage: string | undefined;
   openAiKey: string | undefined;
+  anthropicKey: string | undefined;
+  aiProvider: AIProvider;
 };
 
 export interface UserContext {
@@ -17,6 +21,8 @@ const DefaultUserContext: UserContext = {
     nativateLanguage: undefined,
     secondLanguage: undefined,
     openAiKey: undefined,
+    anthropicKey: undefined,
+    aiProvider: 'openai',
   },
 };
 
