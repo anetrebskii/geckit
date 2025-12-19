@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, memo } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useState, memo } from 'react';
 import { Box, IconButton, Typography, Menu, MenuItem } from '@mui/material';
 import {
   ChevronRight as ChevronRightIcon,
@@ -18,6 +18,7 @@ interface TaskItemProps {
   item: ListItem;
   depth: number;
   focusedInputId: string | null;
+  focusCursorPosition: number | null;
   editingDescriptionId: string | null;
   dropTarget: { id: string; position: DropPosition } | null;
   isSelected: boolean;
@@ -31,6 +32,7 @@ interface TaskItemProps {
     e: React.KeyboardEvent,
     id: string,
     currentContent: string,
+    cursorPosition: number | null,
   ) => void;
   onFocus: (id: string) => void;
   onStartEditDescription: (id: string | null) => void;
@@ -44,6 +46,7 @@ function TaskItemComponent({
   item,
   depth,
   focusedInputId,
+  focusCursorPosition,
   editingDescriptionId,
   dropTarget,
   isSelected,
@@ -92,8 +95,13 @@ function TaskItemComponent({
   const dropPosition = isDropTarget ? dropTarget.position : null;
 
   // Sync local content with item content when item changes externally
-  useEffect(() => {
+  // Use useLayoutEffect to ensure this runs synchronously before blur events
+  useLayoutEffect(() => {
     setLocalContent(item.content);
+    // Also update the DOM content since React doesn't manage contentEditable
+    if (inputRef.current && inputRef.current.textContent !== item.content) {
+      inputRef.current.textContent = item.content;
+    }
   }, [item.content]);
 
   // Sync local description with item description when item changes externally
@@ -105,19 +113,27 @@ function TaskItemComponent({
   useEffect(() => {
     if (focusedInputId === item.id && inputRef.current && !isDragOverlay) {
       inputRef.current.focus();
-      // Place cursor at end
       const range = document.createRange();
       const sel = window.getSelection();
-      if (inputRef.current.childNodes.length > 0) {
-        range.setStartAfter(inputRef.current.lastChild!);
+      const textNode = inputRef.current.firstChild;
+      const contentLength = inputRef.current.textContent?.length || 0;
+
+      if (focusCursorPosition !== null && textNode) {
+        // Place cursor at the specified position (clamped to content length)
+        const pos = Math.min(focusCursorPosition, contentLength);
+        range.setStart(textNode, pos);
+      } else if (textNode) {
+        // Place cursor at beginning
+        range.setStart(textNode, 0);
       } else {
+        // Empty content, set at start of element
         range.setStart(inputRef.current, 0);
       }
       range.collapse(true);
       sel?.removeAllRanges();
       sel?.addRange(range);
     }
-  }, [focusedInputId, item.id, isDragOverlay]);
+  }, [focusedInputId, focusCursorPosition, item.id, isDragOverlay]);
 
   // Focus description input when editing description
   useEffect(() => {
@@ -147,8 +163,10 @@ function TaskItemComponent({
   }, [item.id, registerRef, isDragOverlay]);
 
   const handleBlur = () => {
-    if (localContent !== item.content) {
-      onContentChange(item.id, localContent);
+    // Read current content from DOM since localContent state might be stale
+    const currentContent = inputRef.current?.textContent || '';
+    if (currentContent !== item.content) {
+      onContentChange(item.id, currentContent);
     }
   };
 
@@ -163,7 +181,27 @@ function TaskItemComponent({
       onStartEditDescription(item.id);
       return;
     }
-    onKeyDown(e, item.id, localContent);
+
+    // Get cursor position for keys that need it (Enter for split, Arrow keys for navigation)
+    let cursorPosition: number | null = null;
+    const needsCursorPosition =
+      (e.key === 'Enter' && !e.shiftKey) ||
+      (e.key === 'ArrowUp' && !e.altKey) ||
+      (e.key === 'ArrowDown' && !e.altKey);
+
+    if (needsCursorPosition && inputRef.current) {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        // Calculate offset from start of contentEditable
+        const preCaretRange = range.cloneRange();
+        preCaretRange.selectNodeContents(inputRef.current);
+        preCaretRange.setEnd(range.endContainer, range.endOffset);
+        cursorPosition = preCaretRange.toString().length;
+      }
+    }
+
+    onKeyDown(e, item.id, localContent, cursorPosition);
   };
 
   const handleDescriptionBlur = () => {
@@ -522,6 +560,8 @@ function arePropsEqual(
   const wasFocused = prevProps.focusedInputId === prevProps.item.id;
   const isFocused = nextProps.focusedInputId === nextProps.item.id;
   if (wasFocused !== isFocused) return false;
+  // Re-render if cursor position changed while focused
+  if (isFocused && prevProps.focusCursorPosition !== nextProps.focusCursorPosition) return false;
 
   // Re-render if this item's description editing state changed
   const wasEditingDesc = prevProps.editingDescriptionId === prevProps.item.id;

@@ -60,6 +60,7 @@ import {
   exportToMarkdown,
   importFromMarkdown,
   flattenItemsWithDepth,
+  createItem,
 } from '../../services/tasks_service';
 import {
   CommandManager,
@@ -120,6 +121,7 @@ function searchItems(
 export default function TasksView() {
   const [state, setState] = useState<TasksState>(() => getTasksState());
   const [focusedInputId, setFocusedInputId] = useState<string | null>(null);
+  const [focusCursorPosition, setFocusCursorPosition] = useState<number | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     id: string;
@@ -622,15 +624,28 @@ export default function TasksView() {
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent, id: string, currentContent: string) => {
+    (e: React.KeyboardEvent, id: string, currentContent: string, cursorPosition: number | null) => {
       const item = findItemById(state.rootItems, id);
       if (!item) return;
 
-      // Enter - create new sibling
+      // Enter - create new sibling (split content at cursor position)
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        const command = new CreateItemCommand(id);
+
+        // Determine text before and after cursor
+        const cursorPos = cursorPosition ?? currentContent.length;
+        const textBeforeCursor = currentContent.slice(0, cursorPos);
+        const textAfterCursor = currentContent.slice(cursorPos);
+
+        // Update current item if cursor was not at end
+        if (cursorPos < currentContent.length) {
+          executeCommand(new UpdateContentCommand(id, textBeforeCursor, currentContent));
+        }
+
+        // Create new item with text after cursor
+        const command = new CreateItemCommand(id, createItem(textAfterCursor));
         executeCommand(command);
+        setFocusCursorPosition(null); // New item gets cursor at beginning
         setFocusedInputId(command.createdItemId);
       }
 
@@ -681,6 +696,7 @@ export default function TasksView() {
         );
         if (prevId) {
           e.preventDefault();
+          setFocusCursorPosition(cursorPosition);
           setFocusedInputId(prevId);
         }
       }
@@ -690,6 +706,7 @@ export default function TasksView() {
         const nextId = getNextItemId(state.rootItems, id, state.showCompleted);
         if (nextId) {
           e.preventDefault();
+          setFocusCursorPosition(cursorPosition);
           setFocusedInputId(nextId);
         }
       }
@@ -944,6 +961,7 @@ export default function TasksView() {
         item={flattenedItem.item}
         depth={flattenedItem.depth}
         focusedInputId={focusedInputId}
+        focusCursorPosition={focusCursorPosition}
         editingDescriptionId={editingDescriptionId}
         dropTarget={dropTarget}
         isSelected={selectedIds.has(flattenedItem.item.id)}
@@ -963,6 +981,7 @@ export default function TasksView() {
     ),
     [
       focusedInputId,
+      focusCursorPosition,
       editingDescriptionId,
       dropTarget,
       selectedIds,
@@ -1205,6 +1224,7 @@ export default function TasksView() {
                 item={activeItem}
                 depth={0}
                 focusedInputId={null}
+                focusCursorPosition={null}
                 editingDescriptionId={null}
                 dropTarget={null}
                 isSelected={false}

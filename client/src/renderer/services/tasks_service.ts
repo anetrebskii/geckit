@@ -256,6 +256,7 @@ export function indentItem(
     newItems[index - 1] = {
       ...prevSibling,
       children: [...prevSibling.children, item],
+      collapsed: false, // Auto-expand to show the new child
     };
     return { items: newItems, success: true };
   }
