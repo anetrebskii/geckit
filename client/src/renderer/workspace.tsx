@@ -32,12 +32,16 @@ import {
   AutoAwesome as AutoAwesomeIcon,
   ContentCopy as ContentCopyIcon,
   DeleteSweep as DeleteSweepIcon,
+  Mic as MicIcon,
+  Stop as StopIcon,
+  AudioFile as AudioFileIcon,
 } from '@mui/icons-material';
 import { CmdOrCtrl } from './services/os_helper';
 import { getUserContext } from './services/user_context';
 import ModelSelector from './model_selector';
 import {
   sendChatMessage,
+  transcribeAudio,
   getDefaultModelForProvider,
   getProviderDisplayName,
   AIProvider,
@@ -49,6 +53,8 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  source?: 'transcription';
+  sourceLabel?: string; // e.g., "Mic recording" or the audio file name
 }
 
 interface Chat {
@@ -77,6 +83,19 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [customActionOpen, setCustomActionOpen] = useState(false);
   const [customInstruction, setCustomInstruction] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounterRef = useRef(0);
+  const chatsRef = useRef(chats);
+  const currentChatIdRef = useRef(currentChatId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const customInstructionRef = useRef<HTMLInputElement>(null);
   const sidebarToggleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -88,6 +107,14 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Keep refs in sync for use in async callbacks (avoids stale closures)
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
+  useEffect(() => {
+    currentChatIdRef.current = currentChatId;
+  }, [currentChatId]);
 
   // Debounced sidebar toggle to prevent ResizeObserver loop
   const toggleSidebar = useCallback(() => {
@@ -169,11 +196,11 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
   // Initialize or update selected model when provider changes
   useEffect(() => {
     const providerChanged = prevProviderRef.current !== currentProvider;
-    
+
     if (!selectedModel || providerChanged) {
       setSelectedModel(getDefaultModelForProvider(currentProvider));
     }
-    
+
     prevProviderRef.current = currentProvider;
   }, [currentProvider]);
 
@@ -346,6 +373,338 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     // Replace all chats with just the new empty one
     setChats([newChat]);
     setCurrentChatId(newChat.id);
+  };
+
+  const ACCEPTED_AUDIO_EXTENSIONS = [
+    '.mp3',
+    '.mp4',
+    '.mpeg',
+    '.mpga',
+    '.m4a',
+    '.wav',
+    '.webm',
+    '.ogg',
+  ];
+
+  const isAudioFile = (file: File) => {
+    const ext = `.${file.name.split('.').pop()?.toLowerCase()}`;
+    return (
+      file.type.startsWith('audio/') || ACCEPTED_AUDIO_EXTENSIONS.includes(ext)
+    );
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) {
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const sendTranscribedMessage = async (text: string, sourceLabel: string) => {
+    // Use refs to get current values (avoids stale closures from async callbacks)
+    let chatId = currentChatIdRef.current;
+    if (!chatId) {
+      const newId = Date.now().toString();
+      const newChat: Chat = {
+        id: newId,
+        title: 'New Chat',
+        messages: [],
+        model: selectedModel || getDefaultModelForProvider(currentProvider),
+        provider: currentProvider,
+        createdAt: new Date(),
+      };
+      setChats((prev) => [newChat, ...prev]);
+      setCurrentChatId(newId);
+      chatId = newId;
+    }
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: text,
+      timestamp: new Date(),
+      source: 'transcription',
+      sourceLabel,
+    };
+
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === chatId
+          ? {
+              ...chat,
+              messages: [...chat.messages, userMessage],
+              title:
+                chat.messages.length === 0
+                  ? `${text.slice(0, 30)}...`
+                  : chat.title,
+            }
+          : chat,
+      ),
+    );
+
+    setLoading(true);
+
+    try {
+      const aiConfig: AIConfig = {
+        provider: currentProvider,
+        openAiKey: userContext.settings.openAiKey,
+        anthropicKey: userContext.settings.anthropicKey,
+      };
+
+      // Use chatsRef for current state in async context
+      const currentChatData = chatsRef.current.find((c) => c.id === chatId);
+      const messages = currentChatData
+        ? [...currentChatData.messages, userMessage]
+        : [userMessage];
+
+      const responseText = await sendChatMessage(
+        aiConfig,
+        selectedModel || getDefaultModelForProvider(currentProvider),
+        messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+      );
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: responseText || 'No response',
+        timestamp: new Date(),
+      };
+
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === chatId
+            ? { ...chat, messages: [...chat.messages, assistantMessage] }
+            : chat,
+        ),
+      );
+
+      await copyToClipboard(assistantMessage.content, assistantMessage.id);
+    } catch (err) {
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `${getProviderDisplayName(currentProvider)} API Error: ${err}`,
+        timestamp: new Date(),
+      };
+
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === chatId
+            ? { ...chat, messages: [...chat.messages, errorMessage] }
+            : chat,
+        ),
+      );
+    }
+
+    setLoading(false);
+  };
+
+  const addErrorMessage = (content: string) => {
+    const chatId = currentChatIdRef.current;
+    if (!chatId) return;
+    const msg: Message = {
+      id: Date.now().toString(),
+      role: 'assistant',
+      content,
+      timestamp: new Date(),
+    };
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === chatId
+          ? { ...chat, messages: [...chat.messages, msg] }
+          : chat,
+      ),
+    );
+  };
+
+  const handleTranscribeAndSend = async (
+    audioBlob: Blob,
+    fileName: string,
+    sourceLabel: string,
+  ) => {
+    setIsTranscribing(true);
+
+    try {
+      const aiConfig: AIConfig = {
+        provider: currentProvider,
+        openAiKey: userContext.settings.openAiKey,
+        anthropicKey: userContext.settings.anthropicKey,
+      };
+
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          // Strip the data URL prefix to get raw base64
+          const base64Data = result.split(',')[1];
+          resolve(base64Data);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(audioBlob);
+      });
+
+      const text = await transcribeAudio(aiConfig, base64, fileName);
+
+      if (text.trim()) {
+        await sendTranscribedMessage(text, sourceLabel);
+      } else {
+        addErrorMessage('No speech detected in the audio. Please try again.');
+      }
+    } catch (err) {
+      addErrorMessage(`Transcription Error: ${err}`);
+    }
+
+    setIsTranscribing(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    dragCounterRef.current = 0;
+
+    if (loading || isTranscribing || isRecording) return;
+
+    const { files } = e.dataTransfer;
+    if (files.length === 0) return;
+
+    const file = files[0];
+    if (isAudioFile(file)) {
+      handleTranscribeAndSend(file, file.name, file.name);
+    }
+  };
+
+  const stopVolumeMonitoring = () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    setAudioLevel(0);
+  };
+
+  const startVolumeMonitoring = (stream: MediaStream) => {
+    const audioContext = new AudioContext();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    audioContextRef.current = audioContext;
+    analyserRef.current = analyser;
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const updateLevel = () => {
+      if (!analyserRef.current) return;
+      analyserRef.current.getByteFrequencyData(dataArray);
+      // Calculate RMS volume
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i += 1) {
+        sum += dataArray[i] * dataArray[i];
+      }
+      const rms = Math.sqrt(sum / dataArray.length);
+      // Normalize to 0-1 range (max byte value is 255)
+      setAudioLevel(Math.min(rms / 128, 1));
+      animationFrameRef.current = requestAnimationFrame(updateLevel);
+    };
+    updateLevel();
+  };
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      // Stop recording
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+      }
+      stopVolumeMonitoring();
+      setIsRecording(false);
+      return;
+    }
+
+    // Start recording
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      startVolumeMonitoring(stream);
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: 'audio/webm',
+        });
+        // Stop all tracks to release the microphone
+        stream.getTracks().forEach((track) => track.stop());
+        handleTranscribeAndSend(audioBlob, 'recording.webm', 'Mic recording');
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      // Show mic permission error
+      let chatId = currentChatId;
+      if (!chatId) {
+        createNewChat();
+        chatId = Date.now().toString();
+        setCurrentChatId(chatId);
+      }
+
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `Microphone Error: Could not access microphone. Please grant microphone permission. (${err})`,
+        timestamp: new Date(),
+      };
+
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === chatId
+            ? { ...chat, messages: [...chat.messages, errorMessage] }
+            : chat,
+        ),
+      );
+    }
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    handleTranscribeAndSend(file, file.name, file.name);
+
+    // Reset file input so the same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const sendMessage = async () => {
@@ -841,14 +1200,12 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
             </IconButton>
           </Tooltip>
           {!sidebarCollapsed && (
-            <>
-              <Typography
-                variant="h6"
-                sx={{ fontWeight: 'bold', color: 'black' }}
-              >
-                GeckIt
-              </Typography>
-            </>
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 'bold', color: 'black' }}
+            >
+              GeckIt
+            </Typography>
           )}
         </Box>
 
@@ -950,7 +1307,9 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
                     <TuneIcon />
                   </IconButton>
                 </Tooltip>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Box
+                  sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}
+                >
                   <Chip
                     label={getProviderDisplayName(currentProvider)}
                     size="small"
@@ -1038,7 +1397,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
             </Typography>
             {currentChat && (
               <Typography variant="caption" color="text.secondary">
-                {getProviderDisplayName(currentProvider)} • {selectedModel || currentChat.model}
+                {getProviderDisplayName(currentProvider)} •{' '}
+                {selectedModel || currentChat.model}
               </Typography>
             )}
           </Box>
@@ -1067,7 +1427,46 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
         </Paper>
 
         {/* Messages area */}
-        <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+        <Box
+          sx={{ flex: 1, overflow: 'auto', p: 2, position: 'relative' }}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
+          {/* Drop zone overlay */}
+          {isDragOver && (
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                bgcolor: 'rgba(25, 118, 210, 0.08)',
+                border: '2px dashed',
+                borderColor: 'primary.main',
+                borderRadius: 2,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10,
+                pointerEvents: 'none',
+              }}
+            >
+              <Box sx={{ textAlign: 'center' }}>
+                <AudioFileIcon
+                  sx={{ fontSize: 48, color: 'primary.main', mb: 1 }}
+                />
+                <Typography variant="h6" color="primary.main">
+                  Drop audio file to transcribe
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Supports mp3, mp4, wav, webm, ogg, m4a
+                </Typography>
+              </Box>
+            </Box>
+          )}
           {currentChat?.messages.map((message) => (
             <Card
               key={message.id}
@@ -1080,6 +1479,20 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
               }}
             >
               <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
+                {message.source === 'transcription' && (
+                  <Chip
+                    icon={<MicIcon sx={{ fontSize: 14 }} />}
+                    label={message.sourceLabel || 'Transcribed'}
+                    size="small"
+                    variant="outlined"
+                    color="secondary"
+                    sx={{
+                      mb: 0.5,
+                      height: 22,
+                      '& .MuiChip-label': { fontSize: '0.7rem' },
+                    }}
+                  />
+                )}
                 <Box
                   sx={{
                     display: 'flex',
@@ -1148,15 +1561,85 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           elevation={1}
         >
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+            <Tooltip
+              title={
+                isRecording
+                  ? 'Stop recording'
+                  : 'Record audio (Whisper transcription)'
+              }
+            >
+              <span>
+                <IconButton
+                  onClick={toggleRecording}
+                  disabled={loading || isTranscribing}
+                  size="small"
+                  sx={{
+                    color: isRecording ? 'error.main' : 'action.active',
+                  }}
+                >
+                  {isRecording ? <StopIcon /> : <MicIcon />}
+                </IconButton>
+              </span>
+            </Tooltip>
+            {isRecording && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  gap: '2px',
+                  height: 24,
+                  px: 0.5,
+                }}
+              >
+                {[0, 1, 2, 3, 4].map((i) => {
+                  const barLevel = Math.max(
+                    0.15,
+                    audioLevel *
+                      (0.5 + Math.sin(Date.now() / 150 + i * 1.2) * 0.5),
+                  );
+                  return (
+                    <Box
+                      key={i}
+                      sx={{
+                        width: 3,
+                        borderRadius: 1,
+                        bgcolor: 'error.main',
+                        height: `${barLevel * 100}%`,
+                        minHeight: 3,
+                        transition: 'height 0.1s ease',
+                      }}
+                    />
+                  );
+                })}
+              </Box>
+            )}
+            <Tooltip title="Upload audio file (Whisper transcription)">
+              <span>
+                <IconButton
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={loading || isTranscribing || isRecording}
+                  size="small"
+                >
+                  <AudioFileIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,.ogg"
+              style={{ display: 'none' }}
+            />
             <TextField
               fullWidth
               multiline
               maxRows={4}
-              value={inputMessage}
+              value={isTranscribing ? 'Transcribing audio...' : inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder={`Type your message... (${CmdOrCtrl}+C, ${CmdOrCtrl}+D to paste selected text)`}
-              disabled={loading}
+              disabled={loading || isTranscribing}
               variant="outlined"
               size="small"
               inputRef={inputMessageRef}

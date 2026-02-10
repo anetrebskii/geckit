@@ -2,6 +2,9 @@
  * AI Service for main process - handles API calls to avoid CORS issues
  * Anthropic API does not support CORS, so we must call it from Node.js
  */
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 
@@ -28,6 +31,65 @@ export interface SendMessageResponse {
   success: boolean;
   text?: string;
   error?: string;
+}
+
+export interface TranscribeRequest {
+  config: AIConfig;
+  audioData: string; // base64-encoded audio
+  fileName: string;
+}
+
+export interface TranscribeResponse {
+  success: boolean;
+  text?: string;
+  error?: string;
+}
+
+export async function transcribeAudio(
+  request: TranscribeRequest,
+): Promise<TranscribeResponse> {
+  const { config, audioData, fileName } = request;
+
+  try {
+    if (!config.openAiKey) {
+      return {
+        success: false,
+        error:
+          'OpenAI API key is required for transcription (Whisper is OpenAI-only)',
+      };
+    }
+
+    const openai = new OpenAI({
+      apiKey: config.openAiKey,
+    });
+
+    const buffer = Buffer.from(audioData, 'base64');
+    const tempPath = path.join(os.tmpdir(), `geckit-${Date.now()}-${fileName}`);
+    fs.writeFileSync(tempPath, buffer);
+
+    try {
+      const fileStream = fs.createReadStream(tempPath);
+      const transcription = await openai.audio.transcriptions.create({
+        model: 'whisper-1',
+        file: fileStream,
+      });
+
+      return {
+        success: true,
+        text: transcription.text,
+      };
+    } finally {
+      // Clean up temp file
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // ignore cleanup errors
+      }
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return { success: false, error: errorMessage };
+  }
 }
 
 export async function sendChatMessage(
@@ -87,7 +149,9 @@ export async function sendChatMessage(
 
         // Extract text from content blocks
         const textContent = response.content
-          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+          .filter(
+            (block): block is Anthropic.TextBlock => block.type === 'text',
+          )
           .map((block) => block.text)
           .join('');
 
@@ -98,11 +162,13 @@ export async function sendChatMessage(
       }
 
       default:
-        return { success: false, error: `Unknown provider: ${config.provider}` };
+        return {
+          success: false,
+          error: `Unknown provider: ${config.provider}`,
+        };
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     return { success: false, error: errorMessage };
   }
 }
-

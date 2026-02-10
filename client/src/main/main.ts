@@ -21,7 +21,12 @@ import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import { resolveHtmlPath } from './util';
 import trackEvent from './analytics';
-import { sendChatMessage, SendMessageRequest } from './ai_service';
+import {
+  sendChatMessage,
+  SendMessageRequest,
+  transcribeAudio,
+  TranscribeRequest,
+} from './ai_service';
 
 class AppUpdater {
   constructor() {
@@ -50,6 +55,11 @@ ipcMain.on('ipc-example', async (event, arg) => {
 // Handle AI chat requests from renderer - bypasses CORS issues
 ipcMain.handle('ai-chat', async (_event, request: SendMessageRequest) => {
   return sendChatMessage(request);
+});
+
+// Handle audio transcription requests from renderer (OpenAI Whisper)
+ipcMain.handle('ai-transcribe', async (_event, request: TranscribeRequest) => {
+  return transcribeAudio(request);
 });
 
 if (process.env.NODE_ENV === 'production') {

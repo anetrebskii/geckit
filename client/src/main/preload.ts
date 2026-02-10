@@ -25,6 +25,8 @@ const electronHandler = {
   // AI chat handler - calls main process to avoid CORS issues with Anthropic API
   ai: {
     chat: (request: unknown) => ipcRenderer.invoke('ai-chat', request),
+    transcribe: (request: unknown) =>
+      ipcRenderer.invoke('ai-transcribe', request),
   },
 };
 

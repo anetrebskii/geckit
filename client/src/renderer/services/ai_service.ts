@@ -29,6 +29,18 @@ interface SendMessageResponse {
   error?: string;
 }
 
+interface TranscribeRequest {
+  config: AIConfig;
+  audioData: string;
+  fileName: string;
+}
+
+interface TranscribeResponse {
+  success: boolean;
+  text?: string;
+  error?: string;
+}
+
 // Maximum number of messages to send to the AI (sliding window)
 const MAX_CONTEXT_MESSAGES = 20;
 
@@ -172,4 +184,29 @@ export function isProviderConfigured(
 ): boolean {
   const key = getApiKeyForProvider(config, provider);
   return !!key && key.trim().length > 0;
+}
+
+/**
+ * Transcribe audio via IPC to the main process (OpenAI Whisper)
+ * Whisper is OpenAI-only, so an OpenAI API key is required regardless of the active provider
+ */
+export async function transcribeAudio(
+  config: AIConfig,
+  audioData: string,
+  fileName: string,
+): Promise<string> {
+  const request: TranscribeRequest = {
+    config,
+    audioData,
+    fileName,
+  };
+
+  const response: TranscribeResponse =
+    await window.electron.ai.transcribe(request);
+
+  if (!response.success) {
+    throw new Error(response.error || 'Transcription failed');
+  }
+
+  return response.text || '';
 }
