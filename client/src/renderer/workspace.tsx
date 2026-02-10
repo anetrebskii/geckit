@@ -35,6 +35,7 @@ import {
   Mic as MicIcon,
   Stop as StopIcon,
   AudioFile as AudioFileIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { CmdOrCtrl } from './services/os_helper';
 import { getUserContext } from './services/user_context';
@@ -92,6 +93,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const recordingCancelledRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
   const chatsRef = useRef(chats);
@@ -632,9 +634,19 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     updateLevel();
   };
 
+  const cancelRecording = () => {
+    recordingCancelledRef.current = true;
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+    }
+    stopVolumeMonitoring();
+    setIsRecording(false);
+  };
+
   const toggleRecording = async () => {
     if (isRecording) {
-      // Stop recording
+      // Stop recording and send
+      recordingCancelledRef.current = false;
       if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
       }
@@ -645,6 +657,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
 
     // Start recording
     try {
+      recordingCancelledRef.current = false;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -659,11 +672,15 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
       };
 
       mediaRecorder.onstop = () => {
+        // Stop all tracks to release the microphone
+        stream.getTracks().forEach((track) => track.stop());
+        if (recordingCancelledRef.current) {
+          recordingCancelledRef.current = false;
+          return;
+        }
         const audioBlob = new Blob(audioChunksRef.current, {
           type: 'audio/webm',
         });
-        // Stop all tracks to release the microphone
-        stream.getTracks().forEach((track) => track.stop());
         handleTranscribeAndSend(audioBlob, 'recording.webm', 'Mic recording');
       };
 
@@ -1561,26 +1578,40 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           elevation={1}
         >
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
-            <Tooltip
-              title={
-                isRecording
-                  ? 'Stop recording'
-                  : 'Record audio (Whisper transcription)'
-              }
-            >
-              <span>
-                <IconButton
-                  onClick={toggleRecording}
-                  disabled={loading || isTranscribing}
-                  size="small"
-                  sx={{
-                    color: isRecording ? 'error.main' : 'action.active',
-                  }}
-                >
-                  {isRecording ? <StopIcon /> : <MicIcon />}
-                </IconButton>
-              </span>
-            </Tooltip>
+            {isRecording ? (
+              <>
+                <Tooltip title="Cancel recording">
+                  <IconButton
+                    onClick={cancelRecording}
+                    size="small"
+                    sx={{ color: 'action.active' }}
+                  >
+                    <CloseIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Stop and send">
+                  <IconButton
+                    onClick={toggleRecording}
+                    size="small"
+                    sx={{ color: 'error.main' }}
+                  >
+                    <StopIcon />
+                  </IconButton>
+                </Tooltip>
+              </>
+            ) : (
+              <Tooltip title="Record audio (Whisper transcription)">
+                <span>
+                  <IconButton
+                    onClick={toggleRecording}
+                    disabled={loading || isTranscribing}
+                    size="small"
+                  >
+                    <MicIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
             {isRecording && (
               <Box
                 sx={{
