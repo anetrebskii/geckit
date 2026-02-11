@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Box, Modal, Fade, Tabs, Tab, Paper } from '@mui/material';
-import { Chat as ChatIcon, CheckBox as TasksIcon } from '@mui/icons-material';
+import {
+  Chat as ChatIcon,
+  CheckBox as TasksIcon,
+  Mic as MicIcon,
+} from '@mui/icons-material';
 import Settings from './settings';
 import Workspace from './workspace';
 import TasksView from './components/tasks/TasksView';
+import TranscriptionsView from './components/transcriptions/TranscriptionsView';
 import { getUserContext, setUserContext } from './services/user_context';
 import { Welcome } from './welcome';
 
@@ -19,7 +24,7 @@ const modalStyle = {
   p: 2,
 };
 
-type TabValue = 'chat' | 'tasks';
+type TabValue = 'chat' | 'tasks' | 'transcriptions';
 
 export default function Main() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -46,6 +51,11 @@ export default function Main() {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === '2') {
         e.preventDefault();
         setActiveTab('tasks');
+      }
+      // Cmd/Ctrl + Shift + 3 - Switch to Transcriptions
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === '3') {
+        e.preventDefault();
+        setActiveTab('transcriptions');
       }
     };
 
@@ -90,6 +100,13 @@ export default function Main() {
             label="Tasks"
             sx={{ gap: 0.5 }}
           />
+          <Tab
+            value="transcriptions"
+            icon={<MicIcon sx={{ fontSize: 18 }} />}
+            iconPosition="start"
+            label="Transcriptions"
+            sx={{ gap: 0.5 }}
+          />
         </Tabs>
       </Paper>
 
@@ -99,6 +116,7 @@ export default function Main() {
           <Workspace onOpenSettings={() => setSettingsOpen(true)} />
         )}
         {activeTab === 'tasks' && <TasksView />}
+        {activeTab === 'transcriptions' && <TranscriptionsView />}
       </Box>
 
       {/* Welcome Modal */}
