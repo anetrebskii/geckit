@@ -286,13 +286,6 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     );
   }, [sidebarCollapsed]);
 
-  // Handle shortcut from main process
-  useEffect(() => {
-    window.electron.ipcRenderer.on('shortcut-pressed', (args: any) => {
-      setInputMessage(args.text);
-    });
-  }, []);
-
   const getCurrentChat = () => {
     return chats.find((chat) => chat.id === currentChatId);
   };
@@ -1173,7 +1166,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
   const currentChat = getCurrentChat();
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* Left sidebar - Chat history */}
       <Paper
         sx={{

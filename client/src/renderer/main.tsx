@@ -1,14 +1,25 @@
-import { useEffect, useState } from 'react';
-import { Box, Modal, Fade, Tabs, Tab, Paper } from '@mui/material';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Box,
+  Modal,
+  Fade,
+  Tabs,
+  Tab,
+  Tooltip,
+  IconButton,
+} from '@mui/material';
 import {
   Chat as ChatIcon,
   CheckBox as TasksIcon,
   Mic as MicIcon,
+  Spellcheck as SpellcheckIcon,
+  Settings as SettingsIcon,
 } from '@mui/icons-material';
 import Settings from './settings';
 import Workspace from './workspace';
 import TasksView from './components/tasks/TasksView';
 import TranscriptionsView from './components/transcriptions/TranscriptionsView';
+import CorrectView from './components/correct/CorrectView';
 import { getUserContext, setUserContext } from './services/user_context';
 import { Welcome } from './welcome';
 
@@ -24,12 +35,13 @@ const modalStyle = {
   p: 2,
 };
 
-type TabValue = 'chat' | 'tasks' | 'transcriptions';
+type TabValue = 'correct' | 'chat' | 'tasks' | 'transcriptions';
 
 export default function Main() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabValue>('chat');
+  const [activeTab, setActiveTab] = useState<TabValue>('correct');
+  const [incomingText, setIncomingText] = useState<string | undefined>();
 
   useEffect(() => {
     const userContext = getUserContext();
@@ -39,23 +51,42 @@ export default function Main() {
     }
   }, []);
 
-  // Keyboard shortcuts for tab switching
+  // Listen for shortcut-pressed from main process (Cmd+C+D)
+  useEffect(() => {
+    window.electron.ipcRenderer.on('shortcut-pressed', (args: any) => {
+      setActiveTab('correct');
+      setIncomingText(args.text);
+    });
+  }, []);
+
+  const handleIncomingTextConsumed = useCallback(() => {
+    setIncomingText(undefined);
+  }, []);
+
+  // Keyboard shortcuts for tab switching (Ctrl+number, distinct from Cmd+number)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd/Ctrl + Shift + 1 - Switch to Chat
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === '1') {
-        e.preventDefault();
-        setActiveTab('chat');
-      }
-      // Cmd/Ctrl + Shift + 2 - Switch to Tasks
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === '2') {
-        e.preventDefault();
-        setActiveTab('tasks');
-      }
-      // Cmd/Ctrl + Shift + 3 - Switch to Transcriptions
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === '3') {
-        e.preventDefault();
-        setActiveTab('transcriptions');
+      if (!e.ctrlKey || e.metaKey || e.shiftKey) return;
+
+      switch (e.key) {
+        case '1':
+          e.preventDefault();
+          setActiveTab('correct');
+          break;
+        case '2':
+          e.preventDefault();
+          setActiveTab('chat');
+          break;
+        case '3':
+          e.preventDefault();
+          setActiveTab('tasks');
+          break;
+        case '4':
+          e.preventDefault();
+          setActiveTab('transcriptions');
+          break;
+        default:
+          break;
       }
     };
 
@@ -65,53 +96,104 @@ export default function Main() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      {/* Tab bar */}
-      <Paper
-        elevation={1}
+      {/* Toolbar */}
+      <Box
         sx={{
+          display: 'flex',
+          alignItems: 'center',
+          flexShrink: 0,
           borderBottom: 1,
           borderColor: 'divider',
-          flexShrink: 0,
+          bgcolor: 'grey.50',
+          WebkitAppRegion: 'drag',
+          pl: 9,
         }}
       >
         <Tabs
           value={activeTab}
           onChange={(_, value) => setActiveTab(value)}
           sx={{
-            minHeight: 40,
+            minHeight: 36,
+            WebkitAppRegion: 'no-drag',
+            '& .MuiTabs-indicator': {
+              height: 2,
+            },
             '& .MuiTab-root': {
-              minHeight: 40,
+              minHeight: 36,
+              minWidth: 0,
+              px: 1.5,
               py: 0,
+              fontSize: '0.8rem',
               textTransform: 'none',
+              color: 'text.secondary',
+              '&.Mui-selected': {
+                color: 'primary.main',
+              },
             },
           }}
         >
-          <Tab
-            value="chat"
-            icon={<ChatIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-            label="Chat"
-            sx={{ gap: 0.5 }}
-          />
-          <Tab
-            value="tasks"
-            icon={<TasksIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-            label="Tasks"
-            sx={{ gap: 0.5 }}
-          />
-          <Tab
-            value="transcriptions"
-            icon={<MicIcon sx={{ fontSize: 18 }} />}
-            iconPosition="start"
-            label="Transcriptions"
-            sx={{ gap: 0.5 }}
-          />
+          <Tooltip title="Ctrl+1">
+            <Tab
+              value="correct"
+              icon={<SpellcheckIcon sx={{ fontSize: 16 }} />}
+              iconPosition="start"
+              label="Correct"
+              sx={{ gap: 0.5 }}
+            />
+          </Tooltip>
+          <Tooltip title="Ctrl+2">
+            <Tab
+              value="chat"
+              icon={<ChatIcon sx={{ fontSize: 16 }} />}
+              iconPosition="start"
+              label="Chat"
+              sx={{ gap: 0.5 }}
+            />
+          </Tooltip>
+          <Tooltip title="Ctrl+3">
+            <Tab
+              value="tasks"
+              icon={<TasksIcon sx={{ fontSize: 16 }} />}
+              iconPosition="start"
+              label="Tasks"
+              sx={{ gap: 0.5 }}
+            />
+          </Tooltip>
+          <Tooltip title="Ctrl+4">
+            <Tab
+              value="transcriptions"
+              icon={<MicIcon sx={{ fontSize: 16 }} />}
+              iconPosition="start"
+              label="Transcribe"
+              sx={{ gap: 0.5 }}
+            />
+          </Tooltip>
         </Tabs>
-      </Paper>
+        <Box sx={{ flex: 1 }} />
+        <Tooltip title="Settings">
+          <IconButton
+            size="small"
+            onClick={() => setSettingsOpen(true)}
+            sx={{
+              mr: 1,
+              WebkitAppRegion: 'no-drag',
+              color: 'text.secondary',
+              '&:hover': { color: 'text.primary' },
+            }}
+          >
+            <SettingsIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
 
       {/* Content area */}
-      <Box sx={{ flex: 1, overflow: 'hidden' }}>
+      <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        {activeTab === 'correct' && (
+          <CorrectView
+            incomingText={incomingText}
+            onIncomingTextConsumed={handleIncomingTextConsumed}
+          />
+        )}
         {activeTab === 'chat' && (
           <Workspace onOpenSettings={() => setSettingsOpen(true)} />
         )}
