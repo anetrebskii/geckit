@@ -300,6 +300,7 @@ export default function CorrectView({
       {/* Model selector */}
       <Box sx={{ flexShrink: 0 }}>
         <ModelProviderSelector
+          compact
           model={correctModel}
           provider={correctProvider}
           onChange={(model, provider) => {
