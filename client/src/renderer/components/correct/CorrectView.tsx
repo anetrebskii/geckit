@@ -17,8 +17,10 @@ import {
   sendChatMessage,
   getDefaultModelForProvider,
   getProviderDisplayName,
+  AIProvider,
   AIConfig,
 } from '../../services/ai_service';
+import { ModelProviderSelector } from '../../model_selector';
 
 interface CorrectViewProps {
   // eslint-disable-next-line react/require-default-props
@@ -41,6 +43,35 @@ export default function CorrectView({
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const customInstructionRef = useRef<HTMLInputElement>(null);
+
+  // Per-view model/provider selection
+  const [correctProvider, setCorrectProvider] = useState<AIProvider>(() => {
+    try {
+      const saved = localStorage.getItem('geckit-correct-model');
+      if (saved) return JSON.parse(saved).provider;
+    } catch {
+      /* use default */
+    }
+    return getUserContext().settings.aiProvider || 'openai';
+  });
+  const [correctModel, setCorrectModel] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('geckit-correct-model');
+      if (saved) return JSON.parse(saved).model;
+    } catch {
+      /* use default */
+    }
+    const provider = getUserContext().settings.aiProvider || 'openai';
+    return getDefaultModelForProvider(provider);
+  });
+
+  // Persist correct model/provider to localStorage
+  useEffect(() => {
+    localStorage.setItem(
+      'geckit-correct-model',
+      JSON.stringify({ model: correctModel, provider: correctProvider }),
+    );
+  }, [correctModel, correctProvider]);
 
   // Handle incoming text from shortcut
   useEffect(() => {
@@ -107,33 +138,28 @@ export default function CorrectView({
 
       try {
         const userContext = getUserContext();
-        const currentProvider = userContext.settings.aiProvider || 'openai';
         const aiConfig: AIConfig = {
-          provider: currentProvider,
+          provider: correctProvider,
           openAiKey: userContext.settings.openAiKey,
           anthropicKey: userContext.settings.anthropicKey,
         };
 
-        const responseText = await sendChatMessage(
-          aiConfig,
-          getDefaultModelForProvider(currentProvider),
-          [{ role: 'user', content: messageWithPrompt }],
-        );
+        const responseText = await sendChatMessage(aiConfig, correctModel, [
+          { role: 'user', content: messageWithPrompt },
+        ]);
 
         const resultText = responseText || 'No response';
         setText(resultText);
         await copyToClipboard(resultText);
       } catch (err) {
-        const userContext = getUserContext();
-        const currentProvider = userContext.settings.aiProvider || 'openai';
         setError(
-          `${getProviderDisplayName(currentProvider)} API Error: ${err}`,
+          `${getProviderDisplayName(correctProvider)} API Error: ${err}`,
         );
       }
 
       setLoading(false);
     },
-    [text, loading, getPromptForAction],
+    [text, loading, getPromptForAction, correctProvider, correctModel],
   );
 
   const handleCustomAction = useCallback(() => {
@@ -268,6 +294,18 @@ export default function CorrectView({
             </span>
           </Tooltip>
         ))}
+      </Box>
+
+      {/* Model selector */}
+      <Box sx={{ flexShrink: 0 }}>
+        <ModelProviderSelector
+          model={correctModel}
+          provider={correctProvider}
+          onChange={(model, provider) => {
+            setCorrectModel(model);
+            setCorrectProvider(provider);
+          }}
+        />
       </Box>
 
       {/* Custom Action Modal */}
