@@ -27,6 +27,9 @@ export default function Settings({ onClose }: SettingsProps) {
   const [anthropicKey, setAnthropicKey] = useState(
     () => getUserContext().settings.anthropicKey || '',
   );
+  const [openRouterKey, setOpenRouterKey] = useState(
+    () => getUserContext().settings.openRouterKey || '',
+  );
   const [aiProvider, setAiProvider] = useState<AIProvider>(
     () => getUserContext().settings.aiProvider || 'openai',
   );
@@ -52,6 +55,7 @@ export default function Settings({ onClose }: SettingsProps) {
         settings: {
           openAiKey,
           anthropicKey,
+          openRouterKey,
           aiProvider,
           nativateLanguage: lang1,
           secondLanguage: lang2,
@@ -95,6 +99,9 @@ export default function Settings({ onClose }: SettingsProps) {
           <ToggleButton value="anthropic" aria-label="Anthropic">
             {getProviderDisplayName('anthropic')}
           </ToggleButton>
+          <ToggleButton value="openrouter" aria-label="OpenRouter">
+            {getProviderDisplayName('openrouter')}
+          </ToggleButton>
         </ToggleButtonGroup>
       </Box>
 
@@ -122,6 +129,20 @@ export default function Settings({ onClose }: SettingsProps) {
             sx={{ width: 1 }}
             onChange={(e) => setAnthropicKey(e.target.value)}
             placeholder="sk-ant-..."
+          />
+        </Box>
+      </Collapse>
+
+      {/* OpenRouter API Key */}
+      <Collapse in={aiProvider === 'openrouter'}>
+        <Box>
+          <TextField
+            label="OpenRouter API Key"
+            type="password"
+            value={openRouterKey}
+            sx={{ width: 1 }}
+            onChange={(e) => setOpenRouterKey(e.target.value)}
+            placeholder="sk-or-..."
           />
         </Box>
       </Collapse>

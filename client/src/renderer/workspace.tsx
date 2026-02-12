@@ -482,6 +482,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
         provider: usedProvider,
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
+        openRouterKey: userContext.settings.openRouterKey,
       };
 
       const messages = currentChatData
@@ -563,6 +564,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
         provider: chatProvider,
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
+        openRouterKey: userContext.settings.openRouterKey,
       };
 
       const reader = new FileReader();
@@ -778,6 +780,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
         provider: chatProvider,
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
+        openRouterKey: userContext.settings.openRouterKey,
       };
 
       const currentChat = chats.find((c) => c.id === chatId);
@@ -942,6 +945,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
         provider: chatProvider,
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
+        openRouterKey: userContext.settings.openRouterKey,
       };
 
       const currentChat = chats.find((c) => c.id === chatId);
@@ -1042,6 +1046,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
         provider: chatProvider,
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
+        openRouterKey: userContext.settings.openRouterKey,
       };
 
       const currentChat = chats.find((c) => c.id === chatId);

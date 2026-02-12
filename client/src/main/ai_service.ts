@@ -8,12 +8,13 @@ import os from 'os';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 
-export type AIProvider = 'openai' | 'anthropic';
+export type AIProvider = 'openai' | 'anthropic' | 'openrouter';
 
 export interface AIConfig {
   provider: AIProvider;
   openAiKey?: string;
   anthropicKey?: string;
+  openRouterKey?: string;
 }
 
 export interface ChatMessage {
@@ -119,6 +120,30 @@ export async function sendChatMessage(
         return {
           success: true,
           text: completion.choices[0].message.content || 'No response',
+        };
+      }
+
+      case 'openrouter': {
+        if (!config.openRouterKey) {
+          return { success: false, error: 'OpenRouter API key is required' };
+        }
+
+        const openrouter = new OpenAI({
+          apiKey: config.openRouterKey,
+          baseURL: 'https://openrouter.ai/api/v1',
+        });
+
+        const orCompletion = await openrouter.chat.completions.create({
+          messages: messages.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+          model: modelId,
+        });
+
+        return {
+          success: true,
+          text: orCompletion.choices[0].message.content || 'No response',
         };
       }
 

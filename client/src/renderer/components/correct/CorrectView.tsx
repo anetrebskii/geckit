@@ -142,6 +142,7 @@ export default function CorrectView({
           provider: correctProvider,
           openAiKey: userContext.settings.openAiKey,
           anthropicKey: userContext.settings.anthropicKey,
+          openRouterKey: userContext.settings.openRouterKey,
         };
 
         const responseText = await sendChatMessage(aiConfig, correctModel, [
