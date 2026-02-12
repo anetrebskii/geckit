@@ -8,6 +8,7 @@ import {
   LinearProgress,
   Modal,
   Fade,
+  Snackbar,
 } from '@mui/material';
 import { Send as SendIcon } from '@mui/icons-material';
 import { CmdOrCtrl } from '../../services/os_helper';
@@ -37,6 +38,7 @@ export default function CorrectView({
   const [error, setError] = useState('');
   const [customActionOpen, setCustomActionOpen] = useState(false);
   const [customInstruction, setCustomInstruction] = useState('');
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const customInstructionRef = useRef<HTMLInputElement>(null);
 
@@ -65,6 +67,7 @@ export default function CorrectView({
       document.execCommand('copy');
       document.body.removeChild(textArea);
     }
+    setSnackbarOpen(true);
   };
 
   const getPromptForAction = useCallback(
@@ -347,6 +350,14 @@ export default function CorrectView({
           </Box>
         </Fade>
       </Modal>
+
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={1500}
+        onClose={() => setSnackbarOpen(false)}
+        message="Copied to clipboard"
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Box>
   );
 }
