@@ -39,7 +39,7 @@ import {
 } from '@mui/icons-material';
 import { CmdOrCtrl } from './services/os_helper';
 import { getUserContext } from './services/user_context';
-import ModelSelector from './model_selector';
+import { ModelProviderSelector } from './model_selector';
 import {
   sendChatMessage,
   transcribeAudio,
@@ -189,25 +189,38 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     };
   }, []);
 
-  // Get current provider from user context
+  // Global provider from settings - used only for newly created chats
   const currentProvider = userContext.settings.aiProvider || 'openai';
 
-  // Track previous provider to detect changes
-  const prevProviderRef = useRef(currentProvider);
-
-  // Initialize or update selected model when provider changes
+  // Sync selectedModel from the current chat when switching chats
   useEffect(() => {
-    const providerChanged = prevProviderRef.current !== currentProvider;
-
-    if (!selectedModel || providerChanged) {
-      setSelectedModel(getDefaultModelForProvider(currentProvider));
+    const chat = chats.find((c) => c.id === currentChatId);
+    if (chat) {
+      setSelectedModel(chat.model);
     }
+  }, [currentChatId, chats]);
 
-    prevProviderRef.current = currentProvider;
-  }, [currentProvider]);
+  // Get the current chat's provider (falls back to global for safety)
+  const chatProvider: AIProvider =
+    chats.find((c) => c.id === currentChatId)?.provider || currentProvider;
+
+  // Update current chat's model and provider
+  const updateChatModel = (model: string, provider: AIProvider) => {
+    setSelectedModel(model);
+    if (currentChatId) {
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === currentChatId ? { ...chat, model, provider } : chat,
+        ),
+      );
+    }
+  };
 
   // Load chats from localStorage on component mount
   useEffect(() => {
+    const provider = userContext.settings.aiProvider || 'openai';
+    const defaultModel = getDefaultModelForProvider(provider);
+
     const savedChats = localStorage.getItem('geckit-chats');
     if (savedChats) {
       try {
@@ -227,8 +240,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
             id: Date.now().toString(),
             title: 'New Chat',
             messages: [],
-            model: selectedModel || getDefaultModelForProvider(currentProvider),
-            provider: currentProvider,
+            model: defaultModel,
+            provider,
             createdAt: new Date(),
           };
           setChats([newChat]);
@@ -242,8 +255,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
           id: Date.now().toString(),
           title: 'New Chat',
           messages: [],
-          model: selectedModel || getDefaultModelForProvider(currentProvider),
-          provider: currentProvider,
+          model: defaultModel,
+          provider,
           createdAt: new Date(),
         };
         setChats([newChat]);
@@ -255,14 +268,15 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
         id: Date.now().toString(),
         title: 'New Chat',
         messages: [],
-        model: selectedModel || getDefaultModelForProvider(currentProvider),
-        provider: currentProvider,
+        model: defaultModel,
+        provider,
         createdAt: new Date(),
       };
       setChats([newChat]);
       setCurrentChatId(newChat.id);
     }
-  }, [selectedModel, currentProvider]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Save chats to localStorage whenever chats change
   useEffect(() => {
@@ -456,21 +470,27 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
     setLoading(true);
 
     try {
+      // Use chatsRef for current state in async context
+      const currentChatData = chatsRef.current.find((c) => c.id === chatId);
+      const usedProvider = currentChatData?.provider || currentProvider;
+      const usedModel =
+        currentChatData?.model ||
+        selectedModel ||
+        getDefaultModelForProvider(usedProvider);
+
       const aiConfig: AIConfig = {
-        provider: currentProvider,
+        provider: usedProvider,
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
       };
 
-      // Use chatsRef for current state in async context
-      const currentChatData = chatsRef.current.find((c) => c.id === chatId);
       const messages = currentChatData
         ? [...currentChatData.messages, userMessage]
         : [userMessage];
 
       const responseText = await sendChatMessage(
         aiConfig,
-        selectedModel || getDefaultModelForProvider(currentProvider),
+        usedModel,
         messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
@@ -497,7 +517,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `${getProviderDisplayName(currentProvider)} API Error: ${err}`,
+        content: `${getProviderDisplayName(chatProvider)} API Error: ${err}`,
         timestamp: new Date(),
       };
 
@@ -540,7 +560,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
 
     try {
       const aiConfig: AIConfig = {
-        provider: currentProvider,
+        provider: chatProvider,
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
       };
@@ -755,7 +775,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
 
     try {
       const aiConfig: AIConfig = {
-        provider: currentProvider,
+        provider: chatProvider,
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
       };
@@ -767,7 +787,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
 
       const responseText = await sendChatMessage(
         aiConfig,
-        selectedModel || getDefaultModelForProvider(currentProvider),
+        selectedModel || getDefaultModelForProvider(chatProvider),
         messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
@@ -796,7 +816,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `${getProviderDisplayName(currentProvider)} API Error: ${err}`,
+        content: `${getProviderDisplayName(chatProvider)} API Error: ${err}`,
         timestamp: new Date(),
       };
 
@@ -919,7 +939,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
 
     try {
       const aiConfig: AIConfig = {
-        provider: currentProvider,
+        provider: chatProvider,
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
       };
@@ -931,7 +951,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
 
       const responseText = await sendChatMessage(
         aiConfig,
-        selectedModel || getDefaultModelForProvider(currentProvider),
+        selectedModel || getDefaultModelForProvider(chatProvider),
         messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
@@ -960,7 +980,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `${getProviderDisplayName(currentProvider)} API Error: ${err}`,
+        content: `${getProviderDisplayName(chatProvider)} API Error: ${err}`,
         timestamp: new Date(),
       };
 
@@ -1019,7 +1039,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
 
     try {
       const aiConfig: AIConfig = {
-        provider: currentProvider,
+        provider: chatProvider,
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
       };
@@ -1031,7 +1051,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
 
       const responseText = await sendChatMessage(
         aiConfig,
-        selectedModel || getDefaultModelForProvider(currentProvider),
+        selectedModel || getDefaultModelForProvider(chatProvider),
         messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
@@ -1060,7 +1080,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `${getProviderDisplayName(currentProvider)} API Error: ${err}`,
+        content: `${getProviderDisplayName(chatProvider)} API Error: ${err}`,
         timestamp: new Date(),
       };
 
@@ -1321,7 +1341,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
                   sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}
                 >
                   <Chip
-                    label={getProviderDisplayName(currentProvider)}
+                    label={getProviderDisplayName(chatProvider)}
                     size="small"
                     color="primary"
                     variant="filled"
@@ -1335,11 +1355,10 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
               </Box>
               <Collapse in={showModelSelector}>
                 <Box sx={{ mt: 2 }}>
-                  <ModelSelector
-                    label="Select Model"
-                    value={selectedModel}
-                    onChange={setSelectedModel}
-                    provider={currentProvider}
+                  <ModelProviderSelector
+                    model={selectedModel}
+                    provider={chatProvider}
+                    onChange={updateChatModel}
                   />
                 </Box>
               </Collapse>
@@ -1407,8 +1426,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps) {
             </Typography>
             {currentChat && (
               <Typography variant="caption" color="text.secondary">
-                {getProviderDisplayName(currentProvider)} •{' '}
-                {selectedModel || currentChat.model}
+                {getProviderDisplayName(currentChat.provider || chatProvider)} •{' '}
+                {currentChat.model || selectedModel}
               </Typography>
             )}
           </Box>
