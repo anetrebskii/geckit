@@ -5,6 +5,7 @@ type UserSettings = {
   secondLanguage: string | undefined;
   openAiKey: string | undefined;
   anthropicKey: string | undefined;
+  openRouterKey: string | undefined;
   aiProvider: AIProvider;
 };
 
@@ -22,6 +23,7 @@ const DefaultUserContext: UserContext = {
     secondLanguage: undefined,
     openAiKey: undefined,
     anthropicKey: undefined,
+    openRouterKey: undefined,
     aiProvider: 'openai',
   },
 };

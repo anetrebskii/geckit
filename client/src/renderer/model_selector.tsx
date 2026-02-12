@@ -58,7 +58,7 @@ export default function ModelSelector({
   );
 }
 
-const PROVIDERS: AIProvider[] = ['openai', 'anthropic'];
+const PROVIDERS: AIProvider[] = ['openai', 'anthropic', 'openrouter'];
 
 interface ModelProviderSelectorProps {
   model: string;

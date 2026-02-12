@@ -152,6 +152,7 @@ export default function TranscriptionsView() {
         provider: userContext.settings.aiProvider || 'openai',
         openAiKey: userContext.settings.openAiKey,
         anthropicKey: userContext.settings.anthropicKey,
+        openRouterKey: userContext.settings.openRouterKey,
       };
 
       const reader = new FileReader();
