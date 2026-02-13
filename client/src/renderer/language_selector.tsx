@@ -46,7 +46,7 @@ const languages = [
   'Inuktitut',
 ];
 
-export default function LanguageSelector({ label, onChange, value }: any) {
+export default function LanguageSelector({ label, onChange, value, size }: any) {
   const id = React.useId();
   return (
     <Autocomplete
@@ -54,6 +54,7 @@ export default function LanguageSelector({ label, onChange, value }: any) {
       id={`language-selector-${id}`}
       options={languages}
       freeSolo
+      size={size}
       value={value}
       onInputChange={(e, v) => {
         if (onChange) {
@@ -71,6 +72,7 @@ export default function LanguageSelector({ label, onChange, value }: any) {
           // eslint-disable-next-line react/jsx-props-no-spreading
           {...params}
           label={label}
+          size={size}
         />
       )}
     />
