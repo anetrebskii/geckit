@@ -106,9 +106,9 @@ export default function CorrectView({
       const userContext = getUserContext();
       switch (action) {
         case 'grammar':
-          return '\n\n[Please correct any grammar and spelling mistakes in the text above. Provide only corrected message in the reply without quotas.]';
+          return '\n\n[Please correct any grammar and spelling mistakes in the text above. Preserve all paragraph breaks and line breaks exactly as in the original. Provide only corrected message in the reply without quotas.]';
         case 'improve':
-          return '\n\n[Please improve this text to make it sound more professional and native. Provide only corrected message in the reply without quotas.]';
+          return '\n\n[Please improve this text to make it sound more professional and native. Preserve all paragraph breaks and line breaks exactly as in the original. Provide only corrected message in the reply without quotas.]';
         case 'translate':
           return `\n\n[Please translate this text from ${
             userContext.settings.nativateLanguage || 'English'
