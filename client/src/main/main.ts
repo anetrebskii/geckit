@@ -9,6 +9,7 @@
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
 import path from 'path';
+import { exec } from 'child_process';
 import {
   app,
   BrowserWindow,
@@ -45,6 +46,7 @@ const getAssetPath = (...paths: string[]): string => {
 };
 
 let mainWindow: BrowserWindow | null = null;
+let voiceWindow: BrowserWindow | null = null;
 
 ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
@@ -60,6 +62,53 @@ ipcMain.handle('ai-chat', async (_event, request: SendMessageRequest) => {
 // Handle audio transcription requests from renderer (OpenAI Whisper)
 ipcMain.handle('ai-transcribe', async (_event, request: TranscribeRequest) => {
   return transcribeAudio(request);
+});
+
+// Handle voice popup transcription: transcribe → clipboard → paste back
+ipcMain.handle(
+  'voice-transcription-result',
+  async (_event, request: TranscribeRequest) => {
+    const result = await transcribeAudio(request);
+    if (result.success && result.text) {
+      clipboard.writeText(result.text);
+
+      // Unregister voice shortcut so the simulated paste doesn't re-trigger it
+      globalShortcut.unregister('CommandOrControl+Alt+V');
+
+      // Close voice window
+      if (voiceWindow) {
+        voiceWindow.close();
+        voiceWindow = null;
+      }
+
+      // Hide app so OS returns focus to previous app
+      if (process.platform === 'darwin') {
+        app.hide();
+      }
+
+      // Short delay then simulate Cmd+V to paste into previously focused app
+      setTimeout(() => {
+        if (process.platform === 'darwin') {
+          exec(
+            `osascript -e 'tell application "System Events" to keystroke "v" using command down'`,
+          );
+        }
+        // Re-register voice shortcut after paste
+        setTimeout(() => {
+          registerVoiceShortcut();
+        }, 500);
+      }, 300);
+    }
+    return result;
+  },
+);
+
+// Handle voice popup cancel
+ipcMain.on('voice-cancel', () => {
+  if (voiceWindow) {
+    voiceWindow.close();
+    voiceWindow = null;
+  }
 });
 
 if (process.env.NODE_ENV === 'production') {
@@ -88,6 +137,53 @@ const installExtensions = async () => {
 };
 
 const enableDevtoolsExtensions = process.env.ENABLE_DEVTOOLS === 'true';
+
+const registerVoiceShortcut = () => {
+  globalShortcut.register('CommandOrControl+Alt+V', () => {
+    if (voiceWindow) {
+      // Already open → trigger stop (transcribe & paste)
+      voiceWindow.webContents.send('voice-stop');
+      return;
+    }
+    // Hide main window so it doesn't appear when the app un-hides
+    if (mainWindow) mainWindow.hide();
+    createVoiceWindow();
+  });
+};
+
+const createVoiceWindow = () => {
+  voiceWindow = new BrowserWindow({
+    width: 300,
+    height: 80,
+    show: false,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      devTools: false,
+      preload: app.isPackaged
+        ? path.join(__dirname, 'preload.js')
+        : path.join(__dirname, '../../.erb/dll/preload.js'),
+    },
+  });
+
+  const voiceUrl = resolveHtmlPath('index.html');
+  voiceWindow.loadURL(`${voiceUrl}#/voice`);
+
+  voiceWindow.on('ready-to-show', () => {
+    if (!voiceWindow) return;
+    voiceWindow.show();
+    voiceWindow.webContents.send('voice-start');
+  });
+
+  voiceWindow.on('closed', () => {
+    voiceWindow = null;
+  });
+};
 
 const createWindow = async () => {
   if (isDebug && enableDevtoolsExtensions) {
@@ -186,5 +282,8 @@ app
       mainWindow!.webContents.send('shortcut-pressed', { text });
       mainWindow!.show();
     });
+
+    // Register voice dictation shortcut (Cmd+C+V)
+    registerVoiceShortcut();
   })
   .catch(console.log);

@@ -2,7 +2,11 @@
 /* eslint no-unused-vars: off */
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
-export type Channels = 'ipc-example' | 'shortcut-pressed';
+export type Channels =
+  | 'ipc-example'
+  | 'shortcut-pressed'
+  | 'voice-start'
+  | 'voice-stop';
 
 const electronHandler = {
   ipcRenderer: {
@@ -27,6 +31,9 @@ const electronHandler = {
     chat: (request: unknown) => ipcRenderer.invoke('ai-chat', request),
     transcribe: (request: unknown) =>
       ipcRenderer.invoke('ai-transcribe', request),
+    voiceTranscribe: (request: unknown) =>
+      ipcRenderer.invoke('voice-transcription-result', request),
+    voiceCancel: () => ipcRenderer.send('voice-cancel'),
   },
 };
 

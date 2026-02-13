@@ -584,6 +584,9 @@ export default function TranscriptionsView() {
                 accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,.ogg"
                 style={{ display: 'none' }}
               />
+              <Typography variant="caption" color="text.disabled" sx={{ mt: 1.5, display: 'block' }}>
+                Tip: Press {navigator.platform.includes('Mac') ? 'Cmd' : 'Ctrl'}+Alt+V anywhere to dictate and paste into any app
+              </Typography>
             </Box>
           )}
         </Box>
