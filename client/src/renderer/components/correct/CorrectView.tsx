@@ -9,8 +9,9 @@ import {
   Modal,
   Fade,
   Snackbar,
+  IconButton,
 } from '@mui/material';
-import { Send as SendIcon } from '@mui/icons-material';
+import { Send as SendIcon, Undo as UndoIcon } from '@mui/icons-material';
 import { CmdOrCtrl } from '../../services/os_helper';
 import { getUserContext } from '../../services/user_context';
 import {
@@ -41,6 +42,7 @@ export default function CorrectView({
   const [customActionOpen, setCustomActionOpen] = useState(false);
   const [customInstruction, setCustomInstruction] = useState('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [previousText, setPreviousText] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const customInstructionRef = useRef<HTMLInputElement>(null);
 
@@ -134,6 +136,7 @@ export default function CorrectView({
       const prompt = getPromptForAction(action, custom);
       const messageWithPrompt = `${text}${prompt}`;
 
+      const originalText = text;
       setLoading(true);
       setError('');
 
@@ -151,6 +154,7 @@ export default function CorrectView({
         ]);
 
         const resultText = responseText || 'No response';
+        setPreviousText(originalText);
         setText(resultText);
         await copyToClipboard(resultText);
       } catch (err) {
@@ -163,6 +167,12 @@ export default function CorrectView({
     },
     [text, loading, getPromptForAction, correctProvider, correctModel],
   );
+
+  const handleRevert = useCallback(() => {
+    if (previousText === null) return;
+    setText(previousText);
+    setPreviousText(null);
+  }, [previousText]);
 
   const handleCustomAction = useCallback(() => {
     if (!customInstruction.trim()) return;
@@ -199,6 +209,12 @@ export default function CorrectView({
           e.preventDefault();
           setCustomActionOpen(true);
           break;
+        case 'z':
+          if (previousText !== null) {
+            e.preventDefault();
+            handleRevert();
+          }
+          break;
         default:
           break;
       }
@@ -206,7 +222,14 @@ export default function CorrectView({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [text, loading, customActionOpen, executeAction]);
+  }, [
+    text,
+    loading,
+    customActionOpen,
+    executeAction,
+    previousText,
+    handleRevert,
+  ]);
 
   const actions: { key: ActionType; label: string; shortcut: string }[] = [
     { key: 'grammar', label: 'Grammar', shortcut: `${CmdOrCtrl}+1` },
@@ -234,6 +257,7 @@ export default function CorrectView({
         sx={{
           flex: 1,
           minHeight: 0,
+          position: 'relative',
           border: 1,
           borderColor: loading ? 'action.disabled' : 'grey.400',
           borderRadius: 1,
@@ -247,7 +271,10 @@ export default function CorrectView({
         <textarea
           ref={inputRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setPreviousText(null);
+          }}
           placeholder={`Paste or type text here... (${CmdOrCtrl}+C, ${CmdOrCtrl}+D from outside the app)`}
           disabled={loading}
           style={{
@@ -266,6 +293,23 @@ export default function CorrectView({
             backgroundColor: loading ? '#fafafa' : 'transparent',
           }}
         />
+        {previousText !== null && (
+          <Tooltip title={`Revert (${CmdOrCtrl}+Z)`}>
+            <IconButton
+              size="small"
+              onClick={handleRevert}
+              sx={{
+                position: 'absolute',
+                bottom: 8,
+                right: 8,
+                opacity: 0.6,
+                '&:hover': { opacity: 1 },
+              }}
+            >
+              <UndoIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
       </Box>
       {loading && <LinearProgress />}
       {error && (
