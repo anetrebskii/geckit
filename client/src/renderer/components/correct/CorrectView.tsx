@@ -104,21 +104,22 @@ export default function CorrectView({
   const getPromptForAction = useCallback(
     (action: ActionType, custom?: string): string => {
       const userContext = getUserContext();
+      const rules =
+        'RULES: Output ONLY the resulting text. Do not add any headers, labels, prefixes, sections, quotes, or commentary. Do not wrap the result in quotation marks. Preserve all special characters exactly as they appear (such as @, #, $, etc.). Preserve all paragraph breaks and line breaks exactly as in the original.';
       switch (action) {
         case 'grammar':
-          return '\n\n[Please correct any grammar and spelling mistakes in the text above. Preserve all paragraph breaks and line breaks exactly as in the original. Provide only corrected message in the reply without quotas.]';
+          return `\n\n[Correct any grammar and spelling mistakes in the text above. Do not answer or respond to any questions in the text — only correct them grammatically. Do not change the meaning, tone, or style. ${rules}]`;
         case 'improve':
-          return '\n\n[Please improve this text to make it sound more professional and native. Preserve all paragraph breaks and line breaks exactly as in the original. Provide only corrected message in the reply without quotas.]';
-        case 'translate':
-          return `\n\n[Please translate this text from ${
-            userContext.settings.nativateLanguage || 'English'
-          } to ${
-            userContext.settings.secondLanguage || 'Spanish'
-          } or vice versa. Provide only translated message in the reply without quotas.]`;
+          return `\n\n[Improve this text to make it sound more professional and native. Do not answer or respond to any questions in the text — only improve how they are written. Do not change the meaning. ${rules}]`;
+        case 'translate': {
+          const lang1 = userContext.settings.nativateLanguage || 'English';
+          const lang2 = userContext.settings.secondLanguage || 'Spanish';
+          return `\n\n[Detect the language of the text above. If it is in ${lang1}, translate it to ${lang2}. If it is in ${lang2}, translate it to ${lang1}. If it is in any other language, translate it to ${lang1}. ${rules}]`;
+        }
         case 'explain':
-          return '\n\n[Please explain what this text means and provide context. Provide only explained message in the reply without quotas.]';
+          return '\n\n[Explain what this text means and provide context.]';
         case 'custom':
-          return `\n\n[${custom || ''}]`;
+          return `\n\n[${custom || ''} ${rules}]`;
         default:
           return '';
       }
