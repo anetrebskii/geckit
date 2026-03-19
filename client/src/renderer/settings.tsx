@@ -43,7 +43,12 @@ export default function Settings({ onClose }: SettingsProps) {
 
   useEffect(() => {
     navigator.mediaDevices.enumerateDevices().then((devices) => {
-      setAudioInputDevices(devices.filter((d) => d.kind === 'audioinput'));
+      const inputs = devices.filter((d) => d.kind === 'audioinput');
+      setAudioInputDevices(inputs);
+      localStorage.setItem(
+        'geckit-audio-input-devices',
+        JSON.stringify(inputs.map((d) => ({ deviceId: d.deviceId, label: d.label }))),
+      );
     });
   }, []);
 

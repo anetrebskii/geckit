@@ -50,6 +50,17 @@ export default function Main() {
     }
   }, []);
 
+  // Cache audio input devices for snap window
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then((devices) => {
+      const inputs = devices.filter((d) => d.kind === 'audioinput');
+      localStorage.setItem(
+        'geckit-audio-input-devices',
+        JSON.stringify(inputs.map((d) => ({ deviceId: d.deviceId, label: d.label }))),
+      );
+    });
+  }, []);
+
   // Listen for shortcut-pressed from main process (Cmd+C+D)
   useEffect(() => {
     window.electron.ipcRenderer.on('shortcut-pressed', (args: any) => {

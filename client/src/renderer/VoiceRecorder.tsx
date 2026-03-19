@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Box, Typography, IconButton, CircularProgress } from '@mui/material';
-import { Stop as StopIcon, Close as CloseIcon, Replay as ReplayIcon } from '@mui/icons-material';
-import { getUserContext } from './services/user_context';
+import { Stop as StopIcon, Close as CloseIcon, Replay as ReplayIcon, Mic as MicIcon } from '@mui/icons-material';
+import { getUserContext, setUserContext } from './services/user_context';
 import { AIConfig } from './services/ai_service';
 
 type VoiceState = 'waiting' | 'recording' | 'transcribing' | 'error';
@@ -44,6 +44,28 @@ export default function VoiceRecorder() {
   const [levels, setLevels] = useState<number[]>(() =>
     Array.from({ length: BAR_COUNT }, () => 0),
   );
+
+  const [audioDevices, setAudioDevices] = useState<{ deviceId: string; label: string }[]>([]);
+  const [micDeviceId, setMicDeviceId] = useState(
+    () => getUserContext().settings.microphoneDeviceId || '',
+  );
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('geckit-audio-input-devices');
+      if (stored) setAudioDevices(JSON.parse(stored));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleMicChange = (deviceId: string) => {
+    setMicDeviceId(deviceId);
+    const existing = getUserContext();
+    setUserContext({
+      settings: { ...existing.settings, microphoneDeviceId: deviceId || undefined },
+    });
+  };
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -184,9 +206,8 @@ export default function VoiceRecorder() {
     startedRef.current = true;
 
     try {
-      const { microphoneDeviceId } = getUserContext().settings;
-      const audioConstraint = microphoneDeviceId
-        ? { deviceId: { exact: microphoneDeviceId } }
+      const audioConstraint = micDeviceId
+        ? { deviceId: { exact: micDeviceId } }
         : true;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
       streamRef.current = stream;
@@ -222,7 +243,7 @@ export default function VoiceRecorder() {
       setState('error');
       setErrorMsg(`Mic access denied: ${err}`);
     }
-  }, [handleTranscribe, startAnalyser]);
+  }, [handleTranscribe, startAnalyser, micDeviceId]);
 
   // Listen for IPC signals from main process
   useEffect(() => {
@@ -320,6 +341,33 @@ export default function VoiceRecorder() {
 
         {(state === 'waiting' || state === 'recording') && (
           <>
+            {/* Mic selector — icon with invisible native select overlay */}
+            <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+              <MicIcon
+                fontSize="small"
+                sx={{ color: micDeviceId ? 'success.main' : 'text.secondary' }}
+              />
+              <select
+                value={micDeviceId}
+                onChange={(e) => handleMicChange(e.target.value)}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  opacity: 0,
+                  cursor: 'pointer',
+                  width: '100%',
+                  height: '100%',
+                }}
+              >
+                <option value="">Default</option>
+                {audioDevices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || `Mic ${d.deviceId.slice(0, 6)}`}
+                  </option>
+                ))}
+              </select>
+            </Box>
+
             {/* Audio bars - reactive to mic input */}
             <AudioBars levels={levels} />
 
