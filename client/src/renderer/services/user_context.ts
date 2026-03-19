@@ -7,6 +7,7 @@ type UserSettings = {
   anthropicKey: string | undefined;
   openRouterKey: string | undefined;
   aiProvider: AIProvider;
+  microphoneDeviceId: string | undefined;
 };
 
 export interface UserContext {
@@ -25,6 +26,7 @@ const DefaultUserContext: UserContext = {
     anthropicKey: undefined,
     openRouterKey: undefined,
     aiProvider: 'openai',
+    microphoneDeviceId: undefined,
   },
 };
 

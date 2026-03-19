@@ -27,6 +27,7 @@ import {
   Delete as DeleteIcon,
   ArrowBack as ArrowBackIcon,
   UploadFile as UploadFileIcon,
+  Replay as ReplayIcon,
 } from '@mui/icons-material';
 import { getUserContext } from '../../services/user_context';
 import { transcribeAudio, AIConfig } from '../../services/ai_service';
@@ -49,6 +50,12 @@ export default function TranscriptionsView() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [failedAudio, setFailedAudio] = useState<{
+    blob: Blob;
+    fileName: string;
+    sourceLabel: string;
+    knownDuration?: number;
+  } | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -145,6 +152,7 @@ export default function TranscriptionsView() {
   const handleTranscribe = async (audioBlob: Blob, fileName: string, sourceLabel: string, knownDuration?: number) => {
     setRecordingState('transcribing');
     setError(null);
+    setFailedAudio(null);
 
     try {
       const userContext = getUserContext();
@@ -178,9 +186,11 @@ export default function TranscriptionsView() {
         setSelectedId(item.id);
       } else {
         setError('No speech detected in the audio. Please try again.');
+        setFailedAudio({ blob: audioBlob, fileName, sourceLabel, knownDuration });
       }
     } catch (err) {
       setError(`Transcription error: ${err}`);
+      setFailedAudio({ blob: audioBlob, fileName, sourceLabel, knownDuration });
     }
 
     setRecordingState('idle');
@@ -198,7 +208,12 @@ export default function TranscriptionsView() {
   const startRecording = async () => {
     try {
       setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setFailedAudio(null);
+      const { microphoneDeviceId } = getUserContext().settings;
+      const audioConstraint = microphoneDeviceId
+        ? { deviceId: { exact: microphoneDeviceId } }
+        : true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
       streamRef.current = stream;
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -592,9 +607,23 @@ export default function TranscriptionsView() {
         </Box>
 
         {error && (
-          <Typography variant="body2" color="error" sx={{ mt: 1 }}>
-            {error}
-          </Typography>
+          <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography variant="body2" color="error" sx={{ flex: 1 }}>
+              {error}
+            </Typography>
+            {failedAudio && (
+              <Button
+                size="small"
+                startIcon={<ReplayIcon />}
+                onClick={() => {
+                  const { blob, fileName, sourceLabel, knownDuration } = failedAudio;
+                  handleTranscribe(blob, fileName, sourceLabel, knownDuration);
+                }}
+              >
+                Retry
+              </Button>
+            )}
+          </Box>
         )}
       </Paper>
 

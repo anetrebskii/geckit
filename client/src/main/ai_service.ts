@@ -64,29 +64,26 @@ export async function transcribeAudio(
       apiKey: config.openAiKey,
     });
 
-    const buffer = Buffer.from(audioData, 'base64');
     const tempPath = path.join(os.tmpdir(), `geckit-${Date.now()}-${fileName}`);
-    fs.writeFileSync(tempPath, buffer);
+    fs.writeFileSync(tempPath, audioData, 'base64');
 
+    const fileStream = fs.createReadStream(tempPath);
+    const transcription = await openai.audio.transcriptions.create({
+      model: 'whisper-1',
+      file: fileStream,
+    });
+
+    // Only delete temp file on success
     try {
-      const fileStream = fs.createReadStream(tempPath);
-      const transcription = await openai.audio.transcriptions.create({
-        model: 'whisper-1',
-        file: fileStream,
-      });
-
-      return {
-        success: true,
-        text: transcription.text,
-      };
-    } finally {
-      // Clean up temp file
-      try {
-        fs.unlinkSync(tempPath);
-      } catch {
-        // ignore cleanup errors
-      }
+      fs.unlinkSync(tempPath);
+    } catch {
+      // ignore cleanup errors
     }
+
+    return {
+      success: true,
+      text: transcription.text,
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     return { success: false, error: errorMessage };

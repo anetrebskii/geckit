@@ -2,10 +2,16 @@ import {
   Box,
   Button,
   Divider,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import LanguageSelector from './language_selector';
 import { getUserContext, setUserContext } from './services/user_context';
 
@@ -14,6 +20,7 @@ interface SettingsProps {
 }
 
 export default function Settings({ onClose }: SettingsProps) {
+  const [tab, setTab] = useState(0);
   const [openAiKey, setOpenAiKey] = useState(
     () => getUserContext().settings.openAiKey || '',
   );
@@ -29,6 +36,16 @@ export default function Settings({ onClose }: SettingsProps) {
   const [lang2, setLang2] = useState(
     () => getUserContext().settings.secondLanguage,
   );
+  const [microphoneDeviceId, setMicrophoneDeviceId] = useState(
+    () => getUserContext().settings.microphoneDeviceId || '',
+  );
+  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then((devices) => {
+      setAudioInputDevices(devices.filter((d) => d.kind === 'audioinput'));
+    });
+  }, []);
 
   const saveHandler = async () => {
     try {
@@ -41,6 +58,7 @@ export default function Settings({ onClose }: SettingsProps) {
           openRouterKey,
           nativateLanguage: lang1,
           secondLanguage: lang2,
+          microphoneDeviceId: microphoneDeviceId || undefined,
         },
       });
       onClose();
@@ -59,59 +77,84 @@ export default function Settings({ onClose }: SettingsProps) {
 
       <Divider />
 
-      <Box sx={{ px: 2.5, py: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Typography variant="caption" color="text.secondary" fontWeight={500}>
-          API KEYS
-        </Typography>
-        <TextField
-          label="OpenAI (required for transcription)"
-          type="password"
-          size="small"
-          value={openAiKey}
-          fullWidth
-          onChange={(e) => setOpenAiKey(e.target.value)}
-          placeholder="sk-..."
-        />
-        <TextField
-          label="Anthropic"
-          type="password"
-          size="small"
-          value={anthropicKey}
-          fullWidth
-          onChange={(e) => setAnthropicKey(e.target.value)}
-          placeholder="sk-ant-..."
-        />
-        <TextField
-          label="OpenRouter"
-          type="password"
-          size="small"
-          value={openRouterKey}
-          fullWidth
-          onChange={(e) => setOpenRouterKey(e.target.value)}
-          placeholder="sk-or-..."
-        />
-      </Box>
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        variant="fullWidth"
+        sx={{ borderBottom: 1, borderColor: 'divider' }}
+      >
+        <Tab label="API Keys" />
+        <Tab label="Microphone" />
+        <Tab label="Translation" />
+      </Tabs>
 
-      <Divider />
+      <Box sx={{ px: 2.5, py: 2.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {tab === 0 && (
+          <>
+            <TextField
+              label="OpenAI (required for transcription)"
+              type="password"
+              size="small"
+              value={openAiKey}
+              fullWidth
+              onChange={(e) => setOpenAiKey(e.target.value)}
+              placeholder="sk-..."
+            />
+            <TextField
+              label="Anthropic"
+              type="password"
+              size="small"
+              value={anthropicKey}
+              fullWidth
+              onChange={(e) => setAnthropicKey(e.target.value)}
+              placeholder="sk-ant-..."
+            />
+            <TextField
+              label="OpenRouter"
+              type="password"
+              size="small"
+              value={openRouterKey}
+              fullWidth
+              onChange={(e) => setOpenRouterKey(e.target.value)}
+              placeholder="sk-or-..."
+            />
+          </>
+        )}
 
-      <Box sx={{ px: 2.5, py: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Typography variant="caption" color="text.secondary" fontWeight={500}>
-          TRANSLATION
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1.5 }}>
-          <LanguageSelector
-            label="Native Language"
-            size="small"
-            value={lang1}
-            onChange={(e: any) => setLang1(e)}
-          />
-          <LanguageSelector
-            label="Second Language"
-            size="small"
-            value={lang2}
-            onChange={(e: any) => setLang2(e)}
-          />
-        </Box>
+        {tab === 1 && (
+          <FormControl size="small" fullWidth>
+            <InputLabel>Microphone</InputLabel>
+            <Select
+              value={microphoneDeviceId}
+              label="Microphone"
+              onChange={(e) => setMicrophoneDeviceId(e.target.value)}
+            >
+              <MenuItem value="">System Default</MenuItem>
+              {audioInputDevices.map((device) => (
+                <MenuItem key={device.deviceId} value={device.deviceId}>
+                  {device.label || `Microphone (${device.deviceId.slice(0, 8)}...)`}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
+
+        {tab === 2 && (
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <LanguageSelector
+              label="Native Language"
+              size="small"
+              value={lang1}
+              onChange={(e: any) => setLang1(e)}
+            />
+            <LanguageSelector
+              label="Second Language"
+              size="small"
+              value={lang2}
+              onChange={(e: any) => setLang2(e)}
+            />
+          </Box>
+        )}
       </Box>
 
       <Divider />

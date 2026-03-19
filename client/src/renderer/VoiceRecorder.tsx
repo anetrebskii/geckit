@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Box, Typography, IconButton, CircularProgress } from '@mui/material';
-import { Stop as StopIcon, Close as CloseIcon } from '@mui/icons-material';
+import { Stop as StopIcon, Close as CloseIcon, Replay as ReplayIcon } from '@mui/icons-material';
 import { getUserContext } from './services/user_context';
 import { AIConfig } from './services/ai_service';
 
@@ -48,6 +48,7 @@ export default function VoiceRecorder() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const failedBlobRef = useRef<Blob | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -112,6 +113,7 @@ export default function VoiceRecorder() {
   }, []);
 
   const handleTranscribe = useCallback(async (audioBlob: Blob) => {
+    failedBlobRef.current = audioBlob;
     setState('transcribing');
     try {
       const userContext = getUserContext();
@@ -141,8 +143,10 @@ export default function VoiceRecorder() {
       if (!result.success) {
         setState('error');
         setErrorMsg(result.error || 'Transcription failed');
+      } else {
+        failedBlobRef.current = null;
+        // On success, main process will close this window
       }
-      // On success, main process will close this window
     } catch (err) {
       setState('error');
       setErrorMsg(String(err));
@@ -171,6 +175,7 @@ export default function VoiceRecorder() {
       }
     }
     releaseStream();
+    failedBlobRef.current = null;
     window.electron.ai.voiceCancel();
   }, [stopAnalyser]);
 
@@ -179,7 +184,11 @@ export default function VoiceRecorder() {
     startedRef.current = true;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const { microphoneDeviceId } = getUserContext().settings;
+      const audioConstraint = microphoneDeviceId
+        ? { deviceId: { exact: microphoneDeviceId } }
+        : true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
       streamRef.current = stream;
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -290,6 +299,19 @@ export default function VoiceRecorder() {
             >
               {errorMsg}
             </Typography>
+            {failedBlobRef.current && (
+              <IconButton
+                size="small"
+                title="Retry transcription"
+                onClick={() => {
+                  if (failedBlobRef.current) {
+                    handleTranscribe(failedBlobRef.current);
+                  }
+                }}
+              >
+                <ReplayIcon fontSize="small" />
+              </IconButton>
+            )}
             <IconButton size="small" onClick={cancelRecording}>
               <CloseIcon fontSize="small" />
             </IconButton>
