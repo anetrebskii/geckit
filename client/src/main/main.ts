@@ -17,6 +17,7 @@ import {
   ipcMain,
   globalShortcut,
   clipboard,
+  systemPreferences,
 } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
@@ -265,6 +266,9 @@ app.on('window-all-closed', () => {
 app
   .whenReady()
   .then(() => {
+    if (process.platform === 'darwin') {
+      systemPreferences.askForMediaAccess('microphone');
+    }
     createWindow();
     app.on('activate', () => {
       // On macOS it's common to re-create a window in the app when the

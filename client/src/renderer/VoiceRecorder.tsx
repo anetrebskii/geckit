@@ -209,7 +209,16 @@ export default function VoiceRecorder() {
       const audioConstraint = micDeviceId
         ? { deviceId: { exact: micDeviceId } }
         : true;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
+      } catch (e) {
+        if (micDeviceId && e instanceof DOMException && e.name === 'OverconstrainedError') {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } else {
+          throw e;
+        }
+      }
       streamRef.current = stream;
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
