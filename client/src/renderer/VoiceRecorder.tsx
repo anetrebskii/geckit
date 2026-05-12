@@ -57,6 +57,32 @@ export default function VoiceRecorder() {
     } catch {
       // ignore
     }
+
+    const refresh = () => {
+      navigator.mediaDevices
+        .enumerateDevices()
+        .then((devices) => {
+          const inputs = devices
+            .filter((d) => d.kind === 'audioinput')
+            .map((d) => ({ deviceId: d.deviceId, label: d.label }));
+          setAudioDevices(inputs);
+          try {
+            localStorage.setItem(
+              'geckit-audio-input-devices',
+              JSON.stringify(inputs),
+            );
+          } catch {
+            // ignore
+          }
+          return inputs;
+        })
+        .catch(() => {});
+    };
+    refresh();
+    navigator.mediaDevices.addEventListener('devicechange', refresh);
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', refresh);
+    };
   }, []);
 
   const handleMicChange = (deviceId: string) => {

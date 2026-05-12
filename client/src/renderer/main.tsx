@@ -50,15 +50,28 @@ export default function Main() {
     }
   }, []);
 
-  // Cache audio input devices for snap window
+  // Cache audio input devices for snap window; refresh on plug/unplug
   useEffect(() => {
-    navigator.mediaDevices.enumerateDevices().then((devices) => {
-      const inputs = devices.filter((d) => d.kind === 'audioinput');
-      localStorage.setItem(
-        'geckit-audio-input-devices',
-        JSON.stringify(inputs.map((d) => ({ deviceId: d.deviceId, label: d.label }))),
-      );
-    });
+    const refresh = () => {
+      navigator.mediaDevices
+        .enumerateDevices()
+        .then((devices) => {
+          const inputs = devices.filter((d) => d.kind === 'audioinput');
+          localStorage.setItem(
+            'geckit-audio-input-devices',
+            JSON.stringify(
+              inputs.map((d) => ({ deviceId: d.deviceId, label: d.label })),
+            ),
+          );
+          return inputs;
+        })
+        .catch(() => {});
+    };
+    refresh();
+    navigator.mediaDevices.addEventListener('devicechange', refresh);
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', refresh);
+    };
   }, []);
 
   // Listen for shortcut-pressed from main process (Cmd+C+D)
