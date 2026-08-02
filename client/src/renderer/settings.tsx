@@ -97,7 +97,7 @@ export default function Settings({ onClose }: SettingsProps) {
         {tab === 0 && (
           <>
             <TextField
-              label="OpenAI (required for transcription)"
+              label="OpenAI"
               type="password"
               size="small"
               value={openAiKey}
@@ -115,7 +115,7 @@ export default function Settings({ onClose }: SettingsProps) {
               placeholder="sk-ant-..."
             />
             <TextField
-              label="OpenRouter"
+              label="OpenRouter (required for transcription)"
               type="password"
               size="small"
               value={openRouterKey}

@@ -542,8 +542,9 @@ export function isProviderConfigured(
 }
 
 /**
- * Transcribe audio via IPC to the main process (OpenAI Whisper)
- * Whisper is OpenAI-only, so an OpenAI API key is required regardless of the active provider
+ * Transcribe audio via IPC to the main process (OpenRouter, openai/whisper-1)
+ * Transcription always goes through OpenRouter, so an OpenRouter API key is
+ * required regardless of the active provider
  */
 export async function transcribeAudio(
   config: AIConfig,
