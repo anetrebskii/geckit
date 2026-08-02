@@ -52,24 +52,24 @@ export async function transcribeAudio(
   const { config, audioData, fileName } = request;
 
   try {
-    if (!config.openAiKey) {
+    if (!config.openRouterKey) {
       return {
         success: false,
-        error:
-          'OpenAI API key is required for transcription (Whisper is OpenAI-only)',
+        error: 'OpenRouter API key is required for transcription',
       };
     }
 
-    const openai = new OpenAI({
-      apiKey: config.openAiKey,
+    const openrouter = new OpenAI({
+      apiKey: config.openRouterKey,
+      baseURL: 'https://openrouter.ai/api/v1',
     });
 
     const tempPath = path.join(os.tmpdir(), `geckit-${Date.now()}-${fileName}`);
     fs.writeFileSync(tempPath, audioData, 'base64');
 
     const fileStream = fs.createReadStream(tempPath);
-    const transcription = await openai.audio.transcriptions.create({
-      model: 'whisper-1',
+    const transcription = await openrouter.audio.transcriptions.create({
+      model: 'openai/whisper-1',
       file: fileStream,
     });
 
