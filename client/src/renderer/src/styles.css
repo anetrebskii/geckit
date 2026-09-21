@@ -286,7 +286,13 @@ textarea {
 
 /* Menus */
 
+/* Over a dialog it is opened from. */
+.menu-scrim {
+  z-index: 79;
+}
+
 .menu {
+  z-index: 80;
   min-width: 170px;
   max-width: min(460px, calc(100vw - 16px));
   max-height: 60vh;
@@ -499,12 +505,6 @@ textarea {
   align-items: center;
 }
 
-.open-rule .quiet {
-  overflow: hidden;
-  text-align: left;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 
 /* Animation */
 
@@ -1003,6 +1003,36 @@ textarea {
 .field > label {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+/* A choice in a form, drawn like the fields around it, with its arrow at the end. */
+.select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 8px;
+  text-align: left;
+  white-space: nowrap;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.select:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.select svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.select > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .two {
