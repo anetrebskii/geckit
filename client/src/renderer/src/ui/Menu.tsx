@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { Icon } from './Icon'
 
@@ -6,7 +7,9 @@ import { Icon } from './Icon'
  * A menu hanging off the control that opened it.
  *
  * It is placed where the button is, flipped up when there is no room below,
- * and closed by Escape, by a press outside, or by choosing something.
+ * and closed by Escape, by a press outside, or by choosing something. It is
+ * drawn at the top of the page, so a dialog it is opened in neither moves it
+ * nor scrolls to make room for it.
  */
 
 export interface Choice {
@@ -65,9 +68,9 @@ export function Menu({
     return () => window.removeEventListener('keydown', key, true)
   }, [onClose])
 
-  return (
+  return createPortal(
     <>
-      <div className="scrim" onMouseDown={onClose} />
+      <div className="scrim menu-scrim" onMouseDown={onClose} />
       <div
         ref={menu}
         className={`floating menu${explained ? ' explained' : ''}`}
@@ -75,6 +78,7 @@ export function Menu({
         style={{
           left: at?.left ?? -9999,
           top: at?.top ?? -9999,
+          minWidth: Math.max(170, Math.round(anchor.width)),
           ...(at === undefined ? {} : { maxHeight: at.height }),
           visibility: at === undefined ? 'hidden' : 'visible',
         }}
@@ -99,7 +103,8 @@ export function Menu({
           </button>
         ))}
       </div>
-    </>
+    </>,
+    document.body,
   )
 }
 

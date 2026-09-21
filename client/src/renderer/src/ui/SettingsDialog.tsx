@@ -89,7 +89,7 @@ export function SettingsDialog({
             choices={THEMES.map((one) => ({ value: one.value, label: one.label, ...(one.says === '' ? {} : { says: one.says }) }))}
             chosen={settings.theme}
             onPick={(value) => change({ theme: value as Theme })}
-            className="quiet"
+            className="select"
           />
         </div>
 
@@ -104,8 +104,8 @@ export function SettingsDialog({
                 aria-label="Kinds of file"
                 onChange={(event) => setRule(at, { ...rule, kinds: event.target.value })}
               />
-              <button type="button" className="quiet" title={rule.app} onClick={() => pickApp(at)}>
-                {rule.app === '' ? 'Choose an application...' : appName(rule.app)}
+              <button type="button" className="select" title={rule.app} onClick={() => pickApp(at)}>
+                <span>{rule.app === '' ? 'Choose an application...' : appName(rule.app)}</span>
               </button>
               <button type="button" className="icon-button" aria-label="Remove" onClick={() => setRule(at, undefined)}>
                 <Icon name="close" size={12} />
@@ -135,7 +135,7 @@ export function SettingsDialog({
               choices={LANGUAGES.map((one) => ({ value: one, label: one }))}
               chosen={settings.nativeLanguage}
               onPick={(value) => change({ nativeLanguage: value })}
-              className="quiet"
+              className="select"
             />
           </div>
           <div className="field">
@@ -145,7 +145,7 @@ export function SettingsDialog({
               choices={LANGUAGES.map((one) => ({ value: one, label: one }))}
               chosen={settings.secondLanguage}
               onPick={(value) => change({ secondLanguage: value })}
-              className="quiet"
+              className="select"
             />
           </div>
         </div>
@@ -157,7 +157,7 @@ export function SettingsDialog({
             choices={PROVIDERS.map((one) => ({ value: one.value, label: one.label }))}
             chosen={settings.provider}
             onPick={(value) => change({ provider: value as AIProvider })}
-            className="quiet"
+            className="select"
           />
         </div>
 
