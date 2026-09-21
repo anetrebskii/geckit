@@ -5,6 +5,7 @@ import type { AIProvider, OpenRule, Settings, Theme } from '../../../shared/api'
 import { Icon } from './Icon'
 import { Picker } from './Menu'
 import { MOD } from './Shortcuts'
+import { Version } from './UpdateNotice'
 
 /**
  * The keys and the two languages.
@@ -192,6 +193,22 @@ export function SettingsDialog({
             placeholder="sk-ant-..."
             onChange={(event) => change({ anthropicKey: event.target.value })}
           />
+        </div>
+
+        <div className="field">
+          <label>Updates</label>
+          <Version />
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={settings.autoUpdate}
+              onChange={(event) => change({ autoUpdate: event.target.checked })}
+            />
+            Update GeckIt automatically
+          </label>
+          <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+            Checks on launch and every hour, and downloads a new version in the background. It installs when the app restarts.
+          </span>
         </div>
 
         <div className="dialog-actions">

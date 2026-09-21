@@ -753,6 +753,82 @@ textarea {
   color: var(--text-dim);
 }
 
+/* A new version: bottom left over the sidebar in Chat, along the bottom of the panel. */
+.update-notice {
+  position: fixed;
+  bottom: 32px;
+  left: 8px;
+  z-index: 47;
+  width: 248px;
+}
+
+.panel .update-notice {
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  width: auto;
+}
+
+.notice.update {
+  cursor: default;
+}
+
+.notice.update .body {
+  white-space: normal;
+}
+
+.version .progress {
+  height: 4px;
+  margin: 4px 0 2px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  border-radius: 2px;
+}
+
+.version .progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--settle) var(--ease);
+}
+
+.notice.update .actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.version {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.version .lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.version .why {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.field > label.check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.check input {
+  accent-color: var(--accent);
+}
+
 .toast {
   position: fixed;
   bottom: 16px;

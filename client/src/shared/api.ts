@@ -401,6 +401,46 @@ export type Theme = 'system' | 'light' | 'dark'
 /** How the conversations in the sidebar are gathered: by when, or by which project. */
 export type ChatGrouping = 'time' | 'project'
 
+/** Where an update stands, as Settings and the corner card say it. */
+export interface UpdateView {
+  readonly state: 'off' | 'fresh' | 'checking' | 'current' | 'behind' | 'empty' | 'downloading' | 'ready' | 'waiting' | 'failed'
+  /** This build's own number. */
+  readonly version: string
+  /** The one the release offers. */
+  readonly offered: string
+  readonly percent: number
+  readonly message: string
+  /** The conversations a restart is waiting for, by name. */
+  readonly waitingFor: readonly string[]
+}
+
+/** The line Settings shows under the version, for each state. */
+export function updateText(update: UpdateView): string {
+  switch (update.state) {
+    case 'off':
+    case 'failed':
+      return update.message
+    case 'fresh':
+      return ''
+    case 'checking':
+      return 'Checking for updates...'
+    case 'current':
+      return 'This is the newest version.'
+    case 'downloading':
+      return `Downloading GeckIt ${update.offered}, ${String(update.percent)}%`
+    case 'ready':
+      return `GeckIt ${update.offered} is ready. It installs when the app restarts.`
+    case 'waiting':
+      return update.waitingFor.length === 1
+        ? `Restarts when ${update.waitingFor[0] ?? ''} finishes.`
+        : `Restarts when ${String(update.waitingFor.length)} conversations finish.`
+    case 'behind':
+      return `The newest release is ${update.offered}, older than this version.`
+    case 'empty':
+      return 'There is no published version yet.'
+  }
+}
+
 export interface Settings {
   readonly theme: Theme
   readonly nativeLanguage: string
@@ -429,6 +469,8 @@ export interface Settings {
   readonly panelBounds?: Bounds
   /** This installation, for counting how often each thing is used. Nothing else is sent. */
   readonly client: string
+  /** False stops the checks on launch and every hour; Check for Updates in Settings still works. */
+  readonly autoUpdate: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -451,4 +493,5 @@ export const DEFAULT_SETTINGS: Settings = {
   openWith: [],
   transcriptions: [],
   client: '',
+  autoUpdate: true,
 }

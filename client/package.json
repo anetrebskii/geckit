@@ -67,7 +67,9 @@
     "mac": {
       "icon": "assets/icon.icon",
       "extendInfo": {
-        "NSUserNotificationAlertStyle": "alert"
+        "NSUserNotificationAlertStyle": "alert",
+        "NSMicrophoneUsageDescription": "GeckIt listens while you dictate, to write down what you said.",
+        "NSAppleEventsUsageDescription": "GeckIt pastes what you dictated into the app you were typing in, and opens a conversation in iTerm2 or Terminal."
       },
       "target": {
         "target": "default",
@@ -80,7 +82,9 @@
       "hardenedRuntime": true,
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "notarize": false
     },
     "dmg": {
       "contents": [

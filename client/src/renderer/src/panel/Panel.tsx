@@ -6,6 +6,7 @@ import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Correct } from './Correct'
 import { Transcribe } from './Transcribe'
+import { UpdateNotice } from '../ui/UpdateNotice'
 
 type Tab = 'correct' | 'transcribe'
 
@@ -138,6 +139,7 @@ export function Panel(): React.JSX.Element {
         />
       ) : null}
       {keys ? <ShortcutsDialog onClose={() => setKeys(false)} /> : null}
+      <UpdateNotice />
     </div>
   )
 }

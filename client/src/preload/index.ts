@@ -16,6 +16,7 @@ import type {
   SessionNotice,
   Settings,
   TranscribeRequest,
+  UpdateView,
 } from '../shared/api'
 
 /**
@@ -50,6 +51,14 @@ const geckit = {
     on: (said: (settings: Settings) => void): (() => void) => listen('settings:changed', said),
     /** The system's picker, opened on the Applications folder. */
     pickApp: (): Promise<string | undefined> => ipcRenderer.invoke('settings:pickApp'),
+  },
+
+  update: {
+    view: (): Promise<UpdateView> => ipcRenderer.invoke('update:view'),
+    check: (): Promise<UpdateView> => ipcRenderer.invoke('update:check'),
+    /** Now, or once no conversation is still working. */
+    restart: (): void => ipcRenderer.send('update:restart'),
+    on: (said: (view: UpdateView) => void): (() => void) => listen('update:view', said),
   },
 
   correct: (request: CorrectRequest): Promise<Answered> => ipcRenderer.invoke('correct', request),

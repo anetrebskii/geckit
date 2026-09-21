@@ -15,6 +15,7 @@ import type { Seek } from './Switcher'
 import { Files } from './Prose'
 import type { FileHow } from './Prose'
 import { Transcript } from './Transcript'
+import { UpdateNotice } from '../ui/UpdateNotice'
 import { useChat } from './useChat'
 
 /**
@@ -250,6 +251,7 @@ export function Chat(): React.JSX.Element {
       <Status chat={chat} />
 
       <Notices chat={chat} />
+      <UpdateNotice />
       {switching ? <Switcher chat={chat} onClose={() => setSwitching(false)} onSeek={setSeek} /> : null}
       {setting ? (
         <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />

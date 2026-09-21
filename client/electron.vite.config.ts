@@ -8,6 +8,9 @@ const here = import.meta.dirname
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    define: {
+      __SIGNED__: JSON.stringify(process.env['GECKIT_SIGNED'] === 'true'),
+    },
     build: {
       rollupOptions: { input: { index: resolve(here, 'src/main/index.ts') } },
     },
