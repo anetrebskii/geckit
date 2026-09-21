@@ -21,6 +21,7 @@ export function Menu({
   choices,
   chosen,
   title,
+  explained = false,
   onPick,
   onClose,
 }: {
@@ -28,6 +29,8 @@ export function Menu({
   readonly choices: readonly Choice[]
   readonly chosen?: string
   readonly title?: string
+  /** What each choice says is a sentence, put under its name rather than beside it. */
+  readonly explained?: boolean
   readonly onPick: (value: string) => void
   readonly onClose: () => void
 }): React.JSX.Element {
@@ -67,7 +70,7 @@ export function Menu({
       <div className="scrim" onMouseDown={onClose} />
       <div
         ref={menu}
-        className="floating menu"
+        className={`floating menu${explained ? ' explained' : ''}`}
         role="menu"
         style={{
           left: at?.left ?? -9999,
@@ -91,7 +94,7 @@ export function Menu({
             <span style={{ width: 14, flexShrink: 0 }}>
               {choice.value === chosen ? <Icon name="check" size={13} /> : null}
             </span>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{choice.label}</span>
+            <span className="label">{choice.label}</span>
             {choice.says === undefined ? null : <span className="says">{choice.says}</span>}
           </button>
         ))}
@@ -107,6 +110,7 @@ export function Picker({
   chosen,
   title,
   tip,
+  explained = false,
   onPick,
   className = 'picker',
   disabled,
@@ -118,6 +122,7 @@ export function Picker({
   readonly title?: string
   /** Said on hover over the button. */
   readonly tip?: string
+  readonly explained?: boolean
   readonly onPick: (value: string) => void
   readonly className?: string
   readonly disabled?: boolean
@@ -146,6 +151,7 @@ export function Picker({
           choices={choices}
           {...(chosen === undefined ? {} : { chosen })}
           {...(title === undefined ? {} : { title })}
+          explained={explained}
           onPick={onPick}
           onClose={() => setAnchor(undefined)}
         />
