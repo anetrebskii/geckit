@@ -1,0 +1,453 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+import type {
+  CardAnswer,
+  ChatSession,
+  ClaudeAccount,
+  ModelsSaid,
+  PlanUsage,
+  SessionImage,
+  SessionItem,
+  SessionMode,
+  SessionNotice,
+} from '../../../shared/api'
+import { asImage, canShow } from '../pictures'
+import { useSettings } from '../settings'
+import type { Settings } from '../../../shared/api'
+
+/** What the window is showing: a conversation, or one that has not been sent yet. */
+export type Shown = { readonly kind: 'new' } | { readonly kind: 'session'; readonly id: string }
+
+const NEW = 'new'
+
+/** Chosen where the list is every project's conversations at once. A root is a path, so nothing collides with this. */
+export const ALL = 'all'
+
+/** More than this in one message is a mistake rather than an intention. */
+const MOST_PICTURES = 8
+
+const PLAN_EVERY = 5 * 60_000
+
+/** How long a notice that asks for nothing stays up. */
+const NOTICE_FOR = 8000
+
+const NONE: readonly SessionImage[] = []
+const keyOf = (shown: Shown): string => (shown.kind === 'new' ? NEW : shown.id)
+
+export interface Chat {
+  readonly settings: Settings
+  readonly change: (change: Partial<Settings>) => void
+  readonly root: string | undefined
+  /** Whose conversations are listed: one project's, or `ALL`. */
+  readonly scope: string
+  readonly sessions: readonly ChatSession[]
+  /** Every project's conversations that wait on the person: asking first, then answered and not yet read. */
+  readonly waiting: readonly ChatSession[]
+  /** Said in the window while it is in front, instead of a banner. One per conversation. */
+  readonly notices: readonly SessionNotice[]
+  readonly shown: Shown
+  readonly session: ChatSession | undefined
+  readonly items: readonly SessionItem[]
+  readonly draft: string
+  /** Pictures pasted or dropped into the field, waiting to go with the message. */
+  readonly pictures: readonly SessionImage[]
+  /** Said when something was pasted that cannot be sent. */
+  readonly trouble: string
+  readonly account: ClaudeAccount | undefined
+  /** How much of the plan is spent, once a turn has said. */
+  readonly plan: PlanUsage | undefined
+  readonly models: ModelsSaid
+  /** The mode and model the next message goes with, on a new session or an old one. */
+  readonly mode: SessionMode
+  readonly model: string
+  readonly working: boolean
+  /** Bumped when the composer should take the caret. */
+  readonly focusSeed: number
+  setScope: (scope: string) => void
+  addProject: () => void
+  forgetProject: (root: string) => void
+  open: (shown: Shown) => void
+  /** Open one that may belong to a project other than the one being listed. */
+  show: (session: ChatSession) => void
+  /** The same, by id. */
+  goTo: (id: string) => void
+  dismiss: (session: string) => void
+  startNew: () => void
+  setDraft: (text: string) => void
+  /** Dropped or pasted: pictures are carried, anything else goes into the field as its path. */
+  addFiles: (files: readonly File[]) => void
+  dropPicture: (at: number) => void
+  setMode: (mode: SessionMode) => void
+  setModel: (model: string) => void
+  askModels: () => void
+  send: (again?: string) => void
+  answer: (card: string, answer: CardAnswer | string) => void
+  stop: () => void
+  rename: (id: string, title: string) => void
+  hide: (id: string) => void
+  /** Throws the conversation away for good. The window asks before this is called. */
+  remove: (id: string) => void
+  terminal: (id: string) => void
+  refresh: () => void
+}
+
+export function useChat(): Chat {
+  const [settings, change] = useSettings()
+  const [chosen, setChosen] = useState<string | undefined>()
+  const [sessions, setSessions] = useState<readonly ChatSession[]>([])
+  const [everyone, setEveryone] = useState<readonly ChatSession[]>([])
+  const [notices, setNotices] = useState<readonly SessionNotice[]>([])
+  const [shown, setShown] = useState<Shown>({ kind: 'new' })
+  const [items, setItems] = useState<readonly SessionItem[]>([])
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [pictures, setPictures] = useState<Record<string, readonly SessionImage[]>>({})
+  const [trouble, setTrouble] = useState('')
+  const [account, setAccount] = useState<ClaudeAccount | undefined>()
+  const [plan, setPlan] = useState<PlanUsage | undefined>()
+  const [models, setModels] = useState<ModelsSaid>('unasked')
+  const [focusSeed, setFocusSeed] = useState(0)
+  // The project last worked in, until another one is chosen.
+  const scope = chosen ?? settings.projects[0] ?? ALL
+
+  const shownRef = useRef(shown)
+  const scopeRef = useRef(scope)
+  const sessionsRef = useRef(sessions)
+  const everyoneRef = useRef(everyone)
+  // The shown one is not kept here but where it is set: an effect of an earlier render can run after that and put it back.
+  useEffect(() => {
+    scopeRef.current = scope
+    sessionsRef.current = sessions
+    everyoneRef.current = everyone
+  }, [scope, sessions, everyone])
+
+  const refresh = useCallback(() => {
+    void window.geckit.chat.list(scopeRef.current === ALL ? undefined : scopeRef.current).then(setSessions)
+  }, [])
+
+  useEffect(refresh, [refresh, scope])
+
+  useEffect(() => {
+    void window.geckit.chat.account().then(setAccount)
+    return window.geckit.chat.onAccount(setAccount)
+  }, [])
+
+  // Asking has the plan measured again, so it is asked for on opening, on
+  // coming to the front, and every few minutes while the window is seen.
+  useEffect(() => {
+    const ask = (): void => {
+      if (document.visibilityState === 'visible') void window.geckit.chat.plan().then(setPlan)
+    }
+    ask()
+    const every = setInterval(ask, PLAN_EVERY)
+    window.addEventListener('focus', ask)
+    const off = window.geckit.chat.onPlan(setPlan)
+    return () => {
+      clearInterval(every)
+      window.removeEventListener('focus', ask)
+      off()
+    }
+  }, [])
+
+  useEffect(() => {
+    void window.geckit.chat.list(undefined).then(setEveryone)
+    return window.geckit.chat.onSessions((all) => {
+      setSessions(all.filter((one) => scopeRef.current === ALL || one.root === scopeRef.current))
+      setEveryone(all)
+      // A question answered anywhere, here or in a terminal, has nothing left to say.
+      setNotices((held) =>
+        held.filter((notice) => !notice.asks || all.some((one) => one.id === notice.session && one.state === 'asks')),
+      )
+    })
+  }, [])
+
+  useEffect(
+    () =>
+      window.geckit.chat.onNotice((notice) => {
+        setNotices((held) => [...held.filter((one) => one.session !== notice.session), notice])
+        if (!notice.asks) setTimeout(() => setNotices((held) => held.filter((one) => one !== notice)), NOTICE_FOR)
+      }),
+    [],
+  )
+
+  useEffect(
+    () =>
+      window.geckit.chat.onItems((arrived) => {
+        if (shownRef.current.kind !== 'session' || shownRef.current.id !== arrived.id) return
+        setItems((held) => {
+          const kept = new Map(held.map((item) => [item.id, item]))
+          for (const id of arrived.gone ?? []) kept.delete(id)
+          for (const item of arrived.items) kept.set(item.id, item)
+          return [...kept.values()]
+        })
+      }),
+    [],
+  )
+
+  const open = useCallback((next: Shown) => {
+    shownRef.current = next
+    setShown(next)
+    setFocusSeed((seed) => seed + 1)
+    if (next.kind === 'new') {
+      setItems([])
+      window.geckit.chat.watching(undefined)
+      return
+    }
+    setNotices((held) => held.filter((one) => one.session !== next.id))
+    window.geckit.chat.watching(next.id)
+    void window.geckit.chat.items(next.id).then((read) => {
+      if (shownRef.current.kind === 'session' && shownRef.current.id === next.id) setItems(read)
+    })
+  }, [])
+
+  // Nothing is watched while the window is behind something else.
+  useEffect(() => {
+    const said = (): void =>
+      window.geckit.chat.watching(
+        document.hasFocus() && shownRef.current.kind === 'session' ? shownRef.current.id : undefined,
+      )
+    window.addEventListener('focus', said)
+    window.addEventListener('blur', said)
+    return () => {
+      window.removeEventListener('focus', said)
+      window.removeEventListener('blur', said)
+    }
+  }, [])
+
+  const session = useMemo(
+    () => (shown.kind === 'new' ? undefined : sessions.find((one) => one.id === shown.id)),
+    [shown, sessions],
+  )
+
+  // Where a message goes: the project listed, or the one the open conversation belongs to.
+  const root = scope === ALL ? (session?.root ?? settings.projects[0]) : scope
+  const rootRef = useRef(root)
+  useEffect(() => {
+    rootRef.current = root
+  }, [root])
+
+  const mode = session?.mode ?? settings.chatMode
+  const model = session?.chosen ?? settings.chatModel
+  const working = session?.state === 'working' || session?.state === 'asks'
+  const draft = drafts[keyOf(shown)] ?? ''
+
+  // What Send needs, kept where a callback can read it without being made
+  // again: a callback made again on every keystroke draws the whole
+  // conversation again with it.
+  const held = useRef({ drafts, pictures, mode, model })
+  useEffect(() => {
+    held.current = { drafts, pictures, mode, model }
+  }, [drafts, pictures, mode, model])
+
+  const setDraft = useCallback(
+    (text: string) => setDrafts((held) => ({ ...held, [keyOf(shownRef.current)]: text })),
+    [],
+  )
+
+  const addFiles = useCallback((files: readonly File[]) => {
+    const paths = files
+      .filter((one) => !canShow(one))
+      .map((one) => window.geckit.pathFor(one))
+      .filter((path) => path !== '')
+      .map((path) => (path.includes(' ') ? `"${path}"` : path))
+    if (paths.length > 0) {
+      setDrafts((held) => {
+        const key = keyOf(shownRef.current)
+        const now = held[key] ?? ''
+        return { ...held, [key]: `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${paths.join(' ')} ` }
+      })
+    }
+
+    const wanted = files.filter(canShow)
+    if (wanted.length === 0) return
+    setTrouble('')
+    void Promise.all(wanted.map((file) => asImage(file).catch(() => undefined))).then((read) => {
+      const kept = read.filter((one): one is SessionImage => one !== undefined)
+      if (kept.length < wanted.length) setTrouble('A picture was too big to send')
+      if (kept.length === 0) return
+      const key = keyOf(shownRef.current)
+      setPictures((held) => ({ ...held, [key]: [...(held[key] ?? []), ...kept].slice(0, MOST_PICTURES) }))
+    })
+  }, [])
+
+  const dropPicture = useCallback((at: number) => {
+    const key = keyOf(shownRef.current)
+    setPictures((held) => ({ ...held, [key]: (held[key] ?? []).filter((_one, index) => index !== at) }))
+  }, [])
+
+  const setScope = useCallback((next: string) => {
+    setChosen(next)
+    shownRef.current = { kind: 'new' }
+    setShown({ kind: 'new' })
+    setItems([])
+    window.geckit.chat.watching(undefined)
+  }, [])
+
+  const send = useCallback(
+    (again?: string) => {
+      const where = rootRef.current
+      const key = keyOf(shownRef.current)
+      const now = held.current
+      const text = now.drafts[key] ?? ''
+      const carried = now.pictures[key] ?? []
+      if (where === undefined || (again === undefined && text.trim() === '' && carried.length === 0)) return
+      setDraft('')
+      setTrouble('')
+      setPictures((all) => ({ ...all, [key]: [] }))
+      void window.geckit.chat
+        .send({
+          ...(shownRef.current.kind === 'session' ? { session: shownRef.current.id } : {}),
+          root: where,
+          mode: now.mode,
+          text,
+          ...(carried.length === 0 ? {} : { images: carried }),
+          ...(now.model === '' ? {} : { model: now.model }),
+          ...(again === undefined ? {} : { again }),
+        })
+        .then((id) => {
+          if (shownRef.current.kind === 'session' && shownRef.current.id === id) return
+          open({ kind: 'session', id })
+        })
+    },
+    [open, setDraft],
+  )
+
+  const answer = useCallback((card: string, said: CardAnswer | string) => {
+    if (shownRef.current.kind !== 'session') return
+    window.geckit.chat.answer(shownRef.current.id, card, said)
+  }, [])
+
+  // What the rows in the sidebar are given. Made once, so that typing in the
+  // field draws the field and nothing else.
+  const show = useCallback(
+    (one: ChatSession) => {
+      if (scopeRef.current !== ALL && one.root !== scopeRef.current) setChosen(one.root)
+      open({ kind: 'session', id: one.id })
+    },
+    [open],
+  )
+
+  const goTo = useCallback(
+    (id: string) => {
+      const found = everyoneRef.current.find((one) => one.id === id)
+      if (found !== undefined) {
+        show(found)
+        return
+      }
+      // Asked for before the list was read, as when a notification opens the window.
+      void window.geckit.chat.list(undefined).then((all) => {
+        const listed = all.find((one) => one.id === id)
+        if (listed === undefined) open({ kind: 'session', id })
+        else show(listed)
+      })
+    },
+    [open, show],
+  )
+
+  useEffect(() => window.geckit.chat.onShow(goTo), [goTo])
+
+  const dismiss = useCallback((session: string) => setNotices((held) => held.filter((one) => one.session !== session)), [])
+
+  const waiting = useMemo(
+    () => [...everyone.filter((one) => one.state === 'asks'), ...everyone.filter((one) => one.state === 'unread')],
+    [everyone],
+  )
+
+  const rename = useCallback((id: string, title: string) => window.geckit.chat.rename(id, title), [])
+
+  const hide = useCallback(
+    (id: string) => {
+      window.geckit.chat.hide(id)
+      if (shownRef.current.kind === 'session' && shownRef.current.id === id) open({ kind: 'new' })
+    },
+    [open],
+  )
+
+  const remove = useCallback(
+    (id: string) => {
+      void window.geckit.chat.remove(id).then((gone) => {
+        if (gone && shownRef.current.kind === 'session' && shownRef.current.id === id) open({ kind: 'new' })
+      })
+    },
+    [open],
+  )
+
+  const terminal = useCallback((id: string) => {
+    const where = sessionsRef.current.find((one) => one.id === id)?.root ?? rootRef.current
+    if (where !== undefined) window.geckit.chat.terminal(id, where)
+  }, [])
+
+  const startNew = useCallback(() => open({ kind: 'new' }), [open])
+
+  return {
+    settings,
+    change,
+    root,
+    scope,
+    sessions,
+    waiting,
+    notices,
+    shown,
+    session,
+    items,
+    draft,
+    pictures: pictures[keyOf(shown)] ?? NONE,
+    trouble,
+    account,
+    plan,
+    models,
+    mode,
+    model,
+    working,
+    focusSeed,
+    setScope,
+    addProject: () => {
+      void window.geckit.chat.addProject().then((picked) => {
+        if (picked !== undefined) setScope(picked)
+      })
+    },
+    forgetProject: (which) => {
+      void window.geckit.chat.forgetProject(which)
+      if (which === scopeRef.current) setScope(settings.projects.find((one) => one !== which) ?? ALL)
+    },
+    open,
+    show,
+    goTo,
+    dismiss,
+    startNew,
+    setDraft,
+    addFiles,
+    dropPicture,
+    setMode: (next) => {
+      change({ chatMode: next })
+      if (shownRef.current.kind === 'session') {
+        setSessions((all) =>
+          all.map((one) => (one.id === keyOf(shownRef.current) ? { ...one, mode: next } : one)),
+        )
+      }
+    },
+    setModel: (next) => {
+      change({ chatModel: next })
+      if (shownRef.current.kind === 'session') {
+        setSessions((all) =>
+          all.map((one) => (one.id === keyOf(shownRef.current) ? { ...one, chosen: next } : one)),
+        )
+      }
+    },
+    askModels: () => {
+      if (models !== 'unasked' && models !== 'unsaid') return
+      setModels('asking')
+      void window.geckit.chat.models().then((said) => setModels(said ?? 'unsaid'))
+    },
+    send,
+    answer,
+    stop: () => {
+      if (shownRef.current.kind !== 'session') return
+      window.geckit.chat.stop(shownRef.current.id)
+    },
+    rename,
+    hide,
+    remove,
+    terminal,
+    refresh,
+  }
+}

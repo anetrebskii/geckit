@@ -1,0 +1,187 @@
+import { join } from 'node:path'
+
+import { BrowserWindow, screen, shell } from 'electron'
+
+import type { Bounds } from '../shared/api'
+import { getSettings, setSettings } from './store'
+
+/**
+ * The three windows.
+ *
+ * The panel is the small one that opens on the shortcut: correcting and
+ * dictating, one press from anywhere. Chat is a window of its own, big enough
+ * to work in. Voice is the capsule that appears while something is being
+ * dictated.
+ */
+
+const preload = join(import.meta.dirname, '../preload/index.mjs')
+
+const page = (name: string): { url: string } | { file: string } => {
+  const dev = process.env['ELECTRON_RENDERER_URL']
+  return dev === undefined
+    ? { file: join(import.meta.dirname, `../renderer/${name}.html`) }
+    : { url: `${dev}/${name}.html` }
+}
+
+const load = (window: BrowserWindow, name: string): void => {
+  const where = page(name)
+  void ('url' in where ? window.loadURL(where.url) : window.loadFile(where.file))
+}
+
+/** Bounds that are still on a screen this computer has. */
+function onScreen(bounds: Bounds | undefined): Partial<Bounds> {
+  if (bounds === undefined) return {}
+  const fits = screen.getAllDisplays().some((display) => {
+    const area = display.workArea
+    return (
+      bounds.x < area.x + area.width &&
+      bounds.x + bounds.width > area.x &&
+      bounds.y < area.y + area.height &&
+      bounds.y + bounds.height > area.y
+    )
+  })
+  return fits ? bounds : {}
+}
+
+const remember = (window: BrowserWindow, which: 'panelBounds' | 'chatBounds'): void => {
+  let soon: NodeJS.Timeout | undefined
+  const keep = (): void => {
+    clearTimeout(soon)
+    soon = setTimeout(() => {
+      if (window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return
+      setSettings({ [which]: window.getBounds() })
+    }, 400)
+  }
+  window.on('resize', keep)
+  window.on('move', keep)
+}
+
+const outside = (window: BrowserWindow): void => {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+}
+
+let panel: BrowserWindow | undefined
+let chat: BrowserWindow | undefined
+let voice: BrowserWindow | undefined
+
+export function panelWindow(): BrowserWindow {
+  if (panel !== undefined && !panel.isDestroyed()) return panel
+  panel = new BrowserWindow({
+    width: 460,
+    height: 560,
+    minWidth: 380,
+    minHeight: 420,
+    show: false,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    ...(process.platform === 'darwin' ? { vibrancy: 'sidebar' as const } : { backgroundColor: '#f6f6f7' }),
+    webPreferences: { preload, sandbox: false },
+    ...onScreen(getSettings().panelBounds),
+  })
+  load(panel, 'panel')
+  outside(panel)
+  remember(panel, 'panelBounds')
+  panel.once('ready-to-show', () => panel?.show())
+  panel.on('closed', () => {
+    panel = undefined
+  })
+  return panel
+}
+
+// Its listeners are set up after the page loads, so what is said to it before then waits until it says it listens.
+let listening = false
+let held: [string, unknown][] = []
+
+export function tellChat(channel: string, value: unknown): void {
+  const window = shownChat()
+  if (window !== undefined && listening) window.webContents.send(channel, value)
+  else held.push([channel, value])
+}
+
+export function chatListening(): void {
+  listening = true
+  for (const [channel, value] of held) shownChat()?.webContents.send(channel, value)
+  held = []
+}
+
+export function chatWindow(): BrowserWindow {
+  if (chat !== undefined && !chat.isDestroyed()) return chat
+  listening = false
+  chat = new BrowserWindow({
+    width: 1100,
+    height: 760,
+    minWidth: 760,
+    minHeight: 520,
+    show: false,
+    title: 'Chat',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    backgroundColor: '#ffffff',
+    webPreferences: { preload, sandbox: false },
+    ...onScreen(getSettings().chatBounds),
+  })
+  load(chat, 'chat')
+  outside(chat)
+  remember(chat, 'chatBounds')
+  chat.once('ready-to-show', () => chat?.show())
+  chat.webContents.on('did-start-loading', () => {
+    listening = false
+  })
+  chat.on('closed', () => {
+    chat = undefined
+    held = []
+  })
+  return chat
+}
+
+export const openChat = (session?: string): void => {
+  const window = chatWindow()
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+  if (session !== undefined) tellChat('chat:show', session)
+}
+
+export const shownChat = (): BrowserWindow | undefined =>
+  chat !== undefined && !chat.isDestroyed() ? chat : undefined
+
+/** Whether the person is looking at the chat window right now. */
+export const watchingChat = (): boolean => shownChat()?.isFocused() === true
+
+export function voiceWindow(): BrowserWindow {
+  if (voice !== undefined && !voice.isDestroyed()) return voice
+  voice = new BrowserWindow({
+    width: 340,
+    height: 92,
+    show: false,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    webPreferences: { preload, sandbox: false, devTools: false },
+  })
+  load(voice, 'voice')
+  voice.once('ready-to-show', () => {
+    voice?.show()
+    voice?.webContents.send('voice:start')
+  })
+  voice.on('closed', () => {
+    voice = undefined
+  })
+  return voice
+}
+
+export const shownVoice = (): BrowserWindow | undefined =>
+  voice !== undefined && !voice.isDestroyed() ? voice : undefined
+
+export function closeVoice(): void {
+  shownVoice()?.close()
+  voice = undefined
+}
+
+/** Every window, for telling them all the same thing. */
+export const everyWindow = (): BrowserWindow[] => BrowserWindow.getAllWindows().filter((one) => !one.isDestroyed())

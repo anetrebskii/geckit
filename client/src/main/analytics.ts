@@ -1,33 +1,42 @@
-// https://kilianvalkhof.com/2018/apps/using-google-analytics-to-gather-usage-statistics-in-electron/
+import { randomUUID } from 'node:crypto'
 
-import { app } from 'electron';
+import { app } from 'electron'
 
-import Analytics from 'electron-google-analytics4';
+import { getSettings, setSettings } from './store'
 
-import { v4 as uuidv4 } from 'uuid';
-import { JSONStorage } from 'node-localstorage';
+/**
+ * How often each thing is used, and nothing else.
+ *
+ * One POST to Google's measurement endpoint with the name of what happened.
+ * No text, no path, no key: nothing anybody writes or corrects goes anywhere
+ * near it. A machine that is offline simply does not report.
+ */
 
-const nodeStorage = new JSONStorage(app.getPath('userData'));
+const MEASUREMENT = 'G-297Y3KYMG4'
+const SECRET = 'KpNXmpFVRtmT1FIFt8EjuQ'
 
-const userId = nodeStorage.getItem('userid') || uuidv4();
-nodeStorage.setItem('userid', userId);
-
-const analytics = new Analytics('G-297Y3KYMG4', 'KpNXmpFVRtmT1FIFt8EjuQ');
-
-type EventType =
-  | 'settingsOpened'
+export type EventName =
+  | 'correct'
+  | 'transcribe'
+  | 'dictate'
+  | 'chatSent'
+  | 'chatAnswered'
   | 'settingsSaved'
   | 'shortcutPressed'
-  | 'correctBtnClicked'
-  | 'translateBtnClicked'
-  | 'explainBtnClicked';
 
-// Retrieve the userid value, and if it's not there, assign it a new uuid.
-
-analytics.setUserProperties({ user_id: userId });
-
-export default async function trackEvent(event: EventType) {
-  analytics.event(event);
+function who(): string {
+  const kept = getSettings().client
+  if (kept !== '') return kept
+  const client = randomUUID()
+  setSettings({ client })
+  return client
 }
 
-global.trackEvent = trackEvent;
+export default function track(name: EventName): void {
+  if (!app.isPackaged) return
+  const url = `https://www.google-analytics.com/mp/collect?measurement_id=${MEASUREMENT}&api_secret=${SECRET}`
+  void fetch(url, {
+    method: 'POST',
+    body: JSON.stringify({ client_id: who(), events: [{ name, params: { version: app.getVersion() } }] }),
+  }).catch(() => undefined)
+}
