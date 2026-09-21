@@ -308,14 +308,35 @@ export const Transcript = memo(function Transcript({
     return () => clearInterval(tick)
   }, [])
 
+  // Only the person lets go of the bottom, by moving up, and reaching it again takes hold.
   useEffect(() => {
     const scroller = box.current
-    if (scroller === null) return
+    const content = scroller?.firstElementChild
+    if (scroller === null || content === null || content === undefined) return
+    let last = scroller.scrollTop
+    const gap = (): number => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight
+    // Content getting shorter pulls it up too, and then it is still at the bottom.
     const said = (): void => {
-      stuck.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80
+      if (scroller.scrollTop < last && gap() > 1) stuck.current = false
+      else if (scroller.scrollTop > last && gap() < 16) stuck.current = true
+      last = scroller.scrollTop
     }
+    const wheel = (event: WheelEvent): void => {
+      if (event.deltaY < 0 && scroller.scrollTop > 0) stuck.current = false
+    }
+    // What grows without a new item, the Working line or a picture loading, is followed too.
+    const follow = new ResizeObserver(() => {
+      if (stuck.current) scroller.scrollTop = scroller.scrollHeight
+    })
+    follow.observe(scroller)
+    follow.observe(content)
     scroller.addEventListener('scroll', said)
-    return () => scroller.removeEventListener('scroll', said)
+    scroller.addEventListener('wheel', wheel, { passive: true })
+    return () => {
+      follow.disconnect()
+      scroller.removeEventListener('scroll', said)
+      scroller.removeEventListener('wheel', wheel)
+    }
   }, [])
 
   useLayoutEffect(() => {
@@ -393,37 +414,39 @@ export const Transcript = memo(function Transcript({
         event.clipboardData.setData('text/plain', copied.text)
       }}
     >
-      {items.length > shown.length ? (
-        <div className="turn">
-          <button type="button" className="quiet" onClick={() => setDrawn(reach + PAGE)}>
-            Show earlier ({items.length - shown.length} more)
-          </button>
-        </div>
-      ) : null}
-
-      {shown.map((item) => (
-        <Turn
-          key={item.id}
-          item={item}
-          when={when(item)}
-          onAnswer={onAnswer}
-          onAgain={onAgain}
-          onFile={onFile}
-          onPicture={picture}
-          onCopyAnswer={copyAnswer}
-        />
-      ))}
-
-      {working && items.at(-1)?.kind !== 'card' ? (
-        <div className="turn">
-          <div className="did" style={{ cursor: 'default' }}>
-            <span className="glyph spinning">
-              <Icon name="spinner" size={12} />
-            </span>
-            <span className="what">Working</span>
+      <div>
+        {items.length > shown.length ? (
+          <div className="turn">
+            <button type="button" className="quiet" onClick={() => setDrawn(reach + PAGE)}>
+              Show earlier ({items.length - shown.length} more)
+            </button>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+
+        {shown.map((item) => (
+          <Turn
+            key={item.id}
+            item={item}
+            when={when(item)}
+            onAnswer={onAnswer}
+            onAgain={onAgain}
+            onFile={onFile}
+            onPicture={picture}
+            onCopyAnswer={copyAnswer}
+          />
+        ))}
+
+        {working && items.at(-1)?.kind !== 'card' ? (
+          <div className="turn">
+            <div className="did" style={{ cursor: 'default' }}>
+              <span className="glyph spinning">
+                <Icon name="spinner" size={12} />
+              </span>
+              <span className="what">Working</span>
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       {preview === undefined ? null : <Preview src={preview} onClose={() => setPreview(undefined)} />}
     </div>
