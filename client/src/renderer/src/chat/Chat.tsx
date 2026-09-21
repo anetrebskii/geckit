@@ -6,6 +6,7 @@ import { Icon } from '../ui/Icon'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Composer } from './Composer'
+import { NameField } from './NameField'
 import { projectName } from './project'
 import { Sidebar } from './Sidebar'
 import { Status } from './Status'
@@ -51,6 +52,8 @@ export function Chat(): React.JSX.Element {
   const recentRef = useRef<Recently | undefined>(undefined)
   // The sidebar's width while its edge is dragged, and how far from the edge it was taken.
   const [sizing, setSizing] = useState<number | undefined>()
+  // The conversation whose name is being typed over in the header.
+  const [naming, setNaming] = useState<string | undefined>()
   const grab = useRef(0)
   const { addFiles, send, root } = chat
 
@@ -182,6 +185,10 @@ export function Chat(): React.JSX.Element {
         // The button is the control; pressing it is what opens the menu in its place.
         document.querySelector<HTMLButtonElement>('.project')?.click()
       }
+      if (event.key === 'F2' && chat.session !== undefined) {
+        event.preventDefault()
+        setNaming(chat.session.id)
+      }
       if (meta && event.key === 'r') {
         event.preventDefault()
         chat.refresh()
@@ -265,7 +272,28 @@ export function Chat(): React.JSX.Element {
 
       <div className="talk">
         <div className="talk-head drag">
-          <span className="title">{title}</span>
+          {chat.session === undefined ? (
+            <span className="title">{title}</span>
+          ) : naming === chat.session.id ? (
+            <NameField
+              key={chat.session.id}
+              name={chat.session.title}
+              className="title-field no-drag"
+              onDone={(name) => {
+                if (name !== undefined && chat.session !== undefined) chat.rename(chat.session.id, name)
+                setNaming(undefined)
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="title no-drag"
+              title="Rename (F2)"
+              onClick={() => setNaming(chat.session?.id)}
+            >
+              {title}
+            </button>
+          )}
           {chat.session === undefined ? null : (
             <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{projectName(chat.session.root)}</span>
           )}
