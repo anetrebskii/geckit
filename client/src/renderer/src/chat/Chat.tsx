@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { resumeCommand } from '../../../shared/api'
+import { DEFAULT_SETTINGS, resumeCommand } from '../../../shared/api'
 import type { ChatSession } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { SettingsDialog } from '../ui/SettingsDialog'
@@ -24,6 +24,9 @@ interface Recently {
   readonly at: number
 }
 
+/** A sidebar as wide as the pointer says, leaving the conversation room to be read. */
+const sidebarAt = (x: number): number => Math.round(Math.min(Math.max(x, 220), window.innerWidth - 420))
+
 /**
  * Claude Code, in a window.
  *
@@ -46,6 +49,9 @@ export function Chat(): React.JSX.Element {
   const [recent, setRecent] = useState<Recently | undefined>()
   // Read on the key going up, which can come before the list is drawn when Ctrl+Tab is tapped quickly.
   const recentRef = useRef<Recently | undefined>(undefined)
+  // The sidebar's width while its edge is dragged, and how far from the edge it was taken.
+  const [sizing, setSizing] = useState<number | undefined>()
+  const grab = useRef(0)
   const { addFiles, send, root } = chat
 
   // The transcript is drawn again whenever one of these is, so they are made
@@ -209,7 +215,8 @@ export function Chat(): React.JSX.Element {
 
   return (
     <div
-      className={`chat${over ? ' dropping' : ''}${holding ? ' holding' : ''}`}
+      className={`chat${over ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
+      style={{ '--side': `${String(sizing ?? chat.settings.sidebarWidth)}px` } as React.CSSProperties}
       // The whole window takes a drop. Anywhere else on the page, a dropped
       // file is a page the window would go to instead.
       onDragOver={(event) => {
@@ -235,6 +242,25 @@ export function Chat(): React.JSX.Element {
         onSettings={() => setSetting(true)}
         onSearch={() => setSwitching(true)}
         onKeys={openKeys}
+      />
+      <div
+        className="side-grip"
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId)
+          const edge = event.currentTarget.getBoundingClientRect()
+          grab.current = event.clientX - Math.round(edge.left + edge.width / 2)
+          setSizing(sidebarAt(event.clientX - grab.current))
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) setSizing(sidebarAt(event.clientX - grab.current))
+        }}
+        onPointerUp={(event) => {
+          if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+          chat.change({ sidebarWidth: sidebarAt(event.clientX - grab.current) })
+          setSizing(undefined)
+        }}
+        onLostPointerCapture={() => setSizing(undefined)}
+        onDoubleClick={() => chat.change({ sidebarWidth: DEFAULT_SETTINGS.sidebarWidth })}
       />
 
       <div className="talk">
