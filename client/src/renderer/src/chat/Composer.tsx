@@ -207,6 +207,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: one.why }))}
             chosen={chat.mode}
             title="What it may do"
+            explained
             onPick={(value) => chat.setMode(value as SessionMode)}
           />
           <Picker
