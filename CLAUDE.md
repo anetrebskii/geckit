@@ -4,85 +4,72 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GeckIt is an Electron desktop application that provides a chat interface for AI language models (OpenAI and Anthropic). It's designed as a quick-access tool for text correction, translation, and general AI assistance.
+GeckIt is an Electron desktop app with three things in it: correcting a piece of text, dictating one, and a Claude Code client that runs on the person's own Claude subscription rather than an API key.
 
 ## Repository Structure
 
-- **`client/`**: Main Electron application (React + TypeScript + Material UI)
-- **`site/`**: Marketing website (Next.js + Tailwind CSS) - separate project
-- **Root `package.json`**: Contains only Firebase dependency for site deployment
+- **`client/`**: the app (electron-vite + React 19 + TypeScript, hand-written CSS)
+- **`site/`**: marketing website (Next.js + Tailwind) - a separate project
+- Root `package.json`: only Firebase, for deploying the site
 
 ## Build Commands
 
-All commands are run from the `client/` directory:
+From `client/`:
 
 ```bash
-cd client
-
-# Development
-npm run start          # Start development server (renderer at port 54113)
-
-# Building
-npm run build          # Build both main and renderer for production
-npm run package        # Create distributable packages (dmg, exe, AppImage)
-
-# Linting and Testing
-npm run lint           # ESLint check
-npm run test           # Run Jest tests
+npm run dev            # electron-vite dev, the app with hot reload
+npm run build          # build main, preload and the three renderers into out/
+npm run package        # build then electron-builder (dmg, exe, AppImage)
+npm run lint           # eslint
+npm run test           # vitest
+npm run typecheck      # tsc over the node and web configs
 ```
 
-For the marketing site (`site/` directory):
-```bash
-cd site
-npm run dev            # Next.js development server
-npm run build          # Production build
-```
+From `site/`: `npm run dev`, `npm run build`.
 
 ## Architecture
 
-### Electron Process Model
+### Three windows
 
-The app uses Electron's multi-process architecture:
+- **Panel** (`renderer/panel.html`): the small always-there window, frameless with vibrancy. Two tabs, Correct and Transcribe, and a button that opens Chat.
+- **Chat** (`renderer/chat.html`): its own resizable window, sidebar plus transcript plus composer.
+- **Voice** (`renderer/voice.html`): the frameless capsule the dictation shortcut opens.
 
-1. **Main Process** (`client/src/main/main.ts`):
-   - Creates browser window
-   - Handles AI API calls to bypass CORS restrictions (Anthropic API doesn't support browser CORS)
-   - Registers global shortcut `Cmd/Ctrl+C+D` to paste selected text into the app
-   - Auto-updater integration
+`main/windows.ts` owns all three and remembers their bounds. `main/index.ts` holds every IPC handler and the two global shortcuts: `Cmd/Ctrl+C+D` picks up the selection and fills Correct, `Cmd/Ctrl+Alt+V` opens the dictation capsule and pastes back what it heard.
 
-2. **Preload Script** (`client/src/main/preload.ts`):
-   - Exposes `electron.ipcRenderer` for IPC communication
-   - Exposes `electron.ai.chat()` to invoke AI from renderer
+### Sessions
 
-3. **Renderer Process** (`client/src/renderer/`):
-   - React application with Material UI
-   - Main entry: `App.tsx` → `main.tsx` → `workspace.tsx`
+`main/sessions/` drives the person's own `claude` binary as a subprocess: `claude -p --input-format stream-json --output-format stream-json --include-partial-messages --verbose --permission-mode <manual|auto|plan> --permission-prompt-tool stdio`. The env is scrubbed of `ANTHROPIC_API_KEY` and friends, so a session can only ever run on the plan.
 
-### AI Service Pattern
+- `claude.ts` spawns and drives one process; `claude-read.ts` is the pure stream reader and is what the tests cover.
+- `disk.ts` reads `~/.claude/projects/<slugged path>/<id>.jsonl`, which is how a conversation started in a terminal shows up in the sidebar and resumes here.
+- The mode (`manual` / `auto` / `plan`) is Claude Code's own and is handed over with `--permission-mode`: in `auto` its own safety check decides what runs. Whatever it still asks about reaches GeckIt over stdio and is drawn as a card; `rule.ts` reads what a request wants into what the card says. The person's own `settings.json` rules and `PreToolUse` hooks still come first, so a command allowed there never reaches a card.
+- `index.ts` keeps live sessions by id, each with its own project root, and fans items out to the Chat window.
+- `usage.ts` asks a `claude` that is given no message for `get_usage` and `get_context_usage` over the same stdio channel, so the status bar at the bottom of Chat shows the plan's five-hour and weekly windows and each model's context size without waiting for a turn. Cost comes from the `cost-state` lines the tool writes into the session file. `main/git.ts` reads `git status --porcelain=v2 --branch` for the project's branch and changes.
 
-AI calls are routed through IPC to avoid CORS issues:
-- Renderer: `client/src/renderer/services/ai_service.ts` - calls `window.electron.ai.chat()`
-- Main: `client/src/main/ai_service.ts` - makes actual HTTP requests to OpenAI/Anthropic APIs
+### Correct
 
-The context window is limited to 20 messages (sliding window) defined in the renderer ai_service.
+Two engines, switched in the footer. `plan` runs `claude -p --restricted --no-session-persistence --output-format json --append-system-prompt <instruction>` with the text on stdin (`main/correct.ts`). `key` goes through `main/providers.ts` to OpenAI, Anthropic or OpenRouter, for when the process start time matters.
 
-### State Management
+### Settings
 
-- User settings (API keys, language preferences) stored in `localStorage` via `user_context.ts`
-- Chat history stored in `localStorage` with key `geckit-chats`
+A JSON file in `app.getPath('userData')`, owned by the main process (`main/store.ts`), read and written over IPC and broadcast to every window. Not `localStorage`: three windows and main need the same values.
 
 ## Key Files
 
-- `client/src/renderer/workspace.tsx`: Main chat UI with sidebar, message list, and input
-- `client/src/renderer/services/ai_service.ts`: Model definitions, provider configuration
-- `client/src/main/ai_service.ts`: OpenAI/Anthropic SDK calls
+- `client/src/shared/api.ts`: the whole main/renderer contract
+- `client/src/main/sessions/claude-read.ts`: the stream reader
+- `client/src/main/index.ts`: IPC and shortcuts
+- `client/src/renderer/src/chat/useChat.ts`: chat window state
+- `client/src/renderer/src/styles.css`: the tokens and every component rule
 
 ## CI/CD
 
-GitHub Actions workflow (`.github/workflows/publish.yml`) builds and publishes releases for macOS, Windows, and Linux on push to `main` when files in `client/` change.
+`.github/workflows/publish.yml` builds and publishes macOS, Windows and Linux on push to `main` when `client/` changes.
 
 ## Notes
 
-- Requires Node.js 18+ and npm 8.7.0+ (for package.json overrides)
-- Uses electron-react-boilerplate as foundation (see `client/.erb/` directory)
-- macOS users may need to run `xattr -d com.apple.quarantine /Applications/GeckIt.app` after installation
+- Node 22+ (electron-vite 5).
+- The package is ESM: `"type": "module"` in `client/package.json`.
+- Tests run against recorded `claude` output in `client/test/fixtures/`, so they cost nothing.
+- macOS users may need `xattr -d com.apple.quarantine /Applications/GeckIt.app` after installing.

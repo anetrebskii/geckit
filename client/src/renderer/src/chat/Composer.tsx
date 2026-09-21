@@ -1,0 +1,243 @@
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+
+import { modelName, SESSION_MODES } from '../../../shared/api'
+import type { SessionMode } from '../../../shared/api'
+import { mentionAt, pathsFor } from '../../../shared/paths'
+import { Icon } from '../ui/Icon'
+import { Picker } from '../ui/Menu'
+import type { Choice } from '../ui/Menu'
+import { projectName } from './project'
+import type { Chat } from './useChat'
+
+/** A path offered after @, as its name and the folder it is in. */
+function Offered({ path }: { readonly path: string }): React.JSX.Element {
+  const folder = path.endsWith('/')
+  const bare = folder ? path.slice(0, -1) : path
+  const cut = bare.lastIndexOf('/')
+  return (
+    <>
+      <Icon name={folder ? 'folder' : 'file'} size={13} />
+      <span className="name">{`${bare.slice(cut + 1)}${folder ? '/' : ''}`}</span>
+      <span className="in">{cut < 0 ? '' : bare.slice(0, cut)}</span>
+    </>
+  )
+}
+
+/**
+ * The field a message is written in, with what it will be sent to under it.
+ *
+ * Whose plan is about to answer is said here and not in a settings page,
+ * because here is where the question is asked.
+ */
+export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
+  const field = useRef<HTMLTextAreaElement>(null)
+  const offered = useRef<HTMLDivElement>(null)
+  // Where the caret is, so the @ being typed can be found; and where to put it once a path is in.
+  const [caret, setCaret] = useState(0)
+  const putCaret = useRef<number | undefined>(undefined)
+  const [files, setFiles] = useState<{ readonly root: string; readonly paths: readonly string[] } | undefined>()
+  const [at, setAt] = useState(0)
+  // Escape puts the list away for the @ it was up for.
+  const [closed, setClosed] = useState<number | undefined>()
+
+  const root = chat.root
+  const mention = root === undefined ? undefined : mentionAt(chat.draft, caret)
+  const mentioning = mention !== undefined && mention.from !== closed
+  const found = mentioning && files !== undefined && files.root === root ? pathsFor(files.paths, mention.asked) : undefined
+  const here = Math.min(at, Math.max(0, (found?.length ?? 0) - 1))
+
+  // Asked again whenever an @ is begun, so a file written since is there.
+  useEffect(() => {
+    if (!mentioning || root === undefined) return
+    let current = true
+    void window.geckit.chat.files(root).then((paths) => {
+      if (current) setFiles({ root, paths })
+    })
+    return () => {
+      current = false
+    }
+  }, [mentioning, root])
+
+  useEffect(() => {
+    offered.current?.querySelector('.on')?.scrollIntoView({ block: 'nearest' })
+  }, [here])
+
+  const put = (path: string): void => {
+    if (mention === undefined) return
+    const before = chat.draft.slice(0, mention.from)
+    // A folder is left open, so what is in it is offered next.
+    const said = `@${path}${path.endsWith('/') ? '' : ' '}`
+    chat.setDraft(`${before}${said}${chat.draft.slice(caret)}`)
+    putCaret.current = before.length + said.length
+    setCaret(before.length + said.length)
+    setAt(0)
+  }
+
+  useEffect(() => {
+    field.current?.focus()
+  }, [chat.focusSeed])
+
+  useLayoutEffect(() => {
+    const area = field.current
+    if (area === null) return
+    area.style.height = '0px'
+    area.style.height = `${String(Math.min(area.scrollHeight, 260))}px`
+    if (putCaret.current !== undefined) {
+      area.setSelectionRange(putCaret.current, putCaret.current)
+      putCaret.current = undefined
+    }
+  }, [chat.draft])
+
+  const models: readonly Choice[] = [
+    { value: '', label: 'Default', says: 'as claude is set up' },
+    ...(Array.isArray(chat.models)
+      ? chat.models.map((one) => ({
+          value: one.value,
+          label: one.name,
+          ...(one.id === undefined ? {} : { says: modelName(one.id) }),
+        }))
+      : [
+          {
+            value: '__asking',
+            label: chat.models === 'asking' ? 'Asking claude...' : 'claude did not say which models it has',
+          },
+        ]),
+  ]
+
+  const named = Array.isArray(chat.models)
+    ? (chat.models.find((one) => one.value === chat.model)?.name ?? (chat.model === '' ? 'Default' : chat.model))
+    : chat.model === ''
+      ? 'Default'
+      : chat.model
+
+  const cannot = chat.root === undefined || chat.account?.signedIn !== true || chat.account.key === true
+
+  const { addFiles } = chat
+
+  return (
+    <div className="composer">
+      <div className="composer-inner">
+        {chat.pictures.length === 0 ? null : (
+          <div className="pending">
+            {chat.pictures.map((one, at) => (
+              <span key={`${String(at)}:${one.data.slice(0, 16)}`} className="pending-one">
+                <img src={`data:${one.media};base64,${one.data}`} alt="" />
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Take this picture off"
+                  title="Take this picture off"
+                  onClick={() => chat.dropPicture(at)}
+                >
+                  <Icon name="close" size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {found === undefined ? null : (
+          <div className="mentions" role="listbox" ref={offered}>
+            {found.length === 0 ? (
+              <div className="empty">Nothing in {projectName(root ?? '')} by that name</div>
+            ) : (
+              found.map((path, index) => (
+                <div
+                  key={path}
+                  role="option"
+                  aria-selected={index === here}
+                  className={`mention${index === here ? ' on' : ''}`}
+                  onMouseMove={() => setAt(index)}
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    put(path)
+                  }}
+                >
+                  <Offered path={path} />
+                </div>
+              ))
+            )}
+          </div>
+        )}
+        <textarea
+          ref={field}
+          rows={1}
+          value={chat.draft}
+          placeholder={chat.root === undefined ? 'Add a project folder first' : 'Ask Claude Code. @ picks a file or a folder'}
+          disabled={chat.root === undefined}
+          onChange={(event) => {
+            chat.setDraft(event.target.value)
+            setCaret(event.target.selectionStart)
+            setAt(0)
+          }}
+          onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files]
+            if (files.length === 0) return
+            event.preventDefault()
+            addFiles(files)
+          }}
+          onKeyDown={(event) => {
+            if (found !== undefined && mention !== undefined) {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault()
+                setAt(event.key === 'ArrowDown' ? Math.min(here + 1, found.length - 1) : Math.max(here - 1, 0))
+                return
+              }
+              const path = found[here]
+              if ((event.key === 'Enter' || event.key === 'Tab') && path !== undefined) {
+                event.preventDefault()
+                put(path)
+                return
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                event.stopPropagation()
+                setClosed(mention.from)
+                return
+              }
+            }
+            if (event.key !== 'Enter' || event.shiftKey) return
+            event.preventDefault()
+            if (!chat.working) chat.send()
+          }}
+        />
+        <div className="composer-bar">
+          <Picker
+            label={SESSION_MODES.find((one) => one.mode === chat.mode)?.label ?? 'Ask'}
+            choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: one.why }))}
+            chosen={chat.mode}
+            title="What it may do"
+            onPick={(value) => chat.setMode(value as SessionMode)}
+          />
+          <Picker
+            label={named}
+            choices={models}
+            chosen={chat.model}
+            title="Model"
+            onOpen={chat.askModels}
+            onPick={(value) => {
+              if (value !== '__asking') chat.setModel(value)
+            }}
+          />
+          <div className="spacer" />
+          {chat.working ? (
+            <button type="button" className="send stop" onClick={chat.stop} title="Stop (Esc)" aria-label="Stop">
+              <Icon name="stop" size={12} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="send"
+              disabled={cannot || (chat.draft.trim() === '' && chat.pictures.length === 0)}
+              onClick={() => chat.send()}
+              title="Send (Enter)"
+              aria-label="Send"
+            >
+              <Icon name="send" size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

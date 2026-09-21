@@ -1,0 +1,361 @@
+import { exec } from 'node:child_process'
+import { resolve } from 'node:path'
+
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  nativeTheme,
+  Notification,
+  shell,
+  systemPreferences,
+} from 'electron'
+import log from 'electron-log'
+import updater from 'electron-updater'
+
+import { ANYWHERE } from '../shared/api'
+import type {
+  CardAnswer,
+  ChatSession,
+  ClaudeAccount,
+  CorrectRequest,
+  PlanUsage,
+  SessionItems,
+  SessionMessage,
+  Settings,
+  TranscribeRequest,
+} from '../shared/api'
+import track from './analytics'
+import { correct } from './correct'
+import { projectFiles } from './files'
+import { fetchGit, gitState } from './git'
+import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
+import { Sessions } from './sessions'
+import { searchClaude } from './sessions/search'
+import { forgetProject, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
+import { transcribe } from './transcribe'
+import {
+  chatListening,
+  chatWindow,
+  closeVoice,
+  everyWindow,
+  openChat,
+  panelWindow,
+  shownChat,
+  shownVoice,
+  tellChat,
+  voiceWindow,
+  watchingChat,
+} from './windows'
+
+log.transports.file.level = 'info'
+const { autoUpdater } = updater
+
+autoUpdater.logger = log
+
+const DICTATE = ANYWHERE.dictate
+const CORRECT = ANYWHERE.correct
+const SPOTLIGHT = ANYWHERE.search
+
+let sessions: Sessions | undefined
+
+// A notification nothing holds on to is collected, and a press on it then opens nothing.
+const notices = new Set<Notification>()
+
+/* ------------------------------------------------------------------ */
+/* What the windows are told                                           */
+/* ------------------------------------------------------------------ */
+
+const tell = (channel: string, ...args: unknown[]): void => {
+  for (const window of everyWindow()) window.webContents.send(channel, ...args)
+}
+
+const badge = (): void => {
+  if (process.platform !== 'darwin' || sessions === undefined) return
+  const wanting = sessions.wanting()
+  app.dock?.setBadge(wanting === 0 ? '' : String(wanting))
+}
+
+function build(): Sessions {
+  return new Sessions({
+    notes: notesStore(),
+    changed: (all: readonly ChatSession[]) => {
+      shownChat()?.webContents.send('chat:sessions', all)
+      badge()
+    },
+    items: (items: SessionItems) => shownChat()?.webContents.send('chat:items', items),
+    account: (account: ClaudeAccount) => shownChat()?.webContents.send('chat:accountChanged', account),
+    plan: (plan: PlanUsage) => shownChat()?.webContents.send('chat:plan', plan),
+    notify: (notice) => {
+      // In front, the window says it itself; a banner is for when it is not being looked at.
+      if (watchingChat()) {
+        shownChat()?.webContents.send('chat:notice', notice)
+        return
+      }
+      if (Notification.isSupported()) {
+        const note = new Notification({ title: notice.title, subtitle: notice.subtitle, body: notice.body })
+        notices.add(note)
+        note.on('click', () => {
+          notices.delete(note)
+          openChat(notice.session)
+        })
+        note.on('close', () => notices.delete(note))
+        note.on('failed', (_event, error) => log.warn(`A notification was not shown: ${error}`))
+        note.show()
+      }
+      // A banner goes by in a few seconds; a question keeps the Dock icon bouncing until it is looked at.
+      app.dock?.bounce(notice.asks ? 'critical' : 'informational')
+    },
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* The shortcuts                                                       */
+/* ------------------------------------------------------------------ */
+
+function registerDictate(): void {
+  const took = globalShortcut.register(DICTATE, () => {
+    const open = shownVoice()
+    if (open !== undefined) {
+      // Pressed again while it is up: that is Stop, which transcribes and pastes.
+      open.webContents.send('voice:stop')
+      return
+    }
+    track('dictate')
+    voiceWindow()
+  })
+  if (!took) log.warn(`${DICTATE} is taken by something else, dictation has no shortcut`)
+}
+
+function registerCorrect(): void {
+  const took = globalShortcut.register(CORRECT, () => {
+    track('shortcutPressed')
+    const window = panelWindow()
+    const text = clipboard.readText('selection') || clipboard.readText()
+    const send = (): void => window.webContents.send('panel:text', text)
+    if (window.webContents.isLoading()) window.webContents.once('did-finish-load', send)
+    else send()
+    window.show()
+    window.focus()
+  })
+  if (!took) log.warn(`${CORRECT} is taken by something else, the panel has no shortcut`)
+}
+
+function registerSpotlight(): void {
+  const took = globalShortcut.register(SPOTLIGHT, () => {
+    // Pressed again over the search that is already up, it puts it away, as Spotlight does.
+    const again = watchingChat()
+    openChat()
+    tellChat('chat:spotlight', again)
+  })
+  if (!took) log.warn(`${SPOTLIGHT} is taken by something else, the search has no shortcut`)
+}
+
+/**
+ * The dictation, put where the person was typing.
+ *
+ * The clipboard and a simulated Cmd+V, because there is no other way to type
+ * into somebody else's application. The shortcut is taken down first so the
+ * simulated press cannot trigger it again.
+ */
+function pasteBack(text: string): void {
+  clipboard.writeText(text)
+  globalShortcut.unregister(DICTATE)
+  closeVoice()
+  if (process.platform === 'darwin') app.hide()
+  setTimeout(() => {
+    if (process.platform === 'darwin') {
+      exec(`osascript -e 'tell application "System Events" to keystroke "v" using command down'`)
+    }
+    setTimeout(registerDictate, 500)
+  }, 300)
+}
+
+/**
+ * A terminal in the project, with the conversation already being continued.
+ *
+ * iTerm where it is installed, because that is where somebody who has it is
+ * expecting to land, and Terminal otherwise.
+ */
+function openTerminal(root: string, id: string): void {
+  if (process.platform !== 'darwin') {
+    void shell.openPath(root)
+    return
+  }
+  const command = `cd ${JSON.stringify(root)} && claude --resume ${id}`
+  const iterm = `
+    tell application "System Events" to set present to exists application process "iTerm2"
+    if present or (exists application "iTerm") then
+      tell application "iTerm"
+        activate
+        set w to (create window with default profile)
+        tell current session of w to write text ${JSON.stringify(command)}
+      end tell
+    else
+      tell application "Terminal"
+        activate
+        do script ${JSON.stringify(command)}
+      end tell
+    end if`
+  exec(`osascript -e ${JSON.stringify(iterm)}`, (error) => {
+    if (error === null) return
+    exec(
+      `osascript -e ${JSON.stringify(`tell application "Terminal"\nactivate\ndo script ${JSON.stringify(command)}\nend tell`)}`,
+    )
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* What a window may ask                                               */
+/* ------------------------------------------------------------------ */
+
+function wire(): void {
+  ipcMain.handle('settings:get', () => getSettings())
+  ipcMain.handle('settings:set', (_event, change: Partial<Settings>) => {
+    const settings = setSettings(change)
+    return settings
+  })
+
+  ipcMain.handle('correct', async (_event, request: CorrectRequest) => {
+    track('correct')
+    return correct(request)
+  })
+
+  ipcMain.handle('transcribe', async (_event, request: TranscribeRequest) => {
+    track('transcribe')
+    return transcribe(request)
+  })
+
+  ipcMain.handle('voice:done', async (_event, request: TranscribeRequest) => {
+    const said = await transcribe(request)
+    if (said.ok && said.text !== undefined && said.text.trim() !== '') pasteBack(said.text)
+    return said
+  })
+  ipcMain.on('voice:cancel', () => closeVoice())
+
+  ipcMain.on('chat:open', () => openChat())
+  ipcMain.on('chat:listening', () => chatListening())
+  ipcMain.handle('chat:account', () => sessions?.account())
+  ipcMain.handle('chat:models', () => sessions?.models())
+  ipcMain.handle('chat:plan', () => {
+    void sessions?.measure()
+    return sessions?.plan()
+  })
+  ipcMain.handle('chat:git', async (event, root: string) => {
+    const state = await gitState(root)
+    // What is there to pull is only known once the remote is asked, which is slow, so it follows.
+    if (state?.upstream !== undefined) {
+      void fetchGit(root).then(async (fetched) => {
+        if (fetched && !event.sender.isDestroyed()) event.sender.send('chat:git', { root, state: await gitState(root) })
+      })
+    }
+    return state
+  })
+  ipcMain.handle('chat:addProject', async () => {
+    const window = shownChat() ?? chatWindow()
+    const picked = await dialog.showOpenDialog(window, {
+      title: 'Choose a project',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    const root = picked.filePaths[0]
+    if (picked.canceled || root === undefined) return undefined
+    rememberProject(root)
+    return root
+  })
+  ipcMain.handle('chat:forgetProject', (_event, root: string) => {
+    forgetProject(root)
+  })
+  ipcMain.handle('chat:list', (_event, root: string | undefined) => {
+    // Nothing for the project comes over as null, which is not a folder name.
+    const where = typeof root === 'string' && root !== '' ? root : undefined
+    if (where !== undefined) rememberProject(where)
+    return sessions?.list(where === undefined ? getSettings().projects : [where]) ?? []
+  })
+  ipcMain.handle('chat:search', (_event, asked: string, root: string | undefined) =>
+    searchClaude(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
+  )
+  // The window asks first, in its own words; by here it has been answered.
+  ipcMain.handle('chat:delete', async (_event, id: string) => (await sessions?.remove(id)) ?? false)
+  ipcMain.handle('chat:items', (_event, id: string) => sessions?.items(id) ?? [])
+  ipcMain.handle('chat:send', async (_event, message: SessionMessage) => {
+    track('chatSent')
+    return sessions?.send(message)
+  })
+  ipcMain.on('chat:answer', (_event, id: string, card: string, answer: CardAnswer | string) =>
+    sessions?.answer(id, card, answer),
+  )
+  ipcMain.on('chat:stop', (_event, id: string) => sessions?.stop(id))
+  ipcMain.on('chat:rename', (_event, id: string, title: string) => sessions?.rename(id, title))
+  ipcMain.on('chat:hide', (_event, id: string) => sessions?.hide(id))
+  ipcMain.on('chat:watching', (_event, id: string | undefined) =>
+    sessions?.watching(watchingChat() ? id : undefined),
+  )
+  ipcMain.on('chat:terminal', (_event, id: string, root: string) => {
+    sessions?.handOver(id)
+    openTerminal(root, id)
+  })
+  ipcMain.on('chat:reveal', (_event, root: string, path: string) => shell.showItemInFolder(fileAt(root, path)))
+  ipcMain.handle('chat:exists', (_event, root: string, path: string) => isThere(root, path))
+  ipcMain.handle('chat:files', (_event, root: string) => projectFiles(root))
+  ipcMain.on('chat:openFile', (_event, root: string, path: string) => openFile(getSettings().openWith, root, path))
+  ipcMain.on('chat:fileMenu', (event, root: string, path: string) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (window !== null) fileMenu(window, root, path)
+  })
+  ipcMain.handle('settings:pickApp', (event) => pickApp(BrowserWindow.fromWebContents(event.sender) ?? panelWindow()))
+  ipcMain.on('clipboard:write', (_event, text: string, html: string) => clipboard.write({ text, html }))
+  ipcMain.on('open:link', (_event, href: string) => {
+    if (/^https?:\/\//.test(href)) void shell.openExternal(href)
+  })
+
+  onSettings((settings) => {
+    // The frames, the vibrancy behind the panel and the folder picker are the
+    // system's, not the stylesheet's, and they follow this.
+    nativeTheme.themeSource = settings.theme
+    tell('settings:changed', settings)
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Starting and stopping                                               */
+/* ------------------------------------------------------------------ */
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    const window = BrowserWindow.getAllWindows()[0] ?? panelWindow()
+    if (window.isMinimized()) window.restore()
+    window.focus()
+  })
+
+  void app.whenReady().then(() => {
+    if (process.platform === 'darwin') void systemPreferences.askForMediaAccess('microphone')
+    // A packaged app carries its icon in the bundle; run from the source, the Dock would show Electron's.
+    if (!app.isPackaged) app.dock?.setIcon(resolve(import.meta.dirname, '../../assets/icon.png'))
+    sessions = build()
+    nativeTheme.themeSource = getSettings().theme
+    wire()
+    panelWindow()
+    registerCorrect()
+    registerDictate()
+    registerSpotlight()
+    if (app.isPackaged) void autoUpdater.checkForUpdatesAndNotify().catch(() => undefined)
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) panelWindow()
+    })
+  })
+}
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+  sessions?.dispose()
+})

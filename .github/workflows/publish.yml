@@ -22,7 +22,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-26
             platform: mac
           - os: windows-latest
             platform: win
@@ -31,19 +31,18 @@ jobs:
 
     steps:
       - name: Checkout git repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Node and NPM
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
           cache: npm
           cache-dependency-path: '**/package-lock.json'
 
       - name: Install and build
         run: |
-          npm install
-          npm run postinstall
+          npm ci
           npm run build
 
       - name: Publish releases
