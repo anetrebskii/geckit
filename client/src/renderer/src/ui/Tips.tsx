@@ -10,7 +10,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 const WAIT = 450
 // Moving from one tooltip to the next shows the next at once, as macOS does.
 const STILL_WARM = 700
-const KEYS = /^(.*\S)\s+\(((?:Cmd|Ctrl|Alt|Shift|Esc|Enter)\b[^()]*)\)$/
+const KEYS = /^(.*\S)\s+\(((?:Cmd|Ctrl|Alt|Shift|Esc|Enter|F\d+)\b[^()]*)\)$/
 
 interface Tip {
   readonly text: string

@@ -6,6 +6,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD } from '../ui/Shortcuts'
 import { projectName } from './project'
+import { NameField } from './NameField'
 import { Projects } from './Projects'
 import { ago } from './time'
 import type { Chat } from './useChat'
@@ -107,16 +108,12 @@ const Row = memo(function Row({
   readonly onStopRenaming: () => void
   readonly onMenu: (id: string, at: DOMRect) => void
 }): React.JSX.Element {
-  const [title, setTitle] = useState(session.title)
   return (
     <div
       className={`row${on ? ' on' : ''}${waits ? ` waits ${session.state}` : ''}`}
       title={`${session.title === '' ? 'Untitled' : session.title}${place === undefined ? '' : ` (${MOD}+${String(place)})`}`}
       onClick={() => onOpen(session)}
-      onDoubleClick={() => {
-        setTitle(session.title)
-        onRenamed(session.id, '')
-      }}
+      onDoubleClick={() => onRenamed(session.id, '')}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
@@ -126,18 +123,10 @@ const Row = memo(function Row({
       <span className={`state ${session.state}`} />
       <span className="lines">
         {renaming ? (
-          <input
-            type="text"
-            value={title}
-            autoFocus
-            style={{ width: '100%' }}
-            onClick={(event) => event.stopPropagation()}
-            onChange={(event) => setTitle(event.target.value)}
-            onBlur={onStopRenaming}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') onRenamed(session.id, title)
-              if (event.key === 'Escape') onStopRenaming()
-            }}
+          <NameField
+            name={session.title}
+            className="row-name"
+            onDone={(name) => (name === undefined ? onStopRenaming() : onRenamed(session.id, name))}
           />
         ) : (
           <span className="head">
