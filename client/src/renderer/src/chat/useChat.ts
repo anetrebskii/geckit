@@ -423,9 +423,9 @@ export function useChat(): Chat {
     setMode: (next) => {
       change({ chatMode: next })
       if (shownRef.current.kind === 'session') {
-        setSessions((all) =>
-          all.map((one) => (one.id === keyOf(shownRef.current) ? { ...one, mode: next } : one)),
-        )
+        const id = keyOf(shownRef.current)
+        setSessions((all) => all.map((one) => (one.id === id ? { ...one, mode: next } : one)))
+        window.geckit.chat.mode(id, next)
       }
     },
     setModel: (next) => {

@@ -25,6 +25,7 @@ export function Menu({
   chosen,
   title,
   explained = false,
+  note,
   onPick,
   onClose,
 }: {
@@ -34,6 +35,8 @@ export function Menu({
   readonly title?: string
   /** What each choice says is a sentence, put under its name rather than beside it. */
   readonly explained?: boolean
+  /** A sentence under the choices about choosing any of them. It wraps to the menu's width rather than widening it. */
+  readonly note?: string
   readonly onPick: (value: string) => void
   readonly onClose: () => void
 }): React.JSX.Element {
@@ -55,7 +58,7 @@ export function Menu({
     const under = wants <= below || below >= above
     const height = Math.min(wants, under ? below : above)
     setAt({ left, height, top: under ? anchor.bottom + 4 : anchor.top - height - 4 })
-  }, [anchor, choices])
+  }, [anchor, choices, note])
 
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
@@ -102,6 +105,7 @@ export function Menu({
             {choice.says === undefined ? null : <span className="says">{choice.says}</span>}
           </button>
         ))}
+        {note === undefined ? null : <div className="menu-note">{note}</div>}
       </div>
     </>,
     document.body,
@@ -116,6 +120,7 @@ export function Picker({
   title,
   tip,
   explained = false,
+  note,
   onPick,
   className = 'picker',
   disabled,
@@ -128,6 +133,7 @@ export function Picker({
   /** Said on hover over the button. */
   readonly tip?: string
   readonly explained?: boolean
+  readonly note?: string
   readonly onPick: (value: string) => void
   readonly className?: string
   readonly disabled?: boolean
@@ -157,6 +163,7 @@ export function Picker({
           {...(chosen === undefined ? {} : { chosen })}
           {...(title === undefined ? {} : { title })}
           explained={explained}
+          {...(note === undefined ? {} : { note })}
           onPick={onPick}
           onClose={() => setAnchor(undefined)}
         />

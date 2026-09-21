@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline'
 
 import type { CardAnswer, SessionMode } from '../../shared/api'
 import { planOnly } from './account'
-import { claudeState, readClaude, REFUSED } from './claude-read'
+import { AGAIN, claudeState, readClaude, REFUSED } from './claude-read'
 import type { ClaudeRequest } from './claude-read'
 import { askId } from './heard'
 import type { Driver, Heard, Signal } from './heard'
@@ -104,6 +104,12 @@ export function holdClaude(
       },
     })
 
+  const deny = (request: ClaudeRequest, message: string): void =>
+    write({
+      type: 'control_response',
+      response: { subtype: 'success', request_id: request.request, response: { behavior: 'deny', message } },
+    })
+
   createInterface({ input: child.stdout }).on('line', (line) => {
     let message: Readonly<Record<string, unknown>>
     try {
@@ -197,16 +203,19 @@ export function holdClaude(
       if (request.wanted.kind === 'question') {
         allow(request, { ...request.input, answers: { [request.wanted.question]: answer } })
       } else if (answer === 'no') {
-        write({
-          type: 'control_response',
-          response: {
-            subtype: 'success',
-            request_id: request.request,
-            response: { behavior: 'deny', message: REFUSED },
-          },
-        })
+        deny(request, REFUSED)
       } else {
         allow(request, request.input)
+      }
+    },
+
+    permit(mode, again) {
+      write({ type: 'control_request', request_id: `mode-${String(Date.now())}`, request: { subtype: 'set_permission_mode', mode } })
+      for (const ask of again) {
+        const request = requests.get(ask)
+        if (request === undefined) continue
+        requests.delete(ask)
+        deny(request, AGAIN)
       }
     },
 

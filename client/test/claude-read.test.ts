@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { claudeState, contextOf, lastContext, lastSaid, planOf, readClaude, replayClaude } from '../src/main/sessions/claude-read'
+import { AGAIN, claudeState, contextOf, lastContext, lastSaid, planOf, readClaude, REFUSED, replayClaude } from '../src/main/sessions/claude-read'
 import type { ClaudeSignal } from '../src/main/sessions/claude-read'
 import { within } from '../src/main/sessions/rule'
 import { modelName } from '../src/shared/api'
@@ -88,6 +88,17 @@ describe('reading what claude prints', () => {
     const cards = items.filter((one) => one.kind === 'card')
     expect(cards.length).toBeGreaterThan(0)
     expect(cards.some((one) => one.kind === 'card' && one.card.answered?.startsWith('Not allowed'))).toBe(true)
+  })
+
+  it('draws nothing for what was handed back to be tried again', () => {
+    const state = claudeState(ROOT)
+    const items = new Map<string, SessionItem>()
+    for (const message of recorded('claude-refused.jsonl')) {
+      const read = readClaude(state, JSON.parse(JSON.stringify(message).replaceAll(REFUSED, AGAIN)) as Record<string, unknown>)
+      for (const id of read.gone) items.delete(id)
+      for (const item of read.items) items.set(item.id, item)
+    }
+    expect([...items.values()].filter((one) => one.kind === 'card' || one.kind === 'did')).toEqual([])
   })
 
   it('knows a turn that was interrupted from one that finished', () => {

@@ -24,6 +24,7 @@ import type {
   PlanUsage,
   SessionItems,
   SessionMessage,
+  SessionMode,
   Settings,
   TranscribeRequest,
 } from '../shared/api'
@@ -288,6 +289,7 @@ function wire(): void {
     sessions?.answer(id, card, answer),
   )
   ipcMain.on('chat:stop', (_event, id: string) => sessions?.stop(id))
+  ipcMain.on('chat:mode', (_event, id: string, mode: SessionMode) => sessions?.mode(id, mode))
   ipcMain.on('chat:rename', (_event, id: string, title: string) => sessions?.rename(id, title))
   ipcMain.on('chat:hide', (_event, id: string) => sessions?.hide(id))
   ipcMain.on('chat:watching', (_event, id: string | undefined) =>
