@@ -10,6 +10,7 @@ import { projectName } from './project'
 import { Sidebar } from './Sidebar'
 import { Status } from './Status'
 import { Notices } from './Notices'
+import { Recent } from './Recent'
 import { Switcher } from './Switcher'
 import type { Seek } from './Switcher'
 import { Files } from './Prose'
@@ -17,6 +18,11 @@ import type { FileHow } from './Prose'
 import { Transcript } from './Transcript'
 import { UpdateNotice } from '../ui/UpdateNotice'
 import { useChat } from './useChat'
+
+interface Recently {
+  readonly list: readonly ChatSession[]
+  readonly at: number
+}
 
 /**
  * Claude Code, in a window.
@@ -36,6 +42,10 @@ export function Chat(): React.JSX.Element {
   // The conversations in the order the sidebar draws them, which is what Cmd+1 and Ctrl+Tab go by.
   const order = useRef<readonly ChatSession[]>([])
   const [seek, setSeek] = useState<Seek | undefined>()
+  // Ctrl+Tab while Ctrl is held: the conversations opened last, and the one it is on.
+  const [recent, setRecent] = useState<Recently | undefined>()
+  // Read on the key going up, which can come before the list is drawn when Ctrl+Tab is tapped quickly.
+  const recentRef = useRef<Recently | undefined>(undefined)
   const { addFiles, send, root } = chat
 
   // The transcript is drawn again whenever one of these is, so they are made
@@ -96,8 +106,41 @@ export function Chat(): React.JSX.Element {
       if (next !== undefined) chat.show(next)
     }
 
+    // This one first, then the rest by when each was last open here.
+    const opened = (): ChatSession[] => {
+      const shown = chat.shown.kind === 'session' ? chat.shown.id : undefined
+      const rank = (one: ChatSession): number => (one.id === shown ? Infinity : (one.seen ?? 0))
+      return chat.everyone
+        .filter((one) => one.seen !== undefined || one.id === shown)
+        .sort((one, other) => rank(other) - rank(one))
+        .slice(0, 12)
+    }
+
+    const toRecent = (next: Recently | undefined): void => {
+      recentRef.current = next
+      setRecent(next)
+    }
+
     const key = (event: KeyboardEvent): void => {
       if (switching || setting || keys) return
+      const now = recentRef.current
+      if (now !== undefined && event.key === 'Escape') {
+        event.preventDefault()
+        toRecent(undefined)
+        return
+      }
+      if (event.ctrlKey && event.key === 'Tab') {
+        event.preventDefault()
+        const by = event.shiftKey ? -1 : 1
+        if (now !== undefined) {
+          toRecent({ ...now, at: (now.at + by + now.list.length) % now.list.length })
+          return
+        }
+        const list = opened()
+        const from = chat.shown.kind === 'session' && list[0]?.id === chat.shown.id ? 1 : 0
+        if (list.length > from) toRecent({ list, at: by > 0 ? from : list.length - 1 })
+        return
+      }
       const meta = event.metaKey || event.ctrlKey
       if (meta && event.key === ',') {
         event.preventDefault()
@@ -107,11 +150,6 @@ export function Chat(): React.JSX.Element {
       if (meta && event.key === '/') {
         event.preventDefault()
         setKeys(true)
-        return
-      }
-      if (event.ctrlKey && event.key === 'Tab') {
-        event.preventDefault()
-        step(event.shiftKey ? -1 : 1)
         return
       }
       if (meta && event.altKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
@@ -147,8 +185,24 @@ export function Chat(): React.JSX.Element {
         chat.stop()
       }
     }
+    // Letting go of Ctrl is what opens it, as in VS Code.
+    const up = (event: KeyboardEvent): void => {
+      const now = recentRef.current
+      if (now === undefined || event.key !== 'Control') return
+      toRecent(undefined)
+      const chosen = now.list[now.at]
+      if (chosen !== undefined) chat.goTo(chosen.id)
+    }
+    const away = (): void => toRecent(undefined)
+
     window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', away)
+    return () => {
+      window.removeEventListener('keydown', key)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', away)
+    }
   }, [chat, switching, setting, keys])
 
   const title = chat.session?.title ?? 'New conversation'
@@ -252,6 +306,7 @@ export function Chat(): React.JSX.Element {
 
       <Notices chat={chat} />
       <UpdateNotice />
+      {recent === undefined ? null : <Recent list={recent.list} at={recent.at} />}
       {switching ? <Switcher chat={chat} onClose={() => setSwitching(false)} onSeek={setSeek} /> : null}
       {setting ? (
         <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />

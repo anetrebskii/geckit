@@ -1238,6 +1238,11 @@ textarea {
   outline: none;
 }
 
+/* Ctrl+Tab has no field: nothing is typed, only Tab pressed while Ctrl is held. */
+.switcher.recent {
+  width: min(460px, calc(100vw - 80px));
+}
+
 .switcher-rows {
   min-height: 0;
   padding: 6px;
