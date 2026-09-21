@@ -14,7 +14,6 @@ import {
   systemPreferences,
 } from 'electron'
 import log from 'electron-log'
-import updater from 'electron-updater'
 
 import { ANYWHERE } from '../shared/api'
 import type {
@@ -37,6 +36,7 @@ import { Sessions } from './sessions'
 import { searchClaude } from './sessions/search'
 import { forgetProject, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
+import { checkForUpdates, restartToUpdate, startUpdates, updateView } from './updates'
 import {
   chatListening,
   chatWindow,
@@ -52,9 +52,6 @@ import {
 } from './windows'
 
 log.transports.file.level = 'info'
-const { autoUpdater } = updater
-
-autoUpdater.logger = log
 
 const DICTATE = ANYWHERE.dictate
 const CORRECT = ANYWHERE.correct
@@ -214,6 +211,9 @@ function openTerminal(root: string, id: string): void {
 
 function wire(): void {
   ipcMain.handle('settings:get', () => getSettings())
+  ipcMain.handle('update:view', () => updateView())
+  ipcMain.handle('update:check', () => checkForUpdates())
+  ipcMain.on('update:restart', () => restartToUpdate())
   ipcMain.handle('settings:set', (_event, change: Partial<Settings>) => {
     const settings = setSettings(change)
     return settings
@@ -343,7 +343,11 @@ if (!app.requestSingleInstanceLock()) {
     registerCorrect()
     registerDictate()
     registerSpotlight()
-    if (app.isPackaged) void autoUpdater.checkForUpdatesAndNotify().catch(() => undefined)
+    startUpdates({
+      changed: (view) => tell('update:view', view),
+      running: () => sessions?.working() ?? [],
+      wanted: () => getSettings().autoUpdate,
+    })
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) panelWindow()

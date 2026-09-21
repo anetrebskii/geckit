@@ -8,16 +8,28 @@ on:
       - 'client/**'
       - '.github/workflows/publish.yml'
 
-permissions: 
+permissions:
   deployments: write
-  contents: write  
+  contents: write
 
 jobs:
+  # Decided once, so the three builds carry the same number: major and minor from package.json, the run number after them.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pick
+        run: echo "version=$(node -p "require('./client/package.json').version.split('.').slice(0, 2).join('.')").${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: version
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: client
+        shell: bash
 
     strategy:
       matrix:
@@ -28,6 +40,17 @@ jobs:
             platform: win
           - os: ubuntu-latest
             platform: linux
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The Developer ID for the Mac build only; with no secret the build is unsigned, as before.
+      CSC_LINK: ${{ matrix.platform == 'mac' && secrets.MAC_CSC_LINK || '' }}
+      CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # Read by the build: only a signed Mac copy can install an update over itself.
+      GECKIT_SIGNED: ${{ matrix.platform == 'mac' && secrets.MAC_CSC_LINK != '' }}
 
     steps:
       - name: Checkout git repo
@@ -43,16 +66,37 @@ jobs:
       - name: Install and build
         run: |
           npm ci
+          npm run typecheck
+          npm version "${{ needs.version.outputs.version }}" --no-git-tag-version
           npm run build
 
-      - name: Publish releases
-        env:
-          # These values are used for auto updates signing (macOS)
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
-          # CSC_LINK: ${{ secrets.CSC_LINK }}
-          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          # This is used for uploading release assets to github
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload to the draft release
         run: |
-          npm exec electron-builder -- --publish always --${{ matrix.platform }}
+          sign=()
+          if [ "$GECKIT_SIGNED" = true ]; then
+            sign=(-c.mac.notarize=true)
+          else
+            # An empty CSC_LINK is read as a path, so it is taken away rather than left blank.
+            unset CSC_LINK CSC_KEY_PASSWORD
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            # Without a certificate the Mac app is signed ad hoc, because a Mac calls an app with an unsealed signature damaged and offers only the Trash.
+            if [ "${{ matrix.platform }}" = mac ]; then sign=(-c.mac.identity=- -c.mac.hardenedRuntime=false); fi
+          fi
+          npm exec electron-builder -- --publish always --${{ matrix.platform }} "${sign[@]}"
+
+      # A broken signature fails the run here, and the release stays a draft nobody updates to.
+      - name: Check the Mac signature
+        if: matrix.platform == 'mac'
+        run: |
+          codesign --verify --deep --strict release/build/mac-arm64/GeckIt.app
+          codesign --verify --deep --strict release/build/mac/GeckIt.app
+
+  # Published only once every build is in it, which is when the installed copies see it.
+  release:
+    needs: [version, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "v${{ needs.version.outputs.version }}" --repo "${{ github.repository }}" --draft=false --latest
