@@ -21,6 +21,7 @@ interface Fake {
   readonly made: { root: string; id: string; resume: boolean; mode: SessionMode; model?: string }[]
   readonly sent: { text: string; images?: readonly unknown[] }[]
   readonly answered: [string, string][]
+  readonly permitted: [string, readonly string[]][]
   stopped: number
   ended: number
   closing: Promise<void>
@@ -33,6 +34,7 @@ function fakeClaude(): { claude: typeof holdClaude; fake: Fake } {
     made: [],
     sent: [],
     answered: [],
+    permitted: [],
     stopped: 0,
     ended: 0,
     closing: Promise.resolve(),
@@ -44,6 +46,7 @@ function fakeClaude(): { claude: typeof holdClaude; fake: Fake } {
     const driver: Driver = {
       send: (text, images) => fake.sent.push({ text, ...(images === undefined ? {} : { images }) }),
       answer: (ask, answer) => fake.answered.push([ask, String(answer)]),
+      permit: (mode, again) => fake.permitted.push([mode, again]),
       stop: () => (fake.stopped += 1),
       end: () => {
         fake.ended += 1
@@ -131,6 +134,39 @@ describe('holding a conversation', () => {
     await built.sessions.send({ session: id, root: ROOT, mode: 'auto', text: 'go on' })
     expect(built.fake.ended).toBe(1)
     expect(built.fake.made.at(-1)?.mode).toBe('auto')
+  })
+
+  it('moves a running Claude Code into auto without starting it again, and hands back what was waiting', async () => {
+    const built = build()
+    const id = await started(built, 'manual')
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 'a1', wanted: { kind: 'command', command: 'grep -rn limits' } }] })
+    expect(of(built.rows, id)?.state).toBe('asks')
+
+    built.sessions.mode(id, 'auto')
+    expect(built.fake.permitted).toEqual([['auto', ['a1']]])
+    expect(last(built.fanned)?.gone).toEqual(['card:a1'])
+    expect(of(built.rows, id)).toMatchObject({ state: 'working', stands: 'Working', mode: 'auto' })
+
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'auto', text: 'go on' })
+    expect(built.fake.ended).toBe(0)
+    expect(built.fake.made).toHaveLength(1)
+
+    built.sessions.mode(id, 'manual')
+    expect(built.fake.permitted.at(-1)).toEqual(['manual', []])
+  })
+
+  it('leaves a question up when the session goes into auto, and plan for the next message', async () => {
+    const built = build()
+    const id = await started(built, 'manual')
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 'q1', wanted: { kind: 'question', question: 'Which table?', choices: ['A', 'B'] } }] })
+
+    built.sessions.mode(id, 'auto')
+    expect(built.fake.permitted).toEqual([['auto', []]])
+    expect(of(built.rows, id)?.state).toBe('asks')
+
+    built.sessions.mode(id, 'plan')
+    expect(built.fake.permitted).toHaveLength(1)
   })
 
   it('will not run on a key, and offers the message back', async () => {

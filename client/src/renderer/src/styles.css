@@ -343,6 +343,16 @@ textarea {
   text-overflow: ellipsis;
 }
 
+/* Under the choices and in line with their names. As wide as the menu the choices make, never wider. */
+.menu-note {
+  width: 0;
+  min-width: 100%;
+  padding: 6px 9px 5px 31px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
 .menu.explained {
   width: min(320px, calc(100vw - 16px));
 }

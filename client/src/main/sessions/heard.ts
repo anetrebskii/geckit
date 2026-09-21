@@ -47,6 +47,8 @@ export interface Driver {
   /** Starts a turn. */
   send(text: string, images?: readonly SessionImage[]): void
   answer(ask: string, answer: CardAnswer | string): void
+  /** How it may act from here on, without starting it again. What is under `again` is handed back to be tried once more under it. */
+  permit?(mode: 'auto' | 'manual', again: readonly string[]): void
   stop(): void
   /** Lets go of it, settled once the process has gone. The conversation stays where the tool keeps it. */
   end(): Promise<void>

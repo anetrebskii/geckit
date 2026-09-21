@@ -145,6 +145,10 @@ const INTERRUPTED = /^\[Request interrupted by user/
 export const REFUSED =
   'The person reading said no to this. Do not try it another way; say what you would have done instead.'
 
+/** What was waiting when the mode changed goes back to the tool, whose own check now decides it. */
+export const AGAIN =
+  'The person changed how this session may act while this was waiting. Make the same tool call again, unchanged.'
+
 /** A result that is a no - said here, or said in a terminal, where the tool has words of its own for it. */
 const refused = (said: string): boolean =>
   said.includes(REFUSED) || said.startsWith("The user doesn't want to proceed with this tool use")
@@ -274,6 +278,12 @@ function toolResults(state: ClaudeState, message: Json, out: Reading): boolean {
         id: cardId(use),
         card: { ...cardFor(wanted, state.root), answered: answeredLine(wanted, failed ? 'no' : 'once', state.root) },
       })
+      continue
+    }
+
+    // Handed back to be tried again, it is drawn where it is tried.
+    if (failed && said.includes(AGAIN)) {
+      out.gone.push(use)
       continue
     }
 

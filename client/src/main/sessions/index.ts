@@ -550,6 +550,40 @@ export class Sessions {
     live.driver?.answer(ask, answer)
   }
 
+  /**
+   * A mode chosen under the field holds from now, not from the next message:
+   * Claude Code is moved between Manual and Auto as it runs, and what is
+   * waiting when it goes into Auto is handed back, so its own check decides it.
+   * Plan is still a new start at the next message.
+   */
+  mode(id: string, mode: SessionMode): void {
+    const live = this.#live.get(id)
+    if (live === undefined || live.mode === mode) return
+    live.mode = mode
+    this.#note(live.id, { mode })
+
+    if (live.driver?.permit !== undefined && live.runs !== 'plan' && mode !== 'plan' && live.runs !== mode) {
+      live.runs = mode
+      const again =
+        mode === 'auto'
+          ? [...live.asks].filter(([, wanted]) => wanted.kind !== 'question' && wanted.kind !== 'start').map(([ask]) => ask)
+          : []
+      for (const ask of again) {
+        live.asks.delete(ask)
+        live.held.delete(ask)
+        live.items.delete(cardId(ask))
+      }
+      if (again.length > 0) {
+        const next = [...live.asks.values()][0]
+        live.state = next === undefined ? 'working' : 'asks'
+        live.stands = next === undefined ? 'Working' : waitingFor(next)
+        this.#deps.items({ id: live.id, items: [], gone: again.map(cardId) })
+      }
+      live.driver.permit(mode, again)
+    }
+    this.#changed()
+  }
+
   stop(id: string): void {
     const live = this.#live.get(id)
     if (live === undefined || (live.state !== 'working' && live.state !== 'asks')) return

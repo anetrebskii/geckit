@@ -110,6 +110,16 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
       ? 'Default'
       : chat.model
 
+  // Another model has no cache of this conversation, so it reads all of it again.
+  const again = 'Another model reads the whole conversation again at your next message'
+  const used = chat.session?.spend?.used
+  const cost =
+    chat.session === undefined || chat.models === 'asking' || chat.models === 'unasked'
+      ? undefined
+      : used === undefined
+        ? `${again}.`
+        : `${again}: about ${(Math.round(used / 1000) * 1000).toLocaleString('en-US')} tokens from your plan.`
+
   const cannot = chat.root === undefined || chat.account?.signedIn !== true || chat.account.key === true
 
   const { addFiles } = chat
@@ -215,6 +225,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             choices={models}
             chosen={chat.model}
             title="Model"
+            {...(cost === undefined ? {} : { note: cost })}
             onOpen={chat.askModels}
             onPick={(value) => {
               if (value !== '__asking') chat.setModel(value)

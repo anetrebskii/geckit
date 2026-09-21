@@ -13,6 +13,7 @@ import type {
   SessionItem,
   SessionItems,
   SessionMessage,
+  SessionMode,
   SessionNotice,
   Settings,
   TranscribeRequest,
@@ -84,6 +85,8 @@ const geckit = {
     answer: (id: string, card: string, answer: CardAnswer | string): void =>
       ipcRenderer.send('chat:answer', id, card, answer),
     stop: (id: string): void => ipcRenderer.send('chat:stop', id),
+    /** How a session may act, chosen under the field: it holds from now, not from the next message. */
+    mode: (id: string, mode: SessionMode): void => ipcRenderer.send('chat:mode', id, mode),
     rename: (id: string, title: string): void => ipcRenderer.send('chat:rename', id, title),
     hide: (id: string): void => ipcRenderer.send('chat:hide', id),
     /** Deletes the file the tool keeps it in. True where it is gone. */
