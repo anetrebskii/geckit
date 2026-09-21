@@ -467,6 +467,8 @@ export interface Settings {
   readonly transcriptions: readonly Transcription[]
   readonly chatBounds?: Bounds
   readonly panelBounds?: Bounds
+  /** How wide the Chat window's sidebar was dragged, in pixels. */
+  readonly sidebarWidth: number
   /** This installation, for counting how often each thing is used. Nothing else is sent. */
   readonly client: string
   /** False stops the checks on launch and every hour; Check for Updates in Settings still works. */
@@ -494,4 +496,5 @@ export const DEFAULT_SETTINGS: Settings = {
   transcriptions: [],
   client: '',
   autoUpdate: true,
+  sidebarWidth: 264,
 }

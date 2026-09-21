@@ -364,10 +364,6 @@ textarea {
   color: var(--danger);
 }
 
-.menu-item.danger:hover {
-  color: var(--danger);
-}
-
 /* The project picker */
 
 .menu.projects {
@@ -793,7 +789,7 @@ textarea {
   bottom: 32px;
   left: 8px;
   z-index: 47;
-  width: 248px;
+  width: calc(var(--sidebar, 264px) - 16px);
 }
 
 .panel .update-notice {
@@ -1020,12 +1016,52 @@ textarea {
 /* ------------------------------------------------------------------ */
 
 .chat {
+  --sidebar: clamp(220px, var(--side, 264px), calc(100vw - 420px));
+
+  position: relative;
   display: grid;
-  grid-template-columns: 264px 1fr;
+  grid-template-columns: var(--sidebar) 1fr;
   /* The row is held to the window, so a long conversation scrolls inside the
      transcript instead of pushing the composer off the bottom. */
   grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
+}
+
+/* The sidebar's edge, dragged to make it wider or narrower. */
+.side-grip {
+  position: absolute;
+  top: 0;
+  bottom: 24px;
+  left: calc(var(--sidebar) - 3px);
+  z-index: 3;
+  width: 6px;
+  cursor: col-resize;
+  -webkit-app-region: no-drag;
+}
+
+.side-grip::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  content: '';
+  transition: background-color var(--quick) var(--ease);
+}
+
+.side-grip:hover::after {
+  background: var(--accent);
+  transition-delay: 200ms;
+}
+
+.chat.sizing .side-grip::after {
+  background: var(--accent);
+}
+
+.chat.sizing,
+.chat.sizing * {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .sidebar {
