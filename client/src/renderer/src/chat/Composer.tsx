@@ -173,7 +173,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           ref={field}
           rows={1}
           value={chat.draft}
-          placeholder={chat.root === undefined ? 'Add a project folder first' : 'Ask Claude Code. @ picks a file or a folder'}
+          placeholder={chat.root === undefined ? 'Add a project folder first' : 'Ask Claude Code. @ picks a file, ! runs a command'}
           disabled={chat.root === undefined}
           onChange={(event) => {
             chat.setDraft(event.target.value)
@@ -209,7 +209,8 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             }
             if (event.key !== 'Enter' || event.shiftKey) return
             event.preventDefault()
-            if (!chat.working) chat.send()
+            // A command is run while Claude works, as the terminal lets it be.
+            if (!chat.working || chat.draft.trim().startsWith('!')) chat.send()
           }}
         />
         <div className="composer-bar">
@@ -233,6 +234,11 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             }}
           />
           {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
+          {chat.root !== undefined && chat.draft.trim().startsWith('!') ? (
+            <span className="composer-hint">
+              Runs in {projectName(chat.root)}. Claude sees what it prints with your next message
+            </span>
+          ) : null}
           <div className="spacer" />
           {chat.working ? (
             <button type="button" className="send stop" onClick={chat.stop} title="Stop (Esc)" aria-label="Stop">

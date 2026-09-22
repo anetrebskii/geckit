@@ -182,15 +182,15 @@ export function holdClaude(
   child.stdin.on('error', () => undefined)
 
   return {
-    send(text, images) {
+    send(text, images = [], before = []) {
       turn = true
-      // A message with pictures is sent as blocks, which is the only shape
-      // that can carry one; plain text stays plain text.
+      // A message with pictures or commands ahead of it is sent as blocks,
+      // which is the only shape that can carry them; plain text stays plain text.
       const content =
-        images === undefined || images.length === 0
+        images.length === 0 && before.length === 0
           ? text
           : [
-              ...(text.trim() === '' ? [] : [{ type: 'text', text }]),
+              ...[...before, ...(text.trim() === '' ? [] : [text])].map((one) => ({ type: 'text', text: one })),
               ...images.map((one) => ({
                 type: 'image',
                 source: { type: 'base64', media_type: one.media, data: one.data },

@@ -134,6 +134,44 @@ function Card({
   )
 }
 
+/** A command typed after `!`, with what it printed under it. */
+function Shell({
+  item,
+  onStop,
+}: {
+  readonly item: Extract<SessionItem, { kind: 'shell' }>
+  readonly onStop: (item: string) => void
+}): React.JSX.Element {
+  const ended =
+    item.terminal === true
+      ? 'Opened in a terminal, since it wants a keyboard'
+      : item.stopped === true
+        ? 'Stopped'
+        : item.code === undefined
+          ? ''
+          : `Exit code ${String(item.code)}`
+  return (
+    <div className="shell">
+      <div className="shell-head">
+        <span className="shell-command">!{item.command}</span>
+        {item.running === true ? (
+          <>
+            <span className="glyph spinning">
+              <Icon name="spinner" size={12} />
+            </span>
+            <button type="button" className="quiet small" onClick={() => onStop(item.id)}>
+              Stop
+            </button>
+          </>
+        ) : ended === '' ? null : (
+          <span className={`shell-ended${item.code === undefined ? '' : ' failed'}`}>{ended}</span>
+        )}
+      </div>
+      {item.output === '' ? null : <Code detail>{item.output}</Code>}
+    </div>
+  )
+}
+
 function Note({ item }: { readonly item: Extract<SessionItem, { kind: 'note' }> }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   return (
@@ -183,6 +221,7 @@ const Turn = memo(function Turn({
   onFile,
   onPicture,
   onCopyAnswer,
+  onStopShell,
 }: {
   readonly item: SessionItem
   /** When it was said, where it is one to date: a message, or the end of an answer. */
@@ -193,6 +232,7 @@ const Turn = memo(function Turn({
   readonly onPicture: (src: string) => void
   /** Copies an answer, which is the piece it ends with: what came before it is what was being done. */
   readonly onCopyAnswer: (id: string, text: string) => void
+  readonly onStopShell: (item: string) => void
 }): React.JSX.Element {
   const at = item.kind === 'mine' || item.kind === 'theirs' ? item.at : undefined
   // A line of what was done sits close to the next one, so a run of them reads as one list.
@@ -237,6 +277,8 @@ const Turn = memo(function Turn({
         <div className="thought">{item.text === '' ? 'Thought about it' : item.text}</div>
       ) : item.kind === 'card' ? (
         <Card item={item} onAnswer={onAnswer} />
+      ) : item.kind === 'shell' ? (
+        <Shell item={item} onStop={onStopShell} />
       ) : item.kind === 'wrote' ? (
         <div className="wrote">
           Changed
@@ -274,6 +316,7 @@ export const Transcript = memo(function Transcript({
   onAnswer,
   onAgain,
   onFile,
+  onStopShell,
   seek,
 }: {
   /** Which conversation this is, so another one opens at its end rather than where this one was left. */
@@ -284,6 +327,7 @@ export const Transcript = memo(function Transcript({
   readonly onAgain: (id: string) => void
   /** A file pressed: opened, shown in the Finder, or its menu asked for. */
   readonly onFile: (path: string, how: FileHow) => void
+  readonly onStopShell: (item: string) => void
   /** A message to go to once this conversation is read, found by the words searched for. */
   readonly seek?: Seek | undefined
 }): React.JSX.Element {
@@ -433,6 +477,7 @@ export const Transcript = memo(function Transcript({
             onFile={onFile}
             onPicture={picture}
             onCopyAnswer={copyAnswer}
+            onStopShell={onStopShell}
           />
         ))}
 

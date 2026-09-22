@@ -141,6 +141,19 @@ const NOT_SAID =
 
 const INTERRUPTED = /^\[Request interrupted by user/
 
+/** A command run with `!`, and what it printed, as the terminal writes them and as GeckIt sends them. */
+const BASH_INPUT = /^\s*<bash-input>([\s\S]*)<\/bash-input>\s*$/
+const BASH_OUTPUT = /^\s*<bash-stdout>([\s\S]*)<\/bash-stdout>\s*<bash-stderr>([\s\S]*)<\/bash-stderr>\s*$/
+
+/** The text blocks of what a person said, or the whole of it where it is one string. */
+const textsOf = (content: unknown): string[] =>
+  typeof content === 'string'
+    ? [content]
+    : list(content)
+        .map(object)
+        .filter((block) => string(block['type']) === 'text')
+        .map((block) => string(block['text']))
+
 /** What is refused is refused in words the assistant can act on. */
 export const REFUSED =
   'The person reading said no to this. Do not try it another way; say what you would have done instead.'
@@ -566,6 +579,7 @@ export function replayClaude(root: string, entries: readonly Json[], quietFor: n
     for (const item of read.items) items.set(item.id, item)
   }
   let open = false
+  let shell: string | undefined
 
   for (const entry of entries) {
     const type = string(entry['type'])
@@ -580,9 +594,35 @@ export function replayClaude(root: string, entries: readonly Json[], quietFor: n
         take(readClaude(state, { ...entry, tool_use_result: entry['toolUseResult'] }))
         continue
       }
-      const said = typeof content === 'string' ? content : resultText(content)
+      if (entry['isCompactSummary'] === true) continue
+      // Commands run with `!` are blocks of their own, ahead of what was said with them or alone.
+      const words: string[] = []
+      for (const [index, text] of textsOf(content).entries()) {
+        const input = BASH_INPUT.exec(text)
+        const output = BASH_OUTPUT.exec(text)
+        if (input === null && output === null) {
+          words.push(text)
+          continue
+        }
+        const out = empty()
+        flush(state, out)
+        take(out)
+        const was = shell === undefined ? undefined : items.get(shell)
+        if (output !== null && was?.kind === 'shell') {
+          const printed = [output[1] ?? '', output[2] ?? '']
+            .filter((one) => one.trim() !== '')
+            .map((one) => one.replace(/\n+$/, ''))
+            .join('\n')
+          items.set(was.id, { ...was, output: printed.trim() === '(Bash completed with no output)' ? '' : printed })
+          shell = undefined
+        } else if (input !== null) {
+          shell = `${string(entry['uuid'])}:shell:${String(index)}`
+          items.set(shell, { kind: 'shell', id: shell, command: (input[1] ?? '').trim(), output: '', ...stamped(entry) })
+        }
+      }
+      const said = words.join('\n')
       const pictures = picturesIn(content, budget)
-      if (entry['isCompactSummary'] === true || NOT_SAID.test(said)) continue
+      if (NOT_SAID.test(said)) continue
       if (said.trim() === '' && pictures.length === 0) continue
 
       const out = empty()
@@ -658,6 +698,8 @@ export function typed(entry: Json): string {
   if (string(entry['type']) !== 'user' || entry['isSidechain'] === true || entry['isMeta'] === true) return ''
   if (entry['isCompactSummary'] === true) return ''
   const content = object(entry['message'])['content']
-  if (typeof content !== 'string' || /^\s*(<|\[Request interrupted|Caveat:)/.test(content)) return ''
-  return content
+  if (list(content).some((block) => string(object(block)['type']) === 'tool_result')) return ''
+  return textsOf(content)
+    .filter((text) => !/^\s*(<|\[Request interrupted|Caveat:)/.test(text))
+    .join('\n')
 }

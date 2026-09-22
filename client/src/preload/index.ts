@@ -14,6 +14,7 @@ import type {
   SessionItem,
   SessionItems,
   SessionMessage,
+  ShellCommand,
   SessionMode,
   SessionNotice,
   Settings,
@@ -83,6 +84,9 @@ const geckit = {
     /** Conversations in one project, or in every one offered, with a message holding every word. Nothing asked readies the index. */
     search: (asked: string, root?: string): Promise<ChatFound[]> => ipcRenderer.invoke('chat:search', asked, root),
     send: (message: SessionMessage): Promise<string> => ipcRenderer.invoke('chat:send', message),
+    /** A command typed after `!`, run in the project; says which conversation it is in. */
+    shell: (command: ShellCommand): Promise<string> => ipcRenderer.invoke('chat:shell', command),
+    stopShell: (id: string, item: string): void => ipcRenderer.send('chat:stopShell', id, item),
     answer: (id: string, card: string, answer: CardAnswer | string): void =>
       ipcRenderer.send('chat:answer', id, card, answer),
     stop: (id: string): void => ipcRenderer.send('chat:stop', id),

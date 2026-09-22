@@ -88,6 +88,8 @@ export interface Chat {
   send: (again?: string) => void
   answer: (card: string, answer: CardAnswer | string) => void
   stop: () => void
+  /** Stops a command typed after `!` that is still running. */
+  stopShell: (item: string) => void
   rename: (id: string, title: string) => void
   hide: (id: string) => void
   /** Throws the conversations away for good. The window asks before this is called. */
@@ -301,6 +303,20 @@ export function useChat(): Chat {
       const text = now.drafts[key] ?? ''
       const carried = now.pictures[key] ?? []
       if (where === undefined || (again === undefined && text.trim() === '' && carried.length === 0)) return
+      // A message that starts with ! is a command for the project folder, as in the terminal.
+      const command = again === undefined && text.trim().startsWith('!') ? text.trim().slice(1).trim() : undefined
+      if (command !== undefined) {
+        if (command === '') return
+        setDraft('')
+        setTrouble('')
+        void window.geckit.chat
+          .shell({ ...(shownRef.current.kind === 'session' ? { session: shownRef.current.id } : {}), root: where, command })
+          .then((id) => {
+            if (shownRef.current.kind === 'session' && shownRef.current.id === id) return
+            open({ kind: 'session', id })
+          })
+        return
+      }
       setDraft('')
       setTrouble('')
       setPictures((all) => ({ ...all, [key]: [] }))
@@ -321,6 +337,10 @@ export function useChat(): Chat {
     },
     [open, setDraft],
   )
+
+  const stopShell = useCallback((item: string) => {
+    if (shownRef.current.kind === 'session') window.geckit.chat.stopShell(shownRef.current.id, item)
+  }, [])
 
   const answer = useCallback((card: string, said: CardAnswer | string) => {
     if (shownRef.current.kind !== 'session') return
@@ -468,6 +488,7 @@ export function useChat(): Chat {
       if (shownRef.current.kind !== 'session') return
       window.geckit.chat.stop(shownRef.current.id)
     },
+    stopShell,
     rename,
     hide,
     remove,
