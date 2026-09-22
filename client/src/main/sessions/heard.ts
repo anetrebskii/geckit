@@ -27,8 +27,8 @@ export type Signal =
   | { readonly kind: 'spend'; readonly used?: number; readonly cost?: number }
   /** How much of the plan is spent. Said by the tool after every turn, for the whole account. */
   | { readonly kind: 'plan'; readonly plan: PlanUsage }
-  /** Everything it has running in the background now, said each time that changes. */
-  | { readonly kind: 'tasks'; readonly tasks: readonly BackgroundTask[] }
+  /** A task in the background, as it now stands, said each time that changes. */
+  | { readonly kind: 'task'; readonly task: BackgroundTask }
   /** A turn nobody here started: something in the background finished, or a message came from Remote Control. */
   | { readonly kind: 'begun' }
   | {

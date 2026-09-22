@@ -338,6 +338,8 @@ function wire(): void {
   ipcMain.on('chat:stopShell', (_event, id: string, item: string) => sessions?.stopShell(id, item))
   ipcMain.on('chat:toBackground', (_event, id: string, item: string) => sessions?.toBackground(id, item))
   ipcMain.on('chat:stopTask', (_event, id: string, task: string) => sessions?.stopTask(id, task))
+  ipcMain.on('chat:clearTask', (_event, id: string, task: string) => sessions?.clearTask(id, task))
+  ipcMain.handle('chat:taskOutput', (_event, id: string, task: string) => sessions?.taskOutput(id, task))
   ipcMain.on('chat:reveal', (_event, root: string, path: string) => shell.showItemInFolder(fileAt(root, path)))
   ipcMain.handle('chat:exists', (_event, root: string, path: string) => isThere(root, path))
   ipcMain.handle('chat:files', (_event, root: string) => projectFiles(root))

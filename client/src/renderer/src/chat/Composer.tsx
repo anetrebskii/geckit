@@ -25,6 +25,9 @@ function Offered({ path }: { readonly path: string }): React.JSX.Element {
   )
 }
 
+/** What opens the background tasks rather than going to Claude, as in a terminal. */
+const TASKS = /^\s*\/(tasks|bashes)\s*$/
+
 /**
  * The field a message is written in, with what it will be sent to under it.
  *
@@ -41,6 +44,16 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [at, setAt] = useState(0)
   // Escape puts the list away for the @ it was up for.
   const [closed, setClosed] = useState<number | undefined>()
+  const [background, setBackground] = useState(false)
+
+  const submit = (): void => {
+    if (!TASKS.test(chat.draft)) {
+      chat.send()
+      return
+    }
+    chat.setDraft('')
+    setBackground(true)
+  }
 
   // What Up brings back, newest first: what was said in this conversation, and the commands typed after !.
   const said = useMemo(() => {
@@ -246,7 +259,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             if (event.key !== 'Enter' || event.shiftKey) return
             event.preventDefault()
             // A command is run while Claude works, as the terminal lets it be.
-            if (!chat.working || chat.draft.trim().startsWith('!')) chat.send()
+            if (!chat.working || chat.draft.trim().startsWith('!') || TASKS.test(chat.draft)) submit()
           }}
         />
         <div className="composer-bar">
@@ -270,7 +283,15 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             }}
           />
           {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
-          {chat.session?.tasks === undefined ? null : <Tasks tasks={chat.session.tasks} onStop={chat.stopTask} />}
+          <Tasks
+            session={chat.session?.id}
+            tasks={chat.session?.tasks ?? []}
+            open={background}
+            onOpen={() => setBackground(true)}
+            onClose={() => setBackground(false)}
+            onStop={chat.stopTask}
+            onClear={chat.clearTask}
+          />
           {chat.root !== undefined && chat.draft.trim().startsWith('!') ? (
             <span className="composer-hint">
               Runs in {projectName(chat.root)}. Claude sees what it prints with your next message
@@ -286,7 +307,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               type="button"
               className="send"
               disabled={cannot || (chat.draft.trim() === '' && chat.pictures.length === 0)}
-              onClick={() => chat.send()}
+              onClick={submit}
               title="Send (Enter)"
               aria-label="Send"
             >

@@ -2474,3 +2474,149 @@ textarea {
   font-family: var(--font-code);
   font-size: 11px;
 }
+
+/* What runs in the background, as the terminal's /tasks has it. */
+
+.dialog.tasks {
+  width: min(600px, 92vw);
+}
+
+.dialog.tasks:focus {
+  outline: none;
+}
+
+/* One task opened: what it printed gives up room first, so the buttons under it stay in sight. */
+.dialog.tasks.one {
+  display: flex;
+  flex-direction: column;
+}
+
+.task-printed,
+.task-printed .code-block {
+  display: flex;
+  flex-direction: column;
+  min-height: 96px;
+}
+
+.task-printed .detail {
+  min-height: 0;
+}
+
+.tasks h3 {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.task-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  cursor: default;
+  border-radius: var(--radius);
+}
+
+.task-row.on {
+  background: var(--bg-active);
+}
+
+.task-row .what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row .lasted {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.task-row .how {
+  flex-shrink: 0;
+  min-width: 5.5em;
+  color: var(--text-dim);
+  text-align: end;
+}
+
+.tasks .glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.tasks .glyph.completed {
+  color: var(--success-text);
+}
+
+.tasks .failed,
+.tasks .task-row .how.failed {
+  color: var(--warning-text);
+}
+
+.task-keys {
+  flex: 1;
+  align-self: center;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: normal;
+}
+
+.task-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 10px 0 0;
+}
+
+.task-facts > div {
+  display: contents;
+}
+
+.task-facts dt,
+.task-facts dd {
+  margin: 0;
+}
+
+.task-facts dt {
+  color: var(--text-faint);
+}
+
+.dialog .task-asked {
+  margin: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.task-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.task-did {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.task-said .prose {
+  font-size: inherit;
+  line-height: 1.5;
+}
+
+.dialog .task-said p {
+  color: var(--text);
+}
+
+.dialog .task-more {
+  margin: 8px 0 0;
+  font-size: 12px;
+}

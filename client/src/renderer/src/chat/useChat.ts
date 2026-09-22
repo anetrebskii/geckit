@@ -93,6 +93,8 @@ export interface Chat {
   /** Sends a command Claude is waiting on into the background, as Ctrl+B does in a terminal. */
   toBackground: (item: string) => void
   stopTask: (task: string) => void
+  /** Takes a task that has ended off the list, as x does in the terminal's `/tasks`. */
+  clearTask: (task: string) => void
   rename: (id: string, title: string) => void
   hide: (id: string) => void
   /** Throws the conversations away for good. The window asks before this is called. */
@@ -353,6 +355,10 @@ export function useChat(): Chat {
     if (shownRef.current.kind === 'session') window.geckit.chat.stopTask(shownRef.current.id, task)
   }, [])
 
+  const clearTask = useCallback((task: string) => {
+    if (shownRef.current.kind === 'session') window.geckit.chat.clearTask(shownRef.current.id, task)
+  }, [])
+
   const answer = useCallback((card: string, said: CardAnswer | string) => {
     if (shownRef.current.kind !== 'session') return
     window.geckit.chat.answer(shownRef.current.id, card, said)
@@ -502,6 +508,7 @@ export function useChat(): Chat {
     stopShell,
     toBackground,
     stopTask,
+    clearTask,
     rename,
     hide,
     remove,
