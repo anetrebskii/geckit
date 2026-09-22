@@ -24,6 +24,8 @@ const DAY = 86_400_000
 
 const WAITING = 'Waiting for you'
 
+const FAVORITES = 'Favorites'
+
 function when(at: number, now: number): string {
   const days = Math.floor((now - at) / DAY)
   if (days < 1 && new Date(at).toDateString() === new Date(now).toDateString()) return 'Today'
@@ -59,22 +61,37 @@ type Press = 'open' | 'one' | 'run'
 
 const NONE: ReadonlySet<string> = new Set()
 
-/** What waits for the person first, then the rest under their headings. */
+/**
+ * The favorites first, in the order they were put in, so Cmd+1 is always the
+ * same conversation; then what waits for the person; then the rest under their headings.
+ */
 function arrange(
   sessions: readonly ChatSession[],
   waiting: readonly ChatSession[],
+  favorites: readonly string[],
   by: ChatGrouping,
   now: number,
 ): Group[] {
-  const waits = new Set(waiting.map((one) => one.id))
+  const listed = new Map([...sessions, ...waiting].map((one) => [one.id, one]))
+  const kept = favorites.flatMap((id) => listed.get(id) ?? [])
+  const favorite = new Set(kept.map((one) => one.id))
+  const waits = waiting.filter((one) => !favorite.has(one.id))
+  const waited = new Set(waiting.map((one) => one.id))
   return [
-    ...(waiting.length === 0 ? [] : [[WAITING, waiting] as const]),
+    ...(kept.length === 0 ? [] : [[FAVORITES, kept] as const]),
+    ...(waits.length === 0 ? [] : [[WAITING, waits] as const]),
     ...gather(
-      sessions.filter((one) => !waits.has(one.id)),
+      sessions.filter((one) => !waited.has(one.id) && !favorite.has(one.id)),
       by,
       now,
     ),
   ]
+}
+
+/** Where a row being dragged would land among the favorites: above or below the row under the pointer. */
+interface Landing {
+  readonly id: string
+  readonly after: boolean
 }
 
 /**
@@ -94,10 +111,15 @@ const Row = memo(function Row({
   where,
   changed,
   renaming,
+  favorite,
+  landing,
   onPress,
   onRenamed,
   onStopRenaming,
   onMenu,
+  onDrag,
+  onOver,
+  onLand,
 }: {
   readonly session: ChatSession
   readonly on: boolean
@@ -113,14 +135,41 @@ const Row = memo(function Row({
   /** When it last changed: "5m", "14:05", "Yesterday". */
   readonly changed: string
   readonly renaming: boolean
+  /** Stands among the favorites, where a row dragged over it lands. */
+  readonly favorite: boolean
+  /** A row dragged over this one would land above or below it. */
+  readonly landing: 'before' | 'after' | undefined
   readonly onPress: (session: ChatSession, how: Press) => void
   readonly onRenamed: (id: string, title: string) => void
   readonly onStopRenaming: () => void
   readonly onMenu: (id: string, at: DOMRect) => void
+  readonly onDrag: (id: string | undefined) => void
+  readonly onOver: (landing: Landing | undefined) => void
+  readonly onLand: () => void
 }): React.JSX.Element {
   return (
     <div
-      className={`row${on ? ' on' : ''}${picked ? ' picked' : ''}${waits ? ` waits ${session.state}` : ''}`}
+      className={`row${on ? ' on' : ''}${picked ? ' picked' : ''}${waits ? ` waits ${session.state}` : ''}${landing === undefined ? '' : ` lands-${landing}`}`}
+      draggable={!picking && !renaming}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', session.title)
+        onDrag(session.id)
+      }}
+      onDragEnd={() => onDrag(undefined)}
+      onDragOver={(event) => {
+        if (!favorite) {
+          onOver(undefined)
+          return
+        }
+        event.preventDefault()
+        const box = event.currentTarget.getBoundingClientRect()
+        onOver({ id: session.id, after: event.clientY > box.top + box.height / 2 })
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        onLand()
+      }}
       title={`${session.title === '' ? 'Untitled' : session.title}${place === undefined ? '' : ` (${MOD}+${String(place)})`}`}
       onClick={(event) =>
         onPress(session, event.shiftKey ? 'run' : (MOD === 'Cmd' ? event.metaKey : event.ctrlKey) ? 'one' : 'open')
@@ -191,12 +240,16 @@ const Rows = memo(function Rows({
   folded,
   renaming,
   picked,
+  landing,
   onPress,
   onPickAll,
   onRenamed,
   onStopRenaming,
   onMenu,
   onFold,
+  onDrag,
+  onOver,
+  onLand,
 }: {
   readonly groups: readonly Group[]
   readonly places: ReadonlyMap<string, number>
@@ -209,6 +262,7 @@ const Rows = memo(function Rows({
   readonly folded: ReadonlySet<string>
   readonly renaming: string | undefined
   readonly picked: ReadonlySet<string>
+  readonly landing: Landing | undefined
   readonly onPress: (session: ChatSession, how: Press) => void
   /** Picks every row under a heading, or lets them all go where every one was picked. */
   readonly onPickAll: (rows: readonly ChatSession[]) => void
@@ -216,6 +270,9 @@ const Rows = memo(function Rows({
   readonly onStopRenaming: () => void
   readonly onMenu: (id: string, at: DOMRect) => void
   readonly onFold: (where: string) => void
+  readonly onDrag: (id: string | undefined) => void
+  readonly onOver: (landing: Landing | undefined) => void
+  readonly onLand: () => void
 }): React.JSX.Element {
   const picking = picked.size > 0
   return (
@@ -229,7 +286,22 @@ const Rows = memo(function Rows({
       ) : (
         groups.map(([where, rows]) => (
           <div key={where}>
-            <div className="group-head">
+            <div
+              className={`group-head${where === FAVORITES && landing?.id === '' ? ' lands-after' : ''}`}
+              {...(where === FAVORITES
+                ? {
+                    // Dropped on the heading, it goes first.
+                    onDragOver: (event: React.DragEvent) => {
+                      event.preventDefault()
+                      onOver({ id: '', after: true })
+                    },
+                    onDrop: (event: React.DragEvent) => {
+                      event.preventDefault()
+                      onLand()
+                    },
+                  }
+                : {})}
+            >
               <button type="button" className="group" onClick={() => onFold(where)}>
                 <Icon name={folded.has(where) ? 'right' : 'down'} size={10} />
                 {where}
@@ -251,13 +323,22 @@ const Rows = memo(function Rows({
                 picked={picked.has(session.id)}
                 place={places.get(session.id)}
                 waits={where === WAITING}
-                where={where === WAITING || (by === 'time' && scope === ALL) ? projectName(session.root) : undefined}
+                where={
+                  where === WAITING || (scope === ALL && (by === 'time' || where === FAVORITES))
+                    ? projectName(session.root)
+                    : undefined
+                }
                 changed={ago(session.at, now, by === 'time')}
                 renaming={renaming === session.id}
+                favorite={where === FAVORITES}
+                landing={landing?.id === session.id ? (landing.after ? 'after' : 'before') : undefined}
                 onPress={onPress}
                 onRenamed={onRenamed}
                 onStopRenaming={onStopRenaming}
                 onMenu={onMenu}
+                onDrag={onDrag}
+                onOver={onOver}
+                onLand={onLand}
               />
             ))}
           </div>
@@ -327,7 +408,49 @@ export function Sidebar({
   }, [])
 
   const by = chat.scope === ALL ? chat.settings.chatGrouping : 'time'
-  const groups = useMemo(() => arrange(chat.sessions, chat.waiting, by, now), [chat.sessions, chat.waiting, by, now])
+  const favorites = chat.settings.favorites
+  const groups = useMemo(
+    () => arrange(chat.sessions, chat.waiting, favorites, by, now),
+    [chat.sessions, chat.waiting, favorites, by, now],
+  )
+
+  // A row is dragged into the favorites, or along them, and lands where the line is drawn.
+  const favoritesRef = useRef(favorites)
+  useEffect(() => {
+    favoritesRef.current = favorites
+  }, [favorites])
+  const change = chat.change
+  /** Puts one among the favorites next to another, or first where there is no other. */
+  const place = useCallback(
+    (id: string, next: Landing | undefined) => {
+      if (next?.id === id) return
+      const rest = favoritesRef.current.filter((one) => one !== id)
+      const at = next === undefined || next.id === '' ? 0 : rest.indexOf(next.id) + (next.after ? 1 : 0)
+      change({ favorites: [...rest.slice(0, at), id, ...rest.slice(at)] })
+    },
+    [change],
+  )
+  const dragged = useRef<string | undefined>(undefined)
+  const [landing, setLanding] = useState<Landing | undefined>()
+  const landingRef = useRef(landing)
+  const over = useCallback((next: Landing | undefined) => {
+    if (landingRef.current?.id === next?.id && landingRef.current?.after === next?.after) return
+    landingRef.current = next
+    setLanding(next)
+  }, [])
+  const drag = useCallback(
+    (id: string | undefined) => {
+      dragged.current = id
+      if (id === undefined) over(undefined)
+    },
+    [over],
+  )
+  const land = useCallback(() => {
+    const id = dragged.current
+    const next = landingRef.current
+    if (id !== undefined && next !== undefined) place(id, next)
+    drag(undefined)
+  }, [place, drag])
   const drawn = useMemo(() => groups.flatMap(([where, rows]) => (folded.has(where) ? [] : rows)), [groups, folded])
   const places = useMemo(() => new Map(drawn.slice(0, 9).map((one, at) => [one.id, at + 1])), [drawn])
   useEffect(() => {
@@ -413,6 +536,7 @@ export function Sidebar({
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
   }, [chosen, deleting, pick])
+  const shownFavorites = groups.find(([where]) => where === FAVORITES)?.[1].map((one) => one.id) ?? []
   // Waiting for you is left open, so what comes into it is seen.
   const headings = groups.map(([where]) => where).filter((where) => where !== WAITING)
   const allFolded = headings.length > 0 && headings.every((where) => folded.has(where))
@@ -492,18 +616,35 @@ export function Sidebar({
         folded={folded}
         renaming={renaming}
         picked={picked}
+        landing={landing}
         onPress={press}
         onPickAll={pickAll}
         onRenamed={renamed}
         onStopRenaming={stopRenaming}
         onMenu={openMenu}
         onFold={fold}
+        onDrag={drag}
+        onOver={over}
+        onLand={land}
       />
 
       {menu === undefined ? null : (
         <Menu
           anchor={menu.at}
           choices={[
+            ...(favorites.includes(menu.id)
+              ? [
+                  { value: 'unfavorite', label: 'Remove from favorites' },
+                  ...(shownFavorites.indexOf(menu.id) > 0 ? [{ value: 'up', label: 'Move up' }] : []),
+                  ...(shownFavorites.indexOf(menu.id) < shownFavorites.length - 1 ? [{ value: 'down', label: 'Move down' }] : []),
+                ]
+              : [
+                  {
+                    value: 'favorite',
+                    label: 'Add to favorites',
+                    ...(shownFavorites.length < 9 ? { says: `${MOD}+${String(shownFavorites.length + 1)}` } : {}),
+                  },
+                ]),
             { value: 'rename', label: 'Rename' },
             { value: 'copy', label: 'Copy the terminal command' },
             { value: 'terminal', label: 'Open in a terminal' },
@@ -512,6 +653,13 @@ export function Sidebar({
             { value: 'delete', label: 'Delete', danger: true },
           ]}
           onPick={(value) => {
+            if (value === 'favorite') change({ favorites: [...favorites.filter((id) => id !== menu.id), menu.id] })
+            if (value === 'unfavorite') change({ favorites: favorites.filter((id) => id !== menu.id) })
+            if (value === 'up' || value === 'down') {
+              const at = shownFavorites.indexOf(menu.id)
+              const other = shownFavorites[value === 'up' ? at - 1 : at + 1]
+              if (other !== undefined) place(menu.id, { id: other, after: value === 'down' })
+            }
             if (value === 'rename') setRenaming(menu.id)
             if (value === 'copy') chat.copyTerminal(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)

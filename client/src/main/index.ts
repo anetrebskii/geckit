@@ -181,6 +181,12 @@ function pasteBack(text: string): void {
  * iTerm where it is installed, because that is where somebody who has it is
  * expecting to land, and Terminal otherwise.
  */
+/** A conversation that has gone from the list is not kept among the favorites either. */
+function unfavorite(ids: readonly string[]): void {
+  const favorites = getSettings().favorites
+  if (favorites.some((id) => ids.includes(id))) setSettings({ favorites: favorites.filter((id) => !ids.includes(id)) })
+}
+
 /** A terminal in the folder with the command typed in and run: iTerm where there is one, Terminal otherwise. */
 function openTerminal(root: string, run: string): void {
   if (process.platform !== 'darwin') {
@@ -283,7 +289,11 @@ function wire(): void {
     searchClaude(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
   )
   // The window asks first, in its own words; by here it has been answered.
-  ipcMain.handle('chat:delete', async (_event, ids: readonly string[]) => (await sessions?.remove(ids)) ?? [])
+  ipcMain.handle('chat:delete', async (_event, ids: readonly string[]) => {
+    const gone = (await sessions?.remove(ids)) ?? []
+    unfavorite(gone)
+    return gone
+  })
   ipcMain.handle('chat:items', (_event, id: string) => sessions?.items(id) ?? [])
   ipcMain.handle('chat:send', async (_event, message: SessionMessage) => {
     track('chatSent')
@@ -295,7 +305,10 @@ function wire(): void {
   ipcMain.on('chat:stop', (_event, id: string) => sessions?.stop(id))
   ipcMain.on('chat:mode', (_event, id: string, mode: SessionMode) => sessions?.mode(id, mode))
   ipcMain.on('chat:rename', (_event, id: string, title: string) => sessions?.rename(id, title))
-  ipcMain.on('chat:hide', (_event, id: string) => sessions?.hide(id))
+  ipcMain.on('chat:hide', (_event, id: string) => {
+    sessions?.hide(id)
+    unfavorite([id])
+  })
   ipcMain.on('chat:watching', (_event, id: string | undefined) =>
     sessions?.watching(watchingChat() ? id : undefined),
   )
