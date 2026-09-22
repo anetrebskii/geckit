@@ -55,6 +55,8 @@ export function Chat(): React.JSX.Element {
   const [sizing, setSizing] = useState<number | undefined>()
   // The conversation whose name is being typed over in the header.
   const [naming, setNaming] = useState<string | undefined>()
+  // Asking whether to leave this conversation for a new one about something else.
+  const [clearing, setClearing] = useState(false)
   const grab = useRef(0)
   const { addFiles, send, root } = chat
 
@@ -132,6 +134,13 @@ export function Chat(): React.JSX.Element {
     }
 
     const key = (event: KeyboardEvent): void => {
+      if (clearing) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setClearing(false)
+        }
+        return
+      }
       if (switching || setting || keys) return
       const now = recentRef.current
       if (now !== undefined && event.key === 'Escape') {
@@ -217,7 +226,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys])
+  }, [chat, switching, setting, keys, clearing])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -316,6 +325,14 @@ export function Chat(): React.JSX.Element {
             <>
               <button
                 type="button"
+                className="picker no-drag"
+                title="Start a new conversation in this project, for another task"
+                onClick={() => setClearing(true)}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
                 className="icon-button no-drag"
                 title={`Continue in a terminal: ${resumeCommand(chat.session.id)}`}
                 aria-label="Continue in a terminal"
@@ -377,6 +394,34 @@ export function Chat(): React.JSX.Element {
         <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />
       ) : null}
       {keys ? <ShortcutsDialog onClose={closeKeys} /> : null}
+      {clearing && chat.session !== undefined ? (
+        <div className="dialog-scrim" onMouseDown={() => setClearing(false)}>
+          <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
+            <h2>Clear the conversation?</h2>
+            <p>
+              The next message starts a new conversation in {projectName(chat.session.root)}, with nothing of this one
+              in mind. This one stays in the list.
+            </p>
+            <div className="dialog-actions">
+              <button type="button" className="quiet" onClick={() => setClearing(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                autoFocus
+                onClick={() => {
+                  if (chat.session !== undefined) chat.setRoot(chat.session.root)
+                  chat.startNew()
+                  setClearing(false)
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
