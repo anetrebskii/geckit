@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 
 import { dialog, Menu, shell } from 'electron'
 import type { BrowserWindow, MenuItemConstructorOptions } from 'electron'
+import log from 'electron-log'
 
 import { appName, kindOf, ruleFor, withRule } from '../shared/api'
 import type { OpenRule } from '../shared/api'
@@ -30,7 +31,9 @@ export function openFile(rules: readonly OpenRule[], root: string, path: string)
   const file = fileAt(root, path)
   const fallBack = (): void => {
     void shell.openPath(file).then((failed) => {
-      if (failed !== '') shell.showItemInFolder(file)
+      if (failed === '') return
+      log.warn(`${file} did not open, so it is shown in the Finder: ${failed}`)
+      shell.showItemInFolder(file)
     })
   }
   const rule = ruleFor(rules, file)
@@ -42,7 +45,9 @@ function openIn(app: string, file: string, fallBack: () => void): void {
   if (process.platform === 'darwin') {
     // An application moved or deleted since it was chosen is not a reason to open nothing.
     execFile('open', ['-a', app, file], (error) => {
-      if (error !== null) fallBack()
+      if (error === null) return
+      log.warn(`${file} did not open in ${app}: ${error.message}`)
+      fallBack()
     })
     return
   }
