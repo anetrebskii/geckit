@@ -128,6 +128,10 @@ const Row = memo(function Row({
       onDoubleClick={() => {
         if (!picking) onRenamed(session.id, '')
       }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onMenu(session.id, new DOMRect(event.clientX, event.clientY, 0, 0))
+      }}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
