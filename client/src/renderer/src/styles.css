@@ -551,6 +551,10 @@ textarea {
   }
 }
 
+.spinning {
+  animation: spin 900ms linear infinite;
+}
+
 @keyframes travel {
   from {
     transform: translateX(-100%);
@@ -1665,10 +1669,6 @@ textarea {
   color: var(--text-faint);
 }
 
-.did .glyph.spinning {
-  animation: spin 900ms linear infinite;
-}
-
 .detail {
   max-height: 340px;
   padding: 8px 10px;
@@ -1768,7 +1768,6 @@ textarea {
 .shell-head .glyph {
   flex-shrink: 0;
   color: var(--text-faint);
-  animation: spin 900ms linear infinite;
 }
 
 .shell-head .quiet {
