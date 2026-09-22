@@ -18,6 +18,7 @@ import type {
   SessionMode,
   SessionNotice,
   Settings,
+  TaskOutput,
   TranscribeRequest,
   UpdateView,
 } from '../shared/api'
@@ -90,6 +91,9 @@ const geckit = {
     /** A command still running, sent on in the background as Ctrl+B does in a terminal. */
     toBackground: (id: string, item: string): void => ipcRenderer.send('chat:toBackground', id, item),
     stopTask: (id: string, task: string): void => ipcRenderer.send('chat:stopTask', id, task),
+    /** Takes a task that has ended off the list. */
+    clearTask: (id: string, task: string): void => ipcRenderer.send('chat:clearTask', id, task),
+    taskOutput: (id: string, task: string): Promise<TaskOutput | undefined> => ipcRenderer.invoke('chat:taskOutput', id, task),
     answer: (id: string, card: string, answer: CardAnswer | string): void =>
       ipcRenderer.send('chat:answer', id, card, answer),
     stop: (id: string): void => ipcRenderer.send('chat:stop', id),

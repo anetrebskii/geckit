@@ -323,8 +323,25 @@ describe('what runs in the background', () => {
   it('says what was started in the background, what is running, and how it ended', () => {
     const { items, signals } = play('claude-background.jsonl')
     expect(items.find((one) => one.kind === 'did')).toMatchObject({ what: 'Started in the background: sleep 6; echo background-done' })
-    const tasks = signals.flatMap((one) => (one.kind === 'tasks' ? [one.tasks] : []))
-    expect(tasks).toEqual([[{ id: 'bic0gbvbq', kind: 'local_bash', what: 'Background sleep and echo command' }], []])
+    const tasks = signals.flatMap((one) => (one.kind === 'task' ? [one.task] : []))
+    expect(tasks[0]).toEqual({
+      id: 'bic0gbvbq',
+      kind: 'local_bash',
+      what: 'Background sleep and echo command',
+      status: 'running',
+      started: expect.any(Number),
+    })
+    expect(tasks.at(-1)).toEqual({
+      id: 'bic0gbvbq',
+      kind: 'local_bash',
+      what: 'Background sleep and echo command',
+      command: 'sleep 6; echo background-done',
+      status: 'completed',
+      started: expect.any(Number),
+      ended: 1790063416055,
+      exit: 0,
+      output: '/tmp/claude/-work-docs/e821feff-0a68-4cf1-8e47-55ff92ce7115/tasks/bic0gbvbq.output',
+    })
     expect(items).toContainEqual({
       kind: 'note',
       id: 'task:bic0gbvbq',
@@ -355,6 +372,45 @@ describe('what runs in the background', () => {
     // The watch was stopped, which whoever stopped it knows; the command ran to its end.
     expect(items.has('task:bmyyo5x9p')).toBe(false)
     expect(items.get('task:b707zqkka')).toMatchObject({ note: 'task', text: expect.stringContaining('completed (exit code 0)') })
+  })
+
+  it('keeps a command moved to the background as a task, and how each one ended', () => {
+    const { signals } = play('claude-moved.jsonl')
+    const last = new Map(signals.flatMap((one) => (one.kind === 'task' ? [[one.task.id, one.task] as const] : [])))
+    expect(last.get('b707zqkka')).toMatchObject({
+      kind: 'local_bash',
+      command: 'ping -c 40 127.0.0.1',
+      status: 'completed',
+      exit: 0,
+      output: '/tmp/claude/-work-docs/c9145bd9-f97d-49f7-9fb2-793ab68d8831/tasks/b707zqkka.output',
+    })
+    expect(last.get('bmyyo5x9p')).toMatchObject({ kind: 'monitor', status: 'stopped', ended: 1790063615797 })
+  })
+
+  it('follows a helper in the background: what it is doing, how much it has done, and where it writes', () => {
+    const { signals } = play('claude-helper.jsonl')
+    const tasks = signals.flatMap((one) => (one.kind === 'task' ? [one.task] : []))
+    expect(tasks.map((one) => one.progress?.doing)).toContain('Reading record.mjs')
+    expect(tasks.at(-1)).toMatchObject({
+      id: 'ab35a47f982b8a7c2',
+      kind: 'local_agent',
+      what: 'Count lines in record.mjs',
+      status: 'completed',
+      output: '/tmp/claude/-work-docs/02e15529-b920-4046-8377-2fe62015b09c/tasks/ab35a47f982b8a7c2.output',
+      progress: { doing: 'Reading record.mjs', tools: 2, tokens: 20556 },
+    })
+  })
+
+  it('tells a watch from a command, though the tool counts both as one', () => {
+    const { signals } = play('claude-monitor.jsonl')
+    expect(signals.flatMap((one) => (one.kind === 'task' ? [one.task] : [])).at(-1)).toMatchObject({
+      id: 'bx3vlmxij',
+      kind: 'monitor',
+      what: 'monitoring tick counter',
+      command: 'for i in 1 2 3 4; do echo tick $i; sleep 3; done',
+      status: 'completed',
+      output: '/tmp/claude/-work-docs/a45f7970-d275-45fb-828d-4c80eee29fc8/tasks/bx3vlmxij.output',
+    })
   })
 
   it('reads back the line for what ended in the background, and nothing for what was stopped', () => {

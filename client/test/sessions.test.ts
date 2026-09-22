@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { holdClaude } from '../src/main/sessions/claude'
@@ -810,7 +812,8 @@ describe('commands typed after !', () => {
 describe('what runs in the background', () => {
   afterEach(() => vi.useRealTimers())
 
-  const task = { id: 'b1', kind: 'local_bash', what: 'npm run dev' }
+  const task = { id: 'b1', kind: 'local_bash', what: 'npm run dev', status: 'running', started: 1 } as const
+  const done = { ...task, status: 'completed', ended: 2, exit: 0 } as const
 
   it('shows a turn the tool began by itself as working, and says when it is done', async () => {
     const built = build()
@@ -823,18 +826,40 @@ describe('what runs in the background', () => {
     expect(built.notes.at(-1)).toMatchObject({ title: 'Finished - app', body: 'It printed ready' })
   })
 
-  it('lists what runs in the background, keeps the process for it, and lets it go once nothing is left', async () => {
+  it('lists what runs in the background, keeps the process for it, and lets it go once nothing is left running', async () => {
     vi.useFakeTimers()
     const built = build()
     const id = await started(built)
-    built.fake.hear({ signals: [{ kind: 'tasks', tasks: [task] }, { kind: 'ended', how: 'done' }] })
+    built.fake.hear({ signals: [{ kind: 'task', task }, { kind: 'ended', how: 'done' }] })
     expect(of(built.rows, id)?.tasks).toEqual([task])
     vi.advanceTimersByTime(11 * 60_000)
     expect(built.fake.ended).toBe(0)
-    built.fake.hear({ signals: [{ kind: 'tasks', tasks: [] }] })
-    expect(of(built.rows, id)?.tasks).toBeUndefined()
+    built.fake.hear({ signals: [{ kind: 'task', task: done }] })
+    expect(of(built.rows, id)?.tasks).toEqual([done])
     vi.advanceTimersByTime(11 * 60_000)
     expect(built.fake.ended).toBe(1)
+    // What ended stays to be read until it is cleared, as in the terminal's /tasks.
+    expect(of(built.rows, id)?.tasks).toEqual([done])
+    built.sessions.clearTask(id, 'b1')
+    expect(of(built.rows, id)?.tasks).toBeUndefined()
+  })
+
+  it('clears only what has ended', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'task', task }] })
+    built.sessions.clearTask(id, 'b1')
+    expect(of(built.rows, id)?.tasks).toEqual([task])
+  })
+
+  it('reads what a helper in the background has said and done', async () => {
+    const built = build()
+    const id = await started(built)
+    const output = join(import.meta.dirname, 'fixtures', 'claude-helper-transcript.jsonl')
+    built.fake.hear({ signals: [{ kind: 'task', task: { ...task, id: 'a1', kind: 'local_agent', output } }] })
+    const read = await built.sessions.taskOutput(id, 'a1')
+    expect(read?.kind === 'helper' ? read.lines.map((line) => line.who) : []).toEqual(['asked', 'did', 'did', 'said'])
+    expect(await built.sessions.taskOutput(id, 'nothing')).toBeUndefined()
   })
 
   it('sends a command on in the background, and stops a task, over the control channel', async () => {
@@ -848,12 +873,12 @@ describe('what runs in the background', () => {
     ])
   })
 
-  it('forgets what ran in the background when the process is started again for another model', async () => {
+  it('counts what ran in the background as stopped when the process is started again for another model', async () => {
     const built = build()
     const id = await started(built)
-    built.fake.hear({ signals: [{ kind: 'tasks', tasks: [task] }, { kind: 'ended', how: 'done' }] })
+    built.fake.hear({ signals: [{ kind: 'task', task }, { kind: 'ended', how: 'done' }] })
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', model: 'sonnet', text: 'again' })
     expect(built.fake.made).toHaveLength(2)
-    expect(of(built.rows, id)?.tasks).toBeUndefined()
+    expect(of(built.rows, id)?.tasks).toEqual([{ ...task, status: 'stopped', ended: expect.any(Number) }])
   })
 })

@@ -196,13 +196,30 @@ export interface ChatSession {
   readonly tasks?: readonly BackgroundTask[]
 }
 
-/** One thing Claude Code has running in the background: a command, a watch or a helper. */
+/** One thing Claude Code has in the background: a command, a watch or a helper. */
 export interface BackgroundTask {
   readonly id: string
-  /** The tool's word for what it is: `local_bash`, `local_agent`, `remote_agent`, `local_workflow`. */
+  /** The tool's word for what it is: `local_bash`, `local_agent`, `remote_agent`, `local_workflow`; and `monitor` for a watch, which the tool counts as a command. */
   readonly kind: string
   readonly what: string
+  /** What a command or a watch runs. */
+  readonly command?: string
+  readonly status: 'running' | 'completed' | 'failed' | 'stopped'
+  /** When it was started and when it ended, in milliseconds. */
+  readonly started: number
+  readonly ended?: number
+  /** How a command exited, where the tool said. */
+  readonly exit?: number
+  /** Where the tool writes what it prints, where it said. A helper's is its conversation. */
+  readonly output?: string
+  /** What a helper is doing now, and how much it has done. */
+  readonly progress?: { readonly doing: string; readonly tools: number; readonly tokens: number }
 }
+
+/** What a task in the background has to show: the end of what it printed, or a helper's conversation so far. */
+export type TaskOutput =
+  | { readonly kind: 'printed'; readonly text: string }
+  | { readonly kind: 'helper'; readonly lines: readonly { readonly id: string; readonly who: 'asked' | 'said' | 'did'; readonly text: string }[] }
 
 /** One MCP server Claude Code has for a project, and the tool's word for how it stands: `connected`, `failed`, `needs-auth`, `pending`, `disabled`. */
 export interface McpServer {

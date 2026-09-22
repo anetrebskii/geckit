@@ -77,6 +77,9 @@ export interface ClaudeState {
   limit: { resetsAt?: number } | undefined
   /** Tasks that went on in the background, whose ending is worth a line. One the tool waits on is not. */
   readonly backgrounded: Set<string>
+  /** What is known of every task this run has had, and the task each tool use became. */
+  readonly tasks: Map<string, BackgroundTask>
+  readonly uses: Map<string, string>
 }
 
 export function claudeState(root: string): ClaudeState {
@@ -92,6 +95,8 @@ export function claudeState(root: string): ClaudeState {
     synthetic: undefined,
     limit: undefined,
     backgrounded: new Set(),
+    tasks: new Map(),
+    uses: new Map(),
   }
 }
 
@@ -157,6 +162,23 @@ const tagged = (body: string, tag: string): string => new RegExp(`<${tag}>([\\s\
 function taskNote(id: string, status: string, summary: string): SessionItem | undefined {
   if (id === '' || summary === '' || status === 'stopped' || status === 'killed') return undefined
   return { kind: 'note', id: `task:${id}`, note: 'task', text: summary }
+}
+
+/** The tool's words for how a task ended. */
+const ENDED: Readonly<Record<string, BackgroundTask['status']>> = {
+  completed: 'completed',
+  failed: 'failed',
+  stopped: 'stopped',
+  killed: 'stopped',
+}
+
+/** Where a command or a helper said it writes, in what the tool handed back for it. */
+const WRITES_TO = /(?:Output is being written to|output_file): (\S+?)\.?(?:\s|$)/
+
+/** Keeps what is known of a task, and says it once the task is one in the background. */
+function keepTask(state: ClaudeState, out: Reading, task: BackgroundTask): void {
+  state.tasks.set(task.id, task)
+  if (state.backgrounded.has(task.id)) out.signals.push({ kind: 'task', task })
 }
 
 /** A command run with `!`, and what it printed, as the terminal writes them and as GeckIt sends them. */
@@ -288,6 +310,12 @@ function toolResults(state: ClaudeState, message: Json, out: Reading): boolean {
 
     const said = resultText(block['content'])
     const failed = block['is_error'] === true
+
+    const task = state.tasks.get(state.uses.get(use) ?? '')
+    if (task !== undefined) {
+      const output = string(object(message['tool_use_result'])['outputFile']) || WRITES_TO.exec(said)?.[1]
+      if (output !== undefined && output !== '') keepTask(state, out, { ...task, output })
+    }
 
     if (doing.tool === 'AskUserQuestion') {
       const answers = object(object(message['tool_use_result'] ?? message['toolUseResult'])['answers'])
@@ -462,28 +490,78 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
     } else if (subtype === 'status' && string(message['permissionMode']) !== '') {
       out.signals.push({ kind: 'mode', mode: string(message['permissionMode']) })
     } else if (subtype === 'background_tasks_changed') {
-      const tasks = list(message['tasks']).map((raw): BackgroundTask => {
-        const task = object(raw)
-        return { id: string(task['task_id']), kind: string(task['task_type']), what: string(task['description']) }
-      })
-      for (const task of tasks) state.backgrounded.add(task.id)
-      out.signals.push({ kind: 'tasks', tasks })
+      // One started in the background is listed here a moment before it is said to have started.
+      for (const raw of list(message['tasks'])) {
+        const listed = object(raw)
+        const id = string(listed['task_id'])
+        if (state.backgrounded.has(id) && state.tasks.has(id)) continue
+        state.backgrounded.add(id)
+        const kind = string(listed['task_type'])
+        keepTask(
+          state,
+          out,
+          state.tasks.get(id) ?? { id, kind, what: string(listed['description']), status: 'running', started: Date.now() },
+        )
+      }
     } else if (subtype === 'task_started') {
       const id = string(message['task_id'])
-      const doing = state.tools.get(string(message['tool_use_id']))
+      const use = string(message['tool_use_id'])
+      const doing = state.tools.get(use)
+      const command = string(doing?.input['command'])
+      state.uses.set(use, id)
       if (message['is_backgrounded'] === true) state.backgrounded.add(id)
-      else if (doing !== undefined && COMMANDS.has(doing.tool)) {
+      keepTask(state, out, {
+        started: Date.now(),
+        ...state.tasks.get(id),
+        id,
+        kind: doing?.tool === 'Monitor' ? 'monitor' : string(message['task_type']),
+        what: string(message['description']),
+        status: 'running',
+        ...(command === '' ? {} : { command }),
+      })
+      if (message['is_backgrounded'] !== true && doing !== undefined && COMMANDS.has(doing.tool)) {
         // A command the tool is waiting on has run long enough to become a task, which can go on without it.
         const line = claudeLine(doing.tool, doing.input, state.root)
         if (line !== undefined) out.items.push({ ...doing.item, what: sentence(line.doing), live: true, lasting: true })
       }
     } else if (subtype === 'task_updated') {
-      if (object(message['patch'])['is_backgrounded'] === true) state.backgrounded.add(string(message['task_id']))
+      const id = string(message['task_id'])
+      const patch = object(message['patch'])
+      const task = state.tasks.get(id)
+      const ended = ENDED[string(patch['status'])]
+      if (patch['is_backgrounded'] === true) state.backgrounded.add(id)
+      if (task !== undefined) {
+        const end = typeof patch['end_time'] === 'number' ? patch['end_time'] : Date.now()
+        keepTask(state, out, ended === undefined ? task : { ...task, status: ended, ended: task.ended ?? end })
+      }
+    } else if (subtype === 'task_progress') {
+      const task = state.tasks.get(string(message['task_id']))
+      const usage = object(message['usage'])
+      const count = (key: string): number => (typeof usage[key] === 'number' ? usage[key] : 0)
+      if (task !== undefined) {
+        const progress = { doing: string(message['description']), tools: count('tool_uses'), tokens: count('total_tokens') }
+        keepTask(state, out, { ...task, progress })
+      }
     } else if (subtype === 'task_notification') {
       const id = string(message['task_id'])
-      if (state.backgrounded.delete(id)) {
-        const note = taskNote(id, string(message['status']), string(message['summary']))
+      const task = state.tasks.get(id)
+      const summary = string(message['summary'])
+      if (state.backgrounded.has(id)) {
+        const note = taskNote(id, string(message['status']), summary)
         if (note !== undefined) out.items.push(note)
+      }
+      // One the tool waited on is its line in the conversation, and nothing more.
+      if (!state.backgrounded.has(id)) state.tasks.delete(id)
+      else if (task !== undefined) {
+        const output = string(message['output_file'])
+        const exit = /\(exit code (-?\d+)\)/.exec(summary)?.[1]
+        keepTask(state, out, {
+          ...task,
+          status: ENDED[string(message['status'])] ?? task.status,
+          ended: task.ended ?? Date.now(),
+          ...(output === '' ? {} : { output }),
+          ...(exit === undefined ? {} : { exit: Number(exit) }),
+        })
       }
     }
     return out

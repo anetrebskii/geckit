@@ -52,6 +52,16 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
     ],
   },
   {
+    title: 'In the background, opened under the field or by typing /tasks',
+    keys: [
+      ['Down, Up', 'Move through what runs and what has ended'],
+      ['Enter', 'Open it: how it stands, what it runs, what it printed'],
+      ['X', 'Stop it while it runs, clear it once it has ended'],
+      ['Left', 'Back to the list'],
+      ['Esc', 'Close'],
+    ],
+  },
+  {
     title: 'A picture, opened',
     keys: [
       ['+, -', 'Bigger, smaller'],

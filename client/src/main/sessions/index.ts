@@ -16,6 +16,7 @@ import type {
   SessionNotice,
   SessionState,
   ShellCommand,
+  TaskOutput,
 } from '../../shared/api'
 import { sessionMode } from '../../shared/api'
 import { claudeAccount } from './account'
@@ -30,6 +31,7 @@ import { claudeModels } from './models'
 import type { Wanted } from './rule'
 import { runShell, toldClaude, wantsKeyboard } from './shell'
 import type { Running } from './shell'
+import { taskFile, taskOutput } from './tasks'
 import { readUsage } from './usage'
 import type { Usage } from './usage'
 import {
@@ -169,7 +171,7 @@ interface Live {
   told: { readonly id: string; readonly blocks: readonly string[] }[]
   /** Commands still running, by the item showing them. */
   commands: Map<string, Running>
-  /** What the tool has running in the background, which goes with its process. */
+  /** What the tool has had in the background, running or ended, until the person clears what ended. */
   tasks: readonly BackgroundTask[]
   back: NodeJS.Timeout | undefined
   stopping: NodeJS.Timeout | undefined
@@ -177,6 +179,12 @@ interface Live {
 
 /** How long an idle session keeps its process. */
 const QUIET = 10 * 60_000
+
+const running = (task: BackgroundTask): boolean => task.status === 'running'
+
+/** Tasks as they stand once their process is gone, which took every one still running with it. */
+const ended = (tasks: readonly BackgroundTask[]): readonly BackgroundTask[] =>
+  tasks.map((task) => (running(task) ? { ...task, status: 'stopped', ended: Date.now() } : task))
 
 /** How long Stop waits to be heard before the process is ended instead. */
 const STOP_HEARD = 5_000
@@ -587,6 +595,22 @@ export class Sessions {
     void this.#live.get(id)?.driver?.control?.({ subtype: 'stop_task', task_id: task }).catch(() => undefined)
   }
 
+  /** Takes one that has ended off the list, as x does in the terminal's `/tasks`. */
+  clearTask(id: string, task: string): void {
+    const live = this.#live.get(id)
+    if (live === undefined || !live.tasks.some((one) => one.id === task && one.status !== 'running')) return
+    live.tasks = live.tasks.filter((one) => one.id !== task)
+    this.#changed()
+  }
+
+  /** What a task in the background has printed so far, or what a helper has said and done. */
+  async taskOutput(id: string, task: string): Promise<TaskOutput | undefined> {
+    const live = this.#live.get(id)
+    const one = live?.tasks.find((each) => each.id === task)
+    if (live === undefined || one === undefined) return undefined
+    return taskOutput(live.root, one.output ?? (await taskFile(live.root, live.id, one.id)), one.kind)
+  }
+
   /** Have a process holding the conversation, started the way its mode needs. */
   async #hold(live: Live): Promise<void> {
     clearTimeout(live.quiet)
@@ -596,7 +620,7 @@ export class Sessions {
     if (live.driver !== undefined && (live.ran !== live.chosen || live.runs !== live.mode)) {
       const old = live.driver
       live.driver = undefined
-      live.tasks = []
+      live.tasks = ended(live.tasks)
       void old.end()
     }
     if (live.driver !== undefined) return
@@ -613,10 +637,10 @@ export class Sessions {
       () => {
         if (live.driver !== driver) return
         live.driver = undefined
-        // What ran in the background went with the process.
-        if (live.remote === undefined && live.tasks.length === 0) return
+        // What ran in the background went with the process. What it printed is still there to read.
+        if (live.remote === undefined && !live.tasks.some(running)) return
         live.remote = undefined
-        live.tasks = []
+        live.tasks = ended(live.tasks)
         this.#changed()
       },
     )
@@ -970,12 +994,17 @@ export class Sessions {
         this.#plan = signal.plan
         this.#deps.plan?.(signal.plan)
         return
-      case 'tasks':
-        live.tasks = signal.tasks
-        // The process was kept for them, and with none left an idle one may go again.
-        if (signal.tasks.length === 0 && live.state !== 'working' && live.state !== 'asks') this.#rest(live)
+      case 'task': {
+        const { task } = signal
+        live.tasks = live.tasks.some((one) => one.id === task.id)
+          ? live.tasks.map((one) => (one.id === task.id ? task : one))
+          : [...live.tasks, task]
+        // The process was kept for them, and with none left running an idle one may go again.
+        const idle = live.state !== 'working' && live.state !== 'asks'
+        if (!running(task) && !live.tasks.some(running) && idle) this.#rest(live)
         this.#changed()
         return
+      }
       case 'begun':
         if (live.state === 'working' || live.state === 'asks') return
         clearTimeout(live.quiet)
@@ -1136,7 +1165,7 @@ export class Sessions {
   #rest(live: Live): void {
     clearTimeout(live.quiet)
     live.quiet = setTimeout(() => {
-      if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.length > 0) return
+      if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.some(running)) return
       live.driver?.end()
       live.driver = undefined
     }, QUIET)
