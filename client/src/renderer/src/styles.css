@@ -1663,6 +1663,24 @@ textarea {
   text-overflow: ellipsis;
 }
 
+/* A command that can go on in the background, with the button that sends it there beside it. */
+.did-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.did-row .did {
+  flex: 1;
+  min-width: 0;
+}
+
+.did-row .quiet {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  font-size: 12px;
+}
+
 .did .glyph,
 .card.answered .glyph {
   flex-shrink: 0;

@@ -1,4 +1,4 @@
-import type { CardAnswer, PlanUsage, SessionImage, SessionItem } from '../../shared/api'
+import type { BackgroundTask, CardAnswer, PlanUsage, SessionImage, SessionItem } from '../../shared/api'
 import type { Wanted } from './rule'
 
 /** What a session hears from the process holding it. */
@@ -27,6 +27,10 @@ export type Signal =
   | { readonly kind: 'spend'; readonly used?: number; readonly cost?: number }
   /** How much of the plan is spent. Said by the tool after every turn, for the whole account. */
   | { readonly kind: 'plan'; readonly plan: PlanUsage }
+  /** Everything it has running in the background now, said each time that changes. */
+  | { readonly kind: 'tasks'; readonly tasks: readonly BackgroundTask[] }
+  /** A turn nobody here started: something in the background finished, or a message came from Remote Control. */
+  | { readonly kind: 'begun' }
   | {
       readonly kind: 'ended'
       /** `offPlan` is never the tool's: it is what Sessions says when it would not start one on a key. */

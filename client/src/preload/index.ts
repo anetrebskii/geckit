@@ -87,6 +87,9 @@ const geckit = {
     /** A command typed after `!`, run in the project; says which conversation it is in. */
     shell: (command: ShellCommand): Promise<string> => ipcRenderer.invoke('chat:shell', command),
     stopShell: (id: string, item: string): void => ipcRenderer.send('chat:stopShell', id, item),
+    /** A command still running, sent on in the background as Ctrl+B does in a terminal. */
+    toBackground: (id: string, item: string): void => ipcRenderer.send('chat:toBackground', id, item),
+    stopTask: (id: string, task: string): void => ipcRenderer.send('chat:stopTask', id, task),
     answer: (id: string, card: string, answer: CardAnswer | string): void =>
       ipcRenderer.send('chat:answer', id, card, answer),
     stop: (id: string): void => ipcRenderer.send('chat:stop', id),

@@ -806,3 +806,54 @@ describe('commands typed after !', () => {
     expect(built.fanned[0]?.items[0]).toMatchObject({ kind: 'shell', terminal: true })
   })
 })
+
+describe('what runs in the background', () => {
+  afterEach(() => vi.useRealTimers())
+
+  const task = { id: 'b1', kind: 'local_bash', what: 'npm run dev' }
+
+  it('shows a turn the tool began by itself as working, and says when it is done', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.fake.hear({ signals: [{ kind: 'begun' }, { kind: 'started', session: id, key: false }] })
+    expect(of(built.rows, id)?.state).toBe('working')
+    built.fake.hear({ signals: [{ kind: 'said', text: 'It printed ready' }, { kind: 'ended', how: 'done' }] })
+    expect(of(built.rows, id)?.state).toBe('unread')
+    expect(built.notes.at(-1)).toMatchObject({ title: 'Finished - app', body: 'It printed ready' })
+  })
+
+  it('lists what runs in the background, keeps the process for it, and lets it go once nothing is left', async () => {
+    vi.useFakeTimers()
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'tasks', tasks: [task] }, { kind: 'ended', how: 'done' }] })
+    expect(of(built.rows, id)?.tasks).toEqual([task])
+    vi.advanceTimersByTime(11 * 60_000)
+    expect(built.fake.ended).toBe(0)
+    built.fake.hear({ signals: [{ kind: 'tasks', tasks: [] }] })
+    expect(of(built.rows, id)?.tasks).toBeUndefined()
+    vi.advanceTimersByTime(11 * 60_000)
+    expect(built.fake.ended).toBe(1)
+  })
+
+  it('sends a command on in the background, and stops a task, over the control channel', async () => {
+    const built = build()
+    const id = await started(built)
+    built.sessions.toBackground(id, 'toolu_1')
+    built.sessions.stopTask(id, 'b1')
+    expect(built.fake.controls).toEqual([
+      { subtype: 'background_tasks', tool_use_id: 'toolu_1' },
+      { subtype: 'stop_task', task_id: 'b1' },
+    ])
+  })
+
+  it('forgets what ran in the background when the process is started again for another model', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'tasks', tasks: [task] }, { kind: 'ended', how: 'done' }] })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', model: 'sonnet', text: 'again' })
+    expect(built.fake.made).toHaveLength(2)
+    expect(of(built.rows, id)?.tasks).toBeUndefined()
+  })
+})

@@ -58,6 +58,7 @@ export function holdClaude(
   const waiting = new Map<string, { readonly done: (answer: Json) => void; readonly refused: (why: Error) => void }>()
   let sent = 0
   let turn = false
+  let turns = 0
   let over = false
   let last = ''
 
@@ -135,7 +136,16 @@ export function holdClaude(
     const read = readClaude(state, message)
     const out: Signal[] = []
     for (const signal of read.signals) {
-      if (signal.kind === 'ended') turn = false
+      if (signal.kind === 'ended') {
+        turn = false
+        turns += 1
+      }
+      // The tool starts a turn of its own when something in the background ends. It
+      // is not taken for one before the first turn is over, when there is nothing in the background yet.
+      if (signal.kind === 'started' && !turn && turns > 0) {
+        turn = true
+        out.push({ kind: 'begun' })
+      }
       if (signal.kind !== 'asks') {
         out.push(signal)
         continue

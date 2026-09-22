@@ -29,34 +29,48 @@ const PAGE = 300
 function Did({
   item,
   onFile,
+  onBackground,
 }: {
   readonly item: Extract<SessionItem, { kind: 'did' }>
   readonly onFile: (path: string, how: FileHow) => void
+  readonly onBackground: (item: string) => void
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const has = item.detail !== undefined || item.path !== undefined
+  const line = (
+    <button
+      type="button"
+      className="did"
+      disabled={!has}
+      {...(item.detail === undefined && item.path !== undefined ? { title: OPENS } : {})}
+      onClick={(event) => {
+        if (item.detail !== undefined) setOpen(!open)
+        else if (item.path !== undefined) onFile(item.path, event.metaKey ? 'reveal' : 'open')
+      }}
+      onContextMenu={(event) => {
+        if (item.path === undefined) return
+        event.preventDefault()
+        onFile(item.path, 'menu')
+      }}
+    >
+      <span className={`glyph${item.live === true ? ' spinning' : ''}`}>
+        <Icon name={item.live === true ? 'spinner' : item.detail === undefined ? 'check' : open ? 'down' : 'right'} size={12} />
+      </span>
+      <span className="what">{item.what}</span>
+    </button>
+  )
   return (
     <>
-      <button
-        type="button"
-        className="did"
-        disabled={!has}
-        {...(item.detail === undefined && item.path !== undefined ? { title: OPENS } : {})}
-        onClick={(event) => {
-          if (item.detail !== undefined) setOpen(!open)
-          else if (item.path !== undefined) onFile(item.path, event.metaKey ? 'reveal' : 'open')
-        }}
-        onContextMenu={(event) => {
-          if (item.path === undefined) return
-          event.preventDefault()
-          onFile(item.path, 'menu')
-        }}
-      >
-        <span className={`glyph${item.live === true ? ' spinning' : ''}`}>
-          <Icon name={item.live === true ? 'spinner' : item.detail === undefined ? 'check' : open ? 'down' : 'right'} size={12} />
-        </span>
-        <span className="what">{item.what}</span>
-      </button>
+      {item.live === true && item.lasting === true ? (
+        <div className="did-row">
+          {line}
+          <button type="button" className="quiet small" onClick={() => onBackground(item.id)} title="Ctrl+B">
+            Run in the background
+          </button>
+        </div>
+      ) : (
+        line
+      )}
       {open && item.detail !== undefined ? <Code detail>{item.detail}</Code> : null}
     </>
   )
@@ -222,6 +236,7 @@ const Turn = memo(function Turn({
   onPicture,
   onCopyAnswer,
   onStopShell,
+  onBackground,
 }: {
   readonly item: SessionItem
   /** When it was said, where it is one to date: a message, or the end of an answer. */
@@ -233,6 +248,7 @@ const Turn = memo(function Turn({
   /** Copies an answer, which is the piece it ends with: what came before it is what was being done. */
   readonly onCopyAnswer: (id: string, text: string) => void
   readonly onStopShell: (item: string) => void
+  readonly onBackground: (item: string) => void
 }): React.JSX.Element {
   const at = item.kind === 'mine' || item.kind === 'theirs' ? item.at : undefined
   // A line of what was done sits close to the next one, so a run of them reads as one list.
@@ -272,7 +288,7 @@ const Turn = memo(function Turn({
           <Prose text={item.text} />
         </div>
       ) : item.kind === 'did' ? (
-        <Did item={item} onFile={onFile} />
+        <Did item={item} onFile={onFile} onBackground={onBackground} />
       ) : item.kind === 'thought' ? (
         <div className="thought">{item.text === '' ? 'Thought about it' : item.text}</div>
       ) : item.kind === 'card' ? (
@@ -317,6 +333,7 @@ export const Transcript = memo(function Transcript({
   onAgain,
   onFile,
   onStopShell,
+  onBackground,
   seek,
 }: {
   /** Which conversation this is, so another one opens at its end rather than where this one was left. */
@@ -328,6 +345,7 @@ export const Transcript = memo(function Transcript({
   /** A file pressed: opened, shown in the Finder, or its menu asked for. */
   readonly onFile: (path: string, how: FileHow) => void
   readonly onStopShell: (item: string) => void
+  readonly onBackground: (item: string) => void
   /** A message to go to once this conversation is read, found by the words searched for. */
   readonly seek?: Seek | undefined
 }): React.JSX.Element {
@@ -478,6 +496,7 @@ export const Transcript = memo(function Transcript({
             onPicture={picture}
             onCopyAnswer={copyAnswer}
             onStopShell={onStopShell}
+            onBackground={onBackground}
           />
         ))}
 
