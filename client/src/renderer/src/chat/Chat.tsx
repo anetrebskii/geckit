@@ -431,6 +431,8 @@ export function Chat(): React.JSX.Element {
               onFile={file}
               onStopShell={chat.stopShell}
               onBackground={chat.toBackground}
+              tasks={chat.session?.tasks}
+              onTasks={chat.showTasks}
               seek={seek}
             />
           </Files>

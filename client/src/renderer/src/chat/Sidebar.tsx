@@ -8,6 +8,7 @@ import { MOD } from '../ui/Shortcuts'
 import { projectName } from './project'
 import { NameField } from './NameField'
 import { Projects } from './Projects'
+import { Dot } from './Tasks'
 import { ago } from './time'
 import type { Chat } from './useChat'
 import { ALL } from './useChat'
@@ -190,7 +191,7 @@ const Row = memo(function Row({
       {picking ? (
         <span className="pick">{picked ? <Icon name="check" size={10} /> : null}</span>
       ) : (
-        <span className={`state ${session.state}`} />
+        <Dot session={session} />
       )}
       <span className="lines">
         {renaming ? (

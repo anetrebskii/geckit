@@ -44,15 +44,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [at, setAt] = useState(0)
   // Escape puts the list away for the @ it was up for.
   const [closed, setClosed] = useState<number | undefined>()
-  const [background, setBackground] = useState(false)
-
   const submit = (): void => {
     if (!TASKS.test(chat.draft)) {
       chat.send()
       return
     }
     chat.setDraft('')
-    setBackground(true)
+    chat.showTasks(true)
   }
 
   // What Up brings back, newest first: what was said in this conversation, and the commands typed after !.
@@ -286,9 +284,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           <Tasks
             session={chat.session?.id}
             tasks={chat.session?.tasks ?? []}
-            open={background}
-            onOpen={() => setBackground(true)}
-            onClose={() => setBackground(false)}
+            open={chat.tasksShown}
+            onOpen={() => chat.showTasks(true)}
+            onClose={() => chat.showTasks(false)}
             onStop={chat.stopTask}
             onClear={chat.clearTask}
           />
