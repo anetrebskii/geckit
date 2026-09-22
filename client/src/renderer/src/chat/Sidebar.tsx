@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
 import type { ChatGrouping, ChatSession } from '../../../shared/api'
@@ -54,6 +54,11 @@ function gather(
 
 type Group = readonly [string, readonly ChatSession[]]
 
+/** A plain press, one with Cmd (Ctrl elsewhere), and one with Shift, which takes the rows between. */
+type Press = 'open' | 'one' | 'run'
+
+const NONE: ReadonlySet<string> = new Set()
+
 /** What waits for the person first, then the rest under their headings. */
 function arrange(
   sessions: readonly ChatSession[],
@@ -82,18 +87,23 @@ function arrange(
 const Row = memo(function Row({
   session,
   on,
+  picking,
+  picked,
   place,
   waits,
   where,
   changed,
   renaming,
-  onOpen,
+  onPress,
   onRenamed,
   onStopRenaming,
   onMenu,
 }: {
   readonly session: ChatSession
   readonly on: boolean
+  /** Rows are being picked to be deleted together, and a press picks rather than opens. */
+  readonly picking: boolean
+  readonly picked: boolean
   /** Its place among the first nine drawn, which Cmd and that number open. */
   readonly place: number | undefined
   /** Stands under Waiting for you, and is tinted by what it waits for. */
@@ -103,24 +113,32 @@ const Row = memo(function Row({
   /** When it last changed: "5m", "14:05", "Yesterday". */
   readonly changed: string
   readonly renaming: boolean
-  readonly onOpen: (session: ChatSession) => void
+  readonly onPress: (session: ChatSession, how: Press) => void
   readonly onRenamed: (id: string, title: string) => void
   readonly onStopRenaming: () => void
   readonly onMenu: (id: string, at: DOMRect) => void
 }): React.JSX.Element {
   return (
     <div
-      className={`row${on ? ' on' : ''}${waits ? ` waits ${session.state}` : ''}`}
+      className={`row${on ? ' on' : ''}${picked ? ' picked' : ''}${waits ? ` waits ${session.state}` : ''}`}
       title={`${session.title === '' ? 'Untitled' : session.title}${place === undefined ? '' : ` (${MOD}+${String(place)})`}`}
-      onClick={() => onOpen(session)}
-      onDoubleClick={() => onRenamed(session.id, '')}
+      onClick={(event) =>
+        onPress(session, event.shiftKey ? 'run' : (MOD === 'Cmd' ? event.metaKey : event.ctrlKey) ? 'one' : 'open')
+      }
+      onDoubleClick={() => {
+        if (!picking) onRenamed(session.id, '')
+      }}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') onOpen(session)
+        if (event.key === 'Enter') onPress(session, 'open')
       }}
     >
-      <span className={`state ${session.state}`} />
+      {picking ? (
+        <span className="pick">{picked ? <Icon name="check" size={10} /> : null}</span>
+      ) : (
+        <span className={`state ${session.state}`} />
+      )}
       <span className="lines">
         {renaming ? (
           <NameField
@@ -168,7 +186,9 @@ const Rows = memo(function Rows({
   shownId,
   folded,
   renaming,
-  onOpen,
+  picked,
+  onPress,
+  onPickAll,
   onRenamed,
   onStopRenaming,
   onMenu,
@@ -184,14 +204,18 @@ const Rows = memo(function Rows({
   readonly shownId: string | undefined
   readonly folded: ReadonlySet<string>
   readonly renaming: string | undefined
-  readonly onOpen: (session: ChatSession) => void
+  readonly picked: ReadonlySet<string>
+  readonly onPress: (session: ChatSession, how: Press) => void
+  /** Picks every row under a heading, or lets them all go where every one was picked. */
+  readonly onPickAll: (rows: readonly ChatSession[]) => void
   readonly onRenamed: (id: string, title: string) => void
   readonly onStopRenaming: () => void
   readonly onMenu: (id: string, at: DOMRect) => void
   readonly onFold: (where: string) => void
 }): React.JSX.Element {
+  const picking = picked.size > 0
   return (
-    <div className="sessions">
+    <div className={`sessions${picking ? ' picking' : ''}`}>
       {empty !== undefined ? (
         <div className="empty">{empty}</div>
       ) : groups.length === 0 ? (
@@ -201,23 +225,32 @@ const Rows = memo(function Rows({
       ) : (
         groups.map(([where, rows]) => (
           <div key={where}>
-            <button type="button" className="group" onClick={() => onFold(where)}>
-              <Icon name={folded.has(where) ? 'right' : 'down'} size={10} />
-              {where}
-              <span className="spacer" />
-              <span className="count">{rows.length}</span>
-            </button>
+            <div className="group-head">
+              <button type="button" className="group" onClick={() => onFold(where)}>
+                <Icon name={folded.has(where) ? 'right' : 'down'} size={10} />
+                {where}
+                <span className="spacer" />
+                <span className="count">{rows.length}</span>
+              </button>
+              {picking ? (
+                <button type="button" className="group-pick" onClick={() => onPickAll(rows)}>
+                  {rows.every((one) => picked.has(one.id)) ? 'Deselect' : 'Select all'}
+                </button>
+              ) : null}
+            </div>
             {(folded.has(where) ? [] : rows).map((session) => (
               <Row
                 key={session.id}
                 session={session}
-                on={session.id === shownId}
+                on={!picking && session.id === shownId}
+                picking={picking}
+                picked={picked.has(session.id)}
                 place={places.get(session.id)}
                 waits={where === WAITING}
                 where={where === WAITING || (by === 'time' && scope === ALL) ? projectName(session.root) : undefined}
                 changed={ago(session.at, now, by === 'time')}
                 renaming={renaming === session.id}
-                onOpen={onOpen}
+                onPress={onPress}
                 onRenamed={onRenamed}
                 onStopRenaming={onStopRenaming}
                 onMenu={onMenu}
@@ -244,7 +277,12 @@ export function Sidebar({
   readonly onKeys: () => void
 }): React.JSX.Element {
   const [menu, setMenu] = useState<{ id: string; at: DOMRect } | undefined>()
-  const [deleting, setDeleting] = useState<ChatSession | undefined>()
+  const [deleting, setDeleting] = useState<readonly ChatSession[] | undefined>()
+  // What is picked belongs to the list it was picked in, and another project's list starts with nothing picked.
+  const [picks, setPicks] = useState<{ readonly scope: string; readonly ids: ReadonlySet<string> }>({
+    scope: '',
+    ids: NONE,
+  })
   const [grouping, setGrouping] = useState<DOMRect | undefined>()
   // A folder worked in every day has hundreds of conversations, and the next
   // folder is below all of them until its heading is pressed.
@@ -291,6 +329,86 @@ export function Sidebar({
   useEffect(() => {
     orderRef.current = drawn
   }, [orderRef, drawn])
+
+  const scope = chat.scope
+  // One that has gone from the list meanwhile is not picked any more.
+  const picked = useMemo(() => {
+    if (picks.scope !== scope) return NONE
+    const there = new Set(groups.flatMap(([, rows]) => rows.map((one) => one.id)).filter((id) => picks.ids.has(id)))
+    return there.size === 0 ? NONE : there
+  }, [picks, scope, groups])
+  const chosen = useMemo(() => groups.flatMap(([, rows]) => rows).filter((one) => picked.has(one.id)), [groups, picked])
+  const pickedRef = useRef(picked)
+  // Where Shift+click counts from: the row pressed last, or the one open.
+  const fromRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    pickedRef.current = picked
+  }, [picked])
+  const pick = useCallback(
+    (ids: ReadonlySet<string>) => {
+      pickedRef.current = ids
+      setPicks({ scope, ids })
+    },
+    [scope],
+  )
+
+  const show = chat.show
+  const shownId = chat.shown.kind === 'session' ? chat.shown.id : undefined
+  const press = useCallback(
+    (session: ChatSession, how: Press) => {
+      const held = pickedRef.current
+      const from = fromRef.current ?? shownId
+      fromRef.current = session.id
+      if (how === 'open' && held.size === 0) {
+        show(session)
+        return
+      }
+      const next = new Set(held)
+      const order = orderRef.current.map((one) => one.id)
+      const start = from === undefined ? -1 : order.indexOf(from)
+      const at = order.indexOf(session.id)
+      if (how === 'run' && start !== -1 && at !== -1) {
+        for (const id of order.slice(Math.min(start, at), Math.max(start, at) + 1)) next.add(id)
+      } else if (!next.delete(session.id)) next.add(session.id)
+      pick(next)
+    },
+    [show, shownId, orderRef, pick],
+  )
+  const pickAll = useCallback(
+    (rows: readonly ChatSession[]) => {
+      const held = pickedRef.current
+      const every = rows.every((one) => held.has(one.id))
+      const next = new Set(held)
+      for (const one of rows) {
+        if (every) next.delete(one.id)
+        else next.add(one.id)
+      }
+      pick(next)
+    },
+    [pick],
+  )
+
+  // Esc lets go of what is picked before it stops an answer, and Delete asks about deleting it.
+  useEffect(() => {
+    if (chosen.length === 0 && deleting === undefined) return
+    const key = (event: KeyboardEvent): void => {
+      const field =
+        event.target instanceof HTMLElement &&
+        (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        if (deleting !== undefined) setDeleting(undefined)
+        else pick(NONE)
+      }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && !field && deleting === undefined) {
+        event.preventDefault()
+        setDeleting(chosen)
+      }
+    }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+  }, [chosen, deleting, pick])
   // Waiting for you is left open, so what comes into it is seen.
   const headings = groups.map(([where]) => where).filter((where) => where !== WAITING)
   const allFolded = headings.length > 0 && headings.every((where) => folded.has(where))
@@ -366,10 +484,12 @@ export function Sidebar({
         now={now}
         scope={chat.scope}
         empty={chat.root === undefined ? 'Add a project folder to start.' : undefined}
-        shownId={chat.shown.kind === 'session' ? chat.shown.id : undefined}
+        shownId={shownId}
         folded={folded}
         renaming={renaming}
-        onOpen={chat.show}
+        picked={picked}
+        onPress={press}
+        onPickAll={pickAll}
         onRenamed={renamed}
         onStopRenaming={stopRenaming}
         onMenu={openMenu}
@@ -382,6 +502,7 @@ export function Sidebar({
           choices={[
             { value: 'rename', label: 'Rename' },
             { value: 'terminal', label: 'Continue in a terminal' },
+            { value: 'select', label: 'Select', says: `${MOD}+click` },
             { value: 'hide', label: 'Hide from this list' },
             { value: 'delete', label: 'Delete', danger: true },
           ]}
@@ -389,7 +510,14 @@ export function Sidebar({
             if (value === 'rename') setRenaming(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)
             if (value === 'hide') chat.hide(menu.id)
-            if (value === 'delete') setDeleting(chat.sessions.find((one) => one.id === menu.id))
+            if (value === 'select') {
+              fromRef.current = menu.id
+              pick(new Set([menu.id]))
+            }
+            if (value === 'delete') {
+              const one = groups.flatMap(([, rows]) => rows).find((row) => row.id === menu.id)
+              if (one !== undefined) setDeleting([one])
+            }
           }}
           onClose={() => setMenu(undefined)}
         />
@@ -409,14 +537,39 @@ export function Sidebar({
         />
       )}
 
+      {chosen.length === 0 ? null : (
+        <div className="picked-bar">
+          <span>{chosen.length === 1 ? '1 conversation' : `${String(chosen.length)} conversations`}</span>
+          <span className="spacer" />
+          <button type="button" className="quiet" title="Esc" onClick={() => pick(NONE)}>
+            Cancel
+          </button>
+          <button type="button" className="primary danger" title="Delete" onClick={() => setDeleting(chosen)}>
+            Delete
+          </button>
+        </div>
+      )}
+
       {deleting === undefined ? null : (
         <div className="dialog-scrim" onMouseDown={() => setDeleting(undefined)}>
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
-            <h2>Delete "{deleting.title === '' ? 'Untitled' : deleting.title}"?</h2>
-            <p>
-              Claude Code keeps this conversation in a file of its own. Deleting it here deletes that file, and nothing
-              anywhere keeps a copy.
-            </p>
+            {deleting.length === 1 ? (
+              <>
+                <h2>Delete "{deleting[0]?.title === '' ? 'Untitled' : deleting[0]?.title}"?</h2>
+                <p>
+                  Claude Code keeps this conversation in a file of its own. Deleting it here deletes that file, and
+                  nothing anywhere keeps a copy.
+                </p>
+              </>
+            ) : (
+              <>
+                <h2>Delete {deleting.length} conversations?</h2>
+                <p>
+                  Claude Code keeps each conversation in a file of its own. Deleting them here deletes those files, and
+                  nothing anywhere keeps a copy.
+                </p>
+              </>
+            )}
             <div className="dialog-actions">
               <button type="button" className="quiet" autoFocus onClick={() => setDeleting(undefined)}>
                 Cancel
@@ -425,8 +578,9 @@ export function Sidebar({
                 type="button"
                 className="primary danger"
                 onClick={() => {
-                  chat.remove(deleting.id)
+                  chat.remove(deleting.map((one) => one.id))
                   setDeleting(undefined)
+                  pick(NONE)
                 }}
               >
                 Delete

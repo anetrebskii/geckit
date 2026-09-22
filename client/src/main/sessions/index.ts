@@ -618,18 +618,21 @@ export class Sessions {
   }
 
   /**
-   * Throw a conversation away, the file the tool keeps it in and all.
+   * Throw conversations away, the files the tool keeps them in and all, and say which files went.
    *
-   * There is no copy of it anywhere, which is why the window asks first.
+   * There is no copy of them anywhere, which is why the window asks first. The list is sent once, after the last of them.
    */
-  async remove(id: string): Promise<boolean> {
-    const root = this.#live.get(id)?.root ?? this.#rows.get(id)?.root
-    if (root === undefined) return false
-    // The tool writes to the file as it exits, so it goes first.
-    await this.#letGo(id)
-    const gone = await (this.#deps.disk?.delete ?? deleteClaude)(root, id).catch(() => false)
-    this.#rows.delete(id)
-    this.#note(id, { hidden: true })
+  async remove(ids: readonly string[]): Promise<string[]> {
+    const gone: string[] = []
+    for (const id of ids) {
+      const root = this.#live.get(id)?.root ?? this.#rows.get(id)?.root
+      if (root === undefined) continue
+      // The tool writes to the file as it exits, so it goes first.
+      await this.#letGo(id)
+      if (await (this.#deps.disk?.delete ?? deleteClaude)(root, id).catch(() => false)) gone.push(id)
+      this.#rows.delete(id)
+      this.#note(id, { hidden: true })
+    }
     this.#changed()
     return gone
   }

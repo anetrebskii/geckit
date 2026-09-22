@@ -89,8 +89,8 @@ const geckit = {
     mode: (id: string, mode: SessionMode): void => ipcRenderer.send('chat:mode', id, mode),
     rename: (id: string, title: string): void => ipcRenderer.send('chat:rename', id, title),
     hide: (id: string): void => ipcRenderer.send('chat:hide', id),
-    /** Deletes the file the tool keeps it in. True where it is gone. */
-    remove: (id: string): Promise<boolean> => ipcRenderer.invoke('chat:delete', id),
+    /** Deletes the files the tool keeps them in, and says whose are gone. */
+    remove: (ids: readonly string[]): Promise<readonly string[]> => ipcRenderer.invoke('chat:delete', ids),
     /** Which session is in front, so an answer that arrives here is not announced. */
     watching: (id: string | undefined): void => ipcRenderer.send('chat:watching', id),
     /** Opens a terminal in the project with `claude --resume` already running. */

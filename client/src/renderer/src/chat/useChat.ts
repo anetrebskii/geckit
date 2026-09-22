@@ -89,8 +89,8 @@ export interface Chat {
   stop: () => void
   rename: (id: string, title: string) => void
   hide: (id: string) => void
-  /** Throws the conversation away for good. The window asks before this is called. */
-  remove: (id: string) => void
+  /** Throws the conversations away for good. The window asks before this is called. */
+  remove: (ids: readonly string[]) => void
   terminal: (id: string) => void
   refresh: () => void
 }
@@ -371,9 +371,10 @@ export function useChat(): Chat {
   )
 
   const remove = useCallback(
-    (id: string) => {
-      void window.geckit.chat.remove(id).then((gone) => {
-        if (gone && shownRef.current.kind === 'session' && shownRef.current.id === id) open({ kind: 'new' })
+    (ids: readonly string[]) => {
+      void window.geckit.chat.remove(ids).then((gone) => {
+        const shownNow = shownRef.current
+        if (shownNow.kind === 'session' && gone.includes(shownNow.id)) open({ kind: 'new' })
       })
     },
     [open],
