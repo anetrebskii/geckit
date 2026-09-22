@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { modelName, SESSION_MODES } from '../../../shared/api'
 import type { SessionMode } from '../../../shared/api'
@@ -40,6 +40,21 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [at, setAt] = useState(0)
   // Escape puts the list away for the @ it was up for.
   const [closed, setClosed] = useState<number | undefined>()
+
+  // What Up brings back, newest first: what was said in this conversation, and the commands typed after !.
+  const said = useMemo(() => {
+    const all: string[] = []
+    for (const item of chat.items) {
+      const text = item.kind === 'mine' ? item.text : item.kind === 'shell' ? `!${item.command}` : ''
+      if (text.trim() !== '' && all.at(-1) !== text) all.push(text)
+    }
+    return all.reverse()
+  }, [chat.items])
+  // How far back Up has gone, and what was in the field before it did, which Down past the newest puts back.
+  const recall = useRef<{ readonly at: number; readonly kept: string } | undefined>(undefined)
+  useEffect(() => {
+    recall.current = undefined
+  }, [chat.shown])
 
   const root = chat.root
   const mention = root === undefined ? undefined : mentionAt(chat.draft, caret)
@@ -176,6 +191,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           placeholder={chat.root === undefined ? 'Add a project folder first' : 'Ask Claude Code. @ picks a file, ! runs a command'}
           disabled={chat.root === undefined}
           onChange={(event) => {
+            recall.current = undefined
             chat.setDraft(event.target.value)
             setCaret(event.target.selectionStart)
             setAt(0)
@@ -204,6 +220,25 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 event.preventDefault()
                 event.stopPropagation()
                 setClosed(mention.from)
+                return
+              }
+            }
+            // Up on the first line goes back through what was said, and Down on the last comes forward again.
+            if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.shiftKey && !event.altKey && !event.metaKey) {
+              const area = event.currentTarget
+              const up = event.key === 'ArrowUp'
+              const edge =
+                area.selectionStart === area.selectionEnd &&
+                !(up ? area.value.slice(0, area.selectionStart) : area.value.slice(area.selectionEnd)).includes('\n')
+              const next = up ? (recall.current?.at ?? -1) + 1 : (recall.current?.at ?? 0) - 1
+              if (edge && (up ? next < said.length : recall.current !== undefined)) {
+                event.preventDefault()
+                const kept = recall.current?.kept ?? chat.draft
+                const text = next < 0 ? kept : (said[next] ?? kept)
+                recall.current = next < 0 ? undefined : { at: next, kept }
+                chat.setDraft(text)
+                putCaret.current = text.length
+                setCaret(text.length)
                 return
               }
             }
