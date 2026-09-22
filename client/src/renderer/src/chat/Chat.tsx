@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_SETTINGS, resumeCommand } from '../../../shared/api'
 import type { ChatSession } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
-import { Picker } from '../ui/Menu'
+import { Menu, Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Composer } from './Composer'
@@ -57,6 +57,12 @@ export function Chat(): React.JSX.Element {
   const [naming, setNaming] = useState<string | undefined>()
   // Asking whether to leave this conversation for a new one about something else.
   const [clearing, setClearing] = useState(false)
+  // The Remote Control menu, the conversation it is being switched for, and why the tool would not.
+  const [remoting, setRemoting] = useState<DOMRect | undefined>()
+  const [remoteBusy, setRemoteBusy] = useState<string | undefined>()
+  const [remoteTrouble, setRemoteTrouble] = useState<string | undefined>()
+  // The conversation whose terminal command was just copied, for the check that says so.
+  const [copied, setCopied] = useState<string | undefined>()
   const grab = useRef(0)
   const { addFiles, send, root } = chat
 
@@ -134,10 +140,11 @@ export function Chat(): React.JSX.Element {
     }
 
     const key = (event: KeyboardEvent): void => {
-      if (clearing) {
+      if (clearing || remoteTrouble !== undefined) {
         if (event.key === 'Escape') {
           event.preventDefault()
           setClearing(false)
+          setRemoteTrouble(undefined)
         }
         return
       }
@@ -226,9 +233,22 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys, clearing])
+  }, [chat, switching, setting, keys, clearing, remoteTrouble])
 
   const title = chat.session?.title ?? 'New conversation'
+
+  const remote = (value: string): void => {
+    const session = chat.session
+    if (session === undefined) return
+    if (value === 'open' && session.remote !== undefined) window.geckit.chat.openLink(session.remote)
+    if (value === 'copy' && session.remote !== undefined) void navigator.clipboard.writeText(session.remote)
+    if (value !== 'on' && value !== 'off') return
+    setRemoteBusy(session.id)
+    void window.geckit.chat.remote(session.id, value === 'on').then((said) => {
+      setRemoteBusy(undefined)
+      if (said.error !== undefined) setRemoteTrouble(said.error)
+    })
+  }
 
   return (
     <div
@@ -325,6 +345,20 @@ export function Chat(): React.JSX.Element {
             <>
               <button
                 type="button"
+                className={`picker no-drag${chat.session.remote === undefined ? '' : ' remote-on'}`}
+                disabled={remoteBusy === chat.session.id}
+                title={
+                  chat.session.remote === undefined
+                    ? 'Remote Control: continue this conversation from claude.ai or the Claude app'
+                    : 'Remote Control is on'
+                }
+                onClick={(event) => setRemoting(event.currentTarget.getBoundingClientRect())}
+              >
+                {chat.session.remote === undefined ? null : <span className="remote-dot" />}
+                {remoteBusy === chat.session.id ? 'Remote...' : 'Remote'}
+              </button>
+              <button
+                type="button"
                 className="picker no-drag"
                 title="Start a new conversation in this project, for another task"
                 onClick={() => setClearing(true)}
@@ -334,11 +368,21 @@ export function Chat(): React.JSX.Element {
               <button
                 type="button"
                 className="icon-button no-drag"
-                title={`Continue in a terminal: ${resumeCommand(chat.session.id)}`}
-                aria-label="Continue in a terminal"
-                onClick={() => chat.session !== undefined && chat.terminal(chat.session.id)}
+                title={
+                  copied === chat.session.id
+                    ? 'Copied'
+                    : `Copy the command that continues it in a terminal: ${resumeCommand(chat.session.id)}`
+                }
+                aria-label="Copy the terminal command"
+                onClick={() => {
+                  if (chat.session === undefined) return
+                  const id = chat.session.id
+                  chat.copyTerminal(id)
+                  setCopied(id)
+                  setTimeout(() => setCopied((now) => (now === id ? undefined : now)), 1500)
+                }}
               >
-                <Icon name="terminal" />
+                <Icon name={copied === chat.session.id ? 'check' : 'terminal'} />
               </button>
               <button
                 type="button"
@@ -394,6 +438,47 @@ export function Chat(): React.JSX.Element {
         <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />
       ) : null}
       {keys ? <ShortcutsDialog onClose={closeKeys} /> : null}
+      {remoting === undefined || chat.session === undefined ? null : (
+        <Menu
+          anchor={remoting}
+          title="Remote Control"
+          explained
+          choices={
+            chat.session.remote === undefined
+              ? [
+                  {
+                    value: 'on',
+                    label: 'Turn on',
+                    says: 'Continue this conversation from claude.ai or the Claude app. It is kept running here until it is turned off.',
+                  },
+                ]
+              : [
+                  ...(chat.session.remote === ''
+                    ? []
+                    : [
+                        { value: 'open', label: 'Open on claude.ai' },
+                        { value: 'copy', label: 'Copy the link' },
+                      ]),
+                  { value: 'off', label: 'Turn off' },
+                ]
+          }
+          onPick={remote}
+          onClose={() => setRemoting(undefined)}
+        />
+      )}
+      {remoteTrouble === undefined ? null : (
+        <div className="dialog-scrim" onMouseDown={() => setRemoteTrouble(undefined)}>
+          <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
+            <h2>Remote Control did not start</h2>
+            <p>{remoteTrouble}</p>
+            <div className="dialog-actions">
+              <button type="button" className="primary" autoFocus onClick={() => setRemoteTrouble(undefined)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {clearing && chat.session !== undefined ? (
         <div className="dialog-scrim" onMouseDown={() => setClearing(false)}>
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>

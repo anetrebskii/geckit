@@ -1521,6 +1521,17 @@ textarea {
   font-size: 11px;
 }
 
+.talk-head .remote-on {
+  color: var(--text);
+}
+
+.remote-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+}
+
 .talk-head .title-field {
   width: min(420px, 60%);
   padding: 2px 6px;

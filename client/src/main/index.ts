@@ -34,6 +34,7 @@ import { projectFiles } from './files'
 import { fetchGit, gitState } from './git'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
+import type { McpChange } from './sessions/mcp'
 import { searchClaude } from './sessions/search'
 import { forgetProject, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
@@ -295,6 +296,11 @@ function wire(): void {
   ipcMain.on('chat:watching', (_event, id: string | undefined) =>
     sessions?.watching(watchingChat() ? id : undefined),
   )
+  ipcMain.handle('chat:remote', (_event, id: string, on: boolean) => sessions?.remote(id, on) ?? { error: 'Not ready yet.' })
+  ipcMain.handle('chat:mcp', (_event, root: string, id: string | undefined, change: McpChange | undefined) =>
+    sessions?.mcp(root, id ?? undefined, change ?? undefined),
+  )
+  ipcMain.on('chat:handOver', (_event, id: string) => sessions?.handOver(id))
   ipcMain.on('chat:terminal', (_event, id: string, root: string) => {
     sessions?.handOver(id)
     openTerminal(root, id)

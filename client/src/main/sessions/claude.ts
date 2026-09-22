@@ -37,6 +37,8 @@ export interface ClaudeOptions {
 }
 
 /** Several questions asked at once, being answered one card at a time. */
+type Json = Readonly<Record<string, unknown>>
+
 interface Asked {
   readonly request: ClaudeRequest
   readonly answers: Record<string, string>
@@ -52,6 +54,9 @@ export function holdClaude(
   const state = claudeState(options.root)
   const requests = new Map<string, ClaudeRequest>()
   const asked = new Map<string, Asked>()
+  // Requests of ours on the control channel, waiting for the tool to answer them.
+  const waiting = new Map<string, { readonly done: (answer: Json) => void; readonly refused: (why: Error) => void }>()
+  let sent = 0
   let turn = false
   let over = false
   let last = ''
@@ -117,6 +122,16 @@ export function holdClaude(
     } catch {
       return
     }
+    if (message['type'] === 'control_response') {
+      const response = (message['response'] ?? {}) as Json
+      const id = typeof response['request_id'] === 'string' ? response['request_id'] : ''
+      const one = waiting.get(id)
+      if (one === undefined) return
+      waiting.delete(id)
+      if (response['subtype'] === 'success') one.done((response['response'] ?? {}) as Json)
+      else one.refused(new Error(typeof response['error'] === 'string' ? response['error'] : 'Claude Code refused it.'))
+      return
+    }
     const read = readClaude(state, message)
     const out: Signal[] = []
     for (const signal of read.signals) {
@@ -146,12 +161,18 @@ export function holdClaude(
     last = `${last}${chunk.toString('utf8')}`.slice(-2_000)
   })
 
+  const unanswered = (): void => {
+    for (const one of waiting.values()) one.refused(new Error('Claude Code has stopped.'))
+    waiting.clear()
+  }
   child.on('error', (error) => {
     over = true
+    unanswered()
     gaveOut(error.message)
     left()
   })
   child.on('close', () => {
+    unanswered()
     if (over) return
     over = true
     gaveOut(last.trim())
@@ -217,6 +238,15 @@ export function holdClaude(
         requests.delete(ask)
         deny(request, AGAIN)
       }
+    },
+
+    control(request) {
+      if (over) return Promise.reject(new Error('Claude Code has stopped.'))
+      const id = `ask-${String(++sent)}`
+      return new Promise((done, refused) => {
+        waiting.set(id, { done, refused })
+        write({ type: 'control_request', request_id: id, request })
+      })
     },
 
     stop() {

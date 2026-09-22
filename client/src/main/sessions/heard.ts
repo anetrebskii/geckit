@@ -49,6 +49,8 @@ export interface Driver {
   answer(ask: string, answer: CardAnswer | string): void
   /** How it may act from here on, without starting it again. What is under `again` is handed back to be tried once more under it. */
   permit?(mode: 'auto' | 'manual', again: readonly string[]): void
+  /** A request on the tool's control channel, answered with what it said back. Refused where the tool refused it or has gone. */
+  control?(request: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
   stop(): void
   /** Lets go of it, settled once the process has gone. The conversation stays where the tool keeps it. */
   end(): Promise<void>

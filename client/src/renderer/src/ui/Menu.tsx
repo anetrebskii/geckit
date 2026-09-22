@@ -17,6 +17,8 @@ export interface Choice {
   readonly label: string
   readonly says?: string
   readonly danger?: boolean
+  /** Checked whatever is chosen, for a menu of things each on or off. */
+  readonly on?: boolean
 }
 
 export function Menu({
@@ -99,7 +101,7 @@ export function Menu({
             }}
           >
             <span style={{ width: 14, flexShrink: 0 }}>
-              {choice.value === chosen ? <Icon name="check" size={13} /> : null}
+              {choice.value === chosen || choice.on === true ? <Icon name="check" size={13} /> : null}
             </span>
             <span className="label">{choice.label}</span>
             {choice.says === undefined ? null : <span className="says">{choice.says}</span>}

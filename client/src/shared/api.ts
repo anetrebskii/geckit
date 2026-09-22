@@ -169,6 +169,14 @@ export interface ChatSession {
   readonly spend?: SessionSpend
   /** When it was last in front in this window, in milliseconds. */
   readonly seen?: number
+  /** Remote Control is on, and this is where the conversation is on claude.ai. */
+  readonly remote?: string
+}
+
+/** One MCP server Claude Code has for a project, and the tool's word for how it stands: `connected`, `failed`, `needs-auth`, `pending`, `disabled`. */
+export interface McpServer {
+  readonly name: string
+  readonly status: string
 }
 
 /** A picture sent with a message: what it is, and the picture itself as base64. */
