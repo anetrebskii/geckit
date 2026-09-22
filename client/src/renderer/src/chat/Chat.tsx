@@ -167,6 +167,15 @@ export function Chat(): React.JSX.Element {
         if (list.length > from) toRecent({ list, at: by > 0 ? from : list.length - 1 })
         return
       }
+      // As in a terminal: the command Claude is waiting on goes on in the background, and the turn goes on without it.
+      if (event.ctrlKey && !event.metaKey && event.key === 'b') {
+        const lasting = chat.items.findLast((one) => one.kind === 'did' && one.live === true && one.lasting === true)
+        if (lasting !== undefined) {
+          event.preventDefault()
+          chat.toBackground(lasting.id)
+          return
+        }
+      }
       const meta = event.metaKey || event.ctrlKey
       if (meta && event.key === ',') {
         event.preventDefault()
@@ -421,6 +430,7 @@ export function Chat(): React.JSX.Element {
               onAgain={again}
               onFile={file}
               onStopShell={chat.stopShell}
+              onBackground={chat.toBackground}
               seek={seek}
             />
           </Files>

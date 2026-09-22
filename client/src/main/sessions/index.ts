@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 
 import type {
+  BackgroundTask,
   CardAnswer,
   ChatSession,
   ClaudeAccount,
@@ -168,6 +169,8 @@ interface Live {
   told: { readonly id: string; readonly blocks: readonly string[] }[]
   /** Commands still running, by the item showing them. */
   commands: Map<string, Running>
+  /** What the tool has running in the background, which goes with its process. */
+  tasks: readonly BackgroundTask[]
   back: NodeJS.Timeout | undefined
   stopping: NodeJS.Timeout | undefined
 }
@@ -299,6 +302,7 @@ export class Sessions {
         ...(chosen === undefined ? {} : { chosen }),
         ...(note?.seen === undefined ? {} : { seen: note.seen }),
         ...(live?.remote === undefined ? {} : { remote: live.remote }),
+        ...(live === undefined || live.tasks.length === 0 ? {} : { tasks: live.tasks }),
         ...(used === undefined && cost === undefined
           ? {}
           : {
@@ -378,6 +382,7 @@ export class Sessions {
       remote: undefined,
       told: [],
       commands: new Map(),
+      tasks: [],
       back: undefined,
       stopping: undefined,
     }
@@ -573,6 +578,15 @@ export class Sessions {
     this.#live.get(id)?.commands.get(item)?.stop()
   }
 
+  /** A command the tool is waiting on, sent on in the background: the turn goes on, and so does the command. */
+  toBackground(id: string, item: string): void {
+    void this.#live.get(id)?.driver?.control?.({ subtype: 'background_tasks', tool_use_id: item }).catch(() => undefined)
+  }
+
+  stopTask(id: string, task: string): void {
+    void this.#live.get(id)?.driver?.control?.({ subtype: 'stop_task', task_id: task }).catch(() => undefined)
+  }
+
   /** Have a process holding the conversation, started the way its mode needs. */
   async #hold(live: Live): Promise<void> {
     clearTimeout(live.quiet)
@@ -582,6 +596,7 @@ export class Sessions {
     if (live.driver !== undefined && (live.ran !== live.chosen || live.runs !== live.mode)) {
       const old = live.driver
       live.driver = undefined
+      live.tasks = []
       void old.end()
     }
     if (live.driver !== undefined) return
@@ -598,8 +613,10 @@ export class Sessions {
       () => {
         if (live.driver !== driver) return
         live.driver = undefined
-        if (live.remote === undefined) return
+        // What ran in the background went with the process.
+        if (live.remote === undefined && live.tasks.length === 0) return
         live.remote = undefined
+        live.tasks = []
         this.#changed()
       },
     )
@@ -953,6 +970,21 @@ export class Sessions {
         this.#plan = signal.plan
         this.#deps.plan?.(signal.plan)
         return
+      case 'tasks':
+        live.tasks = signal.tasks
+        // The process was kept for them, and with none left an idle one may go again.
+        if (signal.tasks.length === 0 && live.state !== 'working' && live.state !== 'asks') this.#rest(live)
+        this.#changed()
+        return
+      case 'begun':
+        if (live.state === 'working' || live.state === 'asks') return
+        clearTimeout(live.quiet)
+        live.state = 'working'
+        live.stands = 'Working'
+        live.last = undefined
+        live.at = this.#now()
+        this.#changed()
+        return
       case 'asks':
         this.#asked(live, signal.ask, signal.wanted, signal.line)
         return
@@ -1100,11 +1132,11 @@ export class Sessions {
     this.#rest(live)
   }
 
-  /** An idle process is let go of after a while, unless Remote Control is keeping it. */
+  /** An idle process is let go of after a while, unless Remote Control or something in the background is keeping it. */
   #rest(live: Live): void {
     clearTimeout(live.quiet)
     live.quiet = setTimeout(() => {
-      if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined) return
+      if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.length > 0) return
       live.driver?.end()
       live.driver = undefined
     }, QUIET)

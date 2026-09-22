@@ -75,6 +75,8 @@ export type SessionItem =
       /** A file this was about, as the project names it. */
       readonly path?: string
       readonly live?: boolean
+      /** A command that has run long enough to be sent on in the background, as Ctrl+B does in a terminal. */
+      readonly lasting?: boolean
     }
   | { readonly kind: 'thought'; readonly id: string; readonly text: string }
   | {
@@ -97,7 +99,7 @@ export type SessionItem =
   | {
       readonly kind: 'note'
       readonly id: string
-      readonly note: 'stopped' | 'limit' | 'failed' | 'summarised' | 'mode'
+      readonly note: 'stopped' | 'limit' | 'failed' | 'summarised' | 'mode' | 'task'
       readonly text: string
       /** The tool's own last words, under "What it said". */
       readonly detail?: string
@@ -190,6 +192,16 @@ export interface ChatSession {
   readonly seen?: number
   /** Remote Control is on, and this is where the conversation is on claude.ai. */
   readonly remote?: string
+  /** What Claude Code has running in the background for it. */
+  readonly tasks?: readonly BackgroundTask[]
+}
+
+/** One thing Claude Code has running in the background: a command, a watch or a helper. */
+export interface BackgroundTask {
+  readonly id: string
+  /** The tool's word for what it is: `local_bash`, `local_agent`, `remote_agent`, `local_workflow`. */
+  readonly kind: string
+  readonly what: string
 }
 
 /** One MCP server Claude Code has for a project, and the tool's word for how it stands: `connected`, `failed`, `needs-auth`, `pending`, `disabled`. */

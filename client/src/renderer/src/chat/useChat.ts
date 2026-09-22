@@ -90,6 +90,9 @@ export interface Chat {
   stop: () => void
   /** Stops a command typed after `!` that is still running. */
   stopShell: (item: string) => void
+  /** Sends a command Claude is waiting on into the background, as Ctrl+B does in a terminal. */
+  toBackground: (item: string) => void
+  stopTask: (task: string) => void
   rename: (id: string, title: string) => void
   hide: (id: string) => void
   /** Throws the conversations away for good. The window asks before this is called. */
@@ -342,6 +345,14 @@ export function useChat(): Chat {
     if (shownRef.current.kind === 'session') window.geckit.chat.stopShell(shownRef.current.id, item)
   }, [])
 
+  const toBackground = useCallback((item: string) => {
+    if (shownRef.current.kind === 'session') window.geckit.chat.toBackground(shownRef.current.id, item)
+  }, [])
+
+  const stopTask = useCallback((task: string) => {
+    if (shownRef.current.kind === 'session') window.geckit.chat.stopTask(shownRef.current.id, task)
+  }, [])
+
   const answer = useCallback((card: string, said: CardAnswer | string) => {
     if (shownRef.current.kind !== 'session') return
     window.geckit.chat.answer(shownRef.current.id, card, said)
@@ -489,6 +500,8 @@ export function useChat(): Chat {
       window.geckit.chat.stop(shownRef.current.id)
     },
     stopShell,
+    toBackground,
+    stopTask,
     rename,
     hide,
     remove,

@@ -6,6 +6,7 @@ import { mentionAt, pathsFor } from '../../../shared/paths'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 import { Mcp } from './Mcp'
+import { Tasks } from './Tasks'
 import type { Choice } from '../ui/Menu'
 import { projectName } from './project'
 import type { Chat } from './useChat'
@@ -269,6 +270,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             }}
           />
           {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
+          {chat.session?.tasks === undefined ? null : <Tasks tasks={chat.session.tasks} onStop={chat.stopTask} />}
           {chat.root !== undefined && chat.draft.trim().startsWith('!') ? (
             <span className="composer-hint">
               Runs in {projectName(chat.root)}. Claude sees what it prints with your next message

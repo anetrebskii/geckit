@@ -1,4 +1,4 @@
-import type { PlanUsage, PlanWindow, SessionImage, SessionItem } from '../../shared/api'
+import type { BackgroundTask, PlanUsage, PlanWindow, SessionImage, SessionItem } from '../../shared/api'
 import { askId, cardId } from './heard'
 import type { Signal } from './heard'
 import { filesAmong } from './rule'
@@ -7,6 +7,7 @@ import {
   answeredLine,
   cardFor,
   claudeLine,
+  movedLine,
   questionsFromClaude,
   saidLine,
   sentence,
@@ -74,6 +75,8 @@ export interface ClaudeState {
   /** Said by the tool itself rather than by the model, which is how it reports a failure. */
   synthetic: string | undefined
   limit: { resetsAt?: number } | undefined
+  /** Tasks that went on in the background, whose ending is worth a line. One the tool waits on is not. */
+  readonly backgrounded: Set<string>
 }
 
 export function claudeState(root: string): ClaudeState {
@@ -88,6 +91,7 @@ export function claudeState(root: string): ClaudeState {
     interrupted: false,
     synthetic: undefined,
     limit: undefined,
+    backgrounded: new Set(),
   }
 }
 
@@ -140,6 +144,20 @@ const NOT_SAID =
   /^\s*(<(command-|local-command|system-reminder|bash-|task-notification|user-prompt-submit-hook)|Caveat:)/
 
 const INTERRUPTED = /^\[Request interrupted by user/
+
+/** What the tool hands the model when something in the background ends, as it keeps it in the session file. */
+const TASK_NOTIFICATION = /^\s*<task-notification>([\s\S]*)<\/task-notification>\s*$/
+const tagged = (body: string, tag: string): string => new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(body)?.[1]?.trim() ?? ''
+
+/**
+ * The line for something in the background that ended, under the same id
+ * watched and read back. One that was stopped says nothing, since whoever
+ * stopped it knows; the file keeps it only as a queued command, not a message.
+ */
+function taskNote(id: string, status: string, summary: string): SessionItem | undefined {
+  if (id === '' || summary === '' || status === 'stopped' || status === 'killed') return undefined
+  return { kind: 'note', id: `task:${id}`, note: 'task', text: summary }
+}
 
 /** A command run with `!`, and what it printed, as the terminal writes them and as GeckIt sends them. */
 const BASH_INPUT = /^\s*<bash-input>([\s\S]*)<\/bash-input>\s*$/
@@ -323,6 +341,7 @@ function toolResults(state: ClaudeState, message: Json, out: Reading): boolean {
       }
     }
 
+    const moved = COMMANDS.has(doing.tool) && object(message['tool_use_result'])['backgroundedByUser'] === true
     const detail = COMMANDS.has(doing.tool)
       ? clipped(`$ ${string(doing.input['command'])}\n${said}`.trimEnd())
       : WRITES.has(doing.tool) || doing.tool === 'Read'
@@ -334,7 +353,11 @@ function toolResults(state: ClaudeState, message: Json, out: Reading): boolean {
           : clipped(said)
 
     const { live: _live, ...rest } = doing.item
-    out.items.push({ ...rest, ...(detail === undefined ? {} : { detail }) })
+    out.items.push({
+      ...rest,
+      ...(moved ? { what: movedLine(doing.input, state.root) } : {}),
+      ...(detail === undefined ? {} : { detail }),
+    })
   }
   return any
 }
@@ -438,6 +461,30 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
       })
     } else if (subtype === 'status' && string(message['permissionMode']) !== '') {
       out.signals.push({ kind: 'mode', mode: string(message['permissionMode']) })
+    } else if (subtype === 'background_tasks_changed') {
+      const tasks = list(message['tasks']).map((raw): BackgroundTask => {
+        const task = object(raw)
+        return { id: string(task['task_id']), kind: string(task['task_type']), what: string(task['description']) }
+      })
+      for (const task of tasks) state.backgrounded.add(task.id)
+      out.signals.push({ kind: 'tasks', tasks })
+    } else if (subtype === 'task_started') {
+      const id = string(message['task_id'])
+      const doing = state.tools.get(string(message['tool_use_id']))
+      if (message['is_backgrounded'] === true) state.backgrounded.add(id)
+      else if (doing !== undefined && COMMANDS.has(doing.tool)) {
+        // A command the tool is waiting on has run long enough to become a task, which can go on without it.
+        const line = claudeLine(doing.tool, doing.input, state.root)
+        if (line !== undefined) out.items.push({ ...doing.item, what: sentence(line.doing), live: true, lasting: true })
+      }
+    } else if (subtype === 'task_updated') {
+      if (object(message['patch'])['is_backgrounded'] === true) state.backgrounded.add(string(message['task_id']))
+    } else if (subtype === 'task_notification') {
+      const id = string(message['task_id'])
+      if (state.backgrounded.delete(id)) {
+        const note = taskNote(id, string(message['status']), string(message['summary']))
+        if (note !== undefined) out.items.push(note)
+      }
     }
     return out
   }
@@ -598,6 +645,13 @@ export function replayClaude(root: string, entries: readonly Json[], quietFor: n
       // Commands run with `!` are blocks of their own, ahead of what was said with them or alone.
       const words: string[] = []
       for (const [index, text] of textsOf(content).entries()) {
+        const told = TASK_NOTIFICATION.exec(text)
+        if (told !== null) {
+          const body = told[1] ?? ''
+          const note = taskNote(tagged(body, 'task-id'), tagged(body, 'status'), tagged(body, 'summary'))
+          if (note !== undefined) items.set(note.id, note)
+          continue
+        }
         const input = BASH_INPUT.exec(text)
         const output = BASH_OUTPUT.exec(text)
         if (input === null && output === null) {

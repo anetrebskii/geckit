@@ -318,3 +318,62 @@ describe('what the status line is drawn from', () => {
     expect(lastContext([{ type: 'user', message: { content: 'nothing yet' } }])).toBeUndefined()
   })
 })
+
+describe('what runs in the background', () => {
+  it('says what was started in the background, what is running, and how it ended', () => {
+    const { items, signals } = play('claude-background.jsonl')
+    expect(items.find((one) => one.kind === 'did')).toMatchObject({ what: 'Started in the background: sleep 6; echo background-done' })
+    const tasks = signals.flatMap((one) => (one.kind === 'tasks' ? [one.tasks] : []))
+    expect(tasks).toEqual([[{ id: 'bic0gbvbq', kind: 'local_bash', what: 'Background sleep and echo command' }], []])
+    expect(items).toContainEqual({
+      kind: 'note',
+      id: 'task:bic0gbvbq',
+      note: 'task',
+      text: 'Background command "Background sleep and echo command" completed (exit code 0)',
+    })
+    // The tool starts a turn of its own to read what the command printed.
+    expect(signals.filter((one) => one.kind === 'started')).toHaveLength(2)
+    expect(items.some((one) => one.kind === 'did' && one.what === 'Read what a background task printed')).toBe(true)
+    expect(items.at(-1)).toMatchObject({ kind: 'theirs', text: 'background-done' })
+  })
+
+  it('offers to send a command on in the background once it is a task, and says it was moved there', () => {
+    const state = claudeState(ROOT)
+    const items = new Map<string, SessionItem>()
+    const lasting: SessionItem[] = []
+    for (const message of recorded('claude-moved.jsonl')) {
+      for (const item of readClaude(state, message).items) {
+        items.set(item.id, item)
+        if (item.kind === 'did' && item.lasting === true) lasting.push(item)
+      }
+    }
+    expect(lasting).toEqual([expect.objectContaining({ what: 'Running ping -c 40 127.0.0.1', live: true })])
+    const ping = items.get(lasting[0]?.id ?? '')
+    expect(ping).toMatchObject({ what: 'Moved to the background: ping -c 40 127.0.0.1' })
+    expect(ping).not.toHaveProperty('lasting')
+    expect([...items.values()].some((one) => one.kind === 'did' && one.what === 'Watching in the background: Wait for ping output to complete and display results')).toBe(true)
+    // The watch was stopped, which whoever stopped it knows; the command ran to its end.
+    expect(items.has('task:bmyyo5x9p')).toBe(false)
+    expect(items.get('task:b707zqkka')).toMatchObject({ note: 'task', text: expect.stringContaining('completed (exit code 0)') })
+  })
+
+  it('reads back the line for what ended in the background, and nothing for what was stopped', () => {
+    const told = (id: string, status: string, summary: string): string =>
+      `<task-notification>\n<task-id>${id}</task-id>\n<status>${status}</status>\n<summary>${summary}</summary>\n</task-notification>`
+    const finished = told('b1', 'completed', 'Background command "sleep" completed (exit code 0)')
+    const items = replayClaude(ROOT, [
+      { type: 'user', uuid: 'u1', message: { role: 'user', content: 'run it in the background' } },
+      { type: 'assistant', uuid: 'a1', message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'started' }] } },
+      { type: 'user', uuid: 'u2', origin: { kind: 'task-notification' }, message: { role: 'user', content: finished } },
+      { type: 'assistant', uuid: 'a2', message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'done' }] } },
+      { type: 'user', uuid: 'u3', message: { role: 'user', content: told('b2', 'killed', 'Task "watch" was stopped by the user') } },
+    ], 0)
+    expect(items).toEqual([
+      { kind: 'mine', id: 'u1', text: 'run it in the background' },
+      { kind: 'theirs', id: 'a1:0', text: 'started' },
+      { kind: 'note', id: 'task:b1', note: 'task', text: 'Background command "sleep" completed (exit code 0)' },
+      { kind: 'theirs', id: 'a2:0', text: 'done' },
+    ])
+    expect(typed({ type: 'user', message: { role: 'user', content: finished } })).toBe('')
+  })
+})

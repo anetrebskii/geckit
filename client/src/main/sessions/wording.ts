@@ -109,6 +109,10 @@ export function claudeLine(
   const path = text(input['file_path']) || text(input['notebook_path']) || text(input['path'])
   switch (tool) {
     case 'Read': {
+      // Where the tool writes what a background task prints, which is no file of the project's.
+      if (/\/tasks\/[a-z0-9]+\.output$/.test(path) && within(root, path) === undefined) {
+        return { done: 'Read what a background task printed', doing: 'reading what a background task printed' }
+      }
       const name = shown(root, path)
       return { done: `Read ${name}`, doing: `reading ${name}`, ...about(root, path) }
     }
@@ -122,8 +126,21 @@ export function claudeLine(
     case 'Bash':
     case 'PowerShell': {
       const command = firstLine(tidy(text(input['command']), root))
+      if (input['run_in_background'] === true) {
+        return { done: `Started in the background: ${command}`, doing: `starting in the background: ${command}` }
+      }
       return { done: `Ran ${command}`, doing: `running ${command}` }
     }
+    case 'Monitor': {
+      const what = firstLine(text(input['description']) || tidy(text(input['command']), root), 80)
+      return { done: `Watching in the background: ${what}`, doing: `starting to watch: ${what}` }
+    }
+    case 'TaskStop':
+    case 'KillShell':
+      return { done: 'Stopped a background task', doing: 'stopping a background task' }
+    case 'TaskOutput':
+    case 'BashOutput':
+      return { done: 'Read what a background task printed', doing: 'reading what a background task printed' }
     case 'Grep': {
       const pattern = text(input['pattern'])
       return { done: `Searched the project for ${pattern}`, doing: `searching for ${pattern}` }
@@ -143,6 +160,9 @@ export function claudeLine(
     case 'Task':
     case 'Agent': {
       const what = firstLine(text(input['description']) || text(input['prompt']), 80)
+      if (input['run_in_background'] === true) {
+        return { done: `Handed off in the background: ${what}`, doing: `handing off in the background: ${what}` }
+      }
       return { done: `Handed off: ${what}`, doing: `handing off: ${what}` }
     }
     case 'Skill': {
@@ -167,6 +187,10 @@ export function claudeLine(
     }
   }
 }
+
+/** A command sent on in the background while it ran, which the person did rather than Claude. */
+export const movedLine = (input: Readonly<Record<string, unknown>>, root: string): string =>
+  `Moved to the background: ${firstLine(tidy(text(input['command']), root))}`
 
 /** What one of Claude Code's permission requests is asking for. */
 export function wantedFromClaude(tool: string, input: Readonly<Record<string, unknown>>): Wanted {
