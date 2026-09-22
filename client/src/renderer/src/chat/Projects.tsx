@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { Icon } from '../ui/Icon'
 import { MOD } from '../ui/Shortcuts'
+import { PROJECT_COLORS, projectColor } from '../../../shared/project-color'
 import { homePath, projectName } from './project'
 import type { Chat } from './useChat'
 import { ALL } from './useChat'
@@ -41,6 +42,15 @@ function Menu({
   readonly onClose: () => void
 }): React.JSX.Element {
   const [asked, setAsked] = useState('')
+  // The project whose colours are laid out under it.
+  const [painting, setPainting] = useState<string | undefined>()
+  const colors = chat.settings.projectColors
+  const paint = (root: string, color: number): void => {
+    chat.change({ projectColors: { ...colors, [root]: color } })
+    setPainting(undefined)
+  }
+  const sharing = (root: string, color: number): string[] =>
+    chat.settings.projects.filter((one) => one !== root && projectColor(one, chat.settings) === color).map(projectName)
   // Opens on the project already chosen, so Enter with nothing typed keeps it.
   const [at, setAt] = useState(() => (chat.scope === ALL ? 0 : chat.settings.projects.indexOf(chat.scope) + 1))
 
@@ -109,38 +119,69 @@ function Menu({
         />
         {rows.length === 0 ? <div className="empty">No project by that name.</div> : null}
         {rows.map((row, index) => (
-          <div
-            key={row.value}
-            role="menuitem"
-            className={`menu-item project-row${row.value === chat.scope ? ' on' : ''}${index === here ? ' at' : ''}`}
-            onMouseMove={() => setAt(index)}
-            onClick={() => pick(row.value)}
-          >
-            <span style={{ width: 14, flexShrink: 0 }}>
-              {row.value === chat.scope ? <Icon name="check" size={13} /> : null}
-            </span>
-            <span className="lines">
-              <span className="name">{row.name}</span>
-              <span className="says" title={row.value === ALL ? undefined : row.value}>
-                {row.path}
+          <div key={row.value}>
+            <div
+              role="menuitem"
+              className={`menu-item project-row${row.value === chat.scope ? ' on' : ''}${index === here ? ' at' : ''}`}
+              onMouseMove={() => setAt(index)}
+              onClick={() => pick(row.value)}
+            >
+              <span style={{ width: 14, flexShrink: 0 }}>
+                {row.value === chat.scope ? <Icon name="check" size={13} /> : null}
               </span>
-            </span>
-            <Waiting waits={row.waits} />
-            {row.value === ALL ? (
-              <span className="forget-space" />
-            ) : (
-              <button
-                type="button"
-                className="icon-button forget"
-                aria-label={`Take ${row.name} off the list`}
-                title="Take it off the list. The folder and its conversations stay where they are."
-                onClick={(event) => {
-                  event.stopPropagation()
-                  chat.forgetProject(row.value)
-                }}
-              >
-                <Icon name="close" size={11} />
-              </button>
+              {row.value === ALL ? (
+                <span className="project-dot-space" />
+              ) : (
+                <button
+                  type="button"
+                  className="project-dot"
+                  style={{ background: `var(--project-${String(projectColor(row.value, chat.settings))})` }}
+                  aria-label={`Colour of ${row.name}`}
+                  title={`${PROJECT_COLORS[projectColor(row.value, chat.settings)] ?? ''}. Press to choose another.`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setPainting(painting === row.value ? undefined : row.value)
+                  }}
+                />
+              )}
+              <span className="lines">
+                <span className="name">{row.name}</span>
+                <span className="says" title={row.value === ALL ? undefined : row.value}>
+                  {row.path}
+                </span>
+              </span>
+              <Waiting waits={row.waits} />
+              {row.value === ALL ? (
+                <span className="forget-space" />
+              ) : (
+                <button
+                  type="button"
+                  className="icon-button forget"
+                  aria-label={`Take ${row.name} off the list`}
+                  title="Take it off the list. The folder and its conversations stay where they are."
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    chat.forgetProject(row.value)
+                  }}
+                >
+                  <Icon name="close" size={11} />
+                </button>
+              )}
+            </div>
+            {painting !== row.value ? null : (
+              <div className="project-palette">
+                {PROJECT_COLORS.map((name, color) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className={`project-swatch${projectColor(row.value, chat.settings) === color ? ' on' : ''}`}
+                    style={{ background: `var(--project-${String(color)})` }}
+                    aria-label={name}
+                    title={sharing(row.value, color).length === 0 ? name : `${name}, as ${sharing(row.value, color).join(', ')}`}
+                    onClick={() => paint(row.value, color)}
+                  />
+                ))}
+              </div>
             )}
           </div>
         ))}

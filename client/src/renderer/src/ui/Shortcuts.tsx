@@ -39,6 +39,7 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
     ['Ctrl+B', 'Run the command Claude is waiting on in the background'],
       [`${MOD}+click a file`, MAC ? 'Show it in the Finder' : 'Show it in its folder'],
       ['Right-click a file', 'Choose what opens it'],
+      [`${MOD}+J`, 'Shortcuts: saved prompts to run by hand or on a timetable'],
       [`${MOD}+,`, 'Settings'],
       [`${MOD}+/`, 'These shortcuts'],
     ],

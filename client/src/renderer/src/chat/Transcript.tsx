@@ -26,6 +26,8 @@ import { stamp } from './time'
 
 /** How much of a conversation is drawn at once, and how much more each press adds. */
 const PAGE = 300
+/** What is drawn the moment a conversation opens, its end; the rest of the page follows once that is on screen. */
+const FIRST = 40
 
 function Did({
   item,
@@ -153,33 +155,43 @@ function Card({
   )
 }
 
-/** A command typed after `!`, with what it printed under it. */
+/** What a command asks when what is typed to it should not be shown. */
+const SECRET = /(password|passphrase)[^\n]*:\s*$/i
+
+/** A command typed after `!`, with what it printed under it and a line to type to it while it runs. */
 function Shell({
   item,
   onStop,
+  onType,
 }: {
   readonly item: Extract<SessionItem, { kind: 'shell' }>
   readonly onStop: (item: string) => void
+  readonly onType: (item: string, text: string) => void
 }): React.JSX.Element {
+  const [typed, setTyped] = useState('')
+  const terminal = item.terminal === true
   const ended =
-    item.terminal === true
-      ? 'Opened in a terminal, since it wants a keyboard'
-      : item.stopped === true
-        ? 'Stopped'
-        : item.code === undefined
-          ? ''
-          : `Exit code ${String(item.code)}`
+    item.stopped === true
+      ? terminal
+        ? 'Not waited for'
+        : 'Stopped'
+      : item.code !== undefined
+        ? `Exit code ${String(item.code)}${terminal ? ' in the terminal' : ''}`
+        : terminal
+          ? 'Done in the terminal'
+          : ''
   return (
     <div className="shell">
       <div className="shell-head">
         <span className="shell-command">!{item.command}</span>
         {item.running === true ? (
           <>
+            {terminal ? <span className="shell-ended">In a terminal, since it wants a keyboard</span> : null}
             <span className="glyph spinning">
               <Icon name="spinner" size={12} />
             </span>
             <button type="button" className="quiet small" onClick={() => onStop(item.id)}>
-              Stop
+              {terminal ? 'Stop waiting' : 'Stop'}
             </button>
           </>
         ) : ended === '' ? null : (
@@ -187,12 +199,28 @@ function Shell({
         )}
       </div>
       {item.output === '' ? null : <Code detail>{item.output}</Code>}
+      {item.running === true && !terminal ? (
+        <input
+          type={SECRET.test(item.output) ? 'password' : 'text'}
+          className="shell-typed"
+          value={typed}
+          placeholder="Type to it here, Enter sends the line"
+          onChange={(event) => setTyped(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return
+            event.preventDefault()
+            onType(item.id, `${typed}\n`)
+            setTyped('')
+          }}
+        />
+      ) : null}
     </div>
   )
 }
 
 function Note({ item }: { readonly item: Extract<SessionItem, { kind: 'note' }> }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const summary = item.note === 'summarised'
   return (
     <div className={`note ${item.note}`}>
       {item.text}
@@ -204,9 +232,15 @@ function Note({ item }: { readonly item: Extract<SessionItem, { kind: 'note' }> 
             style={{ color: 'inherit', textDecoration: 'underline' }}
             onClick={() => setOpen(!open)}
           >
-            {open ? 'Hide what it said' : 'What it said'}
+            {summary ? (open ? 'Hide the summary' : 'Read the summary') : open ? 'Hide what it said' : 'What it said'}
           </button>
-          {open ? <Code detail>{item.detail}</Code> : null}
+          {!open ? null : summary ? (
+            <div className="note-summary">
+              <Prose text={item.detail} />
+            </div>
+          ) : (
+            <Code detail>{item.detail}</Code>
+          )}
         </>
       )}
     </div>
@@ -242,6 +276,7 @@ const Turn = memo(function Turn({
   onPicture,
   onCopyAnswer,
   onStopShell,
+  onTypeShell,
   onBackground,
 }: {
   readonly item: SessionItem
@@ -255,6 +290,7 @@ const Turn = memo(function Turn({
   /** Copies an answer, which is the piece it ends with: what came before it is what was being done. */
   readonly onCopyAnswer: (id: string, text: string) => void
   readonly onStopShell: (item: string) => void
+  readonly onTypeShell: (item: string, text: string) => void
   readonly onBackground: (item: string) => void
 }): React.JSX.Element {
   const at = item.kind === 'mine' || item.kind === 'theirs' ? item.at : undefined
@@ -301,7 +337,7 @@ const Turn = memo(function Turn({
       ) : item.kind === 'card' ? (
         <Card item={item} onAnswer={onAnswer} />
       ) : item.kind === 'shell' ? (
-        <Shell item={item} onStop={onStopShell} />
+        <Shell item={item} onStop={onStopShell} onType={onTypeShell} />
       ) : item.kind === 'wrote' ? (
         <div className="wrote">
           Changed
@@ -340,6 +376,7 @@ export const Transcript = memo(function Transcript({
   onAgain,
   onFile,
   onStopShell,
+  onTypeShell,
   onBackground,
   tasks,
   onTasks,
@@ -354,6 +391,7 @@ export const Transcript = memo(function Transcript({
   /** A file pressed: opened, shown in the Finder, or its menu asked for. */
   readonly onFile: (path: string, how: FileHow) => void
   readonly onStopShell: (item: string) => void
+  readonly onTypeShell: (item: string, text: string) => void
   readonly onBackground: (item: string) => void
   /** What Claude Code has in the background for it, and opening the dialog that lists it. */
   readonly tasks: readonly BackgroundTask[] | undefined
@@ -365,7 +403,8 @@ export const Transcript = memo(function Transcript({
   const stuck = useRef(true)
   const was = useRef(at)
   const [preview, setPreview] = useState<string | undefined>()
-  const [drawn, setDrawn] = useState(PAGE)
+  // How much is drawn, and of which conversation: one that has just arrived is drawn from its end, before its page is.
+  const [drawn, setDrawn] = useState({ at, count: FIRST })
   const [now, setNow] = useState(() => Date.now())
 
   const picture = useCallback((src: string) => setPreview(src), [])
@@ -420,7 +459,6 @@ export const Transcript = memo(function Transcript({
     if (was.current !== at) {
       was.current = at
       stuck.current = true
-      setDrawn(PAGE)
     }
     if (!stuck.current || box.current === null) return
     box.current.scrollTop = box.current.scrollHeight
@@ -438,7 +476,14 @@ export const Transcript = memo(function Transcript({
           ),
     [seek, at, items],
   )
-  const reach = sought < 0 ? drawn : Math.max(drawn, items.length - sought + 20)
+  const page = drawn.at === at ? drawn.count : FIRST
+  useEffect(() => {
+    if (page >= PAGE) return
+    const more = setTimeout(() => setDrawn({ at, count: PAGE }), 0)
+    return () => clearTimeout(more)
+  }, [page, at])
+
+  const reach = sought < 0 ? page : Math.max(page, items.length - sought + 20)
   const shown = items.length > reach ? items.slice(items.length - reach) : items
 
   const went = useRef<Seek | undefined>(undefined)
@@ -494,7 +539,7 @@ export const Transcript = memo(function Transcript({
       <div>
         {items.length > shown.length ? (
           <div className="turn">
-            <button type="button" className="quiet" onClick={() => setDrawn(reach + PAGE)}>
+            <button type="button" className="quiet" onClick={() => setDrawn({ at, count: reach + PAGE })}>
               Show earlier ({items.length - shown.length} more)
             </button>
           </div>
@@ -512,6 +557,7 @@ export const Transcript = memo(function Transcript({
             onPicture={picture}
             onCopyAnswer={copyAnswer}
             onStopShell={onStopShell}
+            onTypeShell={onTypeShell}
             onBackground={onBackground}
           />
         ))}

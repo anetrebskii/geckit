@@ -10,6 +10,7 @@ import type {
   SessionItem,
   SessionMode,
   SessionNotice,
+  SessionStatus,
 } from '../../../shared/api'
 import { resumeCommand } from '../../../shared/api'
 import { asImage, canShow } from '../pictures'
@@ -51,6 +52,8 @@ export interface Chat {
   readonly shown: Shown
   readonly session: ChatSession | undefined
   readonly items: readonly SessionItem[]
+  /** The conversation the items are, which is the one shown once they have arrived. */
+  readonly itemsFor: string
   readonly draft: string
   /** Pictures pasted or dropped into the field, waiting to go with the message. */
   readonly pictures: readonly SessionImage[]
@@ -86,10 +89,18 @@ export interface Chat {
   setModel: (model: string) => void
   askModels: () => void
   send: (again?: string) => void
+  /** Words sent to the open conversation as they are, the field left alone: `/compact`, `/goal clear`. */
+  say: (text: string) => void
   answer: (card: string, answer: CardAnswer | string) => void
   stop: () => void
+  /** Cancels a message sent while Claude worked, before it goes. */
+  unqueue: (queued: string) => void
+  /** Starts a message waiting in the queue as a new conversation of its own. */
+  delegate: (queued: string) => void
   /** Stops a command typed after `!` that is still running. */
   stopShell: (item: string) => void
+  /** Types a line to a command typed after `!` that is still running, as its keyboard. */
+  typeShell: (item: string, text: string) => void
   /** Sends a command Claude is waiting on into the background, as Ctrl+B does in a terminal. */
   toBackground: (item: string) => void
   stopTask: (task: string) => void
@@ -98,7 +109,12 @@ export interface Chat {
   /** The dialog with what runs in the background is open. */
   readonly tasksShown: boolean
   showTasks: (open: boolean) => void
+  /** A /compact waiting for a yes: typed in the field, or asked for with the button. */
+  readonly compacting: 'typed' | 'clicked' | undefined
+  setCompacting: (from: 'typed' | 'clicked' | undefined) => void
   rename: (id: string, title: string) => void
+  /** In review, blocked or done; nothing takes the mark off. */
+  mark: (id: string, status: SessionStatus | undefined) => void
   hide: (id: string) => void
   /** Throws the conversations away for good. The window asks before this is called. */
   remove: (ids: readonly string[]) => void
@@ -117,6 +133,7 @@ export function useChat(): Chat {
   const [notices, setNotices] = useState<readonly SessionNotice[]>([])
   const [shown, setShown] = useState<Shown>({ kind: 'new' })
   const [items, setItems] = useState<readonly SessionItem[]>([])
+  const [itemsFor, setItemsFor] = useState('new')
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [pictures, setPictures] = useState<Record<string, readonly SessionImage[]>>({})
   const [trouble, setTrouble] = useState('')
@@ -124,8 +141,8 @@ export function useChat(): Chat {
   const [plan, setPlan] = useState<PlanUsage | undefined>()
   const [models, setModels] = useState<ModelsSaid>('unasked')
   const [focusSeed, setFocusSeed] = useState(0)
-  // The project last worked in, until another one is chosen.
-  const scope = chosen ?? settings.projects[0] ?? ALL
+  // What was chosen last time, every project or the one last worked in, until another is chosen.
+  const scope = chosen ?? (settings.chatAll ? ALL : (settings.projects[0] ?? ALL))
 
   const shownRef = useRef(shown)
   const scopeRef = useRef(scope)
@@ -207,13 +224,16 @@ export function useChat(): Chat {
     setFocusSeed((seed) => seed + 1)
     if (next.kind === 'new') {
       setItems([])
+      setItemsFor('new')
       window.geckit.chat.watching(undefined)
       return
     }
     setNotices((held) => held.filter((one) => one.session !== next.id))
     window.geckit.chat.watching(next.id)
     void window.geckit.chat.items(next.id).then((read) => {
-      if (shownRef.current.kind === 'session' && shownRef.current.id === next.id) setItems(read)
+      if (shownRef.current.kind !== 'session' || shownRef.current.id !== next.id) return
+      setItems(read)
+      setItemsFor(next.id)
     })
   }, [])
 
@@ -264,6 +284,23 @@ export function useChat(): Chat {
     [],
   )
 
+  // Messages still waiting when a turn ended some other way than with an answer come back to the field, ahead of what is typed there: nothing is sent on anybody's behalf.
+  const takenBack = useRef(new Set<string>())
+  useEffect(() => {
+    if (session?.queued === undefined || working) return
+    const id = session.id
+    const back = session.queued.filter((one) => !takenBack.current.has(one.id))
+    if (back.length === 0) return
+    for (const one of back) takenBack.current.add(one.id)
+    void Promise.all(back.map((one) => window.geckit.chat.unqueue(id, one.id))).then((messages) => {
+      const taken = messages.filter((message) => message !== undefined)
+      if (taken.length === 0) return
+      setDrafts((all) => ({ ...all, [id]: [...taken.map((message) => message.text), all[id] ?? ''].filter((text) => text.trim() !== '').join('\n\n') }))
+      const images = taken.flatMap((message) => message.images ?? [])
+      if (images.length > 0) setPictures((all) => ({ ...all, [id]: [...images, ...(all[id] ?? [])] }))
+    })
+  }, [session, working])
+
   const addFiles = useCallback((files: readonly File[]) => {
     const paths = files
       .filter((one) => !canShow(one))
@@ -295,13 +332,18 @@ export function useChat(): Chat {
     setPictures((held) => ({ ...held, [key]: (held[key] ?? []).filter((_one, index) => index !== at) }))
   }, [])
 
-  const setScope = useCallback((next: string) => {
-    setChosen(next)
-    shownRef.current = { kind: 'new' }
-    setShown({ kind: 'new' })
-    setItems([])
-    window.geckit.chat.watching(undefined)
-  }, [])
+  const setScope = useCallback(
+    (next: string) => {
+      setChosen(next)
+      change({ chatAll: next === ALL })
+      shownRef.current = { kind: 'new' }
+      setShown({ kind: 'new' })
+      setItems([])
+      setItemsFor('new')
+      window.geckit.chat.watching(undefined)
+    },
+    [change],
+  )
 
   const send = useCallback(
     (again?: string) => {
@@ -350,6 +392,10 @@ export function useChat(): Chat {
     if (shownRef.current.kind === 'session') window.geckit.chat.stopShell(shownRef.current.id, item)
   }, [])
 
+  const typeShell = useCallback((item: string, text: string) => {
+    if (shownRef.current.kind === 'session') window.geckit.chat.typeShell(shownRef.current.id, item, text)
+  }, [])
+
   const toBackground = useCallback((item: string) => {
     if (shownRef.current.kind === 'session') window.geckit.chat.toBackground(shownRef.current.id, item)
   }, [])
@@ -359,6 +405,7 @@ export function useChat(): Chat {
   }, [])
 
   const [tasksShown, showTasks] = useState(false)
+  const [compacting, setCompacting] = useState<'typed' | 'clicked' | undefined>()
 
   const clearTask = useCallback((task: string) => {
     if (shownRef.current.kind === 'session') window.geckit.chat.clearTask(shownRef.current.id, task)
@@ -406,6 +453,7 @@ export function useChat(): Chat {
   )
 
   const rename = useCallback((id: string, title: string) => window.geckit.chat.rename(id, title), [])
+  const mark = useCallback((id: string, status: SessionStatus | undefined) => window.geckit.chat.mark(id, status), [])
 
   const hide = useCallback(
     (id: string) => {
@@ -451,6 +499,7 @@ export function useChat(): Chat {
     shown,
     session,
     items,
+    itemsFor,
     draft,
     pictures: pictures[keyOf(shown)] ?? NONE,
     trouble,
@@ -465,6 +514,7 @@ export function useChat(): Chat {
     setRoot: (next) => {
       if (scopeRef.current === ALL) setStarted(next)
       else setScope(next)
+      setFocusSeed((seed) => seed + 1)
     },
     addProject: () => {
       void window.geckit.chat.addProject().then((picked) => {
@@ -505,18 +555,40 @@ export function useChat(): Chat {
       void window.geckit.chat.models().then((said) => setModels(said ?? 'unsaid'))
     },
     send,
+    say: (text: string) => {
+      const where = rootRef.current
+      if (where === undefined || shownRef.current.kind !== 'session') return
+      const now = held.current
+      void window.geckit.chat.send({
+        session: shownRef.current.id,
+        root: where,
+        mode: now.mode,
+        text,
+        ...(now.model === '' ? {} : { model: now.model }),
+      })
+    },
     answer,
     stop: () => {
       if (shownRef.current.kind !== 'session') return
       window.geckit.chat.stop(shownRef.current.id)
     },
+    unqueue: (queued) => {
+      if (shownRef.current.kind === 'session') void window.geckit.chat.unqueue(shownRef.current.id, queued)
+    },
+    delegate: (queued) => {
+      if (shownRef.current.kind === 'session') void window.geckit.chat.delegate(shownRef.current.id, queued)
+    },
     stopShell,
+    typeShell,
     toBackground,
     stopTask,
     clearTask,
     tasksShown,
     showTasks,
+    compacting,
+    setCompacting,
     rename,
+    mark,
     hide,
     remove,
     terminal,

@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { DEFAULT_SETTINGS, resumeCommand } from '../../../shared/api'
-import type { ChatSession } from '../../../shared/api'
+import { DEFAULT_SETTINGS, resumeCommand, SESSION_STATUSES } from '../../../shared/api'
+import type { ChatSession, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
+import { linksIn, shortUrl } from '../../../shared/links'
 import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Composer } from './Composer'
 import { NameField } from './NameField'
-import { homePath, projectName } from './project'
-import { Sidebar } from './Sidebar'
+import { projectColor } from '../../../shared/project-color'
+import { homePath, projectName, tint } from './project'
+import { Sidebar, Tags } from './Sidebar'
 import { Status } from './Status'
 import { Notices } from './Notices'
 import { Recent } from './Recent'
+import { ShortcutList } from './ShortcutList'
 import { Switcher } from './Switcher'
 import type { Seek } from './Switcher'
 import { Files } from './Prose'
@@ -42,6 +45,8 @@ export function Chat(): React.JSX.Element {
   const [switching, setSwitching] = useState(false)
   const [setting, setSetting] = useState(false)
   const [keys, setKeys] = useState(false)
+  // The shortcuts dialog and what it opened on; `at` makes a second ask from the tray open it afresh.
+  const [managing, setManaging] = useState<{ readonly edit: string | ShortcutDraft; readonly at: number } | undefined>()
   // Held alone for a moment, the command key shows which number opens which conversation.
   const [holding, setHolding] = useState(false)
   // The conversations in the order the sidebar draws them, which is what Cmd+1 and Ctrl+Tab go by.
@@ -72,6 +77,28 @@ export function Chat(): React.JSX.Element {
   // The dialog listens for Escape with this, so it is made once.
   const closeSettings = useCallback(() => setSetting(false), [])
   const closeKeys = useCallback(() => setKeys(false), [])
+  const closeShortcuts = useCallback(() => setManaging(undefined), [])
+  const shortcutFrom = useCallback(
+    (session: ChatSession) => {
+      const said = (items: readonly SessionItem[]): void => {
+        const first = items.find((item) => item.kind === 'mine')
+        setManaging({
+          edit: {
+            name: session.title,
+            root: session.root,
+            prompt: first?.kind === 'mine' ? first.text : '',
+            mode: session.mode,
+            ...(session.chosen === undefined || session.chosen === '' ? {} : { model: session.chosen }),
+            on: true,
+          },
+          at: Date.now(),
+        })
+      }
+      if (chat.shown.kind === 'session' && chat.shown.id === session.id) said(chat.items)
+      else void window.geckit.chat.items(session.id).then(said)
+    },
+    [chat.shown, chat.items],
+  )
   const openKeys = useCallback(() => {
     setSetting(false)
     setKeys(true)
@@ -86,6 +113,7 @@ export function Chat(): React.JSX.Element {
     [root],
   )
   const files = useMemo(() => (root === undefined ? undefined : { root, onFile: file }), [root, file])
+  const links = useMemo(() => linksIn(chat.items), [chat.items])
 
   useEffect(() => {
     const modifier = MOD === 'Cmd' ? 'Meta' : 'Control'
@@ -110,6 +138,7 @@ export function Chat(): React.JSX.Element {
   }, [])
 
   useEffect(() => window.geckit.chat.onSpotlight((again) => setSwitching((up) => !(again && up))), [])
+  useEffect(() => window.geckit.shortcuts.onManage((edit) => setManaging({ edit, at: Date.now() })), [])
   // After every listener here and in useChat, which effects are set up in the order they are written.
   useEffect(() => window.geckit.chat.listening(), [])
 
@@ -140,15 +169,16 @@ export function Chat(): React.JSX.Element {
     }
 
     const key = (event: KeyboardEvent): void => {
-      if (clearing || remoteTrouble !== undefined) {
+      if (clearing || remoteTrouble !== undefined || chat.compacting !== undefined) {
         if (event.key === 'Escape') {
           event.preventDefault()
           setClearing(false)
+          chat.setCompacting(undefined)
           setRemoteTrouble(undefined)
         }
         return
       }
-      if (switching || setting || keys) return
+      if (switching || setting || keys || managing !== undefined) return
       const now = recentRef.current
       if (now !== undefined && event.key === 'Escape') {
         event.preventDefault()
@@ -185,6 +215,11 @@ export function Chat(): React.JSX.Element {
       if (meta && event.key === '/') {
         event.preventDefault()
         setKeys(true)
+        return
+      }
+      if (meta && event.key === 'j') {
+        event.preventDefault()
+        setManaging({ edit: 'list', at: Date.now() })
         return
       }
       if (meta && event.altKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
@@ -242,7 +277,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys, clearing, remoteTrouble])
+  }, [chat, switching, setting, keys, managing, clearing, remoteTrouble])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -288,6 +323,8 @@ export function Chat(): React.JSX.Element {
         onSettings={() => setSetting(true)}
         onSearch={() => setSwitching(true)}
         onKeys={openKeys}
+        onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
+        onShortcutFrom={shortcutFrom}
       />
       <div
         className="side-grip"
@@ -334,7 +371,12 @@ export function Chat(): React.JSX.Element {
             </button>
           )}
           {chat.session !== undefined ? (
-            <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{projectName(chat.session.root)}</span>
+            <>
+              <span style={{ fontSize: 12, ...tint(projectColor(chat.session.root, chat.settings)) }}>
+                {projectName(chat.session.root)}
+              </span>
+              <Tags session={chat.session} marked={false} />
+            </>
           ) : chat.root === undefined ? null : (
             <Picker
               label={`in ${projectName(chat.root)}`}
@@ -347,11 +389,41 @@ export function Chat(): React.JSX.Element {
             />
           )}
           {chat.session?.model === undefined ? null : (
-            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{chat.session.model}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{chat.session.model}</span>
           )}
           <div className="spacer" />
+          {links.length === 0 ? null : (
+            <Picker
+              label="Links"
+              choices={links.map((link) => ({
+                value: link.url,
+                label: link.text ?? shortUrl(link.url),
+                ...(link.text === undefined ? {} : { says: shortUrl(link.url) }),
+              }))}
+              title="Links in this conversation"
+              tip={`${String(links.length)} ${links.length === 1 ? 'link' : 'links'} in this conversation, the newest first`}
+              className="picker no-drag"
+              onPick={(url) => window.geckit.chat.openLink(url)}
+            />
+          )}
           {chat.session === undefined ? null : (
             <>
+              <Picker
+                label={SESSION_STATUSES.find((one) => one.status === chat.session?.status)?.label ?? 'Status'}
+                choices={[
+                  ...SESSION_STATUSES.map((one) => ({ value: one.status, label: one.label, says: one.why })),
+                  ...(chat.session.status === undefined ? [] : [{ value: '', label: 'No status', says: 'Take the mark off' }]),
+                ]}
+                chosen={chat.session.status ?? ''}
+                title="Where it stands"
+                explained
+                note="Saying anything more in it takes the mark off."
+                tip="Mark it in review, blocked or done"
+                className={`picker no-drag${chat.session.status === undefined ? '' : ` marked ${chat.session.status}`}`}
+                onPick={(value) => {
+                  if (chat.session !== undefined) chat.mark(chat.session.id, value === '' ? undefined : (value as SessionStatus))
+                }}
+              />
               <button
                 type="button"
                 className={`picker no-drag${chat.session.remote === undefined ? '' : ' remote-on'}`}
@@ -365,6 +437,15 @@ export function Chat(): React.JSX.Element {
               >
                 {chat.session.remote === undefined ? null : <span className="remote-dot" />}
                 {remoteBusy === chat.session.id ? 'Remote...' : 'Remote'}
+              </button>
+              <button
+                type="button"
+                className="picker no-drag"
+                disabled={chat.working}
+                title="Summarise the conversation so far and go on from the summary, to free up its context, as /compact does"
+                onClick={() => chat.setCompacting('clicked')}
+              >
+                Compact
               </button>
               <button
                 type="button"
@@ -423,13 +504,14 @@ export function Chat(): React.JSX.Element {
         ) : (
           <Files value={files}>
             <Transcript
-              at={chat.shown.kind === 'session' ? chat.shown.id : 'new'}
+              at={chat.itemsFor}
               items={chat.items}
               working={chat.working}
               onAnswer={chat.answer}
               onAgain={again}
               onFile={file}
               onStopShell={chat.stopShell}
+              onTypeShell={chat.typeShell}
               onBackground={chat.toBackground}
               tasks={chat.session?.tasks}
               onTasks={chat.showTasks}
@@ -445,12 +527,15 @@ export function Chat(): React.JSX.Element {
 
       <Notices chat={chat} />
       <UpdateNotice />
-      {recent === undefined ? null : <Recent list={recent.list} at={recent.at} />}
+      {recent === undefined ? null : <Recent list={recent.list} at={recent.at} colors={chat.settings} />}
       {switching ? <Switcher chat={chat} onClose={() => setSwitching(false)} onSeek={setSeek} /> : null}
       {setting ? (
         <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />
       ) : null}
       {keys ? <ShortcutsDialog onClose={closeKeys} /> : null}
+      {managing === undefined ? null : (
+        <ShortcutList key={managing.at} chat={chat} start={managing.edit} onClose={closeShortcuts} />
+      )}
       {remoting === undefined || chat.session === undefined ? null : (
         <Menu
           anchor={remoting}
@@ -492,6 +577,33 @@ export function Chat(): React.JSX.Element {
           </div>
         </div>
       )}
+      {chat.compacting !== undefined && chat.session !== undefined ? (
+        <div className="dialog-scrim" onMouseDown={() => chat.setCompacting(undefined)}>
+          <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
+            <h2>Compact the conversation?</h2>
+            <p>
+              Claude writes a summary of it so far and goes on from the summary, to free up its context. Everything stays here to read, but what the summary leaves out Claude no longer has in mind.
+            </p>
+            <div className="dialog-actions">
+              <button type="button" className="quiet" onClick={() => chat.setCompacting(undefined)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                autoFocus
+                onClick={() => {
+                  if (chat.compacting === 'typed') chat.send()
+                  else chat.say('/compact')
+                  chat.setCompacting(undefined)
+                }}
+              >
+                Compact
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {clearing && chat.session !== undefined ? (
         <div className="dialog-scrim" onMouseDown={() => setClearing(false)}>
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -68,6 +68,17 @@ describe('the conversations about a folder', () => {
     expect((await listClaude(ROOT))[0]?.title).toBe('The button job')
   })
 
+  it('says which tracker item it is about, from the first thing asked', async () => {
+    conversation('ddd', [
+      said('u1', 'Take FOR-1067 https://linear.app/formula/issue/FOR-1067'),
+      said('u2', 'Also https://github.com/twins-ai/Twins-AI/pull/3908'),
+    ])
+    conversation('eee', [said('u1', 'Rename the button')])
+    const found = await listClaude(ROOT)
+    expect(found.find((one) => one.id === 'ddd')?.work).toMatchObject({ label: 'FOR-1067' })
+    expect(found.find((one) => one.id === 'eee')?.work).toBeUndefined()
+  })
+
   it('falls back to the title the tool wrote', async () => {
     conversation('ccc', [said('u1', 'Rename the button'), line({ type: 'ai-title', aiTitle: 'Button renaming' })])
     expect((await listClaude(ROOT))[0]?.title).toBe('Button renaming')
@@ -124,6 +135,31 @@ describe('one conversation', () => {
   it('is nothing where the tool has no file for it', async () => {
     expect(await claudeFile(ROOT, 'never-written')).toBeUndefined()
     expect(await readClaudeSession(ROOT, 'never-written')).toBeUndefined()
+  })
+
+  it('reads a conversation again only once its file has changed', async () => {
+    conversation('iii', [said('u1', 'hello'), answered('a1', 'hi')])
+    const file = join(config, 'projects', SLUG, 'iii.jsonl')
+    const hourAgo = new Date(Date.now() - 3_600_000)
+    utimesSync(file, hourAgo, hourAgo)
+    const first = await readClaudeSession(ROOT, 'iii')
+    expect(await readClaudeSession(ROOT, 'iii')).toBe(first)
+
+    appendFileSync(file, `${said('u2', 'and now?')}\n${answered('a2', 'Now too.')}\n`)
+    utimesSync(file, hourAgo, new Date(Date.now() - 1_800_000))
+    const again = await readClaudeSession(ROOT, 'iii')
+    expect(again).not.toBe(first)
+    expect(again?.items.at(-1)).toMatchObject({ kind: 'theirs', text: 'Now too.' })
+  })
+
+  it('reads one longer than a piece of the file whole, lines split between pieces and the last with no line end', async () => {
+    const long = 'x'.repeat(2000)
+    const lines = Array.from({ length: 1500 }, (_, at) => [said(`u${String(at)}`, `${long} ${String(at)}`), answered(`a${String(at)}`, `ok ${String(at)}`)]).flat()
+    writeFileSync(join(config, 'projects', SLUG, 'jjj.jsonl'), lines.join('\n'))
+    const read = await readClaudeSession(ROOT, 'jjj')
+    expect(read?.items).toHaveLength(3000)
+    expect(read?.items[2]).toMatchObject({ kind: 'mine', text: `${long} 1` })
+    expect(read?.items.at(-1)).toMatchObject({ kind: 'theirs', text: 'ok 1499' })
   })
 
   it('refuses an id that is a path', async () => {

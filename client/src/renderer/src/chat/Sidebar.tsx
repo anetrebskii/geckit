@@ -1,11 +1,13 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
-import type { ChatGrouping, ChatSession } from '../../../shared/api'
+import { SESSION_STATUSES } from '../../../shared/api'
+import type { ChatGrouping, ChatSession, SessionStatus } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD } from '../ui/Shortcuts'
-import { projectName } from './project'
+import { projectColor } from '../../../shared/project-color'
+import { projectName, tint } from './project'
 import { NameField } from './NameField'
 import { Projects } from './Projects'
 import { Dot } from './Tasks'
@@ -26,6 +28,9 @@ const DAY = 86_400_000
 const WAITING = 'Waiting for you'
 
 const FAVORITES = 'Favorites'
+
+/** Marked done: out of the way at the bottom, folded until its heading is pressed. */
+const DONE = 'Done'
 
 function when(at: number, now: number): string {
   const days = Math.floor((now - at) / DAY)
@@ -78,14 +83,17 @@ function arrange(
   const favorite = new Set(kept.map((one) => one.id))
   const waits = waiting.filter((one) => !favorite.has(one.id))
   const waited = new Set(waiting.map((one) => one.id))
+  const rest = sessions.filter((one) => !waited.has(one.id) && !favorite.has(one.id))
+  const done = rest.filter((one) => one.status === 'done')
   return [
     ...(kept.length === 0 ? [] : [[FAVORITES, kept] as const]),
     ...(waits.length === 0 ? [] : [[WAITING, waits] as const]),
     ...gather(
-      sessions.filter((one) => !waited.has(one.id) && !favorite.has(one.id)),
+      rest.filter((one) => one.status !== 'done'),
       by,
       now,
     ),
+    ...(done.length === 0 ? [] : [[DONE, done] as const]),
   ]
 }
 
@@ -94,6 +102,45 @@ interface Landing {
   readonly id: string
   readonly after: boolean
 }
+
+/** What it is about and where it stands: the tracker item from its first message, and the mark it was given. */
+export function Tags({
+  session,
+  marked = true,
+}: {
+  readonly session: ChatSession
+  /** False leaves the mark to a control of its own. */
+  readonly marked?: boolean
+}): React.JSX.Element | null {
+  const { work } = session
+  const status = marked ? session.status : undefined
+  if (work === undefined && status === undefined) return null
+  return (
+    <>
+      {work === undefined ? null : (
+        <button
+          type="button"
+          className="tag work"
+          title={`Open ${work.says}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            window.geckit.chat.openLink(work.url)
+          }}
+        >
+          {work.label}
+        </button>
+      )}
+      {status === undefined ? null : (
+        <span className={`tag ${status}`} title={SESSION_STATUSES.find((one) => one.status === status)?.why}>
+          {status === 'done' ? <Icon name="check" size={9} /> : null}
+          {SESSION_STATUSES.find((one) => one.status === status)?.label}
+        </span>
+      )}
+    </>
+  )
+}
+
+const STATUS_ICONS: Record<SessionStatus, string> = { review: 'eye', blocked: 'blocked', done: 'done' }
 
 /**
  * One conversation in the list.
@@ -110,6 +157,7 @@ const Row = memo(function Row({
   place,
   waits,
   where,
+  color,
   changed,
   renaming,
   favorite,
@@ -133,6 +181,8 @@ const Row = memo(function Row({
   readonly waits: boolean
   /** The folder it belongs to, where the list does not already say. */
   readonly where: string | undefined
+  /** The folder's colour, as its place in the palette. */
+  readonly color: number
   /** When it last changed: "5m", "14:05", "Yesterday". */
   readonly changed: string
   readonly renaming: boolean
@@ -203,15 +253,22 @@ const Row = memo(function Row({
         ) : (
           <span className="head">
             <span className="title">{session.title === '' ? 'Untitled' : session.title}</span>
-            {place === undefined ? null : <span className="keys place">{`${MOD}+${String(place)}`}</span>}
             <span className="changed" title={new Date(session.at).toLocaleString()}>
               {changed}
             </span>
           </span>
         )}
-        <span className="stands">
-          {where === undefined ? null : <span className="where">{where}</span>}
-          {session.stands === '' ? null : <span>{session.stands}</span>}
+        <span className="foot">
+          <Tags session={session} />
+          <span className="stands">
+            {where === undefined ? null : (
+              <span className="where" style={tint(color)}>
+                {where}
+              </span>
+            )}
+            {session.stands === '' ? null : <span>{session.stands}</span>}
+          </span>
+          {place === undefined ? null : <kbd className="place">{`${MOD}+${String(place)}`}</kbd>}
         </span>
       </span>
       <button
@@ -236,6 +293,7 @@ const Rows = memo(function Rows({
   by,
   now,
   scope,
+  colors,
   empty,
   shownId,
   folded,
@@ -257,6 +315,7 @@ const Rows = memo(function Rows({
   readonly by: ChatGrouping
   readonly now: number
   readonly scope: string
+  readonly colors: Parameters<typeof projectColor>[1]
   /** Said instead of the list where there is no project to list. */
   readonly empty: string | undefined
   readonly shownId: string | undefined
@@ -310,7 +369,11 @@ const Rows = memo(function Rows({
             >
               <button type="button" className="group" onClick={() => onFold(where)}>
                 <Icon name={folded.has(where) ? 'right' : 'down'} size={10} />
-                {where}
+                {by === 'project' && rows[0] !== undefined && where !== FAVORITES && where !== WAITING && where !== DONE ? (
+                  <span style={tint(projectColor(rows[0].root, colors))}>{where}</span>
+                ) : (
+                  where
+                )}
                 <span className="spacer" />
                 <span className="count">{rows.length}</span>
               </button>
@@ -330,10 +393,11 @@ const Rows = memo(function Rows({
                 place={places.get(session.id)}
                 waits={where === WAITING}
                 where={
-                  where === WAITING || (scope === ALL && (by === 'time' || where === FAVORITES))
+                  where === WAITING || where === DONE || (scope === ALL && (by === 'time' || where === FAVORITES))
                     ? projectName(session.root)
                     : undefined
                 }
+                color={projectColor(session.root, colors)}
                 changed={ago(session.at, now, by === 'time')}
                 renaming={renaming === session.id}
                 favorite={where === FAVORITES}
@@ -360,12 +424,17 @@ export function Sidebar({
   onSettings,
   onSearch,
   onKeys,
+  onShortcuts,
+  onShortcutFrom,
 }: {
   readonly chat: Chat
   readonly orderRef: RefObject<readonly ChatSession[]>
   readonly onSettings: () => void
   readonly onSearch: () => void
   readonly onKeys: () => void
+  readonly onShortcuts: () => void
+  /** A new shortcut from this conversation: its project, mode and model, and its first message as the prompt. */
+  readonly onShortcutFrom: (session: ChatSession) => void
 }): React.JSX.Element {
   const [menu, setMenu] = useState<{ id: string; at: DOMRect } | undefined>()
   const [deleting, setDeleting] = useState<readonly ChatSession[] | undefined>()
@@ -377,7 +446,7 @@ export function Sidebar({
   const [grouping, setGrouping] = useState<DOMRect | undefined>()
   // A folder worked in every day has hundreds of conversations, and the next
   // folder is below all of them until its heading is pressed.
-  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set())
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set([DONE]))
   const [renaming, setRenaming] = useState<string | undefined>()
   const [now, setNow] = useState(() => Date.now())
 
@@ -581,6 +650,15 @@ export function Sidebar({
         <button
           type="button"
           className="icon-button no-drag"
+          aria-label="Shortcuts"
+          title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
+          onClick={onShortcuts}
+        >
+          <Icon name="bolt" />
+        </button>
+        <button
+          type="button"
+          className="icon-button no-drag"
           aria-label="Keyboard shortcuts"
           title={`Keyboard shortcuts (${MOD}+/)`}
           onClick={onKeys}
@@ -624,6 +702,7 @@ export function Sidebar({
         by={by}
         now={now}
         scope={chat.scope}
+        colors={chat.settings}
         empty={chat.root === undefined ? 'Add a project folder to start.' : undefined}
         shownId={shownId}
         folded={folded}
@@ -647,23 +726,33 @@ export function Sidebar({
           choices={[
             ...(favorites.includes(menu.id)
               ? [
-                  { value: 'unfavorite', label: 'Remove from favorites' },
-                  ...(shownFavorites.indexOf(menu.id) > 0 ? [{ value: 'up', label: 'Move up' }] : []),
-                  ...(shownFavorites.indexOf(menu.id) < shownFavorites.length - 1 ? [{ value: 'down', label: 'Move down' }] : []),
+                  { value: 'unfavorite', label: 'Remove from favorites', icon: 'star' },
+                  ...(shownFavorites.indexOf(menu.id) > 0 ? [{ value: 'up', label: 'Move up', icon: 'ahead' }] : []),
+                  ...(shownFavorites.indexOf(menu.id) < shownFavorites.length - 1
+                    ? [{ value: 'down', label: 'Move down', icon: 'behind' }]
+                    : []),
                 ]
               : [
                   {
                     value: 'favorite',
                     label: 'Add to favorites',
+                    icon: 'star',
                     ...(shownFavorites.length < 9 ? { says: `${MOD}+${String(shownFavorites.length + 1)}` } : {}),
                   },
                 ]),
-            { value: 'rename', label: 'Rename' },
-            { value: 'copy', label: 'Copy the terminal command' },
-            { value: 'terminal', label: 'Open in a terminal' },
-            { value: 'select', label: 'Select', says: `${MOD}+click` },
-            { value: 'hide', label: 'Hide from this list' },
-            { value: 'delete', label: 'Delete', danger: true },
+            ...SESSION_STATUSES.map((one) => ({
+              value: `status:${one.status}`,
+              label: `Mark as ${one.label.toLowerCase()}`,
+              icon: STATUS_ICONS[one.status],
+              on: chat.everyone.some((session) => session.id === menu.id && session.status === one.status),
+            })),
+            { value: 'rename', label: 'Rename', icon: 'pencil' },
+            { value: 'shortcut', label: 'Save as a shortcut...', icon: 'bolt' },
+            { value: 'copy', label: 'Copy the terminal command', icon: 'copy' },
+            { value: 'terminal', label: 'Open in a terminal', icon: 'terminal' },
+            { value: 'select', label: 'Select', says: `${MOD}+click`, icon: 'select' },
+            { value: 'hide', label: 'Hide from this list', icon: 'hidden' },
+            { value: 'delete', label: 'Delete', danger: true, icon: 'trash' },
           ]}
           onPick={(value) => {
             if (value === 'favorite') change({ favorites: [...favorites.filter((id) => id !== menu.id), menu.id] })
@@ -673,7 +762,16 @@ export function Sidebar({
               const other = shownFavorites[value === 'up' ? at - 1 : at + 1]
               if (other !== undefined) place(menu.id, { id: other, after: value === 'down' })
             }
+            if (value.startsWith('status:')) {
+              const status = value.slice('status:'.length) as SessionStatus
+              const was = chat.everyone.find((session) => session.id === menu.id)?.status
+              chat.mark(menu.id, was === status ? undefined : status)
+            }
             if (value === 'rename') setRenaming(menu.id)
+            if (value === 'shortcut') {
+              const one = chat.everyone.find((session) => session.id === menu.id)
+              if (one !== undefined) onShortcutFrom(one)
+            }
             if (value === 'copy') chat.copyTerminal(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)
             if (value === 'hide') chat.hide(menu.id)

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { AGAIN, claudeState, contextOf, lastContext, lastSaid, planOf, readClaude, REFUSED, replayClaude, typed } from '../src/main/sessions/claude-read'
+import { AGAIN, claudeState, contextOf, goalOf, lastContext, lastSaid, planOf, readClaude, REFUSED, replayClaude, typed } from '../src/main/sessions/claude-read'
 import type { ClaudeSignal } from '../src/main/sessions/claude-read'
 import { within } from '../src/main/sessions/rule'
 import { modelName } from '../src/shared/api'
@@ -178,6 +178,62 @@ describe('pictures sent with a message', () => {
   })
 })
 
+describe('a goal set with /goal', () => {
+  // As claude 2.1.278 wrote them into the session file, cut down to what is read.
+  const condition = 'a file named done.txt that contains the word ok exists in the current folder'
+  const status = (said: Record<string, unknown>): Record<string, unknown> => ({
+    type: 'attachment',
+    attachment: { type: 'goal_status', condition, ...said },
+  })
+  const set = status({ met: false, sentinel: true })
+  const notYet = status({ met: false, reason: 'There is no done.txt yet.' })
+  const met = status({ met: true, reason: 'The Write result confirms done.txt was created with ok in it.', iterations: 2 })
+  const typedGoal = {
+    type: 'user',
+    uuid: 'u1',
+    message: {
+      role: 'user',
+      content: `<command-name>/goal</command-name>\n            <command-message>goal</command-message>\n            <command-args>${condition}</command-args>`,
+    },
+  }
+
+  it('holds from the line that sets it, counting the checks that found it does not hold yet', () => {
+    expect(goalOf([set])).toEqual({ goal: { condition, checks: 0 } })
+    expect(goalOf([set, notYet])).toEqual({ goal: { condition, checks: 1, reason: 'There is no done.txt yet.' } })
+  })
+
+  it('is gone once met, and says so with what the check found', () => {
+    expect(goalOf([set, notYet, met])).toEqual({
+      ended: {
+        kind: 'note',
+        id: '',
+        note: 'goal',
+        text: `Goal met: ${condition}`,
+        detail: 'The Write result confirms done.txt was created with ok in it.',
+      },
+    })
+  })
+
+  it('says when a check sends it back to work, which happens inside the one turn', () => {
+    const feedback = `Stop hook feedback:\n[${condition}]: There is no done.txt yet.`
+    const read = readClaude(claudeState(ROOT), { type: 'user', message: { role: 'user', content: [{ type: 'text', text: feedback }] } })
+    expect(read.signals).toEqual([{ kind: 'held', hook: condition, reason: 'There is no done.txt yet.' }])
+    expect(read.items).toEqual([])
+  })
+
+  it('is gone without a word when cleared by hand', () => {
+    expect(goalOf([set, status({ met: true, sentinel: true })])).toEqual({})
+  })
+
+  it('reads back as the command that was typed and the line saying how it ended', () => {
+    const items = replayClaude(ROOT, [set, typedGoal, met], 0)
+    expect(items).toEqual([
+      { kind: 'mine', id: 'u1', text: `/goal ${condition}` },
+      expect.objectContaining({ kind: 'note', note: 'goal', text: `Goal met: ${condition}` }),
+    ])
+  })
+})
+
 describe('commands run with !', () => {
   const said = (uuid: string, content: unknown): Record<string, unknown> => ({ type: 'user', uuid, message: { role: 'user', content } })
 
@@ -274,6 +330,32 @@ describe('what the status line is drawn from', () => {
     const read = readClaude(claudeState(ROOT), answer)
     expect(read.signals).toContainEqual({ kind: 'spend', used: 29421 })
     expect(contextOf(answer)).toBe(29421)
+  })
+
+  it('says the conversation was summarised, and how much of the context is left in use', () => {
+    // As claude 2.1.278 wrote it after /compact, cut down to what is read.
+    const read = readClaude(claudeState(ROOT), {
+      type: 'system',
+      subtype: 'compact_boundary',
+      compact_metadata: { trigger: 'manual', pre_tokens: 40516, post_tokens: 4779 },
+    })
+    expect(read.items).toMatchObject([{ kind: 'note', note: 'summarised' }])
+    expect(read.signals).toContainEqual({ kind: 'spend', used: 4779 })
+  })
+
+  it('puts the summary under that line, from the stream and from the file', () => {
+    const boundary = { type: 'system', subtype: 'compact_boundary', compact_metadata: { post_tokens: 4779 } }
+    const summary = 'This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\n1. Primary Request and Intent:\n   - A sentence about blue.'
+    const said = { kind: 'note', id: 'summarised:1', note: 'summarised', text: 'Earlier messages were summarised by Claude Code.', detail: '1. Primary Request and Intent:\n   - A sentence about blue.' }
+
+    const state = claudeState(ROOT)
+    readClaude(state, boundary)
+    // As claude 2.1.278 streamed it after /compact.
+    const streamed = readClaude(state, { type: 'user', isReplay: true, isSynthetic: true, message: { role: 'user', content: summary } })
+    expect(streamed.items).toEqual([said])
+
+    const replayed = replayClaude(ROOT, [boundary, { type: 'user', uuid: 'u1', isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { role: 'user', content: summary } }], 0)
+    expect(replayed).toEqual([said])
   })
 
   it('takes what this run has cost from the end of the turn', () => {

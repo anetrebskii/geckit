@@ -27,6 +27,8 @@ function Offered({ path }: { readonly path: string }): React.JSX.Element {
 
 /** What opens the background tasks rather than going to Claude, as in a terminal. */
 const TASKS = /^\s*\/(tasks|bashes)\s*$/
+const GOAL = /^\s*\/goal(\s|$)/
+const COMPACT = /^\s*\/compact(\s|$)/
 
 /**
  * The field a message is written in, with what it will be sent to under it.
@@ -45,6 +47,10 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   // Escape puts the list away for the @ it was up for.
   const [closed, setClosed] = useState<number | undefined>()
   const submit = (): void => {
+    if (COMPACT.test(chat.draft)) {
+      chat.setCompacting('typed')
+      return
+    }
     if (!TASKS.test(chat.draft)) {
       chat.send()
       return
@@ -105,6 +111,11 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
     field.current?.focus()
   }, [chat.focusSeed])
 
+  // Once /compact is answered, the caret is back in the field, where a no leaves what was typed.
+  useEffect(() => {
+    if (chat.compacting === undefined) field.current?.focus()
+  }, [chat.compacting])
+
   useLayoutEffect(() => {
     const area = field.current
     if (area === null) return
@@ -151,9 +162,51 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const cannot = chat.root === undefined || chat.account?.signedIn !== true || chat.account.key === true
 
   const { addFiles } = chat
+  const goal = chat.session?.goal
+  const checked =
+    goal === undefined
+      ? ''
+      : goal.checks === 0
+        ? 'Not checked yet. Each time Claude would stop, a check reads the conversation and sends it back to work until this holds.'
+        : `Checked ${String(goal.checks)} ${goal.checks === 1 ? 'time' : 'times'}, and it does not hold yet${goal.reason === undefined ? '.' : `: ${goal.reason}`}`
+
+  const queued = chat.session?.queued ?? []
 
   return (
     <div className="composer">
+      {queued.length === 0 ? null : (
+        <div className="queued">
+          <div className="queued-head">Queued: each goes once Claude has answered the one before</div>
+          {queued.map((one) => (
+            <div key={one.id} className="queued-one">
+              <span className="queued-text" title={one.text}>
+                {one.text}
+              </span>
+              {one.images === 0 ? null : (
+                <span className="queued-more">{one.images === 1 ? '1 picture' : `${String(one.images)} pictures`}</span>
+              )}
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Start a new conversation with it"
+                title="Start a new conversation with it, in this project, rather than wait here"
+                onClick={() => chat.delegate(one.id)}
+              >
+                <Icon name="branch" size={12} />
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Cancel this message"
+                title="Cancel: it will not be sent"
+                onClick={() => chat.unqueue(one.id)}
+              >
+                <Icon name="close" size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="composer-inner">
         {chat.pictures.length === 0 ? null : (
           <div className="pending">
@@ -200,7 +253,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           ref={field}
           rows={1}
           value={chat.draft}
-          placeholder={chat.root === undefined ? 'Add a project folder first' : 'Ask Claude Code. @ picks a file, ! runs a command'}
+          placeholder={
+            chat.root === undefined
+              ? 'Add a project folder first'
+              : chat.working
+                ? 'Send more: it waits until Claude finishes. ! runs a command now'
+                : 'Ask Claude Code. @ picks a file, ! runs a command'
+          }
           disabled={chat.root === undefined}
           onChange={(event) => {
             recall.current = undefined
@@ -256,8 +315,8 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             }
             if (event.key !== 'Enter' || event.shiftKey) return
             event.preventDefault()
-            // A command is run while Claude works, as the terminal lets it be.
-            if (!chat.working || chat.draft.trim().startsWith('!') || TASKS.test(chat.draft)) submit()
+            // While Claude works a message waits its turn; a command after ! runs at once, as the terminal lets it.
+            submit()
           }}
         />
         <div className="composer-bar">
@@ -290,12 +349,63 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             onStop={chat.stopTask}
             onClear={chat.clearTask}
           />
+          {chat.root === undefined ? null : goal === undefined ? (
+            <button
+              type="button"
+              className="picker"
+              disabled={cannot}
+              title="Set a goal: Claude keeps working until it holds, as /goal does"
+              onClick={() => {
+                const text = GOAL.test(chat.draft) ? chat.draft : `/goal ${chat.draft}`
+                chat.setDraft(text)
+                putCaret.current = text.length
+                field.current?.focus()
+              }}
+            >
+              Goal
+            </button>
+          ) : (
+            <Picker
+              className="picker goal-picker"
+              label={
+                <>
+                  <span className="remote-dot" />
+                  <span className="goal-text">{`Goal: ${goal.condition}`}</span>
+                </>
+              }
+              tip={goal.condition}
+              title="Goal"
+              explained
+              choices={[
+                chat.working
+                  ? { value: 'clear', label: 'Stop and clear it', says: 'Claude stops now, and goes on without a goal at your next message' }
+                  : { value: 'clear', label: 'Clear it', says: 'Claude no longer works towards it' },
+              ]}
+              note={`Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`}
+              onPick={() => chat.say('/goal clear')}
+            />
+          )}
+          {chat.root !== undefined && goal === undefined && GOAL.test(chat.draft) ? (
+            <span className="composer-hint">Claude keeps working until this holds. A check after each reply decides whether it does</span>
+          ) : null}
           {chat.root !== undefined && chat.draft.trim().startsWith('!') ? (
             <span className="composer-hint">
               Runs in {projectName(chat.root)}. Claude sees what it prints with your next message
             </span>
           ) : null}
           <div className="spacer" />
+          {chat.working && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
+            <button
+              type="button"
+              className="send"
+              disabled={cannot}
+              onClick={submit}
+              title="Queue it: it goes when Claude finishes (Enter)"
+              aria-label="Queue"
+            >
+              <Icon name="send" size={14} />
+            </button>
+          ) : null}
           {chat.working ? (
             <button type="button" className="send stop" onClick={chat.stop} title="Stop (Esc)" aria-label="Stop">
               <Icon name="stop" size={12} />
