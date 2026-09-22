@@ -34,6 +34,7 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
       [`${MOD}+R`, 'Refresh'],
       ['Enter', 'Send'],
       ['Shift+Enter', 'New line'],
+    ['Up, Down', 'What you said before in this conversation, from the first line of the field'],
       ['Esc', 'Stop the answer'],
       [`${MOD}+click a file`, MAC ? 'Show it in the Finder' : 'Show it in its folder'],
       ['Right-click a file', 'Choose what opens it'],
