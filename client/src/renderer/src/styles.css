@@ -1200,6 +1200,32 @@ textarea {
   min-width: 0;
 }
 
+/* Where a row dragged into the favorites would land: a line between rows, drawn over them so nothing moves. */
+.row.lands-before::before,
+.row.lands-after::after,
+.group-head.lands-after::after {
+  position: absolute;
+  inset-inline: 8px;
+  height: 2px;
+  content: '';
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.row.lands-before::before {
+  top: -1px;
+}
+
+.row.lands-after::after,
+.group-head.lands-after::after {
+  bottom: -1px;
+}
+
+.group-head {
+  position: relative;
+}
+
 /* Only there while rows are picked, so the list is quiet the rest of the time. */
 .group-pick {
   flex-shrink: 0;

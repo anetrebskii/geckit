@@ -13,8 +13,10 @@ export function useSettings(): [Settings, (change: Partial<Settings>) => void] {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
 
   useEffect(() => {
-    void window.geckit.settings.get().then(setSettings)
-    return window.geckit.settings.on(setSettings)
+    // A key added since the main process was started is not in what it sends.
+    const take = (said: Settings): void => setSettings({ ...DEFAULT_SETTINGS, ...said })
+    void window.geckit.settings.get().then(take)
+    return window.geckit.settings.on(take)
   }, [])
 
   // Every window paints itself from this, so the choice is applied here rather

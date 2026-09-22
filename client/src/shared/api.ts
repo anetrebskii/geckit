@@ -494,6 +494,8 @@ export interface Settings {
   readonly chatModel: string
   readonly chatMode: SessionMode
   readonly chatGrouping: ChatGrouping
+  /** Conversations kept at the top of the list, in the order they were put in; Cmd+1 opens the first. */
+  readonly favorites: readonly string[]
   readonly openWith: readonly OpenRule[]
   readonly transcriptions: readonly Transcription[]
   readonly chatBounds?: Bounds
@@ -523,6 +525,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatModel: '',
   chatMode: 'manual',
   chatGrouping: 'time',
+  favorites: [],
   openWith: [],
   transcriptions: [],
   client: '',
