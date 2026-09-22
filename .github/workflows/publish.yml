@@ -74,7 +74,23 @@ jobs:
         run: |
           sign=()
           if [ "$GECKIT_SIGNED" = true ]; then
-            sign=(-c.mac.notarize=true)
+            # electron-builder unlocks the keychain it makes with the certificate's password instead of the keychain's own, and macOS 26 refuses that. So the certificate goes into a keychain made here, and electron-builder finds the identity in it.
+            keychain="$RUNNER_TEMP/geckit.keychain-db"
+            unlock=$(openssl rand -hex 24)
+            echo "$CSC_LINK" | base64 --decode > "$RUNNER_TEMP/geckit.p12"
+            security create-keychain -p "$unlock" "$keychain"
+            security set-keychain-settings -lut 21600 "$keychain"
+            security unlock-keychain -p "$unlock" "$keychain"
+            security import "$RUNNER_TEMP/geckit.p12" -k "$keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$unlock" "$keychain" > /dev/null
+            rm "$RUNNER_TEMP/geckit.p12"
+            # Apple's intermediate certificates, which electron-builder ships, so the identity's chain can be built.
+            cp node_modules/app-builder-lib/certs/root_certs.keychain "$RUNNER_TEMP/apple-roots.keychain"
+            security list-keychains -d user -s "$keychain" "$RUNNER_TEMP/apple-roots.keychain" $(security list-keychains -d user | tr -d '"')
+            security find-identity -v -p codesigning "$keychain"
+            unset CSC_LINK CSC_KEY_PASSWORD
+            # Without an identity electron-builder only warns and ships the app unsigned; this makes it fail instead.
+            sign=(-c.mac.notarize=true -c.forceCodeSigning=true)
           else
             # An empty CSC_LINK is read as a path, so it is taken away rather than left blank.
             unset CSC_LINK CSC_KEY_PASSWORD
@@ -88,8 +104,11 @@ jobs:
       - name: Check the Mac signature
         if: matrix.platform == 'mac'
         run: |
-          codesign --verify --deep --strict release/build/mac-arm64/GeckIt.app
-          codesign --verify --deep --strict release/build/mac/GeckIt.app
+          for app in release/build/mac-arm64/GeckIt.app release/build/mac/GeckIt.app; do
+            codesign --verify --deep --strict "$app"
+            # With the certificate, macOS itself has to call it notarized Developer ID, which is what opens it without a warning.
+            if [ "$GECKIT_SIGNED" = true ]; then spctl --assess --type execute --verbose=4 "$app"; fi
+          done
 
   # Published only once every build is in it, which is when the installed copies see it.
   release:
