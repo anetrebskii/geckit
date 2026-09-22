@@ -275,8 +275,13 @@ const Rows = memo(function Rows({
   readonly onLand: () => void
 }): React.JSX.Element {
   const picking = picked.size > 0
+  const list = useRef<HTMLDivElement>(null)
+  // The one open is kept in sight, so one opened from the search is seen here too.
+  useEffect(() => {
+    list.current?.querySelector('.row.on')?.scrollIntoView({ block: 'nearest' })
+  }, [shownId])
   return (
-    <div className={`sessions${picking ? ' picking' : ''}`}>
+    <div ref={list} className={`sessions${picking ? ' picking' : ''}`}>
       {empty !== undefined ? (
         <div className="empty">{empty}</div>
       ) : groups.length === 0 ? (
@@ -451,6 +456,15 @@ export function Sidebar({
     if (id !== undefined && next !== undefined) place(id, next)
     drag(undefined)
   }, [place, drag])
+  const show = chat.show
+  const shownId = chat.shown.kind === 'session' ? chat.shown.id : undefined
+  // One opened from somewhere else, the search above all, unfolds its heading.
+  const [unfolded, setUnfolded] = useState(shownId)
+  if (unfolded !== shownId) {
+    setUnfolded(shownId)
+    const where = groups.find(([, rows]) => rows.some((one) => one.id === shownId))?.[0]
+    if (where !== undefined && folded.has(where)) setFolded(new Set([...folded].filter((one) => one !== where)))
+  }
   const drawn = useMemo(() => groups.flatMap(([where, rows]) => (folded.has(where) ? [] : rows)), [groups, folded])
   const places = useMemo(() => new Map(drawn.slice(0, 9).map((one, at) => [one.id, at + 1])), [drawn])
   useEffect(() => {
@@ -479,8 +493,6 @@ export function Sidebar({
     [scope],
   )
 
-  const show = chat.show
-  const shownId = chat.shown.kind === 'session' ? chat.shown.id : undefined
   const press = useCallback(
     (session: ChatSession, how: Press) => {
       const held = pickedRef.current
