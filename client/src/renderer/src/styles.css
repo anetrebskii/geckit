@@ -22,9 +22,9 @@
   --border: #e3e3e6;
   --border-strong: #cdcdd2;
   --text: #1d1d1f;
-  --text-dim: #6b6b70;
-  --text-faint: #8a8a90;
-  --accent: #2a9c3a;
+  --text-dim: #5c5c61;
+  --text-faint: #737378;
+  --accent: #1f8031;
   --accent-text: #ffffff;
   --accent-soft: #e6f4e8;
   --danger: #c0392b;
@@ -50,7 +50,7 @@
   --border-strong: #4a4a50;
   --text: #f2f2f4;
   --text-dim: #a2a2a8;
-  --text-faint: #7e7e85;
+  --text-faint: #8e8e95;
   --accent: #4ac85c;
   --accent-text: #10210f;
   --accent-soft: rgb(74 200 92 / 16%);
@@ -78,7 +78,7 @@
     --border-strong: #4a4a50;
     --text: #f2f2f4;
     --text-dim: #a2a2a8;
-    --text-faint: #7e7e85;
+    --text-faint: #8e8e95;
     --accent: #4ac85c;
     --accent-text: #10210f;
     --accent-soft: rgb(74 200 92 / 16%);
@@ -118,7 +118,7 @@ body,
 
 body {
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
@@ -303,7 +303,7 @@ textarea {
 
 .menu-title {
   padding: 6px 9px 3px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -338,7 +338,7 @@ textarea {
 
 .menu-item .says {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
   text-overflow: ellipsis;
 }
@@ -348,7 +348,7 @@ textarea {
   width: 0;
   min-width: 100%;
   padding: 6px 9px 5px 31px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
   color: var(--text-faint);
 }
@@ -645,7 +645,7 @@ textarea {
 .correct-field textarea {
   flex: 1;
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.55;
   background: none;
   border: none;
@@ -705,7 +705,7 @@ textarea {
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
 }
 
@@ -777,14 +777,14 @@ textarea {
 }
 
 .notice .title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .notice .subtitle,
 .notice .body {
   overflow: hidden;
-  font-size: 12px;
+  font-size: 13px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -853,7 +853,7 @@ textarea {
 }
 
 .version .why {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
 }
 
@@ -875,7 +875,7 @@ textarea {
   left: 50%;
   z-index: 70;
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--tooltip-text);
   background: var(--tooltip-bg);
   border-radius: 6px;
@@ -908,7 +908,7 @@ textarea {
 /* A key named on the control it presses, not only in its tooltip. */
 .keys {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -991,7 +991,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
 }
 
@@ -1011,7 +1011,7 @@ textarea {
 }
 
 .field > label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
 }
 
@@ -1175,7 +1175,7 @@ textarea {
   gap: 4px;
   width: 100%;
   padding: 10px 6px 4px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1204,7 +1204,7 @@ textarea {
 .group-pick {
   flex-shrink: 0;
   padding: 10px 6px 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
 }
 
@@ -1275,7 +1275,7 @@ textarea {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: 13px;
   border-top: 1px solid var(--border);
 }
 
@@ -1353,14 +1353,14 @@ textarea {
 
 .row .changed {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
 
 .row .stands {
   margin-top: 1px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
 }
 
@@ -1431,7 +1431,7 @@ textarea {
 
 .switcher-head {
   padding: 8px 10px 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-faint);
 }
@@ -1518,7 +1518,7 @@ textarea {
   flex-shrink: 1;
   min-width: 0;
   margin-left: -4px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .talk-head .remote-on {
@@ -1585,7 +1585,7 @@ textarea {
 
 .when {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -1649,7 +1649,7 @@ textarea {
   margin: 4px 0 2px;
   overflow: auto;
   font-family: var(--font-code);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
   user-select: text;
@@ -1678,7 +1678,7 @@ textarea {
   align-items: center;
   gap: 5px;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-dim);
   background: var(--bg-sunken);
   border: 1px solid var(--border);
@@ -1732,7 +1732,7 @@ textarea {
 
 .card .where {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
 }
 
@@ -1866,7 +1866,7 @@ textarea {
   width: 100%;
   max-height: 260px;
   padding: 10px 12px 4px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   background: none;
   border: none;
@@ -1919,7 +1919,7 @@ textarea {
 
 .mention .in {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
   text-overflow: ellipsis;
 }
@@ -1942,7 +1942,7 @@ textarea {
   min-width: 0;
   padding: 0 12px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-faint);
   white-space: nowrap;
   background: var(--bg-sunken);
@@ -2041,9 +2041,13 @@ textarea {
 /* Prose the assistant wrote */
 
 .prose {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   overflow-wrap: break-word;
+}
+
+.prose :is(p, li, blockquote, h1, h2, h3, h4, h5, h6) {
+  max-width: 60ch;
 }
 
 .prose > :first-child {
@@ -2107,21 +2111,21 @@ textarea {
 }
 
 .prose h1 {
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .prose h2 {
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .prose h3 {
-  font-size: 13.5px;
+  font-size: 15px;
 }
 
 .prose h4,
 .prose h5,
 .prose h6 {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-dim);
 }
 
@@ -2242,7 +2246,7 @@ textarea {
 }
 
 .prose table {
-  font-size: 12.5px;
+  font-size: 13.5px;
   line-height: 1.45;
   border-collapse: collapse;
 }
@@ -2336,7 +2340,7 @@ textarea {
 
 .shortcuts h3 {
   margin: 16px 0 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-faint);
 }
