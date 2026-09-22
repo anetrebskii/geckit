@@ -66,6 +66,8 @@ export interface Chat {
   /** Bumped when the composer should take the caret. */
   readonly focusSeed: number
   setScope: (scope: string) => void
+  /** Where a new conversation starts: listing every project, only that changes; listing one, the list moves to it. */
+  setRoot: (root: string) => void
   addProject: () => void
   forgetProject: (root: string) => void
   open: (shown: Shown) => void
@@ -96,6 +98,7 @@ export interface Chat {
 export function useChat(): Chat {
   const [settings, change] = useSettings()
   const [chosen, setChosen] = useState<string | undefined>()
+  const [started, setStarted] = useState<string | undefined>()
   const [sessions, setSessions] = useState<readonly ChatSession[]>([])
   const [everyone, setEveryone] = useState<readonly ChatSession[]>([])
   const [notices, setNotices] = useState<readonly SessionNotice[]>([])
@@ -221,7 +224,10 @@ export function useChat(): Chat {
   )
 
   // Where a message goes: the project listed, or the one the open conversation belongs to.
-  const root = scope === ALL ? (session?.root ?? settings.projects[0]) : scope
+  const root =
+    scope === ALL
+      ? (session?.root ?? (started !== undefined && settings.projects.includes(started) ? started : settings.projects[0]))
+      : scope
   const rootRef = useRef(root)
   useEffect(() => {
     rootRef.current = root
@@ -403,6 +409,10 @@ export function useChat(): Chat {
     working,
     focusSeed,
     setScope,
+    setRoot: (next) => {
+      if (scopeRef.current === ALL) setStarted(next)
+      else setScope(next)
+    },
     addProject: () => {
       void window.geckit.chat.addProject().then((picked) => {
         if (picked !== undefined) setScope(picked)

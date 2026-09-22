@@ -3,11 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_SETTINGS, resumeCommand } from '../../../shared/api'
 import type { ChatSession } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
+import { Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Composer } from './Composer'
 import { NameField } from './NameField'
-import { projectName } from './project'
+import { homePath, projectName } from './project'
 import { Sidebar } from './Sidebar'
 import { Status } from './Status'
 import { Notices } from './Notices'
@@ -294,8 +295,18 @@ export function Chat(): React.JSX.Element {
               {title}
             </button>
           )}
-          {chat.session === undefined ? null : (
+          {chat.session !== undefined ? (
             <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{projectName(chat.session.root)}</span>
+          ) : chat.root === undefined ? null : (
+            <Picker
+              label={`in ${projectName(chat.root)}`}
+              choices={chat.settings.projects.map((one) => ({ value: one, label: projectName(one), says: homePath(one) }))}
+              chosen={chat.root}
+              title="Start it in"
+              tip={homePath(chat.root)}
+              className="picker head-project no-drag"
+              onPick={chat.setRoot}
+            />
           )}
           {chat.session?.model === undefined ? null : (
             <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{chat.session.model}</span>
