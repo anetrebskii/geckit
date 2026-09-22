@@ -19,8 +19,12 @@ export const SESSION_MODES: readonly { mode: SessionMode; label: string; why: st
   { mode: 'plan', label: 'Plan', why: 'Reads and proposes. Changes nothing.' },
 ]
 
-/** A mode as it was kept, from before manual was called by the tool's name for it. */
-export const sessionMode = (kept: unknown): SessionMode => (kept === 'auto' || kept === 'plan' ? kept : 'manual')
+/**
+ * A mode as it was kept, from before manual was called by the tool's name for it.
+ * One that has none, as a conversation started in a terminal, is in Auto.
+ */
+export const sessionMode = (kept: unknown): SessionMode =>
+  kept === 'manual' || kept === 'ask' ? 'manual' : kept === 'plan' ? 'plan' : 'auto'
 
 /** What a card is asking, which decides the buttons under it. */
 export type CardKind = 'permission' | 'question' | 'start'
@@ -523,7 +527,7 @@ export const DEFAULT_SETTINGS: Settings = {
   correctKeyModel: '',
   projects: [],
   chatModel: '',
-  chatMode: 'manual',
+  chatMode: 'auto',
   chatGrouping: 'time',
   favorites: [],
   openWith: [],
