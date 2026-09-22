@@ -97,11 +97,16 @@ async function edges(path: string, size: number): Promise<{ head: Json[]; tail: 
   }
 }
 
-/** Throw one conversation away, wherever the tool filed it. Nothing keeps a copy. */
+/**
+ * Throw one conversation away, wherever the tool filed it, with the folder of
+ * the same name beside it where its helpers' conversations and long tool
+ * results are kept. Nothing keeps a copy.
+ */
 export async function deleteClaude(root: string, id: string): Promise<boolean> {
   const path = await claudeFile(root, id)
   if (path === undefined) return false
   await rm(path, { force: true })
+  await rm(path.slice(0, -'.jsonl'.length), { recursive: true, force: true })
   return true
 }
 
