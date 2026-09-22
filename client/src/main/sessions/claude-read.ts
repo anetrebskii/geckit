@@ -1,4 +1,4 @@
-import type { BackgroundTask, PlanUsage, PlanWindow, SessionImage, SessionItem } from '../../shared/api'
+import type { BackgroundTask, PlanUsage, PlanWindow, SessionGoal, SessionImage, SessionItem } from '../../shared/api'
 import { askId, cardId } from './heard'
 import type { Signal } from './heard'
 import { filesAmong } from './rule'
@@ -7,6 +7,7 @@ import {
   answeredLine,
   cardFor,
   claudeLine,
+  goalEnded,
   movedLine,
   questionsFromClaude,
   saidLine,
@@ -75,6 +76,8 @@ export interface ClaudeState {
   /** Said by the tool itself rather than by the model, which is how it reports a failure. */
   synthetic: string | undefined
   limit: { resetsAt?: number } | undefined
+  /** The line for a summary just made, until the summary itself comes, as a message of its own right after it. */
+  summarised: string | undefined
   /** Tasks that went on in the background, whose ending is worth a line. One the tool waits on is not. */
   readonly backgrounded: Set<string>
   /** What is known of every task this run has had, and the task each tool use became. */
@@ -94,6 +97,7 @@ export function claudeState(root: string): ClaudeState {
     interrupted: false,
     synthetic: undefined,
     limit: undefined,
+    summarised: undefined,
     backgrounded: new Set(),
     tasks: new Map(),
     uses: new Map(),
@@ -149,6 +153,10 @@ const NOT_SAID =
   /^\s*(<(command-|local-command|system-reminder|bash-|task-notification|user-prompt-submit-hook)|Caveat:)/
 
 const INTERRUPTED = /^\[Request interrupted by user/
+/** What the tool puts ahead of every summary it hands the model. */
+const SUMMARY_HEAD = /^This session is being continued[^\n]*\n+Summary:\n/
+/** What the tool tells the model when a Stop hook will not let the turn end, a goal's check among them. */
+const HELD = /^Stop hook feedback:\n\[([\s\S]*?)\]: ([\s\S]*)$/
 
 /** What the tool hands the model when something in the background ends, as it keeps it in the session file. */
 const TASK_NOTIFICATION = /^\s*<task-notification>([\s\S]*)<\/task-notification>\s*$/
@@ -481,12 +489,11 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
       })
     } else if (subtype === 'compact_boundary') {
       state.seq += 1
-      out.items.push({
-        kind: 'note',
-        id: `summarised:${String(state.seq)}`,
-        note: 'summarised',
-        text: SUMMARISED,
-      })
+      state.summarised = `summarised:${String(state.seq)}`
+      out.items.push({ kind: 'note', id: state.summarised, note: 'summarised', text: SUMMARISED })
+      // Until the next answer says so, the summary is all the context holds.
+      const left = object(message['compact_metadata'])['post_tokens']
+      if (typeof left === 'number') out.signals.push({ kind: 'spend', used: left })
     } else if (subtype === 'status' && string(message['permissionMode']) !== '') {
       out.signals.push({ kind: 'mode', mode: string(message['permissionMode']) })
     } else if (subtype === 'background_tasks_changed') {
@@ -596,7 +603,15 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
     if (toolResults(state, message, out)) return out
     const content = object(message['message'])['content']
     const said = typeof content === 'string' ? content : resultText(content)
+    // Marked as the summary in the session file, and as made up by the tool in the stream.
+    if (state.summarised !== undefined && (message['isCompactSummary'] === true || message['isSynthetic'] === true)) {
+      out.items.push({ kind: 'note', id: state.summarised, note: 'summarised', text: SUMMARISED, detail: said.replace(SUMMARY_HEAD, '').trim() })
+      state.summarised = undefined
+      return out
+    }
     if (INTERRUPTED.test(said)) state.interrupted = true
+    const held = HELD.exec(said)
+    if (held !== null) out.signals.push({ kind: 'held', hook: held[1] ?? '', reason: (held[2] ?? '').trim() })
     return out
   }
 
@@ -682,7 +697,7 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
 }
 
 /** A file written this recently is a conversation somebody is still in. */
-const STILL_GOING = 60_000
+export const STILL_GOING = 60_000
 
 /**
  * A whole conversation, from the lines of the tool's own session file.
@@ -696,6 +711,59 @@ const STILL_GOING = 60_000
  * ends on something unanswered was stopped - unless it was written a moment
  * ago, in which case it is being held somewhere else and is simply not done.
  */
+/** A line the tool writes about a goal set with /goal. It never comes over the stream, only into the file. */
+const goalStatus = (entry: Json): Json | undefined => {
+  const said = object(entry['attachment'])
+  return string(entry['type']) === 'attachment' && string(said['type']) === 'goal_status' ? said : undefined
+}
+
+/** A goal that ended by itself, met or found impossible; one cleared by hand is not said again. */
+function goalNote(entry: Json): Extract<SessionItem, { kind: 'note' }> | undefined {
+  const said = goalStatus(entry)
+  if (said === undefined || said['sentinel'] === true || (said['met'] !== true && said['failed'] !== true)) return undefined
+  const reason = string(said['reason'])
+  return {
+    kind: 'note',
+    id: '',
+    note: 'goal',
+    text: goalEnded(string(said['condition']), said['met'] === true),
+    ...(reason === '' ? {} : { detail: reason }),
+  }
+}
+
+/** Where a goal set with /goal stands after a conversation's lines. */
+export interface GoalRead {
+  readonly goal?: SessionGoal
+  /** How the last one ended, where it ended by itself. */
+  readonly ended?: Extract<SessionItem, { kind: 'note' }>
+}
+
+/**
+ * The goal that holds after these lines, the way the tool finds it again on
+ * `--resume`: the last line about a goal, unless that one says it was met,
+ * given up or cleared. A goal is set by a line marked `sentinel`, and each
+ * check that finds it does not hold yet writes one more.
+ */
+export function goalOf(entries: readonly Json[]): GoalRead {
+  let goal: SessionGoal | undefined
+  let ended: GoalRead['ended']
+  for (const entry of entries) {
+    const said = goalStatus(entry)
+    if (said === undefined) continue
+    const reason = string(said['reason'])
+    if (said['met'] === true || said['failed'] === true) {
+      goal = undefined
+      ended = goalNote(entry)
+    } else if (said['sentinel'] === true) {
+      goal = { condition: string(said['condition']), checks: 0 }
+      ended = undefined
+    } else if (goal !== undefined) {
+      goal = { condition: goal.condition, checks: goal.checks + 1, ...(reason === '' ? {} : { reason }) }
+    }
+  }
+  return { ...(goal === undefined ? {} : { goal }), ...(ended === undefined ? {} : { ended }) }
+}
+
 export function replayClaude(root: string, entries: readonly Json[], quietFor: number): SessionItem[] {
   const state = claudeState(root)
   const budget = { left: 24_000_000 }
@@ -720,7 +788,10 @@ export function replayClaude(root: string, entries: readonly Json[], quietFor: n
         take(readClaude(state, { ...entry, tool_use_result: entry['toolUseResult'] }))
         continue
       }
-      if (entry['isCompactSummary'] === true) continue
+      if (entry['isCompactSummary'] === true) {
+        take(readClaude(state, entry))
+        continue
+      }
       // Commands run with `!` are blocks of their own, ahead of what was said with them or alone.
       const words: string[] = []
       for (const [index, text] of textsOf(content).entries()) {
@@ -753,7 +824,10 @@ export function replayClaude(root: string, entries: readonly Json[], quietFor: n
           items.set(shell, { kind: 'shell', id: shell, command: (input[1] ?? '').trim(), output: '', ...stamped(entry) })
         }
       }
-      const said = words.join('\n')
+      const written = words.join('\n')
+      // A command typed after `/` is kept in the tool's own markup, and shown as it was typed.
+      const command = tagged(written, 'command-name')
+      const said = command.startsWith('/') ? `${command} ${tagged(written, 'command-args')}`.trim() : written
       const pictures = picturesIn(content, budget)
       if (NOT_SAID.test(said)) continue
       if (said.trim() === '' && pictures.length === 0) continue
@@ -795,6 +869,12 @@ export function replayClaude(root: string, entries: readonly Json[], quietFor: n
     }
 
     if (type === 'system' && string(entry['subtype']) === 'compact_boundary') take(readClaude(state, entry))
+
+    const ended = goalNote(entry)
+    if (ended !== undefined) {
+      state.seq += 1
+      items.set(`goal:${String(state.seq)}`, { ...ended, id: `goal:${String(state.seq)}` })
+    }
   }
 
   const out = empty()

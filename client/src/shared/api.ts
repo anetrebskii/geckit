@@ -90,7 +90,7 @@ export type SessionItem =
       /** How it exited, where that was not 0. */
       readonly code?: number
       readonly stopped?: boolean
-      /** It wants a keyboard, so it was opened in a terminal instead of run here. */
+      /** It wants a keyboard, so it was opened in a terminal instead of run here, and what it printed stayed there. */
       readonly terminal?: boolean
       readonly at?: number
     }
@@ -99,7 +99,7 @@ export type SessionItem =
   | {
       readonly kind: 'note'
       readonly id: string
-      readonly note: 'stopped' | 'limit' | 'failed' | 'summarised' | 'mode' | 'task'
+      readonly note: 'stopped' | 'limit' | 'failed' | 'summarised' | 'mode' | 'task' | 'goal'
       readonly text: string
       /** The tool's own last words, under "What it said". */
       readonly detail?: string
@@ -194,6 +194,48 @@ export interface ChatSession {
   readonly remote?: string
   /** What Claude Code has running in the background for it. */
   readonly tasks?: readonly BackgroundTask[]
+  readonly goal?: SessionGoal
+  /** A command typed after ! that is still running in it, the first where there are more. */
+  readonly runs?: string
+  /** The tracker item it is about, from its first message. */
+  readonly work?: WorkItem
+  /** Where it stands, as the person marked it; saying anything more in it clears it. */
+  readonly status?: SessionStatus
+  /** Messages sent while it worked, oldest first, each going once the turn before it is answered. */
+  readonly queued?: readonly QueuedMessage[]
+}
+
+export interface QueuedMessage {
+  readonly id: string
+  readonly text: string
+  /** How many pictures go with it; the pictures themselves come back only when it is taken out. */
+  readonly images: number
+}
+
+/** The tracker item a conversation is about: the first issue, pull request, Linear or Jira link in its first message. */
+export interface WorkItem {
+  /** `#3914`, `FOR-1067` */
+  readonly label: string
+  readonly url: string
+  /** "twins-ai/Twins-AI pull request 3908" */
+  readonly says: string
+}
+
+export type SessionStatus = 'review' | 'blocked' | 'done'
+
+export const SESSION_STATUSES: readonly { readonly status: SessionStatus; readonly label: string; readonly why: string }[] = [
+  { status: 'review', label: 'In review', why: 'Finished, and waiting for you to check what it did' },
+  { status: 'blocked', label: 'Blocked', why: 'Waiting on something outside it' },
+  { status: 'done', label: 'Done', why: 'Moved out of the list into Done at the bottom' },
+]
+
+/** A goal set with `/goal`: Claude keeps working until a separate check after each turn finds that it holds. */
+export interface SessionGoal {
+  readonly condition: string
+  /** How many checks have found it does not hold yet. */
+  readonly checks: number
+  /** What the last of them said. */
+  readonly reason?: string
 }
 
 /** One thing Claude Code has in the background: a command, a watch or a helper. */
@@ -525,10 +567,14 @@ export interface Settings {
   readonly correctKeyModel: string
   /** Project folders the chat window offers, newest first. */
   readonly projects: readonly string[]
+  /** Each project folder's colour, as its place in the palette: given when it joins the list, changed only by hand. */
+  readonly projectColors: Readonly<Record<string, number>>
   /** The model the next new session is handed. Empty is Default. */
   readonly chatModel: string
   readonly chatMode: SessionMode
   readonly chatGrouping: ChatGrouping
+  /** The chat window lists every project's conversations, and opens that way again. False is the newest project's. */
+  readonly chatAll: boolean
   /** Conversations kept at the top of the list, in the order they were put in; Cmd+1 opens the first. */
   readonly favorites: readonly string[]
   readonly openWith: readonly OpenRule[]
@@ -541,7 +587,32 @@ export interface Settings {
   readonly client: string
   /** False stops the checks on launch and every hour; Check for Updates in Settings still works. */
   readonly autoUpdate: boolean
+  /** Written by the main process only, over `shortcuts:*`, so a window's older copy never undoes a run. */
+  readonly shortcuts: readonly Shortcut[]
 }
+
+/** A saved prompt, run by hand or on a timetable, each time as a new conversation in its project. */
+export interface Shortcut {
+  readonly id: string
+  readonly name: string
+  readonly root: string
+  readonly prompt: string
+  readonly mode: SessionMode
+  /** The model the conversation is handed. Nothing is Default. */
+  readonly model?: string
+  /** When it also runs by itself, as cron writes it: minute, hour, day of the month, month, day of the week. Nothing is by hand only. */
+  readonly cron?: string
+  /** False pauses the timetable and keeps it. */
+  readonly on: boolean
+  /** The next timed run is the first time the timetable names after this: when it was made, last ran on time, or had its time changed. */
+  readonly since: number
+  readonly lastRun?: number
+  /** The conversation the last run started. */
+  readonly lastSession?: string
+}
+
+/** What a window sends to make or change a shortcut; the main process keeps when it ran. */
+export type ShortcutDraft = Omit<Shortcut, 'id' | 'since' | 'lastRun' | 'lastSession'> & { readonly id?: string }
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
@@ -557,13 +628,16 @@ export const DEFAULT_SETTINGS: Settings = {
   correctPlanModel: '',
   correctKeyModel: '',
   projects: [],
+  projectColors: {},
   chatModel: '',
   chatMode: 'auto',
   chatGrouping: 'time',
+  chatAll: false,
   favorites: [],
   openWith: [],
   transcriptions: [],
   client: '',
   autoUpdate: true,
   sidebarWidth: 264,
+  shortcuts: [],
 }

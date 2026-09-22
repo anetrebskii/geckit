@@ -1,4 +1,4 @@
-import { exec } from 'node:child_process'
+import { exec, execFile } from 'node:child_process'
 import { resolve } from 'node:path'
 
 import {
@@ -22,9 +22,11 @@ import type {
   ClaudeAccount,
   CorrectRequest,
   PlanUsage,
+  ShortcutDraft,
   SessionItems,
   SessionMessage,
   SessionMode,
+  SessionStatus,
   Settings,
   ShellCommand,
   TranscribeRequest,
@@ -37,8 +39,10 @@ import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import type { McpChange } from './sessions/mcp'
 import { searchClaude } from './sessions/search'
+import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
 import { forgetProject, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
+import { drawTray, startTray } from './tray'
 import { checkForUpdates, restartToUpdate, startUpdates, updateView } from './updates'
 import {
   chatListening,
@@ -89,6 +93,7 @@ function build(): Sessions {
     changed: (all: readonly ChatSession[]) => {
       shownChat()?.webContents.send('chat:sessions', all)
       badge()
+      drawTray()
     },
     items: (items: SessionItems) => shownChat()?.webContents.send('chat:items', items),
     account: (account: ClaudeAccount) => shownChat()?.webContents.send('chat:accountChanged', account),
@@ -221,11 +226,10 @@ function openTerminal(root: string, run: string): void {
         do script ${JSON.stringify(command)}
       end tell
     end if`
-  exec(`osascript -e ${JSON.stringify(iterm)}`, (error) => {
+  // No shell in between, which would put its own values in for the `$` in the command.
+  execFile('osascript', ['-e', iterm], (error) => {
     if (error === null) return
-    exec(
-      `osascript -e ${JSON.stringify(`tell application "Terminal"\nactivate\ndo script ${JSON.stringify(command)}\nend tell`)}`,
-    )
+    execFile('osascript', ['-e', `tell application "Terminal"\nactivate\ndo script ${JSON.stringify(command)}\nend tell`])
   })
 }
 
@@ -316,8 +320,11 @@ function wire(): void {
     sessions?.answer(id, card, answer),
   )
   ipcMain.on('chat:stop', (_event, id: string) => sessions?.stop(id))
+  ipcMain.handle('chat:unqueue', (_event, id: string, queued: string) => sessions?.unqueue(id, queued))
+  ipcMain.handle('chat:delegate', (_event, id: string, queued: string) => sessions?.delegate(id, queued))
   ipcMain.on('chat:mode', (_event, id: string, mode: SessionMode) => sessions?.mode(id, mode))
   ipcMain.on('chat:rename', (_event, id: string, title: string) => sessions?.rename(id, title))
+  ipcMain.on('chat:mark', (_event, id: string, status: SessionStatus | null) => sessions?.mark(id, status ?? undefined))
   ipcMain.on('chat:hide', (_event, id: string) => {
     sessions?.hide(id)
     unfavorite([id])
@@ -336,6 +343,7 @@ function wire(): void {
   })
   ipcMain.handle('chat:shell', (_event, asked: ShellCommand) => sessions?.shell(asked))
   ipcMain.on('chat:stopShell', (_event, id: string, item: string) => sessions?.stopShell(id, item))
+  ipcMain.on('chat:typeShell', (_event, id: string, item: string, text: string) => sessions?.typeShell(id, item, text))
   ipcMain.on('chat:toBackground', (_event, id: string, item: string) => sessions?.toBackground(id, item))
   ipcMain.on('chat:stopTask', (_event, id: string, task: string) => sessions?.stopTask(id, task))
   ipcMain.on('chat:clearTask', (_event, id: string, task: string) => sessions?.clearTask(id, task))
@@ -353,12 +361,16 @@ function wire(): void {
   ipcMain.on('open:link', (_event, href: string) => {
     if (/^https?:\/\//.test(href)) void shell.openExternal(href)
   })
+  ipcMain.handle('shortcuts:save', (_event, draft: ShortcutDraft) => saveShortcut(draft))
+  ipcMain.on('shortcuts:remove', (_event, id: string) => removeShortcut(id))
+  ipcMain.handle('shortcuts:run', (_event, id: string) => runShortcut(id, 'hand'))
 
   onSettings((settings) => {
     // The frames, the vibrancy behind the panel and the folder picker are the
     // system's, not the stylesheet's, and they follow this.
     nativeTheme.themeSource = settings.theme
     tell('settings:changed', settings)
+    drawTray()
   })
 }
 
@@ -377,12 +389,36 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     if (process.platform === 'darwin') void systemPreferences.askForMediaAccess('microphone')
-    // A packaged app carries its icon in the bundle; run from the source, the Dock would show Electron's.
-    if (!app.isPackaged) app.dock?.setIcon(resolve(import.meta.dirname, '../../assets/icon.png'))
-    sessions = build()
+    // A packaged app carries its icon in the bundle; run from the source, the Dock would show Electron's, so it shows one that says Local.
+    if (!app.isPackaged) app.dock?.setIcon(resolve(import.meta.dirname, '../../assets/icon-dev.png'))
+    const started = build()
+    sessions = started
     nativeTheme.themeSource = getSettings().theme
     wire()
     panelWindow()
+    startShortcuts({
+      start: (message) => started.send(message),
+      rename: (id, title) => started.rename(id, title),
+      busy: (id) => started.busy(id),
+    })
+    startTray({
+      openChat,
+      openPanel: () => {
+        const panel = panelWindow()
+        panel.show()
+        panel.focus()
+      },
+      manage: (edit) => {
+        openChat()
+        tellChat('chat:shortcuts', edit)
+      },
+      // Started by hand, it is shown, where a timed run only says when it is done.
+      run: (id) =>
+        void runShortcut(id, 'hand').then((session) => {
+          if (session !== undefined) openChat(session)
+        }),
+      busy: (id) => started.busy(id),
+    })
     registerCorrect()
     registerDictate()
     registerSpotlight()
@@ -398,9 +434,8 @@ if (!app.requestSingleInstanceLock()) {
   })
 }
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+// The tray keeps it running with no window open, and the timed shortcuts with it; Quit is in the tray's menu.
+app.on('window-all-closed', () => undefined)
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()

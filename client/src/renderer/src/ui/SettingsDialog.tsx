@@ -121,7 +121,7 @@ export function SettingsDialog({
               Add a rule
             </button>
           </div>
-          <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
             Extensions, then the application. * is anything no other rule names. A file with no rule opens in the
             application the system picks for it.
           </span>
@@ -170,7 +170,7 @@ export function SettingsDialog({
             placeholder="sk-or-..."
             onChange={(event) => change({ openRouterKey: event.target.value })}
           />
-          <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>Transcription needs this one.</span>
+          <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Transcription needs this one.</span>
         </div>
 
         <div className="field">
@@ -206,7 +206,7 @@ export function SettingsDialog({
             />
             Update GeckIt automatically
           </label>
-          <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
             Checks on launch and every hour, and downloads a new version in the background. It installs when the app restarts.
           </span>
         </div>
@@ -216,12 +216,14 @@ export function SettingsDialog({
             Keyboard shortcuts ({MOD}+/)
           </button>
           <span className="spacer" />
-          <button type="button" className="quiet" onClick={() => setShown(!shown)}>
-            {shown ? 'Hide keys' : 'Show keys'}
-          </button>
-          <button type="button" className="primary" onClick={onClose}>
-            Done
-          </button>
+          <span className="together">
+            <button type="button" className="quiet" onClick={() => setShown(!shown)}>
+              {shown ? 'Hide keys' : 'Show keys'}
+            </button>
+            <button type="button" className="primary" onClick={onClose}>
+              Done
+            </button>
+          </span>
         </div>
       </div>
     </div>

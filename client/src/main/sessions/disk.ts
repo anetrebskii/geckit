@@ -1,9 +1,11 @@
-import { open, readdir, readFile, realpath, rm, stat } from 'node:fs/promises'
+import { open, readdir, realpath, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import type { SessionItem } from '../../shared/api'
-import { costOf, lastContext, lastSaid, replayClaude, typed } from './claude-read'
+import type { SessionGoal, SessionItem, WorkItem } from '../../shared/api'
+import { workItem } from '../../shared/links'
+import { costOf, goalOf, lastContext, lastSaid, replayClaude, STILL_GOING, typed } from './claude-read'
+import type { GoalRead } from './claude-read'
 import { firstLine } from './wording'
 
 /**
@@ -34,6 +36,7 @@ export interface Found {
   readonly model?: string
   /** Tokens in the context after the last answer. */
   readonly used?: number
+  readonly work?: WorkItem
 }
 
 const string = (value: unknown): string => (typeof value === 'string' ? value : '')
@@ -147,6 +150,7 @@ export async function listClaude(root: string): Promise<Found[]> {
       )
       .find((name) => name !== '' && name !== '<synthetic>')
     const used = lastContext(tail.length > 0 ? tail : head)
+    const work = workItem(asked)
     found.push({
       id: file.id,
       title,
@@ -155,29 +159,88 @@ export async function listClaude(root: string): Promise<Found[]> {
       driven: entrypoint.startsWith('sdk'),
       ...(model === undefined ? {} : { model }),
       ...(used === undefined ? {} : { used }),
+      ...(work === undefined ? {} : { work }),
     })
   }
   return found
+}
+
+const CHUNK = 2 * 1024 * 1024
+
+/**
+ * The entries of a conversation file, read a piece at a time. The main process
+ * also carries every keystroke to the windows, and a hundred megabytes decoded
+ * and parsed in one go held them all up for a quarter of a second.
+ */
+async function entriesOf(path: string, wanted: (line: string) => boolean = () => true): Promise<Json[]> {
+  const entries: Json[] = []
+  const take = (line: string): void => {
+    if (line.trim() === '' || !wanted(line)) return
+    try {
+      entries.push(JSON.parse(line) as Json)
+    } catch {
+      // A line still being written is read once it is whole.
+    }
+  }
+  const file = await open(path, 'r')
+  try {
+    let carry = Buffer.alloc(0)
+    for (;;) {
+      const { buffer, bytesRead } = await file.read(Buffer.alloc(CHUNK), 0, CHUNK, null)
+      if (bytesRead === 0) break
+      const joined = Buffer.concat([carry, buffer.subarray(0, bytesRead)])
+      const end = joined.lastIndexOf(10)
+      if (end < 0) {
+        carry = joined
+        continue
+      }
+      for (const line of joined.subarray(0, end).toString('utf8').split('\n')) take(line)
+      carry = joined.subarray(end + 1)
+    }
+    take(carry.toString('utf8'))
+  } finally {
+    await file.close()
+  }
+  return entries
 }
 
 /** One conversation read whole: what was said, and what it has cost where the tool counted it. */
 export interface Conversation {
   readonly items: SessionItem[]
   readonly cost?: number
+  readonly goal?: SessionGoal
 }
 
 /** One conversation, whole. Undefined where the tool has no file for it. */
+/** The last conversations read, by file, reused while the file is as it was; a hundred megabytes takes a quarter of a second to read again. */
+const kept = new Map<string, { readonly size: number; readonly written: number; readonly conversation: Conversation }>()
+const KEEP = 8
+
 export async function readClaudeSession(root: string, id: string): Promise<Conversation | undefined> {
   const path = await claudeFile(root, id)
   if (path === undefined) return undefined
-  const [source, found] = await Promise.all([readFile(path, 'utf8'), stat(path)])
-  const entries = source.split('\n').flatMap((line) => {
-    try {
-      return line.trim() === '' ? [] : [JSON.parse(line) as Json]
-    } catch {
-      return []
-    }
-  })
+  const found = await stat(path)
+  const was = kept.get(path)
+  if (was !== undefined && was.size === found.size && was.written === found.mtimeMs) return was.conversation
+  const entries = await entriesOf(path)
   const cost = costOf(entries)
-  return { items: replayClaude(root, entries, Date.now() - found.mtimeMs), ...(cost === undefined ? {} : { cost }) }
+  const { goal } = goalOf(entries)
+  const quietFor = Date.now() - found.mtimeMs
+  const conversation = {
+    items: replayClaude(root, entries, quietFor),
+    ...(cost === undefined ? {} : { cost }),
+    ...(goal === undefined ? {} : { goal }),
+  }
+  // One read while it may still be going is read again, as it says Stopped once it has been quiet a minute.
+  kept.delete(path)
+  if (quietFor > STILL_GOING) kept.set(path, { size: found.size, written: found.mtimeMs, conversation })
+  if (kept.size > KEEP) kept.delete(kept.keys().next().value ?? '')
+  return conversation
+}
+
+/** Where a conversation's goal stands, from its lines about goals alone. */
+export async function readGoal(root: string, id: string): Promise<GoalRead> {
+  const path = await claudeFile(root, id)
+  if (path === undefined) return {}
+  return goalOf(await entriesOf(path, (line) => line.includes('"goal_status"')))
 }

@@ -19,13 +19,14 @@ const RECENT = 12
 
 export const running = (task: BackgroundTask): boolean => task.status === 'running'
 
-/** A conversation's dot in a list. Once Claude's turn is over and nothing is waiting to be read, something it started that still runs is a ring, breathing as the working dot does. */
+/** A conversation's dot in a list: working while Claude or a command typed after ! is, then a breathing ring while something it started in the background still runs. */
 export function Dot({ session }: { readonly session: ChatSession }): React.JSX.Element {
-  const background = session.state === 'idle' && (session.tasks?.some(running) ?? false)
+  const shell = session.state === 'idle' && session.runs !== undefined
+  const background = session.state === 'idle' && !shell && (session.tasks?.some(running) ?? false)
   return (
     <span
-      className={`state ${session.state}${background ? ' background' : ''}`}
-      {...(background ? { title: 'Running in the background' } : {})}
+      className={`state ${shell ? 'working' : session.state}${background ? ' background' : ''}`}
+      {...(shell ? { title: `Running !${session.runs ?? ''}` } : background ? { title: 'Running in the background' } : {})}
     />
   )
 }

@@ -31,6 +31,8 @@ export type Signal =
   | { readonly kind: 'task'; readonly task: BackgroundTask }
   /** A turn nobody here started: something in the background finished, or a message came from Remote Control. */
   | { readonly kind: 'begun' }
+  /** A Stop hook sent it back to work instead of letting the turn end: the hook as the tool names it, and why. A goal is one. */
+  | { readonly kind: 'held'; readonly hook: string; readonly reason: string }
   | {
       readonly kind: 'ended'
       /** `offPlan` is never the tool's: it is what Sessions says when it would not start one on a key. */

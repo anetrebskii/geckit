@@ -6,3 +6,5 @@ export const homePath = (path: string): string => {
   const home = window.geckit.home
   return home !== '' && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path
 }
+
+export const tint = (color: number): React.CSSProperties => ({ color: `var(--project-${String(color)})` })

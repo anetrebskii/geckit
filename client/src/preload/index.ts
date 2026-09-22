@@ -11,12 +11,15 @@ import type {
   CorrectRequest,
   GitState,
   PlanUsage,
+  Shortcut,
+  ShortcutDraft,
   SessionItem,
   SessionItems,
   SessionMessage,
   ShellCommand,
   SessionMode,
   SessionNotice,
+  SessionStatus,
   Settings,
   TaskOutput,
   TranscribeRequest,
@@ -67,6 +70,15 @@ const geckit = {
 
   correct: (request: CorrectRequest): Promise<Answered> => ipcRenderer.invoke('correct', request),
 
+  shortcuts: {
+    save: (draft: ShortcutDraft): Promise<Shortcut> => ipcRenderer.invoke('shortcuts:save', draft),
+    remove: (id: string): void => ipcRenderer.send('shortcuts:remove', id),
+    /** Run by hand: the conversation it started, or nothing where it could not. */
+    run: (id: string): Promise<string | undefined> => ipcRenderer.invoke('shortcuts:run', id),
+    /** The tray asked for the list, `new`, or one shortcut by id to edit. */
+    onManage: (said: (edit: string) => void): (() => void) => listen('chat:shortcuts', said),
+  },
+
   transcribe: (request: TranscribeRequest): Promise<Answered> => ipcRenderer.invoke('transcribe', request),
 
   chat: {
@@ -88,6 +100,8 @@ const geckit = {
     /** A command typed after `!`, run in the project; says which conversation it is in. */
     shell: (command: ShellCommand): Promise<string> => ipcRenderer.invoke('chat:shell', command),
     stopShell: (id: string, item: string): void => ipcRenderer.send('chat:stopShell', id, item),
+    /** A line typed to a command typed after `!` that is still running, Enter included. */
+    typeShell: (id: string, item: string, text: string): void => ipcRenderer.send('chat:typeShell', id, item, text),
     /** A command still running, sent on in the background as Ctrl+B does in a terminal. */
     toBackground: (id: string, item: string): void => ipcRenderer.send('chat:toBackground', id, item),
     stopTask: (id: string, task: string): void => ipcRenderer.send('chat:stopTask', id, task),
@@ -97,9 +111,14 @@ const geckit = {
     answer: (id: string, card: string, answer: CardAnswer | string): void =>
       ipcRenderer.send('chat:answer', id, card, answer),
     stop: (id: string): void => ipcRenderer.send('chat:stop', id),
+    /** Takes a message out of the queue before it goes, and gives it back. */
+    unqueue: (id: string, queued: string): Promise<SessionMessage | undefined> => ipcRenderer.invoke('chat:unqueue', id, queued),
+    /** Starts a message waiting in the queue as a new conversation, and says which. */
+    delegate: (id: string, queued: string): Promise<string | undefined> => ipcRenderer.invoke('chat:delegate', id, queued),
     /** How a session may act, chosen under the field: it holds from now, not from the next message. */
     mode: (id: string, mode: SessionMode): void => ipcRenderer.send('chat:mode', id, mode),
     rename: (id: string, title: string): void => ipcRenderer.send('chat:rename', id, title),
+    mark: (id: string, status: SessionStatus | undefined): void => ipcRenderer.send('chat:mark', id, status ?? null),
     hide: (id: string): void => ipcRenderer.send('chat:hide', id),
     /** Deletes the files the tool keeps them in, and says whose are gone. */
     remove: (ids: readonly string[]): Promise<readonly string[]> => ipcRenderer.invoke('chat:delete', ids),

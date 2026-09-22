@@ -19,6 +19,8 @@ export interface Choice {
   readonly danger?: boolean
   /** Checked whatever is chosen, for a menu of things each on or off. */
   readonly on?: boolean
+  /** Drawn where the check goes, and given way to by the check while it is on. */
+  readonly icon?: string
 }
 
 export function Menu({
@@ -51,7 +53,7 @@ export function Menu({
     const box = node.getBoundingClientRect()
     // What it would be without the height it was last given, so a list that
     // arrives after the menu is open - the models - is measured as it now is.
-    const wants = node.scrollHeight + 2
+    const wants = node.scrollHeight + 3
     const left = Math.min(Math.max(8, anchor.left), window.innerWidth - box.width - 8)
     // Below unless it does not fit and there is more room above. A list longer
     // than the room it is given scrolls rather than running off the window.
@@ -101,7 +103,11 @@ export function Menu({
             }}
           >
             <span style={{ width: 14, flexShrink: 0 }}>
-              {choice.value === chosen || choice.on === true ? <Icon name="check" size={13} /> : null}
+              {choice.value === chosen || choice.on === true ? (
+                <Icon name="check" size={13} />
+              ) : choice.icon === undefined ? null : (
+                <Icon name={choice.icon} size={13} />
+              )}
             </span>
             <span className="label">{choice.label}</span>
             {choice.says === undefined ? null : <span className="says">{choice.says}</span>}

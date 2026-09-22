@@ -179,12 +179,15 @@ const COMPONENTS: Components = {
 
 const PLUGINS = [remarkGfm, tagsAsText, pathsAsMentions]
 
+/** Answers already made into elements, the newest kept, so a conversation opened again is not parsed again. */
+const built = new Map<string, JSX.Element>()
+const BUILT = 2000
+
 export function Prose({ text }: { readonly text: string }): JSX.Element {
-  return (
-    <div className="prose">
-      <Markdown remarkPlugins={PLUGINS} components={COMPONENTS}>
-        {text}
-      </Markdown>
-    </div>
-  )
+  let tree = built.get(text)
+  built.delete(text)
+  tree ??= Markdown({ children: text, remarkPlugins: PLUGINS, components: COMPONENTS })
+  built.set(text, tree)
+  if (built.size > BUILT) built.delete(built.keys().next().value ?? '')
+  return <div className="prose">{tree}</div>
 }

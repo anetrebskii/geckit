@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { ChatFound, ChatSession } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
-import { projectName } from './project'
+import { projectColor } from '../../../shared/project-color'
+import { projectName, tint } from './project'
 import { Dot } from './Tasks'
 import { ago } from './time'
 import type { Chat } from './useChat'
@@ -221,7 +222,7 @@ export function Switcher({
                       <span className="changed">{ago(used(row.session), now)}</span>
                     </span>
                     <span className="stands">
-                      <span className="where">
+                      <span className="where" style={tint(projectColor(row.session.root, chat.settings))}>
                         <Marked text={place(row.session.root, words)} words={words} />
                       </span>
                       {row.hit === undefined ? (

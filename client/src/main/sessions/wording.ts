@@ -359,4 +359,8 @@ export function noAutoMode(model: string | undefined): string {
 
 export const SUMMARISED = 'Earlier messages were summarised by Claude Code.'
 
+/** Said where a goal set with /goal ended by itself, with what the check found. */
+export const goalEnded = (condition: string, met: boolean): string =>
+  met ? `Goal met: ${condition}` : `Goal given up, the check found it cannot be met: ${condition}`
+
 export const STOPPED = 'Stopped.'

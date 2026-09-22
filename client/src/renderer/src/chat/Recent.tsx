@@ -1,5 +1,6 @@
-import type { ChatSession } from '../../../shared/api'
-import { projectName } from './project'
+import type { ChatSession, Settings } from '../../../shared/api'
+import { projectColor } from '../../../shared/project-color'
+import { projectName, tint } from './project'
 import { Dot } from './Tasks'
 
 /**
@@ -7,7 +8,15 @@ import { Dot } from './Tasks'
  * this one first. Tab moves down while Ctrl is held, and letting go of Ctrl
  * opens the one it is on.
  */
-export function Recent({ list, at }: { readonly list: readonly ChatSession[]; readonly at: number }): React.JSX.Element {
+export function Recent({
+  list,
+  at,
+  colors,
+}: {
+  readonly list: readonly ChatSession[]
+  readonly at: number
+  readonly colors: Pick<Settings, 'projectColors'>
+}): React.JSX.Element {
   return (
     <div className="switcher recent floating" role="listbox" aria-label="Opened last">
       <div className="switcher-rows">
@@ -25,7 +34,9 @@ export function Recent({ list, at }: { readonly list: readonly ChatSession[]; re
                 <span className="title">{session.title === '' ? 'Untitled' : session.title}</span>
               </span>
               <span className="stands">
-                <span className="where">{projectName(session.root)}</span>
+                <span className="where" style={tint(projectColor(session.root, colors))}>
+                  {projectName(session.root)}
+                </span>
                 {session.stands === '' ? null : <span>{session.stands}</span>}
               </span>
             </span>

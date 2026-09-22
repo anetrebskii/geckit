@@ -14,14 +14,19 @@ import type {
   SessionMessage,
   SessionMode,
   SessionNotice,
+  SessionGoal,
   SessionState,
+  SessionStatus,
   ShellCommand,
   TaskOutput,
+  WorkItem,
 } from '../../shared/api'
 import { sessionMode } from '../../shared/api'
+import { workItem } from '../../shared/links'
 import { claudeAccount } from './account'
 import { holdClaude } from './claude'
-import { claudeFile, deleteClaude, listClaude, readClaudeSession } from './disk'
+import { claudeFile, deleteClaude, listClaude, readClaudeSession, readGoal } from './disk'
+import type { GoalRead } from './claude-read'
 import type { Conversation } from './disk'
 import { cardId } from './heard'
 import type { Driver, Heard, Signal } from './heard'
@@ -29,7 +34,7 @@ import { readMcp, serversOf } from './mcp'
 import type { McpChange } from './mcp'
 import { claudeModels } from './models'
 import type { Wanted } from './rule'
-import { runShell, toldClaude, wantsKeyboard } from './shell'
+import { runInTerminal, runShell, toldClaude, wantsKeyboard } from './shell'
 import type { Running } from './shell'
 import { taskFile, taskOutput } from './tasks'
 import { readUsage } from './usage'
@@ -67,6 +72,7 @@ export interface SessionNote {
   readonly hidden?: boolean
   /** When it was last in front in the window, for the search to offer what was used last. */
   readonly seen?: number
+  readonly status?: SessionStatus
 }
 
 export interface NotesStore {
@@ -94,6 +100,7 @@ interface Row {
   readonly model?: string
   /** Tokens in the context after the last answer. */
   readonly used?: number
+  readonly work?: WorkItem
 }
 
 export type { SessionNotice } from '../../shared/api'
@@ -114,6 +121,7 @@ export interface SessionsDeps {
     read(root: string, id: string): Promise<Conversation | undefined>
     has(root: string, id: string): Promise<boolean>
     delete?(root: string, id: string): Promise<boolean>
+    goal?(root: string, id: string): Promise<GoalRead>
   }
   readonly claudeAccount?: () => Promise<ClaudeAccount>
   readonly claudeModels?: () => Promise<ClaudeModel[] | undefined>
@@ -175,6 +183,22 @@ interface Live {
   tasks: readonly BackgroundTask[]
   back: NodeJS.Timeout | undefined
   stopping: NodeJS.Timeout | undefined
+  /** Set with /goal, as the tool's file last said or as it was just sent. */
+  goal: SessionGoal | undefined
+  /** The goal was cleared while the turn ran, and the tool is told once it has stopped. */
+  clearing: boolean
+  /** Messages sent while it worked, oldest first. */
+  queued: { readonly id: string; readonly message: SessionMessage }[]
+}
+
+/** `/goal <condition>` sets one, and `/goal clear` or one of the tool's other words for it ends it early. */
+const GOAL = /^\/goal\s+([\s\S]+)$/
+const CLEAR_GOAL = new Set(['clear', 'stop', 'off', 'reset', 'none', 'cancel'])
+
+/** The condition a message sets as the goal, `''` where it clears the goal, and nothing where it is not about one. */
+function goalSent(text: string): string | undefined {
+  const goal = GOAL.exec(text.trim())?.[1]?.trim()
+  return goal === undefined || !CLEAR_GOAL.has(goal.toLowerCase()) ? goal : ''
 }
 
 /** How long an idle session keeps its process. */
@@ -297,11 +321,15 @@ export class Sessions {
       const window = model === undefined ? undefined : this.#windows.get(model)
       const cost = live?.spent === undefined && live?.running === undefined ? undefined : (live.spent ?? 0) + (live.running ?? 0)
       const chosen = live === undefined ? note?.model : live.chosen
+      const runs = [...(live?.commands.keys() ?? [])].map((key) => live?.items.get(key)).find((item) => item?.kind === 'shell')
+      // One begun here is not on disk yet the first time it is listed.
+      const first = row === undefined ? [...(live?.items.values() ?? [])].find((item) => item.kind === 'mine') : undefined
+      const work = row?.work ?? (first?.kind === 'mine' ? workItem(first.text) : undefined)
       sessions.push({
         id,
         root: where,
         title: note?.title ?? live?.title ?? row?.title ?? '',
-        stands: (quiet ? live?.stands || row?.stands : live.stands) ?? '',
+        stands: (quiet ? (runs === undefined ? live?.stands || row?.stands : `Running !${runs.command}`) : live.stands) ?? '',
         state: quiet && note?.unread === true ? 'unread' : (live?.state ?? 'idle'),
         at: Math.max(live?.at ?? 0, row?.at ?? 0),
         here: note?.here === true,
@@ -311,6 +339,13 @@ export class Sessions {
         ...(note?.seen === undefined ? {} : { seen: note.seen }),
         ...(live?.remote === undefined ? {} : { remote: live.remote }),
         ...(live === undefined || live.tasks.length === 0 ? {} : { tasks: live.tasks }),
+        ...(live?.goal === undefined ? {} : { goal: live.goal }),
+        ...(runs === undefined ? {} : { runs: runs.command }),
+        ...(work === undefined ? {} : { work }),
+        ...(note?.status === undefined ? {} : { status: note.status }),
+        ...(live === undefined || live.queued.length === 0
+          ? {}
+          : { queued: live.queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0 })) }),
         ...(used === undefined && cost === undefined
           ? {}
           : {
@@ -393,6 +428,9 @@ export class Sessions {
       tasks: [],
       back: undefined,
       stopping: undefined,
+      goal: undefined,
+      clearing: false,
+      queued: [],
     }
     this.#live.set(id, live)
     return live
@@ -405,6 +443,7 @@ export class Sessions {
     // Nothing holds it, so every run of the tool it had has written what it cost.
     live.spent = conversation.cost
     live.running = undefined
+    live.goal = conversation.goal
 
     const items = new Map(read.map((item) => [item.id, item]))
     // What only this window knows goes back where it was, unless the file says it too.
@@ -439,7 +478,19 @@ export class Sessions {
     } else if (live.driver === undefined) {
       await this.#reread(live)
     }
-    if (live.state === 'working' || live.state === 'asks') return live.id
+    if (live.state === 'working' || live.state === 'asks') {
+      // A goal keeps the turn going until it holds, so it is cleared by stopping the turn and clearing it once it has.
+      if (live.goal !== undefined && goalSent(message.text) === '') {
+        live.goal = undefined
+        live.clearing = true
+        this.stop(live.id)
+        this.#changed()
+        return live.id
+      }
+      live.queued.push({ id: `queued:${randomUUID()}`, message: { ...message, session: live.id } })
+      this.#changed()
+      return live.id
+    }
 
     live.mode = message.mode
     // A conversation begun with a command is named after what is first said in it.
@@ -452,6 +503,9 @@ export class Sessions {
       live.model = undefined
     }
     clearTimeout(live.back)
+    // The goal holds from the moment it is sent; the file says the rest once the turn is over.
+    const goal = goalSent(message.text)
+    if (goal !== undefined) live.goal = goal === '' ? undefined : { condition: goal, checks: 0 }
 
     // The message is in the transcript before anything can go wrong with it.
     const again = message.again === undefined ? undefined : live.items.get(message.again)
@@ -507,6 +561,8 @@ export class Sessions {
       here: this.#deps.notes.all()[live.id]?.here ?? !live.begun,
       title: this.#deps.notes.all()[live.id]?.title ?? live.title,
     })
+    // Said to again, it is being worked on, whatever it was marked.
+    if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
     this.#deps.items({ id: live.id, items: [mine], gone })
     this.#changed()
     live.begun = true
@@ -521,7 +577,8 @@ export class Sessions {
   /**
    * A command typed after `!`: run in the project folder, shown in the
    * conversation, and handed to Claude with the next message, the way the
-   * terminal's `!` is. One that wants a keyboard is opened in a terminal instead.
+   * terminal's `!` is. One that wants a keyboard is opened in a terminal
+   * instead, and waited for there.
    */
   async shell(asked: ShellCommand): Promise<string> {
     let live = asked.session === undefined ? undefined : (this.#live.get(asked.session) ?? this.#adopt(asked.session))
@@ -532,24 +589,20 @@ export class Sessions {
       await this.#reread(live)
     }
     const held = live
-    const terminal = this.#deps.terminal !== undefined && wantsKeyboard(command)
+    const terminal = wantsKeyboard(command) ? this.#deps.terminal : undefined
     const item: SessionItem = {
       kind: 'shell',
       id: `shell:${randomUUID()}`,
       command,
       output: '',
       at: this.#now(),
-      ...(terminal ? { terminal: true } : { running: true }),
+      running: true,
+      ...(terminal === undefined ? {} : { terminal: true }),
     }
     held.kept.push({ after: [...held.items.keys()].at(-1), item })
     held.items.set(item.id, item)
     held.at = this.#now()
     this.#deps.items({ id: held.id, items: [item] })
-    this.#changed()
-    if (terminal) {
-      this.#deps.terminal?.(held.root, command)
-      return held.id
-    }
 
     const show = (next: SessionItem): void => {
       if (this.#live.get(held.id) !== held) return
@@ -560,14 +613,18 @@ export class Sessions {
     // What it prints is drawn a few times a second, not once a line.
     let printed = ''
     let drawing: NodeJS.Timeout | undefined
-    const running = (this.#deps.shell ?? runShell)(held.root, command, (output) => {
-      printed = output
-      drawing ??= setTimeout(() => {
-        drawing = undefined
-        if (held.commands.has(item.id)) show({ ...item, output: printed })
-      }, 100)
-    })
+    const running =
+      terminal === undefined
+        ? (this.#deps.shell ?? runShell)(held.root, command, (output) => {
+            printed = output
+            drawing ??= setTimeout(() => {
+              drawing = undefined
+              if (held.commands.has(item.id)) show({ ...item, output: printed })
+            }, 100)
+          })
+        : runInTerminal(held.root, command, terminal)
     held.commands.set(item.id, running)
+    this.#changed()
     void running.done.then((ran) => {
       clearTimeout(drawing)
       held.commands.delete(item.id)
@@ -578,12 +635,17 @@ export class Sessions {
         ...(ran.stopped ? { stopped: true } : ran.code !== undefined && ran.code !== 0 ? { code: ran.code } : {}),
       })
       held.told.push({ id: item.id, blocks: toldClaude(command, ran) })
+      this.#changed()
     })
     return held.id
   }
 
   stopShell(id: string, item: string): void {
     this.#live.get(id)?.commands.get(item)?.stop()
+  }
+
+  typeShell(id: string, item: string, text: string): void {
+    this.#live.get(id)?.commands.get(item)?.write?.(text)
   }
 
   /** A command the tool is waiting on, sent on in the background: the turn goes on, and so does the command. */
@@ -801,6 +863,31 @@ export class Sessions {
     }, STOP_HEARD)
   }
 
+  /** A message taken out of the queue before it went, to be cancelled or typed again. */
+  unqueue(id: string, queued: string): SessionMessage | undefined {
+    const live = this.#live.get(id)
+    const taken = live?.queued.find((one) => one.id === queued)
+    if (live === undefined || taken === undefined) return undefined
+    live.queued = live.queued.filter((one) => one !== taken)
+    this.#changed()
+    return taken.message
+  }
+
+  /** A message taken out of the queue and started as a conversation of its own, in the same project and mode. */
+  async delegate(id: string, queued: string): Promise<string | undefined> {
+    const taken = this.unqueue(id, queued)
+    if (taken === undefined) return undefined
+    const { session: _from, again: _again, ...message } = taken
+    return this.send({ ...message, mode: this.#live.get(id)?.mode ?? message.mode })
+  }
+
+  /** Marked in review, blocked or done; nothing takes the mark off. */
+  mark(id: string, status: SessionStatus | undefined): void {
+    const { status: _was, ...note } = this.#deps.notes.all()[id] ?? {}
+    this.#deps.notes.set(id, status === undefined ? note : { ...note, status })
+    this.#changed()
+  }
+
   rename(id: string, title: string): void {
     const name = title.trim()
     if (name === '') return
@@ -912,6 +999,12 @@ export class Sessions {
     return this.#listed().filter((one) => one.state === 'asks' || one.state === 'unread').length
   }
 
+  /** In the middle of a turn, or waiting for an answer in one. */
+  busy(id: string): boolean {
+    const state = this.#live.get(id)?.state
+    return state === 'working' || state === 'asks'
+  }
+
   /** What quitting would stop. */
   working(): string[] {
     return [...this.#live.values()]
@@ -1012,6 +1105,11 @@ export class Sessions {
         live.stands = 'Working'
         live.last = undefined
         live.at = this.#now()
+        this.#changed()
+        return
+      case 'held':
+        if (live.goal === undefined || signal.hook !== live.goal.condition) return
+        live.goal = { condition: live.goal.condition, checks: live.goal.checks + 1, reason: signal.reason }
         this.#changed()
         return
       case 'asks':
@@ -1156,9 +1254,30 @@ export class Sessions {
     if (items.length > 0 || gone.length > 0) {
       this.#deps.items({ id: live.id, items, ...(gone.length > 0 ? { gone } : {}) })
     }
+    // The next message waiting goes once this one is answered, in the mode chosen by then. A turn that ended any other way leaves them for the window to put back in the field.
+    const next = signal.how === 'done' && !live.clearing ? live.queued.shift() : undefined
+    if (next !== undefined) void this.send({ ...next.message, mode: live.mode })
     this.#changed()
+    if (live.goal !== undefined) void this.#goal(live)
+    if (live.clearing) {
+      live.clearing = false
+      void this.send({ session: live.id, root: live.root, mode: live.mode, text: '/goal clear', ...(live.chosen === undefined ? {} : { model: live.chosen }) })
+    }
 
     this.#rest(live)
+  }
+
+  /** Where the goal stands once a turn is over, which only the tool's file says, and a line where it ended by itself. */
+  async #goal(live: Live): Promise<void> {
+    const read = await (this.#deps.disk?.goal ?? readGoal)(live.root, live.id).catch(() => undefined)
+    if (read === undefined || this.#live.get(live.id) !== live || live.goal === undefined) return
+    live.goal = read.goal
+    if (read.goal === undefined && read.ended !== undefined) {
+      const item: SessionItem = { ...read.ended, id: `goal:${String(this.#now())}` }
+      live.items.set(item.id, item)
+      this.#deps.items({ id: live.id, items: [item] })
+    }
+    this.#changed()
   }
 
   /** An idle process is let go of after a while, unless Remote Control or something in the background is keeping it. */

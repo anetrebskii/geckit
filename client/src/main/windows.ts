@@ -23,9 +23,16 @@ const page = (name: string): { url: string } | { file: string } => {
     : { url: `${dev}/${name}.html` }
 }
 
+/** Run from the source, a window says so along its top, so it is never taken for the installed app. */
+const LOCAL = `
+html::before { content: ''; position: fixed; inset: 0 0 auto; z-index: 2147483647; height: 2px; background: #e8710f; pointer-events: none }
+html::after { content: 'Local'; position: fixed; top: 0; left: 50%; z-index: 2147483647; padding: 0 8px 1px; font: 600 10px/14px -apple-system, system-ui, sans-serif; letter-spacing: 0.04em; color: #fff; background: #e8710f; border-radius: 0 0 5px 5px; transform: translateX(-50%); pointer-events: none }
+`
+
 const load = (window: BrowserWindow, name: string): void => {
   const where = page(name)
   void ('url' in where ? window.loadURL(where.url) : window.loadFile(where.file))
+  if ('url' in where && name !== 'voice') window.webContents.on('did-finish-load', () => void window.webContents.insertCSS(LOCAL))
 }
 
 /** Bounds that are still on a screen this computer has. */
