@@ -30,6 +30,7 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
       ['Ctrl+Tab, Ctrl+Shift+Tab', 'Switch to a conversation opened lately: hold Ctrl, press Tab to move, let go to open'],
       [`${MOD}+Alt+Down, ${MOD}+Alt+Up`, 'Next and previous conversation in the list'],
       ['F2', 'Rename the conversation; or click its name at the top'],
+      [`${MOD}+click, Shift+click`, 'Select several conversations; Delete deletes them, Esc lets them go'],
       [`${MOD}+R`, 'Refresh'],
       ['Enter', 'Send'],
       ['Shift+Enter', 'New line'],

@@ -450,16 +450,16 @@ describe('the list', () => {
       },
     })
     await built.sessions.list([ROOT])
-    expect(await built.sessions.remove('old')).toBe(true)
+    expect(await built.sessions.remove(['old'])).toEqual(['old'])
     expect(thrown).toEqual(['old'])
     expect(of(built.rows, 'old')).toBeUndefined()
-    expect(await built.sessions.remove('never-there')).toBe(false)
+    expect(await built.sessions.remove(['never-there'])).toEqual([])
   })
 
   it('stops the process of a conversation it deletes', async () => {
     const built = build({ disk: { list: async () => [], read: async () => undefined, has: async () => false } })
     const id = await started(built)
-    expect(await built.sessions.remove(id)).toBe(false)
+    expect(await built.sessions.remove([id])).toEqual([])
     expect(built.fake.ended).toBe(1)
     expect(of(built.rows, id)).toBeUndefined()
   })
@@ -484,8 +484,24 @@ describe('the list', () => {
         resolve()
       }, 5),
     )
-    expect(await built.sessions.remove(id)).toBe(true)
+    expect(await built.sessions.remove([id])).toEqual([id])
     expect(order).toEqual(['gone', 'deleted'])
+  })
+
+  it('deletes many at once and sends the list once', async () => {
+    const built = build({
+      disk: {
+        list: async () => ['a', 'b', 'c'].map((id, at) => ({ id, title: id, stands: '', at, driven: false })),
+        read: async () => undefined,
+        has: async () => false,
+        delete: async (_root, id) => id !== 'b',
+      },
+    })
+    await built.sessions.list([ROOT])
+    const sent = built.rows.length
+    expect(await built.sessions.remove(['a', 'b', 'c'])).toEqual(['a', 'c'])
+    expect(built.rows.length).toBe(sent + 1)
+    expect(built.rows.at(-1)?.map((one) => one.id)).toEqual([])
   })
 
   it('lets go of one about to be continued in a terminal', async () => {

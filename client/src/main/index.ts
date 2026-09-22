@@ -279,7 +279,7 @@ function wire(): void {
     searchClaude(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
   )
   // The window asks first, in its own words; by here it has been answered.
-  ipcMain.handle('chat:delete', async (_event, id: string) => (await sessions?.remove(id)) ?? false)
+  ipcMain.handle('chat:delete', async (_event, ids: readonly string[]) => (await sessions?.remove(ids)) ?? [])
   ipcMain.handle('chat:items', (_event, id: string) => sessions?.items(id) ?? [])
   ipcMain.handle('chat:send', async (_event, message: SessionMessage) => {
     track('chatSent')

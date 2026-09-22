@@ -1190,6 +1190,28 @@ textarea {
   letter-spacing: 0;
 }
 
+.group-head {
+  display: flex;
+  align-items: center;
+}
+
+.group-head .group {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Only there while rows are picked, so the list is quiet the rest of the time. */
+.group-pick {
+  flex-shrink: 0;
+  padding: 10px 6px 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.group-pick:hover {
+  color: var(--text);
+}
+
 .row {
   position: relative;
   display: flex;
@@ -1215,6 +1237,50 @@ textarea {
   margin-top: 6px;
   border-radius: 50%;
   background: transparent;
+}
+
+/* Wider than the dot it stands in for, and the text stays where it was. */
+.row .pick {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin: 2px -4px 0;
+  color: var(--accent-text);
+  border: 1px solid var(--text-faint);
+  border-radius: 50%;
+}
+
+.row.picked {
+  background: var(--bg-active);
+}
+
+.row.picked .pick {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.sessions.picking .row .more {
+  display: none;
+}
+
+.sessions.picking .row:hover .changed {
+  visibility: visible;
+}
+
+.picked-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.picked-bar button {
+  padding: 4px 10px;
 }
 
 .row .state.working {
