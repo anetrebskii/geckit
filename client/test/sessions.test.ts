@@ -696,7 +696,7 @@ describe('Claude Code options', () => {
     built.fake.answers['remote_control'] = { session_url: REMOTE }
     await built.sessions.list([ROOT])
     expect(await built.sessions.remote('old', true)).toEqual({ url: REMOTE })
-    expect(built.fake.made).toEqual([{ root: ROOT, id: 'old', resume: true, mode: 'manual' }])
+    expect(built.fake.made).toEqual([{ root: ROOT, id: 'old', resume: true, mode: 'auto' }])
     expect(built.fake.sent).toEqual([])
   })
 
