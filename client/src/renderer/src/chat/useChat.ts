@@ -11,6 +11,7 @@ import type {
   SessionMode,
   SessionNotice,
 } from '../../../shared/api'
+import { resumeCommand } from '../../../shared/api'
 import { asImage, canShow } from '../pictures'
 import { useSettings } from '../settings'
 import type { Settings } from '../../../shared/api'
@@ -92,6 +93,8 @@ export interface Chat {
   /** Throws the conversations away for good. The window asks before this is called. */
   remove: (ids: readonly string[]) => void
   terminal: (id: string) => void
+  /** Puts the command that continues it in a terminal on the clipboard, and lets go of it here. */
+  copyTerminal: (id: string) => void
   refresh: () => void
 }
 
@@ -385,6 +388,13 @@ export function useChat(): Chat {
     if (where !== undefined) window.geckit.chat.terminal(id, where)
   }, [])
 
+  const copyTerminal = useCallback((id: string) => {
+    const where = sessionsRef.current.find((one) => one.id === id)?.root ?? rootRef.current
+    if (where === undefined) return
+    void navigator.clipboard.writeText(`cd ${JSON.stringify(where)} && ${resumeCommand(id)}`)
+    window.geckit.chat.handOver(id)
+  }, [])
+
   const startNew = useCallback(() => open({ kind: 'new' }), [open])
 
   return {
@@ -462,6 +472,7 @@ export function useChat(): Chat {
     hide,
     remove,
     terminal,
+    copyTerminal,
     refresh,
   }
 }

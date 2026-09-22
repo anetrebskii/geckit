@@ -501,13 +501,15 @@ export function Sidebar({
           anchor={menu.at}
           choices={[
             { value: 'rename', label: 'Rename' },
-            { value: 'terminal', label: 'Continue in a terminal' },
+            { value: 'copy', label: 'Copy the terminal command' },
+            { value: 'terminal', label: 'Open in a terminal' },
             { value: 'select', label: 'Select', says: `${MOD}+click` },
             { value: 'hide', label: 'Hide from this list' },
             { value: 'delete', label: 'Delete', danger: true },
           ]}
           onPick={(value) => {
             if (value === 'rename') setRenaming(menu.id)
+            if (value === 'copy') chat.copyTerminal(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)
             if (value === 'hide') chat.hide(menu.id)
             if (value === 'select') {

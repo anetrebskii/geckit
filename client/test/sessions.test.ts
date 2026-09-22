@@ -22,6 +22,9 @@ interface Fake {
   readonly sent: { text: string; images?: readonly unknown[] }[]
   readonly answered: [string, string][]
   readonly permitted: [string, readonly string[]][]
+  /** Requests on the control channel, and what the tool says back to each kind. */
+  readonly controls: Readonly<Record<string, unknown>>[]
+  readonly answers: Record<string, Readonly<Record<string, unknown>>>
   stopped: number
   ended: number
   closing: Promise<void>
@@ -35,6 +38,8 @@ function fakeClaude(): { claude: typeof holdClaude; fake: Fake } {
     sent: [],
     answered: [],
     permitted: [],
+    controls: [],
+    answers: {},
     stopped: 0,
     ended: 0,
     closing: Promise.resolve(),
@@ -47,6 +52,10 @@ function fakeClaude(): { claude: typeof holdClaude; fake: Fake } {
       send: (text, images) => fake.sent.push({ text, ...(images === undefined ? {} : { images }) }),
       answer: (ask, answer) => fake.answered.push([ask, String(answer)]),
       permit: (mode, again) => fake.permitted.push([mode, again]),
+      control: async (request) => {
+        fake.controls.push(request)
+        return fake.answers[String(request['subtype'])] ?? {}
+      },
       stop: () => (fake.stopped += 1),
       end: () => {
         fake.ended += 1
@@ -627,5 +636,86 @@ describe('what the search offers first', () => {
     built.sessions.watching(id)
     built.sessions.watching(undefined)
     expect((await built.sessions.list([ROOT])).find((one) => one.id === id)?.seen).toBe(5_000)
+  })
+})
+
+describe('Claude Code options', () => {
+  const REMOTE = 'https://claude.ai/code/session_remote'
+  afterEach(() => vi.useRealTimers())
+
+  it('turns Remote Control on, says where, and turns it on again in the next process', async () => {
+    const built = build()
+    built.fake.answers['remote_control'] = { session_url: REMOTE }
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    expect(await built.sessions.remote(id, true)).toEqual({ url: REMOTE })
+    expect(built.fake.controls).toEqual([{ subtype: 'remote_control', enabled: true, name: 'do the thing' }])
+    expect(of(built.rows, id)?.remote).toBe(REMOTE)
+
+    // Plan is a new start, and Remote Control goes with the conversation into it.
+    built.sessions.mode(id, 'plan')
+    await built.sessions.send({ root: ROOT, session: id, mode: 'plan', text: 'plan it' })
+    await Promise.resolve()
+    expect(built.fake.made).toHaveLength(2)
+    expect(built.fake.controls.filter((one) => one['enabled'] === true)).toHaveLength(2)
+    expect(of(built.rows, id)?.remote).toBe(REMOTE)
+
+    expect(await built.sessions.remote(id, false)).toEqual({})
+    expect(built.fake.controls.at(-1)).toEqual({ subtype: 'remote_control', enabled: false })
+    expect(of(built.rows, id)?.remote).toBeUndefined()
+  })
+
+  it('keeps the process while Remote Control is on, and lets it go once it is off', async () => {
+    vi.useFakeTimers()
+    const built = build()
+    built.fake.answers['remote_control'] = { session_url: REMOTE }
+    const id = await started(built)
+    await built.sessions.remote(id, true)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    vi.advanceTimersByTime(11 * 60_000)
+    expect(built.fake.ended).toBe(0)
+    await built.sessions.remote(id, false)
+    vi.advanceTimersByTime(11 * 60_000)
+    expect(built.fake.ended).toBe(1)
+  })
+
+  it('starts a process for a conversation that has none, to turn Remote Control on in it', async () => {
+    const built = build({
+      disk: {
+        list: async () => [{ id: 'old', title: 'An old one', stands: '', at: 1, driven: false }],
+        read: async () => undefined,
+        has: async () => true,
+      },
+    })
+    built.fake.answers['remote_control'] = { session_url: REMOTE }
+    await built.sessions.list([ROOT])
+    expect(await built.sessions.remote('old', true)).toEqual({ url: REMOTE })
+    expect(built.fake.made).toEqual([{ root: ROOT, id: 'old', resume: true, mode: 'manual' }])
+    expect(built.fake.sent).toEqual([])
+  })
+
+  it('switches an MCP server in the process holding the conversation, then says how they stand', async () => {
+    const asked: unknown[] = []
+    const built = build({ mcp: async (...args) => (asked.push(args), []) })
+    built.fake.answers['mcp_status'] = { mcpServers: [{ name: 'linear', status: 'disabled' }, { name: 'notion', status: 'connected' }] }
+    const id = await started(built)
+    expect(await built.sessions.mcp(ROOT, id, { name: 'linear', enabled: false })).toEqual([
+      { name: 'linear', status: 'disabled' },
+      { name: 'notion', status: 'connected' },
+    ])
+    expect(built.fake.controls).toEqual([
+      { subtype: 'mcp_toggle', serverName: 'linear', enabled: false },
+      { subtype: 'mcp_status' },
+    ])
+    expect(asked).toEqual([])
+  })
+
+  it('asks a process of its own about MCP where the conversation has none', async () => {
+    const asked: unknown[] = []
+    const built = build({ mcp: async (...args) => (asked.push(args), [{ name: 'linear', status: 'connected' }]) })
+    expect(await built.sessions.mcp(ROOT, undefined, { name: 'linear', enabled: true })).toEqual([
+      { name: 'linear', status: 'connected' },
+    ])
+    expect(asked).toEqual([[ROOT, { name: 'linear', enabled: true }]])
   })
 })

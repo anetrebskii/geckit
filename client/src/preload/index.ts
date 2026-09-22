@@ -7,6 +7,7 @@ import type {
   ChatSession,
   ClaudeAccount,
   ClaudeModel,
+  McpServer,
   CorrectRequest,
   GitState,
   PlanUsage,
@@ -95,6 +96,17 @@ const geckit = {
     watching: (id: string | undefined): void => ipcRenderer.send('chat:watching', id),
     /** Opens a terminal in the project with `claude --resume` already running. */
     terminal: (id: string, root: string): void => ipcRenderer.send('chat:terminal', id, root),
+    /** Lets go of the process holding it, since it is about to be continued somewhere else. */
+    handOver: (id: string): void => ipcRenderer.send('chat:handOver', id),
+    /** Remote Control on or off for a conversation: where it is on claude.ai, or why not. */
+    remote: (id: string, on: boolean): Promise<{ readonly url?: string; readonly error?: string }> =>
+      ipcRenderer.invoke('chat:remote', id, on),
+    /** A project's MCP servers and how each stands, with one switched on or off first. Nothing where the tool would not say. */
+    mcp: (
+      root: string,
+      id: string | undefined,
+      change?: { readonly name: string; readonly enabled: boolean },
+    ): Promise<McpServer[] | undefined> => ipcRenderer.invoke('chat:mcp', root, id, change),
     /** Where the project's checkout stands. Asking also has the remote asked, now and then; what it says arrives through onGit. */
     git: (root: string): Promise<GitState | undefined> => ipcRenderer.invoke('chat:git', root),
     onGit: (said: (git: { readonly root: string; readonly state: GitState | undefined }) => void): (() => void) =>

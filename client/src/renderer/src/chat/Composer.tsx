@@ -5,6 +5,7 @@ import type { SessionMode } from '../../../shared/api'
 import { mentionAt, pathsFor } from '../../../shared/paths'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
+import { Mcp } from './Mcp'
 import type { Choice } from '../ui/Menu'
 import { projectName } from './project'
 import type { Chat } from './useChat'
@@ -231,6 +232,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               if (value !== '__asking') chat.setModel(value)
             }}
           />
+          {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
           <div className="spacer" />
           {chat.working ? (
             <button type="button" className="send stop" onClick={chat.stop} title="Stop (Esc)" aria-label="Stop">

@@ -6,6 +6,7 @@ import type {
   ChatSession,
   ClaudeAccount,
   ClaudeModel,
+  McpServer,
   PlanUsage,
   SessionItem,
   SessionItems,
@@ -21,6 +22,8 @@ import { claudeFile, deleteClaude, listClaude, readClaudeSession } from './disk'
 import type { Conversation } from './disk'
 import { cardId } from './heard'
 import type { Driver, Heard, Signal } from './heard'
+import { readMcp, serversOf } from './mcp'
+import type { McpChange } from './mcp'
 import { claudeModels } from './models'
 import type { Wanted } from './rule'
 import { readUsage } from './usage'
@@ -109,6 +112,7 @@ export interface SessionsDeps {
   readonly claudeAccount?: () => Promise<ClaudeAccount>
   readonly claudeModels?: () => Promise<ClaudeModel[] | undefined>
   readonly usage?: (models: readonly string[]) => Promise<Usage>
+  readonly mcp?: (root: string, change?: McpChange) => Promise<McpServer[] | undefined>
   readonly now?: () => number
 }
 
@@ -152,6 +156,8 @@ interface Live {
   /** The message the turn in hand was started with, for the turn that does not finish. */
   last: string | undefined
   quiet: NodeJS.Timeout | undefined
+  /** Remote Control is on, and where the conversation is on claude.ai. The process is kept while it is. */
+  remote: string | undefined
   back: NodeJS.Timeout | undefined
   stopping: NodeJS.Timeout | undefined
 }
@@ -282,6 +288,7 @@ export class Sessions {
         ...(model === undefined ? {} : { model }),
         ...(chosen === undefined ? {} : { chosen }),
         ...(note?.seen === undefined ? {} : { seen: note.seen }),
+        ...(live?.remote === undefined ? {} : { remote: live.remote }),
         ...(used === undefined && cost === undefined
           ? {}
           : {
@@ -358,6 +365,7 @@ export class Sessions {
       grants: new Set(),
       last: undefined,
       quiet: undefined,
+      remote: undefined,
       back: undefined,
       stopping: undefined,
     }
@@ -481,15 +489,12 @@ export class Sessions {
   async #hold(live: Live): Promise<void> {
     clearTimeout(live.quiet)
 
-    // The tool takes its model when a conversation is taken up, so another model is taking it up again.
-    if (live.driver !== undefined && live.ran !== live.chosen) {
-      live.driver.end()
+    // The tool takes its model when a conversation is taken up, and is told how it may act when it starts, so
+    // another model or a change of mind is a new start. Let go of before it is ended, so Remote Control carries over.
+    if (live.driver !== undefined && (live.ran !== live.chosen || live.runs !== live.mode)) {
+      const old = live.driver
       live.driver = undefined
-    }
-    // Claude Code is told how it may act when it starts, so a change of mind is a new start.
-    if (live.driver !== undefined && live.runs !== live.mode) {
-      live.driver.end()
-      live.driver = undefined
+      void old.end()
     }
     if (live.driver !== undefined) return
 
@@ -503,10 +508,74 @@ export class Sessions {
       { root: live.root, id: live.id, resume, mode: live.mode, ...(live.chosen === undefined ? {} : { model: live.chosen }) },
       (heard) => this.#hear(live, heard),
       () => {
-        if (live.driver === driver) live.driver = undefined
+        if (live.driver !== driver) return
+        live.driver = undefined
+        if (live.remote === undefined) return
+        live.remote = undefined
+        this.#changed()
       },
     )
     live.driver = driver
+    if (live.remote !== undefined) void this.#remoteOn(live).catch(() => this.#remoteOff(live))
+  }
+
+  /**
+   * Remote Control for one conversation: on, it can be continued from claude.ai
+   * or the Claude app, and the process holding it here stays up until it is
+   * turned off. Says where it is on claude.ai, or why the tool would not.
+   */
+  async remote(id: string, on: boolean): Promise<{ readonly url?: string; readonly error?: string }> {
+    const live = this.#live.get(id) ?? this.#adopt(id)
+    if (live === undefined) return { error: 'This conversation is not here any more.' }
+    if (!on) {
+      await live.driver?.control?.({ subtype: 'remote_control', enabled: false }).catch(() => undefined)
+      this.#remoteOff(live)
+      return {}
+    }
+    if ((await this.account()).key === true) return { error: 'That claude is signed in with an API key, and GeckIt only runs sessions on a plan.' }
+    try {
+      await this.#hold(live)
+      return { url: await this.#remoteOn(live) }
+    } catch (error) {
+      this.#remoteOff(live)
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
+  async #remoteOn(live: Live): Promise<string> {
+    const control = live.driver?.control
+    if (control === undefined) throw new Error('Claude Code is not running for this conversation.')
+    const answer = await control({ subtype: 'remote_control', enabled: true, name: this.#deps.notes.all()[live.id]?.title ?? live.title })
+    const url = typeof answer['session_url'] === 'string' ? answer['session_url'] : ''
+    live.remote = url
+    this.#changed()
+    return url
+  }
+
+  #remoteOff(live: Live): void {
+    if (live.remote === undefined) return
+    live.remote = undefined
+    this.#rest(live)
+    this.#changed()
+  }
+
+  /**
+   * The MCP servers Claude Code has for a project and how each stands, with a
+   * server switched on or off first where one was. The conversation's own
+   * process is asked where it has one, so a switch holds in it at once;
+   * otherwise a process in the folder is, and the switch holds from the next start.
+   */
+  async mcp(root: string, id?: string, change?: McpChange): Promise<McpServer[] | undefined> {
+    const control = id === undefined ? undefined : this.#live.get(id)?.driver?.control
+    if (control !== undefined) {
+      try {
+        if (change !== undefined) await control({ subtype: 'mcp_toggle', serverName: change.name, enabled: change.enabled })
+        return serversOf(await control({ subtype: 'mcp_status' }))
+      } catch {
+        // Asked of a process of its own instead, which the switch is saved for anyway.
+      }
+    }
+    return (this.#deps.mcp ?? readMcp)(root, change)
   }
 
   answer(id: string, card: string, answer: CardAnswer | string): void {
@@ -937,9 +1006,14 @@ export class Sessions {
     }
     this.#changed()
 
+    this.#rest(live)
+  }
+
+  /** An idle process is let go of after a while, unless Remote Control is keeping it. */
+  #rest(live: Live): void {
     clearTimeout(live.quiet)
     live.quiet = setTimeout(() => {
-      if (live.state === 'working' || live.state === 'asks') return
+      if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined) return
       live.driver?.end()
       live.driver = undefined
     }, QUIET)
