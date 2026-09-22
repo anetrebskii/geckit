@@ -62,6 +62,9 @@ const SPOTLIGHT = ANYWHERE.search
 
 let sessions: Sessions | undefined
 
+// GeckIt's own window the dictation was started in, which it goes back into.
+let dictatedInto: BrowserWindow | undefined
+
 // A notification nothing holds on to is collected, and a press on it then opens nothing.
 const notices = new Set<Notification>()
 
@@ -126,6 +129,7 @@ function registerDictate(): void {
       return
     }
     track('dictate')
+    dictatedInto = BrowserWindow.getFocusedWindow() ?? undefined
     voiceWindow()
   })
   if (!took) log.warn(`${DICTATE} is taken by something else, dictation has no shortcut`)
@@ -164,6 +168,15 @@ function registerSpotlight(): void {
  */
 function pasteBack(text: string): void {
   clipboard.writeText(text)
+  const into = dictatedInto?.isDestroyed() === false ? dictatedInto : undefined
+  dictatedInto = undefined
+  // Hiding the app would hand the text to whatever is behind it.
+  if (into !== undefined) {
+    closeVoice()
+    into.focus()
+    void into.webContents.insertText(text)
+    return
+  }
   globalShortcut.unregister(DICTATE)
   closeVoice()
   if (process.platform === 'darwin') app.hide()
