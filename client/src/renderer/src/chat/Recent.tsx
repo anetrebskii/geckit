@@ -1,5 +1,6 @@
 import type { ChatSession } from '../../../shared/api'
 import { projectName } from './project'
+import { Dot } from './Tasks'
 
 /**
  * Ctrl+Tab, as VS Code does it between files: the conversations opened last,
@@ -18,7 +19,7 @@ export function Recent({ list, at }: { readonly list: readonly ChatSession[]; re
             aria-selected={index === at}
             className={`row${index === at ? ' on' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
           >
-            <span className={`state ${session.state}`} />
+            <Dot session={session} />
             <span className="lines">
               <span className="head">
                 <span className="title">{session.title === '' ? 'Untitled' : session.title}</span>

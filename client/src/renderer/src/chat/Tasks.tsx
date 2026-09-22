@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-import type { BackgroundTask, TaskOutput } from '../../../shared/api'
+import type { BackgroundTask, ChatSession, TaskOutput } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Code } from './Code'
 import { Prose } from './Prose'
@@ -17,7 +17,18 @@ const GROUPS: readonly { readonly title: string; readonly kind: string }[] = [
 /** How much of a helper's conversation is shown, the last of it, as the terminal shows its recent messages. */
 const RECENT = 12
 
-const running = (task: BackgroundTask): boolean => task.status === 'running'
+export const running = (task: BackgroundTask): boolean => task.status === 'running'
+
+/** A conversation's dot in a list. Once Claude's turn is over and nothing is waiting to be read, something it started that still runs is a ring, breathing as the working dot does. */
+export function Dot({ session }: { readonly session: ChatSession }): React.JSX.Element {
+  const background = session.state === 'idle' && (session.tasks?.some(running) ?? false)
+  return (
+    <span
+      className={`state ${session.state}${background ? ' background' : ''}`}
+      {...(background ? { title: 'Running in the background' } : {})}
+    />
+  )
+}
 
 /** How long something ran, as short as a row allows: 12s, 3m 4s, 1h 2m. */
 function lasted(ms: number): string {

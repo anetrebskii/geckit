@@ -518,6 +518,7 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
         what: string(message['description']),
         status: 'running',
         ...(command === '' ? {} : { command }),
+        ...(use === '' ? {} : { use }),
       })
       if (message['is_backgrounded'] !== true && doing !== undefined && COMMANDS.has(doing.tool)) {
         // A command the tool is waiting on has run long enough to become a task, which can go on without it.

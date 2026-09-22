@@ -336,6 +336,7 @@ describe('what runs in the background', () => {
       kind: 'local_bash',
       what: 'Background sleep and echo command',
       command: 'sleep 6; echo background-done',
+      use: 'toolu_01MroXjCkSq1HxAV3wpPzokU',
       status: 'completed',
       started: expect.any(Number),
       ended: 1790063416055,

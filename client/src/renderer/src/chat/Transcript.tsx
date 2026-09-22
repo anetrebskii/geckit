@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { CardAnswer, SessionItem } from '../../../shared/api'
+import type { BackgroundTask, CardAnswer, SessionItem } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Code, CopyButton } from './Code'
 import { Preview } from './Preview'
@@ -8,6 +8,7 @@ import { OPENS, Prose } from './Prose'
 import type { FileHow } from './Prose'
 import { richOf, richSelection } from './rich'
 import type { Seek } from './Switcher'
+import { running } from './Tasks'
 import { stamp } from './time'
 
 /**
@@ -28,14 +29,18 @@ const PAGE = 300
 
 function Did({
   item,
+  going,
   onFile,
   onBackground,
 }: {
   readonly item: Extract<SessionItem, { kind: 'did' }>
+  /** What it started still runs in the background. */
+  readonly going: boolean
   readonly onFile: (path: string, how: FileHow) => void
   readonly onBackground: (item: string) => void
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const live = item.live === true || going
   const has = item.detail !== undefined || item.path !== undefined
   const line = (
     <button
@@ -53,8 +58,8 @@ function Did({
         onFile(item.path, 'menu')
       }}
     >
-      <span className={`glyph${item.live === true ? ' spinning' : ''}`}>
-        <Icon name={item.live === true ? 'spinner' : item.detail === undefined ? 'check' : open ? 'down' : 'right'} size={12} />
+      <span className={`glyph${live ? ' spinning' : ''}`}>
+        <Icon name={live ? 'spinner' : item.detail === undefined ? 'check' : open ? 'down' : 'right'} size={12} />
       </span>
       <span className="what">{item.what}</span>
     </button>
@@ -229,6 +234,7 @@ function When({
 
 const Turn = memo(function Turn({
   item,
+  going,
   when,
   onAnswer,
   onAgain,
@@ -239,6 +245,7 @@ const Turn = memo(function Turn({
   onBackground,
 }: {
   readonly item: SessionItem
+  readonly going: boolean
   /** When it was said, where it is one to date: a message, or the end of an answer. */
   readonly when: string | undefined
   readonly onAnswer: (card: string, answer: CardAnswer | string) => void
@@ -288,7 +295,7 @@ const Turn = memo(function Turn({
           <Prose text={item.text} />
         </div>
       ) : item.kind === 'did' ? (
-        <Did item={item} onFile={onFile} onBackground={onBackground} />
+        <Did item={item} going={going} onFile={onFile} onBackground={onBackground} />
       ) : item.kind === 'thought' ? (
         <div className="thought">{item.text === '' ? 'Thought about it' : item.text}</div>
       ) : item.kind === 'card' ? (
@@ -334,6 +341,8 @@ export const Transcript = memo(function Transcript({
   onFile,
   onStopShell,
   onBackground,
+  tasks,
+  onTasks,
   seek,
 }: {
   /** Which conversation this is, so another one opens at its end rather than where this one was left. */
@@ -346,6 +355,9 @@ export const Transcript = memo(function Transcript({
   readonly onFile: (path: string, how: FileHow) => void
   readonly onStopShell: (item: string) => void
   readonly onBackground: (item: string) => void
+  /** What Claude Code has in the background for it, and opening the dialog that lists it. */
+  readonly tasks: readonly BackgroundTask[] | undefined
+  readonly onTasks: (open: boolean) => void
   /** A message to go to once this conversation is read, found by the words searched for. */
   readonly seek?: Seek | undefined
 }): React.JSX.Element {
@@ -357,6 +369,9 @@ export const Transcript = memo(function Transcript({
   const [now, setNow] = useState(() => Date.now())
 
   const picture = useCallback((src: string) => setPreview(src), [])
+
+  const runs = useMemo(() => (tasks ?? []).filter(running), [tasks])
+  const going = useMemo(() => new Set(runs.flatMap((task) => (task.use === undefined ? [] : [task.use]))), [runs])
 
   // The Markdown it was written in is its plain text.
   const copyAnswer = useCallback((id: string, text: string) => {
@@ -489,6 +504,7 @@ export const Transcript = memo(function Transcript({
           <Turn
             key={item.id}
             item={item}
+            going={going.has(item.id)}
             when={when(item)}
             onAnswer={onAnswer}
             onAgain={onAgain}
@@ -510,6 +526,20 @@ export const Transcript = memo(function Transcript({
             </div>
           </div>
         ) : null}
+
+        {/* Its turn is over, and what it started goes on. */}
+        {working || runs.length === 0 ? null : (
+          <div className="turn">
+            <button type="button" className="did" title="What runs in the background (/tasks)" onClick={() => onTasks(true)}>
+              <span className="glyph spinning">
+                <Icon name="spinner" size={12} />
+              </span>
+              <span className="what">
+                {runs.length === 1 ? `Running in the background: ${runs[0]?.what ?? ''}` : `${String(runs.length)} running in the background`}
+              </span>
+            </button>
+          </div>
+        )}
       </div>
 
       {preview === undefined ? null : <Preview src={preview} onClose={() => setPreview(undefined)} />}

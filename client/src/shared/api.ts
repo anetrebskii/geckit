@@ -204,6 +204,8 @@ export interface BackgroundTask {
   readonly what: string
   /** What a command or a watch runs. */
   readonly command?: string
+  /** The tool use that started it, which is also the id of its line in the conversation. */
+  readonly use?: string
   readonly status: 'running' | 'completed' | 'failed' | 'stopped'
   /** When it was started and when it ended, in milliseconds. */
   readonly started: number

@@ -95,6 +95,9 @@ export interface Chat {
   stopTask: (task: string) => void
   /** Takes a task that has ended off the list, as x does in the terminal's `/tasks`. */
   clearTask: (task: string) => void
+  /** The dialog with what runs in the background is open. */
+  readonly tasksShown: boolean
+  showTasks: (open: boolean) => void
   rename: (id: string, title: string) => void
   hide: (id: string) => void
   /** Throws the conversations away for good. The window asks before this is called. */
@@ -355,6 +358,8 @@ export function useChat(): Chat {
     if (shownRef.current.kind === 'session') window.geckit.chat.stopTask(shownRef.current.id, task)
   }, [])
 
+  const [tasksShown, showTasks] = useState(false)
+
   const clearTask = useCallback((task: string) => {
     if (shownRef.current.kind === 'session') window.geckit.chat.clearTask(shownRef.current.id, task)
   }, [])
@@ -509,6 +514,8 @@ export function useChat(): Chat {
     toBackground,
     stopTask,
     clearTask,
+    tasksShown,
+    showTasks,
     rename,
     hide,
     remove,

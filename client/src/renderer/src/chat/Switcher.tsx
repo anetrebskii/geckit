@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChatFound, ChatSession } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { projectName } from './project'
+import { Dot } from './Tasks'
 import { ago } from './time'
 import type { Chat } from './useChat'
 import { ALL } from './useChat'
@@ -211,7 +212,7 @@ export function Switcher({
                   onMouseMove={() => setAt(index)}
                   onMouseDown={() => take(row)}
                 >
-                  <span className={`state ${row.session.state}`} />
+                  <Dot session={row.session} />
                   <span className="lines">
                     <span className="head">
                       <span className="title">
