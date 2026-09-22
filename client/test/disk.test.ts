@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -130,11 +130,16 @@ describe('one conversation', () => {
     expect(await claudeFile(ROOT, '../../../etc/passwd')).toBeUndefined()
   })
 
-  it('is gone from disk once it is deleted', async () => {
+  it('is gone from disk once it is deleted, with the folder beside it', async () => {
     conversation('hhh', [said('u1', 'Throw this away')])
+    mkdirSync(join(config, 'projects', SLUG, 'hhh', 'subagents'), { recursive: true })
+    writeFileSync(join(config, 'projects', SLUG, 'hhh', 'subagents', 'agent-1.jsonl'), '')
+    conversation('hhh-kept', [said('u2', 'Not this one')])
     expect(await deleteClaude(ROOT, 'hhh')).toBe(true)
+    expect(existsSync(join(config, 'projects', SLUG, 'hhh'))).toBe(false)
+    expect(await claudeFile(ROOT, 'hhh-kept')).toBeDefined()
     expect(await claudeFile(ROOT, 'hhh')).toBeUndefined()
-    expect(await listClaude(ROOT)).toEqual([])
+    expect((await listClaude(ROOT)).map((one) => one.id)).toEqual(['hhh-kept'])
     expect(await deleteClaude(ROOT, 'hhh')).toBe(false)
   })
 })
