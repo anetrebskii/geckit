@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { holdClaude } from '../src/main/sessions/claude'
+import type { Ran, runShell } from '../src/main/sessions/shell'
 import type { Driver, Heard, Signal } from '../src/main/sessions/heard'
 import { memoryNotes, Sessions } from '../src/main/sessions'
 import type { SessionNotice, SessionsDeps } from '../src/main/sessions'
@@ -19,7 +20,7 @@ const ROOT = '/work/app'
 
 interface Fake {
   readonly made: { root: string; id: string; resume: boolean; mode: SessionMode; model?: string }[]
-  readonly sent: { text: string; images?: readonly unknown[] }[]
+  readonly sent: { text: string; images?: readonly unknown[]; before?: readonly string[] }[]
   readonly answered: [string, string][]
   readonly permitted: [string, readonly string[]][]
   /** Requests on the control channel, and what the tool says back to each kind. */
@@ -49,7 +50,12 @@ function fakeClaude(): { claude: typeof holdClaude; fake: Fake } {
     fake.made.push({ ...options })
     heard = hear
     const driver: Driver = {
-      send: (text, images) => fake.sent.push({ text, ...(images === undefined ? {} : { images }) }),
+      send: (text, images, before) =>
+        fake.sent.push({
+          text,
+          ...(images === undefined ? {} : { images }),
+          ...(before === undefined || before.length === 0 ? {} : { before }),
+        }),
       answer: (ask, answer) => fake.answered.push([ask, String(answer)]),
       permit: (mode, again) => fake.permitted.push([mode, again]),
       control: async (request) => {
@@ -717,5 +723,86 @@ describe('Claude Code options', () => {
       { name: 'linear', status: 'connected' },
     ])
     expect(asked).toEqual([[ROOT, { name: 'linear', enabled: true }]])
+  })
+})
+
+describe('commands typed after !', () => {
+  /** A shell that prints what it is told to and ends when the test says. */
+  function fakeShell(): { shell: typeof runShell; ran: string[]; print: (output: string) => void; end: (ran: Partial<Ran>) => void; stops: number } {
+    const kept = { ran: [] as string[], stops: 0 }
+    let heard: ((output: string) => void) | undefined
+    let finish: ((ran: Ran) => void) | undefined
+    const shell: typeof runShell = (_root, command, hear) => {
+      kept.ran.push(command)
+      heard = hear
+      return {
+        done: new Promise<Ran>((done) => (finish = done)),
+        stop: () => {
+          kept.stops += 1
+          finish?.({ stdout: '', stderr: '', output: '', code: undefined, stopped: true })
+        },
+      }
+    }
+    return {
+      shell,
+      get ran() {
+        return kept.ran
+      },
+      print: (output) => heard?.(output),
+      end: (ran) => finish?.({ stdout: '', stderr: '', output: '', code: 0, stopped: false, ...ran }),
+      get stops() {
+        return kept.stops
+      },
+    }
+  }
+  const settle = (): Promise<void> => new Promise((done) => setTimeout(done, 0))
+
+  it('runs one in the project, shows what it printed, and hands it to Claude with the next message', async () => {
+    const shell = fakeShell()
+    const built = build({ shell: shell.shell })
+    const id = await built.sessions.shell({ root: ROOT, command: ' git status ' })
+    expect(shell.ran).toEqual(['git status'])
+    expect(of(built.rows, id)?.title).toBe('!git status')
+    expect(built.fake.made).toEqual([])
+
+    shell.end({ stdout: 'On branch main\n', output: 'On branch main\n' })
+    await settle()
+    const shown = last(built.fanned)?.items[0]
+    expect(shown).toMatchObject({ kind: 'shell', command: 'git status', output: 'On branch main\n' })
+    expect(shown).not.toHaveProperty('running')
+
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'what changed?' })
+    expect(built.fake.sent).toEqual([
+      {
+        text: 'what changed?',
+        before: ['<bash-input>git status</bash-input>', '<bash-stdout>On branch main\n</bash-stdout><bash-stderr></bash-stderr>'],
+      },
+    ])
+    expect(of(built.rows, id)?.title).toBe('what changed?')
+    // Handed over once: the message after it goes alone.
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'and now?' })
+    expect(built.fake.sent.at(-1)).toEqual({ text: 'and now?' })
+  })
+
+  it('stops one that is still running', async () => {
+    const shell = fakeShell()
+    const built = build({ shell: shell.shell })
+    const id = await built.sessions.shell({ root: ROOT, command: 'npm run dev' })
+    const item = built.fanned[0]?.items[0]
+    built.sessions.stopShell(id, item?.id ?? '')
+    await settle()
+    expect(shell.stops).toBe(1)
+    expect(last(built.fanned)?.items[0]).toMatchObject({ kind: 'shell', stopped: true })
+  })
+
+  it('opens one that wants a keyboard in a terminal instead', async () => {
+    const shell = fakeShell()
+    const opened: [string, string][] = []
+    const built = build({ shell: shell.shell, terminal: (root, command) => opened.push([root, command]) })
+    await built.sessions.shell({ root: ROOT, command: 'gh auth login' })
+    expect(shell.ran).toEqual([])
+    expect(opened).toEqual([[ROOT, 'gh auth login']])
+    expect(built.fanned[0]?.items[0]).toMatchObject({ kind: 'shell', terminal: true })
   })
 })

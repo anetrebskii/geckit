@@ -73,6 +73,21 @@ export type SessionItem =
       readonly live?: boolean
     }
   | { readonly kind: 'thought'; readonly id: string; readonly text: string }
+  | {
+      /** A command typed after `!`, run in the project folder and handed to Claude with the next message. */
+      readonly kind: 'shell'
+      readonly id: string
+      readonly command: string
+      /** What it printed, both streams in the order they came. */
+      readonly output: string
+      readonly running?: boolean
+      /** How it exited, where that was not 0. */
+      readonly code?: number
+      readonly stopped?: boolean
+      /** It wants a keyboard, so it was opened in a terminal instead of run here. */
+      readonly terminal?: boolean
+      readonly at?: number
+    }
   | { readonly kind: 'card'; readonly id: string; readonly card: SessionCard }
   | { readonly kind: 'wrote'; readonly id: string; readonly paths: readonly string[] }
   | {
@@ -210,6 +225,14 @@ export interface SessionMessage {
   readonly model?: string
   /** The item this is a second try of, so the transcript keeps one message and not two. */
   readonly again?: string
+}
+
+/** A command typed after `!` in the composer. */
+export interface ShellCommand {
+  /** Absent in a new conversation, which it starts. */
+  readonly session?: string
+  readonly root: string
+  readonly command: string
 }
 
 /** Items that arrived for one session. */

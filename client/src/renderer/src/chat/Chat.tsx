@@ -420,6 +420,7 @@ export function Chat(): React.JSX.Element {
               onAnswer={chat.answer}
               onAgain={again}
               onFile={file}
+              onStopShell={chat.stopShell}
               seek={seek}
             />
           </Files>

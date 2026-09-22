@@ -1703,6 +1703,67 @@ textarea {
   background: var(--warning-bg);
 }
 
+/* What a message starting with ! will do, said while it is typed. */
+
+.composer-hint {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A command typed after ! is the person's, so it sits in their bubble, with what it printed under it. */
+
+.shell {
+  padding: 9px 12px;
+  background: var(--bubble);
+  border-radius: var(--radius-lg);
+}
+
+.shell-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 22px;
+}
+
+.shell-command {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-code);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.shell-head .glyph {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  animation: spin 900ms linear infinite;
+}
+
+.shell-head .quiet {
+  padding: 1px 8px;
+  font-size: 12px;
+}
+
+.shell-ended {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.shell-ended.failed {
+  color: var(--warning-text);
+}
+
+.shell .detail-block {
+  margin: 8px 0 0;
+}
+
 /* Cards */
 
 .card {

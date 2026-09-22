@@ -14,6 +14,7 @@ import type {
   SessionMode,
   SessionNotice,
   SessionState,
+  ShellCommand,
 } from '../../shared/api'
 import { sessionMode } from '../../shared/api'
 import { claudeAccount } from './account'
@@ -26,6 +27,8 @@ import { readMcp, serversOf } from './mcp'
 import type { McpChange } from './mcp'
 import { claudeModels } from './models'
 import type { Wanted } from './rule'
+import { runShell, toldClaude, wantsKeyboard } from './shell'
+import type { Running } from './shell'
 import { readUsage } from './usage'
 import type { Usage } from './usage'
 import {
@@ -113,6 +116,9 @@ export interface SessionsDeps {
   readonly claudeModels?: () => Promise<ClaudeModel[] | undefined>
   readonly usage?: (models: readonly string[]) => Promise<Usage>
   readonly mcp?: (root: string, change?: McpChange) => Promise<McpServer[] | undefined>
+  readonly shell?: typeof runShell
+  /** Opens a terminal in the folder with the command typed in, for one that wants a keyboard. Without it, it is run here anyway. */
+  readonly terminal?: (root: string, command: string) => void
   readonly now?: () => number
 }
 
@@ -158,6 +164,10 @@ interface Live {
   quiet: NodeJS.Timeout | undefined
   /** Remote Control is on, and where the conversation is on claude.ai. The process is kept while it is. */
   remote: string | undefined
+  /** Commands typed after `!` that have finished since the last message, for the next one to hand to Claude. */
+  told: { readonly id: string; readonly blocks: readonly string[] }[]
+  /** Commands still running, by the item showing them. */
+  commands: Map<string, Running>
   back: NodeJS.Timeout | undefined
   stopping: NodeJS.Timeout | undefined
 }
@@ -267,7 +277,7 @@ export class Sessions {
       if (note?.hidden === true) continue
       if (live === undefined && row?.driven === true && note?.here !== true) continue
       // Held only because it was looked at, and the tool has nothing under that id any more.
-      if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined) {
+      if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0) {
         continue
       }
       const quiet = live === undefined || live.state === 'idle'
@@ -366,6 +376,8 @@ export class Sessions {
       last: undefined,
       quiet: undefined,
       remote: undefined,
+      told: [],
+      commands: new Map(),
       back: undefined,
       stopping: undefined,
     }
@@ -417,6 +429,10 @@ export class Sessions {
     if (live.state === 'working' || live.state === 'asks') return live.id
 
     live.mode = message.mode
+    // A conversation begun with a command is named after what is first said in it.
+    if (!live.begun && ![...live.items.values()].some((item) => item.kind === 'mine')) {
+      live.title = firstLine(message.text, 80) || live.title
+    }
     if (live.chosen !== message.model) {
       live.chosen = message.model
       // What the tool last said answers is not what will. It says again when the turn begins.
@@ -481,8 +497,80 @@ export class Sessions {
     this.#deps.items({ id: live.id, items: [mine], gone })
     this.#changed()
     live.begun = true
-    live.driver?.send(saying.text, saying.images)
+    // The tool's file has the commands from here on, with the message they went with.
+    const told = live.told
+    live.told = []
+    live.kept = live.kept.filter((kept) => !told.some((one) => one.id === kept.item.id))
+    live.driver?.send(saying.text, saying.images, told.flatMap((one) => one.blocks))
     return live.id
+  }
+
+  /**
+   * A command typed after `!`: run in the project folder, shown in the
+   * conversation, and handed to Claude with the next message, the way the
+   * terminal's `!` is. One that wants a keyboard is opened in a terminal instead.
+   */
+  async shell(asked: ShellCommand): Promise<string> {
+    let live = asked.session === undefined ? undefined : (this.#live.get(asked.session) ?? this.#adopt(asked.session))
+    const command = asked.command.trim()
+    if (live === undefined) {
+      live = this.#fresh(randomUUID(), asked.root, firstLine(`!${command}`, 80), sessionMode(undefined))
+    } else if (live.driver === undefined) {
+      await this.#reread(live)
+    }
+    const held = live
+    const terminal = this.#deps.terminal !== undefined && wantsKeyboard(command)
+    const item: SessionItem = {
+      kind: 'shell',
+      id: `shell:${randomUUID()}`,
+      command,
+      output: '',
+      at: this.#now(),
+      ...(terminal ? { terminal: true } : { running: true }),
+    }
+    held.kept.push({ after: [...held.items.keys()].at(-1), item })
+    held.items.set(item.id, item)
+    held.at = this.#now()
+    this.#deps.items({ id: held.id, items: [item] })
+    this.#changed()
+    if (terminal) {
+      this.#deps.terminal?.(held.root, command)
+      return held.id
+    }
+
+    const show = (next: SessionItem): void => {
+      if (this.#live.get(held.id) !== held) return
+      held.items.set(next.id, next)
+      held.kept = held.kept.map((kept) => (kept.item.id === next.id ? { ...kept, item: next } : kept))
+      this.#deps.items({ id: held.id, items: [next] })
+    }
+    // What it prints is drawn a few times a second, not once a line.
+    let printed = ''
+    let drawing: NodeJS.Timeout | undefined
+    const running = (this.#deps.shell ?? runShell)(held.root, command, (output) => {
+      printed = output
+      drawing ??= setTimeout(() => {
+        drawing = undefined
+        if (held.commands.has(item.id)) show({ ...item, output: printed })
+      }, 100)
+    })
+    held.commands.set(item.id, running)
+    void running.done.then((ran) => {
+      clearTimeout(drawing)
+      held.commands.delete(item.id)
+      const { running: _running, ...rest } = item
+      show({
+        ...rest,
+        output: ran.output,
+        ...(ran.stopped ? { stopped: true } : ran.code !== undefined && ran.code !== 0 ? { code: ran.code } : {}),
+      })
+      held.told.push({ id: item.id, blocks: toldClaude(command, ran) })
+    })
+    return held.id
+  }
+
+  stopShell(id: string, item: string): void {
+    this.#live.get(id)?.commands.get(item)?.stop()
   }
 
   /** Have a process holding the conversation, started the way its mode needs. */
@@ -655,6 +743,7 @@ export class Sessions {
 
   stop(id: string): void {
     const live = this.#live.get(id)
+    for (const running of live?.commands.values() ?? []) running.stop()
     if (live === undefined || (live.state !== 'working' && live.state !== 'asks')) return
     if (live.driver === undefined) {
       this.#ended(live, { kind: 'ended', how: 'stopped' })
@@ -711,6 +800,7 @@ export class Sessions {
     const live = this.#live.get(id)
     if (live === undefined) return
     clearTimeout(live.quiet)
+    for (const running of live.commands.values()) running.stop()
     const ended = live.driver?.end()
     this.#live.delete(id)
     await ended
@@ -794,6 +884,7 @@ export class Sessions {
       clearTimeout(live.quiet)
       clearTimeout(live.back)
       clearTimeout(live.stopping)
+      for (const running of live.commands.values()) running.stop()
       live.driver?.end()
     }
     this.#live.clear()

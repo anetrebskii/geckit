@@ -44,8 +44,8 @@ export interface Heard {
 
 /** One conversation being held by a process. */
 export interface Driver {
-  /** Starts a turn. */
-  send(text: string, images?: readonly SessionImage[]): void
+  /** Starts a turn. `before` goes ahead of the message as blocks of its own: the commands run with `!` since the last one. */
+  send(text: string, images?: readonly SessionImage[], before?: readonly string[]): void
   answer(ask: string, answer: CardAnswer | string): void
   /** How it may act from here on, without starting it again. What is under `again` is handed back to be tried once more under it. */
   permit?(mode: 'auto' | 'manual', again: readonly string[]): void

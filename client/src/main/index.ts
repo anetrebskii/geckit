@@ -15,7 +15,7 @@ import {
 } from 'electron'
 import log from 'electron-log'
 
-import { ANYWHERE } from '../shared/api'
+import { ANYWHERE, resumeCommand } from '../shared/api'
 import type {
   CardAnswer,
   ChatSession,
@@ -26,6 +26,7 @@ import type {
   SessionMessage,
   SessionMode,
   Settings,
+  ShellCommand,
   TranscribeRequest,
 } from '../shared/api'
 import track from './analytics'
@@ -81,6 +82,7 @@ const badge = (): void => {
 function build(): Sessions {
   return new Sessions({
     notes: notesStore(),
+    ...(process.platform === 'darwin' ? { terminal: openTerminal } : {}),
     changed: (all: readonly ChatSession[]) => {
       shownChat()?.webContents.send('chat:sessions', all)
       badge()
@@ -179,12 +181,13 @@ function pasteBack(text: string): void {
  * iTerm where it is installed, because that is where somebody who has it is
  * expecting to land, and Terminal otherwise.
  */
-function openTerminal(root: string, id: string): void {
+/** A terminal in the folder with the command typed in and run: iTerm where there is one, Terminal otherwise. */
+function openTerminal(root: string, run: string): void {
   if (process.platform !== 'darwin') {
     void shell.openPath(root)
     return
   }
-  const command = `cd ${JSON.stringify(root)} && claude --resume ${id}`
+  const command = `cd ${JSON.stringify(root)} && ${run}`
   const iterm = `
     tell application "System Events" to set present to exists application process "iTerm2"
     if present or (exists application "iTerm") then
@@ -303,8 +306,10 @@ function wire(): void {
   ipcMain.on('chat:handOver', (_event, id: string) => sessions?.handOver(id))
   ipcMain.on('chat:terminal', (_event, id: string, root: string) => {
     sessions?.handOver(id)
-    openTerminal(root, id)
+    openTerminal(root, resumeCommand(id))
   })
+  ipcMain.handle('chat:shell', (_event, asked: ShellCommand) => sessions?.shell(asked))
+  ipcMain.on('chat:stopShell', (_event, id: string, item: string) => sessions?.stopShell(id, item))
   ipcMain.on('chat:reveal', (_event, root: string, path: string) => shell.showItemInFolder(fileAt(root, path)))
   ipcMain.handle('chat:exists', (_event, root: string, path: string) => isThere(root, path))
   ipcMain.handle('chat:files', (_event, root: string) => projectFiles(root))

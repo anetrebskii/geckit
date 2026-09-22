@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { AGAIN, claudeState, contextOf, lastContext, lastSaid, planOf, readClaude, REFUSED, replayClaude } from '../src/main/sessions/claude-read'
+import { AGAIN, claudeState, contextOf, lastContext, lastSaid, planOf, readClaude, REFUSED, replayClaude, typed } from '../src/main/sessions/claude-read'
 import type { ClaudeSignal } from '../src/main/sessions/claude-read'
 import { within } from '../src/main/sessions/rule'
 import { modelName } from '../src/shared/api'
@@ -175,6 +175,48 @@ describe('pictures sent with a message', () => {
 
   it('leaves a plain message alone', () => {
     expect(replayClaude(ROOT, [said('just words')], 0)).toEqual([{ kind: 'mine', id: 'u1', text: 'just words' }])
+  })
+})
+
+describe('commands run with !', () => {
+  const said = (uuid: string, content: unknown): Record<string, unknown> => ({ type: 'user', uuid, message: { role: 'user', content } })
+
+  it('reads the two entries a terminal writes as one command with what it printed', () => {
+    const items = replayClaude(ROOT, [
+      said('u1', '<bash-input> git status</bash-input>'),
+      said('u2', '<bash-stdout>On branch main</bash-stdout><bash-stderr></bash-stderr>'),
+      said('u3', '<bash-input>true</bash-input>'),
+      said('u4', '<bash-stdout>(Bash completed with no output)</bash-stdout><bash-stderr></bash-stderr>'),
+    ], 0)
+    expect(items).toEqual([
+      { kind: 'shell', id: 'u1:shell:0', command: 'git status', output: 'On branch main' },
+      { kind: 'shell', id: 'u3:shell:0', command: 'true', output: '' },
+    ])
+  })
+
+  it('reads the blocks GeckIt sends ahead of a message as the command and then the message', () => {
+    const items = replayClaude(ROOT, [
+      said('u1', [
+        { type: 'text', text: '<bash-input>npm test</bash-input>' },
+        { type: 'text', text: '<bash-stdout>1 failed\n</bash-stdout><bash-stderr>Exit code 1</bash-stderr>' },
+        { type: 'text', text: 'why does it fail?' },
+      ]),
+    ], 0)
+    expect(items).toEqual([
+      { kind: 'shell', id: 'u1:shell:0', command: 'npm test', output: '1 failed\nExit code 1' },
+      { kind: 'mine', id: 'u1', text: 'why does it fail?' },
+    ])
+  })
+
+  it('names a conversation by the message and not by the command ahead of it', () => {
+    expect(
+      typed(said('u1', [
+        { type: 'text', text: '<bash-input>ls</bash-input>' },
+        { type: 'text', text: '<bash-stdout>a</bash-stdout><bash-stderr></bash-stderr>' },
+        { type: 'text', text: 'what are these?' },
+      ])),
+    ).toBe('what are these?')
+    expect(typed(said('u1', '<bash-input>ls</bash-input>'))).toBe('')
   })
 })
 
