@@ -123,7 +123,7 @@ export function Voice(): React.JSX.Element {
                     {one.text === undefined ? null : <div className="asking-text">{one.text}</div>}
                     {one.goal === undefined ? null : (
                       <div className="asking-goal">
-                        <Icon name="done" size={10} />
+                        <Icon name="goal" size={10} />
                         Until {one.goal}
                       </div>
                     )}
