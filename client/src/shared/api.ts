@@ -665,7 +665,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatModel: '',
   chatMode: 'auto',
   chatGrouping: 'time',
-  chatView: 'list',
+  chatView: 'board',
   chatAll: false,
   chatProjects: [],
   favorites: [],
