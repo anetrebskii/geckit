@@ -331,6 +331,7 @@ function Card({
   readonly onStopRenaming: () => void
 }): React.JSX.Element {
   const open = chat.shown.kind === 'session' && chat.shown.id === session.id
+  const starred = chat.settings.favorites.includes(session.id)
   // The links written in it, counted on the card and listed where the button opens.
   const [links, setLinks] = useState<readonly Link[]>([])
   const [listing, setListing] = useState<DOMRect | undefined>()
@@ -350,7 +351,7 @@ function Card({
   const detail = stands?.tone === 'said-working' ? session.stands.replace(/^Working - /, '') : session.stands
   return (
     <div
-      className={`board-card${open ? ' on' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
+      className={`board-card${starred ? ' starred' : ''}${open ? ' on' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
       draggable={!renaming}
       role="button"
       tabIndex={0}
@@ -378,6 +379,7 @@ function Card({
           />
         ) : (
           <>
+            {starred ? <Icon name="star" size={11} className="board-card-star" /> : null}
             <span className="board-card-title">{session.title}</span>
             <span className="changed">{ago(session.at, now, true)}</span>
           </>
