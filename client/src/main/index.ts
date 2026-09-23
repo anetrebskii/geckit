@@ -38,6 +38,7 @@ import { askOrders, carryOut, saying } from './orders'
 import type { Order, Told } from './orders'
 import { projectFiles } from './files'
 import { fetchGit, gitState } from './git'
+import { keepGuide } from './guide'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import type { McpChange } from './sessions/mcp'
@@ -70,6 +71,8 @@ const SPOTLIGHT = ANYWHERE.search
 const ORDER = ANYWHERE.orders
 
 let sessions: Sessions | undefined
+/** What GECKIT.md was last kept at, so it is only written when the switch moves. */
+let guided: boolean | undefined
 
 // GeckIt's own window the dictation was started in, which it goes back into.
 let dictatedInto: BrowserWindow | undefined
@@ -469,6 +472,10 @@ function wire(): void {
     // The frames, the vibrancy behind the panel and the folder picker are the
     // system's, not the stylesheet's, and they follow this.
     nativeTheme.themeSource = settings.theme
+    if (settings.guideClaude !== guided) {
+      guided = settings.guideClaude
+      void keepGuide(settings.guideClaude)
+    }
     tell('settings:changed', settings)
     drawTray()
   })
@@ -494,6 +501,8 @@ if (!app.requestSingleInstanceLock()) {
     const started = build()
     sessions = started
     nativeTheme.themeSource = getSettings().theme
+    guided = getSettings().guideClaude
+    void keepGuide(guided)
     wire()
     panelWindow()
     startShortcuts({

@@ -618,6 +618,8 @@ export interface Settings {
   readonly client: string
   /** False stops the checks on launch and every hour; Check for Updates in Settings still works. */
   readonly autoUpdate: boolean
+  /** False takes GECKIT.md and the line that reads it out of the tool's own folder again. */
+  readonly guideClaude: boolean
   /** Written by the main process only, over `shortcuts:*`, so a window's older copy never undoes a run. */
   readonly shortcuts: readonly Shortcut[]
 }
@@ -671,6 +673,7 @@ export const DEFAULT_SETTINGS: Settings = {
   transcriptions: [],
   client: '',
   autoUpdate: true,
+  guideClaude: true,
   sidebarWidth: 264,
   shortcuts: [],
 }
