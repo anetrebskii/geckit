@@ -188,6 +188,55 @@ describe('holding a conversation', () => {
     expect(built.fake.permitted).toHaveLength(1)
   })
 
+  it('is not moved up the list by what a turn says as it goes, so two at work keep their places', async () => {
+    const hears = new Map<string, (heard: Heard) => void>()
+    let now = 1_000
+    const quiet: Driver = {
+      send: () => undefined,
+      answer: () => undefined,
+      permit: () => undefined,
+      control: async () => ({}),
+      stop: () => undefined,
+      end: () => Promise.resolve(),
+    }
+    const built = build({
+      now: () => now,
+      claude: (options, hear) => {
+        hears.set(options.id, hear)
+        return quiet
+      },
+    })
+    const order = async (): Promise<string[]> => (await built.sessions.list([ROOT])).map((one) => one.id)
+
+    const first = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'one' })
+    now = 2_000
+    const second = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'two' })
+    expect(await order()).toEqual([second, first])
+
+    now = 3_000
+    hears.get(first)?.({ items: [{ kind: 'did', id: 'd1', what: 'Running npm test', live: true }], gone: [], signals: [] })
+    expect(await order()).toEqual([second, first])
+
+    hears.get(first)?.({ items: [], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    expect(await order()).toEqual([first, second])
+  })
+
+  it('follows `/clear` into the conversation it starts, and keeps the one it left in the list', async () => {
+    const shown: string[] = []
+    const built = build({ show: (id) => shown.push(id) })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+
+    built.fake.hear({ signals: [{ kind: 'started', session: 'cleared', key: false }] })
+    expect(shown).toEqual(['cleared'])
+    expect(await built.sessions.items('cleared')).toEqual([])
+    expect(of(built.rows, 'cleared')).toMatchObject({ root: ROOT, title: '', here: true })
+    expect(of(built.rows, id)).toMatchObject({ root: ROOT, title: 'do the thing' })
+
+    await built.sessions.send({ session: 'cleared', root: ROOT, mode: 'manual', text: 'start again' })
+    expect(of(built.rows, 'cleared')?.title).toBe('start again')
+  })
+
   it('will not run on a key, and offers the message back', async () => {
     const built = build()
     const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'hello' })
@@ -432,6 +481,38 @@ describe('a goal', () => {
     await vi.waitFor(() => expect(of(built.rows, id)?.goal).toBeUndefined())
     expect(last(built.fanned)?.items).toEqual([expect.objectContaining({ note: 'goal', text: `Goal met: ${condition}`, detail: 'All 12 pass.' })])
   })
+
+  it('marks the conversation for review once it holds, and blocked where it was given up on', async () => {
+    const ended = async (read: GoalRead): Promise<string | undefined> => {
+      const built = build({
+        disk: { list: async () => [], read: async () => undefined, has: async () => false, goal: async () => read },
+      })
+      const id = await started(built)
+      built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: `/goal ${condition}` })
+      built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await vi.waitFor(() => expect(of(built.rows, id)?.goal).toBeUndefined())
+      return of(built.rows, id)?.status
+    }
+    expect(await ended({ ended: met, met: true })).toBe('review')
+    expect(await ended({ ended: met })).toBe('blocked')
+  })
+
+  it('leaves a mark made by hand alone, since that one says what the person decided', async () => {
+    let read: GoalRead = { goal: { condition, checks: 0 } }
+    const built = build({
+      disk: { list: async () => [], read: async () => undefined, has: async () => false, goal: async () => read },
+    })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: `/goal ${condition}` })
+    built.sessions.mark(id, 'done')
+
+    read = { ended: met, met: true }
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(of(built.rows, id)?.goal).toBeUndefined())
+    expect(of(built.rows, id)?.status).toBe('done')
+  })
 })
 
 describe('a message sent while it works', () => {
@@ -457,6 +538,32 @@ describe('a message sent while it works', () => {
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: 'then commit' }))
     expect(of(built.rows, id)?.queued).toBeUndefined()
+  })
+
+  it('goes when the turn before it is stopped, one message and then the next', async () => {
+    const built = build()
+    const id = await started(built)
+    await built.sessions.send(more(id, 'and the tests'))
+    await built.sessions.send(more(id, 'then commit'))
+
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'stopped' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: 'and the tests' }))
+    expect(of(built.rows, id)?.queued).toEqual([{ id: expect.any(String), text: 'then commit', images: 0 }])
+
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'stopped' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: 'then commit' }))
+    expect(of(built.rows, id)?.queued).toBeUndefined()
+  })
+
+  it('stays in the queue where the turn ended on its own, for the window to put back in the field', async () => {
+    const built = build()
+    const id = await started(built)
+    await built.sessions.send(more(id, 'and the tests'))
+
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'failed' }] })
+    await vi.waitFor(() => expect(of(built.rows, id)?.state).toBe('failed'))
+    expect(built.fake.sent).toEqual([{ text: 'do the thing' }])
+    expect(of(built.rows, id)?.queued).toEqual([{ id: expect.any(String), text: 'and the tests', images: 0 }])
   })
 
   it('can be cancelled before it goes, and is given back whole', async () => {
@@ -494,18 +601,6 @@ describe('a message sent while it works', () => {
 
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     await vi.waitFor(() => expect(built.fake.sent.at(-1)).toMatchObject({ text: 'look at this instead', images: [picture] }))
-  })
-
-  it('is not sent after a turn that was stopped or failed, and stays for the window to put back in the field', async () => {
-    for (const how of ['stopped', 'failed'] as const) {
-      const built = build()
-      const id = await started(built)
-      await built.sessions.send(more(id, 'and the tests'))
-      built.fake.hear({ signals: [{ kind: 'ended', how }] })
-      await vi.waitFor(() => expect(of(built.rows, id)?.state).not.toBe('working'))
-      expect(built.fake.sent).toEqual([{ text: 'do the thing' }])
-      expect(of(built.rows, id)?.queued).toEqual([{ id: expect.any(String), text: 'and the tests', images: 0 }])
-    }
   })
 
   it('can be started as a conversation of its own instead, in the same project and mode', async () => {
@@ -797,6 +892,18 @@ describe('what the status bar is drawn from', () => {
     built.fake.hear({ signals: [{ kind: 'spend', cost: 0.1 }, { kind: 'ended', how: 'done' }] })
     expect(built.fake.made).toHaveLength(2)
     expect(of(built.rows, id)?.spend?.cost).toBeCloseTo(0.35)
+  })
+})
+
+describe('an answer nobody has read', () => {
+  it('is marked on the row, and the mark is taken off without the conversation being opened', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    expect(of(built.rows, id)?.state).toBe('unread')
+
+    built.sessions.read(id)
+    expect(of(built.rows, id)?.state).toBe('idle')
   })
 })
 

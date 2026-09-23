@@ -25,8 +25,6 @@ import { ALL } from './useChat'
 
 const DAY = 86_400_000
 
-const WAITING = 'Waiting for you'
-
 const FAVORITES = 'Favorites'
 
 /** Marked done: out of the way at the bottom, folded until its heading is pressed. */
@@ -69,25 +67,25 @@ const NONE: ReadonlySet<string> = new Set()
 
 /**
  * The favorites first, in the order they were put in, so Cmd+1 is always the
- * same conversation; then what waits for the person; then the rest under their headings.
+ * same conversation; then the rest under their headings.
+ *
+ * What waits for the person is not gathered under a heading of its own: a
+ * conversation would leave it the moment it was opened, which is the moment
+ * the person is looking at it. It is marked where it stands instead.
  */
 function arrange(
   sessions: readonly ChatSession[],
-  waiting: readonly ChatSession[],
   favorites: readonly string[],
   by: ChatGrouping,
   now: number,
 ): Group[] {
-  const listed = new Map([...sessions, ...waiting].map((one) => [one.id, one]))
+  const listed = new Map(sessions.map((one) => [one.id, one]))
   const kept = favorites.flatMap((id) => listed.get(id) ?? [])
   const favorite = new Set(kept.map((one) => one.id))
-  const waits = waiting.filter((one) => !favorite.has(one.id))
-  const waited = new Set(waiting.map((one) => one.id))
-  const rest = sessions.filter((one) => !waited.has(one.id) && !favorite.has(one.id))
+  const rest = sessions.filter((one) => !favorite.has(one.id))
   const done = rest.filter((one) => one.status === 'done')
   return [
     ...(kept.length === 0 ? [] : [[FAVORITES, kept] as const]),
-    ...(waits.length === 0 ? [] : [[WAITING, waits] as const]),
     ...gather(
       rest.filter((one) => one.status !== 'done'),
       by,
@@ -155,7 +153,6 @@ const Row = memo(function Row({
   picking,
   picked,
   place,
-  waits,
   where,
   color,
   changed,
@@ -177,8 +174,6 @@ const Row = memo(function Row({
   readonly picked: boolean
   /** Its place among the first nine drawn, which Cmd and that number open. */
   readonly place: number | undefined
-  /** Stands under Waiting for you, and is tinted by what it waits for. */
-  readonly waits: boolean
   /** The folder it belongs to, where the list does not already say. */
   readonly where: string | undefined
   /** The folder's colour, as its place in the palette. */
@@ -200,7 +195,7 @@ const Row = memo(function Row({
 }): React.JSX.Element {
   return (
     <div
-      className={`row${on ? ' on' : ''}${picked ? ' picked' : ''}${waits ? ` waits ${session.state}` : ''}${landing === undefined ? '' : ` lands-${landing}`}`}
+      className={`row${on ? ' on' : ''}${picked ? ' picked' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}${landing === undefined ? '' : ` lands-${landing}`}`}
       draggable={!picking && !renaming}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'move'
@@ -240,6 +235,19 @@ const Row = memo(function Row({
     >
       {picking ? (
         <span className="pick">{picked ? <Icon name="check" size={10} /> : null}</span>
+      ) : session.state === 'unread' ? (
+        // An answer is taken as read by pressing its mark, without opening the conversation.
+        <button
+          type="button"
+          className="read"
+          title="Mark as read"
+          onClick={(event) => {
+            event.stopPropagation()
+            window.geckit.chat.read(session.id)
+          }}
+        >
+          <Dot session={session} />
+        </button>
       ) : (
         <Dot session={session} />
       )}
@@ -372,7 +380,7 @@ const Rows = memo(function Rows({
             >
               <button type="button" className="group" onClick={() => onFold(where)}>
                 <Icon name={folded.has(where) ? 'right' : 'down'} size={10} />
-                {by === 'project' && rows[0] !== undefined && where !== FAVORITES && where !== WAITING && where !== DONE ? (
+                {by === 'project' && rows[0] !== undefined && where !== FAVORITES && where !== DONE ? (
                   <span className="tinted" style={tint(projectColor(rows[0].root, colors))}>{where}</span>
                 ) : (
                   where
@@ -394,9 +402,8 @@ const Rows = memo(function Rows({
                 picking={picking}
                 picked={picked.has(session.id)}
                 place={places.get(session.id)}
-                waits={where === WAITING}
                 where={
-                  where === WAITING || where === DONE || (scope === ALL && (by === 'time' || where === FAVORITES))
+                  where === DONE || (scope === ALL && (by === 'time' || where === FAVORITES))
                     ? projectName(session.root)
                     : undefined
                 }
@@ -488,8 +495,8 @@ export function Sidebar({
   const by = chat.scope === ALL ? chat.settings.chatGrouping : 'time'
   const favorites = chat.settings.favorites
   const groups = useMemo(
-    () => arrange(chat.sessions, chat.waiting, favorites, by, now),
-    [chat.sessions, chat.waiting, favorites, by, now],
+    () => arrange(chat.sessions, favorites, by, now),
+    [chat.sessions, favorites, by, now],
   )
 
   // A row is dragged into the favorites, or along them, and lands where the line is drawn.
@@ -531,11 +538,12 @@ export function Sidebar({
   }, [place, drag])
   const show = chat.show
   const shownId = chat.shown.kind === 'session' ? chat.shown.id : undefined
-  // One opened from somewhere else, the search above all, unfolds its heading.
-  const [unfolded, setUnfolded] = useState(shownId)
-  if (unfolded !== shownId) {
-    setUnfolded(shownId)
-    const where = groups.find(([, rows]) => rows.some((one) => one.id === shownId))?.[0]
+  // One opened from somewhere else, the search above all, unfolds its heading. So does one that moves under another heading while it is open, marked done above all: Done is folded, and a conversation that went there without a word would look lost.
+  const where = groups.find(([, rows]) => rows.some((one) => one.id === shownId))?.[0]
+  const [unfolded, setUnfolded] = useState<string | undefined>(undefined)
+  const stands = shownId === undefined ? undefined : `${shownId} ${where ?? ''}`
+  if (unfolded !== stands) {
+    setUnfolded(stands)
     if (where !== undefined && folded.has(where)) setFolded(new Set([...folded].filter((one) => one !== where)))
   }
   const drawn = useMemo(() => groups.flatMap(([where, rows]) => (folded.has(where) ? [] : rows)), [groups, folded])
@@ -622,8 +630,7 @@ export function Sidebar({
     return () => window.removeEventListener('keydown', key, true)
   }, [chosen, deleting, pick])
   const shownFavorites = groups.find(([where]) => where === FAVORITES)?.[1].map((one) => one.id) ?? []
-  // Waiting for you is left open, so what comes into it is seen.
-  const headings = groups.map(([where]) => where).filter((where) => where !== WAITING)
+  const headings = groups.map(([where]) => where)
   const allFolded = headings.length > 0 && headings.every((where) => folded.has(where))
 
   return (

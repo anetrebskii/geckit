@@ -204,6 +204,7 @@ describe('a goal set with /goal', () => {
 
   it('is gone once met, and says so with what the check found', () => {
     expect(goalOf([set, notYet, met])).toEqual({
+      met: true,
       ended: {
         kind: 'note',
         id: '',

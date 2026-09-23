@@ -118,6 +118,8 @@ export interface SessionsDeps {
   readonly plan?: (plan: PlanUsage) => void
   /** Said only where the chat window is not showing that conversation. */
   readonly notify: (notice: SessionNotice) => void
+  /** Points the window at a conversation it is not showing, without bringing it forward. */
+  readonly show?: (id: string) => void
   // What follows is the outside world, replaceable so the rules can be tested without it.
   readonly claude?: typeof holdClaude
   readonly disk?: {
@@ -504,8 +506,8 @@ export class Sessions {
     }
 
     live.mode = message.mode
-    // A conversation begun with a command is named after what is first said in it.
-    if (!live.begun && ![...live.items.values()].some((item) => item.kind === 'mine')) {
+    // A conversation begun with a command is named after what is first said in it, and so is the one carried on in after `/clear`, which has no name yet either.
+    if ((!live.begun || live.title === '') && ![...live.items.values()].some((item) => item.kind === 'mine')) {
       live.title = firstLine(message.text, 80) || live.title
     }
     if (live.chosen !== message.model) {
@@ -1020,6 +1022,13 @@ export class Sessions {
     if (unread) this.#changed()
   }
 
+  /** Taken as read without being opened: the mark on the row is pressed. */
+  read(id: string): void {
+    if (this.#deps.notes.all()[id]?.unread !== true) return
+    this.#note(id, { unread: false })
+    this.#changed()
+  }
+
   /** The plan's windows as last reported, for a window opened since. */
   plan(): PlanUsage | undefined {
     return this.#plan
@@ -1099,11 +1108,63 @@ export class Sessions {
     })
     for (const id of heard.gone) live.items.delete(id)
     for (const item of items) live.items.set(item.id, item)
+    // What a turn says as it goes does not date the conversation: two of them
+    // working would trade places in the list every second. A message sent, a
+    // turn begun or over, and a card put up are what move a row.
     if (items.length > 0 || heard.gone.length > 0) {
-      live.at = now
       this.#deps.items({ id: live.id, items, ...(heard.gone.length > 0 ? { gone: heard.gone } : {}) })
     }
     for (const signal of heard.signals) this.#signal(live, signal)
+  }
+
+  /**
+   * `/clear` does not empty a conversation: the tool leaves it on disk and
+   * carries on in a new one. So the window is moved to that one, with nothing
+   * in it, and the conversation cleared away stays in the list as it stands.
+   */
+  #cleared(live: Live, id: string): void {
+    const was = live.id
+    // It is on disk, but nothing has read it from there yet, so it is written
+    // down here: it was in the list a moment ago and it is not to go missing now.
+    if (!this.#rows.has(was)) {
+      this.#rows.set(was, {
+        id: was,
+        root: live.root,
+        title: this.#deps.notes.all()[was]?.title ?? live.title,
+        stands: live.stands,
+        at: live.at,
+        driven: true,
+        ...(live.model === undefined ? {} : { model: live.model }),
+        ...(live.used === undefined ? {} : { used: live.used }),
+      })
+    }
+    this.#live.delete(was)
+    live.id = id
+    live.items.clear()
+    live.kept = []
+    live.held.clear()
+    live.asks.clear()
+    live.grants.clear()
+    live.told = []
+    live.tasks = []
+    // The tool has written a file under this id, so a process started again resumes it.
+    live.begun = true
+    live.title = ''
+    live.stands = ''
+    live.said = ''
+    live.last = undefined
+    live.used = undefined
+    live.spent = undefined
+    live.running = undefined
+    live.goal = undefined
+    live.named = undefined
+    this.#live.set(id, live)
+    // Started by this application: without that it is taken for another program's and left out of the list.
+    this.#note(id, { here: true, mode: live.mode, ...(live.chosen === undefined ? {} : { model: live.chosen }) })
+    if (this.#watching === was) this.#watching = id
+    // The list first, so the window has the row before it is sent to it.
+    this.#changed()
+    this.#deps.show?.(id)
   }
 
   #signal(live: Live, signal: Signal): void {
@@ -1117,6 +1178,8 @@ export class Sessions {
           this.#ended(live, { kind: 'ended', how: 'offPlan' })
           return
         }
+        // `/clear` leaves the conversation where it is and carries on in another, which the tool says by naming a different one here.
+        if (signal.session !== '' && signal.session !== live.id) this.#cleared(live, signal.session)
         if (this.#deps.notes.all()[live.id]?.title !== live.named) this.#name(live)
         if (live.mode === 'auto' && signal.mode !== undefined && signal.mode !== 'auto') this.#noAuto(live, signal.model)
         if (live.model !== signal.model) {
@@ -1316,8 +1379,8 @@ export class Sessions {
     if (items.length > 0 || gone.length > 0) {
       this.#deps.items({ id: live.id, items, ...(gone.length > 0 ? { gone } : {}) })
     }
-    // The next message waiting goes once this one is answered, in the mode chosen by then. A turn that ended any other way leaves them for the window to put back in the field.
-    const next = signal.how === 'done' && !live.clearing ? live.queued.shift() : undefined
+    // The next message waiting goes once this one is over, in the mode chosen by then. Stopping a turn is moving on to the next thing, so the queue carries on; an ending nobody asked for leaves them for the window to put back in the field.
+    const next = (signal.how === 'done' || signal.how === 'stopped') && !live.clearing ? live.queued.shift() : undefined
     if (next !== undefined) void this.send({ ...next.message, mode: live.mode })
     this.#changed()
     if (live.goal !== undefined) void this.#goal(live)
@@ -1338,6 +1401,12 @@ export class Sessions {
       const item: SessionItem = { ...read.ended, id: `goal:${String(this.#now())}` }
       live.items.set(item.id, item)
       this.#deps.items({ id: live.id, items: [item] })
+      // A goal is what finished means: it held, so this is for the person to look
+      // at; it was given up on, so it is for the person to unblock. A mark made by
+      // hand is left as it is - it says what they decided, which this does not know.
+      if (this.#deps.notes.all()[live.id]?.status === undefined) {
+        this.#note(live.id, { status: read.met === true ? 'review' : 'blocked' })
+      }
     }
     this.#changed()
   }

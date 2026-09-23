@@ -736,6 +736,8 @@ export interface GoalRead {
   readonly goal?: SessionGoal
   /** How the last one ended, where it ended by itself. */
   readonly ended?: Extract<SessionItem, { kind: 'note' }>
+  /** Whether that ending was the goal holding, rather than being given up on. */
+  readonly met?: boolean
 }
 
 /**
@@ -747,6 +749,7 @@ export interface GoalRead {
 export function goalOf(entries: readonly Json[]): GoalRead {
   let goal: SessionGoal | undefined
   let ended: GoalRead['ended']
+  let met = false
   for (const entry of entries) {
     const said = goalStatus(entry)
     if (said === undefined) continue
@@ -754,6 +757,7 @@ export function goalOf(entries: readonly Json[]): GoalRead {
     if (said['met'] === true || said['failed'] === true) {
       goal = undefined
       ended = goalNote(entry)
+      met = said['met'] === true
     } else if (said['sentinel'] === true) {
       goal = { condition: string(said['condition']), checks: 0 }
       ended = undefined
@@ -761,7 +765,7 @@ export function goalOf(entries: readonly Json[]): GoalRead {
       goal = { condition: goal.condition, checks: goal.checks + 1, ...(reason === '' ? {} : { reason }) }
     }
   }
-  return { ...(goal === undefined ? {} : { goal }), ...(ended === undefined ? {} : { ended }) }
+  return { ...(goal === undefined ? {} : { goal }), ...(ended === undefined ? {} : { ended, met }) }
 }
 
 /**

@@ -154,6 +154,7 @@ export const ANYWHERE = {
   correct: 'CommandOrControl+C+D',
   dictate: 'CommandOrControl+Alt+V',
   search: 'CommandOrControl+Alt+P',
+  orders: 'CommandOrControl+Alt+G',
 } as const
 
 /** Something a conversation wants the person to know, and where the window is not showing it. */

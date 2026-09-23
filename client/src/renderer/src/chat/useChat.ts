@@ -286,19 +286,25 @@ export function useChat(): Chat {
     [],
   )
 
-  // Messages still waiting when a turn ended some other way than with an answer come back to the field, ahead of what is typed there: nothing is sent on anybody's behalf.
-  const takenBack = useRef(new Set<string>())
+  // A turn that ended by itself, on an error or the plan's limit, is not one to send the next message into: it comes back to the field, ahead of what is typed there. The ones behind it keep their place in the queue, each its own message still. After Stop the queue carries on by itself, so nothing is taken out of it here.
+  const taken = useRef(new Set<string>())
   useEffect(() => {
-    if (session?.queued === undefined || working) return
-    const id = session.id
-    const back = session.queued.filter((one) => !takenBack.current.has(one.id))
-    if (back.length === 0) return
-    for (const one of back) takenBack.current.add(one.id)
-    void Promise.all(back.map((one) => window.geckit.chat.unqueue(id, one.id))).then((messages) => {
-      const taken = messages.filter((message) => message !== undefined)
-      if (taken.length === 0) return
-      setDrafts((all) => ({ ...all, [id]: [...taken.map((message) => message.text), all[id] ?? ''].filter((text) => text.trim() !== '').join('\n\n') }))
-      const images = taken.flatMap((message) => message.images ?? [])
+    const id = session?.id
+    if (id === undefined) return
+    if (working) {
+      taken.current.delete(id)
+      return
+    }
+    if (session?.state !== 'failed' && session?.state !== 'limit') return
+    // One only, however many are waiting: the next is not pulled out too by the update the first one causes.
+    if (taken.current.has(id)) return
+    const first = session?.queued?.[0]
+    if (first === undefined) return
+    taken.current.add(id)
+    void window.geckit.chat.unqueue(id, first.id).then((message) => {
+      if (message === undefined) return
+      setDrafts((all) => ({ ...all, [id]: [message.text, all[id] ?? ''].filter((text) => text.trim() !== '').join('\n\n') }))
+      const images = message.images ?? []
       if (images.length > 0) setPictures((all) => ({ ...all, [id]: [...images, ...(all[id] ?? [])] }))
     })
   }, [session, working])
