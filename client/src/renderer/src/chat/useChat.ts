@@ -93,8 +93,8 @@ export interface Chat {
   setModel: (model: string) => void
   askModels: () => void
   send: (again?: string) => void
-  /** A new conversation from the board's form: the goal is set first, then the work is sent. */
-  startTask: (root: string, text: string, goal: string) => void
+  /** A new conversation from the board's form: the work goes first, then the goal. */
+  startTask: (root: string, text: string, goal: string, images?: readonly SessionImage[]) => void
   /** Words sent to the open conversation as they are, the field left alone: `/compact`, `/goal clear`. */
   say: (text: string) => void
   answer: (card: string, answer: CardAnswer | string) => void
@@ -423,11 +423,12 @@ export function useChat(): Chat {
 
   // The goal goes first and the work after it, so it holds from the first turn rather than from the second.
   const startTask = useCallback(
-    (root: string, text: string, goal: string) => {
+    (root: string, text: string, goal: string, images: readonly SessionImage[] = []) => {
       const now = held.current
       const model = now.model === '' ? {} : { model: now.model }
       // The task goes first: a goal on its own tells Claude to start working toward it, and it would start without knowing what the task is.
-      void window.geckit.chat.send({ root, mode: now.mode, text, ...model }).then((id) => {
+      const carried = images.length === 0 ? {} : { images }
+      void window.geckit.chat.send({ root, mode: now.mode, text, ...carried, ...model }).then((id) => {
         open({ kind: 'session', id })
         if (goal === '') return
         void window.geckit.chat.send({ session: id, root, mode: now.mode, text: `/goal ${goal}`, ...model })
