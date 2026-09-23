@@ -509,6 +509,9 @@ export class Sessions {
         this.#changed()
         return live.id
       }
+      // A goal waiting its turn stands on the row already, as one sent straight away does.
+      const waiting = goalSent(message.text)
+      if (waiting !== undefined && waiting !== '') live.goal = { condition: waiting, checks: 0 }
       live.queued.push({ id: `queued:${randomUUID()}`, message: { ...message, session: live.id } })
       this.#changed()
       return live.id
