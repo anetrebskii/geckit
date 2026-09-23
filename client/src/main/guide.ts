@@ -1,6 +1,8 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+
+import { app } from 'electron'
 
 /**
  * What Claude Code is told about being run by GeckIt.
@@ -15,6 +17,39 @@ import { join } from 'node:path'
 const IMPORT = '@GECKIT.md'
 
 const where = (): string => process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude')
+
+/** Where the command is written, and what it is called from a shell. */
+export const cliPath = (): string => join(homedir(), '.geckit', 'bin', 'geckit')
+
+/**
+ * The command, as a line that runs the application's own Node on the script
+ * built beside the main process. Nothing has to be installed for it, and it
+ * finds GeckIt's own folder because the path is written into the line.
+ */
+function launcher(): string {
+  const script = join(app.getAppPath(), 'out', 'main', 'cli.js')
+  return [
+    '#!/bin/sh',
+    '# Written by GeckIt when it starts. Anything changed here is written over.',
+    `GECKIT_DATA=${JSON.stringify(app.getPath('userData'))} ELECTRON_RUN_AS_NODE=1 exec ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} "$@"`,
+    '',
+  ].join('\n')
+}
+
+const COMMAND = (path: string): string => `
+## Asking GeckIt about the work itself
+
+\`${path}\` answers about the conversations, and is the way to find out what was done today rather than reading Claude Code's own files. It only reads.
+
+\`\`\`
+${path} sessions --today
+${path} sessions --since 2d --project formula-business --status review
+${path} sessions --today --json
+${path} show <id>
+\`\`\`
+
+\`sessions\` prints one line each, newest first: the id, when it last changed, the project, how it stands - in progress, review, blocked or done - and the title. \`show\` prints what was said in one of them, the person and Claude, without what the tools printed. \`--json\` gives the same for reading with a program.
+`
 
 export const GUIDE = `# Working in GeckIt
 
@@ -49,11 +84,13 @@ Commands, watches and helpers you leave running are listed on the card while the
 export async function keepGuide(wanted: boolean): Promise<void> {
   const folder = where()
   const guide = join(folder, 'GECKIT.md')
+  const command = cliPath()
   const claude = join(folder, 'CLAUDE.md')
   const was = await readFile(claude, 'utf8').catch(() => '')
   const linked = was.split('\n').some((line) => line.trim() === IMPORT)
   if (!wanted) {
     await rm(guide, { force: true }).catch(() => undefined)
+    await rm(command, { force: true }).catch(() => undefined)
     if (!linked) return
     const without = was
       .split('\n')
@@ -65,7 +102,15 @@ export async function keepGuide(wanted: boolean): Promise<void> {
     return
   }
   await mkdir(folder, { recursive: true }).catch(() => undefined)
-  await writeFile(guide, GUIDE).catch(() => undefined)
+  // A shell line, so Windows is left with the guide alone until there is one it can run.
+  const told = await (process.platform === 'win32'
+    ? Promise.resolve(false)
+    : mkdir(join(command, '..'), { recursive: true })
+        .then(() => writeFile(command, launcher()))
+        .then(() => chmod(command, 0o755))
+        .then(() => true)
+        .catch(() => false))
+  await writeFile(guide, told ? `${GUIDE}${COMMAND(command)}` : GUIDE).catch(() => undefined)
   if (linked) return
   const next = was.trim() === '' ? `${IMPORT}\n` : `${was.replace(/\s*$/, '')}\n\n${IMPORT}\n`
   await writeFile(claude, next).catch(() => undefined)

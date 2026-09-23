@@ -12,7 +12,7 @@ export default defineConfig({
       __SIGNED__: JSON.stringify(process.env['GECKIT_SIGNED'] === 'true'),
     },
     build: {
-      rollupOptions: { input: { index: resolve(here, 'src/main/index.ts') } },
+      rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } },
     },
   },
   preload: {
