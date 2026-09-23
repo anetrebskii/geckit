@@ -3270,6 +3270,26 @@ button.tag:hover {
   padding: 2px;
 }
 
+.board-day {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.board-day-head {
+  position: sticky;
+  top: -2px;
+  z-index: 1;
+  padding: 4px 2px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--bg-sunken);
+}
+
 .board-card {
   display: flex;
   flex-shrink: 0;
