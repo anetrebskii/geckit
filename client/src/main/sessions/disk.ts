@@ -3,8 +3,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import type { BackgroundTask, SessionGoal, SessionItem, WorkItem } from '../../shared/api'
-import { workItem } from '../../shared/links'
-import { costOf, goalOf, lastContext, lastSaid, replayClaude, STILL_GOING, tasksOf, typed } from './claude-read'
+import type { Link } from '../../shared/links'
+import { linksInText, workItem } from '../../shared/links'
+import { costOf, goalOf, lastContext, lastSaid, replayClaude, saidIn, STILL_GOING, tasksOf, typed } from './claude-read'
 import type { GoalRead } from './claude-read'
 import { firstLine } from './wording'
 
@@ -243,6 +244,30 @@ export async function readClaudeSession(root: string, id: string): Promise<Conve
   if (kept.size > KEEP) kept.delete(kept.keys().next().value ?? '')
   return conversation
 }
+
+/** The links read out of a file, kept while the file is as it was: a card asks for its count on every list. */
+const linked = new Map<string, { readonly size: number; readonly written: number; readonly links: Link[] }>()
+
+/**
+ * The links written in a conversation, from the lines that carry one. A
+ * hundred megabytes is read in a quarter of a second this way, where replaying
+ * the whole of it to the same end takes several.
+ */
+export async function readLinks(root: string, id: string): Promise<Link[]> {
+  const path = await claudeFile(root, id)
+  if (path === undefined) return []
+  const found = await stat(path)
+  const was = linked.get(path)
+  if (was !== undefined && was.size === found.size && was.written === found.mtimeMs) return was.links
+  const entries = await entriesOf(path, (line) => line.includes('http'))
+  const links = linksInText(entries.map(saidIn))
+  linked.delete(path)
+  linked.set(path, { size: found.size, written: found.mtimeMs, links })
+  if (linked.size > LINKED) linked.delete(linked.keys().next().value ?? '')
+  return links
+}
+
+const LINKED = 200
 
 /** Where a conversation's goal stands, from its lines about goals alone. */
 export async function readGoal(root: string, id: string): Promise<GoalRead> {

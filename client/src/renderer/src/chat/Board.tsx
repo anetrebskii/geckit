@@ -12,7 +12,7 @@ import { Projects } from './Projects'
 import { projectName, tint } from './project'
 import { STATUS_ICONS, Tags } from './Sidebar'
 import { running } from './Tasks'
-import { linksIn, shortUrl } from '../../../shared/links'
+import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
 import { ago } from './time'
 import type { Chat } from './useChat'
@@ -281,8 +281,18 @@ function Card({
   readonly onStopRenaming: () => void
 }): React.JSX.Element {
   const open = chat.shown.kind === 'session' && chat.shown.id === session.id
-  // The links written in it, read when the button is pressed rather than for every card at once.
-  const [links, setLinks] = useState<{ readonly at: DOMRect; readonly list: readonly Link[] } | undefined>()
+  // The links written in it, counted on the card and listed where the button opens.
+  const [links, setLinks] = useState<readonly Link[]>([])
+  const [listing, setListing] = useState<DOMRect | undefined>()
+  useEffect(() => {
+    let gone = false
+    void window.geckit.chat.links(session.id).then((found) => {
+      if (!gone) setLinks(found)
+    })
+    return () => {
+      gone = true
+    }
+  }, [session.id, session.at])
   const stands = standing(session)
   const background = session.tasks?.filter(running).length ?? 0
   const queued = session.queued?.length ?? 0
@@ -329,19 +339,21 @@ function Card({
         </span>
         <Tags session={session} marked={false} />
         <span className="spacer" />
-        <button
-          type="button"
-          className="board-card-links"
-          aria-label="Links in this conversation"
-          title="Links in this conversation, the newest first"
-          onClick={(event) => {
-            event.stopPropagation()
-            const at = event.currentTarget.getBoundingClientRect()
-            void window.geckit.chat.items(session.id).then((items) => setLinks({ at, list: linksIn(items) }))
-          }}
-        >
-          <Icon name="link" size={11} />
-        </button>
+        {links.length === 0 ? null : (
+          <button
+            type="button"
+            className="board-card-links"
+            aria-label={`${links.length} links in this conversation`}
+            title="Links in this conversation, the newest first"
+            onClick={(event) => {
+              event.stopPropagation()
+              setListing(event.currentTarget.getBoundingClientRect())
+            }}
+          >
+            <Icon name="link" size={11} />
+            {links.length}
+          </button>
+        )}
       </div>
       {stands === undefined && background === 0 && queued === 0 ? null : (
         <div className="board-card-state">
@@ -364,22 +376,16 @@ function Card({
           )}
         </div>
       )}
-      {links === undefined ? null : (
+      {listing === undefined ? null : (
         <Menu
-          anchor={links.at}
-          choices={
-            links.list.length === 0
-              ? [{ value: '', label: 'No links in it yet' }]
-              : links.list.map((link) => ({
-                  value: link.url,
-                  label: link.text ?? shortUrl(link.url),
-                  ...(link.text === undefined ? {} : { says: shortUrl(link.url) }),
-                }))
-          }
-          onPick={(url) => {
-            if (url !== '') window.geckit.chat.openLink(url)
-          }}
-          onClose={() => setLinks(undefined)}
+          anchor={listing}
+          choices={links.map((link) => ({
+            value: link.url,
+            label: link.text ?? shortUrl(link.url),
+            ...(link.text === undefined ? {} : { says: shortUrl(link.url) }),
+          }))}
+          onPick={(url) => window.geckit.chat.openLink(url)}
+          onClose={() => setListing(undefined)}
         />
       )}
       {session.goal === undefined ? null : (

@@ -406,6 +406,7 @@ function wire(): void {
     return gone
   })
   ipcMain.handle('chat:items', (_event, id: string) => sessions?.items(id) ?? [])
+  ipcMain.handle('chat:links', (_event, id: string) => sessions?.links(id) ?? [])
   ipcMain.handle('chat:send', async (_event, message: SessionMessage) => {
     track('chatSent')
     return sessions?.send(message)
