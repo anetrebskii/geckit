@@ -12,14 +12,18 @@ const TRAILING = /[.,;:!?]+$/
 
 /** The web links the person or Claude wrote, the newest first and each once, without what tools printed. */
 export function linksIn(items: readonly SessionItem[]): Link[] {
+  return linksInText(items.flatMap((item) => (item.kind === 'mine' || item.kind === 'theirs' ? [item.text] : [])))
+}
+
+/** The same, from what was said as plain text, oldest first. */
+export function linksInText(texts: readonly string[]): Link[] {
   const found = new Map<string, Link>()
-  for (const item of [...items].reverse()) {
-    if (item.kind !== 'mine' && item.kind !== 'theirs') continue
-    for (const [, text = '', url = ''] of item.text.matchAll(NAMED)) {
+  for (const said of [...texts].reverse()) {
+    for (const [, text = '', url = ''] of said.matchAll(NAMED)) {
       const had = found.get(url)
       if (had === undefined || had.text === undefined) found.set(url, text === url ? { url } : { url, text })
     }
-    for (const [bare] of item.text.matchAll(BARE)) {
+    for (const [bare] of said.matchAll(BARE)) {
       const url = bare.replace(TRAILING, '')
       if (!found.has(url)) found.set(url, { url })
     }

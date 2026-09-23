@@ -984,6 +984,14 @@ export function lastSaid(entries: readonly Json[]): string {
   return ''
 }
 
+/** What was said in one of the file's entries, by the person or by the assistant, without what a tool printed. */
+export function saidIn(entry: Json): string {
+  if (string(entry['type']) === 'assistant' && entry['isSidechain'] !== true) {
+    return textsOf(object(entry['message'])['content']).join('\n')
+  }
+  return typed(entry)
+}
+
 /** What the person typed, from one of the file's entries, or nothing where it was not them. */
 export function typed(entry: Json): string {
   if (string(entry['type']) !== 'user' || entry['isSidechain'] === true || entry['isMeta'] === true) return ''

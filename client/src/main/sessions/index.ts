@@ -23,11 +23,12 @@ import type {
   WorkItem,
 } from '../../shared/api'
 import { sessionMode } from '../../shared/api'
-import { workItem } from '../../shared/links'
+import type { Link } from '../../shared/links'
+import { linksIn, workItem } from '../../shared/links'
 import { claudeAccount } from './account'
 import { holdClaude } from './claude'
 import { browsersOf, readBrowsers } from './chrome'
-import { claudeFile, deleteClaude, listClaude, readClaudeSession, readGoal } from './disk'
+import { claudeFile, deleteClaude, listClaude, readClaudeSession, readGoal, readLinks } from './disk'
 import type { GoalRead } from './claude-read'
 import type { Conversation } from './disk'
 import { cardId } from './heard'
@@ -388,6 +389,14 @@ export class Sessions {
       if (live.spent !== spent) this.#changed()
     }
     return [...live.items.values()]
+  }
+
+  /** The links written in a session, from what is held where it is running here and from its file where it is not. */
+  async links(id: string): Promise<Link[]> {
+    const live = this.#live.get(id)
+    if (live?.driver !== undefined) return linksIn([...live.items.values()])
+    const root = live?.root ?? this.#rows.get(id)?.root
+    return root === undefined ? [] : readLinks(root, id)
   }
 
   /** Start holding in memory a session the tool listed. */
