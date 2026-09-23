@@ -150,16 +150,15 @@ export function saying(
     if (order.do === 'start') {
       if (!projects.some((one) => projectSaid(one) === order.project)) continue
       kept.push(order)
-      lines.push(
-        `Start in ${order.project}: ${shortly(order.text)}${order.goal === undefined ? '' : ` (until ${shortly(order.goal)})`}`,
-      )
+      // Whole, however long: this is what is about to be sent, and it is being agreed to.
+      lines.push(`Start in ${order.project}: ${order.text}${order.goal === undefined ? '' : ` (until ${order.goal})`}`)
       continue
     }
     const chat = here.get(order.chat)
     if (chat === undefined) continue
     const title = shortly(chat.title, 40)
     kept.push(order)
-    if (order.do === 'say') lines.push(`Say in ${title}: ${shortly(order.text)}`)
+    if (order.do === 'say') lines.push(`Say in ${title}: ${order.text}`)
     if (order.do === 'stop') lines.push(`Stop ${title}`)
     if (order.do === 'mark') lines.push(`Mark ${title} as ${order.status}`)
     if (order.do === 'open') lines.push(`Open ${title}`)
