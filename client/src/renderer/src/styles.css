@@ -1154,6 +1154,10 @@ svg.spinning,
 }
 
 /* The sidebar's edge, dragged to make it wider or narrower. */
+.side-grip[hidden] {
+  display: none;
+}
+
 .side-grip {
   position: absolute;
   top: 0;
