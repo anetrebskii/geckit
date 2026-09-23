@@ -3522,6 +3522,16 @@ button.tag:hover {
   line-height: 1.45;
 }
 
+/* A file is over the field and would be taken. */
+.new-task-text.taking {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.new-task .pending {
+  margin-top: -4px;
+}
+
 .new-task-where:focus,
 .new-task-text:focus,
 .new-task-goal:focus {

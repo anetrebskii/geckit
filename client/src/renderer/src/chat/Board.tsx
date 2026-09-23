@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ANYWHERE, SESSION_STATUSES } from '../../../shared/api'
-import type { ChatSession, SessionStatus } from '../../../shared/api'
+import type { ChatSession, SessionImage, SessionStatus } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
+import { asImage, canShow } from '../pictures'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
@@ -466,12 +467,30 @@ export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClo
   const [root, setRoot] = useState(() => chat.root ?? chat.settings.projects[0] ?? '')
   const [text, setText] = useState('')
   const [goal, setGoal] = useState('')
+  const [pictures, setPictures] = useState<readonly SessionImage[]>([])
+  const [over, setOver] = useState(false)
   const field = useRef<HTMLTextAreaElement>(null)
   useEffect(() => field.current?.focus(), [])
 
+  // Pictures are carried with the first message; anything else goes into the field as its path, as the composer does.
+  const take = (files: readonly File[]): void => {
+    const paths = files
+      .filter((one) => !canShow(one))
+      .map((one) => window.geckit.pathFor(one))
+      .filter((path) => path !== '')
+      .map((path) => (path.includes(' ') ? `"${path}"` : path))
+    if (paths.length > 0) setText((now) => `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${paths.join(' ')} `)
+    const wanted = files.filter(canShow)
+    if (wanted.length === 0) return
+    void Promise.all(wanted.map((file) => asImage(file).catch(() => undefined))).then((read) => {
+      const kept = read.filter((one): one is SessionImage => one !== undefined)
+      if (kept.length > 0) setPictures((held) => [...held, ...kept].slice(0, 8))
+    })
+  }
+
   const start = (): void => {
-    if (root === '' || text.trim() === '') return
-    chat.startTask(root, text.trim(), goal.trim())
+    if (root === '' || (text.trim() === '' && pictures.length === 0)) return
+    chat.startTask(root, text.trim(), goal.trim(), pictures)
     onClose()
   }
 
@@ -505,16 +524,50 @@ export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClo
         What to do
         <textarea
           ref={field}
-          className="new-task-text"
+          className={`new-task-text${over ? ' taking' : ''}`}
           rows={5}
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="Ask Claude Code. @ picks a file, ! runs a command"
+          placeholder="Ask Claude Code. Paste a picture or drop a file in here"
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files]
+            if (files.length === 0) return
+            event.preventDefault()
+            take(files)
+          }}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setOver(true)
+          }}
+          onDragLeave={() => setOver(false)}
+          onDrop={(event) => {
+            event.preventDefault()
+            setOver(false)
+            take([...event.dataTransfer.files])
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) start()
           }}
         />
       </label>
+      {pictures.length === 0 ? null : (
+        <div className="pending">
+          {pictures.map((one, at) => (
+            <span key={`${String(at)}:${one.data.slice(0, 16)}`} className="pending-one">
+              <img src={`data:${one.media};base64,${one.data}`} alt="" />
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Take this picture off"
+                title="Take this picture off"
+                onClick={() => setPictures((held) => held.filter((_one, index) => index !== at))}
+              >
+                <Icon name="close" size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <label className="new-task-label">
         Goal
         <input
@@ -530,7 +583,12 @@ export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClo
         <button type="button" className="quiet" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" className="primary" disabled={root === '' || text.trim() === ''} onClick={start}>
+        <button
+          type="button"
+          className="primary"
+          disabled={root === '' || (text.trim() === '' && pictures.length === 0)}
+          onClick={start}
+        >
           Start
         </button>
       </div>
