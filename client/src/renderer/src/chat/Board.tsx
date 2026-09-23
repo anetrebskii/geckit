@@ -12,6 +12,8 @@ import { Projects } from './Projects'
 import { projectName, tint } from './project'
 import { STATUS_ICONS, Tags } from './Sidebar'
 import { running } from './Tasks'
+import { linksIn, shortUrl } from '../../../shared/links'
+import type { Link } from '../../../shared/links'
 import { ago } from './time'
 import type { Chat } from './useChat'
 
@@ -279,6 +281,8 @@ function Card({
   readonly onStopRenaming: () => void
 }): React.JSX.Element {
   const open = chat.shown.kind === 'session' && chat.shown.id === session.id
+  // The links written in it, read when the button is pressed rather than for every card at once.
+  const [links, setLinks] = useState<{ readonly at: DOMRect; readonly list: readonly Link[] } | undefined>()
   const stands = standing(session)
   const background = session.tasks?.filter(running).length ?? 0
   const queued = session.queued?.length ?? 0
@@ -324,6 +328,20 @@ function Card({
           {projectName(session.root)}
         </span>
         <Tags session={session} marked={false} />
+        <span className="spacer" />
+        <button
+          type="button"
+          className="board-card-links"
+          aria-label="Links in this conversation"
+          title="Links in this conversation, the newest first"
+          onClick={(event) => {
+            event.stopPropagation()
+            const at = event.currentTarget.getBoundingClientRect()
+            void window.geckit.chat.items(session.id).then((items) => setLinks({ at, list: linksIn(items) }))
+          }}
+        >
+          <Icon name="link" size={11} />
+        </button>
       </div>
       {stands === undefined && background === 0 && queued === 0 ? null : (
         <div className="board-card-state">
@@ -345,6 +363,24 @@ function Card({
             </span>
           )}
         </div>
+      )}
+      {links === undefined ? null : (
+        <Menu
+          anchor={links.at}
+          choices={
+            links.list.length === 0
+              ? [{ value: '', label: 'No links in it yet' }]
+              : links.list.map((link) => ({
+                  value: link.url,
+                  label: link.text ?? shortUrl(link.url),
+                  ...(link.text === undefined ? {} : { says: shortUrl(link.url) }),
+                }))
+          }
+          onPick={(url) => {
+            if (url !== '') window.geckit.chat.openLink(url)
+          }}
+          onClose={() => setLinks(undefined)}
+        />
       )}
       {session.goal === undefined ? null : (
         <div className="board-card-goal" title={session.goal.condition}>
