@@ -660,6 +660,15 @@ export function Sidebar({
         <button
           type="button"
           className="icon-button no-drag"
+          aria-label="As a board"
+          title="The conversations as a board, by what stands where"
+          onClick={() => chat.change({ chatView: 'board' })}
+        >
+          <Icon name="board" />
+        </button>
+        <button
+          type="button"
+          className="icon-button no-drag"
           aria-label="Shortcuts"
           title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
           onClick={onShortcuts}

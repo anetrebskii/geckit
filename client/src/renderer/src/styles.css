@@ -1341,7 +1341,7 @@ svg.spinning,
 /* The row that is open: a fill of its own, quiet enough to read past, as a Mac list marks a selection. */
 .row.on,
 .row.on:hover {
-  background: color-mix(in srgb, var(--accent) 24%, var(--bg));
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
 }
 
 .row.on .title {
@@ -1711,6 +1711,10 @@ button.tag:hover {
   flex-direction: column;
   min-width: 0;
   height: 100%;
+}
+
+.talk[hidden] {
+  display: none;
 }
 
 .talk-head {
@@ -3032,4 +3036,190 @@ button.tag:hover {
 .dialog .task-more {
   margin: 8px 0 0;
   font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- */
+/* The board                                                         */
+/* ---------------------------------------------------------------- */
+
+/* One column of window instead of two: the board takes the width, and a conversation opened from it comes up over it. */
+.chat.boarded {
+  grid-template-columns: 1fr;
+}
+
+.board {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  background: var(--bg);
+}
+
+.board-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 8px 82px;
+  border-bottom: 1px solid var(--border);
+}
+
+.board-where {
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.board-new {
+  width: auto;
+  gap: 8px;
+  padding: 4px 10px;
+}
+
+.board-columns {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 8px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* A card is over this column and would land here. */
+.board-column.taking {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-sunken));
+}
+
+.board-column-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 2px 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.board-cards {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.card:hover {
+  border-color: var(--text-faint);
+}
+
+/* The one open behind the conversation showing over the board. */
+.card.on {
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
+}
+
+.card.waits.asks {
+  box-shadow: inset 3px 0 0 var(--warning-text);
+  background: var(--warning-bg);
+}
+
+.card.waits .card-title {
+  font-weight: 600;
+}
+
+.card-head {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+}
+
+.card-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.card-goal,
+.card-stands {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.card-goal span,
+.card-stands span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.card-goal {
+  color: var(--accent);
+}
+
+/* The conversation over the board, and the board dimmed behind it. */
+.talk-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgb(0 0 0 / 35%);
+}
+
+.talk.over {
+  position: absolute;
+  inset: 40px 40px 24px;
+  z-index: 6;
+  overflow: hidden;
+  height: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 35%);
 }
