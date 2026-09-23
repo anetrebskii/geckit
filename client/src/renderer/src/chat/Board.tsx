@@ -334,8 +334,8 @@ function Card({
             </span>
           )}
           {background === 0 ? null : (
-            <span className="state-said" title="Running in the background">
-              <Icon name="terminal" size={10} />
+            <span className="state-said said-background" title="Running in the background">
+              <span className="state-dot" />
               {background} in the background
             </span>
           )}
