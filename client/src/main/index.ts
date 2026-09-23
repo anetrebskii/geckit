@@ -262,12 +262,11 @@ async function carryOutPlanned(): Promise<Answered> {
   const projects = getSettings().projects
   const mode = getSettings().chatMode
   const did = await carryOut(plan.orders, projects, plan.told, {
-    // The goal goes first and the work after it, so it holds from the first turn
-    // rather than from the second. The second message waits in the queue meanwhile.
+    // The work goes first and the goal after it: a goal on its own tells Claude to
+    // start working toward it, with nothing yet said about what the work is.
     start: async (root, text, goal) => {
-      if (goal === undefined) return held.send({ root, mode, text })
-      const id = await held.send({ root, mode, text: `/goal ${goal}` })
-      await held.send({ session: id, root, mode, text })
+      const id = await held.send({ root, mode, text })
+      if (goal !== undefined) await held.send({ session: id, root, mode, text: `/goal ${goal}` })
       return id
     },
     say: async (id, text) => {
@@ -277,6 +276,9 @@ async function carryOutPlanned(): Promise<Answered> {
     stop: (id) => held.stop(id),
     mark: (id, status) => held.mark(id, status),
     open: (id) => openChat(id),
+    delete: async (id) => {
+      unfavorite(await held.remove([id]))
+    },
   })
   return did.length === 0 ? { ok: false, error: 'None of that could be done' } : { ok: true, text: did.join('\n') }
 }
