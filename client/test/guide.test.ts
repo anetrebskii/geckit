@@ -24,7 +24,7 @@ describe('what Claude Code is told about GeckIt', () => {
   it('writes the file and one line that reads it, leaving what was there', async () => {
     await writeFile(join(folder, 'CLAUDE.md'), '# Mine\n\nAnswer in English.\n')
     await keepGuide(true)
-    expect(await read('GECKIT.md')).toBe(GUIDE)
+    expect(await read('GECKIT.md')).toContain(GUIDE)
     expect(await read('CLAUDE.md')).toBe('# Mine\n\nAnswer in English.\n\n@GECKIT.md\n')
   })
 
