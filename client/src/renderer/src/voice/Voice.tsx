@@ -13,7 +13,7 @@ import { Icon } from '../ui/Icon'
  * the main process does once it has the words.
  */
 
-type State = 'recording' | 'transcribing' | 'done' | 'error'
+type State = 'recording' | 'transcribing' | 'asking' | 'doing' | 'done' | 'error'
 
 /** How long what was done stays up to be read before the capsule goes. */
 const READ_IT = 4_000
@@ -23,21 +23,39 @@ export function Voice(): React.JSX.Element {
   const [state, setState] = useState<State>('recording')
   const [error, setError] = useState('')
   const [did, setDid] = useState('')
+  const [plan, setPlan] = useState<readonly string[]>([])
   const [last, setLast] = useState<Blob | undefined>()
 
   const send = useCallback(async (audio: Blob) => {
     setLast(audio)
     setState('transcribing')
     const answer = await window.geckit.voice.done({ audio: await base64(audio), fileName: 'dictation.webm' })
+    // Said to the application: nothing has happened yet, this is what it would do.
+    if (answer.ok && answer.plan !== undefined && answer.plan.length > 0) {
+      setPlan(answer.plan)
+      setState('asking')
+      return
+    }
     if (answer.ok && answer.text !== undefined && answer.text.trim() !== '') {
-      // Dictation is gone by now, pasted back where the person was. What is still
-      // up was said to the application, and this is what it did about it.
+      // Dictation is gone by now, pasted back where the person was.
       setDid(answer.text)
       setState('done')
       return
     }
     setState('error')
     setError(answer.error ?? 'Nothing was heard')
+  }, [])
+
+  const carryOut = useCallback(async () => {
+    setState('doing')
+    const answer = await window.geckit.voice.do()
+    if (answer.ok && answer.text !== undefined) {
+      setDid(answer.text)
+      setState('done')
+      return
+    }
+    setState('error')
+    setError(answer.error ?? 'None of that could be done')
   }, [])
 
   useEffect(() => {
@@ -61,11 +79,21 @@ export function Voice(): React.JSX.Element {
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') window.geckit.voice.cancel()
-      if (event.key === 'Enter') stop()
+      // Enter stops the recording, and then says yes to what was heard.
+      if (event.key === 'Enter') {
+        if (state === 'asking') void carryOut()
+        else stop()
+      }
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [stop])
+  }, [stop, state, carryOut])
+
+  // The capsule is a window of its own, so it has to be grown to hold the list.
+  useEffect(() => {
+    const height = document.querySelector('.capsule')?.getBoundingClientRect().height
+    window.geckit.voice.size(height === undefined ? 92 : height + 28)
+  }, [state, plan])
 
   const mics = settings.audioDevices
 
@@ -76,6 +104,29 @@ export function Voice(): React.JSX.Element {
           <>
             <Icon name="spinner" className="glyph spinning" />
             <span>Writing it down</span>
+          </>
+        ) : state === 'asking' ? (
+          <div className="asking">
+            <div className="asking-head">Do this?</div>
+            <ol className="asking-plan">
+              {plan.map((one) => (
+                <li key={one}>{one}</li>
+              ))}
+            </ol>
+            <div className="asking-foot">
+              <button type="button" className="quiet" onClick={() => window.geckit.voice.cancel()}>
+                Cancel
+              </button>
+              <button type="button" className="primary" onClick={() => void carryOut()}>
+                Do it
+                <span className="keys">Enter</span>
+              </button>
+            </div>
+          </div>
+        ) : state === 'doing' ? (
+          <>
+            <Icon name="spinner" className="glyph spinning" />
+            <span>Doing it</span>
           </>
         ) : state === 'done' ? (
           <>

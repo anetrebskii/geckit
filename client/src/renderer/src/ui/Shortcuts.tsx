@@ -9,7 +9,7 @@ const MAC = window.geckit.platform === 'darwin'
 /** What the keyboard in front of the person calls the command key. */
 export const MOD = MAC ? 'Cmd' : 'Ctrl'
 
-const said = (accelerator: string): string => accelerator.replace('CommandOrControl', MOD)
+export const said = (accelerator: string): string => accelerator.replace('CommandOrControl', MOD)
 
 const GROUPS: readonly { readonly title: string; readonly keys: readonly (readonly [string, string])[] }[] = [
   {

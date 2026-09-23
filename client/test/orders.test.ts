@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { carryOut, listing, ordersOf } from '../src/main/orders'
+import { carryOut, listing, ordersOf, saying } from '../src/main/orders'
 import type { Doing, Told } from '../src/main/orders'
 
 /**
@@ -116,5 +116,39 @@ describe('what the model is told there is', () => {
         '- b2 | time2you | working | Phone edit looks weird',
       ].join('\n'),
     )
+  })
+})
+
+describe('what it says it will do, before anything is done', () => {
+  it('says each order in the words the capsule shows, and keeps them', () => {
+    const { orders, lines } = saying(
+      [
+        { do: 'start', project: 'radar63', text: 'add a push when a drone is near', goal: 'a push arrives on the phone' },
+        { do: 'say', chat: 'b2', text: 'yes, go ahead' },
+        { do: 'mark', chat: 'a1', status: 'review' },
+      ],
+      PROJECTS,
+      CHATS,
+    )
+    expect(orders).toHaveLength(3)
+    expect(lines).toEqual([
+      'Start in radar63: add a push when a drone is near (until a push arrives on the phone)',
+      'Say in Phone edit looks weird: yes, go ahead',
+      'Mark Radar push notifications as review',
+    ])
+  })
+
+  it('leaves out one naming a conversation or a project that is not there', () => {
+    const { orders, lines } = saying(
+      [
+        { do: 'open', chat: 'gone' },
+        { do: 'start', project: 'nowhere', text: 'do a thing' },
+        { do: 'open', chat: 'a1' },
+      ],
+      PROJECTS,
+      CHATS,
+    )
+    expect(orders).toEqual([{ do: 'open', chat: 'a1' }])
+    expect(lines).toEqual(['Open Radar push notifications'])
   })
 })

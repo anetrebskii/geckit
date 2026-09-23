@@ -177,6 +177,12 @@ const geckit = {
   voice: {
     /** Transcribe, put it on the clipboard, and paste it back where the person was. */
     done: (request: TranscribeRequest): Promise<Answered> => ipcRenderer.invoke('voice:done', request),
+    /** The yes: what was read as orders a moment ago is carried out. */
+    do: (): Promise<Answered> => ipcRenderer.invoke('voice:do'),
+    /** Opens the capsule to say what the application should do, as the shortcut does. */
+    orders: (): void => ipcRenderer.send('voice:orders'),
+    /** The capsule grows to hold what it asks about. */
+    size: (height: number): void => ipcRenderer.send('voice:size', height),
     cancel: (): void => ipcRenderer.send('voice:cancel'),
     onStart: (said: () => void): (() => void) => listen('voice:start', said),
     onStop: (said: () => void): (() => void) => listen('voice:stop', said),

@@ -129,6 +129,44 @@ export async function askOrders(
   return { orders: ordersOf(answer.text ?? '') }
 }
 
+const shortly = (text: string, most = 60): string =>
+  text.length > most ? `${text.slice(0, most - 1).trimEnd()}...` : text
+
+/**
+ * What the orders would do, for the person to say yes to before anything runs.
+ *
+ * An order naming a conversation or a project that is not there is left out
+ * here rather than at the last moment, so that what is shown is what happens.
+ */
+export function saying(
+  orders: readonly Order[],
+  projects: readonly string[],
+  chats: readonly Told[],
+): { readonly orders: readonly Order[]; readonly lines: readonly string[] } {
+  const here = new Map(chats.map((one) => [one.id, one]))
+  const kept: Order[] = []
+  const lines: string[] = []
+  for (const order of orders) {
+    if (order.do === 'start') {
+      if (!projects.some((one) => projectSaid(one) === order.project)) continue
+      kept.push(order)
+      lines.push(
+        `Start in ${order.project}: ${shortly(order.text)}${order.goal === undefined ? '' : ` (until ${shortly(order.goal)})`}`,
+      )
+      continue
+    }
+    const chat = here.get(order.chat)
+    if (chat === undefined) continue
+    const title = shortly(chat.title, 40)
+    kept.push(order)
+    if (order.do === 'say') lines.push(`Say in ${title}: ${shortly(order.text)}`)
+    if (order.do === 'stop') lines.push(`Stop ${title}`)
+    if (order.do === 'mark') lines.push(`Mark ${title} as ${order.status}`)
+    if (order.do === 'open') lines.push(`Open ${title}`)
+  }
+  return { orders: kept, lines }
+}
+
 /** Carrying an order out is the same as pressing what it names in the window. */
 export interface Doing {
   readonly start: (root: string, text: string, goal: string | undefined) => Promise<string>
@@ -137,9 +175,6 @@ export interface Doing {
   readonly mark: (id: string, status: SessionStatus) => void
   readonly open: (id: string) => void
 }
-
-const shortly = (text: string, most = 60): string =>
-  text.length > most ? `${text.slice(0, most - 1).trimEnd()}...` : text
 
 /**
  * The orders done, and a line about each for the person to read.
