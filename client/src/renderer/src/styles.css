@@ -3450,7 +3450,9 @@ button.tag:hover {
 
 .talk.over {
   position: absolute;
-  inset: 40px 40px 24px;
+  /* Under the board's own head, so the window keeps its drag strip and the
+     traffic lights are not covered, and down to the status bar. */
+  inset: 44px 10px 0;
   z-index: 6;
   overflow: hidden;
   height: auto;

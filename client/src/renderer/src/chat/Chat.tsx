@@ -525,6 +525,17 @@ export function Chat(): React.JSX.Element {
               </button>
             </>
           )}
+          {overBoard ? (
+            <button
+              type="button"
+              className="icon-button no-drag"
+              title="Back to the board (Esc)"
+              aria-label="Back to the board"
+              onClick={() => chat.open({ kind: 'new' })}
+            >
+              <Icon name="close" />
+            </button>
+          ) : null}
         </div>
 
         {chat.shown.kind === 'new' && chat.items.length === 0 ? (
