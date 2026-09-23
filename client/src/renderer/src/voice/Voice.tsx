@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
+import type { Planned } from '../../../shared/api'
 import { base64, BARS, time, useRecorder } from '../recorder'
 import { useSettings } from '../settings'
 import { Icon } from '../ui/Icon'
@@ -23,7 +24,8 @@ export function Voice(): React.JSX.Element {
   const [state, setState] = useState<State>('recording')
   const [error, setError] = useState('')
   const [did, setDid] = useState('')
-  const [plan, setPlan] = useState<readonly string[]>([])
+  const [plan, setPlan] = useState<readonly Planned[]>([])
+  const [heard, setHeard] = useState('')
   const [last, setLast] = useState<Blob | undefined>()
 
   const send = useCallback(async (audio: Blob) => {
@@ -33,6 +35,7 @@ export function Voice(): React.JSX.Element {
     // Said to the application: nothing has happened yet, this is what it would do.
     if (answer.ok && answer.plan !== undefined && answer.plan.length > 0) {
       setPlan(answer.plan)
+      setHeard(answer.heard ?? '')
       setState('asking')
       return
     }
@@ -107,12 +110,27 @@ export function Voice(): React.JSX.Element {
           </>
         ) : state === 'asking' ? (
           <div className="asking">
-            <div className="asking-head">Do this?</div>
-            <ol className="asking-plan">
+            <div className="asking-heard">
+              <Icon name="mic" size={11} />
+              <span>{heard}</span>
+            </div>
+            <div className="asking-plan">
               {plan.map((one) => (
-                <li key={one}>{one}</li>
+                <div className="asking-one" key={one.head + (one.text ?? '')}>
+                  <Icon name={one.icon} size={12} />
+                  <div className="asking-said">
+                    <div className="asking-head">{one.head}</div>
+                    {one.text === undefined ? null : <div className="asking-text">{one.text}</div>}
+                    {one.goal === undefined ? null : (
+                      <div className="asking-goal">
+                        <Icon name="done" size={10} />
+                        Until {one.goal}
+                      </div>
+                    )}
+                  </div>
+                </div>
               ))}
-            </ol>
+            </div>
             <div className="asking-foot">
               <button type="button" className="quiet" onClick={() => window.geckit.voice.cancel()}>
                 Cancel

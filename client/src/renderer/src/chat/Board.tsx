@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ANYWHERE } from '../../../shared/api'
+import { ANYWHERE, SESSION_STATUSES } from '../../../shared/api'
 import type { ChatSession, SessionStatus } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { Icon } from '../ui/Icon'
+import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
+import { DeleteChats } from './DeleteChats'
+import { NameField } from './NameField'
 import { Projects } from './Projects'
 import { projectName, tint } from './project'
-import { Tags } from './Sidebar'
+import { STATUS_ICONS, Tags } from './Sidebar'
 import { running } from './Tasks'
 import { ago } from './time'
 import type { Chat } from './useChat'
@@ -35,13 +38,20 @@ export function Board({
   onSettings,
   onKeys,
   onShortcuts,
+  onShortcutFrom,
 }: {
   readonly chat: Chat
   readonly onNew: () => void
   readonly onSettings: () => void
   readonly onKeys: () => void
   readonly onShortcuts: () => void
+  /** A new shortcut from this conversation, as the list's own menu makes one. */
+  readonly onShortcutFrom: (session: ChatSession) => void
 }): React.JSX.Element {
+  // The card the menu is open on, the one being renamed, and the ones being deleted.
+  const [menu, setMenu] = useState<{ readonly id: string; readonly at: DOMRect } | undefined>()
+  const [renaming, setRenaming] = useState<string | undefined>()
+  const [deleting, setDeleting] = useState<readonly ChatSession[] | undefined>()
   // The card being dragged, and the column the pointer is over.
   const held = useRef<string | undefined>(undefined)
   const [over, setOver] = useState<string | undefined>()
@@ -157,12 +167,82 @@ export function Board({
             </div>
             <div className="board-cards">
               {column.rows.map((session) => (
-                <Card key={session.id} chat={chat} session={session} now={now} onDrag={(id) => (held.current = id)} />
+                <Card
+                  key={session.id}
+                  chat={chat}
+                  session={session}
+                  now={now}
+                  renaming={renaming === session.id}
+                  onDrag={(id) => (held.current = id)}
+                  onMenu={(id, at) => setMenu({ id, at })}
+                  onRenamed={(id, name) => {
+                    setRenaming(undefined)
+                    if (name !== '') chat.rename(id, name)
+                  }}
+                  onStopRenaming={() => setRenaming(undefined)}
+                />
               ))}
             </div>
           </div>
         ))}
       </div>
+
+      {menu === undefined ? null : (
+        <Menu
+          anchor={menu.at}
+          choices={[
+            ...(chat.settings.favorites.includes(menu.id)
+              ? [{ value: 'unfavorite', label: 'Remove from favorites', icon: 'star' }]
+              : [{ value: 'favorite', label: 'Add to favorites', icon: 'star' }]),
+            ...SESSION_STATUSES.map((one) => ({
+              value: `status:${one.status}`,
+              label: `Mark as ${one.label.toLowerCase()}`,
+              icon: STATUS_ICONS[one.status],
+              on: chat.everyone.some((session) => session.id === menu.id && session.status === one.status),
+            })),
+            { value: 'rename', label: 'Rename', icon: 'pencil' },
+            { value: 'shortcut', label: 'Save as a shortcut...', icon: 'bolt' },
+            { value: 'copy', label: 'Copy the terminal command', icon: 'copy' },
+            { value: 'terminal', label: 'Open in a terminal', icon: 'terminal' },
+            { value: 'hide', label: 'Hide from this list', icon: 'hidden' },
+            { value: 'delete', label: 'Delete', danger: true, icon: 'trash' },
+          ]}
+          onPick={(value) => {
+            const favorites = chat.settings.favorites
+            if (value === 'favorite') chat.change({ favorites: [...favorites.filter((id) => id !== menu.id), menu.id] })
+            if (value === 'unfavorite') chat.change({ favorites: favorites.filter((id) => id !== menu.id) })
+            if (value.startsWith('status:')) {
+              const status = value.slice('status:'.length) as SessionStatus
+              const was = chat.everyone.find((session) => session.id === menu.id)?.status
+              chat.mark(menu.id, was === status ? undefined : status)
+            }
+            if (value === 'rename') setRenaming(menu.id)
+            if (value === 'shortcut') {
+              const one = chat.everyone.find((session) => session.id === menu.id)
+              if (one !== undefined) onShortcutFrom(one)
+            }
+            if (value === 'copy') chat.copyTerminal(menu.id)
+            if (value === 'terminal') chat.terminal(menu.id)
+            if (value === 'hide') chat.hide(menu.id)
+            if (value === 'delete') {
+              const one = chat.everyone.find((session) => session.id === menu.id)
+              if (one !== undefined) setDeleting([one])
+            }
+          }}
+          onClose={() => setMenu(undefined)}
+        />
+      )}
+
+      {deleting === undefined ? null : (
+        <DeleteChats
+          chats={deleting}
+          onClose={() => setDeleting(undefined)}
+          onDelete={() => {
+            chat.remove(deleting.map((one) => one.id))
+            setDeleting(undefined)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -182,13 +262,21 @@ function Card({
   chat,
   session,
   now,
+  renaming,
   onDrag,
+  onMenu,
+  onRenamed,
+  onStopRenaming,
 }: {
   readonly chat: Chat
   readonly session: ChatSession
   readonly now: number
+  readonly renaming: boolean
   /** The card being dragged, which the board holds on to until it lands. */
   readonly onDrag: (id: string | undefined) => void
+  readonly onMenu: (id: string, at: DOMRect) => void
+  readonly onRenamed: (id: string, name: string) => void
+  readonly onStopRenaming: () => void
 }): React.JSX.Element {
   const open = chat.shown.kind === 'session' && chat.shown.id === session.id
   const stands = standing(session)
@@ -199,9 +287,13 @@ function Card({
   return (
     <div
       className={`board-card${open ? ' on' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
-      draggable
+      draggable={!renaming}
       role="button"
       tabIndex={0}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        onMenu(session.id, new DOMRect(event.clientX, event.clientY, 0, 0))
+      }}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'move'
         event.dataTransfer.setData('text/plain', session.title)
@@ -214,8 +306,18 @@ function Card({
       }}
     >
       <div className="board-card-head">
-        <span className="board-card-title">{session.title}</span>
-        <span className="changed">{ago(session.at, now, true)}</span>
+        {renaming ? (
+          <NameField
+            name={session.title}
+            className="board-card-name"
+            onDone={(name) => (name === undefined ? onStopRenaming() : onRenamed(session.id, name))}
+          />
+        ) : (
+          <>
+            <span className="board-card-title">{session.title}</span>
+            <span className="changed">{ago(session.at, now, true)}</span>
+          </>
+        )}
       </div>
       <div className="board-card-foot">
         <span className="tinted" style={tint(projectColor(session.root, chat.settings))}>

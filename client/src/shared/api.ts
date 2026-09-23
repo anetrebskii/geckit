@@ -427,8 +427,21 @@ export interface Answered {
   readonly ok: boolean
   readonly text?: string
   readonly error?: string
-  /** What was said out loud, read as orders: one line each, waiting for a yes. */
-  readonly plan?: readonly string[]
+  /** What was said out loud, read as orders and waiting for a yes. */
+  readonly plan?: readonly Planned[]
+  /** The words themselves, so a mishearing is caught before anything is done. */
+  readonly heard?: string
+}
+
+/** One thing that will be done, as the capsule shows it before it is agreed to. */
+export interface Planned {
+  readonly icon: string
+  /** "Start in formula-business", "Mark Test workflows as review" */
+  readonly head: string
+  /** The words that will be sent, whole. */
+  readonly text?: string
+  /** What says it is finished: "a step runs on the VM". */
+  readonly goal?: string
 }
 
 /* ------------------------------------------------------------------ */

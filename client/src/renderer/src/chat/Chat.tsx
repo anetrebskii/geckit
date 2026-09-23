@@ -346,6 +346,7 @@ export function Chat(): React.JSX.Element {
           onSettings={() => setSetting(true)}
           onKeys={openKeys}
           onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
+          onShortcutFrom={shortcutFrom}
         />
       ) : (
         <Sidebar
