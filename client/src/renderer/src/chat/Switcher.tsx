@@ -222,7 +222,7 @@ export function Switcher({
                       <span className="changed">{ago(used(row.session), now)}</span>
                     </span>
                     <span className="stands">
-                      <span className="where" style={tint(projectColor(row.session.root, chat.settings))}>
+                      <span className="where tinted" style={tint(projectColor(row.session.root, chat.settings))}>
                         <Marked text={place(row.session.root, words)} words={words} />
                       </span>
                       {row.hit === undefined ? (

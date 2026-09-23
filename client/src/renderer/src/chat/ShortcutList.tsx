@@ -107,7 +107,7 @@ export function ShortcutList({
                   <button type="button" className="shortcut-text" title="Edit" onClick={() => setEditing(one)}>
                     <span className="shortcut-name">{one.name}</span>
                     <span className="shortcut-when">
-                      <span style={tint(projectColor(one.root, chat.settings))}>{projectName(one.root)}</span>
+                      <span className="tinted" style={tint(projectColor(one.root, chat.settings))}>{projectName(one.root)}</span>
                       {one.cron === undefined ? null : <span>{one.on ? describeCron(one.cron) : 'Timetable paused'}</span>}
                       {running ? (
                         <span>Running now</span>

@@ -262,7 +262,7 @@ const Row = memo(function Row({
           <Tags session={session} />
           <span className="stands">
             {where === undefined ? null : (
-              <span className="where" style={tint(color)}>
+              <span className="where tinted" style={tint(color)}>
                 {where}
               </span>
             )}
@@ -336,10 +336,13 @@ const Rows = memo(function Rows({
 }): React.JSX.Element {
   const picking = picked.size > 0
   const list = useRef<HTMLDivElement>(null)
+  // The heading the open one stands under: read here so that a row leaving the
+  // waiting group the moment it is opened is followed down to its own heading.
+  const under = groups.find(([, rows]) => rows.some((one) => one.id === shownId))?.[0]
   // The one open is kept in sight, so one opened from the search is seen here too.
   useEffect(() => {
     list.current?.querySelector('.row.on')?.scrollIntoView({ block: 'nearest' })
-  }, [shownId])
+  }, [shownId, under])
   return (
     <div ref={list} className={`sessions${picking ? ' picking' : ''}`}>
       {empty !== undefined ? (
@@ -370,7 +373,7 @@ const Rows = memo(function Rows({
               <button type="button" className="group" onClick={() => onFold(where)}>
                 <Icon name={folded.has(where) ? 'right' : 'down'} size={10} />
                 {by === 'project' && rows[0] !== undefined && where !== FAVORITES && where !== WAITING && where !== DONE ? (
-                  <span style={tint(projectColor(rows[0].root, colors))}>{where}</span>
+                  <span className="tinted" style={tint(projectColor(rows[0].root, colors))}>{where}</span>
                 ) : (
                   where
                 )}

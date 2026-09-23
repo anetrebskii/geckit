@@ -1338,8 +1338,14 @@ svg.spinning,
   background: var(--bg-hover);
 }
 
-.row.on {
-  background: var(--bg-active);
+/* The row that is open: a fill of its own, quiet enough to read past, as a Mac list marks a selection. */
+.row.on,
+.row.on:hover {
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg));
+}
+
+.row.on .title {
+  color: var(--text);
 }
 
 .row .state {
@@ -1427,10 +1433,7 @@ svg.spinning,
   background: var(--warning-bg);
 }
 
-/* An answer not read yet is the row tinted, with the dot beside the time; a bar as well was two marks for one thing. */
-.row.waits.unread:not(.on) {
-  background: var(--accent-soft);
-}
+/* An answer not read yet is the dot alone, as a mail list marks one: a filled row is the open one. */
 
 .row .foot {
   display: flex;
@@ -1510,6 +1513,15 @@ svg.spinning,
 
 .row .stands .where {
   color: var(--text-dim);
+}
+
+/* A project's name in the colour that project was given. */
+.tinted {
+  color: var(--tint);
+}
+
+.row .stands .where.tinted {
+  color: var(--tint);
 }
 
 /* The tracker item and the mark, ahead of where it stands. */
