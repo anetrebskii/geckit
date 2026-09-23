@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { AGAIN, claudeState, contextOf, goalOf, lastContext, lastSaid, planOf, readClaude, REFUSED, replayClaude, typed } from '../src/main/sessions/claude-read'
+import { AGAIN, claudeState, contextOf, goalOf, lastContext, lastSaid, planOf, readClaude, REFUSED, replayClaude, tasksOf, typed } from '../src/main/sessions/claude-read'
 import type { ClaudeSignal } from '../src/main/sessions/claude-read'
 import { within } from '../src/main/sessions/rule'
 import { modelName } from '../src/shared/api'
@@ -514,5 +514,68 @@ describe('what runs in the background', () => {
       { kind: 'theirs', id: 'a2:0', text: 'done' },
     ])
     expect(typed({ type: 'user', message: { role: 'user', content: finished } })).toBe('')
+  })
+})
+
+describe('what a conversation put in the background, read back out of its file', () => {
+  // As claude 2.1.280 wrote them, cut down to what is read.
+  const use = (id: string, name: string, input: Record<string, unknown>): Record<string, unknown> => ({
+    type: 'assistant',
+    timestamp: '2026-09-22T18:00:00.000Z',
+    message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] },
+  })
+  const backgrounded = (use: string, task: string): Record<string, unknown> => ({
+    type: 'user',
+    timestamp: '2026-09-22T18:00:01.000Z',
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: use, content: `Command running in background with ID: ${task}.` }] },
+    toolUseResult: { stdout: '', stderr: '', backgroundTaskId: task },
+  })
+  const told = (task: string, status: string, summary: string): Record<string, unknown> => ({
+    type: 'user',
+    timestamp: '2026-09-22T18:05:00.000Z',
+    message: {
+      role: 'user',
+      content: `<task-notification>\n<task-id>${task}</task-id>\n<output-file>/tmp/${task}.output</output-file>\n<status>${status}</status>\n<summary>${summary}</summary>\n</task-notification>`,
+    },
+  })
+
+  it('takes the command, what it was for and where it wrote from the lines about it', () => {
+    expect(
+      tasksOf([
+        use('toolu_1', 'Bash', { command: 'npm run build', description: 'Build the app', run_in_background: true }),
+        backgrounded('toolu_1', 'b1'),
+        told('b1', 'completed', 'Background command "Build the app" completed (exit code 0)'),
+      ]),
+    ).toEqual([
+      {
+        id: 'b1',
+        kind: 'local_bash',
+        what: 'Build the app',
+        command: 'npm run build',
+        use: 'toolu_1',
+        status: 'completed',
+        started: Date.parse('2026-09-22T18:00:00.000Z'),
+        ended: Date.parse('2026-09-22T18:05:00.000Z'),
+        exit: 0,
+        output: '/tmp/b1.output',
+      },
+    ])
+  })
+
+  it('has one that was never said to have ended stopped, because the process that held it is gone', () => {
+    expect(
+      tasksOf([use('toolu_2', 'Monitor', { command: 'tail -f log', description: 'Watch the log' }), backgrounded('toolu_2', 'b2')]),
+    ).toMatchObject([{ id: 'b2', kind: 'monitor', status: 'stopped', what: 'Watch the log' }])
+  })
+
+  it('keeps how one failed, and passes over a conversation with nothing in the background', () => {
+    expect(
+      tasksOf([
+        use('toolu_3', 'Bash', { command: 'npm test', description: 'Run the tests' }),
+        backgrounded('toolu_3', 'b3'),
+        told('b3', 'failed', 'Background command "Run the tests" failed with exit code 1'),
+      ]),
+    ).toMatchObject([{ id: 'b3', status: 'failed', exit: 1 }])
+    expect(tasksOf([use('toolu_4', 'Bash', { command: 'ls', description: 'List' })])).toEqual([])
   })
 })

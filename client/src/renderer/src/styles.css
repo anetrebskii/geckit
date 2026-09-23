@@ -1427,8 +1427,9 @@ svg.spinning,
   background: var(--warning-bg);
 }
 
-.row.waits.unread {
-  box-shadow: inset 3px 0 0 var(--accent);
+/* An answer not read yet is the row tinted, with the dot beside the time; a bar as well was two marks for one thing. */
+.row.waits.unread:not(.on) {
+  background: var(--accent-soft);
 }
 
 .row .foot {
@@ -2061,8 +2062,35 @@ button.tag:hover {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: none;
+  border: 0;
+  cursor: text;
+}
+
+.queued-edit {
+  flex: 1;
+  min-width: 0;
+  max-height: 160px;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  resize: none;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+/* The message the dialog is asking about, as it was typed. */
+.queued-dropped {
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
 }
 
 .queued-more {

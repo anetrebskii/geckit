@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 import type {
   Answered,
+  Browser,
   CardAnswer,
   ChatFound,
   ChatSession,
@@ -113,6 +114,8 @@ const geckit = {
     stop: (id: string): void => ipcRenderer.send('chat:stop', id),
     /** Takes a message out of the queue before it goes, and gives it back. */
     unqueue: (id: string, queued: string): Promise<SessionMessage | undefined> => ipcRenderer.invoke('chat:unqueue', id, queued),
+    /** A message waiting in the queue, said again in other words; it keeps its place and its pictures. */
+    requeue: (id: string, queued: string, text: string): void => ipcRenderer.send('chat:requeue', id, queued, text),
     /** Starts a message waiting in the queue as a new conversation, and says which. */
     delegate: (id: string, queued: string): Promise<string | undefined> => ipcRenderer.invoke('chat:delegate', id, queued),
     /** How a session may act, chosen under the field: it holds from now, not from the next message. */
@@ -137,6 +140,9 @@ const geckit = {
       id: string | undefined,
       change?: { readonly name: string; readonly enabled: boolean },
     ): Promise<McpServer[] | undefined> => ipcRenderer.invoke('chat:mcp', root, id, change),
+    /** The Chromes Claude in Chrome is signed in to, with one picked first. Nothing where the tool would not say. */
+    browsers: (root: string, id: string | undefined, pick?: string): Promise<Browser[] | undefined> =>
+      ipcRenderer.invoke('chat:browsers', root, id, pick),
     /** Where the project's checkout stands. Asking also has the remote asked, now and then; what it says arrives through onGit. */
     git: (root: string): Promise<GitState | undefined> => ipcRenderer.invoke('chat:git', root),
     onGit: (said: (git: { readonly root: string; readonly state: GitState | undefined }) => void): (() => void) =>

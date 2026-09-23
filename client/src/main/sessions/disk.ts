@@ -2,9 +2,9 @@ import { open, readdir, realpath, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import type { SessionGoal, SessionItem, WorkItem } from '../../shared/api'
+import type { BackgroundTask, SessionGoal, SessionItem, WorkItem } from '../../shared/api'
 import { workItem } from '../../shared/links'
-import { costOf, goalOf, lastContext, lastSaid, replayClaude, STILL_GOING, typed } from './claude-read'
+import { costOf, goalOf, lastContext, lastSaid, replayClaude, STILL_GOING, tasksOf, typed } from './claude-read'
 import type { GoalRead } from './claude-read'
 import { firstLine } from './wording'
 
@@ -209,6 +209,8 @@ export interface Conversation {
   readonly items: SessionItem[]
   readonly cost?: number
   readonly goal?: SessionGoal
+  /** What it put in the background, all of it ended: the process that held them is gone. */
+  readonly tasks: BackgroundTask[]
 }
 
 /** One conversation, whole. Undefined where the tool has no file for it. */
@@ -228,6 +230,7 @@ export async function readClaudeSession(root: string, id: string): Promise<Conve
   const quietFor = Date.now() - found.mtimeMs
   const conversation = {
     items: replayClaude(root, entries, quietFor),
+    tasks: tasksOf(entries),
     ...(cost === undefined ? {} : { cost }),
     ...(goal === undefined ? {} : { goal }),
   }

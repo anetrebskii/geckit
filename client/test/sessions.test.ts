@@ -475,6 +475,27 @@ describe('a message sent while it works', () => {
     expect(built.fake.sent).toEqual([{ text: 'do the thing' }])
   })
 
+  it('can be said again in other words, keeping its place in the queue and its pictures', async () => {
+    const built = build()
+    const id = await started(built)
+    const picture = { media: 'image/png', data: 'AAAA' } as const
+    await built.sessions.send({ ...more(id, 'look at this'), images: [picture] })
+    await built.sessions.send(more(id, 'then commit'))
+    const first = of(built.rows, id)?.queued?.[0]
+
+    built.sessions.requeue(id, first?.id ?? '', '  look at this instead  ')
+    expect(of(built.rows, id)?.queued).toMatchObject([
+      { id: first?.id, text: 'look at this instead', images: 1 },
+      { text: 'then commit' },
+    ])
+
+    built.sessions.requeue(id, first?.id ?? '', '   ')
+    expect(of(built.rows, id)?.queued?.[0]).toMatchObject({ text: 'look at this instead' })
+
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toMatchObject({ text: 'look at this instead', images: [picture] }))
+  })
+
   it('is not sent after a turn that was stopped or failed, and stays for the window to put back in the field', async () => {
     for (const how of ['stopped', 'failed'] as const) {
       const built = build()
@@ -757,7 +778,7 @@ describe('what the status bar is drawn from', () => {
     const built = build({
       disk: {
         list: async () => [{ id: 'old', title: 'An old one', stands: '', at: 1, driven: false }],
-        read: async () => ({ items: [], cost: 0.64 }),
+        read: async () => ({ items: [], tasks: [], cost: 0.64 }),
         has: async () => true,
       },
     })
@@ -869,6 +890,62 @@ describe('Claude Code options', () => {
       { name: 'linear', status: 'connected' },
     ])
     expect(asked).toEqual([[ROOT, { name: 'linear', enabled: true }]])
+  })
+
+  it('tells Claude Code the name a conversation was given, so a terminal and the phone show it too', async () => {
+    const built = build()
+    const id = await started(built)
+    built.sessions.rename(id, 'Azure migration')
+    expect(built.fake.controls).toEqual([
+      { subtype: 'rename_session', title: 'Azure migration', source: 'host', session_id: id },
+    ])
+  })
+
+  it('tells it at the next start a name given while nothing held the conversation', async () => {
+    const notes = memoryNotes()
+    const built = build({ notes })
+    const id = await started(built)
+    notes.set(id, { ...notes.all()[id], title: 'Azure migration', renamed: true })
+    built.fake.controls.length = 0
+
+    built.fake.hear({ signals: [{ kind: 'started', session: id, key: false }] })
+    expect(built.fake.controls).toEqual([
+      { subtype: 'rename_session', title: 'Azure migration', source: 'host', session_id: id },
+    ])
+  })
+
+  it('leaves the name it gave itself alone, so the tool keeps its own title for a conversation nobody renamed', async () => {
+    const built = build()
+    await started(built)
+    expect(built.fake.controls).toEqual([])
+  })
+
+  it('picks the Chrome to drive in the process holding the conversation, then says which they are', async () => {
+    const asked: unknown[] = []
+    const built = build({ browsers: async (...args) => (asked.push(args), []) })
+    built.fake.answers['get_chrome_browsers'] = {
+      browsers: [
+        { device_id: 'work', name: 'Work', current: true },
+        { device_id: 'mine', name: 'Personal' },
+      ],
+    }
+    const id = await started(built)
+    expect(await built.sessions.browsers(ROOT, id, 'mine')).toEqual([
+      { id: 'work', name: 'Work', current: true },
+      { id: 'mine', name: 'Personal', current: false },
+    ])
+    expect(built.fake.controls).toEqual([
+      { subtype: 'select_chrome_browser', device_id: 'mine' },
+      { subtype: 'get_chrome_browsers' },
+    ])
+    expect(asked).toEqual([])
+  })
+
+  it('asks a process of its own about Chrome where the conversation has none', async () => {
+    const asked: unknown[] = []
+    const built = build({ browsers: async (...args) => (asked.push(args), [{ id: 'work', name: 'Work', current: true }]) })
+    expect(await built.sessions.browsers(ROOT, undefined, 'work')).toEqual([{ id: 'work', name: 'Work', current: true }])
+    expect(asked).toEqual([[ROOT, 'work']])
   })
 })
 

@@ -95,6 +95,8 @@ export interface Chat {
   stop: () => void
   /** Cancels a message sent while Claude worked, before it goes. */
   unqueue: (queued: string) => void
+  /** A message waiting in the queue, said again in other words. */
+  requeue: (queued: string, text: string) => void
   /** Starts a message waiting in the queue as a new conversation of its own. */
   delegate: (queued: string) => void
   /** Stops a command typed after `!` that is still running. */
@@ -574,6 +576,9 @@ export function useChat(): Chat {
     },
     unqueue: (queued) => {
       if (shownRef.current.kind === 'session') void window.geckit.chat.unqueue(shownRef.current.id, queued)
+    },
+    requeue: (queued, text) => {
+      if (shownRef.current.kind === 'session') window.geckit.chat.requeue(shownRef.current.id, queued, text)
     },
     delegate: (queued) => {
       if (shownRef.current.kind === 'session') void window.geckit.chat.delegate(shownRef.current.id, queued)

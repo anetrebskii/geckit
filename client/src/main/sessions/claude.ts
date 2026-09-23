@@ -76,6 +76,10 @@ export function holdClaude(
       options.mode,
       '--permission-prompt-tool',
       'stdio',
+      // Print mode leaves the browser out unless it is asked for, so a session
+      // here would have none of the tools a terminal one has. Without the
+      // extension the server simply does not connect.
+      '--chrome',
       ...(options.model === undefined ? [] : ['--model', options.model]),
       ...(options.resume ? ['--resume', options.id] : ['--session-id', options.id]),
     ],

@@ -5,6 +5,7 @@ import type { SessionMode } from '../../../shared/api'
 import { mentionAt, pathsFor } from '../../../shared/paths'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
+import { Chrome } from './Chrome'
 import { Mcp } from './Mcp'
 import { Tasks } from './Tasks'
 import type { Choice } from '../ui/Menu'
@@ -46,6 +47,8 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [at, setAt] = useState(0)
   // Escape puts the list away for the @ it was up for.
   const [closed, setClosed] = useState<number | undefined>()
+  const [editing, setEditing] = useState<{ readonly id: string; readonly text: string } | undefined>()
+  const [dropping, setDropping] = useState<string | undefined>()
   const submit = (): void => {
     if (COMPACT.test(chat.draft)) {
       chat.setCompacting('typed')
@@ -171,17 +174,73 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         : `Checked ${String(goal.checks)} ${goal.checks === 1 ? 'time' : 'times'}, and it does not hold yet${goal.reason === undefined ? '.' : `: ${goal.reason}`}`
 
   const queued = chat.session?.queued ?? []
+  const dropped = queued.find((one) => one.id === dropping)
 
   return (
     <div className="composer">
+      {dropped === undefined ? null : (
+        <div className="dialog-scrim" onMouseDown={() => setDropping(undefined)}>
+          <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
+            <h2>Cancel this message?</h2>
+            <p className="queued-dropped">{dropped.text}</p>
+            <div className="dialog-actions">
+              <button type="button" className="quiet" onClick={() => setDropping(undefined)}>
+                Keep it
+              </button>
+              <button
+                type="button"
+                className="primary"
+                autoFocus
+                onClick={() => {
+                  chat.unqueue(dropped.id)
+                  setDropping(undefined)
+                }}
+              >
+                Cancel it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {queued.length === 0 ? null : (
         <div className="queued">
           <div className="queued-head">Queued: each goes once Claude has answered the one before</div>
           {queued.map((one) => (
             <div key={one.id} className="queued-one">
-              <span className="queued-text" title={one.text}>
-                {one.text}
-              </span>
+              {editing?.id === one.id ? (
+                <textarea
+                  className="queued-edit"
+                  value={editing.text}
+                  autoFocus
+                  rows={1}
+                  ref={(box) => {
+                    if (box === null) return
+                    box.style.height = 'auto'
+                    box.style.height = `${String(box.scrollHeight)}px`
+                  }}
+                  onChange={(event) => setEditing({ id: one.id, text: event.target.value })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') setEditing(undefined)
+                    if (event.key !== 'Enter' || event.shiftKey) return
+                    event.preventDefault()
+                    setEditing(undefined)
+                    chat.requeue(one.id, editing.text)
+                  }}
+                  onBlur={() => {
+                    setEditing(undefined)
+                    chat.requeue(one.id, editing.text)
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="queued-text"
+                  title="Press to say it in other words"
+                  onClick={() => setEditing({ id: one.id, text: one.text })}
+                >
+                  {one.text}
+                </button>
+              )}
               {one.images === 0 ? null : (
                 <span className="queued-more">{one.images === 1 ? '1 picture' : `${String(one.images)} pictures`}</span>
               )}
@@ -199,7 +258,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 className="icon-button"
                 aria-label="Cancel this message"
                 title="Cancel: it will not be sent"
-                onClick={() => chat.unqueue(one.id)}
+                onClick={() => setDropping(one.id)}
               >
                 <Icon name="close" size={11} />
               </button>
@@ -340,6 +399,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             }}
           />
           {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
+          {chat.root === undefined ? null : <Chrome root={chat.root} id={chat.session?.id} />}
           <Tasks
             session={chat.session?.id}
             tasks={chat.session?.tasks ?? []}
