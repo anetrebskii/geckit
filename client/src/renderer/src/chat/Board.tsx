@@ -168,21 +168,26 @@ export function Board({
               <span className="count">{column.rows.length}</span>
             </div>
             <div className="board-cards">
-              {column.rows.map((session) => (
-                <Card
-                  key={session.id}
-                  chat={chat}
-                  session={session}
-                  now={now}
-                  renaming={renaming === session.id}
-                  onDrag={(id) => (held.current = id)}
-                  onMenu={(id, at) => setMenu({ id, at })}
-                  onRenamed={(id, name) => {
-                    setRenaming(undefined)
-                    if (name !== '') chat.rename(id, name)
-                  }}
-                  onStopRenaming={() => setRenaming(undefined)}
-                />
+              {byDay(column.rows, now, column.status === 'done').map((day) => (
+                <div key={day.heading} className="board-day">
+                  {day.heading === '' ? null : <div className="board-day-head">{day.heading}</div>}
+                  {day.rows.map((session) => (
+                    <Card
+                      key={session.id}
+                      chat={chat}
+                      session={session}
+                      now={now}
+                      renaming={renaming === session.id}
+                      onDrag={(id) => (held.current = id)}
+                      onMenu={(id, at) => setMenu({ id, at })}
+                      onRenamed={(id, name) => {
+                        setRenaming(undefined)
+                        if (name !== '') chat.rename(id, name)
+                      }}
+                      onStopRenaming={() => setRenaming(undefined)}
+                    />
+                  ))}
+                </div>
               ))}
             </div>
           </div>
@@ -247,6 +252,34 @@ export function Board({
       )}
     </div>
   )
+}
+
+const DAY = 86_400_000
+
+/** The day a conversation last changed, as a heading: Today, Yesterday, then the date itself. */
+function dayOf(at: number, now: number): string {
+  const said = new Date(at)
+  if (said.toDateString() === new Date(now).toDateString()) return 'Today'
+  if (said.toDateString() === new Date(now - DAY).toDateString()) return 'Yesterday'
+  const year = said.getFullYear() === new Date(now).getFullYear() ? {} : { year: 'numeric' as const }
+  return said.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...year })
+}
+
+/** The cards under the day they were last touched, the newest day first, or all of them under nothing. */
+function byDay(
+  rows: readonly ChatSession[],
+  now: number,
+  wanted: boolean,
+): { readonly heading: string; readonly rows: readonly ChatSession[] }[] {
+  if (!wanted) return [{ heading: '', rows }]
+  const days: { heading: string; rows: ChatSession[] }[] = []
+  for (const session of rows) {
+    const heading = dayOf(session.at, now)
+    const last = days.at(-1)
+    if (last?.heading === heading) last.rows.push(session)
+    else days.push({ heading, rows: [session] })
+  }
+  return days
 }
 
 /** What the card says is happening in it, in the words the rest of the window uses. */
