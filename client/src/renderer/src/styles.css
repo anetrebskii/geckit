@@ -3325,6 +3325,28 @@ button.tag:hover {
   font-size: 12px;
 }
 
+/* Only there to be found when it is wanted, so it keeps quiet until then. */
+.board-card-links {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 20px;
+  height: 18px;
+  color: var(--text-faint);
+  border-radius: 5px;
+  opacity: 0.5;
+}
+
+.board-card:hover .board-card-links,
+.board-card-links:hover {
+  opacity: 1;
+}
+
+.board-card-links:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
 .board-card-goal,
 .board-card-stands {
   display: flex;
