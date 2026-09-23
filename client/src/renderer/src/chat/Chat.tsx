@@ -7,6 +7,7 @@ import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
+import { Board } from './Board'
 import { Composer } from './Composer'
 import { NameField } from './NameField'
 import { projectColor } from '../../../shared/project-color'
@@ -294,9 +295,14 @@ export function Chat(): React.JSX.Element {
     })
   }
 
+  // The board stands where the list does, and a conversation opened from it
+  // comes up over it rather than beside it.
+  const board = chat.settings.chatView === 'board'
+  const overBoard = board && chat.shown.kind === 'session'
+
   return (
     <div
-      className={`chat${over ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
+      className={`chat${board ? ' boarded' : ''}${over ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
       style={{ '--side': `${String(sizing ?? chat.settings.sidebarWidth)}px` } as React.CSSProperties}
       // The whole window takes a drop. Anywhere else on the page, a dropped
       // file is a page the window would go to instead.
@@ -317,15 +323,20 @@ export function Chat(): React.JSX.Element {
         addFiles([...event.dataTransfer.files])
       }}
     >
-      <Sidebar
-        chat={chat}
-        orderRef={order}
-        onSettings={() => setSetting(true)}
-        onSearch={() => setSwitching(true)}
-        onKeys={openKeys}
-        onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
-        onShortcutFrom={shortcutFrom}
-      />
+      {board ? (
+        <Board chat={chat} />
+      ) : (
+        <Sidebar
+          chat={chat}
+          orderRef={order}
+          onSettings={() => setSetting(true)}
+          onSearch={() => setSwitching(true)}
+          onKeys={openKeys}
+          onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
+          onShortcutFrom={shortcutFrom}
+        />
+      )}
+      {overBoard ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
       <div
         className="side-grip"
         onPointerDown={(event) => {
@@ -346,7 +357,7 @@ export function Chat(): React.JSX.Element {
         onDoubleClick={() => chat.change({ sidebarWidth: DEFAULT_SETTINGS.sidebarWidth })}
       />
 
-      <div className="talk">
+      <div className={`talk${board ? ' over' : ''}`} hidden={board && !overBoard}>
         <div className="talk-head drag">
           {chat.session === undefined ? (
             <span className="title">{title}</span>

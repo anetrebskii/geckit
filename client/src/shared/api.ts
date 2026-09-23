@@ -518,6 +518,9 @@ export type Theme = 'system' | 'light' | 'dark'
 /** How the conversations in the sidebar are gathered: by when, or by which project. */
 export type ChatGrouping = 'time' | 'project'
 
+/** How the conversations are shown: the list, or a board of cards in columns by how each stands. */
+export type ChatView = 'list' | 'board'
+
 /** Where an update stands, as Settings and the corner card say it. */
 export interface UpdateView {
   readonly state: 'off' | 'fresh' | 'checking' | 'current' | 'behind' | 'empty' | 'downloading' | 'ready' | 'waiting' | 'failed'
@@ -582,6 +585,8 @@ export interface Settings {
   readonly chatModel: string
   readonly chatMode: SessionMode
   readonly chatGrouping: ChatGrouping
+  /** The conversations as a list, or as a board of cards by what stands where. */
+  readonly chatView: ChatView
   /** The chat window lists every project's conversations, and opens that way again. False is the newest project's. */
   readonly chatAll: boolean
   /** Conversations kept at the top of the list, in the order they were put in; Cmd+1 opens the first. */
@@ -641,6 +646,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatModel: '',
   chatMode: 'auto',
   chatGrouping: 'time',
+  chatView: 'list',
   chatAll: false,
   favorites: [],
   openWith: [],
