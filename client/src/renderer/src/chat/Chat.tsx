@@ -372,7 +372,7 @@ export function Chat(): React.JSX.Element {
           )}
           {chat.session !== undefined ? (
             <>
-              <span style={{ fontSize: 12, ...tint(projectColor(chat.session.root, chat.settings)) }}>
+              <span className="tinted" style={{ fontSize: 12, ...tint(projectColor(chat.session.root, chat.settings)) }}>
                 {projectName(chat.session.root)}
               </span>
               <Tags session={chat.session} marked={false} />

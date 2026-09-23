@@ -7,4 +7,5 @@ export const homePath = (path: string): string => {
   return home !== '' && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path
 }
 
-export const tint = (color: number): React.CSSProperties => ({ color: `var(--project-${String(color)})` })
+/** The project's colour as a variable the `tinted` rule reads, so a row that is open can say its own colour over it. */
+export const tint = (color: number): React.CSSProperties => ({ ['--tint']: `var(--project-${String(color)})` }) as React.CSSProperties

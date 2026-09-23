@@ -34,7 +34,7 @@ export function Recent({
                 <span className="title">{session.title === '' ? 'Untitled' : session.title}</span>
               </span>
               <span className="stands">
-                <span className="where" style={tint(projectColor(session.root, colors))}>
+                <span className="where tinted" style={tint(projectColor(session.root, colors))}>
                   {projectName(session.root)}
                 </span>
                 {session.stands === '' ? null : <span>{session.stands}</span>}

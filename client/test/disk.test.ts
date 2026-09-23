@@ -89,6 +89,15 @@ describe('the conversations about a folder', () => {
     expect((await listClaude(ROOT))[0]?.driven).toBe(true)
   })
 
+  it('names one whose first message is a file too big to read past', async () => {
+    conversation('ggg', [
+      line({ type: 'attachment', uuid: 'a0', attachment: { content: 'x'.repeat(200 * 1024) } }),
+      said('u1', 'What is in it?'),
+      answered('a1', 'A folder of protocols.'),
+    ])
+    expect((await listClaude(ROOT))[0]).toMatchObject({ id: 'ggg', title: 'What is in it?' })
+  })
+
   it('leaves out what nobody said anything in', async () => {
     conversation('eee', [line({ type: 'summary', summary: 'nothing' })])
     expect(await listClaude(ROOT)).toEqual([])

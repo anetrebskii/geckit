@@ -135,7 +135,10 @@ export async function listClaude(root: string): Promise<Found[]> {
       string([...all].reverse().find((entry) => string(entry['type']) === type)?.[key])
 
     const asked = head.map(typed).find((words) => words.trim() !== '') ?? ''
-    const title = named('custom-title', 'customTitle') || named('ai-title', 'aiTitle') || firstLine(asked, 80)
+    // A first message that is one pasted file fills the head on its own, and the
+    // words are past the end of it; the other end still has some.
+    const said = asked || (tail.map(typed).find((words) => words.trim() !== '') ?? '')
+    const title = named('custom-title', 'customTitle') || named('ai-title', 'aiTitle') || firstLine(said, 80)
     // A file with nobody in it: opened and closed, or the tool's own bookkeeping.
     if (title === '') continue
 
