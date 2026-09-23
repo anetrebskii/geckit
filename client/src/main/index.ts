@@ -491,7 +491,11 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    const window = BrowserWindow.getAllWindows()[0] ?? panelWindow()
+    const window = BrowserWindow.getAllWindows()[0]
+    if (window === undefined) {
+      openChat()
+      return
+    }
     if (window.isMinimized()) window.restore()
     window.focus()
   })
@@ -506,7 +510,8 @@ if (!app.requestSingleInstanceLock()) {
     guided = getSettings().guideClaude
     void keepGuide(guided)
     wire()
-    panelWindow()
+    // The conversations are what this is opened for; correcting and dictating are a shortcut away.
+    openChat()
     startShortcuts({
       start: (message) => started.send(message),
       rename: (id, title) => started.rename(id, title),
@@ -541,7 +546,7 @@ if (!app.requestSingleInstanceLock()) {
     })
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) panelWindow()
+      if (BrowserWindow.getAllWindows().length === 0) openChat()
     })
   })
 }

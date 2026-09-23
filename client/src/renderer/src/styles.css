@@ -28,6 +28,8 @@
   --accent-text: #ffffff;
   --accent-soft: #e6f4e8;
   --danger: #c0392b;
+  --danger-solid: #c0392b;
+  --danger-text: #ffffff;
   --warning-bg: #fdf3e0;
   --warning-text: #8a6116;
   --success-text: #2a7d3a;
@@ -64,6 +66,8 @@
   --accent-text: #10210f;
   --accent-soft: rgb(74 200 92 / 16%);
   --danger: #e0796b;
+  --danger-solid: #e5484d;
+  --danger-text: #ffffff;
   --warning-bg: #3a2f18;
   --warning-text: #e0bb72;
   --success-text: #7fc98d;
@@ -100,6 +104,8 @@
     --accent-text: #10210f;
     --accent-soft: rgb(74 200 92 / 16%);
     --danger: #e0796b;
+    --danger-solid: #e5484d;
+    --danger-text: #ffffff;
     --warning-bg: #3a2f18;
     --warning-text: #e0bb72;
     --success-text: #7fc98d;
@@ -595,7 +601,8 @@ textarea {
 }
 
 .primary.danger {
-  background: var(--danger);
+  color: var(--danger-text);
+  background: var(--danger-solid);
 }
 
 .dialog-actions {
@@ -1052,8 +1059,8 @@ svg.spinning,
 }
 
 .record.on {
-  color: var(--accent-text);
-  background: var(--danger);
+  color: var(--danger-text);
+  background: var(--danger-solid);
 }
 
 .dot {
@@ -2472,7 +2479,8 @@ button.tag:hover {
 }
 
 .send.stop {
-  background: var(--danger);
+  color: var(--danger-text);
+  background: var(--danger-solid);
 }
 
 .send:disabled {

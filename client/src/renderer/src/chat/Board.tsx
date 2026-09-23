@@ -410,6 +410,9 @@ function Card({
  * The goal goes first and the work after it, so it holds from the first turn
  * rather than from the second, which is what a voice order does too.
  */
+/** The row that opens the folder picker rather than choosing a project already there. */
+const PICK = '\u0000pick'
+
 export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClose: () => void }): React.JSX.Element {
   const [root, setRoot] = useState(() => chat.root ?? chat.settings.projects[0] ?? '')
   const [text, setText] = useState('')
@@ -428,12 +431,25 @@ export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClo
       <div className="new-task-head">New task</div>
       <label className="new-task-label">
         Project
-        <select className="new-task-where" value={root} onChange={(event) => setRoot(event.target.value)}>
+        <select
+          className="new-task-where"
+          value={root}
+          onChange={(event) => {
+            if (event.target.value !== PICK) {
+              setRoot(event.target.value)
+              return
+            }
+            void window.geckit.chat.addProject().then((picked) => {
+              if (picked !== undefined) setRoot(picked)
+            })
+          }}
+        >
           {chat.settings.projects.map((one) => (
             <option key={one} value={one}>
               {projectName(one)}
             </option>
           ))}
+          <option value={PICK}>Choose a folder...</option>
         </select>
       </label>
       <label className="new-task-label">
