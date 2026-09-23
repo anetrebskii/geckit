@@ -441,6 +441,16 @@ describe('a goal', () => {
     expect(of(built.rows, id)?.goal).toBeUndefined()
   })
 
+  it('stands on the row while it waits its turn behind the message that started the work', async () => {
+    const built = build()
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: `/goal ${condition}` })
+    expect(built.fake.sent).toEqual([{ text: 'do the thing' }])
+    expect(of(built.rows, id)?.goal).toEqual({ condition, checks: 0 })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: `/goal ${condition}` }))
+  })
+
   it('counts the checks that send it back to work while the turn goes on, and no other Stop hook', async () => {
     const built = build()
     const id = await started(built)

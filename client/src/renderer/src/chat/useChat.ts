@@ -426,10 +426,11 @@ export function useChat(): Chat {
     (root: string, text: string, goal: string) => {
       const now = held.current
       const model = now.model === '' ? {} : { model: now.model }
-      void window.geckit.chat.send({ root, mode: now.mode, text: goal === '' ? text : `/goal ${goal}`, ...model }).then((id) => {
+      // The task goes first: a goal on its own tells Claude to start working toward it, and it would start without knowing what the task is.
+      void window.geckit.chat.send({ root, mode: now.mode, text, ...model }).then((id) => {
         open({ kind: 'session', id })
         if (goal === '') return
-        void window.geckit.chat.send({ session: id, root, mode: now.mode, text, ...model })
+        void window.geckit.chat.send({ session: id, root, mode: now.mode, text: `/goal ${goal}`, ...model })
       })
     },
     [open],
