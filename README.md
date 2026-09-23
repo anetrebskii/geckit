@@ -2,22 +2,37 @@
 
 <h1 align="center">GeckIt</h1>
 
-GeckIt corrects the text you select, transcribes what you say by a shortcut, and has Claude Code chats you can use instead of iTerm2 + Claude Code, on your Claude subscription.
+GeckIt makes your Claude Code chats into a Kanban board with tasks and projects. The chats are your local Claude Code sessions, run on your Claude subscription. It also corrects the text you select and transcribes what you say by a shortcut.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/chat-dark.png">
-  <img src="docs/screenshots/chat-light.png" alt="The Chat window: conversations grouped by project on the left, a Claude Code conversation on the right, the plan's limits in the status bar">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/board-dark.png">
+  <img src="docs/screenshots/board-light.png" alt="The board: Claude Code conversations from three projects as cards in In progress, In review and Done">
 </picture>
 
-## Chat
+## Board
 
-- Chats you can use instead of iTerm2 + Claude Code. They run your own Claude Code on your Claude subscription.
-- Conversations are grouped by project. Favorites are placed at the top, can be re-ordered, and Cmd+1... navigates between them.
+You work with Claude Code sessions like with tasks on a Kanban board. You can keep track of them and see how the work goes on different projects.
+
+- Three columns: In progress, In review, Done. A card is dragged from one to the next, and Done is grouped by the day.
+- A card shows its project, whether Claude is working, asks you something or waits for you, the goal, and the links written in the conversation.
+- New task starts a conversation in a project, with a goal if you give one. Claude keeps working until the goal holds, then the card moves to In review by itself.
+- All projects on one board, or one project at a time with Cmd+K.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/board-open-dark.png">
+  <img src="docs/screenshots/board-open-light.png" alt="A card opened over the board: the Claude Code conversation, marked In review">
+</picture>
+
+## Conversations
+
+Press a card and the conversation opens over the board. You can use it instead of iTerm2 + Claude Code.
+
 - Ctrl+Tab switches between conversations as it works in VS Code between files.
 - A notification when AI has finished its job, so you never miss it waiting for you.
 - The status bar shows the 5-hour and weekly limits, the context size out of the maximum, the total price and git information.
 - @ picks a file or folder from the project, a message starting with ! runs a command, Up brings back your past message, images can be pasted or dropped in.
 - Background jobs are managed as the Claude Code terminal does.
+- The board can be switched to a list, grouped by project, with favorites at the top and Cmd+1... between them.
 
 ## Correct and Transcribe
 
@@ -46,7 +61,7 @@ On Windows and Linux the shortcuts use Ctrl instead of Cmd.
 
 Download it from [Releases](https://github.com/anetrebskii/geckit/releases/latest): a dmg for Apple Silicon or Intel Macs, an installer for Windows, an AppImage for Linux. It updates itself.
 
-Chat and Correct need [Claude Code](https://code.claude.com/docs/en/overview) installed and signed in with a Claude subscription. Correct can run on an OpenAI, Anthropic or OpenRouter key instead. Transcribe needs an OpenRouter key, set in Settings.
+The board and Correct need [Claude Code](https://code.claude.com/docs/en/overview) installed and signed in with a Claude subscription. Correct can run on an OpenAI, Anthropic or OpenRouter key instead. Transcribe needs an OpenRouter key, set in Settings.
 
 ## Build from source
 
