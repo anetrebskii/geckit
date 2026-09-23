@@ -3364,6 +3364,17 @@ button.tag:hover {
   background: var(--accent);
 }
 
+/* Still running, with the turn over: the ring the list uses for the same thing. */
+.state-said.said-background {
+  color: var(--accent);
+}
+
+.state-said.said-background .state-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  animation: fade 900ms var(--ease) infinite alternate;
+}
+
 .state-said.said-failed {
   color: var(--danger);
 }
