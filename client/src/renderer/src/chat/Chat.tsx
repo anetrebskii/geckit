@@ -366,8 +366,10 @@ export function Chat(): React.JSX.Element {
           <NewTask chat={chat} onClose={() => setMaking(false)} />
         </>
       ) : null}
+      {/* There is no sidebar to make wider on the board. */}
       <div
         className="side-grip"
+        hidden={board}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId)
           const edge = event.currentTarget.getBoundingClientRect()
