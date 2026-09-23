@@ -18,6 +18,7 @@ export type Order =
   | { readonly do: 'stop'; readonly chat: string }
   | { readonly do: 'mark'; readonly chat: string; readonly status: SessionStatus }
   | { readonly do: 'open'; readonly chat: string }
+  | { readonly do: 'delete'; readonly chat: string }
 
 /** A conversation as the model is shown it: enough to tell them apart by ear. */
 export interface Told {
@@ -57,6 +58,8 @@ function orderOf(said: unknown): Order | undefined {
     }
     case 'open':
       return chat === '' ? undefined : { do: 'open', chat }
+    case 'delete':
+      return chat === '' ? undefined : { do: 'delete', chat }
     default:
       return undefined
   }
@@ -92,7 +95,7 @@ export function listing(projects: readonly string[], chats: readonly Told[]): st
   const said = chats
     .map((one) => `- ${one.id} | ${projectSaid(one.root)} | ${one.state} | ${one.title}`)
     .join('\n')
-  return `Projects:\n${where || '- (none)'}\n\nConversations, as id | project | how it stands | what it is about:\n${said || '- (none)'}`
+  return `Projects:\n${where || '- (none)'}\n\nConversations, the newest first, as id | project | how it stands | what it is about:\n${said || '- (none)'}`
 }
 
 /** What the model is told to do with the words. */
@@ -105,12 +108,14 @@ export const ORDERS = [
   '{"do":"stop","chat":"<an id>"}',
   '{"do":"mark","chat":"<an id>","status":"review"|"blocked"|"done"}',
   '{"do":"open","chat":"<an id>"}',
+  '{"do":"delete","chat":"<an id>"}',
   'Rules:',
   '- They are speaking, so the words are loose and may be misheard. Match a conversation by what it is about, not by the exact wording, and match a project the same way.',
   '- Never use an id or a project that is not in the list. Where you cannot tell which one is meant, leave that order out.',
   '- Where nothing they said asks for any of this, answer with [].',
   '- Keep their own words in `text`. Do not answer the question yourself, do not carry out the work, do not make the task longer than they said it.',
   '- They may give several orders in one breath. Give them in the order they said them.',
+  '- They may be taking back what they said a moment ago: the conversation they started was the wrong one, or it was started in the wrong project. That is two orders - delete the wrong one, start the right one - and the one they mean is usually the newest in the list. Only delete where they say the conversation should not exist; where they want it left alone, stop or mark it instead.',
   '- A `goal` is what has to be true for the work to be over, said so that it can be checked: what was asked for, and how anybody would see that it holds. Give one where the work has an end somebody could point at, and leave it out where it does not, such as a question or a look at something. Never put steps or a plan in it.',
 ].join('\n')
 
@@ -169,6 +174,7 @@ export function saying(
     if (order.do === 'stop') lines.push({ icon: 'stop', head: `Stop ${title}` })
     if (order.do === 'mark') lines.push({ icon: MARKS[order.status], head: `Mark ${title} as ${order.status}` })
     if (order.do === 'open') lines.push({ icon: 'ahead', head: `Open ${title}` })
+    if (order.do === 'delete') lines.push({ icon: 'trash', head: `Delete ${title}` })
   }
   return { orders: kept, lines }
 }
@@ -180,6 +186,7 @@ export interface Doing {
   readonly stop: (id: string) => void
   readonly mark: (id: string, status: SessionStatus) => void
   readonly open: (id: string) => void
+  readonly delete: (id: string) => Promise<void>
 }
 
 /**
@@ -226,6 +233,10 @@ export async function carryOut(
       case 'open':
         doing.open(order.chat)
         done.push(`Opened ${title}`)
+        break
+      case 'delete':
+        await doing.delete(order.chat)
+        done.push(`Deleted ${title}`)
         break
     }
   }

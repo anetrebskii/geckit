@@ -30,6 +30,9 @@ function watch(): { doing: Doing; did: string[] } {
     stop: (id) => did.push(`stop ${id}`),
     mark: (id, status) => did.push(`mark ${id} ${status}`),
     open: (id) => did.push(`open ${id}`),
+    delete: async (id) => {
+      did.push(`delete ${id}`)
+    },
   }
   return { doing, did }
 }
@@ -50,7 +53,7 @@ describe('reading what the model answered', () => {
 
   it('leaves out what this application does not do, and keeps the rest', () => {
     const said =
-      '[{"do":"delete","chat":"a1"},{"do":"mark","chat":"a1","status":"archived"},{"do":"start","project":"radar63","text":"look at the map"},{"do":"say","chat":"b2"}]'
+      '[{"do":"rename","chat":"a1","title":"Radar"},{"do":"mark","chat":"a1","status":"archived"},{"do":"start","project":"radar63","text":"look at the map"},{"do":"say","chat":"b2"}]'
     expect(ordersOf(said)).toEqual([{ do: 'start', project: 'radar63', text: 'look at the map' }])
   })
 
@@ -111,7 +114,7 @@ describe('what the model is told there is', () => {
         '- radar63',
         '- time2you',
         '',
-        'Conversations, as id | project | how it stands | what it is about:',
+        'Conversations, the newest first, as id | project | how it stands | what it is about:',
         '- a1 | radar63 | idle | Radar push notifications',
         '- b2 | time2you | working | Phone edit looks weird',
       ].join('\n'),
@@ -161,5 +164,32 @@ describe('what it says it will do, before anything is done', () => {
     )
     expect(orders).toEqual([{ do: 'open', chat: 'a1' }])
     expect(lines).toEqual([{ icon: 'ahead', head: 'Open Radar push notifications' }])
+  })
+})
+
+describe('taking back what was just said', () => {
+  it('deletes the wrong conversation and starts the right one, in the order they were said', async () => {
+    const orders = ordersOf(
+      '[{"do":"delete","chat":"a1"},{"do":"start","project":"time2you","text":"the same, in this one"}]',
+    )
+    const { lines } = saying(orders, PROJECTS, CHATS)
+    expect(lines).toEqual([
+      { icon: 'trash', head: 'Delete Radar push notifications' },
+      { icon: 'plus', head: 'Start in time2you', text: 'the same, in this one' },
+    ])
+    const { doing, did } = watch()
+    expect(await carryOut(orders, PROJECTS, CHATS, doing)).toEqual([
+      'Deleted Radar push notifications',
+      'Started in time2you: the same, in this one',
+    ])
+    expect(did).toEqual(['delete a1', 'start /work/time2you the same, in this one'])
+  })
+
+  it('leaves a delete that names a conversation there is no longer', async () => {
+    const orders = ordersOf('[{"do":"delete","chat":"gone"}]')
+    expect(saying(orders, PROJECTS, CHATS).lines).toEqual([])
+    const { doing, did } = watch()
+    expect(await carryOut(orders, PROJECTS, CHATS, doing)).toEqual([])
+    expect(did).toEqual([])
   })
 })
