@@ -34,8 +34,8 @@ import type {
 } from '../shared/api'
 import track from './analytics'
 import { correct } from './correct'
-import { askOrders, carryOut } from './orders'
-import type { Told } from './orders'
+import { askOrders, carryOut, saying } from './orders'
+import type { Order, Told } from './orders'
 import { projectFiles } from './files'
 import { fetchGit, gitState } from './git'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
@@ -56,6 +56,7 @@ import {
   panelWindow,
   shownChat,
   shownVoice,
+  sizeVoice,
   tellChat,
   voiceWindow,
   watchingChat,
@@ -149,19 +150,21 @@ function registerDictate(): void {
   if (!took) log.warn(`${DICTATE} is taken by something else, dictation has no shortcut`)
 }
 
-/** The same capsule, for telling the application what to do rather than typing with it. */
+/** The capsule, for telling the application what to do rather than typing with it. */
+function askOutLoud(): void {
+  const open = shownVoice()
+  if (open !== undefined) {
+    open.webContents.send('voice:stop')
+    return
+  }
+  track('orders')
+  heardFor = 'orders'
+  dictatedInto = undefined
+  voiceWindow()
+}
+
 function registerOrder(): void {
-  const took = globalShortcut.register(ORDER, () => {
-    const open = shownVoice()
-    if (open !== undefined) {
-      open.webContents.send('voice:stop')
-      return
-    }
-    track('orders')
-    heardFor = 'orders'
-    dictatedInto = undefined
-    voiceWindow()
-  })
+  const took = globalShortcut.register(ORDER, askOutLoud)
   if (!took) log.warn(`${ORDER} is taken by something else, saying what to do has no shortcut`)
 }
 
@@ -226,7 +229,10 @@ function pasteBack(text: string): void {
  * Every one of them is something the person could have done with the mouse, and
  * nothing reads or writes a repository on the way.
  */
-async function carryOutSaid(said: string): Promise<Answered> {
+/** What was heard, read as orders and waiting for a yes. Nothing runs until then. */
+let planned: { readonly orders: readonly Order[]; readonly told: readonly Told[] } | undefined
+
+async function readSaid(said: string): Promise<Answered> {
   const held = sessions
   if (held === undefined) return { ok: false, error: 'Not ready yet.' }
   const projects = getSettings().projects
@@ -238,9 +244,21 @@ async function carryOutSaid(said: string): Promise<Answered> {
   }))
   const read = await askOrders(said, projects, told)
   if (read.error !== undefined) return { ok: false, error: read.error }
-  if (read.orders.length === 0) return { ok: false, error: `Nothing to do in "${said}"` }
+  const { orders, lines } = saying(read.orders, projects, told)
+  if (orders.length === 0) return { ok: false, error: `Nothing to do in "${said}"` }
+  planned = { orders, told }
+  return { ok: true, plan: lines }
+}
+
+/** The yes: what was read out loud a moment ago is carried out now. */
+async function carryOutPlanned(): Promise<Answered> {
+  const held = sessions
+  const plan = planned
+  planned = undefined
+  if (held === undefined || plan === undefined) return { ok: false, error: 'There is nothing waiting to be done' }
+  const projects = getSettings().projects
   const mode = getSettings().chatMode
-  const did = await carryOut(read.orders, projects, told, {
+  const did = await carryOut(plan.orders, projects, plan.told, {
     // The goal goes first and the work after it, so it holds from the first turn
     // rather than from the second. The second message waits in the queue meanwhile.
     start: async (root, text, goal) => {
@@ -250,7 +268,7 @@ async function carryOutSaid(said: string): Promise<Answered> {
       return id
     },
     say: async (id, text) => {
-      const chat = told.find((one) => one.id === id)
+      const chat = plan.told.find((one) => one.id === id)
       if (chat !== undefined) await held.send({ session: id, root: chat.root, mode, text })
     },
     stop: (id) => held.stop(id),
@@ -328,11 +346,17 @@ function wire(): void {
     const said = await transcribe(request)
     if (!said.ok || said.text === undefined || said.text.trim() === '') return said
     // Said to the application: it is carried out, and the capsule stays up to say what was done.
-    if (heardFor === 'orders') return carryOutSaid(said.text)
+    if (heardFor === 'orders') return readSaid(said.text)
     pasteBack(said.text)
     return said
   })
-  ipcMain.on('voice:cancel', () => closeVoice())
+  ipcMain.handle('voice:do', () => carryOutPlanned())
+  ipcMain.on('voice:size', (_event, height: number) => sizeVoice(height))
+  ipcMain.on('voice:orders', () => askOutLoud())
+  ipcMain.on('voice:cancel', () => {
+    planned = undefined
+    closeVoice()
+  })
 
   ipcMain.on('chat:open', () => openChat())
   ipcMain.on('chat:listening', () => chatListening())

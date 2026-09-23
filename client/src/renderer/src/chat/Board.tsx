@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { ANYWHERE } from '../../../shared/api'
 import type { ChatSession, SessionStatus } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { Icon } from '../ui/Icon'
-import { MOD } from '../ui/Shortcuts'
+import { MOD, said } from '../ui/Shortcuts'
 import { Projects } from './Projects'
 import { projectName, tint } from './project'
 import { Tags } from './Sidebar'
@@ -86,6 +87,15 @@ export function Board({
           <Icon name="list" />
         </button>
         <Projects chat={chat} />
+        <button
+          type="button"
+          className="icon-button no-drag"
+          aria-label="Say what to do"
+          title={`Say what GeckIt should do: start a conversation, answer one, mark one (${said(ANYWHERE.orders)})`}
+          onClick={() => window.geckit.voice.orders()}
+        >
+          <Icon name="mic" />
+        </button>
         <button
           type="button"
           className="icon-button no-drag"

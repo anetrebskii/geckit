@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 
+import { ANYWHERE } from '../../../shared/api'
 import { useSettings } from '../settings'
 import { Icon } from '../ui/Icon'
 import { SettingsDialog } from '../ui/SettingsDialog'
-import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
+import { MOD, said, ShortcutsDialog } from '../ui/Shortcuts'
 import { Correct } from './Correct'
 import { Transcribe } from './Transcribe'
 import { UpdateNotice } from '../ui/UpdateNotice'
@@ -90,6 +91,15 @@ export function Panel(): React.JSX.Element {
           Transcribe
         </button>
         <div className="spacer" />
+        <button
+          type="button"
+          className="tab no-drag"
+          onClick={() => window.geckit.voice.orders()}
+          title={`Say what GeckIt should do: start a conversation, answer one, mark one (${said(ANYWHERE.orders)})`}
+        >
+          <Icon name="mic" />
+          Say
+        </button>
         <button
           type="button"
           className="tab no-drag"

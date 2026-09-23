@@ -427,6 +427,8 @@ export interface Answered {
   readonly ok: boolean
   readonly text?: string
   readonly error?: string
+  /** What was said out loud, read as orders: one line each, waiting for a yes. */
+  readonly plan?: readonly string[]
 }
 
 /* ------------------------------------------------------------------ */

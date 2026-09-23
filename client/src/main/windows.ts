@@ -185,6 +185,16 @@ export function voiceWindow(): BrowserWindow {
 export const shownVoice = (): BrowserWindow | undefined =>
   voice !== undefined && !voice.isDestroyed() ? voice : undefined
 
+/** The capsule grows to hold what it is asking about, around the middle it already stands on. */
+export function sizeVoice(height: number): void {
+  const open = shownVoice()
+  if (open === undefined) return
+  const was = open.getBounds()
+  const next = Math.max(92, Math.min(520, Math.round(height)))
+  if (next === was.height) return
+  open.setBounds({ ...was, y: Math.round(was.y - (next - was.height) / 2), height: next })
+}
+
 export function closeVoice(): void {
   shownVoice()?.close()
   voice = undefined
