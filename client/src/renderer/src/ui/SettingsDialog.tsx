@@ -211,6 +211,22 @@ export function SettingsDialog({
           </span>
         </div>
 
+        <div className="field">
+          <label>Claude Code</label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={settings.guideClaude}
+              onChange={(event) => change({ guideClaude: event.target.checked })}
+            />
+            Tell Claude Code how GeckIt works
+          </label>
+          <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+            Writes GECKIT.md in ~/.claude and one line in ~/.claude/CLAUDE.md that reads it, so a session knows about the
+            board, goals and the links on a card. Turning this off takes both away again.
+          </span>
+        </div>
+
         <div className="dialog-actions">
           <button type="button" className="quiet" onClick={onShortcuts}>
             Keyboard shortcuts ({MOD}+/)
