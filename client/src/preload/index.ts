@@ -127,6 +127,8 @@ const geckit = {
     remove: (ids: readonly string[]): Promise<readonly string[]> => ipcRenderer.invoke('chat:delete', ids),
     /** Which session is in front, so an answer that arrives here is not announced. */
     watching: (id: string | undefined): void => ipcRenderer.send('chat:watching', id),
+    /** Takes the answer as read without opening it: the mark on the row is pressed. */
+    read: (id: string): void => ipcRenderer.send('chat:read', id),
     /** Opens a terminal in the project with `claude --resume` already running. */
     terminal: (id: string, root: string): void => ipcRenderer.send('chat:terminal', id, root),
     /** Lets go of the process holding it, since it is about to be continued somewhere else. */

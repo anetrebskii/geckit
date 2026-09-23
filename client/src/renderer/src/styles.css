@@ -1357,6 +1357,25 @@ svg.spinning,
   background: transparent;
 }
 
+/* The mark on an answer not read yet is a button, with more to press than the dot it holds. */
+.row .read {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin: 2px -4px 0;
+  border-radius: 50%;
+}
+
+.row .read:hover {
+  background: var(--bg-hover);
+}
+
+.row .read .state {
+  margin-top: 0;
+}
+
 /* Wider than the dot it stands in for, and the text stays where it was. */
 .row .pick {
   display: grid;

@@ -50,7 +50,7 @@ const PATIENCE = 90_000
  * on stdin rather than as an argument, which has a length a paragraph can
  * reach.
  */
-function askPlan(text: string, said: string, model: string): Promise<Answered> {
+export function askPlan(text: string, said: string, model: string): Promise<Answered> {
   return new Promise((done) => {
     const child = spawn(
       'claude',

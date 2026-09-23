@@ -18,6 +18,7 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
       [said(ANYWHERE.correct), `Correct the selected text: hold ${MOD}, press C, then D`],
       [said(ANYWHERE.dictate), 'Dictate into what you are typing in; again to stop and paste'],
       [said(ANYWHERE.search), 'Search conversations; again to put the search away'],
+      [said(ANYWHERE.orders), 'Say what to do: start a conversation, answer one, mark one; again to stop talking'],
     ],
   },
   {

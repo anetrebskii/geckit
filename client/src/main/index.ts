@@ -17,6 +17,7 @@ import log from 'electron-log'
 
 import { ANYWHERE, resumeCommand } from '../shared/api'
 import type {
+  Answered,
   CardAnswer,
   ChatSession,
   ClaudeAccount,
@@ -33,6 +34,8 @@ import type {
 } from '../shared/api'
 import track from './analytics'
 import { correct } from './correct'
+import { askOrders, carryOut } from './orders'
+import type { Told } from './orders'
 import { projectFiles } from './files'
 import { fetchGit, gitState } from './git'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
@@ -63,11 +66,15 @@ log.transports.file.level = 'info'
 const DICTATE = ANYWHERE.dictate
 const CORRECT = ANYWHERE.correct
 const SPOTLIGHT = ANYWHERE.search
+const ORDER = ANYWHERE.orders
 
 let sessions: Sessions | undefined
 
 // GeckIt's own window the dictation was started in, which it goes back into.
 let dictatedInto: BrowserWindow | undefined
+
+/** What the capsule that is up was opened for: writing the words down, or doing what they say. */
+let heardFor: 'paste' | 'orders' = 'paste'
 
 // A notification nothing holds on to is collected, and a press on it then opens nothing.
 const notices = new Set<Notification>()
@@ -97,6 +104,7 @@ function build(): Sessions {
     },
     items: (items: SessionItems) => shownChat()?.webContents.send('chat:items', items),
     account: (account: ClaudeAccount) => shownChat()?.webContents.send('chat:accountChanged', account),
+    show: (id: string) => shownChat()?.webContents.send('chat:show', id),
     plan: (plan: PlanUsage) => shownChat()?.webContents.send('chat:plan', plan),
     notify: (notice) => {
       // In front, the window says it itself; a banner is for when it is not being looked at.
@@ -134,10 +142,27 @@ function registerDictate(): void {
       return
     }
     track('dictate')
+    heardFor = 'paste'
     dictatedInto = BrowserWindow.getFocusedWindow() ?? undefined
     voiceWindow()
   })
   if (!took) log.warn(`${DICTATE} is taken by something else, dictation has no shortcut`)
+}
+
+/** The same capsule, for telling the application what to do rather than typing with it. */
+function registerOrder(): void {
+  const took = globalShortcut.register(ORDER, () => {
+    const open = shownVoice()
+    if (open !== undefined) {
+      open.webContents.send('voice:stop')
+      return
+    }
+    track('orders')
+    heardFor = 'orders'
+    dictatedInto = undefined
+    voiceWindow()
+  })
+  if (!took) log.warn(`${ORDER} is taken by something else, saying what to do has no shortcut`)
 }
 
 function registerCorrect(): void {
@@ -191,6 +216,48 @@ function pasteBack(text: string): void {
     }
     setTimeout(registerDictate, 500)
   }, 300)
+}
+
+/**
+ * What was said to the application rather than typed with it.
+ *
+ * The words, the projects and the conversations there are go to the model, and
+ * what comes back is orders: start one, say something in another, mark a third.
+ * Every one of them is something the person could have done with the mouse, and
+ * nothing reads or writes a repository on the way.
+ */
+async function carryOutSaid(said: string): Promise<Answered> {
+  const held = sessions
+  if (held === undefined) return { ok: false, error: 'Not ready yet.' }
+  const projects = getSettings().projects
+  const told: Told[] = (await held.list(projects)).map((one) => ({
+    id: one.id,
+    title: one.title,
+    root: one.root,
+    state: one.state,
+  }))
+  const read = await askOrders(said, projects, told)
+  if (read.error !== undefined) return { ok: false, error: read.error }
+  if (read.orders.length === 0) return { ok: false, error: `Nothing to do in "${said}"` }
+  const mode = getSettings().chatMode
+  const did = await carryOut(read.orders, projects, told, {
+    // The goal goes first and the work after it, so it holds from the first turn
+    // rather than from the second. The second message waits in the queue meanwhile.
+    start: async (root, text, goal) => {
+      if (goal === undefined) return held.send({ root, mode, text })
+      const id = await held.send({ root, mode, text: `/goal ${goal}` })
+      await held.send({ session: id, root, mode, text })
+      return id
+    },
+    say: async (id, text) => {
+      const chat = told.find((one) => one.id === id)
+      if (chat !== undefined) await held.send({ session: id, root: chat.root, mode, text })
+    },
+    stop: (id) => held.stop(id),
+    mark: (id, status) => held.mark(id, status),
+    open: (id) => openChat(id),
+  })
+  return did.length === 0 ? { ok: false, error: 'None of that could be done' } : { ok: true, text: did.join('\n') }
 }
 
 /**
@@ -259,7 +326,10 @@ function wire(): void {
 
   ipcMain.handle('voice:done', async (_event, request: TranscribeRequest) => {
     const said = await transcribe(request)
-    if (said.ok && said.text !== undefined && said.text.trim() !== '') pasteBack(said.text)
+    if (!said.ok || said.text === undefined || said.text.trim() === '') return said
+    // Said to the application: it is carried out, and the capsule stays up to say what was done.
+    if (heardFor === 'orders') return carryOutSaid(said.text)
+    pasteBack(said.text)
     return said
   })
   ipcMain.on('voice:cancel', () => closeVoice())
@@ -333,6 +403,7 @@ function wire(): void {
   ipcMain.on('chat:watching', (_event, id: string | undefined) =>
     sessions?.watching(watchingChat() ? id : undefined),
   )
+  ipcMain.on('chat:read', (_event, id: string) => sessions?.read(id))
   ipcMain.handle('chat:remote', (_event, id: string, on: boolean) => sessions?.remote(id, on) ?? { error: 'Not ready yet.' })
   ipcMain.handle('chat:mcp', (_event, root: string, id: string | undefined, change: McpChange | undefined) =>
     sessions?.mcp(root, id ?? undefined, change ?? undefined),
@@ -426,6 +497,7 @@ if (!app.requestSingleInstanceLock()) {
     registerCorrect()
     registerDictate()
     registerSpotlight()
+    registerOrder()
     startUpdates({
       changed: (view) => tell('update:view', view),
       running: () => sessions?.working() ?? [],

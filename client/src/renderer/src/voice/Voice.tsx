@@ -13,22 +13,38 @@ import { Icon } from '../ui/Icon'
  * the main process does once it has the words.
  */
 
-type State = 'recording' | 'transcribing' | 'error'
+type State = 'recording' | 'transcribing' | 'done' | 'error'
+
+/** How long what was done stays up to be read before the capsule goes. */
+const READ_IT = 4_000
 
 export function Voice(): React.JSX.Element {
   const [settings, change] = useSettings()
   const [state, setState] = useState<State>('recording')
   const [error, setError] = useState('')
+  const [did, setDid] = useState('')
   const [last, setLast] = useState<Blob | undefined>()
 
   const send = useCallback(async (audio: Blob) => {
     setLast(audio)
     setState('transcribing')
     const answer = await window.geckit.voice.done({ audio: await base64(audio), fileName: 'dictation.webm' })
-    if (answer.ok && answer.text !== undefined && answer.text.trim() !== '') return
+    if (answer.ok && answer.text !== undefined && answer.text.trim() !== '') {
+      // Dictation is gone by now, pasted back where the person was. What is still
+      // up was said to the application, and this is what it did about it.
+      setDid(answer.text)
+      setState('done')
+      return
+    }
     setState('error')
     setError(answer.error ?? 'Nothing was heard')
   }, [])
+
+  useEffect(() => {
+    if (state !== 'done') return
+    const soon = setTimeout(() => window.geckit.voice.cancel(), READ_IT)
+    return () => clearTimeout(soon)
+  }, [state])
 
   const recorder = useRecorder(settings.microphoneDeviceId, (audio) => void send(audio))
   const { start, stop } = recorder
@@ -60,6 +76,13 @@ export function Voice(): React.JSX.Element {
           <>
             <Icon name="spinner" className="glyph spinning" />
             <span>Writing it down</span>
+          </>
+        ) : state === 'done' ? (
+          <>
+            <Icon name="check" className="glyph" />
+            <span className="said" title={did}>
+              {did.split('\n').join(' - ')}
+            </span>
           </>
         ) : state === 'error' ? (
           <>

@@ -23,6 +23,7 @@ export type EventName =
   | 'chatAnswered'
   | 'settingsSaved'
   | 'shortcutPressed'
+  | 'orders'
 
 function who(): string {
   const kept = getSettings().client
