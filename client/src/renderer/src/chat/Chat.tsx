@@ -7,7 +7,7 @@ import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
-import { Board } from './Board'
+import { Board, NewTask } from './Board'
 import { Composer } from './Composer'
 import { NameField } from './NameField'
 import { projectColor } from '../../../shared/project-color'
@@ -69,6 +69,8 @@ export function Chat(): React.JSX.Element {
   const [remoteTrouble, setRemoteTrouble] = useState<string | undefined>()
   // The conversation whose terminal command was just copied, for the check that says so.
   const [copied, setCopied] = useState<string | undefined>()
+  // The board's New task form is open.
+  const [making, setMaking] = useState(false)
   const grab = useRef(0)
   const { addFiles, send, root } = chat
 
@@ -179,6 +181,13 @@ export function Chat(): React.JSX.Element {
         }
         return
       }
+      if (making) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setMaking(false)
+        }
+        return
+      }
       if (switching || setting || keys || managing !== undefined) return
       const now = recentRef.current
       if (now !== undefined && event.key === 'Escape') {
@@ -240,7 +249,8 @@ export function Chat(): React.JSX.Element {
       }
       if (meta && event.key === 'n') {
         event.preventDefault()
-        chat.startNew()
+        if (chat.settings.chatView === 'board') setMaking(true)
+        else chat.startNew()
       }
       if (meta && event.key === 'k') {
         event.preventDefault()
@@ -254,6 +264,12 @@ export function Chat(): React.JSX.Element {
       if (meta && event.key === 'r') {
         event.preventDefault()
         chat.refresh()
+      }
+      // Over the board the conversation is a popup: Escape puts it away rather than stopping what it is doing.
+      if (event.key === 'Escape' && chat.settings.chatView === 'board' && chat.shown.kind === 'session') {
+        event.preventDefault()
+        chat.open({ kind: 'new' })
+        return
       }
       if (event.key === 'Escape' && chat.working) {
         event.preventDefault()
@@ -278,7 +294,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys, managing, clearing, remoteTrouble])
+  }, [chat, switching, setting, keys, managing, clearing, remoteTrouble, making])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -324,7 +340,13 @@ export function Chat(): React.JSX.Element {
       }}
     >
       {board ? (
-        <Board chat={chat} />
+        <Board
+          chat={chat}
+          onNew={() => setMaking(true)}
+          onSettings={() => setSetting(true)}
+          onKeys={openKeys}
+          onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
+        />
       ) : (
         <Sidebar
           chat={chat}
@@ -336,7 +358,13 @@ export function Chat(): React.JSX.Element {
           onShortcutFrom={shortcutFrom}
         />
       )}
-      {overBoard ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
+      {overBoard && !making ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
+      {making ? (
+        <>
+          <div className="talk-scrim" onMouseDown={() => setMaking(false)} />
+          <NewTask chat={chat} onClose={() => setMaking(false)} />
+        </>
+      ) : null}
       <div
         className="side-grip"
         onPointerDown={(event) => {
