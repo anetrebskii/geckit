@@ -2708,8 +2708,8 @@ button.tag:hover {
 /* Asking before anything is done: the capsule becomes a card with the list in it. */
 .capsule:has(.asking) {
   align-items: stretch;
-  width: 300px;
-  padding: 12px 14px 10px;
+  width: 304px;
+  padding: 0;
   border-radius: 14px;
 }
 
@@ -2717,37 +2717,100 @@ button.tag:hover {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 8px;
   min-width: 0;
 }
 
-.asking-head {
-  font-size: 13px;
-  font-weight: 600;
+/* The words themselves, so a mishearing is caught before anything is done. */
+.asking-heard {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  padding: 11px 14px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.asking-heard svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--danger);
 }
 
 .asking-plan {
   display: flex;
   flex-direction: column;
-  gap: 5px;
   max-height: 260px;
-  margin: 0;
   overflow-y: auto;
-  padding-left: 18px;
+}
+
+.asking-one {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 10px 14px;
+}
+
+.asking-one + .asking-one {
+  border-top: 1px solid var(--border);
+}
+
+.asking-one > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.asking-said {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.asking-head {
   font-size: 12px;
+  font-weight: 600;
+}
+
+.asking-text {
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--text-dim);
+}
+
+.asking-goal {
+  display: flex;
+  gap: 5px;
+  align-items: flex-start;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--accent);
+}
+
+.asking-goal svg {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .asking-foot {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border);
 }
 
 .asking-foot .primary {
   display: inline-flex;
   gap: 7px;
   align-items: center;
+}
+
+.asking-foot .keys {
+  color: inherit;
+  opacity: 0.6;
 }
 
 .capsule .time {
@@ -3198,7 +3261,13 @@ button.tag:hover {
   background: var(--warning-bg);
 }
 
-.board-card.waits .board-card-title {
+.board-card.waits .board-card-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.board-card-title {
   font-weight: 600;
 }
 

@@ -138,9 +138,14 @@ describe('what it says it will do, before anything is done', () => {
     expect(orders).toHaveLength(3)
     // Whole, not shortened: it is what is about to be sent.
     expect(lines).toEqual([
-      'Start in radar63: add a push when a drone is near, and keep it quiet between eleven at night and seven in the morning (until a push arrives on the phone)',
-      'Say in Phone edit looks weird: yes, go ahead',
-      'Mark Radar push notifications as review',
+      {
+        icon: 'plus',
+        head: 'Start in radar63',
+        text: 'add a push when a drone is near, and keep it quiet between eleven at night and seven in the morning',
+        goal: 'a push arrives on the phone',
+      },
+      { icon: 'chat', head: 'Say in Phone edit looks weird', text: 'yes, go ahead' },
+      { icon: 'eye', head: 'Mark Radar push notifications as review' },
     ])
   })
 
@@ -155,6 +160,6 @@ describe('what it says it will do, before anything is done', () => {
       CHATS,
     )
     expect(orders).toEqual([{ do: 'open', chat: 'a1' }])
-    expect(lines).toEqual(['Open Radar push notifications'])
+    expect(lines).toEqual([{ icon: 'ahead', head: 'Open Radar push notifications' }])
   })
 })

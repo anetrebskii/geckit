@@ -247,7 +247,7 @@ async function readSaid(said: string): Promise<Answered> {
   const { orders, lines } = saying(read.orders, projects, told)
   if (orders.length === 0) return { ok: false, error: `Nothing to do in "${said}"` }
   planned = { orders, told }
-  return { ok: true, plan: lines }
+  return { ok: true, plan: lines, heard: said }
 }
 
 /** The yes: what was read out loud a moment ago is carried out now. */

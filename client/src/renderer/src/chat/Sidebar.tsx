@@ -8,6 +8,7 @@ import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
 import { projectColor } from '../../../shared/project-color'
 import { projectName, tint } from './project'
+import { DeleteChats } from './DeleteChats'
 import { NameField } from './NameField'
 import { Projects } from './Projects'
 import { Dot } from './Tasks'
@@ -138,7 +139,7 @@ export function Tags({
   )
 }
 
-const STATUS_ICONS: Record<SessionStatus, string> = { review: 'eye', blocked: 'blocked', done: 'done' }
+export const STATUS_ICONS: Record<SessionStatus, string> = { review: 'eye', blocked: 'blocked', done: 'done' }
 
 /**
  * One conversation in the list.
@@ -844,43 +845,15 @@ export function Sidebar({
       )}
 
       {deleting === undefined ? null : (
-        <div className="dialog-scrim" onMouseDown={() => setDeleting(undefined)}>
-          <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
-            {deleting.length === 1 ? (
-              <>
-                <h2>Delete "{deleting[0]?.title === '' ? 'Untitled' : deleting[0]?.title}"?</h2>
-                <p>
-                  Claude Code keeps this conversation in a file of its own. Deleting it here deletes that file, and
-                  nothing anywhere keeps a copy.
-                </p>
-              </>
-            ) : (
-              <>
-                <h2>Delete {deleting.length} conversations?</h2>
-                <p>
-                  Claude Code keeps each conversation in a file of its own. Deleting them here deletes those files, and
-                  nothing anywhere keeps a copy.
-                </p>
-              </>
-            )}
-            <div className="dialog-actions">
-              <button type="button" className="quiet" autoFocus onClick={() => setDeleting(undefined)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="primary danger"
-                onClick={() => {
-                  chat.remove(deleting.map((one) => one.id))
-                  setDeleting(undefined)
-                  pick(NONE)
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <DeleteChats
+          chats={deleting}
+          onClose={() => setDeleting(undefined)}
+          onDelete={() => {
+            chat.remove(deleting.map((one) => one.id))
+            setDeleting(undefined)
+            pick(NONE)
+          }}
+        />
       )}
     </div>
   )
