@@ -89,6 +89,8 @@ export interface Chat {
   setModel: (model: string) => void
   askModels: () => void
   send: (again?: string) => void
+  /** A new conversation from the board's form: the goal is set first, then the work is sent. */
+  startTask: (root: string, text: string, goal: string) => void
   /** Words sent to the open conversation as they are, the field left alone: `/compact`, `/goal clear`. */
   say: (text: string) => void
   answer: (card: string, answer: CardAnswer | string) => void
@@ -396,6 +398,20 @@ export function useChat(): Chat {
     [open, setDraft],
   )
 
+  // The goal goes first and the work after it, so it holds from the first turn rather than from the second.
+  const startTask = useCallback(
+    (root: string, text: string, goal: string) => {
+      const now = held.current
+      const model = now.model === '' ? {} : { model: now.model }
+      void window.geckit.chat.send({ root, mode: now.mode, text: goal === '' ? text : `/goal ${goal}`, ...model }).then((id) => {
+        open({ kind: 'session', id })
+        if (goal === '') return
+        void window.geckit.chat.send({ session: id, root, mode: now.mode, text, ...model })
+      })
+    },
+    [open],
+  )
+
   const stopShell = useCallback((item: string) => {
     if (shownRef.current.kind === 'session') window.geckit.chat.stopShell(shownRef.current.id, item)
   }, [])
@@ -563,6 +579,7 @@ export function useChat(): Chat {
       void window.geckit.chat.models().then((said) => setModels(said ?? 'unsaid'))
     },
     send,
+    startTask,
     say: (text: string) => {
       const where = rootRef.current
       if (where === undefined || shownRef.current.kind !== 'session') return
