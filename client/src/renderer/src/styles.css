@@ -3313,6 +3313,22 @@ button.tag:hover {
   border-radius: 8px;
 }
 
+/* A favorite, the same ones the sidebar groups at its top. */
+.board-card.starred {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.board-card.starred:hover {
+  border-color: var(--accent);
+}
+
+.board-card-star {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--accent);
+}
+
 .board-card:hover {
   border-color: var(--text-faint);
 }
