@@ -123,7 +123,12 @@ describe('what it says it will do, before anything is done', () => {
   it('says each order in the words the capsule shows, and keeps them', () => {
     const { orders, lines } = saying(
       [
-        { do: 'start', project: 'radar63', text: 'add a push when a drone is near', goal: 'a push arrives on the phone' },
+        {
+          do: 'start',
+          project: 'radar63',
+          text: 'add a push when a drone is near, and keep it quiet between eleven at night and seven in the morning',
+          goal: 'a push arrives on the phone',
+        },
         { do: 'say', chat: 'b2', text: 'yes, go ahead' },
         { do: 'mark', chat: 'a1', status: 'review' },
       ],
@@ -131,8 +136,9 @@ describe('what it says it will do, before anything is done', () => {
       CHATS,
     )
     expect(orders).toHaveLength(3)
+    // Whole, not shortened: it is what is about to be sent.
     expect(lines).toEqual([
-      'Start in radar63: add a push when a drone is near (until a push arrives on the phone)',
+      'Start in radar63: add a push when a drone is near, and keep it quiet between eleven at night and seven in the morning (until a push arrives on the phone)',
       'Say in Phone edit looks weird: yes, go ahead',
       'Mark Radar push notifications as review',
     ])
