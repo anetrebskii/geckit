@@ -764,6 +764,80 @@ export function goalOf(entries: readonly Json[]): GoalRead {
   return { ...(goal === undefined ? {} : { goal }), ...(ended === undefined ? {} : { ended }) }
 }
 
+/**
+ * What a conversation put in the background, out of its own file.
+ *
+ * The `task_*` lines a running process sends are not written down, so what is
+ * left is the tool's own answer when a command went into the background and
+ * the notice it wrote when one ended. Nothing in the background outlives the
+ * process that started it, so one never said to have ended is stopped.
+ */
+export function tasksOf(entries: readonly Json[]): BackgroundTask[] {
+  const tools = new Map<string, { readonly tool: string; readonly input: Json; readonly at: number }>()
+  const tasks = new Map<string, BackgroundTask>()
+
+  for (const entry of entries) {
+    if (entry['isSidechain'] === true) continue
+    const at = Date.parse(string(entry['timestamp']))
+    const type = string(entry['type'])
+    const content = object(entry['message'])['content']
+
+    if (type === 'assistant') {
+      for (const block of list(content)) {
+        const use = object(block)
+        if (string(use['type']) === 'tool_use') {
+          tools.set(string(use['id']), { tool: string(use['name']), input: object(use['input']), at })
+        }
+      }
+      continue
+    }
+    if (type !== 'user') continue
+
+    const id = string(object(entry['toolUseResult'])['backgroundTaskId'])
+    if (id !== '') {
+      const result = list(content)
+        .map(object)
+        .find((block) => string(block['type']) === 'tool_result')
+      const use = string(result?.['tool_use_id'])
+      const started = tools.get(use)
+      const command = string(started?.input['command'])
+      const began = started?.at ?? at
+      tasks.set(id, {
+        id,
+        kind: started?.tool === 'Monitor' ? 'monitor' : started?.tool === 'Agent' ? 'local_agent' : 'local_bash',
+        what: string(started?.input['description']),
+        ...(command === '' ? {} : { command }),
+        ...(use === '' ? {} : { use }),
+        status: 'running',
+        started: Number.isNaN(began) ? 0 : began,
+      })
+      continue
+    }
+
+    for (const text of textsOf(content)) {
+      const told = TASK_NOTIFICATION.exec(text)
+      if (told === null) continue
+      const body = told[1] ?? ''
+      const task = tasks.get(tagged(body, 'task-id'))
+      if (task === undefined) continue
+      const output = tagged(body, 'output-file')
+      // "completed (exit code 0)", "failed with exit code 1".
+      const exit = /exit code (-?\d+)/.exec(tagged(body, 'summary'))?.[1]
+      tasks.set(task.id, {
+        ...task,
+        status: ENDED[tagged(body, 'status')] ?? 'completed',
+        ended: Number.isNaN(at) ? task.started : at,
+        ...(output === '' ? {} : { output }),
+        ...(exit === undefined ? {} : { exit: Number(exit) }),
+      })
+    }
+  }
+
+  return [...tasks.values()].map((task) =>
+    task.status === 'running' ? { ...task, status: 'stopped', ended: task.started } : task,
+  )
+}
+
 export function replayClaude(root: string, entries: readonly Json[], quietFor: number): SessionItem[] {
   const state = claudeState(root)
   const budget = { left: 24_000_000 }

@@ -271,6 +271,14 @@ export interface McpServer {
   readonly status: string
 }
 
+/** One Chrome the extension is signed in to, as Claude in Chrome names it. A profile is its own browser. */
+export interface Browser {
+  readonly id: string
+  readonly name: string
+  /** The one Claude drives. */
+  readonly current: boolean
+}
+
 /** A picture sent with a message: what it is, and the picture itself as base64. */
 export interface SessionImage {
   readonly media: string

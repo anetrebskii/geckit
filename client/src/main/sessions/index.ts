@@ -3,6 +3,7 @@ import { basename } from 'node:path'
 
 import type {
   BackgroundTask,
+  Browser,
   CardAnswer,
   ChatSession,
   ClaudeAccount,
@@ -25,6 +26,7 @@ import { sessionMode } from '../../shared/api'
 import { workItem } from '../../shared/links'
 import { claudeAccount } from './account'
 import { holdClaude } from './claude'
+import { browsersOf, readBrowsers } from './chrome'
 import { claudeFile, deleteClaude, listClaude, readClaudeSession, readGoal } from './disk'
 import type { GoalRead } from './claude-read'
 import type { Conversation } from './disk'
@@ -64,6 +66,8 @@ import {
 
 export interface SessionNote {
   readonly title?: string
+  /** The person named it themselves, so Claude Code is told the name and a terminal and the phone show it too. */
+  readonly renamed?: boolean
   readonly mode?: SessionMode
   readonly model?: string
   /** Started in this application rather than in a terminal. */
@@ -127,6 +131,7 @@ export interface SessionsDeps {
   readonly claudeModels?: () => Promise<ClaudeModel[] | undefined>
   readonly usage?: (models: readonly string[]) => Promise<Usage>
   readonly mcp?: (root: string, change?: McpChange) => Promise<McpServer[] | undefined>
+  readonly browsers?: (root: string, pick?: string) => Promise<Browser[] | undefined>
   readonly shell?: typeof runShell
   /** Opens a terminal in the folder with the command typed in, for one that wants a keyboard. Without it, it is run here anyway. */
   readonly terminal?: (root: string, command: string) => void
@@ -181,6 +186,8 @@ interface Live {
   commands: Map<string, Running>
   /** What the tool has had in the background, running or ended, until the person clears what ended. */
   tasks: readonly BackgroundTask[]
+  /** The name Claude Code was last told, so it is told again after a start or a change. */
+  named: string | undefined
   back: NodeJS.Timeout | undefined
   stopping: NodeJS.Timeout | undefined
   /** Set with /goal, as the tool's file last said or as it was just sent. */
@@ -426,6 +433,7 @@ export class Sessions {
       told: [],
       commands: new Map(),
       tasks: [],
+      named: undefined,
       back: undefined,
       stopping: undefined,
       goal: undefined,
@@ -444,6 +452,9 @@ export class Sessions {
     live.spent = conversation.cost
     live.running = undefined
     live.goal = conversation.goal
+    // What it put in the background the last time it ran, on the first read of it alone: they are
+    // ended, and once the list is here it is the process and the person who say what is in it.
+    if (live.items.size === 0) live.tasks = [...conversation.tasks, ...live.tasks]
 
     const items = new Map(read.map((item) => [item.id, item]))
     // What only this window knows goes back where it was, unless the file says it too.
@@ -769,6 +780,24 @@ export class Sessions {
     return (this.#deps.mcp ?? readMcp)(root, change)
   }
 
+  /**
+   * The Chromes the extension is signed in to, with one picked first where one
+   * was. The conversation's own process is asked where it has one, so the
+   * choice holds in it at once; otherwise a process in the folder is.
+   */
+  async browsers(root: string, id?: string, pick?: string): Promise<Browser[] | undefined> {
+    const control = id === undefined ? undefined : this.#live.get(id)?.driver?.control
+    if (control !== undefined) {
+      try {
+        if (pick !== undefined) await control({ subtype: 'select_chrome_browser', device_id: pick })
+        return browsersOf(await control({ subtype: 'get_chrome_browsers' }))
+      } catch {
+        // Asked of a process of its own instead, which the choice is saved for anyway.
+      }
+    }
+    return (this.#deps.browsers ?? readBrowsers)(root, pick)
+  }
+
   answer(id: string, card: string, answer: CardAnswer | string): void {
     const live = this.#live.get(id)
     const ask = card.startsWith('card:') ? card.slice('card:'.length) : card
@@ -873,6 +902,18 @@ export class Sessions {
     return taken.message
   }
 
+  /** A message waiting in the queue, said again in other words. Its place in the queue and its pictures stay. */
+  requeue(id: string, queued: string, text: string): void {
+    const live = this.#live.get(id)
+    const at = live?.queued.findIndex((one) => one.id === queued) ?? -1
+    const said = text.trim()
+    if (live === undefined || at === -1 || said === '') return
+    const was = live.queued[at]
+    if (was === undefined) return
+    live.queued = live.queued.map((one, index) => (index === at ? { id: one.id, message: { ...was.message, text: said } } : one))
+    this.#changed()
+  }
+
   /** A message taken out of the queue and started as a conversation of its own, in the same project and mode. */
   async delegate(id: string, queued: string): Promise<string | undefined> {
     const taken = this.unqueue(id, queued)
@@ -891,10 +932,30 @@ export class Sessions {
   rename(id: string, title: string): void {
     const name = title.trim()
     if (name === '') return
-    this.#note(id, { title: name })
+    this.#note(id, { title: name, renamed: true })
     const live = this.#live.get(id)
-    if (live !== undefined) live.title = name
+    if (live !== undefined) {
+      live.title = name
+      this.#name(live)
+    }
     this.#changed()
+  }
+
+  /**
+   * The name Claude Code itself keeps for the conversation, which is what a
+   * terminal and the phone show. `host` is the tool's word for a name the
+   * person gave in the application holding it, and is what has it pushed to
+   * Remote Control as well; without a process there is nothing to tell, so it
+   * is told at the next start.
+   */
+  #name(live: Live): void {
+    const note = this.#deps.notes.all()[live.id]
+    const title = note?.title
+    if (note?.renamed !== true || title === undefined || live.driver?.control === undefined) return
+    live.named = title
+    void live.driver
+      .control({ subtype: 'rename_session', title, source: 'host', session_id: live.id })
+      .catch(() => (live.named = undefined))
   }
 
   hide(id: string): void {
@@ -1056,6 +1117,7 @@ export class Sessions {
           this.#ended(live, { kind: 'ended', how: 'offPlan' })
           return
         }
+        if (this.#deps.notes.all()[live.id]?.title !== live.named) this.#name(live)
         if (live.mode === 'auto' && signal.mode !== undefined && signal.mode !== 'auto') this.#noAuto(live, signal.model)
         if (live.model !== signal.model) {
           live.model = signal.model

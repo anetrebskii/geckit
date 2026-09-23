@@ -102,7 +102,11 @@ export function richSelection(selection: Selection | null, within: HTMLElement):
   for (const chrome of picked.querySelectorAll(CHROME)) chrome.remove()
   let held: Node = picked
   const start = range.commonAncestorContainer
+  // Words taken out of one bullet are words, not a bullet: no whole item is in
+  // the selection, so the list it sits in is left off and nothing prepends "- ".
+  const inside = picked.querySelector('li') === null
   for (let at = start instanceof Element ? start : start.parentElement; at !== null && at !== within; at = at.parentElement) {
+    if (inside && (at.tagName === 'LI' || at.tagName === 'UL' || at.tagName === 'OL')) continue
     const shell = at.cloneNode(false)
     shell.appendChild(held)
     held = shell

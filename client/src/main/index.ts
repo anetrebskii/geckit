@@ -321,6 +321,7 @@ function wire(): void {
   )
   ipcMain.on('chat:stop', (_event, id: string) => sessions?.stop(id))
   ipcMain.handle('chat:unqueue', (_event, id: string, queued: string) => sessions?.unqueue(id, queued))
+  ipcMain.on('chat:requeue', (_event, id: string, queued: string, text: string) => sessions?.requeue(id, queued, text))
   ipcMain.handle('chat:delegate', (_event, id: string, queued: string) => sessions?.delegate(id, queued))
   ipcMain.on('chat:mode', (_event, id: string, mode: SessionMode) => sessions?.mode(id, mode))
   ipcMain.on('chat:rename', (_event, id: string, title: string) => sessions?.rename(id, title))
@@ -335,6 +336,9 @@ function wire(): void {
   ipcMain.handle('chat:remote', (_event, id: string, on: boolean) => sessions?.remote(id, on) ?? { error: 'Not ready yet.' })
   ipcMain.handle('chat:mcp', (_event, root: string, id: string | undefined, change: McpChange | undefined) =>
     sessions?.mcp(root, id ?? undefined, change ?? undefined),
+  )
+  ipcMain.handle('chat:browsers', (_event, root: string, id: string | undefined, pick: string | undefined) =>
+    sessions?.browsers(root, id ?? undefined, pick ?? undefined),
   )
   ipcMain.on('chat:handOver', (_event, id: string) => sessions?.handOver(id))
   ipcMain.on('chat:terminal', (_event, id: string, root: string) => {
