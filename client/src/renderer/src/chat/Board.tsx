@@ -57,6 +57,15 @@ export function Board({
   // The card being dragged, and the column the pointer is over.
   const held = useRef<string | undefined>(undefined)
   const [over, setOver] = useState<string | undefined>()
+  // A day in Done folded away, by its heading, for as long as the window is open.
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set())
+  const fold = (heading: string): void =>
+    setFolded((was) => {
+      const next = new Set(was)
+      if (!next.delete(heading)) next.add(heading)
+      return next
+    })
+
   // The times on the cards, kept fresh the way the list keeps them.
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -170,8 +179,15 @@ export function Board({
             <div className="board-cards">
               {byDay(column.rows, now, column.status === 'done').map((day) => (
                 <div key={day.heading} className="board-day">
-                  {day.heading === '' ? null : <div className="board-day-head">{day.heading}</div>}
-                  {day.rows.map((session) => (
+                  {day.heading === '' ? null : (
+                    <button type="button" className="board-day-head" onClick={() => fold(day.heading)}>
+                      <Icon name={folded.has(day.heading) ? 'right' : 'down'} size={10} />
+                      {day.heading}
+                      <span className="spacer" />
+                      <span className="count">{day.rows.length}</span>
+                    </button>
+                  )}
+                  {(folded.has(day.heading) ? [] : day.rows).map((session) => (
                     <Card
                       key={session.id}
                       chat={chat}
