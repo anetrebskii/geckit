@@ -604,6 +604,8 @@ export interface Settings {
   readonly chatView: ChatView
   /** The chat window lists every project's conversations, and opens that way again. False is the newest project's. */
   readonly chatAll: boolean
+  /** The projects whose conversations are listed. Empty is every one of them. */
+  readonly chatProjects: readonly string[]
   /** Conversations kept at the top of the list, in the order they were put in; Cmd+1 opens the first. */
   readonly favorites: readonly string[]
   readonly openWith: readonly OpenRule[]
@@ -663,6 +665,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatGrouping: 'time',
   chatView: 'list',
   chatAll: false,
+  chatProjects: [],
   favorites: [],
   openWith: [],
   transcriptions: [],

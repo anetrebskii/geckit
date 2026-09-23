@@ -348,7 +348,7 @@ function Card({
       )}
       {session.goal === undefined ? null : (
         <div className="board-card-goal" title={session.goal.condition}>
-          <Icon name="done" size={10} />
+          <Icon name="goal" size={10} />
           <span>{session.goal.condition}</span>
         </div>
       )}

@@ -69,7 +69,11 @@ export interface Chat {
   readonly working: boolean
   /** Bumped when the composer should take the caret. */
   readonly focusSeed: number
+  /** Every project's conversations are listed while this is empty. */
+  readonly chosen: readonly string[]
   setScope: (scope: string) => void
+  /** That project in the list beside the others already there, or out of it. */
+  alsoScope: (root: string) => void
   /** Where a new conversation starts: listing every project, only that changes; listing one, the list moves to it. */
   setRoot: (root: string) => void
   addProject: () => void
@@ -130,7 +134,7 @@ export interface Chat {
 
 export function useChat(): Chat {
   const [settings, change] = useSettings()
-  const [chosen, setChosen] = useState<string | undefined>()
+  const [picked, setPicked] = useState<readonly string[] | undefined>()
   const [started, setStarted] = useState<string | undefined>()
   const [sessions, setSessions] = useState<readonly ChatSession[]>([])
   const [everyone, setEveryone] = useState<readonly ChatSession[]>([])
@@ -145,25 +149,36 @@ export function useChat(): Chat {
   const [plan, setPlan] = useState<PlanUsage | undefined>()
   const [models, setModels] = useState<ModelsSaid>('unasked')
   const [focusSeed, setFocusSeed] = useState(0)
-  // What was chosen last time, every project or the one last worked in, until another is chosen.
-  const scope = chosen ?? (settings.chatAll ? ALL : (settings.projects[0] ?? ALL))
+  // The projects the list shows, kept from last time. None of them is every one of them.
+  const chosen = useMemo(
+    () => picked ?? settings.chatProjects ?? (settings.chatAll || settings.projects[0] === undefined ? [] : [settings.projects[0]]),
+    [picked, settings.chatProjects, settings.chatAll, settings.projects],
+  )
+  // One project is a scope the rest of the window understands; several are every project, narrowed.
+  const scope = chosen.length === 1 ? (chosen[0] ?? ALL) : ALL
 
   const shownRef = useRef(shown)
   const scopeRef = useRef(scope)
+  const chosenRef = useRef(chosen)
   const sessionsRef = useRef(sessions)
   const everyoneRef = useRef(everyone)
   // The shown one is not kept here but where it is set: an effect of an earlier render can run after that and put it back.
   useEffect(() => {
     scopeRef.current = scope
+    chosenRef.current = chosen
     sessionsRef.current = sessions
     everyoneRef.current = everyone
-  }, [scope, sessions, everyone])
+  }, [scope, chosen, sessions, everyone])
+
+  /** Listed: every project's, or only the chosen ones'. */
+  const within = (one: ChatSession): boolean => chosenRef.current.length === 0 || chosenRef.current.includes(one.root)
 
   const refresh = useCallback(() => {
-    void window.geckit.chat.list(scopeRef.current === ALL ? undefined : scopeRef.current).then(setSessions)
+    const one = chosenRef.current.length === 1 ? chosenRef.current[0] : undefined
+    void window.geckit.chat.list(one).then((all) => setSessions(all.filter(within)))
   }, [])
 
-  useEffect(refresh, [refresh, scope])
+  useEffect(refresh, [refresh, scope, chosen.join('\n')])
 
   useEffect(() => {
     void window.geckit.chat.account().then(setAccount)
@@ -190,7 +205,7 @@ export function useChat(): Chat {
   useEffect(() => {
     void window.geckit.chat.list(undefined).then(setEveryone)
     return window.geckit.chat.onSessions((all) => {
-      setSessions(all.filter((one) => scopeRef.current === ALL || one.root === scopeRef.current))
+      setSessions(all.filter(within))
       setEveryone(all)
       // A question answered anywhere, here or in a terminal, has nothing left to say.
       setNotices((held) =>
@@ -342,10 +357,11 @@ export function useChat(): Chat {
     setPictures((held) => ({ ...held, [key]: (held[key] ?? []).filter((_one, index) => index !== at) }))
   }, [])
 
-  const setScope = useCallback(
-    (next: string) => {
-      setChosen(next)
-      change({ chatAll: next === ALL })
+  const listing = useCallback(
+    (next: readonly string[]) => {
+      setPicked(next)
+      chosenRef.current = next
+      change({ chatAll: next.length === 0, chatProjects: next })
       shownRef.current = { kind: 'new' }
       setShown({ kind: 'new' })
       setItems([])
@@ -353,6 +369,13 @@ export function useChat(): Chat {
       window.geckit.chat.watching(undefined)
     },
     [change],
+  )
+
+  const setScope = useCallback((next: string) => listing(next === ALL ? [] : [next]), [listing])
+
+  const alsoScope = useCallback(
+    (root: string) => listing(chosenRef.current.includes(root) ? chosenRef.current.filter((one) => one !== root) : [...chosenRef.current, root]),
+    [listing],
   )
 
   const send = useCallback(
@@ -444,7 +467,12 @@ export function useChat(): Chat {
   // field draws the field and nothing else.
   const show = useCallback(
     (one: ChatSession) => {
-      if (scopeRef.current !== ALL && one.root !== scopeRef.current) setChosen(one.root)
+      // Opened from somewhere the list does not show: that project joins the ones it does.
+      if (chosenRef.current.length > 0 && !chosenRef.current.includes(one.root)) {
+        const next = [...chosenRef.current, one.root]
+        chosenRef.current = next
+        setPicked(next)
+      }
       open({ kind: 'session', id: one.id })
     },
     [open],
@@ -534,7 +562,9 @@ export function useChat(): Chat {
     model,
     working,
     focusSeed,
+    chosen,
     setScope,
+    alsoScope,
     setRoot: (next) => {
       if (scopeRef.current === ALL) setStarted(next)
       else setScope(next)

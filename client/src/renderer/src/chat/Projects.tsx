@@ -82,6 +82,13 @@ function Menu({
     onClose()
   }
 
+  // The check is the way to list several at once; the row itself still switches to one.
+  const on = (value: string): boolean => (value === ALL ? chat.chosen.length === 0 : chat.chosen.includes(value))
+  const also = (value: string): void => {
+    if (value === ALL) chat.setScope(ALL)
+    else chat.alsoScope(value)
+  }
+
   return (
     <>
       <div className="scrim" onMouseDown={onClose} />
@@ -122,13 +129,26 @@ function Menu({
           <div key={row.value}>
             <div
               role="menuitem"
-              className={`menu-item project-row${row.value === chat.scope ? ' on' : ''}${index === here ? ' at' : ''}`}
+              className={`menu-item project-row${on(row.value) ? ' on' : ''}${index === here ? ' at' : ''}`}
               onMouseMove={() => setAt(index)}
-              onClick={() => pick(row.value)}
+              onClick={(event) => {
+                // Held down, the row does what its check does: adds this project to the list beside the others.
+                if (event.metaKey || event.ctrlKey) also(row.value)
+                else pick(row.value)
+              }}
             >
-              <span style={{ width: 14, flexShrink: 0 }}>
-                {row.value === chat.scope ? <Icon name="check" size={13} /> : null}
-              </span>
+              <button
+                type="button"
+                className={`project-pick${on(row.value) ? ' on' : ''}`}
+                aria-label={on(row.value) ? `Stop listing ${row.name}` : `List ${row.name} as well`}
+                title={row.value === ALL ? 'Every project' : 'List it as well as the others'}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  also(row.value)
+                }}
+              >
+                {on(row.value) ? <Icon name="check" size={13} /> : null}
+              </button>
               {row.value === ALL ? (
                 <span className="project-dot-space" />
               ) : (
@@ -186,6 +206,7 @@ function Menu({
           </div>
         ))}
         <div className="menu-divider" />
+        <div className="projects-hint">A check lists a project beside the others. Pressing a row shows only that one.</div>
         <button type="button" role="menuitem" className="menu-item" onClick={() => pick(ADD)}>
           <span style={{ width: 14, flexShrink: 0 }}>
             <Icon name="plus" size={13} />
@@ -209,7 +230,13 @@ export function Projects({ chat }: { readonly chat: Chat }): React.JSX.Element {
       >
         <Icon name="folder" />
         <span className="name">
-          {chat.root === undefined ? 'Choose a project' : chat.scope === ALL ? 'All projects' : projectName(chat.scope)}
+          {chat.root === undefined
+            ? 'Choose a project'
+            : chat.chosen.length === 0
+              ? 'All projects'
+              : chat.chosen.length === 1
+                ? projectName(chat.scope)
+                : `${String(chat.chosen.length)} projects`}
         </span>
         <span className="spacer" />
         <span className="keys">{MOD}+K</span>
