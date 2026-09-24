@@ -58,6 +58,7 @@ export function Board({
   const [menu, setMenu] = useState<{ readonly id: string; readonly at: DOMRect } | undefined>()
   const [renaming, setRenaming] = useState<string | undefined>()
   const [deleting, setDeleting] = useState<readonly ChatSession[] | undefined>()
+  const [asked, setAsked] = useState<DOMRect | undefined>()
   // The card being dragged, and the column the pointer is over.
   const held = useRef<string | undefined>(undefined)
   const [over, setOver] = useState<string | undefined>()
@@ -153,12 +154,38 @@ export function Board({
           type="button"
           className="new-session no-drag board-new"
           title="A question that is not about a project: it is not put on the board, and is forgotten 2 minutes after the answer"
-          onClick={onAsk}
+          onClick={(event) => {
+            if (chat.questions.length === 0) onAsk()
+            else setAsked(event.currentTarget.getBoundingClientRect())
+          }}
         >
           <Icon name="chat" />
-          Ask
+          {chat.questions.length === 0 ? 'Ask' : `Questions ${String(chat.questions.length)}`}
           <span className="keys">{MOD}+Shift+N</span>
         </button>
+        {asked === undefined ? null : (
+          <Menu
+            anchor={asked}
+            title="Open questions"
+            explained
+            choices={[
+              ...[...chat.questions]
+                .sort((one, other) => other.at - one.at)
+                .map((one) => ({
+                  value: one.id,
+                  label: one.title,
+                  says: one.state === 'working' || one.state === 'asks' ? 'Working' : one.stands,
+                })),
+              { value: '', label: 'New question', icon: 'plus' },
+            ]}
+            note="Each is forgotten 2 minutes after its last answer."
+            onPick={(id) => {
+              if (id === '') onAsk()
+              else chat.open({ kind: 'session', id })
+            }}
+            onClose={() => setAsked(undefined)}
+          />
+        )}
         <button type="button" className="new-session no-drag board-new" onClick={onNew}>
           <Icon name="plus" />
           New task
