@@ -1,34 +1,129 @@
+/* Before the Mac answers: the app's own screens, drawn the way the Chat window is on the phone. */
 .pair {
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
   align-items: center;
-  justify-content: center;
-  padding: calc(env(safe-area-inset-top) + 24px) 32px calc(env(safe-area-inset-bottom) + 24px);
-  font-size: 15px;
+  padding: calc(env(safe-area-inset-top) + 20px) 24px calc(env(safe-area-inset-bottom) + 16px);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.4;
   color: var(--text);
   text-align: center;
   background: var(--bg);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pair-mid {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 
 .pair p {
   max-width: 300px;
   margin: 0;
+  color: var(--text-dim);
 }
 
-.pair .pair-name {
-  font-size: 28px;
+.pair-icon img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+
+.pair-name {
+  margin: 6px 0 0;
+  font-size: 34px;
+  font-weight: 700;
+}
+
+.pair-title {
+  max-width: 300px;
+  margin: 0;
+  font-size: 22px;
   font-weight: 600;
+}
+
+.pair-away {
+  color: var(--text-faint);
+}
+
+.pair-steps {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  max-width: 300px;
+  margin: 14px 0 0;
+  padding: 0;
+  text-align: start;
+  list-style: none;
+}
+
+.pair-steps li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.pair-steps i {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--fill);
+  border-radius: 14px;
+}
+
+.pair .pair-error {
+  color: var(--danger);
+}
+
+.pair-spin {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--fill-strong);
+  border-top-color: var(--text-dim);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
 }
 
 .pair .pair-wait {
   color: var(--text-dim);
 }
 
-.pair button {
-  min-width: 200px;
-  min-height: 44px;
+.pair-actions {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.pair-actions button {
+  height: 50px;
   font-size: 17px;
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+.pair-actions .pair-fill {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.pair-actions .pair-plain {
+  height: 44px;
+  font-weight: 400;
+  color: var(--accent);
 }

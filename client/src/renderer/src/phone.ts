@@ -1,6 +1,7 @@
 import type { Geckit } from '../../preload'
 import type { SessionNotice } from '../../shared/api'
 import type { Link } from './link'
+import type { ScreenLink } from './screen-link'
 
 /**
  * `window.geckit` for the phone, where there is no preload: each call goes to
@@ -164,8 +165,25 @@ export function installGeckit(link: Link, boot: Boot): void {
     },
     panel: { onText: never },
     phone: { state: () => Promise.resolve({ count: 0 }), onState: never, newCode: nothing },
-    peer: { pairing: () => Promise.resolve(undefined), call: () => Promise.resolve(undefined), onTell: never, state: nothing },
+    peer: {
+      pairing: () => Promise.resolve(undefined),
+      call: () => Promise.resolve(undefined),
+      onTell: never,
+      state: nothing,
+      screen: () => Promise.resolve({}),
+    },
   }
 
   Object.defineProperty(window, 'geckit', { value: phone })
+  const screen: ScreenLink = {
+    start: async () => {
+      const refused = await call<string | null>('screen.start')
+      if (refused !== null) throw new Error(refused)
+      const stream = link.screen()
+      if (stream === undefined) throw new Error('The link carries no screen')
+      return stream
+    },
+    stop: () => send('screen.stop'),
+  }
+  Object.defineProperty(window, 'geckitScreen', { value: screen })
 }

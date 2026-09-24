@@ -15,6 +15,10 @@ export interface Link {
   readonly onMessage: (heard: (message: LinkMessage) => void) => void
   readonly onClose: (closed: () => void) => void
   readonly close: () => void
+  /** The phone's side: the Mac's screen as it arrives, once the Mac sends it. */
+  readonly screen: () => MediaStream | undefined
+  /** The Mac's side: what goes out as the screen, or nothing to stop it. */
+  readonly share: (track: MediaStreamTrack | null) => Promise<void>
 }
 
 interface Signal {
@@ -30,6 +34,8 @@ const FRESH = 60_000
 const GATHERING = 4000
 // A send buffer much fuller than this is where browsers start closing channels.
 const BUFFERED = 1_000_000
+// Enough for text on a Retina screen at 15 frames a second; more only fills a phone's mobile data.
+const SCREEN_BITRATE = 3_000_000
 
 async function iceServers(pairing: Pairing, room: string): Promise<RTCIceServer[]> {
   try {
@@ -67,7 +73,7 @@ async function ask(pairing: Pairing, query: Record<string, string>, signal?: Abo
   return (await answer.json()) as { signals: Signal[]; at: number }
 }
 
-function linkOver(channel: RTCDataChannel, peer: RTCPeerConnection): Link {
+function linkOver(channel: RTCDataChannel, peer: RTCPeerConnection, video: RTCRtpTransceiver | undefined, seen?: () => MediaStream | undefined): Link {
   const put = assembler()
   const waiting: string[] = []
   let next = 0
@@ -108,6 +114,20 @@ function linkOver(channel: RTCDataChannel, peer: RTCPeerConnection): Link {
       channel.close()
       closed()
     },
+    screen: () => seen?.(),
+    share: async (track) => {
+      if (video === undefined) return
+      await video.sender.replaceTrack(track)
+      if (track === null) return
+      const parameters = video.sender.getParameters()
+      parameters.encodings = (parameters.encodings.length === 0 ? [{}] : parameters.encodings).map((one) => ({
+        ...one,
+        maxBitrate: SCREEN_BITRATE,
+        maxFramerate: 15,
+      }))
+      parameters.degradationPreference = 'maintain-resolution'
+      await video.sender.setParameters(parameters).catch(() => undefined)
+    },
   }
 }
 
@@ -123,6 +143,12 @@ export async function dial(pairing: Pairing, within = 20_000): Promise<Link> {
   const peer = new RTCPeerConnection({ iceServers: await iceServers(pairing, room) })
   try {
     const channel = peer.createDataChannel('geckit', { ordered: true })
+    // Offered from the start, so the Mac can send its screen later without a second handshake.
+    const video = peer.addTransceiver('video', { direction: 'recvonly' })
+    let stream: MediaStream | undefined
+    peer.addEventListener('track', (event) => {
+      stream = event.streams[0] ?? new MediaStream([event.track])
+    })
     await peer.setLocalDescription(await peer.createOffer())
     await gathered(peer)
     const id = randomId()
@@ -139,7 +165,7 @@ export async function dial(pairing: Pairing, within = 20_000): Promise<Link> {
       opened(channel),
       new Promise((_done, failed) => setTimeout(() => failed(new Error('The Mac did not answer')), Math.max(0, until - Date.now()))),
     ])
-    return linkOver(channel, peer)
+    return linkOver(channel, peer, video, () => stream ?? new MediaStream([video.receiver.track]))
   } catch (error) {
     peer.close()
     throw error
@@ -160,10 +186,13 @@ export function listen(pairing: Pairing, joined: (link: Link) => void, trouble: 
     peer.addEventListener('connectionstatechange', () => {
       if (peer.connectionState === 'closed' || peer.connectionState === 'failed') peers.delete(peer)
     })
-    peer.addEventListener('datachannel', (event) => {
-      void opened(event.channel).then(() => joined(linkOver(event.channel, peer)))
-    })
     await peer.setRemoteDescription({ type: 'offer', sdp: offer.sdp })
+    const video = peer.getTransceivers().find((one) => one.receiver.track.kind === 'video')
+    if (video !== undefined) video.direction = 'sendonly'
+    // The channel opens only once the answer below has gone back, so listening for it here is in time.
+    peer.addEventListener('datachannel', (event) => {
+      void opened(event.channel).then(() => joined(linkOver(event.channel, peer, video)))
+    })
     await peer.setLocalDescription(await peer.createAnswer())
     await gathered(peer)
     const back: Signed = { sdp: peer.localDescription?.sdp ?? '', at: Date.now() }

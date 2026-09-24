@@ -70,12 +70,6 @@ export function Board({
 
   // The times on the cards, kept fresh the way the list keeps them.
   const [now, setNow] = useState(() => Date.now())
-  // The phone shows one column at a time, and opens on the one looked at last.
-  const [shownColumn, setShownColumn] = useState(() => localStorage.getItem('phoneColumn') ?? COLUMNS[0]?.title ?? '')
-  const showColumn = (title: string): void => {
-    setShownColumn(title)
-    localStorage.setItem('phoneColumn', title)
-  }
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60_000)
     return () => clearInterval(tick)
@@ -105,88 +99,63 @@ export function Board({
 
   return (
     <div className="board">
-      {ON_PHONE ? (
-        <div className="board-head">
-          <div className="board-tabs" role="tablist">
-            {columns.map((column) => (
-              <button
-                key={column.title}
-                type="button"
-                role="tab"
-                aria-selected={column.title === shownColumn}
-                className={`tab${column.title === shownColumn ? ' on' : ''}`}
-                onClick={() => showColumn(column.title)}
-              >
-                {column.title}
-                <span className="count">{column.rows.length}</span>
-              </button>
-            ))}
-          </div>
-          <button type="button" className="icon-button board-new" aria-label="New task" onClick={onNew}>
-            <Icon name="plus" />
-          </button>
-        </div>
-      ) : (
-        <div className="board-head drag">
-          <button
-            type="button"
-            className="icon-button no-drag"
-            aria-label="As a list"
-            title="The conversations as a list"
-            onClick={() => chat.change({ chatView: 'list' })}
-          >
-            <Icon name="list" />
-          </button>
-          <Projects chat={chat} />
-          <button
-            type="button"
-            className="icon-button no-drag"
-            aria-label="Say what to do"
-            title={`Say what GeckIt should do: start a conversation, answer one, mark one (${said(ANYWHERE.orders)})`}
-            onClick={() => window.geckit.voice.orders()}
-          >
-            <Icon name="mic" />
-          </button>
-          <button
-            type="button"
-            className="icon-button no-drag"
-            aria-label="Shortcuts"
-            title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
-            onClick={onShortcuts}
-          >
-            <Icon name="bolt" />
-          </button>
-          <button
-            type="button"
-            className="icon-button no-drag"
-            aria-label="Keyboard shortcuts"
-            title={`Keyboard shortcuts (${MOD}+/)`}
-            onClick={onKeys}
-          >
-            <Icon name="keyboard" />
-          </button>
-          <button
-            type="button"
-            className="icon-button no-drag"
-            aria-label="Settings"
-            title={`Settings (${MOD}+,)`}
-            onClick={onSettings}
-          >
-            <Icon name="settings" />
-          </button>
-          <span className="spacer" />
-          <button type="button" className="new-session no-drag board-new" onClick={onNew}>
-            <Icon name="plus" />
-            New task
-            <span className="keys">{MOD}+N</span>
-          </button>
-        </div>
-      )}
+      <div className="board-head drag">
+        <button
+          type="button"
+          className="icon-button no-drag"
+          aria-label="As a list"
+          title="The conversations as a list"
+          onClick={() => chat.change({ chatView: 'list' })}
+        >
+          <Icon name="list" />
+        </button>
+        <Projects chat={chat} />
+        <button
+          type="button"
+          className="icon-button no-drag"
+          aria-label="Say what to do"
+          title={`Say what GeckIt should do: start a conversation, answer one, mark one (${said(ANYWHERE.orders)})`}
+          onClick={() => window.geckit.voice.orders()}
+        >
+          <Icon name="mic" />
+        </button>
+        <button
+          type="button"
+          className="icon-button no-drag"
+          aria-label="Shortcuts"
+          title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
+          onClick={onShortcuts}
+        >
+          <Icon name="bolt" />
+        </button>
+        <button
+          type="button"
+          className="icon-button no-drag"
+          aria-label="Keyboard shortcuts"
+          title={`Keyboard shortcuts (${MOD}+/)`}
+          onClick={onKeys}
+        >
+          <Icon name="keyboard" />
+        </button>
+        <button
+          type="button"
+          className="icon-button no-drag"
+          aria-label="Settings"
+          title={`Settings (${MOD}+,)`}
+          onClick={onSettings}
+        >
+          <Icon name="settings" />
+        </button>
+        <span className="spacer" />
+        <button type="button" className="new-session no-drag board-new" onClick={onNew}>
+          <Icon name="plus" />
+          New task
+          <span className="keys">{MOD}+N</span>
+        </button>
+      </div>
 
       <div className="board-columns">
-        {columns
-          .filter((column) => !ON_PHONE || column.title === shownColumn)
-          .map((column) => (
+        {columns.map((column) => (
             <div
               key={column.title}
               className={`board-column${over === column.title ? ' taking' : ''}`}
@@ -204,13 +173,11 @@ export function Board({
                 drop(column.status)
               }}
             >
-              {ON_PHONE ? null : (
-                <div className="board-column-head">
-                  {column.title}
-                  <span className="spacer" />
-                  <span className="count">{column.rows.length}</span>
-                </div>
-              )}
+              <div className="board-column-head">
+                {column.title}
+                <span className="spacer" />
+                <span className="count">{column.rows.length}</span>
+              </div>
               <div className="board-cards">
                 {byDay(column.rows, now, column.status === 'done').map((day) => (
                   <div key={day.heading} className="board-day">
@@ -530,6 +497,25 @@ export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClo
     onClose()
   }
 
+  if (ON_PHONE) {
+    return (
+      <PhoneNewTask
+        chat={chat}
+        root={root}
+        text={text}
+        goal={goal}
+        pictures={pictures}
+        onRoot={setRoot}
+        onText={setText}
+        onGoal={setGoal}
+        onPictures={take}
+        onDrop={(at) => setPictures((held) => held.filter((_one, index) => index !== at))}
+        onStart={start}
+        onClose={onClose}
+      />
+    )
+  }
+
   return (
     <div className="new-task">
       <div className="new-task-head">New task</div>
@@ -629,5 +615,149 @@ export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClo
         </button>
       </div>
     </div>
+  )
+}
+
+/** New task on the phone: a sheet over the board, its buttons in its own bar, pulled down to put it away. */
+function PhoneNewTask({
+  chat,
+  root,
+  text,
+  goal,
+  pictures,
+  onRoot,
+  onText,
+  onGoal,
+  onPictures,
+  onDrop,
+  onStart,
+  onClose,
+}: {
+  readonly chat: Chat
+  readonly root: string
+  readonly text: string
+  readonly goal: string
+  readonly pictures: readonly SessionImage[]
+  readonly onRoot: (root: string) => void
+  readonly onText: (text: string) => void
+  readonly onGoal: (goal: string) => void
+  readonly onPictures: (files: readonly File[]) => void
+  readonly onDrop: (at: number) => void
+  readonly onStart: () => void
+  readonly onClose: () => void
+}): React.JSX.Element {
+  const [asking, setAsking] = useState(false)
+  const [choosing, setChoosing] = useState(false)
+  const [dragged, setDragged] = useState<number | undefined>()
+  const from = useRef<number | undefined>(undefined)
+  const photos = useRef<HTMLInputElement>(null)
+  const field = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => field.current?.focus(), [])
+  // Nothing typed goes without asking; something typed asks before it is thrown away.
+  const leave = (): void => {
+    if (text.trim() === '' && pictures.length === 0) onClose()
+    else setAsking(true)
+  }
+  const ready = root !== '' && (text.trim() !== '' || pictures.length > 0)
+  return (
+    <>
+      <div className="sheet-scrim" onClick={leave} />
+      <div
+        className={`phone-task${dragged === undefined ? '' : ' dragging'}`}
+        role="dialog"
+        aria-label="New task"
+        style={dragged === undefined ? undefined : { transform: `translateY(${String(dragged)}px)` }}
+      >
+        <div
+          className="phone-task-bar"
+          onPointerDown={(event) => {
+            if ((event.target as Element).closest('button') !== null) return
+            event.currentTarget.setPointerCapture(event.pointerId)
+            from.current = event.clientY
+            setDragged(0)
+          }}
+          onPointerMove={(event) => {
+            if (from.current !== undefined) setDragged(Math.max(0, event.clientY - from.current))
+          }}
+          onPointerUp={() => {
+            from.current = undefined
+            const far = (dragged ?? 0) > 110
+            setDragged(undefined)
+            if (far) leave()
+          }}
+        >
+          <button type="button" onClick={leave}>
+            Cancel
+          </button>
+          <b>New task</b>
+          <button type="button" className="strong" disabled={!ready} onClick={onStart}>
+            Start
+          </button>
+        </div>
+        <div className="phone-task-form">
+          <div className="phone-task-label">Project</div>
+          <button type="button" className="phone-task-cell" onClick={() => setChoosing(true)}>
+            Project
+            <span>
+              {root === '' ? 'None' : projectName(root)}
+              <Icon name="right" size={14} />
+            </span>
+          </button>
+          <div className="phone-task-label">What to do</div>
+          <textarea ref={field} className="phone-task-text" value={text} placeholder="Ask Claude Code" onChange={(event) => onText(event.target.value)} />
+          {pictures.length === 0 ? null : (
+            <div className="pending">
+              {pictures.map((one, at) => (
+                <span key={`${String(at)}:${one.data.slice(0, 16)}`} className="pending-one">
+                  <img src={`data:${one.media};base64,${one.data}`} alt="" />
+                  <button type="button" className="icon-button" aria-label="Take this picture off" onClick={() => onDrop(at)}>
+                    <Icon name="close" size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <button type="button" className="phone-task-photo" onClick={() => photos.current?.click()}>
+            <Icon name="photo" size={20} />
+            Add photo
+          </button>
+          <input
+            ref={photos}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(event) => {
+              onPictures([...(event.target.files ?? [])])
+              event.target.value = ''
+            }}
+          />
+          <div className="phone-task-label">Goal</div>
+          <input className="phone-task-goal" value={goal} placeholder="When it is done, as a condition" onChange={(event) => onGoal(event.target.value)} />
+          <div className="phone-task-note">
+            {goal.trim() === '' ? 'Without a goal, it stops when Claude is done.' : 'Claude keeps working until this holds, then the card goes to In review.'}
+          </div>
+        </div>
+      </div>
+      {choosing ? (
+        <Menu
+          anchor={new DOMRect()}
+          title="Start it in"
+          chosen={root}
+          choices={chat.settings.projects.map((one) => ({ value: one, label: projectName(one) }))}
+          onPick={onRoot}
+          onClose={() => setChoosing(false)}
+        />
+      ) : null}
+      {asking ? (
+        <Menu
+          anchor={new DOMRect()}
+          title="Discard this task?"
+          choices={[{ value: 'discard', label: 'Discard', danger: true }]}
+          onPick={onClose}
+          onClose={() => setAsking(false)}
+        />
+      ) : null}
+    </>
   )
 }

@@ -6,6 +6,7 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  desktopCapturer,
   dialog,
   globalShortcut,
   ipcMain,
@@ -510,6 +511,19 @@ function wire(): void {
     if (run === undefined) throw new Error(`No such call: ${name}`)
     // What came over as JSON has null where it meant nothing, and every handler here takes undefined for that.
     return (run as (...given: unknown[]) => unknown)(...args.map((one) => (one === null ? undefined : one)))
+  })
+  ipcMain.handle('peer:screen', async (event) => {
+    if (event.sender !== shownPeer()?.webContents) return { error: 'Not the phone' }
+    // Asking for the screens is also what puts GeckIt in the Mac's list to allow, and what asks the first time.
+    const screens = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+    if (process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+      return {
+        error:
+          'The Mac has not allowed GeckIt to record its screen. On the Mac: System Settings, Privacy & Security, Screen & System Audio Recording, turn on GeckIt, then quit and reopen it.',
+      }
+    }
+    const first = screens[0]
+    return first === undefined ? { error: 'The Mac has no screen to show' } : { id: first.id }
   })
   ipcMain.on('peer:state', (event, count: number, trouble: string | null) => {
     if (event.sender !== shownPeer()?.webContents) return
