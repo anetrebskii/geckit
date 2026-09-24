@@ -105,6 +105,21 @@ describe('reading what claude prints', () => {
     expect(ended(play('claude-stop.jsonl').signals)).toBe('stopped')
   })
 
+  it('keeps a picture a tool handed back, where the line for it is', () => {
+    const state = claudeState(ROOT)
+    const use = { type: 'tool_use', id: 'toolu_2', name: 'Read', input: { file_path: `${ROOT}/shot.png` } }
+    const back = {
+      type: 'tool_result',
+      tool_use_id: 'toolu_2',
+      content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } }],
+    }
+    readClaude(state, { type: 'assistant', message: { content: [use] } })
+    const items = readClaude(state, { type: 'user', message: { content: [back] } }).items
+    expect(items).toEqual([
+      expect.objectContaining({ kind: 'did', images: [{ media: 'image/png', data: 'iVBORw0KGgo=' }] }),
+    ])
+  })
+
   it('draws no line for looking up a tool', () => {
     const state = claudeState(ROOT)
     const use = { type: 'tool_use', id: 'toolu_1', name: 'ToolSearch', input: { query: 'select:ExitPlanMode' } }

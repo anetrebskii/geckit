@@ -34,12 +34,14 @@ function Did({
   going,
   onFile,
   onBackground,
+  onPicture,
 }: {
   readonly item: Extract<SessionItem, { kind: 'did' }>
   /** What it started still runs in the background. */
   readonly going: boolean
   readonly onFile: (path: string, how: FileHow) => void
   readonly onBackground: (item: string) => void
+  readonly onPicture: (src: string) => void
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const live = item.live === true || going
@@ -79,6 +81,19 @@ function Did({
         line
       )}
       {open && item.detail !== undefined ? <Code detail>{item.detail}</Code> : null}
+      {item.images === undefined ? null : (
+        <div className="pictures did-pictures">
+          {item.images.map((one, index) => (
+            <img
+              key={index}
+              src={`data:${one.media};base64,${one.data}`}
+              alt=""
+              title="Press to see it bigger"
+              onClick={() => onPicture(`data:${one.media};base64,${one.data}`)}
+            />
+          ))}
+        </div>
+      )}
     </>
   )
 }
@@ -331,7 +346,7 @@ const Turn = memo(function Turn({
           <Prose text={item.text} />
         </div>
       ) : item.kind === 'did' ? (
-        <Did item={item} going={going} onFile={onFile} onBackground={onBackground} />
+        <Did item={item} going={going} onFile={onFile} onBackground={onBackground} onPicture={onPicture} />
       ) : item.kind === 'thought' ? (
         <div className="thought">{item.text === '' ? 'Thought about it' : item.text}</div>
       ) : item.kind === 'card' ? (
