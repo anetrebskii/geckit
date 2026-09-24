@@ -546,10 +546,11 @@ export function NewTask({
     onClose()
   }
 
-  if (ON_PHONE && !question) {
+  if (ON_PHONE) {
     return (
       <PhoneNewTask
         chat={chat}
+        question={question}
         root={root}
         text={text}
         goal={goal}
@@ -674,6 +675,7 @@ export function NewTask({
 /** New task on the phone: a sheet over the board, its buttons in its own bar, pulled down to put it away. */
 function PhoneNewTask({
   chat,
+  question,
   root,
   text,
   goal,
@@ -687,6 +689,7 @@ function PhoneNewTask({
   onClose,
 }: {
   readonly chat: Chat
+  readonly question: boolean
   readonly root: string
   readonly text: string
   readonly goal: string
@@ -711,14 +714,14 @@ function PhoneNewTask({
     if (text.trim() === '' && pictures.length === 0) onClose()
     else setAsking(true)
   }
-  const ready = root !== '' && (text.trim() !== '' || pictures.length > 0)
+  const ready = (root !== '' || question) && (text.trim() !== '' || pictures.length > 0)
   return (
     <>
       <div className="sheet-scrim" onClick={leave} />
       <div
         className={`phone-task${dragged === undefined ? '' : ' dragging'}`}
         role="dialog"
-        aria-label="New task"
+        aria-label={question ? 'Ask a question' : 'New task'}
         style={dragged === undefined ? undefined : { transform: `translateY(${String(dragged)}px)` }}
       >
         <div
@@ -742,22 +745,32 @@ function PhoneNewTask({
           <button type="button" onClick={leave}>
             Cancel
           </button>
-          <b>New task</b>
+          <b>{question ? 'Question' : 'New task'}</b>
           <button type="button" className="strong" disabled={!ready} onClick={onStart}>
-            Start
+            {question ? 'Ask' : 'Start'}
           </button>
         </div>
         <div className="phone-task-form">
-          <div className="phone-task-label">Project</div>
-          <button type="button" className="phone-task-cell" onClick={() => setChoosing(true)}>
-            Project
-            <span>
-              {root === '' ? 'None' : projectName(root)}
-              <Icon name="right" size={14} />
-            </span>
-          </button>
-          <div className="phone-task-label">What to do</div>
-          <textarea ref={field} className="phone-task-text" value={text} placeholder="Ask Claude Code" onChange={(event) => onText(event.target.value)} />
+          {question ? null : (
+            <>
+              <div className="phone-task-label">Project</div>
+              <button type="button" className="phone-task-cell" onClick={() => setChoosing(true)}>
+                Project
+                <span>
+                  {root === '' ? 'None' : projectName(root)}
+                  <Icon name="right" size={14} />
+                </span>
+              </button>
+            </>
+          )}
+          <div className="phone-task-label">{question ? 'Question' : 'What to do'}</div>
+          <textarea
+            ref={field}
+            className="phone-task-text"
+            value={text}
+            placeholder={question ? 'Anything, not about a project' : 'Ask Claude Code'}
+            onChange={(event) => onText(event.target.value)}
+          />
           {pictures.length === 0 ? null : (
             <div className="pending">
               {pictures.map((one, at) => (
@@ -785,11 +798,17 @@ function PhoneNewTask({
               event.target.value = ''
             }}
           />
-          <div className="phone-task-label">Goal</div>
-          <input className="phone-task-goal" value={goal} placeholder="When it is done, as a condition" onChange={(event) => onGoal(event.target.value)} />
-          <div className="phone-task-note">
-            {goal.trim() === '' ? 'Without a goal, it stops when Claude is done.' : 'Claude keeps working until this holds, then the card goes to In review.'}
-          </div>
+          {question ? (
+            <div className="phone-task-note">Not on the board. It is forgotten 2 minutes after the last answer.</div>
+          ) : (
+            <>
+              <div className="phone-task-label">Goal</div>
+              <input className="phone-task-goal" value={goal} placeholder="When it is done, as a condition" onChange={(event) => onGoal(event.target.value)} />
+              <div className="phone-task-note">
+                {goal.trim() === '' ? 'Without a goal, it stops when Claude is done.' : 'Claude keeps working until this holds, then the card goes to In review.'}
+              </div>
+            </>
+          )}
         </div>
       </div>
       {choosing ? (

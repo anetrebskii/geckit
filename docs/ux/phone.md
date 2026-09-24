@@ -23,7 +23,9 @@ The phone runs its own GeckIt app, which shows the same Chat window the Mac show
 | Connecting screen in the app (new) | "Connecting to the Mac" | Between a scan or a launch and the first answer from the Mac |
 | Cannot reach the Mac (new) | What stands in the way, Try again, and Scan again | The Mac did not answer |
 | Board in the app (existing Board, phone layout) | One column at a time, chosen by a segmented control at the top: In progress, In review, Done, each with its count. Cards take the whole width | Connected |
-| Board header in the app | The segmented control and New task. The sidebar toggle, dictation, orders, keyboard shortcuts and Settings are not there | Always in the app |
+| Board header in the app | The segmented control, Ask a question and New task. The sidebar toggle, dictation, orders, keyboard shortcuts and Settings are not there | Always in the app |
+| Question sheet in the app (new) | New task without the project and the goal: the question, Add photo, Cancel and Ask, and "Not on the board. It is forgotten 2 minutes after the last answer." | Ask a question is pressed |
+| Questions on the board (new) | A "Questions" group under the column's cards, one row per open question with its dot, title and last line, and "Each is forgotten 2 minutes after its last answer." under it. Pressing a row opens the question like a conversation | While any question is open, in every column |
 | Conversation in the app (existing Chat, phone layout) | Takes the whole screen. Header: Back to the board, the title on one line, Links, Where it stands. The rest of the desktop header is not there | A card is pressed |
 | Composer in the app (existing) | The field, the mode (Manual / Auto / Plan), the goal, the background tasks, Send / Stop. Model, MCP and Chrome are not there | In a conversation |
 | Status line in the app (existing) | The plan's two windows only: 5h and Week | Always |
