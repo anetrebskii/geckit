@@ -111,13 +111,14 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
     setAt(0)
   }
 
+  // On the phone a focused field is a keyboard over half the conversation, so it waits for a tap.
   useEffect(() => {
-    field.current?.focus()
+    if (!ON_PHONE) field.current?.focus()
   }, [chat.focusSeed])
 
   // Once /compact is answered, the caret is back in the field, where a no leaves what was typed.
   useEffect(() => {
-    if (chat.compacting === undefined) field.current?.focus()
+    if (chat.compacting === undefined && !ON_PHONE) field.current?.focus()
   }, [chat.compacting])
 
   useLayoutEffect(() => {
@@ -477,7 +478,8 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               <Icon name="send" size={14} />
             </button>
           ) : null}
-          {chat.working ? (
+          {/* The phone has room for one round button in the field: typed text makes it Queue, and Stop stays under More. */}
+          {chat.working && ON_PHONE && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? null : chat.working ? (
             <button type="button" className="send stop" onClick={chat.stop} title="Stop (Esc)" aria-label="Stop">
               <Icon name="stop" size={12} />
             </button>
