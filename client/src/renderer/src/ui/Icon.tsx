@@ -16,6 +16,7 @@ const PATHS: Record<string, string> = {
   check: 'M3 8.5 6.5 12 13 4.5',
   down: 'M4 6.5 8 10.5 12 6.5',
   right: 'M6.5 4 10.5 8 6.5 12',
+  left: 'M9.5 4 5.5 8 9.5 12',
   collapse: 'M5.5 2.5 8 5l2.5-2.5M5.5 13.5 8 11l2.5 2.5M3.5 8h9',
   expand: 'M5.5 5 8 2.5 10.5 5M5.5 11 8 13.5l2.5-2.5M3.5 8h9',
   plus: 'M8 3.5v9M3.5 8h9',

@@ -1,5 +1,6 @@
 import { exec, execFile } from 'node:child_process'
-import { resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 import {
   app,
@@ -14,6 +15,7 @@ import {
   systemPreferences,
 } from 'electron'
 import log from 'electron-log'
+import QRCode from 'qrcode'
 
 import { ANYWHERE, resumeCommand } from '../shared/api'
 import type {
@@ -22,6 +24,7 @@ import type {
   ChatSession,
   ClaudeAccount,
   CorrectRequest,
+  GitState,
   PlanUsage,
   ShortcutDraft,
   SessionItems,
@@ -40,12 +43,15 @@ import { projectFiles } from './files'
 import { fetchGit, gitState } from './git'
 import { keepGuide } from './guide'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
+import { startPhone } from './phone'
+import type { Phone, PhoneCall } from './phone'
 import { Sessions } from './sessions'
 import type { McpChange } from './sessions/mcp'
 import { searchClaude } from './sessions/search'
 import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
 import { forgetProject, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
+import { serveOnTailnet, stopServing } from './tailscale'
 import { drawTray, startTray } from './tray'
 import { checkForUpdates, restartToUpdate, startUpdates, updateView } from './updates'
 import {
@@ -89,6 +95,13 @@ const notices = new Set<Notification>()
 
 const tell = (channel: string, ...args: unknown[]): void => {
   for (const window of everyWindow()) window.webContents.send(channel, ...args)
+  phone?.tell(channel, args[0])
+}
+
+/** What only the Chat window is told, told to the phone as well. */
+const tellChats = (channel: string, value: unknown): void => {
+  shownChat()?.webContents.send(channel, value)
+  phone?.tell(channel, value)
 }
 
 const badge = (): void => {
@@ -102,15 +115,16 @@ function build(): Sessions {
     notes: notesStore(),
     ...(process.platform === 'darwin' ? { terminal: openTerminal } : {}),
     changed: (all: readonly ChatSession[]) => {
-      shownChat()?.webContents.send('chat:sessions', all)
+      tellChats('chat:sessions', all)
       badge()
       drawTray()
     },
-    items: (items: SessionItems) => shownChat()?.webContents.send('chat:items', items),
-    account: (account: ClaudeAccount) => shownChat()?.webContents.send('chat:accountChanged', account),
+    items: (items: SessionItems) => tellChats('chat:items', items),
+    account: (account: ClaudeAccount) => tellChats('chat:accountChanged', account),
     show: (id: string) => shownChat()?.webContents.send('chat:show', id),
-    plan: (plan: PlanUsage) => shownChat()?.webContents.send('chat:plan', plan),
+    plan: (plan: PlanUsage) => tellChats('chat:plan', plan),
     notify: (notice) => {
+      phone?.tell('chat:notice', notice)
       // In front, the window says it itself; a banner is for when it is not being looked at.
       if (watchingChat()) {
         shownChat()?.webContents.send('chat:notice', notice)
@@ -327,6 +341,35 @@ function openTerminal(root: string, run: string): void {
 /* What a window may ask                                               */
 /* ------------------------------------------------------------------ */
 
+function listChats(root: string | undefined): Promise<ChatSession[]> {
+  // Nothing for the project comes over as null, which is not a folder name.
+  const where = typeof root === 'string' && root !== '' ? root : undefined
+  if (where !== undefined) rememberProject(where)
+  return sessions?.list(where === undefined ? getSettings().projects : [where]) ?? Promise.resolve([])
+}
+
+async function deleteChats(ids: readonly string[]): Promise<readonly string[]> {
+  const gone = (await sessions?.remove(ids)) ?? []
+  unfavorite(gone)
+  return gone
+}
+
+function hideChat(id: string): void {
+  sessions?.hide(id)
+  unfavorite([id])
+}
+
+async function gitFor(root: string, fetched: (state: GitState | undefined) => void): Promise<GitState | undefined> {
+  const state = await gitState(root)
+  // What is there to pull is only known once the remote is asked, which is slow, so it follows.
+  if (state?.upstream !== undefined) {
+    void fetchGit(root).then(async (done) => {
+      if (done) fetched(await gitState(root))
+    })
+  }
+  return state
+}
+
 function wire(): void {
   ipcMain.handle('settings:get', () => getSettings())
   ipcMain.handle('update:view', () => updateView())
@@ -371,16 +414,11 @@ function wire(): void {
     void sessions?.measure()
     return sessions?.plan()
   })
-  ipcMain.handle('chat:git', async (event, root: string) => {
-    const state = await gitState(root)
-    // What is there to pull is only known once the remote is asked, which is slow, so it follows.
-    if (state?.upstream !== undefined) {
-      void fetchGit(root).then(async (fetched) => {
-        if (fetched && !event.sender.isDestroyed()) event.sender.send('chat:git', { root, state: await gitState(root) })
-      })
-    }
-    return state
-  })
+  ipcMain.handle('chat:git', (event, root: string) =>
+    gitFor(root, (state) => {
+      if (!event.sender.isDestroyed()) event.sender.send('chat:git', { root, state })
+    }),
+  )
   ipcMain.handle('chat:addProject', async () => {
     const window = shownChat() ?? chatWindow()
     const picked = await dialog.showOpenDialog(window, {
@@ -395,21 +433,12 @@ function wire(): void {
   ipcMain.handle('chat:forgetProject', (_event, root: string) => {
     forgetProject(root)
   })
-  ipcMain.handle('chat:list', (_event, root: string | undefined) => {
-    // Nothing for the project comes over as null, which is not a folder name.
-    const where = typeof root === 'string' && root !== '' ? root : undefined
-    if (where !== undefined) rememberProject(where)
-    return sessions?.list(where === undefined ? getSettings().projects : [where]) ?? []
-  })
+  ipcMain.handle('chat:list', (_event, root: string | undefined) => listChats(root))
   ipcMain.handle('chat:search', (_event, asked: string, root: string | undefined) =>
     searchClaude(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
   )
   // The window asks first, in its own words; by here it has been answered.
-  ipcMain.handle('chat:delete', async (_event, ids: readonly string[]) => {
-    const gone = (await sessions?.remove(ids)) ?? []
-    unfavorite(gone)
-    return gone
-  })
+  ipcMain.handle('chat:delete', (_event, ids: readonly string[]) => deleteChats(ids))
   ipcMain.handle('chat:items', (_event, id: string) => sessions?.items(id) ?? [])
   ipcMain.handle('chat:links', (_event, id: string) => sessions?.links(id) ?? [])
   ipcMain.handle('chat:send', async (_event, message: SessionMessage) => {
@@ -426,10 +455,7 @@ function wire(): void {
   ipcMain.on('chat:mode', (_event, id: string, mode: SessionMode) => sessions?.mode(id, mode))
   ipcMain.on('chat:rename', (_event, id: string, title: string) => sessions?.rename(id, title))
   ipcMain.on('chat:mark', (_event, id: string, status: SessionStatus | null) => sessions?.mark(id, status ?? undefined))
-  ipcMain.on('chat:hide', (_event, id: string) => {
-    sessions?.hide(id)
-    unfavorite([id])
-  })
+  ipcMain.on('chat:hide', (_event, id: string) => hideChat(id))
   ipcMain.on('chat:watching', (_event, id: string | undefined) =>
     sessions?.watching(watchingChat() ? id : undefined),
   )
@@ -469,6 +495,7 @@ function wire(): void {
   ipcMain.handle('shortcuts:save', (_event, draft: ShortcutDraft) => saveShortcut(draft))
   ipcMain.on('shortcuts:remove', (_event, id: string) => removeShortcut(id))
   ipcMain.handle('shortcuts:run', (_event, id: string) => runShortcut(id, 'hand'))
+  ipcMain.handle('phone:link', () => phoneLink())
 
   onSettings((settings) => {
     // The frames, the vibrancy behind the panel and the folder picker are the
@@ -478,9 +505,111 @@ function wire(): void {
       guided = settings.guideClaude
       void keepGuide(settings.guideClaude)
     }
+    keepPhone(settings.phone)
     tell('settings:changed', settings)
     drawTray()
   })
+}
+
+/* ------------------------------------------------------------------ */
+/* The phone                                                           */
+/* ------------------------------------------------------------------ */
+
+const PHONE_PORT = 47823
+
+let phone: Phone | undefined
+let phoneOn = false
+let phoneTurned: Promise<void> = Promise.resolve()
+let phoneError: string | undefined
+
+/** What the Chat window may ask, less what only makes sense at this Mac: files opened in its apps, its Finder, its terminal. */
+function phoneCalls(): Record<string, PhoneCall> {
+  const held = (): Sessions | undefined => sessions
+  return {
+    'settings.get': () => getSettings(),
+    'settings.set': (change: Partial<Settings>) => setSettings(change),
+    'update.view': () => updateView(),
+    correct: (request: CorrectRequest) => correct(request),
+    transcribe: (request: TranscribeRequest) => transcribe(request),
+    'shortcuts.save': (draft: ShortcutDraft) => saveShortcut(draft),
+    'shortcuts.remove': (id: string) => removeShortcut(id),
+    'shortcuts.run': (id: string) => runShortcut(id, 'hand'),
+    'chat.account': () => held()?.account(),
+    'chat.models': () => held()?.models(),
+    'chat.plan': () => {
+      void held()?.measure()
+      return held()?.plan()
+    },
+    'chat.list': (root: string | undefined) => listChats(root),
+    'chat.items': (id: string) => held()?.items(id) ?? [],
+    'chat.links': (id: string) => held()?.links(id) ?? [],
+    'chat.search': (asked: string, root: string | undefined) =>
+      searchClaude(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
+    'chat.send': (message: SessionMessage) => held()?.send(message),
+    'chat.shell': (asked: ShellCommand) => held()?.shell(asked),
+    'chat.stopShell': (id: string, item: string) => held()?.stopShell(id, item),
+    'chat.typeShell': (id: string, item: string, text: string) => held()?.typeShell(id, item, text),
+    'chat.toBackground': (id: string, item: string) => held()?.toBackground(id, item),
+    'chat.stopTask': (id: string, task: string) => held()?.stopTask(id, task),
+    'chat.clearTask': (id: string, task: string) => held()?.clearTask(id, task),
+    'chat.taskOutput': (id: string, task: string) => held()?.taskOutput(id, task),
+    'chat.answer': (id: string, card: string, answer: CardAnswer | string) => held()?.answer(id, card, answer),
+    'chat.stop': (id: string) => held()?.stop(id),
+    'chat.unqueue': (id: string, queued: string) => held()?.unqueue(id, queued),
+    'chat.requeue': (id: string, queued: string, text: string) => held()?.requeue(id, queued, text),
+    'chat.delegate': (id: string, queued: string) => held()?.delegate(id, queued),
+    'chat.mode': (id: string, mode: SessionMode) => held()?.mode(id, mode),
+    'chat.rename': (id: string, title: string) => held()?.rename(id, title),
+    'chat.mark': (id: string, status: SessionStatus | undefined) => held()?.mark(id, status),
+    'chat.hide': (id: string) => hideChat(id),
+    'chat.remove': (ids: readonly string[]) => deleteChats(ids),
+    'chat.read': (id: string) => held()?.read(id),
+    'chat.remote': (id: string, on: boolean) => held()?.remote(id, on) ?? { error: 'Not ready yet.' },
+    'chat.mcp': (root: string, id: string | undefined, change: McpChange | undefined) => held()?.mcp(root, id, change),
+    'chat.browsers': (root: string, id: string | undefined, pick: string | undefined) => held()?.browsers(root, id, pick),
+    'chat.git': (root: string) => gitFor(root, (state) => phone?.tell('chat:git', { root, state })),
+    'chat.exists': (root: string, path: string) => isThere(root, path),
+    'chat.files': (root: string) => projectFiles(root),
+    'chat.forgetProject': (root: string) => forgetProject(root),
+  }
+}
+
+/** The server is up while the switch is on; each change waits for the one before it to finish. */
+function keepPhone(on: boolean): void {
+  if (on === phoneOn) return
+  phoneOn = on
+  phoneTurned = phoneTurned.then(async () => {
+    phone?.close()
+    phone = undefined
+    phoneError = undefined
+    if (!on) {
+      await stopServing()
+      return
+    }
+    const dev = process.env['ELECTRON_RENDERER_URL']
+    try {
+      phone = await startPhone({
+        port: PHONE_PORT,
+        key: getSettings().phoneKey,
+        pages: dev === undefined ? { folder: join(import.meta.dirname, '../renderer') } : { dev },
+        boot: { home: homedir(), platform: process.platform },
+        calls: phoneCalls(),
+      })
+    } catch (error) {
+      phoneError = `Port ${String(PHONE_PORT)} is taken by something else: ${String(error)}`
+    }
+  })
+}
+
+/** The link for the phone, as text and as a QR code. Asked again each time, so Tailscale installed since is found. */
+async function phoneLink(): Promise<{ readonly url?: string; readonly qr?: string; readonly error?: string }> {
+  await phoneTurned
+  if (!phoneOn) return {}
+  if (phoneError !== undefined) return { error: phoneError }
+  const served = await serveOnTailnet(PHONE_PORT)
+  if (served.url === undefined) return { error: served.error ?? 'Tailscale did not say where this Mac is.' }
+  const url = `${served.url}/?key=${getSettings().phoneKey}`
+  return { url, qr: await QRCode.toDataURL(url, { margin: 1, width: 400 }) }
 }
 
 /* ------------------------------------------------------------------ */
@@ -509,6 +638,7 @@ if (!app.requestSingleInstanceLock()) {
     nativeTheme.themeSource = getSettings().theme
     guided = getSettings().guideClaude
     void keepGuide(guided)
+    keepPhone(getSettings().phone)
     wire()
     // The conversations are what this is opened for; correcting and dictating are a shortcut away.
     openChat()
@@ -557,4 +687,5 @@ app.on('window-all-closed', () => undefined)
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   sessions?.dispose()
+  phone?.close()
 })

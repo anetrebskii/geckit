@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -52,9 +53,19 @@ export function getSettings(): Settings {
   // No file yet means a first run, and the old build's keys are worth keeping.
   if (settings === undefined) {
     const found = read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }
-    settings = { ...found, chatMode: sessionMode(found.chatMode), projectColors: withColors(found) }
-    // Projects listed before colours were, given theirs once and for all.
-    if (Object.keys(settings.projectColors).length !== Object.keys(found.projectColors).length) write(SETTINGS, settings)
+    settings = {
+      ...found,
+      chatMode: sessionMode(found.chatMode),
+      projectColors: withColors(found),
+      phoneKey: found.phoneKey === '' ? randomBytes(24).toString('base64url') : found.phoneKey,
+    }
+    // Projects listed before colours were, and the phone's key, given once and for all.
+    if (
+      Object.keys(settings.projectColors).length !== Object.keys(found.projectColors).length ||
+      settings.phoneKey !== found.phoneKey
+    ) {
+      write(SETTINGS, settings)
+    }
   }
   return settings
 }
