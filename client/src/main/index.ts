@@ -19,7 +19,7 @@ import {
 import log from 'electron-log'
 import QRCode from 'qrcode'
 
-import { ANYWHERE, resumeCommand } from '../shared/api'
+import { ANYWHERE, resumeCommand, shownProjects } from '../shared/api'
 import { newKey, pairingLink, SIGNAL } from '../shared/pairing'
 import type {
   Answered,
@@ -120,7 +120,12 @@ function build(): Sessions {
     notes: notesStore(),
     ...(process.platform === 'darwin' ? { terminal: openTerminal } : {}),
     changed: (all: readonly ChatSession[]) => {
-      tellChats('chat:sessions', all)
+      // Every conversation it holds, which is more than the window lists: another profile's rows stay held after a switch until they are read again. A general question belongs to no project and is always told.
+      const shown = shownProjects(getSettings())
+      tellChats(
+        'chat:sessions',
+        all.filter((one) => one.question === true || shown.includes(one.root)),
+      )
       badge()
       drawTray()
     },
@@ -350,7 +355,7 @@ function listChats(root: string | undefined): Promise<ChatSession[]> {
   // Nothing for the project comes over as null, which is not a folder name.
   const where = typeof root === 'string' && root !== '' ? root : undefined
   if (where !== undefined) rememberProject(where)
-  return sessions?.list(where === undefined ? getSettings().projects : [where]) ?? Promise.resolve([])
+  return sessions?.list(where === undefined ? shownProjects(getSettings()) : [where]) ?? Promise.resolve([])
 }
 
 async function deleteChats(ids: readonly string[]): Promise<readonly string[]> {
@@ -440,7 +445,7 @@ function wire(): void {
   })
   ipcMain.handle('chat:list', (_event, root: string | undefined) => listChats(root))
   ipcMain.handle('chat:search', (_event, asked: string, root: string | undefined) =>
-    searchClaude(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
+    searchClaude(typeof root === 'string' && root !== '' ? [root] : shownProjects(getSettings()), asked),
   )
   // The window asks first, in its own words; by here it has been answered.
   ipcMain.handle('chat:delete', (_event, ids: readonly string[]) => deleteChats(ids))
@@ -584,7 +589,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.items': (id: string) => held()?.items(id) ?? [],
     'chat.links': (id: string) => held()?.links(id) ?? [],
     'chat.search': (asked: string, root: string | undefined) =>
-      searchClaude(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
+      searchClaude(typeof root === 'string' && root !== '' ? [root] : shownProjects(getSettings()), asked),
     'chat.send': (message: SessionMessage) => held()?.send(message),
     'chat.shell': (asked: ShellCommand) => held()?.shell(asked),
     'chat.stopShell': (id: string, item: string) => held()?.stopShell(id, item),

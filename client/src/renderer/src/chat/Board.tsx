@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ANYWHERE, SESSION_STATUSES } from '../../../shared/api'
+import { ANYWHERE, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, SessionImage, SessionStatus } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { ON_PHONE } from '../on-phone'
@@ -11,7 +11,7 @@ import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
 import { NameField } from './NameField'
 import { Projects } from './Projects'
-import { projectName, tint } from './project'
+import { emptyProfile, projectName, tint } from './project'
 import { STATUS_ICONS, Tags } from './Sidebar'
 import { running } from './Tasks'
 import { shortUrl } from '../../../shared/links'
@@ -193,6 +193,9 @@ export function Board({
         </button>
       </div>
 
+      {emptyProfile(chat.settings) === undefined ? null : (
+        <div className="board-empty">No projects in {emptyProfile(chat.settings)}. Tick some in Settings, Profiles.</div>
+      )}
       <div className="board-columns">
         {columns.map((column) => (
             <div
@@ -515,7 +518,7 @@ export function NewTask({
   /** A general question: no project, no goal, and no card. */
   readonly question?: boolean
 }): React.JSX.Element {
-  const [root, setRoot] = useState(() => chat.root ?? chat.settings.projects[0] ?? '')
+  const [root, setRoot] = useState(() => chat.root ?? shownProjects(chat.settings)[0] ?? '')
   const [text, setText] = useState('')
   const [goal, setGoal] = useState('')
   const [pictures, setPictures] = useState<readonly SessionImage[]>([])
@@ -585,7 +588,7 @@ export function NewTask({
               })
             }}
           >
-            {chat.settings.projects.map((one) => (
+            {shownProjects(chat.settings).map((one) => (
               <option key={one} value={one}>
                 {projectName(one)}
               </option>
@@ -816,7 +819,7 @@ function PhoneNewTask({
           anchor={new DOMRect()}
           title="Start it in"
           chosen={root}
-          choices={chat.settings.projects.map((one) => ({ value: one, label: projectName(one) }))}
+          choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectName(one) }))}
           onPick={onRoot}
           onClose={() => setChoosing(false)}
         />

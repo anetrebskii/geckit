@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { modelName, SESSION_MODES } from '../../../shared/api'
+import { modelName, SESSION_MODES, shownProjects } from '../../../shared/api'
 import type { SessionMode, Shortcut, ShortcutDraft } from '../../../shared/api'
 import { cronOf, describeCron, describeTime, nextRun, nextTimed, WEEKDAYS, whenOf } from '../../../shared/schedule'
 import type { When } from '../../../shared/schedule'
@@ -58,10 +58,11 @@ export function ShortcutList({
   readonly start: string | ShortcutDraft
   readonly onClose: () => void
 }): React.JSX.Element {
-  const shortcuts = chat.settings.shortcuts
+  // Another profile's shortcuts are kept and run, and listed only where that profile is in use.
+  const shortcuts = chat.settings.shortcuts.filter((one) => shownProjects(chat.settings).includes(one.root))
   const blank = (): ShortcutDraft => ({
     name: '',
-    root: chat.root ?? chat.settings.projects[0] ?? '',
+    root: chat.root ?? shownProjects(chat.settings)[0] ?? '',
     prompt: '',
     mode: 'auto',
     on: true,
@@ -225,7 +226,7 @@ function Editor({
           <label>Project</label>
           <Picker
             label={draft.root === '' ? 'Choose a project' : projectName(draft.root)}
-            choices={chat.settings.projects.map((one) => ({ value: one, label: projectName(one), says: homePath(one) }))}
+            choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectName(one), says: homePath(one) }))}
             chosen={draft.root}
             {...(draft.root === '' ? {} : { tip: homePath(draft.root) })}
             className="select"

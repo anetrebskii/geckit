@@ -1,3 +1,6 @@
+import { profileOf, shownProjects } from '../../../shared/api'
+import type { Settings } from '../../../shared/api'
+
 /** A project folder by its last part, which is what anybody calls it. */
 export const projectName = (root: string): string => root.split('/').filter((part) => part !== '').pop() ?? root
 
@@ -9,3 +12,9 @@ export const homePath = (path: string): string => {
 
 /** The project's colour as a variable the `tinted` rule reads, so a row that is open can say its own colour over it. */
 export const tint = (color: number): React.CSSProperties => ({ ['--tint']: `var(--project-${String(color)})` }) as React.CSSProperties
+
+/** The profile in use, by name, where it has no projects to show. */
+export function emptyProfile(settings: Settings): string | undefined {
+  const profile = profileOf(settings)
+  return profile !== undefined && shownProjects(settings).length === 0 ? profile.name : undefined
+}

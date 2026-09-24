@@ -608,6 +608,10 @@ export interface Settings {
   readonly correctKeyModel: string
   /** Project folders the chat window offers, newest first. */
   readonly projects: readonly string[]
+  /** Named sets of projects, TwinsAI or Formula, each one what the whole application shows while it is in use. */
+  readonly profiles: readonly ProjectProfile[]
+  /** The profile in use, by id. Empty is All projects. */
+  readonly profile: string
   /** Each project folder's colour, as its place in the palette: given when it joins the list, changed only by hand. */
   readonly projectColors: Readonly<Record<string, number>>
   /** The model the next new session is handed. Empty is Default. */
@@ -667,6 +671,23 @@ export interface Shortcut {
 /** What a window sends to make or change a shortcut; the main process keeps when it ran. */
 export type ShortcutDraft = Omit<Shortcut, 'id' | 'since' | 'lastRun' | 'lastSession'> & { readonly id?: string }
 
+/** A name for some of the projects, chosen in Settings so that nothing else is listed anywhere while it is in use. */
+export interface ProjectProfile {
+  readonly id: string
+  readonly name: string
+  readonly projects: readonly string[]
+}
+
+/** The profile in use, and nothing for All projects. */
+export const profileOf = ({ profiles, profile }: Pick<Settings, 'profiles' | 'profile'>): ProjectProfile | undefined =>
+  profile === '' ? undefined : profiles.find((one) => one.id === profile)
+
+/** The projects anything offers or lists: every one, or the profile's in use. */
+export function shownProjects(settings: Pick<Settings, 'projects' | 'profiles' | 'profile'>): readonly string[] {
+  const profile = profileOf(settings)
+  return profile === undefined ? settings.projects : settings.projects.filter((one) => profile.projects.includes(one))
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   nativeLanguage: 'English',
@@ -681,6 +702,8 @@ export const DEFAULT_SETTINGS: Settings = {
   correctPlanModel: '',
   correctKeyModel: '',
   projects: [],
+  profiles: [],
+  profile: '',
   projectColors: {},
   chatModel: '',
   chatMode: 'auto',

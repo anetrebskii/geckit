@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { Icon } from '../ui/Icon'
 import { MOD } from '../ui/Shortcuts'
+import { profileOf, shownProjects } from '../../../shared/api'
 import { PROJECT_COLORS, projectColor } from '../../../shared/project-color'
 import { homePath, projectName } from './project'
 import type { Chat } from './useChat'
@@ -13,6 +14,12 @@ import { ALL } from './useChat'
  */
 
 const ADD = ''
+
+/** Every project listed at once: all of them, or all of the profile's in use. */
+function everyName(chat: Chat): string {
+  const profile = profileOf(chat.settings)
+  return profile === undefined ? 'All projects' : `All in ${profile.name}`
+}
 
 interface Waits {
   readonly asks: number
@@ -70,14 +77,15 @@ function Menu({
   // The project whose colours are laid out under it.
   const [painting, setPainting] = useState<string | undefined>()
   const colors = chat.settings.projectColors
+  const projects = shownProjects(chat.settings)
   const paint = (root: string, color: number): void => {
     chat.change({ projectColors: { ...colors, [root]: color } })
     setPainting(undefined)
   }
   const sharing = (root: string, color: number): string[] =>
-    chat.settings.projects.filter((one) => one !== root && projectColor(one, chat.settings) === color).map(projectName)
+    projects.filter((one) => one !== root && projectColor(one, chat.settings) === color).map(projectName)
   // Opens on the project already chosen, so Enter with nothing typed keeps it.
-  const [at, setAt] = useState(() => (chat.scope === ALL ? 0 : chat.settings.projects.indexOf(chat.scope) + 1))
+  const [at, setAt] = useState(() => (chat.scope === ALL ? 0 : projects.indexOf(chat.scope) + 1))
 
   const waits = new Map<string, Waits>()
   for (const one of chat.waiting) {
@@ -102,8 +110,8 @@ function Menu({
 
   const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
   const rows = [
-    { value: ALL, name: 'All projects', path: `${String(chat.settings.projects.length)} folders`, waits: everywhere, work: standing },
-    ...chat.settings.projects.map((root) => ({
+    { value: ALL, name: everyName(chat), path: `${String(projects.length)} folders`, waits: everywhere, work: standing },
+    ...projects.map((root) => ({
       value: root,
       name: projectName(root),
       path: homePath(root),
@@ -271,7 +279,7 @@ export function Projects({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {chat.root === undefined
             ? 'Choose a project'
             : chat.chosen.length === 0
-              ? 'All projects'
+              ? everyName(chat)
               : chat.chosen.length === 1
                 ? projectName(chat.scope)
                 : `${String(chat.chosen.length)} projects`}
