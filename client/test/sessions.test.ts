@@ -1312,3 +1312,46 @@ describe('general questions', () => {
     expect(of(built.rows, id)).toBeUndefined()
   })
 })
+
+describe('turns cut off by GeckIt closing', () => {
+  it('lists one that was working when it closed, and not one whose turn ended', async () => {
+    const notes = memoryNotes()
+    const before = build({ notes })
+    const cut = await before.sessions.send({ root: ROOT, mode: 'plan', text: 'Refactor it' })
+    expect(before.sessions.cutOff()).toEqual([])
+
+    const after = build({ notes })
+    expect(after.sessions.cutOff()).toEqual([{ id: cut, root: ROOT, title: 'Refactor it', at: 1_000 }])
+    expect((await after.sessions.list([ROOT])).length).toBe(0)
+
+    before.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    expect(build({ notes }).sessions.cutOff()).toEqual([])
+  })
+
+  it('is taken off the list by a mark, and not by being put back into progress', async () => {
+    const notes = memoryNotes()
+    const id = await build({ notes }).sessions.send({ root: ROOT, mode: 'auto', text: 'Go' })
+    const after = build({ notes })
+    after.sessions.mark(id, undefined)
+    expect(after.sessions.cutOff().map((one) => one.id)).toEqual([id])
+    after.sessions.mark(id, 'done')
+    expect(after.sessions.cutOff()).toEqual([])
+  })
+
+  it('says it stopped on its row, and sends continue in the mode it had', async () => {
+    const notes = memoryNotes()
+    const id = await build({ notes }).sessions.send({ root: ROOT, mode: 'plan', text: 'Go' })
+    const after = build({
+      notes,
+      disk: {
+        list: async () => [{ id, title: 'Go', stands: 'Working on it', at: 1, driven: false }],
+        read: async () => undefined,
+        has: async () => true,
+      },
+    })
+    expect((await after.sessions.list([ROOT]))[0]?.stands).toBe('Stopped when GeckIt closed')
+    await after.sessions.proceed(id)
+    expect(after.fake.made[0]).toMatchObject({ id, resume: true, mode: 'plan' })
+    expect(after.fake.sent.at(-1)?.text).toBe('continue')
+  })
+})

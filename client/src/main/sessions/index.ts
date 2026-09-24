@@ -9,14 +9,15 @@ import type {
   ChatSession,
   ClaudeAccount,
   ClaudeModel,
+  CutOff,
   McpServer,
   PlanUsage,
+  SessionGoal,
   SessionItem,
   SessionItems,
   SessionMessage,
   SessionMode,
   SessionNotice,
-  SessionGoal,
   SessionState,
   SessionStatus,
   ShellCommand,
@@ -79,6 +80,8 @@ export interface SessionNote {
   /** When it was last in front in the window, for the search to offer what was used last. */
   readonly seen?: number
   readonly status?: SessionStatus
+  /** A turn is running, where and since when; still here on a start, it was cut off by GeckIt closing. */
+  readonly cut?: { readonly root: string; readonly at: number }
 }
 
 export interface NotesStore {
@@ -346,7 +349,14 @@ export class Sessions {
         id,
         root: where,
         title: note?.title ?? live?.title ?? row?.title ?? '',
-        stands: (quiet ? (runs === undefined ? live?.stands || row?.stands : `Running !${runs.command}`) : live.stands) ?? '',
+        stands:
+          (quiet
+            ? runs !== undefined
+              ? `Running !${runs.command}`
+              : note?.cut !== undefined
+                ? 'Stopped when GeckIt closed'
+                : live?.stands || row?.stands
+            : live.stands) ?? '',
         state: quiet && note?.unread === true ? 'unread' : (live?.state ?? 'idle'),
         at: Math.max(live?.at ?? 0, row?.at ?? 0),
         here: note?.here === true,
@@ -597,6 +607,8 @@ export class Sessions {
       ...(live.chosen === undefined ? {} : { model: live.chosen }),
       here: this.#deps.notes.all()[live.id]?.here ?? !live.begun,
       title: this.#deps.notes.all()[live.id]?.title ?? live.title,
+      // Written as the turn starts, since a crash leaves no chance to write anything as it ends.
+      cut: { root: live.root, at: this.#now() },
     })
     // Said to again, it is being worked on, whatever it was marked.
     if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
@@ -957,9 +969,46 @@ export class Sessions {
 
   /** Marked in review, blocked or done; nothing takes the mark off. */
   mark(id: string, status: SessionStatus | undefined): void {
-    const { status: _was, ...note } = this.#deps.notes.all()[id] ?? {}
-    this.#deps.notes.set(id, status === undefined ? note : { ...note, status })
+    const { status: _was, cut, ...note } = this.#deps.notes.all()[id] ?? {}
+    // Marked, it is dealt with, and no longer waits to be continued; put back into progress, it still does.
+    this.#deps.notes.set(id, status === undefined ? { ...note, ...(cut === undefined ? {} : { cut }) } : { ...note, status })
     this.#changed()
+  }
+
+  /** The conversations whose turn was running when GeckIt last closed, newest first. */
+  cutOff(): CutOff[] {
+    return Object.entries(this.#deps.notes.all())
+      .flatMap(([id, note]) =>
+        note.cut === undefined || note.hidden === true || this.#live.has(id)
+          ? []
+          : [{ id, root: note.cut.root, title: note.title ?? '', at: note.cut.at }],
+      )
+      .sort((one, other) => other.at - one.at)
+  }
+
+  /** Sends "continue" to one that was cut off, in the mode and with the model it had. */
+  async proceed(id: string): Promise<void> {
+    const note = this.#deps.notes.all()[id]
+    const cut = note?.cut
+    if (note === undefined || cut === undefined) return
+    // Another profile's project is not read yet, and without its row the message would start a new conversation.
+    if (!this.#rows.has(id) && !this.#live.has(id)) await this.list([cut.root])
+    if (!this.#rows.has(id) && !this.#live.has(id)) {
+      this.#uncut(id)
+      return
+    }
+    await this.send({
+      session: id,
+      root: cut.root,
+      mode: sessionMode(note.mode),
+      text: 'continue',
+      ...(note.model === undefined ? {} : { model: note.model }),
+    })
+  }
+
+  #uncut(id: string): void {
+    const { cut, ...note } = this.#deps.notes.all()[id] ?? {}
+    if (cut !== undefined) this.#deps.notes.set(id, note)
   }
 
   rename(id: string, title: string): void {
@@ -1335,6 +1384,7 @@ export class Sessions {
 
   #ended(live: Live, signal: Extract<Signal, { kind: 'ended' }>): void {
     clearTimeout(live.stopping)
+    this.#uncut(live.id)
     const now = this.#now()
     const items: SessionItem[] = []
     // A card nobody answered is not waiting on anybody any more.

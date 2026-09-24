@@ -8,6 +8,7 @@ import type {
   ChatSession,
   ClaudeAccount,
   ClaudeModel,
+  CutOff,
   McpServer,
   CorrectRequest,
   GitState,
@@ -99,6 +100,10 @@ const geckit = {
     list: (root: string | undefined): Promise<ChatSession[]> => ipcRenderer.invoke('chat:list', root),
     items: (id: string): Promise<SessionItem[]> => ipcRenderer.invoke('chat:items', id),
     links: (id: string): Promise<Link[]> => ipcRenderer.invoke('chat:links', id),
+    /** What closing GeckIt cut off, the first time a window asks after a start, and nothing after that. */
+    cutOff: (): Promise<CutOff[]> => ipcRenderer.invoke('chat:cutOff'),
+    /** Sends "continue" to each of them. */
+    proceed: (ids: readonly string[]): void => ipcRenderer.send('chat:proceed', ids),
     /** Conversations in one project, or in every one offered, with a message holding every word. Nothing asked readies the index. */
     search: (asked: string, root?: string): Promise<ChatFound[]> => ipcRenderer.invoke('chat:search', asked, root),
     send: (message: SessionMessage): Promise<string> => ipcRenderer.invoke('chat:send', message),

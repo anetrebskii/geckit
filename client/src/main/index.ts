@@ -82,6 +82,7 @@ const SPOTLIGHT = ANYWHERE.search
 const ORDER = ANYWHERE.orders
 
 let sessions: Sessions | undefined
+let cutOffered = false
 /** What GECKIT.md was last kept at, so it is only written when the switch moves. */
 let guided: boolean | undefined
 
@@ -451,6 +452,15 @@ function wire(): void {
   ipcMain.handle('chat:delete', (_event, ids: readonly string[]) => deleteChats(ids))
   ipcMain.handle('chat:items', (_event, id: string) => sessions?.items(id) ?? [])
   ipcMain.handle('chat:links', (_event, id: string) => sessions?.links(id) ?? [])
+  // Offered once a start: a window opened again later is not asked again.
+  ipcMain.handle('chat:cutOff', () => {
+    if (cutOffered) return []
+    cutOffered = true
+    return sessions?.cutOff() ?? []
+  })
+  ipcMain.on('chat:proceed', (_event, ids: readonly string[]) => {
+    for (const id of ids) void sessions?.proceed(id)
+  })
   ipcMain.handle('chat:send', async (_event, message: SessionMessage) => {
     track('chatSent')
     return sessions?.send(message)

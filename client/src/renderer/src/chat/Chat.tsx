@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DEFAULT_SETTINGS, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
-import type { ChatSession, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
+import type { ChatSession, CutOff, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
 import { linksIn, shortUrl } from '../../../shared/links'
 import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Board, NewTask } from './Board'
+import { CutOffDialog } from './CutOff'
 import { PhoneBoard } from './PhoneBoard'
 import { EdgeBack, PhoneNav } from './PhoneNav'
 import { Screen } from './Screen'
@@ -76,6 +77,13 @@ export function Chat(): React.JSX.Element {
   // The board's New task form is open.
   const [making, setMaking] = useState(false)
   const [asking, setAsking] = useState(false)
+  const [cut, setCut] = useState<readonly CutOff[] | undefined>()
+  useEffect(() => {
+    if (ON_PHONE) return
+    void window.geckit.chat.cutOff().then((list) => {
+      if (list.length > 0) setCut(list)
+    })
+  }, [])
   // The Mac's own screen, shown on the phone.
   const [screening, setScreening] = useState(false)
   const grab = useRef(0)
@@ -216,7 +224,7 @@ export function Chat(): React.JSX.Element {
         }
         return
       }
-      if (switching || setting || keys || managing !== undefined) return
+      if (switching || setting || keys || managing !== undefined || cut !== undefined) return
       const now = recentRef.current
       if (now !== undefined && event.key === 'Escape') {
         event.preventDefault()
@@ -327,7 +335,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys, managing, clearing, remoteTrouble, making, asking])
+  }, [chat, switching, setting, keys, managing, clearing, remoteTrouble, making, asking, cut])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -402,6 +410,7 @@ export function Chat(): React.JSX.Element {
           <NewTask chat={chat} onClose={() => setMaking(false)} />
         </>
       ) : null}
+      {cut === undefined ? null : <CutOffDialog list={cut} onClose={() => setCut(undefined)} />}
       {asking ? (
         <>
           <div className="talk-scrim" onMouseDown={() => setAsking(false)} />
