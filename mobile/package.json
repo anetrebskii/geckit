@@ -1,0 +1,22 @@
+{
+  "name": "geckit-mobile",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "NODE_ENV=production vite build",
+    "ios": "npm run build && cap sync ios && cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/barcode-scanner": "^3.1.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.0"
+  }
+}

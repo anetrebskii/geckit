@@ -11,6 +11,7 @@ import type {
   McpServer,
   CorrectRequest,
   GitState,
+  PhoneView,
   PlanUsage,
   Shortcut,
   ShortcutDraft,
@@ -27,6 +28,7 @@ import type {
   UpdateView,
 } from '../shared/api'
 import type { Link } from '../shared/links'
+import type { Pairing } from '../shared/pairing'
 
 /**
  * Everything a window may ask the main process, and nothing else.
@@ -188,6 +190,27 @@ const geckit = {
     cancel: (): void => ipcRenderer.send('voice:cancel'),
     onStart: (said: () => void): (() => void) => listen('voice:start', said),
     onStop: (said: () => void): (() => void) => listen('voice:stop', said),
+  },
+
+  phone: {
+    state: (): Promise<PhoneView> => ipcRenderer.invoke('phone:state'),
+    onState: (said: (view: PhoneView) => void): (() => void) => listen('phone:state', said),
+    /** A new key: every phone on the old one has to scan again. */
+    newCode: (): void => ipcRenderer.send('phone:newCode'),
+  },
+
+  /** The hidden window the phone is answered in, and nothing else, uses these. */
+  peer: {
+    pairing: (): Promise<Pairing | undefined> => ipcRenderer.invoke('peer:pairing'),
+    call: (name: string, args: readonly unknown[]): Promise<unknown> => ipcRenderer.invoke('peer:call', name, args),
+    onTell: (said: (channel: string, value: unknown) => void): (() => void) => {
+      const on = (_event: unknown, channel: string, value: unknown): void => said(channel, value)
+      ipcRenderer.on('peer:tell', on)
+      return () => {
+        ipcRenderer.off('peer:tell', on)
+      }
+    },
+    state: (count: number, trouble: string | undefined): void => ipcRenderer.send('peer:state', count, trouble ?? null),
   },
 
   panel: {

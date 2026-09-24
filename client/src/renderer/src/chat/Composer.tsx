@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { modelName, SESSION_MODES } from '../../../shared/api'
 import type { SessionMode } from '../../../shared/api'
 import { mentionAt, pathsFor } from '../../../shared/paths'
+import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 import { Chrome } from './Chrome'
@@ -391,19 +392,23 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             explained
             onPick={(value) => chat.setMode(value as SessionMode)}
           />
-          <Picker
-            label={named}
-            choices={models}
-            chosen={chat.model}
-            title="Model"
-            {...(cost === undefined ? {} : { note: cost })}
-            onOpen={chat.askModels}
-            onPick={(value) => {
-              if (value !== '__asking') chat.setModel(value)
-            }}
-          />
-          {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
-          {chat.root === undefined ? null : <Chrome root={chat.root} id={chat.session?.id} />}
+          {ON_PHONE ? null : (
+            <>
+              <Picker
+                label={named}
+                choices={models}
+                chosen={chat.model}
+                title="Model"
+                {...(cost === undefined ? {} : { note: cost })}
+                onOpen={chat.askModels}
+                onPick={(value) => {
+                  if (value !== '__asking') chat.setModel(value)
+                }}
+              />
+              {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
+              {chat.root === undefined ? null : <Chrome root={chat.root} id={chat.session?.id} />}
+            </>
+          )}
           <Tasks
             session={chat.session?.id}
             tasks={chat.session?.tasks ?? []}
