@@ -508,6 +508,25 @@ describe('a goal', () => {
     expect(await ended({ ended: met })).toBe('blocked')
   })
 
+  it('takes up a goal set anywhere else, and draws no ending for one it never followed', async () => {
+    let read: GoalRead = { ended: met, met: true }
+    const built = build({
+      disk: { list: async () => [], read: async () => undefined, has: async () => false, goal: async () => read },
+    })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(built.fake.sent.length).toBeGreaterThan(0))
+    expect(of(built.rows, id)?.status).toBeUndefined()
+
+    read = { goal: { condition, checks: 0 } }
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(of(built.rows, id)?.goal).toEqual({ condition, checks: 0 }))
+
+    read = { ended: met, met: true }
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(of(built.rows, id)?.status).toBe('review'))
+  })
+
   it('leaves a mark made by hand alone, since that one says what the person decided', async () => {
     let read: GoalRead = { goal: { condition, checks: 0 } }
     const built = build({

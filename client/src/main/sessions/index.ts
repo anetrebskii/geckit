@@ -1395,7 +1395,7 @@ export class Sessions {
     const next = (signal.how === 'done' || signal.how === 'stopped') && !live.clearing ? live.queued.shift() : undefined
     if (next !== undefined) void this.send({ ...next.message, mode: live.mode })
     this.#changed()
-    if (live.goal !== undefined) void this.#goal(live)
+    void this.#goal(live)
     if (live.clearing) {
       live.clearing = false
       void this.send({ session: live.id, root: live.root, mode: live.mode, text: '/goal clear', ...(live.chosen === undefined ? {} : { model: live.chosen }) })
@@ -1406,10 +1406,13 @@ export class Sessions {
 
   /** Where the goal stands once a turn is over, which only the tool's file says, and a line where it ended by itself. */
   async #goal(live: Live): Promise<void> {
+    // One set anywhere else counts, so the file is read whether or not this knew of a goal: from a terminal, from another window, or from the tool's own queue.
+    const had = live.goal
     const read = await (this.#deps.disk?.goal ?? readGoal)(live.root, live.id).catch(() => undefined)
-    if (read === undefined || this.#live.get(live.id) !== live || live.goal === undefined) return
+    // A goal sent while the file was being read is newer than anything it says.
+    if (read === undefined || this.#live.get(live.id) !== live || live.goal !== had) return
     live.goal = read.goal
-    if (read.goal === undefined && read.ended !== undefined) {
+    if (had !== undefined && read.goal === undefined && read.ended !== undefined) {
       const item: SessionItem = { ...read.ended, id: `goal:${String(this.#now())}` }
       live.items.set(item.id, item)
       this.#deps.items({ id: live.id, items: [item] })
