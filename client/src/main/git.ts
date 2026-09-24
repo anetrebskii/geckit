@@ -76,3 +76,18 @@ export async function fetchGit(root: string): Promise<boolean> {
   fetchedAt.set(root, Date.now())
   return true
 }
+
+const repos = new Map<string, string | undefined>()
+
+/** The `owner/name` a remote's address points at, where it is GitHub's. */
+export function repoOf(url: string): string | undefined {
+  return /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/.exec(url.trim())?.[1]
+}
+
+/** The GitHub repository the checkout pushes to, for turning `#123` in an answer into a link. */
+export async function gitRepo(root: string): Promise<string | undefined> {
+  if (repos.has(root)) return repos.get(root)
+  const repo = repoOf((await git(root, ['remote', 'get-url', 'origin'])) ?? '')
+  repos.set(root, repo)
+  return repo
+}

@@ -141,6 +141,7 @@ export function installGeckit(link: Link, boot: Boot): void {
       openFile: nothing,
       fileMenu: nothing,
       exists: (root, path) => call('chat.exists', root, path),
+      repo: (root) => call('chat.repo', root),
       files: (root) => call('chat.files', root),
       openLink: (href) => void window.open(href, '_blank', 'noopener'),
       onSessions: (said) => listen('chat:sessions', said),

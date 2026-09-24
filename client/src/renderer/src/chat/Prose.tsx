@@ -5,6 +5,7 @@ import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import { Code } from './Code'
+import { issuesIn } from '../../../shared/issues'
 import { pathIn, pathOfLink, pathsIn } from '../../../shared/paths'
 
 /**
@@ -29,7 +30,13 @@ export const OPENS = 'Open it. Cmd+click shows it in the Finder, right-click cho
 
 /** The project the paths in an answer are said from, and what pressing one does. */
 export const Files = createContext<
-  { readonly root: string; readonly onFile: (path: string, how: FileHow) => void } | undefined
+  | {
+      readonly root: string
+      readonly onFile: (path: string, how: FileHow) => void
+      /** The GitHub repository the project pushes to, which is what `#123` in an answer means. */
+      readonly repo?: string
+    }
+  | undefined
 >(undefined)
 
 // Found once, a path stays found; one not there is asked again when it is next drawn, as it may be written by then.
@@ -91,7 +98,44 @@ function Mention({
   )
 }
 
+/** `#123` written about a project on GitHub, drawn as the link to it. */
+function Issue({ said }: { readonly said: string }): JSX.Element {
+  const files = useContext(Files)
+  if (files?.repo === undefined) return <>{said}</>
+  const href = `https://github.com/${files.repo}/issues/${said.slice(1)}`
+  return (
+    <a href={href} title={`${files.repo}${said} on GitHub`} onClick={open(href)}>
+      {said}
+    </a>
+  )
+}
+
 const MENTION = 'mention'
+const ISSUE = 'issue'
+
+/** Cuts `#123` out of the sentences. Links and code are left as they are, as are the paths already cut out. */
+function issuesAsLinks() {
+  const said = (text: string): Node[] =>
+    issuesIn(text).map((part) =>
+      part.issue
+        ? {
+            type: ISSUE,
+            data: { hName: 'span', hProperties: { className: [ISSUE] } },
+            children: [{ type: 'text', value: part.text }],
+          }
+        : { type: 'text', value: part.text },
+    )
+  const walk = (node: Node): void => {
+    if (node.children === undefined || ['link', 'linkReference', 'inlineCode', 'code', MENTION, ISSUE].includes(node.type)) {
+      return
+    }
+    node.children = node.children.flatMap((child) =>
+      child.type === 'text' && child.value !== undefined ? said(child.value) : [child],
+    )
+    for (const child of node.children) walk(child)
+  }
+  return walk
+}
 
 /** Cuts the paths out of the sentences, so each can be asked about on its own. Links and code are left as they are. */
 function pathsAsMentions() {
@@ -162,14 +206,17 @@ const COMPONENTS: Components = {
       </Mention>
     )
   },
-  span: ({ className, children }) =>
-    className === MENTION && typeof children === 'string' ? (
-      <Mention path={children} code={false}>
-        {children}
-      </Mention>
-    ) : (
-      <span className={className}>{children}</span>
-    ),
+  span: ({ className, children }) => {
+    if (className === MENTION && typeof children === 'string') {
+      return (
+        <Mention path={children} code={false}>
+          {children}
+        </Mention>
+      )
+    }
+    if (className === ISSUE && typeof children === 'string') return <Issue said={children} />
+    return <span className={className}>{children}</span>
+  },
   table: ({ children }) => (
     <div className="prose-table">
       <table>{children}</table>
@@ -177,7 +224,7 @@ const COMPONENTS: Components = {
   ),
 }
 
-const PLUGINS = [remarkGfm, tagsAsText, pathsAsMentions]
+const PLUGINS = [remarkGfm, tagsAsText, pathsAsMentions, issuesAsLinks]
 
 /** Answers already made into elements, the newest kept, so a conversation opened again is not parsed again. */
 const built = new Map<string, JSX.Element>()

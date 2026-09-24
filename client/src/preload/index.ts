@@ -161,6 +161,7 @@ const geckit = {
     fileMenu: (root: string, path: string): void => ipcRenderer.send('chat:fileMenu', root, path),
     /** Whether a path said in a conversation is there: from the project, or from the home folder for ~. */
     exists: (root: string, path: string): Promise<boolean> => ipcRenderer.invoke('chat:exists', root, path),
+    repo: (root: string): Promise<string | undefined> => ipcRenderer.invoke('chat:repo', root),
     /** Every file and folder in a project, as paths from it, for @. */
     files: (root: string): Promise<string[]> => ipcRenderer.invoke('chat:files', root),
     openLink: (href: string): void => ipcRenderer.send('open:link', href),
