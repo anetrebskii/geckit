@@ -245,6 +245,22 @@ function Editor({
         />
       </div>
 
+      <div className="field">
+        <label htmlFor="shortcut-goal">Goal</label>
+        <input
+          id="shortcut-goal"
+          type="text"
+          value={draft.goal ?? ''}
+          placeholder="When it is done, as a condition. Leave empty for none"
+          onChange={(event) => change({ goal: event.target.value })}
+        />
+        <span className="shortcut-next">
+          {(draft.goal ?? '').trim() === ''
+            ? 'No goal: the run stops when Claude is done, and the card stays In progress.'
+            : 'Claude keeps working until this holds, then the card goes to In review.'}
+        </span>
+      </div>
+
       <div className="two">
         <div className="field">
           <label>What it may do</label>

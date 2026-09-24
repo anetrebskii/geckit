@@ -66,6 +66,18 @@ describe('the shortcuts', () => {
     expect(held.shortcuts[1]).toMatchObject({ since: at('2026-09-22T09:00'), lastSession: 'session-1' })
   })
 
+  it('sends the goal after the prompt, into the conversation the run started', async () => {
+    held.shortcuts = [{ ...morning, goal: "today's plan is written" }]
+    expect(await runShortcut('m', 'hand')).toBe('session-1')
+    expect(start).toHaveBeenNthCalledWith(1, { root: '/p', mode: 'auto', text: 'Review what came in overnight' })
+    expect(start).toHaveBeenNthCalledWith(2, { session: 'session-1', root: '/p', mode: 'auto', text: "/goal today's plan is written" })
+  })
+
+  it('keeps a goal only where there is one, trimmed', () => {
+    expect(saveShortcut({ ...morning, goal: '  it holds  ' }).goal).toBe('it holds')
+    expect(saveShortcut({ ...morning, goal: '   ' }).goal).toBeUndefined()
+  })
+
   it('lets a timed run go while the last one is still going, rather than piling it up', async () => {
     held.shortcuts = [{ ...morning, lastSession: 'still-going' }]
     busy = true

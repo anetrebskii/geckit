@@ -59,6 +59,10 @@ export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise
     })
     deps.rename(session, one.name)
     put(id, { lastSession: session })
+    // The goal goes after the work, so it holds from the first turn without the run beginning with a condition and no task.
+    if (one.goal !== undefined && one.goal !== '') {
+      await deps.start({ session, root: one.root, mode: one.mode, text: `/goal ${one.goal}` })
+    }
     return session
   } catch (error) {
     log.warn(`Shortcut "${one.name}" did not start: ${error instanceof Error ? error.message : String(error)}`)
@@ -77,6 +81,7 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
     name: draft.name,
     root: draft.root,
     prompt: draft.prompt,
+    ...(draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
     mode: draft.mode,
     ...(draft.model === undefined || draft.model === '' ? {} : { model: draft.model }),
     ...(draft.cron === undefined || draft.cron.trim() === '' ? {} : { cron: draft.cron.trim() }),
