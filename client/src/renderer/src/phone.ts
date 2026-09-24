@@ -15,40 +15,91 @@ export interface Boot {
   readonly platform: Geckit['platform']
 }
 
-/** The banner over the page while the link to the Mac is down. */
+// Most drops mend in a few seconds, back from the background above all, and a pill that comes and goes in that time only startles.
+const QUIET = 5000
+// What was done while the link was down goes over the next one, unless the Mac stays away this long.
+const HOLD = 60_000
+let dropping: number | undefined
+
+/** The pill over the page while the link to the Mac is down, once the drop has lasted long enough to be worth saying. */
 export function showDropped(): void {
-  if (document.querySelector('.phone-offline') !== null) return
-  const line = document.createElement('div')
-  line.className = 'phone-offline'
-  line.setAttribute('role', 'status')
-  line.textContent = 'Not connected to the Mac. Trying again.'
-  document.body.append(line)
+  if (dropping !== undefined || document.querySelector('.phone-offline') !== null) return
+  dropping = window.setTimeout(() => {
+    const line = document.createElement('div')
+    line.className = 'phone-offline'
+    line.setAttribute('role', 'status')
+    line.textContent = 'Not connected to the Mac. Trying again.'
+    document.body.append(line)
+  }, QUIET)
 }
 
-export function installGeckit(link: Link, boot: Boot): void {
+function hideDropped(): void {
+  window.clearTimeout(dropping)
+  dropping = undefined
+  document.querySelector('.phone-offline')?.remove()
+}
+
+/**
+ * Installs `window.geckit` over the link, and gives back what puts a new link
+ * under it once the old one drops: the page stays as it was, and is brought up
+ * to date with what the Mac told while nobody was listening.
+ */
+export function installGeckit(first: Link, boot: Boot): (next: Link) => void {
   const pending = new Map<number, { readonly done: (value: unknown) => void; readonly failed: (error: Error) => void }>()
   let asked = 0
   const heard = new Map<string, Set<(value: never) => void>>()
+  let link = first
+  let down = false
+  const held: (() => void)[] = []
 
-  link.onMessage((message) => {
-    if (message.t === 'reply') {
-      const waiting = pending.get(message.id)
-      pending.delete(message.id)
-      if (message.error === undefined) waiting?.done(message.value)
-      else waiting?.failed(new Error(message.error))
-    }
-    if (message.t === 'tell') for (const one of heard.get(message.channel) ?? []) one(message.value as never)
-  })
-  link.onClose(() => {
-    for (const waiting of pending.values()) waiting.failed(new Error('The link to the Mac is down'))
-    pending.clear()
-  })
+  const told = (channel: string, value: unknown): void => {
+    for (const one of heard.get(channel) ?? []) one(value as never)
+  }
+
+  const bind = (one: Link): void => {
+    one.onMessage((message) => {
+      if (message.t === 'reply') {
+        const waiting = pending.get(message.id)
+        pending.delete(message.id)
+        if (message.error === undefined) waiting?.done(message.value)
+        else waiting?.failed(new Error(message.error))
+      }
+      if (message.t === 'tell') told(message.channel, message.value)
+    })
+    one.onClose(() => {
+      if (one !== link) return
+      down = true
+      for (const waiting of pending.values()) waiting.failed(new Error('The link to the Mac is down'))
+      pending.clear()
+    })
+  }
+  bind(first)
 
   const call = <T>(name: string, ...args: unknown[]): Promise<T> =>
     new Promise((done, failed) => {
-      const id = asked++
-      pending.set(id, { done: done as (value: unknown) => void, failed })
-      link.send({ t: 'call', id, name, args })
+      const go = (): void => {
+        const id = asked++
+        pending.set(id, { done: done as (value: unknown) => void, failed })
+        link.send({ t: 'call', id, name, args })
+      }
+      if (!down) {
+        try {
+          go()
+          return
+        } catch {
+          // The channel closed before it said so.
+          down = true
+        }
+      }
+      const expired = window.setTimeout(() => {
+        held.splice(held.indexOf(later), 1)
+        failed(new Error('The link to the Mac is down'))
+      }, HOLD)
+      const later = (): void => {
+        window.clearTimeout(expired)
+        go()
+      }
+      held.push(later)
     })
 
   const send = (name: string, ...args: unknown[]): void => void call(name, ...args).catch(() => undefined)
@@ -186,4 +237,18 @@ export function installGeckit(link: Link, boot: Boot): void {
     stop: () => send('screen.stop'),
   }
   Object.defineProperty(window, 'geckitScreen', { value: screen })
+
+  return (next) => {
+    link = next
+    down = false
+    bind(next)
+    hideDropped()
+    for (const later of held.splice(0)) later()
+    // Told again as if the Mac had told it: the list, the plan, the settings, and the conversation on screen.
+    void call('chat.list', undefined).then((all) => told('chat:sessions', all))
+    void call('chat.plan').then((plan) => told('chat:plan', plan))
+    void call('settings.get').then((settings) => told('settings:changed', settings))
+    const shown = watched
+    if (shown !== undefined) void call('chat.items', shown).then((items) => told('chat:items', { id: shown, items }))
+  }
 }
