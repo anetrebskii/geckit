@@ -9,6 +9,7 @@ import { dial } from '../../client/src/renderer/src/link'
 import type { Link } from '../../client/src/renderer/src/link'
 import { installGeckit, showDropped } from '../../client/src/renderer/src/phone'
 import type { Boot } from '../../client/src/renderer/src/phone'
+import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
 import { readPairing } from '../../client/src/shared/pairing'
 import type { Pairing } from '../../client/src/shared/pairing'
@@ -19,6 +20,48 @@ const KEPT = 'pairing'
 const AGAIN = [0, 2000, 5000, 10_000, 30_000]
 
 const kept = (): Pairing | undefined => readPairing(localStorage.getItem(KEPT) ?? '')
+
+// Every Mac this phone has scanned, so it can go back to one without the code; KEPT is the one it talks to now.
+const MACS = 'macs'
+interface KeptMac {
+  readonly link: string
+  readonly name?: string
+}
+const linkOf = (pairing: Pairing): string => `geckit://pair?k=${pairing.key}&s=${encodeURIComponent(pairing.signal)}`
+
+function keptMacs(): KeptMac[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(MACS) ?? '[]') as KeptMac[]
+    if (list.length > 0) return list
+  } catch {
+    // Written by hand or by an older app: started over from the one in use.
+  }
+  const one = localStorage.getItem(KEPT)
+  return one === null ? [] : [{ link: one }]
+}
+
+const nameOf = (mac: KeptMac, at: number): string => mac.name ?? `Mac ${String(at + 1)}`
+const isCurrent = (mac: KeptMac): boolean => readPairing(mac.link)?.key === kept()?.key
+
+function useMac(link: string | undefined): void {
+  if (link === undefined) localStorage.removeItem(KEPT)
+  else localStorage.setItem(KEPT, link)
+  location.reload()
+}
+
+;(window as { geckitMacs?: Macs }).geckitMacs = {
+  list: () => keptMacs().map((mac, at) => ({ name: nameOf(mac, at), current: isCurrent(mac) })),
+  switchTo: (index) => useMac(keptMacs()[index]?.link),
+  add: () => void scan(),
+  forget: (index) => {
+    const list = keptMacs()
+    const gone = list[index]
+    if (gone === undefined) return
+    const left = list.filter((one) => one !== gone)
+    localStorage.setItem(MACS, JSON.stringify(left))
+    if (isCurrent(gone)) useMac(left[0]?.link)
+  },
+}
 
 // The Taptic Engine for the Chat window, which only knows what kind of moment it is; a browser without one feels nothing.
 ;(window as { geckitTap?: (kind: Tap) => void }).geckitTap = (kind) => {
@@ -116,7 +159,12 @@ async function scan(): Promise<void> {
 }
 
 function paired(pairing: Pairing): void {
-  localStorage.setItem(KEPT, `geckit://pair?k=${pairing.key}&s=${encodeURIComponent(pairing.signal)}`)
+  const list = keptMacs()
+  // A Mac scanned again keeps its place and its name; its code may have changed.
+  const at = list.findIndex((one) => readPairing(one.link)?.key === pairing.key)
+  const mac = { ...list[at], link: linkOf(pairing) }
+  localStorage.setItem(MACS, JSON.stringify(at === -1 ? [...list, mac] : list.map((one, index) => (index === at ? mac : one))))
+  localStorage.setItem(KEPT, linkOf(pairing))
   if (started) location.reload()
   else void connect()
 }
@@ -138,7 +186,10 @@ let started = false
 async function connect(): Promise<void> {
   const pairing = kept()
   if (pairing === undefined) return notPaired()
-  screen([picture('pair-spin', ''), line('Connecting to the Mac', 'pair-wait')])
+  const macs = keptMacs()
+  const here = macs.findIndex(isCurrent)
+  const others = macs.map((mac, at) => ({ mac, at })).filter(({ at }) => at !== here)
+  screen([picture('pair-spin', ''), line(macs[here]?.name === undefined ? 'Connecting to the Mac' : `Connecting to ${macs[here].name}`, 'pair-wait')])
   let link: Link
   let boot: Boot
   try {
@@ -151,12 +202,19 @@ async function connect(): Promise<void> {
           'pair-away',
           '<svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><rect x="8" y="12" width="40" height="26" rx="3"/><path d="M20 46h16M28 38v8M8 8l40 40"/></svg>',
         ),
-        line('The Mac did not answer.', 'pair-title', 'h2'),
+        line(`${macs[here]?.name ?? 'The Mac'} did not answer.`, 'pair-title', 'h2'),
         line('GeckIt has to be open there, with Phone turned on in Settings.'),
       ],
-      [button('Try again', 'pair-fill', () => void connect()), button('Scan again', 'pair-plain', () => void scan())],
+      [
+        button('Try again', 'pair-fill', () => void connect()),
+        ...others.map(({ mac, at }) => button(`Connect to ${nameOf(mac, at)}`, 'pair-plain', () => useMac(mac.link))),
+        button('Scan again', 'pair-plain', () => void scan()),
+      ],
     )
     return
+  }
+  if (boot.name !== undefined && here !== -1) {
+    localStorage.setItem(MACS, JSON.stringify(macs.map((mac, at) => (at === here ? { ...mac, name: boot.name } : mac))))
   }
   document.querySelector('.pair')?.remove()
   started = true

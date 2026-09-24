@@ -239,7 +239,10 @@ export function listen(pairing: Pairing, joined: (link: Link) => void, trouble: 
     let after = 0
     while (!stop.signal.aborted) {
       try {
-        const heard = await ask(pairing, { room, kind: 'offer', after: String(after) }, stop.signal)
+        // Held to a time of its own: one question left open by the service would leave this Mac deaf to every phone.
+        const heard = await inTime(15_000, (signal) =>
+          ask(pairing, { room, kind: 'offer', after: String(after) }, AbortSignal.any([signal, stop.signal])),
+        )
         trouble(undefined)
         // Past the newest offer seen; with none, a little behind the service's clock, so one arriving as this asked is not missed.
         after = heard.signals.length === 0 ? heard.at - 2000 : Math.max(...heard.signals.map((one) => one.at)) + 1

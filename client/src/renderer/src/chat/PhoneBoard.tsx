@@ -8,6 +8,7 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
+import { macs } from '../macs'
 import { projectName } from './project'
 import { running } from './Tasks'
 import { ago } from './time'
@@ -70,6 +71,10 @@ export function PhoneBoard({
   // The row whose actions are showing; a touch anywhere else puts it back.
   const [open, setOpen] = useState<string | undefined>()
   const [unfolded, setUnfolded] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  // Read once: the list changes only by a scan or a switch, and both start the page over.
+  const [paired] = useState(() => macs()?.list())
+  const thisMac = paired?.find((one) => one.current)
 
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60_000)
@@ -137,7 +142,7 @@ export function PhoneBoard({
     >
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-bar-row">
-          <span className="phone-bar-small">GeckIt</span>
+          <span className="phone-bar-small">{thisMac?.name ?? 'GeckIt'}</span>
           <span className="spacer" />
           <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
             <Icon name="display" size={24} />
@@ -146,7 +151,14 @@ export function PhoneBoard({
             <Icon name="compose" size={24} />
           </button>
         </div>
-        <h1 className="phone-large">GeckIt</h1>
+        {paired === undefined ? (
+          <h1 className="phone-large">GeckIt</h1>
+        ) : (
+          <button type="button" className="phone-large phone-macs" onClick={() => setSwitching(true)}>
+            {thisMac?.name ?? 'GeckIt'}
+            <Icon name="down" size={20} />
+          </button>
+        )}
         <div className="phone-seg" role="tablist" style={{ '--at': COLUMNS.findIndex((one) => one.column === shown) } as React.CSSProperties}>
           <span className="phone-seg-thumb" />
           {COLUMNS.map((one) => (
@@ -242,6 +254,28 @@ export function PhoneBoard({
         )}
       </div>
 
+      {switching && paired !== undefined ? (
+        <Menu
+          anchor={new DOMRect()}
+          title="Macs this phone is paired with"
+          chosen={String(paired.findIndex((one) => one.current))}
+          choices={[
+            ...paired.map((one, at) => ({ value: String(at), label: one.name })),
+            { value: 'add', label: 'Add a Mac', says: "Scan the code in its GeckIt Settings" },
+            ...(paired.length > 1 && thisMac !== undefined
+              ? [{ value: 'forget', label: `Forget ${thisMac.name}`, says: 'Scanning its code again brings it back', danger: true }]
+              : []),
+          ]}
+          onPick={(value) => {
+            const list = macs()
+            if (list === undefined) return
+            if (value === 'add') list.add()
+            else if (value === 'forget') list.forget(paired.findIndex((one) => one.current))
+            else if (!paired[Number(value)]?.current) list.switchTo(Number(value))
+          }}
+          onClose={() => setSwitching(false)}
+        />
+      ) : null}
       {pressed === undefined ? null : (
         <Pressed
           chat={chat}
