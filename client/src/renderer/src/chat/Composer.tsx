@@ -320,9 +320,11 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           placeholder={
             chat.root === undefined
               ? 'Add a project folder first'
-              : chat.working
-                ? 'Send more: it waits until Claude finishes. ! runs a command now'
-                : 'Ask Claude Code. @ picks a file, ! runs a command'
+              : ON_PHONE
+                ? 'Message'
+                : chat.working
+                  ? 'Send more: it waits until Claude finishes. ! runs a command now'
+                  : 'Ask Claude Code. @ picks a file, ! runs a command'
           }
           disabled={chat.root === undefined}
           onChange={(event) => {

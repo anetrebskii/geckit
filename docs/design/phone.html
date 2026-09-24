@@ -1,0 +1,1008 @@
+<title>GeckIt for iPhone</title>
+<style>
+:root {
+  color-scheme: light;
+  --sf: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --page: #e9e9ec;
+  --ground: #f2f2f5;
+  --bg: #ffffff;
+  --raised: #ffffff;
+  --sunken: #f4f4f6;
+  --fill: rgb(118 118 128 / 12%);
+  --fill-strong: rgb(118 118 128 / 20%);
+  --border: #e3e3e6;
+  --separator: rgb(60 60 67 / 18%);
+  --text: #1d1d1f;
+  --dim: #5c5c61;
+  --faint: #8a8a8f;
+  --accent: #1f8031;
+  --accent-text: #ffffff;
+  --accent-soft: #e6f4e8;
+  --amber: #b07a12;
+  --amber-soft: #fdf3e0;
+  --amber-text: #8a6116;
+  --danger: #c0392b;
+  --bubble: #ececf0;
+  --code-bg: #f6f6f8;
+  --scrim: rgb(0 0 0 / 28%);
+  --glass: rgb(255 255 255 / 78%);
+  --menu: rgb(246 246 248 / 96%);
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
+  --lift: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 18px 50px rgb(0 0 0 / 22%);
+  --p0: hsl(196 80% 32%);
+  --p1: hsl(220 70% 45%);
+  --p2: hsl(258 55% 52%);
+  --p3: hsl(338 65% 44%);
+  --p4: hsl(176 70% 26%);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0f0f10;
+    --ground: #000000;
+    --bg: #1e1e20;
+    --raised: #1c1c1e;
+    --sunken: #2a2a2d;
+    --fill: rgb(118 118 128 / 24%);
+    --fill-strong: rgb(118 118 128 / 36%);
+    --border: #35353a;
+    --separator: rgb(84 84 88 / 55%);
+    --text: #f2f2f4;
+    --dim: #a2a2a8;
+    --faint: #8e8e95;
+    --accent: #4ac85c;
+    --accent-text: #10210f;
+    --accent-soft: rgb(74 200 92 / 16%);
+    --amber: #e0bb72;
+    --amber-soft: #3a2f18;
+    --amber-text: #e0bb72;
+    --danger: #e0796b;
+    --bubble: #2c2c2f;
+    --code-bg: #141416;
+    --scrim: rgb(0 0 0 / 50%);
+    --glass: rgb(30 30 32 / 78%);
+    --menu: rgb(44 44 46 / 96%);
+    --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
+    --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+    --p0: hsl(196 70% 64%);
+    --p1: hsl(220 85% 72%);
+    --p2: hsl(258 75% 78%);
+    --p3: hsl(338 75% 75%);
+    --p4: hsl(172 50% 58%);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0f0f10;
+  --ground: #000000;
+  --bg: #1e1e20;
+  --raised: #1c1c1e;
+  --sunken: #2a2a2d;
+  --fill: rgb(118 118 128 / 24%);
+  --fill-strong: rgb(118 118 128 / 36%);
+  --border: #35353a;
+  --separator: rgb(84 84 88 / 55%);
+  --text: #f2f2f4;
+  --dim: #a2a2a8;
+  --faint: #8e8e95;
+  --accent: #4ac85c;
+  --accent-text: #10210f;
+  --accent-soft: rgb(74 200 92 / 16%);
+  --amber: #e0bb72;
+  --amber-soft: #3a2f18;
+  --amber-text: #e0bb72;
+  --danger: #e0796b;
+  --bubble: #2c2c2f;
+  --code-bg: #141416;
+  --scrim: rgb(0 0 0 / 50%);
+  --glass: rgb(30 30 32 / 78%);
+  --menu: rgb(44 44 46 / 96%);
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
+  --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+  --p0: hsl(196 70% 64%);
+  --p1: hsl(220 85% 72%);
+  --p2: hsl(258 75% 78%);
+  --p3: hsl(338 75% 75%);
+  --p4: hsl(172 50% 58%);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--page); color: var(--text); font-family: var(--sf); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible, [tabindex]:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+svg { display: block; }
+
+/* The page: the phone on the left, what to try on the right; stacked on a phone. */
+.page { display: flex; gap: 40px; align-items: flex-start; justify-content: center; padding: 32px 16px; min-height: 100%; }
+.stage { flex: none; position: sticky; top: 32px; }
+.notes { flex: 0 1 400px; min-width: 0; font-size: 14px; line-height: 1.5; color: var(--dim); display: flex; flex-direction: column; gap: 22px; padding-top: 8px; }
+.notes h1 { margin: 0; font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.notes h2 { margin: 0 0 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
+.notes p { margin: 0; }
+.notes code { font-family: var(--mono); font-size: 12.5px; }
+.jump { display: flex; flex-wrap: wrap; gap: 6px; }
+.jump button, .themes button { height: 32px; padding: 0 12px; border-radius: 16px; background: var(--raised); color: var(--text); font-size: 13px; box-shadow: 0 0 0 1px var(--border); }
+.jump button:hover, .themes button:hover { background: var(--sunken); }
+.themes { display: flex; gap: 6px; }
+.themes button.on { background: var(--text); color: var(--bg); box-shadow: none; }
+.try { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.try li { display: grid; grid-template-columns: 108px 1fr; gap: 10px; }
+.try b { font-weight: 600; color: var(--text); }
+.changes { width: 100%; border-collapse: collapse; font-size: 13px; }
+.changes td { padding: 6px 0; border-top: 1px solid var(--border); vertical-align: top; }
+.changes td:first-child { color: var(--text); font-weight: 600; width: 34%; padding-right: 10px; }
+.num { font-variant-numeric: tabular-nums; }
+
+.phone { position: relative; width: 390px; height: 844px; border-radius: 54px; overflow: hidden; background: var(--ground); box-shadow: 0 0 0 10px #111113, 0 0 0 11px #3a3a3e, 0 30px 80px rgb(0 0 0 / 30%); isolation: isolate; font-size: 17px; line-height: 1.3; }
+.sysbar { position: absolute; inset: 0 0 auto; height: 54px; z-index: 40; display: flex; align-items: center; justify-content: space-between; padding: 6px 34px 0 44px; font-size: 16px; font-weight: 600; pointer-events: none; }
+.sysbar .island { position: absolute; left: 50%; top: 11px; width: 124px; height: 36px; margin-left: -62px; border-radius: 20px; background: #000; }
+.sysbar .icons { display: flex; gap: 6px; align-items: center; }
+.home { position: absolute; left: 50%; bottom: 8px; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: var(--text); opacity: 0.85; z-index: 60; pointer-events: none; }
+
+@media (max-width: 860px) {
+  .page { flex-direction: column; align-items: stretch; padding-block: 16px; gap: 28px; }
+  .stage { position: static; }
+  .phone { width: 100%; height: calc(100svh - 32px); max-height: 844px; border-radius: 28px; box-shadow: 0 0 0 1px var(--border); }
+  .sysbar, .home { display: none; }
+  .phone { --top: 0px; }
+  .notes { flex-basis: auto; }
+}
+.phone { --top: 54px; --bottom: 26px; }
+
+/* ---------- The app ---------- */
+.layer { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--ground); }
+.board { transition: transform 320ms var(--ease), filter 320ms var(--ease); }
+.board.behind { transform: translateX(-28%); filter: brightness(0.94); }
+.board.sunk { transform: scale(0.94); border-radius: 14px; filter: brightness(0.9); }
+.scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
+.bar { flex: none; padding: calc(var(--top) + 4px) 16px 0; background: var(--ground); }
+.bar-row { display: flex; align-items: center; justify-content: flex-end; height: 44px; }
+.bar-small { position: absolute; left: 0; right: 0; text-align: center; font-weight: 600; font-size: 17px; opacity: 0; transition: opacity 160ms var(--ease); pointer-events: none; }
+.bar.scrolled .bar-small { opacity: 1; }
+.bar.scrolled { box-shadow: 0 0.5px 0 var(--separator); }
+.large { margin: 0; font-size: 34px; font-weight: 700; letter-spacing: 0.01em; line-height: 41px; transition: opacity 160ms var(--ease); }
+.bar.scrolled .large { opacity: 0; }
+.icon-btn { width: 44px; height: 44px; display: grid; place-items: center; color: var(--accent); border-radius: 22px; }
+.icon-btn:active { opacity: 0.5; }
+
+.seg { display: flex; margin: 10px 0 12px; padding: 2px; border-radius: 9px; background: var(--fill); position: relative; }
+.seg button { flex: 1; height: 30px; border-radius: 7px; font-size: 13px; font-weight: 500; position: relative; z-index: 1; white-space: nowrap; }
+.seg button .n { color: var(--faint); font-weight: 400; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.seg button.on { font-weight: 600; }
+.seg .thumb { position: absolute; top: 2px; bottom: 2px; left: 2px; border-radius: 7px; background: var(--raised); box-shadow: 0 0 0 0.5px rgb(0 0 0 / 4%), 0 3px 8px rgb(0 0 0 / 12%), 0 3px 1px rgb(0 0 0 / 4%); transition: transform 280ms var(--ease); }
+
+.alert { margin: 0 16px 14px; padding: 12px 14px; border-radius: 12px; background: var(--amber-soft); color: var(--amber-text); font-size: 15px; }
+.head { margin: 18px 32px 7px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--faint); }
+.head:first-child { margin-top: 4px; }
+.group { margin: 0 16px; border-radius: 12px; background: var(--raised); overflow: hidden; }
+.empty { margin: 90px 32px; text-align: center; color: var(--faint); font-size: 17px; }
+.foot { margin: 18px 32px calc(var(--bottom) + 18px); font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+.swipe { position: relative; overflow: hidden; }
+.swipe + .swipe .row::before { content: ""; position: absolute; top: 0; right: 0; left: 36px; height: 0.5px; background: var(--separator); }
+.acts { position: absolute; top: 0; bottom: 0; display: flex; }
+.acts.left { left: 0; }
+.acts.right { right: 0; }
+.act { width: 84px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 13px; font-weight: 600; color: #fff; }
+.act.review { background: #c08a1e; width: 96px; }
+.act.done { background: #2e9a42; }
+.act.more { background: #8e8e93; }
+.row { position: relative; display: grid; grid-template-columns: 10px 1fr; column-gap: 10px; padding: 11px 16px 11px 16px; background: var(--raised); touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: default; }
+.row.pressed { background: var(--sunken); }
+.dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; }
+.dot.working { background: var(--accent); animation: breathe 1.6s ease-in-out infinite; }
+.dot.asks { background: var(--amber); }
+.dot.idle { background: var(--accent); }
+.dot.read { background: transparent; box-shadow: inset 0 0 0 1.5px var(--faint); }
+@keyframes breathe { 50% { opacity: 0.35; } }
+.line1 { display: flex; gap: 8px; align-items: baseline; }
+.title { flex: 1; font-size: 17px; font-weight: 600; line-height: 22px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.time { flex: none; font-size: 15px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.said { margin-top: 3px; font-size: 15px; line-height: 20px; color: var(--dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.said.working { color: var(--accent); }
+.meta { margin-top: 5px; font-size: 13px; color: var(--faint); }
+.meta .proj { font-weight: 600; }
+.ask-said { margin-top: 3px; font-size: 15px; font-weight: 600; color: var(--amber-text); }
+.ask-cmd { margin-top: 6px; padding: 7px 10px; border-radius: 8px; background: var(--sunken); font-family: var(--mono); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ask-btns { display: flex; gap: 8px; margin-top: 10px; }
+.ask-btns button { flex: 1; height: 44px; border-radius: 10px; font-size: 17px; font-weight: 600; }
+.btn-fill { background: var(--accent); color: var(--accent-text); }
+.btn-grey { background: var(--fill); color: var(--text); }
+.btn-plain { color: var(--accent); font-weight: 400; }
+button:active { filter: brightness(0.92); }
+
+/* ---------- Conversation ---------- */
+.convo { transform: translateX(100%); transition: transform 320ms var(--ease); box-shadow: -8px 0 30px rgb(0 0 0 / 12%); background: var(--bg); z-index: 5; }
+.convo.open { transform: none; }
+.convo.dragging, .board.dragging { transition: none; }
+.nav { flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: var(--top) 4px 0; min-height: calc(var(--top) + 52px); background: var(--glass); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 0.5px 0 var(--separator); position: relative; z-index: 2; }
+.back { justify-self: start; display: flex; align-items: center; gap: 2px; height: 44px; padding: 0 10px 0 4px; color: var(--accent); font-size: 17px; }
+.nav-title { text-align: center; min-width: 0; max-width: 230px; }
+.nav-title b { display: block; font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-title span { font-size: 12px; color: var(--faint); }
+.nav .icon-btn { justify-self: end; }
+.offline { position: absolute; left: 50%; top: calc(var(--top) + 60px); transform: translateX(-50%); z-index: 3; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border-radius: 16px; background: var(--raised); box-shadow: var(--shadow); font-size: 13px; color: var(--dim); white-space: nowrap; animation: drop 280ms var(--ease) both; }
+@keyframes drop { from { opacity: 0; transform: translate(-50%, -8px); } }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--fill-strong); border-top-color: var(--dim); animation: turn 800ms linear infinite; flex: none; }
+@keyframes turn { to { transform: rotate(360deg); } }
+
+.transcript { flex: 1; overflow-y: auto; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 14px; font-size: 17px; line-height: 1.45; }
+.mine { align-self: flex-end; max-width: 82%; padding: 9px 14px; border-radius: 20px; background: var(--bubble); -webkit-touch-callout: none; }
+.theirs { -webkit-touch-callout: none; }
+.theirs p { margin: 0 0 10px; }
+.theirs p:last-child { margin: 0; }
+.theirs code { font-family: var(--mono); font-size: 15px; padding: 1px 5px; border-radius: 5px; background: var(--code-bg); }
+.thought { color: var(--faint); font-style: italic; font-size: 15px; }
+.tools { display: flex; flex-direction: column; margin: -6px 0; }
+.tool { display: flex; align-items: center; gap: 8px; min-height: 36px; color: var(--dim); font-size: 15px; text-align: left; }
+.tool svg { color: var(--faint); flex: none; }
+.tool .out { display: none; }
+.tool-out { margin: 2px 0 6px 22px; padding: 10px 12px; border-radius: 10px; background: var(--code-bg); font-family: var(--mono); font-size: 13px; line-height: 1.45; white-space: pre; overflow-x: auto; color: var(--dim); }
+pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--code-bg); font-family: var(--mono); font-size: 14px; line-height: 1.5; overflow-x: auto; -webkit-touch-callout: none; }
+.working-line { display: flex; align-items: center; gap: 10px; color: var(--accent); font-size: 15px; }
+.stamp { font-size: 12px; color: var(--faint); text-align: center; }
+
+.dock { flex: none; margin: 0 10px 8px; padding: 16px; border-radius: 18px; background: var(--raised); box-shadow: var(--lift); animation: rise 360ms var(--ease) both; position: relative; z-index: 2; }
+@keyframes rise { from { transform: translateY(24px); opacity: 0; } }
+.dock h3 { margin: 0; font-size: 17px; font-weight: 600; }
+.dock .where { font-size: 13px; color: var(--faint); margin-top: 2px; }
+.dock .cmd { margin: 12px 0 14px; padding: 10px 12px; border-radius: 10px; background: var(--sunken); font-family: var(--mono); font-size: 15px; overflow-x: auto; white-space: nowrap; }
+.dock .stack { display: grid; gap: 8px; }
+.dock .stack button { height: 50px; border-radius: 12px; font-size: 17px; font-weight: 600; }
+
+.composer { flex: none; padding: 8px 10px calc(var(--bottom) + 8px); background: var(--glass); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 -0.5px 0 var(--separator); position: relative; z-index: 2; }
+.composer.greyed { opacity: 0.45; pointer-events: none; }
+.chips { display: flex; gap: 6px; padding: 0 2px 8px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 12px; border-radius: 16px; background: var(--fill); font-size: 15px; color: var(--text); }
+.chip.set { background: var(--accent-soft); color: var(--accent); }
+.field { display: flex; align-items: flex-end; gap: 6px; padding: 4px 4px 4px 14px; border-radius: 22px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--border); }
+.field textarea { flex: 1; min-height: 36px; max-height: 120px; padding: 7px 0; border: 0; background: none; resize: none; font: inherit; font-size: 17px; line-height: 22px; color: var(--text); outline: none; }
+.field textarea::placeholder { color: var(--faint); }
+.send { width: 36px; height: 36px; border-radius: 18px; display: grid; place-items: center; background: var(--accent); color: var(--accent-text); flex: none; margin: 0 0 0 0; position: relative; }
+.send::after { content: ""; position: absolute; inset: -4px; }
+.send:disabled { background: var(--fill-strong); color: var(--raised); cursor: default; }
+.send.stop { background: var(--text); color: var(--bg); }
+
+/* ---------- Sheets, menus, banners ---------- */
+.scrim { position: absolute; inset: 0; background: var(--scrim); z-index: 20; animation: fade 240ms var(--ease) both; }
+@keyframes fade { from { opacity: 0; } }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 21; background: var(--ground); border-radius: 14px 14px 0 0; padding: 6px 16px calc(var(--bottom) + 12px); animation: up 360ms var(--ease) both; max-height: calc(100% - var(--top) - 10px); display: flex; flex-direction: column; }
+.sheet.dragging { transition: none; animation: none; }
+.sheet.settle { transition: transform 280ms var(--ease); }
+@keyframes up { from { transform: translateY(100%); } }
+.grab { flex: none; height: 22px; display: grid; place-items: center; touch-action: none; cursor: grab; }
+.grab::before { content: ""; width: 36px; height: 5px; border-radius: 3px; background: var(--fill-strong); }
+.sheet-title { text-align: center; font-size: 13px; color: var(--faint); padding: 2px 16px 12px; }
+.list { border-radius: 12px; background: var(--raised); overflow: hidden; }
+.list + .list { margin-top: 10px; }
+.opt { display: grid; grid-template-columns: 1fr 24px; align-items: center; gap: 8px; width: 100%; min-height: 56px; padding: 9px 16px; text-align: left; position: relative; }
+.opt + .opt::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px; background: var(--separator); }
+.opt b { display: block; font-weight: 400; font-size: 17px; }
+.opt span { display: block; font-size: 13px; color: var(--faint); margin-top: 1px; }
+.opt .check { color: var(--accent); }
+.opt.danger b { color: var(--danger); }
+.opt.center { grid-template-columns: 1fr; text-align: center; }
+.opt.center b { color: var(--accent); }
+.opt.bold b { font-weight: 600; }
+
+.full { top: calc(var(--top) + 10px); max-height: none; padding: 0; background: var(--ground); }
+.full .sheet-nav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 52px; padding: 0 8px; touch-action: none; }
+.full .sheet-nav b { font-size: 17px; font-weight: 600; }
+.full .sheet-nav button { height: 44px; padding: 0 8px; font-size: 17px; color: var(--accent); }
+.full .sheet-nav button:first-child { justify-self: start; }
+.full .sheet-nav button:last-child { justify-self: end; font-weight: 600; }
+.full .sheet-nav button:disabled { color: var(--faint); cursor: default; }
+.form { padding: 8px 16px; overflow-y: auto; }
+.form label { display: block; margin: 16px 16px 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--faint); }
+.form label:first-child { margin-top: 4px; }
+.cell { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; padding: 0 16px; border-radius: 12px; background: var(--raised); font-size: 17px; }
+.cell span { color: var(--faint); display: flex; align-items: center; gap: 4px; }
+.form textarea, .form input { width: 100%; border: 0; border-radius: 12px; background: var(--raised); padding: 11px 16px; font: inherit; font-size: 17px; line-height: 22px; color: var(--text); resize: none; outline: none; }
+.form textarea { min-height: 132px; }
+.form .note { margin: 7px 16px 0; font-size: 13px; color: var(--faint); }
+.form .attach { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; color: var(--accent); font-size: 17px; }
+
+.menu-veil { position: absolute; inset: 0; z-index: 30; background: var(--scrim); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); animation: fade 200ms var(--ease) both; }
+.lifted { position: absolute; z-index: 31; border-radius: 12px; overflow: hidden; box-shadow: var(--lift); animation: pop 260ms var(--ease) both; pointer-events: none; }
+.lifted .row::before { display: none; }
+@keyframes pop { from { transform: scale(0.96); } 60% { transform: scale(1.03); } }
+.cmenu { position: absolute; z-index: 31; width: 250px; border-radius: 14px; background: var(--menu); backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px); box-shadow: var(--lift); overflow: hidden; animation: grow 260ms var(--ease) both; transform-origin: top left; }
+@keyframes grow { from { transform: scale(0.6); opacity: 0; } }
+.cmenu button { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 44px; padding: 0 16px; font-size: 17px; text-align: left; position: relative; }
+.cmenu button + button::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 0.5px; background: var(--separator); }
+.cmenu .gap { height: 8px; background: var(--fill); }
+.cmenu button.accent { color: var(--accent); font-weight: 600; }
+.cmenu button.danger { color: var(--danger); }
+.cmenu button svg { color: currentColor; opacity: 0.8; }
+
+.banner { position: absolute; left: 8px; right: 8px; top: calc(var(--top) + 4px); z-index: 35; display: grid; grid-template-columns: 38px 1fr; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 22px; background: var(--glass); backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px); box-shadow: var(--lift); text-align: left; animation: slide 420ms var(--ease) both; touch-action: none; }
+@keyframes slide { from { transform: translateY(-140%); } }
+.banner img { width: 38px; height: 38px; border-radius: 9px; }
+.banner .top { display: flex; justify-content: space-between; font-size: 13px; color: var(--faint); }
+.banner b { display: block; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner span.body { display: block; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.pair { z-index: 45; background: var(--bg); align-items: center; padding: calc(var(--top) + 20px) 24px calc(var(--bottom) + 16px); }
+.pair .mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; width: 100%; }
+.pair img { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 8px 24px rgb(0 0 0 / 14%); }
+.pair h2 { margin: 6px 0 0; font-size: 34px; font-weight: 700; }
+.pair h3 { margin: 0; font-size: 22px; font-weight: 600; max-width: 300px; }
+.pair p { margin: 0; font-size: 17px; color: var(--dim); max-width: 300px; line-height: 1.4; }
+.steps { margin: 14px 0 0; padding: 0; list-style: none; display: grid; gap: 12px; text-align: left; width: 100%; max-width: 300px; font-size: 17px; }
+.steps li { display: grid; grid-template-columns: 28px 1fr; align-items: center; gap: 12px; }
+.steps i { font-style: normal; width: 28px; height: 28px; border-radius: 14px; display: grid; place-items: center; background: var(--fill); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pair .actions { width: 100%; display: grid; gap: 8px; }
+.pair .actions button { height: 50px; border-radius: 12px; font-size: 17px; font-weight: 600; }
+.pair .big-spin { width: 28px; height: 28px; border-width: 3px; }
+.camera { z-index: 46; background: #000; color: #fff; align-items: center; justify-content: center; }
+.finder { width: 250px; height: 250px; border-radius: 28px; position: relative; box-shadow: 0 0 0 2000px rgb(0 0 0 / 45%); background: radial-gradient(circle at 40% 35%, #2b2f2d, #121413); }
+.finder::after { content: ""; position: absolute; inset: -3px; border-radius: 30px; border: 3px solid #fff; mask: linear-gradient(#000 0 0) top/60% 3px no-repeat; }
+.qr { position: absolute; inset: 58px; background:
+  linear-gradient(90deg, #eee 0 30%, transparent 30% 40%, #eee 40% 50%, transparent 50% 70%, #eee 70%) top/100% 14% no-repeat,
+  linear-gradient(90deg, transparent 0 20%, #eee 20% 60%, transparent 60% 80%, #eee 80%) center/100% 14% no-repeat,
+  linear-gradient(90deg, #eee 0 50%, transparent 50% 60%, #eee 60% 100%) bottom/100% 14% no-repeat; opacity: 0.8; border-radius: 4px; }
+.camera p { position: absolute; top: calc(var(--top) + 60px); left: 0; right: 0; text-align: center; font-size: 17px; }
+.camera button { position: absolute; bottom: calc(var(--bottom) + 24px); left: 50%; transform: translateX(-50%); height: 44px; padding: 0 20px; border-radius: 22px; background: rgb(255 255 255 / 18%); color: #fff; font-size: 17px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
+</style>
+
+<div class="page">
+  <div class="stage">
+    <div class="phone" id="phone">
+      <div class="sysbar" aria-hidden="true"><span>9:41</span><span class="island"></span><span class="icons">
+        <svg width="18" height="12" viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="currentColor"/><rect x="5" y="5.5" width="3" height="6.5" rx="1" fill="currentColor"/><rect x="10" y="3" width="3" height="9" rx="1" fill="currentColor"/><rect x="15" y="0" width="3" height="12" rx="1" fill="currentColor"/></svg>
+        <svg width="26" height="12" viewBox="0 0 26 12"><rect x="0.5" y="0.5" width="22" height="11" rx="3.5" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="16" height="8" rx="2" fill="currentColor"/><rect x="24" y="4" width="1.5" height="4" rx="0.75" fill="currentColor" opacity="0.4"/></svg>
+      </span></div>
+
+      <section class="layer board" id="board" aria-label="Board">
+        <header class="bar" id="bar">
+          <div class="bar-row"><span class="bar-small">GeckIt</span>
+            <button class="icon-btn" id="new" aria-label="New task"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M18.4 2.6a2 2 0 0 1 2.9 2.9L12 14.8l-3.6.9.9-3.6z"/></svg></button>
+          </div>
+          <h1 class="large">GeckIt</h1>
+          <div class="seg" role="tablist" id="seg">
+            <span class="thumb" id="thumb"></span>
+            <button role="tab" data-col="progress">In progress<span class="n"></span></button>
+            <button role="tab" data-col="review">In review<span class="n"></span></button>
+            <button role="tab" data-col="done">Done<span class="n"></span></button>
+          </div>
+        </header>
+        <div class="scroll" id="list"></div>
+      </section>
+
+      <section class="layer convo" id="convo" aria-label="Conversation">
+        <header class="nav">
+          <button class="back" id="back"><svg width="13" height="22" viewBox="0 0 13 22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2 2 11l9 9"/></svg>Board</button>
+          <div class="nav-title"><b id="c-title"></b><span id="c-proj"></span></div>
+          <button class="icon-btn" id="more" aria-label="More"><svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="13" cy="13" r="11"/><circle cx="8" cy="13" r="1.3" fill="currentColor" stroke="none"/><circle cx="13" cy="13" r="1.3" fill="currentColor" stroke="none"/><circle cx="18" cy="13" r="1.3" fill="currentColor" stroke="none"/></svg></button>
+        </header>
+        <div class="transcript" id="transcript"></div>
+        <div id="dock-slot"></div>
+        <div class="composer" id="composer">
+          <div class="chips"><button class="chip" id="mode">Manual <svg width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="m1 1 4 4 4-4"/></svg></button><button class="chip" id="goal">Goal</button></div>
+          <div class="field"><textarea id="msg" rows="1" placeholder="Message" aria-label="Message"></textarea>
+            <button class="send" id="send" aria-label="Send" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <div class="home"></div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    <div>
+      <h1>GeckIt for iPhone</h1>
+      <p style="margin-top:8px">A working prototype of <code>docs/ux/phone-design.md</code>. The sessions are examples, not yours. Nothing here reaches a Mac.</p>
+    </div>
+    <div>
+      <h2>Theme</h2>
+      <div class="themes" id="themes"><button data-t="system" class="on">System</button><button data-t="light">Light</button><button data-t="dark">Dark</button></div>
+    </div>
+    <div>
+      <h2>Show a state</h2>
+      <div class="jump">
+        <button data-j="pair">Not paired</button>
+        <button data-j="unreach">Cannot reach the Mac</button>
+        <button data-j="notice">A notice arrives</button>
+        <button data-j="card">A card arrives</button>
+        <button data-j="drop">Link drops</button>
+        <button data-j="usage">Usage at 92%</button>
+        <button data-j="reset">Start over</button>
+      </div>
+    </div>
+    <div>
+      <h2>Try</h2>
+      <ul class="try">
+        <li><b>Swipe left</b><span>on a row: Done and More; all the way marks it Done</span></li>
+        <li><b>Swipe right</b><span>on a row: In review</span></li>
+        <li><b>Long press</b><span>a row for its menu; a message for Copy</span></li>
+        <li><b>Allow once</b><span>right on a Needs you row, without opening it</span></li>
+        <li><b>Edge swipe</b><span>from the left edge of a conversation to go back</span></li>
+        <li><b>Swipe down</b><span>on a sheet's grabber to close it</span></li>
+      </ul>
+    </div>
+    <div>
+      <h2>What changes</h2>
+      <table class="changes">
+        <tr><td>Type</td><td class="num">11 to 13 px today; iOS styles now: 34, 17, 15, 13</td></tr>
+        <tr><td>Touch targets</td><td class="num">22 to 36 pt today (Send 28x28); 44 pt at least now</td></tr>
+        <tr><td>Asks</td><td>A Needs you group, answered from the row</td></tr>
+        <tr><td>Status</td><td>Swipes on rows; More and long press as the visible twins</td></tr>
+        <tr><td>Menus</td><td>Bottom sheets and context menus instead of desktop popovers</td></tr>
+        <tr><td>Permission card</td><td>Docked above the composer until answered</td></tr>
+        <tr><td>New task</td><td>A full-height sheet: Cancel, New task, Start</td></tr>
+        <tr><td>Stop</td><td>A grey square, not red: it interrupts, it does not destroy</td></tr>
+        <tr><td>Usage</td><td>The list's footer; a banner only at 90%</td></tr>
+      </table>
+    </div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  const ICON = 'data:image/png;base64,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'
+  const phone = document.getElementById('phone')
+  const $ = (id) => document.getElementById(id)
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+  const tap = (n) => { try { navigator.vibrate && navigator.vibrate(n) } catch (e) {} }
+
+  const PROJECTS = { geckit: 'p0', site: 'p1', 'formula-business': 'p2', 'aqua-crm': 'p3', signal: 'p4' }
+  const fresh = () => [
+    { id: 1, title: 'Fix the flaky sessions test on CI', project: 'geckit', status: 'progress', state: 'asks', time: 'now',
+      ask: { what: 'Wants to run a command', cmd: 'npm run test -- sessions --run' },
+      prompt: 'The sessions test fails on CI about one run in five. Find out why and fix it.',
+      tools: [['Read', 'test/sessions.test.ts', '  80 tests, 1742 ms\n  flaky: "stops a shell" timed out after 1000 ms'], ['Searched', 'setTimeout in src/main/sessions', 'claude.ts:214  setTimeout(kill, 1000)']],
+      reply: '<p>The shell test waits a fixed <code>1000 ms</code> for the process to end, and on a busy CI runner it sometimes takes longer. I changed it to wait for the <code>exit</code> event instead.</p><p>I want to run the sessions tests to check.</p>' },
+    { id: 2, title: 'Move the pricing page to the new layout', project: 'site', status: 'progress', state: 'asks', time: '3m',
+      ask: { what: 'Wants to edit a file', cmd: 'site/src/app/pricing/page.tsx' },
+      prompt: 'Move the pricing page to the layout the home page uses.',
+      tools: [['Read', 'site/src/app/page.tsx', '']], reply: '<p>The home page uses <code>Section</code> and <code>Lead</code>. I will rebuild pricing from the same two.</p>' },
+    { id: 3, title: 'Write the release notes for 0.6', project: 'geckit', status: 'progress', state: 'working', time: '1m', said: 'Reading the 23 commits since 0.5.0',
+      prompt: 'Write the release notes for 0.6 from the commits since 0.5.0.', tools: [['Ran', 'git log --oneline v0.5.0..', 'f64c8b2 A goal set anywhere else is picked up\nd2b8cf5 A shortcut can carry a goal\n78562f7 A favorite is marked on the board']], reply: '' },
+    { id: 4, title: 'Why does the Formula sync skip Sunday?', project: 'formula-business', status: 'progress', state: 'idle', time: '14m',
+      said: 'The cron runs Monday to Saturday: 0 6 * * 1-6 in scripts/sync.ts. Want me to add Sunday?',
+      prompt: 'Why does the sync skip Sunday?', tools: [['Read', 'scripts/sync.ts', '']],
+      reply: '<p>The schedule is <code>0 6 * * 1-6</code>, so it runs Monday to Saturday at 06:00 and never on Sunday.</p><pre class="code">export const SCHEDULE = \'0 6 * * 1-6\'</pre><p>Want me to add Sunday?</p>' },
+    { id: 5, title: 'Clean up the intake form labels', project: 'aqua-crm', status: 'progress', state: 'read', time: '1h', said: 'Done: 12 labels renamed, the form tests pass.',
+      prompt: 'Rename the intake form labels to what the masters call things.', tools: [['Edited', 'src/intake/labels.ts', '']], reply: '<p>Done: 12 labels renamed, the form tests pass.</p>' },
+    { id: 6, title: 'Add Cloudflare TURN to the signal site', project: 'signal', status: 'review', state: 'idle', time: '35m', said: 'Deployed to a test build. Check the relay with mobile data.',
+      prompt: 'Add Cloudflare TURN to the signal site.', tools: [['Edited', 'functions/ice.js', '']], reply: '<p>Deployed to a test build. Check the relay with mobile data.</p>' },
+    { id: 7, title: 'Mark favorites on the board', project: 'geckit', status: 'review', state: 'read', time: '3h', said: 'Pinned sessions show a star and sort first.',
+      prompt: 'Mark favorites on the board.', tools: [], reply: '<p>Pinned sessions show a star and sort first.</p>' },
+    { id: 8, title: 'A goal set anywhere else is picked up', project: 'geckit', status: 'done', state: 'read', time: 'Yesterday', said: 'Committed as f64c8b2.',
+      prompt: 'Pick up a goal set outside GeckIt.', tools: [], reply: '<p>Committed as <code>f64c8b2</code>.</p>' },
+  ]
+  let S = { col: 'progress', sessions: fresh(), open: null, mode: 'Manual', goal: '', usageHigh: false }
+  let openSwipe = null
+
+  /* ---------------- board ---------------- */
+  const cols = ['progress', 'review', 'done']
+  const empties = { progress: 'Nothing in progress.', review: 'Nothing in review.', done: 'Nothing done yet.' }
+  const find = (id) => S.sessions.find((s) => s.id === id)
+
+  function saidOf(s) {
+    if (s.state === 'working') return `<div class="said working">${esc(s.said || 'Working')}</div>`
+    return s.said ? `<div class="said">${esc(s.said)}</div>` : ''
+  }
+  function meta(s) { return `<div class="meta"><span class="proj" style="color:var(--${PROJECTS[s.project]})">${esc(s.project)}</span></div>` }
+  function rowHTML(s) {
+    const ask = s.state === 'asks'
+    const body = ask
+      ? `<div class="ask-said">Needs an answer</div><div class="ask-cmd">${esc(s.ask.cmd)}</div>${meta(s)}<div class="ask-btns"><button class="btn-grey" data-ans="no">No</button><button class="btn-fill" data-ans="once">Allow once</button></div>`
+      : `${saidOf(s)}${meta(s)}`
+    return `<div class="swipe" data-id="${s.id}">
+      <div class="acts left" aria-hidden="true"><button class="act review" data-act="review" tabindex="-1"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><path d="M11 6v5l3 2" stroke-linecap="round"/></svg>In review</button></div>
+      <div class="acts right" aria-hidden="true"><button class="act more" data-act="more" tabindex="-1"><svg width="22" height="22" viewBox="0 0 22 22" fill="currentColor"><circle cx="5" cy="11" r="1.8"/><circle cx="11" cy="11" r="1.8"/><circle cx="17" cy="11" r="1.8"/></svg>More</button><button class="act done" data-act="done" tabindex="-1"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 11.5 4 4 8-9"/></svg>Done</button></div>
+      <div class="row" tabindex="0" role="button" aria-label="${esc(s.title)}"><span class="dot ${s.state}"></span><div><div class="line1"><span class="title">${esc(s.title)}</span><span class="time">${esc(s.time)}</span></div>${body}</div></div>
+    </div>`
+  }
+  function renderBoard() {
+    const here = S.sessions.filter((s) => s.status === S.col)
+    let html = S.usageHigh ? '<div class="alert">5-hour window at 92%. Resets at 14:00.</div>' : ''
+    if (here.length === 0) html += `<div class="empty">${empties[S.col]}</div>`
+    else {
+      const asks = S.col === 'progress' ? here.filter((s) => s.state === 'asks') : []
+      const rest = here.filter((s) => !asks.includes(s))
+      if (asks.length) html += `<div class="head">Needs you</div><div class="group">${asks.map(rowHTML).join('')}</div>`
+      if (rest.length) html += `${asks.length ? '<div class="head">Sessions</div>' : ''}<div class="group">${rest.map(rowHTML).join('')}</div>`
+    }
+    html += '<div class="foot">5-hour window 7%, week 44%</div>'
+    $('list').innerHTML = html
+    openSwipe = null
+    document.querySelectorAll('#seg button').forEach((b, i) => {
+      b.classList.toggle('on', b.dataset.col === S.col)
+      b.setAttribute('aria-selected', b.dataset.col === S.col)
+      b.querySelector('.n').textContent = S.sessions.filter((s) => s.status === b.dataset.col).length
+    })
+    const i = cols.indexOf(S.col)
+    const seg = $('seg')
+    const w = (seg.clientWidth - 4) / 3
+    $('thumb').style.width = w + 'px'
+    $('thumb').style.transform = `translateX(${i * w}px)`
+  }
+  $('seg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S.col = b.dataset.col; renderBoard(); $('list').scrollTop = 0 })
+  $('list').addEventListener('scroll', () => $('bar').classList.toggle('scrolled', $('list').scrollTop > 40))
+  window.addEventListener('resize', renderBoard)
+
+  function setStatus(id, status) {
+    const s = find(id)
+    if (!s) return
+    s.status = status
+    if (status !== 'progress' && s.state === 'working') s.state = 'idle'
+    renderBoard()
+    if (S.open === id) renderConvo()
+  }
+  function answer(id, how) {
+    const s = find(id)
+    if (!s || s.state !== 'asks') return
+    s.transcriptExtra = (s.transcriptExtra || '') + `<div class="tools"><div class="tool">${CHECK}${how === 'no' ? 'Denied' : 'Allowed'}: ${esc(s.ask.cmd)}</div></div>`
+    s.state = how === 'no' ? 'idle' : 'working'
+    s.said = how === 'no' ? 'You said no. Waiting for what to do instead.' : 'Working'
+    s.time = 'now'
+    renderBoard()
+    if (S.open === id) renderConvo()
+  }
+
+  /* Row gestures: a horizontal drag swipes, a still press of 450 ms opens the menu, anything else is a tap. */
+  let g = null
+  $('list').addEventListener('pointerdown', (e) => {
+    const row = e.target.closest('.row')
+    if (!row || e.target.closest('button')) return
+    const wrap = row.parentElement
+    if (openSwipe && openSwipe !== wrap) { closeSwipe(); g = { swallow: true }; return }
+    const base = wrap._x || 0
+    g = { row, wrap, id: +wrap.dataset.id, x0: e.clientX, y0: e.clientY, base, dir: null, pid: e.pointerId }
+    row.classList.add('pressed')
+    g.timer = setTimeout(() => { if (g && !g.dir) { row.classList.remove('pressed'); openRowMenu(g.id, row); g.menu = true } }, 450)
+  })
+  $('list').addEventListener('pointermove', (e) => {
+    if (!g || g.swallow || g.menu) return
+    const dx = e.clientX - g.x0, dy = e.clientY - g.y0
+    if (!g.dir && Math.hypot(dx, dy) > 8) {
+      clearTimeout(g.timer)
+      g.row.classList.remove('pressed')
+      g.dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v'
+      if (g.dir === 'h') g.row.setPointerCapture(g.pid)
+    }
+    if (g.dir === 'h') {
+      const w = g.row.offsetWidth
+      let x = g.base + dx
+      x = Math.max(-w, Math.min(w, x))
+      move(g.wrap, x, false)
+    }
+  })
+  const finish = (e) => {
+    if (!g) return
+    clearTimeout(g.timer)
+    const cur = g
+    g = null
+    if (cur.swallow || cur.menu) return
+    cur.row.classList.remove('pressed')
+    if (cur.dir === 'h') return settle(cur.wrap, cur.id)
+    if (!cur.dir && e.type === 'pointerup') { if (openSwipe) closeSwipe(); else openConvo(cur.id) }
+  }
+  $('list').addEventListener('pointerup', finish)
+  $('list').addEventListener('pointercancel', finish)
+  $('list').addEventListener('click', (e) => {
+    const ans = e.target.closest('[data-ans]')
+    if (ans) { answer(+ans.closest('.swipe').dataset.id, ans.dataset.ans); tap(10); return }
+    const act = e.target.closest('[data-act]')
+    if (act) {
+      const id = +act.closest('.swipe').dataset.id
+      if (act.dataset.act === 'more') { closeSwipe(); statusSheet(id) }
+      else { tap(10); setStatus(id, act.dataset.act) }
+    }
+  })
+  $('list').addEventListener('keydown', (e) => { const row = e.target.closest('.row'); if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openConvo(+row.parentElement.dataset.id) } })
+  $('list').addEventListener('contextmenu', (e) => { if (e.target.closest('.row')) e.preventDefault() })
+
+  function move(wrap, x, animate) {
+    wrap._x = x
+    const row = wrap.querySelector('.row')
+    row.style.transition = animate ? 'transform 300ms var(--ease)' : 'none'
+    row.style.transform = `translateX(${x}px)`
+    const w = row.offsetWidth
+    const right = wrap.querySelector('.acts.right'), left = wrap.querySelector('.acts.left')
+    right.style.width = Math.max(0, -x) + 'px'
+    left.style.width = Math.max(0, x) + 'px'
+    const done = right.querySelector('.done'), more = right.querySelector('.more'), rev = left.querySelector('.review')
+    const full = -x > w * 0.5
+    done.style.width = full ? '100%' : '84px'
+    more.style.display = full ? 'none' : ''
+    rev.style.width = x > w * 0.5 ? '100%' : '96px'
+    ;[right, left].forEach((a) => (a.style.transition = animate ? 'width 300ms var(--ease)' : 'none'))
+    ;[done, rev].forEach((a) => (a.style.transition = animate ? 'width 300ms var(--ease)' : 'none'))
+  }
+  function settle(wrap, id) {
+    const w = wrap.querySelector('.row').offsetWidth, x = wrap._x || 0
+    if (x < -w * 0.5) { tap(12); move(wrap, -w, true); setTimeout(() => setStatus(id, 'done'), 260) }
+    else if (x > w * 0.5) { tap(12); move(wrap, w, true); setTimeout(() => setStatus(id, 'review'), 260) }
+    else if (x < -56) { move(wrap, -168, true); openSwipe = wrap }
+    else if (x > 56) { move(wrap, 96, true); openSwipe = wrap }
+    else { move(wrap, 0, true); if (openSwipe === wrap) openSwipe = null }
+  }
+  function closeSwipe() { if (openSwipe) { move(openSwipe, 0, true); openSwipe = null } }
+  phone.addEventListener('pointerdown', (e) => { if (openSwipe && !e.target.closest('#list')) closeSwipe() }, true)
+
+  /* ---------------- menus and sheets ---------------- */
+  const CHECK = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.5 3 3 7-7"/></svg>'
+  const rel = (el) => { const a = el.getBoundingClientRect(), p = phone.getBoundingClientRect(); return { x: a.left - p.left, y: a.top - p.top, w: a.width, h: a.height } }
+
+  function contextMenu(anchor, items, clone) {
+    tap(8)
+    const veil = document.createElement('div')
+    veil.className = 'menu-veil'
+    phone.append(veil)
+    const r = rel(anchor)
+    let lifted
+    if (clone) {
+      lifted = document.createElement('div')
+      lifted.className = 'lifted'
+      lifted.style.cssText = `left:${r.x}px;top:${r.y}px;width:${r.w}px`
+      lifted.append(anchor.cloneNode(true))
+      lifted.firstChild.style.transform = 'none'
+      phone.append(lifted)
+    }
+    const menu = document.createElement('div')
+    menu.className = 'cmenu'
+    menu.setAttribute('role', 'menu')
+    menu.innerHTML = items.map((it) => it === '-' ? '<div class="gap"></div>' : `<button role="menuitem" class="${it.cls || ''}">${esc(it.label)}${it.icon || ''}</button>`).join('')
+    phone.append(menu)
+    const real = items.filter((it) => it !== '-')
+    const mh = menu.offsetHeight, ph = phone.clientHeight
+    let top = r.y + r.h + 8
+    if (top + mh > ph - 20) { top = Math.max(60, r.y - mh - 8); menu.style.transformOrigin = 'bottom left' }
+    menu.style.top = top + 'px'
+    menu.style.left = Math.min(Math.max(12, r.x + 8), phone.clientWidth - 262) + 'px'
+    const close = () => { veil.remove(); menu.remove(); lifted && lifted.remove() }
+    veil.addEventListener('click', close)
+    menu.querySelectorAll('button').forEach((b, i) => b.addEventListener('click', () => { close(); real[i].run() }))
+    const first = menu.querySelector('button'); first && first.focus()
+    menu.addEventListener('keydown', (e) => {
+      const bs = [...menu.querySelectorAll('button')], at = bs.indexOf(document.activeElement)
+      if (e.key === 'Escape') close()
+      if (e.key === 'ArrowDown') { e.preventDefault(); bs[(at + 1) % bs.length].focus() }
+      if (e.key === 'ArrowUp') { e.preventDefault(); bs[(at - 1 + bs.length) % bs.length].focus() }
+    })
+  }
+  function statusItems(id) {
+    const s = find(id)
+    const mark = (st) => (s.status === st ? CHECK : '')
+    return [
+      { label: 'In review', icon: mark('review'), run: () => setStatus(id, 'review') },
+      { label: 'Blocked', run: () => { s.said = 'Blocked: waiting on something outside it'; setStatus(id, 'progress') } },
+      { label: 'Done', icon: mark('done'), run: () => setStatus(id, 'done') },
+      { label: 'No status', icon: mark('progress'), run: () => setStatus(id, 'progress') },
+    ]
+  }
+  function openRowMenu(id, row) {
+    const s = find(id)
+    const items = []
+    if (s.state === 'asks') items.push({ label: 'Allow once', cls: 'accent', run: () => answer(id, 'once') }, { label: 'Allow this session', run: () => answer(id, 'session') }, { label: 'No', run: () => answer(id, 'no') }, '-')
+    items.push(...statusItems(id), '-', { label: 'Rename', run: () => renameSheet(id) })
+    if (s.state === 'working') items.push({ label: 'Stop', run: () => stop(id) })
+    contextMenu(row, items, true)
+  }
+
+  function sheet(html, { full = false, onClose } = {}) {
+    const scrim = document.createElement('div')
+    scrim.className = 'scrim'
+    const el = document.createElement('div')
+    el.className = 'sheet' + (full ? ' full' : '')
+    el.setAttribute('role', 'dialog')
+    el.innerHTML = (full ? '' : '<div class="grab" aria-hidden="true"></div>') + html
+    phone.append(scrim, el)
+    let closed = false
+    const close = (how) => {
+      if (closed) return
+      closed = true
+      el.classList.add('settle')
+      el.style.transform = 'translateY(110%)'
+      scrim.style.transition = 'opacity 260ms'
+      scrim.style.opacity = '0'
+      setTimeout(() => { el.remove(); scrim.remove() }, 280)
+      onClose && onClose(how)
+    }
+    const tryClose = () => (el._guard ? el._guard(close) : close('dismiss'))
+    scrim.addEventListener('click', tryClose)
+    el.addEventListener('keydown', (e) => { if (e.key === 'Escape') tryClose() })
+    const handle = el.querySelector('.grab, .sheet-nav')
+    let d = null
+    handle.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; d = { y: e.clientY }; handle.setPointerCapture(e.pointerId); el.classList.add('dragging') })
+    handle.addEventListener('pointermove', (e) => { if (!d) return; const dy = Math.max(0, e.clientY - d.y); el.style.transform = `translateY(${dy}px)`; d.dy = dy })
+    const up = () => { if (!d) return; el.classList.remove('dragging'); el.classList.add('settle'); const dy = d.dy || 0; d = null; if (dy > 110) { el.style.transform = ''; tryClose() } else el.style.transform = '' ; setTimeout(() => el.classList.remove('settle'), 300) }
+    handle.addEventListener('pointerup', up)
+    handle.addEventListener('pointercancel', up)
+    setTimeout(() => { const f = el.querySelector('textarea') || el.querySelector('input') || el.querySelector('button:not(:disabled)'); f && f.focus({ preventScroll: true }) }, 60)
+    return { el, close }
+  }
+  function optionSheet(title, opts, extra) {
+    const s = sheet(`<div class="sheet-title">${esc(title)}</div><div class="list">${opts.map((o) => `<button class="opt"><div><b>${esc(o.label)}</b>${o.says ? `<span>${esc(o.says)}</span>` : ''}</div><span class="check">${o.on ? CHECK : ''}</span></button>`).join('')}</div>${extra || ''}`)
+    s.el.querySelectorAll('.list:first-of-type .opt').forEach((b, i) => b.addEventListener('click', () => { s.close('pick'); opts[i].run() }))
+    return s
+  }
+  function statusSheet(id) {
+    const s = find(id)
+    const opts = [
+      { label: 'In review', says: 'Finished, and waiting for you to check what it did', on: s.status === 'review', run: () => setStatus(id, 'review') },
+      { label: 'Blocked', says: 'Waiting on something outside it', run: () => setStatus(id, 'progress') },
+      { label: 'Done', says: 'Moved into Done', on: s.status === 'done', run: () => setStatus(id, 'done') },
+      { label: 'No status', on: s.status === 'progress', run: () => setStatus(id, 'progress') },
+    ]
+    const extra = `<div class="list"><button class="opt" data-x="links"><div><b>Links</b><span>2 in this conversation</span></div><span></span></button><button class="opt" data-x="rename"><div><b>Rename</b></div><span></span></button>${s.state === 'working' ? '<button class="opt" data-x="stop"><div><b>Stop</b><span>Interrupts Claude; the conversation stays</span></div><span></span></button>' : ''}</div>`
+    const sh = optionSheet('Where it stands', opts, extra)
+    sh.el.querySelectorAll('[data-x]').forEach((b) => b.addEventListener('click', () => {
+      sh.close('pick')
+      if (b.dataset.x === 'rename') renameSheet(id)
+      if (b.dataset.x === 'stop') stop(id)
+      if (b.dataset.x === 'links') linksSheet()
+    }))
+  }
+  function linksSheet() {
+    const s = sheet('<div class="sheet-title">Links in this conversation, the newest first</div><div class="list"><button class="opt"><div><b>Pull request #214</b><span>github.com/anetrebskii/geckit/pull/214</span></div><span></span></button><button class="opt"><div><b>CI run</b><span>github.com/anetrebskii/geckit/actions/runs/9921</span></div><span></span></button></div>')
+    s.el.querySelectorAll('.opt').forEach((b) => b.addEventListener('click', () => s.close('pick')))
+  }
+  function renameSheet(id) {
+    const s = find(id)
+    const sh = sheet(`<div class="sheet-title">Rename</div><div class="form" style="padding:0"><input id="rename-field" value="${esc(s.title)}" aria-label="Name"></div><div class="list" style="margin-top:10px"><button class="opt center bold"><div><b>Save</b></div></button></div>`)
+    sh.el.querySelector('.opt').addEventListener('click', () => { const v = sh.el.querySelector('input').value.trim(); if (v) s.title = v; sh.close('pick'); renderBoard(); if (S.open === id) renderConvo() })
+  }
+  function modeSheet() {
+    const set = (m) => () => { S.mode = m; $('mode').firstChild.textContent = m + ' ' }
+    optionSheet('What it may do', [
+      { label: 'Manual', says: 'Asks before it runs or changes anything.', on: S.mode === 'Manual', run: set('Manual') },
+      { label: 'Auto', says: "Claude Code's auto mode: its safety check lets routine work through and stops what looks risky.", on: S.mode === 'Auto', run: set('Auto') },
+      { label: 'Plan', says: 'Reads and proposes. Changes nothing.', on: S.mode === 'Plan', run: set('Plan') },
+    ])
+  }
+  function goalSheet() {
+    const sh = sheet(`<div class="sheet-title">Goal</div><div class="form" style="padding:0"><input id="goal-field" placeholder="When it is done, as a condition" value="${esc(S.goal)}" aria-label="Goal"><div class="note">Without a goal, it stops when Claude is done.</div></div><div class="list" style="margin-top:14px"><button class="opt center bold"><div><b>Set goal</b></div></button></div>`)
+    sh.el.querySelector('.opt').addEventListener('click', () => { S.goal = sh.el.querySelector('input').value.trim(); $('goal').classList.toggle('set', !!S.goal); $('goal').textContent = S.goal ? 'Goal set' : 'Goal'; sh.close('pick') })
+  }
+
+  function newTask() {
+    let project = 'geckit'
+    $('board').classList.add('sunk')
+    const sh = sheet(`<div class="sheet-nav"><button data-n="cancel">Cancel</button><b>New task</b><button data-n="start" disabled>Start</button></div>
+      <div class="form"><label>Project</label><button class="cell" data-n="project"><b style="font-weight:400">Project</b><span><em style="font-style:normal" id="nt-proj">geckit</em><svg width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m1.5 1.5 5 5-5 5"/></svg></span></button>
+      <label for="nt-what">What to do</label><textarea id="nt-what" placeholder="Ask Claude Code"></textarea>
+      <button class="attach"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="4" width="15" height="12" rx="2.5"/><circle cx="7.5" cy="8.5" r="1.5"/><path d="m3 14 4.5-4 3.5 3 2.5-2 4 3.5"/></svg>Add photo</button>
+      <label for="nt-goal">Goal</label><input id="nt-goal" placeholder="When it is done, as a condition"><div class="note">Without a goal, it stops when Claude is done.</div></div>`,
+      { full: true, onClose: () => $('board').classList.remove('sunk') })
+    const what = sh.el.querySelector('#nt-what'), start = sh.el.querySelector('[data-n="start"]')
+    what.addEventListener('input', () => (start.disabled = !what.value.trim()))
+    sh.el._guard = (close) => {
+      if (!what.value.trim()) return close('dismiss')
+      sh.el.style.transform = ''
+      const c = optionSheet('Discard this task?', [{ label: 'Discard', run: () => close('dismiss') }], '<div class="list"><button class="opt center bold" data-keep><div><b>Keep editing</b></div></button></div>')
+      c.el.querySelector('.list .opt b').style.color = 'var(--danger)'
+      c.el.querySelector('[data-keep]').addEventListener('click', () => c.close('pick'))
+    }
+    sh.el.querySelector('[data-n="cancel"]').addEventListener('click', () => sh.el._guard(sh.close))
+    sh.el.querySelector('[data-n="project"]').addEventListener('click', () => optionSheet('Start it in', Object.keys(PROJECTS).map((p) => ({ label: p, on: p === project, run: () => { project = p; sh.el.querySelector('#nt-proj').textContent = p } }))))
+    start.addEventListener('click', () => {
+      const text = what.value.trim()
+      const id = Date.now()
+      S.sessions.unshift({ id, title: text.length > 60 ? text.slice(0, 57) + '...' : text, project, status: 'progress', state: 'working', time: 'now', said: 'Working', prompt: text, tools: [], reply: '' })
+      sh.close('start')
+      S.col = 'progress'
+      renderBoard()
+      setTimeout(() => openConvo(id), 180)
+    })
+  }
+  $('new').addEventListener('click', newTask)
+
+  /* ---------------- conversation ---------------- */
+  function renderConvo() {
+    const s = find(S.open)
+    if (!s) return
+    $('c-title').textContent = s.title
+    $('c-proj').textContent = s.project
+    const tools = s.tools.length ? `<div class="tools">${s.tools.map((t, i) => `<button class="tool" data-tool="${i}"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m5 3 4 4-4 4"/></svg>${esc(t[0])} ${esc(t[1])}</button>${t[2] ? `<div class="tool-out" hidden>${esc(t[2])}</div>` : ''}`).join('')}</div>` : ''
+    $('transcript').innerHTML = `<div class="stamp">Today 11:57</div><div class="mine">${esc(s.prompt)}</div><div class="thought">Thought about it</div>${tools}${s.reply ? `<div class="theirs">${s.reply}</div>` : ''}${s.transcriptExtra || ''}${s.state === 'working' ? '<div class="working-line"><span class="spin" style="border-top-color:var(--accent)"></span>Working</div>' : ''}`
+    $('dock-slot').innerHTML = s.state === 'asks'
+      ? `<div class="dock" role="alertdialog" aria-label="${esc(s.ask.what)}"><h3>${esc(s.ask.what)}</h3><div class="where">in ${esc(s.project)}</div><div class="cmd">${esc(s.ask.cmd)}</div><div class="stack"><button class="btn-fill" data-d="once">Allow once</button><button class="btn-grey" data-d="session">Allow this session</button><button class="btn-plain" data-d="no" style="height:44px">No</button></div></div>`
+      : ''
+    $('composer').classList.toggle('greyed', s.state === 'asks')
+    $('msg').placeholder = s.state === 'working' ? 'Send more: it waits until Claude finishes' : 'Message'
+    syncSend()
+    const t = $('transcript'); t.scrollTop = t.scrollHeight
+  }
+  function syncSend() {
+    const s = find(S.open), b = $('send'), has = $('msg').value.trim() !== ''
+    const stopping = s && s.state === 'working' && !has
+    b.classList.toggle('stop', stopping)
+    b.disabled = !has && !stopping
+    b.setAttribute('aria-label', stopping ? 'Stop' : 'Send')
+    b.innerHTML = stopping ? '<svg width="12" height="12" viewBox="0 0 12 12"><rect width="12" height="12" rx="2.5" fill="currentColor"/></svg>' : '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>'
+  }
+  function stop(id) {
+    const s = find(id)
+    if (!s || s.state !== 'working') return
+    s.state = 'idle'; s.said = 'Stopped'
+    s.transcriptExtra = (s.transcriptExtra || '') + '<div class="thought">Stopped</div>'
+    renderBoard(); if (S.open === id) renderConvo()
+  }
+  function openConvo(id) {
+    S.open = id
+    const s = find(id)
+    if (s.state === 'idle') s.state = 'read'
+    renderConvo()
+    $('convo').classList.add('open')
+    $('board').classList.add('behind')
+    setTimeout(renderBoard, 330)
+  }
+  function closeConvo() {
+    $('convo').classList.remove('open', 'dragging')
+    $('convo').style.transform = ''
+    $('board').classList.remove('behind', 'dragging')
+    $('board').style.transform = ''
+    S.open = null
+  }
+  $('back').addEventListener('click', closeConvo)
+  $('more').addEventListener('click', () => statusSheet(S.open))
+  $('mode').addEventListener('click', modeSheet)
+  $('goal').addEventListener('click', goalSheet)
+  $('msg').addEventListener('input', () => { const m = $('msg'); m.style.height = 'auto'; m.style.height = Math.min(120, m.scrollHeight) + 'px'; syncSend() })
+  $('send').addEventListener('click', () => {
+    const s = find(S.open)
+    const text = $('msg').value.trim()
+    if (!text) return stop(S.open)
+    s.transcriptExtra = (s.transcriptExtra || '') + `<div class="mine">${esc(text)}</div>`
+    s.state = 'working'; s.said = 'Working'; s.time = 'now'
+    if (s.status !== 'progress') s.status = 'progress'
+    $('msg').value = ''; $('msg').style.height = 'auto'
+    renderConvo(); renderBoard()
+  })
+  $('dock-slot').addEventListener('click', (e) => { const b = e.target.closest('[data-d]'); if (b) { tap(10); answer(S.open, b.dataset.d) } })
+  $('transcript').addEventListener('click', (e) => {
+    const t = e.target.closest('.tool')
+    if (!t) return
+    const out = t.nextElementSibling
+    if (out && out.classList.contains('tool-out')) { out.hidden = !out.hidden; t.querySelector('svg').style.transform = out.hidden ? '' : 'rotate(90deg)' }
+  })
+
+  /* Long press on a message or a code block: Copy, and Select text for messages. */
+  let lp = null
+  $('transcript').addEventListener('pointerdown', (e) => {
+    const m = e.target.closest('.mine, .theirs, pre.code')
+    if (!m) return
+    lp = { m, x: e.clientX, y: e.clientY, t: setTimeout(() => {
+      const text = m.innerText
+      const items = [{ label: 'Copy', icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="6" width="9" height="9" rx="2"/><path d="M12 6V4.5A1.5 1.5 0 0 0 10.5 3h-6A1.5 1.5 0 0 0 3 4.5v6A1.5 1.5 0 0 0 4.5 12H6"/></svg>', run: () => { try { navigator.clipboard.writeText(text).catch(() => {}) } catch (err) {} } }]
+      if (!m.matches('pre.code')) items.push({ label: 'Select text', run: () => { const r = document.createRange(); r.selectNodeContents(m); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r) } })
+      contextMenu(m, items, false)
+      lp = null
+    }, 450) }
+  })
+  const lpCancel = (e) => { if (lp && (e.type !== 'pointermove' || Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 8)) { clearTimeout(lp.t); lp = null } }
+  ;['pointermove', 'pointerup', 'pointercancel'].forEach((t) => $('transcript').addEventListener(t, lpCancel))
+  $('transcript').addEventListener('contextmenu', (e) => { if (e.target.closest('.mine, .theirs, pre.code')) e.preventDefault() })
+
+  /* Edge swipe: a drag starting within 24 points of the left edge takes the conversation off to the right. */
+  let edge = null
+  $('convo').addEventListener('pointerdown', (e) => {
+    const r = rel($('convo'))
+    const x = e.clientX - phone.getBoundingClientRect().left
+    if (x > 24 || e.target.closest('textarea, input')) return
+    edge = { x0: e.clientX, w: r.w, pid: e.pointerId, t: Date.now() }
+    $('convo').setPointerCapture(e.pointerId)
+    $('convo').classList.add('dragging'); $('board').classList.add('dragging')
+  })
+  $('convo').addEventListener('pointermove', (e) => {
+    if (!edge) return
+    const dx = Math.max(0, e.clientX - edge.x0)
+    edge.dx = dx
+    $('convo').style.transform = `translateX(${dx}px)`
+    $('board').style.transform = `translateX(${-28 + (dx / edge.w) * 28}%)`
+  })
+  const edgeUp = () => {
+    if (!edge) return
+    const { dx = 0, w, t } = edge
+    edge = null
+    $('convo').classList.remove('dragging'); $('board').classList.remove('dragging')
+    const fast = dx / Math.max(1, Date.now() - t) > 0.6
+    if (dx > w / 3 || (fast && dx > 40)) closeConvo()
+    else { $('convo').style.transform = ''; $('board').style.transform = '' }
+  }
+  $('convo').addEventListener('pointerup', edgeUp)
+  $('convo').addEventListener('pointercancel', edgeUp)
+  $('convo').style.touchAction = 'pan-y'
+
+  /* ---------------- pairing and the states around it ---------------- */
+  function layer(cls, html) {
+    const el = document.createElement('section')
+    el.className = 'layer ' + cls
+    el.innerHTML = html
+    phone.append(el)
+    return el
+  }
+  function pairing() {
+    const el = layer('pair', `<div class="mid"><img src="${ICON}" alt=""><h2>GeckIt</h2><p>Your conversations with Claude Code, on your iPhone.</p>
+      <ol class="steps"><li><i>1</i>Open GeckIt on your Mac</li><li><i>2</i>Settings, then turn on Phone</li><li><i>3</i>Scan the code</li></ol></div>
+      <div class="actions"><button class="btn-fill" data-p="scan">Scan</button></div>`)
+    el.querySelector('[data-p="scan"]').addEventListener('click', () => { el.remove(); scanning() })
+  }
+  function scanning() {
+    const el = layer('camera', `<p>Point at the code in GeckIt's Settings</p><div class="finder"><div class="qr"></div></div><button data-p="cancel">Cancel</button>`)
+    const t = setTimeout(() => { el.remove(); tap(15); connecting() }, 1600)
+    el.querySelector('[data-p="cancel"]').addEventListener('click', () => { clearTimeout(t); el.remove(); pairing() })
+  }
+  function connecting(fail) {
+    const el = layer('pair', `<div class="mid"><span class="spin big-spin"></span><p>Connecting to the Mac</p></div>`)
+    setTimeout(() => { el.remove(); if (fail) unreachable() }, 1500)
+  }
+  function unreachable() {
+    const el = layer('pair', `<div class="mid"><svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="var(--faint)" stroke-width="2.6" stroke-linecap="round"><rect x="8" y="12" width="40" height="26" rx="3"/><path d="M20 46h16M28 38v8M8 8l40 40"/></svg><h3>The Mac did not answer.</h3><p>GeckIt has to be open there, with Phone turned on in Settings.</p></div>
+      <div class="actions"><button class="btn-fill" data-p="again">Try again</button><button class="btn-plain" data-p="scan" style="height:44px">Scan again</button></div>`)
+    el.querySelector('[data-p="again"]').addEventListener('click', () => { el.remove(); connecting() })
+    el.querySelector('[data-p="scan"]').addEventListener('click', () => { el.remove(); scanning() })
+  }
+
+  function notice() {
+    const s = S.sessions.find((x) => x.state === 'asks' && x.id !== S.open) || S.sessions[0]
+    document.querySelector('.banner')?.remove()
+    const b = document.createElement('button')
+    b.className = 'banner'
+    b.innerHTML = `<img src="${ICON}" alt=""><div><div class="top"><span>${esc(s.project)}</span><span>now</span></div><b>${esc(s.title)}</b><span class="body">${s.state === 'asks' ? 'Needs an answer' : 'Finished'}</span></div>`
+    phone.append(b)
+    tap(20)
+    const gone = () => { b.style.transition = 'transform 300ms var(--ease)'; b.style.transform = 'translateY(-140%)'; setTimeout(() => b.remove(), 300) }
+    const t = setTimeout(gone, 4000)
+    let y0 = null, moved = false
+    b.addEventListener('pointerdown', (e) => { y0 = e.clientY; moved = false; b.setPointerCapture(e.pointerId) })
+    b.addEventListener('pointermove', (e) => { if (y0 === null) return; const dy = Math.min(0, e.clientY - y0); if (dy < -6) moved = true; b.style.transform = `translateY(${dy}px)` })
+    b.addEventListener('pointerup', (e) => {
+      const dy = e.clientY - y0; y0 = null
+      if (moved && dy < -30) { clearTimeout(t); gone() }
+      else if (!moved) { clearTimeout(t); b.remove(); if (S.open !== s.id) { if (S.open) closeConvo(); setTimeout(() => openConvo(s.id), S.open ? 320 : 0) } }
+      else b.style.transform = ''
+    })
+  }
+  function cardArrives() {
+    let s = S.open ? find(S.open) : null
+    if (!s) { s = S.sessions.find((x) => x.state === 'asks') || S.sessions[0]; openConvo(s.id) }
+    if (s.state !== 'asks') { s.state = 'asks'; s.ask = { what: 'Wants to run a command', cmd: 'git push origin HEAD' }; s.status = 'progress' }
+    tap([10, 60, 10])
+    setTimeout(() => { renderConvo(); renderBoard() }, S.open === s.id ? 0 : 340)
+  }
+  function drop() {
+    const old = document.querySelector('.offline')
+    if (old) return old.remove()
+    const p = document.createElement('div')
+    p.className = 'offline'
+    p.setAttribute('role', 'status')
+    p.innerHTML = '<span class="spin"></span>Not connected to the Mac. Trying again.'
+    phone.append(p)
+  }
+
+  document.querySelector('.jump').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return
+    const j = b.dataset.j
+    document.querySelectorAll('.pair, .camera').forEach((el) => el.remove())
+    if (j === 'pair') pairing()
+    if (j === 'unreach') unreachable()
+    if (j === 'notice') notice()
+    if (j === 'card') cardArrives()
+    if (j === 'drop') drop()
+    if (j === 'usage') { S.usageHigh = !S.usageHigh; renderBoard() }
+    if (j === 'reset') { document.querySelectorAll('.scrim, .sheet, .menu-veil, .cmenu, .lifted, .banner, .offline').forEach((el) => el.remove()); closeConvo(); S = { col: 'progress', sessions: fresh(), open: null, mode: 'Manual', goal: '', usageHigh: false }; renderBoard() }
+  })
+  document.getElementById('themes').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return
+    document.querySelectorAll('#themes button').forEach((x) => x.classList.toggle('on', x === b))
+    if (b.dataset.t === 'system') document.documentElement.removeAttribute('data-theme')
+    else document.documentElement.setAttribute('data-theme', b.dataset.t)
+  })
+
+  renderBoard()
+})()
+</script>

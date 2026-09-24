@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+import { ON_PHONE } from '../on-phone'
 import { Icon } from './Icon'
+import { Sheet } from './Sheet'
 
 /**
  * A menu hanging off the control that opened it.
@@ -74,6 +76,34 @@ export function Menu({
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
   }, [onClose])
+
+  if (ON_PHONE) {
+    return (
+      <Sheet {...(title === undefined ? {} : { title })} onClose={onClose}>
+        <div className="sheet-list" role="menu">
+          {choices.map((choice) => (
+            <button
+              key={choice.value}
+              type="button"
+              role="menuitem"
+              className={`sheet-option${choice.danger === true ? ' danger' : ''}`}
+              onClick={() => {
+                onPick(choice.value)
+                onClose()
+              }}
+            >
+              <span className="sheet-words">
+                <span className="label">{choice.label}</span>
+                {choice.says === undefined ? null : <span className="says">{choice.says}</span>}
+              </span>
+              {choice.value === chosen || choice.on === true ? <Icon name="check" size={16} /> : null}
+            </button>
+          ))}
+        </div>
+        {note === undefined ? null : <div className="sheet-note">{note}</div>}
+      </Sheet>
+    )
+  }
 
   return createPortal(
     <>

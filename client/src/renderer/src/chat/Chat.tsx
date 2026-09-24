@@ -8,6 +8,9 @@ import { Menu, Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Board, NewTask } from './Board'
+import { PhoneBoard } from './PhoneBoard'
+import { EdgeBack, PhoneNav } from './PhoneNav'
+import { Screen } from './Screen'
 import { Composer } from './Composer'
 import { NameField } from './NameField'
 import { projectColor } from '../../../shared/project-color'
@@ -72,6 +75,8 @@ export function Chat(): React.JSX.Element {
   const [copied, setCopied] = useState<string | undefined>()
   // The board's New task form is open.
   const [making, setMaking] = useState(false)
+  // The Mac's own screen, shown on the phone.
+  const [screening, setScreening] = useState(false)
   const grab = useRef(0)
   const { addFiles, send, root } = chat
 
@@ -340,7 +345,9 @@ export function Chat(): React.JSX.Element {
         addFiles([...event.dataTransfer.files])
       }}
     >
-      {board ? (
+      {board && ON_PHONE ? (
+        <PhoneBoard chat={chat} onNew={() => setMaking(true)} onScreen={() => setScreening(true)} />
+      ) : board ? (
         <Board
           chat={chat}
           onNew={() => setMaking(true)}
@@ -389,173 +396,162 @@ export function Chat(): React.JSX.Element {
         onDoubleClick={() => chat.change({ sidebarWidth: DEFAULT_SETTINGS.sidebarWidth })}
       />
 
-      <div className={`talk${board ? ' over' : ''}`} hidden={board && !overBoard}>
-        <div className="talk-head drag">
-          {ON_PHONE && overBoard ? (
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="Back to the board"
-              onClick={() => chat.open({ kind: 'new' })}
-            >
-              <Icon name="left" />
-            </button>
-          ) : null}
-          {chat.session === undefined ? (
-            <span className="title">{title}</span>
-          ) : naming === chat.session.id ? (
-            <NameField
-              key={chat.session.id}
-              name={chat.session.title}
-              className="title-field no-drag"
-              onDone={(name) => {
-                if (name !== undefined && chat.session !== undefined) chat.rename(chat.session.id, name)
-                setNaming(undefined)
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              className="title no-drag"
-              title="Rename (F2)"
-              onClick={() => setNaming(chat.session?.id)}
-            >
-              {title}
-            </button>
-          )}
-          {chat.session !== undefined ? (
-            ON_PHONE ? null : (
+      <div className={`talk${board ? ' over' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}`} hidden={board && !overBoard}>
+        {ON_PHONE && overBoard ? <EdgeBack onBack={() => chat.open({ kind: 'new' })} /> : null}
+        {ON_PHONE ? (
+          <PhoneNav chat={chat} links={links} />
+        ) : (
+          <div className="talk-head drag">
+            {chat.session === undefined ? (
+              <span className="title">{title}</span>
+            ) : naming === chat.session.id ? (
+              <NameField
+                key={chat.session.id}
+                name={chat.session.title}
+                className="title-field no-drag"
+                onDone={(name) => {
+                  if (name !== undefined && chat.session !== undefined) chat.rename(chat.session.id, name)
+                  setNaming(undefined)
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className="title no-drag"
+                title="Rename (F2)"
+                onClick={() => setNaming(chat.session?.id)}
+              >
+                {title}
+              </button>
+            )}
+            {chat.session !== undefined ? (
               <>
                 <span className="tinted" style={{ fontSize: 12, ...tint(projectColor(chat.session.root, chat.settings)) }}>
                   {projectName(chat.session.root)}
                 </span>
                 <Tags session={chat.session} marked={false} />
               </>
-            )
-          ) : chat.root === undefined ? null : (
-            <Picker
-              label={`in ${projectName(chat.root)}`}
-              choices={chat.settings.projects.map((one) => ({ value: one, label: projectName(one), says: homePath(one) }))}
-              chosen={chat.root}
-              title="Start it in"
-              tip={homePath(chat.root)}
-              className="picker head-project no-drag"
-              onPick={chat.setRoot}
-            />
-          )}
-          {ON_PHONE || chat.session?.model === undefined ? null : (
-            <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{chat.session.model}</span>
-          )}
-          <div className="spacer" />
-          {links.length === 0 ? null : (
-            <Picker
-              label="Links"
-              choices={links.map((link) => ({
-                value: link.url,
-                label: link.text ?? shortUrl(link.url),
-                ...(link.text === undefined ? {} : { says: shortUrl(link.url) }),
-              }))}
-              title="Links in this conversation"
-              tip={`${String(links.length)} ${links.length === 1 ? 'link' : 'links'} in this conversation, the newest first`}
-              className="picker no-drag"
-              onPick={(url) => window.geckit.chat.openLink(url)}
-            />
-          )}
-          {chat.session === undefined ? null : (
-            <>
+            ) : chat.root === undefined ? null : (
               <Picker
-                label={SESSION_STATUSES.find((one) => one.status === chat.session?.status)?.label ?? 'Status'}
-                choices={[
-                  ...SESSION_STATUSES.map((one) => ({ value: one.status, label: one.label, says: one.why })),
-                  ...(chat.session.status === undefined ? [] : [{ value: '', label: 'No status', says: 'Take the mark off' }]),
-                ]}
-                chosen={chat.session.status ?? ''}
-                title="Where it stands"
-                explained
-                note="Saying anything more in it takes the mark off."
-                tip="Mark it in review, blocked or done"
-                className={`picker no-drag${chat.session.status === undefined ? '' : ` marked ${chat.session.status}`}`}
-                onPick={(value) => {
-                  if (chat.session !== undefined) chat.mark(chat.session.id, value === '' ? undefined : (value as SessionStatus))
-                }}
+                label={`in ${projectName(chat.root)}`}
+                choices={chat.settings.projects.map((one) => ({ value: one, label: projectName(one), says: homePath(one) }))}
+                chosen={chat.root}
+                title="Start it in"
+                tip={homePath(chat.root)}
+                className="picker head-project no-drag"
+                onPick={chat.setRoot}
               />
-              {ON_PHONE ? null : (
-                <>
-                  <button
-                    type="button"
-                    className={`picker no-drag${chat.session.remote === undefined ? '' : ' remote-on'}`}
-                    disabled={remoteBusy === chat.session.id}
-                    title={
-                      chat.session.remote === undefined
-                        ? 'Remote Control: continue this conversation from claude.ai or the Claude app'
-                        : 'Remote Control is on'
-                    }
-                    onClick={(event) => setRemoting(event.currentTarget.getBoundingClientRect())}
-                  >
-                    {chat.session.remote === undefined ? null : <span className="remote-dot" />}
-                    {remoteBusy === chat.session.id ? 'Remote...' : 'Remote'}
-                  </button>
-                  <button
-                    type="button"
-                    className="picker no-drag"
-                    disabled={chat.working}
-                    title="Summarise the conversation so far and go on from the summary, to free up its context, as /compact does"
-                    onClick={() => chat.setCompacting('clicked')}
-                  >
-                    Compact
-                  </button>
-                  <button
-                    type="button"
-                    className="picker no-drag"
-                    title="Start a new conversation in this project, for another task"
-                    onClick={() => setClearing(true)}
-                  >
-                    Clear
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button no-drag"
-                    title={
-                      copied === chat.session.id
-                        ? 'Copied'
-                        : `Copy the command that continues it in a terminal: ${resumeCommand(chat.session.id)}`
-                    }
-                    aria-label="Copy the terminal command"
-                    onClick={() => {
-                      if (chat.session === undefined) return
-                      const id = chat.session.id
-                      chat.copyTerminal(id)
-                      setCopied(id)
-                      setTimeout(() => setCopied((now) => (now === id ? undefined : now)), 1500)
-                    }}
-                  >
-                    <Icon name={copied === chat.session.id ? 'check' : 'terminal'} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button no-drag"
-                    title={`Refresh (${MOD}+R)`}
-                    aria-label="Refresh"
-                    onClick={chat.refresh}
-                  >
-                    <Icon name="refresh" />
-                  </button>
-                </>
-              )}
-            </>
-          )}
-          {overBoard && !ON_PHONE ? (
-            <button
-              type="button"
-              className="icon-button no-drag"
-              title="Back to the board (Esc)"
-              aria-label="Back to the board"
-              onClick={() => chat.open({ kind: 'new' })}
-            >
-              <Icon name="close" />
-            </button>
-          ) : null}
-        </div>
+            )}
+            {chat.session?.model === undefined ? null : (
+              <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{chat.session.model}</span>
+            )}
+            <div className="spacer" />
+            {links.length === 0 ? null : (
+              <Picker
+                label="Links"
+                choices={links.map((link) => ({
+                  value: link.url,
+                  label: link.text ?? shortUrl(link.url),
+                  ...(link.text === undefined ? {} : { says: shortUrl(link.url) }),
+                }))}
+                title="Links in this conversation"
+                tip={`${String(links.length)} ${links.length === 1 ? 'link' : 'links'} in this conversation, the newest first`}
+                className="picker no-drag"
+                onPick={(url) => window.geckit.chat.openLink(url)}
+              />
+            )}
+            {chat.session === undefined ? null : (
+              <>
+                <Picker
+                  label={SESSION_STATUSES.find((one) => one.status === chat.session?.status)?.label ?? 'Status'}
+                  choices={[
+                    ...SESSION_STATUSES.map((one) => ({ value: one.status, label: one.label, says: one.why })),
+                    ...(chat.session.status === undefined ? [] : [{ value: '', label: 'No status', says: 'Take the mark off' }]),
+                  ]}
+                  chosen={chat.session.status ?? ''}
+                  title="Where it stands"
+                  explained
+                  note="Saying anything more in it takes the mark off."
+                  tip="Mark it in review, blocked or done"
+                  className={`picker no-drag${chat.session.status === undefined ? '' : ` marked ${chat.session.status}`}`}
+                  onPick={(value) => {
+                    if (chat.session !== undefined) chat.mark(chat.session.id, value === '' ? undefined : (value as SessionStatus))
+                  }}
+                />
+                <button
+                  type="button"
+                  className={`picker no-drag${chat.session.remote === undefined ? '' : ' remote-on'}`}
+                  disabled={remoteBusy === chat.session.id}
+                  title={
+                    chat.session.remote === undefined
+                      ? 'Remote Control: continue this conversation from claude.ai or the Claude app'
+                      : 'Remote Control is on'
+                  }
+                  onClick={(event) => setRemoting(event.currentTarget.getBoundingClientRect())}
+                >
+                  {chat.session.remote === undefined ? null : <span className="remote-dot" />}
+                  {remoteBusy === chat.session.id ? 'Remote...' : 'Remote'}
+                </button>
+                <button
+                  type="button"
+                  className="picker no-drag"
+                  disabled={chat.working}
+                  title="Summarise the conversation so far and go on from the summary, to free up its context, as /compact does"
+                  onClick={() => chat.setCompacting('clicked')}
+                >
+                  Compact
+                </button>
+                <button
+                  type="button"
+                  className="picker no-drag"
+                  title="Start a new conversation in this project, for another task"
+                  onClick={() => setClearing(true)}
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  className="icon-button no-drag"
+                  title={
+                    copied === chat.session.id
+                      ? 'Copied'
+                      : `Copy the command that continues it in a terminal: ${resumeCommand(chat.session.id)}`
+                  }
+                  aria-label="Copy the terminal command"
+                  onClick={() => {
+                    if (chat.session === undefined) return
+                    const id = chat.session.id
+                    chat.copyTerminal(id)
+                    setCopied(id)
+                    setTimeout(() => setCopied((now) => (now === id ? undefined : now)), 1500)
+                  }}
+                >
+                  <Icon name={copied === chat.session.id ? 'check' : 'terminal'} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button no-drag"
+                  title={`Refresh (${MOD}+R)`}
+                  aria-label="Refresh"
+                  onClick={chat.refresh}
+                >
+                  <Icon name="refresh" />
+                </button>
+              </>
+            )}
+            {overBoard ? (
+              <button
+                type="button"
+                className="icon-button no-drag"
+                title="Back to the board (Esc)"
+                aria-label="Back to the board"
+                onClick={() => chat.open({ kind: 'new' })}
+              >
+                <Icon name="close" />
+              </button>
+            ) : null}
+          </div>
+        )}
 
         {chat.shown.kind === 'new' && chat.items.length === 0 ? (
           <div className="transcript">
@@ -596,6 +592,7 @@ export function Chat(): React.JSX.Element {
       <Status chat={chat} />
 
       <Notices chat={chat} />
+      {screening ? <Screen onClose={() => setScreening(false)} /> : null}
       <UpdateNotice />
       {recent === undefined ? null : <Recent list={recent.list} at={recent.at} colors={chat.settings} />}
       {switching ? <Switcher chat={chat} onClose={() => setSwitching(false)} onSeek={setSeek} /> : null}

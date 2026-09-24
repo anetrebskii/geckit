@@ -37,6 +37,24 @@
   --tooltip-bg: #2b2b2e;
   --tooltip-text: #f2f2f4;
   --code-bg: #f6f6f8;
+  /* The phone's own: iOS grouped lists, their hairlines, and the coloured backs of a swiped row. */
+  --ground: #f2f2f5;
+  --fill: rgb(118 118 128 / 12%);
+  --fill-strong: rgb(118 118 128 / 20%);
+  --separator: rgb(60 60 67 / 18%);
+  --scrim: rgb(0 0 0 / 28%);
+  --glass: rgb(249 249 251 / 82%);
+  --menu: rgb(246 246 248 / 96%);
+  --lift: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 18px 50px rgb(0 0 0 / 22%);
+  --review-solid: #c08a1e;
+  --done-solid: #2e9a42;
+  --more-solid: #8e8e93;
+  --sheet: #f2f2f5;
+  --on-solid: #ffffff;
+  /* The Mac's screen is shown on black in either theme, as a photo or a video is. */
+  --screen: #000000;
+  --screen-bar: rgb(0 0 0 / 55%);
+  --screen-text: #f2f2f4;
   --shadow: 0 0 0 0.5px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
   /* A project's name, in the colour it was given: sky, blue, indigo, violet, purple, magenta, pink, slate. */
   --project-0: hsl(196 80% 32%);
@@ -75,6 +93,22 @@
   --tooltip-bg: #3a3a3f;
   --tooltip-text: #f2f2f4;
   --code-bg: #1a1a1c;
+  --ground: #000000;
+  --fill: rgb(118 118 128 / 24%);
+  --fill-strong: rgb(118 118 128 / 36%);
+  --separator: rgb(84 84 88 / 55%);
+  --scrim: rgb(0 0 0 / 50%);
+  --glass: rgb(30 30 32 / 82%);
+  --menu: rgb(44 44 46 / 96%);
+  --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+  --review-solid: #a8781a;
+  --done-solid: #2b8a3c;
+  --more-solid: #636366;
+  --sheet: #1c1c1e;
+  --on-solid: #ffffff;
+  --screen: #000000;
+  --screen-bar: rgb(0 0 0 / 55%);
+  --screen-text: #f2f2f4;
   --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
   --project-0: hsl(196 70% 64%);
   --project-1: hsl(220 85% 72%);
@@ -113,6 +147,22 @@
     --tooltip-bg: #3a3a3f;
     --tooltip-text: #f2f2f4;
     --code-bg: #1a1a1c;
+    --ground: #000000;
+    --fill: rgb(118 118 128 / 24%);
+    --fill-strong: rgb(118 118 128 / 36%);
+    --separator: rgb(84 84 88 / 55%);
+    --scrim: rgb(0 0 0 / 50%);
+    --glass: rgb(30 30 32 / 82%);
+    --menu: rgb(44 44 46 / 96%);
+    --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+    --review-solid: #a8781a;
+    --done-solid: #2b8a3c;
+    --more-solid: #636366;
+    --sheet: #1c1c1e;
+    --on-solid: #ffffff;
+    --screen: #000000;
+    --screen-bar: rgb(0 0 0 / 55%);
+    --screen-text: #f2f2f4;
     --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
     --project-0: hsl(196 70% 64%);
     --project-1: hsl(220 85% 72%);
@@ -3630,112 +3680,1134 @@ button.tag:hover {
 /* The phone                                                         */
 /* ---------------------------------------------------------------- */
 
-/* The same window served to the phone: one column of the board at a time, and a conversation that takes the screen. */
+/* The same window served to the phone, drawn as an iPhone app: the system font at iOS sizes, grouped lists, and 44pt targets. */
+html.phone {
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --top: env(safe-area-inset-top);
+  --bottom: env(safe-area-inset-bottom);
+
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.phone body {
+  font-size: 17px;
+  line-height: 1.3;
+  background: var(--ground);
+  overscroll-behavior: none;
+}
+
 html.phone #root {
   height: 100dvh;
 }
 
-html.phone .board-head {
-  gap: 8px;
-  padding: calc(env(safe-area-inset-top) + 8px) 10px 8px;
+/* The board's usage line says what the status bar says, and the conversation covers the rest. */
+html.phone .status-bar,
+html.phone .talk-scrim {
+  display: none;
 }
 
-/* The three columns as a segmented control, the way iOS switches between views of one list. */
-.board-tabs {
-  display: flex;
-  flex: 1;
-  gap: 2px;
-  min-width: 0;
-  padding: 2px;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.board-tabs .tab {
-  flex: 1;
-  justify-content: center;
-  min-width: 0;
-  height: 32px;
-  padding: 0 6px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.board-tabs .tab.on {
-  background: var(--bg-raised);
-  box-shadow: var(--shadow);
-}
-
-.board-tabs .count {
-  color: var(--text-faint);
-}
-
-/* A thumb, not a pointer: the controls kept on the phone are as tall as the segments. */
-html.phone .icon-button {
-  width: 36px;
-  height: 36px;
-}
-
-html.phone .board-columns {
-  display: flex;
-  padding: 0;
-}
-
-html.phone .board-column {
-  flex: 1;
-  min-width: 0;
-  padding: 10px 10px 0;
-  background: none;
-  border: 0;
-  border-radius: 0;
-}
-
-html.phone .talk.over {
-  inset: 0;
-  width: 100%;
-  padding-top: env(safe-area-inset-top);
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-
-html.phone .talk-head {
-  gap: 4px;
-  padding: 0 6px;
-}
-
-/* Mode, tasks and goal take a line of their own when they do not fit beside Send. */
-html.phone .composer-bar {
-  flex-wrap: wrap;
-}
-
-html.phone .composer-bar .send {
-  margin-inline-start: auto;
-}
-
-html.phone .status-bar {
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-/* The stream to the Mac is down; the page under it is as it was, and reloads once the stream is back. */
-.phone-offline {
-  position: fixed;
-  inset: 0 0 auto;
-  z-index: 20;
-  padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
-  font-size: 12px;
-  color: var(--text-dim);
-  text-align: center;
-  background: var(--bg-raised);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  animation: fade var(--quick) var(--ease) both;
+html.phone .chat {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 /* Safari zooms into any field whose text is smaller than this. */
 html.phone input,
 html.phone textarea,
 html.phone [contenteditable] {
-  font-size: 16px;
+  font-size: 17px;
+}
+
+html.phone button:active:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+/* The board */
+
+.phone-board {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  background: var(--ground);
+}
+
+.phone-bar {
+  position: relative;
+  flex: none;
+  padding: calc(var(--top) + 4px) 16px 0;
+  background: var(--ground);
+  transition: box-shadow var(--settle) var(--ease);
+}
+
+.phone-bar.scrolled {
+  box-shadow: 0 0.5px 0 var(--separator);
+}
+
+.phone-bar-row {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  margin-inline-end: -10px;
+}
+
+.phone-bar-small {
+  position: absolute;
+  inset-inline: 0;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--settle) var(--ease);
+}
+
+.phone-bar.scrolled .phone-bar-small {
+  opacity: 1;
+}
+
+.phone-large {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 41px;
+  letter-spacing: 0.01em;
+  transition: opacity var(--settle) var(--ease);
+}
+
+.phone-bar.scrolled .phone-large {
+  opacity: 0;
+}
+
+.phone-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+  border-radius: 22px;
+}
+
+/* The segmented control: the thumb slides under the chosen third. */
+.phone-seg {
+  position: relative;
+  display: flex;
+  margin: 10px 0 12px;
+  padding: 2px;
+  background: var(--fill);
+  border-radius: 9px;
+}
+
+.phone-seg button {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  height: 30px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: 7px;
+}
+
+.phone-seg button.on {
+  font-weight: 600;
+}
+
+.phone-seg .n {
+  margin-inline-start: 4px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.phone-seg-thumb {
+  position: absolute;
+  inset-block: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 3);
+  background: var(--bg-raised);
+  border-radius: 7px;
+  box-shadow: 0 0 0 0.5px var(--separator), 0 3px 8px var(--fill-strong);
+  transform: translateX(calc(var(--at, 0) * 100%));
+  transition: transform 280ms var(--ease);
+}
+
+.phone-list {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: calc(var(--bottom) + 18px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.phone-alert {
+  margin: 0 16px 14px;
+  padding: 12px 14px;
+  font-size: 15px;
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-radius: 12px;
+}
+
+.phone-empty {
+  margin: 90px 32px;
+  font-size: 17px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.phone-head {
+  margin: 18px 32px 7px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.phone-head:first-child {
+  margin-top: 4px;
+}
+
+.phone-group {
+  margin: 0 16px;
+  overflow: hidden;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.phone-foot {
+  margin: 18px 32px 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+/* The asks past the third, folded into one line at the foot of the group. */
+.phone-fold {
+  position: relative;
+  width: 100%;
+  height: 44px;
+  font-size: 17px;
+  color: var(--accent);
+  box-shadow: inset 0 0.5px 0 var(--separator);
+}
+
+/* A row, and what its swipe uncovers on either side. */
+.phone-swipe {
+  position: relative;
+  overflow: hidden;
+}
+
+.phone-swipe + .phone-swipe .phone-row::before {
+  position: absolute;
+  top: 0;
+  inset-inline: 36px 0;
+  height: 0.5px;
+  content: '';
+  background: var(--separator);
+}
+
+.phone-actions {
+  position: absolute;
+  inset-block: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.phone-actions.lead {
+  left: 0;
+}
+
+.phone-actions.trail {
+  right: 0;
+  justify-content: flex-end;
+}
+
+.phone-action {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-solid);
+  transition: width var(--settle) var(--ease);
+}
+
+.phone-action.review {
+  background: var(--review-solid);
+}
+
+.phone-action.done {
+  background: var(--done-solid);
+}
+
+.phone-action.more,
+.phone-action.back {
+  background: var(--more-solid);
+}
+
+.phone-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  column-gap: 10px;
+  padding: 11px 16px;
+  cursor: default;
+  background: var(--bg-raised);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform 260ms var(--ease);
+}
+
+.phone-row.moving {
+  transition: none;
+}
+
+.phone-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+
+.phone-dot.working {
+  background: var(--accent);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.phone-dot.asks {
+  background: var(--review-solid);
+}
+
+.phone-dot.failed {
+  background: var(--danger);
+}
+
+.phone-dot.unread {
+  background: var(--accent);
+}
+
+.phone-dot.read {
+  box-shadow: inset 0 0 0 1.5px var(--text-faint);
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.phone-row-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.phone-row-title {
+  display: -webkit-box;
+  flex: 1;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 22px;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.phone-row-time {
+  flex: none;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.phone-row-said {
+  display: -webkit-box;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 20px;
+  color: var(--text-dim);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.phone-row-said.working {
+  color: var(--accent);
+}
+
+.phone-row-asks {
+  margin-top: 3px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--warning-text);
+}
+
+.phone-row-cmd {
+  margin-top: 6px;
+  padding: 7px 10px;
+  overflow: hidden;
+  font-family: var(--font-code);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--bg-sunken);
+  border-radius: 8px;
+}
+
+.phone-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  margin-top: 5px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.phone-row-tag {
+  padding: 1px 6px;
+  font-size: 12px;
+  background: var(--fill);
+  border-radius: 4px;
+}
+
+.phone-row-tag.blocked {
+  color: var(--danger);
+  background: none;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.phone-row-answer {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.phone-button {
+  flex: 1;
+  height: 44px;
+  padding: 0 16px;
+  font-size: 17px;
+  font-weight: 600;
+  border-radius: 10px;
+}
+
+.phone-button.fill {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.phone-button.grey {
+  color: var(--text);
+  background: var(--fill);
+}
+
+/* A long press lifts the row over a blurred board and opens its menu beside it. */
+.phone-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  animation: fade 200ms var(--ease) both;
+}
+
+.phone-lifted {
+  position: fixed;
+  z-index: 61;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: 12px;
+  box-shadow: var(--lift);
+  animation: press 260ms var(--ease) both;
+}
+
+@keyframes press {
+  from {
+    transform: scale(0.96);
+  }
+  60% {
+    transform: scale(1.03);
+  }
+}
+
+.phone-menu {
+  position: fixed;
+  z-index: 61;
+  width: 250px;
+  overflow: hidden;
+  transform-origin: top left;
+  background: var(--menu);
+  backdrop-filter: saturate(180%) blur(30px);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  border-radius: 14px;
+  box-shadow: var(--lift);
+  animation: grow 260ms var(--ease) both;
+}
+
+@keyframes grow {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.phone-menu button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 44px;
+  padding: 0 16px;
+  font-size: 17px;
+  text-align: start;
+}
+
+.phone-menu button + button::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.5px;
+  content: '';
+  background: var(--separator);
+}
+
+.phone-menu button.accent {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.phone-menu .gap {
+  height: 8px;
+  background: var(--fill);
+}
+
+/* Sheets: every menu on the phone, rising from the bottom under the thumb. They share one layer, so one opened from another lands on top of it. */
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--scrim);
+  animation: fade 240ms var(--ease) both;
+}
+
+.sheet {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - var(--top) - 10px);
+  padding: 0 16px calc(var(--bottom) + 12px);
+  background: var(--sheet);
+  border-radius: 14px 14px 0 0;
+  transition: transform 280ms var(--ease);
+  animation: sheet 360ms var(--ease) both;
+}
+
+.sheet.dragging {
+  transition: none;
+}
+
+@keyframes sheet {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+.sheet-grab {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 6px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sheet-handle {
+  width: 36px;
+  height: 5px;
+  margin-bottom: 10px;
+  background: var(--fill-strong);
+  border-radius: 3px;
+}
+
+.sheet-title {
+  padding: 0 16px 12px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sheet-list {
+  overflow: hidden;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.sheet-body + .sheet-list,
+.sheet-field + .sheet-list {
+  margin-top: 10px;
+}
+
+.sheet-option {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 50px;
+  padding: 9px 16px;
+  font-size: 17px;
+  text-align: start;
+}
+
+.sheet-option + .sheet-option::before {
+  position: absolute;
+  top: 0;
+  inset-inline: 16px 0;
+  height: 0.5px;
+  content: '';
+  background: var(--separator);
+}
+
+.sheet-option > svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.sheet-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sheet-words .says {
+  margin-top: 1px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.sheet-option.danger {
+  color: var(--danger);
+}
+
+.sheet-option.sheet-cancel {
+  justify-content: center;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.sheet-note {
+  margin: 7px 16px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.sheet-field {
+  width: 100%;
+  padding: 11px 16px;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 0;
+  border-radius: 12px;
+  outline: none;
+}
+
+/* New task: a sheet almost the height of the screen, the way Mail's new message is. */
+.phone-task {
+  position: fixed;
+  inset: calc(var(--top) + 10px) 0 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--sheet);
+  border-radius: 14px 14px 0 0;
+  transition: transform 280ms var(--ease);
+  animation: sheet 360ms var(--ease) both;
+}
+
+.phone-task.dragging {
+  transition: none;
+}
+
+.phone-task-bar {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 52px;
+  padding: 0 8px;
+  touch-action: none;
+}
+
+.phone-task-bar b {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.phone-task-bar button {
+  height: 44px;
+  padding: 0 8px;
+  font-size: 17px;
+  color: var(--accent);
+  justify-self: start;
+}
+
+.phone-task-bar button.strong {
+  font-weight: 600;
+  justify-self: end;
+}
+
+.phone-task-bar button:disabled {
+  color: var(--text-faint);
+}
+
+.phone-task-form {
+  flex: 1;
+  min-height: 0;
+  padding: 8px 16px calc(var(--bottom) + 16px);
+  overflow-y: auto;
+}
+
+.phone-task-label {
+  margin: 16px 16px 6px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.phone-task-label:first-child {
+  margin-top: 4px;
+}
+
+.phone-task-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 17px;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.phone-task-cell span {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+.phone-task-text,
+.phone-task-goal {
+  width: 100%;
+  padding: 11px 16px;
+  line-height: 22px;
+  color: var(--text);
+  resize: none;
+  background: var(--bg-raised);
+  border: 0;
+  border-radius: 12px;
+  outline: none;
+}
+
+.phone-task-text {
+  min-height: 132px;
+}
+
+.phone-task-photo {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  height: 44px;
+  margin-top: 6px;
+  padding: 0 16px;
+  font-size: 17px;
+  color: var(--accent);
+}
+
+.phone-task-note {
+  margin: 7px 16px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.phone-task .pending {
+  padding: 10px 0 0;
+}
+
+/* The conversation, pushed in from the right over the board. */
+html.phone .talk.over {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  border: 0;
+  border-radius: 0;
+  box-shadow: -8px 0 30px var(--fill-strong);
+  transition: transform 280ms var(--ease);
+  animation: push 320ms var(--ease) both;
+}
+
+@keyframes push {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+.phone-edge {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  z-index: 4;
+  width: 20px;
+  touch-action: none;
+}
+
+.phone-nav {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: calc(var(--top) + 52px);
+  padding: var(--top) 4px 0;
+  background: var(--glass);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 0.5px 0 var(--separator);
+}
+
+.phone-back {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  height: 44px;
+  padding: 0 10px 0 4px;
+  font-size: 17px;
+  color: var(--accent);
+  justify-self: start;
+}
+
+.phone-nav-title {
+  min-width: 0;
+  max-width: 220px;
+  text-align: center;
+}
+
+.phone-nav-title b {
+  display: block;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-nav-title span {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.phone-nav .phone-icon {
+  justify-self: end;
+}
+
+html.phone .transcript {
+  padding: 16px 0 24px;
+  overscroll-behavior: contain;
+}
+
+html.phone .turn {
+  padding: 0 16px;
+}
+
+html.phone .mine {
+  width: fit-content;
+  max-width: 82%;
+  margin-inline-start: auto;
+  padding: 9px 14px;
+  border-radius: 20px;
+}
+
+html.phone .prose {
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+/* A question waiting for an answer stays in reach at the foot of the conversation while the rest scrolls under it. */
+html.phone .talk.asks .turn:has(> .card:not(.answered)) {
+  position: sticky;
+  bottom: 8px;
+  z-index: 2;
+}
+
+/* The composer under a docked card waits: the card is what needs answering first. */
+html.phone .talk.asks .composer {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+html.phone .card:not(.answered) {
+  padding: 16px;
+  border: 0;
+  border-radius: 18px;
+  box-shadow: var(--lift);
+}
+
+html.phone .card .card-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+html.phone .card .where {
+  font-size: 13px;
+}
+
+html.phone .card .card-actions {
+  display: grid;
+  gap: 8px;
+}
+
+html.phone .card .card-actions button {
+  height: 50px;
+  font-size: 17px;
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+html.phone .card .card-actions input {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+}
+
+html.phone .composer {
+  padding: 8px 10px calc(var(--bottom) + 8px);
+  background: var(--glass);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 -0.5px 0 var(--separator);
+}
+
+html.phone .composer-inner {
+  border-color: var(--border);
+  border-radius: 22px;
+}
+
+html.phone .composer-inner:focus-within {
+  box-shadow: none;
+}
+
+html.phone .composer-inner textarea {
+  padding-inline: 14px;
+  line-height: 22px;
+}
+
+/* Mode, tasks and goal take a line of their own when they do not fit beside Send. */
+html.phone .composer-bar {
+  flex-wrap: wrap;
+  padding: 2px 4px 4px 8px;
+}
+
+html.phone .composer-bar .send {
+  margin-inline-start: auto;
+}
+
+html.phone .send {
+  width: 36px;
+  height: 36px;
+  border-radius: 18px;
+}
+
+html.phone .send.stop {
+  color: var(--text);
+  background: var(--fill-strong);
+}
+
+html.phone .send:disabled {
+  color: var(--bg-raised);
+  background: var(--fill-strong);
+}
+
+/* Notices come down from the top as the system's banners do. */
+html.phone .notices {
+  top: calc(var(--top) + 4px);
+  right: 8px;
+  left: 8px;
+  width: auto;
+}
+
+html.phone .notice {
+  padding: 12px 10px 12px 14px;
+  background: var(--glass);
+  backdrop-filter: saturate(180%) blur(30px);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  border: 0;
+  border-radius: 22px;
+  box-shadow: var(--lift);
+  animation: banner 420ms var(--ease) both;
+}
+
+html.phone .notice .title,
+html.phone .notice .body {
+  font-size: 15px;
+}
+
+@keyframes banner {
+  from {
+    transform: translateY(-140%);
+  }
+}
+
+/* The stream to the Mac is down; a pill drops under the bar, and the page reloads once the stream is back. */
+.phone-offline {
+  position: fixed;
+  top: calc(var(--top) + 60px);
+  left: 50%;
+  z-index: 55;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  line-height: 32px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  background: var(--bg-raised);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  animation: fade var(--settle) var(--ease) both;
+}
+
+.phone-spin {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--fill-strong);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+/* The Mac's screen: black edge to edge, the bars over it fading away on a tap. */
+.phone-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  color: var(--screen-text);
+  background: var(--screen);
+  animation: fade var(--settle) var(--ease) both;
+}
+
+.phone-screen-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.phone-screen-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform-origin: 0 0;
+}
+
+.phone-screen-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 32px;
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.phone-screen-note .phone-button {
+  flex: none;
+}
+
+.phone-screen-note .phone-spin {
+  width: 22px;
+  height: 22px;
+  border-width: 2.5px;
+}
+
+.phone-screen-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: calc(var(--top) + 4px) 8px 4px 16px;
+  background: var(--screen-bar);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: opacity var(--settle) var(--ease), transform var(--settle) var(--ease);
+}
+
+.phone-screen-bar.hidden {
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-100%);
+}
+
+.phone-screen-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.phone-screen-live {
+  padding: 1px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-solid);
+  background: var(--danger-solid);
+  border-radius: 4px;
+}
+
+.phone-screen-done {
+  height: 44px;
+  padding: 0 10px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--screen-text);
+}
+
+.phone-screen-peek {
+  position: absolute;
+  top: calc(var(--top) + 6px);
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--screen-text);
+  background: var(--screen-bar);
+  border-radius: 16px;
 }
