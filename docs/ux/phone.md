@@ -28,6 +28,7 @@ The phone runs its own GeckIt app, which shows the same Chat window the Mac show
 | Questions on the board (new) | A "Questions" group under the column's cards, one row per open question with its dot, title and last line, and "Each is forgotten 2 minutes after its last answer." under it. Pressing a row opens the question like a conversation | While any question is open, in every column |
 | Conversation in the app (existing Chat, phone layout) | Takes the whole screen. Header: Back to the board, the title on one line, Links, Where it stands. The rest of the desktop header is not there | A card is pressed |
 | Composer in the app (existing) | The field, the mode (Manual / Auto / Plan), the goal, the background tasks, Send / Stop. Model, MCP and Chrome are not there | In a conversation |
+| Dictate in the composer (new) | A mic in the round button's place, as in Messages. Pressed, it turns red and breathes, the field says "Listening" and fills with what iOS hears, after what was typed; pressed again, it stops and the text stays to be read and sent. It uses iOS's own speech recognition in the language set as Your language in Settings | The field is empty and Claude is not working, or while listening |
 | Status line in the app (existing) | The plan's two windows only: 5h and Week | Always |
 | Connection banner (new) | A pill with a spinner: "Reconnecting to <Mac>" and under it the step the try is at ("Reaching the pairing service", "Waiting for <Mac> to answer", "Opening the connection"), with the seconds once a step passes 8 s; between tries "<Mac> did not answer" and "Trying again in 5 s", adding "GeckIt has to be open there, with Phone on." from the fourth try | Link has been down for 5 s |
 | Notice (existing) | The Mac's in-window notice, "Finished - demo" or "Needs an answer - demo", dropping from the top | Another conversation finishes or asks; never the one on screen |
@@ -176,6 +177,8 @@ stateDiagram-v2
 | Settings, nobody | "No phone connected" |
 | Settings, some | "1 phone connected", "2 phones connected" |
 | Settings, New code | "New code" with the explanation "Phones paired with the old code will have to scan again." |
+| Dictate, listening | the field's placeholder "Listening" |
+| Dictate, not allowed | "GeckIt may not use the microphone. Allow it in Settings, GeckIt." or the same for Speech Recognition, in the field's placeholder |
 | Settings, signaling down | "The pairing service did not answer. Phones cannot find this Mac until it does." |
 
 ## 8. Edge cases
@@ -186,6 +189,8 @@ stateDiagram-v2
 - **Drop mid-send:** the message goes as a request over the link; if it fails, nothing is in the transcript, the text and pictures go back into the field, and the status line says it was not sent.
 - **Stale copy:** after a drop the page starts over rather than patching, so nothing on screen is older than the reconnect.
 - **Code photographed by someone else:** it is a key; New code on the Mac makes the old one worthless.
+- **Dictating while Claude works:** the round button is Stop then, so the keyboard's own dictation is the way; the mic comes back when the turn ends. A turn that starts while listening does not stop it.
+- **Dictation and sending:** nothing is sent by itself; the text waits in the field. iOS stops listening by itself after about a minute, and the text heard stays.
 - **Networks that block a direct link:** the relay carries it, when one is configured; without it, Cannot reach the Mac.
 
 ## 9. Deliberately not there

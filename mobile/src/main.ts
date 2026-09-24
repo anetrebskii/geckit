@@ -2,6 +2,8 @@ import { App } from '@capacitor/app'
 import { CapacitorBarcodeScanner, CapacitorBarcodeScannerTypeHint } from '@capacitor/barcode-scanner'
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
 import { Keyboard } from '@capacitor/keyboard'
+import { registerPlugin } from '@capacitor/core'
+import type { PluginListenerHandle } from '@capacitor/core'
 
 import '../../client/src/renderer/src/styles.css'
 import './pair.css'
@@ -11,6 +13,7 @@ import { installGeckit, sayDropped, showDropped } from '../../client/src/rendere
 import type { Boot } from '../../client/src/renderer/src/phone'
 import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
+import type { Dictate } from '../../client/src/renderer/src/dictate'
 import { readPairing } from '../../client/src/shared/pairing'
 import type { Pairing } from '../../client/src/shared/pairing'
 import icon from './icon.png'
@@ -72,6 +75,34 @@ function useMac(link: string | undefined): void {
         ? Haptics.impact({ style: ImpactStyle.Medium })
         : Haptics.notification({ type: kind === 'done' ? NotificationType.Success : NotificationType.Warning })
   felt.catch(() => undefined)
+}
+
+interface Dictation {
+  start(options: { language: string }): Promise<void>
+  stop(): Promise<void>
+  addListener(event: 'heard', said: (heard: { text: string }) => void): Promise<PluginListenerHandle>
+  addListener(event: 'ended', said: () => void): Promise<PluginListenerHandle>
+}
+const dictation = registerPlugin<Dictation>('Dictation')
+let hearing: PluginListenerHandle[] = []
+
+// iOS's own speech recognition for the composer, which hears what is said while the button is held on.
+;(window as { geckitDictate?: Dictate }).geckitDictate = {
+  start: async (language, heard, ended) => {
+    for (const one of hearing.splice(0)) void one.remove()
+    hearing = await Promise.all([
+      dictation.addListener('heard', (said) => heard(said.text)),
+      dictation.addListener('ended', () => {
+        for (const one of hearing.splice(0)) void one.remove()
+        ended()
+      }),
+    ])
+    await dictation.start({ language }).catch((error: unknown) => {
+      for (const one of hearing.splice(0)) void one.remove()
+      throw error
+    })
+  },
+  stop: () => void dictation.stop().catch(() => undefined),
 }
 
 // The arrows and Done over the keys are for forms of many fields; the composer is one.

@@ -3,7 +3,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { modelName, SESSION_MODES } from '../../../shared/api'
 import type { SessionMode } from '../../../shared/api'
 import { mentionAt, pathsFor } from '../../../shared/paths'
+import { dictate } from '../dictate'
 import { ON_PHONE } from '../on-phone'
+import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 import { Chrome } from './Chrome'
@@ -50,6 +52,8 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [closed, setClosed] = useState<number | undefined>()
   const [editing, setEditing] = useState<{ readonly id: string; readonly text: string } | undefined>()
   const [dropping, setDropping] = useState<string | undefined>()
+  const [listening, setListening] = useState(false)
+  const [unheard, setUnheard] = useState<string | undefined>()
   const submit = (): void => {
     if (COMPACT.test(chat.draft)) {
       chat.setCompacting('typed')
@@ -171,6 +175,27 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const cannot = chat.root === undefined || chat.account?.signedIn !== true || chat.account.key === true
 
   const { addFiles } = chat
+
+  // What is said goes after what was typed, and replaces itself as iOS hears it better.
+  const listen = (): void => {
+    const ears = dictate()
+    if (ears === undefined) return
+    if (listening) {
+      ears.stop()
+      return
+    }
+    const kept = chat.draft.trimEnd()
+    setUnheard(undefined)
+    setListening(true)
+    tap('light')
+    ears
+      .start(chat.settings.nativeLanguage, (text) => chat.setDraft(kept === '' ? text : `${kept} ${text}`), () => setListening(false))
+      .catch((error: unknown) => {
+        setListening(false)
+        setUnheard(error instanceof Error ? error.message : String(error))
+      })
+  }
+  useEffect(() => () => dictate()?.stop(), [chat.session?.id])
   const goal = chat.session?.goal
   const checked =
     goal === undefined
@@ -322,12 +347,15 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             chat.root === undefined
               ? 'Add a project folder first'
               : ON_PHONE
-                ? 'Message'
+                ? listening
+                  ? 'Listening'
+                  : (unheard ?? 'Message')
                 : chat.working
                   ? 'Send more: it waits until Claude finishes. ! runs a command now'
                   : 'Ask Claude Code. @ picks a file, ! runs a command'
           }
           disabled={chat.root === undefined}
+          readOnly={listening}
           onChange={(event) => {
             recall.current = undefined
             chat.setDraft(event.target.value)
@@ -466,7 +494,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             </span>
           ) : null}
           <div className="spacer" />
-          {chat.working && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
+          {chat.working && !listening && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
             <button
               type="button"
               className="send"
@@ -479,7 +507,18 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             </button>
           ) : null}
           {/* The phone has room for one round button in the field: typed text makes it Queue, and Stop stays under More. */}
-          {chat.working && ON_PHONE && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? null : chat.working ? (
+          {/* On the phone an empty field offers dictation in the send button's place, as Messages does. */}
+          {ON_PHONE && dictate() !== undefined && (listening || (!chat.working && chat.draft.trim() === '' && chat.pictures.length === 0)) ? (
+            <button
+              type="button"
+              className={listening ? 'send listening' : 'send'}
+              disabled={cannot}
+              onClick={listen}
+              aria-label={listening ? 'Stop dictating' : 'Dictate'}
+            >
+              <Icon name={listening ? 'stop' : 'mic'} size={listening ? 12 : 16} />
+            </button>
+          ) : chat.working && ON_PHONE && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? null : chat.working ? (
             <button type="button" className="send stop" onClick={chat.stop} title="Stop (Esc)" aria-label="Stop">
               <Icon name="stop" size={12} />
             </button>

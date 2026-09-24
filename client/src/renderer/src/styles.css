@@ -4911,6 +4911,12 @@ html.phone .send:disabled {
   background: var(--fill-strong);
 }
 
+html.phone .send.listening {
+  color: var(--danger-text);
+  background: var(--danger-solid);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
 /* Notices come down from the top as the system's banners do. */
 html.phone .notices {
   top: calc(var(--top) + 4px);
