@@ -19,6 +19,31 @@ interface Waits {
   readonly unread: number
 }
 
+/** What stands in a project, in the board's own two columns. */
+interface Work {
+  readonly progress: number
+  readonly review: number
+}
+
+function Standing({ work }: { readonly work: Work | undefined }): React.JSX.Element | null {
+  if (work === undefined || (work.progress === 0 && work.review === 0)) return null
+  return (
+    <>
+      {work.progress === 0 ? null : (
+        <span className="project-count" title={`${String(work.progress)} in progress`}>
+          {work.progress}
+        </span>
+      )}
+      {work.review === 0 ? null : (
+        <span className="project-count review" title={`${String(work.review)} in review`}>
+          <Icon name="eye" size={11} />
+          {work.review}
+        </span>
+      )}
+    </>
+  )
+}
+
 function Waiting({ waits }: { readonly waits: Waits | undefined }): React.JSX.Element | null {
   if (waits === undefined) return null
   const said = [
@@ -64,14 +89,26 @@ function Menu({
     undefined,
   )
 
+  const work = new Map<string, Work>()
+  for (const one of chat.everyone) {
+    if (one.status === 'done') continue
+    const held = work.get(one.root) ?? { progress: 0, review: 0 }
+    work.set(one.root, one.status === 'review' ? { ...held, review: held.review + 1 } : { ...held, progress: held.progress + 1 })
+  }
+  const standing = [...work.values()].reduce<Work>(
+    (sum, one) => ({ progress: sum.progress + one.progress, review: sum.review + one.review }),
+    { progress: 0, review: 0 },
+  )
+
   const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
   const rows = [
-    { value: ALL, name: 'All projects', path: `${String(chat.settings.projects.length)} folders`, waits: everywhere },
+    { value: ALL, name: 'All projects', path: `${String(chat.settings.projects.length)} folders`, waits: everywhere, work: standing },
     ...chat.settings.projects.map((root) => ({
       value: root,
       name: projectName(root),
       path: homePath(root),
       waits: waits.get(root),
+      work: work.get(root),
     })),
   ].filter((row) => words.every((word) => `${row.name} ${row.value}`.toLowerCase().includes(word)))
   const here = Math.min(at, Math.max(0, rows.length - 1))
@@ -170,6 +207,7 @@ function Menu({
                   {row.path}
                 </span>
               </span>
+              <Standing work={row.work} />
               <Waiting waits={row.waits} />
               {row.value === ALL ? (
                 <span className="forget-space" />
