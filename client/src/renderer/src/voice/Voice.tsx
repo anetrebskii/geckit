@@ -117,14 +117,16 @@ export function Voice(): React.JSX.Element {
             <div className="asking-plan">
               {plan.map((one) => (
                 <div className="asking-one" key={one.head + (one.text ?? '')}>
-                  <Icon name={one.icon} size={12} />
+                  <Icon name={one.icon} size={13} />
                   <div className="asking-said">
                     <div className="asking-head">{one.head}</div>
                     {one.text === undefined ? null : <div className="asking-text">{one.text}</div>}
                     {one.goal === undefined ? null : (
                       <div className="asking-goal">
-                        <Icon name="goal" size={10} />
-                        Until {one.goal}
+                        <Icon name="goal" size={11} />
+                        <span>
+                          <b>Until</b> {/^[A-Z][a-z]/.test(one.goal) ? one.goal.charAt(0).toLowerCase() + one.goal.slice(1) : one.goal}
+                        </span>
                       </div>
                     )}
                   </div>
