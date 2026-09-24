@@ -145,6 +145,21 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
 
   return (
     <div className="status-bar">
+      {chat.questions.map((one) => {
+        const working = one.state === 'working' || one.state === 'asks'
+        return (
+          <button
+            key={one.id}
+            type="button"
+            className={`question${chat.session?.id === one.id ? ' shown' : ''}`}
+            title={`${one.title}\n${working ? 'Working' : one.stands}\n\nA general question, forgotten 2 minutes after its last answer`}
+            onClick={() => chat.open({ kind: 'session', id: one.id })}
+          >
+            <Icon name={working ? 'spinner' : 'chat'} size={12} className={working ? 'spinning' : ''} />
+            <span>{one.title}</span>
+          </button>
+        )
+      })}
       {ON_PHONE || shownGit === undefined ? null : <Git git={shownGit} now={now} />}
       {ON_PHONE || spend?.used === undefined ? null : (
         <span
