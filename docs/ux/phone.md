@@ -9,11 +9,11 @@ created: 2026-09-24
 
 ## 1. Why
 
-Away from the Mac, Alex cannot see which conversations are working, which ones wait for him, and what they finished, and a session that stopped on a permission card stays stopped until he is back at the desk. Remote Control in the Claude app covers one conversation at a time and knows nothing of the board, the goals or the cards. He wants his own app: open it, scan a code on the Mac once, and from then on manage the conversations from the phone, with the phone talking to the Mac directly rather than through somebody's service.
+Away from the Mac, Alex cannot see which conversations are working, which ones wait for Alex, and what they finished, and a session that stopped on a permission card stays stopped until Alex is back at the desk. Remote Control in the Claude app covers one conversation at a time and knows nothing of the board, the goals or the cards. Alex wants an app of their own: open it, scan a code on the Mac once, and from then on manage the conversations from the phone, with the phone talking to the Mac directly rather than through somebody's service.
 
 ## 2. What is added
 
-The phone runs its own GeckIt app, which shows the same Chat window the Mac shows. It reaches the Mac directly (WebRTC), finds it through a small signaling function on weroost, and falls back to a relay only when the two networks cannot see each other. It is one person's tool: his Mac, his phones.
+The phone runs its own GeckIt app, which shows the same Chat window the Mac shows. It reaches the Mac directly (WebRTC), finds it through a small signaling function on weroost, and falls back to a relay only when the two networks cannot see each other. It is one person's tool: their Mac, their phones.
 
 | Surface | What appears | When |
 |---|---|---|
@@ -47,7 +47,7 @@ block-beta
 
 ## 3. States
 
-| State | When | What he sees | What he does |
+| State | When | What the person sees | What they do |
 |---|---|---|---|
 | Not paired | First launch, or after Scan again | "Scan the code in GeckIt's Settings on your Mac." and Scan | Presses Scan |
 | Scanning | Scan pressed | The camera | Points it at the QR on the Mac, or Cancel |
@@ -105,12 +105,12 @@ stateDiagram-v2
   class dropped wait
 ```
 
-| From | Event | To | What he sees |
+| From | Event | To | What the person sees |
 |---|---|---|---|
 | Not paired | Presses Scan | Scanning | The camera; the first time, iOS asks for the camera |
 | Scanning | Presses Cancel | Not paired, or Connecting when a pairing is kept | The pairing screen, or "Connecting to the Mac" |
 | Scanning | Reads a code that is not GeckIt's, by itself | Not a GeckIt code | The pairing screen with "That is not a GeckIt code." |
-| Any | The iPhone Camera app reads the Mac's code and he presses its banner, then Open | Connecting | iOS asks "Open in GeckIt?" first; then "Connecting to the Mac", and the new pairing replaces the old one |
+| Any | The iPhone Camera app reads the Mac's code and the person presses its banner, then Open | Connecting | iOS asks "Open in GeckIt?" first; then "Connecting to the Mac", and the new pairing replaces the old one |
 | Scanning | Reads GeckIt's code, by itself | Connecting | "Connecting to the Mac"; the pairing is kept on the phone |
 | Connecting | The Mac answers, by itself | Board | The board |
 | Connecting | No answer in 20 s, by itself | Cannot reach the Mac | The reason, Try again, Scan again |
@@ -120,10 +120,10 @@ stateDiagram-v2
 | Board | Presses a segment | Board | That column's cards; the choice is kept for the next opening |
 | Board | Presses a card | Conversation | The conversation over the whole screen |
 | Board | Presses New task | Conversation (new) | The New task form, as on the Mac |
-| Conversation | Presses Back | Board | The board, on the column he left |
+| Conversation | Presses Back | Board | The board, on the column they left |
 | Conversation | A permission card arrives, by itself | Asks | The card at the end of the transcript |
 | Asks | Presses Allow once / for the session / No | Conversation | The card goes; the work goes on |
-| Conversation | Presses Send | Conversation | His message in the transcript; "Working" |
+| Conversation | Presses Send | Conversation | Their message in the transcript; "Working" |
 | Any connected | The link breaks, by itself | Dropped | The banner |
 | Dropped | The link is back, by itself | Board | The page starts over on the board as it stands now |
 | App sent to the background | iOS suspends it, by itself | Dropped on return | Nothing while away; on return the banner for as long as reconnecting takes |
@@ -136,10 +136,10 @@ stateDiagram-v2
 
 | State | Why not shown |
 |---|---|
-| Direct or through the relay | Nothing he does differs; it is a network fact |
+| Direct or through the relay | Nothing the person does differs; it is a network fact |
 | The signaling function on weroost | It only introduces the two ends; once connected it is not used |
 | The Mac's own window being open or not | Nothing on the phone depends on it |
-| Git branch, context size, cost | Desk facts: nothing he acts on from a phone |
+| Git branch, context size, cost | Desk facts: nothing the person acts on from a phone |
 | Background tasks' output | Opened on demand from the tasks button only, as on the Mac |
 | A drop shorter than the reconnect | The banner shows once the link has broken, and goes when it is back |
 
@@ -199,7 +199,7 @@ stateDiagram-v2
 
 | Option | Verdict |
 |---|---|
-| Tailscale and a web page | No: a VPN app on the phone, and not his own app |
+| Tailscale and a web page | No: a VPN app on the phone, and not an app of their own |
 | A relay server carrying everything | No: every byte through a server |
 | WebRTC directly, a relay only when the networks cannot see each other | Yes |
 
@@ -228,7 +228,7 @@ stateDiagram-v2
 
 | Requirement | Where |
 |---|---|
-| His own app on the phone | The GeckIt app (section 2) |
+| An own app on the phone | The GeckIt app (section 2) |
 | Start it, scan a QR, manage | Not paired, Scanning, Connecting, Board |
 | See sessions' progress | Board, Conversation |
 | Manage sessions | Asks, Send, Stop, mode, Where it stands |

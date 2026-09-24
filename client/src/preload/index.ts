@@ -211,6 +211,8 @@ const geckit = {
       }
     },
     state: (count: number, trouble: string | undefined): void => ipcRenderer.send('peer:state', count, trouble ?? null),
+    /** Which screen to capture for a phone, or why this Mac will not let it be. */
+    screen: (): Promise<{ readonly id?: string; readonly error?: string }> => ipcRenderer.invoke('peer:screen'),
   },
 
   panel: {
