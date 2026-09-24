@@ -48,10 +48,12 @@ interface Waiting {
 export function PhoneBoard({
   chat,
   onNew,
+  onAsk,
   onScreen,
 }: {
   readonly chat: Chat
   readonly onNew: () => void
+  readonly onAsk: () => void
   readonly onScreen: () => void
 }): React.JSX.Element {
   const [shown, setShown] = useState<Column>(() => {
@@ -147,6 +149,9 @@ export function PhoneBoard({
           <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
             <Icon name="display" size={24} />
           </button>
+          <button type="button" className="phone-icon" aria-label="Ask a question" onClick={onAsk}>
+            <Icon name="chat" size={24} />
+          </button>
           <button type="button" className="phone-icon" aria-label="New task" onClick={onNew}>
             <Icon name="compose" size={24} />
           </button>
@@ -240,6 +245,26 @@ export function PhoneBoard({
                 />
               ))}
             </div>
+          </>
+        )}
+        {chat.questions.length === 0 ? null : (
+          <>
+            <div className="phone-head">Questions</div>
+            <div className="phone-group">
+              {[...chat.questions]
+                .sort((one, other) => other.at - one.at)
+                .map((session) => (
+                  <button
+                    key={session.id}
+                    type="button"
+                    className="phone-row phone-question"
+                    onClick={() => chat.open({ kind: 'session', id: session.id })}
+                  >
+                    <RowBody chat={chat} session={session} now={now} waiting={undefined} />
+                  </button>
+                ))}
+            </div>
+            <div className="phone-note">Each is forgotten 2 minutes after its last answer.</div>
           </>
         )}
         {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (

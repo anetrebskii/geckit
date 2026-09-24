@@ -373,7 +373,7 @@ export function Chat(): React.JSX.Element {
       }}
     >
       {board && ON_PHONE ? (
-        <PhoneBoard chat={chat} onNew={() => setMaking(true)} onScreen={() => setScreening(true)} />
+        <PhoneBoard chat={chat} onNew={() => setMaking(true)} onAsk={() => setAsking(true)} onScreen={() => setScreening(true)} />
       ) : board ? (
         <Board
           chat={chat}
