@@ -92,6 +92,7 @@ export function Chat(): React.JSX.Element {
   // The transcript is drawn again whenever one of these is, so they are made
   // once rather than on every keystroke in the field below it.
   const again = useCallback((id: string) => send(id), [send])
+  const proceed = useCallback(() => send(undefined, 'continue'), [send])
   // The dialog listens for Escape with this, so it is made once.
   const closeSettings = useCallback(() => setSetting(false), [])
   const closeKeys = useCallback(() => setKeys(false), [])
@@ -623,6 +624,7 @@ export function Chat(): React.JSX.Element {
               onStopShell={chat.stopShell}
               onTypeShell={chat.typeShell}
               onBackground={chat.toBackground}
+              onContinue={proceed}
               tasks={chat.session?.tasks}
               onTasks={chat.showTasks}
               seek={seek}

@@ -94,7 +94,7 @@ export interface Chat {
   setMode: (mode: SessionMode) => void
   setModel: (model: string) => void
   askModels: () => void
-  send: (again?: string) => void
+  send: (again?: string, said?: string) => void
   /** A general question, in no project, which the board and the list never show. */
   ask: (text: string, images?: readonly SessionImage[]) => void
   /** A new conversation from the board's form: the work goes first, then the goal. */
@@ -408,15 +408,16 @@ export function useChat(): Chat {
   )
 
   const send = useCallback(
-    (again?: string) => {
+    (again?: string, said?: string) => {
       const where = rootRef.current
       const key = keyOf(shownRef.current)
       const now = held.current
-      const text = now.drafts[key] ?? ''
-      const carried = now.pictures[key] ?? []
+      // Words given here, as Continue gives them, go without touching what is typed in the field.
+      const text = said ?? now.drafts[key] ?? ''
+      const carried = said === undefined ? (now.pictures[key] ?? []) : []
       if (where === undefined || (again === undefined && text.trim() === '' && carried.length === 0)) return
       // A message that starts with ! is a command for the project folder, as in the terminal.
-      const command = again === undefined && text.trim().startsWith('!') ? text.trim().slice(1).trim() : undefined
+      const command = again === undefined && said === undefined && text.trim().startsWith('!') ? text.trim().slice(1).trim() : undefined
       if (command !== undefined) {
         if (command === '') return
         setDraft('')
@@ -429,9 +430,11 @@ export function useChat(): Chat {
           })
         return
       }
-      setDraft('')
+      if (said === undefined) {
+        setDraft('')
+        setPictures((all) => ({ ...all, [key]: [] }))
+      }
       setTrouble('')
-      setPictures((all) => ({ ...all, [key]: [] }))
       void window.geckit.chat
         .send({
           ...(shownRef.current.kind === 'session' ? { session: shownRef.current.id } : {}),
@@ -449,8 +452,10 @@ export function useChat(): Chat {
           },
           // Only the phone's link can fail on the way: what was written goes back where it was written.
           () => {
-            setDrafts((all) => ({ ...all, [key]: text }))
-            setPictures((all) => ({ ...all, [key]: carried }))
+            if (said === undefined) {
+              setDrafts((all) => ({ ...all, [key]: text }))
+              setPictures((all) => ({ ...all, [key]: carried }))
+            }
             setTrouble('Not sent: the Mac could not be reached')
           },
         )

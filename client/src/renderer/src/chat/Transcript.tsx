@@ -393,6 +393,7 @@ export const Transcript = memo(function Transcript({
   onStopShell,
   onTypeShell,
   onBackground,
+  onContinue,
   tasks,
   onTasks,
   seek,
@@ -408,6 +409,8 @@ export const Transcript = memo(function Transcript({
   readonly onStopShell: (item: string) => void
   readonly onTypeShell: (item: string, text: string) => void
   readonly onBackground: (item: string) => void
+  /** Sends "continue", offered under a Stop that is the last thing said. */
+  readonly onContinue: () => void
   /** What Claude Code has in the background for it, and opening the dialog that lists it. */
   readonly tasks: readonly BackgroundTask[] | undefined
   readonly onTasks: (open: boolean) => void
@@ -538,6 +541,8 @@ export const Transcript = memo(function Transcript({
     (item.kind === 'mine' || (item.kind === 'theirs' && ends.has(item.id))) && item.at !== undefined
       ? stamp(item.at, now)
       : undefined
+  const last = items.at(-1)
+  const stopped = !working && last?.kind === 'note' && last.note === 'stopped'
 
   return (
     <div
@@ -576,6 +581,14 @@ export const Transcript = memo(function Transcript({
             onBackground={onBackground}
           />
         ))}
+
+        {stopped ? (
+          <div className="turn">
+            <button type="button" className="quiet" onClick={onContinue}>
+              Continue
+            </button>
+          </div>
+        ) : null}
 
         {working && items.at(-1)?.kind !== 'card' ? (
           <div className="turn">
