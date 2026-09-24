@@ -3973,13 +3973,17 @@ html.phone button:active:not(:disabled) {
   position: sticky;
   top: 0;
   z-index: 2;
-  padding: 0 16px;
+  padding: 10px 16px 12px;
   background: var(--ground);
   transition: box-shadow var(--settle) var(--ease);
 }
 
 .phone-seg-bar.scrolled {
   box-shadow: 0 0.5px 0 var(--separator);
+}
+
+.phone-seg-bar .phone-seg {
+  margin: 0;
 }
 
 .phone-icon {
