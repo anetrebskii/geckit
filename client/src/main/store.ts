@@ -1,10 +1,10 @@
-import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { app } from 'electron'
 
 import { DEFAULT_SETTINGS, sessionMode } from '../shared/api'
+import { newKey } from '../shared/pairing'
 import type { Settings } from '../shared/api'
 import { withColors } from '../shared/project-color'
 import { carriedOver } from './carry-over'
@@ -57,7 +57,7 @@ export function getSettings(): Settings {
       ...found,
       chatMode: sessionMode(found.chatMode),
       projectColors: withColors(found),
-      phoneKey: found.phoneKey === '' ? randomBytes(24).toString('base64url') : found.phoneKey,
+      phoneKey: found.phoneKey === '' ? newKey() : found.phoneKey,
     }
     // Projects listed before colours were, and the phone's key, given once and for all.
     if (

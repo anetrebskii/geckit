@@ -1,0 +1,14 @@
+{
+  "extends": "../client/tsconfig.web.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "types": [
+      "vite/client"
+    ]
+  },
+  "include": [
+    "src",
+    "../client/src/renderer/src/geckit.d.ts"
+  ]
+}

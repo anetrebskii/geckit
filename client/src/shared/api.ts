@@ -576,6 +576,14 @@ export function updateText(update: UpdateView): string {
   }
 }
 
+/** The phone as Settings shows it: the code to scan while the switch is on, and how many phones are joined. */
+export interface PhoneView {
+  readonly qr?: string
+  readonly count: number
+  /** Why phones cannot find this Mac, when they cannot. */
+  readonly trouble?: string
+}
+
 export interface Settings {
   readonly theme: Theme
   readonly nativeLanguage: string
@@ -620,9 +628,9 @@ export interface Settings {
   readonly autoUpdate: boolean
   /** False takes GECKIT.md and the line that reads it out of the tool's own folder again. */
   readonly guideClaude: boolean
-  /** The Chat window is served to the phone over Tailscale. */
+  /** Phones with GeckIt's app can reach the conversations. */
   readonly phone: boolean
-  /** What the phone's link carries; made once, on the first start. */
+  /** What the QR code carries; made on the first start, and again by New code. */
   readonly phoneKey: string
   /** Written by the main process only, over `shortcuts:*`, so a window's older copy never undoes a run. */
   readonly shortcuts: readonly Shortcut[]

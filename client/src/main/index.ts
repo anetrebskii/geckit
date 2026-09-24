@@ -1,6 +1,6 @@
 import { exec, execFile } from 'node:child_process'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 
 import {
   app,
@@ -18,6 +18,7 @@ import log from 'electron-log'
 import QRCode from 'qrcode'
 
 import { ANYWHERE, resumeCommand } from '../shared/api'
+import { newKey, pairingLink, SIGNAL } from '../shared/pairing'
 import type {
   Answered,
   CardAnswer,
@@ -25,6 +26,7 @@ import type {
   ClaudeAccount,
   CorrectRequest,
   GitState,
+  PhoneView,
   PlanUsage,
   ShortcutDraft,
   SessionItems,
@@ -43,25 +45,26 @@ import { projectFiles } from './files'
 import { fetchGit, gitState } from './git'
 import { keepGuide } from './guide'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
-import { startPhone } from './phone'
-import type { Phone, PhoneCall } from './phone'
 import { Sessions } from './sessions'
 import type { McpChange } from './sessions/mcp'
 import { searchClaude } from './sessions/search'
 import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
 import { forgetProject, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
-import { serveOnTailnet, stopServing } from './tailscale'
 import { drawTray, startTray } from './tray'
 import { checkForUpdates, restartToUpdate, startUpdates, updateView } from './updates'
 import {
   chatListening,
   chatWindow,
+  closePeer,
   closeVoice,
   everyWindow,
   openChat,
   panelWindow,
+  peerWindow,
+  personWindows,
   shownChat,
+  shownPeer,
   shownVoice,
   sizeVoice,
   tellChat,
@@ -95,13 +98,13 @@ const notices = new Set<Notification>()
 
 const tell = (channel: string, ...args: unknown[]): void => {
   for (const window of everyWindow()) window.webContents.send(channel, ...args)
-  phone?.tell(channel, args[0])
+  shownPeer()?.webContents.send('peer:tell', channel, args[0])
 }
 
 /** What only the Chat window is told, told to the phone as well. */
 const tellChats = (channel: string, value: unknown): void => {
   shownChat()?.webContents.send(channel, value)
-  phone?.tell(channel, value)
+  shownPeer()?.webContents.send('peer:tell', channel, value)
 }
 
 const badge = (): void => {
@@ -124,7 +127,7 @@ function build(): Sessions {
     show: (id: string) => shownChat()?.webContents.send('chat:show', id),
     plan: (plan: PlanUsage) => tellChats('chat:plan', plan),
     notify: (notice) => {
-      phone?.tell('chat:notice', notice)
+      shownPeer()?.webContents.send('peer:tell', 'chat:notice', notice)
       // In front, the window says it itself; a banner is for when it is not being looked at.
       if (watchingChat()) {
         shownChat()?.webContents.send('chat:notice', notice)
@@ -495,7 +498,24 @@ function wire(): void {
   ipcMain.handle('shortcuts:save', (_event, draft: ShortcutDraft) => saveShortcut(draft))
   ipcMain.on('shortcuts:remove', (_event, id: string) => removeShortcut(id))
   ipcMain.handle('shortcuts:run', (_event, id: string) => runShortcut(id, 'hand'))
-  ipcMain.handle('phone:link', () => phoneLink())
+  ipcMain.handle('phone:state', () => phoneView())
+  ipcMain.on('phone:newCode', () => setSettings({ phoneKey: newKey() }))
+  // Only the phone's own window may speak for the phone.
+  ipcMain.handle('peer:pairing', (event) =>
+    event.sender === shownPeer()?.webContents ? { key: getSettings().phoneKey, signal: SIGNAL } : undefined,
+  )
+  ipcMain.handle('peer:call', async (event, name: string, args: readonly unknown[]) => {
+    if (event.sender !== shownPeer()?.webContents) throw new Error('Not the phone')
+    const run = Object.hasOwn(PHONE_CALLS, name) ? PHONE_CALLS[name] : undefined
+    if (run === undefined) throw new Error(`No such call: ${name}`)
+    // What came over as JSON has null where it meant nothing, and every handler here takes undefined for that.
+    return (run as (...given: unknown[]) => unknown)(...args.map((one) => (one === null ? undefined : one)))
+  })
+  ipcMain.on('peer:state', (event, count: number, trouble: string | null) => {
+    if (event.sender !== shownPeer()?.webContents) return
+    phoneState = { count, ...(trouble === null ? {} : { trouble }) }
+    void phoneView().then((view) => tell('phone:state', view))
+  })
 
   onSettings((settings) => {
     // The frames, the vibrancy behind the panel and the folder picker are the
@@ -505,7 +525,7 @@ function wire(): void {
       guided = settings.guideClaude
       void keepGuide(settings.guideClaude)
     }
-    keepPhone(settings.phone)
+    keepPhone(settings.phone, settings.phoneKey)
     tell('settings:changed', settings)
     drawTray()
   })
@@ -515,17 +535,18 @@ function wire(): void {
 /* The phone                                                           */
 /* ------------------------------------------------------------------ */
 
-const PHONE_PORT = 47823
+type PhoneCall = (...args: never[]) => unknown
 
-let phone: Phone | undefined
 let phoneOn = false
-let phoneTurned: Promise<void> = Promise.resolve()
-let phoneError: string | undefined
+let phoneKey = ''
+let phoneState: { readonly count: number; readonly trouble?: string } = { count: 0 }
+let phoneCode: { readonly key: string; readonly qr: string } | undefined
 
-/** What the Chat window may ask, less what only makes sense at this Mac: files opened in its apps, its Finder, its terminal. */
+/** What the phone may ask, less what only makes sense at this Mac: files opened in its apps, its Finder, its terminal. */
 function phoneCalls(): Record<string, PhoneCall> {
   const held = (): Sessions | undefined => sessions
   return {
+    boot: () => ({ home: homedir(), platform: process.platform }),
     'settings.get': () => getSettings(),
     'settings.set': (change: Partial<Settings>) => setSettings(change),
     'update.view': () => updateView(),
@@ -567,49 +588,34 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.remote': (id: string, on: boolean) => held()?.remote(id, on) ?? { error: 'Not ready yet.' },
     'chat.mcp': (root: string, id: string | undefined, change: McpChange | undefined) => held()?.mcp(root, id, change),
     'chat.browsers': (root: string, id: string | undefined, pick: string | undefined) => held()?.browsers(root, id, pick),
-    'chat.git': (root: string) => gitFor(root, (state) => phone?.tell('chat:git', { root, state })),
+    'chat.git': (root: string) => gitFor(root, (state) => shownPeer()?.webContents.send('peer:tell', 'chat:git', { root, state })),
     'chat.exists': (root: string, path: string) => isThere(root, path),
     'chat.files': (root: string) => projectFiles(root),
     'chat.forgetProject': (root: string) => forgetProject(root),
   }
 }
 
-/** The server is up while the switch is on; each change waits for the one before it to finish. */
-function keepPhone(on: boolean): void {
-  if (on === phoneOn) return
+const PHONE_CALLS = phoneCalls()
+
+/** The phone's window is there while the switch is on, and starts over with a new code. */
+function keepPhone(on: boolean, key: string): void {
+  if (on === phoneOn && key === phoneKey) return
   phoneOn = on
-  phoneTurned = phoneTurned.then(async () => {
-    phone?.close()
-    phone = undefined
-    phoneError = undefined
-    if (!on) {
-      await stopServing()
-      return
-    }
-    const dev = process.env['ELECTRON_RENDERER_URL']
-    try {
-      phone = await startPhone({
-        port: PHONE_PORT,
-        key: getSettings().phoneKey,
-        pages: dev === undefined ? { folder: join(import.meta.dirname, '../renderer') } : { dev },
-        boot: { home: homedir(), platform: process.platform },
-        calls: phoneCalls(),
-      })
-    } catch (error) {
-      phoneError = `Port ${String(PHONE_PORT)} is taken by something else: ${String(error)}`
-    }
-  })
+  phoneKey = key
+  closePeer()
+  phoneState = { count: 0 }
+  if (on) peerWindow()
+  void phoneView().then((view) => tell('phone:state', view))
 }
 
-/** The link for the phone, as text and as a QR code. Asked again each time, so Tailscale installed since is found. */
-async function phoneLink(): Promise<{ readonly url?: string; readonly qr?: string; readonly error?: string }> {
-  await phoneTurned
-  if (!phoneOn) return {}
-  if (phoneError !== undefined) return { error: phoneError }
-  const served = await serveOnTailnet(PHONE_PORT)
-  if (served.url === undefined) return { error: served.error ?? 'Tailscale did not say where this Mac is.' }
-  const url = `${served.url}/?key=${getSettings().phoneKey}`
-  return { url, qr: await QRCode.toDataURL(url, { margin: 1, width: 400 }) }
+/** What Settings shows: the code to scan, and how many phones are on it. */
+async function phoneView(): Promise<PhoneView> {
+  if (!phoneOn) return { count: 0 }
+  const key = getSettings().phoneKey
+  if (phoneCode?.key !== key) {
+    phoneCode = { key, qr: await QRCode.toDataURL(pairingLink({ key, signal: SIGNAL }), { margin: 1, width: 400 }) }
+  }
+  return { qr: phoneCode.qr, ...phoneState }
 }
 
 /* ------------------------------------------------------------------ */
@@ -620,7 +626,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    const window = BrowserWindow.getAllWindows()[0]
+    const window = personWindows()[0]
     if (window === undefined) {
       openChat()
       return
@@ -638,7 +644,7 @@ if (!app.requestSingleInstanceLock()) {
     nativeTheme.themeSource = getSettings().theme
     guided = getSettings().guideClaude
     void keepGuide(guided)
-    keepPhone(getSettings().phone)
+    keepPhone(getSettings().phone, getSettings().phoneKey)
     wire()
     // The conversations are what this is opened for; correcting and dictating are a shortcut away.
     openChat()
@@ -676,7 +682,7 @@ if (!app.requestSingleInstanceLock()) {
     })
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) openChat()
+      if (personWindows().length === 0) openChat()
     })
   })
 }
@@ -687,5 +693,5 @@ app.on('window-all-closed', () => undefined)
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   sessions?.dispose()
-  phone?.close()
+  closePeer()
 })

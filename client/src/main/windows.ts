@@ -73,6 +73,7 @@ const outside = (window: BrowserWindow): void => {
 let panel: BrowserWindow | undefined
 let chat: BrowserWindow | undefined
 let voice: BrowserWindow | undefined
+let peer: BrowserWindow | undefined
 
 export function panelWindow(): BrowserWindow {
   if (panel !== undefined && !panel.isDestroyed()) return panel
@@ -200,5 +201,31 @@ export function closeVoice(): void {
   voice = undefined
 }
 
+/**
+ * The window the phone is answered in, never shown: WebRTC is Chromium's, and
+ * Chromium is in a window, not in the main process. Kept from being throttled
+ * like a window in the background, since it is always one.
+ */
+export function peerWindow(): BrowserWindow {
+  if (peer !== undefined && !peer.isDestroyed()) return peer
+  peer = new BrowserWindow({ show: false, webPreferences: { preload, sandbox: false, backgroundThrottling: false } })
+  load(peer, 'peer')
+  peer.on('closed', () => {
+    peer = undefined
+  })
+  return peer
+}
+
+export const shownPeer = (): BrowserWindow | undefined =>
+  peer !== undefined && !peer.isDestroyed() ? peer : undefined
+
+export function closePeer(): void {
+  shownPeer()?.destroy()
+  peer = undefined
+}
+
 /** Every window, for telling them all the same thing. */
 export const everyWindow = (): BrowserWindow[] => BrowserWindow.getAllWindows().filter((one) => !one.isDestroyed())
+
+/** The windows a person can see and go back to; the phone's is not one. */
+export const personWindows = (): BrowserWindow[] => everyWindow().filter((one) => one !== peer)

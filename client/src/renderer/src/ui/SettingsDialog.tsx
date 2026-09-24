@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { appName } from '../../../shared/api'
-import type { AIProvider, OpenRule, Settings, Theme } from '../../../shared/api'
+import type { AIProvider, OpenRule, PhoneView, Settings, Theme } from '../../../shared/api'
 import { Icon } from './Icon'
 import { Picker } from './Menu'
 import { MOD } from './Shortcuts'
@@ -251,12 +251,12 @@ export function SettingsDialog({
 }
 
 function PhoneAccess({ on, change }: { readonly on: boolean; readonly change: (on: boolean) => void }): React.JSX.Element {
-  const [link, setLink] = useState<{ readonly url?: string; readonly qr?: string; readonly error?: string }>({})
-  const [asked, setAsked] = useState(0)
+  const [view, setView] = useState<PhoneView>({ count: 0 })
 
   useEffect(() => {
-    if (on) void window.geckit.phone.link().then(setLink)
-  }, [on, asked])
+    void window.geckit.phone.state().then(setView)
+    return window.geckit.phone.onState(setView)
+  }, [])
 
   return (
     <div className="field">
@@ -266,28 +266,21 @@ function PhoneAccess({ on, change }: { readonly on: boolean; readonly change: (o
         Open the conversations on your phone
       </label>
       <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
-        Over Tailscale, which has to be signed in on this Mac and on the phone, with HTTPS turned on for the tailnet.
-        Only your own devices reach it, and only with the key in the link.
+        Scan the code with the GeckIt app on your iPhone. The phone talks to this Mac directly, and only with the key in this code.
       </span>
-      {on && link.qr !== undefined && link.url !== undefined ? (
+      {on && view.qr !== undefined ? (
         <div className="phone-link">
-          <img src={link.qr} alt="QR code of the link" width={160} height={160} />
+          <img src={view.qr} alt="QR code for the GeckIt app" width={160} height={160} />
           <span>
-            Point the phone&apos;s camera at it, then Share, Add to Home Screen.
-            <button type="button" className="quiet" onClick={() => void navigator.clipboard.writeText(link.url ?? '')}>
-              Copy the link
+            {view.count === 0 ? 'No phone connected' : `${String(view.count)} ${view.count === 1 ? 'phone' : 'phones'} connected`}
+            <button type="button" className="quiet" onClick={() => window.geckit.phone.newCode()}>
+              New code
             </button>
+            <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Phones paired with the old code will have to scan again.</span>
           </span>
         </div>
       ) : null}
-      {on && link.error !== undefined ? (
-        <span className="phone-error">
-          {link.error}{' '}
-          <button type="button" className="quiet" onClick={() => setAsked(asked + 1)}>
-            Try again
-          </button>
-        </span>
-      ) : null}
+      {on && view.trouble !== undefined ? <span className="phone-error">{view.trouble}</span> : null}
     </div>
   )
 }
