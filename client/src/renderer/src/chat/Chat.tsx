@@ -121,7 +121,27 @@ export function Chat(): React.JSX.Element {
     },
     [root],
   )
-  const files = useMemo(() => (root === undefined ? undefined : { root, onFile: file }), [root, file])
+  // What `#123` in an answer means, where the project pushes to GitHub. Kept with the project it was read for, so another project's is not used for it.
+  const [repo, setRepo] = useState<{ readonly root: string; readonly name?: string } | undefined>()
+  useEffect(() => {
+    if (root === undefined) return
+    let here = true
+    // Asked through a promise, so a window drawn against an older main process is left without a repository rather than broken.
+    void Promise.resolve()
+      .then(() => window.geckit.chat.repo(root))
+      .then((found) => {
+        if (here) setRepo({ root, ...(found === undefined ? {} : { name: found }) })
+      })
+      .catch(() => undefined)
+    return () => {
+      here = false
+    }
+  }, [root])
+  const named = repo !== undefined && repo.root === root ? repo.name : undefined
+  const files = useMemo(
+    () => (root === undefined ? undefined : { root, onFile: file, ...(named === undefined ? {} : { repo: named }) }),
+    [root, file, named],
+  )
   const links = useMemo(() => linksIn(chat.items), [chat.items])
 
   useEffect(() => {

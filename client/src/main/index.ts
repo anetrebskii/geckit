@@ -43,7 +43,7 @@ import { correct } from './correct'
 import { askOrders, carryOut, saying } from './orders'
 import type { Order, Told } from './orders'
 import { projectFiles } from './files'
-import { fetchGit, gitState } from './git'
+import { fetchGit, gitRepo, gitState } from './git'
 import { keepGuide } from './guide'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
@@ -485,6 +485,7 @@ function wire(): void {
   ipcMain.handle('chat:taskOutput', (_event, id: string, task: string) => sessions?.taskOutput(id, task))
   ipcMain.on('chat:reveal', (_event, root: string, path: string) => shell.showItemInFolder(fileAt(root, path)))
   ipcMain.handle('chat:exists', (_event, root: string, path: string) => isThere(root, path))
+  ipcMain.handle('chat:repo', (_event, root: string) => gitRepo(root))
   ipcMain.handle('chat:files', (_event, root: string) => projectFiles(root))
   ipcMain.on('chat:openFile', (_event, root: string, path: string) => openFile(getSettings().openWith, root, path))
   ipcMain.on('chat:fileMenu', (event, root: string, path: string) => {
@@ -604,6 +605,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.browsers': (root: string, id: string | undefined, pick: string | undefined) => held()?.browsers(root, id, pick),
     'chat.git': (root: string) => gitFor(root, (state) => shownPeer()?.webContents.send('peer:tell', 'chat:git', { root, state })),
     'chat.exists': (root: string, path: string) => isThere(root, path),
+    'chat.repo': (root: string) => gitRepo(root),
     'chat.files': (root: string) => projectFiles(root),
     'chat.forgetProject': (root: string) => forgetProject(root),
   }
