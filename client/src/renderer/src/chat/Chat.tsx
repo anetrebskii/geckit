@@ -594,7 +594,24 @@ export function Chat(): React.JSX.Element {
       <Notices chat={chat} />
       {screening ? <Screen onClose={() => setScreening(false)} /> : null}
       <UpdateNotice />
-      {recent === undefined ? null : <Recent list={recent.list} at={recent.at} colors={chat.settings} />}
+      {recent === undefined ? null : (
+        <Recent
+          list={recent.list}
+          at={recent.at}
+          colors={chat.settings}
+          onAt={(index) => {
+            const next = { list: recent.list, at: index }
+            recentRef.current = next
+            setRecent(next)
+          }}
+          onPick={(index) => {
+            recentRef.current = undefined
+            setRecent(undefined)
+            const chosen = recent.list[index]
+            if (chosen !== undefined) chat.goTo(chosen.id)
+          }}
+        />
+      )}
       {switching ? <Switcher chat={chat} onClose={() => setSwitching(false)} onSeek={setSeek} /> : null}
       {setting ? (
         <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />

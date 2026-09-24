@@ -12,10 +12,14 @@ export function Recent({
   list,
   at,
   colors,
+  onAt,
+  onPick,
 }: {
   readonly list: readonly ChatSession[]
   readonly at: number
   readonly colors: Pick<Settings, 'projectColors'>
+  readonly onAt: (index: number) => void
+  readonly onPick: (index: number) => void
 }): React.JSX.Element {
   return (
     <div className="switcher recent floating" role="listbox" aria-label="Opened last">
@@ -27,6 +31,8 @@ export function Recent({
             role="option"
             aria-selected={index === at}
             className={`row${index === at ? ' on' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
+            onMouseMove={() => onAt(index)}
+            onMouseDown={() => onPick(index)}
           >
             <Dot session={session} />
             <span className="lines">
