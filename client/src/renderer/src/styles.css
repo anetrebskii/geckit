@@ -4902,3 +4902,41 @@ html.phone .task-row .how {
   min-width: 0;
   text-align: start;
 }
+
+/* The Background window as a sheet on the phone: the list sits in the sheet's own grouped box rather than a dialog of its own. */
+.tasks-sheet .dialog.tasks {
+  width: auto;
+  max-height: none;
+  padding: 12px 16px;
+  overflow: visible;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+  animation: none;
+}
+
+.tasks-sheet .dialog.tasks + .sheet-list {
+  margin-top: 10px;
+}
+
+/* The large title names the Mac the board is from, and opens the list of Macs this phone is paired with. */
+.phone-macs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 100%;
+  text-align: start;
+}
+
+.phone-macs > svg {
+  flex: none;
+  margin-top: 4px;
+  color: var(--accent);
+}
+
+.phone-bar-small,
+.phone-macs {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

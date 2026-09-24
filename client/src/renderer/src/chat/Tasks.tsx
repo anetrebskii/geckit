@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import type { BackgroundTask, ChatSession, TaskOutput } from '../../../shared/api'
+import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
+import { Sheet } from '../ui/Sheet'
 import { Code } from './Code'
 import { Prose } from './Prose'
 
@@ -195,6 +197,65 @@ function Background({
     return () => window.removeEventListener('keydown', key, true)
   })
 
+  const list =
+    order.length === 0 ? (
+      <p>Nothing is running in the background.</p>
+    ) : (
+      groups.map((group) => (
+        <section key={group.title}>
+          <h3>{group.title}</h3>
+          {group.tasks.map((task) => {
+            const index = order.indexOf(task)
+            return (
+              <div
+                key={task.id}
+                className={`task-row${index === here ? ' on' : ''}`}
+                role="button"
+                tabIndex={-1}
+                onMouseMove={() => setAt(index)}
+                onClick={() => setOpened(task.id)}
+              >
+                <Glyph task={task} />
+                <span className="what">{task.what || task.id}</span>
+                <span className="lasted">{lasted((task.ended ?? now) - task.started)}</span>
+                <span className={`how ${task.status}`}>{standing(task, stopping.has(task.id))}</span>
+              </div>
+            )
+          })}
+        </section>
+      ))
+    )
+
+  // On the phone a dialog the size of the screen leaves nothing to tap outside it, so it is a sheet: dragged down or Done.
+  if (ON_PHONE) {
+    return (
+      <Sheet title="Background" onClose={onClose} cancel={false} className="tasks-sheet">
+        {shown === undefined || session === undefined ? (
+          <>
+            <div className="dialog tasks">{list}</div>
+            <div className="sheet-list">
+              <button type="button" className="sheet-option sheet-cancel" onClick={onClose}>
+                Done
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="dialog tasks one">
+            <Details
+              session={session}
+              task={shown}
+              now={now}
+              stopping={stopping.has(shown.id)}
+              onBack={() => setOpened(undefined)}
+              onAct={() => act(shown)}
+              onClose={onClose}
+            />
+          </div>
+        )}
+      </Sheet>
+    )
+  }
+
   return (
     <div className="dialog-scrim" onMouseDown={onClose}>
       <div
@@ -208,33 +269,7 @@ function Background({
         {shown === undefined || session === undefined ? (
           <>
             <h2>Background</h2>
-            {order.length === 0 ? (
-              <p>Nothing is running in the background.</p>
-            ) : (
-              groups.map((group) => (
-                <section key={group.title}>
-                  <h3>{group.title}</h3>
-                  {group.tasks.map((task) => {
-                    const index = order.indexOf(task)
-                    return (
-                      <div
-                        key={task.id}
-                        className={`task-row${index === here ? ' on' : ''}`}
-                        role="button"
-                        tabIndex={-1}
-                        onMouseMove={() => setAt(index)}
-                        onClick={() => setOpened(task.id)}
-                      >
-                        <Glyph task={task} />
-                        <span className="what">{task.what || task.id}</span>
-                        <span className="lasted">{lasted((task.ended ?? now) - task.started)}</span>
-                        <span className={`how ${task.status}`}>{standing(task, stopping.has(task.id))}</span>
-                      </div>
-                    )
-                  })}
-                </section>
-              ))
-            )}
+            {list}
             <div className="dialog-actions">
               {order.length === 0 ? null : (
                 <span className="task-keys">Up and Down to choose, Enter to open, X to stop or clear</span>

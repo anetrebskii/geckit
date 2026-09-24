@@ -1,5 +1,5 @@
 import { exec, execFile } from 'node:child_process'
-import { homedir } from 'node:os'
+import { homedir, hostname } from 'node:os'
 import { resolve } from 'node:path'
 
 import {
@@ -564,7 +564,8 @@ let awake: number | undefined
 function phoneCalls(): Record<string, PhoneCall> {
   const held = (): Sessions | undefined => sessions
   return {
-    boot: () => ({ home: homedir(), platform: process.platform }),
+    // The name the phone lists this Mac under, as the network knows it: Alexs-MacBook-Pro.local reads Alexs MacBook Pro.
+    boot: () => ({ home: homedir(), platform: process.platform, name: hostname().replace(/\.local$/, '').replaceAll('-', ' ') }),
     'settings.get': () => getSettings(),
     'settings.set': (change: Partial<Settings>) => setSettings(change),
     'update.view': () => updateView(),
