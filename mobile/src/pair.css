@@ -174,3 +174,32 @@
 .pair-actions [hidden] {
   display: none;
 }
+
+/* The pill while the phone reaches the Mac again: the spinner, what is going on, and the step it is at under it. */
+.phone-offline {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  max-width: calc(100vw - 32px);
+  height: auto;
+  padding: 8px 16px 8px 12px;
+  line-height: 18px;
+  white-space: normal;
+  border-radius: 20px;
+}
+
+.phone-offline > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.phone-offline b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.phone-offline small {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}

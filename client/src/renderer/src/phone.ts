@@ -22,6 +22,8 @@ const QUIET = 5000
 // What was done while the link was down goes over the next one, unless the Mac stays away this long.
 const HOLD = 60_000
 let dropping: number | undefined
+// What the pill says: what is going on, and the step it is at, kept for the pill made once QUIET has passed.
+let saying = { head: 'Not connected to the Mac', step: 'Trying again' }
 
 /** The pill over the page while the link to the Mac is down, once the drop has lasted long enough to be worth saying. */
 export function showDropped(): void {
@@ -30,9 +32,26 @@ export function showDropped(): void {
     const line = document.createElement('div')
     line.className = 'phone-offline'
     line.setAttribute('role', 'status')
-    line.textContent = 'Not connected to the Mac. Trying again.'
+    const spin = document.createElement('span')
+    spin.className = 'phone-spin'
+    const text = document.createElement('span')
+    const head = document.createElement('b')
+    const step = document.createElement('small')
+    text.append(head, step)
+    line.append(spin, text)
     document.body.append(line)
+    sayDropped(saying.head, saying.step)
   }, QUIET)
+}
+
+/** What the pill says while the phone tries to reach the Mac again, so a long wait reads as waited on rather than stuck. */
+export function sayDropped(head: string, step: string): void {
+  saying = { head, step }
+  const line = document.querySelector('.phone-offline')
+  const said = line?.querySelector('b')
+  const under = line?.querySelector('small')
+  if (said !== null && said !== undefined) said.textContent = head
+  if (under !== null && under !== undefined) under.textContent = step
 }
 
 function hideDropped(): void {
