@@ -630,6 +630,8 @@ export interface Shortcut {
   readonly name: string
   readonly root: string
   readonly prompt: string
+  /** What being finished means, sent as `/goal` after the prompt. Nothing is no goal. */
+  readonly goal?: string
   readonly mode: SessionMode
   /** The model the conversation is handed. Nothing is Default. */
   readonly model?: string
