@@ -1296,7 +1296,7 @@ describe('general questions', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('runs one with nothing written to disk, marks it, and ends it after two quiet minutes', async () => {
+  it('runs one with nothing written to disk, marks it, and ends it after five quiet minutes', async () => {
     const built = build()
     const id = await built.sessions.send({ root: ROOT, mode: 'auto', text: 'What is a monad?', question: true })
     expect(built.fake.made[0]).toMatchObject({ resume: false, question: true })
@@ -1305,7 +1305,7 @@ describe('general questions', () => {
 
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     expect(built.sessions.wanting()).toBe(0)
-    vi.advanceTimersByTime(60_000)
+    vi.advanceTimersByTime(240_000)
     expect(built.fake.ended).toBe(0)
     await vi.advanceTimersByTimeAsync(61_000)
     expect(built.fake.ended).toBe(1)

@@ -164,7 +164,7 @@ export function Board({
         <button
           type="button"
           className="new-session no-drag board-new"
-          title="A question that is not about a project: it is not put on the board, and is forgotten 2 minutes after the answer"
+          title="A question that is not about a project: it is not put on the board, and is forgotten 5 minutes after the answer"
           onClick={(event) => {
             if (chat.questions.length === 0) onAsk()
             else setAsked(event.currentTarget.getBoundingClientRect())
@@ -189,7 +189,7 @@ export function Board({
                 })),
               { value: '', label: 'New question', icon: 'plus' },
             ]}
-            note="Each is forgotten 2 minutes after its last answer."
+            note="Each is forgotten 5 minutes after its last answer."
             onPick={(id) => {
               if (id === '') onAsk()
               else chat.open({ kind: 'session', id })
@@ -668,7 +668,7 @@ export function NewTask({
         </label>
       )}
       <div className="new-task-foot">
-        <span className="new-task-why">{question ? `Not on the board. It is forgotten 2 minutes after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when Claude is done. ${MOD}+Enter starts it` : 'Claude keeps working until this holds, then the card goes to In review'}</span>
+        <span className="new-task-why">{question ? `Not on the board. It is forgotten 5 minutes after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when Claude is done. ${MOD}+Enter starts it` : 'Claude keeps working until this holds, then the card goes to In review'}</span>
         <span className="spacer" />
         <button type="button" className="quiet" onClick={onClose}>
           Cancel
@@ -813,7 +813,7 @@ function PhoneNewTask({
             }}
           />
           {question ? (
-            <div className="phone-task-note">Not on the board. It is forgotten 2 minutes after the last answer.</div>
+            <div className="phone-task-note">Not on the board. It is forgotten 5 minutes after the last answer.</div>
           ) : (
             <>
               <div className="phone-task-label">Goal</div>
