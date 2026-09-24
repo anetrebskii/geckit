@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { DEFAULT_SETTINGS, resumeCommand, SESSION_STATUSES } from '../../../shared/api'
+import { DEFAULT_SETTINGS, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
 import { linksIn, shortUrl } from '../../../shared/links'
 import { Icon } from '../ui/Icon'
@@ -468,7 +468,7 @@ export function Chat(): React.JSX.Element {
             ) : chat.root === undefined ? null : (
               <Picker
                 label={`in ${projectName(chat.root)}`}
-                choices={chat.settings.projects.map((one) => ({ value: one, label: projectName(one), says: homePath(one) }))}
+                choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectName(one), says: homePath(one) }))}
                 chosen={chat.root}
                 title="Start it in"
                 tip={homePath(chat.root)}

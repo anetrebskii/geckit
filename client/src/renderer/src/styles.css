@@ -658,6 +658,60 @@ textarea {
   animation: lift var(--settle) var(--ease) both;
 }
 
+/* Settings, a section at a time: the sections down the left, and only the section scrolls. */
+.dialog.settings-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 94vw);
+  height: min(560px, 84vh);
+  max-height: none;
+  overflow: hidden;
+}
+
+.settings-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 18px;
+  min-height: 0;
+  margin-top: 12px;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-nav button {
+  padding: 5px 10px;
+  color: var(--text-dim);
+  text-align: left;
+  border-radius: var(--radius);
+}
+
+.settings-nav button:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.settings-nav button.on {
+  color: var(--text);
+  background: var(--bg-active);
+}
+
+.settings-page {
+  min-height: 0;
+  padding-right: 4px;
+  overflow-y: auto;
+}
+
+.settings-dialog .dialog-actions {
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .dialog h2 {
   margin: 0 0 4px;
   font-size: 13px;
@@ -1199,6 +1253,68 @@ svg.spinning,
 .field > label {
   font-size: 12px;
   color: var(--text-dim);
+}
+
+/*
+ * A list of ticks in Settings: the profile in use, and the projects in it.
+ *
+ * The list holds the columns and a row takes them with `subgrid`, so the names
+ * and the paths stand in columns however long a name is while each row is still
+ * a box of its own to highlight.
+ */
+.projects-listed {
+  display: grid;
+  grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr);
+  max-height: 264px;
+  margin-top: 2px;
+  padding: 3px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.project-listed {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 4px 0;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.project-listed > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-listed:hover {
+  background: var(--bg-hover);
+}
+
+/* The tick, in the accent, and nothing at all where a project is not listed: an empty box would be one more thing to read. */
+.project-listed .tick {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  color: var(--accent);
+}
+
+.project-listed .name {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.project-listed.off .name {
+  color: var(--text-faint);
+}
+
+.project-listed .says {
+  padding-right: 10px;
+  padding-left: 10px;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 
 .phone-link {
@@ -3373,6 +3489,12 @@ button.tag:hover {
   width: auto;
   gap: 8px;
   padding: 4px 10px;
+}
+
+.board-empty {
+  padding: 12px 12px 0;
+  font-size: 13px;
+  color: var(--text-dim);
 }
 
 .board-columns {

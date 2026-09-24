@@ -83,14 +83,25 @@ export function onSettings(watcher: (settings: Settings) => void): () => void {
   return () => watchers.delete(watcher)
 }
 
-/** The project folders the chat window offers, this one first. */
+/** The project folders the chat window offers, this one first. One added while a profile is in use joins that profile too. */
 export function rememberProject(root: string): Settings {
-  const projects = [root, ...getSettings().projects.filter((one) => one !== root)].slice(0, 20)
-  return setSettings({ projects, projectColors: withColors({ projects, projectColors: getSettings().projectColors }) })
+  const now = getSettings()
+  const projects = [root, ...now.projects.filter((one) => one !== root)].slice(0, 20)
+  return setSettings({
+    projects,
+    profiles: now.profiles.map((one) =>
+      one.id !== now.profile || one.projects.includes(root) ? one : { ...one, projects: [...one.projects, root] },
+    ),
+    projectColors: withColors({ projects, projectColors: now.projectColors }),
+  })
 }
 
 export function forgetProject(root: string): Settings {
-  return setSettings({ projects: getSettings().projects.filter((one) => one !== root) })
+  const now = getSettings()
+  return setSettings({
+    projects: now.projects.filter((one) => one !== root),
+    profiles: now.profiles.map((one) => ({ ...one, projects: one.projects.filter((kept) => kept !== root) })),
+  })
 }
 
 /** What the tool's own session file will not say back, kept beside it. */

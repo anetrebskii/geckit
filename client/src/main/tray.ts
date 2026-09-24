@@ -7,6 +7,7 @@ import type { MenuItemConstructorOptions, NativeImage } from 'electron'
 import appIcon from '../../assets/icons/32x32.png?asset'
 import template from '../../assets/trayTemplate.png?asset'
 import template2x from '../../assets/trayTemplate@2x.png?asset'
+import { shownProjects } from '../shared/api'
 import { describeTime, nextTimed } from '../shared/schedule'
 import { getSettings } from './store'
 
@@ -45,16 +46,20 @@ export function startTray(given: TrayDeps): void {
 export function drawTray(): void {
   if (tray === undefined || deps === undefined) return
   const now = Date.now()
-  const rows = getSettings().shortcuts.map((one) => {
-    const next = nextTimed(one, now)
-    const when =
-      one.lastSession !== undefined && deps?.busy(one.lastSession) === true
-        ? 'running now'
-        : next === undefined
-          ? undefined
-          : `next ${describeTime(next, now).replace(/^[A-Z]/, (first) => first.toLowerCase())}`
-    return { one, says: when === undefined ? basename(one.root) : `${basename(one.root)}, ${when}` }
-  })
+  // Another profile's shortcuts run all the same, and are listed only where that profile is in use.
+  const shown = shownProjects(getSettings())
+  const rows = getSettings()
+    .shortcuts.filter((one) => shown.includes(one.root))
+    .map((one) => {
+      const next = nextTimed(one, now)
+      const when =
+        one.lastSession !== undefined && deps?.busy(one.lastSession) === true
+          ? 'running now'
+          : next === undefined
+            ? undefined
+            : `next ${describeTime(next, now).replace(/^[A-Z]/, (first) => first.toLowerCase())}`
+      return { one, says: when === undefined ? basename(one.root) : `${basename(one.root)}, ${when}` }
+    })
   const key = JSON.stringify(rows.map(({ one, says }) => [one.id, one.name, says]))
   if (key === drawn) return
   drawn = key

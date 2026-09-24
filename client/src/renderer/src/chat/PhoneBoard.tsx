@@ -9,7 +9,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { macs } from '../macs'
-import { projectName } from './project'
+import { emptyProfile, projectName } from './project'
 import { running } from './Tasks'
 import { ago } from './time'
 import type { Chat } from './useChat'
@@ -195,7 +195,13 @@ export function PhoneBoard({
             {new Date(high.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
           </div>
         )}
-        {rows.length === 0 ? <div className="phone-empty">{COLUMNS.find((one) => one.column === shown)?.empty}</div> : null}
+        {rows.length === 0 ? (
+          <div className="phone-empty">
+            {emptyProfile(chat.settings) === undefined
+              ? COLUMNS.find((one) => one.column === shown)?.empty
+              : `No projects in ${emptyProfile(chat.settings) ?? ''}. Tick some in Settings, Profiles.`}
+          </div>
+        ) : null}
         {asking.length === 0 ? null : (
           <>
             <div className="phone-head">Needs you</div>

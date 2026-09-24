@@ -12,7 +12,7 @@ import type {
   SessionNotice,
   SessionStatus,
 } from '../../../shared/api'
-import { resumeCommand } from '../../../shared/api'
+import { resumeCommand, shownProjects } from '../../../shared/api'
 import { asImage, canShow } from '../pictures'
 import { useSettings } from '../settings'
 import type { Settings } from '../../../shared/api'
@@ -154,11 +154,12 @@ export function useChat(): Chat {
   const [plan, setPlan] = useState<PlanUsage | undefined>()
   const [models, setModels] = useState<ModelsSaid>('unasked')
   const [focusSeed, setFocusSeed] = useState(0)
-  // The projects the list shows, kept from last time. None of them is every one of them.
-  const chosen = useMemo(
-    () => picked ?? settings.chatProjects ?? (settings.chatAll || settings.projects[0] === undefined ? [] : [settings.projects[0]]),
-    [picked, settings.chatProjects, settings.chatAll, settings.projects],
-  )
+  // The projects the list shows, kept from last time. None of them is every one of the profile's.
+  const chosen = useMemo<readonly string[]>(() => {
+    const shown = shownProjects(settings)
+    const kept = picked ?? settings.chatProjects ?? (settings.chatAll || shown[0] === undefined ? [] : [shown[0]])
+    return kept.filter((one) => shown.includes(one))
+  }, [picked, settings])
   // One project is a scope the rest of the window understands; several are every project, narrowed.
   const scope = chosen.length === 1 ? (chosen[0] ?? ALL) : ALL
 
@@ -181,10 +182,15 @@ export function useChat(): Chat {
 
   const refresh = useCallback(() => {
     const one = chosenRef.current.length === 1 ? chosenRef.current[0] : undefined
-    void window.geckit.chat.list(one).then((all) => setSessions(all.filter(within)))
+    void window.geckit.chat.list(one).then((all) => {
+      setSessions(all.filter(within))
+      // Asked for every project, this is every project: the counts are made from the same answer.
+      if (one === undefined) setEveryone(all.filter((session) => session.question !== true))
+    })
   }, [])
 
-  useEffect(refresh, [refresh, scope, chosen.join('\n')])
+  // Another profile changes what the list may hold, with the scope itself unmoved.
+  useEffect(refresh, [refresh, scope, chosen.join('\n'), shownProjects(settings).join('\n')])
 
   useEffect(() => {
     void window.geckit.chat.account().then(setAccount)
@@ -300,7 +306,8 @@ export function useChat(): Chat {
   // Where a message goes: the project listed, or the one the open conversation belongs to.
   const root =
     scope === ALL
-      ? (session?.root ?? (started !== undefined && settings.projects.includes(started) ? started : settings.projects[0]))
+      ? (session?.root ??
+        (started !== undefined && shownProjects(settings).includes(started) ? started : shownProjects(settings)[0]))
       : scope
   const rootRef = useRef(root)
   useEffect(() => {
@@ -627,7 +634,7 @@ export function useChat(): Chat {
     },
     forgetProject: (which) => {
       void window.geckit.chat.forgetProject(which)
-      if (which === scopeRef.current) setScope(settings.projects.find((one) => one !== which) ?? ALL)
+      if (which === scopeRef.current) setScope(shownProjects(settings).find((one) => one !== which) ?? ALL)
     },
     open,
     show,
