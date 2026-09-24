@@ -164,10 +164,14 @@ const opened = (channel: RTCDataChannel): Promise<void> =>
 
 const randomId = (): string => [...crypto.getRandomValues(new Uint8Array(8))].map((one) => one.toString(16).padStart(2, '0')).join('')
 
+/** Where a dial has got to, for a screen that would otherwise only spin. */
+export type Dialing = 'service' | 'mac' | 'joining'
+
 /** The phone's side: joined, or an error once `within` has passed without the Mac answering. */
 // Long enough for a pairing service slow to wake on both sides of the handshake.
-export async function dial(pairing: Pairing, within = 45_000): Promise<Link> {
+export async function dial(pairing: Pairing, within = 45_000, step: (at: Dialing) => void = () => undefined): Promise<Link> {
   const until = Date.now() + within
+  step('service')
   const room = await roomOf(pairing.key)
   const peer = new RTCPeerConnection({ iceServers: await iceServers(pairing, room) })
   try {
@@ -183,6 +187,7 @@ export async function dial(pairing: Pairing, within = 45_000): Promise<Link> {
     const id = randomId()
     const offer: Signed = { sdp: peer.localDescription?.sdp ?? '', at: Date.now() }
     await post(pairing, { room, kind: 'offer', id, box: await seal(pairing.key, offer) })
+    step('mac')
     let answer: Signed | undefined
     while (answer === undefined && Date.now() < until) {
       // The service holds a question 10 s at most, so one open much longer than that is lost.
@@ -196,6 +201,7 @@ export async function dial(pairing: Pairing, within = 45_000): Promise<Link> {
     }
     if (answer === undefined) throw new Error('The Mac did not answer')
     await peer.setRemoteDescription({ type: 'answer', sdp: answer.sdp })
+    step('joining')
     await Promise.race([
       opened(channel),
       new Promise((_done, failed) => setTimeout(() => failed(new Error('The Mac did not answer')), Math.max(0, until - Date.now()))),
