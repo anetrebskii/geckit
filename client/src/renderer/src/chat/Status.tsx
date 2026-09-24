@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { planLine } from '../../../shared/api'
 import type { GitState, PlanWindow } from '../../../shared/api'
+import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
 import { ago } from './time'
 import type { Chat } from './useChat'
@@ -144,8 +145,8 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
 
   return (
     <div className="status-bar">
-      {shownGit === undefined ? null : <Git git={shownGit} now={now} />}
-      {spend?.used === undefined ? null : (
+      {ON_PHONE || shownGit === undefined ? null : <Git git={shownGit} now={now} />}
+      {ON_PHONE || spend?.used === undefined ? null : (
         <span
           className="stat"
           title={
@@ -162,7 +163,7 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
           </span>
         </span>
       )}
-      {spend?.cost === undefined ? null : (
+      {ON_PHONE || spend?.cost === undefined ? null : (
         <span
           className="stat"
           title="What this conversation would have cost at API prices, as Claude Code counts it. The plan covers it."
@@ -172,9 +173,11 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
         </span>
       )}
       <span className="spacer" />
-      <span className={`lead${chat.trouble === '' ? '' : ' trouble'}`}>
-        {chat.trouble === '' ? planLine(chat.account) : chat.trouble}
-      </span>
+      {ON_PHONE && chat.trouble === '' ? null : (
+        <span className={`lead${chat.trouble === '' ? '' : ' trouble'}`}>
+          {chat.trouble === '' ? planLine(chat.account) : chat.trouble}
+        </span>
+      )}
       {plan?.fiveHour === undefined ? null : <Window name="5h" window={plan.fiveHour} now={now} />}
       {plan?.sevenDay === undefined ? null : <Window name="Week" window={plan.sevenDay} now={now} />}
     </div>

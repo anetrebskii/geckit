@@ -30,6 +30,7 @@ export default defineConfig({
           panel: resolve(here, 'src/renderer/panel.html'),
           chat: resolve(here, 'src/renderer/chat.html'),
           voice: resolve(here, 'src/renderer/voice.html'),
+          peer: resolve(here, 'src/renderer/peer.html'),
         },
       },
     },

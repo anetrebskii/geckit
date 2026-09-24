@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { appName } from '../../../shared/api'
-import type { AIProvider, OpenRule, Settings, Theme } from '../../../shared/api'
+import type { AIProvider, OpenRule, PhoneView, Settings, Theme } from '../../../shared/api'
 import { Icon } from './Icon'
 import { Picker } from './Menu'
 import { MOD } from './Shortcuts'
@@ -227,6 +227,10 @@ export function SettingsDialog({
           </span>
         </div>
 
+        {document.documentElement.classList.contains('phone') ? null : (
+          <PhoneAccess on={settings.phone} change={(phone) => change({ phone })} />
+        )}
+
         <div className="dialog-actions">
           <button type="button" className="quiet" onClick={onShortcuts}>
             Keyboard shortcuts ({MOD}+/)
@@ -242,6 +246,41 @@ export function SettingsDialog({
           </span>
         </div>
       </div>
+    </div>
+  )
+}
+
+function PhoneAccess({ on, change }: { readonly on: boolean; readonly change: (on: boolean) => void }): React.JSX.Element {
+  const [view, setView] = useState<PhoneView>({ count: 0 })
+
+  useEffect(() => {
+    void window.geckit.phone.state().then(setView)
+    return window.geckit.phone.onState(setView)
+  }, [])
+
+  return (
+    <div className="field">
+      <label>Phone</label>
+      <label className="check">
+        <input type="checkbox" checked={on} onChange={(event) => change(event.target.checked)} />
+        Open the conversations on your phone
+      </label>
+      <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+        Scan the code with the GeckIt app on your iPhone. The phone talks to this Mac directly, and only with the key in this code.
+      </span>
+      {on && view.qr !== undefined ? (
+        <div className="phone-link">
+          <img src={view.qr} alt="QR code for the GeckIt app" width={160} height={160} />
+          <span>
+            {view.count === 0 ? 'No phone connected' : `${String(view.count)} ${view.count === 1 ? 'phone' : 'phones'} connected`}
+            <button type="button" className="quiet" onClick={() => window.geckit.phone.newCode()}>
+              New code
+            </button>
+            <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Phones paired with the old code will have to scan again.</span>
+          </span>
+        </div>
+      ) : null}
+      {on && view.trouble !== undefined ? <span className="phone-error">{view.trouble}</span> : null}
     </div>
   )
 }
