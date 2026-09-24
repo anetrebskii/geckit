@@ -39,6 +39,7 @@ const COLUMNS: readonly { readonly status: SessionStatus | undefined; readonly t
 export function Board({
   chat,
   onNew,
+  onAsk,
   onSettings,
   onKeys,
   onShortcuts,
@@ -46,6 +47,7 @@ export function Board({
 }: {
   readonly chat: Chat
   readonly onNew: () => void
+  readonly onAsk: () => void
   readonly onSettings: () => void
   readonly onKeys: () => void
   readonly onShortcuts: () => void
@@ -147,6 +149,16 @@ export function Board({
           <Icon name="settings" />
         </button>
         <span className="spacer" />
+        <button
+          type="button"
+          className="new-session no-drag board-new"
+          title="A question that is not about a project: it is not put on the board, and is forgotten 2 minutes after the answer"
+          onClick={onAsk}
+        >
+          <Icon name="chat" />
+          Ask
+          <span className="keys">{MOD}+Shift+N</span>
+        </button>
         <button type="button" className="new-session no-drag board-new" onClick={onNew}>
           <Icon name="plus" />
           New task
@@ -466,7 +478,16 @@ function Card({
 /** The row that opens the folder picker rather than choosing a project already there. */
 const PICK = '\u0000pick'
 
-export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClose: () => void }): React.JSX.Element {
+export function NewTask({
+  chat,
+  onClose,
+  question = false,
+}: {
+  readonly chat: Chat
+  readonly onClose: () => void
+  /** A general question: no project, no goal, and no card. */
+  readonly question?: boolean
+}): React.JSX.Element {
   const [root, setRoot] = useState(() => chat.root ?? chat.settings.projects[0] ?? '')
   const [text, setText] = useState('')
   const [goal, setGoal] = useState('')
@@ -492,12 +513,13 @@ export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClo
   }
 
   const start = (): void => {
-    if (root === '' || (text.trim() === '' && pictures.length === 0)) return
-    chat.startTask(root, text.trim(), goal.trim(), pictures)
+    if ((root === '' && !question) || (text.trim() === '' && pictures.length === 0)) return
+    if (question) chat.ask(text.trim(), pictures)
+    else chat.startTask(root, text.trim(), goal.trim(), pictures)
     onClose()
   }
 
-  if (ON_PHONE) {
+  if (ON_PHONE && !question) {
     return (
       <PhoneNewTask
         chat={chat}
@@ -518,39 +540,41 @@ export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClo
 
   return (
     <div className="new-task">
-      <div className="new-task-head">New task</div>
+      <div className="new-task-head">{question ? 'Ask a question' : 'New task'}</div>
+      {question ? null : (
+        <label className="new-task-label">
+          Project
+          <select
+            className="new-task-where"
+            value={root}
+            onChange={(event) => {
+              if (event.target.value !== PICK) {
+                setRoot(event.target.value)
+                return
+              }
+              void window.geckit.chat.addProject().then((picked) => {
+                if (picked !== undefined) setRoot(picked)
+              })
+            }}
+          >
+            {chat.settings.projects.map((one) => (
+              <option key={one} value={one}>
+                {projectName(one)}
+              </option>
+            ))}
+            <option value={PICK}>Choose a folder...</option>
+          </select>
+        </label>
+      )}
       <label className="new-task-label">
-        Project
-        <select
-          className="new-task-where"
-          value={root}
-          onChange={(event) => {
-            if (event.target.value !== PICK) {
-              setRoot(event.target.value)
-              return
-            }
-            void window.geckit.chat.addProject().then((picked) => {
-              if (picked !== undefined) setRoot(picked)
-            })
-          }}
-        >
-          {chat.settings.projects.map((one) => (
-            <option key={one} value={one}>
-              {projectName(one)}
-            </option>
-          ))}
-          <option value={PICK}>Choose a folder...</option>
-        </select>
-      </label>
-      <label className="new-task-label">
-        What to do
+        {question ? 'Question' : 'What to do'}
         <textarea
           ref={field}
           className={`new-task-text${over ? ' taking' : ''}`}
           rows={5}
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="Ask Claude Code. Paste a picture or drop a file in here"
+          placeholder={question ? 'Anything, not about a project. Paste a picture or drop a file in here' : 'Ask Claude Code. Paste a picture or drop a file in here'}
           onPaste={(event) => {
             const files = [...event.clipboardData.files]
             if (files.length === 0) return
@@ -590,17 +614,19 @@ export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClo
           ))}
         </div>
       )}
-      <label className="new-task-label">
-        Goal
-        <input
-          className="new-task-goal"
-          value={goal}
-          onChange={(event) => setGoal(event.target.value)}
-          placeholder="When it is done, as a condition. Leave empty for none"
-        />
-      </label>
+      {question ? null : (
+        <label className="new-task-label">
+          Goal
+          <input
+            className="new-task-goal"
+            value={goal}
+            onChange={(event) => setGoal(event.target.value)}
+            placeholder="When it is done, as a condition. Leave empty for none"
+          />
+        </label>
+      )}
       <div className="new-task-foot">
-        <span className="new-task-why">{goal.trim() === '' ? `No goal: it stops when Claude is done. ${MOD}+Enter starts it` : 'Claude keeps working until this holds, then the card goes to In review'}</span>
+        <span className="new-task-why">{question ? `Not on the board. It is forgotten 2 minutes after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when Claude is done. ${MOD}+Enter starts it` : 'Claude keeps working until this holds, then the card goes to In review'}</span>
         <span className="spacer" />
         <button type="button" className="quiet" onClick={onClose}>
           Cancel
@@ -608,10 +634,10 @@ export function NewTask({ chat, onClose }: { readonly chat: Chat; readonly onClo
         <button
           type="button"
           className="primary"
-          disabled={root === '' || (text.trim() === '' && pictures.length === 0)}
+          disabled={(root === '' && !question) || (text.trim() === '' && pictures.length === 0)}
           onClick={start}
         >
-          Start
+          {question ? 'Ask' : 'Start'}
         </button>
       </div>
     </div>

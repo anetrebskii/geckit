@@ -75,6 +75,7 @@ export function Chat(): React.JSX.Element {
   const [copied, setCopied] = useState<string | undefined>()
   // The board's New task form is open.
   const [making, setMaking] = useState(false)
+  const [asking, setAsking] = useState(false)
   // The Mac's own screen, shown on the phone.
   const [screening, setScreening] = useState(false)
   const grab = useRef(0)
@@ -207,10 +208,11 @@ export function Chat(): React.JSX.Element {
         }
         return
       }
-      if (making) {
+      if (making || asking) {
         if (event.key === 'Escape') {
           event.preventDefault()
           setMaking(false)
+          setAsking(false)
         }
         return
       }
@@ -273,6 +275,11 @@ export function Chat(): React.JSX.Element {
         event.preventDefault()
         setSwitching(true)
       }
+      if (meta && event.shiftKey && event.key.toLowerCase() === 'n') {
+        event.preventDefault()
+        setAsking(true)
+        return
+      }
       if (meta && event.key === 'n') {
         event.preventDefault()
         if (chat.settings.chatView === 'board') setMaking(true)
@@ -320,7 +327,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys, managing, clearing, remoteTrouble, making])
+  }, [chat, switching, setting, keys, managing, clearing, remoteTrouble, making, asking])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -371,6 +378,7 @@ export function Chat(): React.JSX.Element {
         <Board
           chat={chat}
           onNew={() => setMaking(true)}
+          onAsk={() => setAsking(true)}
           onSettings={() => setSetting(true)}
           onKeys={openKeys}
           onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
@@ -387,11 +395,17 @@ export function Chat(): React.JSX.Element {
           onShortcutFrom={shortcutFrom}
         />
       )}
-      {overBoard && !making ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
+      {overBoard && !making && !asking ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
       {making ? (
         <>
           <div className="talk-scrim" onMouseDown={() => setMaking(false)} />
           <NewTask chat={chat} onClose={() => setMaking(false)} />
+        </>
+      ) : null}
+      {asking ? (
+        <>
+          <div className="talk-scrim" onMouseDown={() => setAsking(false)} />
+          <NewTask question chat={chat} onClose={() => setAsking(false)} />
         </>
       ) : null}
       {/* There is no sidebar to make wider on the board. */}

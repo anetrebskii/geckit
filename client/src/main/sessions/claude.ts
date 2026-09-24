@@ -34,6 +34,8 @@ export interface ClaudeOptions {
   readonly mode: SessionMode
   /** The model chosen under the field, in the tool's own word for it. Without one the tool runs as it is set up. */
   readonly model?: string
+  /** Nothing is written to disk, so it never shows up among the project's conversations. */
+  readonly question?: boolean
 }
 
 /** Several questions asked at once, being answered one card at a time. */
@@ -81,6 +83,7 @@ export function holdClaude(
       // extension the server simply does not connect.
       '--chrome',
       ...(options.model === undefined ? [] : ['--model', options.model]),
+      ...(options.question === true ? ['--no-session-persistence'] : []),
       ...(options.resume ? ['--resume', options.id] : ['--session-id', options.id]),
     ],
     { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly() },
