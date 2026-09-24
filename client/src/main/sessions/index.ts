@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { homedir } from 'node:os'
 import { basename } from 'node:path'
 
 import type {
@@ -199,6 +200,8 @@ interface Live {
   clearing: boolean
   /** Messages sent while it worked, oldest first. */
   queued: { readonly id: string; readonly message: SessionMessage }[]
+  /** A general question, which is never listed and is ended once it has been quiet for a while. */
+  readonly question: boolean
 }
 
 /** `/goal <condition>` sets one, and `/goal clear` or one of the tool's other words for it ends it early. */
@@ -213,6 +216,9 @@ function goalSent(text: string): string | undefined {
 
 /** How long an idle session keeps its process. */
 const QUIET = 10 * 60_000
+
+/** How long a general question is kept once it has gone quiet. */
+const QUESTION_QUIET = 2 * 60_000
 
 const running = (task: BackgroundTask): boolean => task.status === 'running'
 
@@ -272,6 +278,7 @@ export class Sessions {
   }
 
   #note(id: string, change: SessionNote): void {
+    if (this.#live.get(id)?.question === true) return
     this.#deps.notes.set(id, { ...this.#deps.notes.all()[id], ...change })
   }
 
@@ -356,6 +363,7 @@ export class Sessions {
         ...(live === undefined || live.queued.length === 0
           ? {}
           : { queued: live.queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0 })) }),
+        ...(live?.question === true ? { question: true } : {}),
         ...(used === undefined && cost === undefined
           ? {}
           : {
@@ -414,7 +422,7 @@ export class Sessions {
     return live
   }
 
-  #fresh(id: string, root: string, title: string, mode: SessionMode): Live {
+  #fresh(id: string, root: string, title: string, mode: SessionMode, question = false): Live {
     const live: Live = {
       id,
       root,
@@ -450,6 +458,7 @@ export class Sessions {
       goal: undefined,
       clearing: false,
       queued: [],
+      question,
     }
     this.#live.set(id, live)
     return live
@@ -496,7 +505,10 @@ export class Sessions {
   async send(message: SessionMessage): Promise<string> {
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
-      live = this.#fresh(randomUUID(), message.root, firstLine(message.text, 80), message.mode)
+      live =
+        message.question === true
+          ? this.#fresh(randomUUID(), homedir(), firstLine(message.text, 80), message.mode, true)
+          : this.#fresh(randomUUID(), message.root, firstLine(message.text, 80), message.mode)
     } else if (live.driver === undefined) {
       await this.#reread(live)
     }
@@ -712,14 +724,21 @@ export class Sessions {
     }
     if (live.driver !== undefined) return
 
-    const resume = live.begun || (await (this.#deps.disk?.has ?? has)(live.root, live.id))
+    const resume = !live.question && (live.begun || (await (this.#deps.disk?.has ?? has)(live.root, live.id)))
     // A new run counts from nothing, so the one before it is counted in with the earlier ones.
     if (live.running !== undefined) live.spent = (live.spent ?? 0) + live.running
     live.running = undefined
     live.runs = live.mode
     live.ran = live.chosen
     const driver = (this.#deps.claude ?? holdClaude)(
-      { root: live.root, id: live.id, resume, mode: live.mode, ...(live.chosen === undefined ? {} : { model: live.chosen }) },
+      {
+        root: live.root,
+        id: live.id,
+        resume,
+        mode: live.mode,
+        ...(live.chosen === undefined ? {} : { model: live.chosen }),
+        ...(live.question ? { question: true } : {}),
+      },
       (heard) => this.#hear(live, heard),
       () => {
         if (live.driver !== driver) return
@@ -1078,7 +1097,7 @@ export class Sessions {
 
   /** How many sessions have stopped to ask or have answered unseen, for the badge on the Dock. */
   wanting(): number {
-    return this.#listed().filter((one) => one.state === 'asks' || one.state === 'unread').length
+    return this.#listed().filter((one) => one.question !== true && (one.state === 'asks' || one.state === 'unread')).length
   }
 
   /** In the middle of a turn, or waiting for an answer in one. */
@@ -1429,11 +1448,18 @@ export class Sessions {
   /** An idle process is let go of after a while, unless Remote Control or something in the background is keeping it. */
   #rest(live: Live): void {
     clearTimeout(live.quiet)
-    live.quiet = setTimeout(() => {
-      if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.some(running)) return
-      live.driver?.end()
-      live.driver = undefined
-    }, QUIET)
+    live.quiet = setTimeout(
+      () => {
+        if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.some(running)) return
+        if (live.question) {
+          void this.#letGo(live.id).then(() => this.#changed())
+          return
+        }
+        live.driver?.end()
+        live.driver = undefined
+      },
+      live.question ? QUESTION_QUIET : QUIET,
+    )
   }
 
   #back(live: Live): void {

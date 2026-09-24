@@ -206,6 +206,8 @@ export interface ChatSession {
   readonly status?: SessionStatus
   /** Messages sent while it worked, oldest first, each going once the turn before it is answered. */
   readonly queued?: readonly QueuedMessage[]
+  /** A general question: shown while it is open, and never as a card or a row. */
+  readonly question?: boolean
 }
 
 export interface QueuedMessage {
@@ -313,6 +315,8 @@ export interface SessionMessage {
   readonly model?: string
   /** The item this is a second try of, so the transcript keeps one message and not two. */
   readonly again?: string
+  /** A general question, in no project: kept off the board and the list, and ended two minutes after its last answer. */
+  readonly question?: boolean
 }
 
 /** A command typed after `!` in the composer. */

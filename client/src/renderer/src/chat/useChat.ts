@@ -93,6 +93,8 @@ export interface Chat {
   setModel: (model: string) => void
   askModels: () => void
   send: (again?: string) => void
+  /** A general question, in no project, which the board and the list never show. */
+  ask: (text: string, images?: readonly SessionImage[]) => void
   /** A new conversation from the board's form: the work goes first, then the goal. */
   startTask: (root: string, text: string, goal: string, images?: readonly SessionImage[]) => void
   /** Words sent to the open conversation as they are, the field left alone: `/compact`, `/goal clear`. */
@@ -138,6 +140,7 @@ export function useChat(): Chat {
   const [started, setStarted] = useState<string | undefined>()
   const [sessions, setSessions] = useState<readonly ChatSession[]>([])
   const [everyone, setEveryone] = useState<readonly ChatSession[]>([])
+  const [questions, setQuestions] = useState<readonly ChatSession[]>([])
   const [notices, setNotices] = useState<readonly SessionNotice[]>([])
   const [shown, setShown] = useState<Shown>({ kind: 'new' })
   const [items, setItems] = useState<readonly SessionItem[]>([])
@@ -171,7 +174,8 @@ export function useChat(): Chat {
   }, [scope, chosen, sessions, everyone])
 
   /** Listed: every project's, or only the chosen ones'. */
-  const within = (one: ChatSession): boolean => chosenRef.current.length === 0 || chosenRef.current.includes(one.root)
+  const within = (one: ChatSession): boolean =>
+    one.question !== true && (chosenRef.current.length === 0 || chosenRef.current.includes(one.root))
 
   const refresh = useCallback(() => {
     const one = chosenRef.current.length === 1 ? chosenRef.current[0] : undefined
@@ -203,10 +207,23 @@ export function useChat(): Chat {
   }, [])
 
   useEffect(() => {
-    void window.geckit.chat.list(undefined).then(setEveryone)
+    void window.geckit.chat.list(undefined).then((all) => setEveryone(all.filter((one) => one.question !== true)))
+    let asked = new Set<string>()
     return window.geckit.chat.onSessions((all) => {
       setSessions(all.filter(within))
-      setEveryone(all)
+      setEveryone(all.filter((one) => one.question !== true))
+      const now = all.filter((one) => one.question === true)
+      setQuestions(now)
+      // A question ended after two quiet minutes is gone, and so is its view.
+      const shownNow = shownRef.current
+      if (shownNow.kind === 'session' && asked.has(shownNow.id) && !now.some((one) => one.id === shownNow.id)) {
+        shownRef.current = { kind: 'new' }
+        setShown({ kind: 'new' })
+        setItems([])
+        setItemsFor('new')
+        window.geckit.chat.watching(undefined)
+      }
+      asked = new Set(now.map((one) => one.id))
       // A question answered anywhere, here or in a terminal, has nothing left to say.
       setNotices((held) =>
         held.filter((notice) => !notice.asks || all.some((one) => one.id === notice.session && one.state === 'asks')),
@@ -271,8 +288,11 @@ export function useChat(): Chat {
   }, [])
 
   const session = useMemo(
-    () => (shown.kind === 'new' ? undefined : sessions.find((one) => one.id === shown.id)),
-    [shown, sessions],
+    () =>
+      shown.kind === 'new'
+        ? undefined
+        : (sessions.find((one) => one.id === shown.id) ?? questions.find((one) => one.id === shown.id)),
+    [shown, sessions, questions],
   )
 
   // Where a message goes: the project listed, or the one the open conversation belongs to.
@@ -427,6 +447,23 @@ export function useChat(): Chat {
         )
     },
     [open, setDraft],
+  )
+
+  const ask = useCallback(
+    (text: string, images: readonly SessionImage[] = []) => {
+      const now = held.current
+      void window.geckit.chat
+        .send({
+          root: '',
+          mode: now.mode,
+          text,
+          question: true,
+          ...(images.length === 0 ? {} : { images }),
+          ...(now.model === '' ? {} : { model: now.model }),
+        })
+        .then((id) => open({ kind: 'session', id }))
+    },
+    [open],
   )
 
   // The goal goes first and the work after it, so it holds from the first turn rather than from the second.
@@ -619,6 +656,7 @@ export function useChat(): Chat {
       void window.geckit.chat.models().then((said) => setModels(said ?? 'unsaid'))
     },
     send,
+    ask,
     startTask,
     say: (text: string) => {
       const where = rootRef.current
