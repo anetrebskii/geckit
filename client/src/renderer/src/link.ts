@@ -37,10 +37,20 @@ const BUFFERED = 1_000_000
 // Enough for text on a Retina screen at 15 frames a second; more only fills a phone's mobile data.
 const SCREEN_BITRATE = 3_000_000
 
+// The pairing service takes seconds to answer, so what it said is kept for half the day a relay's keys last; the app starting again asks afresh.
+const KEEP = 12 * 3600_000
+// The service has taken 7 s to wake; twice that and it is not coming.
+const POSTING = 15_000
+const kept = new Map<string, { readonly servers: RTCIceServer[]; readonly until: number }>()
+
 async function iceServers(pairing: Pairing, room: string): Promise<RTCIceServer[]> {
+  const held = kept.get(room)
+  if (held !== undefined && held.until > Date.now()) return held.servers
   try {
-    const answer = await fetch(`${pairing.signal}/api/fn/ice?room=${room}`)
-    return ((await answer.json()) as { readonly iceServers: RTCIceServer[] }).iceServers
+    const answer = await inTime(POSTING, (signal) => fetch(`${pairing.signal}/api/fn/ice?room=${room}`, { signal }))
+    const said = (await answer.json()) as { readonly iceServers: RTCIceServer[] }
+    kept.set(room, { servers: said.iceServers, until: Date.now() + KEEP })
+    return said.iceServers
   } catch {
     return STUN
   }
@@ -59,11 +69,14 @@ function gathered(peer: RTCPeerConnection): Promise<void> {
 }
 
 async function post(pairing: Pairing, body: { room: string; kind: 'offer' | 'answer'; id: string; box: string }): Promise<void> {
-  const answer = await fetch(`${pairing.signal}/api/fn/signal`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  const answer = await inTime(POSTING, (signal) =>
+    fetch(`${pairing.signal}/api/fn/signal`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }),
+  )
   if (!answer.ok) throw new Error(`The pairing service answered ${String(answer.status)}`)
 }
 
@@ -71,6 +84,21 @@ async function ask(pairing: Pairing, query: Record<string, string>, signal?: Abo
   const answer = await fetch(`${pairing.signal}/api/fn/signal?${new URLSearchParams(query).toString()}`, signal === undefined ? {} : { signal })
   if (!answer.ok) throw new Error(`The pairing service answered ${String(answer.status)}`)
   return (await answer.json()) as { signals: Signal[]; at: number }
+}
+
+/** Gives up at the time given even when the request does not: WebKit has been seen to keep one open past its abort signal, which left a phone reconnecting forever. */
+function inTime<T>(ms: number, doing: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const stop = new AbortController()
+  let timer = 0
+  return Promise.race([
+    doing(stop.signal),
+    new Promise<never>((_done, failed) => {
+      timer = window.setTimeout(() => {
+        stop.abort()
+        failed(new Error('The pairing service did not answer in time'))
+      }, ms)
+    }),
+  ]).finally(() => window.clearTimeout(timer))
 }
 
 function linkOver(channel: RTCDataChannel, peer: RTCPeerConnection, video: RTCRtpTransceiver | undefined, seen?: () => MediaStream | undefined): Link {
@@ -137,7 +165,8 @@ const opened = (channel: RTCDataChannel): Promise<void> =>
 const randomId = (): string => [...crypto.getRandomValues(new Uint8Array(8))].map((one) => one.toString(16).padStart(2, '0')).join('')
 
 /** The phone's side: joined, or an error once `within` has passed without the Mac answering. */
-export async function dial(pairing: Pairing, within = 20_000): Promise<Link> {
+// Long enough for a pairing service slow to wake on both sides of the handshake.
+export async function dial(pairing: Pairing, within = 45_000): Promise<Link> {
   const until = Date.now() + within
   const room = await roomOf(pairing.key)
   const peer = new RTCPeerConnection({ iceServers: await iceServers(pairing, room) })
@@ -156,7 +185,13 @@ export async function dial(pairing: Pairing, within = 20_000): Promise<Link> {
     await post(pairing, { room, kind: 'offer', id, box: await seal(pairing.key, offer) })
     let answer: Signed | undefined
     while (answer === undefined && Date.now() < until) {
-      const heard = await ask(pairing, { room, kind: 'answer', id, after: '0' }, AbortSignal.timeout(Math.max(1, until - Date.now())))
+      // The service holds a question 10 s at most, so one open much longer than that is lost.
+      const heard = await inTime(Math.min(15_000, Math.max(1, until - Date.now())), (signal) =>
+        ask(pairing, { room, kind: 'answer', id, after: '0' }, signal),
+      ).catch((error: unknown) => {
+        if (Date.now() >= until) throw error
+        return { signals: [] }
+      })
       for (const one of heard.signals) answer ??= await unseal<Signed>(pairing.key, one.box)
     }
     if (answer === undefined) throw new Error('The Mac did not answer')

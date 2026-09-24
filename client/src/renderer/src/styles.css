@@ -4720,10 +4720,10 @@ html.phone .notice .body {
   }
 }
 
-/* The stream to the Mac is down; a pill drops under the bar, and the page reloads once the stream is back. */
+/* The link to the Mac is down; a pill says so, and goes once the page is back on a new link. On the board it sits at the foot, clear of the large title; in a conversation, under the bar, clear of the field. */
 .phone-offline {
   position: fixed;
-  top: calc(var(--top) + 60px);
+  bottom: calc(var(--bottom) + 16px);
   left: 50%;
   z-index: 55;
   height: 32px;
@@ -4737,6 +4737,11 @@ html.phone .notice .body {
   box-shadow: var(--shadow);
   transform: translateX(-50%);
   animation: fade var(--settle) var(--ease) both;
+}
+
+body:has(.talk.over:not([hidden])) .phone-offline {
+  top: calc(var(--top) + 60px);
+  bottom: auto;
 }
 
 .phone-spin {
