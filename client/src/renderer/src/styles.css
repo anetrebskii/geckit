@@ -4608,9 +4608,18 @@ html.phone .composer {
   box-shadow: 0 -0.5px 0 var(--separator);
 }
 
+/* With the keyboard up the home indicator is under it, so its inset would only be a gap above the keys. */
+html.phone.keyboard .composer {
+  padding-bottom: 8px;
+}
+
+/* Mode, tasks and goal as a row of chips above the field, scrolled sideways when they do not fit; the field under them is one round line with Send inside it, as in Messages. */
 html.phone .composer-inner {
-  border-color: var(--border);
-  border-radius: 22px;
+  display: flex;
+  flex-direction: column;
+  background: none;
+  border: 0;
+  border-radius: 0;
 }
 
 html.phone .composer-inner:focus-within {
@@ -4618,24 +4627,57 @@ html.phone .composer-inner:focus-within {
 }
 
 html.phone .composer-inner textarea {
-  padding-inline: 14px;
+  min-height: 40px;
+  padding: 8px 48px 8px 16px;
   line-height: 22px;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  scrollbar-width: none;
 }
 
-/* Mode, tasks and goal take a line of their own when they do not fit beside Send. */
 html.phone .composer-bar {
-  flex-wrap: wrap;
-  padding: 2px 4px 4px 8px;
+  order: -1;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 0 0 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-html.phone .composer-bar .send {
-  margin-inline-start: auto;
+html.phone .composer-bar::-webkit-scrollbar {
+  display: none;
 }
 
+html.phone .composer-bar .picker {
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--fill);
+  border-radius: 16px;
+}
+
+html.phone .composer-bar .goal-picker {
+  max-width: 220px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+html.phone .composer-bar .spacer,
+html.phone .composer-hint {
+  display: none;
+}
+
+/* Held to the field's last line, and not clipped by the chip row it sits in, which is not what it is placed against. */
 html.phone .send {
-  width: 36px;
-  height: 36px;
-  border-radius: 18px;
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
 }
 
 html.phone .send.stop {
