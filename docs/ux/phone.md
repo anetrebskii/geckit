@@ -143,6 +143,7 @@ stateDiagram-v2
 | Direct or through the relay | Nothing the person does differs; it is a network fact |
 | The signaling function on weroost | It only introduces the two ends; once connected it is not used |
 | The Mac's own window being open or not | Nothing on the phone depends on it |
+| The profile in use on the Mac | A profile is how the Mac is being looked at; the phone shows every project's conversations |
 | Git branch, context size, cost | Desk facts: nothing the person acts on from a phone |
 | Background tasks' output | Opened on demand from the tasks button only, as on the Mac |
 | A drop shorter than the reconnect | The banner shows once the link has broken, and goes when it is back |
