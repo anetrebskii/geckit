@@ -387,6 +387,7 @@ export function Chat(): React.JSX.Element {
           chat={chat}
           onNew={() => setMaking(true)}
           onAsk={() => setAsking(true)}
+          onSearch={() => setSwitching(true)}
           onSettings={() => setSetting(true)}
           onKeys={openKeys}
           onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}

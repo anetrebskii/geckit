@@ -40,6 +40,7 @@ export function Board({
   chat,
   onNew,
   onAsk,
+  onSearch,
   onSettings,
   onKeys,
   onShortcuts,
@@ -48,6 +49,7 @@ export function Board({
   readonly chat: Chat
   readonly onNew: () => void
   readonly onAsk: () => void
+  readonly onSearch: () => void
   readonly onSettings: () => void
   readonly onKeys: () => void
   readonly onShortcuts: () => void
@@ -113,6 +115,15 @@ export function Board({
           <Icon name="list" />
         </button>
         <Projects chat={chat} />
+        <button
+          type="button"
+          className="icon-button no-drag"
+          aria-label="Search conversations"
+          title={`Search conversations (${MOD}+P, or ${MOD}+Alt+P from any app)`}
+          onClick={onSearch}
+        >
+          <Icon name="search" />
+        </button>
         <button
           type="button"
           className="icon-button no-drag"
