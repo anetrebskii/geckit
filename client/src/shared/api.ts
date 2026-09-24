@@ -77,6 +77,8 @@ export type SessionItem =
       readonly live?: boolean
       /** A command that has run long enough to be sent on in the background, as Ctrl+B does in a terminal. */
       readonly lasting?: boolean
+      /** Pictures it handed back: a screenshot it took, an image it read. */
+      readonly images?: readonly SessionImage[]
     }
   | { readonly kind: 'thought'; readonly id: string; readonly text: string }
   | {

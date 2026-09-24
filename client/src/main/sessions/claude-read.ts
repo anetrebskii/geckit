@@ -83,7 +83,12 @@ export interface ClaudeState {
   /** What is known of every task this run has had, and the task each tool use became. */
   readonly tasks: Map<string, BackgroundTask>
   readonly uses: Map<string, string>
+  /** How much base64 the pictures may still take, over the whole conversation. */
+  readonly budget: { left: number }
 }
+
+/** A whole transcript goes to the window in one message, so what the pictures may weigh is capped. */
+const PICTURES = 24_000_000
 
 export function claudeState(root: string): ClaudeState {
   return {
@@ -101,6 +106,7 @@ export function claudeState(root: string): ClaudeState {
     backgrounded: new Set(),
     tasks: new Map(),
     uses: new Map(),
+    budget: { left: PICTURES },
   }
 }
 
@@ -388,11 +394,15 @@ function toolResults(state: ClaudeState, message: Json, out: Reading): boolean {
           ? undefined
           : clipped(said)
 
+    // What a tool handed back as a picture - a screenshot, a page, an image read
+    // off disk - is shown where it was done, since a terminal cannot show it at all.
+    const pictures = picturesIn(block['content'], state.budget)
     const { live: _live, ...rest } = doing.item
     out.items.push({
       ...rest,
       ...(moved ? { what: movedLine(doing.input, state.root) } : {}),
       ...(detail === undefined ? {} : { detail }),
+      ...(pictures.length === 0 ? {} : { images: pictures }),
     })
   }
   return any
@@ -844,7 +854,7 @@ export function tasksOf(entries: readonly Json[]): BackgroundTask[] {
 
 export function replayClaude(root: string, entries: readonly Json[], quietFor: number): SessionItem[] {
   const state = claudeState(root)
-  const budget = { left: 24_000_000 }
+  const budget = state.budget
   const items = new Map<string, SessionItem>()
   const take = (read: Reading): void => {
     for (const id of read.gone) items.delete(id)
