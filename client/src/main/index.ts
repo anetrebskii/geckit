@@ -12,6 +12,7 @@ import {
   ipcMain,
   nativeTheme,
   Notification,
+  powerSaveBlocker,
   shell,
   systemPreferences,
 } from 'electron'
@@ -556,6 +557,8 @@ let phoneOn = false
 let phoneKey = ''
 let phoneState: { readonly count: number; readonly trouble?: string } = { count: 0 }
 let phoneCode: { readonly key: string; readonly qr: string } | undefined
+// While Phone is on the Mac does not fall asleep by itself, which would leave the phone nothing to reach; the screen still turns off, and a closed lid still sleeps.
+let awake: number | undefined
 
 /** What the phone may ask, less what only makes sense at this Mac: files opened in its apps, its Finder, its terminal. */
 function phoneCalls(): Record<string, PhoneCall> {
@@ -621,6 +624,11 @@ function keepPhone(on: boolean, key: string): void {
   closePeer()
   phoneState = { count: 0 }
   if (on) peerWindow()
+  if (on && awake === undefined) awake = powerSaveBlocker.start('prevent-app-suspension')
+  if (!on && awake !== undefined) {
+    powerSaveBlocker.stop(awake)
+    awake = undefined
+  }
   void phoneView().then((view) => tell('phone:state', view))
 }
 

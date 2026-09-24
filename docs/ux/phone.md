@@ -58,7 +58,7 @@ block-beta
 | Conversation | A card is pressed | The transcript, live, and the composer | Reads, answers a card, writes, stops, marks, goes back |
 | Asks | A session waits on a permission card or a question | The card in the conversation, as on the Mac; "Waiting for you" on the board card | Answers it |
 | Not sent | A message could not reach the Mac | The text still in the field; "Not sent: the Mac could not be reached" in the status line | Sends it again |
-| Dropped | The link to the Mac broke while connected | "Not connected to the Mac. Trying again." over the page, the page as it was underneath | Nothing; it reconnects by itself |
+| Dropped | The link to the Mac broke while connected | Nothing for the first 5 s; then "Not connected to the Mac. Trying again." in a pill, the page as it was underneath. What is done meanwhile, a message typed and sent included, waits and goes over the new link | Nothing; it reconnects by itself |
 | Paired on the Mac | The switch is on | The QR, and "No phone connected" or "1 phone connected" | Scans it, or presses New code |
 
 ## 4. Transitions
@@ -94,7 +94,8 @@ stateDiagram-v2
   convo --> board: Back
   board --> dropped: link breaks
   convo --> dropped: link breaks
-  dropped --> board: link back
+  dropped --> board: link back, from the board
+  dropped --> convo: link back, from a conversation
 
   class unpaired hands
   class scanning hands
@@ -124,9 +125,9 @@ stateDiagram-v2
 | Conversation | A permission card arrives, by itself | Asks | The card at the end of the transcript |
 | Asks | Presses Allow once / for the session / No | Conversation | The card goes; the work goes on |
 | Conversation | Presses Send | Conversation | Their message in the transcript; "Working" |
-| Any connected | The link breaks, by itself | Dropped | The banner |
-| Dropped | The link is back, by itself | Board | The page starts over on the board as it stands now |
-| App sent to the background | iOS suspends it, by itself | Dropped on return | Nothing while away; on return the banner for as long as reconnecting takes |
+| Any connected | The link breaks, by itself | Dropped | Nothing; the pill after 5 s if still down |
+| Dropped | The link is back, by itself | Where it was | The pill goes; the page stays where it was, and the list, the plan and the open conversation catch up with what happened meanwhile |
+| App sent to the background | iOS suspends it, by itself | Dropped on return | Nothing while away; on return the pill for as long as reconnecting takes. A link that looks open but does not answer within 3 s is taken as dropped |
 | Mac: switch on | Presses the switch | Paired on the Mac | The QR and "No phone connected" |
 | Mac: Paired | A phone connects, by itself | Paired on the Mac | "1 phone connected" |
 | Mac: Paired | Presses New code | Paired on the Mac | A new QR; every phone connected drops, and each has to scan again |
@@ -152,6 +153,10 @@ stateDiagram-v2
 | An offer kept on weroost | 60 s | Longer than the 20 s the phone waits; an older one is from a phone that gave up |
 | Key in the QR | 32 random bytes | It is the only thing that lets a phone in; it also encrypts what passes through weroost |
 | Reconnect after a drop | At once, then 2, 5, 10, 30 s, then every 30 s | A drop from switching networks mends in seconds; a Mac that is asleep should not be asked every second |
+| One try to connect | 45 s | The pairing service takes several seconds to wake on each side of the handshake |
+| Pill after a drop | 5 s | Back from the background, a drop mends in about that; a pill that comes and goes only startles |
+| What is done while down | Held 60 s | Long enough for a reconnect; past it, it fails as it would have |
+| A link back from the background | Asked, and dropped if silent for 3 s | iOS freezes the app; a frozen link looks open and carries nothing |
 | Largest message | 64 MB | A pasted photo from the phone camera is up to ~12 MB, base64 adds a third |
 
 ## 7. Wording
@@ -175,7 +180,7 @@ stateDiagram-v2
 
 - **Two phones:** both scan the same code; both connect and see the same thing.
 - **The Mac and the phone at once:** both see the same session; an answer from either removes the card from both.
-- **Mac asleep or GeckIt closed:** the phone waits 20 s and says so; nothing is queued on weroost for later.
+- **Mac asleep or GeckIt closed:** while Phone is on, GeckIt keeps the Mac from falling asleep by itself (the display still turns off). A closed lid on battery still sleeps; then the phone waits 45 s and says so, and nothing is queued on weroost for later.
 - **Drop mid-send:** the message goes as a request over the link; if it fails, nothing is in the transcript, the text and pictures go back into the field, and the status line says it was not sent.
 - **Stale copy:** after a drop the page starts over rather than patching, so nothing on screen is older than the reconnect.
 - **Code photographed by someone else:** it is a key; New code on the Mac makes the old one worthless.
