@@ -26,6 +26,9 @@ const MACS = 'macs'
 interface KeptMac {
   readonly link: string
   readonly name?: string
+  /** The person's own name for it, which the Mac's does not overwrite. */
+  readonly given?: string
+  readonly favorite?: boolean
 }
 const linkOf = (pairing: Pairing): string => `geckit://pair?k=${pairing.key}&s=${encodeURIComponent(pairing.signal)}`
 
@@ -40,7 +43,11 @@ function keptMacs(): KeptMac[] {
   return one === null ? [] : [{ link: one }]
 }
 
-const nameOf = (mac: KeptMac, at: number): string => mac.name ?? `Mac ${String(at + 1)}`
+const nameOf = (mac: KeptMac, at: number): string => mac.given ?? mac.name ?? `Mac ${String(at + 1)}`
+
+function change(index: number, how: (mac: KeptMac) => KeptMac): void {
+  localStorage.setItem(MACS, JSON.stringify(keptMacs().map((mac, at) => (at === index ? how(mac) : mac))))
+}
 const isCurrent = (mac: KeptMac): boolean => readPairing(mac.link)?.key === kept()?.key
 
 function useMac(link: string | undefined): void {
@@ -50,7 +57,7 @@ function useMac(link: string | undefined): void {
 }
 
 ;(window as { geckitMacs?: Macs }).geckitMacs = {
-  list: () => keptMacs().map((mac, at) => ({ name: nameOf(mac, at), current: isCurrent(mac) })),
+  list: () => keptMacs().map((mac, at) => ({ name: nameOf(mac, at), current: isCurrent(mac), favorite: mac.favorite === true })),
   switchTo: (index) => useMac(keptMacs()[index]?.link),
   add: () => void scan(),
   forget: (index) => {
@@ -61,6 +68,9 @@ function useMac(link: string | undefined): void {
     localStorage.setItem(MACS, JSON.stringify(left))
     if (isCurrent(gone)) useMac(left[0]?.link)
   },
+  rename: (index, name) =>
+    change(index, ({ given: _, ...mac }) => (name.trim() === '' ? mac : { ...mac, given: name.trim() })),
+  favorite: (index, on) => change(index, ({ favorite: _, ...mac }) => (on ? { ...mac, favorite: true } : mac)),
 }
 
 // The Taptic Engine for the Chat window, which only knows what kind of moment it is; a browser without one feels nothing.
@@ -188,8 +198,13 @@ async function connect(): Promise<void> {
   if (pairing === undefined) return notPaired()
   const macs = keptMacs()
   const here = macs.findIndex(isCurrent)
-  const others = macs.map((mac, at) => ({ mac, at })).filter(({ at }) => at !== here)
-  screen([picture('pair-spin', ''), line(macs[here]?.name === undefined ? 'Connecting to the Mac' : `Connecting to ${macs[here].name}`, 'pair-wait')])
+  const others = macs
+    .map((mac, at) => ({ mac, at }))
+    .filter(({ at }) => at !== here)
+    .sort((one, other) => Number(other.mac.favorite === true) - Number(one.mac.favorite === true))
+  const mine = macs[here]
+  const name = mine === undefined ? undefined : nameOf(mine, here)
+  screen([picture('pair-spin', ''), line(name === undefined ? 'Connecting to the Mac' : `Connecting to ${name}`, 'pair-wait')])
   let link: Link
   let boot: Boot
   try {
@@ -202,7 +217,7 @@ async function connect(): Promise<void> {
           'pair-away',
           '<svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><rect x="8" y="12" width="40" height="26" rx="3"/><path d="M20 46h16M28 38v8M8 8l40 40"/></svg>',
         ),
-        line(`${macs[here]?.name ?? 'The Mac'} did not answer.`, 'pair-title', 'h2'),
+        line(`${name ?? 'The Mac'} did not answer.`, 'pair-title', 'h2'),
         line('GeckIt has to be open there, with Phone turned on in Settings.'),
       ],
       [

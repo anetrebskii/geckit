@@ -9,6 +9,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { macs } from '../macs'
+import type { Macs } from '../macs'
 import { projectName } from './project'
 import { running } from './Tasks'
 import { ago } from './time'
@@ -72,8 +73,8 @@ export function PhoneBoard({
   const [open, setOpen] = useState<string | undefined>()
   const [unfolded, setUnfolded] = useState(false)
   const [switching, setSwitching] = useState(false)
-  // Read once: the list changes only by a scan or a switch, and both start the page over.
-  const [paired] = useState(() => macs()?.list())
+  // Read again after a rename or a star; a scan, a switch or forgetting the Mac in use start the page over.
+  const [paired, setPaired] = useState(() => macs()?.list())
   const thisMac = paired?.find((one) => one.current)
 
   useEffect(() => {
@@ -255,26 +256,7 @@ export function PhoneBoard({
       </div>
 
       {switching && paired !== undefined ? (
-        <Menu
-          anchor={new DOMRect()}
-          title="Macs this phone is paired with"
-          chosen={String(paired.findIndex((one) => one.current))}
-          choices={[
-            ...paired.map((one, at) => ({ value: String(at), label: one.name })),
-            { value: 'add', label: 'Add a Mac', says: "Scan the code in its GeckIt Settings" },
-            ...(paired.length > 1 && thisMac !== undefined
-              ? [{ value: 'forget', label: `Forget ${thisMac.name}`, says: 'Scanning its code again brings it back', danger: true }]
-              : []),
-          ]}
-          onPick={(value) => {
-            const list = macs()
-            if (list === undefined) return
-            if (value === 'add') list.add()
-            else if (value === 'forget') list.forget(paired.findIndex((one) => one.current))
-            else if (!paired[Number(value)]?.current) list.switchTo(Number(value))
-          }}
-          onClose={() => setSwitching(false)}
-        />
+        <MacList paired={paired} onChange={() => setPaired(macs()?.list())} onClose={() => setSwitching(false)} />
       ) : null}
       {pressed === undefined ? null : (
         <Pressed
@@ -652,6 +634,146 @@ export function Rename({ session, chat, onClose }: { readonly session: ChatSessi
           if (event.key === 'Enter') save()
         }}
       />
+      <div className="sheet-list">
+        <button type="button" className="sheet-option sheet-cancel" onClick={save}>
+          Save
+        </button>
+      </div>
+    </Sheet>
+  )
+}
+
+/** Every Mac this phone is paired with, the favorites first; a row switches to its Mac, its star and its menu change it. */
+function MacList({
+  paired,
+  onChange,
+  onClose,
+}: {
+  readonly paired: ReturnType<Macs['list']>
+  readonly onChange: () => void
+  readonly onClose: () => void
+}): React.JSX.Element {
+  const [acting, setActing] = useState<number | undefined>()
+  const [renaming, setRenaming] = useState<number | undefined>()
+  const list = macs()
+  const rows = paired.map((mac, at) => ({ ...mac, at })).sort((one, other) => Number(other.favorite) - Number(one.favorite))
+  const star = (at: number, on: boolean): void => {
+    tap('light')
+    list?.favorite(at, on)
+    onChange()
+  }
+  const chosen = acting === undefined ? undefined : paired[acting]
+  const named = renaming === undefined ? undefined : paired[renaming]
+
+  return (
+    <>
+      <Sheet title="Macs this phone is paired with" onClose={onClose}>
+        <div className="sheet-list">
+          {rows.map((mac) => (
+            <div key={mac.at} className={`sheet-option phone-mac${mac.favorite ? ' favorite' : ''}`}>
+              <button
+                type="button"
+                className="phone-mac-star"
+                aria-label={mac.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                aria-pressed={mac.favorite}
+                onClick={() => star(mac.at, !mac.favorite)}
+              >
+                <Icon name="star" size={20} />
+              </button>
+              <button
+                type="button"
+                className="phone-mac-name"
+                onClick={() => {
+                  onClose()
+                  if (!mac.current) list?.switchTo(mac.at)
+                }}
+              >
+                <span className="label">{mac.name}</span>
+                {mac.current ? <Icon name="check" size={16} /> : null}
+              </button>
+              <button type="button" className="phone-mac-more" aria-label={`More for ${mac.name}`} onClick={() => setActing(mac.at)}>
+                <Icon name="more" size={20} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="sheet-list phone-mac-add">
+          <button
+            type="button"
+            className="sheet-option"
+            onClick={() => {
+              onClose()
+              list?.add()
+            }}
+          >
+            <span className="sheet-words">
+              <span className="label">Add a Mac</span>
+              <span className="says">Scan the code in its GeckIt Settings</span>
+            </span>
+          </button>
+        </div>
+      </Sheet>
+      {acting === undefined || chosen === undefined ? null : (
+        <Menu
+          anchor={new DOMRect()}
+          title={chosen.name}
+          choices={[
+            { value: 'rename', label: 'Rename' },
+            { value: 'favorite', label: chosen.favorite ? 'Remove from favorites' : 'Add to favorites' },
+            ...(paired.length > 1 ? [{ value: 'forget', label: 'Forget', says: 'Scanning its code again brings it back', danger: true }] : []),
+          ]}
+          onPick={(value) => {
+            if (value === 'rename') setRenaming(acting)
+            else if (value === 'favorite') star(acting, !chosen.favorite)
+            else if (value === 'forget') {
+              list?.forget(acting)
+              onChange()
+            }
+          }}
+          onClose={() => setActing(undefined)}
+        />
+      )}
+      {renaming === undefined || named === undefined ? null : (
+        <RenameMac
+          name={named.name}
+          onSave={(name) => {
+            list?.rename(renaming, name)
+            onChange()
+          }}
+          onClose={() => setRenaming(undefined)}
+        />
+      )}
+    </>
+  )
+}
+
+function RenameMac({
+  name,
+  onSave,
+  onClose,
+}: {
+  readonly name: string
+  readonly onSave: (name: string) => void
+  readonly onClose: () => void
+}): React.JSX.Element {
+  const [given, setGiven] = useState(name)
+  const save = (): void => {
+    if (given.trim() !== name) onSave(given)
+    onClose()
+  }
+  return (
+    <Sheet title="Rename" onClose={onClose} cancel={false}>
+      <input
+        className="sheet-field"
+        value={given}
+        placeholder="The name the Mac gives itself"
+        autoFocus
+        onChange={(event) => setGiven(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') save()
+        }}
+      />
+      <div className="sheet-note">Left empty, it goes back to the name the Mac gives itself.</div>
       <div className="sheet-list">
         <button type="button" className="sheet-option sheet-cancel" onClick={save}>
           Save
