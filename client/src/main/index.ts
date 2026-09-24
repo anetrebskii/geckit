@@ -122,11 +122,12 @@ function build(): Sessions {
     ...(process.platform === 'darwin' ? { terminal: openTerminal } : {}),
     changed: (all: readonly ChatSession[]) => {
       // Every conversation it holds, which is more than the window lists: another profile's rows stay held after a switch until they are read again. A general question belongs to no project and is always told.
-      const shown = shownProjects(getSettings())
-      tellChats(
-        'chat:sessions',
-        all.filter((one) => one.question === true || shown.includes(one.root)),
-      )
+      const settings = getSettings()
+      const within = (where: readonly string[]): readonly ChatSession[] =>
+        all.filter((one) => one.question === true || where.includes(one.root))
+      shownChat()?.webContents.send('chat:sessions', within(shownProjects(settings)))
+      // The phone is in no profile, so it is told every project's.
+      shownPeer()?.webContents.send('peer:tell', 'chat:sessions', within(settings.projects))
       badge()
       drawTray()
     },
@@ -352,11 +353,11 @@ function openTerminal(root: string, run: string): void {
 /* What a window may ask                                               */
 /* ------------------------------------------------------------------ */
 
-function listChats(root: string | undefined): Promise<ChatSession[]> {
+function listChats(root: string | undefined, every: readonly string[]): Promise<ChatSession[]> {
   // Nothing for the project comes over as null, which is not a folder name.
   const where = typeof root === 'string' && root !== '' ? root : undefined
   if (where !== undefined) rememberProject(where)
-  return sessions?.list(where === undefined ? shownProjects(getSettings()) : [where]) ?? Promise.resolve([])
+  return sessions?.list(where === undefined ? every : [where]) ?? Promise.resolve([])
 }
 
 async function deleteChats(ids: readonly string[]): Promise<readonly string[]> {
@@ -444,7 +445,7 @@ function wire(): void {
   ipcMain.handle('chat:forgetProject', (_event, root: string) => {
     forgetProject(root)
   })
-  ipcMain.handle('chat:list', (_event, root: string | undefined) => listChats(root))
+  ipcMain.handle('chat:list', (_event, root: string | undefined) => listChats(root, shownProjects(getSettings())))
   ipcMain.handle('chat:search', (_event, asked: string, root: string | undefined) =>
     searchClaude(typeof root === 'string' && root !== '' ? [root] : shownProjects(getSettings()), asked),
   )
@@ -557,7 +558,8 @@ function wire(): void {
       void keepGuide(settings.guideClaude)
     }
     keepPhone(settings.phone, settings.phoneKey)
-    tell('settings:changed', settings)
+    for (const window of everyWindow()) window.webContents.send('settings:changed', settings)
+    shownPeer()?.webContents.send('peer:tell', 'settings:changed', phoneSettings(settings))
     drawTray()
   })
 }
@@ -575,13 +577,20 @@ let phoneCode: { readonly key: string; readonly qr: string } | undefined
 // While Phone is on the Mac does not fall asleep by itself, which would leave the phone nothing to reach; the screen still turns off, and a closed lid still sleeps.
 let awake: number | undefined
 
+/**
+ * What the phone is handed instead of the Mac's own settings. A profile, and
+ * the projects the list is narrowed to, are how this Mac is being looked at;
+ * the phone is in none of them and shows every project's conversations.
+ */
+const phoneSettings = (settings: Settings): Settings => ({ ...settings, profile: '', chatProjects: [], chatAll: true })
+
 /** What the phone may ask, less what only makes sense at this Mac: files opened in its apps, its Finder, its terminal. */
 function phoneCalls(): Record<string, PhoneCall> {
   const held = (): Sessions | undefined => sessions
   return {
     // The name the phone lists this Mac under, as the network knows it: Alexs-MacBook-Pro.local reads Alexs MacBook Pro.
     boot: () => ({ home: homedir(), platform: process.platform, name: hostname().replace(/\.local$/, '').replaceAll('-', ' ') }),
-    'settings.get': () => getSettings(),
+    'settings.get': () => phoneSettings(getSettings()),
     'settings.set': (change: Partial<Settings>) => setSettings(change),
     'update.view': () => updateView(),
     correct: (request: CorrectRequest) => correct(request),
@@ -595,11 +604,11 @@ function phoneCalls(): Record<string, PhoneCall> {
       void held()?.measure()
       return held()?.plan()
     },
-    'chat.list': (root: string | undefined) => listChats(root),
+    'chat.list': (root: string | undefined) => listChats(root, getSettings().projects),
     'chat.items': (id: string) => held()?.items(id) ?? [],
     'chat.links': (id: string) => held()?.links(id) ?? [],
     'chat.search': (asked: string, root: string | undefined) =>
-      searchClaude(typeof root === 'string' && root !== '' ? [root] : shownProjects(getSettings()), asked),
+      searchClaude(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
     'chat.send': (message: SessionMessage) => held()?.send(message),
     'chat.shell': (asked: ShellCommand) => held()?.shell(asked),
     'chat.stopShell': (id: string, item: string) => held()?.stopShell(id, item),
