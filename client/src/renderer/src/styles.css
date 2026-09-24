@@ -383,8 +383,8 @@ textarea {
 
 /* Menus */
 
-/* Over a dialog it is opened from. */
-.menu-scrim {
+/* Over a dialog it is opened from. Both classes, because `.scrim` is written further down and would otherwise put this back under the dialog. */
+.scrim.menu-scrim {
   z-index: 79;
 }
 
