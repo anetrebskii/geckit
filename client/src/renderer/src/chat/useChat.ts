@@ -45,6 +45,8 @@ export interface Chat {
   readonly sessions: readonly ChatSession[]
   /** Every project's conversations, whichever is listed. */
   readonly everyone: readonly ChatSession[]
+  /** General questions still open, newest first; each is gone two minutes after its last answer. */
+  readonly questions: readonly ChatSession[]
   /** Every project's conversations that wait on the person: asking first, then answered and not yet read. */
   readonly waiting: readonly ChatSession[]
   /** Said in the window while it is in front, instead of a banner. One per conversation. */
@@ -593,6 +595,7 @@ export function useChat(): Chat {
     scope,
     sessions,
     everyone,
+    questions,
     waiting,
     notices,
     shown,
