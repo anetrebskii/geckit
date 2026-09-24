@@ -4877,3 +4877,23 @@ body:has(.talk.over:not([hidden])) .phone-offline {
   background: var(--screen-bar);
   border-radius: 16px;
 }
+
+/* The Background sheet on a phone: the name has the width to itself, and what it cost and how it stands stand under it. */
+html.phone .task-row {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+html.phone .task-row .what {
+  flex: 1 0 calc(100% - 26px);
+  white-space: normal;
+}
+
+html.phone .task-row .lasted {
+  margin-inline-start: 26px;
+}
+
+html.phone .task-row .how {
+  min-width: 0;
+  text-align: start;
+}
