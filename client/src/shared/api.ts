@@ -293,6 +293,15 @@ export interface SessionImage {
 /** What the tool said it has, or that it is being asked, or that it did not say. */
 export type ModelsSaid = 'unasked' | 'asking' | 'unsaid' | readonly ClaudeModel[]
 
+/** A conversation whose turn was running when GeckIt last closed, offered on the next start to be continued. */
+export interface CutOff {
+  readonly id: string
+  readonly root: string
+  readonly title: string
+  /** When the turn began, in milliseconds. */
+  readonly at: number
+}
+
 /** A conversation in which a message says every word searched for. */
 export interface ChatFound {
   readonly id: string

@@ -160,6 +160,8 @@ export function installGeckit(first: Link, boot: Boot): (next: Link) => void {
       list: (root) => call('chat.list', root),
       items: (id) => call('chat.items', id),
       links: (id) => call('chat.links', id),
+      cutOff: () => Promise.resolve([]),
+      proceed: nothing,
       search: (asked, root) => call('chat.search', asked, root),
       send: (message) => call('chat.send', message),
       shell: (command) => call('chat.shell', command),
