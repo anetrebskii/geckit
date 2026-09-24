@@ -160,25 +160,42 @@ async function connect(): Promise<void> {
   }
   document.querySelector('.pair')?.remove()
   started = true
-  installGeckit(link, boot)
-  link.onClose(() => void mend(pairing))
+  current = link
+  const swap = installGeckit(link, boot)
+  link.onClose(() => void mend(pairing, swap))
   await import('../../client/src/renderer/src/chat/main')
 }
 
-/** The page stays as it was under the banner until the Mac answers again, and then starts over on the new link. */
-async function mend(pairing: Pairing): Promise<void> {
+let current: Link | undefined
+
+/** The page stays as it was under the pill until the Mac answers again, and then carries on over the new link. */
+async function mend(pairing: Pairing, swap: (next: Link) => void): Promise<void> {
   showDropped()
   for (let tried = 0; ; tried++) {
     await new Promise((done) => setTimeout(done, AGAIN[Math.min(tried, AGAIN.length - 1)]))
     try {
-      ;(await dial(pairing)).close()
-      location.reload()
+      const link = await dial(pairing)
+      current = link
+      swap(link)
+      link.onClose(() => void mend(pairing, swap))
       return
     } catch {
       // Not yet.
     }
   }
 }
+
+// Back from the background, a link iOS froze may look open and carry nothing; one that does not answer in a few seconds is closed, which starts the mending.
+const SILENT = 3000
+void App.addListener('resume', () => {
+  const link = current
+  if (link === undefined || !started) return
+  const quiet = setTimeout(() => link.close(), SILENT)
+  void window.geckit.settings
+    .get()
+    .then(() => clearTimeout(quiet))
+    .catch(() => undefined)
+})
 
 void App.addListener('appUrlOpen', ({ url }) => {
   const pairing = readPairing(url)
