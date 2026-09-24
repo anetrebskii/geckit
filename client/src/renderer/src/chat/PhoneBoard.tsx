@@ -271,7 +271,7 @@ export function PhoneBoard({
                   </button>
                 ))}
             </div>
-            <div className="phone-note">Each is forgotten 2 minutes after its last answer.</div>
+            <div className="phone-note">Each is forgotten 5 minutes after its last answer.</div>
           </>
         )}
         {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (

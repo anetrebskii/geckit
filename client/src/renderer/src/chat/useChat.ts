@@ -45,7 +45,7 @@ export interface Chat {
   readonly sessions: readonly ChatSession[]
   /** Every project's conversations, whichever is listed. */
   readonly everyone: readonly ChatSession[]
-  /** General questions still open, newest first; each is gone two minutes after its last answer. */
+  /** General questions still open, newest first; each is gone five minutes after its last answer. */
   readonly questions: readonly ChatSession[]
   /** Every project's conversations that wait on the person: asking first, then answered and not yet read. */
   readonly waiting: readonly ChatSession[]
@@ -222,7 +222,7 @@ export function useChat(): Chat {
       setEveryone(all.filter((one) => one.question !== true))
       const now = all.filter((one) => one.question === true)
       setQuestions(now)
-      // A question ended after two quiet minutes is gone, and so is its view.
+      // A question ended after five quiet minutes is gone, and so is its view.
       const shownNow = shownRef.current
       if (shownNow.kind === 'session' && asked.has(shownNow.id) && !now.some((one) => one.id === shownNow.id)) {
         shownRef.current = { kind: 'new' }

@@ -221,7 +221,7 @@ function goalSent(text: string): string | undefined {
 const QUIET = 10 * 60_000
 
 /** How long a general question is kept once it has gone quiet. */
-const QUESTION_QUIET = 2 * 60_000
+const QUESTION_QUIET = 5 * 60_000
 
 const running = (task: BackgroundTask): boolean => task.status === 'running'
 
