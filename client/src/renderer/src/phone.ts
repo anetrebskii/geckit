@@ -13,6 +13,8 @@ import type { ScreenLink } from './screen-link'
 export interface Boot {
   readonly home: string
   readonly platform: Geckit['platform']
+  /** A Mac running a GeckIt from before it said its name has none. */
+  readonly name?: string
 }
 
 // Most drops mend in a few seconds, back from the background above all, and a pill that comes and goes in that time only startles.
