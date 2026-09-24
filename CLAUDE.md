@@ -10,6 +10,8 @@ GeckIt is an Electron desktop app with three things in it: correcting a piece of
 
 - **`client/`**: the app (electron-vite + React 19 + TypeScript, hand-written CSS)
 - **`site/`**: marketing website (Next.js + Tailwind) - a separate project
+- **`mobile/`**: the iPhone app (Capacitor), built from the client's own Chat sources and React
+- **`signal/`**: the weroost site whose functions introduce the phone to the Mac
 - Root `package.json`: only Firebase, for deploying the site
 
 ## Build Commands
@@ -26,6 +28,8 @@ npm run typecheck      # tsc over the node and web configs
 ```
 
 From `site/`: `npm run dev`, `npm run build`.
+
+From `mobile/` (needs `client/node_modules`): `npm run build` into `www/`, `npm run ios` to sync and open Xcode.
 
 ## Architecture
 
@@ -51,6 +55,10 @@ From `site/`: `npm run dev`, `npm run build`.
 ### Correct
 
 Two engines, switched in the footer. `plan` runs `claude -p --restricted --no-session-persistence --output-format json --append-system-prompt <instruction>` with the text on stdin (`main/correct.ts`). `key` goes through `main/providers.ts` to OpenAI, Anthropic or OpenRouter, for when the process start time matters.
+
+### The phone
+
+With Phone on in Settings, main opens a hidden `peer` window, since WebRTC lives in a renderer and not in main. It waits on the weroost signaling function (`signal/`) for offers sealed with the key in the Settings QR (`shared/pairing.ts`, `renderer/src/link.ts`), answers each, and relays the phone's calls to main over `peer:call` against the list in `phoneCalls()`, and main's tells back. The app in `mobile/` scans the QR, dials, and installs a `window.geckit` built over the link (`renderer/src/phone.ts`) before loading the Chat window with `html.phone`. Cloudflare TURN is used only when `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` are set on the weroost site. What it looks like and why is in `docs/ux/phone.md`.
 
 ### Settings
 
