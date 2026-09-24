@@ -145,7 +145,6 @@ export function PhoneBoard({
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-bar-row">
           <span className="phone-bar-small">{thisMac?.name ?? 'GeckIt'}</span>
-          <span className="spacer" />
           <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
             <Icon name="display" size={24} />
           </button>
@@ -156,6 +155,12 @@ export function PhoneBoard({
             <Icon name="compose" size={24} />
           </button>
         </div>
+      </header>
+
+      <div
+        className="phone-list"
+        onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 40)}
+      >
         {paired === undefined ? (
           <h1 className="phone-large">GeckIt</h1>
         ) : (
@@ -164,31 +169,27 @@ export function PhoneBoard({
             <Icon name="down" size={20} />
           </button>
         )}
-        <div className="phone-seg" role="tablist" style={{ '--at': COLUMNS.findIndex((one) => one.column === shown) } as React.CSSProperties}>
-          <span className="phone-seg-thumb" />
-          {COLUMNS.map((one) => (
-            <button
-              key={one.column}
-              type="button"
-              role="tab"
-              aria-selected={one.column === shown}
-              className={one.column === shown ? 'on' : ''}
-              onClick={() => {
-                show(one.column)
-                tap('light')
-              }}
-            >
-              {one.title}
-              <span className="n">{counts[one.column]}</span>
-            </button>
-          ))}
+        <div className={`phone-seg-bar${scrolled ? ' scrolled' : ''}`}>
+          <div className="phone-seg" role="tablist" style={{ '--at': COLUMNS.findIndex((one) => one.column === shown) } as React.CSSProperties}>
+            <span className="phone-seg-thumb" />
+            {COLUMNS.map((one) => (
+              <button
+                key={one.column}
+                type="button"
+                role="tab"
+                aria-selected={one.column === shown}
+                className={one.column === shown ? 'on' : ''}
+                onClick={() => {
+                  show(one.column)
+                  tap('light')
+                }}
+              >
+                {one.title}
+                <span className="n">{counts[one.column]}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      </header>
-
-      <div
-        className="phone-list"
-        onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 40)}
-      >
         {high === undefined ? null : (
           <div className="phone-alert">
             {highName} at {Math.round(high.part * 100)}%. Resets at{' '}

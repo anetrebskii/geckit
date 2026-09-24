@@ -3930,15 +3930,9 @@ html.phone button:active:not(:disabled) {
 }
 
 .phone-bar {
-  position: relative;
   flex: none;
   padding: calc(var(--top) + 4px) 16px 0;
   background: var(--ground);
-  transition: box-shadow var(--settle) var(--ease);
-}
-
-.phone-bar.scrolled {
-  box-shadow: 0 0.5px 0 var(--separator);
 }
 
 .phone-bar-row {
@@ -3949,31 +3943,43 @@ html.phone button:active:not(:disabled) {
 }
 
 .phone-bar-small {
-  position: absolute;
-  inset-inline: 0;
+  flex: 1;
+  min-width: 0;
   font-size: 17px;
   font-weight: 600;
-  text-align: center;
   pointer-events: none;
   opacity: 0;
-  transition: opacity var(--settle) var(--ease);
+  transform: translateY(6px);
+  transition:
+    opacity var(--settle) var(--ease),
+    transform var(--settle) var(--ease);
 }
 
 .phone-bar.scrolled .phone-bar-small {
   opacity: 1;
+  transform: none;
 }
 
 .phone-large {
-  margin: 0;
+  margin: 0 16px;
   font-size: 34px;
   font-weight: 700;
   line-height: 41px;
   letter-spacing: 0.01em;
-  transition: opacity var(--settle) var(--ease);
 }
 
-.phone-bar.scrolled .phone-large {
-  opacity: 0;
+/* Scrolls with the list until it reaches the bar, then stays under it; the line under it shows once the title has gone. */
+.phone-seg-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0 16px;
+  background: var(--ground);
+  transition: box-shadow var(--settle) var(--ease);
+}
+
+.phone-seg-bar.scrolled {
+  box-shadow: 0 0.5px 0 var(--separator);
 }
 
 .phone-icon {
@@ -5115,7 +5121,7 @@ html.phone .task-row .how {
   display: flex;
   gap: 6px;
   align-items: center;
-  max-width: 100%;
+  max-width: calc(100% - 32px);
   text-align: start;
 }
 
