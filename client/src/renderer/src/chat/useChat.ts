@@ -413,10 +413,18 @@ export function useChat(): Chat {
           ...(now.model === '' ? {} : { model: now.model }),
           ...(again === undefined ? {} : { again }),
         })
-        .then((id) => {
-          if (shownRef.current.kind === 'session' && shownRef.current.id === id) return
-          open({ kind: 'session', id })
-        })
+        .then(
+          (id) => {
+            if (shownRef.current.kind === 'session' && shownRef.current.id === id) return
+            open({ kind: 'session', id })
+          },
+          // Only the phone's link can fail on the way: what was written goes back where it was written.
+          () => {
+            setDrafts((all) => ({ ...all, [key]: text }))
+            setPictures((all) => ({ ...all, [key]: carried }))
+            setTrouble('Not sent: the Mac could not be reached')
+          },
+        )
     },
     [open, setDraft],
   )

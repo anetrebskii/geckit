@@ -190,6 +190,12 @@ const geckit = {
     onStop: (said: () => void): (() => void) => listen('voice:stop', said),
   },
 
+  phone: {
+    /** Where the phone opens the conversations, as a link and a QR code of it, or why it cannot. Nothing while the switch is off. */
+    link: (): Promise<{ readonly url?: string; readonly qr?: string; readonly error?: string }> =>
+      ipcRenderer.invoke('phone:link'),
+  },
+
   panel: {
     /** Cmd+C+D: what was selected in the application the person was in. */
     onText: (said: (text: string) => void): (() => void) => listen('panel:text', said),

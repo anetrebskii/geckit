@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ANYWHERE, SESSION_STATUSES } from '../../../shared/api'
 import type { ChatSession, SessionImage, SessionStatus } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
+import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
@@ -69,6 +70,12 @@ export function Board({
 
   // The times on the cards, kept fresh the way the list keeps them.
   const [now, setNow] = useState(() => Date.now())
+  // The phone shows one column at a time, and opens on the one looked at last.
+  const [shownColumn, setShownColumn] = useState(() => localStorage.getItem('phoneColumn') ?? COLUMNS[0]?.title ?? '')
+  const showColumn = (title: string): void => {
+    setShownColumn(title)
+    localStorage.setItem('phoneColumn', title)
+  }
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60_000)
     return () => clearInterval(tick)
@@ -98,117 +105,144 @@ export function Board({
 
   return (
     <div className="board">
-      <div className="board-head drag">
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="As a list"
-          title="The conversations as a list"
-          onClick={() => chat.change({ chatView: 'list' })}
-        >
-          <Icon name="list" />
-        </button>
-        <Projects chat={chat} />
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Say what to do"
-          title={`Say what GeckIt should do: start a conversation, answer one, mark one (${said(ANYWHERE.orders)})`}
-          onClick={() => window.geckit.voice.orders()}
-        >
-          <Icon name="mic" />
-        </button>
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Shortcuts"
-          title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
-          onClick={onShortcuts}
-        >
-          <Icon name="bolt" />
-        </button>
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Keyboard shortcuts"
-          title={`Keyboard shortcuts (${MOD}+/)`}
-          onClick={onKeys}
-        >
-          <Icon name="keyboard" />
-        </button>
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Settings"
-          title={`Settings (${MOD}+,)`}
-          onClick={onSettings}
-        >
-          <Icon name="settings" />
-        </button>
-        <span className="spacer" />
-        <button type="button" className="new-session no-drag board-new" onClick={onNew}>
-          <Icon name="plus" />
-          New task
-          <span className="keys">{MOD}+N</span>
-        </button>
-      </div>
+      {ON_PHONE ? (
+        <div className="board-head">
+          <div className="board-tabs" role="tablist">
+            {columns.map((column) => (
+              <button
+                key={column.title}
+                type="button"
+                role="tab"
+                aria-selected={column.title === shownColumn}
+                className={`tab${column.title === shownColumn ? ' on' : ''}`}
+                onClick={() => showColumn(column.title)}
+              >
+                {column.title}
+                <span className="count">{column.rows.length}</span>
+              </button>
+            ))}
+          </div>
+          <button type="button" className="icon-button board-new" aria-label="New task" onClick={onNew}>
+            <Icon name="plus" />
+          </button>
+        </div>
+      ) : (
+        <div className="board-head drag">
+          <button
+            type="button"
+            className="icon-button no-drag"
+            aria-label="As a list"
+            title="The conversations as a list"
+            onClick={() => chat.change({ chatView: 'list' })}
+          >
+            <Icon name="list" />
+          </button>
+          <Projects chat={chat} />
+          <button
+            type="button"
+            className="icon-button no-drag"
+            aria-label="Say what to do"
+            title={`Say what GeckIt should do: start a conversation, answer one, mark one (${said(ANYWHERE.orders)})`}
+            onClick={() => window.geckit.voice.orders()}
+          >
+            <Icon name="mic" />
+          </button>
+          <button
+            type="button"
+            className="icon-button no-drag"
+            aria-label="Shortcuts"
+            title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
+            onClick={onShortcuts}
+          >
+            <Icon name="bolt" />
+          </button>
+          <button
+            type="button"
+            className="icon-button no-drag"
+            aria-label="Keyboard shortcuts"
+            title={`Keyboard shortcuts (${MOD}+/)`}
+            onClick={onKeys}
+          >
+            <Icon name="keyboard" />
+          </button>
+          <button
+            type="button"
+            className="icon-button no-drag"
+            aria-label="Settings"
+            title={`Settings (${MOD}+,)`}
+            onClick={onSettings}
+          >
+            <Icon name="settings" />
+          </button>
+          <span className="spacer" />
+          <button type="button" className="new-session no-drag board-new" onClick={onNew}>
+            <Icon name="plus" />
+            New task
+            <span className="keys">{MOD}+N</span>
+          </button>
+        </div>
+      )}
 
       <div className="board-columns">
-        {columns.map((column) => (
-          <div
-            key={column.title}
-            className={`board-column${over === column.title ? ' taking' : ''}`}
-            onDragOver={(event) => {
-              event.preventDefault()
-              event.dataTransfer.dropEffect = 'move'
-              setOver(column.title)
-            }}
-            onDragLeave={(event) => {
-              if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
-              setOver((one) => (one === column.title ? undefined : one))
-            }}
-            onDrop={(event) => {
-              event.preventDefault()
-              drop(column.status)
-            }}
-          >
-            <div className="board-column-head">
-              {column.title}
-              <span className="spacer" />
-              <span className="count">{column.rows.length}</span>
-            </div>
-            <div className="board-cards">
-              {byDay(column.rows, now, column.status === 'done').map((day) => (
-                <div key={day.heading} className="board-day">
-                  {day.heading === '' ? null : (
-                    <button type="button" className="board-day-head" onClick={() => fold(day.heading)}>
-                      <Icon name={folded.has(day.heading) ? 'right' : 'down'} size={10} />
-                      {day.heading}
-                      <span className="spacer" />
-                      <span className="count">{day.rows.length}</span>
-                    </button>
-                  )}
-                  {(folded.has(day.heading) ? [] : day.rows).map((session) => (
-                    <Card
-                      key={session.id}
-                      chat={chat}
-                      session={session}
-                      now={now}
-                      renaming={renaming === session.id}
-                      onDrag={(id) => (held.current = id)}
-                      onMenu={(id, at) => setMenu({ id, at })}
-                      onRenamed={(id, name) => {
-                        setRenaming(undefined)
-                        if (name !== '') chat.rename(id, name)
-                      }}
-                      onStopRenaming={() => setRenaming(undefined)}
-                    />
-                  ))}
+        {columns
+          .filter((column) => !ON_PHONE || column.title === shownColumn)
+          .map((column) => (
+            <div
+              key={column.title}
+              className={`board-column${over === column.title ? ' taking' : ''}`}
+              onDragOver={(event) => {
+                event.preventDefault()
+                event.dataTransfer.dropEffect = 'move'
+                setOver(column.title)
+              }}
+              onDragLeave={(event) => {
+                if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+                setOver((one) => (one === column.title ? undefined : one))
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                drop(column.status)
+              }}
+            >
+              {ON_PHONE ? null : (
+                <div className="board-column-head">
+                  {column.title}
+                  <span className="spacer" />
+                  <span className="count">{column.rows.length}</span>
                 </div>
-              ))}
+              )}
+              <div className="board-cards">
+                {byDay(column.rows, now, column.status === 'done').map((day) => (
+                  <div key={day.heading} className="board-day">
+                    {day.heading === '' ? null : (
+                      <button type="button" className="board-day-head" onClick={() => fold(day.heading)}>
+                        <Icon name={folded.has(day.heading) ? 'right' : 'down'} size={10} />
+                        {day.heading}
+                        <span className="spacer" />
+                        <span className="count">{day.rows.length}</span>
+                      </button>
+                    )}
+                    {(folded.has(day.heading) ? [] : day.rows).map((session) => (
+                      <Card
+                        key={session.id}
+                        chat={chat}
+                        session={session}
+                        now={now}
+                        renaming={renaming === session.id}
+                        onDrag={(id) => (held.current = id)}
+                        onMenu={(id, at) => setMenu({ id, at })}
+                        onRenamed={(id, name) => {
+                          setRenaming(undefined)
+                          if (name !== '') chat.rename(id, name)
+                        }}
+                        onStopRenaming={() => setRenaming(undefined)}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
       </div>
 
       {menu === undefined ? null : (

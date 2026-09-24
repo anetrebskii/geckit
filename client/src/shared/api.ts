@@ -620,6 +620,10 @@ export interface Settings {
   readonly autoUpdate: boolean
   /** False takes GECKIT.md and the line that reads it out of the tool's own folder again. */
   readonly guideClaude: boolean
+  /** The Chat window is served to the phone over Tailscale. */
+  readonly phone: boolean
+  /** What the phone's link carries; made once, on the first start. */
+  readonly phoneKey: string
   /** Written by the main process only, over `shortcuts:*`, so a window's older copy never undoes a run. */
   readonly shortcuts: readonly Shortcut[]
 }
@@ -674,6 +678,8 @@ export const DEFAULT_SETTINGS: Settings = {
   client: '',
   autoUpdate: true,
   guideClaude: true,
+  phone: false,
+  phoneKey: '',
   sidebarWidth: 264,
   shortcuts: [],
 }

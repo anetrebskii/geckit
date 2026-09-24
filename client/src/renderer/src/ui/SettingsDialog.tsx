@@ -227,6 +227,10 @@ export function SettingsDialog({
           </span>
         </div>
 
+        {document.documentElement.classList.contains('phone') ? null : (
+          <PhoneAccess on={settings.phone} change={(phone) => change({ phone })} />
+        )}
+
         <div className="dialog-actions">
           <button type="button" className="quiet" onClick={onShortcuts}>
             Keyboard shortcuts ({MOD}+/)
@@ -242,6 +246,48 @@ export function SettingsDialog({
           </span>
         </div>
       </div>
+    </div>
+  )
+}
+
+function PhoneAccess({ on, change }: { readonly on: boolean; readonly change: (on: boolean) => void }): React.JSX.Element {
+  const [link, setLink] = useState<{ readonly url?: string; readonly qr?: string; readonly error?: string }>({})
+  const [asked, setAsked] = useState(0)
+
+  useEffect(() => {
+    if (on) void window.geckit.phone.link().then(setLink)
+  }, [on, asked])
+
+  return (
+    <div className="field">
+      <label>Phone</label>
+      <label className="check">
+        <input type="checkbox" checked={on} onChange={(event) => change(event.target.checked)} />
+        Open the conversations on your phone
+      </label>
+      <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+        Over Tailscale, which has to be signed in on this Mac and on the phone, with HTTPS turned on for the tailnet.
+        Only your own devices reach it, and only with the key in the link.
+      </span>
+      {on && link.qr !== undefined && link.url !== undefined ? (
+        <div className="phone-link">
+          <img src={link.qr} alt="QR code of the link" width={160} height={160} />
+          <span>
+            Point the phone&apos;s camera at it, then Share, Add to Home Screen.
+            <button type="button" className="quiet" onClick={() => void navigator.clipboard.writeText(link.url ?? '')}>
+              Copy the link
+            </button>
+          </span>
+        </div>
+      ) : null}
+      {on && link.error !== undefined ? (
+        <span className="phone-error">
+          {link.error}{' '}
+          <button type="button" className="quiet" onClick={() => setAsked(asked + 1)}>
+            Try again
+          </button>
+        </span>
+      ) : null}
     </div>
   )
 }
