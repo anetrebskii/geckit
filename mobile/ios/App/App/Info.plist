@@ -66,6 +66,10 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>GeckIt listens while you dictate a message.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>GeckIt turns what you dictate into the text of your message.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>GeckIt reads the code in Settings on your Mac to pair with it.</string>
 	<key>CFBundleURLTypes</key>
