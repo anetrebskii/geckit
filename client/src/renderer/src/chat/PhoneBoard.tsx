@@ -388,7 +388,7 @@ function RowBody({
             {card?.detail === undefined ? null : <div className="phone-row-cmd">{card.detail}</div>}
           </>
         ) : said === '' ? null : (
-          <div className={`phone-row-said${stands.tone === 'working' ? ' working' : ''}`}>{said}</div>
+          <div className={`phone-row-said${stands.tone === 'working' ? ' doing' : ''}`}>{said}</div>
         )}
         <div className="phone-row-meta">
           <span style={{ color: `var(--project-${String(projectColor(session.root, chat.settings))})`, fontWeight: 600 }}>

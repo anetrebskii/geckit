@@ -4258,7 +4258,7 @@ html.phone button:active:not(:disabled) {
   -webkit-box-orient: vertical;
 }
 
-.phone-row-said.working {
+.phone-row-said.doing {
   color: var(--accent);
 }
 
