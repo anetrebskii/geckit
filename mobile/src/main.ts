@@ -7,7 +7,7 @@ import '../../client/src/renderer/src/styles.css'
 import './pair.css'
 import { dial } from '../../client/src/renderer/src/link'
 import type { Dialing, Link } from '../../client/src/renderer/src/link'
-import { installGeckit, showDropped } from '../../client/src/renderer/src/phone'
+import { installGeckit, sayDropped, showDropped } from '../../client/src/renderer/src/phone'
 import type { Boot } from '../../client/src/renderer/src/phone'
 import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
@@ -190,14 +190,16 @@ const SLOW = 8000
 type Stage = Dialing | 'boot'
 const STAGES: readonly Stage[] = ['service', 'mac', 'joining', 'boot']
 
+const stageSaid = (mac: string): Record<Stage, string> => ({
+  service: 'Reaching the pairing service',
+  mac: `Waiting for ${mac} to answer`,
+  joining: 'Opening the connection',
+  boot: 'Loading your conversations',
+})
+
 /** The steps of a connect, the one under way turning, so a slow Mac reads as waited on rather than stuck. */
 function connecting(mac: string, others: readonly HTMLElement[]): (at: Stage) => void {
-  const said: Record<Stage, string> = {
-    service: 'Reaching the pairing service',
-    mac: `Waiting for ${mac} to answer`,
-    joining: 'Opening the connection',
-    boot: 'Loading your conversations',
-  }
+  const said = stageSaid(mac)
   const list = document.createElement('ol')
   list.className = 'pair-progress'
   const rows = STAGES.map((stage) => {
@@ -287,25 +289,57 @@ async function connect(): Promise<void> {
   started = true
   current = link
   const swap = installGeckit(link, boot)
-  link.onClose(() => void mend(pairing, swap))
+  const name = boot.name ?? macs[here]?.name ?? 'the Mac'
+  link.onClose(() => void mend(pairing, swap, name))
   await import('../../client/src/renderer/src/chat/main')
 }
 
 let current: Link | undefined
 
-/** The page stays as it was under the pill until the Mac answers again, and then carries on over the new link. */
-async function mend(pairing: Pairing, swap: (next: Link) => void): Promise<void> {
+/**
+ * The page stays as it was under the pill until the Mac answers again, and then carries on over the new link.
+ *
+ * The pill says the step each try is at and how long it has taken once that is long, and between tries when the
+ * next one is, as the first connect's screen does.
+ */
+async function mend(pairing: Pairing, swap: (next: Link) => void, mac: string): Promise<void> {
   showDropped()
+  const said = stageSaid(mac)
+  const head = `Reconnecting to ${mac}`
+  let step = 'Trying again'
+  let since = Date.now()
+  let next: number | undefined
+  let tries = 0
+  const tell = (): void => {
+    if (next !== undefined) {
+      const left = Math.max(1, Math.round((next - Date.now()) / 1000))
+      const hint = tries >= 3 ? ' GeckIt has to be open there, with Phone on.' : ''
+      sayDropped(`${mac} did not answer`, `Trying again in ${String(left)} s.${hint}`)
+      return
+    }
+    const taken = Date.now() - since
+    sayDropped(head, taken < SLOW ? step : `${step}, ${String(Math.round(taken / 1000))} s`)
+  }
+  const tick = window.setInterval(tell, 1000)
   for (let tried = 0; ; tried++) {
-    await new Promise((done) => setTimeout(done, AGAIN[Math.min(tried, AGAIN.length - 1)]))
+    const wait = AGAIN[Math.min(tried, AGAIN.length - 1)] ?? 0
+    next = wait === 0 ? undefined : Date.now() + wait
+    tell()
+    await new Promise((done) => setTimeout(done, wait))
+    next = undefined
     try {
-      const link = await dial(pairing)
+      const link = await dial(pairing, undefined, (at) => {
+        step = said[at]
+        since = Date.now()
+        tell()
+      })
+      window.clearInterval(tick)
       current = link
       swap(link)
-      link.onClose(() => void mend(pairing, swap))
+      link.onClose(() => void mend(pairing, swap, mac))
       return
     } catch {
-      // Not yet.
+      tries++
     }
   }
 }

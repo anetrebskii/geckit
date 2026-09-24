@@ -29,7 +29,7 @@ The phone runs its own GeckIt app, which shows the same Chat window the Mac show
 | Conversation in the app (existing Chat, phone layout) | Takes the whole screen. Header: Back to the board, the title on one line, Links, Where it stands. The rest of the desktop header is not there | A card is pressed |
 | Composer in the app (existing) | The field, the mode (Manual / Auto / Plan), the goal, the background tasks, Send / Stop. Model, MCP and Chrome are not there | In a conversation |
 | Status line in the app (existing) | The plan's two windows only: 5h and Week | Always |
-| Connection banner (new) | One line at the top when the link to the Mac dropped | Link is down |
+| Connection banner (new) | A pill with a spinner: "Reconnecting to <Mac>" and under it the step the try is at ("Reaching the pairing service", "Waiting for <Mac> to answer", "Opening the connection"), with the seconds once a step passes 8 s; between tries "<Mac> did not answer" and "Trying again in 5 s", adding "GeckIt has to be open there, with Phone on." from the fourth try | Link has been down for 5 s |
 | Notice (existing) | The Mac's in-window notice, "Finished - demo" or "Needs an answer - demo", dropping from the top | Another conversation finishes or asks; never the one on screen |
 
 ```mermaid
