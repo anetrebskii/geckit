@@ -91,18 +91,6 @@
   color: var(--danger);
 }
 
-.pair-spin {
-  width: 28px;
-  height: 28px;
-  border: 3px solid var(--fill-strong);
-  border-top-color: var(--text-dim);
-  border-radius: 50%;
-  animation: spin 800ms linear infinite;
-}
-
-.pair .pair-wait {
-  color: var(--text-dim);
-}
 
 .pair-actions {
   display: grid;
@@ -126,4 +114,63 @@
   height: 44px;
   font-weight: 400;
   color: var(--accent);
+}
+
+.pair-progress {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  max-width: 300px;
+  margin: 18px 0 0;
+  padding: 0;
+  text-align: start;
+  list-style: none;
+}
+
+.pair-progress li {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+.pair-progress li.now {
+  color: var(--text);
+}
+
+.pair-progress li.done {
+  color: var(--text-dim);
+}
+
+.pair-progress i {
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--fill-strong);
+  border-radius: 50%;
+}
+
+.pair-progress li.now i {
+  border-top-color: var(--text-dim);
+  animation: spin 800ms linear infinite;
+}
+
+.pair-progress li.done i {
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 10.5l2.8 2.8L14 7.5'/%3E%3C/svg%3E") center / 20px no-repeat;
+  border: 0;
+}
+
+.pair-progress small {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.pair .pair-hint {
+  font-size: 15px;
+}
+
+.pair-actions [hidden] {
+  display: none;
 }

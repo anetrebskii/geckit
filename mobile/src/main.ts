@@ -6,7 +6,7 @@ import { Keyboard } from '@capacitor/keyboard'
 import '../../client/src/renderer/src/styles.css'
 import './pair.css'
 import { dial } from '../../client/src/renderer/src/link'
-import type { Link } from '../../client/src/renderer/src/link'
+import type { Dialing, Link } from '../../client/src/renderer/src/link'
 import { installGeckit, showDropped } from '../../client/src/renderer/src/phone'
 import type { Boot } from '../../client/src/renderer/src/phone'
 import type { Macs } from '../../client/src/renderer/src/macs'
@@ -182,20 +182,87 @@ function bootOf(link: Link): Promise<Boot> {
 }
 
 let started = false
+// A connect started again, from Scan or Try again, leaves the one before it to finish unseen.
+let attempt = 0
+// Past this a step is slow enough to say how long it has taken, and what else can be done.
+const SLOW = 8000
+
+type Stage = Dialing | 'boot'
+const STAGES: readonly Stage[] = ['service', 'mac', 'joining', 'boot']
+
+/** The steps of a connect, the one under way turning, so a slow Mac reads as waited on rather than stuck. */
+function connecting(mac: string, others: readonly HTMLElement[]): (at: Stage) => void {
+  const said: Record<Stage, string> = {
+    service: 'Reaching the pairing service',
+    mac: `Waiting for ${mac} to answer`,
+    joining: 'Opening the connection',
+    boot: 'Loading your conversations',
+  }
+  const list = document.createElement('ol')
+  list.className = 'pair-progress'
+  const rows = STAGES.map((stage) => {
+    const one = document.createElement('li')
+    const mark = document.createElement('i')
+    const text = document.createElement('span')
+    text.textContent = said[stage]
+    const time = document.createElement('small')
+    one.append(mark, text, time)
+    list.append(one)
+    return one
+  })
+  const hint = line('GeckIt has to be open there, with Phone turned on in Settings.', 'pair-hint')
+  hint.hidden = true
+  const actions = [...others, button('Scan again', 'pair-plain', () => void scan())]
+  for (const one of actions) one.hidden = true
+  screen([line(`Connecting to ${mac}`, 'pair-title', 'h2'), list, hint], actions)
+
+  let since = Date.now()
+  let now = 0
+  const tick = window.setInterval(() => {
+    const taken = Date.now() - since
+    const time = rows[now]?.querySelector('small')
+    if (time !== null && time !== undefined) time.textContent = taken < SLOW ? '' : `${String(Math.round(taken / 1000))} s`
+    if (taken >= SLOW) {
+      hint.hidden = STAGES[now] !== 'mac'
+      for (const one of actions) one.hidden = false
+    }
+    if (!list.isConnected) window.clearInterval(tick)
+  }, 1000)
+  return (at) => {
+    now = STAGES.indexOf(at)
+    since = Date.now()
+    rows.forEach((one, index) => {
+      one.className = index < now ? 'done' : index === now ? 'now' : ''
+      const time = one.querySelector('small')
+      if (time !== null) time.textContent = ''
+    })
+    hint.hidden = true
+  }
+}
 
 async function connect(): Promise<void> {
   const pairing = kept()
   if (pairing === undefined) return notPaired()
+  const mine = ++attempt
   const macs = keptMacs()
   const here = macs.findIndex(isCurrent)
   const others = macs.map((mac, at) => ({ mac, at })).filter(({ at }) => at !== here)
-  screen([picture('pair-spin', ''), line(macs[here]?.name === undefined ? 'Connecting to the Mac' : `Connecting to ${macs[here].name}`, 'pair-wait')])
+  const step = connecting(
+    macs[here]?.name ?? 'the Mac',
+    others.map(({ mac, at }) => button(`Connect to ${nameOf(mac, at)}`, 'pair-plain', () => useMac(mac.link))),
+  )
   let link: Link
   let boot: Boot
   try {
-    link = await dial(pairing)
+    link = await dial(pairing, undefined, (at) => {
+      if (mine === attempt) step(at)
+    })
+    if (mine !== attempt) return link.close()
+    step('boot')
     boot = await bootOf(link)
+    if (mine !== attempt) return link.close()
   } catch {
+    if (mine !== attempt) return
     screen(
       [
         picture(
