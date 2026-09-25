@@ -10,6 +10,7 @@ import {
   dialog,
   globalShortcut,
   ipcMain,
+  Menu,
   nativeTheme,
   Notification,
   powerSaveBlocker,
@@ -686,6 +687,7 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     if (process.platform === 'darwin') void systemPreferences.askForMediaAccess('microphone')
+    else Menu.setApplicationMenu(null)
     // A packaged app carries its icon in the bundle; run from the source, the Dock would show Electron's, so it shows one that says Local.
     if (!app.isPackaged) app.dock?.setIcon(resolve(import.meta.dirname, '../../assets/icon-dev.png'))
     const started = build()
