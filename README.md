@@ -4,6 +4,13 @@
 
 GeckIt makes your Claude Code chats into a Kanban board with tasks and projects. The chats are your local Claude Code sessions, run on your Claude subscription. It also corrects the text you select and transcribes what you say by a shortcut.
 
+<p align="center">
+  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-macos-arm.svg" height="48" alt="Download for macOS, Apple Silicon"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-macos-intel.svg" height="48" alt="Download for macOS, Intel"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-windows.svg" height="48" alt="Download for Windows"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-linux.svg" height="48" alt="Download for Linux, AppImage"></a>
+</p>
+
 https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec
 
 A new task is started with a goal. While Claude works on it, another task asks to run a command and gets an answer. When the goal holds, the card moves to In review by itself.
