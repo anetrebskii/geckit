@@ -44,9 +44,9 @@ describe('running a command', () => {
   it('runs in the folder, keeps what it printed, and says how it exited', async () => {
     const seen: string[] = []
     const ran = await runShell(import.meta.dirname, windows ? 'cd& echo oops>&2& exit 3' : 'pwd; echo oops >&2; exit 3', (output) => seen.push(output)).done
-    expect(ran.output).toBe(`${import.meta.dirname}\noops\n`)
-    // On a terminal of its own, as on macOS, the two come on one stream, the way a terminal shows them.
-    if (process.platform !== 'darwin') {
+    // On a terminal of its own, as on macOS, the two come on one stream in the order printed; on two pipes either may arrive first.
+    if (process.platform === 'darwin') expect(ran.output).toBe(`${import.meta.dirname}\noops\n`)
+    else {
       expect(ran.stdout).toBe(`${import.meta.dirname}\n`)
       expect(ran.stderr).toBe('oops\n')
     }
