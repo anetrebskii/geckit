@@ -20,7 +20,7 @@ import {
 import log from 'electron-log'
 import QRCode from 'qrcode'
 
-import { ANYWHERE, resumeCommand, shownProjects } from '../shared/api'
+import { ANYWHERE, homeOf, resumeCommand, shownProjects } from '../shared/api'
 import { newKey, pairingLink, SIGNAL } from '../shared/pairing'
 import type {
   Answered,
@@ -125,7 +125,7 @@ function build(): Sessions {
       // Every conversation it holds, which is more than the window lists: another profile's rows stay held after a switch until they are read again. A general question belongs to no project and is always told.
       const settings = getSettings()
       const within = (where: readonly string[]): readonly ChatSession[] =>
-        all.filter((one) => one.question === true || where.includes(one.root))
+        all.filter((one) => one.question === true || where.includes(homeOf(one)))
       shownChat()?.webContents.send('chat:sessions', within(shownProjects(settings)))
       // The phone is in no profile, so it is told every project's.
       shownPeer()?.webContents.send('peer:tell', 'chat:sessions', within(settings.projects))
@@ -446,6 +446,11 @@ function wire(): void {
   ipcMain.handle('chat:forgetProject', (_event, root: string) => {
     forgetProject(root)
   })
+  ipcMain.handle('chat:rememberProject', (_event, root: string) => {
+    rememberProject(root)
+  })
+  ipcMain.handle('chat:hidden', (_event, older: boolean) => sessions?.hidden(getSettings().projects, older) ?? [])
+  ipcMain.handle('chat:bring', (_event, id: string) => sessions?.bring(id))
   ipcMain.handle('chat:list', (_event, root: string | undefined) => listChats(root, shownProjects(getSettings())))
   ipcMain.handle('chat:search', (_event, asked: string, root: string | undefined) =>
     searchClaude(typeof root === 'string' && root !== '' ? [root] : shownProjects(getSettings()), asked),
@@ -606,6 +611,11 @@ function phoneCalls(): Record<string, PhoneCall> {
       return held()?.plan()
     },
     'chat.list': (root: string | undefined) => listChats(root, getSettings().projects),
+    'chat.hidden': (older: boolean) => held()?.hidden(getSettings().projects, older) ?? [],
+    'chat.bring': (id: string) => held()?.bring(id),
+    'chat.rememberProject': (root: string) => {
+      rememberProject(root)
+    },
     'chat.items': (id: string) => held()?.items(id) ?? [],
     'chat.links': (id: string) => held()?.links(id) ?? [],
     'chat.search': (asked: string, root: string | undefined) =>

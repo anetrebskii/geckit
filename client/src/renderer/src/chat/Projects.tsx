@@ -2,11 +2,12 @@ import { useState } from 'react'
 
 import { Icon } from '../ui/Icon'
 import { MOD } from '../ui/Shortcuts'
-import { profileOf, shownProjects } from '../../../shared/api'
+import { homeOf, profileOf, shownProjects } from '../../../shared/api'
 import { PROJECT_COLORS, projectColor } from '../../../shared/project-color'
 import { homePath, projectName } from './project'
 import type { Chat } from './useChat'
 import { ALL } from './useChat'
+import { HiddenChats } from './HiddenChats'
 
 /**
  * The project picker: every folder, what waits in each, a field to get to one
@@ -68,10 +69,12 @@ function Menu({
   chat,
   anchor,
   onClose,
+  onHidden,
 }: {
   readonly chat: Chat
   readonly anchor: DOMRect
   readonly onClose: () => void
+  readonly onHidden: () => void
 }): React.JSX.Element {
   const [asked, setAsked] = useState('')
   // The project whose colours are laid out under it.
@@ -89,8 +92,8 @@ function Menu({
 
   const waits = new Map<string, Waits>()
   for (const one of chat.waiting) {
-    const held = waits.get(one.root) ?? { asks: 0, unread: 0 }
-    waits.set(one.root, one.state === 'asks' ? { ...held, asks: held.asks + 1 } : { ...held, unread: held.unread + 1 })
+    const held = waits.get(homeOf(one)) ?? { asks: 0, unread: 0 }
+    waits.set(homeOf(one), one.state === 'asks' ? { ...held, asks: held.asks + 1 } : { ...held, unread: held.unread + 1 })
   }
   const everywhere = [...waits.values()].reduce<Waits | undefined>(
     (sum, one) => ({ asks: (sum?.asks ?? 0) + one.asks, unread: (sum?.unread ?? 0) + one.unread }),
@@ -100,8 +103,8 @@ function Menu({
   const work = new Map<string, Work>()
   for (const one of chat.everyone) {
     if (one.status === 'done') continue
-    const held = work.get(one.root) ?? { progress: 0, review: 0 }
-    work.set(one.root, one.status === 'review' ? { ...held, review: held.review + 1 } : { ...held, progress: held.progress + 1 })
+    const held = work.get(homeOf(one)) ?? { progress: 0, review: 0 }
+    work.set(homeOf(one), one.status === 'review' ? { ...held, review: held.review + 1 } : { ...held, progress: held.progress + 1 })
   }
   const standing = [...work.values()].reduce<Work>(
     (sum, one) => ({ progress: sum.progress + one.progress, review: sum.review + one.review }),
@@ -259,6 +262,20 @@ function Menu({
           </span>
           Add a project...
         </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="menu-item"
+          onClick={() => {
+            onClose()
+            onHidden()
+          }}
+        >
+          <span style={{ width: 14, flexShrink: 0 }}>
+            <Icon name="hidden" size={13} />
+          </span>
+          Hidden conversations...
+        </button>
       </div>
     </>
   )
@@ -266,6 +283,7 @@ function Menu({
 
 export function Projects({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [anchor, setAnchor] = useState<DOMRect | undefined>()
+  const [hidden, setHidden] = useState(false)
   return (
     <>
       <button
@@ -288,7 +306,10 @@ export function Projects({ chat }: { readonly chat: Chat }): React.JSX.Element {
         <span className="keys">{MOD}+K</span>
         <Icon name="down" size={11} />
       </button>
-      {anchor === undefined ? null : <Menu chat={chat} anchor={anchor} onClose={() => setAnchor(undefined)} />}
+      {anchor === undefined ? null : (
+        <Menu chat={chat} anchor={anchor} onClose={() => setAnchor(undefined)} onHidden={() => setHidden(true)} />
+      )}
+      {hidden ? <HiddenChats chat={chat} onClose={() => setHidden(false)} /> : null}
     </>
   )
 }

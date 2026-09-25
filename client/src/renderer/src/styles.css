@@ -742,6 +742,114 @@ textarea {
   gap: 8px;
 }
 
+/* Hidden conversations: the folders scroll between the title and Close. */
+.dialog.hidden-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, 94vw);
+  height: min(600px, 84vh);
+  max-height: none;
+  overflow: hidden;
+}
+
+.hidden-dialog p {
+  margin: 0;
+}
+
+.hidden-body {
+  flex: 1;
+  min-height: 0;
+  margin: 8px -12px 0;
+  padding: 0 6px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.hidden-dialog .dialog-actions {
+  padding-top: 12px;
+  margin-top: 0;
+  border-top: 1px solid var(--border);
+}
+
+.hidden-dialog .empty {
+  padding: 40px 16px;
+  text-align: center;
+}
+
+.hidden-folder {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 14px 8px 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.hidden-folder .path {
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hidden-folder .done {
+  color: var(--success-text);
+}
+
+.hidden-row {
+  align-items: center;
+}
+
+.hidden-row .reason {
+  color: var(--text-dim);
+}
+
+.hidden-row .reason::after {
+  content: ' \00b7\00a0';
+  color: var(--text-faint);
+}
+
+.hidden-folder .quiet,
+.hidden-row .quiet,
+.hidden-older .quiet {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.hidden-row .on-board {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--success-text);
+}
+
+.hidden-more {
+  margin: 2px 8px 0;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+  border-radius: var(--radius);
+}
+
+.hidden-more:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.hidden-older {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 12px;
+}
+
+.hidden-older .empty {
+  padding: 4px;
+}
+
 .open-rule {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
@@ -3693,6 +3801,11 @@ html.framed .board-head {
 .board-day-head:hover {
   color: var(--text-dim);
   background: var(--bg-raised);
+}
+
+/* The folder below its project a conversation was started in: geckit / client. */
+.board-card .subfolder {
+  color: var(--text-faint);
 }
 
 .board-card {

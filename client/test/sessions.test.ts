@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { holdClaude } from '../src/main/sessions/claude'
 import type { GoalRead } from '../src/main/sessions/claude-read'
+import type { Found } from '../src/main/sessions/disk'
 import type { Ran, runShell } from '../src/main/sessions/shell'
 import type { Driver, Heard, Signal } from '../src/main/sessions/heard'
 import { memoryNotes, Sessions } from '../src/main/sessions'
@@ -722,6 +723,95 @@ describe('the list', () => {
     const all = await built.sessions.list([ROOT])
     expect(all.map((one) => one.id)).toEqual([id, 'from-a-terminal'])
     expect(all.every((one) => one.root === ROOT)).toBe(true)
+  })
+
+  it('lists one started in a folder below a project under that project, and runs it where it was started', async () => {
+    const built = build({
+      disk: {
+        list: async () => [
+          { id: 'below', title: 'In the client', stands: '', at: 500, driven: false, below: `${ROOT}/client` },
+        ],
+        read: async () => undefined,
+        has: async () => false,
+      },
+    })
+    const all = await built.sessions.list([ROOT])
+    expect(all[0]).toMatchObject({ id: 'below', root: `${ROOT}/client`, project: ROOT })
+  })
+
+  it('keeps one below two projects under the nearer', async () => {
+    const outer = '/work'
+    const built = build({
+      disk: {
+        list: async (root) => [
+          root === outer
+            ? { id: 'deep', title: 'Deep', stands: '', at: 500, driven: false, below: ROOT }
+            : { id: 'deep', title: 'Deep', stands: '', at: 500, driven: false },
+        ],
+        read: async () => undefined,
+        has: async () => false,
+      },
+    })
+    const all = await built.sessions.list([ROOT, outer])
+    expect(all[0]).toMatchObject({ id: 'deep', root: ROOT })
+    expect(all[0]?.project).toBeUndefined()
+  })
+
+  it('lists what a program started once it is brought onto the board, and one hidden by hand again', async () => {
+    const built = build({
+      disk: {
+        list: async () => [
+          { id: 'driven', title: 'A nightly check', stands: '', at: 500, driven: true },
+          { id: 'hid', title: 'Put away', stands: '', at: 400, driven: false },
+        ],
+        read: async () => undefined,
+        has: async () => false,
+      },
+    })
+    await built.sessions.list([ROOT])
+    built.sessions.hide('hid')
+    expect((await built.sessions.list([ROOT])).map((one) => one.id)).toEqual([])
+    built.sessions.bring('driven')
+    built.sessions.bring('hid')
+    expect((await built.sessions.list([ROOT])).map((one) => one.id)).toEqual(['driven', 'hid'])
+  })
+
+  it('finds what no board lists, by folder, and why', async () => {
+    const kept = (id: string, cwd: string, driven: boolean, at: number): Found => ({ id, title: id, stands: '', at, driven, cwd })
+    const built = build({
+      disk: {
+        list: async () => [
+          { id: 'listed', title: 'On the board', stands: '', at: 900, driven: false },
+          { id: 'hid', title: 'Put away', stands: '', at: 800, driven: false },
+        ],
+        read: async () => undefined,
+        has: async () => false,
+        every: async (_from, _to, wanted) =>
+          [
+            kept('listed', ROOT, false, 900),
+            kept('hid', ROOT, false, 800),
+            kept('nightly', ROOT, true, 700),
+            kept('notes', '/work/notes', false, 600),
+            kept('elsewhere', '/work/other-profile', false, 500),
+            kept('gone', '/work/gone', false, 400),
+          ].filter((one) => wanted(one.id)),
+      },
+      there: async (path) => path !== '/work/gone',
+    })
+    await built.sessions.list([ROOT])
+    built.sessions.hide('hid')
+    const folders = await built.sessions.hidden([ROOT, '/work/other-profile'], false)
+    expect(folders).toEqual([
+      {
+        path: ROOT,
+        project: ROOT,
+        chats: [
+          { id: 'hid', title: 'hid', stands: '', at: 800, reason: 'hidden' },
+          { id: 'nightly', title: 'nightly', stands: '', at: 700, reason: 'driven' },
+        ],
+      },
+      { path: '/work/notes', chats: [{ id: 'notes', title: 'notes', stands: '', at: 600, reason: 'terminal' }] },
+    ])
   })
 
   it('lists several projects at once, newest first', async () => {

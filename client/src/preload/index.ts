@@ -8,6 +8,7 @@ import type {
   ChatSession,
   ClaudeAccount,
   ClaudeModel,
+  HiddenFolder,
   CutOff,
   McpServer,
   CorrectRequest,
@@ -96,6 +97,11 @@ const geckit = {
     /** The folder picker. The folder chosen is remembered and given back. */
     addProject: (): Promise<string | undefined> => ipcRenderer.invoke('chat:addProject'),
     forgetProject: (root: string): Promise<void> => ipcRenderer.invoke('chat:forgetProject', root),
+    /** Puts a folder on the list of projects, as Add a project does once one is chosen. */
+    rememberProject: (root: string): Promise<void> => ipcRenderer.invoke('chat:rememberProject', root),
+    /** What the tool kept that no board lists, from the last 30 days or from before them. */
+    hidden: (older: boolean): Promise<HiddenFolder[]> => ipcRenderer.invoke('chat:hidden', older),
+    bring: (id: string): Promise<void> => ipcRenderer.invoke('chat:bring', id),
     /** Nothing for the project is every conversation, in every project offered. */
     list: (root: string | undefined): Promise<ChatSession[]> => ipcRenderer.invoke('chat:list', root),
     items: (id: string): Promise<SessionItem[]> => ipcRenderer.invoke('chat:items', id),

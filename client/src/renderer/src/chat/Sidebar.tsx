@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
-import { ANYWHERE, SESSION_STATUSES } from '../../../shared/api'
+import { ANYWHERE, homeOf, SESSION_STATUSES } from '../../../shared/api'
 import type { ChatGrouping, ChatSession, SessionStatus } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
@@ -53,7 +53,7 @@ function gather(
 ): [string, ChatSession[]][] {
   const groups = new Map<string, ChatSession[]>()
   for (const session of sessions) {
-    const where = by === 'project' ? projectName(session.root) : when(session.at, now)
+    const where = by === 'project' ? projectName(homeOf(session)) : when(session.at, now)
     groups.set(where, [...(groups.get(where) ?? []), session])
   }
   return [...groups.entries()]
@@ -382,7 +382,7 @@ const Rows = memo(function Rows({
               <button type="button" className="group" onClick={() => onFold(where)}>
                 <Icon name={folded.has(where) ? 'right' : 'down'} size={10} />
                 {by === 'project' && rows[0] !== undefined && where !== FAVORITES && where !== DONE ? (
-                  <span className="tinted" style={tint(projectColor(rows[0].root, colors))}>{where}</span>
+                  <span className="tinted" style={tint(projectColor(homeOf(rows[0]), colors))}>{where}</span>
                 ) : (
                   where
                 )}
@@ -405,10 +405,10 @@ const Rows = memo(function Rows({
                 place={places.get(session.id)}
                 where={
                   where === DONE || (scope === ALL && (by === 'time' || where === FAVORITES))
-                    ? projectName(session.root)
+                    ? projectName(homeOf(session))
                     : undefined
                 }
-                color={projectColor(session.root, colors)}
+                color={projectColor(homeOf(session), colors)}
                 changed={ago(session.at, now, by === 'time')}
                 renaming={renaming === session.id}
                 favorite={where === FAVORITES}

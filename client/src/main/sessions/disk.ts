@@ -38,18 +38,26 @@ export interface Found {
   /** Tokens in the context after the last answer. */
   readonly used?: number
   readonly work?: WorkItem
+  /** The folder it was started in, as the tool wrote it down. */
+  readonly cwd?: string
 }
 
 const string = (value: unknown): string => (typeof value === 'string' ? value : '')
 
 const slug = (root: string): string => root.replace(/[^A-Za-z0-9]/g, '-')
 
+// Somebody who keeps the tool's folder elsewhere says so the way the tool asks them to.
+const base = (): string => join(process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude'), 'projects')
+
+/** The folder under the name it was started in, and under the one it resolves to. */
+async function names(root: string): Promise<string[]> {
+  const real = await realpath(root).catch(() => root)
+  return [...new Set([root, real])]
+}
+
 /** Where the tool files this folder, under the name it was started in or the one it resolves to. */
 export async function folders(root: string): Promise<string[]> {
-  // Somebody who keeps the tool's folder elsewhere says so the way the tool asks them to.
-  const base = join(process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude'), 'projects')
-  const real = await realpath(root).catch(() => root)
-  return [...new Set([root, real])].map((path) => join(base, slug(path)))
+  return (await names(root)).map((path) => join(base(), slug(path)))
 }
 
 /** Where one conversation is kept, if it is. */
@@ -114,22 +122,72 @@ export async function deleteClaude(root: string, id: string): Promise<boolean> {
   return true
 }
 
-/** Every conversation the tool has about this folder, newest first. */
-export async function listClaude(root: string): Promise<Found[]> {
-  const files: { id: string; path: string; at: number; size: number }[] = []
-  for (const folder of await folders(root)) {
-    for (const name of await readdir(folder).catch(() => [])) {
-      if (!name.endsWith('.jsonl')) continue
-      const path = join(folder, name)
-      const found = await stat(path).catch(() => undefined)
-      if (found?.isFile() !== true || found.size === 0) continue
-      files.push({ id: name.slice(0, -'.jsonl'.length), path, at: found.mtimeMs, size: found.size })
-    }
-  }
-  files.sort((one, other) => other.at - one.at)
+interface Kept {
+  readonly id: string
+  readonly path: string
+  readonly at: number
+  readonly size: number
+}
 
+async function filesIn(folder: string): Promise<Kept[]> {
+  const files: Kept[] = []
+  for (const name of await readdir(folder).catch(() => [])) {
+    if (!name.endsWith('.jsonl')) continue
+    const path = join(folder, name)
+    const found = await stat(path).catch(() => undefined)
+    if (found?.isFile() !== true || found.size === 0) continue
+    files.push({ id: name.slice(0, -'.jsonl'.length), path, at: found.mtimeMs, size: found.size })
+  }
+  return files
+}
+
+const within = (path: string, folder: string): boolean => path === folder || path.startsWith(`${folder}/`)
+
+/**
+ * Every conversation the tool has about this folder, newest first, and the ones
+ * started in a folder below it, which say where in `below`.
+ */
+export async function listClaude(root: string): Promise<(Found & { readonly below?: string })[]> {
+  const heads = await names(root)
+  const own = heads.map(slug)
+  // The tool files a folder below under a name that starts with this one's, as does a folder beside it named the same and more.
+  const near = (await readdir(base()).catch(() => [])).filter((name) => own.some((one) => name.startsWith(`${one}-`)))
+  const files = [
+    ...(await Promise.all(own.map((name) => filesIn(join(base(), name))))).flat(),
+    ...(await Promise.all(near.map(async (name) => (await filesIn(join(base(), name))).map((file) => ({ ...file, near: true }))))).flat(),
+  ]
+  const below = (cwd: string | undefined): string | undefined =>
+    cwd !== undefined && !heads.includes(cwd) && heads.some((head) => within(cwd, head)) ? cwd : undefined
+  const found = await rowsOf(files, (row, file) => !('near' in file) || below(row.cwd) !== undefined, MOST)
+  return found.map((row) => {
+    const at = below(row.cwd)
+    return at === undefined ? row : { ...row, below: at }
+  })
+}
+
+/** Where the system keeps what it throws away soon: helpers' scratch folders and test runs, nothing to resume. */
+const TEMPORARY = ['/private/tmp/', '/private/var/folders/', '/tmp/', '/var/folders/']
+
+/**
+ * Every conversation the tool has kept that was last written from one time up
+ * to another, in whatever folder, but a temporary one. `wanted` passes over
+ * the ones already known before their files are read.
+ */
+export async function everyClaude(from: number, to: number, wanted: (id: string) => boolean): Promise<Found[]> {
+  const temporary = TEMPORARY.map((path) => slug(path))
+  const kept = (await readdir(base()).catch(() => [])).filter((name) => !temporary.some((one) => name.startsWith(one)))
+  const files = (await Promise.all(kept.map((name) => filesIn(join(base(), name)))))
+    .flat()
+    .filter((file) => file.at >= from && file.at < to && wanted(file.id))
+  return rowsOf(files, (row) => row.cwd !== undefined && !TEMPORARY.some((path) => `${row.cwd ?? ''}/`.startsWith(path)), Infinity)
+}
+
+/** The rows of these files, newest first, as many as are asked for of those `kept` keeps. */
+async function rowsOf<File extends Kept>(files: File[], kept: (row: Found, file: File) => boolean, most: number): Promise<Found[]> {
+  files.sort((one, other) => other.at - one.at)
   const found: Found[] = []
-  for (const file of files.slice(0, MOST)) {
+  for (const file of files) {
+    if (found.length >= most) break
     const { head, tail } = await edges(file.path, file.size).catch(() => ({ head: [], tail: [] }))
     const all = [...head, ...tail]
     const named = (type: string, key: string): string =>
@@ -155,7 +213,8 @@ export async function listClaude(root: string): Promise<Found[]> {
       .find((name) => name !== '' && name !== '<synthetic>')
     const used = lastContext(tail.length > 0 ? tail : head)
     const work = workItem(asked)
-    found.push({
+    const cwd = string(all.find((entry) => string(entry['cwd']) !== '')?.['cwd'])
+    const row: Found = {
       id: file.id,
       title,
       stands: lastSaid(tail.length > 0 ? tail : head) || firstLine(named('last-prompt', 'lastPrompt')),
@@ -164,7 +223,9 @@ export async function listClaude(root: string): Promise<Found[]> {
       ...(model === undefined ? {} : { model }),
       ...(used === undefined ? {} : { used }),
       ...(work === undefined ? {} : { work }),
-    })
+      ...(cwd === '' ? {} : { cwd }),
+    }
+    if (kept(row, file)) found.push(row)
   }
   return found
 }
