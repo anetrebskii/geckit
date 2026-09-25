@@ -8,6 +8,7 @@ import { ON_PHONE } from '../on-phone'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
+import { MOD } from '../ui/Shortcuts'
 import { Chrome } from './Chrome'
 import { Mcp } from './Mcp'
 import { Tasks } from './Tasks'
@@ -519,7 +520,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               <Icon name={listening ? 'stop' : 'mic'} size={listening ? 12 : 16} />
             </button>
           ) : chat.working && ON_PHONE && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? null : chat.working ? (
-            <button type="button" className="send stop" onClick={chat.stop} title="Stop (Esc)" aria-label="Stop">
+            <button type="button" className="send stop" onClick={chat.stop} title={chat.settings.chatView === 'board' ? `Stop (${MOD}+.)` : `Stop (Esc, ${MOD}+.)`} aria-label="Stop">
               <Icon name="stop" size={12} />
             </button>
           ) : (
