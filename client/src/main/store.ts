@@ -8,6 +8,7 @@ import { newKey } from '../shared/pairing'
 import type { Settings } from '../shared/api'
 import { withColors } from '../shared/project-color'
 import { carriedOver } from './carry-over'
+import { withMoves } from './sessions'
 import type { NotesStore, SessionNote } from './sessions'
 
 /**
@@ -111,7 +112,7 @@ export function notesStore(): NotesStore {
   return {
     all: () => notes,
     set: (id, note) => {
-      notes = { ...notes, [id]: note }
+      notes = { ...notes, [id]: withMoves(notes[id], note, Date.now()) }
       clearTimeout(soon)
       soon = setTimeout(() => write(NOTES, notes), 250)
     },
