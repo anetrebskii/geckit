@@ -259,6 +259,8 @@ function grantKeys(wanted: Wanted): string[] {
   }
 }
 
+const squeezed = (text: string): string => text.replace(/\s+/g, ' ').trim()
+
 export class Sessions {
   readonly #deps: SessionsDeps
   readonly #live = new Map<string, Live>()
@@ -639,6 +641,9 @@ export class Sessions {
     }
     const held = live
     const terminal = wantsKeyboard(command) ? this.#deps.terminal : undefined
+    // A command Claude asked for, run as it was written, is answered as soon as it ends, so the turn goes on without being told to.
+    const said = [...held.items.values()].filter((one) => one.kind === 'theirs').at(-1)
+    const wanted = said?.kind === 'theirs' && squeezed(said.text).includes(squeezed(command))
     const item: SessionItem = {
       kind: 'shell',
       id: `shell:${randomUUID()}`,
@@ -685,6 +690,14 @@ export class Sessions {
       })
       held.told.push({ id: item.id, blocks: toldClaude(command, ran) })
       this.#changed()
+      if (!wanted || ran.stopped || this.#live.get(held.id) !== held) return
+      void this.send({
+        session: held.id,
+        root: held.root,
+        mode: held.mode,
+        text: 'I ran it.',
+        ...(held.chosen === undefined ? {} : { model: held.chosen }),
+      })
     })
     return held.id
   }
