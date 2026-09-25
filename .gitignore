@@ -24,4 +24,3 @@ pnpm-debug.log*
 
 #Electron-builder output
 /dist_electron
-.firebase/hosting.c2l0ZQ.cache

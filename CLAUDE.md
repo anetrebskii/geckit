@@ -9,10 +9,8 @@ GeckIt is an Electron desktop app with three things in it: correcting a piece of
 ## Repository Structure
 
 - **`client/`**: the app (electron-vite + React 19 + TypeScript, hand-written CSS)
-- **`site/`**: marketing website (Next.js + Tailwind) - a separate project
 - **`mobile/`**: the iPhone app (Capacitor), built from the client's own Chat sources and React
 - **`signal/`**: the weroost site whose functions introduce the phone to the Mac
-- Root `package.json`: only Firebase, for deploying the site
 
 ## Build Commands
 
@@ -26,8 +24,6 @@ npm run lint           # eslint
 npm run test           # vitest
 npm run typecheck      # tsc over the node and web configs
 ```
-
-From `site/`: `npm run dev`, `npm run build`.
 
 From `mobile/` (needs `client/node_modules`): `npm run build` into `www/`, `npm run ios` to sync and open Xcode.
 
