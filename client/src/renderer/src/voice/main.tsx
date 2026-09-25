@@ -12,6 +12,6 @@ void window.geckit.voice
   .catch(() => 'paste')
   .then((mode) =>
   createRoot(document.getElementById('root') as HTMLElement).render(
-    <StrictMode>{mode === 'record' ? <Record /> : <Voice />}</StrictMode>,
+    <StrictMode>{mode === 'record' || mode === 'fill' ? <Record fill={mode === 'fill'} /> : <Voice />}</StrictMode>,
   ),
 )

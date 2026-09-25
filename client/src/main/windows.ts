@@ -157,11 +157,22 @@ export const shownChat = (): BrowserWindow | undefined =>
 /** Whether the person is looking at the chat window right now. */
 export const watchingChat = (): boolean => shownChat()?.isFocused() === true
 
+/** How far above the bottom of the screen the capsule stands, clear of the Dock and of what is being shown. */
+const CAPSULE_FROM_BOTTOM = 24
+
+/** The capsule has been put in the middle as a card, and from then on grows around where it stands, wherever it is moved. */
+let voiceInMiddle = false
+
 export function voiceWindow(): BrowserWindow {
   if (voice !== undefined && !voice.isDestroyed()) return voice
+  // At the bottom of the screen the pointer is on, out of the way of what is being talked about.
+  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
+  voiceInMiddle = false
   voice = new BrowserWindow({
     width: 340,
     height: 92,
+    x: Math.round(area.x + (area.width - 340) / 2),
+    y: area.y + area.height - 92 - CAPSULE_FROM_BOTTOM,
     show: false,
     frame: false,
     transparent: true,
@@ -198,17 +209,35 @@ export function listeningVoice(): BrowserWindow | undefined {
   return undefined
 }
 
-/** The capsule grows to hold what it is asking about, around the middle it already stands on. */
-export function sizeVoice(height: number, width?: number): void {
+/**
+ * The capsule sized to what it holds.
+ *
+ * As a pill at the bottom it grows upward, its bottom edge staying put. When it
+ * becomes a card to read (`middle`), it goes to the middle of its screen once,
+ * where all of it can be seen; after that it grows around where it stands, so a
+ * card that was moved is not pulled back.
+ */
+export function sizeVoice(height: number, width?: number, middle = false): void {
   const open = shownVoice()
   if (open === undefined) return
   const was = open.getBounds()
   const next = Math.max(92, Math.min(520, Math.round(height)))
   const wide = width === undefined ? was.width : Math.max(340, Math.min(520, Math.round(width)))
+  if (middle && !voiceInMiddle) {
+    voiceInMiddle = true
+    const area = screen.getDisplayMatching(was).workArea
+    open.setBounds({
+      x: Math.round(area.x + (area.width - wide) / 2),
+      y: Math.round(area.y + (area.height - next) / 2),
+      width: wide,
+      height: next,
+    })
+    return
+  }
   if (next === was.height && wide === was.width) return
   open.setBounds({
     x: Math.round(was.x - (wide - was.width) / 2),
-    y: Math.round(was.y - (next - was.height) / 2),
+    y: voiceInMiddle ? Math.round(was.y - (next - was.height) / 2) : was.y - (next - was.height),
     width: wide,
     height: next,
   })

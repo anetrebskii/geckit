@@ -1,5 +1,10 @@
-@import '@fontsource-variable/inter';
-@import '@fontsource-variable/jetbrains-mono';
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<title>GeckIt - Ways to start a task</title>
+<style>
+/* client/src/renderer/src/styles.css, inlined as it is, without the font imports. */
 
 /*
  * One stylesheet for three windows.
@@ -3195,11 +3200,9 @@ button.tag:hover {
   justify-content: center;
   height: 100%;
   background: transparent;
-  /* Only what can be seen moves the capsule; the clear margin around it does nothing. */
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
 }
 
-/* The capsule is moved by any part of itself that is not a control, as a window is by its title bar. */
 .capsule {
   display: flex;
   align-items: center;
@@ -3209,10 +3212,6 @@ button.tag:hover {
   border: 1px solid var(--border);
   border-radius: 999px;
   box-shadow: var(--shadow);
-  -webkit-app-region: drag;
-}
-
-.capsule :is(button, select, textarea, input, .mic, .frames, .asking-plan, .asking-heard span) {
   -webkit-app-region: no-drag;
 }
 
@@ -3379,6 +3378,10 @@ button.tag:hover {
   height: 8px;
   background: var(--danger-solid);
   border-radius: 50%;
+}
+
+.capsule .time.ending {
+  color: var(--warning-text);
 }
 
 /* What is being recorded leads, so the pill cannot be taken for dictation; the microphone follows it, quieter. */
@@ -3937,54 +3940,6 @@ html.framed .board-head {
   white-space: nowrap;
 }
 
-/* New task and the arrow beside it: one control, the arrow set off by a hairline. */
-.board-split {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-}
-
-.board-head .board-split .board-new {
-  border-radius: var(--radius) 0 0 var(--radius);
-}
-
-.board-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 28px;
-  color: var(--text-dim);
-  border-left: 1px solid var(--border);
-  border-radius: 0 var(--radius) var(--radius) 0;
-}
-
-.board-more:hover,
-.board-more.on {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
-/* Starting a task is what the board is for: tinted rather than filled, so it leads the head without shouting over the cards. */
-.board-split :is(.board-new, .board-more) {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.board-split :is(.board-new, .board-more):hover,
-.board-split .board-more.on {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
-}
-
-.board-split .board-more {
-  border-left-color: color-mix(in srgb, var(--accent) 25%, transparent);
-}
-
-.board-split .keys {
-  color: color-mix(in srgb, var(--accent) 65%, transparent);
-}
-
 .board-empty {
   padding: 12px 12px 0;
   font-size: 13px;
@@ -4109,6 +4064,19 @@ html.framed .board-head {
 /* The one open behind the conversation showing over the board. */
 .board-card.on {
   background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
+}
+
+.board-card.picked {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.board-picked {
+  padding: 8px 14px;
+}
+
+.board-picked-how {
+  color: var(--text-faint);
 }
 
 .board-card.waits.asks {
@@ -4326,35 +4294,6 @@ html.framed .board-head {
 .new-task-goal:focus {
   border-color: var(--accent);
   outline: none;
-}
-
-/* Other ways to fill the field than typing in it. */
-.new-task-ways {
-  display: flex;
-  gap: 6px;
-  margin-top: -4px;
-}
-
-.new-task-ways .quiet {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  padding: 3px 9px;
-  font-size: 12px;
-}
-
-.new-task-recorded {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin-top: -6px;
-  font-size: 11px;
-  color: var(--text-faint);
-}
-
-.new-task-recorded .icon-button {
-  width: 18px;
-  height: 18px;
 }
 
 .new-task-foot {
@@ -5735,3 +5674,601 @@ html.phone .task-row .how {
 .sheet-note + .sheet-list {
   margin-top: 10px;
 }
+</style>
+<style>
+/* What this prototype adds, from the app's own tokens. */
+
+#root {
+  position: fixed;
+  inset: 0;
+}
+
+.board-split {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.board-head .board-split .board-new {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.board-head .board-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  color: var(--text-dim);
+  border-left: 1px solid var(--border);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.board-head .board-more:hover,
+.board-head .board-more.on {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.board-split :is(.board-new, .board-more) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.board-split :is(.board-new, .board-more):hover,
+.board-split .board-more.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
+}
+
+.board-split .board-more {
+  border-left-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.board-split .keys {
+  color: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+.new-task-ways {
+  display: flex;
+  gap: 6px;
+  margin-top: -4px;
+}
+
+.new-task-ways .quiet {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+.new-task-recorded {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: -6px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.new-task-recorded .icon-button {
+  width: 18px;
+  height: 18px;
+}
+
+.new-task .pending-one .shot {
+  width: 56px;
+  height: 56px;
+  aspect-ratio: auto;
+}
+
+.shot {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.shot i {
+  position: absolute;
+  background: var(--fill);
+}
+
+.shot i.bar {
+  background: var(--bg-sunken);
+}
+
+.shot i.map {
+  background: var(--accent-soft);
+}
+
+.shot i.menu {
+  background: var(--bg-raised);
+  box-shadow: var(--shadow);
+}
+
+/* The other application, in front while GeckIt is behind it. */
+.desk {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: none;
+  background: var(--bg-sunken);
+}
+
+.desk.on {
+  display: block;
+}
+
+.desk .site {
+  position: absolute;
+  inset: 40px 60px 60px 18%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.desk .site-bar {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.desk .site-map {
+  flex: 1;
+  margin: 16px 20px;
+  background: var(--accent-soft);
+  border-radius: var(--radius-lg);
+}
+
+.capsule-spot {
+  position: fixed;
+  bottom: 38px;
+  left: 50%;
+  z-index: 50;
+  transform: translateX(-50%);
+}
+
+.capsule-spot:empty {
+  display: none;
+}
+
+.capsule .rec-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--danger-solid);
+  border-radius: 50%;
+}
+
+.recording-what {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.capsule .rule {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 0;
+  background: var(--border);
+}
+
+.capsule:has(.recording-what) :is(.mic, .bars) {
+  color: var(--text-faint);
+}
+
+.board-card.arrived {
+  animation: arrived 2.4s var(--ease) both;
+}
+
+@keyframes arrived {
+  0%,
+  40% {
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+/* The prototype's own controls, outside the app. */
+.proto {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 80;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--bg-raised);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.proto button {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="board">
+    <div class="board-head drag">
+      <button type="button" class="icon-button no-drag" aria-label="As a list" data-icon="list"></button>
+      <button type="button" class="project no-drag" title="Switch project (Cmd+K)">
+        <span data-icon="folder"></span><span class="name">All projects</span><span class="spacer"></span><span class="keys">Cmd+K</span><span data-icon="down" data-size="11"></span>
+      </button>
+      <button type="button" class="icon-button no-drag" aria-label="Shortcuts" data-icon="bolt"></button>
+      <button type="button" class="icon-button no-drag" aria-label="Keyboard shortcuts" data-icon="keyboard"></button>
+      <button type="button" class="icon-button no-drag" aria-label="Settings" data-icon="settings"></button>
+      <span class="spacer"></span>
+      <button type="button" class="new-session no-drag board-new" id="ask"><span data-icon="chat"></span>Ask<span class="keys">Cmd+Shift+N</span></button>
+      <span class="board-split no-drag">
+        <button type="button" class="new-session board-new" id="new"><span data-icon="plus"></span>New task<span class="keys">Cmd+N</span></button>
+        <button type="button" class="board-more" id="more" aria-label="Other ways to start a task" title="Other ways to start a task" aria-haspopup="menu" data-icon="down" data-size="11"></button>
+      </span>
+    </div>
+    <div class="board-columns" id="columns"></div>
+  </div>
+  <div id="form-spot"></div>
+</div>
+
+<div class="desk" id="desk">
+  <div class="site"><div class="site-bar">localhost:3000/trails/tahoe-rim - the application being shown</div><div class="site-map"></div></div>
+</div>
+<div class="capsule-spot" id="spot"></div>
+
+<div class="proto">
+  Prototype
+  <button type="button" class="quiet" id="proto-reset">Start again</button>
+  <button type="button" class="quiet" id="proto-theme">Dark</button>
+</div>
+
+<script>
+const PATHS = {
+  list: 'M2.5 4.5h11M2.5 8h11M2.5 11.5h11',
+  folder: 'M2.5 4.5a1 1 0 0 1 1-1h2.8l1.5 1.7h4.7a1 1 0 0 1 1 1v6.3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1Z',
+  down: 'M4 6.5 8 10.5 12 6.5',
+  mic: 'M8 2.5a2 2 0 0 1 2 2v3.5a2 2 0 0 1-4 0V4.5a2 2 0 0 1 2-2ZM4 8a4 4 0 0 0 8 0M8 12v2',
+  bolt: 'M9 2.5 4 9h4l-1 4.5L12 7H8Z',
+  keyboard: 'M3 4h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1ZM4.6 6.6h.5M7.75 6.6h.5M10.9 6.6h.5M5.8 9.4h4.4',
+  settings: 'M6.82 3.76L7.03 2.18A5.9 5.9 0 0 1 8.97 2.18L9.18 3.76A4.4 4.4 0 0 1 10.17 4.17L11.43 3.2A5.9 5.9 0 0 1 12.8 4.57L11.83 5.83A4.4 4.4 0 0 1 12.24 6.82L13.82 7.03A5.9 5.9 0 0 1 13.82 8.97L12.24 9.18A4.4 4.4 0 0 1 11.83 10.17L12.8 11.43A5.9 5.9 0 0 1 11.43 12.8L10.17 11.83A4.4 4.4 0 0 1 9.18 12.24L8.97 13.82A5.9 5.9 0 0 1 7.03 13.82L6.82 12.24A4.4 4.4 0 0 1 5.83 11.83L4.57 12.8A5.9 5.9 0 0 1 3.2 11.43L4.17 10.17A4.4 4.4 0 0 1 3.76 9.18L2.18 8.97A5.9 5.9 0 0 1 2.18 7.03L3.76 6.82A4.4 4.4 0 0 1 4.17 5.83L3.2 4.57A5.9 5.9 0 0 1 4.57 3.2L5.83 4.17A4.4 4.4 0 0 1 6.82 3.76ZM8 9.9a1.9 1.9 0 1 0 0-3.8 1.9 1.9 0 0 0 0 3.8Z',
+  chat: 'M13.5 9a2 2 0 0 1-2 2H6.2L3 13.5V4.5a2 2 0 0 1 2-2h6.5a2 2 0 0 1 2 2Z',
+  plus: 'M8 3.5v9M3.5 8h9',
+  close: 'M4 4l8 8M12 4l-8 8',
+  display: 'M2.5 3h11a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM5.5 14h5M8 11.5V14',
+  stop: 'M6 4.5h4A1.5 1.5 0 0 1 11.5 6v4a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 10V6A1.5 1.5 0 0 1 6 4.5Z',
+  spinner: 'M8 2.5a5.5 5.5 0 1 0 5.5 5.5',
+  pencil: 'M10.4 3.3a1.5 1.5 0 0 1 2.2 2.1l-7 7-2.9.8.8-2.9ZM9.2 4.5l2.2 2.2',
+}
+const FILLED = new Set(['stop'])
+const icon = (name, size = 14, cls = '') =>
+  `<svg ${cls ? `class="${cls}" ` : ''}width="${size}" height="${size}" viewBox="0 0 16 16" fill="${FILLED.has(name) ? 'currentColor' : 'none'}" stroke="${FILLED.has(name) ? 'none' : 'currentColor'}" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PATHS[name]}"/></svg>`
+const esc = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+function drawIcons(root) {
+  for (const el of root.querySelectorAll('[data-icon]')) {
+    el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon, Number(el.dataset.size ?? 14)))
+    delete el.dataset.icon
+  }
+}
+const time = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+const PAGE = [['bar', 0, 0, 100, 14], ['map', 8, 26, 84, 66]]
+const MENU = [['menu', 70, 20, 40, 48]]
+const FRAMES = [PAGE, [...PAGE, ...MENU], [...PAGE, ...MENU], [...PAGE, ...MENU]]
+const shot = (rects) =>
+  `<span class="shot">${rects.map(([k, x, y, w, h]) => `<i class="${k}" style="left:${x}%;top:${y}%;width:${w}%;height:${h}%"></i>`).join('')}</span>`
+const HEARD = 'When I press Export on the trail page the menu opens off the right edge and the last two items are cut off. It should open under the button, and to the left when there is no room.'
+
+const CARDS_START = [
+  { title: 'Offline trail pages', project: 'trailmap', color: 5, at: '1h', column: 0, stands: 'The service worker caches the trail pages and their tiles.' },
+  { title: 'Tray icon blurry on Retina', project: 'geckit', color: 0, at: '25m', column: 1, stands: 'The template image is drawn at 16 and 32 px now.' },
+  { title: 'Upgrade to Next.js 16', project: 'pinch', color: 1, at: 'Sun', column: 2, stands: 'Builds and the e2e suite passes on 16.0.2.' },
+]
+const PROJECTS = [['trailmap', 5], ['geckit', 0], ['pinch', 1]]
+
+let cards, form
+function reset() {
+  cards = CARDS_START.map((c) => ({ ...c }))
+  form = undefined
+  closeMenu()
+  document.getElementById('form-spot').innerHTML = ''
+  document.getElementById('spot').innerHTML = ''
+  document.getElementById('desk').classList.remove('on')
+  drawBoard()
+}
+
+function drawBoard(arrived) {
+  const columns = ['In progress', 'In review', 'Done'].map((title, i) => ({ title, rows: cards.filter((c) => c.column === i) }))
+  document.getElementById('columns').innerHTML = columns
+    .map(
+      (col) => `
+    <div class="board-column">
+      <div class="board-column-head">${col.title}<span class="spacer"></span><span class="count">${col.rows.length}</span></div>
+      <div class="board-cards"><div class="board-day">${col.rows
+        .map(
+          (c) => `
+        <div class="board-card${c === arrived ? ' arrived' : ''}" role="button" tabindex="0">
+          <div class="board-card-head"><span class="board-card-title">${esc(c.title)}</span><span class="changed">${c.at}</span></div>
+          <div class="board-card-foot"><span class="tinted" style="--tint: var(--project-${c.color})">${c.project}</span><span class="spacer"></span></div>
+          ${c.working ? '<div class="board-card-state"><span class="state-said said-working"><span class="state-dot"></span>Claude is working</span></div>' : ''}
+          ${c.stands ? `<div class="board-card-stands"><span>${esc(c.stands)}</span></div>` : ''}
+        </div>`,
+        )
+        .join('')}</div></div>
+    </div>`,
+    )
+    .join('')
+}
+
+// The menu under the arrow: the ways to start, each saying what happens.
+
+function openMenu() {
+  closeMenu()
+  const more = document.getElementById('more')
+  more.classList.add('on')
+  const anchor = more.parentElement.getBoundingClientRect()
+  const scrim = document.createElement('div')
+  scrim.className = 'scrim menu-scrim'
+  scrim.id = 'menu-scrim'
+  scrim.addEventListener('mousedown', closeMenu)
+  const menu = document.createElement('div')
+  menu.className = 'floating menu explained'
+  menu.id = 'menu'
+  menu.setAttribute('role', 'menu')
+  const ways = [
+    ['write', 'pencil', 'Write it', 'The form: project, what to do, a goal. Cmd+N'],
+    ['record', 'display', 'Record the screen', 'Show it and talk. The recording becomes the task. Cmd+Alt+R'],
+    ['say', 'mic', 'Say it', 'Tell GeckIt what to start, answer or mark. Cmd+Alt+G'],
+  ]
+  menu.innerHTML = ways
+    .map(
+      ([value, glyph, label, says]) => `
+    <button type="button" role="menuitem" class="menu-item" data-way="${value}">
+      <span style="width: 14px; flex-shrink: 0">${icon(glyph, 13)}</span>
+      <span class="label">${label}</span>
+      <span class="says">${says}</span>
+    </button>`,
+    )
+    .join('')
+  document.body.append(scrim, menu)
+  const width = menu.getBoundingClientRect().width
+  menu.style.left = `${Math.max(8, anchor.right - width)}px`
+  menu.style.top = `${anchor.bottom + 4}px`
+  const items = [...menu.querySelectorAll('[role=menuitem]')]
+  let at = 0
+  const mark = () => items.forEach((one, i) => one.classList.toggle('at', i === at))
+  mark()
+  items.forEach((one, i) => {
+    one.addEventListener('mousemove', () => ((at = i), mark()))
+    one.addEventListener('click', () => pick(one.dataset.way))
+  })
+  menu.tabIndex = -1
+  menu.focus()
+  menu.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') (event.preventDefault(), (at = Math.min(at + 1, items.length - 1)), mark())
+    if (event.key === 'ArrowUp') (event.preventDefault(), (at = Math.max(at - 1, 0)), mark())
+    if (event.key === 'Enter') (event.preventDefault(), pick(items[at].dataset.way))
+    if (event.key === 'Escape') (event.preventDefault(), closeMenu(), more.focus())
+  })
+}
+function closeMenu() {
+  document.getElementById('menu')?.remove()
+  document.getElementById('menu-scrim')?.remove()
+  document.getElementById('more')?.classList.remove('on')
+}
+function pick(way) {
+  closeMenu()
+  if (way === 'write') openForm(false)
+  if (way === 'record') record('capsule')
+  if (way === 'say') sayCapsule()
+}
+
+// The form, with the row of other ways under the field.
+
+function openForm(question) {
+  form = { question, root: 'trailmap', text: '', goal: '', frames: [], seconds: 0 }
+  drawForm()
+  document.querySelector('.new-task-text').focus()
+}
+
+function drawForm() {
+  const spot = document.getElementById('form-spot')
+  if (form === undefined) {
+    spot.innerHTML = ''
+    return
+  }
+  const q = form.question
+  const ready = form.text.trim() !== '' || form.frames.length > 0
+  spot.innerHTML = `
+    <div class="talk-scrim" id="form-scrim"></div>
+    <div class="new-task" role="dialog" aria-label="${q ? 'Ask a question' : 'New task'}">
+      <div class="new-task-head">${q ? 'Ask a question' : 'New task'}</div>
+      ${q ? '' : `<label class="new-task-label">Project<select class="new-task-where">${PROJECTS.map(([p]) => `<option${p === form.root ? ' selected' : ''}>${p}</option>`).join('')}</select></label>`}
+      <label class="new-task-label">${q ? 'Question' : 'What to do'}
+        <textarea class="new-task-text" rows="5" placeholder="${q ? 'Anything, not about a project. Paste a picture, drop a file, or record the screen' : 'Ask Claude Code. Paste a picture, drop a file, or record the screen'}">${esc(form.text)}</textarea>
+      </label>
+      <div class="new-task-ways">
+        <button type="button" class="quiet" id="form-record" title="Show what you mean and talk; the words and frames come back into this form (Cmd+Alt+R)">${icon('display', 13)}Record the screen</button>
+        <button type="button" class="quiet" id="form-dictate" title="Say it instead of typing it (Cmd+Alt+V)">${icon('mic', 13)}Dictate</button>
+      </div>
+      ${
+        form.frames.length === 0
+          ? ''
+          : `<div class="pending">${form.frames
+              .map((rects, i) => `<span class="pending-one">${shot(rects)}<button type="button" class="icon-button" data-drop="${i}" aria-label="Take this picture off" title="Take this picture off">${icon('close', 11)}</button></span>`)
+              .join('')}</div>
+        <div class="new-task-recorded">${icon('display', 12)}<span>From a ${time(form.seconds)} recording. Claude gets the video too.</span><button type="button" class="icon-button" id="drop-recording" aria-label="Take the recording off" title="Take the recording off">${icon('close', 11)}</button></div>`
+      }
+      ${q ? '' : `<label class="new-task-label">Goal<input class="new-task-goal" value="${esc(form.goal)}" placeholder="When it is done, as a condition. Leave empty for none" /></label>`}
+      <div class="new-task-foot">
+        <span class="new-task-why">${q ? 'Not on the board. It is forgotten 5 minutes after the last answer. Cmd+Enter asks' : form.goal.trim() === '' ? 'No goal: it stops when Claude is done. Cmd+Enter starts it' : 'Claude keeps working until this holds, then the card goes to In review'}</span>
+        <span class="spacer"></span>
+        <button type="button" class="quiet" id="form-cancel">Cancel</button>
+        <button type="button" class="primary" id="form-start"${ready ? '' : ' disabled'}>${q ? 'Ask' : 'Start'}</button>
+      </div>
+    </div>`
+  const text = spot.querySelector('.new-task-text')
+  text.addEventListener('input', () => {
+    form.text = text.value
+    spot.querySelector('#form-start').disabled = form.text.trim() === '' && form.frames.length === 0
+  })
+  spot.querySelector('.new-task-goal')?.addEventListener('input', (e) => (form.goal = e.target.value))
+  spot.querySelector('.new-task-where')?.addEventListener('change', (e) => (form.root = e.target.value))
+  spot.querySelector('#form-scrim').addEventListener('mousedown', closeForm)
+  spot.querySelector('#form-cancel').addEventListener('click', closeForm)
+  spot.querySelector('#form-start').addEventListener('click', start)
+  spot.querySelector('#form-record').addEventListener('click', () => record('form'))
+  spot.querySelector('#form-dictate').addEventListener('click', () => {
+    text.focus()
+    text.setRangeText((text.value && !text.value.endsWith(' ') ? ' ' : '') + 'Also check the same menu on the route page.', text.selectionStart, text.selectionEnd, 'end')
+    form.text = text.value
+    spot.querySelector('#form-start').disabled = false
+  })
+  spot.querySelectorAll('[data-drop]').forEach((b) =>
+    b.addEventListener('click', () => {
+      form.frames.splice(Number(b.dataset.drop), 1)
+      if (form.frames.length === 0) form.seconds = 0
+      drawForm()
+    }),
+  )
+  spot.querySelector('#drop-recording')?.addEventListener('click', () => {
+    form.frames = []
+    form.seconds = 0
+    drawForm()
+  })
+  spot.querySelector('.new-task').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) (event.preventDefault(), start())
+    if (event.key === 'Escape') (event.preventDefault(), closeForm())
+  })
+}
+
+function closeForm() {
+  form = undefined
+  drawForm()
+  document.getElementById('new').focus()
+}
+
+function start() {
+  if (form.text.trim() === '' && form.frames.length === 0) return
+  const color = PROJECTS.find(([p]) => p === form.root)?.[1] ?? 0
+  const card = { title: form.text.trim().split(/[.\n]/)[0].slice(0, 44) || 'From a recording', project: form.root, color, at: 'now', column: 0, working: true }
+  cards.unshift(card)
+  closeForm()
+  drawBoard(card)
+}
+
+// Recording: GeckIt goes behind, the capsule records, and the words and frames come back to where it was started.
+
+let tick, elapsed
+function record(into) {
+  const keep = form
+  document.getElementById('desk').classList.add('on')
+  elapsed = 0
+  const spot = document.getElementById('spot')
+  const draw = () => {
+    spot.innerHTML = `<div class="capsule">
+      <span class="recording-what"><span class="rec-dot" aria-hidden="true"></span>${icon('display', 15)}<span>Recording the screen</span></span>
+      <span class="time">${time(elapsed)}</span>
+      <span class="rule" aria-hidden="true"></span>
+      <span class="mic">${icon('mic', 15)}</span>
+      <span class="bars">${[6, 12, 18, 9, 5].map((h) => `<span style="height:${h}px"></span>`).join('')}</span>
+      <button type="button" class="icon-button" id="rec-stop" aria-label="Stop" title="Stop (Enter)" style="color: var(--danger)">${icon('stop', 13)}</button>
+      <button type="button" class="icon-button" id="rec-cancel" aria-label="Throw away" title="Throw away (Esc)">${icon('close')}</button>
+    </div>`
+    spot.querySelector('#rec-stop').addEventListener('click', stop)
+    spot.querySelector('#rec-cancel').addEventListener('click', cancel)
+  }
+  const back = () => {
+    clearInterval(tick)
+    document.removeEventListener('keydown', keys)
+    spot.innerHTML = ''
+    document.getElementById('desk').classList.remove('on')
+  }
+  const stop = () => {
+    clearInterval(tick)
+    document.removeEventListener('keydown', keys)
+    const seconds = Math.max(elapsed, 42)
+    spot.innerHTML = `<div class="capsule">${icon('spinner', 14, 'glyph spinning')}<span>Writing it down</span></div>`
+    setTimeout(() => {
+      back()
+      if (into === 'form' && keep !== undefined) {
+        form = keep
+        form.text = form.text.trim() === '' ? HEARD : `${form.text.trimEnd()}\n${HEARD}`
+        form.frames = [...form.frames, ...FRAMES].slice(-8)
+        form.seconds += seconds
+        drawForm()
+        const text = document.querySelector('.new-task-text')
+        text.focus()
+        text.setSelectionRange(text.value.length, text.value.length)
+      } else {
+        spot.innerHTML = `<div class="capsule"><span>The capsule asks "Ask" or "Make a task", as the shortcut does (see screen-recording.html)</span><button type="button" class="icon-button" id="x" aria-label="Close">${icon('close')}</button></div>`
+        spot.querySelector('#x').addEventListener('click', () => (spot.innerHTML = ''))
+      }
+    }, 1100)
+  }
+  const cancel = () => {
+    back()
+    if (into === 'form' && keep !== undefined) {
+      form = keep
+      drawForm()
+    }
+  }
+  const keys = (event) => {
+    if (event.key === 'Enter') (event.preventDefault(), stop())
+    if (event.key === 'Escape') (event.preventDefault(), cancel())
+  }
+  if (into === 'form') document.getElementById('form-spot').innerHTML = ''
+  draw()
+  tick = setInterval(() => {
+    elapsed += 1
+    const t = spot.querySelector('.time')
+    if (t) t.textContent = time(elapsed)
+  }, 1000)
+  document.addEventListener('keydown', keys)
+}
+
+function sayCapsule() {
+  const spot = document.getElementById('spot')
+  spot.innerHTML = `<div class="capsule">${icon('mic', 15)}<span>The "Say what to do" capsule, as Cmd+Alt+G opens it today</span><button type="button" class="icon-button" id="x" aria-label="Close">${icon('close')}</button></div>`
+  spot.querySelector('#x').addEventListener('click', () => (spot.innerHTML = ''))
+}
+
+// Wiring
+
+document.getElementById('new').addEventListener('click', () => openForm(false))
+document.getElementById('ask').addEventListener('click', () => openForm(true))
+document.getElementById('more').addEventListener('click', openMenu)
+document.addEventListener('keydown', (event) => {
+  if (!(event.metaKey || event.ctrlKey) || document.getElementById('spot').innerHTML !== '') return
+  if (event.altKey && event.code === 'KeyR') return (event.preventDefault(), form === undefined ? record('capsule') : record('form'))
+  if (event.key.toLowerCase() === 'n' && form === undefined) (event.preventDefault(), openForm(event.shiftKey))
+})
+document.getElementById('proto-reset').addEventListener('click', reset)
+document.getElementById('proto-theme').addEventListener('click', (event) => {
+  const dark = document.documentElement.dataset.theme !== 'dark'
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+  event.currentTarget.textContent = dark ? 'Light' : 'Dark'
+})
+drawIcons(document)
+reset()
+</script>
+</body>
+</html>

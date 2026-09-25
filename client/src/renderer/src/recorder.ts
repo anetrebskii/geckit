@@ -25,6 +25,8 @@ export interface Recorder {
 export function useRecorder(
   deviceId: string,
   done: (audio: Blob, seconds: number) => void,
+  /** Bits a second for the audio; a long recording asks for few, so it still fits what Whisper takes. */
+  bits?: number,
 ): Recorder {
   const [recording, setRecording] = useState(false)
   const [elapsed, setElapsed] = useState(0)
@@ -91,7 +93,7 @@ export function useRecorder(
       })
       .then((live) => {
         stream.current = live
-        const recorder = new MediaRecorder(live)
+        const recorder = new MediaRecorder(live, bits === undefined ? undefined : { audioBitsPerSecond: bits })
         media.current = recorder
         chunks.current = []
         keep.current = true
@@ -118,7 +120,7 @@ export function useRecorder(
         setRecording(false)
         setError(problem instanceof Error ? problem.message : String(problem))
       })
-  }, [deviceId, release, watch])
+  }, [deviceId, bits, release, watch])
 
   const stop = useCallback(() => {
     keep.current = true

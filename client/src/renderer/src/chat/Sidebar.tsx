@@ -1,11 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
-import { ANYWHERE, homeOf, SESSION_STATUSES } from '../../../shared/api'
+import { homeOf, SESSION_STATUSES } from '../../../shared/api'
 import type { ChatGrouping, ChatSession, SessionStatus } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
-import { MOD, said } from '../ui/Shortcuts'
+import { MOD } from '../ui/Shortcuts'
 import { projectColor } from '../../../shared/project-color'
 import { projectName, tint } from './project'
 import { DeleteChats } from './DeleteChats'
@@ -666,15 +666,6 @@ export function Sidebar({
           onClick={() => chat.change({ chatView: 'board' })}
         >
           <Icon name="board" />
-        </button>
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Say what to do"
-          title={`Say what GeckIt should do: start a conversation, answer one, mark one (${said(ANYWHERE.orders)})`}
-          onClick={() => window.geckit.voice.orders()}
-        >
-          <Icon name="mic" />
         </button>
         <button
           type="button"
