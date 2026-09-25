@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 
 import type { McpServer } from '../../shared/api'
-import { planOnly } from './account'
+import { claudeCommand, planOnly } from './account'
 
 /**
  * The MCP servers Claude Code has for a folder, and whether each connects,
@@ -37,7 +37,7 @@ export const serversOf = (answer: Json): McpServer[] =>
 export function readMcp(root: string, change?: McpChange): Promise<McpServer[] | undefined> {
   return new Promise((done) => {
     const child = spawn(
-      'claude',
+      claudeCommand(),
       [
         '-p',
         '--input-format',
@@ -49,7 +49,7 @@ export function readMcp(root: string, change?: McpChange): Promise<McpServer[] |
         '--settings',
         JSON.stringify({ disableAllHooks: true }),
       ],
-      { cwd: root, stdio: ['pipe', 'pipe', 'ignore'], env: planOnly() },
+      { cwd: root, stdio: ['pipe', 'pipe', 'ignore'], env: planOnly(), windowsHide: true },
     )
     let servers: McpServer[] | undefined
     let over = false

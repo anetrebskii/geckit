@@ -547,23 +547,6 @@ export function Chat(): React.JSX.Element {
                 </button>
                 <button
                   type="button"
-                  className="picker no-drag"
-                  disabled={chat.working}
-                  title="Summarise the conversation so far and go on from the summary, to free up its context, as /compact does"
-                  onClick={() => chat.setCompacting('clicked')}
-                >
-                  Compact
-                </button>
-                <button
-                  type="button"
-                  className="picker no-drag"
-                  title="Start a new conversation in this project, for another task"
-                  onClick={() => setClearing(true)}
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
                   className="icon-button no-drag"
                   title={
                     copied === chat.session.id
@@ -641,7 +624,7 @@ export function Chat(): React.JSX.Element {
         )}
 
         <Composer chat={chat} />
-        {ON_PHONE ? null : <TalkStatus chat={chat} />}
+        {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
       </div>
 
       <Status chat={chat} />

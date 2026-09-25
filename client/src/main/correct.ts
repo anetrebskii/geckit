@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import type { Answered, CorrectAction, CorrectRequest } from '../shared/api'
 import { defaultModelFor } from '../shared/models'
 import { askProvider } from './providers'
-import { planOnly } from './sessions/account'
+import { claudeCommand, planOnly } from './sessions/account'
 import { getSettings } from './store'
 
 /**
@@ -53,7 +53,7 @@ const PATIENCE = 90_000
 export function askPlan(text: string, said: string, model: string): Promise<Answered> {
   return new Promise((done) => {
     const child = spawn(
-      'claude',
+      claudeCommand(),
       [
         '-p',
         '--restricted',
@@ -64,7 +64,7 @@ export function askPlan(text: string, said: string, model: string): Promise<Answ
         said,
         ...(model === '' ? [] : ['--model', model]),
       ],
-      { cwd: tmpdir(), stdio: ['pipe', 'pipe', 'pipe'], env: planOnly() },
+      { cwd: tmpdir(), stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true },
     )
 
     let out = ''

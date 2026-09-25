@@ -857,6 +857,13 @@ textarea {
   align-items: center;
 }
 
+.phrase-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
 
 /* Animation */
 
@@ -1383,6 +1390,11 @@ html.framed .topbar {
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+/* A conversation's title is long, so it gives way and the project and time stay whole. */
+.projects-listed.cut-off {
+  grid-template-columns: auto minmax(0, 1fr) max-content;
 }
 
 .project-listed {
@@ -2447,6 +2459,38 @@ button.tag:hover {
 }
 
 /* Messages sent while Claude works, waiting their turn above the field. */
+.phrases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.phrase {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  max-width: 100%;
+  padding: 3px 10px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.phrase:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.phrase.keep {
+  padding: 3px 6px;
+  border-style: dashed;
+}
+
 .queued {
   display: flex;
   flex-direction: column;
@@ -2794,6 +2838,25 @@ button.tag:hover {
 .talk-status .stat:has(.branch) {
   flex-shrink: 1;
   min-width: 0;
+}
+
+.talk-status .act {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.talk-status .act:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.talk-status .act:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .status-bar .value,
@@ -3299,6 +3362,108 @@ button.tag:hover {
   white-space: nowrap;
   text-overflow: ellipsis;
   border: none;
+}
+
+/* Recording the screen: the dot says the screen is being taken, the bars that the microphone is. */
+.capsule .rec-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--danger-solid);
+  border-radius: 50%;
+}
+
+.capsule .time.ending {
+  color: var(--warning-text);
+}
+
+.capsule-note {
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.capsule-note.danger {
+  color: var(--danger);
+}
+
+.capsule > .quiet {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+/* A recording's card is wider than an order's, to hold its frames in one row. */
+.capsule:has(.recorded) {
+  width: 400px;
+}
+
+.recorded .asking-heard textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  line-height: 1.45;
+  color: var(--text);
+  resize: none;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.recorded .asking-heard textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.frames {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  overflow-x: auto;
+}
+
+.frame {
+  position: relative;
+  flex: none;
+  width: 64px;
+}
+
+.frame img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.frame .at {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.frame .leave {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--tooltip-text);
+  background: var(--tooltip-bg);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity var(--quick) var(--ease);
+}
+
+.frame:hover .leave,
+.frame .leave:focus-visible {
+  opacity: 1;
 }
 
 .mic {

@@ -207,6 +207,17 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         : `Checked ${String(goal.checks)} ${goal.checks === 1 ? 'time' : 'times'}, and it does not hold yet${goal.reason === undefined ? '.' : `: ${goal.reason}`}`
 
   const queued = chat.session?.queued ?? []
+  const phrases = chat.settings.phrases.filter((one) => one.trim() !== '')
+  const draft = chat.draft.trim()
+  // Each press adds its phrase on a line of its own, so a few presses make the message.
+  const addPhrase = (phrase: string): void => {
+    const text = draft === '' ? phrase.trim() : `${chat.draft.trimEnd()}\n${phrase.trim()}`
+    chat.setDraft(text)
+    putCaret.current = text.length
+    setCaret(text.length)
+    if (!ON_PHONE) field.current?.focus()
+  }
+  const keepable = draft !== '' && !draft.includes('\n') && !phrases.some((one) => one.trim() === draft)
   const dropped = queued.find((one) => one.id === dropping)
 
   return (
@@ -297,6 +308,26 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               </button>
             </div>
           ))}
+        </div>
+      )}
+      {chat.root === undefined || (phrases.length === 0 && !keepable) ? null : (
+        <div className="phrases">
+          {phrases.map((phrase, at) => (
+            <button key={at} type="button" className="phrase" title="Add to the message" onClick={() => addPhrase(phrase)}>
+              {phrase}
+            </button>
+          ))}
+          {keepable ? (
+            <button
+              type="button"
+              className="phrase keep"
+              aria-label="Keep as a phrase"
+              title="Keep what is typed as a phrase, one press away. Settings, Phrases changes or removes it"
+              onClick={() => chat.change({ phrases: [...chat.settings.phrases, draft] })}
+            >
+              <Icon name="plus" size={11} />
+            </button>
+          ) : null}
         </div>
       )}
       <div className={command ? 'composer-inner command' : 'composer-inner'}>

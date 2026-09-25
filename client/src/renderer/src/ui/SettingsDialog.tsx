@@ -9,7 +9,7 @@ import { MOD } from './Shortcuts'
 import { Version } from './UpdateNotice'
 
 /**
- * Settings, a section at a time: General, Profiles, Correct and dictation, Phone.
+ * Settings, a section at a time: General, Profiles, Phrases, Correct and dictation, Phone.
  *
  * Chat needs no key: it runs on the Claude plan through the person's own
  * `claude`, which is signed in from a terminal and never from here.
@@ -42,11 +42,12 @@ const LANGUAGES = [
   'Japanese',
 ]
 
-type Section = 'general' | 'profiles' | 'correct' | 'phone'
+type Section = 'general' | 'profiles' | 'phrases' | 'correct' | 'phone'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
   { value: 'profiles', label: 'Profiles' },
+  { value: 'phrases', label: 'Phrases' },
   { value: 'correct', label: 'Correct and dictation' },
   { value: 'phone', label: 'Phone' },
 ]
@@ -96,6 +97,7 @@ export function SettingsDialog({
           <div className="settings-page">
             {section === 'general' ? <General settings={settings} change={change} /> : null}
             {section === 'profiles' ? <Profiles settings={settings} change={change} /> : null}
+            {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
             {section === 'phone' ? <PhoneAccess on={settings.phone} change={(phone) => change({ phone })} /> : null}
           </div>
@@ -185,6 +187,18 @@ function General({ settings, change }: Part): React.JSX.Element {
         </label>
         <span style={NOTE}>
           Checks on launch and every hour, and downloads a new version in the background. It installs when the app restarts.
+        </span>
+      </div>
+
+      <div className="field">
+        <label>Usage</label>
+        <label className="check">
+          <input type="checkbox" checked={settings.analytics} onChange={(event) => change({ analytics: event.target.checked })} />
+          Count which features are used
+        </label>
+        <span style={NOTE}>
+          Sends Google Analytics the name of what was used, such as correct or chatSent, the version and a random id for
+          this installation. Never text, paths or keys.
         </span>
       </div>
 
@@ -326,6 +340,51 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
         </>
       )}
     </>
+  )
+}
+
+function Phrases({ settings, change }: Part): React.JSX.Element {
+  const phrases = settings.phrases
+  const [added, setAdded] = useState(false)
+  const setPhrase = (at: number, text: string | undefined): void =>
+    change({
+      phrases: text === undefined ? phrases.filter((_one, index) => index !== at) : phrases.map((one, index) => (index === at ? text : one)),
+    })
+
+  return (
+    <div className="field">
+      <label>Phrases</label>
+      {phrases.map((phrase, at) => (
+        <div key={at} className="phrase-rule">
+          <input
+            type="text"
+            value={phrase}
+            placeholder="commit to main"
+            aria-label="Phrase"
+            autoFocus={added && at === phrases.length - 1}
+            onChange={(event) => setPhrase(at, event.target.value)}
+          />
+          <button type="button" className="icon-button" aria-label="Remove" onClick={() => setPhrase(at, undefined)}>
+            <Icon name="close" size={12} />
+          </button>
+        </div>
+      ))}
+      <div>
+        <button
+          type="button"
+          className="quiet"
+          onClick={() => {
+            setAdded(true)
+            change({ phrases: [...phrases, ''] })
+          }}
+        >
+          Add a phrase
+        </button>
+      </div>
+      <span style={NOTE}>
+        Each phrase is a button over the message field, and a press adds it to the message. The + next to them saves what is typed as a new one.
+      </span>
+    </div>
   )
 }
 

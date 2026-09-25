@@ -14,6 +14,7 @@ import {
   nativeTheme,
   Notification,
   powerSaveBlocker,
+  screen,
   shell,
   systemPreferences,
 } from 'electron'
@@ -28,6 +29,7 @@ import type {
   ChatSession,
   ClaudeAccount,
   CorrectRequest,
+  VoiceMode,
   GitState,
   PhoneView,
   PlanUsage,
@@ -39,6 +41,9 @@ import type {
   Settings,
   ShellCommand,
   TranscribeRequest,
+  Recording,
+  ScreenSource,
+  SessionImage,
 } from '../shared/api'
 import track from './analytics'
 import { correct } from './correct'
@@ -54,6 +59,8 @@ import { searchClaude } from './sessions/search'
 import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
 import { forgetProject, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
+import { keepRecording, sweepRecordings } from './recordings'
+import { recordedNote } from '../shared/recording'
 import { drawTray, startTray } from './tray'
 import { checkForUpdates, restartToUpdate, startUpdates, updateView } from './updates'
 import {
@@ -81,6 +88,7 @@ const DICTATE = ANYWHERE.dictate
 const CORRECT = ANYWHERE.correct
 const SPOTLIGHT = ANYWHERE.search
 const ORDER = ANYWHERE.orders
+const RECORD = ANYWHERE.record
 
 let sessions: Sessions | undefined
 let cutOffered = false
@@ -91,7 +99,7 @@ let guided: boolean | undefined
 let dictatedInto: BrowserWindow | undefined
 
 /** What the capsule that is up was opened for: writing the words down, or doing what they say. */
-let heardFor: 'paste' | 'orders' = 'paste'
+let heardFor: VoiceMode = 'paste'
 
 // A notification nothing holds on to is collected, and a press on it then opens nothing.
 const notices = new Set<Notification>()
@@ -198,6 +206,71 @@ function registerOrder(): void {
   if (!took) log.warn(`${ORDER} is taken by something else, saying what to do has no shortcut`)
 }
 
+/** The capsule, for showing the screen while talking about it. Pressed again while it records, it stops. */
+function recordScreen(): void {
+  const open = listeningVoice()
+  if (open !== undefined) {
+    open.webContents.send('voice:stop')
+    return
+  }
+  track('record')
+  heardFor = 'record'
+  dictatedInto = undefined
+  // Left out of what is recorded, so it is never in its own frames.
+  voiceWindow().setContentProtection(true)
+}
+
+function registerRecord(): void {
+  const took = globalShortcut.register(RECORD, recordScreen)
+  if (!took) log.warn(`${RECORD} is taken by something else, recording the screen has no shortcut`)
+}
+
+/** The screen the pointer is on, which is the one being talked about. */
+async function screenToRecord(): Promise<ScreenSource> {
+  // Asking for the screens is also what puts GeckIt in the Mac's list to allow, and what asks the first time.
+  const screens = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+  if (process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('screen') !== 'granted') return { denied: true }
+  const here = String(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id)
+  const source = screens.find((one) => one.display_id === here) ?? screens[0]
+  return source === undefined ? { error: 'There is no screen to record' } : { id: source.id }
+}
+
+const pictures = (recording: Recording): readonly SessionImage[] => recording.frames.map((one) => one.image)
+
+const withNote = (text: string, recording: Recording): string =>
+  `${text}\n\n${recordedNote(recording.seconds, recording.frames, recording.video)}`
+
+/** A recording asked about as a general question, which opens in Chat with the answer coming. */
+async function askRecorded(recording: Recording): Promise<Answered> {
+  const held = sessions
+  if (held === undefined) return { ok: false, error: 'Not ready yet.' }
+  const id = await held.send({
+    root: '',
+    mode: getSettings().chatMode,
+    text: withNote(recording.text, recording),
+    images: pictures(recording),
+    question: true,
+  })
+  closeVoice()
+  openChat(id)
+  return { ok: true }
+}
+
+/** A recording read as one piece of work in one project, waiting for the yes. */
+async function readRecorded(recording: Recording): Promise<Answered> {
+  const read = await readSaid(`Start this as one task, in the project it is about:\n${recording.text}`)
+  // The lines are in the order of the orders, so the start's line is at the start's place.
+  const at = planned?.orders.findIndex((one) => one.do === 'start') ?? -1
+  const start = planned?.orders[at]
+  const line = read.plan?.[at]
+  if (planned === undefined || start === undefined || line === undefined) {
+    planned = undefined
+    return { ok: false, error: 'No project fits what was said. Name the project and try again.' }
+  }
+  planned = { orders: [start], told: planned.told, images: pictures(recording), note: recordedNote(recording.seconds, recording.frames, recording.video) }
+  return { ok: true, plan: [line], heard: recording.text }
+}
+
 function registerCorrect(): void {
   const took = globalShortcut.register(CORRECT, () => {
     track('shortcutPressed')
@@ -260,9 +333,20 @@ function pasteBack(text: string): void {
  * nothing reads or writes a repository on the way.
  */
 /** What was heard, read as orders and waiting for a yes. Nothing runs until then. */
-let planned: { readonly orders: readonly Order[]; readonly told: readonly Told[] } | undefined
+let planned:
+  | {
+      readonly orders: readonly Order[]
+      readonly told: readonly Told[]
+      /** A recording's frames, which go with the task it starts. */
+      readonly images?: readonly SessionImage[]
+      /** What the frames are and where the video is, under the task. */
+      readonly note?: string
+    }
+  | undefined
 
 async function readSaid(said: string): Promise<Answered> {
+  // What was read before is replaced, whether or not this reading comes to anything.
+  planned = undefined
   const held = sessions
   if (held === undefined) return { ok: false, error: 'Not ready yet.' }
   const projects = getSettings().projects
@@ -292,7 +376,12 @@ async function carryOutPlanned(): Promise<Answered> {
     // The work goes first and the goal after it: a goal on its own tells Claude to
     // start working toward it, with nothing yet said about what the work is.
     start: async (root, text, goal) => {
-      const id = await held.send({ root, mode, text })
+      const id = await held.send({
+        root,
+        mode,
+        text: plan.note === undefined ? text : `${text}\n\n${plan.note}`,
+        ...(plan.images === undefined || plan.images.length === 0 ? {} : { images: plan.images }),
+      })
       if (goal !== undefined) await held.send({ session: id, root, mode, text: `/goal ${goal}` })
       return id
     },
@@ -412,7 +501,16 @@ function wire(): void {
     return said
   })
   ipcMain.handle('voice:do', () => carryOutPlanned())
-  ipcMain.on('voice:size', (_event, height: number) => sizeVoice(height))
+  ipcMain.on('voice:size', (_event, height: number, width?: number) => sizeVoice(height, width))
+  ipcMain.handle('voice:mode', () => heardFor)
+  ipcMain.handle('voice:screen', () => screenToRecord())
+  ipcMain.handle('voice:keep', (_event, video: Uint8Array) => keepRecording(video))
+  ipcMain.handle('voice:ask', (_event, recording: Recording) => askRecorded(recording))
+  ipcMain.handle('voice:task', (_event, recording: Recording) => readRecorded(recording))
+  ipcMain.on('voice:allow', () => {
+    closeVoice()
+    void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
+  })
   ipcMain.on('voice:orders', () => askOutLoud())
   ipcMain.on('voice:cancel', () => {
     planned = undefined
@@ -731,11 +829,14 @@ if (!app.requestSingleInstanceLock()) {
           if (session !== undefined) openChat(session)
         }),
       busy: (id) => started.busy(id),
+      record: recordScreen,
     })
     registerCorrect()
     registerDictate()
     registerSpotlight()
     registerOrder()
+    registerRecord()
+    sweepRecordings()
     startUpdates({
       changed: (view) => tell('update:view', view),
       running: () => sessions?.working() ?? [],

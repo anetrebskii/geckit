@@ -199,13 +199,19 @@ export function listeningVoice(): BrowserWindow | undefined {
 }
 
 /** The capsule grows to hold what it is asking about, around the middle it already stands on. */
-export function sizeVoice(height: number): void {
+export function sizeVoice(height: number, width?: number): void {
   const open = shownVoice()
   if (open === undefined) return
   const was = open.getBounds()
   const next = Math.max(92, Math.min(520, Math.round(height)))
-  if (next === was.height) return
-  open.setBounds({ ...was, y: Math.round(was.y - (next - was.height) / 2), height: next })
+  const wide = width === undefined ? was.width : Math.max(340, Math.min(520, Math.round(width)))
+  if (next === was.height && wide === was.width) return
+  open.setBounds({
+    x: Math.round(was.x - (wide - was.width) / 2),
+    y: Math.round(was.y - (next - was.height) / 2),
+    width: wide,
+    height: next,
+  })
 }
 
 export function closeVoice(): void {

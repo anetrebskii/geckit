@@ -63,6 +63,10 @@ Download it from [Releases](https://github.com/anetrebskii/geckit/releases/lates
 
 The board and Correct need [Claude Code](https://code.claude.com/docs/en/overview) installed and signed in with a Claude subscription. Correct can run on an OpenAI, Anthropic or OpenRouter key instead. Transcribe needs an OpenRouter key, set in Settings.
 
+The Windows installer is not signed, so SmartScreen warns about it: More info, then Run anyway. It installs for your user only, into `%LOCALAPPDATA%\Programs\geckit`, without administrator rights.
+
+Do not keep one conversation open in GeckIt and in a terminal at the same time: two `claude` processes would write to the same history file.
+
 ## Build from source
 
 Node 22 or later.
