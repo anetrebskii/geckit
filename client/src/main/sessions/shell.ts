@@ -135,7 +135,8 @@ export function runShell(root: string, command: string, heard: (output: string) 
       const pid = child.pid
       const kill = (signal: NodeJS.Signals): void => {
         try {
-          if (windows) child.kill(signal)
+          // Killing cmd.exe alone leaves what it started running, so the whole tree goes.
+          if (windows) spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true }).on('error', () => undefined)
           else process.kill(-pid, signal)
         } catch {
           // Gone already.

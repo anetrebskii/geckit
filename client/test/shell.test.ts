@@ -31,6 +31,8 @@ describe('what a command printed', () => {
 })
 
 describe('running a command', () => {
+  // Windows runs a command with cmd.exe, so each one is said in its words there.
+  const windows = process.platform === 'win32'
   const was = process.env['SHELL']
   beforeEach(() => {
     process.env['SHELL'] = '/bin/sh'
@@ -41,7 +43,7 @@ describe('running a command', () => {
 
   it('runs in the folder, keeps what it printed, and says how it exited', async () => {
     const seen: string[] = []
-    const ran = await runShell(import.meta.dirname, 'pwd; echo oops >&2; exit 3', (output) => seen.push(output)).done
+    const ran = await runShell(import.meta.dirname, windows ? 'cd& echo oops>&2& exit 3' : 'pwd; echo oops >&2; exit 3', (output) => seen.push(output)).done
     expect(ran.output).toBe(`${import.meta.dirname}\noops\n`)
     // On a terminal of its own, as on macOS, the two come on one stream, the way a terminal shows them.
     if (process.platform !== 'darwin') {
@@ -55,7 +57,12 @@ describe('running a command', () => {
 
   it('waits for what is typed when it asks', async () => {
     const seen: string[] = []
-    const running = runShell(import.meta.dirname, 'printf "Continue (Y/n)? "; read -r answer; echo "got $answer"', (output) => seen.push(output))
+    const running = runShell(
+      import.meta.dirname,
+      // cmd expands %answer% as it reads the line, before set /p has filled it; call expands it again after.
+      windows ? 'set /p answer=Continue (Y/n)? & call echo got %answer%' : 'printf "Continue (Y/n)? "; read -r answer; echo "got $answer"',
+      (output) => seen.push(output),
+    )
     await vi.waitFor(() => expect(seen.at(-1)).toBe('Continue (Y/n)? '), { timeout: 5000 })
     running.write?.('n\n')
     const ran = await running.done
@@ -64,7 +71,7 @@ describe('running a command', () => {
   })
 
   it('stops what it started', async () => {
-    const running = runShell(import.meta.dirname, 'echo started; sleep 30', () => undefined)
+    const running = runShell(import.meta.dirname, windows ? 'echo started& ping -n 30 127.0.0.1 >nul' : 'echo started; sleep 30', () => undefined)
     await new Promise((done) => setTimeout(done, 300))
     running.stop()
     const ran = await running.done
