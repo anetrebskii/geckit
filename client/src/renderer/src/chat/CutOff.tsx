@@ -30,7 +30,7 @@ export function CutOffDialog({ list, onClose }: { readonly list: readonly CutOff
       <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
         <h2>Continue where they stopped?</h2>
         <p>These were working when GeckIt closed. Each ticked one is sent &quot;continue&quot;.</p>
-        <div className="projects-listed">
+        <div className="projects-listed cut-off">
           {list.map((one) => {
             const on = ticked.has(one.id)
             return (

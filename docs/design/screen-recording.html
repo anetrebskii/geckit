@@ -1,5 +1,10 @@
-@import '@fontsource-variable/inter';
-@import '@fontsource-variable/jetbrains-mono';
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<title>GeckIt - Screen recording</title>
+<style>
+/* client/src/renderer/src/styles.css, inlined as it is, without the font imports. */
 
 /*
  * One stylesheet for three windows.
@@ -742,114 +747,6 @@ textarea {
   gap: 8px;
 }
 
-/* Hidden conversations: the folders scroll between the title and Close. */
-.dialog.hidden-dialog {
-  display: flex;
-  flex-direction: column;
-  width: min(600px, 94vw);
-  height: min(600px, 84vh);
-  max-height: none;
-  overflow: hidden;
-}
-
-.hidden-dialog p {
-  margin: 0;
-}
-
-.hidden-body {
-  flex: 1;
-  min-height: 0;
-  margin: 8px -12px 0;
-  padding: 0 6px;
-  overflow-y: auto;
-  border-top: 1px solid var(--border);
-}
-
-.hidden-dialog .dialog-actions {
-  padding-top: 12px;
-  margin-top: 0;
-  border-top: 1px solid var(--border);
-}
-
-.hidden-dialog .empty {
-  padding: 40px 16px;
-  text-align: center;
-}
-
-.hidden-folder {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding: 14px 8px 4px;
-  font-size: 12px;
-  color: var(--text-faint);
-}
-
-.hidden-folder .path {
-  overflow: hidden;
-  font-weight: 600;
-  color: var(--text-dim);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.hidden-folder .done {
-  color: var(--success-text);
-}
-
-.hidden-row {
-  align-items: center;
-}
-
-.hidden-row .reason {
-  color: var(--text-dim);
-}
-
-.hidden-row .reason::after {
-  content: ' \00b7\00a0';
-  color: var(--text-faint);
-}
-
-.hidden-folder .quiet,
-.hidden-row .quiet,
-.hidden-older .quiet {
-  flex-shrink: 0;
-  padding: 2px 10px;
-  font-size: 12px;
-}
-
-.hidden-row .on-board {
-  display: flex;
-  flex-shrink: 0;
-  gap: 8px;
-  align-items: center;
-  font-size: 12px;
-  color: var(--success-text);
-}
-
-.hidden-more {
-  margin: 2px 8px 0;
-  padding: 2px 10px;
-  font-size: 12px;
-  color: var(--text-faint);
-  border-radius: var(--radius);
-}
-
-.hidden-more:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
-.hidden-older {
-  display: flex;
-  justify-content: center;
-  padding: 14px 0 12px;
-}
-
-.hidden-older .empty {
-  padding: 4px;
-}
-
 .open-rule {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
@@ -944,10 +841,6 @@ svg.spinning,
   padding-right: 8px;
   padding-left: 82px;
   border-bottom: 1px solid var(--border);
-}
-
-html.framed .topbar {
-  padding-left: 8px;
 }
 
 .tab {
@@ -1575,10 +1468,6 @@ html.framed .topbar {
   gap: 4px;
   height: var(--topbar);
   padding: 0 8px 0 82px;
-}
-
-html.framed .sidebar-head {
-  padding-left: 8px;
 }
 
 .project {
@@ -2763,27 +2652,7 @@ button.tag:hover {
   text-overflow: ellipsis;
 }
 
-/* Under the conversation, what belongs to it: its checkout, context and cost. */
-
-.talk-status {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-  padding: 0 24px 10px;
-  margin-top: -6px;
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--text-faint);
-  white-space: nowrap;
-}
-
-.talk-status:empty {
-  display: none;
-}
-
-/* The bar along the bottom: the account's plan and windows. */
+/* The bar along the bottom: the conversation's on the left, the account's on the right. */
 
 .status-bar {
   display: flex;
@@ -2801,8 +2670,7 @@ button.tag:hover {
   border-top: 1px solid var(--border);
 }
 
-.status-bar .stat,
-.talk-status .stat {
+.status-bar .stat {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -2834,52 +2702,28 @@ button.tag:hover {
   background: var(--bg-hover);
 }
 
-.status-bar .stat:has(.branch),
-.talk-status .stat:has(.branch) {
+.status-bar .stat:has(.branch) {
   flex-shrink: 1;
   min-width: 0;
 }
 
-.talk-status .act {
-  flex-shrink: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.talk-status .act:hover:not(:disabled) {
-  color: var(--text);
-}
-
-.talk-status .act:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.status-bar .value,
-.talk-status .value {
+.status-bar .value {
   color: var(--text-dim);
 }
 
-.status-bar .branch,
-.talk-status .branch {
+.status-bar .branch {
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.status-bar .count,
-.talk-status .count {
+.status-bar .count {
   display: inline-flex;
   align-items: center;
   gap: 1px;
 }
 
-.status-bar .count.some,
-.talk-status .count.some {
+.status-bar .count.some {
   color: var(--text-dim);
 }
 
@@ -3364,108 +3208,6 @@ button.tag:hover {
   border: none;
 }
 
-/* Recording the screen: the dot says the screen is being taken, the bars that the microphone is. */
-.capsule .rec-dot {
-  width: 8px;
-  height: 8px;
-  background: var(--danger-solid);
-  border-radius: 50%;
-}
-
-.capsule .time.ending {
-  color: var(--warning-text);
-}
-
-.capsule-note {
-  max-width: 280px;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.capsule-note.danger {
-  color: var(--danger);
-}
-
-.capsule > .quiet {
-  flex-shrink: 0;
-  padding: 3px 10px;
-  font-size: 12px;
-}
-
-/* A recording's card is wider than an order's, to hold its frames in one row. */
-.capsule:has(.recorded) {
-  width: 400px;
-}
-
-.recorded .asking-heard textarea {
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  font: inherit;
-  line-height: 1.45;
-  color: var(--text);
-  resize: none;
-  background: transparent;
-  border: none;
-  outline: none;
-}
-
-.recorded .asking-heard textarea::placeholder {
-  color: var(--text-faint);
-}
-
-.frames {
-  display: flex;
-  gap: 8px;
-  padding: 12px 14px 10px;
-  overflow-x: auto;
-}
-
-.frame {
-  position: relative;
-  flex: none;
-  width: 64px;
-}
-
-.frame img {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  object-fit: cover;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.frame .at {
-  display: block;
-  margin-top: 3px;
-  font-size: 10.5px;
-  color: var(--text-faint);
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.frame .leave {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  color: var(--tooltip-text);
-  background: var(--tooltip-bg);
-  border-radius: 50%;
-  opacity: 0;
-  transition: opacity var(--quick) var(--ease);
-}
-
-.frame:hover .leave,
-.frame .leave:focus-visible {
-  opacity: 1;
-}
-
 .mic {
   position: relative;
   display: inline-flex;
@@ -3804,10 +3546,6 @@ button.tag:hover {
   border-bottom: 1px solid var(--border);
 }
 
-html.framed .board-head {
-  padding-left: 12px;
-}
-
 /* One row, one height: the picker and the two buttons carry the sidebar's own margins, which stand them off centre here. */
 .board-head .project,
 .board-head .board-new {
@@ -3992,11 +3730,6 @@ html.framed .board-head {
 .board-day-head:hover {
   color: var(--text-dim);
   background: var(--bg-raised);
-}
-
-/* The folder below its project a conversation was started in: geckit / client. */
-.board-card .subfolder {
-  color: var(--text-faint);
 }
 
 .board-card {
@@ -5572,3 +5305,762 @@ html.phone .task-row .how {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+</style>
+<style>
+/* What this prototype adds, from the app's own tokens. */
+
+.capsule-spot {
+  position: fixed;
+  top: 96px;
+  left: 50%;
+  z-index: 50;
+  transform: translateX(-50%);
+}
+
+.capsule-spot:empty {
+  display: none;
+}
+
+.capsule .rec-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--danger-solid);
+  border-radius: 50%;
+}
+
+.capsule .time.ending {
+  color: var(--warning-text);
+}
+
+.capsule .capsule-note {
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.capsule .capsule-note.danger {
+  color: var(--danger);
+}
+
+.capsule .quiet {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.capsule:has(.recorded) {
+  width: 400px;
+}
+
+.choosing .asking-heard textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  line-height: 1.45;
+  color: var(--text);
+  resize: none;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.choosing .asking-heard textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.frames {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  overflow-x: auto;
+}
+
+.frame {
+  position: relative;
+  flex: none;
+  width: 64px;
+}
+
+.frame .at {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.frame .leave {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--tooltip-text);
+  background: var(--tooltip-bg);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity var(--quick) var(--ease);
+}
+
+.frame:hover .leave,
+.frame .leave:focus-visible {
+  opacity: 1;
+}
+
+/* A frame, drawn as the page it was taken of: a small picture, not an icon. */
+.shot {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.shot i {
+  position: absolute;
+  background: var(--fill);
+  border-radius: 1px;
+}
+
+.shot i.bar {
+  background: var(--bg-sunken);
+  border-radius: 0;
+}
+
+.shot i.map {
+  background: var(--accent-soft);
+}
+
+.shot i.menu {
+  background: var(--bg-raised);
+  box-shadow: var(--shadow);
+}
+
+.shot i.hi {
+  background: var(--bg-active);
+}
+
+.pictures .shot {
+  width: 150px;
+}
+
+/* The Mac the recording is of. */
+.desk {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg-sunken);
+}
+
+.menubar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  height: 26px;
+  padding: 0 14px;
+  font-size: 12px;
+  background: var(--glass);
+  border-bottom: 1px solid var(--border);
+}
+
+.menubar b {
+  font-weight: 600;
+}
+
+.menubar .recording-on {
+  display: none;
+  color: var(--danger);
+}
+
+.desk.recording .menubar .recording-on {
+  display: inline-flex;
+}
+
+.site {
+  position: absolute;
+  top: 60px;
+  right: 0;
+  bottom: 40px;
+  left: 18%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.site-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-lg) 0 0 0;
+}
+
+.site-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.site-head h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.site-head .quiet {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.site-map {
+  flex: 1;
+  margin: 16px 20px;
+  background: var(--accent-soft);
+  border-radius: var(--radius-lg);
+}
+
+.site-menu {
+  position: absolute;
+  top: calc(100% - 8px);
+  right: -110px;
+  width: 190px;
+  padding: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.site-menu[hidden] {
+  display: none;
+}
+
+/* GeckIt's own windows, as they come forward after Ask and Start it. */
+.gk-window {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(880px, 92vw);
+  height: min(560px, 80vh);
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--lift);
+  transform: translateX(-50%);
+}
+
+.gk-window.chat {
+  width: min(620px, 92vw);
+}
+
+.gk-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.gk-title .icon-button {
+  margin-left: auto;
+}
+
+.gk-window .transcript-body {
+  flex: 1;
+  padding: 16px 0 8px;
+  overflow-y: auto;
+}
+
+.gk-window .board {
+  flex: 1;
+  min-height: 0;
+}
+
+.board-card.arrived {
+  animation: arrived 2.4s var(--ease) both;
+}
+
+@keyframes arrived {
+  0%,
+  40% {
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+/* The prototype's own controls, outside the app. */
+.proto {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 80;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  max-width: 560px;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--bg-raised);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.proto button {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+</style>
+</head>
+<body>
+<div class="desk" id="desk">
+  <div class="menubar">
+    <b>Safari</b><span>File</span><span>Edit</span><span>View</span>
+    <span class="spacer" style="flex: 1"></span>
+    <span class="recording-on" title="Recording the screen" data-icon="display"></span>
+    <span>Fri 25 Sep 14:12</span>
+  </div>
+  <div class="site">
+    <div class="site-bar"><span>localhost:3000/trails/tahoe-rim</span></div>
+    <div class="site-head">
+      <h1>Tahoe Rim Trail</h1>
+      <span class="spacer" style="flex: 1"></span>
+      <button type="button" class="quiet" id="export">Export</button>
+      <div class="site-menu" id="export-menu" hidden>
+        <div class="menu-item">GPX track</div>
+        <div class="menu-item">KML for Google Earth</div>
+        <div class="menu-item">PDF, one page per day</div>
+        <div class="menu-item">Offline pack</div>
+      </div>
+    </div>
+    <div class="site-map"></div>
+  </div>
+</div>
+
+<div class="capsule-spot" id="spot"></div>
+
+<div class="proto">
+  Prototype. Cmd+Alt+R records.
+  <button type="button" class="quiet" data-proto="record">Record</button>
+  <button type="button" class="quiet" data-proto="ending">Jump to 4:30</button>
+  <button type="button" class="quiet" data-proto="silent">Nothing heard</button>
+  <button type="button" class="quiet" data-proto="whisper">Whisper fails</button>
+  <button type="button" class="quiet" data-proto="noproject">No project fits</button>
+  <button type="button" class="quiet" data-proto="denied">No permission</button>
+  <button type="button" class="quiet" data-proto="reset">Start again</button>
+  <button type="button" class="quiet" data-proto="theme">Dark</button>
+</div>
+
+<script>
+const PATHS = {
+  mic: 'M8 2.5a2 2 0 0 1 2 2v3.5a2 2 0 0 1-4 0V4.5a2 2 0 0 1 2-2ZM4 8a4 4 0 0 0 8 0M8 12v2',
+  close: 'M4 4l8 8M12 4l-8 8',
+  stop: 'M6 4.5h4A1.5 1.5 0 0 1 11.5 6v4a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 10V6A1.5 1.5 0 0 1 6 4.5Z',
+  spinner: 'M8 2.5a5.5 5.5 0 1 0 5.5 5.5',
+  check: 'M3 8.5 6.5 12 13 4.5',
+  refresh: 'M13.4 8a5.4 5.4 0 1 1-5.4-5.4c1.51 0 2.96.6 4.04 1.64L13.4 5.6M13.4 2.6v3h-3',
+  plus: 'M8 3.5v9M3.5 8h9',
+  goal: 'M8 13.8a5.8 5.8 0 1 0 0-11.6 5.8 5.8 0 0 0 0 11.6ZM8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
+  display: 'M2.5 3h11a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM5.5 14h5M8 11.5V14',
+  chat: 'M13.5 9a2 2 0 0 1-2 2H6.2L3 13.5V4.5a2 2 0 0 1 2-2h6.5a2 2 0 0 1 2 2Z',
+  board: 'M2.5 3.5h3.4v9H2.5zM6.3 3.5h3.4v6H6.3zM10.1 3.5h3.4v7.5h-3.4z',
+}
+const FILLED = new Set(['stop'])
+const icon = (name, size = 14, cls = '') =>
+  `<svg ${cls ? `class="${cls}" ` : ''}width="${size}" height="${size}" viewBox="0 0 16 16" fill="${FILLED.has(name) ? 'currentColor' : 'none'}" stroke="${FILLED.has(name) ? 'none' : 'currentColor'}" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PATHS[name]}"/></svg>`
+const esc = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+function drawIcons(root) {
+  for (const el of root.querySelectorAll('[data-icon]')) {
+    el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon, Number(el.dataset.size ?? 14)))
+    delete el.dataset.icon
+  }
+}
+const time = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+// Each frame is the page as it was at that moment: the bar, the map, rows, and the menu once it is open.
+const PAGE = [['bar', 0, 0, 100, 12], ['row', 6, 18, 30, 6], ['row', 82, 17, 12, 8], ['map', 6, 32, 88, 60]]
+const MENU = [['menu', 82, 26, 30, 52], ['row', 85, 32, 20, 5], ['row', 85, 44, 20, 5], ['row', 85, 56, 20, 5]]
+const FRAMES_START = [
+  { at: 2, rects: PAGE },
+  { at: 9, rects: [...PAGE, ...MENU] },
+  { at: 17, rects: [...PAGE, ...MENU, ['hi', 83, 54, 17, 8]] },
+  { at: 31, rects: [...PAGE, ...MENU, ['hi', 83, 66, 17, 8]] },
+  { at: 42, rects: [...PAGE, ...MENU] },
+]
+const shot = (rects) =>
+  `<span class="shot">${rects.map(([k, x, y, w, h]) => `<i class="${k}" style="left:${x}%;top:${y}%;width:${w}%;height:${h}%"></i>`).join('')}</span>`
+
+const HEARD =
+  'When I press Export on the trail page the menu opens off the right edge, and the last two items are cut off. It should open under the button, and to the left when there is no room.'
+const TASK = {
+  project: 'trailmap',
+  text: 'The Export menu on the trail page opens past the right edge of the window and cuts off its last two items. Open it under the button, and to the left of it when there is no room on the right.',
+  goal: 'the Export menu opens fully inside the window at any width',
+}
+const PATH = '~/Library/Application Support/GeckIt/recordings/2026-09-25-1412.webm'
+const LONGEST = 300
+const WARN = 270
+
+let state, elapsed, timer, frames, heard, fails, levels, levelTimer, soon
+function reset() {
+  clearInterval(timer)
+  clearInterval(levelTimer)
+  clearTimeout(soon)
+  state = 'idle'
+  elapsed = 0
+  frames = FRAMES_START.slice()
+  heard = HEARD
+  fails = { whisper: false, project: false, denied: false }
+  document.querySelectorAll('.gk-window').forEach((w) => w.remove())
+  document.getElementById('export-menu').hidden = true
+  draw()
+}
+
+function go(next) {
+  state = next
+  draw()
+}
+
+function start() {
+  if (state !== 'idle') return
+  document.querySelectorAll('.gk-window').forEach((w) => w.remove())
+  if (fails.denied) return go('denied')
+  elapsed = 0
+  go('recording')
+  timer = setInterval(() => {
+    elapsed += 1
+    if (elapsed >= LONGEST) return stop()
+    drawTime()
+  }, 1000)
+  levels = [0, 0, 0, 0, 0]
+  levelTimer = setInterval(() => {
+    levels = levels.map(() => Math.random() * (Math.random() < 0.3 ? 0.2 : 1))
+    document.querySelectorAll('.capsule .bars span').forEach((bar, i) => (bar.style.height = `${4 + levels[i] * 16}px`))
+  }, 120)
+}
+
+function stop() {
+  clearInterval(timer)
+  clearInterval(levelTimer)
+  if (elapsed < 5) elapsed = 42
+  write()
+}
+
+function write() {
+  go('writing')
+  soon = setTimeout(() => go(fails.whisper ? 'failed-whisper' : 'choosing'), 1200)
+}
+
+function cancel() {
+  clearInterval(timer)
+  clearInterval(levelTimer)
+  clearTimeout(soon)
+  go('idle')
+}
+
+function plan() {
+  go('planning')
+  soon = setTimeout(() => go(fails.project ? 'failed-project' : 'planned'), 1100)
+}
+
+function draw() {
+  const spot = document.getElementById('spot')
+  document.getElementById('desk').classList.toggle('recording', state === 'recording')
+  spot.innerHTML = state === 'idle' ? '' : `<div class="capsule">${body()}</div>`
+  drawIcons(spot)
+  wire(spot)
+}
+
+function drawTime() {
+  const el = document.querySelector('.capsule .time')
+  if (el === null) return
+  const ending = elapsed >= WARN
+  el.textContent = ending ? `${time(LONGEST - elapsed)} left` : time(elapsed)
+  el.classList.toggle('ending', ending)
+}
+
+function body() {
+  switch (state) {
+    case 'recording':
+      return `
+        <span class="rec-dot" aria-hidden="true"></span>
+        <span class="mic" title="Microphone">${icon('mic', 15)}</span>
+        <span class="bars">${'<span></span>'.repeat(5)}</span>
+        <span class="time${elapsed >= WARN ? ' ending' : ''}">${elapsed >= WARN ? `${time(LONGEST - elapsed)} left` : time(elapsed)}</span>
+        <button type="button" class="icon-button" data-do="stop" aria-label="Stop" title="Stop (Enter)" style="color: var(--danger)">${icon('stop', 13)}</button>
+        <button type="button" class="icon-button" data-do="cancel" aria-label="Throw away" title="Throw away (Esc)">${icon('close')}</button>`
+    case 'writing':
+      return `${icon('spinner', 14, 'glyph spinning')}<span>Writing it down</span>`
+    case 'planning':
+      return `${icon('spinner', 14, 'glyph spinning')}<span>Finding the project</span>`
+    case 'choosing':
+      return `
+        <div class="asking recorded choosing">
+          <label class="asking-heard">${icon('mic', 11)}<textarea id="heard" rows="3" aria-label="What was heard" placeholder="Nothing was heard. Say it here in writing.">${esc(heard)}</textarea></label>
+          <div class="frames">${frames
+            .map(
+              (f, i) => `
+            <div class="frame">
+              ${shot(f.rects)}
+              <span class="at">${time(f.at)}</span>
+              <button type="button" class="leave" data-leave="${i}" aria-label="Leave this frame out" title="Leave this frame out">${icon('close', 9)}</button>
+            </div>`,
+            )
+            .join('')}</div>
+          <div class="asking-foot">
+            <button type="button" class="quiet" data-do="cancel">Cancel</button>
+            <button type="button" class="quiet" data-do="ask"${heard.trim() === '' ? ' disabled' : ''}>Ask<span class="keys">Cmd+Enter</span></button>
+            <button type="button" class="primary" data-do="task"${heard.trim() === '' ? ' disabled' : ''}>Make a task<span class="keys">Enter</span></button>
+          </div>
+        </div>`
+    case 'planned':
+      return `
+        <div class="asking recorded">
+          <div class="asking-heard">${icon('mic', 11)}<span>${esc(heard)}</span></div>
+          <div class="asking-plan">
+            <div class="asking-one">${icon('plus', 13)}
+              <div class="asking-said">
+                <div class="asking-head">Start in ${TASK.project}</div>
+                <div class="asking-text">${esc(TASK.text)}</div>
+                <div class="asking-goal">${icon('goal', 11)}<span><b>Until</b> ${esc(TASK.goal)}</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="asking-foot">
+            <button type="button" class="quiet" data-do="back">Cancel</button>
+            <button type="button" class="primary" data-do="start">Start it<span class="keys">Enter</span></button>
+          </div>
+        </div>`
+    case 'started':
+      return `${icon('check', 14, 'glyph')}<span class="said">Started in ${TASK.project}</span>`
+    case 'denied':
+      return `
+        <span class="capsule-note danger">The Mac has not allowed GeckIt to record the screen.</span>
+        <button type="button" class="quiet" data-do="settings">Open Settings</button>
+        <button type="button" class="icon-button" data-do="cancel" aria-label="Close">${icon('close')}</button>`
+    case 'failed-whisper':
+    case 'failed-project': {
+      const said =
+        state === 'failed-whisper'
+          ? 'Whisper did not answer: the request timed out.'
+          : 'No project fits what was said. Name the project and try again.'
+      return `
+        <span class="capsule-note danger">${said}</span>
+        <button type="button" class="icon-button" data-do="again" aria-label="Try again" title="Try again">${icon('refresh')}</button>
+        <button type="button" class="icon-button" data-do="cancel" aria-label="Close">${icon('close')}</button>`
+    }
+  }
+  return ''
+}
+
+function wire(spot) {
+  spot.querySelectorAll('[data-do]').forEach((b) => b.addEventListener('click', () => act(b.dataset.do)))
+  spot.querySelectorAll('[data-leave]').forEach((b) =>
+    b.addEventListener('click', () => {
+      frames.splice(Number(b.dataset.leave), 1)
+      draw()
+      const left = spot.querySelectorAll('.leave')
+      ;(left[Math.min(Number(b.dataset.leave), left.length - 1)] ?? spot.querySelector('#heard'))?.focus()
+    }),
+  )
+  const field = spot.querySelector('#heard')
+  if (field !== null) {
+    field.focus()
+    field.setSelectionRange(field.value.length, field.value.length)
+    field.addEventListener('input', () => {
+      heard = field.value
+      const empty = heard.trim() === ''
+      spot.querySelector('[data-do=ask]').disabled = empty
+      spot.querySelector('[data-do=task]').disabled = empty
+    })
+  }
+  spot.querySelector('.primary, [data-do=again], [data-do=settings]')?.focus({ preventScroll: true })
+  if (field !== null) field.focus()
+  if (state === 'recording') drawTime()
+}
+
+function act(what) {
+  if (what === 'stop') return stop()
+  if (what === 'cancel') return cancel()
+  if (what === 'settings') return cancel()
+  if (what === 'task') return heard.trim() === '' ? undefined : plan()
+  if (what === 'ask') return heard.trim() === '' ? undefined : ask()
+  if (what === 'back') return go('choosing')
+  if (what === 'again') {
+    if (state === 'failed-whisper') {
+      fails.whisper = false
+      return write()
+    }
+    // The words are what named no project, so they are handed back to be changed.
+    fails.project = false
+    return go('choosing')
+  }
+  if (what === 'start') {
+    go('started')
+    soon = setTimeout(() => {
+      go('idle')
+      showBoard()
+    }, 4000)
+  }
+}
+
+// After Ask: the capsule goes and the question comes forward with the recording already sent.
+function ask() {
+  go('idle')
+  const win = document.createElement('div')
+  win.className = 'gk-window chat'
+  win.innerHTML = `
+    <div class="gk-title">${icon('chat', 13)}<span>Question</span><button type="button" class="icon-button" aria-label="Close">${icon('close')}</button></div>
+    <div class="transcript-body">
+      <div class="turn">
+        <div class="mine">${esc(heard)}
+
+Recorded on the screen, ${time(elapsed)}. The frames are attached in order. The whole recording is at ${esc(PATH)} if you need more of it.<div class="pictures">${frames.map((f) => shot(f.rects)).join('')}</div></div>
+        <div class="when">14:13</div>
+      </div>
+      <div class="turn" id="answer"><div class="theirs">${icon('spinner', 12, 'glyph spinning')}</div></div>
+    </div>`
+  document.body.append(win)
+  win.querySelector('.icon-button').addEventListener('click', () => win.remove())
+  setTimeout(() => {
+    const answer = win.querySelector('#answer .theirs')
+    if (answer !== null)
+      answer.textContent =
+        'In the second frame the menu is anchored to the left edge of Export and runs about 110 px past the window, so "PDF, one page per day" and "Offline pack" are cut off. The menu needs to measure the room on the right before it opens and flip to end at the button when there is not enough.'
+  }, 1400)
+}
+
+// After Start it: the card is on the board, and here the board is shown to see it.
+const CARDS = [
+  { title: 'Offline trail pages', project: 'trailmap', color: 5, at: '1h', column: 0, stands: 'The service worker caches the trail pages and their tiles.' },
+  { title: 'Tray icon blurry on Retina', project: 'geckit', color: 0, at: '25m', column: 1, stands: 'The template image is drawn at 16 and 32 px now.' },
+  { title: 'Upgrade to Next.js 16', project: 'pinch', color: 1, at: 'Sun', column: 2, stands: 'Builds and the e2e suite passes on 16.0.2.' },
+]
+function showBoard() {
+  const cards = [{ title: 'Export menu opens off screen', project: 'trailmap', color: 5, at: 'now', column: 0, working: true, fresh: true }, ...CARDS]
+  const win = document.createElement('div')
+  win.className = 'gk-window'
+  const columns = ['In progress', 'In review', 'Done'].map((title, i) => ({ title, rows: cards.filter((c) => c.column === i) }))
+  win.innerHTML = `
+    <div class="gk-title">${icon('board', 13)}<span>GeckIt</span><button type="button" class="icon-button" aria-label="Close">${icon('close')}</button></div>
+    <div class="board"><div class="board-columns">${columns
+      .map(
+        (col) => `
+      <div class="board-column">
+        <div class="board-column-head">${col.title}<span class="spacer"></span><span class="count">${col.rows.length}</span></div>
+        <div class="board-cards"><div class="board-day">${col.rows
+          .map(
+            (c) => `
+          <div class="board-card${c.fresh ? ' arrived' : ''}" role="button" tabindex="0">
+            <div class="board-card-head"><span class="board-card-title">${esc(c.title)}</span><span class="changed">${c.at}</span></div>
+            <div class="board-card-foot"><span class="tinted" style="--tint: var(--project-${c.color})">${c.project}</span><span class="spacer"></span></div>
+            ${c.working ? '<div class="board-card-state"><span class="state-said said-working"><span class="state-dot"></span>Claude is working</span></div>' : ''}
+            ${c.fresh ? `<div class="board-card-goal">${icon('goal', 11)}<span>${esc(TASK.goal)}</span></div>` : ''}
+            ${c.stands ? `<div class="board-card-stands"><span>${esc(c.stands)}</span></div>` : ''}
+          </div>`,
+          )
+          .join('')}</div></div>
+      </div>`,
+      )
+      .join('')}</div></div>`
+  document.body.append(win)
+  win.querySelector('.icon-button').addEventListener('click', () => win.remove())
+}
+
+// The page being recorded: Export opens its menu off the edge, which is the problem being shown.
+document.getElementById('export').addEventListener('click', (event) => {
+  event.stopPropagation()
+  const menu = document.getElementById('export-menu')
+  menu.hidden = !menu.hidden
+})
+document.addEventListener('click', () => (document.getElementById('export-menu').hidden = true))
+
+document.addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.altKey && event.code === 'KeyR') {
+    event.preventDefault()
+    // Pressed again while recording is Stop; past that it does nothing, so a second press loses nothing.
+    if (state === 'idle') start()
+    else if (state === 'recording') stop()
+    return
+  }
+  if (event.key === 'Escape') {
+    if (state === 'planned') return go('choosing')
+    if (state === 'writing' || state === 'planning' || state === 'started') return
+    if (state !== 'idle') return cancel()
+    document.querySelectorAll('.gk-window').forEach((w) => w.remove())
+  }
+  if (event.key === 'Enter' && !event.shiftKey) {
+    if (state === 'recording') return (event.preventDefault(), stop())
+    if (state === 'choosing') return (event.preventDefault(), act(event.metaKey || event.ctrlKey ? 'ask' : 'task'))
+    if (state === 'planned') return (event.preventDefault(), act('start'))
+  }
+})
+
+document.querySelectorAll('[data-proto]').forEach((b) =>
+  b.addEventListener('click', (event) => {
+    const what = b.dataset.proto
+    if (what === 'theme') {
+      const dark = document.documentElement.dataset.theme !== 'dark'
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+      event.currentTarget.textContent = dark ? 'Light' : 'Dark'
+      return
+    }
+    reset()
+    if (what === 'record') start()
+    if (what === 'ending') {
+      start()
+      elapsed = WARN
+      drawTime()
+    }
+    if (what === 'silent') {
+      heard = ''
+      elapsed = 42
+      go('choosing')
+    }
+    if (what === 'whisper') {
+      fails.whisper = true
+      start()
+    }
+    if (what === 'noproject') {
+      fails.project = true
+      elapsed = 42
+      go('choosing')
+    }
+    if (what === 'denied') {
+      fails.denied = true
+      start()
+    }
+  }),
+)
+drawIcons(document)
+reset()
+</script>
+</body>
+</html>

@@ -104,7 +104,7 @@ function Git({ git, now }: { readonly git: GitState; readonly now: number }): Re
   )
 }
 
-export function TalkStatus({ chat }: { readonly chat: Chat }): React.JSX.Element {
+export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly onClear: () => void }): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   const [git, setGit] = useState<{ readonly root: string; readonly state: GitState | undefined }>()
   const root = chat.session?.root ?? chat.root
@@ -160,6 +160,22 @@ export function TalkStatus({ chat }: { readonly chat: Chat }): React.JSX.Element
             {spend.window === undefined ? '' : ` of ${tokens(spend.window)}`}
           </span>
         </span>
+      )}
+      {chat.session === undefined ? null : (
+        <>
+          <button
+            type="button"
+            className="act"
+            disabled={chat.working}
+            title="Summarise the conversation so far and go on from the summary, to free up its context, as /compact does"
+            onClick={() => chat.setCompacting('clicked')}
+          >
+            Compact
+          </button>
+          <button type="button" className="act" title="Start a new conversation in this project, for another task" onClick={onClear}>
+            Clear
+          </button>
+        </>
       )}
       {spend?.cost === undefined ? null : (
         <span

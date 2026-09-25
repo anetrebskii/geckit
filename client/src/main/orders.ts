@@ -43,10 +43,9 @@ function orderOf(said: unknown): Order | undefined {
   switch (string(one['do'])) {
     case 'start': {
       const project = string(one['project'])
-      const goal = string(one['goal'])
-      return project === '' || text === ''
-        ? undefined
-        : { do: 'start', project, text, ...(goal === '' ? {} : { goal }) }
+      // Every start holds a goal, so one the model left out is the task itself being done.
+      const goal = string(one['goal']) || `Done: ${text}`
+      return project === '' || text === '' ? undefined : { do: 'start', project, text, goal }
     }
     case 'say':
       return chat === '' || text === '' ? undefined : { do: 'say', chat, text }
@@ -103,7 +102,7 @@ export const ORDERS = [
   'You turn what somebody said out loud into orders for GeckIt, the application they are looking at. It holds conversations with Claude Code, one per piece of work.',
   'Answer with a JSON array of orders and nothing else: no prose, no code fence, no explanation. An empty array is a fine answer.',
   'The orders, each an object:',
-  '{"do":"start","project":"<a project from the list>","text":"<what to ask it to do>","goal":"<optional: what has to be true for this to be finished>"}',
+  '{"do":"start","project":"<a project from the list>","text":"<what to ask it to do>","goal":"<what has to be true for this to be finished>"}',
   '{"do":"say","chat":"<an id from the list>","text":"<what to say in that conversation>"}',
   '{"do":"stop","chat":"<an id>"}',
   '{"do":"mark","chat":"<an id>","status":"review"|"blocked"|"done"}',
@@ -116,7 +115,7 @@ export const ORDERS = [
   '- Keep their own words in `text`. Do not answer the question yourself, do not carry out the work, do not make the task longer than they said it.',
   '- They may give several orders in one breath. Give them in the order they said them.',
   '- They may be taking back what they said a moment ago: the conversation they started was the wrong one, or it was started in the wrong project. That is two orders - delete the wrong one, start the right one - and the one they mean is usually the newest in the list. Only delete where they say the conversation should not exist; where they want it left alone, stop or mark it instead.',
-  '- A `goal` is what has to be true for the work to be over, said so that it can be checked: what was asked for, and how anybody would see that it holds. Give one where the work has an end somebody could point at, and leave it out where it does not, such as a question or a look at something. Never put steps or a plan in it.',
+  '- A `goal` is what has to be true for the work to be over, said so that it can be checked: what was asked for, and how anybody would see that it holds. Every start has one. Where the work is a question or a look at something, the goal is that it has been answered. Never put steps or a plan in it.',
 ].join('\n')
 
 /**

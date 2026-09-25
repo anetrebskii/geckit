@@ -473,14 +473,18 @@ export const Transcript = memo(function Transcript({
     }
   }, [])
 
+  // A message the person has just sent takes hold of the bottom again, however far up they were.
+  const lastMine = items.findLast((item) => item.kind === 'mine')?.id
+  const sent = useRef(lastMine)
   useLayoutEffect(() => {
     if (was.current !== at) {
       was.current = at
       stuck.current = true
-    }
+    } else if (sent.current !== lastMine && lastMine !== undefined) stuck.current = true
+    sent.current = lastMine
     if (!stuck.current || box.current === null) return
     box.current.scrollTop = box.current.scrollHeight
-  }, [at, items])
+  }, [at, items, lastMine])
 
   // The message a search went to, however far back it is.
   const sought = useMemo(

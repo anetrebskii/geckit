@@ -19,6 +19,7 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
+    "postinstall": "node scripts/dev-bundle.js",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",

@@ -18,6 +18,7 @@ export interface TrayDeps {
   readonly manage: (edit: string) => void
   readonly run: (id: string) => void
   readonly busy: (id: string) => boolean
+  readonly record: () => void
 }
 
 let tray: Tray | undefined
@@ -68,6 +69,7 @@ export function drawTray(): void {
   const items: MenuItemConstructorOptions[] = [
     { label: 'Open Chat', click: () => deps?.openChat() },
     { label: 'Correct and Transcribe', click: () => deps?.openPanel() },
+    { label: 'Record the Screen', click: () => deps?.record() },
     { type: 'separator' },
     { label: 'Shortcuts', enabled: false },
     ...rows.map(

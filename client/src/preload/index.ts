@@ -28,6 +28,9 @@ import type {
   TaskOutput,
   TranscribeRequest,
   UpdateView,
+  Recording,
+  ScreenSource,
+  VoiceMode,
 } from '../shared/api'
 import type { Link } from '../shared/links'
 import type { Pairing } from '../shared/pairing'
@@ -198,7 +201,19 @@ const geckit = {
     /** Opens the capsule to say what the application should do, as the shortcut does. */
     orders: (): void => ipcRenderer.send('voice:orders'),
     /** The capsule grows to hold what it asks about. */
-    size: (height: number): void => ipcRenderer.send('voice:size', height),
+    size: (height: number, width?: number): void => ipcRenderer.send('voice:size', height, width),
+    /** What the capsule was opened for. */
+    mode: (): Promise<VoiceMode> => ipcRenderer.invoke('voice:mode'),
+    /** The screen under the pointer, to record. */
+    screen: (): Promise<ScreenSource> => ipcRenderer.invoke('voice:screen'),
+    /** The video of a recording, kept on disk for a week; answers where. */
+    keep: (video: Uint8Array): Promise<string> => ipcRenderer.invoke('voice:keep', video),
+    /** A recording asked about as a general question, opened in Chat. */
+    ask: (recording: Recording): Promise<Answered> => ipcRenderer.invoke('voice:ask', recording),
+    /** A recording read as a task: the project and the words, waiting for the yes that `do` gives. */
+    task: (recording: Recording): Promise<Answered> => ipcRenderer.invoke('voice:task', recording),
+    /** The Mac's own page for allowing screen recording. */
+    allow: (): void => ipcRenderer.send('voice:allow'),
     cancel: (): void => ipcRenderer.send('voice:cancel'),
     onStart: (said: () => void): (() => void) => listen('voice:start', said),
     onStop: (said: () => void): (() => void) => listen('voice:stop', said),

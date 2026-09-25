@@ -54,7 +54,7 @@ describe('reading what the model answered', () => {
   it('leaves out what this application does not do, and keeps the rest', () => {
     const said =
       '[{"do":"rename","chat":"a1","title":"Radar"},{"do":"mark","chat":"a1","status":"archived"},{"do":"start","project":"radar63","text":"look at the map"},{"do":"say","chat":"b2"}]'
-    expect(ordersOf(said)).toEqual([{ do: 'start', project: 'radar63', text: 'look at the map' }])
+    expect(ordersOf(said)).toEqual([{ do: 'start', project: 'radar63', text: 'look at the map', goal: 'Done: look at the map' }])
   })
 
   it('is nothing where the answer is not an array at all', () => {
@@ -175,12 +175,12 @@ describe('taking back what was just said', () => {
     const { lines } = saying(orders, PROJECTS, CHATS)
     expect(lines).toEqual([
       { icon: 'trash', head: 'Delete Radar push notifications' },
-      { icon: 'plus', head: 'Start in time2you', text: 'the same, in this one' },
+      { icon: 'plus', head: 'Start in time2you', text: 'the same, in this one', goal: 'Done: the same, in this one' },
     ])
     const { doing, did } = watch()
     expect(await carryOut(orders, PROJECTS, CHATS, doing)).toEqual([
       'Deleted Radar push notifications',
-      'Started in time2you: the same, in this one',
+      'Started in time2you: the same, in this one (until Done: the same, in this one)',
     ])
     expect(did).toEqual(['delete a1', 'start /work/time2you the same, in this one'])
   })

@@ -157,6 +157,7 @@ export const ANYWHERE = {
   dictate: 'CommandOrControl+Alt+V',
   search: 'CommandOrControl+Alt+P',
   orders: 'CommandOrControl+Alt+G',
+  record: 'CommandOrControl+Alt+R',
 } as const
 
 /** Something a conversation wants the person to know, and where the window is not showing it. */
@@ -486,6 +487,26 @@ export interface TranscribeRequest {
   readonly fileName: string
 }
 
+/** What the capsule was opened for: typing with the words, telling the application what to do, or showing the screen. */
+export type VoiceMode = 'paste' | 'orders' | 'record'
+
+/** The screen the capsule records, or why it cannot. */
+export type ScreenSource = { readonly id: string } | { readonly denied: true } | { readonly error: string }
+
+/** A still from a screen recording, taken so many seconds in. */
+export interface RecordedFrame {
+  readonly at: number
+  readonly image: SessionImage
+}
+
+/** A screen recording once it is stopped: the words, the frames that go with them, and where the video was kept. */
+export interface Recording {
+  readonly text: string
+  readonly frames: readonly RecordedFrame[]
+  readonly seconds: number
+  readonly video?: string
+}
+
 /* ------------------------------------------------------------------ */
 /* Settings                                                            */
 /* ------------------------------------------------------------------ */
@@ -645,6 +666,8 @@ export interface Settings {
   readonly sidebarWidth: number
   /** This installation, for counting how often each thing is used. Nothing else is sent. */
   readonly client: string
+  /** False sends nothing to Google Analytics. */
+  readonly analytics: boolean
   /** False stops the checks on launch and every hour; Check for Updates in Settings still works. */
   readonly autoUpdate: boolean
   /** False takes GECKIT.md and the line that reads it out of the tool's own folder again. */
@@ -655,6 +678,8 @@ export interface Settings {
   readonly phoneKey: string
   /** Written by the main process only, over `shortcuts:*`, so a window's older copy never undoes a run. */
   readonly shortcuts: readonly Shortcut[]
+  /** What is written often, offered after ; in the message field. */
+  readonly phrases: readonly string[]
 }
 
 /** A saved prompt, run by hand or on a timetable, each time as a new conversation in its project. */
@@ -748,10 +773,12 @@ export const DEFAULT_SETTINGS: Settings = {
   openWith: [],
   transcriptions: [],
   client: '',
+  analytics: true,
   autoUpdate: true,
   guideClaude: true,
   phone: false,
   phoneKey: '',
   sidebarWidth: 264,
   shortcuts: [],
+  phrases: [],
 }
