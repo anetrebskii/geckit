@@ -17,7 +17,7 @@ import { NameField } from './NameField'
 import { projectColor } from '../../../shared/project-color'
 import { homePath, projectName, tint } from './project'
 import { Sidebar, Tags } from './Sidebar'
-import { Status } from './Status'
+import { Status, TalkStatus } from './Status'
 import { Notices } from './Notices'
 import { Recent } from './Recent'
 import { ShortcutList } from './ShortcutList'
@@ -641,6 +641,7 @@ export function Chat(): React.JSX.Element {
         )}
 
         <Composer chat={chat} />
+        {ON_PHONE ? null : <TalkStatus chat={chat} />}
       </div>
 
       <Status chat={chat} />

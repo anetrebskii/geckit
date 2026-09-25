@@ -8,13 +8,12 @@ import { ago } from './time'
 import type { Chat } from './useChat'
 
 /**
- * The bar along the bottom of the window, where a terminal keeps its status line.
- *
- * On the left, what belongs to the conversation in front: where its project's
- * checkout stands, how full its context is, and what it has cost. On the right,
- * what belongs to the whole account: whose plan it is, and how much of its
- * five-hour and weekly windows is spent. Those are measured when the window
- * opens and every few minutes after, without waiting for a turn.
+ * Where a terminal keeps its status line. Under the conversation, what belongs
+ * to it: where its project's checkout stands, how full its context is, and what
+ * it has cost. Along the bottom of the window, what belongs to the whole
+ * account: whose plan it is, and how much of its five-hour and weekly windows
+ * is spent. Those are measured when the window opens and every few minutes
+ * after, without waiting for a turn.
  */
 
 const tokens = (count: number): string =>
@@ -105,13 +104,12 @@ function Git({ git, now }: { readonly git: GitState; readonly now: number }): Re
   )
 }
 
-export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
+export function TalkStatus({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   const [git, setGit] = useState<{ readonly root: string; readonly state: GitState | undefined }>()
   const root = chat.session?.root ?? chat.root
   const state = chat.session?.state
   const spend = chat.session?.spend
-  const plan = chat.plan
 
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60_000)
@@ -144,24 +142,9 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const shownGit = git !== undefined && git.root === root ? git.state : undefined
 
   return (
-    <div className="status-bar">
-      {chat.questions.map((one) => {
-        const working = one.state === 'working' || one.state === 'asks'
-        return (
-          <button
-            key={one.id}
-            type="button"
-            className={`question${chat.session?.id === one.id ? ' shown' : ''}`}
-            title={`${one.title}\n${working ? 'Working' : one.stands}\n\nA general question, forgotten 5 minutes after its last answer`}
-            onClick={() => chat.open({ kind: 'session', id: one.id })}
-          >
-            <Icon name={working ? 'spinner' : 'chat'} size={12} className={working ? 'spinning' : ''} />
-            <span>{one.title}</span>
-          </button>
-        )
-      })}
-      {ON_PHONE || shownGit === undefined ? null : <Git git={shownGit} now={now} />}
-      {ON_PHONE || spend?.used === undefined ? null : (
+    <div className="talk-status">
+      {shownGit === undefined ? null : <Git git={shownGit} now={now} />}
+      {spend?.used === undefined ? null : (
         <span
           className="stat"
           title={
@@ -178,7 +161,7 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
           </span>
         </span>
       )}
-      {ON_PHONE || spend?.cost === undefined ? null : (
+      {spend?.cost === undefined ? null : (
         <span
           className="stat"
           title="What this conversation would have cost at API prices, as Claude Code counts it. The plan covers it."
@@ -187,6 +170,36 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
           <span className="value">{dollars(spend.cost)}</span>
         </span>
       )}
+    </div>
+  )
+}
+
+export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now())
+  const plan = chat.plan
+
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(tick)
+  }, [])
+
+  return (
+    <div className="status-bar">
+      {chat.questions.map((one) => {
+        const working = one.state === 'working' || one.state === 'asks'
+        return (
+          <button
+            key={one.id}
+            type="button"
+            className={`question${chat.session?.id === one.id ? ' shown' : ''}`}
+            title={`${one.title}\n${working ? 'Working' : one.stands}\n\nA general question, forgotten 5 minutes after its last answer`}
+            onClick={() => chat.open({ kind: 'session', id: one.id })}
+          >
+            <Icon name={working ? 'spinner' : 'chat'} size={12} className={working ? 'spinning' : ''} />
+            <span>{one.title}</span>
+          </button>
+        )
+      })}
       <span className="spacer" />
       {ON_PHONE && chat.trouble === '' ? null : (
         <span className={`lead${chat.trouble === '' ? '' : ' trouble'}`}>

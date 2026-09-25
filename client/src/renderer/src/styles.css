@@ -2719,7 +2719,27 @@ button.tag:hover {
   text-overflow: ellipsis;
 }
 
-/* The bar along the bottom: the conversation's on the left, the account's on the right. */
+/* Under the conversation, what belongs to it: its checkout, context and cost. */
+
+.talk-status {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 0 24px 10px;
+  margin-top: -6px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.talk-status:empty {
+  display: none;
+}
+
+/* The bar along the bottom: the account's plan and windows. */
 
 .status-bar {
   display: flex;
@@ -2737,7 +2757,8 @@ button.tag:hover {
   border-top: 1px solid var(--border);
 }
 
-.status-bar .stat {
+.status-bar .stat,
+.talk-status .stat {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -2769,28 +2790,33 @@ button.tag:hover {
   background: var(--bg-hover);
 }
 
-.status-bar .stat:has(.branch) {
+.status-bar .stat:has(.branch),
+.talk-status .stat:has(.branch) {
   flex-shrink: 1;
   min-width: 0;
 }
 
-.status-bar .value {
+.status-bar .value,
+.talk-status .value {
   color: var(--text-dim);
 }
 
-.status-bar .branch {
+.status-bar .branch,
+.talk-status .branch {
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.status-bar .count {
+.status-bar .count,
+.talk-status .count {
   display: inline-flex;
   align-items: center;
   gap: 1px;
 }
 
-.status-bar .count.some {
+.status-bar .count.some,
+.talk-status .count.some {
   color: var(--text-dim);
 }
 
