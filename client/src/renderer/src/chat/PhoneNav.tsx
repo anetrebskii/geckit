@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 
-import { SESSION_STATUSES } from '../../../shared/api'
+import { homeOf, SESSION_STATUSES } from '../../../shared/api'
 import type { SessionStatus } from '../../../shared/api'
 import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
@@ -25,7 +25,7 @@ export function PhoneNav({ chat, links }: { readonly chat: Chat; readonly links:
       </button>
       <div className="phone-nav-title">
         <b>{session?.title ?? 'New conversation'}</b>
-        {session === undefined ? null : <span>{projectName(session.root)}</span>}
+        {session === undefined ? null : <span>{projectName(homeOf(session))}</span>}
       </div>
       {session === undefined ? (
         <span />

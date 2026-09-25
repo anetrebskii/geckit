@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type { ChatFound, ChatSession } from '../../../shared/api'
+import { homeOf } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { projectColor } from '../../../shared/project-color'
 import { projectName, tint } from './project'
@@ -108,7 +109,7 @@ function useFound(chat: Chat, asked: string): { readonly found: readonly Row[]; 
     }
   }, [asked, within])
 
-  const all = within === undefined ? every : every.filter((one) => one.root === within)
+  const all = within === undefined ? every : every.filter((one) => homeOf(one) === within)
 
   const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
   const front = chat.shown.kind === 'session' ? chat.shown.id : undefined
@@ -183,7 +184,7 @@ function Rows({
                   <span className="changed">{ago(used(row.session), now)}</span>
                 </span>
                 <span className="stands">
-                  <span className="where tinted" style={tint(projectColor(row.session.root, chat.settings))}>
+                  <span className="where tinted" style={tint(projectColor(homeOf(row.session), chat.settings))}>
                     <Marked text={place(row.session.root, words)} words={words} />
                   </span>
                   {row.hit === undefined ? (

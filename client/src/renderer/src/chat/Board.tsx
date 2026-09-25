@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ANYWHERE, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { ANYWHERE, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, SessionImage, SessionStatus } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { ON_PHONE } from '../on-phone'
@@ -435,8 +435,13 @@ function Card({
         )}
       </div>
       <div className="board-card-foot">
-        <span className="tinted" style={tint(projectColor(session.root, chat.settings))}>
-          {projectName(session.root)}
+        <span>
+          <span className="tinted" style={tint(projectColor(homeOf(session), chat.settings))}>
+            {projectName(homeOf(session))}
+          </span>
+          {session.project === undefined ? null : (
+            <span className="subfolder"> / {session.root.slice(session.project.length + 1)}</span>
+          )}
         </span>
         <Tags session={session} marked={false} />
         <span className="spacer" />

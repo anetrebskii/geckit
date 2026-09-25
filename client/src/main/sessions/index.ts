@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename } from 'node:path'
 
@@ -7,6 +8,9 @@ import type {
   Browser,
   CardAnswer,
   ChatSession,
+  HiddenChat,
+  HiddenFolder,
+  HiddenReason,
   ClaudeAccount,
   ClaudeModel,
   CutOff,
@@ -30,7 +34,7 @@ import { linksIn, workItem } from '../../shared/links'
 import { claudeAccount } from './account'
 import { holdClaude } from './claude'
 import { browsersOf, readBrowsers } from './chrome'
-import { claudeFile, deleteClaude, listClaude, readClaudeSession, readGoal, readLinks } from './disk'
+import { claudeFile, deleteClaude, everyClaude, listClaude, readClaudeSession, readGoal, readLinks } from './disk'
 import type { GoalRead } from './claude-read'
 import type { Conversation } from './disk'
 import { cardId } from './heard'
@@ -77,6 +81,8 @@ export interface SessionNote {
   readonly here?: boolean
   readonly unread?: boolean
   readonly hidden?: boolean
+  /** Brought onto the board by hand, though a program started it. */
+  readonly shown?: boolean
   /** When it was last in front in the window, for the search to offer what was used last. */
   readonly seen?: number
   readonly status?: SessionStatus
@@ -102,6 +108,8 @@ export function memoryNotes(): NotesStore {
 interface Row {
   readonly id: string
   readonly root: string
+  /** The project it is listed under, where it was started in a folder below. */
+  readonly project?: string
   readonly title: string
   readonly stands: string
   readonly at: number
@@ -128,12 +136,14 @@ export interface SessionsDeps {
   // What follows is the outside world, replaceable so the rules can be tested without it.
   readonly claude?: typeof holdClaude
   readonly disk?: {
-    list(root: string): Promise<readonly Omit<Row, 'root'>[]>
+    list(root: string): Promise<readonly (Omit<Row, 'root' | 'project'> & { readonly below?: string })[]>
     read(root: string, id: string): Promise<Conversation | undefined>
     has(root: string, id: string): Promise<boolean>
     delete?(root: string, id: string): Promise<boolean>
     goal?(root: string, id: string): Promise<GoalRead>
+    every?: typeof everyClaude
   }
+  readonly there?: (path: string) => Promise<boolean>
   readonly claudeAccount?: () => Promise<ClaudeAccount>
   readonly claudeModels?: () => Promise<ClaudeModel[] | undefined>
   readonly usage?: (models: readonly string[]) => Promise<Usage>
@@ -235,6 +245,21 @@ const STOP_HEARD = 5_000
 /** How long the plan's windows, once asked, are taken to stand. */
 const MEASURED_FOR = 60_000
 
+/** How far back Hidden conversations reads before it is asked for older ones: what is looked for there is remembered as recent. */
+const HIDDEN_FOR = 30 * 24 * 60 * 60_000
+
+/** The nearest project a folder is in, where it is in one. */
+const projectOf = (path: string, projects: readonly string[]): string | undefined =>
+  projects
+    .filter((one) => path === one || path.startsWith(`${one}/`))
+    .sort((one, other) => other.length - one.length)[0]
+
+const there = (path: string): Promise<boolean> =>
+  stat(path).then(
+    (found) => found.isDirectory(),
+    () => false,
+  )
+
 
 /** What "for this session" is remembered under, or nothing where it cannot be. */
 function grantKeys(wanted: Wanted): string[] {
@@ -314,8 +339,13 @@ export class Sessions {
   async list(roots: readonly string[]): Promise<ChatSession[]> {
     for (const root of roots) {
       const found = await (this.#deps.disk?.list ?? listClaude)(root).catch(() => [])
-      for (const [id, row] of this.#rows) if (row.root === root) this.#rows.delete(id)
-      for (const row of found) this.#rows.set(row.id, { ...row, root })
+      for (const [id, row] of this.#rows) if ((row.project ?? row.root) === root) this.#rows.delete(id)
+      for (const { below, ...row } of found) {
+        // A folder below two projects is the nearer one's.
+        const held = this.#rows.get(row.id)
+        if (below !== undefined && held !== undefined && (held.project ?? held.root).length > root.length) continue
+        this.#rows.set(row.id, below === undefined ? { ...row, root } : { ...row, root: below, project: root })
+      }
     }
     // A model not seen before is measured, so its rows can say how much context it holds.
     if ([...this.#rows.values()].some((row) => row.model !== undefined && !this.#windows.has(row.model))) void this.measure()
@@ -330,9 +360,10 @@ export class Sessions {
       const live = this.#live.get(id)
       const note = this.#deps.notes.all()[id]
       const where = live?.root ?? row?.root
-      if (where === undefined || (roots !== undefined && !roots.includes(where))) continue
+      const project = row?.project
+      if (where === undefined || (roots !== undefined && !roots.includes(project ?? where))) continue
       if (note?.hidden === true) continue
-      if (live === undefined && row?.driven === true && note?.here !== true) continue
+      if (live === undefined && row?.driven === true && note?.here !== true && note?.shown !== true) continue
       // Held only because it was looked at, and the tool has nothing under that id any more.
       if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0) {
         continue
@@ -350,6 +381,7 @@ export class Sessions {
       sessions.push({
         id,
         root: where,
+        ...(project === undefined ? {} : { project }),
         title: note?.title ?? live?.title ?? row?.title ?? '',
         stands:
           (quiet
@@ -1051,6 +1083,56 @@ export class Sessions {
     void live.driver
       .control({ subtype: 'rename_session', title, source: 'host', session_id: live.id })
       .catch(() => (live.named = undefined))
+  }
+
+  /**
+   * What the tool kept and no board lists: hidden by hand, started by a
+   * program, or in a folder that is no project. The last 30 days, or what is
+   * older than that. A general question asked here is in no project and is not
+   * one of them.
+   */
+  async hidden(projects: readonly string[], older: boolean): Promise<HiddenFolder[]> {
+    const notes = this.#deps.notes.all()
+    const edge = this.#now() - HIDDEN_FOR
+    const listed = (id: string): boolean => {
+      const row = this.#rows.get(id)
+      const note = notes[id]
+      if (note?.hidden === true) return false
+      return note?.here === true || note?.shown === true || (row !== undefined && !row.driven)
+    }
+    const found = await (this.#deps.disk?.every ?? everyClaude)(older ? 0 : edge, older ? edge : Infinity, (id) => !listed(id))
+    const folders = new Map<string, HiddenChat[]>()
+    for (const row of found) {
+      const where = row.cwd ?? ''
+      const project = projectOf(where, projects)
+      const note = notes[row.id]
+      // A program's conversation in the home folder is a general question asked here, which is never listed.
+      if (row.driven && where === homedir() && note?.hidden !== true) continue
+      const reason: HiddenReason | undefined =
+        note?.hidden === true
+          ? 'hidden'
+          : row.driven && note?.here !== true && note?.shown !== true
+            ? 'driven'
+            : project === undefined && note?.here !== true
+              ? 'terminal'
+              : undefined
+      if (reason === undefined || !(await (this.#deps.there ?? there)(where))) continue
+      const chats = folders.get(where) ?? []
+      chats.push({ id: row.id, title: note?.title ?? row.title, stands: row.stands, at: row.at, reason })
+      folders.set(where, chats)
+    }
+    return [...folders]
+      .map(([path, chats]) => {
+        const project = projectOf(path, projects)
+        return { path, ...(project === undefined ? {} : { project }), chats }
+      })
+      .sort((one, other) => (other.chats[0]?.at ?? 0) - (one.chats[0]?.at ?? 0))
+  }
+
+  /** Put a conversation from Hidden conversations on the board. */
+  bring(id: string): void {
+    this.#note(id, { hidden: false, shown: true })
+    this.#changed()
   }
 
   hide(id: string): void {

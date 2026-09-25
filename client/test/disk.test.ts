@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { claudeFile, deleteClaude, listClaude, readClaudeSession } from '../src/main/sessions/disk'
+import { claudeFile, deleteClaude, everyClaude, listClaude, readClaudeSession } from '../src/main/sessions/disk'
 
 /**
  * Reading the tool's own conversations off disk.
@@ -114,6 +114,51 @@ describe('the conversations about a folder', () => {
 
   it('finds nothing for a folder the tool has never been run in', async () => {
     expect(await listClaude('/somewhere/else')).toEqual([])
+  })
+})
+
+const elsewhere = (folder: string, id: string, cwd: string, entrypoint = 'cli'): void => {
+  mkdirSync(join(config, 'projects', folder), { recursive: true })
+  writeFileSync(
+    join(config, 'projects', folder, `${id}.jsonl`),
+    `${line({ type: 'user', uuid: 'u1', cwd, entrypoint, message: { role: 'user', content: `Asked in ${cwd}` } })}\n`,
+  )
+}
+
+describe('the conversations started below a folder', () => {
+  it('are its own, and say the folder they were started in', async () => {
+    elsewhere(`${SLUG}-client`, 'sub', `${ROOT}/client`)
+    const found = await listClaude(ROOT)
+    expect(found).toHaveLength(1)
+    expect(found[0]).toMatchObject({ id: 'sub', below: `${ROOT}/client` })
+  })
+
+  it('leave out a folder beside it whose name only starts the same', async () => {
+    elsewhere(`${SLUG}-two`, 'beside', '/work/an app-two')
+    expect(await listClaude(ROOT)).toEqual([])
+  })
+
+  it('say nothing of below for one in the folder itself', async () => {
+    conversation('own', [line({ type: 'user', uuid: 'u1', cwd: ROOT, message: { role: 'user', content: 'Here' } })])
+    expect((await listClaude(ROOT))[0]?.below).toBeUndefined()
+  })
+})
+
+describe('every conversation kept', () => {
+  it('is read from every folder but a temporary one, with where each was started', async () => {
+    elsewhere('-work-notes', 'notes', '/work/notes')
+    elsewhere('-private-tmp-scratch', 'scratch', '/private/tmp/scratch')
+    const found = await everyClaude(0, Infinity, () => true)
+    expect(found.map((one) => [one.id, one.cwd])).toEqual([['notes', '/work/notes']])
+  })
+
+  it('passes over what it is told is known, and what was written outside the times asked for', async () => {
+    elsewhere('-work-notes', 'known', '/work/notes')
+    elsewhere('-work-notes', 'old', '/work/notes')
+    const path = join(config, 'projects', '-work-notes', 'old.jsonl')
+    utimesSync(path, new Date(1000), new Date(1000))
+    expect((await everyClaude(0, Infinity, (id) => id !== 'known')).map((one) => one.id)).toEqual(['old'])
+    expect((await everyClaude(10_000, Infinity, () => true)).map((one) => one.id)).toEqual(['known'])
   })
 })
 

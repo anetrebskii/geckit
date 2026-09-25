@@ -1,5 +1,10 @@
-@import '@fontsource-variable/inter';
-@import '@fontsource-variable/jetbrains-mono';
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<title>GeckIt - Hidden conversations</title>
+<style>
+/* client/src/renderer/src/styles.css, inlined as it is, without the font imports. */
 
 /*
  * One stylesheet for three windows.
@@ -742,117 +747,16 @@ textarea {
   gap: 8px;
 }
 
-/* Hidden conversations: the folders scroll between the title and Close. */
-.dialog.hidden-dialog {
-  display: flex;
-  flex-direction: column;
-  width: min(600px, 94vw);
-  height: min(600px, 84vh);
-  max-height: none;
-  overflow: hidden;
-}
-
-.hidden-dialog p {
-  margin: 0;
-}
-
-.hidden-body {
-  flex: 1;
-  min-height: 0;
-  margin: 8px -12px 0;
-  padding: 0 6px;
-  overflow-y: auto;
-  border-top: 1px solid var(--border);
-}
-
-.hidden-dialog .dialog-actions {
-  padding-top: 12px;
-  margin-top: 0;
-  border-top: 1px solid var(--border);
-}
-
-.hidden-dialog .empty {
-  padding: 40px 16px;
-  text-align: center;
-}
-
-.hidden-folder {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding: 14px 8px 4px;
-  font-size: 12px;
-  color: var(--text-faint);
-}
-
-.hidden-folder .path {
-  overflow: hidden;
-  font-weight: 600;
-  color: var(--text-dim);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.hidden-folder .done {
-  color: var(--success-text);
-}
-
-.hidden-row {
-  align-items: center;
-}
-
-.hidden-row .reason {
-  color: var(--text-dim);
-}
-
-.hidden-row .reason::after {
-  content: ' \00b7\00a0';
-  color: var(--text-faint);
-}
-
-.hidden-folder .quiet,
-.hidden-row .quiet,
-.hidden-older .quiet {
-  flex-shrink: 0;
-  padding: 2px 10px;
-  font-size: 12px;
-}
-
-.hidden-row .on-board {
-  display: flex;
-  flex-shrink: 0;
-  gap: 8px;
-  align-items: center;
-  font-size: 12px;
-  color: var(--success-text);
-}
-
-.hidden-more {
-  margin: 2px 8px 0;
-  padding: 2px 10px;
-  font-size: 12px;
-  color: var(--text-faint);
-  border-radius: var(--radius);
-}
-
-.hidden-more:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
-.hidden-older {
-  display: flex;
-  justify-content: center;
-  padding: 14px 0 12px;
-}
-
-.hidden-older .empty {
-  padding: 4px;
-}
-
 .open-rule {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.phrase-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
 }
@@ -937,10 +841,6 @@ svg.spinning,
   padding-right: 8px;
   padding-left: 82px;
   border-bottom: 1px solid var(--border);
-}
-
-html.framed .topbar {
-  padding-left: 8px;
 }
 
 .tab {
@@ -1385,6 +1285,11 @@ html.framed .topbar {
   border-radius: var(--radius);
 }
 
+/* A conversation's title is long, so it gives way and the project and time stay whole. */
+.projects-listed.cut-off {
+  grid-template-columns: auto minmax(0, 1fr) max-content;
+}
+
 .project-listed {
   display: grid;
   grid-column: 1 / -1;
@@ -1563,10 +1468,6 @@ html.framed .topbar {
   gap: 4px;
   height: var(--topbar);
   padding: 0 8px 0 82px;
-}
-
-html.framed .sidebar-head {
-  padding-left: 8px;
 }
 
 .project {
@@ -2326,23 +2227,6 @@ button.tag:hover {
   text-overflow: ellipsis;
 }
 
-/* A draft starting with ! is a command, so the field looks like a terminal while it is typed. */
-
-.composer-inner.command,
-.composer-inner.command:focus-within {
-  border-color: var(--warning-text);
-  box-shadow: 0 0 0 3px var(--warning-bg);
-}
-
-.composer-inner.command textarea {
-  font-family: var(--font-code);
-  font-size: 13px;
-}
-
-.composer-hint.command {
-  color: var(--warning-text);
-}
-
 /* A command typed after ! is the person's, so it sits in their bubble, with what it printed under it. */
 
 .shell {
@@ -2447,6 +2331,38 @@ button.tag:hover {
 }
 
 /* Messages sent while Claude works, waiting their turn above the field. */
+.phrases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.phrase {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  max-width: 100%;
+  padding: 3px 10px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.phrase:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.phrase.keep {
+  padding: 3px 6px;
+  border-style: dashed;
+}
+
 .queued {
   display: flex;
   flex-direction: column;
@@ -3613,10 +3529,6 @@ button.tag:hover {
   border-bottom: 1px solid var(--border);
 }
 
-html.framed .board-head {
-  padding-left: 12px;
-}
-
 /* One row, one height: the picker and the two buttons carry the sidebar's own margins, which stand them off centre here. */
 .board-head .project,
 .board-head .board-new {
@@ -3801,11 +3713,6 @@ html.framed .board-head {
 .board-day-head:hover {
   color: var(--text-dim);
   background: var(--bg-raised);
-}
-
-/* The folder below its project a conversation was started in: geckit / client. */
-.board-card .subfolder {
-  color: var(--text-faint);
 }
 
 .board-card {
@@ -5381,3 +5288,524 @@ html.phone .task-row .how {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+</style>
+<style>
+/* What this prototype adds, from the app's own tokens. */
+
+.hidden-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, 94vw);
+  height: min(600px, 84vh);
+  max-height: none;
+  overflow: hidden;
+}
+
+.hidden-body {
+  flex: 1;
+  min-height: 0;
+  margin: 8px -12px 0;
+  padding: 0 6px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.hidden-dialog .dialog-actions {
+  padding-top: 12px;
+  margin-top: 0;
+  border-top: 1px solid var(--border);
+}
+
+.hidden-folder {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 14px 8px 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.hidden-folder .path {
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hidden-folder .done {
+  color: var(--success-text);
+}
+
+.hidden-row {
+  align-items: center;
+}
+
+.hidden-row .reason {
+  color: var(--text-dim);
+}
+
+.hidden-row .reason::after {
+  content: ' \00b7\00a0';
+  color: var(--text-faint);
+}
+
+.hidden-folder .quiet,
+.hidden-row .quiet,
+.hidden-more {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.hidden-row .on-board {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--success-text);
+}
+
+.hidden-more {
+  margin: 2px 8px 0;
+  color: var(--text-faint);
+  border-radius: var(--radius);
+}
+
+.hidden-more:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.hidden-older {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 12px;
+}
+
+.hidden-dialog .empty {
+  padding: 40px 16px;
+  text-align: center;
+}
+
+.board-card .subfolder {
+  color: var(--text-faint);
+}
+
+.board-card.arrived {
+  animation: arrived 2.4s var(--ease) both;
+}
+
+@keyframes arrived {
+  0%,
+  40% {
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+/* The prototype's own controls, outside the app. */
+.proto {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 80;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--bg-raised);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.proto button {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="board">
+    <div class="board-head drag">
+      <button type="button" class="icon-button no-drag" aria-label="As a list" data-icon="list"></button>
+      <button type="button" class="project no-drag" id="project" title="Switch project (Cmd+K)">
+        <span data-icon="folder"></span><span class="name">All projects</span><span class="spacer"></span><span class="keys">Cmd+K</span><span data-icon="down" data-size="11"></span>
+      </button>
+      <button type="button" class="icon-button no-drag" aria-label="Say what to do" data-icon="mic"></button>
+      <button type="button" class="icon-button no-drag" aria-label="Shortcuts" data-icon="bolt"></button>
+      <button type="button" class="icon-button no-drag" aria-label="Keyboard shortcuts" data-icon="keyboard"></button>
+      <button type="button" class="icon-button no-drag" aria-label="Settings" data-icon="settings"></button>
+      <span class="spacer"></span>
+      <button type="button" class="new-session no-drag board-new"><span data-icon="chat"></span>Ask<span class="keys">Cmd+Shift+N</span></button>
+      <button type="button" class="new-session no-drag board-new"><span data-icon="plus"></span>New task<span class="keys">Cmd+N</span></button>
+    </div>
+    <div class="board-columns" id="columns"></div>
+  </div>
+</div>
+
+<div class="proto">
+  Prototype
+  <button type="button" class="quiet" id="proto-empty">Nothing hidden</button>
+  <button type="button" class="quiet" id="proto-reset">Start again</button>
+  <button type="button" class="quiet" id="proto-theme">Dark</button>
+</div>
+
+<script>
+const PATHS = {
+  list: 'M2.5 4.5h11M2.5 8h11M2.5 11.5h11',
+  folder: 'M2.5 4.5a1 1 0 0 1 1-1h2.8l1.5 1.7h4.7a1 1 0 0 1 1 1v6.3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1Z',
+  down: 'M4 6.5 8 10.5 12 6.5',
+  right: 'M6.5 4 10.5 8 6.5 12',
+  mic: 'M8 2.5a2 2 0 0 1 2 2v3.5a2 2 0 0 1-4 0V4.5a2 2 0 0 1 2-2ZM4 8a4 4 0 0 0 8 0M8 12v2',
+  bolt: 'M9 2.5 4 9h4l-1 4.5L12 7H8Z',
+  keyboard: 'M3 4h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1ZM4.6 6.6h.5M7.75 6.6h.5M10.9 6.6h.5M5.8 9.4h4.4',
+  settings: 'M6.82 3.76L7.03 2.18A5.9 5.9 0 0 1 8.97 2.18L9.18 3.76A4.4 4.4 0 0 1 10.17 4.17L11.43 3.2A5.9 5.9 0 0 1 12.8 4.57L11.83 5.83A4.4 4.4 0 0 1 12.24 6.82L13.82 7.03A5.9 5.9 0 0 1 13.82 8.97L12.24 9.18A4.4 4.4 0 0 1 11.83 10.17L12.8 11.43A5.9 5.9 0 0 1 11.43 12.8L10.17 11.83A4.4 4.4 0 0 1 9.18 12.24L8.97 13.82A5.9 5.9 0 0 1 7.03 13.82L6.82 12.24A4.4 4.4 0 0 1 5.83 11.83L4.57 12.8A5.9 5.9 0 0 1 3.2 11.43L4.17 10.17A4.4 4.4 0 0 1 3.76 9.18L2.18 8.97A5.9 5.9 0 0 1 2.18 7.03L3.76 6.82A4.4 4.4 0 0 1 4.17 5.83L3.2 4.57A5.9 5.9 0 0 1 4.57 3.2L5.83 4.17A4.4 4.4 0 0 1 6.82 3.76ZM8 9.9a1.9 1.9 0 1 0 0-3.8 1.9 1.9 0 0 0 0 3.8Z',
+  chat: 'M13.5 9a2 2 0 0 1-2 2H6.2L3 13.5V4.5a2 2 0 0 1 2-2h6.5a2 2 0 0 1 2 2Z',
+  plus: 'M8 3.5v9M3.5 8h9',
+  check: 'M3 8.5 6.5 12 13 4.5',
+  close: 'M4 4l8 8M12 4l-8 8',
+  hidden: 'M1.8 8s2.3-4.3 6.2-4.3S14.2 8 14.2 8s-2.3 4.3-6.2 4.3S1.8 8 1.8 8ZM8 9.9a1.9 1.9 0 1 0 0-3.8 1.9 1.9 0 0 0 0 3.8ZM3 13 13 3',
+}
+const icon = (name, size = 14) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PATHS[name]}"/></svg>`
+const esc = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+function drawIcons(root) {
+  for (const el of root.querySelectorAll('[data-icon]')) {
+    el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon, Number(el.dataset.size ?? 14)))
+    delete el.dataset.icon
+  }
+}
+
+// The profile being looked at is Personal; standup-bot is a project of Work.
+const PROFILE = 'Personal'
+const PROJECTS_START = [
+  { path: '~/Projects/mine/geckit', name: 'geckit', color: 0, profile: 'Personal' },
+  { path: '~/Projects/mine/trailmap', name: 'trailmap', color: 5, profile: 'Personal' },
+  { path: '~/Projects/mine/pinch', name: 'pinch', color: 1, profile: 'Personal' },
+  { path: '~/Projects/work/standup-bot', name: 'standup-bot', color: 2, profile: 'Work' },
+]
+const CARDS_START = [
+  { id: 'c1', title: 'Offline trail pages', project: 'trailmap', at: 'now', column: 0, state: ['said-working', 'Claude is working'], stands: 'changing public/sw.js' },
+  { id: 'c2', title: 'Tray icon blurry on Retina', project: 'geckit', sub: 'client', at: '25m', column: 0, state: ['said-unread', 'Waiting for you'], stands: 'The template image is drawn at 16 and 32 px now, so the tray picks the sharp one.' },
+  { id: 'c3', title: 'Add --max-width flag', project: 'pinch', at: '1h', column: 0, stands: 'Added --max-width. Images wider than it are resized with Lanczos.' },
+  { id: 'c4', title: 'Rate-limit /api/search', project: 'trailmap', at: '48m', column: 1, stands: 'Search is now limited to 60 requests a minute per IP.' },
+  { id: 'c5', title: 'Upgrade to Next.js 16', project: 'pinch', at: 'Sun', column: 2, stands: 'Builds and the e2e suite passes on 16.0.2.' },
+]
+const row = (id, title, at, reason, stands) => ({ id, title, at, reason, stands })
+const HIDDEN_START = [
+  {
+    path: '~/Projects/mine/geckit',
+    rows: [
+      row('h1', 'Fix the tray icon', '2h', 'Hidden by you', 'The first try, before the template image. Superseded.'),
+      row('h2', 'Nightly dependency check', '6:10 AM', 'Started by another app', '3 packages have newer versions; none of them are security fixes.'),
+      row('h3', 'Nightly dependency check', 'Yesterday', 'Started by another app', 'Nothing to update.'),
+      row('h4', 'Summarise the commits', 'Yesterday', 'Started by another app', '14 commits since Monday, most of them on the board.'),
+      row('h5', 'Nightly dependency check', 'Tue', 'Started by another app', 'electron 38.2 is out; the changelog has nothing for us.'),
+      row('h6', 'Nightly dependency check', 'Mon', 'Started by another app', 'Nothing to update.'),
+      row('h7', 'Nightly dependency check', 'Sep 21', 'Started by another app', 'Nothing to update.'),
+    ],
+  },
+  {
+    path: '~/Projects/work/standup-bot',
+    rows: [row('h8', 'Summaries in Slack threads', '3h', 'Hidden by you', 'The summary now goes into the thread of that morning’s prompt.')],
+  },
+  {
+    path: '~/Projects/folio-notes',
+    rows: [
+      row('h9', 'Draft the README', '4h', 'Started in a terminal', 'README.md has install, usage and the three commands.'),
+      row('h10', 'Try the API', 'Tue', 'Started by another app', 'The token works; /v1/notes returns 200 with an empty list.'),
+    ],
+  },
+  {
+    path: '~/Documents/taxes',
+    rows: [row('h11', 'Sort the receipts', 'Sep 19', 'Started in a terminal', 'Receipts sorted into 2026/Q3, 41 files, two could not be read.')],
+  },
+]
+const OLDER = [
+  {
+    path: '~/Projects/mine/eda',
+    rows: [row('h12', 'Meal plan export', 'Aug 14', 'Started in a terminal', 'Exports the week as a PDF, one page per day.')],
+  },
+]
+
+let projects, cards, hidden, done, added, opened, emptyMode, olderShown
+function reset() {
+  projects = PROJECTS_START.map((p) => ({ ...p }))
+  cards = CARDS_START.map((c) => ({ ...c }))
+  hidden = structuredClone(HIDDEN_START)
+  done = new Map()
+  added = new Set()
+  opened = new Set()
+  emptyMode = false
+  olderShown = false
+  drawBoard()
+}
+
+const projectOf = (path) =>
+  projects
+    .filter((p) => path === p.path || path.startsWith(p.path + '/'))
+    .sort((a, b) => b.path.length - a.path.length)[0]
+const listed = () => projects.filter((p) => p.profile === PROFILE)
+const tint = (p) => `--tint: var(--project-${p.color})`
+
+// The board
+
+function drawBoard(arrived = new Set()) {
+  const names = new Set(listed().map((p) => p.name))
+  const columns = ['In progress', 'In review', 'Done'].map((title, index) => ({
+    title,
+    rows: cards.filter((c) => c.column === index && names.has(c.project)),
+  }))
+  document.getElementById('columns').innerHTML = columns
+    .map(
+      (column) => `
+    <div class="board-column">
+      <div class="board-column-head">${column.title}<span class="spacer"></span><span class="count">${column.rows.length}</span></div>
+      <div class="board-cards"><div class="board-day">${column.rows.map((c) => cardHTML(c, arrived.has(c.id))).join('')}</div></div>
+    </div>`,
+    )
+    .join('')
+}
+
+function cardHTML(c, arrived) {
+  const p = projects.find((one) => one.name === c.project)
+  return `
+    <div class="board-card${arrived ? ' arrived' : ''}" role="button" tabindex="0">
+      <div class="board-card-head"><span class="board-card-title">${esc(c.title)}</span><span class="changed">${c.at}</span></div>
+      <div class="board-card-foot"><span><span class="tinted" style="${tint(p)}">${esc(p.name)}</span>${c.sub ? `<span class="subfolder"> / ${esc(c.sub)}</span>` : ''}</span><span class="spacer"></span></div>
+      ${c.state ? `<div class="board-card-state"><span class="state-said ${c.state[0]}"><span class="state-dot"></span>${c.state[1]}</span></div>` : ''}
+      ${c.stands ? `<div class="board-card-stands"><span>${esc(c.stands)}</span></div>` : ''}
+    </div>`
+}
+
+// The project menu
+
+let menuAt = 0
+function openMenu() {
+  closeMenu()
+  const anchor = document.getElementById('project').getBoundingClientRect()
+  const rows = [{ name: 'All projects', path: 'Every project in Personal', all: true }, ...listed()]
+  const scrim = document.createElement('div')
+  scrim.className = 'scrim'
+  scrim.id = 'menu-scrim'
+  scrim.addEventListener('mousedown', closeMenu)
+  const menu = document.createElement('div')
+  menu.className = 'floating menu projects'
+  menu.id = 'menu'
+  menu.setAttribute('role', 'menu')
+  menu.style.left = `${Math.max(8, anchor.left)}px`
+  menu.style.top = `${anchor.bottom + 4}px`
+  menu.innerHTML = `
+    <input type="text" class="projects-field" placeholder="Switch to a project" />
+    ${rows
+      .map(
+        (r) => `
+      <div role="menuitem" class="menu-item project-row${r.all ? ' on' : ''}">
+        <button type="button" class="project-pick${r.all ? ' on' : ''}" tabindex="-1">${r.all ? icon('check', 13) : ''}</button>
+        ${r.all ? '<span class="project-dot-space"></span>' : `<button type="button" class="project-dot" tabindex="-1" style="background: var(--project-${r.color})"></button>`}
+        <span class="lines"><span class="name">${esc(r.name)}</span><span class="says">${esc(r.path)}</span></span>
+        ${r.all ? '<span class="forget-space"></span>' : `<button type="button" class="icon-button forget" tabindex="-1">${icon('close', 11)}</button>`}
+      </div>`,
+      )
+      .join('')}
+    <div class="menu-divider"></div>
+    <div class="projects-hint">A check lists a project beside the others. Pressing a row shows only that one.</div>
+    <button type="button" role="menuitem" class="menu-item"><span style="width: 14px; flex-shrink: 0">${icon('plus', 13)}</span>Add a project...</button>
+    <button type="button" role="menuitem" class="menu-item" id="open-hidden"><span style="width: 14px; flex-shrink: 0">${icon('hidden', 13)}</span>Hidden conversations...</button>`
+  document.body.append(scrim, menu)
+  const items = [...menu.querySelectorAll('[role=menuitem]')]
+  menuAt = 0
+  const mark = () => items.forEach((one, i) => one.classList.toggle('at', i === menuAt))
+  mark()
+  items.forEach((one, i) => one.addEventListener('mousemove', () => ((menuAt = i), mark())))
+  items.forEach((one) => one.addEventListener('click', () => pick(one)))
+  const field = menu.querySelector('input')
+  field.focus()
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') (event.preventDefault(), (menuAt = Math.min(menuAt + 1, items.length - 1)), mark())
+    if (event.key === 'ArrowUp') (event.preventDefault(), (menuAt = Math.max(menuAt - 1, 0)), mark())
+    if (event.key === 'Enter') (event.preventDefault(), pick(items[menuAt]))
+    if (event.key === 'Escape') (event.preventDefault(), closeMenu(), document.getElementById('project').focus())
+  })
+}
+function pick(item) {
+  closeMenu()
+  if (item.id === 'open-hidden') openDialog()
+}
+function closeMenu() {
+  document.getElementById('menu')?.remove()
+  document.getElementById('menu-scrim')?.remove()
+}
+
+// The dialog
+
+function openDialog() {
+  const scrim = document.createElement('div')
+  scrim.className = 'dialog-scrim'
+  scrim.id = 'dialog-scrim'
+  scrim.addEventListener('mousedown', closeDialog)
+  scrim.innerHTML = `
+    <div class="dialog hidden-dialog" role="dialog" aria-modal="true" aria-labelledby="hidden-title">
+      <h2 id="hidden-title">Hidden conversations</h2>
+      <p style="margin: 0">Kept by Claude Code on this Mac and not on the board.</p>
+      <div class="hidden-body" id="hidden-body"><div class="empty">Reading conversations...</div></div>
+      <div class="dialog-actions"><button type="button" class="primary" id="hidden-close">Close</button></div>
+    </div>`
+  scrim.firstElementChild.addEventListener('mousedown', (event) => event.stopPropagation())
+  document.body.append(scrim)
+  document.getElementById('hidden-close').addEventListener('click', closeDialog)
+  document.getElementById('hidden-close').focus()
+  scrim.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') (event.preventDefault(), closeDialog())
+  })
+  setTimeout(drawDialog, 450)
+}
+
+function waiting() {
+  return hidden.filter((group) => group.rows.some((r) => !gone(r.id)))
+}
+// A row shown or added before the dialog last closed is gone from it; in this opening it stays and says so.
+const gone = (id) => done.get(id)?.closed === true
+
+function drawDialog() {
+  const body = document.getElementById('hidden-body')
+  if (body === null) return
+  const groups = emptyMode ? [] : waiting()
+  if (groups.length === 0) {
+    body.innerHTML = '<div class="empty">Nothing is hidden. Every conversation from the last 30 days is on the board.</div>'
+    return
+  }
+  body.innerHTML =
+    groups.map(groupHTML).join('') +
+    (olderShown ? '' : '<div class="hidden-older"><button type="button" class="quiet hidden-more" data-older>Show older</button></div>')
+  drawIcons(body)
+  body.querySelectorAll('[data-show]').forEach((b) => b.addEventListener('click', () => show(b.dataset.show)))
+  body.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => add(b.dataset.add)))
+  body.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => closeDialog()))
+  body.querySelectorAll('[data-switch]').forEach((b) => b.addEventListener('click', () => closeDialog()))
+  body.querySelectorAll('[data-expand]').forEach((b) =>
+    b.addEventListener('click', () => {
+      opened.add(b.dataset.expand)
+      drawDialog()
+    }),
+  )
+  body.querySelector('[data-older]')?.addEventListener('click', () => {
+    olderShown = true
+    body.querySelector('.hidden-older').innerHTML = '<div class="empty" style="padding: 4px">Reading conversations...</div>'
+    setTimeout(() => {
+      hidden.push(...structuredClone(OLDER))
+      drawDialog()
+    }, 450)
+  })
+}
+
+const MOST = 5
+function groupHTML(group) {
+  const p = projectOf(group.path)
+  const rows = group.rows.filter((r) => !gone(r.id))
+  const shown = opened.has(group.path) ? rows : rows.slice(0, MOST)
+  const wasAdded = added.has(group.path)
+  const head = `
+    <div class="hidden-folder">
+      <span data-icon="folder" data-size="13"></span>
+      <span class="path" title="${esc(group.path)}">${esc(group.path)}</span>
+      ${p && !wasAdded ? `<span class="tinted" style="${tint(p)}">in ${esc(p.name)}</span>` : ''}
+      <span class="spacer"></span>
+      ${wasAdded ? '<span class="done">Added as a project</span>' : p ? '' : `<button type="button" class="quiet" data-add="${esc(group.path)}">Add as project</button>`}
+    </div>`
+  const more = rows.length - shown.length
+  return (
+    head +
+    shown.map((r) => rowHTML(r, p)).join('') +
+    (more > 0 ? `<button type="button" class="hidden-more" data-expand="${esc(group.path)}">${more} more</button>` : '')
+  )
+}
+
+function rowHTML(r, p) {
+  const did = done.get(r.id)
+  let end = ''
+  if (did !== undefined) {
+    end =
+      did.profile === PROFILE
+        ? `<span class="on-board">On the board.<button type="button" class="quiet" data-open="${r.id}">Open</button></span>`
+        : `<span class="on-board">On the board of ${esc(did.profile)}.<button type="button" class="quiet" data-switch="${r.id}">Switch</button></span>`
+  } else if (p) {
+    end = `<button type="button" class="quiet" data-show="${r.id}">Show on the board</button>`
+  }
+  return `
+    <div class="row hidden-row">
+      <span class="lines">
+        <span class="head"><span class="title">${esc(r.title)}</span><span class="changed">${r.at}</span></span>
+        <span class="stands"><span class="reason">${esc(r.reason)}</span>${esc(r.stands)}</span>
+      </span>
+      ${end}
+    </div>`
+}
+
+function show(id) {
+  const group = hidden.find((g) => g.rows.some((r) => r.id === id))
+  const r = group.rows.find((one) => one.id === id)
+  const p = projectOf(group.path)
+  done.set(id, { profile: p.profile })
+  cards.unshift({ id, title: r.title, project: p.name, at: r.at, column: 0, stands: r.stands })
+  drawDialog()
+  drawBoard(new Set([id]))
+  document.querySelector(`[data-open="${id}"], [data-switch="${id}"]`)?.focus()
+}
+
+function add(path) {
+  const group = hidden.find((g) => g.path === path)
+  const name = path.split('/').pop()
+  projects.push({ path, name, color: 3 + (projects.length % 4), profile: PROFILE })
+  added.add(path)
+  for (const r of group.rows) {
+    done.set(r.id, { profile: PROFILE })
+    cards.unshift({ id: r.id, title: r.title, project: name, at: r.at, column: 0, stands: r.stands })
+  }
+  drawDialog()
+  drawBoard(new Set(group.rows.map((r) => r.id)))
+  document.querySelector(`[data-open="${group.rows[0].id}"]`)?.focus()
+}
+
+function closeDialog() {
+  for (const value of done.values()) value.closed = true
+  document.getElementById('dialog-scrim')?.remove()
+  document.getElementById('project').focus()
+}
+
+// Wiring
+
+document.getElementById('project').addEventListener('click', openMenu)
+document.addEventListener('keydown', (event) => {
+  if (event.metaKey && event.key === 'k') (event.preventDefault(), openMenu())
+})
+document.getElementById('proto-reset').addEventListener('click', () => {
+  closeMenu()
+  document.getElementById('dialog-scrim')?.remove()
+  reset()
+})
+document.getElementById('proto-empty').addEventListener('click', () => {
+  closeMenu()
+  document.getElementById('dialog-scrim')?.remove()
+  emptyMode = true
+  openDialog()
+})
+document.getElementById('proto-theme').addEventListener('click', (event) => {
+  const dark = document.documentElement.dataset.theme !== 'dark'
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+  event.currentTarget.textContent = dark ? 'Light' : 'Dark'
+})
+drawIcons(document)
+reset()
+</script>
+</body>
+</html>

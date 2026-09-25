@@ -12,7 +12,7 @@ import type {
   SessionNotice,
   SessionStatus,
 } from '../../../shared/api'
-import { resumeCommand, shownProjects } from '../../../shared/api'
+import { homeOf, resumeCommand, shownProjects } from '../../../shared/api'
 import { asImage, canShow } from '../pictures'
 import { useSettings } from '../settings'
 import type { Settings } from '../../../shared/api'
@@ -178,7 +178,7 @@ export function useChat(): Chat {
 
   /** Listed: every project's, or only the chosen ones'. */
   const within = (one: ChatSession): boolean =>
-    one.question !== true && (chosenRef.current.length === 0 || chosenRef.current.includes(one.root))
+    one.question !== true && (chosenRef.current.length === 0 || chosenRef.current.includes(homeOf(one)))
 
   const refresh = useCallback(() => {
     const one = chosenRef.current.length === 1 ? chosenRef.current[0] : undefined
@@ -529,8 +529,8 @@ export function useChat(): Chat {
   const show = useCallback(
     (one: ChatSession) => {
       // Opened from somewhere the list does not show: that project joins the ones it does.
-      if (chosenRef.current.length > 0 && !chosenRef.current.includes(one.root)) {
-        const next = [...chosenRef.current, one.root]
+      if (chosenRef.current.length > 0 && !chosenRef.current.includes(homeOf(one))) {
+        const next = [...chosenRef.current, homeOf(one)]
         chosenRef.current = next
         setPicked(next)
       }

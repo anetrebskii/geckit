@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { SESSION_STATUSES } from '../../../shared/api'
+import { homeOf, SESSION_STATUSES } from '../../../shared/api'
 import type { CardAnswer, ChatSession, SessionCard, SessionStatus } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { tap } from '../tap'
@@ -391,8 +391,8 @@ function RowBody({
           <div className={`phone-row-said${stands.tone === 'working' ? ' doing' : ''}`}>{said}</div>
         )}
         <div className="phone-row-meta">
-          <span style={{ color: `var(--project-${String(projectColor(session.root, chat.settings))})`, fontWeight: 600 }}>
-            {projectName(session.root)}
+          <span style={{ color: `var(--project-${String(projectColor(homeOf(session), chat.settings))})`, fontWeight: 600 }}>
+            {projectName(homeOf(session))}
           </span>
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
           {session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}

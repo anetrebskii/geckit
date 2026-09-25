@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { DEFAULT_SETTINGS, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { DEFAULT_SETTINGS, homeOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, CutOff, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
 import { linksIn, shortUrl } from '../../../shared/links'
 import { Icon } from '../ui/Icon'
@@ -479,8 +479,8 @@ export function Chat(): React.JSX.Element {
             )}
             {chat.session !== undefined ? (
               <>
-                <span className="tinted" style={{ fontSize: 12, ...tint(projectColor(chat.session.root, chat.settings)) }}>
-                  {projectName(chat.session.root)}
+                <span className="tinted" style={{ fontSize: 12, ...tint(projectColor(homeOf(chat.session), chat.settings)) }}>
+                  {projectName(homeOf(chat.session))}
                 </span>
                 <Tags session={chat.session} marked={false} />
               </>
@@ -747,7 +747,7 @@ export function Chat(): React.JSX.Element {
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
             <h2>Clear the conversation?</h2>
             <p>
-              The next message starts a new conversation in {projectName(chat.session.root)}, with nothing of this one
+              The next message starts a new conversation in {projectName(homeOf(chat.session))}, with nothing of this one
               in mind. This one stays in the list.
             </p>
             <div className="dialog-actions">
@@ -759,7 +759,7 @@ export function Chat(): React.JSX.Element {
                 className="primary"
                 autoFocus
                 onClick={() => {
-                  if (chat.session !== undefined) chat.setRoot(chat.session.root)
+                  if (chat.session !== undefined) chat.setRoot(homeOf(chat.session))
                   chat.startNew()
                   setClearing(false)
                 }}

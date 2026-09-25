@@ -175,8 +175,10 @@ export interface SessionNotice {
 export interface ChatSession {
   /** Claude Code's own id for it, which is what `claude --resume` takes. */
   readonly id: string
-  /** The project folder it is about. */
+  /** The folder it runs in: the project's own, or one below it. */
   readonly root: string
+  /** The project it is listed under, where it was started in a folder below that project's. */
+  readonly project?: string
   readonly title: string
   /** The second line: where it stands, or the first line of the last thing said. */
   readonly stands: string
@@ -679,6 +681,28 @@ export interface Shortcut {
 
 /** What a window sends to make or change a shortcut; the main process keeps when it ran. */
 export type ShortcutDraft = Omit<Shortcut, 'id' | 'since' | 'lastRun' | 'lastSession'> & { readonly id?: string }
+
+/** The project a conversation is listed under. */
+export const homeOf = (session: Pick<ChatSession, 'root' | 'project'>): string => session.project ?? session.root
+
+/** Why a conversation the tool kept is not on the board. */
+export type HiddenReason = 'hidden' | 'driven' | 'terminal'
+
+/** A conversation the tool kept that the board does not list. */
+export interface HiddenChat {
+  readonly id: string
+  readonly title: string
+  readonly stands: string
+  readonly at: number
+  readonly reason: HiddenReason
+}
+
+/** The hidden conversations of one folder, and the project it is in, if any. */
+export interface HiddenFolder {
+  readonly path: string
+  readonly project?: string
+  readonly chats: readonly HiddenChat[]
+}
 
 /** A name for some of the projects, chosen in Settings so that nothing else is listed anywhere while it is in use. */
 export interface ProjectProfile {
