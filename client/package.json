@@ -1,6 +1,6 @@
 {
   "name": "geckit",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "description": "Correct text, dictate it, and talk to Claude Code, from one small window",
   "keywords": [
     "geckit"

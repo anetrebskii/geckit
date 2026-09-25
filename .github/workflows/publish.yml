@@ -13,15 +13,36 @@ permissions:
   contents: write
 
 jobs:
-  # Decided once, so the three builds carry the same number: major and minor from package.json, the run number after them.
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - run: |
+          npm ci
+          npm run lint
+          npm test
+
+  # Decided once, so the three builds carry the same number. The major is set here and nowhere else; the minor is one past the highest tag that has it, and the tag is made before the builds start. The same action and the same shape as Twins-AI.
   version:
+    needs: test
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.pick.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - id: pick
-        run: echo "version=$(node -p "require('./client/package.json').version.split('.').slice(0, 2).join('.')").${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+      - uses: entech-code/auto-version-tagging-action@HEAD
+        id: pick
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          majorVersion: 1
 
   publish:
     needs: version
@@ -67,7 +88,7 @@ jobs:
         run: |
           npm ci
           npm run typecheck
-          npm version "${{ needs.version.outputs.version }}" --no-git-tag-version
+          npm version "${{ needs.version.outputs.version }}" --no-git-tag-version --allow-same-version
           npm run build
 
       - name: Upload to the draft release
