@@ -132,18 +132,13 @@ jobs:
             if [ "$GECKIT_SIGNED" = true ]; then spctl --assess --type execute --verbose=4 "$app"; fi
           done
 
-  # The iPhone app, built every time and sent to TestFlight when the App Store Connect key is set. Xcode signs it by itself with that key, so no certificate or profile is kept here.
+  # The iPhone app is built here so a change that breaks it fails the run; it goes to App Store Connect from the Mac, by hand.
   ios:
     needs: version
     runs-on: macos-26
     defaults:
       run:
         working-directory: mobile
-    env:
-      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-      ASC_KEY: ${{ secrets.ASC_KEY }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -160,28 +155,7 @@ jobs:
           npx cap sync ios
 
       - name: Archive
-        run: |
-          version=(MARKETING_VERSION=${{ needs.version.outputs.version }} CURRENT_PROJECT_VERSION=${{ github.run_number }})
-          if [ -z "$ASC_KEY_ID" ]; then
-            xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/GeckIt.xcarchive" archive CODE_SIGNING_ALLOWED=NO "${version[@]}"
-            exit 0
-          fi
-          echo "$ASC_KEY" > "$RUNNER_TEMP/asc.p8"
-          auth=(-allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/asc.p8" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/GeckIt.xcarchive" archive "${auth[@]}" "${version[@]}"
-          cat > "$RUNNER_TEMP/export.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
-            <key>signingStyle</key><string>automatic</string>
-            <key>teamID</key><string>$APPLE_TEAM_ID</string>
-          </dict></plist>
-          PLIST
-          # With destination upload, the export is what sends the build to App Store Connect, where it shows up in TestFlight.
-          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/GeckIt.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" -exportPath "$RUNNER_TEMP/export" "${auth[@]}"
-          rm "$RUNNER_TEMP/asc.p8"
+        run: xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/GeckIt.xcarchive" archive CODE_SIGNING_ALLOWED=NO MARKETING_VERSION=${{ needs.version.outputs.version }} CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
   # Published only once every build is in it, which is when the installed copies see it.
   release:
