@@ -198,6 +198,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   }
   useEffect(() => () => dictate()?.stop(), [chat.session?.id])
   const goal = chat.session?.goal
+  const command = chat.root !== undefined && chat.draft.trim().startsWith('!')
   const checked =
     goal === undefined
       ? ''
@@ -298,7 +299,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           ))}
         </div>
       )}
-      <div className="composer-inner">
+      <div className={command ? 'composer-inner command' : 'composer-inner'}>
         {chat.pictures.length === 0 ? null : (
           <div className="pending">
             {chat.pictures.map((one, at) => (
@@ -489,8 +490,8 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {chat.root !== undefined && goal === undefined && GOAL.test(chat.draft) ? (
             <span className="composer-hint">Claude keeps working until this holds. A check after each reply decides whether it does</span>
           ) : null}
-          {chat.root !== undefined && chat.draft.trim().startsWith('!') ? (
-            <span className="composer-hint">
+          {command ? (
+            <span className="composer-hint command">
               Runs in {projectName(chat.root)}. Claude sees what it prints with your next message
             </span>
           ) : null}
