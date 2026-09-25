@@ -282,7 +282,10 @@ export function Chat(): React.JSX.Element {
       }
       if (meta && event.key === 'p') {
         event.preventDefault()
-        setSwitching(true)
+        // The board has the search as a field of its own; the key goes to it rather than opening a second one over it.
+        const inBoard = document.querySelector<HTMLInputElement>('.board-search-field')
+        if (inBoard === null) setSwitching(true)
+        else inBoard.focus()
       }
       if (meta && event.shiftKey && event.key.toLowerCase() === 'n') {
         event.preventDefault()
@@ -388,7 +391,7 @@ export function Chat(): React.JSX.Element {
           chat={chat}
           onNew={() => setMaking(true)}
           onAsk={() => setAsking(true)}
-          onSearch={() => setSwitching(true)}
+          onSeek={setSeek}
           onSettings={() => setSetting(true)}
           onKeys={openKeys}
           onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}

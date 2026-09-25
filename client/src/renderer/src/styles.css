@@ -3480,19 +3480,107 @@ button.tag:hover {
   border-bottom: 1px solid var(--border);
 }
 
+/* One row, one height: the picker and the two buttons carry the sidebar's own margins, which stand them off centre here. */
+.board-head .project,
+.board-head .board-new {
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+}
+
 .board-head .project {
   flex: 0 1 240px;
 }
 
-.board-new {
-  flex-shrink: 0;
-  white-space: nowrap;
+/* The search says it is there rather than waiting behind a key: the Cmd+P field itself, in the head, its rows under it. */
+.board-search {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 520px;
+  height: 28px;
+  padding: 0 10px;
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.board-search:hover {
+  border-color: var(--border-strong);
+}
+
+/* Over the layer that takes a click away, so the field itself stays a field while the rows are up. */
+.board-search.open {
+  z-index: 45;
+  background: var(--field);
+  border-color: var(--accent);
+}
+
+/* By the element, as the Cmd+P field is: a class alone loses to input[type='text']. */
+.board-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+.board-search input:focus-visible {
+  outline: none;
+}
+
+/* Away from the field, which puts the rows away without taking the click to a card. */
+.board-search-away {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+}
+
+/* Wider than the field: a row carries a title, a project and the line it was found in. */
+.board-search-found {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(560px, calc(100vw - 120px));
+  max-height: 60vh;
+  padding: 6px;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.board-search-found .row {
+  cursor: default;
+}
+
+.board-search-found mark {
+  font-weight: 600;
+  color: var(--text);
+  background: none;
+}
+
+.board-search-found .where mark {
+  color: inherit;
+}
+
+.board-search-found .more-found {
+  color: var(--text-faint);
 }
 
 .board-new {
+  flex-shrink: 0;
   width: auto;
   gap: 8px;
-  padding: 4px 10px;
+  white-space: nowrap;
 }
 
 .board-empty {
