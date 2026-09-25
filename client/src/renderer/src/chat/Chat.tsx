@@ -310,6 +310,11 @@ export function Chat(): React.JSX.Element {
         event.preventDefault()
         chat.refresh()
       }
+      if (meta && event.key === '.' && chat.working) {
+        event.preventDefault()
+        chat.stop()
+        return
+      }
       // Over the board the conversation is a popup: Escape puts it away rather than stopping what it is doing.
       if (event.key === 'Escape' && chat.settings.chatView === 'board' && chat.shown.kind === 'session') {
         event.preventDefault()
