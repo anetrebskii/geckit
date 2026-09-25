@@ -31,6 +31,7 @@ interface Row extends Found {
   readonly status?: SessionStatus
   readonly created?: number
   readonly moves: readonly Move[]
+  readonly favorite: boolean
 }
 
 const data = (): string => {
@@ -50,7 +51,9 @@ function kept<T>(name: string, fallback: T): T {
 }
 
 async function rows(): Promise<Row[]> {
-  const projects = kept<{ projects?: string[] }>('settings.json', {}).projects ?? []
+  const settings = kept<{ projects?: string[]; favorites?: string[] }>('settings.json', {})
+  const projects = settings.projects ?? []
+  const favorites = new Set(settings.favorites ?? [])
   const notes = kept<Record<string, Note>>('sessions.json', {})
   const all: Row[] = []
   for (const root of projects) {
@@ -64,6 +67,7 @@ async function rows(): Promise<Row[]> {
         ...(note?.status === undefined ? {} : { status: note.status }),
         ...(note?.created === undefined ? {} : { created: note.created }),
         moves: note?.moves ?? [],
+        favorite: favorites.has(found.id),
       })
     }
   }
@@ -112,17 +116,18 @@ const standing = (row: Row): string => row.status ?? 'in progress'
 
 function table(found: readonly Row[]): string {
   if (found.length === 0) return 'Nothing.'
-  const said = found.map((row) => [row.id.slice(0, 8), when(row.at), basename(row.root), standing(row), row.title])
-  const wide = [0, 1, 2, 3].map((at) => Math.max(...said.map((one) => (one[at] ?? '').length)))
+  const said = found.map((row) => [row.favorite ? '*' : ' ', row.id.slice(0, 8), when(row.at), basename(row.root), standing(row), row.title])
+  const wide = [0, 1, 2, 3, 4].map((at) => Math.max(...said.map((one) => (one[at] ?? '').length)))
   return said
-    .map((one) => one.map((cell, at) => (at === 4 ? cell : cell.padEnd(wide[at] ?? 0))).join('  '))
+    .map((one) => one.map((cell, at) => (at === 5 ? cell : cell.padEnd(wide[at] ?? 0))).join('  '))
     .join('\n')
 }
 
 const HELP = `geckit - what GeckIt holds, read from a command line.
 
-  geckit sessions [--today] [--since 2d] [--project <name>] [--status review|blocked|done] [--json]
-      The conversations, the newest first: id, when it last changed, project, how it stands, title.
+  geckit sessions [--today] [--since 2d] [--project <name>] [--status review|blocked|done] [--favorites] [--json]
+      The conversations, the newest first: a * for a favorite, id, when it last changed, project, how it stands, title.
+      --favorites keeps only the favorites.
       --today is since midnight. --since takes 2d, 36h or 90m; one moved between columns in that time counts too.
       --json adds history: when it was created and every move between columns, with the time of each.
 
@@ -141,11 +146,13 @@ async function sessions(args: readonly string[]): Promise<string> {
   const from = has('--today') ? midnight() : since(value('--since') ?? '')
   const project = value('--project')
   const status = value('--status')
+  const favorites = has('--favorites')
   const found = (await rows()).filter(
     (row) =>
       (from === undefined || row.at >= from || row.moves.some((move) => move.at >= from)) &&
       (project === undefined || basename(row.root).toLowerCase().includes(project.toLowerCase())) &&
-      (status === undefined || row.status === status),
+      (status === undefined || row.status === status) &&
+      (!favorites || row.favorite),
   )
   if (!has('--json')) return table(found)
   const said = await Promise.all(
@@ -156,6 +163,7 @@ async function sessions(args: readonly string[]): Promise<string> {
       root: row.root,
       status: standing(row),
       title: row.title,
+      favorite: row.favorite,
       last: row.stands,
       history: await history(row),
     })),
@@ -177,10 +185,10 @@ async function show(args: readonly string[]): Promise<string> {
   )
   const moved = await history(row)
   if (args.includes('--json')) {
-    return JSON.stringify({ id: row.id, project: basename(row.root), status: standing(row), title: row.title, history: moved, said }, undefined, 2)
+    return JSON.stringify({ id: row.id, project: basename(row.root), status: standing(row), title: row.title, favorite: row.favorite, history: moved, said }, undefined, 2)
   }
   return [
-    `${row.title}  (${basename(row.root)}, ${standing(row)}, ${when(row.at)})`,
+    `${row.title}  (${basename(row.root)}, ${standing(row)}, ${row.favorite ? 'favorite, ' : ''}${when(row.at)})`,
     ...moved.map((one) => `  ${when(Date.parse(one.at))}  ${one.status}`),
     '',
     ...said.map((one) => `${one.who}:\n${one.text}\n`),
