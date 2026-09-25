@@ -5,13 +5,20 @@
 GeckIt makes your Claude Code chats into a Kanban board with tasks and projects. The chats are your local Claude Code sessions, run on your Claude subscription. It also corrects the text you select and transcribes what you say by a shortcut.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/board-dark.png">
-  <img src="docs/screenshots/board-light.png" alt="The board: Claude Code conversations from three projects as cards in In progress, In review and Done">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/video/geckit-dark.webp">
+  <img src="docs/video/geckit-light.webp" alt="A new task with a goal is started, Claude works on it, a question from another task is answered, and the new card moves to In review by itself">
 </picture>
+
+A new task is started with a goal. While Claude works on it, another task asks to run a command and gets an answer. When the goal holds, the card moves to In review by itself. The same as a video: [light](docs/video/geckit-light.mp4), [dark](docs/video/geckit-dark.mp4).
 
 ## Board
 
 You work with Claude Code sessions like with tasks on a Kanban board. You can keep track of them and see how the work goes on different projects.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/board-dark.png">
+  <img src="docs/screenshots/board-light.png" alt="The board: Claude Code conversations from three projects as cards in In progress, In review and Done">
+</picture>
 
 - Three columns: In progress, In review, Done. A card is dragged from one to the next, and Done is grouped by the day.
 - A card shows its project, whether Claude is working, asks you something or waits for you, the goal, and the links written in the conversation.
