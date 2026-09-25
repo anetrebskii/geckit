@@ -673,9 +673,10 @@ export class Sessions {
     }
     const held = live
     const terminal = wantsKeyboard(command) ? this.#deps.terminal : undefined
-    // A command Claude asked for, run as it was written, is answered as soon as it ends, so the turn goes on without being told to.
-    const said = [...held.items.values()].filter((one) => one.kind === 'theirs').at(-1)
-    const wanted = said?.kind === 'theirs' && squeezed(said.text).includes(squeezed(command))
+    // A command Claude asked for since the person last wrote, run as it was written, is answered as soon as it ends, so the turn goes on without being told to.
+    const items = [...held.items.values()]
+    const since = items.slice(items.findLastIndex((one) => one.kind === 'mine') + 1)
+    const wanted = since.some((one) => one.kind === 'theirs' && squeezed(one.text).includes(squeezed(command)))
     const item: SessionItem = {
       kind: 'shell',
       id: `shell:${randomUUID()}`,
