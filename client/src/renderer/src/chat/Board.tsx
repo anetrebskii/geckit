@@ -13,6 +13,8 @@ import { NameField } from './NameField'
 import { Projects } from './Projects'
 import { emptyProfile, projectName, tint } from './project'
 import { STATUS_ICONS, Tags } from './Sidebar'
+import { BoardSearch } from './Switcher'
+import type { Seek } from './Switcher'
 import { running } from './Tasks'
 import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
@@ -40,7 +42,7 @@ export function Board({
   chat,
   onNew,
   onAsk,
-  onSearch,
+  onSeek,
   onSettings,
   onKeys,
   onShortcuts,
@@ -49,7 +51,8 @@ export function Board({
   readonly chat: Chat
   readonly onNew: () => void
   readonly onAsk: () => void
-  readonly onSearch: () => void
+  /** A conversation opened on something said in it, marked there as the Cmd+P panel marks it. */
+  readonly onSeek: (seek: Seek) => void
   readonly onSettings: () => void
   readonly onKeys: () => void
   readonly onShortcuts: () => void
@@ -115,15 +118,7 @@ export function Board({
           <Icon name="list" />
         </button>
         <Projects chat={chat} />
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Search conversations"
-          title={`Search conversations (${MOD}+P, or ${MOD}+Alt+P from any app)`}
-          onClick={onSearch}
-        >
-          <Icon name="search" />
-        </button>
+        <BoardSearch chat={chat} onSeek={onSeek} />
         <button
           type="button"
           className="icon-button no-drag"
