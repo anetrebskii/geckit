@@ -67,7 +67,7 @@ import {
   personWindows,
   shownChat,
   shownPeer,
-  shownVoice,
+  listeningVoice,
   sizeVoice,
   tellChat,
   voiceWindow,
@@ -165,7 +165,7 @@ function build(): Sessions {
 
 function registerDictate(): void {
   const took = globalShortcut.register(DICTATE, () => {
-    const open = shownVoice()
+    const open = listeningVoice()
     if (open !== undefined) {
       // Pressed again while it is up: that is Stop, which transcribes and pastes.
       open.webContents.send('voice:stop')
@@ -181,7 +181,7 @@ function registerDictate(): void {
 
 /** The capsule, for telling the application what to do rather than typing with it. */
 function askOutLoud(): void {
-  const open = shownVoice()
+  const open = listeningVoice()
   if (open !== undefined) {
     open.webContents.send('voice:stop')
     return
