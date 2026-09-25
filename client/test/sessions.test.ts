@@ -8,7 +8,7 @@ import type { GoalRead } from '../src/main/sessions/claude-read'
 import type { Found } from '../src/main/sessions/disk'
 import type { Ran, runShell } from '../src/main/sessions/shell'
 import type { Driver, Heard, Signal } from '../src/main/sessions/heard'
-import { memoryNotes, Sessions } from '../src/main/sessions'
+import { memoryNotes, Sessions, withMoves } from '../src/main/sessions'
 import type { SessionNotice, SessionsDeps } from '../src/main/sessions'
 import type { ChatSession, SessionItem, SessionItems, SessionMode } from '../src/shared/api'
 
@@ -1468,5 +1468,28 @@ describe('turns cut off by GeckIt closing', () => {
     after.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     await vi.waitFor(() => expect(after.fake.sent.at(-1)).toEqual({ text: 'and the lint' }))
     expect(notes.all()[id]?.queued?.map((one) => one.message.text)).toEqual(['then commit'])
+  })
+})
+
+describe('the moves between columns', () => {
+  it('keeps when it was created and each move, and nothing for a change that stays in the column', () => {
+    const first = withMoves(undefined, { title: 'Fix it' }, 1)
+    expect(first).toEqual({ title: 'Fix it', created: 1, moves: [{ status: 'progress', at: 1 }] })
+    const renamed = withMoves(first, { title: 'Fix the spinner' }, 2)
+    expect(renamed.moves).toEqual([{ status: 'progress', at: 1 }])
+    const review = withMoves(renamed, { title: 'Fix the spinner', status: 'review' }, 3)
+    const back = withMoves(review, { title: 'Fix the spinner' }, 4)
+    const done = withMoves(back, { title: 'Fix the spinner', status: 'done' }, 5)
+    expect(done.created).toBe(1)
+    expect(done.moves).toEqual([
+      { status: 'progress', at: 1 },
+      { status: 'review', at: 3 },
+      { status: 'progress', at: 4 },
+      { status: 'done', at: 5 },
+    ])
+  })
+
+  it('starts the record for a note written before there was one', () => {
+    expect(withMoves({ status: 'review' }, { status: 'done' }, 7)).toEqual({ status: 'done', moves: [{ status: 'done', at: 7 }] })
   })
 })

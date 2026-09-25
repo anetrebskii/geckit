@@ -1,10 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
 import type { SessionStatus } from '../shared/api'
 import { claudeFile, listClaude, readClaudeSession } from '../main/sessions/disk'
 import type { Found } from '../main/sessions/disk'
+import type { Move } from '../main/sessions'
 
 /**
  * GeckIt from a command line, for a session that is asked about the work
@@ -21,11 +22,15 @@ interface Note {
   readonly title?: string
   readonly hidden?: boolean
   readonly status?: SessionStatus
+  readonly created?: number
+  readonly moves?: readonly Move[]
 }
 
 interface Row extends Found {
   readonly root: string
   readonly status?: SessionStatus
+  readonly created?: number
+  readonly moves: readonly Move[]
 }
 
 const data = (): string => {
@@ -52,7 +57,14 @@ async function rows(): Promise<Row[]> {
     for (const found of await listClaude(root).catch(() => [])) {
       const note = notes[found.id]
       if (note?.hidden === true) continue
-      all.push({ ...found, root, title: note?.title ?? found.title, ...(note?.status === undefined ? {} : { status: note.status }) })
+      all.push({
+        ...found,
+        root,
+        title: note?.title ?? found.title,
+        ...(note?.status === undefined ? {} : { status: note.status }),
+        ...(note?.created === undefined ? {} : { created: note.created }),
+        moves: note?.moves ?? [],
+      })
     }
   }
   return all.sort((one, other) => other.at - one.at)
@@ -75,6 +87,26 @@ export function since(said: string): number | undefined {
 
 const when = (at: number): string => new Date(at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
 
+/** When it was started: GeckIt's own record, or for one it never saw begin, when the tool made its file. */
+async function started(row: Row): Promise<number | undefined> {
+  if (row.created !== undefined) return row.created
+  const path = await claudeFile(row.root, row.id)
+  if (path === undefined) return undefined
+  try {
+    return statSync(path).birthtimeMs
+  } catch {
+    return undefined
+  }
+}
+
+/** Every column it stood in and since when, the start first. */
+async function history(row: Row): Promise<{ readonly status: string; readonly at: string }[]> {
+  const began = await started(row)
+  const moves = row.moves.map((move) => ({ status: move.status === 'progress' ? 'in progress' : move.status, at: move.at }))
+  const all = began === undefined || moves.some((move) => move.at <= began) ? moves : [{ status: 'created', at: began }, ...moves]
+  return all.map((one) => ({ status: one.status, at: new Date(one.at).toISOString() }))
+}
+
 /** What a row is doing, in one word, from GeckIt's mark where it has one. */
 const standing = (row: Row): string => row.status ?? 'in progress'
 
@@ -91,10 +123,11 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
 
   geckit sessions [--today] [--since 2d] [--project <name>] [--status review|blocked|done] [--json]
       The conversations, the newest first: id, when it last changed, project, how it stands, title.
-      --today is since midnight. --since takes 2d, 36h or 90m.
+      --today is since midnight. --since takes 2d, 36h or 90m; one moved between columns in that time counts too.
+      --json adds history: when it was created and every move between columns, with the time of each.
 
   geckit show <id> [--json]
-      What was said in one conversation, the person and Claude, without what the tools printed.
+      When it was created and moved between columns, then what was said in it, the person and Claude, without what the tools printed.
       The id is the one sessions prints; the first few characters are enough.
 
 Nothing here writes anything.`
@@ -110,17 +143,24 @@ async function sessions(args: readonly string[]): Promise<string> {
   const status = value('--status')
   const found = (await rows()).filter(
     (row) =>
-      (from === undefined || row.at >= from) &&
+      (from === undefined || row.at >= from || row.moves.some((move) => move.at >= from)) &&
       (project === undefined || basename(row.root).toLowerCase().includes(project.toLowerCase())) &&
       (status === undefined || row.status === status),
   )
-  return has('--json')
-    ? JSON.stringify(
-        found.map((row) => ({ id: row.id, at: new Date(row.at).toISOString(), project: basename(row.root), root: row.root, status: standing(row), title: row.title, last: row.stands })),
-        undefined,
-        2,
-      )
-    : table(found)
+  if (!has('--json')) return table(found)
+  const said = await Promise.all(
+    found.map(async (row) => ({
+      id: row.id,
+      at: new Date(row.at).toISOString(),
+      project: basename(row.root),
+      root: row.root,
+      status: standing(row),
+      title: row.title,
+      last: row.stands,
+      history: await history(row),
+    })),
+  )
+  return JSON.stringify(said, undefined, 2)
 }
 
 async function show(args: readonly string[]): Promise<string> {
@@ -135,10 +175,16 @@ async function show(args: readonly string[]): Promise<string> {
   const said = items.flatMap((item) =>
     item.kind === 'mine' || item.kind === 'theirs' ? [{ who: item.kind === 'mine' ? 'Alex' : 'Claude', text: item.text }] : [],
   )
+  const moved = await history(row)
   if (args.includes('--json')) {
-    return JSON.stringify({ id: row.id, project: basename(row.root), status: standing(row), title: row.title, said }, undefined, 2)
+    return JSON.stringify({ id: row.id, project: basename(row.root), status: standing(row), title: row.title, history: moved, said }, undefined, 2)
   }
-  return [`${row.title}  (${basename(row.root)}, ${standing(row)}, ${when(row.at)})`, '', ...said.map((one) => `${one.who}:\n${one.text}\n`)].join('\n')
+  return [
+    `${row.title}  (${basename(row.root)}, ${standing(row)}, ${when(row.at)})`,
+    ...moved.map((one) => `  ${when(Date.parse(one.at))}  ${one.status}`),
+    '',
+    ...said.map((one) => `${one.who}:\n${one.text}\n`),
+  ].join('\n')
 }
 
 export async function run(args: readonly string[]): Promise<string> {
