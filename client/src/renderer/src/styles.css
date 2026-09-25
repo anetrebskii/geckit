@@ -2210,6 +2210,23 @@ button.tag:hover {
   text-overflow: ellipsis;
 }
 
+/* A draft starting with ! is a command, so the field looks like a terminal while it is typed. */
+
+.composer-inner.command,
+.composer-inner.command:focus-within {
+  border-color: var(--warning-text);
+  box-shadow: 0 0 0 3px var(--warning-bg);
+}
+
+.composer-inner.command textarea {
+  font-family: var(--font-code);
+  font-size: 13px;
+}
+
+.composer-hint.command {
+  color: var(--warning-text);
+}
+
 /* A command typed after ! is the person's, so it sits in their bubble, with what it printed under it. */
 
 .shell {
