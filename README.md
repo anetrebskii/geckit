@@ -1,4 +1,4 @@
-<p align="center"><img src="client/assets/icons/128x128.png" width="96" alt=""></p>
+<p align="center"><img src="docs/icon-walk.svg" width="112" alt=""></p>
 
 <h1 align="center">GeckIt</h1>
 
