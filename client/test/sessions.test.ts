@@ -1444,4 +1444,29 @@ describe('turns cut off by GeckIt closing', () => {
     expect(after.fake.made[0]).toMatchObject({ id, resume: true, mode: 'plan' })
     expect(after.fake.sent.at(-1)?.text).toBe('continue')
   })
+
+  it('keeps what was queued, and sends it once the continued turn is answered', async () => {
+    const notes = memoryNotes()
+    const before = build({ notes })
+    const id = await started(before)
+    await before.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'and the tests' })
+    await before.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'then commit' })
+    const after = build({
+      notes,
+      disk: {
+        list: async () => [{ id, title: 'do the thing', stands: 'Working on it', at: 1, driven: false }],
+        read: async () => undefined,
+        has: async () => true,
+      },
+    })
+    const listed = await after.sessions.list([ROOT])
+    expect(listed[0]?.queued?.map((one) => one.text)).toEqual(['and the tests', 'then commit'])
+
+    const first = listed[0]?.queued?.[0]?.id ?? ''
+    after.sessions.requeue(id, first, 'and the lint')
+    await after.sessions.proceed(id)
+    after.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(after.fake.sent.at(-1)).toEqual({ text: 'and the lint' }))
+    expect(notes.all()[id]?.queued?.map((one) => one.message.text)).toEqual(['then commit'])
+  })
 })

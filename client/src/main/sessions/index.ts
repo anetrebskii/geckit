@@ -88,6 +88,13 @@ export interface SessionNote {
   readonly status?: SessionStatus
   /** A turn is running, where and since when; still here on a start, it was cut off by GeckIt closing. */
   readonly cut?: { readonly root: string; readonly at: number }
+  /** Messages waiting for the turn before them, kept so a restart does not lose them. */
+  readonly queued?: readonly Queued[]
+}
+
+interface Queued {
+  readonly id: string
+  readonly message: SessionMessage
 }
 
 export interface NotesStore {
@@ -212,7 +219,7 @@ interface Live {
   /** The goal was cleared while the turn ran, and the tool is told once it has stopped. */
   clearing: boolean
   /** Messages sent while it worked, oldest first. */
-  queued: { readonly id: string; readonly message: SessionMessage }[]
+  queued: Queued[]
   /** A general question, which is never listed and is ended once it has been quiet for a while. */
   readonly question: boolean
 }
@@ -310,6 +317,13 @@ export class Sessions {
     this.#deps.notes.set(id, { ...this.#deps.notes.all()[id], ...change })
   }
 
+  #queue(live: Live, queued: Queued[]): void {
+    live.queued = queued
+    if (live.question) return
+    const { queued: _was, ...note } = this.#deps.notes.all()[live.id] ?? {}
+    this.#deps.notes.set(live.id, queued.length === 0 ? note : { ...note, queued })
+  }
+
   // --- what the window asks ---------------------------------------------------
 
   async account(): Promise<ClaudeAccount> {
@@ -376,6 +390,7 @@ export class Sessions {
       // One begun here is not on disk yet the first time it is listed.
       const first = row === undefined ? [...(live?.items.values() ?? [])].find((item) => item.kind === 'mine') : undefined
       const work = row?.work ?? (first?.kind === 'mine' ? workItem(first.text) : undefined)
+      const queued = live?.queued ?? note?.queued ?? []
       sessions.push({
         id,
         root: where,
@@ -402,9 +417,9 @@ export class Sessions {
         ...(runs === undefined ? {} : { runs: runs.command }),
         ...(work === undefined ? {} : { work }),
         ...(note?.status === undefined ? {} : { status: note.status }),
-        ...(live === undefined || live.queued.length === 0
+        ...(queued.length === 0
           ? {}
-          : { queued: live.queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0 })) }),
+          : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0 })) }),
         ...(live?.question === true ? { question: true } : {}),
         ...(used === undefined && cost === undefined
           ? {}
@@ -461,6 +476,7 @@ export class Sessions {
     live.model = row.model
     live.used = row.used
     live.chosen = note?.model
+    live.queued = [...(note?.queued ?? [])]
     return live
   }
 
@@ -566,7 +582,7 @@ export class Sessions {
       // A goal waiting its turn stands on the row already, as one sent straight away does.
       const waiting = goalSent(message.text)
       if (waiting !== undefined && waiting !== '') live.goal = { condition: waiting, checks: 0 }
-      live.queued.push({ id: `queued:${randomUUID()}`, message: { ...message, session: live.id } })
+      this.#queue(live, [...live.queued, { id: `queued:${randomUUID()}`, message: { ...message, session: live.id } }])
       this.#changed()
       return live.id
     }
@@ -981,23 +997,26 @@ export class Sessions {
 
   /** A message taken out of the queue before it went, to be cancelled or typed again. */
   unqueue(id: string, queued: string): SessionMessage | undefined {
-    const live = this.#live.get(id)
+    const live = this.#live.get(id) ?? this.#adopt(id)
     const taken = live?.queued.find((one) => one.id === queued)
     if (live === undefined || taken === undefined) return undefined
-    live.queued = live.queued.filter((one) => one !== taken)
+    this.#queue(live, live.queued.filter((one) => one !== taken))
     this.#changed()
     return taken.message
   }
 
   /** A message waiting in the queue, said again in other words. Its place in the queue and its pictures stay. */
   requeue(id: string, queued: string, text: string): void {
-    const live = this.#live.get(id)
+    const live = this.#live.get(id) ?? this.#adopt(id)
     const at = live?.queued.findIndex((one) => one.id === queued) ?? -1
     const said = text.trim()
     if (live === undefined || at === -1 || said === '') return
     const was = live.queued[at]
     if (was === undefined) return
-    live.queued = live.queued.map((one, index) => (index === at ? { id: one.id, message: { ...was.message, text: said } } : one))
+    this.#queue(
+      live,
+      live.queued.map((one, index) => (index === at ? { id: one.id, message: { ...was.message, text: said } } : one)),
+    )
     this.#changed()
   }
 
@@ -1553,7 +1572,8 @@ export class Sessions {
       this.#deps.items({ id: live.id, items, ...(gone.length > 0 ? { gone } : {}) })
     }
     // The next message waiting goes once this one is over, in the mode chosen by then. Stopping a turn is moving on to the next thing, so the queue carries on; an ending nobody asked for leaves them for the window to put back in the field.
-    const next = (signal.how === 'done' || signal.how === 'stopped') && !live.clearing ? live.queued.shift() : undefined
+    const next = (signal.how === 'done' || signal.how === 'stopped') && !live.clearing ? live.queued[0] : undefined
+    if (next !== undefined) this.#queue(live, live.queued.slice(1))
     if (next !== undefined) void this.send({ ...next.message, mode: live.mode })
     this.#changed()
     void this.#goal(live)
