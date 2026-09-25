@@ -90,6 +90,32 @@ export interface SessionNote {
   readonly cut?: { readonly root: string; readonly at: number }
   /** Messages waiting for the turn before them, kept so a restart does not lose them. */
   readonly queued?: readonly Queued[]
+  /** When GeckIt first wrote anything about it. */
+  readonly created?: number
+  /** Every move between columns, oldest first, so what was done can be told with when. */
+  readonly moves?: readonly Move[]
+}
+
+export interface Move {
+  readonly status: SessionStatus | 'progress'
+  readonly at: number
+}
+
+/**
+ * The note as it is to be kept: when it was first written and every change of
+ * column carried over from the one before, whatever the change left out, and a
+ * move added where the column is not the one it was in.
+ */
+export function withMoves(was: SessionNote | undefined, note: SessionNote, at: number): SessionNote {
+  const now = note.status ?? 'progress'
+  const before = was === undefined ? undefined : (was.status ?? 'progress')
+  const moves = was?.moves ?? []
+  const created = was === undefined ? at : was.created
+  return {
+    ...note,
+    ...(created === undefined ? {} : { created }),
+    ...(now === before ? (moves.length === 0 ? {} : { moves }) : { moves: [...moves, { status: now, at }] }),
+  }
 }
 
 interface Queued {

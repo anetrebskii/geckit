@@ -9,16 +9,20 @@ import { GUIDE, keepGuide } from '../src/main/guide'
 describe('what Claude Code is told about GeckIt', () => {
   let folder = ''
   const was = process.env['CLAUDE_CONFIG_DIR']
+  // The command is written under the home folder, and a test that turns the guide off would delete the real one.
+  const home = process.env['HOME']
   const read = (name: string): Promise<string> => readFile(join(folder, name), 'utf8').catch(() => 'gone')
 
   beforeEach(async () => {
     folder = await mkdtemp(join(tmpdir(), 'geckit-guide-'))
     process.env['CLAUDE_CONFIG_DIR'] = folder
+    process.env['HOME'] = folder
   })
 
   afterEach(() => {
     if (was === undefined) delete process.env['CLAUDE_CONFIG_DIR']
     else process.env['CLAUDE_CONFIG_DIR'] = was
+    process.env['HOME'] = home
   })
 
   it('writes the file and one line that reads it, leaving what was there', async () => {

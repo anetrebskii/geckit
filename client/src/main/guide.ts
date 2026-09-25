@@ -48,7 +48,7 @@ ${path} sessions --today --json
 ${path} show <id>
 \`\`\`
 
-\`sessions\` prints one line each, newest first: the id, when it last changed, the project, how it stands - in progress, review, blocked or done - and the title. \`show\` prints what was said in one of them, the person and Claude, without what the tools printed. \`--json\` gives the same for reading with a program.
+\`sessions\` prints one line each, newest first: the id, when it last changed, the project, how it stands - in progress, review, blocked or done - and the title. \`--today\` and \`--since\` also count one moved between columns in that time. \`show\` prints when it was created and each time it moved to another column, then what was said in it, the person and Claude, without what the tools printed. \`--json\` gives the same for reading with a program, with that history in \`history\`.
 `
 
 export const GUIDE = `# Working in GeckIt
