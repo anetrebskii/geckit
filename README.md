@@ -152,3 +152,7 @@ cd client
 npm install
 npm run dev
 ```
+
+## License
+
+MIT, with one more condition: an app, service or site built from this code shows "Based on GeckIt by Alex Netrebskii" with a link to this repository, in its About screen or README. The GeckIt name and the gecko icon are not part of the license. See [LICENSE](LICENSE).
