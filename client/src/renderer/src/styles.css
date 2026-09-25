@@ -2577,6 +2577,10 @@ button.tag:hover {
   color: var(--text);
 }
 
+.goal-picker .remote-dot {
+  flex-shrink: 0;
+}
+
 .goal-picker .goal-text {
   overflow: hidden;
   text-overflow: ellipsis;
