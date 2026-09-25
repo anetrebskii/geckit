@@ -831,6 +831,10 @@ svg.spinning,
   border-bottom: 1px solid var(--border);
 }
 
+html.framed .topbar {
+  padding-left: 8px;
+}
+
 .tab {
   display: flex;
   align-items: center;
@@ -1451,6 +1455,10 @@ svg.spinning,
   gap: 4px;
   height: var(--topbar);
   padding: 0 8px 0 82px;
+}
+
+html.framed .sidebar-head {
+  padding-left: 8px;
 }
 
 .project {
@@ -3495,6 +3503,10 @@ button.tag:hover {
   gap: 8px;
   padding: 8px 12px 8px 82px;
   border-bottom: 1px solid var(--border);
+}
+
+html.framed .board-head {
+  padding-left: 12px;
 }
 
 /* One row, one height: the picker and the two buttons carry the sidebar's own margins, which stand them off centre here. */
