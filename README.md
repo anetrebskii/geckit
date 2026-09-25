@@ -13,7 +13,6 @@ A new task is started with a goal. While Claude works on it, another task asks t
 You work with Claude Code sessions like with tasks on a Kanban board. You can keep track of them and see how the work goes on different projects.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/board-dark.png">
   <img src="docs/screenshots/board-light.png" alt="The board: Claude Code conversations from three projects as cards in In progress, In review and Done">
 </picture>
 
@@ -29,7 +28,6 @@ You work with Claude Code sessions like with tasks on a Kanban board. You can ke
 The field at the top of the board (Cmd+P) finds a conversation by its title, its project or anything said in it.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/search-dark.png">
   <img src="docs/screenshots/search-light.png" alt="The search field at the top of the board with conversations found by what was said in them">
 </picture>
 
@@ -38,7 +36,6 @@ The field at the top of the board (Cmd+P) finds a conversation by its title, its
 A profile is a set of projects, for example one for work and one for your own. The board, search, New task and shortcuts show only the projects of the profile in use.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/profiles-dark.png">
   <img src="docs/screenshots/profiles-light.png" alt="Settings, Profiles: All projects, Work and Side projects">
 </picture>
 
@@ -47,7 +44,6 @@ A profile is a set of projects, for example one for work and one for your own. T
 Press a card and the conversation opens over the board. You can use it instead of iTerm2 + Claude Code.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/board-open-dark.png">
   <img src="docs/screenshots/board-open-light.png" alt="A card opened over the board: the Claude Code conversation, marked In review">
 </picture>
 
@@ -59,14 +55,12 @@ Press a card and the conversation opens over the board. You can use it instead o
 - Background jobs are managed as the Claude Code terminal does.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/background-dark.png">
   <img src="docs/screenshots/background-light.png" alt="The Background window: a dev server and a test watch running, a finished command, and a helper agent">
 </picture>
 
 - The board can be switched to a list, grouped by project, with favorites at the top and Cmd+1... between them.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/list-dark.png">
   <img src="docs/screenshots/list-light.png" alt="The list view: conversations grouped by project in a sidebar, with favorites at the top">
 </picture>
 
@@ -75,7 +69,6 @@ Press a card and the conversation opens over the board. You can use it instead o
 Press Cmd+Alt+R, show the problem on the screen and say what is wrong. GeckIt writes down what you said and keeps frames of what you showed.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/record-screen-dark.png">
   <img src="docs/screenshots/record-screen-light.png" alt="Recording the screen: the capsule over a web page with a broken filter bar">
 </picture>
 
@@ -83,11 +76,9 @@ Then Ask sends it to Claude as a question, and Make a task finds the project it 
 
 <p>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/record-choosing-dark.png">
     <img src="docs/screenshots/record-choosing-light.png" width="49%" alt="After recording: what was said, two frames, and Cancel, Ask and Make a task">
   </picture>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/record-planned-dark.png">
     <img src="docs/screenshots/record-planned-light.png" width="49%" alt="The planned task: Start in trailmap, with the words and the goal">
   </picture>
 </p>
@@ -99,7 +90,6 @@ The New task form has Record the screen too: the recording fills the form.
 Press Cmd+Alt+G and say what to do: start a task in a project, write to a conversation, stop it, mark it done. GeckIt shows what it understood and does it when you agree.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/say-dark.png">
   <img src="docs/screenshots/say-light.png" width="340" alt="Say it: two actions heard, Start in pinch with a goal and Mark Release notes for 0.9 as done">
 </picture>
 
@@ -108,7 +98,6 @@ Press Cmd+Alt+G and say what to do: start a task in a project, write to a conver
 A shortcut is a saved prompt for a project, with a goal, a mode and a model. Run it from the board (Cmd+J) or the menu bar, or give it a timetable: every day, every weekday, every week or a cron line. A timed shortcut runs while GeckIt is open.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/shortcuts-dark.png">
   <img src="docs/screenshots/shortcuts-light.png" alt="Shortcuts: Morning triage every weekday, Dependency updates every Monday, and Release notes run by hand">
 </picture>
 
@@ -117,7 +106,6 @@ A shortcut is a saved prompt for a project, with a goal, a mode and a model. Run
 The board and the conversations on your iPhone. Turn on Phone in Settings and scan the code with the GeckIt app. The phone connects to the Mac over WebRTC. The iPhone app is not public yet.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phone-dark.png">
   <img src="docs/screenshots/phone-light.png" alt="The iPhone app: the board, a command waiting for an answer, and a conversation">
 </picture>
 
@@ -125,11 +113,9 @@ The board and the conversations on your iPhone. Turn on Phone in Settings and sc
 
 <p>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/correct-dark.png">
     <img src="docs/screenshots/correct-light.png" width="49%" alt="The Correct tab with a message to fix and the Grammar, Improve, Translate, Explain and Custom buttons">
   </picture>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/transcribe-dark.png">
     <img src="docs/screenshots/transcribe-light.png" width="49%" alt="The Transcribe tab recording, with past transcriptions under it">
   </picture>
 </p>
@@ -138,7 +124,6 @@ The board and the conversations on your iPhone. Turn on Phone in Settings and sc
 - **Transcribe.** Press Cmd+Alt+V, speak, and the text is pasted where you were typing. Audio files can be transcribed too, and you choose the microphone.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/voice-dark.png">
   <img src="docs/screenshots/voice-light.png" width="340" alt="The dictation capsule Cmd+Alt+V opens">
 </picture>
 
