@@ -576,7 +576,14 @@ export function NewTask({
   }
 
   return (
-    <div className="new-task">
+    <div
+      className="new-task"
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return
+        event.preventDefault()
+        start()
+      }}
+    >
       <div className="new-task-head">{question ? 'Ask a question' : 'New task'}</div>
       {question ? null : (
         <label className="new-task-label">
@@ -627,9 +634,6 @@ export function NewTask({
             event.preventDefault()
             setOver(false)
             take([...event.dataTransfer.files])
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) start()
           }}
         />
       </label>
