@@ -177,6 +177,8 @@ export function voiceWindow(): BrowserWindow {
     voice?.show()
     voice?.webContents.send('voice:start')
   })
+  voice.webContents.on('render-process-gone', () => voice?.destroy())
+  voice.on('unresponsive', () => voice?.destroy())
   voice.on('closed', () => {
     voice = undefined
   })
@@ -185,6 +187,16 @@ export function voiceWindow(): BrowserWindow {
 
 export const shownVoice = (): BrowserWindow | undefined =>
   voice !== undefined && !voice.isDestroyed() ? voice : undefined
+
+/** The capsule a second press should stop; one that never showed or whose page died is thrown away instead, so the press opens a new one. */
+export function listeningVoice(): BrowserWindow | undefined {
+  const open = shownVoice()
+  if (open === undefined) return undefined
+  if (open.isVisible() && !open.webContents.isCrashed()) return open
+  open.destroy()
+  voice = undefined
+  return undefined
+}
 
 /** The capsule grows to hold what it is asking about, around the middle it already stands on. */
 export function sizeVoice(height: number): void {
