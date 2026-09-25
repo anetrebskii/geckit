@@ -49,6 +49,7 @@
   --review-solid: #c08a1e;
   --done-solid: #2e9a42;
   --more-solid: #8e8e93;
+  --favorite: #ffcc00;
   --sheet: #f2f2f5;
   --on-solid: #ffffff;
   /* The Mac's screen is shown on black in either theme, as a photo or a video is. */
@@ -104,6 +105,7 @@
   --review-solid: #a8781a;
   --done-solid: #2b8a3c;
   --more-solid: #636366;
+  --favorite: #ffd60a;
   --sheet: #1c1c1e;
   --on-solid: #ffffff;
   --screen: #000000;
@@ -158,6 +160,7 @@
     --review-solid: #a8781a;
     --done-solid: #2b8a3c;
     --more-solid: #636366;
+    --favorite: #ffd60a;
     --sheet: #1c1c1e;
     --on-solid: #ffffff;
     --screen: #000000;
@@ -5571,4 +5574,64 @@ html.phone .task-row .how {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A Mac in the list: its star, its name that switches to it, and its menu, each a target of its own. */
+.phone-mac {
+  gap: 0;
+  padding: 0;
+}
+
+.phone-mac + .phone-mac::before {
+  inset-inline-start: 48px;
+}
+
+.phone-mac-star,
+.phone-mac-more {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 48px;
+  min-height: 50px;
+  color: var(--text-faint);
+}
+
+.phone-mac.favorite .phone-mac-star {
+  color: var(--favorite);
+}
+
+.phone-mac.favorite .phone-mac-star svg {
+  fill: currentColor;
+}
+
+.phone-mac-name {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 50px;
+  font-size: 17px;
+  text-align: start;
+}
+
+.phone-mac-name .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-mac.favorite .phone-mac-name .label {
+  font-weight: 600;
+}
+
+.phone-mac-name > svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.phone-mac-add,
+.sheet-note + .sheet-list {
+  margin-top: 10px;
 }
