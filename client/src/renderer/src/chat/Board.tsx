@@ -66,8 +66,8 @@ export function Board({
   const [deleting, setDeleting] = useState<readonly ChatSession[] | undefined>()
   const [asked, setAsked] = useState<DOMRect | undefined>()
   const [ways, setWays] = useState<DOMRect | undefined>()
-  // The card being dragged, and the column the pointer is over.
-  const held = useRef<string | undefined>(undefined)
+  // The cards being dragged, and the column the pointer is over.
+  const held = useRef<readonly string[]>([])
   const [over, setOver] = useState<string | undefined>()
   // A day in Done folded away, by its heading, for as long as the window is open.
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set())
@@ -98,13 +98,70 @@ export function Board({
     [chat.sessions],
   )
 
+  // The cards picked with Cmd or Shift, to be moved, hidden or deleted together. One gone from the board is not picked any more.
+  const [picks, setPicks] = useState<ReadonlySet<string>>(new Set())
+  const picked = useMemo(
+    () => new Set(chat.sessions.filter((one) => picks.has(one.id)).map((one) => one.id)),
+    [chat.sessions, picks],
+  )
+  const chosen = useMemo(() => chat.sessions.filter((one) => picked.has(one.id)), [chat.sessions, picked])
+  // Where Shift+click counts from: the card pressed last.
+  const from = useRef<string | undefined>(undefined)
+  const order = columns.flatMap((column) =>
+    byDay(column.rows, now, column.status === 'done').flatMap((day) => (folded.has(day.heading) ? [] : day.rows.map((one) => one.id))),
+  )
+  const press = (session: ChatSession, how: 'open' | 'one' | 'run'): void => {
+    const start = from.current === undefined ? -1 : order.indexOf(from.current)
+    from.current = session.id
+    if (how === 'open' && picked.size === 0) {
+      chat.show(session)
+      return
+    }
+    const next = new Set(picked)
+    const at = order.indexOf(session.id)
+    if (how === 'run' && start !== -1 && at !== -1) {
+      for (const id of order.slice(Math.min(start, at), Math.max(start, at) + 1)) next.add(id)
+    } else if (!next.delete(session.id)) next.add(session.id)
+    setPicks(next)
+  }
+  // What the menu of a picked card does, it does to every picked one.
+  const targets = (id: string): readonly string[] => (picked.has(id) ? [...picked] : [id])
+
+  // Esc lets go of what is picked, and Delete asks about deleting it.
+  useEffect(() => {
+    if (chosen.length === 0 || deleting !== undefined) return
+    const key = (event: KeyboardEvent): void => {
+      const field =
+        event.target instanceof HTMLElement &&
+        (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))
+      if (field) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        setPicks(new Set())
+      }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault()
+        setDeleting(chosen)
+      }
+    }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+  }, [chosen, deleting])
+
   const drop = (status: SessionStatus | undefined): void => {
-    const id = held.current
-    held.current = undefined
+    const ids = held.current
+    held.current = []
     setOver(undefined)
-    if (id === undefined) return
-    const was = chat.sessions.find((one) => one.id === id)?.status
-    if (was !== status) chat.mark(id, status)
+    for (const id of ids) {
+      const was = chat.sessions.find((one) => one.id === id)?.status
+      if (was !== status) chat.mark(id, status)
+    }
+  }
+
+  const hide = (ids: readonly string[]): void => {
+    for (const id of ids) chat.hide(id)
+    setPicks(new Set())
   }
 
   return (
@@ -277,7 +334,9 @@ export function Board({
                         session={session}
                         now={now}
                         renaming={renaming === session.id}
-                        onDrag={(id) => (held.current = id)}
+                        picked={picked.has(session.id)}
+                        onPress={press}
+                        onDrag={(id) => (held.current = id === undefined ? [] : targets(id))}
                         onMenu={(id, at) => setMenu({ id, at })}
                         onRenamed={(id, name) => {
                           setRenaming(undefined)
@@ -293,6 +352,23 @@ export function Board({
           ))}
       </div>
 
+      {chosen.length === 0 ? null : (
+        <div className="picked-bar board-picked">
+          <span>{chosen.length === 1 ? '1 conversation' : `${String(chosen.length)} conversations`}</span>
+          <span className="board-picked-how">Drag one to move them all</span>
+          <span className="spacer" />
+          <button type="button" className="quiet" title="Esc" onClick={() => setPicks(new Set())}>
+            Cancel
+          </button>
+          <button type="button" className="quiet" onClick={() => hide(chosen.map((one) => one.id))}>
+            Hide
+          </button>
+          <button type="button" className="primary danger" title="Delete" onClick={() => setDeleting(chosen)}>
+            Delete
+          </button>
+        </div>
+      )}
+
       {menu === undefined ? null : (
         <Menu
           anchor={menu.at}
@@ -304,14 +380,21 @@ export function Board({
               value: `status:${one.status}`,
               label: `Mark as ${one.label.toLowerCase()}`,
               icon: STATUS_ICONS[one.status],
-              on: chat.everyone.some((session) => session.id === menu.id && session.status === one.status),
+              on: targets(menu.id).every((id) => chat.everyone.some((session) => session.id === id && session.status === one.status)),
             })),
-            { value: 'rename', label: 'Rename', icon: 'pencil' },
-            { value: 'shortcut', label: 'Save as a shortcut...', icon: 'bolt' },
-            { value: 'copy', label: 'Copy the terminal command', icon: 'copy' },
-            { value: 'terminal', label: 'Open in a terminal', icon: 'terminal' },
-            { value: 'hide', label: 'Hide from this list', icon: 'hidden' },
-            { value: 'delete', label: 'Delete', danger: true, icon: 'trash' },
+            ...(picked.has(menu.id) && picked.size > 1
+              ? [
+                  { value: 'hide', label: `Hide ${String(picked.size)} from this list`, icon: 'hidden' },
+                  { value: 'delete', label: `Delete ${String(picked.size)}`, danger: true, icon: 'trash' },
+                ]
+              : [
+                  { value: 'rename', label: 'Rename', icon: 'pencil' },
+                  { value: 'shortcut', label: 'Save as a shortcut...', icon: 'bolt' },
+                  { value: 'copy', label: 'Copy the terminal command', icon: 'copy' },
+                  { value: 'terminal', label: 'Open in a terminal', icon: 'terminal' },
+                  { value: 'hide', label: 'Hide from this list', icon: 'hidden' },
+                  { value: 'delete', label: 'Delete', danger: true, icon: 'trash' },
+                ]),
           ]}
           onPick={(value) => {
             const favorites = chat.settings.favorites
@@ -319,8 +402,9 @@ export function Board({
             if (value === 'unfavorite') chat.change({ favorites: favorites.filter((id) => id !== menu.id) })
             if (value.startsWith('status:')) {
               const status = value.slice('status:'.length) as SessionStatus
-              const was = chat.everyone.find((session) => session.id === menu.id)?.status
-              chat.mark(menu.id, was === status ? undefined : status)
+              const ids = targets(menu.id)
+              const all = ids.every((id) => chat.everyone.find((session) => session.id === id)?.status === status)
+              for (const id of ids) chat.mark(id, all ? undefined : status)
             }
             if (value === 'rename') setRenaming(menu.id)
             if (value === 'shortcut') {
@@ -329,10 +413,11 @@ export function Board({
             }
             if (value === 'copy') chat.copyTerminal(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)
-            if (value === 'hide') chat.hide(menu.id)
+            if (value === 'hide') hide(targets(menu.id))
             if (value === 'delete') {
-              const one = chat.everyone.find((session) => session.id === menu.id)
-              if (one !== undefined) setDeleting([one])
+              const ids = targets(menu.id)
+              const some = chat.everyone.filter((session) => ids.includes(session.id))
+              if (some.length > 0) setDeleting(some)
             }
           }}
           onClose={() => setMenu(undefined)}
@@ -346,6 +431,7 @@ export function Board({
           onDelete={() => {
             chat.remove(deleting.map((one) => one.id))
             setDeleting(undefined)
+            setPicks(new Set())
           }}
         />
       )}
@@ -397,6 +483,8 @@ function Card({
   session,
   now,
   renaming,
+  picked,
+  onPress,
   onDrag,
   onMenu,
   onRenamed,
@@ -406,6 +494,9 @@ function Card({
   readonly session: ChatSession
   readonly now: number
   readonly renaming: boolean
+  readonly picked: boolean
+  /** Cmd+click picks one card, Shift+click the run up to it, and a plain click opens it unless some are picked. */
+  readonly onPress: (session: ChatSession, how: 'open' | 'one' | 'run') => void
   /** The card being dragged, which the board holds on to until it lands. */
   readonly onDrag: (id: string | undefined) => void
   readonly onMenu: (id: string, at: DOMRect) => void
@@ -433,7 +524,7 @@ function Card({
   const detail = stands?.tone === 'said-working' ? session.stands.replace(/^Working - /, '') : session.stands
   return (
     <div
-      className={`board-card${starred ? ' starred' : ''}${open ? ' on' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
+      className={`board-card${starred ? ' starred' : ''}${open ? ' on' : ''}${picked ? ' picked' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
       draggable={!renaming}
       role="button"
       tabIndex={0}
@@ -447,7 +538,9 @@ function Card({
         onDrag(session.id)
       }}
       onDragEnd={() => onDrag(undefined)}
-      onClick={() => chat.show(session)}
+      onClick={(event) =>
+        onPress(session, event.shiftKey ? 'run' : (MOD === 'Cmd' ? event.metaKey : event.ctrlKey) ? 'one' : 'open')
+      }
       onKeyDown={(event) => {
         if (event.key === 'Enter') chat.show(session)
       }}

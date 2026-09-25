@@ -4111,6 +4111,19 @@ html.framed .board-head {
   background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
 }
 
+.board-card.picked {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.board-picked {
+  padding: 8px 14px;
+}
+
+.board-picked-how {
+  color: var(--text-faint);
+}
+
 .board-card.waits.asks {
   box-shadow: inset 3px 0 0 var(--warning-text);
   background: var(--warning-bg);
