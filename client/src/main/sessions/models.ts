@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { createInterface } from 'node:readline'
 
 import type { ClaudeModel } from '../../shared/api'
-import { planOnly } from './account'
+import { claudeCommand, planOnly } from './account'
 
 /**
  * Which models the tool has, as the tool itself says.
@@ -61,9 +61,9 @@ export function claudeModelsFrom(answer: Json): ClaudeModel[] | undefined {
 export function claudeModels(): Promise<ClaudeModel[] | undefined> {
   return new Promise((done) => {
     const child = spawn(
-      'claude',
+      claudeCommand(),
       ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'],
-      { cwd: homedir(), stdio: ['pipe', 'pipe', 'ignore'], env: planOnly() },
+      { cwd: homedir(), stdio: ['pipe', 'pipe', 'ignore'], env: planOnly(), windowsHide: true },
     )
     let over = false
     const finish = (models: ClaudeModel[] | undefined): void => {

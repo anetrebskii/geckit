@@ -189,6 +189,18 @@ function General({ settings, change }: Part): React.JSX.Element {
       </div>
 
       <div className="field">
+        <label>Usage</label>
+        <label className="check">
+          <input type="checkbox" checked={settings.analytics} onChange={(event) => change({ analytics: event.target.checked })} />
+          Count which features are used
+        </label>
+        <span style={NOTE}>
+          Sends Google Analytics the name of what was used, such as correct or chatSent, the version and a random id for
+          this installation. Never text, paths or keys.
+        </span>
+      </div>
+
+      <div className="field">
         <label>Claude Code</label>
         <label className="check">
           <input type="checkbox" checked={settings.guideClaude} onChange={(event) => change({ guideClaude: event.target.checked })} />

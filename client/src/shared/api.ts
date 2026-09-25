@@ -643,6 +643,8 @@ export interface Settings {
   readonly sidebarWidth: number
   /** This installation, for counting how often each thing is used. Nothing else is sent. */
   readonly client: string
+  /** False sends nothing to Google Analytics. */
+  readonly analytics: boolean
   /** False stops the checks on launch and every hour; Check for Updates in Settings still works. */
   readonly autoUpdate: boolean
   /** False takes GECKIT.md and the line that reads it out of the tool's own folder again. */
@@ -724,6 +726,7 @@ export const DEFAULT_SETTINGS: Settings = {
   openWith: [],
   transcriptions: [],
   client: '',
+  analytics: true,
   autoUpdate: true,
   guideClaude: true,
   phone: false,

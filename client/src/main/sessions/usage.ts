@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline'
 
 import type { PlanUsage } from '../../shared/api'
 import { planOf } from './claude-read'
-import { planOnly } from './account'
+import { claudeCommand, planOnly } from './account'
 
 /**
  * How much of the plan is spent, and how much context each model may hold,
@@ -33,7 +33,7 @@ const PATIENCE = 20_000
 export function readUsage(models: readonly string[]): Promise<Usage> {
   return new Promise((done) => {
     const child = spawn(
-      'claude',
+      claudeCommand(),
       [
         '-p',
         '--input-format',
@@ -46,7 +46,7 @@ export function readUsage(models: readonly string[]): Promise<Usage> {
         '--settings',
         JSON.stringify({ disableAllHooks: true }),
       ],
-      { cwd: homedir(), stdio: ['pipe', 'pipe', 'ignore'], env: planOnly() },
+      { cwd: homedir(), stdio: ['pipe', 'pipe', 'ignore'], env: planOnly(), windowsHide: true },
     )
     let plan: PlanUsage | undefined
     const windows = new Map<string, number | undefined>(models.map((model) => [model, undefined]))

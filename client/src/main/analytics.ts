@@ -9,7 +9,8 @@ import { getSettings, setSettings } from './store'
  *
  * One POST to Google's measurement endpoint with the name of what happened.
  * No text, no path, no key: nothing anybody writes or corrects goes anywhere
- * near it. A machine that is offline simply does not report.
+ * near it. A machine that is offline simply does not report, and nor does
+ * one where it is turned off in Settings.
  */
 
 const MEASUREMENT = 'G-297Y3KYMG4'
@@ -34,7 +35,7 @@ function who(): string {
 }
 
 export default function track(name: EventName): void {
-  if (!app.isPackaged) return
+  if (!app.isPackaged || !getSettings().analytics) return
   const url = `https://www.google-analytics.com/mp/collect?measurement_id=${MEASUREMENT}&api_secret=${SECRET}`
   void fetch(url, {
     method: 'POST',
