@@ -5311,7 +5311,7 @@ html.phone .task-row .how {
 
 .capsule-spot {
   position: fixed;
-  top: 96px;
+  bottom: 38px;
   left: 50%;
   z-index: 50;
   transform: translateX(-50%);
@@ -5330,6 +5330,26 @@ html.phone .task-row .how {
 
 .capsule .time.ending {
   color: var(--warning-text);
+}
+
+.recording-what {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.capsule .rule {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 0;
+  background: var(--border);
+}
+
+.capsule:has(.recording-what) :is(.mic, .bars) {
+  color: var(--text-faint);
 }
 
 .capsule .capsule-note {
@@ -5669,7 +5689,6 @@ html.phone .task-row .how {
 <div class="proto">
   Prototype. Cmd+Alt+R records.
   <button type="button" class="quiet" data-proto="record">Record</button>
-  <button type="button" class="quiet" data-proto="ending">Jump to 4:30</button>
   <button type="button" class="quiet" data-proto="silent">Nothing heard</button>
   <button type="button" class="quiet" data-proto="whisper">Whisper fails</button>
   <button type="button" class="quiet" data-proto="noproject">No project fits</button>
@@ -5756,7 +5775,6 @@ function start() {
   go('recording')
   timer = setInterval(() => {
     elapsed += 1
-    if (elapsed >= LONGEST) return stop()
     drawTime()
   }, 1000)
   levels = [0, 0, 0, 0, 0]
@@ -5810,10 +5828,11 @@ function body() {
   switch (state) {
     case 'recording':
       return `
-        <span class="rec-dot" aria-hidden="true"></span>
-        <span class="mic" title="Microphone">${icon('mic', 15)}</span>
-        <span class="bars">${'<span></span>'.repeat(5)}</span>
+        <span class="recording-what"><span class="rec-dot" aria-hidden="true"></span>${icon('display', 15)}<span>Recording the screen</span></span>
         <span class="time${elapsed >= WARN ? ' ending' : ''}">${elapsed >= WARN ? `${time(LONGEST - elapsed)} left` : time(elapsed)}</span>
+        <span class="rule" aria-hidden="true"></span>
+        <span class="mic" title="The microphone, which is heard with the screen">${icon('mic', 15)}</span>
+        <span class="bars">${'<span></span>'.repeat(5)}</span>
         <button type="button" class="icon-button" data-do="stop" aria-label="Stop" title="Stop (Enter)" style="color: var(--danger)">${icon('stop', 13)}</button>
         <button type="button" class="icon-button" data-do="cancel" aria-label="Throw away" title="Throw away (Esc)">${icon('close')}</button>`
     case 'writing':

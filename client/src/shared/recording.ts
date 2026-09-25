@@ -1,11 +1,5 @@
 import type { RecordedFrame } from './api'
 
-/** The longest recording, in seconds: one problem is shown in under a minute, a walk through a flow in five. */
-export const LONGEST = 300
-
-/** When the time turns into a countdown, so the sentence can be finished. */
-export const WARN = 270
-
 /** The most frames sent with a recording: each costs about a page of text, and more makes Claude skim. */
 export const MOST_FRAMES = 8
 

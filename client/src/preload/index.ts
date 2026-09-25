@@ -185,6 +185,8 @@ const geckit = {
     onAccount: (said: (account: ClaudeAccount) => void): (() => void) => listen('chat:accountChanged', said),
     /** A notification was pressed, or the panel asked for a session to be shown. */
     onShow: (said: (id: string) => void): (() => void) => listen('chat:show', said),
+    /** A recording made for the open form, to go into it. */
+    onRecorded: (said: (recording: Recording) => void): (() => void) => listen('chat:recorded', said),
     /** Something happened in another conversation while this window is in front. */
     onNotice: (said: (notice: SessionNotice) => void): (() => void) => listen('chat:notice', said),
     /** The search shortcut was pressed in another application, or again over the search. */
@@ -200,14 +202,25 @@ const geckit = {
     do: (): Promise<Answered> => ipcRenderer.invoke('voice:do'),
     /** Opens the capsule to say what the application should do, as the shortcut does. */
     orders: (): void => ipcRenderer.send('voice:orders'),
+    /** Opens the capsule to record the screen, as the shortcut does. */
+    record: (): void => ipcRenderer.send('voice:record'),
+    /** Whether a New task or Ask form is open, which a recording then goes into. */
+    form: (open: boolean): void => ipcRenderer.send('voice:form', open),
+    /** Dictation into what has the cursor in this window. */
+    dictate: (): void => ipcRenderer.send('voice:dictate'),
+    /** A form's recording, handed back to the form. */
+    fill: (recording: Recording): void => ipcRenderer.send('voice:fill', recording),
     /** The capsule grows to hold what it asks about. */
-    size: (height: number, width?: number): void => ipcRenderer.send('voice:size', height, width),
+    /** `middle`: it has become a card to read, so it is put in the middle of the screen, once. */
+    size: (height: number, width?: number, middle?: boolean): void => ipcRenderer.send('voice:size', height, width, middle),
     /** What the capsule was opened for. */
     mode: (): Promise<VoiceMode> => ipcRenderer.invoke('voice:mode'),
     /** The screen under the pointer, to record. */
     screen: (): Promise<ScreenSource> => ipcRenderer.invoke('voice:screen'),
-    /** The video of a recording, kept on disk for a week; answers where. */
-    keep: (video: Uint8Array): Promise<string> => ipcRenderer.invoke('voice:keep', video),
+    /** A new video file for the recording that is starting; answers where. */
+    video: (): Promise<string> => ipcRenderer.invoke('voice:video'),
+    /** The next second or so of the video, added to its file. */
+    videoPart: (part: Uint8Array): void => ipcRenderer.send('voice:videoPart', part),
     /** A recording asked about as a general question, opened in Chat. */
     ask: (recording: Recording): Promise<Answered> => ipcRenderer.invoke('voice:ask', recording),
     /** A recording read as a task: the project and the words, waiting for the yes that `do` gives. */

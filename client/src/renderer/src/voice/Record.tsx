@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Planned, RecordedFrame, Recording } from '../../../shared/api'
-import { clock, HELD_FRAMES, LONGEST, MOST_FRAMES, thinFrames, WARN } from '../../../shared/recording'
+import { clock, HELD_FRAMES, MOST_FRAMES, thinFrames } from '../../../shared/recording'
 import { base64, BARS, useRecorder } from '../recorder'
 import { useSettings } from '../settings'
 import { Icon } from '../ui/Icon'
@@ -44,6 +44,9 @@ const CHANGED = 0.1
 /** Claude reads a picture at most this long on its long edge, so a larger one only costs more. */
 const LONG_EDGE = 1568
 
+/** Speech at this rate is still clear to Whisper, and more than two hours of it stays under the 25 MB it takes. */
+const SPEECH_BITS = 24_000
+
 /** Loud enough to be talking, and quiet for long enough to have finished a thing. */
 const SPEAKING = 0.3
 const PAUSE = 700
@@ -52,8 +55,11 @@ interface Capture {
   readonly stream: MediaStream
   readonly view: HTMLVideoElement
   readonly recorder: MediaRecorder
-  readonly chunks: Blob[]
   readonly began: number
+  /** Where the video is being written, a part at a time. */
+  readonly video: string
+  /** The parts sent so far, in order. */
+  writing: Promise<void>
   frames: RecordedFrame[]
   last?: Uint8ClampedArray | undefined
   watching?: ReturnType<typeof setInterval>
@@ -72,9 +78,13 @@ async function openScreen(id: string): Promise<Capture> {
   await view.play()
   const type = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm'
   const recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 1_000_000 })
-  const capture: Capture = { stream, view, recorder, chunks: [], began: Date.now(), frames: [] }
+  const video = await window.geckit.voice.video()
+  const capture: Capture = { stream, view, recorder, video, writing: Promise.resolve(), began: Date.now(), frames: [] }
+  // Each part goes to disk as it comes, so there is no limit to how long a recording can be.
   recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) capture.chunks.push(event.data)
+    if (event.data.size === 0) return
+    const part = event.data
+    capture.writing = capture.writing.then(async () => window.geckit.voice.videoPart(new Uint8Array(await part.arrayBuffer())))
   }
   recorder.start(1000)
   capture.watching = setInterval(() => {
@@ -137,8 +147,8 @@ async function endScreen(capture: Capture): Promise<{ frames: RecordedFrame[]; v
   closeScreen(capture)
   const frames = thinFrames(capture.frames, MOST_FRAMES)
   try {
-    const bytes = new Uint8Array(await new Blob(capture.chunks, { type: 'video/webm' }).arrayBuffer())
-    return { frames, video: await window.geckit.voice.keep(bytes) }
+    await capture.writing
+    return capture.video === '' ? { frames } : { frames, video: capture.video }
   } catch {
     // The frames and the words are what matter; the video is only a way to more of them.
     return { frames }
@@ -148,7 +158,8 @@ async function endScreen(capture: Capture): Promise<{ frames: RecordedFrame[]; v
 const lowered = (goal: string): string =>
   /^[A-Z][a-z]/.test(goal) ? goal.charAt(0).toLowerCase() + goal.slice(1) : goal
 
-export function Record(): React.JSX.Element {
+/** `fill`: made for the New task form that is open, so what was heard and seen goes back into it rather than being asked about here. */
+export function Record({ fill = false }: { readonly fill?: boolean }): React.JSX.Element {
   const [settings, change] = useSettings()
   const [state, setState] = useState<State>('starting')
   const [error, setError] = useState('')
@@ -190,16 +201,29 @@ export function Record(): React.JSX.Element {
         )
         return
       }
+      if (fill) {
+        window.geckit.voice.fill({
+          text: said.text?.trim() ?? '',
+          frames: screen.frames,
+          seconds: seconds.current,
+          ...(screen.video === undefined ? {} : { video: screen.video }),
+        })
+        return
+      }
       setText(said.text?.trim() ?? '')
       setState('choosing')
     },
-    [fail],
+    [fail, fill],
   )
 
-  const recorder = useRecorder(settings.microphoneDeviceId, (audio, took) => {
-    seconds.current = took
-    void write(audio)
-  })
+  const recorder = useRecorder(
+    settings.microphoneDeviceId,
+    (audio, took) => {
+      seconds.current = took
+      void write(audio)
+    },
+    SPEECH_BITS,
+  )
   const { start, stop, cancel, elapsed, levels } = recorder
   // Held rather than depended on: choosing another microphone must not open the screen a second time.
   const starting = useRef(start)
@@ -254,10 +278,6 @@ export function Record(): React.JSX.Element {
     cancel()
     window.geckit.voice.cancel()
   }, [cancel])
-
-  useEffect(() => {
-    if (state === 'recording' && elapsed >= LONGEST) finish()
-  }, [state, elapsed, finish])
 
   // The end of each thing said is a moment worth a frame: it is usually when the thing being talked about is on the screen.
   useEffect(() => {
@@ -357,10 +377,11 @@ export function Record(): React.JSX.Element {
     return () => window.removeEventListener('keydown', key)
   }, [state, finish, throwAway, ask, task, carryOut])
 
-  // The capsule is a window of its own, so it is grown to hold the card.
+  // The capsule is a window of its own, so it is grown to hold the card; once it is one, it goes where all of it can be read.
   useEffect(() => {
     const height = document.querySelector('.capsule')?.getBoundingClientRect().height
-    window.geckit.voice.size(height === undefined ? 92 : height + 28, 460)
+    const card = state !== 'starting' && state !== 'recording' && state !== 'writing'
+    window.geckit.voice.size(height === undefined ? 92 : height + 28, 460, card)
   }, [state, frames, plan, text])
 
   // A microphone that would not start ends the recording where it stands.
@@ -368,7 +389,6 @@ export function Record(): React.JSX.Element {
   const shown: State = deaf ? 'failed' : state
   const trouble = deaf ? recorder.error : error
   const empty = text.trim() === ''
-  const ending = elapsed >= WARN
 
   return (
     <div className="capsule-window">
@@ -492,8 +512,14 @@ export function Record(): React.JSX.Element {
           </>
         ) : (
           <>
-            <span className="rec-dot" aria-hidden="true" />
-            <span className="mic">
+            <span className="recording-what">
+              <span className="rec-dot" aria-hidden="true" />
+              <Icon name="display" size={15} />
+              <span>Recording the screen</span>
+            </span>
+            <span className="time">{clock(elapsed)}</span>
+            <span className="rule" aria-hidden="true" />
+            <span className="mic" title="The microphone, which is heard with the screen">
               <Icon
                 name="mic"
                 size={15}
@@ -516,9 +542,6 @@ export function Record(): React.JSX.Element {
               {Array.from({ length: BARS }, (_one, at) => (
                 <span key={at} style={{ height: 4 + (levels[at] ?? 0) * 16 }} />
               ))}
-            </span>
-            <span className={`time${ending ? ' ending' : ''}`}>
-              {ending ? `${clock(LONGEST - elapsed)} left` : clock(elapsed)}
             </span>
             <button
               type="button"

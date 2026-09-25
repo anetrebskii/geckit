@@ -95,7 +95,7 @@ export function Voice(): React.JSX.Element {
   // The capsule is a window of its own, so it has to be grown to hold the list.
   useEffect(() => {
     const height = document.querySelector('.capsule')?.getBoundingClientRect().height
-    window.geckit.voice.size(height === undefined ? 92 : height + 28)
+    window.geckit.voice.size(height === undefined ? 92 : height + 28, undefined, state === 'asking')
   }, [state, plan])
 
   const mics = settings.audioDevices

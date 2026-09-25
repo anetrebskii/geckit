@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ANYWHERE, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
-import type { ChatSession, SessionImage, SessionStatus } from '../../../shared/api'
+import type { ChatSession, RecordedFrame, SessionImage, SessionStatus } from '../../../shared/api'
+import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
@@ -64,6 +65,7 @@ export function Board({
   const [renaming, setRenaming] = useState<string | undefined>()
   const [deleting, setDeleting] = useState<readonly ChatSession[] | undefined>()
   const [asked, setAsked] = useState<DOMRect | undefined>()
+  const [ways, setWays] = useState<DOMRect | undefined>()
   // The card being dragged, and the column the pointer is over.
   const held = useRef<string | undefined>(undefined)
   const [over, setOver] = useState<string | undefined>()
@@ -119,15 +121,6 @@ export function Board({
         </button>
         <Projects chat={chat} />
         <BoardSearch chat={chat} onSeek={onSeek} />
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Say what to do"
-          title={`Say what GeckIt should do: start a conversation, answer one, mark one (${said(ANYWHERE.orders)})`}
-          onClick={() => window.geckit.voice.orders()}
-        >
-          <Icon name="mic" />
-        </button>
         <button
           type="button"
           className="icon-button no-drag"
@@ -192,11 +185,51 @@ export function Board({
             onClose={() => setAsked(undefined)}
           />
         )}
-        <button type="button" className="new-session no-drag board-new" onClick={onNew}>
-          <Icon name="plus" />
-          New task
-          <span className="keys">{MOD}+N</span>
-        </button>
+        {/* Writing it is the usual way; the arrow offers the others, each saying what it does, so recording and speaking read as ways to start a task. */}
+        <span className="board-split no-drag">
+          <button type="button" className="new-session board-new" onClick={onNew}>
+            <Icon name="plus" />
+            New task
+            <span className="keys">{MOD}+N</span>
+          </button>
+          <button
+            type="button"
+            className={`board-more${ways === undefined ? '' : ' on'}`}
+            aria-label="Other ways to start a task"
+            aria-haspopup="menu"
+            title="Other ways to start a task"
+            onClick={(event) => setWays(event.currentTarget.parentElement?.getBoundingClientRect())}
+          >
+            <Icon name="down" size={11} />
+          </button>
+        </span>
+        {ways === undefined ? null : (
+          <Menu
+            anchor={ways}
+            explained
+            choices={[
+              { value: 'write', icon: 'pencil', label: 'Write it', says: `The form: project, what to do, a goal. ${MOD}+N` },
+              {
+                value: 'record',
+                icon: 'display',
+                label: 'Record the screen',
+                says: `Show it and talk. The recording becomes the task. ${said(ANYWHERE.record)}`,
+              },
+              {
+                value: 'say',
+                icon: 'mic',
+                label: 'Say it',
+                says: `Tell GeckIt what to start, answer or mark. ${said(ANYWHERE.orders)}`,
+              },
+            ]}
+            onPick={(way) => {
+              if (way === 'write') onNew()
+              if (way === 'record') window.geckit.voice.record()
+              if (way === 'say') window.geckit.voice.orders()
+            }}
+            onClose={() => setWays(undefined)}
+          />
+        )}
       </div>
 
       {emptyProfile(chat.settings) === undefined ? null : (
@@ -519,6 +552,13 @@ function Card({
 /** The row that opens the folder picker rather than choosing a project already there. */
 const PICK = '\u0000pick'
 
+/** What recordings made for the form brought: their length together, their videos, and their frames. */
+interface Recorded {
+  readonly seconds: number
+  readonly videos: readonly string[]
+  readonly frames: readonly RecordedFrame[]
+}
+
 export function NewTask({
   chat,
   onClose,
@@ -534,8 +574,39 @@ export function NewTask({
   const [goal, setGoal] = useState('')
   const [pictures, setPictures] = useState<readonly SessionImage[]>([])
   const [over, setOver] = useState(false)
+  const [recorded, setRecorded] = useState<Recorded | undefined>(undefined)
   const field = useRef<HTMLTextAreaElement>(null)
   useEffect(() => field.current?.focus(), [])
+
+  // While the form is open, a recording is made for it: from its own button, the menu, or Cmd+Alt+R.
+  useEffect(() => {
+    if (ON_PHONE) return
+    window.geckit.voice.form(true)
+    return () => window.geckit.voice.form(false)
+  }, [])
+
+  // The words go at the end of what is written, and the frames among the pictures, kept to what the form holds.
+  useEffect(
+    () =>
+      window.geckit.chat.onRecorded((recording) => {
+        if (recording.text !== '') setText((now) => (now.trim() === '' ? recording.text : `${now.trimEnd()}\n${recording.text}`))
+        setRecorded((was) => ({
+          seconds: (was?.seconds ?? 0) + recording.seconds,
+          videos: [...(was?.videos ?? []), ...(recording.video === undefined ? [] : [recording.video])],
+          frames: [...(was?.frames ?? []), ...recording.frames],
+        }))
+        requestAnimationFrame(() => {
+          const box = field.current
+          if (box === null) return
+          box.focus()
+          box.setSelectionRange(box.value.length, box.value.length)
+        })
+      }),
+    [],
+  )
+  const room = Math.max(0, MOST_FRAMES - pictures.length)
+  const frames = recorded === undefined || room === 0 ? [] : thinFrames(recorded.frames, room)
+  const ready = text.trim() !== '' || pictures.length > 0 || frames.length > 0
 
   // Pictures are carried with the first message; anything else goes into the field as its path, as the composer does.
   const take = (files: readonly File[]): void => {
@@ -554,9 +625,13 @@ export function NewTask({
   }
 
   const start = (): void => {
-    if ((root === '' && !question) || (text.trim() === '' && pictures.length === 0)) return
-    if (question) chat.ask(text.trim(), pictures)
-    else chat.startTask(root, text.trim(), goal.trim(), pictures)
+    if ((root === '' && !question) || !ready) return
+    // What the frames are and where the video is goes under the words, for Claude rather than for the form.
+    const note = recorded === undefined ? '' : recordedNote(recorded.seconds, frames, recorded.videos.join(' and ') || undefined)
+    const said = note === '' ? text.trim() : `${text.trim()}\n\n${note}`.trim()
+    const sent = [...pictures, ...frames.map((one) => one.image)]
+    if (question) chat.ask(said, sent)
+    else chat.startTask(root, said, goal.trim(), sent)
     onClose()
   }
 
@@ -623,7 +698,7 @@ export function NewTask({
           rows={5}
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder={question ? 'Anything, not about a project. Paste a picture or drop a file in here' : 'Ask Claude Code. Paste a picture or drop a file in here'}
+          placeholder={question ? 'Anything, not about a project. Paste a picture, drop a file, or record the screen' : 'Ask Claude Code. Paste a picture, drop a file, or record the screen'}
           onPaste={(event) => {
             const files = [...event.clipboardData.files]
             if (files.length === 0) return
@@ -642,8 +717,47 @@ export function NewTask({
           }}
         />
       </label>
-      {pictures.length === 0 ? null : (
+      <div className="new-task-ways">
+        <button
+          type="button"
+          className="quiet"
+          title={`Show what you mean and talk; the words and frames come back into this form (${said(ANYWHERE.record)})`}
+          onClick={() => window.geckit.voice.record()}
+        >
+          <Icon name="display" size={13} />
+          Record the screen
+        </button>
+        <button
+          type="button"
+          className="quiet"
+          title={`Say it instead of typing it (${said(ANYWHERE.dictate)})`}
+          onClick={() => {
+            field.current?.focus()
+            window.geckit.voice.dictate()
+          }}
+        >
+          <Icon name="mic" size={13} />
+          Dictate
+        </button>
+      </div>
+      {pictures.length === 0 && frames.length === 0 ? null : (
         <div className="pending">
+          {frames.map((one) => (
+            <span key={`frame:${String(one.at)}:${one.image.data.slice(-16)}`} className="pending-one">
+              <img src={`data:${one.image.media};base64,${one.image.data}`} alt="" title={`At ${clock(one.at)} in the recording`} />
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Take this frame off"
+                title="Take this frame off"
+                onClick={() =>
+                  setRecorded((was) => (was === undefined ? was : { ...was, frames: was.frames.filter((kept) => kept !== one) }))
+                }
+              >
+                <Icon name="close" size={11} />
+              </button>
+            </span>
+          ))}
           {pictures.map((one, at) => (
             <span key={`${String(at)}:${one.data.slice(0, 16)}`} className="pending-one">
               <img src={`data:${one.media};base64,${one.data}`} alt="" />
@@ -658,6 +772,21 @@ export function NewTask({
               </button>
             </span>
           ))}
+        </div>
+      )}
+      {recorded === undefined ? null : (
+        <div className="new-task-recorded">
+          <Icon name="display" size={12} />
+          <span>From a {clock(recorded.seconds)} recording. Claude gets the video too.</span>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Take the recording off"
+            title="Take the recording off"
+            onClick={() => setRecorded(undefined)}
+          >
+            <Icon name="close" size={11} />
+          </button>
         </div>
       )}
       {question ? null : (
@@ -680,7 +809,7 @@ export function NewTask({
         <button
           type="button"
           className="primary"
-          disabled={(root === '' && !question) || (text.trim() === '' && pictures.length === 0)}
+          disabled={(root === '' && !question) || !ready}
           onClick={start}
         >
           {question ? 'Ask' : 'Start'}

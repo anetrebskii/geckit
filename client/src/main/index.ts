@@ -59,7 +59,7 @@ import { searchClaude } from './sessions/search'
 import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
 import { forgetProject, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
-import { keepRecording, sweepRecordings } from './recordings'
+import { addToRecording, dropRecording, keepRecording, startRecording, sweepRecordings } from './recordings'
 import { recordedNote } from '../shared/recording'
 import { drawTray, startTray } from './tray'
 import { checkForUpdates, restartToUpdate, startUpdates, updateView } from './updates'
@@ -206,7 +206,14 @@ function registerOrder(): void {
   if (!took) log.warn(`${ORDER} is taken by something else, saying what to do has no shortcut`)
 }
 
-/** The capsule, for showing the screen while talking about it. Pressed again while it records, it stops. */
+/** A New task or Ask form is open in Chat, and a recording made now goes into it. */
+let formOpen = false
+
+/**
+ * The capsule, for showing the screen while talking about it. Pressed again while it records, it stops.
+ *
+ * With a form open, the recording is for the form: Chat goes behind so what is shown is in front, and comes back with the words and frames in the form.
+ */
 function recordScreen(): void {
   const open = listeningVoice()
   if (open !== undefined) {
@@ -214,10 +221,23 @@ function recordScreen(): void {
     return
   }
   track('record')
-  heardFor = 'record'
+  const chat = shownChat()
+  heardFor = formOpen && chat?.isVisible() === true ? 'fill' : 'record'
   dictatedInto = undefined
+  if (heardFor === 'fill') chat?.hide()
   // Left out of what is recorded, so it is never in its own frames.
   voiceWindow().setContentProtection(true)
+}
+
+/** The capsule goes; a form's recording brings Chat back to the form, whatever became of it. */
+function closeCapsule(): void {
+  closeVoice()
+  dropRecording()
+  if (heardFor !== 'fill') return
+  heardFor = 'record'
+  const chat = shownChat()
+  chat?.show()
+  chat?.focus()
 }
 
 function registerRecord(): void {
@@ -251,6 +271,7 @@ async function askRecorded(recording: Recording): Promise<Answered> {
     images: pictures(recording),
     question: true,
   })
+  keepRecording()
   closeVoice()
   openChat(id)
   return { ok: true }
@@ -376,6 +397,7 @@ async function carryOutPlanned(): Promise<Answered> {
     // The work goes first and the goal after it: a goal on its own tells Claude to
     // start working toward it, with nothing yet said about what the work is.
     start: async (root, text, goal) => {
+      if (plan.note !== undefined) keepRecording()
       const id = await held.send({
         root,
         mode,
@@ -501,20 +523,39 @@ function wire(): void {
     return said
   })
   ipcMain.handle('voice:do', () => carryOutPlanned())
-  ipcMain.on('voice:size', (_event, height: number, width?: number) => sizeVoice(height, width))
+  ipcMain.on('voice:size', (_event, height: number, width?: number, middle?: boolean) => sizeVoice(height, width, middle))
   ipcMain.handle('voice:mode', () => heardFor)
   ipcMain.handle('voice:screen', () => screenToRecord())
-  ipcMain.handle('voice:keep', (_event, video: Uint8Array) => keepRecording(video))
+  ipcMain.handle('voice:video', () => startRecording())
+  ipcMain.on('voice:videoPart', (_event, part: Uint8Array) => addToRecording(part))
   ipcMain.handle('voice:ask', (_event, recording: Recording) => askRecorded(recording))
   ipcMain.handle('voice:task', (_event, recording: Recording) => readRecorded(recording))
   ipcMain.on('voice:allow', () => {
-    closeVoice()
+    closeCapsule()
     void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
   })
   ipcMain.on('voice:orders', () => askOutLoud())
+  ipcMain.on('voice:record', () => recordScreen())
+  ipcMain.on('voice:form', (_event, open: boolean) => {
+    formOpen = open
+  })
+  // Dictation into the form's field, which keeps the cursor while the capsule listens.
+  ipcMain.on('voice:dictate', (event) => {
+    if (listeningVoice() !== undefined) return
+    track('dictate')
+    heardFor = 'paste'
+    dictatedInto = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    voiceWindow()
+  })
+  // What a form's recording heard and saw, handed to the form.
+  ipcMain.on('voice:fill', (_event, recording: Recording) => {
+    keepRecording()
+    tellChat('chat:recorded', recording)
+    closeCapsule()
+  })
   ipcMain.on('voice:cancel', () => {
     planned = undefined
-    closeVoice()
+    closeCapsule()
   })
 
   ipcMain.on('chat:open', () => openChat())

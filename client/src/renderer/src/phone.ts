@@ -225,6 +225,7 @@ export function installGeckit(first: Link, boot: Boot): (next: Link) => void {
       onItems: (said) => listen('chat:items', said),
       onAccount: (said) => listen('chat:accountChanged', said),
       onShow: never,
+      onRecorded: never,
       onNotice: (said) =>
         listen<SessionNotice>('chat:notice', (notice) => {
           if (notice.session !== watched) said(notice)
@@ -236,11 +237,16 @@ export function installGeckit(first: Link, boot: Boot): (next: Link) => void {
       done: () => Promise.resolve({ ok: false, error: 'Not on the phone' }),
       do: () => Promise.resolve({ ok: false, error: 'Not on the phone' }),
       orders: nothing,
+      record: nothing,
+      form: nothing,
+      dictate: nothing,
+      fill: nothing,
       size: nothing,
       cancel: nothing,
       mode: () => Promise.resolve('paste'),
       screen: () => Promise.resolve({ error: 'Not on the phone' }),
-      keep: () => Promise.resolve(''),
+      video: () => Promise.resolve(''),
+      videoPart: nothing,
       ask: () => Promise.resolve({ ok: false, error: 'Not on the phone' }),
       task: () => Promise.resolve({ ok: false, error: 'Not on the phone' }),
       allow: nothing,

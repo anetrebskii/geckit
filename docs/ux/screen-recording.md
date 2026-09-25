@@ -16,7 +16,9 @@ Some problems are easier to show than to describe: a menu that opens in the wron
 | Surface | What appears | When seen |
 |---|---|---|
 | Global shortcut, new, `Cmd+Alt+R` | Starts recording the screen and the microphone, and stops it when pressed again | Always, while GeckIt runs |
-| Voice capsule (`voice/Voice.tsx`), existing | A recording mode: a red dot, the microphone bars, the time, Stop and Cancel | While recording |
+| Voice capsule (`voice/Record.tsx`), existing window | A recording mode that leads with what is recorded: a red dot, a screen icon, "Recording the screen", the time; then, after a rule and quieter, the microphone and its bars; Stop and Cancel | While recording |
+| Board head and sidebar head (`Board.tsx`, `Sidebar.tsx`), existing | A screen button beside the microphone of "Say what to do", titled "Record the screen while you talk, then ask about it or make it a task" | Always |
+| Panel tabs (`Panel.tsx`), existing | "Record", beside "Say" | Always |
 | Voice capsule, new state "Choosing" | What was heard, as editable text, a strip of the frames that will be sent, and two actions: "Ask" and "Make a task" | After Stop, once the words are written down |
 | Voice capsule, existing "asking" state | The planned task: project, text, goal, and "Start it" | After "Make a task" |
 | Chat window, existing | The question opened with the recording already sent: the words as the message, the frames as its pictures | After "Ask" |
@@ -42,14 +44,13 @@ block-beta
   style d3 fill:#e5e7eb,stroke:#9ca3af
 ```
 
-The capsule is the one dictation and Cmd+Alt+G already use, so there is one place that listens, not three. It is left out of the recording, so it never shows up in its own frames.
+The capsule is the one dictation and Cmd+Alt+G already use, so there is one place that listens, not three. It is left out of the recording, so it never shows up in its own frames. It opens at the bottom middle of the screen the pointer is on, 24 px above the Dock, so it does not cover what is being shown, and it grows upward when it becomes a card. It is moved by dragging any part of it that is not a control, like a window by its title bar; the clear margin around it does not move it.
 
 ## 3. States
 
 | State | When it happens | What the person sees | What to do |
 |---|---|---|---|
 | Recording | The shortcut was pressed | The capsule with a red dot, the bars, the time; the Mac's own recording indicator in the menu bar | Show and talk, then press the shortcut again, Enter or Stop; Escape or Cancel throws it away |
-| Almost over | 4:30 recorded | The time turns to the countdown, "0:30 left" | Finish, or let it stop by itself |
 | Writing it down | Stopped, the audio is at Whisper and the frames are being chosen | "Writing it down" with the spinner | Nothing, it takes a few seconds |
 | Choosing | The words and frames are ready | What was heard, the frame strip, "Ask" and "Make a task" | Correct the words if they are wrong, remove a frame with its x, then choose |
 | Planning | "Make a task" was pressed | "Finding the project" with the spinner | Nothing |
@@ -117,7 +118,6 @@ stateDiagram-v2
 | Nothing | Pressed `Cmd+Alt+R` or "Record the screen" in the tray, screen recording allowed | Recording | The capsule, red dot, time from 0:00 |
 | Nothing | Same, screen recording not allowed | No permission | "The Mac has not allowed GeckIt to record the screen." and "Open Settings" |
 | Recording | Pressed `Cmd+Alt+R` again, Enter or Stop | Writing it down | "Writing it down" |
-| Recording | Reached 5:00, by itself | Writing it down | "Writing it down", the same as a Stop |
 | Recording | Pressed Escape or Cancel | Nothing | The capsule goes; nothing was kept |
 | Writing it down | Words and frames ready, by itself | Choosing | What was heard, the frames, "Ask" and "Make a task" |
 | Writing it down | Whisper failed, by itself | Failed | The error and "Try again" |
@@ -148,32 +148,24 @@ The recording shortcut pressed while the capsule is past Recording does nothing,
 
 ## 6. Numbers and time
 
-```mermaid
-flowchart LR
-  A["0:00 to 4:30<br/>time counts up"] --> B["4:30<br/>0:30 left"] --> C["5:00<br/>stops by itself"]
-  style A fill:#dbeafe,stroke:#2563eb,color:#111827
-  style B fill:#fef3c7,stroke:#d97706,color:#111827
-  style C fill:#e5e7eb,stroke:#9ca3af,color:#111827
-```
-
 | Number | Value | Why |
 |---|---|---|
-| Longest recording | 5 minutes | Showing one problem takes under a minute; five covers walking through a flow, and keeps the audio well under Whisper's 25 MB limit |
-| Warning before the end | 30 seconds | Enough to finish the sentence |
+| Longest recording | none | A walk through a whole flow can take as long as it takes. The video is written to disk a second at a time, so length costs no memory; the speech is recorded at 24 kbit/s, so more than two hours of it stays under Whisper's 25 MB |
 | Frames at most | 8 | Each frame costs about as much as a page of text; 8 shows a flow, more makes Claude skim |
 | Frames at least | 1 | The last frame before Stop is always kept: it is what was on the screen when the point was made |
 | Picture change that makes a frame | a tenth of the screen changed since the last frame | Catches a new page, a dialog, a menu, and not a blinking cursor or a clock |
 | Recording kept after it is sent | 7 days | Claude may be asked to look at the video again while the work is still going; after a week it is not |
 | Started stays up | 4 seconds | The same as a carried-out voice order today (`READ_IT`) |
+| Where the card appears | the middle of the screen, once | The pill starts at the bottom to stay out of the way; the card that follows Stop is taller than the space under most of what is shown, so it goes where all of it can be read. Moved by hand after that, it stays where it was put |
 
 ## 7. Wording
 
 | State | Text |
 |---|---|
 | Tray item | "Record the Screen" |
+| Recording, label | "Recording the screen" |
 | Recording, Stop tooltip | "Stop (Enter)" |
 | Recording, Cancel tooltip | "Throw away (Esc)" |
-| Almost over | "0:30 left" |
 | Writing it down | "Writing it down" |
 | Choosing, frame x tooltip | "Leave this frame out" |
 | Choosing, first action | "Ask" |
@@ -249,6 +241,15 @@ flowchart LR
 | Evenly spaced | no |
 
 **Why:** evenly spaced frames miss a dialog that was up for a second and repeat a page that stayed for a minute.
+
+### Where recording is started inside the app
+
+| Option | Verdict |
+|---|---|
+| A screen icon in the board and sidebar heads, and "Record" in the panel | no, reversed after it was built |
+| "Record the screen" inside the New task and Ask forms, and in a menu on "New task" | yes |
+
+**Why:** Alex could not tell from the head that the icon starts a task. Decided in `docs/ux/starting-work.md`, which replaces this document's rows for the heads and the panel.
 
 ## 11. Requirements
 
