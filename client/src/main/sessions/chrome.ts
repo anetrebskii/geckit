@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 
 import type { Browser } from '../../shared/api'
-import { planOnly } from './account'
+import { claudeCommand, planOnly } from './account'
 
 /**
  * The Chromes the extension is signed in to, and which one Claude uses.
@@ -31,7 +31,7 @@ export const browsersOf = (answer: Json): Browser[] =>
 export function readBrowsers(root: string, pick?: string): Promise<Browser[] | undefined> {
   return new Promise((done) => {
     const child = spawn(
-      'claude',
+      claudeCommand(),
       [
         '-p',
         '--input-format',
@@ -44,7 +44,7 @@ export function readBrowsers(root: string, pick?: string): Promise<Browser[] | u
         '--settings',
         JSON.stringify({ disableAllHooks: true }),
       ],
-      { cwd: root, stdio: ['pipe', 'pipe', 'ignore'], env: planOnly() },
+      { cwd: root, stdio: ['pipe', 'pipe', 'ignore'], env: planOnly(), windowsHide: true },
     )
     let browsers: Browser[] | undefined
     let over = false

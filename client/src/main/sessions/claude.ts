@@ -3,7 +3,7 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 
 import type { CardAnswer, SessionMode } from '../../shared/api'
-import { planOnly } from './account'
+import { claudeCommand, planOnly } from './account'
 import { AGAIN, claudeState, readClaude, REFUSED } from './claude-read'
 import type { ClaudeRequest } from './claude-read'
 import { askId } from './heard'
@@ -65,7 +65,7 @@ export function holdClaude(
   let last = ''
 
   const child: ChildProcessWithoutNullStreams = spawn(
-    'claude',
+    claudeCommand(),
     [
       '-p',
       '--input-format',
@@ -86,7 +86,7 @@ export function holdClaude(
       ...(options.question === true ? ['--no-session-persistence'] : []),
       ...(options.resume ? ['--resume', options.id] : ['--session-id', options.id]),
     ],
-    { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly() },
+    { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true },
   )
   const closed = new Promise<void>((resolve) => {
     child.once('close', () => resolve())
