@@ -513,6 +513,38 @@ textarea {
   color: var(--danger);
 }
 
+.menu-row {
+  position: relative;
+}
+
+.menu-row .menu-item {
+  padding-right: 30px;
+}
+
+.menu-remove {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  opacity: 0;
+  transform: translateY(-50%);
+}
+
+.menu-row:hover .menu-remove,
+.menu-remove:focus-visible {
+  opacity: 1;
+}
+
+.menu-remove:hover {
+  color: var(--danger);
+  background: var(--bg-hover);
+}
+
 /* The project picker */
 
 /* A project's colour, and the colours to choose from under it. */
@@ -4671,10 +4703,30 @@ html.phone button:active:not(:disabled) {
 }
 
 .phone-question {
-  width: 100%;
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-raised);
+}
+
+.phone-question .phone-row {
+  flex: 1;
+  min-width: 0;
   color: inherit;
   text-align: left;
   border: 0;
+}
+
+.phone-question-remove {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+  border: 0;
+}
+
+.phone-question-remove:active {
+  color: var(--danger);
 }
 
 .phone-question + .phone-question {

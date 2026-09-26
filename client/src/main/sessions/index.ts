@@ -246,7 +246,7 @@ interface Live {
   clearing: boolean
   /** Messages sent while it worked, oldest first. */
   queued: Queued[]
-  /** A general question, which is never listed and is ended once it has been quiet for a while. */
+  /** A general question, which is never listed and is thrown away a day after it has gone quiet. */
   readonly question: boolean
 }
 
@@ -264,7 +264,7 @@ function goalSent(text: string): string | undefined {
 const QUIET = 10 * 60_000
 
 /** How long a general question is kept once it has gone quiet. */
-const QUESTION_QUIET = 5 * 60_000
+const QUESTION_KEPT = 24 * 60 * 60_000
 
 const running = (task: BackgroundTask): boolean => task.status === 'running'
 
@@ -820,7 +820,7 @@ export class Sessions {
     }
     if (live.driver !== undefined) return
 
-    const resume = !live.question && (live.begun || (await (this.#deps.disk?.has ?? has)(live.root, live.id)))
+    const resume = live.begun || (await (this.#deps.disk?.has ?? has)(live.root, live.id))
     // A new run counts from nothing, so the one before it is counted in with the earlier ones.
     if (live.running !== undefined) live.spent = (live.spent ?? 0) + live.running
     live.running = undefined
@@ -833,7 +833,6 @@ export class Sessions {
         resume,
         mode: live.mode,
         ...(live.chosen === undefined ? {} : { model: live.chosen }),
-        ...(live.question ? { question: true } : {}),
       },
       (heard) => this.#hear(live, heard),
       () => {
@@ -1639,14 +1638,11 @@ export class Sessions {
     live.quiet = setTimeout(
       () => {
         if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.some(running)) return
-        if (live.question) {
-          void this.#letGo(live.id).then(() => this.#changed())
-          return
-        }
         live.driver?.end()
         live.driver = undefined
+        if (live.question) live.quiet = setTimeout(() => void this.remove([live.id]), QUESTION_KEPT - QUIET)
       },
-      live.question ? QUESTION_QUIET : QUIET,
+      QUIET,
     )
   }
 

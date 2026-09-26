@@ -1386,20 +1386,29 @@ describe('general questions', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('runs one with nothing written to disk, marks it, and ends it after five quiet minutes', async () => {
-    const built = build()
+  it('marks one, lets its process go after ten quiet minutes, and deletes it a day after', async () => {
+    const deleted: string[] = []
+    const built = build({
+      disk: {
+        list: async () => [],
+        read: async () => undefined,
+        has: async () => false,
+        delete: async (_root, id) => (deleted.push(id), true),
+      },
+    })
     const id = await built.sessions.send({ root: ROOT, mode: 'auto', text: 'What is a monad?', question: true })
-    expect(built.fake.made[0]).toMatchObject({ resume: false, question: true })
+    expect(built.fake.made[0]).toMatchObject({ resume: false })
     expect(built.fake.made[0]?.root).not.toBe(ROOT)
     expect(of(built.rows, id)?.question).toBe(true)
 
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     expect(built.sessions.wanting()).toBe(0)
-    vi.advanceTimersByTime(240_000)
-    expect(built.fake.ended).toBe(0)
-    await vi.advanceTimersByTimeAsync(61_000)
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
     expect(built.fake.ended).toBe(1)
+    expect(of(built.rows, id)?.question).toBe(true)
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
     expect(of(built.rows, id)).toBeUndefined()
+    expect(deleted).toEqual([id])
   })
 })
 

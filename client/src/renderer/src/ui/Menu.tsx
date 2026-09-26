@@ -23,6 +23,8 @@ export interface Choice {
   readonly on?: boolean
   /** Drawn where the check goes, and given way to by the check while it is on. */
   readonly icon?: string
+  /** Offered for deleting when the menu is given `onRemove`. */
+  readonly removable?: boolean
 }
 
 export function Menu({
@@ -33,6 +35,7 @@ export function Menu({
   explained = false,
   note,
   onPick,
+  onRemove,
   onClose,
 }: {
   readonly anchor: DOMRect
@@ -44,6 +47,8 @@ export function Menu({
   /** A sentence under the choices about choosing any of them. It wraps to the menu's width rather than widening it. */
   readonly note?: string
   readonly onPick: (value: string) => void
+  /** A choice that can be thrown away from the menu gets a button for it, shown on hover. */
+  readonly onRemove?: (value: string) => void
   readonly onClose: () => void
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
@@ -121,28 +126,45 @@ export function Menu({
         }}
       >
         {title === undefined ? null : <div className="menu-title">{title}</div>}
-        {choices.map((choice) => (
-          <button
-            key={choice.value}
-            type="button"
-            role="menuitem"
-            className={`menu-item${choice.value === chosen ? ' on' : ''}${choice.danger === true ? ' danger' : ''}`}
-            onClick={() => {
-              onPick(choice.value)
-              onClose()
-            }}
-          >
-            <span style={{ width: 14, flexShrink: 0 }}>
-              {choice.value === chosen || choice.on === true ? (
-                <Icon name="check" size={13} />
-              ) : choice.icon === undefined ? null : (
-                <Icon name={choice.icon} size={13} />
-              )}
-            </span>
-            <span className="label">{choice.label}</span>
-            {choice.says === undefined ? null : <span className="says">{choice.says}</span>}
-          </button>
-        ))}
+        {choices.map((choice) => {
+          const item = (
+            <button
+              key={choice.value}
+              type="button"
+              role="menuitem"
+              className={`menu-item${choice.value === chosen ? ' on' : ''}${choice.danger === true ? ' danger' : ''}`}
+              onClick={() => {
+                onPick(choice.value)
+                onClose()
+              }}
+            >
+              <span style={{ width: 14, flexShrink: 0 }}>
+                {choice.value === chosen || choice.on === true ? (
+                  <Icon name="check" size={13} />
+                ) : choice.icon === undefined ? null : (
+                  <Icon name={choice.icon} size={13} />
+                )}
+              </span>
+              <span className="label">{choice.label}</span>
+              {choice.says === undefined ? null : <span className="says">{choice.says}</span>}
+            </button>
+          )
+          if (onRemove === undefined || choice.removable !== true) return item
+          return (
+            <div key={choice.value} className="menu-row">
+              {item}
+              <button
+                type="button"
+                className="menu-remove"
+                aria-label={`Delete ${choice.label}`}
+                title="Delete"
+                onClick={() => onRemove(choice.value)}
+              >
+                <Icon name="trash" size={13} />
+              </button>
+            </div>
+          )
+        })}
         {note === undefined ? null : <div className="menu-note">{note}</div>}
       </div>
     </>,
