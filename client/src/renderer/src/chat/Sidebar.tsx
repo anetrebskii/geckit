@@ -10,7 +10,6 @@ import { projectColor } from '../../../shared/project-color'
 import { projectName, tint } from './project'
 import { DeleteChats } from './DeleteChats'
 import { NameField } from './NameField'
-import { Projects } from './Projects'
 import { Dot } from './Tasks'
 import { ago } from './time'
 import type { Chat } from './useChat'
@@ -136,6 +135,36 @@ export function Tags({
         </span>
       )}
     </>
+  )
+}
+
+export function Views({ chat }: { chat: Chat }): React.JSX.Element {
+  const shown = chat.settings.chatView
+  return (
+    <div className="views no-drag" role="radiogroup" aria-label="View">
+      <button
+        type="button"
+        role="radio"
+        aria-checked={shown === 'board'}
+        className={shown === 'board' ? 'on' : undefined}
+        title="Board: the conversations as cards, by what stands where"
+        onClick={() => chat.change({ chatView: 'board' })}
+      >
+        <Icon name="board" />
+        <span>Board</span>
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={shown === 'list'}
+        className={shown === 'list' ? 'on' : undefined}
+        title="List: the conversations one under another, by project"
+        onClick={() => chat.change({ chatView: 'list' })}
+      >
+        <Icon name="list" />
+        <span>List</span>
+      </button>
+    </div>
   )
 }
 
@@ -432,18 +461,10 @@ const Rows = memo(function Rows({
 export function Sidebar({
   chat,
   orderRef,
-  onSettings,
-  onSearch,
-  onKeys,
-  onShortcuts,
   onShortcutFrom,
 }: {
   readonly chat: Chat
   readonly orderRef: RefObject<readonly ChatSession[]>
-  readonly onSettings: () => void
-  readonly onSearch: () => void
-  readonly onKeys: () => void
-  readonly onShortcuts: () => void
   /** A new shortcut from this conversation: its project, mode and model, and its first message as the prompt. */
   readonly onShortcutFrom: (session: ChatSession) => void
 }): React.JSX.Element {
@@ -636,17 +657,9 @@ export function Sidebar({
 
   return (
     <div className="sidebar">
-      <div className="sidebar-head drag">
+      {headings.length === 0 && chat.scope !== ALL ? null : (
+      <div className="sidebar-tools">
         <span className="spacer" />
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Search conversations"
-          title={`Search conversations (${MOD}+P, or ${MOD}+Alt+P from any app)`}
-          onClick={onSearch}
-        >
-          <Icon name="search" />
-        </button>
         {headings.length === 0 ? null : (
           <button
             type="button"
@@ -658,42 +671,6 @@ export function Sidebar({
             <Icon name={allFolded ? 'expand' : 'collapse'} />
           </button>
         )}
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="As a board"
-          title="The conversations as a board, by what stands where"
-          onClick={() => chat.change({ chatView: 'board' })}
-        >
-          <Icon name="board" />
-        </button>
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Shortcuts"
-          title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
-          onClick={onShortcuts}
-        >
-          <Icon name="bolt" />
-        </button>
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Keyboard shortcuts"
-          title={`Keyboard shortcuts (${MOD}+/)`}
-          onClick={onKeys}
-        >
-          <Icon name="keyboard" />
-        </button>
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Settings"
-          title={`Settings (${MOD}+,)`}
-          onClick={onSettings}
-        >
-          <Icon name="settings" />
-        </button>
         {chat.scope === ALL ? (
           <button
             type="button"
@@ -706,15 +683,7 @@ export function Sidebar({
           </button>
         ) : null}
       </div>
-
-      <Projects chat={chat} />
-
-      <button type="button" className="new-session" onClick={chat.startNew}>
-        <Icon name="plus" />
-        New conversation
-        <span className="spacer" />
-        <span className="keys">{MOD}+N</span>
-      </button>
+      )}
 
       <Rows
         groups={groups}

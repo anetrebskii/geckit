@@ -14,7 +14,7 @@ import { HiddenChats } from './HiddenChats'
 import { NameField } from './NameField'
 import { Projects } from './Projects'
 import { emptyProfile, projectName, tint } from './project'
-import { STATUS_ICONS, Tags } from './Sidebar'
+import { STATUS_ICONS, Tags, Views } from './Sidebar'
 import { BoardSearch } from './Switcher'
 import type { Seek } from './Switcher'
 import { running } from './Tasks'
@@ -40,7 +40,8 @@ const COLUMNS: readonly { readonly status: SessionStatus | undefined; readonly t
   { status: 'done', title: 'Done' },
 ]
 
-export function Board({
+/** The bar across the top in both views, so switching between them changes only what is below it. */
+export function TopBar({
   chat,
   onNew,
   onAsk,
@@ -48,7 +49,6 @@ export function Board({
   onSettings,
   onKeys,
   onShortcuts,
-  onShortcutFrom,
 }: {
   readonly chat: Chat
   readonly onNew: () => void
@@ -58,6 +58,143 @@ export function Board({
   readonly onSettings: () => void
   readonly onKeys: () => void
   readonly onShortcuts: () => void
+}): React.JSX.Element {
+  const [asked, setAsked] = useState<DOMRect | undefined>()
+  const [ways, setWays] = useState<DOMRect | undefined>()
+  const [hidden, setHidden] = useState(false)
+  return (
+    <div className="board-head drag">
+      <Views chat={chat} />
+      <Projects chat={chat} />
+      <BoardSearch chat={chat} onSeek={onSeek} />
+      <button
+        type="button"
+        className="icon-button no-drag"
+        aria-label="Shortcuts"
+        title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
+        onClick={onShortcuts}
+      >
+        <Icon name="bolt" />
+      </button>
+      <button
+        type="button"
+        className="icon-button no-drag"
+        aria-label="Keyboard shortcuts"
+        title={`Keyboard shortcuts (${MOD}+/)`}
+        onClick={onKeys}
+      >
+        <Icon name="keyboard" />
+      </button>
+      <button
+        type="button"
+        className="icon-button no-drag"
+        aria-label="Hidden conversations"
+        title="Hidden conversations: kept by Claude Code on this Mac and not on the board"
+        onClick={() => setHidden(true)}
+      >
+        <Icon name="hidden" />
+      </button>
+      <button
+        type="button"
+        className="icon-button no-drag"
+        aria-label="Settings"
+        title={`Settings (${MOD}+,)`}
+        onClick={onSettings}
+      >
+        <Icon name="settings" />
+      </button>
+      <span className="spacer" />
+      <button
+        type="button"
+        className="new-session no-drag board-new"
+        title="A question that is not about a project: it is not put on the board, and is forgotten 5 minutes after the answer"
+        onClick={(event) => {
+          if (chat.questions.length === 0) onAsk()
+          else setAsked(event.currentTarget.getBoundingClientRect())
+        }}
+      >
+        <Icon name="chat" />
+        {chat.questions.length === 0 ? 'Ask' : `Questions ${String(chat.questions.length)}`}
+        <span className="keys">{MOD}+Shift+N</span>
+      </button>
+      {asked === undefined ? null : (
+        <Menu
+          anchor={asked}
+          title="Open questions"
+          explained
+          choices={[
+            ...[...chat.questions]
+              .sort((one, other) => other.at - one.at)
+              .map((one) => ({
+                value: one.id,
+                label: one.title,
+                says: one.state === 'working' || one.state === 'asks' ? 'Working' : one.stands,
+              })),
+            { value: '', label: 'New question', icon: 'plus' },
+          ]}
+          note="Each is forgotten 5 minutes after its last answer."
+          onPick={(id) => {
+            if (id === '') onAsk()
+            else chat.open({ kind: 'session', id })
+          }}
+          onClose={() => setAsked(undefined)}
+        />
+      )}
+      {/* Writing it is the usual way; the arrow offers the others, each saying what it does, so recording and speaking read as ways to start a task. */}
+      <span className="board-split no-drag">
+        <button type="button" className="new-session board-new" onClick={onNew}>
+          <Icon name="plus" />
+          New task
+          <span className="keys">{MOD}+N</span>
+        </button>
+        <button
+          type="button"
+          className={`board-more${ways === undefined ? '' : ' on'}`}
+          aria-label="Other ways to start a task"
+          aria-haspopup="menu"
+          title="Other ways to start a task"
+          onClick={(event) => setWays(event.currentTarget.parentElement?.getBoundingClientRect())}
+        >
+          <Icon name="down" size={11} />
+        </button>
+      </span>
+      {ways === undefined ? null : (
+        <Menu
+          anchor={ways}
+          explained
+          choices={[
+            { value: 'write', icon: 'pencil', label: 'Write it', says: `The form: project, what to do, a goal. ${MOD}+N` },
+            {
+              value: 'record',
+              icon: 'display',
+              label: 'Record the screen',
+              says: `Show it and talk. The recording becomes the task. ${said(ANYWHERE.record)}`,
+            },
+            {
+              value: 'say',
+              icon: 'mic',
+              label: 'Say it',
+              says: `Tell GeckIt what to start, answer or mark. ${said(ANYWHERE.orders)}`,
+            },
+          ]}
+          onPick={(way) => {
+            if (way === 'write') onNew()
+            if (way === 'record') window.geckit.voice.record()
+            if (way === 'say') window.geckit.voice.orders()
+          }}
+          onClose={() => setWays(undefined)}
+        />
+      )}
+      {hidden ? <HiddenChats chat={chat} onClose={() => setHidden(false)} /> : null}
+    </div>
+  )
+}
+
+export function Board({
+  chat,
+  onShortcutFrom,
+}: {
+  readonly chat: Chat
   /** A new shortcut from this conversation, as the list's own menu makes one. */
   readonly onShortcutFrom: (session: ChatSession) => void
 }): React.JSX.Element {
@@ -65,9 +202,6 @@ export function Board({
   const [menu, setMenu] = useState<{ readonly id: string; readonly at: DOMRect } | undefined>()
   const [renaming, setRenaming] = useState<string | undefined>()
   const [deleting, setDeleting] = useState<readonly ChatSession[] | undefined>()
-  const [asked, setAsked] = useState<DOMRect | undefined>()
-  const [ways, setWays] = useState<DOMRect | undefined>()
-  const [hidden, setHidden] = useState(false)
   // The cards being dragged, and the column the pointer is over.
   const held = useRef<readonly string[]>([])
   const [over, setOver] = useState<string | undefined>()
@@ -168,139 +302,6 @@ export function Board({
 
   return (
     <div className="board">
-      <div className="board-head drag">
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="As a list"
-          title="The conversations as a list"
-          onClick={() => chat.change({ chatView: 'list' })}
-        >
-          <Icon name="list" />
-        </button>
-        <Projects chat={chat} />
-        <BoardSearch chat={chat} onSeek={onSeek} />
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Shortcuts"
-          title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
-          onClick={onShortcuts}
-        >
-          <Icon name="bolt" />
-        </button>
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Keyboard shortcuts"
-          title={`Keyboard shortcuts (${MOD}+/)`}
-          onClick={onKeys}
-        >
-          <Icon name="keyboard" />
-        </button>
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Hidden conversations"
-          title="Hidden conversations: kept by Claude Code on this Mac and not on the board"
-          onClick={() => setHidden(true)}
-        >
-          <Icon name="hidden" />
-        </button>
-        <button
-          type="button"
-          className="icon-button no-drag"
-          aria-label="Settings"
-          title={`Settings (${MOD}+,)`}
-          onClick={onSettings}
-        >
-          <Icon name="settings" />
-        </button>
-        <span className="spacer" />
-        <button
-          type="button"
-          className="new-session no-drag board-new"
-          title="A question that is not about a project: it is not put on the board, and is forgotten 5 minutes after the answer"
-          onClick={(event) => {
-            if (chat.questions.length === 0) onAsk()
-            else setAsked(event.currentTarget.getBoundingClientRect())
-          }}
-        >
-          <Icon name="chat" />
-          {chat.questions.length === 0 ? 'Ask' : `Questions ${String(chat.questions.length)}`}
-          <span className="keys">{MOD}+Shift+N</span>
-        </button>
-        {asked === undefined ? null : (
-          <Menu
-            anchor={asked}
-            title="Open questions"
-            explained
-            choices={[
-              ...[...chat.questions]
-                .sort((one, other) => other.at - one.at)
-                .map((one) => ({
-                  value: one.id,
-                  label: one.title,
-                  says: one.state === 'working' || one.state === 'asks' ? 'Working' : one.stands,
-                })),
-              { value: '', label: 'New question', icon: 'plus' },
-            ]}
-            note="Each is forgotten 5 minutes after its last answer."
-            onPick={(id) => {
-              if (id === '') onAsk()
-              else chat.open({ kind: 'session', id })
-            }}
-            onClose={() => setAsked(undefined)}
-          />
-        )}
-        {/* Writing it is the usual way; the arrow offers the others, each saying what it does, so recording and speaking read as ways to start a task. */}
-        <span className="board-split no-drag">
-          <button type="button" className="new-session board-new" onClick={onNew}>
-            <Icon name="plus" />
-            New task
-            <span className="keys">{MOD}+N</span>
-          </button>
-          <button
-            type="button"
-            className={`board-more${ways === undefined ? '' : ' on'}`}
-            aria-label="Other ways to start a task"
-            aria-haspopup="menu"
-            title="Other ways to start a task"
-            onClick={(event) => setWays(event.currentTarget.parentElement?.getBoundingClientRect())}
-          >
-            <Icon name="down" size={11} />
-          </button>
-        </span>
-        {ways === undefined ? null : (
-          <Menu
-            anchor={ways}
-            explained
-            choices={[
-              { value: 'write', icon: 'pencil', label: 'Write it', says: `The form: project, what to do, a goal. ${MOD}+N` },
-              {
-                value: 'record',
-                icon: 'display',
-                label: 'Record the screen',
-                says: `Show it and talk. The recording becomes the task. ${said(ANYWHERE.record)}`,
-              },
-              {
-                value: 'say',
-                icon: 'mic',
-                label: 'Say it',
-                says: `Tell GeckIt what to start, answer or mark. ${said(ANYWHERE.orders)}`,
-              },
-            ]}
-            onPick={(way) => {
-              if (way === 'write') onNew()
-              if (way === 'record') window.geckit.voice.record()
-              if (way === 'say') window.geckit.voice.orders()
-            }}
-            onClose={() => setWays(undefined)}
-          />
-        )}
-        {hidden ? <HiddenChats chat={chat} onClose={() => setHidden(false)} /> : null}
-      </div>
-
       {emptyProfile(chat.settings) === undefined ? null : (
         <div className="board-empty">No projects in {emptyProfile(chat.settings)}. Tick some in Settings, Profiles.</div>
       )}
