@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { homeOf, SESSION_STATUSES } from '../../../shared/api'
@@ -12,7 +12,7 @@ import { macs } from '../macs'
 import type { Macs } from '../macs'
 import { emptyProfile, projectName } from './project'
 import { running } from './Tasks'
-import { ago, questionLeft } from './time'
+import { ago, byDay, questionLeft } from './time'
 import type { Chat } from './useChat'
 
 /**
@@ -75,6 +75,16 @@ export function PhoneBoard({
   // The row whose actions are showing; a touch anywhere else puts it back.
   const [open, setOpen] = useState<string | undefined>()
   const [unfolded, setUnfolded] = useState(false)
+  // A day in Done folded away, by its heading, for as long as the app is open.
+  const [foldedDays, setFoldedDays] = useState<ReadonlySet<string>>(new Set())
+  const foldDay = (heading: string): void => {
+    tap('light')
+    setFoldedDays((was) => {
+      const next = new Set(was)
+      if (!next.delete(heading)) next.add(heading)
+      return next
+    })
+  }
   const [switching, setSwitching] = useState(false)
   // Read again after a rename or a star; a scan, a switch or forgetting the Mac in use start the page over.
   const [paired, setPaired] = useState(() => macs()?.list())
@@ -235,29 +245,45 @@ export function PhoneBoard({
             </div>
           </>
         )}
-        {rest.length === 0 ? null : (
-          <>
-            {asking.length === 0 ? null : <div className="phone-head">Sessions</div>}
-            <div className="phone-group">
-              {rest.map((session) => (
-                <Row
-                  key={session.id}
-                  chat={chat}
-                  session={session}
-                  now={now}
-                  column={shown}
-                  open={open === session.id}
-                  waiting={undefined}
-                  onOpen={(on) => setOpen(on ? session.id : undefined)}
-                  onMark={(status) => mark(session, status)}
-                  onMore={() => setMore(session)}
-                  onPress={(at) => setPressed({ session, at })}
-                  onAnswer={() => undefined}
-                />
-              ))}
-            </div>
-          </>
-        )}
+        {rest.length === 0
+          ? null
+          : byDay(rest, now, shown === 'done').map((day) => (
+              <Fragment key={day.heading}>
+                {day.heading !== '' ? (
+                  <button
+                    type="button"
+                    className="phone-head phone-day-head"
+                    aria-expanded={!foldedDays.has(day.heading)}
+                    onClick={() => foldDay(day.heading)}
+                  >
+                    {day.heading}
+                    <span className="spacer" />
+                    <span className="n">{day.rows.length}</span>
+                    <Icon name={foldedDays.has(day.heading) ? 'right' : 'down'} size={13} />
+                  </button>
+                ) : asking.length === 0 ? null : (
+                  <div className="phone-head">Sessions</div>
+                )}
+                {foldedDays.has(day.heading) ? null : <div className="phone-group">
+                  {day.rows.map((session) => (
+                    <Row
+                      key={session.id}
+                      chat={chat}
+                      session={session}
+                      now={now}
+                      column={shown}
+                      open={open === session.id}
+                      waiting={undefined}
+                      onOpen={(on) => setOpen(on ? session.id : undefined)}
+                      onMark={(status) => mark(session, status)}
+                      onMore={() => setMore(session)}
+                      onPress={(at) => setPressed({ session, at })}
+                      onAnswer={() => undefined}
+                    />
+                  ))}
+                </div>}
+              </Fragment>
+            ))}
         {chat.questions.length === 0 ? null : (
           <>
             <div className="phone-head">Questions</div>
@@ -365,12 +391,14 @@ function RowBody({
   now,
   waiting,
   onAnswer,
+  dayHeaded,
 }: {
   readonly chat: Chat
   readonly session: ChatSession
   readonly now: number
   readonly waiting: Waiting | undefined
   readonly onAnswer?: (how: CardAnswer) => void
+  readonly dayHeaded?: boolean
 }): React.JSX.Element {
   const stands = standing(session)
   const background = session.tasks?.filter(running).length ?? 0
@@ -382,7 +410,7 @@ function RowBody({
       <div className="phone-row-text">
         <div className="phone-row-line">
           <span className="phone-row-title">{session.title}</span>
-          <span className="phone-row-time">{session.question === true ? (questionLeft(session, now) ?? '') : ago(session.at, now)}</span>
+          <span className="phone-row-time">{session.question === true ? (questionLeft(session, now) ?? '') : ago(session.at, now, dayHeaded)}</span>
         </div>
         {session.state === 'asks' ? (
           <>
@@ -576,7 +604,7 @@ function Row({
           if (held.way === 'side') settle(x)
         }}
       >
-        <RowBody chat={chat} session={session} now={now} waiting={waiting} onAnswer={onAnswer} />
+        <RowBody chat={chat} session={session} now={now} waiting={waiting} onAnswer={onAnswer} dayHeaded={column === 'done'} />
       </div>
     </div>
   )

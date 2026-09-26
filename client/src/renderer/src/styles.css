@@ -4805,6 +4805,24 @@ html.phone button:active:not(:disabled) {
   letter-spacing: 0.02em;
 }
 
+.phone-day-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: calc(100% - 64px);
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: left;
+  background: none;
+  border: none;
+}
+
+.phone-day-head .n {
+  text-transform: none;
+}
+
 .phone-head:first-child {
   margin-top: 4px;
 }
