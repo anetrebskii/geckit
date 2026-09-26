@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// A room is the hash of the key in the QR code, and what is left in it is sealed with that key, so these rules only keep it well-formed.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /rooms/{room} {
+      // The Mac says it is waiting, which is what lets a phone in the same room ask for a relay.
+      allow create, update: if room.matches('[0-9a-f]{64}')
+        && request.resource.data.keys().hasOnly(['seen'])
+        && request.resource.data.seen == request.time;
+
+      match /{kind}/{id} {
+        allow get, list: if kind in ['offers', 'answers'];
+        allow create: if kind in ['offers', 'answers']
+          && room.matches('[0-9a-f]{64}')
+          && id.matches('[0-9a-z-]{1,64}')
+          && request.resource.data.keys().hasOnly(['box', 'at', 'gone'])
+          && request.resource.data.box is string
+          && request.resource.data.box.size() <= 65536
+          && request.resource.data.at == request.time
+          && request.resource.data.gone > request.time
+          && request.resource.data.gone < request.time + duration.value(2, 'h');
+      }
+    }
+  }
+}
