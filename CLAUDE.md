@@ -10,7 +10,7 @@ GeckIt is an Electron desktop app with three things in it: correcting a piece of
 
 - **`client/`**: the app (electron-vite + React 19 + TypeScript, hand-written CSS)
 - **`mobile/`**: the iPhone app (Capacitor), built from the client's own Chat sources and React
-- **`signal/`**: the weroost site whose functions introduce the phone to the Mac
+- **`signal/`**: the Firebase project `geckit-signal`: Firestore rules for the rooms the phone and the Mac meet in, and the `ice` function that hands out the relay
 
 ## Build Commands
 
@@ -54,7 +54,7 @@ Two engines, switched in the footer. `plan` runs `claude -p --restricted --no-se
 
 ### The phone
 
-With Phone on in Settings, main opens a hidden `peer` window, since WebRTC lives in a renderer and not in main. It waits on the weroost signaling function (`signal/`) for offers sealed with the key in the Settings QR (`shared/pairing.ts`, `renderer/src/link.ts`), answers each, and relays the phone's calls to main over `peer:call` against the list in `phoneCalls()`, and main's tells back. The app in `mobile/` scans the QR, dials, and installs a `window.geckit` built over the link (`renderer/src/phone.ts`) before loading the Chat window with `html.phone`. Cloudflare TURN is used only when `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` are set on the weroost site. What it looks like and why is in `docs/ux/phone.md`.
+With Phone on in Settings, main opens a hidden `peer` window, since WebRTC lives in a renderer and not in main. It listens in Firestore (`signal/`) for offers sealed with the key in the Settings QR (`shared/pairing.ts`, `renderer/src/link.ts`), answers each, and relays the phone's calls to main over `peer:call` against the list in `phoneCalls()`, and main's tells back. The app in `mobile/` scans the QR, dials, and installs a `window.geckit` built over the link (`renderer/src/phone.ts`) before loading the Chat window with `html.phone`. Cloudflare TURN is used only when `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` are set as secrets of the `ice` function (`firebase functions:secrets:set`). What it looks like and why is in `docs/ux/phone.md`.
 
 ### Settings
 

@@ -1,14 +1,15 @@
 /**
  * What the phone and the Mac share once the QR code is scanned, and how they
- * use it to find each other through the signaling function on weroost.
+ * use it to find each other through Firestore.
  *
  * The key never leaves the two of them: the room they meet in is a hash of it,
- * and what they leave in the room is sealed with it, so weroost sees neither
+ * and what they leave in the room is sealed with it, so Firestore sees neither
  * the offer nor the addresses in it. Plain WebCrypto, so it runs in a window
  * on the Mac, in the app on the phone, and in the tests.
  */
 
-export const SIGNAL = 'https://geckit--signal.weroostapp.ru'
+// Where the relay's keys are asked for; the rooms themselves are in Firestore.
+export const SIGNAL = 'https://europe-west1-geckit-signal.cloudfunctions.net'
 
 export interface Pairing {
   readonly key: string

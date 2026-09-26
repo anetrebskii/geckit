@@ -13,7 +13,7 @@ Away from the Mac, Alex cannot see which conversations are working, which ones w
 
 ## 2. What is added
 
-The phone runs its own GeckIt app, which shows the same Chat window the Mac shows. It reaches the Mac directly (WebRTC), finds it through a small signaling function on weroost, and falls back to a relay only when the two networks cannot see each other. It is one person's tool: their Mac, their phones.
+The phone runs its own GeckIt app, which shows the same Chat window the Mac shows. It reaches the Mac directly (WebRTC), finds it through Firestore, and falls back to a relay only when the two networks cannot see each other. It is one person's tool: their Mac, their phones.
 
 | Surface | What appears | When |
 |---|---|---|
@@ -143,7 +143,7 @@ stateDiagram-v2
 | State | Why not shown |
 |---|---|
 | Direct or through the relay | Nothing the person does differs; it is a network fact |
-| The signaling function on weroost | It only introduces the two ends; once connected it is not used |
+| Firestore, project `geckit-signal` | It only introduces the two ends; once connected it is not used |
 | The Mac's own window being open or not | Nothing on the phone depends on it |
 | The profile in use on the Mac | A profile is how the Mac is being looked at; the phone shows every project's conversations |
 | Git branch, context size, cost | Desk facts: nothing the person acts on from a phone |
@@ -154,12 +154,11 @@ stateDiagram-v2
 
 | Number | Value | Why |
 |---|---|---|
-| Waiting for the Mac to answer | 20 s | The Mac asks the signaling function every 10 s at most, then gathers its routes; 20 s covers one missed ask and the gathering |
-| One ask to the signaling function | Held up to 10 s | Its functions end at 15 s; 10 s leaves room to answer |
-| An offer kept on weroost | 60 s | Longer than the 20 s the phone waits; an older one is from a phone that gave up |
-| Key in the QR | 32 random bytes | It is the only thing that lets a phone in; it also encrypts what passes through weroost |
+| Waiting for the Mac to answer | 20 s | The Mac hears an offer as Firestore stores it, then gathers its routes for up to 4 s |
+| An offer answered | 60 s | Longer than the 20 s the phone waits; an older one is from a phone that gave up. Firestore's TTL deletes it an hour later |
+| Key in the QR | 32 random bytes | It is the only thing that lets a phone in; it also encrypts what passes through Firestore |
 | Reconnect after a drop | At once, then 2, 5, 10, 30 s, then every 30 s | A drop from switching networks mends in seconds; a Mac that is asleep should not be asked every second |
-| One try to connect | 45 s | The pairing service takes several seconds to wake on each side of the handshake |
+| One try to connect | 45 s | The `ice` function takes seconds to wake from cold, before the handshake starts |
 | Pill after a drop | 5 s | Back from the background, a drop mends in about that; a pill that comes and goes only startles |
 | What is done while down | Held 60 s | Long enough for a reconnect; past it, it fails as it would have |
 | A link back from the background | Asked, and dropped if silent for 3 s | iOS freezes the app; a frozen link looks open and carries nothing |
@@ -190,7 +189,7 @@ stateDiagram-v2
 
 - **Two phones:** both scan the same code; both connect and see the same thing.
 - **The Mac and the phone at once:** both see the same session; an answer from either removes the card from both.
-- **Mac asleep or GeckIt closed:** while Phone is on, GeckIt keeps the Mac from falling asleep by itself (the display still turns off). A closed lid on battery still sleeps; then the phone waits 45 s and says so, and nothing is queued on weroost for later.
+- **Mac asleep or GeckIt closed:** while Phone is on, GeckIt keeps the Mac from falling asleep by itself (the display still turns off). A closed lid on battery still sleeps; then the phone waits 45 s and says so, and nothing is queued in Firestore for later.
 - **Drop mid-send:** the message goes as a request over the link; if it fails, nothing is in the transcript, the text and pictures go back into the field, and the status line says it was not sent.
 - **Stale copy:** after a drop the page starts over rather than patching, so nothing on screen is older than the reconnect.
 - **Code photographed by someone else:** it is a key; New code on the Mac makes the old one worthless.
@@ -251,6 +250,6 @@ stateDiagram-v2
 | Start it, scan a QR, manage | Not paired, Scanning, Connecting, Board |
 | See sessions' progress | Board, Conversation |
 | Manage sessions | Asks, Send, Stop, mode, Where it stands |
-| Peer-to-peer to the Mac | WebRTC; weroost only introduces the two ends |
+| Peer-to-peer to the Mac | WebRTC; Firestore only introduces the two ends |
 
 **Missing from the request:** whether a notification is wanted when a card arrives while the app is closed; left out of this version (section 9).
