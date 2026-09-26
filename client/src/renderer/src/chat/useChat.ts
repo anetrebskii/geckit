@@ -665,10 +665,10 @@ export function useChat(): Chat {
         )
       }
     },
+    // Asked at every opening: main keeps the answer, and asks Claude Code again once another version of it answers.
     askModels: () => {
-      if (models !== 'unasked' && models !== 'unsaid') return
-      setModels('asking')
-      void window.geckit.chat.models().then((said) => setModels(said ?? 'unsaid'))
+      if (!Array.isArray(models)) setModels('asking')
+      void window.geckit.chat.models().then((said) => setModels((held) => said ?? (Array.isArray(held) ? held : 'unsaid')))
     },
     send,
     ask,

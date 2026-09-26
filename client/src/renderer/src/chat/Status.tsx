@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { planLine } from '../../../shared/api'
+import { planLine, programLine } from '../../../shared/api'
 import type { GitState, PlanWindow } from '../../../shared/api'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
@@ -193,6 +193,9 @@ export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly on
 export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   const plan = chat.plan
+  // Whose plan, and which Claude Code spends it: an older one runs fewer models.
+  const program = chat.account?.program
+  const lead = [planLine(chat.account), programLine(chat.account)].filter((part) => part !== undefined).join(' · ')
 
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60_000)
@@ -218,8 +221,11 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
       })}
       <span className="spacer" />
       {ON_PHONE && chat.trouble === '' ? null : (
-        <span className={`lead${chat.trouble === '' ? '' : ' trouble'}`}>
-          {chat.trouble === '' ? planLine(chat.account) : chat.trouble}
+        <span
+          className={`lead${chat.trouble === '' ? '' : ' trouble'}`}
+          {...(chat.trouble === '' && program?.path !== undefined ? { title: `GeckIt starts ${program.path}` } : {})}
+        >
+          {chat.trouble === '' ? lead : chat.trouble}
         </span>
       )}
       {plan?.fiveHour === undefined ? null : <Window name="5h" window={plan.fiveHour} now={now} />}

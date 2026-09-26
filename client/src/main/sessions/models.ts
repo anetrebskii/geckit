@@ -29,22 +29,33 @@ const PATIENCE = 15_000
  * Its own `default` row is left out: asked with the tool set to Haiku it still
  * described its default as Opus 5, so the row names the plan's default and not
  * what this machine would run.
+ *
+ * A model the plan has and this build cannot run is named apart, with the
+ * tool's own reason: `Update to 2.1.280+ to use Opus 5.5`. It is kept, greyed,
+ * because it is the one thing that says the list is short for want of an
+ * update. The id it gives such a row is a placeholder and not a model's.
  */
 export function claudeModelsFrom(answer: Json): ClaudeModel[] | undefined {
   const listed = answer['models']
   if (!Array.isArray(listed)) return undefined
+  const unusable = answer['unavailable_models']
   const models: ClaudeModel[] = []
-  for (const raw of listed) {
+  for (const [raw, off] of [
+    ...listed.map((one: unknown) => [one, false] as const),
+    ...(Array.isArray(unusable) ? unusable.map((one: unknown) => [one, true] as const) : []),
+  ]) {
     const one = (raw ?? {}) as Json
     const value = string(one['value'])
     if (value === '' || value === 'default') continue
     const says = string(one['description'])
-    const id = string(one['resolvedModel'])
+    const disabled = off || one['disabled'] === true
+    const id = disabled ? '' : string(one['resolvedModel'])
     models.push({
       value,
       name: string(one['displayName']) || value,
       ...(says === '' ? {} : { says }),
       ...(id === '' ? {} : { id }),
+      ...(disabled ? { disabled: true as const } : {}),
     })
   }
   return models
