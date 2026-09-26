@@ -617,6 +617,9 @@ export function Chat(): React.JSX.Element {
               tasks={chat.session?.tasks}
               onTasks={chat.showTasks}
               seek={seek}
+              earlier={chat.earlier}
+              onEarlier={chat.showEarlier}
+              onSteps={chat.loadSteps}
             />
           </Files>
         )}

@@ -10,7 +10,7 @@ import './pair.css'
 import { dial } from '../../client/src/renderer/src/link'
 import type { Dialing, Link } from '../../client/src/renderer/src/link'
 import { installGeckit, sayDropped, showDropped } from '../../client/src/renderer/src/phone'
-import type { Boot } from '../../client/src/renderer/src/phone'
+import type { Boot, Installed } from '../../client/src/renderer/src/phone'
 import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
 import type { Dictate } from '../../client/src/renderer/src/dictate'
@@ -289,12 +289,45 @@ function connecting(mac: string, others: readonly HTMLElement[]): (at: Stage) =>
   }
 }
 
+// What a Mac said of itself the last time, by its key, so the app can open on what it kept of it before the Mac answers again.
+const BOOTS = 'boots'
+const macOf = (pairing: Pairing): string => pairing.key.slice(0, 16)
+
+function keptBoot(pairing: Pairing): Boot | undefined {
+  try {
+    return (JSON.parse(localStorage.getItem(BOOTS) ?? '{}') as Record<string, Boot>)[macOf(pairing)]
+  } catch {
+    return undefined
+  }
+}
+
+function keepBoot(pairing: Pairing, boot: Boot): void {
+  let all: Record<string, Boot> = {}
+  try {
+    all = JSON.parse(localStorage.getItem(BOOTS) ?? '{}') as Record<string, Boot>
+  } catch {
+    // Written by an older app: started over.
+  }
+  localStorage.setItem(BOOTS, JSON.stringify({ ...all, [macOf(pairing)]: boot }))
+}
+
 async function connect(): Promise<void> {
   const pairing = kept()
   if (pairing === undefined) return notPaired()
   const mine = ++attempt
   const macs = keptMacs()
   const here = macs.findIndex(isCurrent)
+  // A Mac this phone has talked to before: its conversations are up at once, and the link is made under them.
+  const before = started ? undefined : keptBoot(pairing)
+  if (before !== undefined) {
+    const name = macs[here] === undefined ? (before.name ?? 'the Mac') : nameOf(macs[here], here)
+    started = true
+    installed = installGeckit(undefined, before, macOf(pairing))
+    const opened = import('../../client/src/renderer/src/chat/main')
+    void mend(pairing, installed.swap, name, true)
+    await opened
+    return
+  }
   const others = macs
     .map((mac, at) => ({ mac, at }))
     .filter(({ at }) => at !== here)
@@ -337,16 +370,19 @@ async function connect(): Promise<void> {
   if (boot.name !== undefined && here !== -1) {
     localStorage.setItem(MACS, JSON.stringify(macs.map((mac, at) => (at === here ? { ...mac, name: boot.name } : mac))))
   }
+  keepBoot(pairing, boot)
   document.querySelector('.pair')?.remove()
   started = true
   current = link
-  const swap = installGeckit(link, boot)
+  installed = installGeckit(link, boot, macOf(pairing))
+  const { swap } = installed
   const name = boot.name ?? macs[here]?.name ?? 'the Mac'
   link.onClose(() => void mend(pairing, swap, name))
   await import('../../client/src/renderer/src/chat/main')
 }
 
 let current: Link | undefined
+let installed: Installed | undefined
 
 /**
  * The page stays as it was under the pill until the Mac answers again, and then carries on over the new link.
@@ -354,10 +390,10 @@ let current: Link | undefined
  * The pill says the step each try is at and how long it has taken once that is long, and between tries when the
  * next one is, as the first connect's screen does.
  */
-async function mend(pairing: Pairing, swap: (next: Link) => void, mac: string): Promise<void> {
+async function mend(pairing: Pairing, swap: (next: Link) => void, mac: string, first = false): Promise<void> {
   showDropped()
-  const said = stageSaid(mac)
-  const head = `Reconnecting to ${mac}`
+  const said = stageSaid('the Mac')
+  const head = `${first ? 'Connecting' : 'Reconnecting'} to ${mac}`
   let step = 'Trying again'
   let since = Date.now()
   let next: number | undefined
@@ -389,10 +425,23 @@ async function mend(pairing: Pairing, swap: (next: Link) => void, mac: string): 
       current = link
       swap(link)
       link.onClose(() => void mend(pairing, swap, mac))
+      if (first) void refreshBoot(pairing, link)
       return
     } catch {
       tries++
     }
+  }
+}
+
+/** The Mac's name and home as it says them now, for the next launch; asked over the link just made, as the first connect does. */
+async function refreshBoot(pairing: Pairing, link: Link): Promise<void> {
+  const boot = await bootOf(link).catch(() => undefined)
+  if (boot === undefined) return
+  keepBoot(pairing, boot)
+  const macs = keptMacs()
+  const here = macs.findIndex(isCurrent)
+  if (boot.name !== undefined && here !== -1) {
+    localStorage.setItem(MACS, JSON.stringify(macs.map((mac, at) => (at === here ? { ...mac, name: boot.name } : mac))))
   }
 }
 
@@ -402,8 +451,8 @@ void App.addListener('resume', () => {
   const link = current
   if (link === undefined || !started) return
   const quiet = setTimeout(() => link.close(), SILENT)
-  void window.geckit.settings
-    .get()
+  void installed
+    ?.ping()
     .then(() => clearTimeout(quiet))
     .catch(() => undefined)
 })

@@ -111,8 +111,7 @@ export function PhoneBoard({
     let gone = false
     void Promise.all(
       asks.map(async (one) => {
-        const items = await window.geckit.chat.items(one.id)
-        const card = items.findLast((item) => item.kind === 'card' && item.card.answered === undefined)
+        const card = await window.geckit.chat.waiting(one.id)
         return card?.kind === 'card' ? ([one.id, { item: card.id, card: card.card }] as const) : undefined
       }),
     ).then((found) => {

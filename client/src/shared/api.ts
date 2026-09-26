@@ -106,6 +106,15 @@ export type SessionItem =
       /** The tool's own last words, under "What it said". */
       readonly detail?: string
     }
+  /** A run of steps as one line, sent to the phone in place of the steps, which it asks for when the line is opened. */
+  | {
+      readonly kind: 'steps'
+      /** `steps:` and the first step's id, which is also what the steps drawn open are known by. */
+      readonly id: string
+      readonly ids: readonly string[]
+      /** What the last of them did: "Ran npm test". */
+      readonly latest?: string
+    }
 
 /** Where a session stands, which is also which group its row is under. */
 export type SessionState = 'working' | 'asks' | 'unread' | 'idle' | 'limit' | 'failed'
@@ -292,7 +301,9 @@ export interface Browser {
 /** A picture sent with a message: what it is, and the picture itself as base64. */
 export interface SessionImage {
   readonly media: string
+  /** Empty on the phone until the picture is looked at, and then asked for by `ref` at the size it is drawn. */
   readonly data: string
+  readonly ref?: string
 }
 
 /** What the tool said it has, or that it is being asked, or that it did not say. */

@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { collection, doc, getFirestore, onSnapshot, query, serverTimestamp, setDoc, Timestamp, where } from 'firebase/firestore'
 import type { Firestore } from 'firebase/firestore'
-import { assembler, framesOf, roomOf, seal, unseal } from '../../shared/pairing'
+import { assembler, framesOf, packed, roomOf, seal, SQUEEZE_FROM, unpacker, unseal } from '../../shared/pairing'
 import type { LinkMessage, Pairing, Signed } from '../../shared/pairing'
 
 /**
@@ -22,6 +22,8 @@ export interface Link {
   readonly screen: () => MediaStream | undefined
   /** The Mac's side: what goes out as the screen, or nothing to stop it. */
   readonly share: (track: MediaStreamTrack | null) => Promise<void>
+  /** From now on what is sent goes deflated, once the other side has said it can read that. */
+  readonly compress: (on: boolean) => void
 }
 
 // Public by design: what may be written is decided by firestore.rules in signal/.
@@ -43,6 +45,8 @@ const KEPT = 3600_000
 const SEEN = 30_000
 // Past this, the routes found so far are enough.
 const GATHERING = 4000
+// Once a route through a NAT is found, this long for the relay's; one of them is how a phone off the Mac's network gets through.
+const AFTER_ROUTE = 1000
 // A send buffer much fuller than this is where browsers start closing channels.
 const BUFFERED = 1_000_000
 // Enough for text on a Retina screen at 15 frames a second; more only fills a phone's mobile data.
@@ -70,11 +74,22 @@ async function iceServers(pairing: Pairing, room: string): Promise<RTCIceServer[
 function gathered(peer: RTCPeerConnection): Promise<void> {
   if (peer.iceGatheringState === 'complete') return Promise.resolve()
   return new Promise((done) => {
-    const timer = setTimeout(done, GATHERING)
-    peer.addEventListener('icegatheringstatechange', () => {
-      if (peer.iceGatheringState !== 'complete') return
+    const until = Date.now() + GATHERING
+    let timer = setTimeout(done, GATHERING)
+    const enough = (): void => {
       clearTimeout(timer)
       done()
+    }
+    peer.addEventListener('icegatheringstatechange', () => {
+      if (peer.iceGatheringState === 'complete') enough()
+    })
+    // A route through the relay reaches from anywhere, so nothing found after it is needed; one through a NAT is given a moment for the relay's.
+    peer.addEventListener('icecandidate', ({ candidate }) => {
+      if (candidate?.type === 'relay') enough()
+      else if (candidate?.type === 'srflx') {
+        clearTimeout(timer)
+        timer = setTimeout(done, Math.min(AFTER_ROUTE, until - Date.now()))
+      }
     })
   })
 }
@@ -126,22 +141,35 @@ function inTime<T>(ms: number, doing: (signal: AbortSignal) => Promise<T>): Prom
 
 function linkOver(channel: RTCDataChannel, peer: RTCPeerConnection, video: RTCRtpTransceiver | undefined, seen?: () => MediaStream | undefined): Link {
   const put = assembler()
-  const waiting: string[] = []
+  const unpack = unpacker()
+  const waiting: (string | ArrayBuffer)[] = []
   let next = 0
+  let squeeze = false
+  // Deflating takes a moment either way, so what is sent, and what is heard, goes one message after another in the order it came.
+  let sending = Promise.resolve()
+  let hearing = Promise.resolve()
   let closedOnce = false
   const closers: (() => void)[] = []
   const hearers: ((message: LinkMessage) => void)[] = []
 
   channel.bufferedAmountLowThreshold = BUFFERED / 4
+  channel.binaryType = 'arraybuffer'
   const pump = (): void => {
     while (waiting.length > 0 && channel.readyState === 'open' && channel.bufferedAmount < BUFFERED) {
-      channel.send(waiting.shift() ?? '')
+      const frame = waiting.shift() ?? ''
+      if (typeof frame === 'string') channel.send(frame)
+      else channel.send(frame)
     }
   }
   channel.addEventListener('bufferedamountlow', pump)
-  channel.addEventListener('message', (event: MessageEvent<string>) => {
-    const message = put(event.data)
-    if (message !== undefined) for (const hear of hearers) hear(message)
+  channel.addEventListener('message', (event: MessageEvent<string | ArrayBuffer>) => {
+    const data = event.data
+    hearing = hearing
+      .then(async () => {
+        const message = typeof data === 'string' ? put(data) : await unpack(data)
+        if (message !== undefined) for (const hear of hearers) hear(message)
+      })
+      .catch(() => undefined)
   })
   const closed = (): void => {
     if (closedOnce) return
@@ -156,8 +184,17 @@ function linkOver(channel: RTCDataChannel, peer: RTCPeerConnection, video: RTCRt
 
   return {
     send: (message) => {
-      waiting.push(...framesOf(message, next++))
-      pump()
+      const m = next++
+      sending = sending
+        .then(async () => {
+          const text = squeeze ? JSON.stringify(message) : ''
+          waiting.push(...(squeeze && text.length >= SQUEEZE_FROM ? await packed(message, m) : framesOf(message, m)))
+          pump()
+        })
+        .catch(() => undefined)
+    },
+    compress: (on) => {
+      squeeze = on
     },
     onMessage: (heard) => hearers.push(heard),
     onClose: (close) => closers.push(close),

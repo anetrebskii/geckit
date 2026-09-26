@@ -17,6 +17,7 @@ import type {
   PlanUsage,
   Shortcut,
   ShortcutDraft,
+  SessionImage,
   SessionItem,
   SessionItems,
   SessionMessage,
@@ -33,7 +34,8 @@ import type {
   VoiceMode,
 } from '../shared/api'
 import type { Link } from '../shared/links'
-import type { Pairing } from '../shared/pairing'
+import { pieceOf } from '../shared/pairing'
+import type { Pairing, Piece } from '../shared/pairing'
 
 /**
  * Everything a window may ask the main process, and nothing else.
@@ -108,6 +110,17 @@ const geckit = {
     /** Nothing for the project is every conversation, in every project offered. */
     list: (root: string | undefined): Promise<ChatSession[]> => ipcRenderer.invoke('chat:list', root),
     items: (id: string): Promise<SessionItem[]> => ipcRenderer.invoke('chat:items', id),
+    waiting: (id: string): Promise<SessionItem | undefined> => ipcRenderer.invoke('chat:waiting', id),
+    /** What is before a line of a conversation; the phone is sent a conversation's end first, this window all of it. */
+    before: async (id: string, before: string): Promise<Piece> =>
+      pieceOf((await ipcRenderer.invoke('chat:items', id)) as SessionItem[], before, 200),
+    /** A picture the phone was sent by name, at the width it is drawn; this window is sent them whole. */
+    picture: (_ref: string, _width: number): Promise<SessionImage | undefined> => Promise.resolve(undefined),
+    /** Steps of a conversation by their ids, for a run the phone was sent as one line. */
+    steps: async (id: string, ids: readonly string[]): Promise<SessionItem[]> =>
+      ((await ipcRenderer.invoke('chat:items', id)) as SessionItem[]).filter((item) => ids.includes(item.id)),
+    /** How much of the open conversation is still on the Mac only, which only the phone is told. */
+    onEarlier: (said: (earlier: { readonly id: string; readonly left: number }) => void): (() => void) => listen('chat:earlier', said),
     links: (id: string): Promise<Link[]> => ipcRenderer.invoke('chat:links', id),
     /** What closing GeckIt cut off, the first time a window asks after a start, and nothing after that. */
     cutOff: (): Promise<CutOff[]> => ipcRenderer.invoke('chat:cutOff'),
