@@ -68,7 +68,7 @@ jobs:
           sign=()
           if [ "${{ matrix.platform }}" = mac ]; then sign=(-c.mac.identity=- -c.mac.hardenedRuntime=false); fi
           npm exec electron-builder -- --publish never --${{ matrix.platform }} "${sign[@]}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: geckit-${{ matrix.platform }}
           retention-days: 7
