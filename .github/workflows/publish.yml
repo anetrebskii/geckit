@@ -32,6 +32,7 @@ jobs:
           npm test
 
   # Decided once, so the three builds carry the same number. The major is set here and nowhere else; the minor is one past the highest tag that has it, and the tag is made before the builds start. The same action and the same shape as Twins-AI.
+  # The action pushes .version to main, which the ruleset lets only the owner update, so it pushes with the owner's token. Pull requests never see this secret.
   version:
     needs: test
     runs-on: ubuntu-latest
@@ -39,10 +40,10 @@ jobs:
       version: ${{ steps.pick.outputs.version }}
     steps:
       - uses: actions/checkout@v5
-      - uses: entech-code/auto-version-tagging-action@HEAD
+      - uses: entech-code/auto-version-tagging-action@7615bc1048b4e526aa6403e39e38bc0dba86f981
         id: pick
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.VERSION_TOKEN }}
           majorVersion: 1
 
   publish:
@@ -157,7 +158,7 @@ jobs:
       - name: Archive
         run: xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/GeckIt.xcarchive" archive CODE_SIGNING_ALLOWED=NO MARKETING_VERSION=${{ needs.version.outputs.version }} CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
-  # Published only once every build is in it, which is when the installed copies see it.
+  # Published only once every build is in it, which is when the installed copies see it. A prerelease is the Development channel; Promote is what makes one Latest, which is Stable and what the website links at.
   release:
     needs: [version, publish]
     runs-on: ubuntu-latest
@@ -165,4 +166,4 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "v${{ needs.version.outputs.version }}" --repo "${{ github.repository }}" --draft=false --latest
+        run: gh release edit "v${{ needs.version.outputs.version }}" --repo "${{ github.repository }}" --draft=false --prerelease --latest=false

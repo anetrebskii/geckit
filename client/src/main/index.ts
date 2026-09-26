@@ -62,7 +62,7 @@ import { transcribe } from './transcribe'
 import { addToRecording, dropRecording, keepRecording, startRecording, sweepRecordings } from './recordings'
 import { recordedNote } from '../shared/recording'
 import { drawTray, startTray } from './tray'
-import { checkForUpdates, restartToUpdate, startUpdates, updateView } from './updates'
+import { checkForUpdates, follow, restartToUpdate, startUpdates, updateView } from './updates'
 import {
   chatListening,
   chatWindow,
@@ -703,6 +703,7 @@ function wire(): void {
       void keepGuide(settings.guideClaude)
     }
     keepPhone(settings.phone, settings.phoneKey)
+    follow(settings.updateChannel)
     for (const window of everyWindow()) window.webContents.send('settings:changed', settings)
     shownPeer()?.webContents.send('peer:tell', 'settings:changed', phoneSettings(settings))
     drawTray()
@@ -880,6 +881,7 @@ if (!app.requestSingleInstanceLock()) {
     sweepRecordings()
     startUpdates({
       changed: (view) => tell('update:view', view),
+      channel: getSettings().updateChannel,
       running: () => sessions?.working() ?? [],
       wanted: () => getSettings().autoUpdate,
     })

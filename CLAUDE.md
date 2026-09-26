@@ -10,7 +10,7 @@ GeckIt is an Electron desktop app with three things in it: correcting a piece of
 
 - **`client/`**: the app (electron-vite + React 19 + TypeScript, hand-written CSS)
 - **`mobile/`**: the iPhone app (Capacitor), built from the client's own Chat sources and React
-- **`signal/`**: the weroost site whose functions introduce the phone to the Mac
+- **`signal/`**: the Firebase project `geckit-signal`: Firestore rules for the rooms the phone and the Mac meet in, and the `ice` function that hands out the relay
 
 ## Build Commands
 
@@ -55,7 +55,7 @@ Two engines, switched in the footer. `plan` runs `claude -p --restricted --no-se
 
 ### The phone
 
-With Phone on in Settings, main opens a hidden `peer` window, since WebRTC lives in a renderer and not in main. It waits on the weroost signaling function (`signal/`) for offers sealed with the key in the Settings QR (`shared/pairing.ts`, `renderer/src/link.ts`), answers each, and relays the phone's calls to main over `peer:call` against the list in `phoneCalls()`, and main's tells back. The app in `mobile/` scans the QR, dials, and installs a `window.geckit` built over the link (`renderer/src/phone.ts`) before loading the Chat window with `html.phone`. Cloudflare TURN is used only when `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` are set on the weroost site. What it looks like and why is in `docs/ux/phone.md`.
+With Phone on in Settings, main opens a hidden `peer` window, since WebRTC lives in a renderer and not in main. It listens in Firestore (`signal/`) for offers sealed with the key in the Settings QR (`shared/pairing.ts`, `renderer/src/link.ts`), answers each, and relays the phone's calls to main over `peer:call` against the list in `phoneCalls()`, and main's tells back. The app in `mobile/` scans the QR, dials, and installs a `window.geckit` built over the link (`renderer/src/phone.ts`) before loading the Chat window with `html.phone`. Cloudflare TURN is used only when `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` are in the `ice` function's environment (`signal/functions/.env`, not committed); without them it hands out STUN only. What it looks like and why is in `docs/ux/phone.md`.
 
 ### Settings
 
@@ -71,7 +71,7 @@ A JSON file in `app.getPath('userData')`, owned by the main process (`main/store
 
 ## CI/CD
 
-`.github/workflows/publish.yml` builds and publishes macOS, Windows and Linux on push to `main` when `client/` changes.
+`.github/workflows/publish.yml` builds and publishes macOS, Windows and Linux on push to `main` when `client/` changes, as a prerelease: that is the Development channel. `.github/workflows/promote.yml`, run by hand, marks one release Latest, which is the Stable channel, and adds copies of its installers named without the version, which the README's `releases/latest/download/<name>` buttons fetch. The channel a copy follows is `updateChannel` in Settings, Version; `main/updates.ts` reads Development with `allowPrerelease`.
 
 ## Notes
 

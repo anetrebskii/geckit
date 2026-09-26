@@ -91,6 +91,32 @@ export interface SessionNote {
   readonly cut?: { readonly root: string; readonly at: number }
   /** Messages waiting for the turn before them, kept so a restart does not lose them. */
   readonly queued?: readonly Queued[]
+  /** When GeckIt first wrote anything about it. */
+  readonly created?: number
+  /** Every move between columns, oldest first, so what was done can be told with when. */
+  readonly moves?: readonly Move[]
+}
+
+export interface Move {
+  readonly status: SessionStatus | 'progress'
+  readonly at: number
+}
+
+/**
+ * The note as it is to be kept: when it was first written and every change of
+ * column carried over from the one before, whatever the change left out, and a
+ * move added where the column is not the one it was in.
+ */
+export function withMoves(was: SessionNote | undefined, note: SessionNote, at: number): SessionNote {
+  const now = note.status ?? 'progress'
+  const before = was === undefined ? undefined : (was.status ?? 'progress')
+  const moves = was?.moves ?? []
+  const created = was === undefined ? at : was.created
+  return {
+    ...note,
+    ...(created === undefined ? {} : { created }),
+    ...(now === before ? (moves.length === 0 ? {} : { moves }) : { moves: [...moves, { status: now, at }] }),
+  }
 }
 
 interface Queued {
@@ -222,7 +248,7 @@ interface Live {
   clearing: boolean
   /** Messages sent while it worked, oldest first. */
   queued: Queued[]
-  /** A general question, which is never listed and is ended once it has been quiet for a while. */
+  /** A general question, which is never listed and is thrown away a day after it has gone quiet. */
   readonly question: boolean
 }
 
@@ -240,7 +266,7 @@ function goalSent(text: string): string | undefined {
 const QUIET = 10 * 60_000
 
 /** How long a general question is kept once it has gone quiet. */
-const QUESTION_QUIET = 5 * 60_000
+const QUESTION_KEPT = 24 * 60 * 60_000
 
 const running = (task: BackgroundTask): boolean => task.status === 'running'
 
@@ -844,7 +870,7 @@ export class Sessions {
     }
     if (live.driver !== undefined) return
 
-    const resume = !live.question && (live.begun || (await (this.#deps.disk?.has ?? has)(live.root, live.id)))
+    const resume = live.begun || (await (this.#deps.disk?.has ?? has)(live.root, live.id))
     // A new run counts from nothing, so the one before it is counted in with the earlier ones.
     if (live.running !== undefined) live.spent = (live.spent ?? 0) + live.running
     live.running = undefined
@@ -857,7 +883,6 @@ export class Sessions {
         resume,
         mode: live.mode,
         ...(live.chosen === undefined ? {} : { model: live.chosen }),
-        ...(live.question ? { question: true } : {}),
       },
       (heard) => this.#hear(live, heard),
       () => {
@@ -1666,14 +1691,11 @@ export class Sessions {
     live.quiet = setTimeout(
       () => {
         if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.some(running)) return
-        if (live.question) {
-          void this.#letGo(live.id).then(() => this.#changed())
-          return
-        }
         live.driver?.end()
         live.driver = undefined
+        if (live.question) live.quiet = setTimeout(() => void this.remove([live.id]), QUESTION_KEPT - QUIET)
       },
-      live.question ? QUESTION_QUIET : QUIET,
+      QUIET,
     )
   }
 

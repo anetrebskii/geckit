@@ -2,22 +2,33 @@
 
 <h1 align="center">GeckIt</h1>
 
-GeckIt makes your Claude Code chats into a Kanban board with tasks and projects. The chats are your local Claude Code sessions, run on your Claude subscription. It also corrects the text you select and transcribes what you say by a shortcut.
+Run Claude Code in several projects at once. Instead of a terminal tab for each session, you see at a glance which one is working, which one waits for you and which one is done.
+
+GeckIt makes your Claude Code chats into a Kanban board with tasks and projects. It also corrects the text you select and transcribes what you say by a shortcut.
 
 <p align="center">
-  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-macos-arm.svg" height="48" alt="Download for macOS, Apple Silicon"></a>
-  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-macos-intel.svg" height="48" alt="Download for macOS, Intel"></a>
-  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-windows.svg" height="48" alt="Download for Windows"></a>
-  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-linux.svg" height="48" alt="Download for Linux, AppImage"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-arm64.dmg"><img src="docs/download-macos-arm.svg" height="48" alt="Download for macOS, Apple Silicon"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-x64.dmg"><img src="docs/download-macos-intel.svg" height="48" alt="Download for macOS, Intel"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-Setup.exe"><img src="docs/download-windows.svg" height="48" alt="Download for Windows"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt.AppImage"><img src="docs/download-linux.svg" height="48" alt="Download for Linux, AppImage"></a>
 </p>
 
-https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec
+<p align="center">Free and open source. The board runs your own Claude Code on your Claude subscription, with no API key.</p>
 
-A new task is started with a goal. While Claude works on it, another task asks to run a command and gets an answer. When the goal holds, the card moves to In review by itself.
+<a href="https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/video/geckit-dark.webp">
+    <img src="docs/video/geckit-light.webp" alt="A new task with a goal is started, Claude works on it, a question from another task is answered, and the new card moves to In review by itself">
+  </picture>
+</a>
+
+A new task is started with a goal. While Claude works on it, another task asks to run a command and gets an answer. When the goal holds, the card moves to In review by itself. [Play it as a video](https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec).
+
+The iPhone app is on [TestFlight](https://testflight.apple.com/join/7B7vbk2e). It is in Apple's review now, so the link opens once the review passes.
 
 ## Board
 
-You work with Claude Code sessions like with tasks on a Kanban board. You can keep track of them and see how the work goes on different projects.
+In terminal tabs it is easy to lose the session that asked you something and has waited since. You work with Claude Code sessions like with tasks on a Kanban board. You can keep track of them and see how the work goes on different projects.
 
 <picture>
   <img src="docs/screenshots/board-light.png" alt="The board: Claude Code conversations from three projects as cards in In progress, In review and Done">
@@ -27,12 +38,12 @@ You work with Claude Code sessions like with tasks on a Kanban board. You can ke
 - A card shows its project, whether Claude is working, asks you something or waits for you, the goal, and the links written in the conversation.
 - New task starts a conversation in a project, with a goal if you give one. Claude keeps working until the goal holds, then the card moves to In review by itself.
 - All projects on one board, or one project at a time with Cmd+K.
-- Cmd+click or Shift+click picks several cards, and they are moved, hidden or deleted together.
+- Cmd+click or Shift+click picks several cards, and they are moved, hidden or deleted together. Hidden conversations are behind their own button in the top bar.
 - Ask (Cmd+Shift+N) is a question outside any project. It is not put on the board.
 
 ### Search
 
-The field at the top of the board (Cmd+P) finds a conversation by its title, its project or anything said in it.
+Find the conversation where something was decided without remembering which project it was in. The field at the top of the board (Cmd+P) finds a conversation by its title, its project or anything said in it.
 
 <picture>
   <img src="docs/screenshots/search-light.png" alt="The search field at the top of the board with conversations found by what was said in them">
@@ -40,7 +51,7 @@ The field at the top of the board (Cmd+P) finds a conversation by its title, its
 
 ### Profiles
 
-A profile is a set of projects, for example one for work and one for your own. The board, search, New task and shortcuts show only the projects of the profile in use.
+Keep work and your own projects apart. A profile is a set of projects, for example one for work and one for your own. The board, search, New task and shortcuts show only the projects of the profile in use.
 
 <picture>
   <img src="docs/screenshots/profiles-light.png" alt="Settings, Profiles: All projects, Work and Side projects">
@@ -65,7 +76,7 @@ Press a card and the conversation opens over the board. You can use it instead o
   <img src="docs/screenshots/background-light.png" alt="The Background window: a dev server and a test watch running, a finished command, and a helper agent">
 </picture>
 
-- The board can be switched to a list, grouped by project, with favorites at the top and Cmd+1... between them.
+- The Board/List switch at the left of the top bar shows the conversations as a list, grouped by project, with favorites at the top and Cmd+1... between them.
 
 <picture>
   <img src="docs/screenshots/list-light.png" alt="The list view: conversations grouped by project in a sidebar, with favorites at the top">
@@ -73,7 +84,7 @@ Press a card and the conversation opens over the board. You can use it instead o
 
 ## Screen recording
 
-Press Cmd+Alt+R, show the problem on the screen and say what is wrong. GeckIt writes down what you said and keeps frames of what you showed.
+Show the bug instead of typing a description of it. Press Cmd+Alt+R, show the problem on the screen and say what is wrong. GeckIt writes down what you said and keeps frames of what you showed.
 
 <picture>
   <img src="docs/screenshots/record-screen-light.png" alt="Recording the screen: the capsule over a web page with a broken filter bar">
@@ -94,7 +105,7 @@ The New task form has Record the screen too: the recording fills the form.
 
 ## Say it
 
-Press Cmd+Alt+G and say what to do: start a task in a project, write to a conversation, stop it, mark it done. GeckIt shows what it understood and does it when you agree.
+Start or stop work without typing, from any app. Press Cmd+Alt+G and say what to do: start a task in a project, write to a conversation, stop it, mark it done. GeckIt shows what it understood and does it when you agree.
 
 <picture>
   <img src="docs/screenshots/say-light.png" width="340" alt="Say it: two actions heard, Start in pinch with a goal and Mark Release notes for 0.9 as done">
@@ -102,7 +113,7 @@ Press Cmd+Alt+G and say what to do: start a task in a project, write to a conver
 
 ## Shortcuts
 
-A shortcut is a saved prompt for a project, with a goal, a mode and a model. Run it from the board (Cmd+J) or the menu bar, or give it a timetable: every day, every weekday, every week or a cron line. A timed shortcut runs while GeckIt is open.
+The prompt you type every morning, typed once. A shortcut is a saved prompt for a project, with a goal, a mode and a model. Run it from the board (Cmd+J) or the menu bar, or give it a timetable: every day, every weekday, every week or a cron line. A timed shortcut runs while GeckIt is open.
 
 <picture>
   <img src="docs/screenshots/shortcuts-light.png" alt="Shortcuts: Morning triage every weekday, Dependency updates every Monday, and Release notes run by hand">
@@ -110,13 +121,15 @@ A shortcut is a saved prompt for a project, with a goal, a mode and a model. Run
 
 ## Phone
 
-The board and the conversations on your iPhone. Turn on Phone in Settings and scan the code with the GeckIt app. The phone connects to the Mac over WebRTC. The iPhone app is not public yet.
+Answer a waiting command without going back to the Mac. The board and the conversations on your iPhone. Turn on Phone in Settings and scan the code with the GeckIt app. The phone connects to the Mac over WebRTC. The iPhone app is on [TestFlight](https://testflight.apple.com/join/7B7vbk2e), in Apple's review for now.
 
 <picture>
   <img src="docs/screenshots/phone-light.png" alt="The iPhone app: the board, a command waiting for an answer, and a conversation">
 </picture>
 
 ## Correct and Transcribe
+
+Fix a message or dictate it without leaving the app you write in.
 
 <p>
   <picture>
@@ -138,11 +151,11 @@ On Windows and Linux the shortcuts use Ctrl instead of Cmd.
 
 ## Claude Code knows about GeckIt
 
-GeckIt adds a short guide to `~/.claude`, so Claude Code knows about the board, goals and cards. On macOS and Linux it also installs a `geckit` command that says what was done: `geckit sessions --today`, `geckit show <id>`. One setting turns both off.
+GeckIt adds a short guide to `~/.claude`, so Claude Code knows about the board, goals and cards. On macOS and Linux it also installs a `geckit` command that says what was done: `geckit sessions --today`, `geckit sessions --favorites`, and `geckit show <id>` with when the card was created and each time it moved. One setting turns both off.
 
 ## Install
 
-Download it from [Releases](https://github.com/anetrebskii/geckit/releases/latest): a dmg for Apple Silicon or Intel Macs, an installer for Windows, an AppImage for Linux. It updates itself.
+Download it from [Releases](https://github.com/anetrebskii/geckit/releases/latest): a dmg for Apple Silicon or Intel Macs, an installer for Windows, an AppImage for Linux. It updates itself from the Stable channel, the release marked Latest. Settings, Version switches it to Development, which gets every build from main.
 
 The board and Correct need [Claude Code](https://code.claude.com/docs/en/overview) installed and signed in with a Claude subscription. Correct can run on an OpenAI, Anthropic or OpenRouter key instead. Transcribe, screen recording and Say it need an OpenRouter key, set in Settings.
 

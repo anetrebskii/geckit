@@ -262,17 +262,25 @@ export function PhoneBoard({
               {[...chat.questions]
                 .sort((one, other) => other.at - one.at)
                 .map((session) => (
-                  <button
-                    key={session.id}
-                    type="button"
-                    className="phone-row phone-question"
-                    onClick={() => chat.open({ kind: 'session', id: session.id })}
-                  >
-                    <RowBody chat={chat} session={session} now={now} waiting={undefined} />
-                  </button>
+                  <div key={session.id} className="phone-question">
+                    <button type="button" className="phone-row" onClick={() => chat.open({ kind: 'session', id: session.id })}>
+                      <RowBody chat={chat} session={session} now={now} waiting={undefined} />
+                    </button>
+                    <button
+                      type="button"
+                      className="phone-question-remove"
+                      aria-label={`Delete ${session.title}`}
+                      onClick={() => {
+                        tap('light')
+                        chat.remove([session.id])
+                      }}
+                    >
+                      <Icon name="trash" size={18} />
+                    </button>
+                  </div>
                 ))}
             </div>
-            <div className="phone-note">Each is forgotten 5 minutes after its last answer.</div>
+            <div className="phone-note">Each is deleted a day after its last answer.</div>
           </>
         )}
         {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
