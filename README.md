@@ -2,7 +2,7 @@
 
 <h1 align="center">GeckIt</h1>
 
-Run Claude Code in several projects at once. Instead of a terminal tab for each session, you see at a glance which one is working, which one waits for you and which one is done.
+Working with several Claude Code chats at once? See which one is working, which one waits for you and which one is done.
 
 GeckIt makes your Claude Code chats into a Kanban board with tasks and projects. It also corrects the text you select and transcribes what you say by a shortcut.
 
