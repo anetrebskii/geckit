@@ -425,6 +425,17 @@ textarea {
   background: var(--bg-hover);
 }
 
+/* Named and not choosable, such as a model this Claude Code is too old to run. */
+.menu-item:disabled,
+.sheet-option:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.menu-item:disabled:hover {
+  background: none;
+}
+
 .menu-item.on {
   color: var(--accent);
 }
@@ -443,7 +454,7 @@ textarea {
   text-overflow: ellipsis;
 }
 
-/* Under the choices and in line with their names. As wide as the menu the choices make, never wider. */
+/* Under the choices and in line with their names. As wide as the menu the choices make, never wider. A line of its own for each thing it says. */
 .menu-note {
   width: 0;
   min-width: 100%;
@@ -451,6 +462,7 @@ textarea {
   font-size: 12px;
   line-height: 1.4;
   color: var(--text-faint);
+  white-space: pre-line;
 }
 
 .menu.explained {

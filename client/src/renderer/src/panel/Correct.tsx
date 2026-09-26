@@ -128,11 +128,11 @@ export function Correct({
   const planChoices: readonly Choice[] = [
     { value: '', label: 'Default', says: 'as claude is set up' },
     ...(Array.isArray(models)
-      ? models.map((one) => ({
-          value: one.value,
-          label: one.name,
-          ...(one.id === undefined ? {} : { says: modelName(one.id) }),
-        }))
+      ? models.map((one) =>
+          one.disabled === true
+            ? { value: one.value, label: one.name, disabled: true, ...(one.says === undefined ? {} : { says: one.says }) }
+            : { value: one.value, label: one.name, ...(one.id === undefined ? {} : { says: modelName(one.id) }) },
+        )
       : [
           {
             value: '__asking',
@@ -141,10 +141,10 @@ export function Correct({
         ]),
   ]
 
+  // Asked at every opening: main keeps the answer, and asks Claude Code again once another version of it answers.
   const askModels = (): void => {
-    if (models !== 'unasked' && models !== 'unsaid') return
-    setModels('asking')
-    void window.geckit.chat.models().then((said) => setModels(said ?? 'unsaid'))
+    if (!Array.isArray(models)) setModels('asking')
+    void window.geckit.chat.models().then((said) => setModels((held) => said ?? (Array.isArray(held) ? held : 'unsaid')))
   }
   const keyChoices: readonly Choice[] = modelsFor(settings.provider).map((one) => ({ value: one, label: one }))
 

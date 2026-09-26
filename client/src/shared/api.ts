@@ -366,6 +366,23 @@ export interface ClaudeAccount {
   readonly plan?: string
   /** Signed in, and not with a plan: a key, a token, a Console account, a cloud provider. */
   readonly key?: boolean
+  /** The Claude Code that answers, which is also what the models and their windows were asked of. */
+  readonly program?: ClaudeProgram
+}
+
+/**
+ * Which Claude Code GeckIt starts, as it says for itself.
+ *
+ * Another version has other models: one older than a model the plan has names
+ * that model and cannot run it.
+ */
+export interface ClaudeProgram {
+  /** `2.1.283`, from `claude --version`. */
+  readonly version: string
+  /** How it was put on this machine, read from where it is: "Homebrew", "npm", "the native installer". */
+  readonly from?: string
+  /** Where the program is, with its links followed. */
+  readonly path?: string
 }
 
 /** One model the tool says it has, in the tool's own words. */
@@ -378,6 +395,8 @@ export interface ClaudeModel {
   readonly says?: string
   /** The id it stands for, where the tool says: `claude-sonnet-5`. */
   readonly id?: string
+  /** Named by the tool and not runnable by it. What it says is its reason: `Update to 2.1.280+ to use Opus 5.5`. */
+  readonly disabled?: true
 }
 
 const capital = (word: string): string => word.charAt(0).toUpperCase() + word.slice(1)
@@ -415,6 +434,13 @@ export function planLine(account: ClaudeAccount | undefined): string {
   if (!account.signedIn) return 'Nobody is signed in. Run claude auth login in a terminal.'
   if (account.key === true) return 'Signed in with an API key, not a plan'
   return account.plan === undefined ? 'Your Claude plan' : `Your Claude ${account.plan} plan`
+}
+
+/** Which Claude Code answers, for the foot of the model menu and the line along the bottom: "Claude Code 2.1.283 from Homebrew". */
+export function programLine(account: ClaudeAccount | undefined): string | undefined {
+  const program = account?.program
+  if (program === undefined) return undefined
+  return `Claude Code ${program.version}${program.from === undefined ? '' : ` from ${program.from}`}`
 }
 
 /** What continues a session in a terminal opened in its folder. */

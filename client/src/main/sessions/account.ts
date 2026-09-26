@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { delimiter, isAbsolute, join } from 'node:path'
 
-import type { ClaudeAccount } from '../../shared/api'
+import type { ClaudeAccount, ClaudeProgram } from '../../shared/api'
 
 /**
  * Whether somebody is signed in, as `claude auth status` says for itself.
@@ -105,4 +105,53 @@ export async function claudeAccount(): Promise<ClaudeAccount> {
     // An older build that answers in a sentence. Here, and unknown.
     return { here: true, signedIn: undefined }
   }
+}
+
+/** The version at the start of what `claude --version` prints: `2.1.283 (Claude Code)`. */
+export function versionOf(printed: string): string | undefined {
+  return /^\s*(\d+\.\d+\.\d+\S*)/.exec(printed)?.[1]
+}
+
+/**
+ * How Claude Code was put on this machine, from where the program is once its
+ * links are followed, which is also what says how it is updated. Homebrew
+ * keeps it in its Caskroom or Cellar, npm in its package, and the native
+ * installer under `.local`. Anywhere else is not guessed at.
+ */
+export function installedBy(path: string): string | undefined {
+  const where = path.replaceAll('\\', '/')
+  if (/\/(Caskroom|Cellar)\//.test(where)) return 'Homebrew'
+  if (where.includes('/node_modules/@anthropic-ai/claude-code/')) return 'npm'
+  if (/\/\.local\/(share\/claude\/|bin\/claude)/.test(where)) return 'the native installer'
+  return undefined
+}
+
+/** The program `claudeCommand` names, found on the path it is started with and followed to where it really is. */
+function programPath(env: NodeJS.ProcessEnv): string | undefined {
+  const command = claudeCommand(env)
+  const found = isAbsolute(command)
+    ? command
+    : (env[pathKey(env)] ?? '')
+        .split(delimiter)
+        .filter((dir) => dir !== '')
+        .map((dir) => join(dir, command))
+        .find((one) => existsSync(one))
+  if (found === undefined) return undefined
+  try {
+    return realpathSync(found)
+  } catch {
+    return found
+  }
+}
+
+/**
+ * Which Claude Code GeckIt starts, as `claude --version` says. Nothing where it
+ * did not answer, which is not taken to mean it changed.
+ */
+export async function claudeProgram(): Promise<ClaudeProgram | undefined> {
+  const version = versionOf((await printed(['--version'])) ?? '')
+  if (version === undefined) return undefined
+  const path = programPath(planOnly())
+  const from = path === undefined ? undefined : installedBy(path)
+  return { version, ...(from === undefined ? {} : { from }), ...(path === undefined ? {} : { path }) }
 }
