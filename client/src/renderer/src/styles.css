@@ -5537,6 +5537,13 @@ html.phone .composer-bar .picker {
   border-radius: 16px;
 }
 
+html.phone .composer-bar .photo-pick {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  padding: 0;
+}
+
 html.phone .composer-bar .goal-picker {
   max-width: 220px;
   color: var(--accent);

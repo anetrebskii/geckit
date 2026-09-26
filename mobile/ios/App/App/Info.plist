@@ -73,7 +73,7 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>GeckIt turns what you dictate into the text of your message.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>GeckIt reads the code in Settings on your Mac to pair with it.</string>
+	<string>GeckIt reads the code in Settings on your Mac to pair with it, and takes the photos you add to a message.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
