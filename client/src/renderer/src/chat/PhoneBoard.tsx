@@ -140,7 +140,10 @@ export function PhoneBoard({
     <div
       className="phone-board"
       onPointerDownCapture={(event) => {
-        if (open !== undefined && !(event.target as Element).closest(`[data-row="${open}"]`)) setOpen(undefined)
+        if (open !== undefined && !(event.target as Element).closest(`[data-row="${open}"]`)) {
+          event.stopPropagation()
+          setOpen(undefined)
+        }
       }}
     >
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
@@ -431,6 +434,17 @@ function Row({
   const [x, setX] = useState(0)
   const [moving, setMoving] = useState(false)
   const touch = useRef<{ x: number; y: number; from: number; way?: 'side' | 'down'; timer: number; pressed: boolean } | undefined>(undefined)
+  const row = useRef<HTMLDivElement>(null)
+  // React's touch listeners are passive, and only a non-passive one can keep the list still under a sideways swipe.
+  useEffect(() => {
+    const element = row.current
+    if (element === null) return
+    const hold = (event: TouchEvent): void => {
+      if (touch.current?.way === 'side') event.preventDefault()
+    }
+    element.addEventListener('touchmove', hold, { passive: false })
+    return () => element.removeEventListener('touchmove', hold)
+  }, [])
   const { lead, trail } = swipes(column)
   // Measured when a finger lands on it; the row is as wide as the list.
   const [width, setWidth] = useState(360)
@@ -492,6 +506,7 @@ function Row({
         </button>
       </div>
       <div
+        ref={row}
         className={`phone-row${moving ? ' moving' : ''}`}
         role="button"
         tabIndex={0}
