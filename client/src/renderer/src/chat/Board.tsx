@@ -12,6 +12,7 @@ import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
 import { HiddenChats } from './HiddenChats'
 import { NameField } from './NameField'
+import { Preview } from './Preview'
 import { Projects } from './Projects'
 import { QuestionsMenu } from './Questions'
 import { emptyProfile, projectName, tint } from './project'
@@ -634,6 +635,7 @@ export function NewTask({
   const [pictures, setPictures] = useState<readonly SessionImage[]>([])
   const [over, setOver] = useState(false)
   const [recorded, setRecorded] = useState<Recorded | undefined>(undefined)
+  const [looking, setLooking] = useState<string | undefined>()
   const field = useRef<HTMLTextAreaElement>(null)
   useEffect(() => field.current?.focus(), [])
 
@@ -803,7 +805,7 @@ export function NewTask({
         <div className="pending">
           {frames.map((one) => (
             <span key={`frame:${String(one.at)}:${one.image.data.slice(-16)}`} className="pending-one">
-              <img src={`data:${one.image.media};base64,${one.image.data}`} alt="" title={`At ${clock(one.at)} in the recording`} />
+              <img src={`data:${one.image.media};base64,${one.image.data}`} alt="" onClick={() => setLooking(`data:${one.image.media};base64,${one.image.data}`)} title={`At ${clock(one.at)} in the recording`} />
               <button
                 type="button"
                 className="icon-button"
@@ -819,7 +821,7 @@ export function NewTask({
           ))}
           {pictures.map((one, at) => (
             <span key={`${String(at)}:${one.data.slice(0, 16)}`} className="pending-one">
-              <img src={`data:${one.media};base64,${one.data}`} alt="" />
+              <img src={`data:${one.media};base64,${one.data}`} alt="" onClick={() => setLooking(`data:${one.media};base64,${one.data}`)} />
               <button
                 type="button"
                 className="icon-button"
@@ -831,6 +833,7 @@ export function NewTask({
               </button>
             </span>
           ))}
+          {looking === undefined ? null : <Preview src={looking} onClose={() => setLooking(undefined)} />}
         </div>
       )}
       {recorded === undefined ? null : (
@@ -911,6 +914,7 @@ function PhoneNewTask({
   const [asking, setAsking] = useState(false)
   const [choosing, setChoosing] = useState(false)
   const [dragged, setDragged] = useState<number | undefined>()
+  const [looking, setLooking] = useState<string | undefined>()
   const from = useRef<number | undefined>(undefined)
   const photos = useRef<HTMLInputElement>(null)
   const field = useRef<HTMLTextAreaElement>(null)
@@ -981,12 +985,13 @@ function PhoneNewTask({
             <div className="pending">
               {pictures.map((one, at) => (
                 <span key={`${String(at)}:${one.data.slice(0, 16)}`} className="pending-one">
-                  <img src={`data:${one.media};base64,${one.data}`} alt="" />
+                  <img src={`data:${one.media};base64,${one.data}`} alt="" onClick={() => setLooking(`data:${one.media};base64,${one.data}`)} />
                   <button type="button" className="icon-button" aria-label="Take this picture off" onClick={() => onDrop(at)}>
                     <Icon name="close" size={11} />
                   </button>
                 </span>
               ))}
+              {looking === undefined ? null : <Preview src={looking} onClose={() => setLooking(undefined)} />}
             </div>
           )}
           <button type="button" className="phone-task-photo" onClick={() => photos.current?.click()}>
