@@ -327,7 +327,7 @@ export interface SessionMessage {
   readonly model?: string
   /** The item this is a second try of, so the transcript keeps one message and not two. */
   readonly again?: string
-  /** A general question, in no project: kept off the board and the list, and ended five minutes after its last answer. */
+  /** A general question, in no project: kept off the board and the list, and deleted a day after its last answer. */
   readonly question?: boolean
 }
 

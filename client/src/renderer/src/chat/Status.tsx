@@ -208,7 +208,7 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
             key={one.id}
             type="button"
             className={`question${chat.session?.id === one.id ? ' shown' : ''}`}
-            title={`${one.title}\n${working ? 'Working' : one.stands}\n\nA general question, forgotten 5 minutes after its last answer`}
+            title={`${one.title}\n${working ? 'Working' : one.stands}\n\nA general question, deleted a day after its last answer`}
             onClick={() => chat.open({ kind: 'session', id: one.id })}
           >
             <Icon name={working ? 'spinner' : 'chat'} size={12} className={working ? 'spinning' : ''} />
