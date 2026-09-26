@@ -16,23 +16,30 @@ function useUpdate(): UpdateView | undefined {
 }
 
 /**
- * A downloaded version, in a card in the corner: what Notula Collect puts in
- * its tray menu. It installs on the next quit anyway, so Later is a fine answer.
+ * A version on its way and then downloaded, in a card in the corner, with the
+ * download's bar as Notula shows it. It installs on the next quit anyway, so
+ * Later is a fine answer.
  */
 export function UpdateNotice(): React.JSX.Element | null {
   const view = useUpdate()
   const [later, setLater] = useState<string>()
-  if (view === undefined || (view.state !== 'ready' && view.state !== 'waiting') || view.offered === later) return null
+  if (view === undefined || !['downloading', 'ready', 'waiting'].includes(view.state) || view.offered === later) return null
 
   return (
     <div className="update-notice no-drag" aria-live="polite">
       <div className="notice update">
         <span className="state" />
         <span className="lines">
-          <span className="title">GeckIt {view.offered} is ready</span>
-          <span className="body">
-            {view.state === 'waiting' ? updateText(view) : 'It installs when the app restarts.'}
+          <span className="title">
+            {view.state === 'downloading' ? `Downloading GeckIt ${view.offered}` : `GeckIt ${view.offered} is ready`}
           </span>
+          {view.state === 'downloading' ? (
+            <span className="progress" role="progressbar" aria-valuenow={view.percent}>
+              <span style={{ width: `${String(view.percent)}%` }} />
+            </span>
+          ) : (
+            <span className="body">{view.state === 'waiting' ? updateText(view) : 'It installs when the app restarts.'}</span>
+          )}
           {view.state === 'ready' ? (
             <span className="actions">
               <button type="button" className="primary" onClick={() => window.geckit.update.restart()}>

@@ -70,7 +70,7 @@ A JSON file in `app.getPath('userData')`, owned by the main process (`main/store
 
 ## CI/CD
 
-`.github/workflows/publish.yml` builds and publishes macOS, Windows and Linux on push to `main` when `client/` changes.
+`.github/workflows/publish.yml` builds and publishes macOS, Windows and Linux on push to `main` when `client/` changes, as a prerelease: that is the Development channel. `.github/workflows/promote.yml`, run by hand, marks one release Latest, which is the Stable channel and what the README's `releases/latest` download links open. The channel a copy follows is `updateChannel` in Settings, Version; `main/updates.ts` reads Development with `allowPrerelease`.
 
 ## Notes
 

@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import updater from 'electron-updater'
 
-import type { UpdateView } from '../shared/api'
+import type { UpdateChannel, UpdateView } from '../shared/api'
 
 const { autoUpdater, CancellationToken } = updater
 
@@ -11,6 +11,9 @@ const { autoUpdater, CancellationToken } = updater
  * Checked on launch and every hour; a newer version downloads in the background
  * and installs when the app restarts. A restart asked for while Claude is still
  * working in a conversation waits for it to finish.
+ *
+ * Every build is published as a prerelease, which is Development; the one
+ * promoted is marked Latest, which is Stable and what the website links at.
  */
 
 // Squirrel.Mac refuses to swap in a bundle without a Developer ID signature; the NSIS updater and the AppImage check none.
@@ -22,6 +25,7 @@ let view: UpdateView = {
   state: app.isPackaged ? 'fresh' : 'off',
   version: app.getVersion(),
   offered: '',
+  channel: 'stable',
   percent: 0,
   message: app.isPackaged ? '' : 'Updates are off in a development build.',
   waitingFor: [],
@@ -29,6 +33,7 @@ let view: UpdateView = {
 let changed: (view: UpdateView) => void = () => undefined
 let running: () => readonly string[] = () => []
 let round = 0
+let started = false
 
 export const updateView = (): UpdateView => view
 
@@ -110,14 +115,31 @@ export function restartToUpdate(): void {
   }, 2000)
 }
 
+/** Read this channel from now on, and look at once, because the person is looking at the menu they changed it in. */
+export function follow(channel: UpdateChannel): void {
+  if (!started || channel === view.channel) return
+  if (view.state !== 'off') autoUpdater.allowPrerelease = channel === 'dev'
+  // A check already out is asking the old channel, so its answer is dropped and the question asked again.
+  if (view.state === 'checking') {
+    round++
+    view = { ...view, state: 'fresh' }
+  }
+  tell({ channel })
+  void checkForUpdates()
+}
+
 export function startUpdates(hooks: {
   readonly changed: (view: UpdateView) => void
+  readonly channel: UpdateChannel
   /** The conversations a restart would stop, by name. */
   readonly running: () => readonly string[]
   readonly wanted: () => boolean
 }): void {
   ;({ changed, running } = hooks)
+  view = { ...view, channel: hooks.channel }
+  started = true
   if (view.state === 'off') return
+  autoUpdater.allowPrerelease = hooks.channel === 'dev'
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = SIGNED
   autoUpdater.logger = null
