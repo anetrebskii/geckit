@@ -2,6 +2,8 @@
 
 <h1 align="center">GeckIt</h1>
 
+Run Claude Code in several projects at once, and see at a glance which session is working, which one waits for you and which one is done.
+
 GeckIt makes your Claude Code chats into a Kanban board with tasks and projects. The chats are your local Claude Code sessions, run on your Claude subscription. It also corrects the text you select and transcribes what you say by a shortcut.
 
 <p align="center">
@@ -19,7 +21,7 @@ A new task is started with a goal. While Claude works on it, another task asks t
 
 ## Board
 
-You work with Claude Code sessions like with tasks on a Kanban board. You can keep track of them and see how the work goes on different projects.
+In terminal tabs it is easy to lose the session that asked you something and has waited since. You work with Claude Code sessions like with tasks on a Kanban board. You can keep track of them and see how the work goes on different projects.
 
 <picture>
   <img src="docs/screenshots/board-light.png" alt="The board: Claude Code conversations from three projects as cards in In progress, In review and Done">
@@ -34,7 +36,7 @@ You work with Claude Code sessions like with tasks on a Kanban board. You can ke
 
 ### Search
 
-The field at the top of the board (Cmd+P) finds a conversation by its title, its project or anything said in it.
+Find the conversation where something was decided without remembering which project it was in. The field at the top of the board (Cmd+P) finds a conversation by its title, its project or anything said in it.
 
 <picture>
   <img src="docs/screenshots/search-light.png" alt="The search field at the top of the board with conversations found by what was said in them">
@@ -42,7 +44,7 @@ The field at the top of the board (Cmd+P) finds a conversation by its title, its
 
 ### Profiles
 
-A profile is a set of projects, for example one for work and one for your own. The board, search, New task and shortcuts show only the projects of the profile in use.
+Keep work and your own projects apart. A profile is a set of projects, for example one for work and one for your own. The board, search, New task and shortcuts show only the projects of the profile in use.
 
 <picture>
   <img src="docs/screenshots/profiles-light.png" alt="Settings, Profiles: All projects, Work and Side projects">
@@ -75,7 +77,7 @@ Press a card and the conversation opens over the board. You can use it instead o
 
 ## Screen recording
 
-Press Cmd+Alt+R, show the problem on the screen and say what is wrong. GeckIt writes down what you said and keeps frames of what you showed.
+Show the bug instead of typing a description of it. Press Cmd+Alt+R, show the problem on the screen and say what is wrong. GeckIt writes down what you said and keeps frames of what you showed.
 
 <picture>
   <img src="docs/screenshots/record-screen-light.png" alt="Recording the screen: the capsule over a web page with a broken filter bar">
@@ -96,7 +98,7 @@ The New task form has Record the screen too: the recording fills the form.
 
 ## Say it
 
-Press Cmd+Alt+G and say what to do: start a task in a project, write to a conversation, stop it, mark it done. GeckIt shows what it understood and does it when you agree.
+Start or stop work without typing, from any app. Press Cmd+Alt+G and say what to do: start a task in a project, write to a conversation, stop it, mark it done. GeckIt shows what it understood and does it when you agree.
 
 <picture>
   <img src="docs/screenshots/say-light.png" width="340" alt="Say it: two actions heard, Start in pinch with a goal and Mark Release notes for 0.9 as done">
@@ -104,7 +106,7 @@ Press Cmd+Alt+G and say what to do: start a task in a project, write to a conver
 
 ## Shortcuts
 
-A shortcut is a saved prompt for a project, with a goal, a mode and a model. Run it from the board (Cmd+J) or the menu bar, or give it a timetable: every day, every weekday, every week or a cron line. A timed shortcut runs while GeckIt is open.
+The prompt you type every morning, typed once. A shortcut is a saved prompt for a project, with a goal, a mode and a model. Run it from the board (Cmd+J) or the menu bar, or give it a timetable: every day, every weekday, every week or a cron line. A timed shortcut runs while GeckIt is open.
 
 <picture>
   <img src="docs/screenshots/shortcuts-light.png" alt="Shortcuts: Morning triage every weekday, Dependency updates every Monday, and Release notes run by hand">
@@ -112,13 +114,15 @@ A shortcut is a saved prompt for a project, with a goal, a mode and a model. Run
 
 ## Phone
 
-The board and the conversations on your iPhone. Turn on Phone in Settings and scan the code with the GeckIt app. The phone connects to the Mac over WebRTC. The iPhone app is on [TestFlight](https://testflight.apple.com/join/7B7vbk2e), in Apple's review for now.
+Answer a waiting command without going back to the Mac. The board and the conversations on your iPhone. Turn on Phone in Settings and scan the code with the GeckIt app. The phone connects to the Mac over WebRTC. The iPhone app is on [TestFlight](https://testflight.apple.com/join/7B7vbk2e), in Apple's review for now.
 
 <picture>
   <img src="docs/screenshots/phone-light.png" alt="The iPhone app: the board, a command waiting for an answer, and a conversation">
 </picture>
 
 ## Correct and Transcribe
+
+Fix a message or dictate it without leaving the app you write in.
 
 <p>
   <picture>
