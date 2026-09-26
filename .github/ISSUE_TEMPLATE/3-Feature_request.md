@@ -1,15 +1,9 @@
 ---
 name: Feature request
-about: You want something added to the boilerplate. 🎉
+about: Something GeckIt should do
 labels: 'enhancement'
 ---
 
-<!---
-❗️❗️ Also, please consider donating (https://opencollective.com/electron-react-boilerplate-594) ❗️❗️
+## What you want to do
 
-Donations will ensure the following:
-
-🔨 Long term maintenance of the project
-🛣 Progress on the roadmap
-🐛 Quick responses to bug reports and help requests
- -->
+## How you do it today
