@@ -2799,6 +2799,7 @@ button.tag:hover {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+  cursor: zoom-in;
 }
 
 .pictures img {
@@ -2837,7 +2838,8 @@ button.tag:hover {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: rgb(0 0 0 / 72%);
+  touch-action: none;
+  background: rgb(0 0 0 / calc(72% * (1 - var(--leaving, 0))));
   animation: fade var(--quick) var(--ease) both;
 }
 
@@ -2869,11 +2871,16 @@ button.tag:hover {
   min-width: 52px;
   font-variant-numeric: tabular-nums;
 }
+  -webkit-touch-callout: none;
 
 .composer textarea {
   display: block;
   width: 100%;
   max-height: 260px;
+.preview.easing img {
+  transition: transform 0.25s var(--ease);
+}
+
   padding: 10px 12px 4px;
   font-size: 14px;
   line-height: 1.5;
@@ -6051,4 +6058,37 @@ html.phone .task-row .how {
 .phone-mac-add,
 .sheet-note + .sheet-list {
   margin-top: 10px;
+}
+
+/* On the phone a picture takes the whole screen on black, is pinched rather than stepped, and only the close button stays, clear of the notch. */
+html.phone .preview {
+  background: rgb(0 0 0 / calc(1 - var(--leaving, 0)));
+}
+
+html.phone .preview img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html.phone .preview-bar {
+  top: calc(var(--top) + 8px);
+  right: 12px;
+  padding: 0;
+  opacity: calc(1 - var(--leaving, 0) * 2);
+  background: rgb(255 255 255 / 16%);
+  border: none;
+  box-shadow: none;
+}
+
+html.phone .preview-bar .zooming {
+  display: none;
+}
+
+html.phone .preview-bar .icon-button {
+  width: 36px;
+  height: 36px;
+  color: #fff;
+  border-radius: 999px;
 }

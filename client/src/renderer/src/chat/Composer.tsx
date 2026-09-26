@@ -11,6 +11,7 @@ import { Picker } from '../ui/Menu'
 import { MOD } from '../ui/Shortcuts'
 import { Chrome } from './Chrome'
 import { Mcp } from './Mcp'
+import { Preview } from './Preview'
 import { Tasks } from './Tasks'
 import type { Choice } from '../ui/Menu'
 import { projectName } from './project'
@@ -56,6 +57,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [dropping, setDropping] = useState<string | undefined>()
   const [listening, setListening] = useState(false)
   const [unheard, setUnheard] = useState<string | undefined>()
+  const [looking, setLooking] = useState<string | undefined>()
   const submit = (): void => {
     if (COMPACT.test(chat.draft)) {
       chat.setCompacting('typed')
@@ -339,7 +341,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           <div className="pending">
             {chat.pictures.map((one, at) => (
               <span key={`${String(at)}:${one.data.slice(0, 16)}`} className="pending-one">
-                <img src={`data:${one.media};base64,${one.data}`} alt="" />
+                <img src={`data:${one.media};base64,${one.data}`} alt="" onClick={() => setLooking(`data:${one.media};base64,${one.data}`)} />
                 <button
                   type="button"
                   className="icon-button"
@@ -351,6 +353,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 </button>
               </span>
             ))}
+            {looking === undefined ? null : <Preview src={looking} onClose={() => setLooking(undefined)} />}
           </div>
         )}
         {found === undefined ? null : (
