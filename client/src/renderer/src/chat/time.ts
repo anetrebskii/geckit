@@ -52,3 +52,29 @@ export function ago(at: number, now: number, dayHeaded = false): string {
   if (now - at < 6 * DAY) return WEEKDAY.format(at)
   return date(at, now)
 }
+
+/** The day a conversation last changed, as a heading: Today, Yesterday, then the date itself. */
+function dayOf(at: number, now: number): string {
+  const said = new Date(at)
+  if (said.toDateString() === new Date(now).toDateString()) return 'Today'
+  if (said.toDateString() === new Date(now - DAY).toDateString()) return 'Yesterday'
+  const year = said.getFullYear() === new Date(now).getFullYear() ? {} : { year: 'numeric' as const }
+  return said.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...year })
+}
+
+/** The cards under the day they were last touched, the newest day first, or all of them under nothing. */
+export function byDay(
+  rows: readonly ChatSession[],
+  now: number,
+  wanted: boolean,
+): { readonly heading: string; readonly rows: readonly ChatSession[] }[] {
+  if (!wanted) return [{ heading: '', rows }]
+  const days: { heading: string; rows: ChatSession[] }[] = []
+  for (const session of rows) {
+    const heading = dayOf(session.at, now)
+    const last = days.at(-1)
+    if (last?.heading === heading) last.rows.push(session)
+    else days.push({ heading, rows: [session] })
+  }
+  return days
+}

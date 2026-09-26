@@ -21,7 +21,7 @@ import type { Seek } from './Switcher'
 import { running } from './Tasks'
 import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
-import { ago } from './time'
+import { ago, byDay } from './time'
 import type { Chat } from './useChat'
 
 /**
@@ -431,34 +431,6 @@ export function Board({
       )}
     </div>
   )
-}
-
-const DAY = 86_400_000
-
-/** The day a conversation last changed, as a heading: Today, Yesterday, then the date itself. */
-function dayOf(at: number, now: number): string {
-  const said = new Date(at)
-  if (said.toDateString() === new Date(now).toDateString()) return 'Today'
-  if (said.toDateString() === new Date(now - DAY).toDateString()) return 'Yesterday'
-  const year = said.getFullYear() === new Date(now).getFullYear() ? {} : { year: 'numeric' as const }
-  return said.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...year })
-}
-
-/** The cards under the day they were last touched, the newest day first, or all of them under nothing. */
-function byDay(
-  rows: readonly ChatSession[],
-  now: number,
-  wanted: boolean,
-): { readonly heading: string; readonly rows: readonly ChatSession[] }[] {
-  if (!wanted) return [{ heading: '', rows }]
-  const days: { heading: string; rows: ChatSession[] }[] = []
-  for (const session of rows) {
-    const heading = dayOf(session.at, now)
-    const last = days.at(-1)
-    if (last?.heading === heading) last.rows.push(session)
-    else days.push({ heading, rows: [session] })
-  }
-  return days
 }
 
 /** What the card says is happening in it, in the words the rest of the window uses. */
