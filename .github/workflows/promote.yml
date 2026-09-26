@@ -1,6 +1,6 @@
 name: Promote
 
-# Moves a build from Development to Stable. Nothing is rebuilt: the release is marked Latest, which is what copies on Stable read and what the website's releases/latest link opens.
+# Moves a build from Development to Stable. Nothing is rebuilt: the installers get copies named without the version and the release is marked Latest, which is what copies on Stable read and what the website's releases/latest link opens.
 
 on:
   workflow_dispatch:
@@ -42,5 +42,13 @@ jobs:
             echo "::error::$tag cannot go to Stable, it is missing:$missing"
             exit 1
           fi
+          # Copies without the version in the name, so the README's buttons at releases/latest/download/<name> download the file itself.
+          dir=$(mktemp -d)
+          v=${tag#v}
+          for file in "GeckIt-$v-arm64.dmg" "GeckIt-$v-x64.dmg" "GeckIt-Setup-$v.exe" "GeckIt-$v.AppImage"; do
+            gh release download "$tag" --repo "$REPO" --pattern "$file" --dir "$dir"
+            mv "$dir/$file" "$dir/${file/-$v/}"
+          done
+          gh release upload "$tag" --repo "$REPO" --clobber "$dir"/*
           gh release edit "$tag" --repo "$REPO" --draft=false --prerelease=false --latest
           echo "$tag is Stable: https://github.com/$REPO/releases/tag/$tag" >> "$GITHUB_STEP_SUMMARY"

@@ -2,16 +2,18 @@
 
 <h1 align="center">GeckIt</h1>
 
-Run Claude Code in several projects at once, and see at a glance which session is working, which one waits for you and which one is done.
+Run Claude Code in several projects at once. Instead of a terminal tab for each session, you see at a glance which one is working, which one waits for you and which one is done.
 
-GeckIt makes your Claude Code chats into a Kanban board with tasks and projects. The chats are your local Claude Code sessions, run on your Claude subscription. It also corrects the text you select and transcribes what you say by a shortcut.
+GeckIt makes your Claude Code chats into a Kanban board with tasks and projects. It also corrects the text you select and transcribes what you say by a shortcut.
 
 <p align="center">
-  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-macos-arm.svg" height="48" alt="Download for macOS, Apple Silicon"></a>
-  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-macos-intel.svg" height="48" alt="Download for macOS, Intel"></a>
-  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-windows.svg" height="48" alt="Download for Windows"></a>
-  <a href="https://github.com/anetrebskii/geckit/releases/latest"><img src="docs/download-linux.svg" height="48" alt="Download for Linux, AppImage"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-arm64.dmg"><img src="docs/download-macos-arm.svg" height="48" alt="Download for macOS, Apple Silicon"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-x64.dmg"><img src="docs/download-macos-intel.svg" height="48" alt="Download for macOS, Intel"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-Setup.exe"><img src="docs/download-windows.svg" height="48" alt="Download for Windows"></a>
+  <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt.AppImage"><img src="docs/download-linux.svg" height="48" alt="Download for Linux, AppImage"></a>
 </p>
+
+<p align="center">Free and open source. The board runs your own Claude Code on your Claude subscription, with no API key.</p>
 
 https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec
 
