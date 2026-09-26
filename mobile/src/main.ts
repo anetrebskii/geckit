@@ -117,8 +117,14 @@ let hearing: PluginListenerHandle[] = []
 
 // The arrows and Done over the keys are for forms of many fields; the composer is one.
 void Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => undefined)
-Keyboard.addListener('keyboardWillShow', () => document.documentElement.classList.add('keyboard')).catch(() => undefined)
-Keyboard.addListener('keyboardWillHide', () => document.documentElement.classList.remove('keyboard')).catch(() => undefined)
+Keyboard.addListener('keyboardWillShow', (info) => {
+  document.documentElement.classList.add('keyboard')
+  document.documentElement.style.setProperty('--keyboard', `${String(info.keyboardHeight)}px`)
+}).catch(() => undefined)
+Keyboard.addListener('keyboardWillHide', () => {
+  document.documentElement.classList.remove('keyboard')
+  document.documentElement.style.setProperty('--keyboard', '0px')
+}).catch(() => undefined)
 
 /** What the screen says in its middle, and its buttons along the bottom where the thumb is. */
 function screen(middle: readonly HTMLElement[], actions: readonly HTMLElement[] = []): void {

@@ -4,9 +4,9 @@ const config: CapacitorConfig = {
   appId: 'com.anetrebskii.geckit',
   appName: 'GeckIt',
   webDir: 'www',
-  ios: { contentInset: 'never' },
-  // The web view is made shorter above the keyboard rather than scrolled under it, so the bar at the top stays put.
-  plugins: { Keyboard: { resize: 'native', resizeOnFullScreen: true } },
+  // The page makes room for the keyboard itself as it starts to rise; the plugin would shrink the web view only once it is up, and the web view would scroll the bar at the top away.
+  ios: { contentInset: 'never', scrollEnabled: false },
+  plugins: { Keyboard: { resize: 'none', resizeOnFullScreen: true } },
 }
 
 export default config
