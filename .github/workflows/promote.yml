@@ -1,0 +1,46 @@
+name: Promote
+
+# Moves a build from Development to Stable. Nothing is rebuilt: the release is marked Latest, which is what copies on Stable read and what the website's releases/latest link opens.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to promote (X.Y.Z). Empty takes the newest development build.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Promote to Stable
+        run: |
+          if [ -z "$VERSION" ]; then
+            tag=$(gh release list --repo "$REPO" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
+          else
+            tag="v${VERSION#v}"
+          fi
+          echo "Promoting $tag"
+          # Every platform's updater file has to be there, or a copy on Stable would be told to update and find nothing to fetch.
+          assets=$(gh release view "$tag" --repo "$REPO" --json assets --jq '.assets[].name')
+          missing=""
+          for file in latest-mac.yml latest.yml latest-linux.yml; do
+            grep -qx "$file" <<< "$assets" || missing="$missing $file"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::$tag cannot go to Stable, it is missing:$missing"
+            exit 1
+          fi
+          gh release edit "$tag" --repo "$REPO" --draft=false --prerelease=false --latest
+          echo "$tag is Stable: https://github.com/$REPO/releases/tag/$tag" >> "$GITHUB_STEP_SUMMARY"

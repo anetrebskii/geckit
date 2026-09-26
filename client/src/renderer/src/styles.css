@@ -1179,7 +1179,8 @@ html.framed .topbar {
   white-space: normal;
 }
 
-.version .progress {
+.version .progress,
+.notice.update .progress {
   height: 4px;
   margin: 4px 0 2px;
   overflow: hidden;
@@ -1187,7 +1188,8 @@ html.framed .topbar {
   border-radius: 2px;
 }
 
-.version .progress > span {
+.version .progress > span,
+.notice.update .progress > span {
   display: block;
   height: 100%;
   background: var(--accent);

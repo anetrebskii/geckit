@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { appName, profileOf } from '../../../shared/api'
-import type { AIProvider, OpenRule, PhoneView, ProjectProfile, Settings, Theme } from '../../../shared/api'
+import { UPDATE_CHANNELS, appName, channelLabel, profileOf } from '../../../shared/api'
+import type { AIProvider, OpenRule, PhoneView, ProjectProfile, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { homePath, projectName } from '../chat/project'
 import { Icon } from './Icon'
 import { Picker } from './Menu'
@@ -9,7 +9,7 @@ import { MOD } from './Shortcuts'
 import { Version } from './UpdateNotice'
 
 /**
- * Settings, a section at a time: General, Profiles, Phrases, Correct and dictation, Phone.
+ * Settings, a section at a time: General, Profiles, Phrases, Correct and dictation, Phone, Version.
  *
  * Chat needs no key: it runs on the Claude plan through the person's own
  * `claude`, which is signed in from a terminal and never from here.
@@ -42,7 +42,7 @@ const LANGUAGES = [
   'Japanese',
 ]
 
-type Section = 'general' | 'profiles' | 'phrases' | 'correct' | 'phone'
+type Section = 'general' | 'profiles' | 'phrases' | 'correct' | 'phone' | 'version'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
@@ -50,6 +50,7 @@ const SECTIONS: readonly { readonly value: Section; readonly label: string }[] =
   { value: 'phrases', label: 'Phrases' },
   { value: 'correct', label: 'Correct and dictation' },
   { value: 'phone', label: 'Phone' },
+  { value: 'version', label: 'Version' },
 ]
 
 const NOTE = { fontSize: 12, color: 'var(--text-faint)' } as const
@@ -100,6 +101,7 @@ export function SettingsDialog({
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
             {section === 'phone' ? <PhoneAccess on={settings.phone} change={(phone) => change({ phone })} /> : null}
+            {section === 'version' ? <Updates settings={settings} change={change} /> : null}
           </div>
         </div>
 
@@ -179,18 +181,6 @@ function General({ settings, change }: Part): React.JSX.Element {
       </div>
 
       <div className="field">
-        <label>Updates</label>
-        <Version />
-        <label className="check">
-          <input type="checkbox" checked={settings.autoUpdate} onChange={(event) => change({ autoUpdate: event.target.checked })} />
-          Update GeckIt automatically
-        </label>
-        <span style={NOTE}>
-          Checks on launch and every hour, and downloads a new version in the background. It installs when the app restarts.
-        </span>
-      </div>
-
-      <div className="field">
         <label>Usage</label>
         <label className="check">
           <input type="checkbox" checked={settings.analytics} onChange={(event) => change({ analytics: event.target.checked })} />
@@ -211,6 +201,43 @@ function General({ settings, change }: Part): React.JSX.Element {
         <span style={NOTE}>
           Writes GECKIT.md in ~/.claude and one line in ~/.claude/CLAUDE.md that reads it, so a session knows about the
           board, goals and the links on a card. Turning this off takes both away again.
+        </span>
+      </div>
+    </>
+  )
+}
+
+function Updates({ settings, change }: Part): React.JSX.Element {
+  return (
+    <>
+      <div className="field">
+        <label>Version</label>
+        <Version />
+      </div>
+
+      <div className="field">
+        <label>Channel</label>
+        <Picker
+          label={channelLabel(settings.updateChannel)}
+          choices={UPDATE_CHANNELS.map((one) => ({ value: one.value, label: one.label, says: one.says }))}
+          chosen={settings.updateChannel}
+          onPick={(value) => change({ updateChannel: value as UpdateChannel })}
+          className="select"
+        />
+        <span style={NOTE}>
+          Every build goes to Development first, and the ones that hold up are promoted to Stable, which is also what the
+          website downloads. Moving to Stable from a newer development build keeps this one until Stable passes it.
+        </span>
+      </div>
+
+      <div className="field">
+        <label>Updates</label>
+        <label className="check">
+          <input type="checkbox" checked={settings.autoUpdate} onChange={(event) => change({ autoUpdate: event.target.checked })} />
+          Update GeckIt automatically
+        </label>
+        <span style={NOTE}>
+          Checks on launch and every hour, and downloads a new version in the background. It installs when the app restarts.
         </span>
       </div>
     </>

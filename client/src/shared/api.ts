@@ -574,6 +574,17 @@ export type ChatGrouping = 'time' | 'project'
 /** How the conversations are shown: the list, or a board of cards in columns by how each stands. */
 export type ChatView = 'list' | 'board'
 
+/** Which builds this copy is offered: every build lands on Development first, and the ones promoted reach Stable. */
+export type UpdateChannel = 'stable' | 'dev'
+
+export const UPDATE_CHANNELS: readonly { readonly value: UpdateChannel; readonly label: string; readonly says: string }[] = [
+  { value: 'stable', label: 'Stable', says: 'the builds that were promoted' },
+  { value: 'dev', label: 'Development', says: 'every build, as soon as it is made' },
+]
+
+export const channelLabel = (channel: UpdateChannel): string =>
+  UPDATE_CHANNELS.find((one) => one.value === channel)?.label ?? 'Stable'
+
 /** Where an update stands, as Settings and the corner card say it. */
 export interface UpdateView {
   readonly state: 'off' | 'fresh' | 'checking' | 'current' | 'behind' | 'empty' | 'downloading' | 'ready' | 'waiting' | 'failed'
@@ -581,6 +592,7 @@ export interface UpdateView {
   readonly version: string
   /** The one the release offers. */
   readonly offered: string
+  readonly channel: UpdateChannel
   readonly percent: number
   readonly message: string
   /** The conversations a restart is waiting for, by name. */
@@ -608,9 +620,9 @@ export function updateText(update: UpdateView): string {
         ? `Restarts when ${update.waitingFor[0] ?? ''} finishes.`
         : `Restarts when ${String(update.waitingFor.length)} conversations finish.`
     case 'behind':
-      return `The newest release is ${update.offered}, older than this version.`
+      return `${channelLabel(update.channel)} is on ${update.offered}, older than this version.`
     case 'empty':
-      return 'There is no published version yet.'
+      return `There is no ${channelLabel(update.channel).toLowerCase()} build yet.`
   }
 }
 
@@ -670,6 +682,7 @@ export interface Settings {
   readonly analytics: boolean
   /** False stops the checks on launch and every hour; Check for Updates in Settings still works. */
   readonly autoUpdate: boolean
+  readonly updateChannel: UpdateChannel
   /** False takes GECKIT.md and the line that reads it out of the tool's own folder again. */
   readonly guideClaude: boolean
   /** Phones with GeckIt's app can reach the conversations. */
@@ -775,6 +788,7 @@ export const DEFAULT_SETTINGS: Settings = {
   client: '',
   analytics: true,
   autoUpdate: true,
+  updateChannel: 'stable',
   guideClaude: true,
   phone: false,
   phoneKey: '',
