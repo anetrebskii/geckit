@@ -7,7 +7,7 @@ import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
-import { Board, NewTask } from './Board'
+import { Board, NewTask, TopBar } from './Board'
 import { CutOffDialog } from './CutOff'
 import { PhoneBoard } from './PhoneBoard'
 import { EdgeBack, PhoneNav } from './PhoneNav'
@@ -294,8 +294,7 @@ export function Chat(): React.JSX.Element {
       }
       if (meta && event.key === 'n') {
         event.preventDefault()
-        if (chat.settings.chatView === 'board') setMaking(true)
-        else chat.startNew()
+        setMaking(true)
       }
       if (meta && event.key === 'k') {
         event.preventDefault()
@@ -316,7 +315,7 @@ export function Chat(): React.JSX.Element {
         return
       }
       // Over the board the conversation is a popup: Escape puts it away rather than stopping what it is doing.
-      if (event.key === 'Escape' && chat.settings.chatView === 'board' && chat.shown.kind === 'session') {
+      if (event.key === 'Escape' && (chat.settings.chatView === 'board' || ON_PHONE) && chat.shown.kind === 'session') {
         event.preventDefault()
         chat.open({ kind: 'new' })
         return
@@ -363,12 +362,13 @@ export function Chat(): React.JSX.Element {
 
   // The board stands where the list does, and a conversation opened from it
   // comes up over it rather than beside it.
-  const board = chat.settings.chatView === 'board'
+  // The phone has no list, whichever view the Mac is on.
+  const board = chat.settings.chatView === 'board' || ON_PHONE
   const overBoard = board && chat.shown.kind === 'session'
 
   return (
     <div
-      className={`chat${board ? ' boarded' : ''}${over ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
+      className={`chat${board ? ' boarded' : ''}${ON_PHONE ? '' : ' topped'}${over ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
       style={{ '--side': `${String(sizing ?? chat.settings.sidebarWidth)}px` } as React.CSSProperties}
       // The whole window takes a drop. Anywhere else on the page, a dropped
       // file is a page the window would go to instead.
@@ -389,10 +389,8 @@ export function Chat(): React.JSX.Element {
         addFiles([...event.dataTransfer.files])
       }}
     >
-      {board && ON_PHONE ? (
-        <PhoneBoard chat={chat} onNew={() => setMaking(true)} onAsk={() => setAsking(true)} onScreen={() => setScreening(true)} />
-      ) : board ? (
-        <Board
+      {ON_PHONE ? null : (
+        <TopBar
           chat={chat}
           onNew={() => setMaking(true)}
           onAsk={() => setAsking(true)}
@@ -400,16 +398,16 @@ export function Chat(): React.JSX.Element {
           onSettings={() => setSetting(true)}
           onKeys={openKeys}
           onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
-          onShortcutFrom={shortcutFrom}
         />
+      )}
+      {board && ON_PHONE ? (
+        <PhoneBoard chat={chat} onNew={() => setMaking(true)} onAsk={() => setAsking(true)} onScreen={() => setScreening(true)} />
+      ) : board ? (
+        <Board chat={chat} onShortcutFrom={shortcutFrom} />
       ) : (
         <Sidebar
           chat={chat}
           orderRef={order}
-          onSettings={() => setSetting(true)}
-          onSearch={() => setSwitching(true)}
-          onKeys={openKeys}
-          onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
           onShortcutFrom={shortcutFrom}
         />
       )}
