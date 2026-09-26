@@ -4525,8 +4525,10 @@ html.phone body {
   overscroll-behavior: none;
 }
 
+/* Shrunk with the keyboard as it rises, in its time, so the field comes up on top of the keys rather than after them. */
 html.phone #root {
-  height: 100dvh;
+  height: calc(100dvh - var(--keyboard, 0px));
+  transition: height 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 /* The board's usage line says what the status bar says, and the conversation covers the rest. */
