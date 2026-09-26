@@ -10,7 +10,7 @@ import type { Ran, runShell } from '../src/main/sessions/shell'
 import type { Driver, Heard, Signal } from '../src/main/sessions/heard'
 import { memoryNotes, Sessions, withMoves } from '../src/main/sessions'
 import type { SessionNotice, SessionsDeps } from '../src/main/sessions'
-import type { ChatSession, SessionItem, SessionItems, SessionMode } from '../src/shared/api'
+import type { ChatSession, ClaudeAccount, SessionItem, SessionItems, SessionMode } from '../src/shared/api'
 
 /**
  * What a conversation does, with nothing of the tool in it.
@@ -101,6 +101,7 @@ function build(over: Partial<SessionsDeps> = {}): Built {
     disk: { list: async () => [], read: async () => undefined, has: async () => false },
     claudeAccount: async () => ({ here: true, signedIn: true, plan: 'Max' }),
     claudeModels: async () => undefined,
+    claudeProgram: async () => undefined,
     usage: async () => ({ windows: new Map() }),
     now: () => 1_000,
     ...over,
@@ -1011,6 +1012,120 @@ describe('what the status bar is drawn from', () => {
     built.fake.hear({ signals: [{ kind: 'spend', cost: 0.1 }, { kind: 'ended', how: 'done' }] })
     expect(built.fake.made).toHaveLength(2)
     expect(of(built.rows, id)?.spend?.cost).toBeCloseTo(0.35)
+  })
+})
+
+describe('another Claude Code', () => {
+  const OPUS = 'claude-opus-5-5'
+  const OLD = { version: '2.1.153', from: 'Homebrew', path: '/opt/homebrew/Caskroom/claude-code/2.1.153/claude' }
+  const NEW = { version: '2.1.283', from: 'Homebrew', path: '/opt/homebrew/Caskroom/claude-code@latest/2.1.283/claude' }
+  const listed = {
+    list: async () => [{ id: 'old', title: 'An old one', stands: '', at: 1, driven: false, model: OPUS, used: 50_000 }],
+    read: async () => undefined,
+    has: async () => true,
+  }
+
+  it('says which one answers along with the account', async () => {
+    const built = build({ claudeProgram: async () => OLD })
+    expect(await built.sessions.account()).toEqual({ here: true, signedIn: true, plan: 'Max', program: OLD })
+  })
+
+  it('asks for the models again once another version answers, looking at most once a minute', async () => {
+    let clock = 1_000
+    let program = OLD
+    const lists = [[{ value: 'opus', name: 'Opus' }], [{ value: 'opus', name: 'Opus' }, { value: 'fable', name: 'Fable' }]]
+    let asked = 0
+    const told: ClaudeAccount[] = []
+    const built = build({
+      now: () => clock,
+      claudeProgram: async () => program,
+      claudeModels: async () => lists[asked++],
+      account: (account) => told.push(account),
+    })
+    expect(await built.sessions.models()).toEqual(lists[0])
+    clock += 60_001
+    expect(await built.sessions.models()).toEqual(lists[0])
+    expect(asked).toBe(1)
+
+    program = NEW
+    expect(await built.sessions.models()).toEqual(lists[0])
+    clock += 60_001
+    expect(await built.sessions.models()).toEqual(lists[1])
+    expect(asked).toBe(2)
+    await vi.waitFor(() => expect(told.at(-1)?.program).toEqual(NEW))
+  })
+
+  it('measures the windows again once another version answers', async () => {
+    let clock = 1_000
+    let program = OLD
+    const asked: (readonly string[])[] = []
+    const built = build({
+      now: () => clock,
+      claudeProgram: async () => program,
+      disk: listed,
+      usage: async (models) => {
+        asked.push(models)
+        return { windows: new Map([[OPUS, program === OLD ? 200_000 : 1_000_000]]) }
+      },
+    })
+    await built.sessions.list([ROOT])
+    await vi.waitFor(() => expect(of(built.rows, 'old')?.spend?.window).toBe(200_000))
+    program = NEW
+    clock += 60_001
+    await built.sessions.measure()
+    await vi.waitFor(() => expect(of(built.rows, 'old')?.spend?.window).toBe(1_000_000))
+    expect(asked).toEqual([[OPUS], [], [OPUS]])
+  })
+
+  it('does not keep a window the version before measured', async () => {
+    let clock = 1_000
+    let program = OLD
+    const asked: (readonly string[])[] = []
+    const told: ClaudeAccount[] = []
+    let release: (() => void) | undefined
+    const built = build({
+      now: () => clock,
+      claudeProgram: async () => program,
+      account: (account) => told.push(account),
+      disk: listed,
+      usage: (models) => {
+        asked.push(models)
+        if (asked.length > 1) return Promise.resolve({ windows: new Map([[OPUS, 1_000_000]]) })
+        return new Promise((done) => {
+          release = () => done({ windows: new Map([[OPUS, 200_000]]) })
+        })
+      },
+    })
+    await built.sessions.account()
+    program = NEW
+    clock += 60_001
+    await built.sessions.list([ROOT])
+    await vi.waitFor(() => expect(told).toHaveLength(1))
+    release?.()
+    await vi.waitFor(() => expect(of(built.rows, 'old')?.spend?.window).toBe(1_000_000))
+    expect(asked).toEqual([[OPUS], [OPUS]])
+  })
+
+  it('keeps what it asked where the version could not be read', async () => {
+    let clock = 1_000
+    let program: typeof OLD | undefined = OLD
+    let asked = 0
+    const built = build({
+      now: () => clock,
+      claudeProgram: async () => program,
+      claudeModels: async () => {
+        asked += 1
+        return [{ value: 'opus', name: 'Opus' }]
+      },
+    })
+    await built.sessions.models()
+    program = undefined
+    clock += 60_001
+    await built.sessions.models()
+    program = OLD
+    clock += 60_001
+    await built.sessions.models()
+    expect(asked).toBe(1)
   })
 })
 

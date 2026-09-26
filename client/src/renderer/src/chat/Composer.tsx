@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { modelName, SESSION_MODES } from '../../../shared/api'
+import { modelName, programLine, SESSION_MODES } from '../../../shared/api'
 import type { SessionMode } from '../../../shared/api'
 import { mentionAt, pathsFor } from '../../../shared/paths'
 import { dictate } from '../dictate'
@@ -144,11 +144,11 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const models: readonly Choice[] = [
     { value: '', label: 'Default', says: 'as claude is set up' },
     ...(Array.isArray(chat.models)
-      ? chat.models.map((one) => ({
-          value: one.value,
-          label: one.name,
-          ...(one.id === undefined ? {} : { says: modelName(one.id) }),
-        }))
+      ? chat.models.map((one) =>
+          one.disabled === true
+            ? { value: one.value, label: one.name, disabled: true, ...(one.says === undefined ? {} : { says: one.says }) }
+            : { value: one.value, label: one.name, ...(one.id === undefined ? {} : { says: modelName(one.id) }) },
+        )
       : [
           {
             value: '__asking',
@@ -172,6 +172,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
       : used === undefined
         ? `${again}.`
         : `${again}: about ${(Math.round(used / 1000) * 1000).toLocaleString('en-US')} tokens from your plan.`
+  // Which Claude Code named these, since an older one names fewer.
+  const program = programLine(chat.account)
+  const note = [program === undefined ? undefined : `${program}.`, cost].filter((line) => line !== undefined).join('\n')
 
   const cannot = chat.root === undefined || chat.account?.signedIn !== true || chat.account.key === true
 
@@ -463,7 +466,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 choices={models}
                 chosen={chat.model}
                 title="Model"
-                {...(cost === undefined ? {} : { note: cost })}
+                {...(note === '' ? {} : { note })}
                 onOpen={chat.askModels}
                 onPick={(value) => {
                   if (value !== '__asking') chat.setModel(value)

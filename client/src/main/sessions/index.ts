@@ -13,6 +13,7 @@ import type {
   HiddenReason,
   ClaudeAccount,
   ClaudeModel,
+  ClaudeProgram,
   CutOff,
   McpServer,
   PlanUsage,
@@ -31,7 +32,7 @@ import type {
 import { sessionMode } from '../../shared/api'
 import type { Link } from '../../shared/links'
 import { linksIn, workItem } from '../../shared/links'
-import { claudeAccount } from './account'
+import { claudeAccount, claudeProgram } from './account'
 import { holdClaude } from './claude'
 import { browsersOf, readBrowsers } from './chrome'
 import { claudeFile, deleteClaude, everyClaude, listClaude, readClaudeSession, readGoal, readLinks } from './disk'
@@ -179,6 +180,7 @@ export interface SessionsDeps {
   readonly there?: (path: string) => Promise<boolean>
   readonly claudeAccount?: () => Promise<ClaudeAccount>
   readonly claudeModels?: () => Promise<ClaudeModel[] | undefined>
+  readonly claudeProgram?: () => Promise<ClaudeProgram | undefined>
   readonly usage?: (models: readonly string[]) => Promise<Usage>
   readonly mcp?: (root: string, change?: McpChange) => Promise<McpServer[] | undefined>
   readonly browsers?: (root: string, pick?: string) => Promise<Browser[] | undefined>
@@ -329,6 +331,12 @@ export class Sessions {
   #measuring: Promise<void> | undefined
   /** What the tool said it has, kept once said: a vendor ships a model far less often than a window is opened. */
   #models: Promise<ClaudeModel[] | undefined> | undefined
+  /** The Claude Code that answers, as last looked at, and when. The models and windows above were asked of it. */
+  #program: ClaudeProgram | undefined
+  #looked = -Infinity
+  #looking: Promise<void> | undefined
+  /** Counts the versions seen, so a window the one before measured is not kept once it lands. */
+  #generation = 0
 
   constructor(deps: SessionsDeps) {
     this.#deps = deps
@@ -353,16 +361,58 @@ export class Sessions {
   // --- what the window asks ---------------------------------------------------
 
   async account(): Promise<ClaudeAccount> {
-    return (this.#deps.claudeAccount ?? claudeAccount)()
+    const [account, program] = await Promise.all([(this.#deps.claudeAccount ?? claudeAccount)(), this.#look()])
+    return program === undefined ? account : { ...account, program }
+  }
+
+  /**
+   * Which Claude Code answers, looked at again at most once a minute: when the
+   * plan is measured, and when the model menu is opened. Nothing else says it
+   * was updated, and GeckIt may have been open for weeks.
+   */
+  async #look(): Promise<ClaudeProgram | undefined> {
+    if (this.#looking === undefined && this.#now() - this.#looked >= MEASURED_FOR) {
+      this.#looked = this.#now()
+      this.#looking = (this.#deps.claudeProgram ?? claudeProgram)()
+        .then((program) => {
+          if (program !== undefined) this.#took(program)
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          this.#looking = undefined
+        })
+    }
+    await this.#looking
+    return this.#program
+  }
+
+  /**
+   * Another version has other models and measures windows its own way: what
+   * was asked of the one before is forgotten, asked again, and every window
+   * is told which one answers now.
+   */
+  #took(program: ClaudeProgram): void {
+    const before = this.#program?.version
+    this.#program = program
+    if (before === undefined || before === program.version) return
+    this.#models = undefined
+    this.#windows.clear()
+    this.#generation += 1
+    this.#changed()
+    void this.measure()
+    void this.account().then((account) => this.#deps.account(account))
   }
 
   /**
    * The models the tool says it has, or nothing where it did not say.
    *
-   * Asked when the menu under the composer is first opened, which is a press,
-   * and not when a window is: asking Claude Code means starting it.
+   * Asked when the menu under the composer is opened, which is a press, and
+   * not when a window is: asking Claude Code means starting it. Every opening
+   * asks here, and is answered from what was kept until another version of
+   * Claude Code answers.
    */
   async models(): Promise<ClaudeModel[] | undefined> {
+    await this.#look()
     if (this.#models === undefined) {
       this.#models = (this.#deps.claudeModels ?? claudeModels)()
       // Not having said is not kept: the next opening of the menu asks again.
@@ -1264,9 +1314,12 @@ export class Sessions {
     const unknown = [...models].filter((model) => !this.#windows.has(model))
     if (unknown.length === 0 && this.#now() - this.#measured < MEASURED_FOR) return Promise.resolve()
     this.#measured = this.#now()
+    void this.#look()
+    const generation = this.#generation
     this.#measuring = (this.#deps.usage ?? readUsage)(unknown)
       .then((usage) => {
-        for (const model of unknown) this.#windows.set(model, usage.windows.get(model))
+        // Measured by the version before, where it changed meanwhile: the new one is asked once this is over.
+        if (generation === this.#generation) for (const model of unknown) this.#windows.set(model, usage.windows.get(model))
         if (usage.plan !== undefined) {
           this.#plan = usage.plan
           this.#deps.plan?.(usage.plan)

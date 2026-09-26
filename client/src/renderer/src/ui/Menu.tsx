@@ -23,6 +23,8 @@ export interface Choice {
   readonly on?: boolean
   /** Drawn where the check goes, and given way to by the check while it is on. */
   readonly icon?: string
+  /** Shown and not choosable: what it says is why. */
+  readonly disabled?: boolean
   /** Offered for deleting when the menu is given `onRemove`. */
   readonly removable?: boolean
 }
@@ -92,6 +94,7 @@ export function Menu({
               type="button"
               role="menuitem"
               className={`sheet-option${choice.danger === true ? ' danger' : ''}`}
+              disabled={choice.disabled === true}
               onClick={() => {
                 onPick(choice.value)
                 onClose()
@@ -133,6 +136,7 @@ export function Menu({
               type="button"
               role="menuitem"
               className={`menu-item${choice.value === chosen ? ' on' : ''}${choice.danger === true ? ' danger' : ''}`}
+              disabled={choice.disabled === true}
               onClick={() => {
                 onPick(choice.value)
                 onClose()
