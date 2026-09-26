@@ -10,6 +10,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
+import { HiddenChats } from './HiddenChats'
 import { NameField } from './NameField'
 import { Projects } from './Projects'
 import { emptyProfile, projectName, tint } from './project'
@@ -66,6 +67,7 @@ export function Board({
   const [deleting, setDeleting] = useState<readonly ChatSession[] | undefined>()
   const [asked, setAsked] = useState<DOMRect | undefined>()
   const [ways, setWays] = useState<DOMRect | undefined>()
+  const [hidden, setHidden] = useState(false)
   // The cards being dragged, and the column the pointer is over.
   const held = useRef<readonly string[]>([])
   const [over, setOver] = useState<string | undefined>()
@@ -199,6 +201,15 @@ export function Board({
         <button
           type="button"
           className="icon-button no-drag"
+          aria-label="Hidden conversations"
+          title="Hidden conversations: kept by Claude Code on this Mac and not on the board"
+          onClick={() => setHidden(true)}
+        >
+          <Icon name="hidden" />
+        </button>
+        <button
+          type="button"
+          className="icon-button no-drag"
           aria-label="Settings"
           title={`Settings (${MOD}+,)`}
           onClick={onSettings}
@@ -287,6 +298,7 @@ export function Board({
             onClose={() => setWays(undefined)}
           />
         )}
+        {hidden ? <HiddenChats chat={chat} onClose={() => setHidden(false)} /> : null}
       </div>
 
       {emptyProfile(chat.settings) === undefined ? null : (
