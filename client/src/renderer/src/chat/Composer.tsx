@@ -43,6 +43,7 @@ const COMPACT = /^\s*\/compact(\s|$)/
  */
 export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const field = useRef<HTMLTextAreaElement>(null)
+  const photos = useRef<HTMLInputElement>(null)
   const offered = useRef<HTMLDivElement>(null)
   // Where the caret is, so the @ being typed can be found; and where to put it once a path is in.
   const [caret, setCaret] = useState(0)
@@ -451,6 +452,30 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           }}
         />
         <div className="composer-bar">
+          {ON_PHONE ? (
+            <>
+              <button
+                type="button"
+                className="picker photo-pick"
+                disabled={chat.root === undefined}
+                aria-label="Add a photo"
+                onClick={() => photos.current?.click()}
+              >
+                <Icon name="photo" size={16} />
+              </button>
+              <input
+                ref={photos}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(event) => {
+                  addFiles([...(event.target.files ?? [])])
+                  event.target.value = ''
+                }}
+              />
+            </>
+          ) : null}
           <Picker
             label={SESSION_MODES.find((one) => one.mode === chat.mode)?.label ?? 'Ask'}
             choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: one.why }))}
