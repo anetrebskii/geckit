@@ -5090,10 +5090,12 @@ html.phone button:active:not(:disabled) {
   color: var(--accent);
 }
 
+/* The menu's note on the phone, split into lines as `.menu-note` is. */
 .sheet-note {
   margin: 7px 16px 0;
   font-size: 13px;
   color: var(--text-faint);
+  white-space: pre-line;
 }
 
 .sheet-field {
