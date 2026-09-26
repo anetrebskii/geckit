@@ -15,6 +15,7 @@ The board lists only what Claude Code has kept under the exact folder of a proje
 
 | Surface | What appears | When seen |
 |---|---|---|
+| Top bar (`Board.tsx`), existing | An icon button, the eye struck through, after Shortcuts and Keyboard shortcuts and before Settings; its tooltip "Hidden conversations: kept by Claude Code on this Mac and not on the board" | Always, in the board and in the list |
 | Project menu (Cmd+K, `Projects.tsx`), existing | An item "Hidden conversations..." under "Add a project..." | Always |
 | Hidden conversations dialog, new, over the board like "Delete conversations" | Conversations the board does not list, grouped by folder, newest folder first | When the item is chosen |
 | Folder group in the dialog | The folder, the project it belongs to if any, and "Add as project" when it belongs to none | Always |
@@ -91,7 +92,7 @@ stateDiagram-v2
 
 | From | Event | To | What the person sees |
 |---|---|---|---|
-| Board | Chose "Hidden conversations..." in the project menu | Reading | The dialog, "Reading conversations..." |
+| Board | Chose "Hidden conversations..." with the button in the top bar or in the project menu | Reading | The dialog, "Reading conversations..." |
 | Reading | Reading finished with something found, by itself | Listed | Folder groups, newest first |
 | Reading | Reading finished with nothing found, by itself | Nothing hidden | "Nothing is hidden. Every conversation from the last 30 days is on the board." |
 | Listed | Pressed "Show on the board" on a row | Shown | The row's action becomes "On the board. Open"; behind the dialog the card appears in its column |
@@ -189,11 +190,15 @@ Everything done here is undone with what the board already has: "Hide from this 
 
 | Option | Verdict |
 |---|---|
-| The project menu, under "Add a project..." | yes |
-| A button in the board's header | no |
+| An icon button in the top bar, beside Shortcuts, Keyboard shortcuts and Settings | yes |
+| The project menu, under "Add a project..." | yes, as well |
+| A row under the search results | no |
+| "Hidden" at the left end of the bottom bar | no |
 | Settings | no |
 
-**Why:** the question it answers, "what is not on my board", sits beside "which projects are on my board", and the header is full already.
+**Why:** the icons in the top bar are already the places that open over the board, each a dialog of its own, and the hidden conversations are one more such place; the bar is the same in the board and the list, so it is in sight in both. It is how a Mac app keeps its places: in the toolbar, a tool among tools. The bottom bar is where a Mac app says how things stand, as Finder's says how many items and how much space: a word there reads as news, "something is hidden", and not as a way in, which is how it read when it was tried. A row under the search results is seen only by someone already searching. The project menu alone was not found, since nobody opens a menu of projects to look for a conversation; it keeps the item for whoever is there.
+
+This reverses the earlier "no" to a button in the board's header, given because the header was full: the header has one more icon of the same kind as its neighbours, and nothing else moved. It stays there too, beside "which projects are on my board", and the header is full already.
 
 ## 11. Requirements check
 
