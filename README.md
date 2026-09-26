@@ -31,7 +31,7 @@ In terminal tabs it is easy to lose the session that asked you something and has
 - A card shows its project, whether Claude is working, asks you something or waits for you, the goal, and the links written in the conversation.
 - New task starts a conversation in a project, with a goal if you give one. Claude keeps working until the goal holds, then the card moves to In review by itself.
 - All projects on one board, or one project at a time with Cmd+K.
-- Cmd+click or Shift+click picks several cards, and they are moved, hidden or deleted together.
+- Cmd+click or Shift+click picks several cards, and they are moved, hidden or deleted together. Hidden conversations are behind their own button in the top bar.
 - Ask (Cmd+Shift+N) is a question outside any project. It is not put on the board.
 
 ### Search
@@ -69,7 +69,7 @@ Press a card and the conversation opens over the board. You can use it instead o
   <img src="docs/screenshots/background-light.png" alt="The Background window: a dev server and a test watch running, a finished command, and a helper agent">
 </picture>
 
-- The board can be switched to a list, grouped by project, with favorites at the top and Cmd+1... between them.
+- The Board/List switch at the left of the top bar shows the conversations as a list, grouped by project, with favorites at the top and Cmd+1... between them.
 
 <picture>
   <img src="docs/screenshots/list-light.png" alt="The list view: conversations grouped by project in a sidebar, with favorites at the top">
@@ -144,11 +144,11 @@ On Windows and Linux the shortcuts use Ctrl instead of Cmd.
 
 ## Claude Code knows about GeckIt
 
-GeckIt adds a short guide to `~/.claude`, so Claude Code knows about the board, goals and cards. On macOS and Linux it also installs a `geckit` command that says what was done: `geckit sessions --today`, `geckit show <id>`. One setting turns both off.
+GeckIt adds a short guide to `~/.claude`, so Claude Code knows about the board, goals and cards. On macOS and Linux it also installs a `geckit` command that says what was done: `geckit sessions --today`, `geckit sessions --favorites`, and `geckit show <id>` with when the card was created and each time it moved. One setting turns both off.
 
 ## Install
 
-Download it from [Releases](https://github.com/anetrebskii/geckit/releases/latest): a dmg for Apple Silicon or Intel Macs, an installer for Windows, an AppImage for Linux. It updates itself.
+Download it from [Releases](https://github.com/anetrebskii/geckit/releases/latest): a dmg for Apple Silicon or Intel Macs, an installer for Windows, an AppImage for Linux. It updates itself from the Stable channel, the release marked Latest. Settings, Version switches it to Development, which gets every build from main.
 
 The board and Correct need [Claude Code](https://code.claude.com/docs/en/overview) installed and signed in with a Claude subscription. Correct can run on an OpenAI, Anthropic or OpenRouter key instead. Transcribe, screen recording and Say it need an OpenRouter key, set in Settings.
 
