@@ -34,6 +34,7 @@ import type {
   PhoneView,
   PlanUsage,
   ShortcutDraft,
+  SessionItem,
   SessionItems,
   SessionMessage,
   SessionMode,
@@ -598,6 +599,7 @@ function wire(): void {
   ipcMain.handle('chat:delete', (_event, ids: readonly string[]) => deleteChats(ids))
   ipcMain.handle('chat:items', (_event, id: string) => sessions?.items(id) ?? [])
   ipcMain.handle('chat:links', (_event, id: string) => sessions?.links(id) ?? [])
+  ipcMain.handle('chat:waiting', (_event, id: string) => waitingCard(id))
   // Offered once a start: a window opened again later is not asked again.
   ipcMain.handle('chat:cutOff', () => {
     if (cutOffered) return []
@@ -716,6 +718,10 @@ function wire(): void {
 
 type PhoneCall = (...args: never[]) => unknown
 
+/** The card a conversation waits on, without the whole conversation. */
+const waitingCard = async (id: string): Promise<SessionItem | undefined> =>
+  (await sessions?.items(id))?.findLast((item) => item.kind === 'card' && item.card.answered === undefined)
+
 let phoneOn = false
 let phoneKey = ''
 let phoneState: { readonly count: number; readonly trouble?: string } = { count: 0 }
@@ -758,6 +764,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     },
     'chat.items': (id: string) => held()?.items(id) ?? [],
     'chat.links': (id: string) => held()?.links(id) ?? [],
+    'chat.waiting': (id: string) => waitingCard(id),
     'chat.search': (asked: string, root: string | undefined) =>
       searchClaude(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
     'chat.send': (message: SessionMessage) => held()?.send(message),

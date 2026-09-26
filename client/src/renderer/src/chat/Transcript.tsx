@@ -1,6 +1,7 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { BackgroundTask, CardAnswer, SessionItem } from '../../../shared/api'
+import { isStep, runKey } from '../../../shared/steps'
+import type { BackgroundTask, CardAnswer, SessionImage, SessionItem } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Code, CopyButton } from './Code'
 import { Preview } from './Preview'
@@ -84,13 +85,7 @@ function Did({
       {item.images === undefined ? null : (
         <div className="pictures did-pictures">
           {item.images.map((one, index) => (
-            <img
-              key={index}
-              src={`data:${one.media};base64,${one.data}`}
-              alt=""
-              title="Press to see it bigger"
-              onClick={() => onPicture(`data:${one.media};base64,${one.data}`)}
-            />
+            <Picture key={index} image={one} onPicture={onPicture} />
           ))}
         </div>
       )}
@@ -323,13 +318,7 @@ const Turn = memo(function Turn({
           {item.images === undefined ? null : (
             <div className="pictures">
               {item.images.map((one, index) => (
-                <img
-                  key={index}
-                  src={`data:${one.media};base64,${one.data}`}
-                  alt=""
-                  title="Press to see it bigger"
-                  onClick={() => onPicture(`data:${one.media};base64,${one.data}`)}
-                />
+                <Picture key={index} image={one} onPicture={onPicture} />
               ))}
             </div>
           )}
@@ -374,7 +363,7 @@ const Turn = memo(function Turn({
           ))}
         </div>
       ) : (
-        <Note item={item} />
+        item.kind === 'steps' ? null : <Note item={item} />
       )}
       {at === undefined || when === undefined ? null : (
         <When at={at} said={when} onCopy={item.kind === 'theirs' ? () => onCopyAnswer(item.id, item.text) : undefined} />
@@ -382,6 +371,89 @@ const Turn = memo(function Turn({
     </div>
   )
 })
+
+// A picture is drawn at most 220 points wide, and fills the screen when pressed; the phone asks for each size when it is wanted, and keeps it.
+const DRAWN = 220 * 3
+const WHOLE = 1200
+const asked = new Map<string, Promise<string | undefined>>()
+const PICTURES_KEPT = 80
+
+function pictureAt(ref: string, width: number): Promise<string | undefined> {
+  const key = `${ref}\n${String(width)}`
+  let held = asked.get(key)
+  if (held === undefined) {
+    held = window.geckit.chat
+      .picture(ref, width)
+      .then((one) => (one === undefined ? undefined : `data:${one.media};base64,${one.data}`))
+      .catch(() => {
+        asked.delete(key)
+        return undefined
+      })
+    asked.set(key, held)
+    if (asked.size > PICTURES_KEPT) asked.delete(asked.keys().next().value ?? '')
+  }
+  return held
+}
+
+/** A picture, carried whole or, on the phone, asked for once it comes into view. */
+function Picture({ image, onPicture }: { readonly image: SessionImage; readonly onPicture: (src: string) => void }): React.JSX.Element {
+  const ref = image.data === '' ? image.ref : undefined
+  const [src, setSrc] = useState(ref === undefined ? `data:${image.media};base64,${image.data}` : undefined)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const element = box.current
+    if (ref === undefined || element === null) return
+    let gone = false
+    const seen = new IntersectionObserver((entries) => {
+      if (!entries.some((one) => one.isIntersecting)) return
+      seen.disconnect()
+      void pictureAt(ref, DRAWN).then((got) => {
+        if (!gone && got !== undefined) setSrc(got)
+      })
+    })
+    seen.observe(element)
+    return () => {
+      gone = true
+      seen.disconnect()
+    }
+  }, [ref])
+  if (src === undefined) return <div ref={box} className="picture-waiting" aria-busy="true" />
+  return (
+    <img
+      src={src}
+      alt=""
+      title="Press to see it bigger"
+      onClick={() => {
+        if (ref === undefined) return onPicture(src)
+        void pictureAt(ref, WHOLE).then((whole) => onPicture(whole ?? src))
+      }}
+    />
+  )
+}
+
+/** The one line a run of steps is drawn as, and the line over it once it is open. */
+function Fold({
+  said,
+  icon,
+  title,
+  onPress,
+}: {
+  readonly said: string
+  readonly icon: 'right' | 'down' | 'spinner'
+  readonly title: string
+  readonly onPress: () => void
+}): React.JSX.Element {
+  return (
+    <div className="turn step">
+      <button type="button" className="did" title={title} onClick={onPress}>
+        <span className={`glyph${icon === 'spinner' ? ' spinning' : ''}`}>
+          <Icon name={icon} size={12} />
+        </span>
+        <span className="what">{said}</span>
+      </button>
+    </div>
+  )
+}
 
 export const Transcript = memo(function Transcript({
   at,
@@ -397,6 +469,9 @@ export const Transcript = memo(function Transcript({
   tasks,
   onTasks,
   seek,
+  earlier = 0,
+  onEarlier,
+  onSteps,
 }: {
   /** Which conversation this is, so another one opens at its end rather than where this one was left. */
   readonly at: string
@@ -416,6 +491,11 @@ export const Transcript = memo(function Transcript({
   readonly onTasks: (open: boolean) => void
   /** A message to go to once this conversation is read, found by the words searched for. */
   readonly seek?: Seek | undefined
+  /** How much is before the items and not yet here, and asking for it. */
+  readonly earlier?: number
+  readonly onEarlier?: () => void
+  /** A run of steps opened that is only a line so far: its steps are to be asked for. */
+  readonly onSteps?: (run: Extract<SessionItem, { kind: 'steps' }>) => void
 }): React.JSX.Element {
   const box = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
@@ -423,6 +503,7 @@ export const Transcript = memo(function Transcript({
   const [preview, setPreview] = useState<string | undefined>()
   // How much is drawn, and of which conversation: one that has just arrived is drawn from its end, before its page is.
   const [drawn, setDrawn] = useState({ at, count: FIRST })
+  const [opened, setOpened] = useState<{ readonly at: string; readonly keys: ReadonlySet<string> }>({ at, keys: new Set() })
   const [now, setNow] = useState(() => Date.now())
 
   const picture = useCallback((src: string) => setPreview(src), [])
@@ -548,6 +629,36 @@ export const Transcript = memo(function Transcript({
   const last = items.at(-1)
   const stopped = !working && last?.kind === 'note' && last.note === 'stopped'
 
+  // A conversation reads as what was asked and what was answered: each run of steps between them is one line, opened by a press.
+  // On the phone a run arrives as one `steps` item, and its steps are asked for when it is opened.
+  const folds = new Map<string, { readonly first: string; readonly ids: string[]; latest: string | undefined }>()
+  const foldOf = new Map<string, string>()
+  let fold: string | undefined
+  for (const item of shown) {
+    if (item.kind === 'steps') {
+      fold = undefined
+      folds.set(item.id, { first: item.id, ids: [...item.ids], latest: item.latest })
+      foldOf.set(item.id, item.id)
+      continue
+    }
+    if (!isStep(item)) {
+      fold = undefined
+      continue
+    }
+    fold ??= runKey(item.id)
+    const held = folds.get(fold) ?? { first: item.id, ids: [], latest: undefined }
+    held.ids.push(item.id)
+    if (item.kind === 'did') held.latest = item.what
+    folds.set(fold, held)
+    foldOf.set(item.id, fold)
+  }
+  // The message searched for is shown with what is around it.
+  const target = sought < 0 ? undefined : foldOf.get(items[sought]?.id ?? '')
+  const openKeys = opened.at === at ? opened.keys : new Set<string>()
+  const isOpen = (key: string): boolean => openKeys.has(key) || key === target
+  const workingFold = working ? foldOf.get([...shown].reverse().find((item) => foldOf.has(item.id))?.id ?? '') : undefined
+  const counted = (n: number): string => (n === 1 ? '1 step' : `${String(n)} steps`)
+
   return (
     <div
       className="transcript"
@@ -561,30 +672,72 @@ export const Transcript = memo(function Transcript({
       }}
     >
       <div>
-        {items.length > shown.length ? (
+        {items.length > shown.length || earlier > 0 ? (
           <div className="turn">
-            <button type="button" className="quiet" onClick={() => setDrawn({ at, count: reach + PAGE })}>
-              Show earlier ({items.length - shown.length} more)
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => (items.length > shown.length ? setDrawn({ at, count: reach + PAGE }) : onEarlier?.())}
+            >
+              Show earlier ({items.length - shown.length + earlier} more)
             </button>
           </div>
         ) : null}
 
-        {shown.map((item) => (
-          <Turn
-            key={item.id}
-            item={item}
-            going={going.has(item.id)}
-            when={when(item)}
-            onAnswer={onAnswer}
-            onAgain={onAgain}
-            onFile={onFile}
-            onPicture={picture}
-            onCopyAnswer={copyAnswer}
-            onStopShell={onStopShell}
-            onTypeShell={onTypeShell}
-            onBackground={onBackground}
-          />
-        ))}
+        {shown.map((item) => {
+          const key = foldOf.get(item.id)
+          const held = key === undefined ? undefined : folds.get(key)
+          if (key === undefined || held === undefined) return <Turn key={item.id} item={item} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
+          if (held.first !== item.id && !isOpen(key)) return null
+          const open = (): void => {
+            setOpened({ at, keys: new Set([...openKeys, key]) })
+            if (item.kind === 'steps') onSteps?.(item)
+          }
+          const close = (): void => setOpened({ at, keys: new Set([...openKeys].filter((one) => one !== key)) })
+          if (item.kind === 'steps') {
+            const now = key === workingFold
+            const loading = isOpen(key)
+            return (
+              <Fold
+                key={item.id}
+                said={`${counted(held.ids.length)}${loading ? '' : now && held.latest !== undefined ? `, ${held.latest}` : ''}`}
+                icon={loading || now ? 'spinner' : 'right'}
+                title={loading ? 'Hide what was done' : 'Show what was done'}
+                onPress={loading ? close : open}
+              />
+            )
+          }
+          if (!isOpen(key)) {
+            const now = key === workingFold
+            return (
+              <Fold
+                key={`fold:${key}`}
+                said={`${counted(held.ids.length)}${now && held.latest !== undefined ? `, ${held.latest}` : ''}`}
+                icon={now ? 'spinner' : 'right'}
+                title="Show what was done"
+                onPress={open}
+              />
+            )
+          }
+          return (
+            <Fragment key={item.id}>
+              {held.first === item.id ? <Fold said={counted(held.ids.length)} icon="down" title="Hide what was done" onPress={close} /> : null}
+              <Turn
+                item={item}
+                going={going.has(item.id)}
+                when={when(item)}
+                onAnswer={onAnswer}
+                onAgain={onAgain}
+                onFile={onFile}
+                onPicture={picture}
+                onCopyAnswer={copyAnswer}
+                onStopShell={onStopShell}
+                onTypeShell={onTypeShell}
+                onBackground={onBackground}
+              />
+            </Fragment>
+          )
+        })}
 
         {stopped ? (
           <div className="turn">

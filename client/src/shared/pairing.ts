@@ -1,3 +1,5 @@
+import type { SessionItem } from './api'
+
 /**
  * What the phone and the Mac share once the QR code is scanned, and how they
  * use it to find each other through Firestore.
@@ -87,6 +89,19 @@ export type LinkMessage =
   | { readonly t: 'reply'; readonly id: number; readonly value?: unknown; readonly error?: string }
   | { readonly t: 'tell'; readonly channel: string; readonly value: unknown }
 
+/** What the phone is sent of a conversation: `count` lines before `before`, or its end, and how many are left before them. */
+export interface Piece {
+  readonly items: SessionItem[]
+  readonly left: number
+}
+
+export function pieceOf(all: readonly SessionItem[], before: string | undefined, count: number): Piece {
+  const found = before === undefined ? all.length : all.findIndex((item) => item.id === before)
+  if (found === -1) return { items: [], left: 0 }
+  const start = Math.max(0, found - count)
+  return { items: all.slice(start, found), left: start }
+}
+
 /** A data channel carries messages of a few hundred kilobytes at most, and a pasted photo is megabytes, so every message goes in pieces. */
 export const FRAME = 16_000
 
@@ -116,5 +131,59 @@ export function assembler(): (frame: string) => LinkMessage | undefined {
     }
     held.delete(frame.m)
     return JSON.parse(parts.join('')) as LinkMessage
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Compressed, once both sides have said they can read it             */
+/* ------------------------------------------------------------------ */
+
+/** What is shorter than this goes as text: compressing it saves nothing worth the time. */
+export const SQUEEZE_FROM = 512
+// Four bytes of message, two of piece, two of how many pieces.
+const HEAD = 8
+
+async function through(bytes: Uint8Array<ArrayBuffer>, stream: CompressionStream | DecompressionStream): Promise<Uint8Array<ArrayBuffer>> {
+  return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer())
+}
+
+/** A message deflated and cut into binary pieces, each headed with which message, which piece and of how many. */
+export async function packed(message: LinkMessage, m: number): Promise<ArrayBuffer[]> {
+  const body = await through(new TextEncoder().encode(JSON.stringify(message)), new CompressionStream('deflate-raw'))
+  const n = Math.max(1, Math.ceil(body.length / FRAME))
+  return Array.from({ length: n }, (_one, i) => {
+    const part = body.subarray(i * FRAME, (i + 1) * FRAME)
+    const frame = new Uint8Array(HEAD + part.length)
+    const head = new DataView(frame.buffer)
+    head.setUint32(0, m)
+    head.setUint16(4, i)
+    head.setUint16(6, n)
+    frame.set(part, HEAD)
+    return frame.buffer
+  })
+}
+
+/** Puts binary pieces back together and inflates them; a message comes out once its last piece is in. */
+export function unpacker(): (frame: ArrayBuffer) => Promise<LinkMessage | undefined> {
+  const held = new Map<number, Uint8Array<ArrayBuffer>[]>()
+  return async (raw) => {
+    const head = new DataView(raw)
+    const m = head.getUint32(0)
+    const i = head.getUint16(4)
+    const n = head.getUint16(6)
+    const parts = held.get(m) ?? []
+    parts[i] = new Uint8Array(raw, HEAD)
+    if (parts.filter((one) => one !== undefined).length < n) {
+      held.set(m, parts)
+      return undefined
+    }
+    held.delete(m)
+    const body = new Uint8Array(parts.reduce((all, one) => all + one.length, 0))
+    let at = 0
+    for (const one of parts) {
+      body.set(one, at)
+      at += one.length
+    }
+    return JSON.parse(new TextDecoder().decode(await through(body, new DecompressionStream('deflate-raw')))) as LinkMessage
   }
 }

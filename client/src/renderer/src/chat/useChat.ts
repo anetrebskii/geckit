@@ -56,6 +56,11 @@ export interface Chat {
   readonly items: readonly SessionItem[]
   /** The conversation the items are, which is the one shown once they have arrived. */
   readonly itemsFor: string
+  /** How much of the conversation is before its items and still on the Mac: the phone is sent a conversation's end first. */
+  readonly earlier: number
+  readonly showEarlier: () => void
+  /** Puts the steps of a run the phone was sent as one line where the line is. */
+  readonly loadSteps: (run: Extract<SessionItem, { kind: 'steps' }>) => void
   readonly draft: string
   /** Pictures pasted or dropped into the field, waiting to go with the message. */
   readonly pictures: readonly SessionImage[]
@@ -136,6 +141,9 @@ export interface Chat {
   refresh: () => void
 }
 
+// How long a message sent stays up on its own once the Mac has taken it.
+const SHOWN_FOR = 1500
+
 export function useChat(): Chat {
   const [settings, change] = useSettings()
   const [picked, setPicked] = useState<readonly string[] | undefined>()
@@ -147,6 +155,7 @@ export function useChat(): Chat {
   const [shown, setShown] = useState<Shown>({ kind: 'new' })
   const [items, setItems] = useState<readonly SessionItem[]>([])
   const [itemsFor, setItemsFor] = useState('new')
+  const [earlier, setEarlier] = useState({ id: '', left: 0 })
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [pictures, setPictures] = useState<Record<string, readonly SessionImage[]>>({})
   const [trouble, setTrouble] = useState('')
@@ -164,6 +173,10 @@ export function useChat(): Chat {
   const scope = chosen.length === 1 ? (chosen[0] ?? ALL) : ALL
 
   const shownRef = useRef(shown)
+  const itemsRef = useRef(items)
+  useEffect(() => {
+    itemsRef.current = items
+  }, [items])
   const scopeRef = useRef(scope)
   const chosenRef = useRef(chosen)
   const sessionsRef = useRef(sessions)
@@ -250,10 +263,26 @@ export function useChat(): Chat {
 
   useEffect(
     () =>
+      // A dev app started before this was added has a preload without it until it is started again.
+      window.geckit.chat.onEarlier?.((said) => {
+        if (shownRef.current.kind === 'session' && shownRef.current.id === said.id) setEarlier(said)
+      }),
+    [],
+  )
+
+  // A message sent is up the moment Send is pressed, and gives way to the Mac's own once that arrives.
+  const sending = useRef(0)
+  useEffect(
+    () =>
       window.geckit.chat.onItems((arrived) => {
         if (shownRef.current.kind !== 'session' || shownRef.current.id !== arrived.id) return
         setItems((held) => {
           const kept = new Map(held.map((item) => [item.id, item]))
+          for (const item of arrived.items) {
+            if (item.kind !== 'mine') continue
+            const mine = [...kept.values()].find((one) => one.kind === 'mine' && one.id.startsWith('sending:') && one.text === item.text)
+            if (mine !== undefined) kept.delete(mine.id)
+          }
           for (const id of arrived.gone ?? []) kept.delete(id)
           for (const item of arrived.items) kept.set(item.id, item)
           return [...kept.values()]
@@ -263,6 +292,7 @@ export function useChat(): Chat {
   )
 
   const open = useCallback((next: Shown) => {
+    const before = shownRef.current
     shownRef.current = next
     setShown(next)
     setFocusSeed((seed) => seed + 1)
@@ -273,6 +303,9 @@ export function useChat(): Chat {
       return
     }
     setNotices((held) => held.filter((one) => one.session !== next.id))
+    setEarlier({ id: next.id, left: 0 })
+    // Another conversation's lines are not left up while this one is read.
+    if (before.kind !== 'session' || before.id !== next.id) setItems([])
     window.geckit.chat.watching(next.id)
     void window.geckit.chat.items(next.id).then((read) => {
       if (shownRef.current.kind !== 'session' || shownRef.current.id !== next.id) return
@@ -435,9 +468,15 @@ export function useChat(): Chat {
         setPictures((all) => ({ ...all, [key]: [] }))
       }
       setTrouble('')
+      const into = shownRef.current
+      const shownNow = `sending:${String(sending.current++)}`
+      if (into.kind === 'session' && again === undefined) {
+        setItems((held) => [...held, { kind: 'mine', id: shownNow, text, ...(carried.length === 0 ? {} : { images: carried }), at: Date.now() }])
+      }
+      const unshow = (): void => setItems((held) => held.filter((one) => one.id !== shownNow))
       void window.geckit.chat
         .send({
-          ...(shownRef.current.kind === 'session' ? { session: shownRef.current.id } : {}),
+          ...(into.kind === 'session' ? { session: into.id } : {}),
           root: where,
           mode: now.mode,
           text,
@@ -447,11 +486,14 @@ export function useChat(): Chat {
         })
         .then(
           (id) => {
+            // What the Mac made of it has been told by now, unless it went into the queue or became something else.
+            setTimeout(unshow, SHOWN_FOR)
             if (shownRef.current.kind === 'session' && shownRef.current.id === id) return
             open({ kind: 'session', id })
           },
           // Only the phone's link can fail on the way: what was written goes back where it was written.
           () => {
+            unshow()
             if (said === undefined) {
               setDrafts((all) => ({ ...all, [key]: text }))
               setPictures((all) => ({ ...all, [key]: carried }))
@@ -495,6 +537,30 @@ export function useChat(): Chat {
     },
     [open],
   )
+
+  const showEarlier = useCallback(() => {
+    const now = shownRef.current
+    if (now.kind !== 'session') return
+    const first = itemsRef.current[0]
+    if (first === undefined) return
+    void window.geckit.chat.before(now.id, first.id).then((piece) => {
+      if (shownRef.current.kind !== 'session' || shownRef.current.id !== now.id) return
+      setItems((held) => {
+        const have = new Set(held.map((one) => one.id))
+        return [...piece.items.filter((one) => !have.has(one.id)), ...held]
+      })
+      setEarlier({ id: now.id, left: piece.left })
+    })
+  }, [])
+
+  const loadSteps = useCallback((run: Extract<SessionItem, { kind: 'steps' }>) => {
+    const now = shownRef.current
+    if (now.kind !== 'session') return
+    void window.geckit.chat.steps(now.id, run.ids).then((found) => {
+      if (shownRef.current.kind !== 'session' || shownRef.current.id !== now.id) return
+      setItems((held) => held.flatMap((one) => (one.id === run.id ? found : [one])))
+    })
+  }, [])
 
   const stopShell = useCallback((item: string) => {
     if (shownRef.current.kind === 'session') window.geckit.chat.stopShell(shownRef.current.id, item)
@@ -606,6 +672,9 @@ export function useChat(): Chat {
     root,
     scope,
     sessions,
+    earlier: shown.kind === 'session' && earlier.id === shown.id ? earlier.left : 0,
+    showEarlier,
+    loadSteps,
     everyone,
     questions,
     waiting,

@@ -2814,6 +2814,14 @@ button.tag:hover {
   border-color: var(--border-strong);
 }
 
+/* A picture on the phone before it has come over. */
+.picture-waiting {
+  width: 160px;
+  height: 120px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
 /* A picture a tool handed back, under the line saying what was done. */
 .did-pictures {
   margin: 4px 0 8px 20px;
