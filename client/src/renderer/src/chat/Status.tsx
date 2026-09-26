@@ -4,7 +4,7 @@ import { planLine, programLine } from '../../../shared/api'
 import type { GitState, PlanWindow } from '../../../shared/api'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
-import { ago } from './time'
+import { ago, deletedIn } from './time'
 import type { Chat } from './useChat'
 
 /**
@@ -211,7 +211,7 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
             key={one.id}
             type="button"
             className={`question${chat.session?.id === one.id ? ' shown' : ''}`}
-            title={`${one.title}\n${working ? 'Working' : one.stands}\n\nA general question, deleted a day after its last answer`}
+            title={`${one.title}\n${working ? 'Working' : one.stands}\n\nA general question. ${deletedIn(one, now)}`}
             onClick={() => chat.open({ kind: 'session', id: one.id })}
           >
             <Icon name={working ? 'spinner' : 'chat'} size={12} className={working ? 'spinning' : ''} />

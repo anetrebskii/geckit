@@ -211,6 +211,8 @@ export interface ChatSession {
   readonly queued?: readonly QueuedMessage[]
   /** A general question: shown while it is open, and never as a card or a row. */
   readonly question?: boolean
+  /** When a general question that has gone quiet is deleted. */
+  readonly goes?: number
 }
 
 export interface QueuedMessage {

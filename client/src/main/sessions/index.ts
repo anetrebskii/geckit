@@ -250,6 +250,8 @@ interface Live {
   queued: Queued[]
   /** A general question, which is never listed and is thrown away a day after it has gone quiet. */
   readonly question: boolean
+  /** When the question is thrown away, counted from when it last went quiet. */
+  goes: number | undefined
 }
 
 /** `/goal <condition>` sets one, and `/goal clear` or one of the tool's other words for it ends it early. */
@@ -497,6 +499,7 @@ export class Sessions {
           ? {}
           : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0 })) }),
         ...(live?.question === true ? { question: true } : {}),
+        ...(live?.goes === undefined ? {} : { goes: live.goes }),
         ...(used === undefined && cost === undefined
           ? {}
           : {
@@ -593,6 +596,7 @@ export class Sessions {
       clearing: false,
       queued: [],
       question,
+      goes: undefined,
     }
     this.#live.set(id, live)
     return live
@@ -1688,6 +1692,10 @@ export class Sessions {
   /** An idle process is let go of after a while, unless Remote Control or something in the background is keeping it. */
   #rest(live: Live): void {
     clearTimeout(live.quiet)
+    if (live.question) {
+      live.goes = this.#now() + QUESTION_KEPT
+      this.#changed()
+    }
     live.quiet = setTimeout(
       () => {
         if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.some(running)) return

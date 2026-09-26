@@ -13,6 +13,7 @@ import { DeleteChats } from './DeleteChats'
 import { HiddenChats } from './HiddenChats'
 import { NameField } from './NameField'
 import { Projects } from './Projects'
+import { QuestionsMenu } from './Questions'
 import { emptyProfile, projectName, tint } from './project'
 import { STATUS_ICONS, Tags, Views } from './Sidebar'
 import { BoardSearch } from './Switcher'
@@ -118,29 +119,7 @@ export function TopBar({
         <span className="keys">{MOD}+Shift+N</span>
       </button>
       {asked === undefined ? null : (
-        <Menu
-          anchor={asked}
-          title="Open questions"
-          explained
-          choices={[
-            ...[...chat.questions]
-              .sort((one, other) => other.at - one.at)
-              .map((one) => ({
-                value: one.id,
-                label: one.title,
-                says: one.state === 'working' || one.state === 'asks' ? 'Working' : one.stands,
-                removable: true,
-              })),
-            { value: '', label: 'New question', icon: 'plus' },
-          ]}
-          note="Each is deleted a day after its last answer."
-          onPick={(id) => {
-            if (id === '') onAsk()
-            else chat.open({ kind: 'session', id })
-          }}
-          onRemove={(id) => chat.remove([id])}
-          onClose={() => setAsked(undefined)}
-        />
+        <QuestionsMenu chat={chat} anchor={asked} onAsk={onAsk} onClose={() => setAsked(undefined)} />
       )}
       {/* Writing it is the usual way; the arrow offers the others, each saying what it does, so recording and speaking read as ways to start a task. */}
       <span className="board-split no-drag">

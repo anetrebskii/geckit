@@ -12,7 +12,7 @@ import { macs } from '../macs'
 import type { Macs } from '../macs'
 import { emptyProfile, projectName } from './project'
 import { running } from './Tasks'
-import { ago } from './time'
+import { ago, questionLeft } from './time'
 import type { Chat } from './useChat'
 
 /**
@@ -69,6 +69,7 @@ export function PhoneBoard({
   const [now, setNow] = useState(() => Date.now())
   const [waiting, setWaiting] = useState<ReadonlyMap<string, Waiting>>(new Map())
   const [pressed, setPressed] = useState<{ readonly session: ChatSession; readonly at: DOMRect } | undefined>()
+  const [deleting, setDeleting] = useState<ChatSession | undefined>()
   const [more, setMore] = useState<ChatSession | undefined>()
   const [renaming, setRenaming] = useState<ChatSession | undefined>()
   // The row whose actions are showing; a touch anywhere else puts it back.
@@ -275,7 +276,7 @@ export function PhoneBoard({
                       aria-label={`Delete ${session.title}`}
                       onClick={() => {
                         tap('light')
-                        chat.remove([session.id])
+                        setDeleting(session)
                       }}
                     >
                       <Icon name="trash" size={18} />
@@ -301,6 +302,15 @@ export function PhoneBoard({
       {switching && paired !== undefined ? (
         <MacList paired={paired} onChange={() => setPaired(macs()?.list())} onClose={() => setSwitching(false)} />
       ) : null}
+      {deleting === undefined ? null : (
+        <Menu
+          anchor={new DOMRect()}
+          title={`Delete "${deleting.title === '' ? 'Untitled' : deleting.title}"?`}
+          choices={[{ value: 'delete', label: 'Delete', says: 'Nothing anywhere keeps a copy', danger: true }]}
+          onPick={() => chat.remove([deleting.id])}
+          onClose={() => setDeleting(undefined)}
+        />
+      )}
       {pressed === undefined ? null : (
         <Pressed
           chat={chat}
@@ -373,7 +383,7 @@ function RowBody({
       <div className="phone-row-text">
         <div className="phone-row-line">
           <span className="phone-row-title">{session.title}</span>
-          <span className="phone-row-time">{ago(session.at, now)}</span>
+          <span className="phone-row-time">{session.question === true ? (questionLeft(session, now) ?? '') : ago(session.at, now)}</span>
         </div>
         {session.state === 'asks' ? (
           <>

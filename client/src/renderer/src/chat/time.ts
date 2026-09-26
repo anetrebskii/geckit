@@ -1,3 +1,5 @@
+import type { ChatSession } from '../../../shared/api'
+
 /** Times the way this computer writes them. */
 
 const DAY = 86_400_000
@@ -10,6 +12,25 @@ const sameDay = (one: number, other: number): boolean => new Date(one).toDateStr
 
 const date = (at: number, now: number): string =>
   (new Date(at).getFullYear() === new Date(now).getFullYear() ? DATE : DATE_YEAR).format(at)
+
+/** How long until something happens, in the largest whole unit: "23h", "40m". */
+export function left(at: number, now: number): string {
+  const minutes = Math.max(1, Math.ceil((at - now) / 60_000))
+  return minutes < 60 ? `${String(minutes)}m` : `${String(Math.floor(minutes / 60))}h`
+}
+
+const answering = (question: ChatSession): boolean => question.state === 'working' || question.state === 'asks'
+
+/** When a general question goes: a day after its last answer, which one still being answered has not had yet. */
+export function deletedIn(question: ChatSession, now: number): string {
+  if (answering(question)) return 'Deleted a day after it answers'
+  return `Deleted in ${left(question.goes ?? question.at + DAY, now)}`
+}
+
+/** What a general question has left, "23h left", or nothing while it is being answered. */
+export function questionLeft(question: ChatSession, now: number): string | undefined {
+  return answering(question) ? undefined : `${left(question.goes ?? question.at + DAY, now)} left`
+}
 
 /** When a message was said: the time today, with the day before that. */
 export function stamp(at: number, now: number): string {
