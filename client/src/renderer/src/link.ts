@@ -1,3 +1,6 @@
+import { initializeApp } from 'firebase/app'
+import { collection, doc, getFirestore, onSnapshot, query, serverTimestamp, setDoc, Timestamp, where } from 'firebase/firestore'
+import type { Firestore } from 'firebase/firestore'
 import { assembler, framesOf, roomOf, seal, unseal } from '../../shared/pairing'
 import type { LinkMessage, Pairing, Signed } from '../../shared/pairing'
 
@@ -7,7 +10,7 @@ import type { LinkMessage, Pairing, Signed } from '../../shared/pairing'
  * The phone dials: it leaves an offer in the room and waits for the answer. The
  * Mac listens: it waits in the room for offers and answers each. Each side
  * gathers all its routes before it speaks, so one offer and one answer are the
- * whole of the signaling, and weroost is not asked again once they are joined.
+ * whole of the signaling, and Firestore is not asked again once they are joined.
  */
 
 export interface Link {
@@ -21,15 +24,23 @@ export interface Link {
   readonly share: (track: MediaStreamTrack | null) => Promise<void>
 }
 
-interface Signal {
-  readonly id: string
-  readonly box: string
-  readonly at: number
+// Public by design: what may be written is decided by firestore.rules in signal/.
+const FIREBASE = {
+  apiKey: 'AIzaSyC4h8OpyHUFHpQuQvn8vYdRiPXg-lh2mXc',
+  authDomain: 'geckit-signal.firebaseapp.com',
+  projectId: 'geckit-signal',
+  appId: '1:229553514713:web:15dd5a3b6ceb081012b6c8',
 }
+let store: Firestore | undefined
+const firestore = (): Firestore => (store ??= getFirestore(initializeApp(FIREBASE)))
 
 const STUN: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }]
 // An offer older than this is from a phone that has given up on it.
 const FRESH = 60_000
+// What is left in a room is deleted by Firestore's TTL some time after this.
+const KEPT = 3600_000
+// The relay is handed only to a room whose Mac said it was waiting within the last minute.
+const SEEN = 30_000
 // Past this, the routes found so far are enough.
 const GATHERING = 4000
 // A send buffer much fuller than this is where browsers start closing channels.
@@ -37,9 +48,9 @@ const BUFFERED = 1_000_000
 // Enough for text on a Retina screen at 15 frames a second; more only fills a phone's mobile data.
 const SCREEN_BITRATE = 3_000_000
 
-// The pairing service takes seconds to answer, so what it said is kept for half the day a relay's keys last; the app starting again asks afresh.
+// The relay's keys last a day, so what the function said is kept for half of it; the app starting again asks afresh.
 const KEEP = 12 * 3600_000
-// The service has taken 7 s to wake; twice that and it is not coming.
+// A function waking from cold takes seconds; much more than that and it is not coming.
 const POSTING = 15_000
 const kept = new Map<string, { readonly servers: RTCIceServer[]; readonly until: number }>()
 
@@ -47,7 +58,7 @@ async function iceServers(pairing: Pairing, room: string): Promise<RTCIceServer[
   const held = kept.get(room)
   if (held !== undefined && held.until > Date.now()) return held.servers
   try {
-    const answer = await inTime(POSTING, (signal) => fetch(`${pairing.signal}/api/fn/ice?room=${room}`, { signal }))
+    const answer = await inTime(POSTING, (signal) => fetch(`${pairing.signal}/ice?room=${room}`, { signal }))
     const said = (await answer.json()) as { readonly iceServers: RTCIceServer[] }
     kept.set(room, { servers: said.iceServers, until: Date.now() + KEEP })
     return said.iceServers
@@ -68,22 +79,34 @@ function gathered(peer: RTCPeerConnection): Promise<void> {
   })
 }
 
-async function post(pairing: Pairing, body: { room: string; kind: 'offer' | 'answer'; id: string; box: string }): Promise<void> {
-  const answer = await inTime(POSTING, (signal) =>
-    fetch(`${pairing.signal}/api/fn/signal`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal,
-    }),
+async function post(room: string, kind: 'offers' | 'answers', id: string, box: string): Promise<void> {
+  await inTime(POSTING, () =>
+    setDoc(doc(firestore(), 'rooms', room, kind, id), { box, at: serverTimestamp(), gone: Timestamp.fromMillis(Date.now() + KEPT) }),
   )
-  if (!answer.ok) throw new Error(`The pairing service answered ${String(answer.status)}`)
 }
 
-async function ask(pairing: Pairing, query: Record<string, string>, signal?: AbortSignal): Promise<{ signals: Signal[]; at: number }> {
-  const answer = await fetch(`${pairing.signal}/api/fn/signal?${new URLSearchParams(query).toString()}`, signal === undefined ? {} : { signal })
-  if (!answer.ok) throw new Error(`The pairing service answered ${String(answer.status)}`)
-  return (await answer.json()) as { signals: Signal[]; at: number }
+/** The answer to one offer, as soon as the Mac leaves it, or nothing at `until`. */
+function answerTo(room: string, id: string, until: number): Promise<string | undefined> {
+  return new Promise((done, failed) => {
+    const timer = window.setTimeout(() => {
+      stop()
+      done(undefined)
+    }, Math.max(0, until - Date.now()))
+    const stop = onSnapshot(
+      doc(firestore(), 'rooms', room, 'answers', id),
+      (found) => {
+        const box: unknown = found.get('box')
+        if (typeof box !== 'string') return
+        window.clearTimeout(timer)
+        stop()
+        done(box)
+      },
+      (error) => {
+        window.clearTimeout(timer)
+        failed(error)
+      },
+    )
+  })
 }
 
 /** Gives up at the time given even when the request does not: WebKit has been seen to keep one open past its abort signal, which left a phone reconnecting forever. */
@@ -186,19 +209,10 @@ export async function dial(pairing: Pairing, within = 45_000, step: (at: Dialing
     await gathered(peer)
     const id = randomId()
     const offer: Signed = { sdp: peer.localDescription?.sdp ?? '', at: Date.now() }
-    await post(pairing, { room, kind: 'offer', id, box: await seal(pairing.key, offer) })
+    await post(room, 'offers', id, await seal(pairing.key, offer))
     step('mac')
-    let answer: Signed | undefined
-    while (answer === undefined && Date.now() < until) {
-      // The service holds a question 10 s at most, so one open much longer than that is lost.
-      const heard = await inTime(Math.min(15_000, Math.max(1, until - Date.now())), (signal) =>
-        ask(pairing, { room, kind: 'answer', id, after: '0' }, signal),
-      ).catch((error: unknown) => {
-        if (Date.now() >= until) throw error
-        return { signals: [] }
-      })
-      for (const one of heard.signals) answer ??= await unseal<Signed>(pairing.key, one.box)
-    }
+    const box = await answerTo(room, id, until)
+    const answer = box === undefined ? undefined : await unseal<Signed>(pairing.key, box)
     if (answer === undefined) throw new Error('The Mac did not answer')
     await peer.setRemoteDescription({ type: 'answer', sdp: answer.sdp })
     step('joining')
@@ -217,10 +231,11 @@ export async function dial(pairing: Pairing, within = 45_000, step: (at: Dialing
 export function listen(pairing: Pairing, joined: (link: Link) => void, trouble: (said: string | undefined) => void): () => void {
   const answered = new Set<string>()
   const peers = new Set<RTCPeerConnection>()
-  const stop = new AbortController()
+  const stops: (() => void)[] = []
+  let stopped = false
 
-  const answer = async (room: string, one: Signal): Promise<void> => {
-    const offer = await unseal<Signed>(pairing.key, one.box)
+  const answer = async (room: string, id: string, box: string): Promise<void> => {
+    const offer = await unseal<Signed>(pairing.key, box)
     if (offer === undefined || Date.now() - offer.at > FRESH) return
     const peer = new RTCPeerConnection({ iceServers: await iceServers(pairing, room) })
     peers.add(peer)
@@ -237,36 +252,38 @@ export function listen(pairing: Pairing, joined: (link: Link) => void, trouble: 
     await peer.setLocalDescription(await peer.createAnswer())
     await gathered(peer)
     const back: Signed = { sdp: peer.localDescription?.sdp ?? '', at: Date.now() }
-    await post(pairing, { room, kind: 'answer', id: one.id, box: await seal(pairing.key, back) })
+    await post(room, 'answers', id, await seal(pairing.key, back))
   }
 
-  void (async () => {
-    const room = await roomOf(pairing.key)
-    let after = 0
-    while (!stop.signal.aborted) {
-      try {
-        // Held to a time of its own: one question left open by the service would leave this Mac deaf to every phone.
-        const heard = await inTime(15_000, (signal) =>
-          ask(pairing, { room, kind: 'offer', after: String(after) }, AbortSignal.any([signal, stop.signal])),
-        )
-        trouble(undefined)
-        // Past the newest offer seen; with none, a little behind the service's clock, so one arriving as this asked is not missed.
-        after = heard.signals.length === 0 ? heard.at - 2000 : Math.max(...heard.signals.map((one) => one.at)) + 1
-        for (const one of heard.signals) {
-          if (answered.has(one.id)) continue
-          answered.add(one.id)
-          void answer(room, one).catch(() => undefined)
-        }
-      } catch {
-        if (stop.signal.aborted) return
-        trouble('The pairing service did not answer. Phones cannot find this Mac until it does.')
-        await new Promise((done) => setTimeout(done, 5000))
-      }
-    }
-  })()
+  const unreachable = 'The pairing service did not answer. Phones cannot find this Mac until it does.'
+  void roomOf(pairing.key).then((room) => {
+    if (stopped) return
+    const seen = (): void => void setDoc(doc(firestore(), 'rooms', room), { seen: serverTimestamp() }).catch(() => undefined)
+    seen()
+    const timer = window.setInterval(seen, SEEN)
+    stops.push(() => window.clearInterval(timer))
+    const fresh = query(collection(firestore(), 'rooms', room, 'offers'), where('at', '>=', Timestamp.fromMillis(Date.now() - FRESH)))
+    stops.push(
+      onSnapshot(
+        fresh,
+        { includeMetadataChanges: true },
+        (found) => {
+          trouble(found.metadata.fromCache ? unreachable : undefined)
+          for (const change of found.docChanges()) {
+            const box: unknown = change.doc.get('box')
+            if (change.type !== 'added' || answered.has(change.doc.id) || typeof box !== 'string') continue
+            answered.add(change.doc.id)
+            void answer(room, change.doc.id, box).catch(() => undefined)
+          }
+        },
+        () => trouble(unreachable),
+      ),
+    )
+  })
 
   return () => {
-    stop.abort()
+    stopped = true
+    for (const stop of stops) stop()
     for (const peer of peers) peer.close()
   }
 }
