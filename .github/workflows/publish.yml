@@ -32,6 +32,7 @@ jobs:
           npm test
 
   # Decided once, so the three builds carry the same number. The major is set here and nowhere else; the minor is one past the highest tag that has it, and the tag is made before the builds start. The same action and the same shape as Twins-AI.
+  # The action pushes .version to main, which the ruleset lets only the owner update, so it pushes with the owner's token. Pull requests never see this secret.
   version:
     needs: test
     runs-on: ubuntu-latest
@@ -39,10 +40,10 @@ jobs:
       version: ${{ steps.pick.outputs.version }}
     steps:
       - uses: actions/checkout@v5
-      - uses: entech-code/auto-version-tagging-action@HEAD
+      - uses: entech-code/auto-version-tagging-action@7615bc1048b4e526aa6403e39e38bc0dba86f981
         id: pick
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.VERSION_TOKEN }}
           majorVersion: 1
 
   publish:

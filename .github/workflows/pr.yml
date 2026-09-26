@@ -1,0 +1,101 @@
+name: Pull request
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# A pull request from a fork runs with code nobody has reviewed yet, so the token only reads and no secret is used anywhere below.
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+  # The same builds as a release, unsigned, kept on the run for a week so a reviewer can install what the pull request makes.
+  build:
+    needs: check
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: client
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - run: npm ci
+      - run: npm run build
+      - name: Package unsigned
+        run: |
+          sign=()
+          if [ "${{ matrix.platform }}" = mac ]; then sign=(-c.mac.identity=- -c.mac.hardenedRuntime=false); fi
+          npm exec electron-builder -- --publish never --${{ matrix.platform }} "${sign[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: geckit-${{ matrix.platform }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            client/release/build/*.dmg
+            client/release/build/*.exe
+            client/release/build/*.AppImage
+
+  ios:
+    needs: check
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - run: |
+          npm ci --prefix ../client
+          npm ci
+          npm run build
+          npx cap sync ios
+      - run: xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/GeckIt.xcarchive" archive CODE_SIGNING_ALLOWED=NO
