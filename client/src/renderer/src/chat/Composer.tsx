@@ -379,6 +379,30 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         <textarea
           ref={field}
           rows={1}
+        {ON_PHONE ? (
+          <>
+            <button
+              type="button"
+              className="photo-pick"
+              disabled={chat.root === undefined}
+              aria-label="Add a photo"
+              onClick={() => photos.current?.click()}
+            >
+              <Icon name="photo" size={18} />
+            </button>
+            <input
+              ref={photos}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(event) => {
+                addFiles([...(event.target.files ?? [])])
+                event.target.value = ''
+              }}
+            />
+          </>
+        ) : null}
           value={chat.draft}
           placeholder={
             chat.root === undefined
@@ -452,30 +476,6 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           }}
         />
         <div className="composer-bar">
-          {ON_PHONE ? (
-            <>
-              <button
-                type="button"
-                className="picker photo-pick"
-                disabled={chat.root === undefined}
-                aria-label="Add a photo"
-                onClick={() => photos.current?.click()}
-              >
-                <Icon name="photo" size={16} />
-              </button>
-              <input
-                ref={photos}
-                type="file"
-                accept="image/*"
-                multiple
-                hidden
-                onChange={(event) => {
-                  addFiles([...(event.target.files ?? [])])
-                  event.target.value = ''
-                }}
-              />
-            </>
-          ) : null}
           <Picker
             label={SESSION_MODES.find((one) => one.mode === chat.mode)?.label ?? 'Ask'}
             choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: one.why }))}

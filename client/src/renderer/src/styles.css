@@ -5611,10 +5611,12 @@ html.phone.keyboard .composer {
   padding-bottom: 8px;
 }
 
-/* Mode, tasks and goal as a row of chips above the field, scrolled sideways when they do not fit; the field under them is one round line with Send inside it, as in Messages. */
+/* As in Messages: a round photo button beside one round field with Send inside it, and above them the phrases and then mode, tasks and goal, each one row of filled capsules that runs to the screen's edges and scrolls sideways. */
 html.phone .composer-inner {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  column-gap: 8px;
+  align-items: end;
   background: none;
   border: 0;
   border-radius: 0;
@@ -5629,16 +5631,16 @@ html.phone .composer-inner textarea {
   padding: 8px 48px 8px 16px;
   line-height: 22px;
   background: var(--field);
-  border: 1px solid var(--border);
+  border: 1px solid var(--separator);
   border-radius: 20px;
   scrollbar-width: none;
 }
 
 html.phone .composer-bar {
-  order: -1;
   flex-wrap: nowrap;
   gap: 6px;
-  padding: 0 0 8px;
+  margin: 0 -10px;
+  padding: 0 10px 8px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -5651,20 +5653,66 @@ html.phone .composer-bar .picker {
   flex: none;
   height: 32px;
   padding: 0 12px;
+html.phone .composer-inner > * {
+  grid-column: 1 / -1;
+}
+
+html.phone .composer-inner > .photo-pick {
+  grid-column: 1;
+}
+
+html.phone .composer-inner > textarea {
+  grid-column: 2;
+}
+
   font-size: 15px;
   color: var(--text);
   background: var(--fill);
   border-radius: 16px;
 }
 
-html.phone .composer-bar .photo-pick {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  padding: 0;
+html.phone .phrase {
+  max-width: 240px;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
+html.phone .phrase.keep {
+  width: 30px;
+  padding: 0;
+}
+  transition: border-color 0.2s;
+}
+
+/* Beside the photo button a long placeholder would take two lines, so it ends in an ellipsis instead. */
+html.phone .composer-inner textarea::placeholder {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+html.phone .composer-inner textarea:focus {
+  border-color: var(--fill-strong);
+}
+
+html.phone .photo-pick {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 2px;
+  padding: 0;
+  color: var(--text-dim);
+  background: var(--fill);
+  border: 0;
+  border-radius: 18px;
+}
+
+html.phone .photo-pick:active {
+  background: var(--fill-strong);
+
 html.phone .composer-bar .goal-picker {
+html.phone .phrases,
   max-width: 220px;
   color: var(--accent);
   background: var(--accent-soft);
@@ -5674,15 +5722,22 @@ html.phone .composer-bar .spacer,
 html.phone .composer-hint {
   display: none;
 }
+html.phone .phrases::-webkit-scrollbar,
 
 /* Held to the field's last line, and not clipped by the chip row it sits in, which is not what it is placed against. */
 html.phone .send {
   position: absolute;
+html.phone .composer-bar {
+  order: -1;
+}
+
+html.phone .phrase,
   right: 4px;
   bottom: 4px;
   width: 32px;
-  height: 32px;
-  border-radius: 16px;
+  height: 30px;
+  border: 0;
+  border-radius: 15px;
 }
 
 html.phone .send.stop {
@@ -5694,6 +5749,15 @@ html.phone .send:disabled {
   color: var(--bg-raised);
   background: var(--fill-strong);
 }
+  justify-content: center;
+  color: var(--text-dim);
+  background: none;
+  border: 1px dashed var(--border-strong);
+}
+
+html.phone .phrase:active,
+html.phone .composer-bar .picker:active {
+  background: var(--fill-strong);
 
 html.phone .send.listening {
   color: var(--danger-text);
@@ -5722,7 +5786,8 @@ html.phone .notice {
 
 html.phone .notice .title,
 html.phone .notice .body {
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 @keyframes banner {
