@@ -5629,37 +5629,6 @@ html.phone .composer-inner {
   border-radius: 0;
 }
 
-html.phone .composer-inner:focus-within {
-  box-shadow: none;
-}
-
-html.phone .composer-inner textarea {
-  min-height: 40px;
-  padding: 8px 48px 8px 16px;
-  line-height: 22px;
-  background: var(--field);
-  border: 1px solid var(--separator);
-  border-radius: 20px;
-  scrollbar-width: none;
-}
-
-html.phone .composer-bar {
-  flex-wrap: nowrap;
-  gap: 6px;
-  margin: 0 -10px;
-  padding: 0 10px 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-html.phone .composer-bar::-webkit-scrollbar {
-  display: none;
-}
-
-html.phone .composer-bar .picker {
-  flex: none;
-  height: 32px;
-  padding: 0 12px;
 html.phone .composer-inner > * {
   grid-column: 1 / -1;
 }
@@ -5672,22 +5641,18 @@ html.phone .composer-inner > textarea {
   grid-column: 2;
 }
 
-  font-size: 15px;
-  color: var(--text);
-  background: var(--fill);
-  border-radius: 16px;
+html.phone .composer-inner:focus-within {
+  box-shadow: none;
 }
 
-html.phone .phrase {
-  max-width: 240px;
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
-html.phone .phrase.keep {
-  width: 30px;
-  padding: 0;
-}
+html.phone .composer-inner textarea {
+  min-height: 40px;
+  padding: 8px 48px 8px 16px;
+  line-height: 22px;
+  background: var(--field);
+  border: 1px solid var(--separator);
+  border-radius: 20px;
+  scrollbar-width: none;
   transition: border-color 0.2s;
 }
 
@@ -5717,9 +5682,61 @@ html.phone .photo-pick {
 
 html.phone .photo-pick:active {
   background: var(--fill-strong);
+}
+
+html.phone .phrases,
+html.phone .composer-bar {
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin: 0 -10px;
+  padding: 0 10px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+html.phone .phrases::-webkit-scrollbar,
+html.phone .composer-bar::-webkit-scrollbar {
+  display: none;
+}
+
+html.phone .composer-bar {
+  order: -1;
+}
+
+html.phone .phrase,
+html.phone .composer-bar .picker {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--fill);
+  border: 0;
+  border-radius: 15px;
+}
+
+html.phone .phrase {
+  max-width: 240px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+html.phone .phrase.keep {
+  width: 30px;
+  padding: 0;
+  justify-content: center;
+  color: var(--text-dim);
+  background: none;
+  border: 1px dashed var(--border-strong);
+}
+
+html.phone .phrase:active,
+html.phone .composer-bar .picker:active {
+  background: var(--fill-strong);
+}
 
 html.phone .composer-bar .goal-picker {
-html.phone .phrases,
   max-width: 220px;
   color: var(--accent);
   background: var(--accent-soft);
@@ -5729,22 +5746,15 @@ html.phone .composer-bar .spacer,
 html.phone .composer-hint {
   display: none;
 }
-html.phone .phrases::-webkit-scrollbar,
 
 /* Held to the field's last line, and not clipped by the chip row it sits in, which is not what it is placed against. */
 html.phone .send {
   position: absolute;
-html.phone .composer-bar {
-  order: -1;
-}
-
-html.phone .phrase,
   right: 4px;
   bottom: 4px;
   width: 32px;
-  height: 30px;
-  border: 0;
-  border-radius: 15px;
+  height: 32px;
+  border-radius: 16px;
 }
 
 html.phone .send.stop {
@@ -5756,15 +5766,6 @@ html.phone .send:disabled {
   color: var(--bg-raised);
   background: var(--fill-strong);
 }
-  justify-content: center;
-  color: var(--text-dim);
-  background: none;
-  border: 1px dashed var(--border-strong);
-}
-
-html.phone .phrase:active,
-html.phone .composer-bar .picker:active {
-  background: var(--fill-strong);
 
 html.phone .send.listening {
   color: var(--danger-text);
@@ -5793,8 +5794,7 @@ html.phone .notice {
 
 html.phone .notice .title,
 html.phone .notice .body {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 15px;
 }
 
 @keyframes banner {

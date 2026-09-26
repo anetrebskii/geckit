@@ -379,9 +379,6 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             )}
           </div>
         )}
-        <textarea
-          ref={field}
-          rows={1}
         {ON_PHONE ? (
           <>
             <button
@@ -406,6 +403,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             />
           </>
         ) : null}
+        <textarea
+          ref={field}
+          rows={1}
           value={chat.draft}
           placeholder={
             chat.root === undefined
