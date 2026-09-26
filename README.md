@@ -16,10 +16,7 @@ GeckIt makes your Claude Code chats into a Kanban board with tasks and projects.
 <p align="center">Free and open source. The board runs your own Claude Code on your Claude subscription, with no API key.</p>
 
 <a href="https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/video/geckit-dark.webp">
-    <img src="docs/video/geckit-light.webp" alt="A new task with a goal is started, Claude works on it, a question from another task is answered, and the new card moves to In review by itself">
-  </picture>
+  <img src="docs/video/geckit-light.webp" alt="A new task with a goal is started, Claude works on it, a question from another task is answered, and the new card moves to In review by itself">
 </a>
 
 A new task is started with a goal. While Claude works on it, another task asks to run a command and gets an answer. When the goal holds, the card moves to In review by itself. [Play it as a video](https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec).
