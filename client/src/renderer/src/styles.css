@@ -525,36 +525,128 @@ textarea {
   color: var(--danger);
 }
 
-.menu-row {
+/* The open questions: a title with the time left at its right, one line of the answer under it. */
+.questions-menu {
+  width: min(340px, calc(100vw - 16px));
+}
+
+.question-item {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 52px;
+  border-radius: 5px;
 }
 
-.menu-row .menu-item {
-  padding-right: 30px;
+.question-item:hover,
+.question-item.confirming {
+  background: var(--bg-hover);
 }
 
-.menu-remove {
+.question-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: 52px;
+  justify-content: center;
+  padding: 7px 72px 7px 31px;
+  text-align: left;
+}
+
+.question-title,
+.question-says {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.question-says {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* Where the board cards put their time. It makes way for the bin under the pointer. */
+.question-left {
   position: absolute;
-  top: 50%;
+  top: 8px;
+  right: 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.question-bin {
+  position: absolute;
+  top: 5px;
   right: 5px;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
   color: var(--text-faint);
   opacity: 0;
-  transform: translateY(-50%);
 }
 
-.menu-row:hover .menu-remove,
-.menu-remove:focus-visible {
+.question-item:hover .question-left {
+  visibility: hidden;
+}
+
+.question-item:hover .question-bin,
+.question-bin:focus-visible {
   opacity: 1;
 }
 
-.menu-remove:hover {
+.question-bin:hover {
   color: var(--danger);
-  background: var(--bg-hover);
+  background: var(--border);
+}
+
+/* The row asks in place, on one line and at the same height, so nothing under it moves. */
+.question-item.confirming {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 0 31px;
+}
+
+.question-item.confirming .question-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.question-confirm {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.question-cancel,
+.question-delete {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 11px;
+  font-size: 12px;
+  border-radius: 5px;
+}
+
+.question-cancel {
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+}
+
+.question-cancel:hover {
+  color: var(--text);
+}
+
+.question-delete {
+  color: var(--danger-text);
+  background: var(--danger-solid);
+  border: 1px solid transparent;
 }
 
 /* The project picker */

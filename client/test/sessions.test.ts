@@ -1518,6 +1518,7 @@ describe('general questions', () => {
 
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     expect(built.sessions.wanting()).toBe(0)
+    expect(of(built.rows, id)?.goes).toBe(1_000 + 24 * 60 * 60_000)
     await vi.advanceTimersByTimeAsync(10 * 60_000)
     expect(built.fake.ended).toBe(1)
     expect(of(built.rows, id)?.question).toBe(true)
