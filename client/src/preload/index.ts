@@ -5,6 +5,7 @@ import type {
   Browser,
   CardAnswer,
   FileShown,
+  Folders,
   ChatFound,
   ChatSession,
   ClaudeAccount,
@@ -34,6 +35,7 @@ import type {
   ScreenSource,
   VoiceMode,
 } from '../shared/api'
+import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from '../shared/hosts'
 import type { Link } from '../shared/links'
 import { pieceOf } from '../shared/pairing'
 import type { Pairing, Piece } from '../shared/pairing'
@@ -218,6 +220,34 @@ const geckit = {
     onSpotlight: (said: (again: boolean) => void): (() => void) => listen('chat:spotlight', said),
     /** Everything above is listened for: what main held while the window loaded can come now. */
     listening: (): void => ipcRenderer.send('chat:listening'),
+  },
+
+  /** Other computers conversations run on, reached over SSH. */
+  hosts: {
+    list: (): Promise<HostView[]> => ipcRenderer.invoke('hosts:list'),
+    onChanged: (said: (hosts: readonly HostView[]) => void): (() => void) => listen('hosts:changed', said),
+    /** The hosts in the person's SSH config, offered as an address is typed. */
+    known: (): Promise<KnownHost[]> => ipcRenderer.invoke('hosts:known'),
+    /** Reaches a host not yet added, and keeps it once it was reached; what it checks arrives through onChecks. */
+    check: (draft: HostDraft): Promise<{ readonly ok: true; readonly host: HostView } | { readonly ok: false; readonly problem: string }> =>
+      ipcRenderer.invoke('hosts:check', draft),
+    onChecks: (said: (lines: readonly HostCheck[]) => void): (() => void) => listen('hosts:checks', said),
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('hosts:remove', id),
+    connect: (id: string): void => ipcRenderer.send('hosts:connect', id),
+    reconnect: (id: string): void => ipcRenderer.send('hosts:reconnect', id),
+    disconnect: (id: string): void => ipcRenderer.send('hosts:disconnect', id),
+    /** One level of a host's folders, from its home where no path is given. */
+    folders: (id: string, path?: string): Promise<Folders | undefined> => ipcRenderer.invoke('hosts:folders', id, path ?? null),
+    /** A folder on a host as a project; the project's root is given back. */
+    addFolder: (id: string, path: string): Promise<string | undefined> => ipcRenderer.invoke('hosts:addFolder', id, path),
+    /** What hosts are asking now, and each new question as it is asked. */
+    prompts: (): Promise<HostPrompt[]> => ipcRenderer.invoke('hosts:prompts'),
+    onPrompt: (said: (prompt: HostPrompt) => void): (() => void) => listen('hosts:prompt', said),
+    onAnswered: (said: (id: string) => void): (() => void) => listen('hosts:answered', said),
+    answer: (answer: HostAnswer): void => ipcRenderer.send('hosts:answer', answer),
+    install: (id: string): Promise<{ readonly ok: boolean; readonly text: string }> => ipcRenderer.invoke('hosts:install', id),
+    /** A terminal signed in to the host, running `run` there where one is given. */
+    terminal: (id: string, run?: string): void => ipcRenderer.send('hosts:terminal', id, run ?? null),
   },
 
   voice: {

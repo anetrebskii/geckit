@@ -1,6 +1,6 @@
 import { exec, execFile } from 'node:child_process'
 import { homedir, hostname } from 'node:os'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import {
   app,
@@ -62,6 +62,17 @@ import type { LocalAsk } from '../shared/local'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import type { McpChange } from './sessions/mcp'
+import { readMcp } from './sessions/mcp'
+import { readBrowsers } from './sessions/chrome'
+import { claudeFile, deleteClaude, forkPoint, listClaude, readClaudeSession, readGoal, readLinks } from './sessions/disk'
+import { HostDisk } from './hosts/disk'
+import { Hosts } from './hosts/hosts'
+import { hostExists, hostFile, hostFiles, hostGit, hostTerminal, routedClaude, routedShell } from './hosts/route'
+import type { Routes } from './hosts/route'
+import { runsAt } from './hosts/runs'
+import { secretsAt } from './hosts/secrets'
+import { hostOf, isRemote } from '../shared/hosts'
+import type { HostAnswer, HostDraft } from '../shared/hosts'
 import { searchClaude } from './sessions/search'
 import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
 import { forgetProject, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
@@ -98,6 +109,7 @@ const ORDER = ANYWHERE.orders
 const RECORD = ANYWHERE.record
 
 let sessions: Sessions | undefined
+let routes: Routes | undefined
 let cutOffered = false
 /** What GECKIT.md was last kept at, so it is only written when the switch moves. */
 let guided: boolean | undefined
@@ -132,10 +144,74 @@ const badge = (): void => {
   app.dock?.setBadge(wanting === 0 ? '' : String(wanting))
 }
 
-function build(): Sessions {
+/** Everything about other computers: who they are, what runs on them, and their conversations' files. */
+function buildHosts(): Routes {
+  const folder = join(app.getPath('userData'), 'hosts')
+  const secrets = secretsAt(join(folder, 'secrets.json'))
+  const hosts = new Hosts({
+    folder,
+    executable: process.execPath,
+    hosts: () => getSettings().hosts,
+    save: (list) => setSettings({ hosts: list }),
+    forgetProjects: (id) => {
+      for (const root of getSettings().projects.filter((one) => hostOf(one) === id)) forgetProject(root)
+      void routes?.disk.forget(id)
+    },
+    remember: (root) => rememberProject(root),
+    changed: (views) => tell('hosts:changed', views),
+    prompt: (prompt) => {
+      tell('hosts:prompt', prompt)
+      // A host asking while nothing of GeckIt's is in front brings the window up to answer it.
+      if (!watchingChat()) openChat()
+    },
+    answered: (id) => tell('hosts:answered', id),
+    checks: (lines) => tell('hosts:checks', lines),
+    secrets,
+  })
+  return { hosts, disk: new HostDisk(hosts, folder), runs: runsAt(join(folder, 'runs.json')) }
+}
+
+/** Claude Code's files about a root: this computer's, or a host's through its copy here. */
+function routedDisk(held: Routes): NonNullable<ConstructorParameters<typeof Sessions>[0]['disk']> {
+  const local = {
+    list: listClaude,
+    read: readClaudeSession,
+    has: async (root: string, id: string) => (await claudeFile(root, id)) !== undefined,
+    delete: deleteClaude,
+    goal: readGoal,
+    forkPoint,
+    links: readLinks,
+  }
+  return {
+    list: (root) => (isRemote(root) ? held.disk.list(root) : local.list(root)),
+    read: (root, id) => (isRemote(root) ? held.disk.read(root, id) : local.read(root, id)),
+    has: (root, id) => (isRemote(root) ? held.disk.has(root, id) : local.has(root, id)),
+    delete: (root, id) => (isRemote(root) ? held.disk.delete(root, id) : local.delete(root, id)),
+    goal: (root, id) => (isRemote(root) ? held.disk.goal(root, id) : local.goal(root, id)),
+    forkPoint: (root, id, at) => (isRemote(root) ? held.disk.forkPoint(root, id, at) : local.forkPoint(root, id, at)),
+    links: (root, id) => (isRemote(root) ? held.disk.links(root, id) : local.links(root, id)),
+  }
+}
+
+/** A terminal for a root: in its folder here, or signed in to its host and in its folder there. */
+function terminalFor(root: string, run: string): void {
+  if (!isRemote(root) || routes === undefined) {
+    openTerminal(root, run)
+    return
+  }
+  const line = hostTerminal(routes, root, run)
+  if (line !== undefined) openTerminal(homedir(), line)
+}
+
+function build(held: Routes): Sessions {
   return new Sessions({
     notes: notesStore(),
-    ...(process.platform === 'darwin' ? { terminal: openTerminal } : {}),
+    ...(process.platform === 'darwin' ? { terminal: terminalFor } : {}),
+    claude: routedClaude(held),
+    disk: routedDisk(held),
+    shell: routedShell(held),
+    mcp: (root, change) => (isRemote(root) ? Promise.resolve(undefined) : readMcp(root, change)),
+    browsers: (root, pick) => (isRemote(root) ? Promise.resolve(undefined) : readBrowsers(root, pick)),
     changed: (all: readonly ChatSession[]) => {
       // Every conversation it holds, which is more than the window lists: another profile's rows stay held after a switch until they are read again. A general question belongs to no project and is always told.
       const settings = getSettings()
@@ -491,6 +567,7 @@ function hideChat(id: string): void {
 }
 
 async function gitFor(root: string, fetched: (state: GitState | undefined) => void): Promise<GitState | undefined> {
+  if (isRemote(root)) return routes === undefined ? undefined : hostGit(routes, root)
   const state = await gitState(root)
   // What is there to pull is only known once the remote is asked, which is slow, so it follows.
   if (state?.upstream !== undefined) {
@@ -499,6 +576,36 @@ async function gitFor(root: string, fetched: (state: GitState | undefined) => vo
     })
   }
   return state
+}
+
+const existsFor = (root: string, path: string): Promise<boolean> =>
+  isRemote(root) ? (routes === undefined ? Promise.resolve(false) : hostExists(routes, root, path)) : isThere(root, path)
+
+const fileFor = (root: string, path: string) =>
+  isRemote(root) && routes !== undefined ? hostFile(routes, root, path) : fileShown(root, path)
+
+const filesFor = (root: string): Promise<string[]> =>
+  isRemote(root) ? (routes === undefined ? Promise.resolve([]) : hostFiles(routes, root)) : projectFiles(root)
+
+/** What a window may ask about hosts. */
+function wireHosts(): void {
+  const hosts = (): Hosts | undefined => routes?.hosts
+  ipcMain.handle('hosts:list', () => hosts()?.views() ?? [])
+  ipcMain.handle('hosts:known', () => hosts()?.known() ?? [])
+  ipcMain.handle('hosts:check', (_event, draft: HostDraft) => hosts()?.check(draft) ?? { ok: false, problem: 'Not ready yet.' })
+  ipcMain.handle('hosts:remove', (_event, id: string) => hosts()?.remove(id))
+  ipcMain.on('hosts:connect', (_event, id: string) => void hosts()?.connect(id))
+  ipcMain.on('hosts:reconnect', (_event, id: string) => hosts()?.reconnect(id))
+  ipcMain.on('hosts:disconnect', (_event, id: string) => hosts()?.disconnect(id))
+  ipcMain.handle('hosts:folders', (_event, id: string, path: string | undefined) => hosts()?.folders(id, path ?? undefined))
+  ipcMain.handle('hosts:addFolder', (_event, id: string, path: string) => hosts()?.addFolder(id, path))
+  ipcMain.handle('hosts:prompts', () => hosts()?.prompts() ?? [])
+  ipcMain.on('hosts:answer', (_event, answer: HostAnswer) => hosts()?.answer(answer))
+  ipcMain.handle('hosts:install', (_event, id: string) => hosts()?.install(id) ?? { ok: false, text: 'Not ready yet.' })
+  ipcMain.on('hosts:terminal', (_event, id: string, run: string | undefined) => {
+    const line = hosts()?.terminalCommand(id, undefined, run ?? undefined)
+    if (line !== undefined) openTerminal(homedir(), line)
+  })
 }
 
 function wire(): void {
@@ -578,6 +685,7 @@ function wire(): void {
       if (!event.sender.isDestroyed()) event.sender.send('chat:git', { root, state })
     }),
   )
+  wireHosts()
   ipcMain.handle('chat:addProject', async () => {
     const window = shownChat() ?? chatWindow()
     const picked = await dialog.showOpenDialog(window, {
@@ -648,7 +756,7 @@ function wire(): void {
   ipcMain.on('chat:handOver', (_event, id: string) => sessions?.handOver(id))
   ipcMain.on('chat:terminal', (_event, id: string, root: string) => {
     sessions?.handOver(id)
-    openTerminal(root, resumeCommand(id))
+    terminalFor(root, resumeCommand(id))
   })
   ipcMain.handle('chat:shell', (_event, asked: ShellCommand) => sessions?.shell(asked))
   ipcMain.on('chat:stopShell', (_event, id: string, item: string) => sessions?.stopShell(id, item))
@@ -657,15 +765,20 @@ function wire(): void {
   ipcMain.on('chat:stopTask', (_event, id: string, task: string) => sessions?.stopTask(id, task))
   ipcMain.on('chat:clearTask', (_event, id: string, task: string) => sessions?.clearTask(id, task))
   ipcMain.handle('chat:taskOutput', (_event, id: string, task: string) => sessions?.taskOutput(id, task))
-  ipcMain.on('chat:reveal', (_event, root: string, path: string) => shell.showItemInFolder(fileAt(root, path)))
-  ipcMain.handle('chat:exists', (_event, root: string, path: string) => isThere(root, path))
-  ipcMain.handle('chat:file', (_event, root: string, path: string) => fileShown(root, path))
-  ipcMain.handle('chat:repo', (_event, root: string) => gitRepo(root))
-  ipcMain.handle('chat:files', (_event, root: string) => projectFiles(root))
-  ipcMain.on('chat:openFile', (_event, root: string, path: string) => openFile(getSettings().openWith, root, path))
+  // A file on a host is not on this computer to show in a folder or open in an application here.
+  ipcMain.on('chat:reveal', (_event, root: string, path: string) => {
+    if (!isRemote(root)) shell.showItemInFolder(fileAt(root, path))
+  })
+  ipcMain.handle('chat:exists', (_event, root: string, path: string) => existsFor(root, path))
+  ipcMain.handle('chat:file', (_event, root: string, path: string) => fileFor(root, path))
+  ipcMain.handle('chat:repo', (_event, root: string) => (isRemote(root) ? undefined : gitRepo(root)))
+  ipcMain.handle('chat:files', (_event, root: string) => filesFor(root))
+  ipcMain.on('chat:openFile', (_event, root: string, path: string) => {
+    if (!isRemote(root)) openFile(getSettings().openWith, root, path)
+  })
   ipcMain.on('chat:fileMenu', (event, root: string, path: string) => {
     const window = BrowserWindow.fromWebContents(event.sender)
-    if (window !== null) fileMenu(window, root, path)
+    if (window !== null && !isRemote(root)) fileMenu(window, root, path)
   })
   ipcMain.handle('settings:pickApp', (event) => pickApp(BrowserWindow.fromWebContents(event.sender) ?? panelWindow()))
   ipcMain.handle('settings:accessibility', () => process.platform !== 'darwin' || systemPreferences.isTrustedAccessibilityClient(false))
@@ -819,12 +932,21 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.mcp': (root: string, id: string | undefined, change: McpChange | undefined) => held()?.mcp(root, id, change),
     'chat.browsers': (root: string, id: string | undefined, pick: string | undefined) => held()?.browsers(root, id, pick),
     'chat.git': (root: string) => gitFor(root, (state) => shownPeer()?.webContents.send('peer:tell', 'chat:git', { root, state })),
-    'chat.exists': (root: string, path: string) => isThere(root, path),
-    'chat.file': (root: string, path: string) => fileShown(root, path),
+    'chat.exists': (root: string, path: string) => existsFor(root, path),
+    'chat.file': (root: string, path: string) => fileFor(root, path),
     // A page a session serves on the Mac's localhost, opened on the phone: each of its requests is made here.
     'local.fetch': (asked: LocalAsk) => localFetch(asked),
-    'chat.repo': (root: string) => gitRepo(root),
-    'chat.files': (root: string) => projectFiles(root),
+    'chat.repo': (root: string) => (isRemote(root) ? undefined : gitRepo(root)),
+    'chat.files': (root: string) => filesFor(root),
+    // The phone reaches hosts only through this computer: it sees them, answers what they ask, and adds their folders.
+    'hosts.list': () => routes?.hosts.views() ?? [],
+    'hosts.connect': (id: string) => void routes?.hosts.connect(id),
+    'hosts.reconnect': (id: string) => routes?.hosts.reconnect(id),
+    'hosts.disconnect': (id: string) => routes?.hosts.disconnect(id),
+    'hosts.folders': (id: string, path: string | undefined) => routes?.hosts.folders(id, path),
+    'hosts.addFolder': (id: string, path: string) => routes?.hosts.addFolder(id, path),
+    'hosts.prompts': () => routes?.hosts.prompts() ?? [],
+    'hosts.answer': (answer: HostAnswer) => routes?.hosts.answer(answer),
     'chat.forgetProject': (root: string) => forgetProject(root),
     'chat.folders': (path: string | undefined) => foldersIn(path),
     'mac.version': () => app.getVersion(),
@@ -900,9 +1022,13 @@ if (!app.requestSingleInstanceLock()) {
     else Menu.setApplicationMenu(null)
     // A packaged app carries its icon in the bundle; run from the source, the Dock would show Electron's, so it shows one that says Local.
     if (!app.isPackaged) app.dock?.setIcon(resolve(import.meta.dirname, '../../assets/icon-dev.png'))
-    const started = build()
+    const held = buildHosts()
+    routes = held
+    const started = build(held)
     sessions = started
     void started.resumeQueues()
+    // What was running on hosts when GeckIt closed is still running there, and is picked up.
+    started.reattach(Object.entries(held.runs.all()).map(([id, run]) => ({ id, root: run.root })))
     nativeTheme.themeSource = getSettings().theme
     guided = getSettings().guideClaude
     void keepGuide(guided)
@@ -959,5 +1085,6 @@ app.on('window-all-closed', () => undefined)
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   sessions?.dispose()
+  routes?.hosts.dispose()
   closePeer()
 })

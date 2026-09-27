@@ -22,7 +22,7 @@ type Json = Readonly<Record<string, unknown>>
  * nothing the tool reports and sends the plan's sign-in to the gateway, which
  * is worse.
  */
-const OFF_PLAN = [
+export const OFF_PLAN = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN',
   'ANTHROPIC_BASE_URL',
@@ -92,7 +92,11 @@ const printed = (args: readonly string[]): Promise<string | undefined> =>
 
 export async function claudeAccount(): Promise<ClaudeAccount> {
   const out = await printed(['auth', 'status'])
-  if (out === undefined) return { here: false, signedIn: undefined }
+  return out === undefined ? { here: false, signedIn: undefined } : accountFrom(out)
+}
+
+/** What `claude auth status` printed, read into who is signed in and on what plan. */
+export function accountFrom(out: string): ClaudeAccount {
   try {
     const said = JSON.parse(out) as Json
     if (said['loggedIn'] !== true) return { here: true, signedIn: false }

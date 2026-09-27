@@ -1,0 +1,142 @@
+import { randomBytes } from 'node:crypto'
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:net'
+import type { Server } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import type { HostPrompt } from '../../shared/hosts'
+
+/**
+ * What ssh asks, brought to GeckIt.
+ *
+ * With no terminal to ask in, OpenSSH runs the program in `SSH_ASKPASS` with
+ * the question as its argument and takes what it prints as the answer. That
+ * program is GeckIt's own binary run as Node on a few lines written here,
+ * which carry the question over a socket only this process listens on, with a
+ * token made at start, and print what comes back. Nothing it is told is kept.
+ */
+
+const WINDOWS = process.platform === 'win32'
+
+/** The helper ssh runs, in plain Node: one question out, one answer back, exit 1 for none. */
+const HELPER = `const net = require('node:net')
+const socket = net.connect(process.env.GECKIT_ASKPASS_SOCKET)
+let got = ''
+socket.on('connect', () => socket.write(JSON.stringify({ token: process.env.GECKIT_ASKPASS_TOKEN, host: process.env.GECKIT_HOST || '', prompt: process.argv.slice(2).join(' ') }) + '\\n'))
+socket.on('data', (chunk) => { got += chunk.toString('utf8') })
+socket.on('end', () => {
+  try {
+    const said = JSON.parse(got)
+    if (typeof said.answer === 'string') { process.stdout.write(said.answer + '\\n'); process.exit(0) }
+  } catch {}
+  process.exit(1)
+})
+socket.on('error', () => process.exit(1))
+`
+
+/** What a question from ssh is, read from its words, and the card that asks it. */
+export function readPrompt(prompt: string, name: string, fallbackUser: string): Omit<HostPrompt, 'id' | 'host'> {
+  const said = prompt.trim()
+  if (/continue connecting|authenticity of host/i.test(said)) {
+    const print = /(SHA256:[A-Za-z0-9+/=]+)/.exec(said)?.[1]
+    return {
+      kind: 'trust',
+      text: `This is the first connection to ${name}. Its key is ${print ?? 'one GeckIt has not seen'}. Trust it?`,
+      ...(print === undefined ? {} : { detail: print }),
+    }
+  }
+  const key = /passphrase for (?:key )?['"]?([^'":]+)['"]?/i.exec(said)?.[1]
+  if (key !== undefined) return { kind: 'passphrase', text: `${name} asks for the passphrase of ${tilde(key.trim())}.`, detail: tilde(key.trim()) }
+  if (/verification code|one-time|otp|authenticator|token code/i.test(said)) return { kind: 'code', text: `${name} asks for a one-time code.` }
+  if (/password/i.test(said)) {
+    const user = /^([^@\s']+)@[^']*'s password/i.exec(said)?.[1] ?? /password for ([^\s:]+)/i.exec(said)?.[1] ?? fallbackUser
+    return { kind: 'password', text: user === '' ? `${name} asks for a password.` : `${name} asks for the password of ${user}.` }
+  }
+  return { kind: 'other', text: `${name} asks: ${said}` }
+}
+
+/** A path under the home folder, written with ~ as a person writes it. */
+function tilde(path: string): string {
+  const home = process.env['HOME'] ?? process.env['USERPROFILE'] ?? ''
+  return home !== '' && path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
+}
+
+export interface Asker {
+  /** What every ssh is started with. */
+  readonly env: Readonly<Record<string, string>>
+  close(): void
+}
+
+/**
+ * Listens for the helper and hands each question to `ask`, which answers with
+ * the words or with nothing for Not now.
+ */
+export function startAskpass(folder: string, executable: string, ask: (host: string, prompt: string) => Promise<string | undefined>): Asker {
+  mkdirSync(folder, { recursive: true, mode: 0o700 })
+  const token = randomBytes(24).toString('hex')
+  const socket = WINDOWS
+    ? `\\\\.\\pipe\\geckit-askpass-${String(process.pid)}-${randomBytes(4).toString('hex')}`
+    : join(tmpdir(), `geckit-askpass-${String(process.pid)}.sock`)
+  if (!WINDOWS) rmSync(socket, { force: true })
+
+  const helper = join(folder, 'askpass.cjs')
+  writeFileSync(helper, HELPER, { mode: 0o600 })
+  const launcher = join(folder, WINDOWS ? 'askpass.cmd' : 'askpass.sh')
+  if (WINDOWS) {
+    writeFileSync(launcher, `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${executable}" "${helper}" %*\r\n`)
+  } else {
+    writeFileSync(launcher, `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec "${executable}" "${helper}" "$@"\n`)
+    chmodSync(launcher, 0o700)
+  }
+
+  const server: Server = createServer((connection) => {
+    let got = ''
+    connection.on('data', (chunk: Buffer) => {
+      got += chunk.toString('utf8')
+      const end = got.indexOf('\n')
+      if (end < 0) return
+      let asked: { token?: unknown; host?: unknown; prompt?: unknown } = {}
+      try {
+        asked = JSON.parse(got.slice(0, end)) as typeof asked
+      } catch {
+        connection.end()
+        return
+      }
+      if (asked.token !== token || typeof asked.prompt !== 'string' || typeof asked.host !== 'string') {
+        connection.end()
+        return
+      }
+      void ask(asked.host, asked.prompt)
+        .catch(() => undefined)
+        .then((answer) => connection.end(JSON.stringify(answer === undefined ? {} : { answer })))
+    })
+    connection.on('error', () => undefined)
+  })
+  server.on('error', () => undefined)
+  server.listen(socket)
+  if (!WINDOWS) {
+    server.on('listening', () => {
+      try {
+        chmodSync(socket, 0o600)
+      } catch {
+        // A socket that cannot be narrowed still asks for the token.
+      }
+    })
+  }
+
+  return {
+    env: {
+      SSH_ASKPASS: launcher,
+      SSH_ASKPASS_REQUIRE: 'force',
+      // Older ssh asks only where it thinks there is a screen to ask on.
+      DISPLAY: process.env['DISPLAY'] ?? ':0',
+      GECKIT_ASKPASS_SOCKET: socket,
+      GECKIT_ASKPASS_TOKEN: token,
+    },
+    close() {
+      server.close()
+      if (!WINDOWS) rmSync(socket, { force: true })
+    },
+  }
+}
