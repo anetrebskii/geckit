@@ -711,7 +711,15 @@ async function openLink(href: string): Promise<void> {
   }
   const local = await routes.forwards.open(host, port)
   if (local === undefined) {
-    void shell.openExternal(href)
+    // Never this computer's own localhost by mistake: nothing was actually carried over, so opening it here would show whatever answers this computer's own port, not the host's.
+    const name = routes.hosts.config(host)?.name ?? host
+    tellChats('chat:notice', {
+      session: watched.id,
+      title: `Could not bring ${name}'s ${String(port)} here. Check that ${name} is connected, then open the link again.`,
+      subtitle: '',
+      body: '',
+      asks: false,
+    })
     return
   }
   if (local !== port) {
@@ -733,12 +741,15 @@ async function openLink(href: string): Promise<void> {
  * phone is given the local port to open through its own page instead, with a
  * word for where it landed when the same port was already taken here.
  */
-async function forwardLink(root: string, href: string): Promise<{ readonly href: string; readonly moved?: string }> {
+async function forwardLink(root: string, href: string): Promise<{ readonly href: string; readonly moved?: string; readonly problem?: string }> {
   const id = hostOf(root)
   const port = localPort(href)
   if (id === undefined || port === undefined || routes === undefined) return { href }
   const local = await routes.forwards.open(id, port)
-  if (local === undefined) return { href }
+  if (local === undefined) {
+    const name = routes.hosts.config(id)?.name ?? id
+    return { href, problem: `Could not bring ${name}'s ${String(port)} here. Check that ${name} is connected, then open the link again.` }
+  }
   const next = withPort(href, local)
   if (local === port) return { href: next }
   const name = routes.hosts.config(id)?.name ?? id
@@ -772,9 +783,15 @@ function wireHosts(): void {
   })
   ipcMain.handle('hosts:folders', (_event, id: string, path: string | undefined) => hosts()?.folders(id, path ?? undefined))
   ipcMain.handle('hosts:addFolder', (_event, id: string, path: string) => hosts()?.addFolder(id, path))
+  ipcMain.handle('hosts:addFolderSaying', (_event, id: string, path: string) => hosts()?.addFolderSaying(id, path) ?? { problem: 'Not ready yet.' })
   ipcMain.handle('hosts:prompts', () => hosts()?.prompts() ?? [])
   ipcMain.on('hosts:answer', (_event, answer: HostAnswer) => hosts()?.answer(answer))
   ipcMain.handle('hosts:install', (_event, id: string) => hosts()?.install(id) ?? { ok: false, text: 'Not ready yet.' })
+  ipcMain.handle('hosts:trustNewKey', (_event, id: string) => hosts()?.trustNewKey(id) ?? { ok: false, problem: 'Not ready yet.' })
+  ipcMain.handle('hosts:running', (_event, id: string) => hosts()?.running(id) ?? 0)
+  // Actually working or waiting on an answer, for Disconnect; every conversation listed there at all, idle ones too, for Remove's own count of what stays behind.
+  ipcMain.handle('hosts:working', (_event, id: string) => (sessions?.ids((root) => hostOf(root) === id) ?? []).filter((one) => sessions?.busy(one) === true).length)
+  ipcMain.handle('hosts:conversations', (_event, id: string) => sessions?.ids((root) => hostOf(root) === id).length ?? 0)
   ipcMain.on('hosts:terminal', (_event, id: string, run: string | undefined) => {
     // Off macOS there is no terminal to open one in; pretending to would only silently open the home folder.
     if (process.platform !== 'darwin') return
@@ -1132,6 +1149,10 @@ function phoneCalls(): Record<string, PhoneCall> {
     },
     'hosts.folders': (id: string, path: string | undefined) => routes?.hosts.folders(id, path),
     'hosts.addFolder': (id: string, path: string) => routes?.hosts.addFolder(id, path),
+    'hosts.addFolderSaying': (id: string, path: string) => routes?.hosts.addFolderSaying(id, path) ?? { problem: 'Not ready yet.' },
+    'hosts.running': (id: string) => routes?.hosts.running(id) ?? 0,
+    'hosts.working': (id: string) => (held()?.ids((root) => hostOf(root) === id) ?? []).filter((one) => held()?.busy(one) === true).length,
+    'hosts.conversations': (id: string) => held()?.ids((root) => hostOf(root) === id).length ?? 0,
     'hosts.prompts': () => routes?.hosts.prompts() ?? [],
     'hosts.answer': (answer: HostAnswer) => routes?.hosts.answer(answer),
     // A `localhost` link opened on the phone, in a conversation on a host: carried here, the way the Mac's own openLink carries it.

@@ -25,7 +25,21 @@ import {
   safeId,
   startScript,
 } from '../src/main/hosts/run-script'
-import { badArgsProblem, isConnectionFailure, runOn, spawnOn, sshArgs, sshProblem } from '../src/main/hosts/ssh'
+import {
+  badArgsProblem,
+  changedKeyPrint,
+  changedKeyProblem,
+  isChangedKeyProblem,
+  isConnectionFailure,
+  knownHostsTargets,
+  readSshConfigTarget,
+  removeWithLines,
+  runOn,
+  spawnOn,
+  sshArgs,
+  sshKeygenProgram,
+  sshProblem,
+} from '../src/main/hosts/ssh'
 import { edgesOf, rowFrom, slug } from '../src/main/sessions/disk'
 import type { HostConfig, HostState } from '../src/shared/hosts'
 import { draftProblem, forHowLong, hostIdFor, machineName, hostOf, outOfReach, outOfReachLine, parseTarget, pathOf, remoteRoot, stateLine, targetLine } from '../src/shared/hosts'
@@ -95,6 +109,7 @@ describe('a host as it is named and shown', () => {
     expect(stateLine({ state: 'idle' }, 0)).toBe('Not connected')
     expect(stateLine({ state: 'up', since: 0 }, 2 * 3_600_000)).toBe('Connected for 2 h')
     expect(stateLine({ state: 'lost' }, 0)).toBe('Out of reach, reconnecting')
+    expect(stateLine({ state: 'lost', problem: 'Could not reach devbox: timed out after 20 s.' }, 0)).toBe('Out of reach: Could not reach devbox: timed out after 20 s. Trying again')
     expect(stateLine({ state: 'needs', problem: 'Could not reach devbox: timed out after 20 s.' }, 0)).toBe('Could not reach devbox: timed out after 20 s.')
     expect(forHowLong(30_000)).toBe('a moment')
     expect(forHowLong(12 * 60_000)).toBe('12 min')
@@ -206,9 +221,10 @@ describe('the ssh a host is reached with', () => {
   })
 
   it('says what went wrong in the words of the design', () => {
-    expect(sshProblem('ssh: Could not resolve hostname devbox: nodename nor servname provided', 'devbox')).toBe('Could not reach devbox: no host by that name.')
-    expect(sshProblem('ssh: connect to host devbox port 22: Operation timed out', 'devbox')).toBe('Could not reach devbox: timed out after 20 s.')
-    expect(sshProblem('leo@devbox: Permission denied (publickey,password).', 'devbox')).toBe('devbox did not accept the sign-in.')
+    expect(sshProblem('ssh: Could not resolve hostname devbox: nodename nor servname provided', 'devbox', '')).toBe('Could not reach devbox: no host by that name.')
+    expect(sshProblem('ssh: connect to host devbox port 22: Operation timed out', 'devbox', '')).toBe('Could not reach devbox: timed out after 20 s.')
+    expect(sshProblem('leo@devbox: Permission denied (publickey,password).', 'devbox', '')).toBe('devbox did not accept the sign-in. Check the password or key, then Try again.')
+    expect(sshProblem('leo@devbox: Permission denied (publickey,password).', 'devbox', 'leo')).toBe('devbox did not accept the sign-in for leo. Check the password or key, then Try again.')
   })
 
   it('ends its own options with -- right before the address, so nothing about it is read as one', () => {
@@ -239,6 +255,53 @@ describe('the ssh a host is reached with', () => {
     expect(isConnectionFailure(1, 'ssh: connect to host devbox port 22: Operation timed out')).toBe(false)
     expect(isConnectionFailure(255, 'bash: some-command: command not found')).toBe(false)
   })
+
+  it('tells apart a host whose key has changed from one it could not reach at all, and reads the fingerprint it printed', () => {
+    const said = [
+      '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@',
+      '@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @',
+      '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@',
+      'IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!',
+      'The fingerprint for the ED25519 key sent by the remote host is',
+      'SHA256:88eNewKey02d.',
+      'Host key verification failed.',
+    ].join('\n')
+    expect(isChangedKeyProblem(said)).toBe(true)
+    expect(isChangedKeyProblem('ssh: connect to host devbox port 22: Operation timed out')).toBe(false)
+    expect(changedKeyPrint(said)).toBe('SHA256:88eNewKey02d')
+    expect(changedKeyPrint('ssh: connect to host devbox port 22: Operation timed out')).toBeUndefined()
+    expect(changedKeyProblem('devbox')).toBe("devbox's key has changed since the last connection. That can mean the host was set up again, or that something is in the way.")
+  })
+
+  it('names the known_hosts entries a changed key is forgotten from: the address, and [address]:port too off the default port', () => {
+    expect(knownHostsTargets({ address: 'devbox.local', port: 22 })).toEqual(['devbox.local'])
+    expect(knownHostsTargets({ address: 'devbox.local', port: 2222 })).toEqual(['devbox.local', '[devbox.local]:2222'])
+    expect(typeof sshKeygenProgram()).toBe('string')
+  })
+
+  it('reads what ssh -G itself says of a host: its alias resolved, a HostKeyAlias where it looks a key up under one instead, and every known_hosts file of the person\'s own', () => {
+    const out = ['user leo', 'hostname devbox.local', 'port 2222', 'hostkeyalias devbox-alias', 'userknownhostsfile /Users/leo/.ssh/known_hosts /Users/leo/.ssh/known_hosts2', ''].join(
+      '\n',
+    )
+    expect(readSshConfigTarget(out)).toEqual({
+      hostname: 'devbox.local',
+      port: 2222,
+      hostKeyAlias: 'devbox-alias',
+      knownHostsFiles: ['/Users/leo/.ssh/known_hosts', '/Users/leo/.ssh/known_hosts2'],
+    })
+    expect(readSshConfigTarget('hostname devbox\nport 22\nuserknownhostsfile none\n')).toEqual({ hostname: 'devbox', port: 22, knownHostsFiles: [] })
+  })
+
+  it('reads the exact ssh-keygen line ssh itself prints under "remove with:" for a changed key, rather than only guessing at it', () => {
+    const said = [
+      'Offending ED25519 key in /Users/leo/.ssh/known_hosts:12',
+      '  remove with:',
+      '  ssh-keygen -f "/Users/leo/.ssh/known_hosts" -R "devbox.local"',
+      'Host key verification failed.',
+    ].join('\n')
+    expect(removeWithLines(said)).toEqual([{ file: '/Users/leo/.ssh/known_hosts', target: 'devbox.local' }])
+    expect(removeWithLines('Host key verification failed.')).toEqual([])
+  })
 })
 
 describe('what ssh asks', () => {
@@ -257,6 +320,13 @@ describe('what ssh asks', () => {
     expect(trust).toEqual({ kind: 'trust', text: 'This is the first connection to devbox. Its key is SHA256:3f9Tq0abc1c. Trust it?', detail: 'SHA256:3f9Tq0abc1c' })
     expect(readPrompt('Verification code: ', 'devbox', 'leo').kind).toBe('code')
     expect(readPrompt('Something else?', 'devbox', 'leo')).toEqual({ kind: 'other', text: 'devbox asks: Something else?' })
+  })
+
+  it('asks to trust a key it cannot show the fingerprint of, in its own words rather than the generic first-connection ones', () => {
+    expect(readPrompt("The authenticity of host 'devbox' can't be established.\nAre you sure you want to continue connecting (yes/no)? ", 'devbox', 'leo')).toEqual({
+      kind: 'trust',
+      text: "devbox did not show its key's fingerprint. Trust it only if you expected this.",
+    })
   })
 })
 

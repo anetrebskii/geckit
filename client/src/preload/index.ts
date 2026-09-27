@@ -253,12 +253,23 @@ const geckit = {
     folders: (id: string, path?: string): Promise<Folders | undefined> => ipcRenderer.invoke('hosts:folders', id, path ?? null),
     /** A folder on a host as a project; the project's root is given back. */
     addFolder: (id: string, path: string): Promise<string | undefined> => ipcRenderer.invoke('hosts:addFolder', id, path),
+    /** `addFolder`, but with why it failed rather than only that it did. */
+    addFolderSaying: (id: string, path: string): Promise<{ readonly root: string } | { readonly problem: string }> =>
+      ipcRenderer.invoke('hosts:addFolderSaying', id, path),
     /** What hosts are asking now, and each new question as it is asked. */
     prompts: (): Promise<HostPrompt[]> => ipcRenderer.invoke('hosts:prompts'),
     onPrompt: (said: (prompt: HostPrompt) => void): (() => void) => listen('hosts:prompt', said),
     onAnswered: (said: (id: string) => void): (() => void) => listen('hosts:answered', said),
     answer: (answer: HostAnswer): void => ipcRenderer.send('hosts:answer', answer),
     install: (id: string): Promise<{ readonly ok: boolean; readonly text: string }> => ipcRenderer.invoke('hosts:install', id),
+    /** Forgets a host's changed key from wherever ssh itself keeps it and reaches it again; why it could not, where it could not. */
+    trustNewKey: (id: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly problem: string }> => ipcRenderer.invoke('hosts:trustNewKey', id),
+    /** How many runs Remove would stop on the host now, idle ones too. */
+    running: (id: string): Promise<number> => ipcRenderer.invoke('hosts:running', id),
+    /** How many conversations on the host are actually working or waiting on an answer now, for Disconnect. */
+    working: (id: string): Promise<number> => ipcRenderer.invoke('hosts:working', id),
+    /** How many conversations on the host are listed at all, for Remove to say how many stay behind. */
+    conversations: (id: string): Promise<number> => ipcRenderer.invoke('hosts:conversations', id),
     /** A terminal signed in to the host, running `run` there where one is given. */
     terminal: (id: string, run?: string): void => ipcRenderer.send('hosts:terminal', id, run ?? null),
     /** What a terminal types to resume a particular conversation on a host; nothing for a local root. */

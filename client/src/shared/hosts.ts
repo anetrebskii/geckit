@@ -70,6 +70,8 @@ export interface HostView {
   readonly who?: string
   /** The line for a state that needs the person, as it is shown. */
   readonly problem?: string
+  /** The host's key changed since the last connection: what it showed now, where ssh said it. */
+  readonly changedKey?: { readonly print?: string }
   readonly remembered: boolean
   /** Whether a password can be remembered on this computer at all. */
   readonly canRemember: boolean
@@ -200,6 +202,13 @@ export function draftProblem(draft: Pick<HostDraft, 'address' | 'port' | 'name' 
 export const targetLine = (host: Pick<HostConfig, 'address' | 'user' | 'port'>): string =>
   `${host.user === '' ? '' : `${host.user}@`}${host.address}${host.port === 22 ? '' : `:${String(host.port)}`}`
 
+/**
+ * Who a host signs in as, beside its name: its whole target, or only the user
+ * where the name is the address itself, which would otherwise be said twice.
+ */
+export const besideName = (host: Pick<HostConfig, 'name' | 'address' | 'user' | 'port'>): string =>
+  host.name === host.address && host.port === 22 ? host.user : targetLine(host)
+
 /** The words for a state, as Settings and the chip's menu say them. */
 export function stateLine(view: Pick<HostView, 'state' | 'problem' | 'since'>, now: number): string {
   switch (view.state) {
@@ -210,7 +219,7 @@ export function stateLine(view: Pick<HostView, 'state' | 'problem' | 'since'>, n
     case 'up':
       return view.since === undefined ? 'Connected' : `Connected for ${forHowLong(now - view.since)}`
     case 'lost':
-      return 'Out of reach, reconnecting'
+      return view.problem === undefined ? 'Out of reach, reconnecting' : `Out of reach: ${view.problem} Trying again`
     case 'needs':
     case 'missing':
     case 'signin':

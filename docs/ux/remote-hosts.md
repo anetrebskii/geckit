@@ -141,7 +141,7 @@ A host:
 | Connected | SSH is up and `claude` answers | A solid dot, nothing else | Work |
 | Lost | The connection dropped while connected | For 10 s nothing. After that the chip's dot turns amber, working cards on it say "devbox is out of reach. Still working there", the composer says "Reconnecting to devbox" | Nothing; it retries by itself. "Reconnect" in the chip's menu tries at once |
 | Needs you | The host asks for a password, a passphrase, a one-time code, or trust in an unknown or changed key; or it refused the sign-in | The sign-in card in the conversation and on the host's row in Settings, in the words below; the chip's dot red | Answer the card, or "Not now" |
-| No Claude Code | Connected, but `claude` is not on the host's PATH | "Claude Code is not installed on devbox." and "Install it" | Install it, or "Use another path" |
+| No Claude Code | Connected, but `claude` is not on the host's PATH | "Claude Code is not installed on devbox." and "Install it" | Install it |
 | Not signed in | `claude` is there but not signed in to a plan | "Claude Code on devbox is not signed in." and "Sign in on devbox" | Press it: a terminal opens `claude /login` on the host; GeckIt checks again when it closes |
 
 A conversation on a host has the states a local one has (working, asking, waiting, done), and one more:
@@ -257,10 +257,10 @@ A conversation on a host moves between its columns exactly as a local one. Out o
 | Passphrase card | "devbox asks for the passphrase of ~/.ssh/id_ed25519." Field, "Unlock", "Not now" |
 | Code card | "devbox asks for a one-time code." Field, "Send", "Not now" |
 | Unknown key | "This is the first connection to devbox. Its key is SHA256:3f9...a1c. Trust it?" "Trust", "Not now" |
-| Changed key | "devbox's key has changed since the last connection. Was SHA256:3f9...a1c, now SHA256:88e...02d. If it was not reinstalled, do not trust it." "Trust the new key", "Not now" |
+| Changed key | "devbox's key has changed since the last connection. That can mean the host was set up again, or that something is in the way." The fingerprint it shows now, where ssh said one. "Not now", "Trust the new key" |
 | Timed out | "Could not reach devbox: timed out after 20 s." "Try again" |
 | Sign-in refused | "devbox did not accept the sign-in for leo." "Try again" |
-| No Claude Code | "Claude Code is not installed on devbox." "Install it", "Use another path" |
+| No Claude Code | "Claude Code is not installed on devbox." "Install it" |
 | Not signed in | "Claude Code on devbox is not signed in." "Sign in on devbox" |
 | Chrome greyed | "Chrome is on this computer, and this conversation runs on devbox" |
 | Disconnect, something running | "Disconnect devbox? 2 conversations are working there and will keep working." |

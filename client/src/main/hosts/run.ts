@@ -113,7 +113,7 @@ export class RemoteRun extends EventEmitter {
       const ran = await runOn(this.#options.host(), this.#options.setup(), startScript(this.#options.id, this.#options.cwd, this.#options.argv), { timeout: 60_000 })
       if (this.#over) return
       if (ran.code !== 0 || !ran.out.toString('utf8').includes('started')) {
-        const why = ran.err === '' ? ran.out.toString('utf8').trim() : sshProblem(ran.err, this.#options.host().name)
+        const why = ran.err === '' ? ran.out.toString('utf8').trim() : sshProblem(ran.err, this.#options.host().name, this.#options.host().user)
         this.stderr.write(why)
         this.#end()
         return

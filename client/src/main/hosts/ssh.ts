@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
@@ -38,6 +38,17 @@ export function sshProgram(): string {
     return existsSync(system) ? system : 'ssh'
   } catch {
     return 'ssh'
+  }
+}
+
+/** `ssh-keygen`, found the same way `sshProgram` finds `ssh` itself. */
+export function sshKeygenProgram(): string {
+  if (!WINDOWS) return 'ssh-keygen'
+  const system = join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'OpenSSH', 'ssh-keygen.exe')
+  try {
+    return existsSync(system) ? system : 'ssh-keygen'
+  } catch {
+    return 'ssh-keygen'
   }
 }
 
@@ -111,6 +122,63 @@ export const remoteCommand = (script: string): string => `sh -c ${quote(script)}
  * `askpass.ts`), which crosses that hop unharmed.
  */
 export type SshChild = ChildProcessWithoutNullStreams & { readonly conn: string }
+
+/** Where `ssh-keygen -R` is told to forget a host: its address, and `[address]:port` too where the port is not 22, since that is the form ssh itself keeps such an entry under in `known_hosts`. A guess only, kept for where `sshConfigTarget` itself could not be asked; an alias, a `HostKeyAlias` or a config port can put the real entry somewhere this never looks. */
+export function knownHostsTargets(host: Pick<HostConfig, 'address' | 'port'>): string[] {
+  return host.port === 22 ? [host.address] : [host.address, `[${host.address}]:${String(host.port)}`]
+}
+
+/** What ssh itself would use to reach a host: the hostname and port an alias in the config resolves to, the `HostKeyAlias` it looks a key up under instead where one is set, and every `known_hosts` file it would look in. */
+export interface SshTarget {
+  readonly hostname: string
+  readonly port: number
+  readonly hostKeyAlias?: string
+  readonly knownHostsFiles: readonly string[]
+}
+
+/** What `ssh -G` printed, read into the parts that decide where a host's key is kept: never guessed, since that is what lets an alias, a `HostKeyAlias`, a config port or a `UserKnownHostsFile` of the person's own be read exactly as ssh reads them. */
+export function readSshConfigTarget(out: string): SshTarget {
+  const hostname = /^hostname (.+)$/im.exec(out)?.[1]?.trim() ?? ''
+  const port = Number(/^port (\d+)$/im.exec(out)?.[1] ?? '22')
+  const hostKeyAlias = /^hostkeyalias (.+)$/im.exec(out)?.[1]?.trim()
+  const home = process.env['HOME'] ?? process.env['USERPROFILE'] ?? ''
+  const files = [...out.matchAll(/^userknownhostsfile (.+)$/gim)].flatMap((one) => (one[1] ?? '').trim().split(/\s+/)).filter((one) => one !== '' && one.toLowerCase() !== 'none')
+  const knownHostsFiles = files.map((one) => (one.startsWith('~') && home !== '' ? join(home, one.slice(1)) : one))
+  return {
+    hostname,
+    port: Number.isInteger(port) && port > 0 ? port : 22,
+    ...(hostKeyAlias === undefined || hostKeyAlias === '' ? {} : { hostKeyAlias }),
+    knownHostsFiles,
+  }
+}
+
+/**
+ * Asks ssh itself where it would reach a host and where it keeps its key,
+ * with `ssh -G`, which prints its configuration for the very same arguments
+ * `sshArgs` would connect with rather than leave it guessed from the address
+ * and port alone. Nothing where ssh could not even be asked - a bad config,
+ * say - for a caller to fall back to a guess of its own.
+ */
+export function sshConfigTarget(host: HostConfig, setup: SshSetup): Promise<SshTarget | undefined> {
+  let args: string[]
+  try {
+    args = sshArgs(host, setup)
+  } catch {
+    return Promise.resolve(undefined)
+  }
+  return new Promise((done) => {
+    execFile(sshProgram(), ['-G', ...args], { env: { ...process.env, ...setup.env }, timeout: 5_000 }, (error, stdout) => {
+      done(error === null ? readSshConfigTarget(stdout) : undefined)
+    })
+  })
+}
+
+/** The exact `ssh-keygen -f "<file>" -R "<target>"` line or lines ssh itself printed under "remove with:" for a changed key: read where it said one, rather than worked out again from the config, which is the more exact of the two. */
+export function removeWithLines(err: string): { readonly file: string; readonly target: string }[] {
+  return [...err.matchAll(/ssh-keygen -f "([^"]+)" -R "([^"]+)"/g)]
+    .map((one) => ({ file: one[1] ?? '', target: one[2] ?? '' }))
+    .filter((one) => one.file !== '' && one.target !== '')
+}
 
 /** What a thrown `sshArgs` message becomes for a person, named for the host it was about. */
 export function badArgsProblem(reason: string, name: string): string | undefined {
@@ -234,17 +302,29 @@ export function runOn(host: HostConfig, setup: SshSetup, script: string, { input
  * What ssh said when it could not connect, as the person is told it. Anything
  * else is ssh's own words, which are more use than a guess.
  */
-export function sshProblem(err: string, name: string): string {
+export function sshProblem(err: string, name: string, user: string): string {
   const said = err.trim()
   if (/Could not resolve hostname|nodename nor servname|Name or service not known/i.test(said)) return `Could not reach ${name}: no host by that name.`
   if (/timed out|Operation timed out|Connection timed out/i.test(said)) return `Could not reach ${name}: timed out after 20 s.`
   if (/Connection refused/i.test(said)) return `Could not reach ${name}: it refused the connection.`
   if (/No route to host|Network is unreachable|Host is down/i.test(said)) return `Could not reach ${name}: the network cannot get to it.`
-  if (/Permission denied/i.test(said)) return `${name} did not accept the sign-in.`
+  if (/Permission denied/i.test(said)) {
+    return user === '' ? `${name} did not accept the sign-in. Check the password or key, then Try again.` : `${name} did not accept the sign-in for ${user}. Check the password or key, then Try again.`
+  }
   if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i.test(said)) return `${name}'s key could not be trusted.`
   const last = said.split('\n').filter((line) => line.trim() !== '').pop()
   return last === undefined ? `Could not reach ${name}.` : `Could not reach ${name}: ${last}`
 }
+
+/** Whether ssh refused a host outright because its key changed since the last time, rather than any other reason. */
+export const isChangedKeyProblem = (err: string): boolean => /REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(err)
+
+/** The fingerprint ssh printed for the key it found this time, where it said one. */
+export const changedKeyPrint = (err: string): string | undefined => /(SHA256:[A-Za-z0-9+/=]+)/.exec(err)?.[1]
+
+/** The line for a host whose key has changed, named for it. */
+export const changedKeyProblem = (name: string): string =>
+  `${name}'s key has changed since the last connection. That can mean the host was set up again, or that something is in the way.`
 
 /**
  * ssh's own failure to reach a host at all, rather than the script it ran

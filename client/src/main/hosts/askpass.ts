@@ -59,11 +59,9 @@ export function readPrompt(prompt: string, name: string, fallbackUser: string): 
   const said = prompt.trim()
   if (/continue connecting|authenticity of host/i.test(said)) {
     const print = /(SHA256:[A-Za-z0-9+/=]+)/.exec(said)?.[1]
-    return {
-      kind: 'trust',
-      text: `This is the first connection to ${name}. Its key is ${print ?? 'one GeckIt has not seen'}. Trust it?`,
-      ...(print === undefined ? {} : { detail: print }),
-    }
+    return print === undefined
+      ? { kind: 'trust', text: `${name} did not show its key's fingerprint. Trust it only if you expected this.` }
+      : { kind: 'trust', text: `This is the first connection to ${name}. Its key is ${print}. Trust it?`, detail: print }
   }
   const key = /passphrase for (?:key )?['"]?([^'":]+)['"]?/i.exec(said)?.[1]
   if (key !== undefined) return { kind: 'passphrase', text: `${name} asks for the passphrase of ${tilde(key.trim())}.`, detail: tilde(key.trim()) }

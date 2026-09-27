@@ -10,6 +10,7 @@ import { PhoneHostFolders, PhoneWhere } from './PhoneHosts'
 import { Folders } from './PhoneSettings'
 import { homePath, projectLabel } from './project'
 import type { Chat } from './useChat'
+import { useHostBounce } from './useHosts'
 
 /** Which step of choosing a folder the sheet is at: where it is, then the folders there, on the computer or a host. */
 type Step = { readonly step: 'list' } | { readonly step: 'where' } | { readonly step: 'folders'; readonly host?: string }
@@ -29,23 +30,35 @@ export function PhoneProject({
   const [at, setAt] = useState<Step>({ step: 'list' })
   const [folder, setFolder] = useState<FolderList | undefined>()
   const [adding, setAdding] = useState(false)
+  const [trouble, setTrouble] = useState<string | undefined>()
   const pick = (one: string): void => {
     tap('light')
     onPick(one)
     onClose()
   }
+  const onShownFolder = (found: FolderList): void => {
+    setTrouble(undefined)
+    setFolder(found)
+  }
   const projects = shownProjects(chat.settings)
-  const host = at.step === 'folders' && at.host !== undefined ? chat.hosts.find((one) => one.id === at.host) : undefined
+  const onHostId = at.step === 'folders' ? at.host : undefined
+  const host = onHostId === undefined ? undefined : chat.hosts.find((one) => one.id === onHostId)
+  // The host removed while its folders are open, or a card there answered Not now, which always leaves it Not connected: back to Where, never the computer's folders in its place.
+  useHostBounce(chat.hosts, onHostId, () => setAt({ step: 'where' }))
   const here = (): void => {
     if (folder === undefined) return
     if (host !== undefined) {
       // A folder on a host is made a project there first, which also reads where its links lead.
       setAdding(true)
-      void window.geckit.hosts.addFolder(host.id, folder.path).then((made) => {
+      setTrouble(undefined)
+      void window.geckit.hosts.addFolderSaying(host.id, folder.path).then((said) => {
         setAdding(false)
-        if (made === undefined) return
+        if ('problem' in said) {
+          setTrouble(said.problem)
+          return
+        }
         chat.refresh()
-        pick(made)
+        pick(said.root)
       })
       return
     }
@@ -85,11 +98,14 @@ export function PhoneProject({
           }}
         />
       ) : at.step === 'folders' ? (
-        host === undefined ? (
-          <Folders chat={chat} {...(near === undefined ? {} : { from: near })} onShown={setFolder} />
-        ) : (
-          <PhoneHostFolders chat={chat} host={host} onShown={setFolder} />
-        )
+        <>
+          {onHostId !== undefined && host === undefined ? null : host === undefined ? (
+            <Folders chat={chat} {...(near === undefined ? {} : { from: near })} onShown={onShownFolder} />
+          ) : (
+            <PhoneHostFolders chat={chat} host={host} onShown={onShownFolder} />
+          )}
+          {trouble === undefined ? null : <div className="phone-note phone-lead">{trouble}</div>}
+        </>
       ) : (
         <>
           {projects.length === 0 ? null : (

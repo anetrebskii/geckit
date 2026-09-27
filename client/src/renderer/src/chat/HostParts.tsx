@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { forHowLong, stateLine, targetLine } from '../../../shared/hosts'
 import type { HostPrompt, HostState, HostView } from '../../../shared/hosts'
 import { Picker } from '../ui/Menu'
+import { askDisconnect, Confirm } from './Hosts'
 import { useMinute } from './useHosts'
 
 /** How a host stands, as a dot: solid when connected, hollow when not, amber out of reach, red when it needs the person. */
@@ -16,48 +18,75 @@ export function HostDot({ state }: { readonly state: HostState }): React.JSX.Ele
  */
 export function HostChip({ host, onTerminal }: { readonly host: HostView; readonly onTerminal: () => void }): React.JSX.Element {
   const now = useMinute()
+  const [asking, setAsking] = useState<number | undefined>()
   const tip =
     host.state === 'up'
       ? `On ${host.name} (${targetLine(host)})${host.since === undefined ? '' : `, connected for ${forHowLong(now - host.since)}`}`
       : `${host.name}: ${stateLine(host, now)}`
   const down = host.state === 'idle' || host.state === 'needs' || host.state === 'missing' || host.state === 'signin'
   return (
-    <Picker
-      label={
-        <>
-          <HostDot state={host.state} />
-          {host.name}
-        </>
-      }
-      title={`${host.name} · ${targetLine(host)}`}
-      note={[stateLine(host, now), host.version === undefined ? undefined : `Claude Code ${host.version}`, host.plan === undefined ? undefined : `Claude ${host.plan}`]
-        .filter((one) => one !== undefined)
-        .join(' · ')}
-      tip={tip}
-      className="picker host-chip no-drag"
-      choices={[
-        { value: 'terminal', label: 'Open a terminal there', icon: 'terminal' },
-        ...(down ? [{ value: 'connect', label: 'Connect' }] : [{ value: 'reconnect', label: 'Reconnect' }, { value: 'disconnect', label: 'Disconnect' }]),
-      ]}
-      onPick={(value) => {
-        if (value === 'terminal') onTerminal()
-        if (value === 'connect' || value === 'reconnect') window.geckit.hosts.reconnect(host.id)
-        if (value === 'disconnect') window.geckit.hosts.disconnect(host.id)
-      }}
-    />
+    <>
+      <Picker
+        label={
+          <>
+            <HostDot state={host.state} />
+            {host.name}
+          </>
+        }
+        // Who it signs in as heads the note rather than the menu's title, which is set in capitals and would change how an address reads.
+        note={[targetLine(host), stateLine(host, now), host.version === undefined ? undefined : `Claude Code ${host.version}`, host.plan === undefined ? undefined : `Claude ${host.plan}`]
+          .filter((one) => one !== undefined)
+          .join(' · ')}
+        tip={tip}
+        className="picker host-chip no-drag"
+        choices={[
+          { value: 'terminal', label: 'Open a terminal there', icon: 'terminal' },
+          ...(down ? [{ value: 'connect', label: 'Connect' }] : [{ value: 'reconnect', label: 'Reconnect' }, { value: 'disconnect', label: 'Disconnect' }]),
+        ]}
+        onPick={(value) => {
+          if (value === 'terminal') onTerminal()
+          if (value === 'connect' || value === 'reconnect') window.geckit.hosts.reconnect(host.id)
+          if (value === 'disconnect') askDisconnect(host, setAsking)
+        }}
+      />
+      {/* Portalled out of the drag region: nested in .talk-head.drag, it would inherit the header's nowrap and sit where drags start. */}
+      {asking === undefined
+        ? null
+        : createPortal(<Confirm host={host} what="disconnect" running={asking} onClose={() => setAsking(undefined)} />, document.body)}
+    </>
   )
 }
 
-/** What a host asks while connecting, as a card: a password, a passphrase, a code, or trust in its key. */
-export function HostPromptCard({ prompt, canRemember }: { readonly prompt: HostPrompt; readonly canRemember: boolean }): React.JSX.Element {
+/**
+ * What a host asks while connecting, as a card: a password, a passphrase, a
+ * code, or trust in its key. A key is asked about as the phone asks it: which
+ * host, then the fingerprint on a line of its own to compare, and the two
+ * answers weigh the same, with Not now where focus starts, since trusting a
+ * key is not a thing to be done by pressing Return.
+ */
+export function HostPromptCard({ prompt, hostName, canRemember }: { readonly prompt: HostPrompt; readonly hostName: string; readonly canRemember: boolean }): React.JSX.Element {
   const [answer, setAnswer] = useState('')
   const [remember, setRemember] = useState(true)
   const send = (): void => window.geckit.hosts.answer({ id: prompt.id, answer, ...(prompt.kind === 'password' ? { remember: remember && canRemember } : {}) })
   const notNow = (): void => window.geckit.hosts.answer({ id: prompt.id })
   const typed = prompt.kind !== 'trust'
+  const print = prompt.kind === 'trust' ? prompt.detail : undefined
   return (
-    <div className="host-prompt">
-      <div className="host-prompt-title">{prompt.text}</div>
+    <div
+      className="host-prompt"
+      role="alertdialog"
+      aria-label={prompt.text}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') notNow()
+      }}
+    >
+      <div className="host-prompt-title">{print === undefined ? prompt.text : `This is the first connection to ${hostName}.`}</div>
+      {print === undefined ? null : (
+        <>
+          <div className="host-prompt-note">Its key, to compare with what the host shows for itself:</div>
+          <div className="host-print">{print}</div>
+        </>
+      )}
       {typed ? (
         <input
           type={prompt.kind === 'other' || prompt.kind === 'code' ? 'text' : 'password'}
@@ -67,7 +96,6 @@ export function HostPromptCard({ prompt, canRemember }: { readonly prompt: HostP
           onChange={(event) => setAnswer(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && answer !== '') send()
-            if (event.key === 'Escape') notNow()
           }}
         />
       ) : null}
@@ -78,11 +106,11 @@ export function HostPromptCard({ prompt, canRemember }: { readonly prompt: HostP
         </label>
       ) : null}
       <div className="host-prompt-actions">
-        <button type="button" className="primary" disabled={typed && answer === ''} onClick={send}>
-          {prompt.kind === 'trust' ? 'Trust' : prompt.kind === 'passphrase' ? 'Unlock' : prompt.kind === 'code' ? 'Send' : 'Sign in'}
-        </button>
-        <button type="button" className="quiet" onClick={notNow}>
+        <button type="button" className="quiet" autoFocus={!typed} onClick={notNow}>
           Not now
+        </button>
+        <button type="button" className={typed ? 'primary' : 'quiet'} disabled={typed && answer === ''} onClick={send}>
+          {prompt.kind === 'trust' ? 'Trust' : prompt.kind === 'passphrase' ? 'Unlock' : prompt.kind === 'code' ? 'Send' : 'Sign in'}
         </button>
       </div>
     </div>
@@ -93,7 +121,49 @@ export function HostPromptCard({ prompt, canRemember }: { readonly prompt: HostP
 export function HostTroubleCard({ host }: { readonly host: HostView }): React.JSX.Element | null {
   const [installing, setInstalling] = useState(false)
   const [said, setSaid] = useState<string | undefined>()
+  const [trusting, setTrusting] = useState(false)
+  const [trustSaid, setTrustSaid] = useState<string | undefined>()
+  // A key that changed since the last connection is dismissed for that print alone: a new change to look at shows the card again. Starts false, since a print of undefined must never read as already dismissed.
+  const [dismissed, setDismissed] = useState(false)
+  const [dismissedPrint, setDismissedPrint] = useState<string | undefined>()
   if (host.state !== 'missing' && host.state !== 'signin' && host.state !== 'needs') return null
+  if (host.changedKey !== undefined && (!dismissed || dismissedPrint !== host.changedKey.print)) {
+    return (
+      <div className="host-prompt trouble">
+        <div className="host-prompt-title">{host.problem ?? `${host.name}'s key has changed since the last connection.`}</div>
+        {host.changedKey.print === undefined ? null : <div className="host-print">{host.changedKey.print}</div>}
+        {trustSaid === undefined ? null : <div className="host-prompt-note trouble">{trustSaid}</div>}
+        <div className="host-prompt-actions">
+          <button
+            type="button"
+            className="quiet"
+            autoFocus
+            onClick={() => {
+              setDismissed(true)
+              setDismissedPrint(host.changedKey?.print)
+            }}
+          >
+            Not now
+          </button>
+          <button
+            type="button"
+            className="quiet"
+            disabled={trusting}
+            onClick={() => {
+              setTrusting(true)
+              setTrustSaid(undefined)
+              void window.geckit.hosts.trustNewKey(host.id).then((done) => {
+                setTrusting(false)
+                if (!done.ok) setTrustSaid(done.problem)
+              })
+            }}
+          >
+            {trusting ? 'Trusting...' : 'Trust the new key'}
+          </button>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="host-prompt trouble">
       <div className="host-prompt-title">{host.problem ?? `${host.name} needs you.`}</div>
@@ -116,7 +186,7 @@ export function HostTroubleCard({ host }: { readonly host: HostView }): React.JS
           </button>
         ) : null}
         {host.state === 'signin' ? (
-          <button type="button" className="primary" onClick={() => window.geckit.hosts.terminal(host.id, 'claude')}>
+          <button type="button" className="primary" onClick={() => window.geckit.hosts.terminal(host.id, 'claude /login')}>
             Sign in on {host.name}
           </button>
         ) : null}

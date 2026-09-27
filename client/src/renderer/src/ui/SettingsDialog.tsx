@@ -63,15 +63,12 @@ export function SettingsDialog({
   change,
   onClose,
   onShortcuts,
-  working,
   first,
 }: {
   readonly settings: Settings
   readonly change: (change: Partial<Settings>) => void
   readonly onClose: () => void
   readonly onShortcuts: () => void
-  /** How many conversations are working on a host, for Disconnect to warn about. */
-  readonly working?: (host: string) => number
   /** The section it opens on. */
   readonly first?: Section
 }): React.JSX.Element {
@@ -116,7 +113,7 @@ export function SettingsDialog({
               />
             ) : null}
             {section === 'profiles' ? <Profiles settings={settings} change={change} /> : null}
-            {section === 'hosts' ? <HostsSection {...(working === undefined ? {} : { working })} /> : null}
+            {section === 'hosts' ? <HostsSection /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
             {section === 'phone' ? <PhoneAccess on={settings.phone} change={(phone) => change({ phone })} /> : null}

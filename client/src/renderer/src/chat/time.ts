@@ -10,6 +10,9 @@ const WEEKDAY = new Intl.DateTimeFormat(undefined, { weekday: 'short' })
 
 const sameDay = (one: number, other: number): boolean => new Date(one).toDateString() === new Date(other).toDateString()
 
+/** The clock time alone, "2:41 PM", for a tooltip that says when something was last true rather than how long ago. */
+export const clockTime = (at: number): string => TIME.format(at)
+
 const date = (at: number, now: number): string =>
   (new Date(at).getFullYear() === new Date(now).getFullYear() ? DATE : DATE_YEAR).format(at)
 

@@ -57,7 +57,8 @@ export function PhoneHostSheet({ prompt, host }: { readonly prompt: HostPrompt; 
           </div>
         </div>
       ) : null}
-      <button type="button" className="host-sheet-go" disabled={typed && answer === ''} onPointerDown={(event) => event.preventDefault()} onClick={send}>
+      {/* Trusting a key weighs the same as not: neither is filled, as iOS asks whether to trust a computer. */}
+      <button type="button" className={typed ? 'host-sheet-go' : 'host-sheet-go even'} disabled={typed && answer === ''} onPointerDown={(event) => event.preventDefault()} onClick={send}>
         {prompt.kind === 'trust' ? 'Trust' : prompt.kind === 'passphrase' ? 'Unlock' : prompt.kind === 'code' ? 'Send' : 'Sign in'}
       </button>
       <button type="button" className="host-sheet-not" onClick={notNow}>

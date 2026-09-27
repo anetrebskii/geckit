@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Folders } from '../../../shared/api'
 import type { HostView } from '../../../shared/hosts'
 import { Icon } from '../ui/Icon'
+import { useHosts } from './useHosts'
 
 /**
  * Choose a folder on a host.
@@ -27,8 +28,20 @@ interface Place {
 
 const base = (path: string): string => path.split('/').filter((part) => part !== '').pop() ?? '/'
 
+/**
+ * Why its folders could not be read, in the words the state itself gives:
+ * nothing while the connection is only dropped, since it retries by itself;
+ * a card declined reads as not signed in, since that is what it will ask
+ * again; anything else, the plain miss.
+ */
+const readTrouble = (host: HostView, where: string | undefined): string | undefined => {
+  if (host.state === 'lost') return undefined
+  if (host.state === 'idle') return `Not signed in to ${host.name}. Press Connect in its menu to try again.`
+  return `Could not read ${where ?? 'the home folder'} on ${host.name}.`
+}
+
 export function HostFolders({
-  host,
+  host: opened,
   onClose,
   onAdded,
 }: {
@@ -36,6 +49,14 @@ export function HostFolders({
   readonly onClose: () => void
   readonly onAdded: (root: string) => void
 }): React.JSX.Element {
+  // How it stands is read fresh throughout: a card answered while this is open changes it, and a stale snapshot would say the wrong thing about why reading failed.
+  const { hosts } = useHosts()
+  const host = hosts.find((one) => one.id === opened.id) ?? opened
+  // What a `.then` reads once a read finishes: the host may have changed state while it was in flight, and the words said about why it failed are its latest, not the one at the moment it was asked.
+  const hostRef = useRef(host)
+  useEffect(() => {
+    hostRef.current = host
+  }, [host])
   const [folders, setFolders] = useState<Folders | undefined>()
   const [places, setPlaces] = useState<readonly Place[]>([])
   const [reading, setReading] = useState(true)
@@ -54,7 +75,7 @@ export function HostFolders({
       void window.geckit.hosts.folders(host.id, where).then((found) => {
         setReading(false)
         if (found === undefined || (where !== undefined && found.path !== where && found.path === found.home)) {
-          setTrouble(`Could not read ${where ?? 'the home folder'} on ${host.name}.`)
+          setTrouble(readTrouble(hostRef.current, where))
           return
         }
         setFolders(found)
@@ -63,7 +84,7 @@ export function HostFolders({
         list.current?.focus()
       })
     },
-    [host.id, host.name],
+    [host],
   )
 
   // The home folder first, which is also what says which places the host has.
@@ -71,7 +92,7 @@ export function HostFolders({
     void window.geckit.hosts.folders(host.id, undefined).then((found) => {
       setReading(false)
       if (found === undefined) {
-        setTrouble(`Could not read the folders on ${host.name}.`)
+        setTrouble(readTrouble(hostRef.current, undefined))
         return
       }
       setFolders(found)
@@ -99,13 +120,13 @@ export function HostFolders({
   const add = (): void => {
     if (target === '') return
     setAdding(true)
-    void window.geckit.hosts.addFolder(host.id, target).then((root) => {
+    void window.geckit.hosts.addFolderSaying(host.id, target).then((said) => {
       setAdding(false)
-      if (root === undefined) {
-        setTrouble(`${target} is not a folder on ${host.name}.`)
+      if ('problem' in said) {
+        setTrouble(said.problem)
         return
       }
-      onAdded(root)
+      onAdded(said.root)
       onClose()
     })
   }
@@ -220,7 +241,13 @@ export function HostFolders({
             ) : trouble !== undefined && folders === undefined ? (
               <div className="folder-note trouble">{trouble}</div>
             ) : shown.length === 0 ? (
-              <div className="folder-note">{filter === '' ? `No folders inside ${base(path)}` : `No folder named like "${filter}"`}</div>
+              <div className="folder-note">
+                {host.state === 'lost'
+                  ? `${host.name} is out of reach. Trying again`
+                  : filter === ''
+                    ? `No folders inside ${base(path)}`
+                    : `No folder named like "${filter}"`}
+              </div>
             ) : (
               shown.map((one) => (
                 <div
@@ -234,7 +261,11 @@ export function HostFolders({
                 >
                   <Icon name="folder" size={14} />
                   <span className="name">{one.name}</span>
-                  {one.git ? <span className="folder-git">git</span> : null}
+                  {one.git ? (
+                    <span className="folder-git" title="Git repository">
+                      git
+                    </span>
+                  ) : null}
                 </div>
               ))
             )}

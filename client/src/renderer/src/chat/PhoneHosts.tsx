@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import type { Folders as FolderList } from '../../../shared/api'
 import { remoteRoot, stateLine } from '../../../shared/hosts'
-import type { HostView } from '../../../shared/hosts'
+import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { macs } from '../macs'
 import { tap } from '../tap'
 import { HostDot } from './HostParts'
@@ -25,6 +25,23 @@ export const pairedName = (): string | undefined => macs()?.list().find((one) =>
 /** What the phone calls the host it works through, in a sentence. */
 export const computerName = (): string => pairedName() ?? 'the host'
 
+/**
+ * Whether a host's trouble is one only the computer can fix, said as "X needs
+ * you on <computer>": no Claude Code there, not signed in, or a key that
+ * changed, since none of those is answered by a sheet here. A plain `needs`
+ * with a password, passphrase or code already up is answered by the phone's
+ * own sheet instead, so it does not also say to go to the computer.
+ */
+export const needsComputer = (host: HostView, prompts: readonly HostPrompt[]): boolean =>
+  host.state === 'missing' ||
+  host.state === 'signin' ||
+  host.changedKey !== undefined ||
+  (host.state === 'needs' && !prompts.some((prompt) => prompt.host === host.id))
+
+/** How a host stands, in the words the phone shows: a changed key is not the phone's to fix, so it says where to. */
+const phoneStateLine = (host: HostView, now: number): string =>
+  host.changedKey !== undefined ? `${host.name}'s key has changed. Check it on ${computerName()}.` : stateLine(host, now)
+
 /** A host as a row: its dot and its name, and how it stands where it is not connected. */
 function HostCell({ host, now, onPress }: { readonly host: HostView; readonly now: number; readonly onPress: () => void }): React.JSX.Element {
   return (
@@ -35,7 +52,7 @@ function HostCell({ host, now, onPress }: { readonly host: HostView; readonly no
           {host.name}
         </span>
       }
-      {...(host.state === 'up' ? {} : { says: stateLine(host, now) })}
+      {...(host.state === 'up' ? {} : { says: phoneStateLine(host, now) })}
       onPress={onPress}
     />
   )
@@ -114,7 +131,9 @@ export function PhoneHostFolders({
           .map((one) => (
             <Cell key={one.path} label={one.name} icon="folder" {...(one.git ? { says: 'Git repository' } : {})} onPress={() => setAt(one.path)} />
           ))}
-        {shown.folders.every((one) => one.name.startsWith('.')) ? <Cell label="No folders in it" /> : null}
+        {shown.folders.every((one) => one.name.startsWith('.')) ? (
+          <Cell label={`No folders inside ${shown.path.split('/').filter((part) => part !== '').pop() ?? host.name}`} />
+        ) : null}
       </div>
       {onShown !== undefined ? null : (
         <div className="phone-group phone-form-group">
@@ -127,15 +146,15 @@ export function PhoneHostFolders({
               : {
                   onPress: () => {
                     setAdding(true)
-                    void window.geckit.hosts.addFolder(host.id, shown.path).then((root) => {
+                    void window.geckit.hosts.addFolderSaying(host.id, shown.path).then((said) => {
                       setAdding(false)
-                      if (root === undefined) {
-                        setTrouble(`Could not add ${shown.path} on ${host.name}.`)
+                      if ('problem' in said) {
+                        setTrouble(said.problem)
                         return
                       }
                       tap('done')
                       chat.refresh()
-                      onAdded?.(root)
+                      onAdded?.(said.root)
                     })
                   },
                 })}

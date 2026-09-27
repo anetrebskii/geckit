@@ -4,7 +4,7 @@ import { Icon } from '../ui/Icon'
 import { MOD } from '../ui/Shortcuts'
 import { homeOf, profileOf, shownProjects } from '../../../shared/api'
 import { PROJECT_COLORS, projectColor } from '../../../shared/project-color'
-import { hostOf, stateLine, targetLine } from '../../../shared/hosts'
+import { besideName, hostOf, stateLine } from '../../../shared/hosts'
 import type { HostView } from '../../../shared/hosts'
 import { AddHost } from './Hosts'
 import { useMinute } from './useHosts'
@@ -467,7 +467,7 @@ function GroupRow({
       </button>
       <span className="group-dot">{host === undefined ? <Icon name="display" size={12} /> : <HostDot state={host.state} />}</span>
       <span className="group-name">{row.name}</span>
-      <span className="group-says">{host === undefined ? row.path : host.state === 'up' ? targetLine(host) : stateLine(host, now)}</span>
+      <span className="group-says">{host === undefined ? row.path : host.state === 'up' ? besideName(host) : stateLine(host, now)}</span>
       <Standing work={row.work} />
       <Waiting waits={row.waits} />
     </div>
