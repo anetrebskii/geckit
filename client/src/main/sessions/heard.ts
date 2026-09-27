@@ -60,6 +60,8 @@ export interface Driver {
   stop(): void
   /** Lets go of it, settled once the process has gone. The conversation stays where the tool keeps it. */
   end(): Promise<void>
+  /** Lets go of it here and leaves it running where it runs, for GeckIt quitting. Where it runs here, the same as end. */
+  leave?(): void
 }
 
 /**

@@ -1,3 +1,5 @@
+import type { HostConfig } from './hosts'
+
 /**
  * The contract between the main process and the windows.
  *
@@ -775,6 +777,8 @@ export interface Settings {
   readonly shortcuts: readonly Shortcut[]
   /** What is written often, offered after ; in the message field. */
   readonly phrases: readonly string[]
+  /** Other computers conversations run on, reached over SSH. Never a password: those are in the system's credential store. */
+  readonly hosts: readonly HostConfig[]
 }
 
 /** A saved prompt, run by hand or on a timetable, each time as a new conversation in its project. */
@@ -879,4 +883,5 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarWidth: 264,
   shortcuts: [],
   phrases: [],
+  hosts: [],
 }

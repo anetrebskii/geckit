@@ -185,6 +185,7 @@ export interface SessionsDeps {
     delete?(root: string, id: string): Promise<boolean>
     goal?(root: string, id: string): Promise<GoalRead>
     forkPoint?(root: string, id: string, at: number): Promise<string | undefined>
+    links?(root: string, id: string): Promise<Link[]>
     every?: typeof everyClaude
   }
   readonly there?: (path: string) => Promise<boolean>
@@ -579,7 +580,7 @@ export class Sessions {
     const live = this.#live.get(id)
     if (live?.driver !== undefined) return linksIn([...live.items.values()])
     const root = live?.root ?? this.#rows.get(id)?.root
-    return root === undefined ? [] : readLinks(root, id)
+    return root === undefined ? [] : (this.#deps.disk?.links ?? readLinks)(root, id)
   }
 
   /** Start holding in memory a session the tool listed. */
@@ -1192,6 +1193,25 @@ export class Sessions {
   }
 
   /** The conversations whose turn was running when GeckIt last closed, newest first. */
+  /**
+   * Conversations still running on their hosts from before GeckIt last closed,
+   * held again as working: their runs are picked up where they were read to.
+   */
+  reattach(runs: readonly { readonly id: string; readonly root: string }[]): void {
+    for (const run of runs) {
+      if (this.#live.has(run.id)) continue
+      const note = this.#deps.notes.all()[run.id]
+      const live = this.#fresh(run.id, run.root, note?.title ?? '', sessionMode(note?.mode))
+      live.begun = true
+      live.chosen = note?.model
+      live.state = 'working'
+      live.queued = [...(note?.queued ?? [])]
+      this.#uncut(run.id)
+      void this.#hold(live)
+    }
+    this.#changed()
+  }
+
   cutOff(): CutOff[] {
     return Object.entries(this.#deps.notes.all())
       .flatMap(([id, note]) =>
@@ -1456,7 +1476,9 @@ export class Sessions {
       clearTimeout(live.back)
       clearTimeout(live.stopping)
       for (const running of live.commands.values()) running.stop()
-      live.driver?.end()
+      // A run on a host is left going there, and picked up on the next start.
+      if (live.driver?.leave === undefined) void live.driver?.end()
+      else live.driver.leave()
     }
     this.#live.clear()
     this.#watching = undefined
