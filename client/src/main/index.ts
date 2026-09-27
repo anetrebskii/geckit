@@ -54,6 +54,7 @@ import { projectFiles } from './files'
 import { foldersIn } from './folders'
 import { fetchGit, gitRepo, gitState } from './git'
 import { keepGuide } from './guide'
+import { fileShown } from './file-shown'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import type { McpChange } from './sessions/mcp'
@@ -650,6 +651,7 @@ function wire(): void {
   ipcMain.handle('chat:taskOutput', (_event, id: string, task: string) => sessions?.taskOutput(id, task))
   ipcMain.on('chat:reveal', (_event, root: string, path: string) => shell.showItemInFolder(fileAt(root, path)))
   ipcMain.handle('chat:exists', (_event, root: string, path: string) => isThere(root, path))
+  ipcMain.handle('chat:file', (_event, root: string, path: string) => fileShown(root, path))
   ipcMain.handle('chat:repo', (_event, root: string) => gitRepo(root))
   ipcMain.handle('chat:files', (_event, root: string) => projectFiles(root))
   ipcMain.on('chat:openFile', (_event, root: string, path: string) => openFile(getSettings().openWith, root, path))
@@ -658,6 +660,10 @@ function wire(): void {
     if (window !== null) fileMenu(window, root, path)
   })
   ipcMain.handle('settings:pickApp', (event) => pickApp(BrowserWindow.fromWebContents(event.sender) ?? panelWindow()))
+  ipcMain.handle('settings:accessibility', () => process.platform !== 'darwin' || systemPreferences.isTrustedAccessibilityClient(false))
+  ipcMain.on('settings:openAccessibility', () => {
+    if (process.platform === 'darwin') void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility')
+  })
   ipcMain.on('clipboard:write', (_event, text: string, html: string) => clipboard.write({ text, html }))
   ipcMain.on('open:link', (_event, href: string) => {
     if (/^https?:\/\//.test(href)) void shell.openExternal(href)
@@ -792,6 +798,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.browsers': (root: string, id: string | undefined, pick: string | undefined) => held()?.browsers(root, id, pick),
     'chat.git': (root: string) => gitFor(root, (state) => shownPeer()?.webContents.send('peer:tell', 'chat:git', { root, state })),
     'chat.exists': (root: string, path: string) => isThere(root, path),
+    'chat.file': (root: string, path: string) => fileShown(root, path),
     'chat.repo': (root: string) => gitRepo(root),
     'chat.files': (root: string) => projectFiles(root),
     'chat.forgetProject': (root: string) => forgetProject(root),

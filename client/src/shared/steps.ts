@@ -1,4 +1,4 @@
-import type { SessionItem } from './api'
+import type { SessionImage, SessionItem } from './api'
 
 /** What was done on the way to an answer, as opposed to what was said: read, ran, thought, changed, allowed. */
 export const isStep = (item: SessionItem): boolean =>
@@ -14,11 +14,14 @@ export function collapse(items: readonly SessionItem[]): SessionItem[] {
   const out: SessionItem[] = []
   let ids: string[] = []
   let latest: string | undefined
+  let images: SessionImage[] = []
   const close = (): void => {
     const first = ids[0]
-    if (first !== undefined) out.push({ kind: 'steps', id: runKey(first), ids, ...(latest === undefined ? {} : { latest }) })
+    if (first !== undefined)
+      out.push({ kind: 'steps', id: runKey(first), ids, ...(latest === undefined ? {} : { latest }), ...(images.length === 0 ? {} : { images }) })
     ids = []
     latest = undefined
+    images = []
   }
   for (const item of items) {
     if (!isStep(item)) {
@@ -27,7 +30,10 @@ export function collapse(items: readonly SessionItem[]): SessionItem[] {
       continue
     }
     ids.push(item.id)
-    if (item.kind === 'did') latest = item.what
+    if (item.kind === 'did') {
+      latest = item.what
+      images.push(...(item.images ?? []))
+    }
   }
   close()
   return out

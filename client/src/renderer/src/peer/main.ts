@@ -81,7 +81,7 @@ const byName = new Set<Link>()
 // A phone that folds steps asks for the end of what it opens, and lines sent unfolded before that would land after it.
 const folding = new Set<Link>()
 const forPhone = (link: Link, id: string, all: readonly SessionItem[]): SessionItem[] =>
-  byName.has(link) ? collapse(all).map((item) => withoutPictures(id, item)) : collapse(all)
+  collapse(byName.has(link) ? all.map((item) => withoutPictures(id, item)) : all)
 
 // A picture is drawn 220 points wide in the conversation and fills the screen when pressed, so it is sent at the width asked for, and no wider than it is.
 const scaled = new Map<string, Promise<SessionImage>>()

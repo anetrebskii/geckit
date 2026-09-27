@@ -54,8 +54,11 @@ export function getSettings(): Settings {
   // No file yet means a first run, and the old build's keys are worth keeping.
   if (settings === undefined) {
     const found = read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }
+    // A build from before the welcome kept no answer, and anyone with a project has already set up.
+    const kept = read<Partial<Settings>>(SETTINGS, {})?.welcomed
     settings = {
       ...found,
+      welcomed: kept ?? found.projects.length > 0,
       chatMode: sessionMode(found.chatMode),
       projectColors: withColors(found),
       phoneKey: found.phoneKey === '' ? newKey() : found.phoneKey,
@@ -63,7 +66,8 @@ export function getSettings(): Settings {
     // Projects listed before colours were, and the phone's key, given once and for all.
     if (
       Object.keys(settings.projectColors).length !== Object.keys(found.projectColors).length ||
-      settings.phoneKey !== found.phoneKey
+      settings.phoneKey !== found.phoneKey ||
+      settings.welcomed !== kept
     ) {
       write(SETTINGS, settings)
     }

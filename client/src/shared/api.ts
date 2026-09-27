@@ -114,6 +114,8 @@ export type SessionItem =
       readonly ids: readonly string[]
       /** What the last of them did: "Ran npm test". */
       readonly latest?: string
+      /** The pictures its steps handed back, shown under the line while it is shut. */
+      readonly images?: readonly SessionImage[]
     }
 
 /** Where a session stands, which is also which group its row is under. */
@@ -305,6 +307,13 @@ export interface SessionImage {
   readonly data: string
   readonly ref?: string
 }
+
+/** A file said in a conversation, read on the Mac for the phone to show: a picture, a page with what it links to put inside it, or text. */
+export type FileShown =
+  | { readonly kind: 'picture'; readonly image: SessionImage }
+  | { readonly kind: 'page'; readonly html: string }
+  | { readonly kind: 'markdown' | 'text'; readonly text: string }
+  | { readonly kind: 'none'; readonly why: string }
 
 /** What the tool said it has, or that it is being asked, or that it did not say. */
 export type ModelsSaid = 'unasked' | 'asking' | 'unsaid' | readonly ClaudeModel[]
@@ -732,6 +741,8 @@ export interface Settings {
   readonly updateChannel: UpdateChannel
   /** False takes GECKIT.md and the line that reads it out of the tool's own folder again. */
   readonly guideClaude: boolean
+  /** The first-start sheet was finished or skipped. False shows it again. */
+  readonly welcomed: boolean
   /** Phones with GeckIt's app can reach the conversations. */
   readonly phone: boolean
   /** What the QR code carries; made on the first start, and again by New code. */
@@ -837,6 +848,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autoUpdate: true,
   updateChannel: 'stable',
   guideClaude: true,
+  // True until the main process says otherwise, so a window never flashes the sheet before its settings arrive.
+  welcomed: true,
   phone: false,
   phoneKey: '',
   sidebarWidth: 264,

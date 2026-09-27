@@ -12,6 +12,7 @@ import { CutOffDialog } from './CutOff'
 import { PhoneHome } from './PhoneHome'
 import { EdgeBack, PhoneNav } from './PhoneNav'
 import { Screen } from './Screen'
+import { FileView } from './FileView'
 import { Composer } from './Composer'
 import { NameField } from './NameField'
 import { projectColor } from '../../../shared/project-color'
@@ -26,6 +27,7 @@ import type { Seek } from './Switcher'
 import { Files } from './Prose'
 import type { FileHow } from './Prose'
 import { Transcript } from './Transcript'
+import { Welcome } from './Welcome'
 import { ON_PHONE } from '../on-phone'
 import { UpdateNotice } from '../ui/UpdateNotice'
 import { useChat } from './useChat'
@@ -124,10 +126,13 @@ export function Chat(): React.JSX.Element {
     setSetting(false)
     setKeys(true)
   }, [])
+  // A file pressed on the phone, shown here since the phone has nothing to open it in.
+  const [viewing, setViewing] = useState<{ readonly root: string; readonly path: string } | undefined>()
   const file = useCallback(
     (path: string, how: FileHow) => {
       if (root === undefined) return
-      if (how === 'reveal') window.geckit.chat.reveal(root, path)
+      if (ON_PHONE) setViewing({ root, path })
+      else if (how === 'reveal') window.geckit.chat.reveal(root, path)
       else if (how === 'menu') window.geckit.chat.fileMenu(root, path)
       else window.geckit.chat.openFile(root, path)
     },
@@ -643,6 +648,7 @@ export function Chat(): React.JSX.Element {
 
       <Notices chat={chat} />
       {screening ? <Screen onClose={() => setScreening(false)} /> : null}
+      {viewing === undefined ? null : <FileView root={viewing.root} path={viewing.path} onClose={() => setViewing(undefined)} />}
       <UpdateNotice />
       {recent === undefined ? null : (
         <Recent
@@ -667,6 +673,7 @@ export function Chat(): React.JSX.Element {
         <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />
       ) : null}
       {keys ? <ShortcutsDialog onClose={closeKeys} /> : null}
+      {chat.settings.welcomed || ON_PHONE ? null : <Welcome chat={chat} />}
       {managing === undefined ? null : (
         <ShortcutList key={managing.at} chat={chat} start={managing.edit} onClose={closeShortcuts} />
       )}

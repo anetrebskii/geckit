@@ -2828,6 +2828,20 @@ button.tag:hover {
   margin: 4px 0 8px 20px;
 }
 
+/* The pictures of a shut run of steps, in one row that scrolls sideways. */
+.fold-pictures {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.fold-pictures img,
+.fold-pictures .picture-waiting {
+  flex: none;
+  max-width: 160px;
+  max-height: 160px;
+}
+
 /* One picture, filling the window */
 
 .preview {
@@ -5370,8 +5384,11 @@ html.phone button:active:not(:disabled) {
 }
 
 .phone-task-bar b {
+  overflow: hidden;
   font-size: 17px;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .phone-task-bar button {
@@ -5396,6 +5413,29 @@ html.phone button:active:not(:disabled) {
   min-height: 0;
   padding: 8px 16px calc(var(--bottom) + 16px);
   overflow-y: auto;
+}
+
+.phone-task-form:has(> .file-view-page) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.file-view-page {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.file-view-said {
+  margin: 24px 0;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.file-view-prose {
+  padding-bottom: 16px;
 }
 
 .phone-task-label {
@@ -6202,4 +6242,578 @@ html.phone .preview-bar .icon-button {
   height: 36px;
   color: #fff;
   border-radius: 999px;
+}
+
+/* ------------------------------------------------------------------ */
+/* The welcome a first start opens over the board (docs/ux/welcome.md). */
+
+.welcome {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px 24px;
+  background: var(--bg);
+  animation: fade var(--settle) var(--ease) both;
+}
+
+.welcome-drag {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--topbar);
+  -webkit-app-region: drag;
+}
+
+.welcome-skip {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  padding: 4px 10px;
+  color: var(--text-faint);
+  border-radius: var(--radius);
+}
+
+.welcome-skip:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(520px, 100%);
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  animation: lift var(--settle) var(--ease) both;
+}
+
+.welcome-card h1 {
+  margin: 8px 0 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.welcome-card p {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.welcome-card .field {
+  margin: 0;
+}
+
+.welcome-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.welcome-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.welcome-list svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.welcome-list b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.welcome-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+}
+
+.welcome-status.ready {
+  color: var(--success-text);
+  background: var(--accent-soft);
+}
+
+.welcome-status.missing,
+.welcome-status.out,
+.welcome-status.key {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+}
+
+.welcome-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.welcome-command code {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  overflow-x: auto;
+  font-family: var(--font-code);
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: all;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.welcome-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(520px, 100%);
+  margin-top: 24px;
+}
+
+.welcome-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.welcome-dots button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  background: var(--fill-strong);
+  border-radius: 50%;
+  transition: width var(--settle) var(--ease), background var(--settle) var(--ease);
+}
+
+.welcome-dots button.on {
+  width: 20px;
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+/* The pictures. Each one's own rules are its last frame, which is what stays with Reduce motion. */
+
+.welcome-art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 150px;
+  overflow: hidden;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.welcome-art i {
+  display: block;
+}
+
+.board-art {
+  gap: 12px;
+  align-items: stretch;
+  padding: 18px 22px;
+}
+
+.art-column {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  width: 128px;
+}
+
+.art-column span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.art-column i {
+  height: 30px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  opacity: 0.6;
+}
+
+.art-card {
+  position: absolute;
+  top: 40px;
+  left: calc(50% - 206px + 280px);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 128px;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  animation: art-card 4.2s var(--ease) infinite;
+}
+
+.art-card b {
+  width: 8px;
+  height: 8px;
+  background: var(--done-solid);
+  border-radius: 50%;
+  animation: art-status 4.2s var(--ease) infinite;
+}
+
+.art-card i {
+  width: 90%;
+  height: 5px;
+  background: var(--fill-strong);
+  border-radius: 3px;
+}
+
+.art-card i + i {
+  width: 55%;
+}
+
+@keyframes art-card {
+  0%,
+  22% {
+    left: calc(50% - 206px);
+    transform: none;
+  }
+  30% {
+    transform: translateY(-4px) rotate(-2deg);
+  }
+  38%,
+  56% {
+    left: calc(50% - 206px + 140px);
+    transform: none;
+  }
+  64% {
+    transform: translateY(-4px) rotate(2deg);
+  }
+  72%,
+  100% {
+    left: calc(50% - 206px + 280px);
+    transform: none;
+  }
+}
+
+@keyframes art-status {
+  0%,
+  33% {
+    background: var(--accent);
+  }
+  38%,
+  67% {
+    background: var(--review-solid);
+  }
+  72%,
+  100% {
+    background: var(--done-solid);
+  }
+}
+
+.terminal-art {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: #e8e8ea;
+  background: #1c1c1e;
+  border-color: #1c1c1e;
+}
+
+.art-lights {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.art-lights i {
+  width: 10px;
+  height: 10px;
+  background: #ff5f57;
+  border-radius: 50%;
+}
+
+.art-lights i:nth-child(2) {
+  background: #febc2e;
+}
+
+.art-lights i:nth-child(3) {
+  background: #28c840;
+}
+
+.art-line {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.art-prompt {
+  color: #5fd068;
+}
+
+.art-typed {
+  width: calc(var(--chars) * 1ch);
+  overflow: hidden;
+  border-right: 2px solid transparent;
+  animation:
+    art-type 1.8s steps(var(--chars)) both,
+    art-caret 0.8s step-end 6;
+}
+
+.art-answer {
+  color: #5fd068;
+  animation: fade var(--settle) var(--ease) 1.9s both;
+}
+
+@keyframes art-type {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes art-caret {
+  50% {
+    border-color: #e8e8ea;
+  }
+}
+
+.folder-art {
+  gap: 36px;
+}
+
+.art-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 170px;
+  padding: 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.art-list i,
+.art-slot {
+  height: 18px;
+  background: var(--fill);
+  border-radius: 4px;
+}
+
+.art-slot {
+  background: var(--accent-soft);
+  animation: art-slot 3.6s var(--ease) infinite;
+}
+
+.art-folder {
+  position: absolute;
+  top: 84px;
+  left: calc(50% - 104px);
+  display: flex;
+  color: var(--accent);
+  animation: art-folder 3.6s var(--ease) infinite;
+}
+
+@keyframes art-folder {
+  0% {
+    top: 40px;
+    left: calc(50% + 70px);
+    opacity: 0;
+    transform: scale(1.3);
+  }
+  15% {
+    top: 40px;
+    left: calc(50% + 70px);
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  50%,
+  100% {
+    top: 84px;
+    left: calc(50% - 104px);
+    opacity: 1;
+    transform: scale(0.7);
+  }
+}
+
+@keyframes art-slot {
+  0%,
+  45% {
+    background: var(--fill);
+  }
+  55%,
+  100% {
+    background: var(--accent-soft);
+  }
+}
+
+.keys-art {
+  flex-direction: column;
+  gap: 14px;
+}
+
+.art-keys {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.art-keys kbd {
+  min-width: 34px;
+  padding: 6px 8px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  text-align: center;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 3px;
+  border-radius: var(--radius);
+  animation: art-press 4s var(--ease) infinite;
+}
+
+.art-keys span {
+  width: 64px;
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.art-keys.art-correct kbd:nth-child(2) {
+  animation-delay: 0.25s;
+}
+
+.art-keys.art-correct kbd:nth-child(3) {
+  animation-delay: 0.5s;
+}
+
+.art-keys.art-dictate kbd {
+  animation-delay: 2s;
+}
+
+.art-keys.art-dictate kbd:nth-child(2) {
+  animation-delay: 2.25s;
+}
+
+.art-keys.art-dictate kbd:nth-child(3) {
+  animation-delay: 2.5s;
+}
+
+@keyframes art-press {
+  0%,
+  100% {
+    transform: none;
+  }
+  4%,
+  28% {
+    color: var(--accent-text);
+    background: var(--accent);
+    border-color: var(--accent);
+    border-bottom-width: 1px;
+    transform: translateY(2px);
+  }
+  34% {
+    transform: none;
+  }
+}
+
+.phone-art {
+  gap: 48px;
+}
+
+.art-code {
+  display: grid;
+  grid-template-columns: repeat(5, 12px);
+  gap: 2px;
+  padding: 8px;
+  background: #ffffff;
+  border-radius: 4px;
+}
+
+.art-code i {
+  height: 12px;
+}
+
+.art-code i.on {
+  background: #1d1d1f;
+}
+
+.art-phone {
+  position: relative;
+  width: 64px;
+  height: 118px;
+  overflow: hidden;
+  background: var(--bg-raised);
+  border: 3px solid var(--text);
+  border-radius: 14px;
+  animation: art-tilt 3.6s var(--ease) infinite;
+}
+
+.art-scan {
+  position: absolute;
+  inset: 30% 10% auto;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  opacity: 0;
+  animation: art-scan 3.6s linear infinite;
+}
+
+@keyframes art-tilt {
+  0%,
+  100% {
+    transform: translateX(30px) rotate(8deg);
+  }
+  30%,
+  75% {
+    transform: none;
+  }
+}
+
+@keyframes art-scan {
+  0%,
+  30% {
+    top: 30%;
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  55% {
+    top: 70%;
+  }
+  70% {
+    top: 30%;
+    opacity: 1;
+  }
+  75%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-art,
+  .welcome-art * {
+    animation: none !important;
+  }
 }

@@ -1,0 +1,45 @@
+import { useEffect, useState } from 'react'
+
+import type { FileShown } from '../../../shared/api'
+import { Code } from './Code'
+import { FullSheet, tooOld } from './PhoneKit'
+import { Preview } from './Preview'
+import { Prose } from './Prose'
+
+/**
+ * A file pressed in a conversation on the phone, read on the Mac and shown
+ * here: a picture in the viewer, a page drawn as it is and clickable, Markdown
+ * as it reads, anything else as text.
+ */
+export function FileView({ root, path, onClose }: { readonly root: string; readonly path: string; readonly onClose: () => void }): React.JSX.Element {
+  const [shown, setShown] = useState<FileShown | undefined>()
+  useEffect(() => {
+    let here = true
+    window.geckit.chat.file(root, path).then(
+      (got) => here && setShown(got),
+      (error: unknown) => here && setShown({ kind: 'none', why: tooOld(error) }),
+    )
+    return () => {
+      here = false
+    }
+  }, [root, path])
+
+  if (shown?.kind === 'picture') return <Preview src={`data:${shown.image.media};base64,${shown.image.data}`} onClose={onClose} />
+  return (
+    <FullSheet title={path.split('/').at(-1) ?? path} onClose={onClose}>
+      {shown === undefined ? (
+        <p className="file-view-said">Reading it on the Mac...</p>
+      ) : shown.kind === 'none' ? (
+        <p className="file-view-said">{shown.why}</p>
+      ) : shown.kind === 'page' ? (
+        <iframe className="file-view-page" title={path} sandbox="allow-scripts allow-forms" srcDoc={shown.html} />
+      ) : shown.kind === 'markdown' ? (
+        <div className="file-view-prose">
+          <Prose text={shown.text} />
+        </div>
+      ) : (
+        <Code detail>{shown.text}</Code>
+      )}
+    </FullSheet>
+  )
+}
