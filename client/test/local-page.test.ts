@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { localFetch } from '../src/main/local-page'
 import { isLocal, toMac, toPhone } from '../src/shared/local'
 
-const seen: { origin?: string; cookie?: string; host?: string }[] = []
+const seen: { origin: string | undefined; cookie: string | undefined; host: string | undefined }[] = []
 const server = createServer((request, answer) => {
   seen.push({ origin: request.headers.origin, cookie: request.headers.cookie, host: request.headers.host })
   if (request.url === '/login') {
