@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { UPDATE_CHANNELS, appName, channelLabel, profileOf } from '../../../shared/api'
 import type { AIProvider, OpenRule, PhoneView, ProjectProfile, Settings, Theme, UpdateChannel } from '../../../shared/api'
+import { HostsSection } from '../chat/Hosts'
 import { homePath, projectName } from '../chat/project'
 import { Icon } from './Icon'
 import { Picker } from './Menu'
@@ -9,7 +10,7 @@ import { MOD } from './Shortcuts'
 import { Version } from './UpdateNotice'
 
 /**
- * Settings, a section at a time: General, Profiles, Phrases, Correct and dictation, Phone, Version.
+ * Settings, a section at a time: General, Profiles, Hosts, Phrases, Correct and dictation, Phone, Version.
  *
  * Chat needs no key: it runs on the Claude plan through the person's own
  * `claude`, which is signed in from a terminal and never from here.
@@ -42,11 +43,12 @@ export const LANGUAGES = [
   'Japanese',
 ]
 
-type Section = 'general' | 'profiles' | 'phrases' | 'correct' | 'phone' | 'version'
+export type Section = 'general' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
   { value: 'profiles', label: 'Profiles' },
+  { value: 'hosts', label: 'Hosts' },
   { value: 'phrases', label: 'Phrases' },
   { value: 'correct', label: 'Correct and dictation' },
   { value: 'phone', label: 'Phone' },
@@ -60,13 +62,19 @@ export function SettingsDialog({
   change,
   onClose,
   onShortcuts,
+  working,
+  first,
 }: {
   readonly settings: Settings
   readonly change: (change: Partial<Settings>) => void
   readonly onClose: () => void
   readonly onShortcuts: () => void
+  /** How many conversations are working on a host, for Disconnect to warn about. */
+  readonly working?: (host: string) => number
+  /** The section it opens on. */
+  readonly first?: Section
 }): React.JSX.Element {
-  const [section, setSection] = useState<Section>('general')
+  const [section, setSection] = useState<Section>(first ?? 'general')
   const onPhone = document.documentElement.classList.contains('phone')
 
   useEffect(() => {
@@ -107,6 +115,7 @@ export function SettingsDialog({
               />
             ) : null}
             {section === 'profiles' ? <Profiles settings={settings} change={change} /> : null}
+            {section === 'hosts' ? <HostsSection {...(working === undefined ? {} : { working })} /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
             {section === 'phone' ? <PhoneAccess on={settings.phone} change={(phone) => change({ phone })} /> : null}

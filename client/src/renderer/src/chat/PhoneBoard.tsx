@@ -13,7 +13,7 @@ import { PhoneScope, ScopeButton } from './PhoneScope'
 import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
 import type { Macs } from '../macs'
-import { emptyProfile, projectName } from './project'
+import { emptyProfile, projectLabel } from './project'
 import { running } from './Tasks'
 import { ago, byDay, questionLeft } from './time'
 import type { Chat } from './useChat'
@@ -453,7 +453,7 @@ export function RowBody({
         )}
         <div className="phone-row-meta">
           <span style={{ color: `var(--project-${String(projectColor(homeOf(session), chat.settings))})`, fontWeight: 600 }}>
-            {projectName(homeOf(session))}
+            {projectLabel(homeOf(session))}
           </span>
           {chat.settings.favorites.includes(session.id) ? <Icon name="star" size={13} className="phone-row-star" /> : null}
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}

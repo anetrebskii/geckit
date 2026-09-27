@@ -1,17 +1,24 @@
-import { basename, extname } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, extname, join } from 'node:path'
 
-import type { FileShown, GitState } from '../../shared/api'
+import type { BackgroundTask, FileShown, GitState, McpServer, TaskOutput } from '../../shared/api'
 import { hostOf, pathOf } from '../../shared/hosts'
 import { readGit } from '../git'
 import { holdClaude } from '../sessions/claude'
 import type { ClaudeOptions } from '../sessions/claude'
 import type { Driver, Heard } from '../sessions/heard'
+import { MCP_ARGS, readMcp } from '../sessions/mcp'
+import type { McpChange } from '../sessions/mcp'
 import { plain, runShell } from '../sessions/shell'
+import { taskOutput } from '../sessions/tasks'
 import type { Ran, Running } from '../sessions/shell'
 import type { HostDisk } from './disk'
+import type { Forwards } from './forward'
 import type { Hosts } from './hosts'
 import { RemoteRun } from './run'
-import { existsScript, filesScript, quote, readFileScript, shellScript } from './run-script'
+import { claudeHereScript, existsScript, filesScript, quote, readFileScript, shellScript, taskOutputScript } from './run-script'
 import type { RunsStore } from './runs'
 import { runOn, spawnOn } from './ssh'
 
@@ -25,6 +32,7 @@ export interface Routes {
   readonly hosts: Hosts
   readonly disk: HostDisk
   readonly runs: RunsStore
+  readonly forwards: Forwards
 }
 
 /** Holds a conversation: a local process, or a run on its host. */
@@ -58,7 +66,9 @@ export function routedClaude(routes: Routes) {
       })
       return run
     }
-    return holdClaude({ ...options, launch }, hear, left)
+    // How much of a plan is spent is said for the account that answered, which on a host may not be this computer's.
+    const heard = (said: Heard): void => hear({ ...said, signals: said.signals.filter((signal) => signal.kind !== 'plan') })
+    return holdClaude({ ...options, launch }, heard, left)
   }
 }
 
@@ -100,6 +110,35 @@ export function routedShell(routes: Routes) {
         if (child.stdin.writable) child.stdin.write(text)
       },
     }
+  }
+}
+
+/** A project's MCP servers, asked of Claude Code on its host. */
+export function hostMcp(routes: Routes, root: string, change?: McpChange): Promise<McpServer[] | undefined> {
+  const id = hostOf(root)
+  const host = id === undefined ? undefined : routes.hosts.config(id)
+  if (host === undefined || routes.hosts.state(host.id) !== 'up') return Promise.resolve(undefined)
+  return readMcp(root, change, () => {
+    const child = spawnOn(host, routes.hosts.setup(), claudeHereScript(pathOf(root), ['claude', ...MCP_ARGS]))
+    child.stderr.resume()
+    return child
+  })
+}
+
+/** What a task in the background on a host printed, fetched and read as a local one is. */
+export async function hostTaskOutput(routes: Routes, root: string, session: string, task: BackgroundTask): Promise<TaskOutput | undefined> {
+  const id = hostOf(root)
+  const host = id === undefined ? undefined : routes.hosts.config(id)
+  if (host === undefined || routes.hosts.state(host.id) !== 'up' || !/^[A-Za-z0-9-]+$/.test(task.id)) return undefined
+  // A helper's is its whole conversation; a command's, the end of what it printed.
+  const most = task.kind === 'local_agent' ? 4 * 1024 * 1024 : 64_000
+  const ran = await runOn(host, routes.hosts.setup(), taskOutputScript(pathOf(root), session, task.id, task.output, most), { timeout: 30_000 })
+  const here = join(tmpdir(), `geckit-task-${randomUUID()}`)
+  await writeFile(here, ran.out)
+  try {
+    return await taskOutput(pathOf(root), here, task.kind)
+  } finally {
+    await rm(here, { force: true })
   }
 }
 

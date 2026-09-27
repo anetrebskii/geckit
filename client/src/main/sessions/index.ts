@@ -196,6 +196,8 @@ export interface SessionsDeps {
   readonly mcp?: (root: string, change?: McpChange) => Promise<McpServer[] | undefined>
   readonly browsers?: (root: string, pick?: string) => Promise<Browser[] | undefined>
   readonly shell?: typeof runShell
+  /** What a task in the background printed, where it is not on this computer to read. */
+  readonly taskOutput?: (root: string, session: string, task: BackgroundTask) => Promise<TaskOutput | undefined>
   /** Opens a terminal in the folder with the command typed in, for one that wants a keyboard. Without it, it is run here anyway. */
   readonly terminal?: (root: string, command: string) => void
   readonly now?: () => number
@@ -900,6 +902,11 @@ export class Sessions {
     const live = this.#live.get(id)
     const one = live?.tasks.find((each) => each.id === task)
     if (live === undefined || one === undefined) return undefined
+    const elsewhere = this.#deps.taskOutput
+    if (elsewhere !== undefined) {
+      const read = await elsewhere(live.root, live.id, one)
+      if (read !== undefined) return read
+    }
     return taskOutput(live.root, one.output ?? (await taskFile(live.root, live.id, one.id)), one.kind)
   }
 
@@ -1197,19 +1204,22 @@ export class Sessions {
    * Conversations still running on their hosts from before GeckIt last closed,
    * held again as working: their runs are picked up where they were read to.
    */
-  reattach(runs: readonly { readonly id: string; readonly root: string }[]): void {
+  async reattach(runs: readonly { readonly id: string; readonly root: string }[]): Promise<void> {
     for (const run of runs) {
       if (this.#live.has(run.id)) continue
       const note = this.#deps.notes.all()[run.id]
       const live = this.#fresh(run.id, run.root, note?.title ?? '', sessionMode(note?.mode))
       live.begun = true
       live.chosen = note?.model
-      live.state = 'working'
+      // Working only where a turn was running when GeckIt closed; the rest of what it says comes on the stream.
+      live.state = note?.cut === undefined ? 'idle' : 'working'
       live.queued = [...(note?.queued ?? [])]
       this.#uncut(run.id)
-      void this.#hold(live)
+      // What was said before is read from the file first; the stream then carries on from where it was read to.
+      await this.#reread(live).catch(() => undefined)
+      await this.#hold(live)
+      this.#changed()
     }
-    this.#changed()
   }
 
   cutOff(): CutOff[] {
@@ -1398,6 +1408,14 @@ export class Sessions {
   }
 
   /** The session the chat window is showing while it is in front, or none. */
+  /** The folder of the conversation in front, and which one it is: links said in it are about that folder's computer. */
+  watched(): { readonly id: string; readonly root: string } | undefined {
+    const id = this.#watching
+    if (id === undefined) return undefined
+    const root = this.#live.get(id)?.root ?? this.#rows.get(id)?.root
+    return root === undefined ? undefined : { id, root }
+  }
+
   watching(id: string | undefined): void {
     this.#watching = id
     if (id === undefined) return

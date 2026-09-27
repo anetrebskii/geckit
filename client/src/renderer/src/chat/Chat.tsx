@@ -17,7 +17,9 @@ import { FileView } from './FileView'
 import { Composer } from './Composer'
 import { NameField } from './NameField'
 import { projectColor } from '../../../shared/project-color'
-import { homePath, projectName, tint } from './project'
+import { hostOf, isRemote } from '../../../shared/hosts'
+import { HostChip, HostPromptCard, HostTroubleCard } from './HostParts'
+import { homePath, projectLabel, projectName, tint } from './project'
 import { Sidebar, Tags } from './Sidebar'
 import { Status, TalkStatus } from './Status'
 import { Notices } from './Notices'
@@ -95,6 +97,12 @@ export function Chat(): React.JSX.Element {
   const [screening, setScreening] = useState(false)
   const grab = useRef(0)
   const { addFiles, send, root } = chat
+  // The host the open conversation, or the one about to start, runs on.
+  const host = root === undefined ? undefined : chat.hosts.find((one) => one.id === hostOf(root))
+  const workingOn = useCallback(
+    (id: string) => chat.everyone.filter((one) => hostOf(one.root) === id && (one.state === 'working' || one.state === 'asks')).length,
+    [chat.everyone],
+  )
 
   // The transcript is drawn again whenever one of these is, so they are made
   // once rather than on every keystroke in the field below it.
@@ -134,7 +142,8 @@ export function Chat(): React.JSX.Element {
   const file = useCallback(
     (path: string, how: FileHow) => {
       if (root === undefined) return
-      if (ON_PHONE) setViewing({ root, path })
+      // A file on a host is not on this computer to open in an application, so it is shown here.
+      if (ON_PHONE || isRemote(root)) setViewing({ root, path })
       else if (how === 'reveal') window.geckit.chat.reveal(root, path)
       else if (how === 'menu') window.geckit.chat.fileMenu(root, path)
       else window.geckit.chat.openFile(root, path)
@@ -512,12 +521,13 @@ export function Chat(): React.JSX.Element {
                 <span className="tinted" style={{ fontSize: 12, ...tint(projectColor(homeOf(chat.session), chat.settings)) }}>
                   {projectName(homeOf(chat.session))}
                 </span>
+                {host === undefined ? null : <HostChip host={host} onTerminal={() => window.geckit.hosts.terminal(host.id)} />}
                 <Tags session={chat.session} marked={false} />
               </>
             ) : chat.root === undefined ? null : (
               <Picker
-                label={`in ${projectName(chat.root)}`}
-                choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectName(one), says: homePath(one) }))}
+                label={`in ${projectLabel(chat.root)}`}
+                choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectLabel(one), says: homePath(one) }))}
                 chosen={chat.root}
                 title="Start it in"
                 tip={homePath(chat.root)}
@@ -674,6 +684,14 @@ export function Chat(): React.JSX.Element {
       <Status chat={chat} />
 
       <Notices chat={chat} />
+      {chat.prompts.length === 0 && (host === undefined || !['missing', 'signin', 'needs'].includes(host.state)) ? null : (
+        <div className="host-prompts">
+          {chat.prompts.map((prompt) => (
+            <HostPromptCard key={prompt.id} prompt={prompt} canRemember={chat.hosts.find((one) => one.id === prompt.host)?.canRemember ?? false} />
+          ))}
+          {host === undefined || chat.prompts.some((one) => one.host === host.id) ? null : <HostTroubleCard host={host} />}
+        </div>
+      )}
       {screening ? <Screen onClose={() => setScreening(false)} /> : null}
       {viewing === undefined ? null : <FileView root={viewing.root} path={viewing.path} onClose={() => setViewing(undefined)} />}
       <UpdateNotice />
@@ -697,7 +715,7 @@ export function Chat(): React.JSX.Element {
       )}
       {switching ? <Switcher chat={chat} onClose={() => setSwitching(false)} onSeek={setSeek} /> : null}
       {setting ? (
-        <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />
+        <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} working={workingOn} />
       ) : null}
       {keys ? <ShortcutsDialog onClose={closeKeys} /> : null}
       {chat.settings.welcomed || ON_PHONE ? null : <Welcome chat={chat} />}

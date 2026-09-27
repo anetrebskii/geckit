@@ -7354,3 +7354,357 @@ html.phone .preview-bar .icon-button {
     animation: none !important;
   }
 }
+
+/*
+ * Hosts: other computers conversations run on.
+ *
+ * The dot says how a host stands, in the same colours as everything else that
+ * stands: the accent when it is there, hollow when it is not connected, blue
+ * while it connects, amber out of reach, red when it needs the person.
+ */
+.host-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.host-dot.idle {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-faint);
+}
+
+.host-dot.connecting {
+  background: var(--project-1);
+  animation: fade 900ms var(--ease) infinite alternate;
+}
+
+.host-dot.lost {
+  background: var(--review-solid);
+}
+
+.host-dot.needs,
+.host-dot.missing,
+.host-dot.signin {
+  background: var(--danger);
+}
+
+/* The host after a project's name: in the faint words, so the name still leads. */
+.host-tag {
+  color: var(--text-faint);
+}
+
+.picker.host-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.state-said.said-away {
+  color: var(--warning-text);
+}
+
+.state-said.said-away .state-dot {
+  background: var(--review-solid);
+}
+
+.row .stands .away {
+  color: var(--warning-text);
+}
+
+/* In place of the send button while the host cannot take a message: what is typed stays. */
+.host-waiting {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.host-waiting.lost {
+  color: var(--warning-text);
+}
+
+.host-waiting.needs,
+.host-waiting.missing,
+.host-waiting.signin {
+  color: var(--danger);
+}
+
+/* What a host asks, over the window, where it is seen whatever is open. */
+.host-prompts {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(460px, 92vw);
+  transform: translateX(-50%);
+}
+
+.host-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  animation: lift var(--settle) var(--ease) both;
+}
+
+.host-prompt-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.host-prompt-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.host-prompt .check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.host-said {
+  max-height: 160px;
+  margin: 0;
+  overflow: auto;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+
+/* Settings, Hosts. */
+.hosts-lead,
+.hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.hosts-list {
+  display: flex;
+  flex-direction: column;
+  margin: 6px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.host-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+}
+
+.host-row + .host-row {
+  border-top: 1px solid var(--border);
+}
+
+.host-lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.host-lines .name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.host-lines .says {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-lines .host-state {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.host-lines .host-state.trouble {
+  color: var(--danger);
+}
+
+.host-row .quiet {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+/* Add a host: Address wide, User and Port beside it. */
+.dialog.add-host {
+  width: min(520px, 94vw);
+}
+
+.add-host-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px 72px;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.add-host input[type='text'],
+.add-host input[type='password'],
+.add-host select {
+  width: 100%;
+}
+
+.host-auth {
+  width: max-content;
+  margin-bottom: 4px;
+}
+
+.host-offers {
+  display: flex;
+  flex-direction: column;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.host-offers button {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 4px 8px;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.host-offers button:hover {
+  background: var(--bg-hover);
+}
+
+.host-offers .name {
+  font-family: var(--font-code);
+  color: var(--text);
+}
+
+.host-offers .says {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+}
+
+.host-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  margin: 4px 0 0;
+  list-style: none;
+}
+
+.host-checks li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-dim);
+}
+
+.host-checks li.ok {
+  color: var(--success-text);
+}
+
+.host-checks li.failed {
+  color: var(--danger);
+}
+
+/* A folder on a host. */
+.dialog.host-folders {
+  width: min(500px, 94vw);
+}
+
+.host-folders input[type='text'] {
+  width: 100%;
+  font-family: var(--font-code);
+}
+
+.host-tree {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  padding: 3px;
+  margin-bottom: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.host-tree button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  color: var(--text-dim);
+  text-align: left;
+  border-radius: 4px;
+}
+
+.host-tree button:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.host-tree .name {
+  flex: 1;
+  font-family: var(--font-code);
+  font-size: 12px;
+}
+
+.host-tree .git {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* The project picker's groups: Local, and each host with how it stands. */
+.projects-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.projects-group .says {
+  margin-left: auto;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--text-faint);
+  text-transform: none;
+}
+
+.menu-item.project-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-left: 40px;
+  color: var(--text-dim);
+}
