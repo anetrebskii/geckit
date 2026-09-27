@@ -614,6 +614,24 @@ function Card({
 /** The row that opens the folder picker rather than choosing a project already there. */
 const PICK = '\u0000pick'
 
+interface KeptTask {
+  readonly root: string
+  readonly text: string
+  readonly goal: string
+}
+
+const keptKey = (question: boolean): string => (question ? 'newQuestion' : 'newTask')
+
+/** What was being written in the form when the app went away, so a restart brings it back. */
+export function keptTask(question: boolean): KeptTask | undefined {
+  try {
+    const kept = JSON.parse(localStorage.getItem(keptKey(question)) ?? 'null') as KeptTask | null
+    return kept === null || (kept.text.trim() === '' && kept.goal.trim() === '') ? undefined : kept
+  } catch {
+    return undefined
+  }
+}
+
 /** What recordings made for the form brought: their length together, their videos, and their frames. */
 interface Recorded {
   readonly seconds: number
@@ -634,9 +652,13 @@ export function NewTask({
   /** On the phone: opened to be filled from a recording, whose picker comes up at once. */
   readonly record?: boolean
 }): React.JSX.Element {
-  const [root, setRoot] = useState(() => chat.root ?? shownProjects(chat.settings)[0] ?? '')
-  const [text, setText] = useState('')
-  const [goal, setGoal] = useState('')
+  const [kept] = useState(() => keptTask(question))
+  const [root, setRoot] = useState(() => kept?.root ?? chat.root ?? shownProjects(chat.settings)[0] ?? '')
+  const [text, setText] = useState(kept?.text ?? '')
+  const [goal, setGoal] = useState(kept?.goal ?? '')
+  useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal })), [question, root, text, goal])
+  // Closed on purpose, it is let go of; a restart does not unmount it, so what was written stays for the next start.
+  useEffect(() => () => localStorage.removeItem(keptKey(question)), [question])
   const [pictures, setPictures] = useState<readonly SessionImage[]>([])
   const [over, setOver] = useState(false)
   const [recorded, setRecorded] = useState<Recorded | undefined>(undefined)
