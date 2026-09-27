@@ -248,11 +248,13 @@ describe('the SSH config', () => {
 
 describe("a host's folders", () => {
   it('reads one level, its checkouts marked, the way up given', () => {
-    const folders = readFolders('/home/leo\n@git\n1\ttrailmap\n0\t.cache\n0\tnotes\n')
+    const folders = readFolders('/home/leo\n@os Linux\n@home /home/leo\n@git\n1\ttrailmap\n0\t.cache\n0\tnotes\n')
     expect(folders).toEqual({
       path: '/home/leo',
       git: true,
       up: '/home',
+      system: 'Linux',
+      home: '/home/leo',
       folders: [
         { name: 'notes', path: '/home/leo/notes', git: false },
         { name: 'trailmap', path: '/home/leo/trailmap', git: true },

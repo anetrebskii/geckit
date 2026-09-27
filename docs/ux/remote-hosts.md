@@ -38,13 +38,13 @@ The one decision everything else follows from: **a host is part of a project's a
 |---|---|---|
 | Settings, new section "Hosts" (beside General, Profiles, Correct and dictation, Phone) | Local first, then each host: its name, `user@address`, how it stands, the Claude Code there and whose plan it runs on. "Add a host" at the bottom | Always |
 | "Add a host" sheet, new | Address, User, Port, Sign in with (Key or Password), Name; the checks it runs, line by line, under the fields. Details in section 4 | Pressed from Settings or from the project picker |
-| Project picker, Cmd+K, existing | Projects grouped under "Local" and then each host by name with a dot for how it stands. Each host's header row is itself a scope: "All on devbox". Each group ends with "Add a folder on devbox...", the list with "Add a host..." | Only when at least one host is added; before that it is as today |
+| Project picker, Cmd+K, existing | Projects grouped under "Local" and then each host. Every group is built the same way: its header (a dot for a host, its name, `user@address` or how it stands, and how many are open) is itself a scope, pressed to list only that group; then its projects; then, last in the group, "Add a folder..." for Local and "Add a folder on devbox..." for a host. Below the groups, "Add a host..." and "Hidden conversations..." | Only when at least one host is added; before that it is as today |
 | Project label on a card, a list row, a Cmd+P row, a Ctrl+Tab row, existing | For a project on a host: its name, then the host name in the faint text, `trailmap · devbox`. A local project: the name alone, as today | A project on a host |
 | Conversation header, existing | After the project name, a host chip `devbox` with its dot. Its menu: how it stands and since when, "Open a terminal there", "Reconnect" or "Disconnect" | A conversation on a host |
 | Card and list row, existing | While its host is out of reach, a conversation that was working or asking reads "devbox is out of reach. Still working there" as its second line. The others on that host keep their line | The host is Lost or Needs you |
 | Composer, existing | While its host is out of reach: the field stays, what is typed is kept, the send button is replaced by "Reconnecting to devbox". "Chrome" is greyed with the reason | Out of reach; Chrome is always greyed on a host |
 | New task form, existing | The Project select groups projects under Local and each host, and ends with "Choose a folder on this computer..." and "Choose a folder on devbox..." for each connected host | Only when a host is added |
-| Folder chooser on a host, new | A path field starting at the host's home, completing from the host's folders as it is typed, folders holding `.git` marked | "Choose a folder on devbox..." |
+| Folder chooser on a host, new | A sheet shaped like the system's own Open panel: Places down the left (Home, the usual folders the host has, and the root), a path bar of the folder's parts across the top, one level of folders in a list with checkouts marked `git`, a filter field, and Add with the chosen folder's name | "Add a folder on devbox..." |
 | Status bar, existing | Plan and Claude Code are those of the open conversation's host: `devbox · Your Claude Max plan · Claude Code 2.1.270` | A conversation on a host is open |
 | Sign-in card, new | A card like a permission card when the host asks for something: a password, a key's passphrase, a one-time code, or trust in its key | The host asked while connecting |
 | Phone | Nothing new: conversations on hosts are on the phone's board as they are on the computer's, carried through it | Always |
@@ -90,6 +90,19 @@ The form asks what every SSH client asks, in the order people know from JetBrain
 - A remembered password is kept in the system's own credential store (Keychain, Credential Manager, Secret Service), never in GeckIt's settings file. Not remembered, it is asked for on the sign-in card each time the host is connected.
 - A key's passphrase is asked for on the card when the agent does not already hold it. GeckIt does not keep it.
 - "Connect" checks, one line after another: "Reached devbox", "Claude Code 2.1.270", "Signed in: Claude Max". The host is saved only when the first line passes, as Zed does.
+
+### The folder chooser on a host
+
+The system's own Open panel shows only this computer's disks, and a host's folders are not among them unless the host is mounted, which needs software on both sides. So Local keeps the system panel, and a host gets a chooser built to behave like it:
+
+| Part | What it does |
+|---|---|
+| Places | Home, then the folders people keep work in that the host has: Desktop, Documents, Developer, Projects on a Mac; projects, code, src, work on Linux; and the root, "/" |
+| Path bar | The open folder's parts, each pressed to go back to it; the host's home is written as its name |
+| List | One level, folders only, sorted by name, hidden ones left out unless "Show hidden" is ticked; a checkout marked `git` |
+| Keyboard | Up and Down move, Enter or double click opens, Cmd+Up or Backspace goes to the enclosing folder, typing filters, Cmd+Shift+G types a path, Escape cancels |
+| Add | Adds the selected folder, or the open one when none is selected, and names it: "Add trailmap" |
+| States | "Reading devbox..." while it reads; "Could not read /srv on devbox." in the list, with the path bar still usable; "No folders inside trailmap" for a folder with none in it |
 
 ## 5. How it runs, as far as the person can tell
 
@@ -278,6 +291,8 @@ A conversation on a host moves between its columns exactly as a local one. Out o
 | Local projects marked? | Always; only when a host is added; never on cards | Never on cards; "Local" in the picker only when a host is added | Silent for the person with no hosts; the absence of a host name is itself the sign |
 | The word for this computer | Per system ("This Mac", "This PC"); one word | "Local", one word | GeckIt runs on three systems; one word reads the same in every screenshot and doc, as in Claude Desktop and VS Code |
 | Sign-in fields | One address string; separate fields | Separate fields, and the Address field splits `user@address:port` | The shape people know from Gateway and Termius, without losing the quick way |
+| Choosing a folder on a host | The system's Open panel; a chooser of GeckIt's | GeckIt's, shaped like the system's | The system panel cannot see a host's disk without mounting it, which means installing software on both sides; Local keeps the system panel |
+| Where "Add a folder" stands | One at the foot of the picker; one per group | Last in each group, Local included | A folder is added to a computer, so it is asked for where that computer's projects are |
 | Survive disconnect | End with the connection; a terminal multiplexer; own detached process | Own detached process | A multiplexer is not on every host and has its own output; a pipe and a file are |
 | Host as a scope | Only projects; "All on devbox" too | Both, the header row is the scope | Narrowing to a host is the "switch" people will look for, and it costs one row |
 | Profiles | Separate from hosts; able to hold projects on hosts | They hold any project | A profile is a list of projects; where they are is their own business |

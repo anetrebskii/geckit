@@ -8,7 +8,8 @@ import { hostOf, stateLine, targetLine } from '../../../shared/hosts'
 import type { HostView } from '../../../shared/hosts'
 import { AddHost } from './Hosts'
 import { useMinute } from './useHosts'
-import { HostDot, HostFolders } from './HostParts'
+import { HostFolders } from './HostFolders'
+import { HostDot } from './HostParts'
 import { homePath, projectLabel, projectName } from './project'
 import type { Chat } from './useChat'
 import { ALL } from './useChat'
@@ -20,8 +21,9 @@ import { HiddenChats } from './HiddenChats'
  */
 
 const ADD = ''
-/** A host's own row, which lists every project on it. */
+/** The head of a group, which lists every project in it: a host by its id, or Local. */
 const ON_HOST = 'host:'
+const LOCAL = '\u0000local'
 /** Add a folder on a host. */
 const ADD_ON = 'add:'
 
@@ -93,7 +95,8 @@ interface Row {
   readonly path: string
   readonly waits: Waits | undefined
   readonly work: Work | undefined
-  readonly kind: 'all' | 'project' | 'host' | 'add'
+  /** `group` is the head of Local or of a host, which lists that group alone. */
+  readonly kind: 'all' | 'project' | 'group' | 'add'
   /** The host its group is under, or `local`; nothing where there are no hosts. */
   readonly group?: string
 }
@@ -164,34 +167,39 @@ function Menu({
     kind: 'project',
     ...(group === undefined ? {} : { group }),
   })
-  const onHost = (id: string): string[] => projects.filter((root) => hostOf(root) === id)
-  const matches = (row: Row): boolean => row.kind === 'all' || words.every((word) => `${row.name} ${row.value}`.toLowerCase().includes(word))
+  const onHost = (id: string | undefined): string[] => projects.filter((root) => hostOf(root) === id)
+  const matches = (row: Row): boolean =>
+    row.kind === 'all' || row.kind === 'group' || words.every((word) => `${row.name} ${row.value}`.toLowerCase().includes(word))
   const all: Row = { value: ALL, name: everyName(chat), path: folders(projects.length), waits: everywhere, work: standing, kind: 'all' }
+  // Local and each host are built the same way: a head that lists the group alone, its projects, and adding a folder to it.
+  const group = (id: string | undefined, name: string): Row[] => {
+    const key = id ?? LOCAL
+    const roots = onHost(id)
+    const inside = roots.map((root) => projectRow(root, key)).filter(matches)
+    if (words.length > 0 && inside.length === 0) return []
+    return [
+      {
+        value: `${ON_HOST}${key}`,
+        name,
+        path: folders(roots.length),
+        waits: sumWaits(roots.map((root) => waits.get(root))),
+        work: sumWork(roots.map((root) => work.get(root))),
+        kind: 'group',
+        group: key,
+      },
+      ...inside,
+      { value: id === undefined ? ADD : `${ADD_ON}${id}`, name: id === undefined ? 'Add a folder...' : `Add a folder on ${name}...`, path: '', waits: undefined, work: undefined, kind: 'add', group: key },
+    ]
+  }
   const rows: Row[] =
     chat.hosts.length === 0
       ? [all, ...projects.map((root) => projectRow(root))].filter(matches)
-      : [
-          all,
-          ...projects.filter((root) => hostOf(root) === undefined).map((root) => projectRow(root, 'local')),
-          ...chat.hosts.flatMap((host): Row[] => [
-            {
-              value: `${ON_HOST}${host.id}`,
-              name: `All on ${host.name}`,
-              path: folders(onHost(host.id).length),
-              waits: sumWaits(onHost(host.id).map((root) => waits.get(root))),
-              work: sumWork(onHost(host.id).map((root) => work.get(root))),
-              kind: 'host',
-              group: host.id,
-            },
-            ...onHost(host.id).map((root) => projectRow(root, host.id)),
-            { value: `${ADD_ON}${host.id}`, name: `Add a folder on ${host.name}...`, path: '', waits: undefined, work: undefined, kind: 'add', group: host.id },
-          ]),
-        ].filter(matches)
+      : [all, ...group(undefined, 'Local'), ...chat.hosts.flatMap((host) => group(host.id, host.name))]
   const here = Math.min(at, Math.max(0, rows.length - 1))
 
   const pick = (value: string): void => {
     if (value === ADD) chat.addProject()
-    else if (value.startsWith(ON_HOST)) chat.choose(onHost(value.slice(ON_HOST.length)))
+    else if (value.startsWith(ON_HOST)) chat.choose(onGroup(value))
     else if (value.startsWith(ADD_ON)) {
       const host = chat.hosts.find((one) => one.id === value.slice(ADD_ON.length))
       if (host !== undefined) onFolderOn(host)
@@ -199,11 +207,16 @@ function Menu({
     onClose()
   }
 
+  const onGroup = (value: string): string[] => {
+    const key = value.slice(ON_HOST.length)
+    return onHost(key === LOCAL ? undefined : key)
+  }
+
   // The check is the way to list several at once; the row itself still switches to one.
   const on = (value: string): boolean => {
     if (value === ALL) return chat.chosen.length === 0
     if (value.startsWith(ON_HOST)) {
-      const roots = onHost(value.slice(ON_HOST.length))
+      const roots = onGroup(value)
       return chat.chosen.length > 0 && roots.length > 0 && roots.every((root) => chat.chosen.includes(root))
     }
     return chat.chosen.includes(value)
@@ -211,7 +224,7 @@ function Menu({
   const also = (value: string): void => {
     if (value === ALL) chat.setScope(ALL)
     else if (value.startsWith(ON_HOST)) {
-      const roots = onHost(value.slice(ON_HOST.length))
+      const roots = onGroup(value)
       chat.choose(on(value) ? chat.chosen.filter((root) => !roots.includes(root)) : [...new Set([...chat.chosen, ...roots])])
     } else chat.alsoScope(value)
   }
@@ -254,8 +267,18 @@ function Menu({
         {rows.length === 0 ? <div className="empty">No project by that name.</div> : null}
         {rows.map((row, index) => (
           <div key={row.value}>
-            {row.group === undefined || rows[index - 1]?.group === row.group ? null : <GroupHead chat={chat} group={row.group} />}
-            {row.kind === 'add' ? (
+            {row.kind === 'group' ? (
+              <GroupRow
+                chat={chat}
+                row={row}
+                on={on(row.value)}
+                at={index === here}
+                first={index === 1}
+                onAt={() => setAt(index)}
+                onPick={() => pick(row.value)}
+                onAlso={() => also(row.value)}
+              />
+            ) : row.kind === 'add' ? (
               <div
                 role="menuitem"
                 className={`menu-item project-add${index === here ? ' at' : ''}`}
@@ -288,7 +311,7 @@ function Menu({
               >
                 {on(row.value) ? <Icon name="check" size={13} /> : null}
               </button>
-              {row.kind === 'all' || row.kind === 'host' ? (
+              {row.kind === 'all' ? (
                 <span className="project-dot-space" />
               ) : (
                 <button
@@ -311,7 +334,7 @@ function Menu({
               </span>
               <Standing work={row.work} />
               <Waiting waits={row.waits} />
-              {row.kind === 'all' || row.kind === 'host' ? (
+              {row.kind === 'all' ? (
                 <span className="forget-space" />
               ) : (
                 <button
@@ -348,12 +371,14 @@ function Menu({
         ))}
         <div className="menu-divider" />
         <div className="projects-hint">A check lists a project beside the others. Pressing a row shows only that one.</div>
-        <button type="button" role="menuitem" className="menu-item" onClick={() => pick(ADD)}>
-          <span style={{ width: 14, flexShrink: 0 }}>
-            <Icon name="plus" size={13} />
-          </span>
-          {chat.hosts.length === 0 ? 'Add a project...' : 'Add a folder on this computer...'}
-        </button>
+        {chat.hosts.length > 0 ? null : (
+          <button type="button" role="menuitem" className="menu-item" onClick={() => pick(ADD)}>
+            <span style={{ width: 14, flexShrink: 0 }}>
+              <Icon name="plus" size={13} />
+            </span>
+            Add a project...
+          </button>
+        )}
         <button
           type="button"
           role="menuitem"
@@ -387,15 +412,59 @@ function Menu({
   )
 }
 
-/** Over a group of projects: Local, or a host with how it stands. */
-function GroupHead({ chat, group }: { readonly chat: Chat; readonly group: string }): React.JSX.Element {
-  const host = chat.hosts.find((one) => one.id === group)
+/**
+ * The head of a group: Local, or a host with a dot for how it stands and where
+ * it is. It is a row like the others, so it is reached with the arrows, and
+ * pressing it lists that group alone; its check adds the group beside the rest.
+ */
+function GroupRow({
+  chat,
+  row,
+  on,
+  at,
+  first,
+  onAt,
+  onPick,
+  onAlso,
+}: {
+  readonly chat: Chat
+  readonly row: Row
+  readonly on: boolean
+  readonly at: boolean
+  readonly first: boolean
+  readonly onAt: () => void
+  readonly onPick: () => void
+  readonly onAlso: () => void
+}): React.JSX.Element {
+  const host = chat.hosts.find((one) => one.id === row.group)
   const now = useMinute()
   return (
-    <div className="projects-group">
-      {host === undefined ? null : <HostDot state={host.state} />}
-      <span className="name">{host === undefined ? 'Local' : host.name}</span>
-      {host === undefined ? null : <span className="says">{host.state === 'up' ? targetLine(host) : stateLine(host, now)}</span>}
+    <div
+      role="menuitem"
+      className={`menu-item projects-group${first ? ' first' : ''}${on ? ' on' : ''}${at ? ' at' : ''}`}
+      title={host === undefined ? 'List only the projects on this computer' : `List only the projects on ${host.name}`}
+      onMouseMove={onAt}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey) onAlso()
+        else onPick()
+      }}
+    >
+      <button
+        type="button"
+        className={`project-pick${on ? ' on' : ''}`}
+        aria-label={on ? `Stop listing ${row.name}` : `List ${row.name} as well`}
+        onClick={(event) => {
+          event.stopPropagation()
+          onAlso()
+        }}
+      >
+        {on ? <Icon name="check" size={13} /> : null}
+      </button>
+      <span className="group-dot">{host === undefined ? <Icon name="display" size={12} /> : <HostDot state={host.state} />}</span>
+      <span className="group-name">{row.name}</span>
+      <span className="group-says">{host === undefined ? row.path : host.state === 'up' ? targetLine(host) : stateLine(host, now)}</span>
+      <Standing work={row.work} />
+      <Waiting waits={row.waits} />
     </div>
   )
 }

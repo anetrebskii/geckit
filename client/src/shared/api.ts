@@ -587,6 +587,10 @@ export interface Folders {
   readonly up?: string
   readonly git: boolean
   readonly folders: readonly { readonly name: string; readonly path: string; readonly git: boolean }[]
+  /** On a host, what `uname -s` says: `Darwin`, `Linux`. */
+  readonly system?: string
+  /** On a host, its home folder. */
+  readonly home?: string
 }
 
 /* ------------------------------------------------------------------ */

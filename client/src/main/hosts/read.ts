@@ -45,14 +45,16 @@ export function readSshConfig(text: string): KnownHost[] {
   return found.filter((one) => (seen.has(one.host) ? false : (seen.add(one.host), true)))
 }
 
-/** One level of a host's folders, as `foldersScript` printed it. */
+/** One level of a host's folders, as `foldersScript` printed it, with the host's system and home folder. */
 export function readFolders(out: string): Folders {
   const lines = out.split('\n').filter((line) => line !== '')
   const path = lines[0] ?? '/'
   const git = lines.includes('@git')
+  const system = lines.find((line) => line.startsWith('@os '))?.slice(4).trim()
+  const home = lines.find((line) => line.startsWith('@home '))?.slice(6).trim()
   const folders = lines
     .slice(1)
-    .filter((line) => line !== '@git')
+    .filter((line) => !line.startsWith('@'))
     .flatMap((line) => {
       const tab = line.indexOf('\t')
       if (tab < 0) return []
@@ -61,7 +63,14 @@ export function readFolders(out: string): Folders {
     })
     .sort((one, other) => Number(other.name.startsWith('.') ? 0 : 1) - Number(one.name.startsWith('.') ? 0 : 1) || one.name.localeCompare(other.name))
   const up = path === '/' ? undefined : path.slice(0, path.lastIndexOf('/')) || '/'
-  return { path, git, folders, ...(up === undefined ? {} : { up }) }
+  return {
+    path,
+    git,
+    folders,
+    ...(up === undefined ? {} : { up }),
+    ...(system === undefined || system === '' ? {} : { system }),
+    ...(home === undefined || home === '' ? {} : { home }),
+  }
 }
 
 /** What a host's check says: whether Claude Code is there, which version, and who is signed in. */

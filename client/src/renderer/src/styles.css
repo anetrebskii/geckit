@@ -7633,78 +7633,321 @@ html.phone .preview-bar .icon-button {
   color: var(--danger);
 }
 
-/* A folder on a host. */
-.dialog.host-folders {
-  width: min(500px, 94vw);
-}
-
-.host-folders input[type='text'] {
-  width: 100%;
-  font-family: var(--font-code);
-}
-
-.host-tree {
+/*
+ * Choose a folder on a host, shaped like the system's Open panel: a bar with
+ * the way up, the folder's parts and a filter; Places down the left; one level
+ * of folders; and the chosen path beside Add. The chosen row takes the accent
+ * while the list has the keyboard and a quiet tint when it does not, as
+ * Finder's does.
+ */
+.dialog.folder-panel {
   display: flex;
   flex-direction: column;
-  max-height: 260px;
-  padding: 3px;
-  margin-bottom: 8px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  width: min(680px, 94vw);
+  height: min(460px, 80vh);
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
 }
 
-.host-tree button {
+.folder-bar {
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
   align-items: center;
-  padding: 4px 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.path-bar {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.path-bar .path-part {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.path-bar button {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  padding: 2px 5px;
+  overflow: hidden;
+  font-size: 12px;
   color: var(--text-dim);
-  text-align: left;
+  text-overflow: ellipsis;
   border-radius: 4px;
 }
 
-.host-tree button:hover {
+.path-bar button:hover {
   color: var(--text);
   background: var(--bg-hover);
 }
 
-.host-tree .name {
+.path-bar button.here {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.folder-filter {
+  display: flex;
+  flex-shrink: 0;
+  gap: 5px;
+  align-items: center;
+  width: 150px;
+  padding: 0 8px;
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.folder-filter input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  font-size: 12px;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.folder-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 168px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.folder-places {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px;
+  overflow-y: auto;
+  background: var(--bg-sunken);
+  border-inline-end: 1px solid var(--border);
+}
+
+.places-head {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.folder-places button {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 4px 8px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: start;
+  white-space: nowrap;
+  border-radius: 5px;
+}
+
+.folder-places button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-places button:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.folder-places button.on {
+  color: var(--text);
+  background: var(--bg-active);
+}
+
+.folder-list {
+  padding: 6px;
+  overflow-y: auto;
+  outline: none;
+}
+
+.folder-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  color: var(--text-dim);
+  border-radius: 5px;
+  cursor: default;
+}
+
+.folder-row .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-row.on {
+  background: var(--bg-active);
+}
+
+.folder-list:focus .folder-row.on {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.folder-list:focus .folder-row.on .name,
+.folder-list:focus .folder-row.on .folder-git {
+  color: var(--accent-text);
+}
+
+.folder-git {
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.folder-note {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.folder-note.trouble,
+.folder-where .trouble {
+  color: var(--danger);
+}
+
+.folder-goto {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  animation: fade var(--quick) var(--ease) both;
+}
+
+.folder-goto input[type='text'] {
   flex: 1;
   font-family: var(--font-code);
   font-size: 12px;
 }
 
-.host-tree .git {
-  font-size: 11px;
-  color: var(--text-faint);
+.folder-foot {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
 }
 
-/* The project picker's groups: Local, and each host with how it stands. */
-.projects-group {
+.folder-foot .check {
   display: flex;
   gap: 6px;
   align-items: center;
-  padding: 8px 12px 3px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.folder-where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The project picker's groups: Local, and each host. The head is a row like
+ * the others, in the small capitals a sidebar section uses, reached with the
+ * arrows; a hairline above it parts it from the group before.
+ */
+.menu-item.projects-group {
+  gap: 8px;
+  padding-top: 7px;
+  padding-bottom: 5px;
+  margin-top: 5px;
+  cursor: default;
+}
+
+.menu-item.projects-group:not(.first) {
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 5px 5px;
+}
+
+.menu-item.projects-group.at {
+  background: var(--bg-hover);
+}
+
+.projects-group .group-dot {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 11px;
+  color: var(--text-faint);
+}
+
+.projects-group .group-name {
+  overflow: hidden;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--text-dim);
+  text-overflow: ellipsis;
   text-transform: uppercase;
 }
 
-.projects-group .says {
-  margin-left: auto;
-  font-weight: 400;
-  letter-spacing: 0;
-  color: var(--text-faint);
-  text-transform: none;
+.projects-group.on .group-name {
+  color: var(--accent);
 }
 
+.projects-group .group-says {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: end;
+  text-overflow: ellipsis;
+}
+
+/* Adding a folder, last in its group: the plus under the colour dots, the words under the names. */
 .menu-item.project-add {
-  display: flex;
   gap: 8px;
-  align-items: center;
-  padding-left: 40px;
-  color: var(--text-dim);
+  padding-inline-start: 31px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.menu-item.project-add.at,
+.menu-item.project-add:hover {
+  color: var(--text);
+  background: var(--bg-hover);
 }
