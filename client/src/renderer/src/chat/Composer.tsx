@@ -709,21 +709,21 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               <Icon name="send" size={14} />
             </button>
           ) : null}
-          {/* The phone has room for one round button in the field: typed text makes it Queue, and Stop stays under More. */}
-          {/* On the phone an empty field offers dictation in the send button's place, as Messages does, while Claude works too. */}
+          {/* The phone has room for one round button in the field: typed text makes it Queue, and while Claude works an empty field makes it Stop. */}
+          {/* Otherwise an empty field offers dictation in the send button's place, as Messages does. */}
           {/* Beside the mic, the language it listens in: a press switches to the other of the two in Settings, and it stays so. */}
-          {/* With a picture attached Send keeps its place, and the mic and language sit to its left, so words can still be said to go with it. */}
+          {/* With a picture attached, or Stop in the round button, the mic and language sit to its left, so words can still be said. */}
           {ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' ? (
-            <button type="button" className={chat.pictures.length > 0 ? 'spoken beside' : 'spoken'} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
+            <button type="button" className={chat.pictures.length > 0 || chat.working ? 'spoken beside' : 'spoken'} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
               {languageCode(spoken)}
             </button>
           ) : null}
-          {ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && chat.pictures.length > 0 ? (
+          {ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
             <button type="button" className="send mic beside" disabled={cannot} onClick={listen} aria-label={`Dictate in ${spoken}`}>
               <Icon name="mic" size={16} />
             </button>
           ) : null}
-          {ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0)) ? (
+          {ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
             <button
               type="button"
               className={listening !== undefined ? 'send listening' : 'send'}
