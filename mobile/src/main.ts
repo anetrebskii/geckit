@@ -2,7 +2,7 @@ import { App } from '@capacitor/app'
 import { CapacitorBarcodeScanner, CapacitorBarcodeScannerTypeHint } from '@capacitor/barcode-scanner'
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
 import { Keyboard } from '@capacitor/keyboard'
-import { registerPlugin } from '@capacitor/core'
+import { Capacitor, registerPlugin } from '@capacitor/core'
 import type { PluginListenerHandle } from '@capacitor/core'
 
 import '../../client/src/renderer/src/styles.css'
@@ -14,6 +14,7 @@ import type { Boot, Installed } from '../../client/src/renderer/src/phone'
 import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
 import type { Dictate } from '../../client/src/renderer/src/dictate'
+import type { PickedVideo, Picking } from '../../client/src/renderer/src/picked'
 import { readPairing } from '../../client/src/shared/pairing'
 import type { Pairing } from '../../client/src/shared/pairing'
 import icon from './icon.png'
@@ -113,6 +114,37 @@ let hearing: PluginListenerHandle[] = []
     })
   },
   stop: () => void dictation.stop().catch(() => undefined),
+}
+
+interface Recording {
+  pick(): Promise<Partial<PickedVideo> & { url?: string }>
+  words(options: { path: string; language: string }): Promise<{ text: string }>
+  frames(options: { path: string; count: number }): Promise<{ frames: { at: number; data: string }[] }>
+  drop(options: { path: string }): Promise<void>
+}
+const recording = registerPlugin<Recording>('Recording')
+const urls = new Map<string, string>()
+
+// A video from Photos, read on the phone: iOS hears its words and takes its frames, and the page reads the file to send it on.
+;(window as { geckitPicking?: Picking }).geckitPicking = {
+  pick: async () => {
+    const got = await recording.pick()
+    if (got.path === undefined || got.url === undefined) return undefined
+    urls.set(got.path, got.url)
+    return { path: got.path, ext: got.ext ?? 'mov', seconds: got.seconds ?? 0, bytes: got.bytes ?? 0 }
+  },
+  words: async (video, language) => (await recording.words({ path: video.path, language })).text,
+  frames: async (video, count) => (await recording.frames({ path: video.path, count })).frames,
+  piece: async (video, from, to) =>
+    (
+      await fetch(Capacitor.convertFileSrc(urls.get(video.path) ?? `file://${video.path}`), {
+        headers: { Range: `bytes=${String(from)}-${String(to - 1)}` },
+      })
+    ).blob(),
+  drop: (video) => {
+    urls.delete(video.path)
+    void recording.drop({ path: video.path }).catch(() => undefined)
+  },
 }
 
 // The arrows and Done over the keys are for forms of many fields; the composer is one.

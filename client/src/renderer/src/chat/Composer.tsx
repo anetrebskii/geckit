@@ -7,7 +7,7 @@ import { dictate } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
-import { Picker } from '../ui/Menu'
+import { Menu, Picker } from '../ui/Menu'
 import { MOD } from '../ui/Shortcuts'
 import { Chrome } from './Chrome'
 import { Mcp } from './Mcp'
@@ -55,6 +55,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [closed, setClosed] = useState<number | undefined>()
   const [editing, setEditing] = useState<{ readonly id: string; readonly text: string } | undefined>()
   const [dropping, setDropping] = useState<string | undefined>()
+  // The phrase a long press or a right click is on, asked about before it goes.
+  const [unphrasing, setUnphrasing] = useState<{ readonly phrase: string; readonly at: DOMRect } | undefined>()
+  const phraseHeld = useRef<{ timer: number; held: boolean }>({ timer: 0, held: false })
   const [listening, setListening] = useState(false)
   const [unheard, setUnheard] = useState<string | undefined>()
   const [looking, setLooking] = useState<string | undefined>()
@@ -319,7 +322,30 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
       {chat.root === undefined || (phrases.length === 0 && !keepable) ? null : (
         <div className="phrases">
           {phrases.map((phrase, at) => (
-            <button key={at} type="button" className="phrase" title="Add to the message" onClick={() => addPhrase(phrase)}>
+            <button
+              key={at}
+              type="button"
+              className="phrase"
+              title="Add to the message. Hold or right-click to remove it"
+              onContextMenu={(event) => {
+                event.preventDefault()
+                setUnphrasing({ phrase, at: event.currentTarget.getBoundingClientRect() })
+              }}
+              onPointerDown={(event) => {
+                const at = event.currentTarget.getBoundingClientRect()
+                phraseHeld.current.held = false
+                phraseHeld.current.timer = window.setTimeout(() => {
+                  phraseHeld.current.held = true
+                  tap('light')
+                  setUnphrasing({ phrase, at })
+                }, 450)
+              }}
+              onPointerUp={() => window.clearTimeout(phraseHeld.current.timer)}
+              onPointerLeave={() => window.clearTimeout(phraseHeld.current.timer)}
+              onClick={() => {
+                if (!phraseHeld.current.held) addPhrase(phrase)
+              }}
+            >
               {phrase}
             </button>
           ))}
@@ -335,6 +361,15 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             </button>
           ) : null}
         </div>
+      )}
+      {unphrasing === undefined ? null : (
+        <Menu
+          anchor={unphrasing.at}
+          title={`Remove "${unphrasing.phrase}"?`}
+          choices={[{ value: 'remove', label: 'Remove phrase', says: 'Only the button goes; nothing sent is changed', danger: true }]}
+          onPick={() => chat.change({ phrases: chat.settings.phrases.filter((one) => one !== unphrasing.phrase) })}
+          onClose={() => setUnphrasing(undefined)}
+        />
       )}
       <div className={command ? 'composer-inner command' : 'composer-inner'}>
         {chat.pictures.length === 0 ? null : (

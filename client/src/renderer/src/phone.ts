@@ -3,6 +3,8 @@ import type { ChatSession, SessionImage, SessionItem, SessionItems, SessionNotic
 import { pieceOf } from '../../shared/pairing'
 import { collapse, runKey } from '../../shared/steps'
 import type { Piece } from '../../shared/pairing'
+import { OWN } from './phone-calls'
+import type { PhoneCalls } from './phone-calls'
 import { keep, readKept } from './kept'
 import type { Link } from './link'
 import type { ScreenLink } from './screen-link'
@@ -146,8 +148,27 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
   let down = first === undefined
   const held: (() => void)[] = []
 
+  // How this phone looks and which projects it shows are its own, whatever the Mac has; a profile the Mac no longer has is All projects again.
+  const ownKey = 'own'
+  const readOwn = (): Partial<Settings> => {
+    try {
+      return JSON.parse(localStorage.getItem(ownKey) ?? '{}') as Partial<Settings>
+    } catch {
+      return {}
+    }
+  }
+  let mine = readOwn()
+  let last: Settings | undefined
+  const own = (settings: Settings): Settings => {
+    last = settings
+    const kept = { ...settings, ...mine }
+    const gone = mine.profile !== undefined && mine.profile !== '' && !settings.profiles.some((one) => one.id === mine.profile)
+    return gone ? { ...kept, profile: '', chatProjects: [], chatAll: true } : kept
+  }
+
   const told = (channel: string, value: unknown): void => {
-    for (const one of heard.get(channel) ?? []) one(value as never)
+    const said = channel === 'settings:changed' ? own(value as Settings) : value
+    for (const one of heard.get(channel) ?? []) one(said as never)
   }
 
   const bind = (one: Link): void => {
@@ -375,8 +396,19 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     copy: (text) => void navigator.clipboard.writeText(text),
     pathFor: () => '',
     settings: {
-      get: () => keptFirst('settings', () => call('settings.get'), 'settings:changed'),
-      set: (change) => call('settings.set', change),
+      get: () => keptFirst<Settings>('settings', () => call('settings.get'), 'settings:changed').then(own),
+      set: async (change) => {
+        const here = Object.fromEntries(Object.entries(change).filter(([key]) => (OWN as readonly string[]).includes(key)))
+        const there = Object.fromEntries(Object.entries(change).filter(([key]) => !(OWN as readonly string[]).includes(key)))
+        if (Object.keys(here).length > 0) {
+          mine = { ...mine, ...here }
+          localStorage.setItem(ownKey, JSON.stringify(mine))
+        }
+        if (Object.keys(there).length > 0) return own(await call<Settings>('settings.set', there))
+        const now = last ?? (await call<Settings>('settings.get'))
+        told('settings:changed', now)
+        return own(now)
+      },
       on: (said) => listen('settings:changed', said),
       pickApp: () => Promise.resolve(undefined),
     },
@@ -515,7 +547,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onItems: (said) => listen('chat:items', said),
       onAccount: (said) => listen('chat:accountChanged', said),
       onShow: never,
-      onRecorded: never,
+      onRecorded: (said) => listen('chat:recorded', said),
       onNotice: (said) =>
         listen<SessionNotice>('chat:notice', (notice) => {
           if (notice.session !== watched) said(notice)
@@ -566,6 +598,19 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     stop: () => send('screen.stop'),
   }
   Object.defineProperty(window, 'geckitScreen', { value: screen })
+  const calls: PhoneCalls = {
+    readOrders: (said) => call('orders.read', said),
+    doOrders: () => call('orders.do'),
+    folders: (path) => call('chat.folders', path),
+    version: () => call('mac.version'),
+    firstAsked: (id) => call('chat.firstAsked', id),
+    startVideo: (ext) => call('recording.start', ext),
+    videoPart: (part) => call('recording.part', part),
+    keepVideo: () => send('recording.keep'),
+    dropVideo: () => send('recording.drop'),
+    recorded: (recording) => told('chat:recorded', recording),
+  }
+  Object.defineProperty(window, 'geckitPhone', { value: calls })
 
   const swap = (next: Link): void => {
     link = next

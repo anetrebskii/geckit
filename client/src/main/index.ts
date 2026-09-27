@@ -51,6 +51,7 @@ import { correct } from './correct'
 import { askOrders, carryOut, saying } from './orders'
 import type { Order, Told } from './orders'
 import { projectFiles } from './files'
+import { foldersIn } from './folders'
 import { fetchGit, gitRepo, gitState } from './git'
 import { keepGuide } from './guide'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
@@ -387,7 +388,7 @@ async function readSaid(said: string): Promise<Answered> {
 }
 
 /** The yes: what was read out loud a moment ago is carried out now. */
-async function carryOutPlanned(): Promise<Answered> {
+async function carryOutPlanned(open: (id: string) => void = openChat): Promise<Answered> {
   const held = sessions
   const plan = planned
   planned = undefined
@@ -414,7 +415,7 @@ async function carryOutPlanned(): Promise<Answered> {
     },
     stop: (id) => held.stop(id),
     mark: (id, status) => held.mark(id, status),
-    open: (id) => openChat(id),
+    open,
     delete: async (id) => {
       unfavorite(await held.remove([id]))
     },
@@ -794,6 +795,26 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.repo': (root: string) => gitRepo(root),
     'chat.files': (root: string) => projectFiles(root),
     'chat.forgetProject': (root: string) => forgetProject(root),
+    'chat.folders': (path: string | undefined) => foldersIn(path),
+    'mac.version': () => app.getVersion(),
+    'chat.firstAsked': async (id: string) => {
+      const first = (await held()?.items(id))?.find((item) => item.kind === 'mine')
+      return first?.kind === 'mine' ? first.text : ''
+    },
+    // Said on the phone: read as orders, and carried out on its yes; a conversation an order opens is opened on the phone.
+    'orders.read': (said: string) => readSaid(said),
+    'orders.do': async () => {
+      let opened: string | undefined
+      const did = await carryOutPlanned((id) => {
+        opened = id
+      })
+      return { ...did, ...(opened === undefined ? {} : { open: opened }) }
+    },
+    // A video picked on the phone, sent a piece at a time into the same folder the Mac's recordings go.
+    'recording.start': (ext: string) => startRecording(ext),
+    'recording.part': (part: string) => addToRecording(Buffer.from(part, 'base64')),
+    'recording.keep': () => keepRecording(),
+    'recording.drop': () => dropRecording(),
   }
 }
 

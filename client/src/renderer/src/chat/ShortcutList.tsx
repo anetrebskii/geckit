@@ -12,9 +12,9 @@ import type { Chat } from './useChat'
 
 /** Saved prompts, each run a new conversation in its project: by hand, from here or the menu bar, or on a timetable. */
 
-type Repeats = 'never' | When['kind']
+export type Repeats = 'never' | When['kind']
 
-const REPEATS: readonly { readonly value: Repeats; readonly label: string }[] = [
+export const REPEATS: readonly { readonly value: Repeats; readonly label: string }[] = [
   { value: 'never', label: 'Never, only by hand' },
   { value: 'hour', label: 'Every hour' },
   { value: 'day', label: 'Every day' },
@@ -24,10 +24,10 @@ const REPEATS: readonly { readonly value: Repeats; readonly label: string }[] = 
 ]
 
 /** Where a new timetable starts. */
-const FIRST_CRON = '0 9 * * 1-5'
+export const FIRST_CRON = '0 9 * * 1-5'
 
 /** The same time of day, as another kind of timetable. */
-function turned(when: When, kind: When['kind']): When {
+export function turned(when: When, kind: When['kind']): When {
   const hour = 'hour' in when ? when.hour : 9
   const minute = 'minute' in when ? when.minute : 0
   switch (kind) {

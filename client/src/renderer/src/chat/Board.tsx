@@ -4,6 +4,7 @@ import { ANYWHERE, homeOf, SESSION_STATUSES, shownProjects } from '../../../shar
 import type { ChatSession, RecordedFrame, SessionImage, SessionStatus } from '../../../shared/api'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
+import { dictate } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { Icon } from '../ui/Icon'
@@ -12,6 +13,7 @@ import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
 import { HiddenChats } from './HiddenChats'
 import { NameField } from './NameField'
+import { PhoneRecord } from './PhoneRecord'
 import { Preview } from './Preview'
 import { Projects } from './Projects'
 import { QuestionsMenu } from './Questions'
@@ -623,11 +625,14 @@ export function NewTask({
   chat,
   onClose,
   question = false,
+  record = false,
 }: {
   readonly chat: Chat
   readonly onClose: () => void
   /** A general question: no project, no goal, and no card. */
   readonly question?: boolean
+  /** On the phone: opened to be filled from a recording, whose picker comes up at once. */
+  readonly record?: boolean
 }): React.JSX.Element {
   const [root, setRoot] = useState(() => chat.root ?? shownProjects(chat.settings)[0] ?? '')
   const [text, setText] = useState('')
@@ -712,6 +717,10 @@ export function NewTask({
         onDrop={(at) => setPictures((held) => held.filter((_one, index) => index !== at))}
         onStart={start}
         onClose={onClose}
+        record={record}
+        frames={frames.map((one) => one.image)}
+        recorded={recorded === undefined ? undefined : { seconds: recorded.seconds, video: recorded.videos.length > 0 }}
+        onUnrecord={() => setRecorded(undefined)}
       />
     )
   }
@@ -896,6 +905,10 @@ function PhoneNewTask({
   onDrop,
   onStart,
   onClose,
+  record,
+  frames,
+  recorded,
+  onUnrecord,
 }: {
   readonly chat: Chat
   readonly question: boolean
@@ -903,6 +916,11 @@ function PhoneNewTask({
   readonly text: string
   readonly goal: string
   readonly pictures: readonly SessionImage[]
+  readonly record: boolean
+  /** A recording's frames, which go with the pictures. */
+  readonly frames: readonly SessionImage[]
+  readonly recorded: { readonly seconds: number; readonly video: boolean } | undefined
+  readonly onUnrecord: () => void
   readonly onRoot: (root: string) => void
   readonly onText: (text: string) => void
   readonly onGoal: (goal: string) => void
@@ -913,18 +931,42 @@ function PhoneNewTask({
 }): React.JSX.Element {
   const [asking, setAsking] = useState(false)
   const [choosing, setChoosing] = useState(false)
+  const [recording, setRecording] = useState(record)
+  const [listening, setListening] = useState(false)
+  // Dictation goes after what was already typed, as the composer's does.
+  const typed = useRef('')
+  const dictating = (): void => {
+    const ear = dictate()
+    if (ear === undefined) return
+    if (listening) {
+      ear.stop()
+      return
+    }
+    typed.current = text.trim() === '' ? '' : `${text.trimEnd()} `
+    setListening(true)
+    ear
+      .start(
+        chat.settings.nativeLanguage,
+        (heard) => onText(`${typed.current}${heard}`),
+        () => setListening(false),
+      )
+      .catch(() => setListening(false))
+  }
+  useEffect(() => () => dictate()?.stop(), [])
   const [dragged, setDragged] = useState<number | undefined>()
   const [looking, setLooking] = useState<string | undefined>()
   const from = useRef<number | undefined>(undefined)
   const photos = useRef<HTMLInputElement>(null)
   const field = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => field.current?.focus(), [])
+  useEffect(() => {
+    if (!record) field.current?.focus()
+  }, [record])
   // Nothing typed goes without asking; something typed asks before it is thrown away.
   const leave = (): void => {
-    if (text.trim() === '' && pictures.length === 0) onClose()
+    if (text.trim() === '' && pictures.length === 0 && frames.length === 0) onClose()
     else setAsking(true)
   }
-  const ready = (root !== '' || question) && (text.trim() !== '' || pictures.length > 0)
+  const ready = (root !== '' || question) && (text.trim() !== '' || pictures.length > 0 || frames.length > 0)
   return (
     <>
       <div className="sheet-scrim" onClick={leave} />
@@ -978,9 +1020,41 @@ function PhoneNewTask({
             ref={field}
             className="phone-task-text"
             value={text}
-            placeholder={question ? 'Anything, not about a project' : 'Ask Claude Code'}
+            placeholder={listening ? 'Listening' : question ? 'Anything, not about a project' : 'Ask Claude Code'}
             onChange={(event) => onText(event.target.value)}
           />
+          <div className="phone-task-ways">
+            <button type="button" className={listening ? 'on' : ''} onClick={dictating}>
+              <Icon name={listening ? 'stop' : 'mic'} size={18} />
+              {listening ? 'Stop' : 'Dictate'}
+            </button>
+            <button type="button" onClick={() => setRecording(true)}>
+              <Icon name="display" size={18} />
+              From a recording
+            </button>
+          </div>
+          {recorded === undefined ? null : (
+            <div className="phone-task-recorded">
+              <Icon name="display" size={16} />
+              <span>
+                From a {clock(recorded.seconds)} recording. {recorded.video ? 'Claude gets the video too.' : 'Claude gets the frames, not the video.'}
+                {text.trim() === '' ? ' Nothing was said in it. Write what to do.' : ''}
+              </span>
+              <button type="button" aria-label="Take the recording off" onClick={onUnrecord}>
+                <Icon name="close" size={13} />
+              </button>
+            </div>
+          )}
+          {frames.length === 0 ? null : (
+            <div className="pending">
+              {frames.map((one, at) => (
+                <span key={`f${String(at)}`} className="pending-one">
+                  <img src={`data:${one.media};base64,${one.data}`} alt="" onClick={() => setLooking(`data:${one.media};base64,${one.data}`)} />
+                </span>
+              ))}
+              {looking === undefined || pictures.length > 0 ? null : <Preview src={looking} onClose={() => setLooking(undefined)} />}
+            </div>
+          )}
           {pictures.length === 0 ? null : (
             <div className="pending">
               {pictures.map((one, at) => (
@@ -1032,6 +1106,7 @@ function PhoneNewTask({
           onClose={() => setChoosing(false)}
         />
       ) : null}
+      {recording ? <PhoneRecord language={chat.settings.nativeLanguage} onClose={() => setRecording(false)} /> : null}
       {asking ? (
         <Menu
           anchor={new DOMRect()}

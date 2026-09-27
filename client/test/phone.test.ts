@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Link } from '../src/renderer/src/link'
 import type { Installed } from '../src/renderer/src/phone'
 import type { LinkMessage } from '../src/shared/pairing'
-import type { SessionItem, SessionItems } from '../src/shared/api'
+import { DEFAULT_SETTINGS } from '../src/shared/api'
+import type { SessionItem, SessionItems, Settings } from '../src/shared/api'
 import { collapse } from '../src/shared/steps'
 
 const theirs = (id: string): SessionItem => ({ kind: 'theirs', id, text: id })
@@ -15,6 +16,7 @@ function macWith(
 ): { readonly link: Link; readonly asked: string[]; readonly tell: (value: SessionItems) => void } {
   const hearers: ((message: LinkMessage) => void)[] = []
   const asked: string[] = []
+  let mac: Settings = { ...DEFAULT_SETTINGS, theme: 'light', profiles: [{ id: 'f', name: 'Formula', projects: ['/f'] }] }
   const answer = (id: number, value: unknown, error?: string): void =>
     void Promise.resolve().then(() => hearers.forEach((hear) => hear({ t: 'reply', id, ...(error === undefined ? { value } : { error }) })))
   const link: Link = {
@@ -23,6 +25,11 @@ function macWith(
       asked.push(message.name)
       const [, second, third] = message.args as [string, unknown, unknown]
       if (old && (message.name === 'chat.turns' || message.name === 'chat.turnsBefore' || message.name === 'chat.steps')) return answer(message.id, undefined, `No such call: ${message.name}`)
+      if (message.name === 'settings.get') return answer(message.id, mac)
+      if (message.name === 'settings.set') {
+        mac = { ...mac, ...(second === undefined ? (message.args[0] as Partial<Settings>) : {}) }
+        return answer(message.id, mac)
+      }
       if (message.name === 'chat.items') return answer(message.id, all)
       if (message.name === 'chat.steps') return answer(message.id, all.filter((one) => (second as string[]).includes(one.id)))
       if (message.name === 'chat.turns') {
@@ -60,6 +67,30 @@ describe('the phone over the link', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('keeps its own look and projects, and hands the rest to the Mac', async () => {
+    const kept = new Map<string, string>()
+    vi.stubGlobal('localStorage', { getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => kept.set(key, value) })
+    const { link, asked } = macWith([])
+    install(link)
+    const heard: Settings[] = []
+    window.geckit.settings.on((said) => heard.push(said))
+    expect((await window.geckit.settings.get()).theme).toBe('light')
+    const mine = await window.geckit.settings.set({ theme: 'dark', profile: 'f' })
+    expect(mine).toMatchObject({ theme: 'dark', profile: 'f' })
+    expect(asked.filter((one) => one === 'settings.set')).toEqual([])
+    expect(heard.at(-1)).toMatchObject({ theme: 'dark', profile: 'f' })
+    const both = await window.geckit.settings.set({ chatMode: 'plan', theme: 'system' })
+    expect(both).toMatchObject({ chatMode: 'plan', theme: 'system', profile: 'f' })
+    expect(asked.filter((one) => one === 'settings.set')).toEqual(['settings.set'])
+  })
+
+  it('goes back to All projects when the Mac deletes the profile it shows', async () => {
+    const kept = new Map<string, string>([['own', JSON.stringify({ profile: 'gone', chatProjects: ['/x'] })]])
+    vi.stubGlobal('localStorage', { getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => kept.set(key, value) })
+    install(macWith([]).link)
+    expect(await window.geckit.settings.get()).toMatchObject({ profile: '', chatProjects: [], chatAll: true })
   })
 
   it('opens a conversation on its end, and says how much is before it', async () => {

@@ -50,7 +50,7 @@ function place(root: string, words: readonly string[]): string {
   return home !== '' && root.startsWith(`${home}/`) ? `~${root.slice(home.length)}` : root
 }
 
-function Marked({ text, words }: { readonly text: string; readonly words: readonly string[] }): React.JSX.Element {
+export function Marked({ text, words }: { readonly text: string; readonly words: readonly string[] }): React.JSX.Element {
   const lower = text.toLowerCase()
   const parts: React.JSX.Element[] = []
   let at = 0
@@ -78,7 +78,7 @@ interface Row {
 }
 
 /** What is typed, against the conversations here and what the main process finds in what was said. */
-function useFound(chat: Chat, asked: string): { readonly found: readonly Row[]; readonly words: readonly string[] } {
+export function useFound(chat: Chat, asked: string): { readonly found: readonly Row[]; readonly words: readonly string[] } {
   const [every, setEvery] = useState<readonly ChatSession[]>(chat.sessions)
   const [hits, setHits] = useState<{ readonly asked: string; readonly found: readonly ChatFound[] }>({ asked: '', found: [] })
 
