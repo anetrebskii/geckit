@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8" />
-<title>GeckIt - Conversations on other machines</title>
+<title>GeckIt - Conversations on other hosts</title>
 <style>
 /* Tokens as in client/src/renderer/src/styles.css; only what this prototype draws. */
 :root,
@@ -139,7 +139,7 @@ code, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; fon
 .meter { display: inline-block; width: 44px; height: 4px; background: var(--border); border-radius: 2px; vertical-align: middle; margin: 0 6px; }
 .meter b { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 
-/* A machine's dot: how it stands. */
+/* A host's dot: how it stands. */
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; background: var(--accent); }
 .dot.idle { background: none; box-shadow: inset 0 0 0 1.5px var(--text-faint); }
 .dot.connecting { background: var(--project-1); animation: pulse 1s infinite; }
@@ -189,11 +189,11 @@ code, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; fon
 .chead .title { font-weight: 600; font-size: 14px; }
 .chead .proj { font-size: 13px; }
 .chead .model { color: var(--text-faint); }
-.machine {
+.host {
   display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--bg-sunken); cursor: pointer; font-size: 12px;
 }
-.machine:hover { border-color: var(--border-strong); }
+.host:hover { border-color: var(--border-strong); }
 .transcript { flex: 1; overflow: auto; padding: 18px 22px; }
 .you { background: var(--bubble); border-radius: 12px; padding: 12px 14px; margin-bottom: 18px; }
 .said p { margin: 0 0 10px; font-size: 14px; }
@@ -249,6 +249,13 @@ code, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; fon
 .suggest div { padding: 5px 10px; cursor: pointer; display: flex; }
 .suggest div:hover { background: var(--bg-hover); }
 .suggest div span { margin-left: auto; color: var(--text-faint); }
+.grid { display: grid; grid-template-columns: 1fr 140px 80px; gap: 10px; }
+.grid label { margin-bottom: 12px; }
+.authseg { margin-top: 4px; width: max-content; }
+.authbox { margin: -4px 0 12px; }
+.authbox .field + .tick, .authbox .field + .hint { margin-top: 6px; }
+.tick { display: flex !important; align-items: center; gap: 6px; margin: 6px 0 0 !important; color: var(--text) !important; }
+.hint { color: var(--text-faint); font-size: 12px; margin-top: 6px; }
 .checks { margin: 6px 0 0; padding: 0; list-style: none; }
 .checks li { display: flex; gap: 8px; align-items: center; padding: 3px 0; color: var(--text-dim); }
 .checks li.ok { color: var(--success-text); }
@@ -287,28 +294,28 @@ select.field { appearance: auto; }
 <div class="window" id="window"></div>
 
 <script>
-/* All of this is invented data, to show the shapes; nothing here is read from a machine. */
-const MACHINES = [
-  { id: 'mac', name: 'This Mac', host: '', state: 'up' },
-  { id: 'gpu-box', name: 'gpu-box', host: 'leo@10.0.4.12', state: 'up', since: '2 h', cc: '2.1.270', plan: 'Claude Max' },
-  { id: 'staging', name: 'staging', host: 'deploy@staging.trailmap.dev', state: 'idle', cc: '2.1.244', plan: 'Claude Pro' },
+/* All of this is invented data, to show the shapes; nothing here is read from a host. */
+const HOSTS = [
+  { id: 'local', name: 'Local', host: '', state: 'up' },
+  { id: 'devbox', name: 'devbox', host: 'leo@devbox.local', state: 'up', since: '2 h', cc: '2.1.270', plan: 'Claude Max' },
+  { id: 'staging', name: 'staging', host: 'deploy@staging.example.com', state: 'idle', cc: '2.1.244', plan: 'Claude Pro' },
 ]
 const PROJECTS = [
-  { id: 'mac:trailmap', name: 'trailmap', machine: 'mac', color: 0, path: '~/code/trailmap' },
-  { id: 'mac:pinch', name: 'pinch', machine: 'mac', color: 1, path: '~/code/pinch' },
-  { id: 'gpu-box:trailmap', name: 'trailmap', machine: 'gpu-box', color: 5, path: '~/trailmap' },
-  { id: 'gpu-box:llm-eval', name: 'llm-eval', machine: 'gpu-box', color: 2, path: '~/work/llm-eval' },
-  { id: 'staging:api', name: 'api', machine: 'staging', color: 4, path: '/srv/api' },
+  { id: 'local:trailmap', name: 'trailmap', host: 'local', color: 0, path: '~/code/trailmap' },
+  { id: 'local:pinch', name: 'pinch', host: 'local', color: 1, path: '~/code/pinch' },
+  { id: 'devbox:trailmap', name: 'trailmap', host: 'devbox', color: 5, path: '~/trailmap' },
+  { id: 'devbox:llm-eval', name: 'llm-eval', host: 'devbox', color: 2, path: '~/work/llm-eval' },
+  { id: 'staging:api', name: 'api', host: 'staging', color: 4, path: '/srv/api' },
 ]
 const CHATS = [
-  { id: 1, title: 'Trail difficulty ratings', project: 'mac:trailmap', col: 0, at: 'now', asks: true, line: 'Asking you', s: 'Wants to change a file' },
-  { id: 2, title: 'Fine-tune on trail photos', project: 'gpu-box:llm-eval', col: 0, at: 'now', line: 'Claude is working', working: true, bg: '2 in the background', s: 'epoch 3 of 8, loss 0.412, about 40 min left' },
-  { id: 3, title: 'Tile cache on the GPU box', project: 'gpu-box:trailmap', col: 0, at: '12m', line: 'Claude is working', working: true, s: 'Timing a full build of the cache on the GPU path' },
-  { id: 4, title: 'Add --max-width flag', project: 'mac:pinch', col: 0, at: '25m', line: 'Waiting for you', s: 'Added --max-width. Images wider than it are resized.' },
+  { id: 1, title: 'Trail difficulty ratings', project: 'local:trailmap', col: 0, at: 'now', asks: true, line: 'Asking you', s: 'Wants to change a file' },
+  { id: 2, title: 'Fine-tune on trail photos', project: 'devbox:llm-eval', col: 0, at: 'now', line: 'Claude is working', working: true, bg: '2 in the background', s: 'epoch 3 of 8, loss 0.412, about 40 min left' },
+  { id: 3, title: 'Faster tile cache build', project: 'devbox:trailmap', col: 0, at: '12m', line: 'Claude is working', working: true, s: 'Timing a full build to compare with the 50 minutes' },
+  { id: 4, title: 'Add --max-width flag', project: 'local:pinch', col: 0, at: '25m', line: 'Waiting for you', s: 'Added --max-width. Images wider than it are resized.' },
   { id: 5, title: 'Rate-limit /api/search', project: 'staging:api', col: 1, at: '48m', s: 'Search is now limited to 60 requests a minute per IP.' },
-  { id: 6, title: 'Release notes for 0.9', project: 'mac:pinch', col: 1, at: '5:24 AM', s: 'Drafted in CHANGELOG.md and as a draft release.' },
-  { id: 7, title: 'Eval on the new split', project: 'gpu-box:llm-eval', col: 2, at: '4:24 AM', s: 'Accuracy 91.2%, up from 88.7% on the old split.' },
-  { id: 8, title: 'Debounce the map', project: 'mac:trailmap', col: 2, at: 'Yesterday', s: 'Panning now waits for moveend plus 250 ms before it searches.' },
+  { id: 6, title: 'Release notes for 0.9', project: 'local:pinch', col: 1, at: '5:24 AM', s: 'Drafted in CHANGELOG.md and as a draft release.' },
+  { id: 7, title: 'Eval on the new split', project: 'devbox:llm-eval', col: 2, at: '4:24 AM', s: 'Accuracy 91.2%, up from 88.7% on the old split.' },
+  { id: 8, title: 'Debounce the map', project: 'local:trailmap', col: 2, at: 'Yesterday', s: 'Panning now waits for moveend plus 250 ms before it searches.' },
 ]
 
 const S = {
@@ -316,35 +323,35 @@ const S = {
   add: { step: 0, host: '', name: '' }, folder: '~/work', timers: [],
 }
 const $ = (sel) => document.querySelector(sel)
-const machine = (id) => MACHINES.find((m) => m.id === id)
+const host = (id) => HOSTS.find((m) => m.id === id)
 const project = (id) => PROJECTS.find((p) => p.id === id)
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 const away = (m) => m.state === 'lost' || m.state === 'needs'
 const clear = () => { S.timers.forEach(clearTimeout); S.timers = [] }
 const later = (ms, fn) => S.timers.push(setTimeout(fn, ms))
 
-/* A project's label: its name, and the machine after it only when that is not this Mac. */
+/* A project's label: its name, and the host after it only when that is not this computer. */
 function where(p) {
-  const m = machine(p.machine)
+  const m = host(p.host)
   return `<span style="color:var(--project-${p.color})">${esc(p.name)}</span>` +
-    (p.machine === 'mac' ? '' : `<span class="m"> · ${esc(m.name)}</span>`)
+    (p.host === 'local' ? '' : `<span class="m"> · ${esc(m.name)}</span>`)
 }
 function shown() {
   return CHATS.filter((c) => {
     const p = project(c.project)
     if (S.scope === 'all') return true
-    if (S.scope.startsWith('machine:')) return p.machine === S.scope.slice(8)
+    if (S.scope.startsWith('host:')) return p.host === S.scope.slice(8)
     return c.project === S.scope
   })
 }
 function scopeName() {
   if (S.scope === 'all') return 'All projects'
-  if (S.scope.startsWith('machine:')) return `All on ${machine(S.scope.slice(8)).name}`
+  if (S.scope.startsWith('host:')) return `All on ${host(S.scope.slice(8)).name}`
   const p = project(S.scope)
-  return p.machine === 'mac' ? p.name : `${p.name} · ${machine(p.machine).name}`
+  return p.host === 'local' ? p.name : `${p.name} · ${host(p.host).name}`
 }
 function second(c) {
-  const m = machine(project(c.project).machine)
+  const m = host(project(c.project).host)
   // Only what was working or asking goes on there unseen; the rest has nothing new to say.
   if (away(m) && (c.working || c.asks)) return `<div class="s away">${esc(m.name)} is out of reach. Still working there</div>`
   return `<div class="s">${esc(c.s)}</div>`
@@ -364,15 +371,15 @@ function bar() {
 }
 function status() {
   const c = CHATS.find((x) => x.id === S.open)
-  const m = S.view === 'list' && S.scene !== 'settings' && c ? machine(project(c.project).machine) : machine('mac')
-  const who = m.id === 'mac' ? 'Your Claude Max plan · Claude Code 2.1.278' : `${esc(m.name)} · Your ${m.plan} plan · Claude Code ${m.cc}`
+  const m = S.view === 'list' && S.scene !== 'settings' && c ? host(project(c.project).host) : host('local')
+  const who = m.id === 'local' ? 'Your Claude Max plan · Claude Code 2.1.278' : `${esc(m.name)} · Your ${m.plan} plan · Claude Code ${m.cc}`
   return `<div class="status"><span>${who}</span><span>5h<span class="meter"><b style="width:23%"></b></span>23%, resets in 2h 14m</span><span>Week<span class="meter"><b style="width:41%"></b></span>41%, resets in 3d 5h</span></div>`
 }
 
 function card(c) {
   const p = project(c.project)
   const cls = c.asks ? 'card asks' : c.col === 1 ? 'card review' : 'card'
-  const line = c.line && !(away(machine(p.machine)) && (c.working || c.asks))
+  const line = c.line && !(away(host(p.host)) && (c.working || c.asks))
     ? `<div class="line ${c.asks ? 'ask' : ''}"><span class="dot" style="background:currentColor"></span>${esc(c.line)}${c.bg ? ` &nbsp;○ ${esc(c.bg)}` : ''}</div>` : ''
   return `<div class="${cls}" onclick="openChat(${c.id})"><div class="t">${esc(c.title)}<span>${esc(c.at)}</span></div>
     <div class="where">${where(p)}</div>${line}${second(c)}</div>`
@@ -391,17 +398,17 @@ function sidebar() {
   const groups = [...new Set(list.map((c) => c.project))]
   return `<div class="side">${groups.map((pid) => {
     const p = project(pid)
-    const m = machine(p.machine)
-    return `<div class="group"><span style="color:var(--project-${p.color})">${esc(p.name.toUpperCase())}</span>${p.machine === 'mac' ? '' : `<span class="m">· ${esc(m.name)}</span>`}</div>` +
+    const m = host(p.host)
+    return `<div class="group"><span style="color:var(--project-${p.color})">${esc(p.name.toUpperCase())}</span>${p.host === 'local' ? '' : `<span class="m">· ${esc(m.name)}</span>`}</div>` +
       list.filter((c) => c.project === pid).map((c) => `<div class="row ${c.id === S.open ? 'on' : ''}" onclick="openChat(${c.id})">
         <div class="t">${esc(c.title)}<span>${esc(c.at)}</span></div>${second(c).replace('class="s', 'class="s')}</div>`).join('')
   }).join('')}</div>`
 }
 
 function chip(m) {
-  if (m.id === 'mac') return ''
+  if (m.id === 'local') return ''
   const title = m.state === 'up' ? `On ${m.name} (${m.host}), connected for ${m.since}` : `${m.name}: ${stateWord(m)}`
-  return `<span class="machine" title="${esc(title)}" onclick="openMenu('chip', event)"><span class="dot ${m.state}"></span>${esc(m.name)} ⌄</span>`
+  return `<span class="host" title="${esc(title)}" onclick="openMenu('chip', event)"><span class="dot ${m.state}"></span>${esc(m.name)} ⌄</span>`
 }
 function stateWord(m) {
   return { up: `Connected for ${m.since ?? 'a moment'}`, idle: 'Not connected', connecting: 'Connecting', lost: 'Out of reach, reconnecting', needs: 'Needs you' }[m.state]
@@ -410,49 +417,49 @@ function stateWord(m) {
 function conversation() {
   const c = CHATS.find((x) => x.id === S.open)
   const p = project(c.project)
-  const m = machine(p.machine)
-  const remote = m.id !== 'mac'
+  const m = host(p.host)
+  const remote = m.id !== 'local'
   const body = c.id === 3 ? `
-      <div class="you">The tile cache takes 50 minutes to build on this box and the GPU sits idle. Build it on the GPU, and keep the CPU path for machines without one.</div>
+      <div class="you">The tile cache takes 50 minutes to build on this host. Rebuild only the tiles whose data changed since the last run.</div>
       <div class="steps">› 6 steps</div>
-      <div class="said"><p>The rasterising step now runs on the GPU through <code>cupy</code> when one is there, and falls back to the CPU path otherwise.</p>
-      <p><code>src/tiles/raster.py</code> picks the path; the tests run both. Now timing a full build of the cache on <b>gpu-box</b> to compare with the 50 minutes.</p></div>
-      ${S.asked ? `<div class="qcard"><h4>Wants to run a command</h4><div class="mono">python -m tiles.build --all --gpu</div><div class="acts"><button class="btn primary" onclick="answer()">Allow</button><button class="btn">Deny</button><button class="btn">Always allow</button></div><div style="color:var(--text-faint);font-size:12px;margin-top:6px">Asked while gpu-box was out of reach; it waited there.</div></div>` : ''}
+      <div class="said"><p>The build now keeps a hash of each tile's source data and skips the tiles whose hash has not changed.</p>
+      <p><code>src/tiles/build.py</code> reads and writes the hashes; the tests cover a first build and a rebuild. Now timing a full build on <b>devbox</b> to compare with the 50 minutes.</p></div>
+      ${S.asked ? `<div class="qcard"><h4>Wants to run a command</h4><div class="mono">python -m tiles.build --all</div><div class="acts"><button class="btn primary" onclick="answer()">Allow</button><button class="btn">Deny</button><button class="btn">Always allow</button></div><div style="color:var(--text-faint);font-size:12px;margin-top:6px">Asked while devbox was out of reach; it waited there.</div></div>` : ''}
       ${S.needs ? passphrase() : ''}`
     : `<div class="you">${esc(c.title)}.</div><div class="steps">› 3 steps</div><div class="said"><p>${esc(c.s)}</p></div>`
   const composer = away(m) ? `
       <div class="composer away"><textarea rows="2" placeholder="Ask Claude Code. @ picks a file, ! runs a command">And make the build resumable</textarea>
-      <div class="tools"><span>Auto ⌄</span><span>Default ⌄</span><span>MCP ⌄</span><span class="off" title="Chrome is on this Mac, and this conversation runs on ${esc(m.name)}">Chrome ⌄</span><span>Goal</span>
+      <div class="tools"><span>Auto ⌄</span><span>Default ⌄</span><span>MCP ⌄</span><span class="off" title="Chrome is on this computer, and this conversation runs on ${esc(m.name)}">Chrome ⌄</span><span>Goal</span>
       <span class="waiting"><span class="dot ${m.state}"></span>${m.state === 'needs' ? `${esc(m.name)} needs you, above` : `Reconnecting to ${esc(m.name)}`}</span></div></div>`
     : m.state === 'connecting' ? `
       <div class="composer away"><textarea rows="2" placeholder="Ask Claude Code. @ picks a file, ! runs a command"></textarea>
       <div class="tools"><span>Auto ⌄</span><span>Default ⌄</span><span>MCP ⌄</span><span class="off">Chrome ⌄</span><span>Goal</span><span class="waiting" style="color:var(--text-dim)"><span class="dot connecting"></span>Connecting to ${esc(m.name)}</span></div></div>`
     : `
       <div class="composer"><textarea rows="2" placeholder="Ask Claude Code. @ picks a file, ! runs a command"></textarea>
-      <div class="tools"><span>Auto ⌄</span><span>Default ⌄</span><span>MCP ⌄</span>${remote ? `<span class="off" title="Chrome is on this Mac, and this conversation runs on ${esc(m.name)}">Chrome ⌄</span>` : '<span>Chrome ⌄</span>'}<span>Goal</span><button class="send">↑</button></div></div>`
+      <div class="tools"><span>Auto ⌄</span><span>Default ⌄</span><span>MCP ⌄</span>${remote ? `<span class="off" title="Chrome is on this computer, and this conversation runs on ${esc(m.name)}">Chrome ⌄</span>` : '<span>Chrome ⌄</span>'}<span>Goal</span><button class="send">↑</button></div></div>`
   return `<div class="conv">
     <div class="chead"><span class="title">${esc(c.title)}</span><span class="proj" style="color:var(--project-${p.color})">${esc(p.name)}</span>${chip(m)}<span class="model">claude-opus-5</span>
       <span class="grow" style="flex:1"></span><span style="color:var(--text-dim)">${c.col === 1 ? 'In review ⌄' : 'In progress ⌄'}</span><button class="ghost" title="${remote ? `Open a terminal on ${esc(m.name)}` : 'Open a terminal'}">&gt;_</button></div>
     <div class="transcript">${body}</div>
     ${composer}
-    <div class="under"><span>⑂ feat/gpu-tiles 3 changed ↓0 ↑1</span><span>Context 44k of 200k</span><span>Cost $1.84</span></div>
+    <div class="under"><span>⑂ feat/tile-hashes 3 changed ↓0 ↑1</span><span>Context 44k of 200k</span><span>Cost $1.84</span></div>
   </div>`
 }
 
 function passphrase() {
-  return `<div class="qcard hands"><h4>gpu-box asks for the passphrase of ~/.ssh/id_ed25519.</h4>
+  return `<div class="qcard hands"><h4>devbox asks for the passphrase of ~/.ssh/id_ed25519.</h4>
     <input class="field" type="password" value="••••••••••" />
     <div class="acts"><button class="btn primary" onclick="unlock()">Unlock</button><button class="btn" onclick="notNow()">Not now</button></div></div>`
 }
 
-/* Cmd+K: projects under their machines, each machine's header row a scope of its own. */
+/* Cmd+K: projects under their hosts, each host's header row a scope of its own. */
 function picker() {
-  const rows = MACHINES.map((m) => {
-    const ps = PROJECTS.filter((p) => p.machine === m.id)
-    const head = `<div class="head">${m.id === 'mac' ? '' : `<span class="dot ${m.state}"></span>`}${esc(m.name.toUpperCase())}<span class="st">${m.id === 'mac' ? '' : esc(m.state === 'up' ? m.host : stateWord(m))}</span></div>`
-    const all = m.id === 'mac' ? '' : `<div class="item scope-row ${S.scope === 'machine:' + m.id ? 'at' : ''}" onclick="setScope('machine:${m.id}')"><span class="pdot"></span>All on ${esc(m.name)}<span class="sub">${CHATS.filter((c) => project(c.project).machine === m.id && c.col < 2).length} open</span></div>`
+  const rows = HOSTS.map((m) => {
+    const ps = PROJECTS.filter((p) => p.host === m.id)
+    const head = `<div class="head">${m.id === 'local' ? '' : `<span class="dot ${m.state}"></span>`}${esc(m.name.toUpperCase())}<span class="st">${m.id === 'local' ? '' : esc(m.state === 'up' ? m.host : stateWord(m))}</span></div>`
+    const all = m.id === 'local' ? '' : `<div class="item scope-row ${S.scope === 'host:' + m.id ? 'at' : ''}" onclick="setScope('host:${m.id}')"><span class="pdot"></span>All on ${esc(m.name)}<span class="sub">${CHATS.filter((c) => project(c.project).host === m.id && c.col < 2).length} open</span></div>`
     const items = ps.map((p) => `<div class="item ${S.scope === p.id ? 'at' : ''}" onclick="setScope('${p.id}')"><span class="pdot" style="background:var(--project-${p.color})"></span><span class="lines">${esc(p.name)}<small>${esc(p.path)}</small></span><span class="sub">${CHATS.filter((c) => c.project === p.id && c.col < 2).length || ''}</span></div>`).join('')
-    const add = `<div class="item add" onclick="${m.id === 'mac' ? '' : `pickFolder('${m.id}')`}">＋ Add a folder${m.id === 'mac' ? '' : ` on ${esc(m.name)}`}...</div>`
+    const add = `<div class="item add" onclick="${m.id === 'local' ? '' : `pickFolder('${m.id}')`}">＋ Add a folder${m.id === 'local' ? '' : ` on ${esc(m.name)}`}...</div>`
     return head + all + items + add
   }).join('<div class="sep"></div>')
   return `<div class="scrim" onclick="closeMenu()"></div>
@@ -460,13 +467,13 @@ function picker() {
       <input class="field" placeholder="Switch to a project" autofocus />
       <div class="item scope-row ${S.scope === 'all' ? 'at' : ''}" onclick="setScope('all')"><span class="pdot"></span>All projects<span class="sub">${CHATS.filter((c) => c.col < 2).length} open</span></div>
       <div class="sep"></div>${rows}<div class="sep"></div>
-      <div class="item add" onclick="openAdd()">⇄ Connect a machine...</div>
+      <div class="item add" onclick="openAdd()">⇄ Add a host...</div>
     </div>`
 }
 
 function chipMenu() {
   const c = CHATS.find((x) => x.id === S.open)
-  const m = machine(project(c.project).machine)
+  const m = host(project(c.project).host)
   const toggle = m.state === 'idle'
     ? `<div class="item" onclick="connect('${m.id}')">Connect</div>`
     : `<div class="item" onclick="reconnect('${m.id}')">Reconnect</div><div class="item" onclick="disconnect('${m.id}')">Disconnect</div>`
@@ -475,8 +482,6 @@ function chipMenu() {
       <div class="info"><b style="color:var(--text)">${esc(m.name)}</b> · ${esc(m.host)}<br>${esc(stateWord(m))} · Claude Code ${esc(m.cc)} · ${esc(m.plan)}</div>
       <div class="sep"></div>
       <div class="item">Open a terminal there</div>
-      <div class="item">Open in VS Code <span class="sub">ssh-remote+${esc(m.id)}</span></div>
-      <div class="item">Open in Zed <span class="sub">ssh://${esc(m.id)}</span></div>
       <div class="sep"></div>${toggle}
       <div class="sep"></div>
       <div class="item" onclick="dropLine()" style="color:var(--text-faint)">Prototype: drop the connection</div>
@@ -492,22 +497,22 @@ function switcher() {
       const p = project(c.project)
       return `<div class="item ${i === S.tab ? 'at' : ''}" onclick="openChat(${id})"><span class="pdot" style="background:var(--project-${p.color})"></span><span class="lines">${esc(c.title)}<small>${where(p).replace(/style="color:var\(--project-\d\)"/, '')}</small></span><span class="sub">${esc(c.at)}</span></div>`
     }).join('')}
-    <div class="info" style="text-align:center">Hold Ctrl, press Tab to go down. Every machine's conversations are in it.</div></div>`
+    <div class="info" style="text-align:center">Hold Ctrl, press Tab to go down. Every host's conversations are in it.</div></div>`
 }
 
 function newTask() {
-  const opts = MACHINES.map((m) => `<optgroup label="${esc(m.name)}${m.id === 'mac' ? '' : ` (${esc(stateWord(m).toLowerCase())})`}">${PROJECTS.filter((p) => p.machine === m.id).map((p) => `<option ${p.id === S.taskProject ? 'selected' : ''} value="${p.id}">${esc(p.name)}${m.id === 'mac' ? '' : ' · ' + esc(m.name)}</option>`).join('')}</optgroup>`).join('')
-  const picks = MACHINES.map((m) => `<option value="pick:${m.id}">Choose a folder on ${esc(m.name === 'This Mac' ? 'this Mac' : m.name)}...</option>`).join('')
+  const opts = HOSTS.map((m) => `<optgroup label="${esc(m.name)}${m.id === 'local' ? '' : ` (${esc(stateWord(m).toLowerCase())})`}">${PROJECTS.filter((p) => p.host === m.id).map((p) => `<option ${p.id === S.taskProject ? 'selected' : ''} value="${p.id}">${esc(p.name)}${m.id === 'local' ? '' : ' · ' + esc(m.name)}</option>`).join('')}</optgroup>`).join('')
+  const picks = HOSTS.map((m) => `<option value="pick:${m.id}">Choose a folder on ${esc(m.name === 'Local' ? 'this computer' : m.name)}...</option>`).join('')
   return `<div class="scrim dim" onclick="closeMenu()"></div>
     <div class="sheet"><h2>New task</h2>
       <label>Project<select class="field" onchange="taskProject(this.value)">${opts}<optgroup label="──────────">${picks}</optgroup></select></label>
       <label>What to do<textarea class="field" rows="4" placeholder="Ask Claude Code. Paste a picture, drop a file, or record the screen"></textarea></label>
-      <div style="color:var(--text-faint);font-size:12px">${S.taskProject && project(S.taskProject).machine !== 'mac' ? `Runs on ${esc(machine(project(S.taskProject).machine).name)}, on its own plan. Pictures are copied there before it starts.` : '&nbsp;'}</div>
+      <div style="color:var(--text-faint);font-size:12px">${S.taskProject && project(S.taskProject).host !== 'local' ? `Runs on ${esc(host(project(S.taskProject).host).name)}, on its own plan. Pictures are copied there before it starts.` : '&nbsp;'}</div>
       <div class="foot"><button class="btn" onclick="closeMenu()">Cancel</button><button class="btn primary" onclick="closeMenu()">Start</button></div></div>`
 }
 
 function folderSheet() {
-  const m = machine(S.folderOn)
+  const m = host(S.folderOn)
   const dirs = [['~/work', ''], ['~/work/llm-eval', 'git'], ['~/work/tiles-bench', 'git'], ['~/work/notebooks', ''], ['~/datasets', ''], ['~/trailmap', 'git']]
   return `<div class="scrim dim" onclick="closeMenu()"></div>
     <div class="sheet"><h2>Choose a folder on ${esc(m.name)}</h2>
@@ -519,39 +524,56 @@ function folderSheet() {
 
 function addSheet() {
   const a = S.add
-  const hosts = [['gpu-box', 'leo@10.0.4.12'], ['staging', 'deploy@staging.trailmap.dev'], ['pi', 'pi@raspberrypi.local'], ['build-mac', 'ci@10.0.4.30']]
-  const checks = [['Reached ' + (a.name || 'pi'), 1], ['Claude Code 2.1.278', 2], ['Signed in: Claude Pro', 3]]
+  // Hosts read from the SSH config, offered as the address is typed.
+  const known = [['devbox', 'leo', 'devbox.local'], ['staging', 'deploy', 'staging.example.com'], ['build', 'ci', 'build.internal'], ['home', 'leo', '192.168.1.20']]
+  const offer = known.filter(([h]) => !HOSTS.some((m) => m.id === h) && (!a.address || h.startsWith(a.address)) && h !== a.address)
+  const shown = a.name || a.address || 'the host'
+  const checks = [['Reached ' + shown, 1], ['Claude Code 2.1.278', 2], ['Signed in: Claude Pro', 3]]
+  const seg = (v, label) => `<button class="${a.auth === v ? 'on' : ''}" onclick="S.add.auth='${v}';render()">${label}</button>`
+  const auth = a.auth === 'key'
+    ? `<select class="field" onchange="S.add.key=this.value"><option ${a.key === 'default' ? 'selected' : ''} value="default">Default keys (SSH config and agent)</option><option value="file">~/.ssh/id_ed25519</option><option value="choose">Choose a key file...</option></select>
+       <div class="hint">A passphrase, if the key has one, is asked for when connecting. It is not kept.</div>`
+    : `<input class="field" type="password" value="${esc(a.password)}" placeholder="Password" oninput="S.add.password=this.value" />
+       <label class="tick"><input type="checkbox" ${a.remember ? 'checked' : ''} onchange="S.add.remember=this.checked" /> Remember on this computer</label>
+       <div class="hint">Kept in the system's credential store, not in GeckIt's settings. Not remembered, it is asked for each time.</div>`
   return `<div class="scrim dim" onclick="closeMenu()"></div>
-    <div class="sheet"><h2>Connect a machine</h2>
-      <label>Host<input class="field mono" value="${esc(a.host)}" placeholder="A Host from ~/.ssh/config, or user@host" oninput="S.add.host=this.value" />
-        ${a.step === 0 ? `<div class="suggest">${hosts.filter(([h]) => !MACHINES.some((m) => m.id === h)).map(([h, u]) => `<div onclick="chooseHost('${h}')"><span class="mono" style="margin:0;color:var(--text)">${h}</span><span>${u}</span></div>`).join('')}</div>` : ''}</label>
-      <label>Name<input class="field" value="${esc(a.name)}" placeholder="What to call it on the board" /></label>
-      ${a.step > 0 ? `<ul class="checks">${checks.map(([t, n]) => `<li class="${a.step > n ? 'ok' : 'wait'}">${a.step > n ? '✓' : '<span class="dot connecting"></span>'} ${esc(t)}</li>`).join('')}</ul>` : '<div style="color:var(--text-faint);font-size:12px">Uses your own ssh, so keys, the agent and jump hosts work as they do in Terminal. Nothing of GeckIt\'s is installed there.</div>'}
+    <div class="sheet"><h2>Add a host</h2>
+      <div class="grid">
+        <label class="wide">Address<input class="field mono" value="${esc(a.address)}" placeholder="Name, IP, or a Host from SSH config" oninput="typed(this.value)" onblur="render()" />
+          ${a.step === 0 && offer.length ? `<div class="suggest">${offer.map(([h, u, addr]) => `<div onclick="chooseHost('${h}')"><span class="mono" style="margin:0;color:var(--text)">${h}</span><span>${u}@${addr}</span></div>`).join('')}</div>` : ''}</label>
+        <label>User<input class="field mono" value="${esc(a.user)}" oninput="S.add.user=this.value" /></label>
+        <label>Port<input class="field mono" value="${esc(a.port)}" oninput="S.add.port=this.value" /></label>
+      </div>
+      <label>Sign in with<div class="seg authseg">${seg('key', 'Key')}${seg('password', 'Password')}</div></label>
+      <div class="authbox">${auth}</div>
+      <label>Name<input class="field" value="${esc(a.name)}" placeholder="What the board calls it" oninput="S.add.name=this.value" /></label>
+      ${a.step > 0 ? `<ul class="checks">${checks.map(([t, n]) => `<li class="${a.step > n ? 'ok' : 'wait'}">${a.step > n ? '✓' : '<span class="dot connecting"></span>'} ${esc(t)}</li>`).join('')}</ul>` : '<div class="hint">Uses the SSH settings already on this computer. Nothing is installed on the host.</div>'}
       <div class="foot"><button class="btn" onclick="closeMenu()">Cancel</button><button class="btn primary" onclick="${a.step >= 4 ? 'finishAdd()' : 'runAdd()'}">${a.step >= 4 ? 'Done' : 'Connect'}</button></div></div>`
 }
 
 function settings() {
-  const rows = MACHINES.map((m) => `<div class="mrow"><span class="dot ${m.id === 'mac' ? '' : m.state}"></span>
-    <div><div class="n">${esc(m.name)}</div><div class="d">${m.id === 'mac' ? 'Claude Code 2.1.278 · Claude Max · Homebrew' : `${esc(m.host)} · Claude Code ${esc(m.cc)} · ${esc(m.plan)}`}</div></div>
-    <div class="r">${m.id === 'mac' ? '' : `${esc(stateWord(m))} <button class="btn" onclick="${m.state === 'idle' ? `connect('${m.id}')` : `disconnect('${m.id}')`}">${m.state === 'idle' ? 'Connect' : 'Disconnect'}</button><button class="btn">Remove</button>`}</div></div>`).join('')
-  return `<div class="settings"><nav><div>General</div><div>Profiles</div><div class="on">Machines</div><div>Correct and dictation</div><div>Phone</div></nav>
-    <main><h2>Machines</h2><p class="lead">Conversations on another machine run there, on the Claude Code and the plan signed in there, and keep working when this Mac sleeps or the connection drops. Their projects are listed with the machine's name after them.</p>
+  const rows = HOSTS.map((m) => `<div class="mrow"><span class="dot ${m.id === 'local' ? '' : m.state}"></span>
+    <div><div class="n">${esc(m.name)}</div><div class="d">${m.id === 'local' ? 'Claude Code 2.1.278 · Claude Max' : `${esc(m.host)} · Claude Code ${esc(m.cc)} · ${esc(m.plan)}`}</div></div>
+    <div class="r">${m.id === 'local' ? '' : `${esc(stateWord(m))} <button class="btn" onclick="${m.state === 'idle' ? `connect('${m.id}')` : `disconnect('${m.id}')`}">${m.state === 'idle' ? 'Connect' : 'Disconnect'}</button><button class="btn">Remove</button>`}</div></div>`).join('')
+  return `<div class="settings"><nav><div>General</div><div>Profiles</div><div class="on">Hosts</div><div>Correct and dictation</div><div>Phone</div></nav>
+    <main><h2>Hosts</h2><p class="lead">Conversations on another host run there, on the Claude Code and the plan signed in there, and keep working when this computer sleeps or the connection drops. Their projects are listed with the host's name after them.</p>
     <div class="mlist">${rows}</div>
-    <div style="margin-top:12px"><button class="btn" onclick="openAdd()">＋ Add a machine</button></div></main></div>`
+    <div style="margin-top:12px"><button class="btn" onclick="openAdd()">＋ Add a host</button></div></main></div>`
 }
 
 /* Scenes: each is a starting point; everything in it can be pressed. */
 const SCENES = {
-  board: ['Board, every machine', 'One board. A project on another machine has its name after it: "trailmap · gpu-box". This Mac\'s projects are unmarked. Press the project picker to narrow by machine.'],
-  picker: ['Cmd+K by machine', 'Projects under their machine. The machine\'s own row, "All on gpu-box", narrows the board to it. staging is Not connected: hollow dot, still listed.'],
-  conversation: ['Conversation on gpu-box', 'The machine chip in the header says where it runs. Press it for its menu, and use the two Prototype rows to drop the connection or have ssh ask for a passphrase.'],
+  board: ['Board, every host', 'One board. A project on another host has its name after it: "trailmap · devbox". Local\'s projects are unmarked. Press the project picker to narrow by host.'],
+  picker: ['Cmd+K by host', 'Projects under their host. The host\'s own row, "All on devbox", narrows the board to it. staging is Not connected: hollow dot, still listed.'],
+  conversation: ['Conversation on devbox', 'The host chip in the header says where it runs. Press it for its menu, and use the two Prototype rows to drop the connection or have ssh ask for a passphrase.'],
   lost: ['Out of reach', 'The connection dropped more than 10 s ago. The card keeps its column, the typed text is kept, and it reconnects by itself; here in 4 s, then a question asked meanwhile arrives.'],
-  switcher: ['Ctrl+Tab across machines', 'Moving between conversations is not a switch of machine: Ctrl+Tab and Cmd+P hold every machine\'s at once.'],
-  newtask: ['New task on a machine', 'The Project select groups projects by machine and ends with "Choose a folder on ..." for each. Pick one on gpu-box to see the line under the field.'],
-  folder: ['Folder on gpu-box', 'A folder chosen on the machine itself, read from there as it is typed.'],
+  switcher: ['Ctrl+Tab across hosts', 'Moving between conversations is not a switch of host: Ctrl+Tab and Cmd+P hold every host\'s at once.'],
+  newtask: ['New task on a host', 'The Project select groups projects by host and ends with "Choose a folder on ..." for each. Pick one on devbox to see the line under the field.'],
+  folder: ['Folder on devbox', 'A folder chosen on the host itself, read from there as it is typed.'],
   needs: ['ssh asks for a passphrase', 'ssh asked for something it needs from you. The card is in the conversation; GeckIt passes on what is typed and keeps none of it.'],
-  settings: ['Settings, Machines', 'This Mac first, then each machine with how it stands, its Claude Code and whose plan. Add a machine opens the sheet.'],
-  add: ['Connect a machine', 'Hosts from ~/.ssh/config are offered. Pick one and press Connect: the checks tick one after another.'],
+  settings: ['Settings, Hosts', 'Local first, then each host with how it stands, its Claude Code and whose plan. Add a host opens the sheet.'],
+  add: ['Add a host', 'Hosts from the SSH config are offered as the address is typed, and user@address:port fills User and Port by itself. Press Connect: the checks tick one after another.'],
+  password: ['Add a host, password', 'Signing in with a password: it is kept in the system\'s credential store when "Remember on this computer" is ticked, otherwise asked for each time.'],
 }
 
 function go(scene) {
@@ -560,19 +582,20 @@ function go(scene) {
   S.menu = null
   S.asked = false
   S.needs = false
-  machine('gpu-box').state = 'up'
-  machine('staging').state = 'idle'
+  host('devbox').state = 'up'
+  host('staging').state = 'idle'
   S.view = ['board', 'picker', 'newtask', 'folder', 'add'].includes(scene) ? 'board' : 'list'
   if (scene === 'picker') S.menu = 'picker'
-  if (scene === 'newtask') { S.menu = 'newtask'; S.taskProject = 'mac:trailmap' }
-  if (scene === 'folder') { S.menu = 'folder'; S.folderOn = 'gpu-box' }
-  if (scene === 'add') { S.menu = 'add'; S.add = { step: 0, host: '', name: '' } }
+  if (scene === 'newtask') { S.menu = 'newtask'; S.taskProject = 'local:trailmap' }
+  if (scene === 'folder') { S.menu = 'folder'; S.folderOn = 'devbox' }
+  if (scene === 'add') { S.menu = 'add'; S.add = blank() }
+  if (scene === 'password') { S.view = 'board'; S.menu = 'add'; S.add = { ...blank(), address: 'home', user: 'leo', name: 'home', auth: 'password', password: 'secret-pass' } }
   if (scene === 'switcher') { S.view = 'board'; S.menu = 'switcher'; S.tab = 1 }
   if (scene === 'conversation' || scene === 'lost' || scene === 'needs') S.open = 3
-  if (scene === 'needs') { machine('gpu-box').state = 'needs'; S.needs = true }
+  if (scene === 'needs') { host('devbox').state = 'needs'; S.needs = true }
   if (scene === 'lost') {
-    machine('gpu-box').state = 'lost'
-    later(4000, () => { machine('gpu-box').state = 'up'; S.asked = true; render() })
+    host('devbox').state = 'lost'
+    later(4000, () => { host('devbox').state = 'up'; S.asked = true; render() })
   }
   render()
 }
@@ -597,7 +620,7 @@ function openMenu(which, event) {
     S.menuX = r.left - w.left
     S.menuY = r.bottom - w.top + 4
   }
-  if (which === 'newtask') S.taskProject = S.taskProject ?? 'mac:trailmap'
+  if (which === 'newtask') S.taskProject = S.taskProject ?? 'local:trailmap'
   S.menu = which
   render()
 }
@@ -608,53 +631,66 @@ function openChat(id) {
   S.menu = null
   S.view = 'list'
   if (!['conversation', 'lost'].includes(S.scene)) S.scene = 'conversation'
-  const m = machine(project(CHATS.find((c) => c.id === id).project).machine)
+  const m = host(project(CHATS.find((c) => c.id === id).project).host)
   if (m.state === 'idle') connect(m.id, true)
   render()
 }
 function taskProject(v) {
   if (v.startsWith('pick:')) {
     const on = v.slice(5)
-    if (on === 'mac') return
+    if (on === 'local') return
     S.folderOn = on
     S.menu = 'folder'
   } else S.taskProject = v
   render()
 }
 function pickFolder(on) { S.folderOn = on; S.menu = 'folder'; render() }
-function openAdd() { S.add = { step: 0, host: '', name: '' }; S.menu = 'add'; render() }
-function chooseHost(h) { S.add.host = h; S.add.name = h; render() }
+const blank = () => ({ step: 0, address: '', user: 'leo', port: '22', auth: 'key', key: 'default', password: '', remember: true, name: '' })
+function openAdd() { S.add = blank(); S.menu = 'add'; render() }
+function chooseHost(h) {
+  const [, u] = { build: ['build', 'ci'], home: ['home', 'leo'], staging: ['staging', 'deploy'], devbox: ['devbox', 'leo'] }[h]
+  Object.assign(S.add, { address: h, user: u, port: '22', name: h })
+  render()
+}
+/* user@address:port typed into Address fills the three fields. */
+function typed(v) {
+  const m = v.match(/^(?:([^@\s]+)@)?([^:\s]*)(?::(\d+))?$/)
+  if (m && (m[1] || m[3])) {
+    Object.assign(S.add, { address: m[2], user: m[1] ?? S.add.user, port: m[3] ?? S.add.port })
+    render()
+  } else S.add.address = v
+}
 function runAdd() {
-  if (!S.add.host) chooseHost('pi')
+  if (!S.add.address) chooseHost('build')
   S.add.step = 1
   render()
   ;[2, 3, 4].forEach((n, i) => later(700 * (i + 1), () => { S.add.step = n; render() }))
 }
 function finishAdd() {
-  if (!MACHINES.some((m) => m.id === S.add.host)) {
-    MACHINES.push({ id: S.add.host, name: S.add.name, host: 'pi@raspberrypi.local', state: 'up', since: 'a moment', cc: '2.1.278', plan: 'Claude Pro' })
+  if (!HOSTS.some((m) => m.id === S.add.address)) {
+    HOSTS.push({ id: S.add.address, name: S.add.name || S.add.address, host: `${S.add.user}@${S.add.address}`, state: 'up', since: 'a moment', cc: '2.1.278', plan: 'Claude Pro' })
   }
   closeMenu()
 }
 function connect(id, quiet) {
-  const m = machine(id)
+  const m = host(id)
   m.state = 'connecting'
   S.menu = null
   if (!quiet) render()
   later(1500, () => { m.state = 'up'; m.since = 'a moment'; render() })
 }
 function reconnect(id) { connect(id) }
-function disconnect(id) { machine(id).state = 'idle'; S.menu = null; render() }
+function disconnect(id) { host(id).state = 'idle'; S.menu = null; render() }
 function dropLine() {
   S.menu = null
   S.scene = 'lost'
-  machine('gpu-box').state = 'lost'
+  host('devbox').state = 'lost'
   render()
-  later(4000, () => { machine('gpu-box').state = 'up'; S.asked = true; render() })
+  later(4000, () => { host('devbox').state = 'up'; S.asked = true; render() })
 }
-function askPass() { S.menu = null; machine('gpu-box').state = 'needs'; S.needs = true; render() }
-function unlock() { S.needs = false; connect('gpu-box') }
-function notNow() { S.needs = false; machine('gpu-box').state = 'idle'; render() }
+function askPass() { S.menu = null; host('devbox').state = 'needs'; S.needs = true; render() }
+function unlock() { S.needs = false; connect('devbox') }
+function notNow() { S.needs = false; host('devbox').state = 'idle'; render() }
 function answer() { S.asked = false; render() }
 function theme() { S.theme = S.theme === 'light' ? 'dark' : 'light'; document.documentElement.dataset.theme = S.theme; render() }
 
