@@ -4971,6 +4971,15 @@ html.phone button:active:not(:disabled) {
   transition: none;
 }
 
+/* A favorite, tinted where it stands as the Mac's board tints it. */
+.phone-row.starred {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-raised));
+}
+
+.phone-row-star {
+  color: var(--accent);
+}
+
 .phone-dot {
   width: 10px;
   height: 10px;

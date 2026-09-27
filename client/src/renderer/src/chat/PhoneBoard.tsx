@@ -112,9 +112,7 @@ export function PhoneBoard({
     return count
   }, [chat.sessions])
   const asking = shown === 'progress' ? rows.filter((one) => one.state === 'asks') : []
-  // The starred ones stand together under what asks, in the order they were starred, as the Mac's list keeps them.
-  const starred = chat.settings.favorites.flatMap((id) => rows.filter((one) => one.id === id && !asking.includes(one)))
-  const rest = rows.filter((one) => !asking.includes(one) && !starred.includes(one))
+  const rest = rows.filter((one) => !asking.includes(one))
   const [ways, setWays] = useState(false)
   const [scoping, setScoping] = useState(false)
   const newPress = useRef<number | undefined>(undefined)
@@ -278,29 +276,6 @@ export function PhoneBoard({
                   {folded} more
                 </button>
               )}
-            </div>
-          </>
-        )}
-        {starred.length === 0 ? null : (
-          <>
-            <div className="phone-head">Favorites</div>
-            <div className="phone-group">
-              {starred.map((session) => (
-                <Row
-                  key={session.id}
-                  chat={chat}
-                  session={session}
-                  now={now}
-                  column={shown}
-                  open={open === session.id}
-                  waiting={undefined}
-                  onOpen={(on) => setOpen(on ? session.id : undefined)}
-                  onMark={(status) => mark(session, status)}
-                  onMore={() => setMore(session)}
-                  onPress={(at) => setPressed({ session, at })}
-                  onAnswer={() => undefined}
-                />
-              ))}
             </div>
           </>
         )}
@@ -624,7 +599,7 @@ function Row({
       </div>
       <div
         ref={row}
-        className={`phone-row${moving ? ' moving' : ''}`}
+        className={`phone-row${chat.settings.favorites.includes(session.id) ? ' starred' : ''}${moving ? ' moving' : ''}`}
         role="button"
         tabIndex={0}
         style={{ transform: `translateX(${String(offset)}px)` }}
