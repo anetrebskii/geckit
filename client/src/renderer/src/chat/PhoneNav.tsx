@@ -8,6 +8,7 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Rename } from './PhoneBoard'
+import { contextLine, PhoneInfo } from './PhoneInfo'
 import { projectName } from './project'
 import type { Chat } from './useChat'
 
@@ -16,10 +17,18 @@ export function PhoneNav({
   chat,
   links,
   onScreen,
+  onClear,
+  info,
+  pulled,
+  onInfo,
 }: {
   readonly chat: Chat
   readonly links: readonly Link[]
   readonly onScreen: () => void
+  readonly onClear: () => void
+  readonly info: boolean
+  readonly pulled: number | undefined
+  readonly onInfo: (open: boolean) => void
 }): React.JSX.Element {
   const [more, setMore] = useState(false)
   const [listing, setListing] = useState(false)
@@ -33,7 +42,7 @@ export function PhoneNav({
       </button>
       <div className="phone-nav-title">
         <b>{session?.title ?? 'New conversation'}</b>
-        {session === undefined ? null : <span>{projectName(homeOf(session))}</span>}
+        {session === undefined ? null : <span>{[projectName(homeOf(session)), contextLine(chat)].filter((one) => one !== undefined).join(' · ')}</span>}
       </div>
       <span className="phone-nav-end">
         <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
@@ -57,11 +66,13 @@ export function PhoneNav({
             ...(links.length === 0
               ? []
               : [{ value: 'links', label: 'Links', says: `${String(links.length)} in this conversation`, icon: 'link' }]),
+            { value: 'info', label: 'Conversation', says: 'Context, cost, the plan, Compact and Clear' },
             { value: 'rename', label: 'Rename', icon: 'pencil' },
             ...(chat.working ? [{ value: 'stop', label: 'Stop', says: 'Interrupts Claude; the conversation stays', icon: 'stop' }] : []),
           ]}
           onPick={(value) => {
             if (value === 'links') setListing(true)
+            else if (value === 'info') onInfo(true)
             else if (value === 'rename') setRenaming(true)
             else if (value === 'stop') chat.stop()
             else chat.mark(session.id, value === '' ? undefined : (value as SessionStatus))
@@ -82,8 +93,44 @@ export function PhoneNav({
           onClose={() => setListing(false)}
         />
       ) : null}
+      {(info || pulled !== undefined) && session !== undefined ? <PhoneInfo chat={chat} {...(pulled === undefined ? {} : { pulled })} onClear={onClear} onClose={() => onInfo(false)} /> : null}
       {renaming && session !== undefined ? <Rename session={session} chat={chat} onClose={() => setRenaming(false)} /> : null}
     </div>
+  )
+}
+
+/** The strip along the right edge that draws the conversation's drawer out with the finger, the way back to the board mirrored. */
+export function EdgeInfo({ onPull, onOpen }: { readonly onPull: (moved: number | undefined) => void; readonly onOpen: () => void }): React.JSX.Element {
+  const drag = useRef<{ x: number; at: number; moved: number } | undefined>(undefined)
+  return (
+    <div
+      className="phone-edge right"
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        drag.current = { x: event.clientX, at: Date.now(), moved: 0 }
+      }}
+      onPointerMove={(event) => {
+        const held = drag.current
+        if (held === undefined) return
+        held.moved = Math.max(0, held.x - event.clientX)
+        onPull(held.moved)
+      }}
+      onPointerUp={() => {
+        const held = drag.current
+        drag.current = undefined
+        if (held === undefined) return
+        const fast = held.moved / Math.max(1, Date.now() - held.at) > 0.6
+        if (held.moved > window.innerWidth / 4 || (fast && held.moved > 30)) {
+          tap('light')
+          onOpen()
+        }
+        onPull(undefined)
+      }}
+      onPointerCancel={() => {
+        drag.current = undefined
+        onPull(undefined)
+      }}
+    />
   )
 }
 

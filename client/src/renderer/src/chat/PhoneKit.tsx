@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Icon } from '../ui/Icon'
@@ -220,6 +220,101 @@ export function FullSheet({
         <div ref={body} className="phone-task-form">
           {children}
         </div>
+      </div>
+    </>,
+    document.body,
+  )
+}
+
+/**
+ * A panel that comes in from the right edge over two thirds and more of the
+ * screen. While the edge is still being dragged it stands where the finger is,
+ * `pulled` pixels in; dragged back right, or its scrim pressed, it goes.
+ */
+export function Drawer({
+  title,
+  pulled,
+  onClose,
+  children,
+}: {
+  readonly title: string
+  readonly pulled?: number
+  readonly onClose: () => void
+  readonly children: React.ReactNode
+}): React.JSX.Element {
+  const panel = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  const [phase, setPhase] = useState<'in' | 'open' | 'out'>(pulled === undefined ? 'in' : 'open')
+  const [dragged, setDragged] = useState<number | undefined>()
+  const from = useRef<{ x: number; y: number; way?: 'side' | 'down'; at: number; t: number; v: number } | undefined>(undefined)
+
+  useLayoutEffect(() => {
+    setWidth(panel.current?.offsetWidth ?? 0)
+  }, [])
+  useEffect(() => {
+    if (phase !== 'in') return
+    const frame = requestAnimationFrame(() => setPhase('open'))
+    return () => cancelAnimationFrame(frame)
+  }, [phase])
+
+  const close = (): void => {
+    setDragged(undefined)
+    setPhase('out')
+    setTimeout(onClose, 260)
+  }
+
+  const off = pulled !== undefined ? Math.max(0, width - pulled) : dragged !== undefined ? dragged : phase === 'open' ? 0 : width || 9999
+  const moving = pulled !== undefined || dragged !== undefined
+  const shown = width === 0 ? (phase === 'open' ? 1 : 0) : 1 - off / width
+
+  return createPortal(
+    <>
+      <div className="phone-drawer-scrim" style={{ opacity: shown, transition: moving ? 'none' : undefined }} onClick={close} />
+      <div
+        ref={panel}
+        className="phone-drawer"
+        role="dialog"
+        aria-label={title}
+        style={{ transform: `translateX(${String(off)}px)`, transition: moving ? 'none' : undefined }}
+        onPointerDown={(event) => {
+          from.current = { x: event.clientX, y: event.clientY, at: 0, t: event.timeStamp, v: 0 }
+        }}
+        onPointerMove={(event) => {
+          const held = from.current
+          if (held === undefined) return
+          const dx = event.clientX - held.x
+          const dy = event.clientY - held.y
+          if (held.way === undefined && Math.abs(dx) + Math.abs(dy) > 6) held.way = dx > Math.abs(dy) ? 'side' : 'down'
+          if (held.way !== 'side') return
+          const at = Math.max(0, dx)
+          const dt = event.timeStamp - held.t
+          if (dt > 0) held.v = held.v * 0.2 + ((at - held.at) / dt) * 0.8
+          held.at = at
+          held.t = event.timeStamp
+          setDragged(at)
+        }}
+        onPointerUp={(event) => {
+          const held = from.current
+          from.current = undefined
+          if (held?.way !== 'side') return
+          // A short flick to the right is enough, as a swipe back is; a finger that stopped before letting go is not a flick.
+          const flick = event.timeStamp - held.t < 80 && held.v > 0.3
+          if (flick || held.at > width / 3) close()
+          else setDragged(undefined)
+        }}
+        onPointerCancel={() => {
+          from.current = undefined
+          setDragged(undefined)
+        }}
+      >
+        <div className="phone-task-bar">
+          <span />
+          <b>{title}</b>
+          <button type="button" className="strong" onClick={close}>
+            Done
+          </button>
+        </div>
+        <div className="phone-drawer-body">{children}</div>
       </div>
     </>,
     document.body,

@@ -8,6 +8,7 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
+import { resetsAt } from './PhoneInfo'
 import { PhoneScope, ScopeButton } from './PhoneScope'
 import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
@@ -308,11 +309,11 @@ export function PhoneBoard({
         {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
           <div className="phone-foot">
             {[
-              chat.plan.fiveHour === undefined ? '' : `5-hour window ${String(Math.round(chat.plan.fiveHour.part * 100))}%`,
-              chat.plan.sevenDay === undefined ? '' : `week ${String(Math.round(chat.plan.sevenDay.part * 100))}%`,
+              chat.plan.fiveHour === undefined ? '' : `5-hour window ${String(Math.round(chat.plan.fiveHour.part * 100))}%, resets ${resetsAt(chat.plan.fiveHour.resetsAt, now)}`,
+              chat.plan.sevenDay === undefined ? '' : `week ${String(Math.round(chat.plan.sevenDay.part * 100))}%, resets ${resetsAt(chat.plan.sevenDay.resetsAt, now)}`,
             ]
               .filter((one) => one !== '')
-              .join(', ')}
+              .join(' · ')}
           </div>
         )}
       </div>
