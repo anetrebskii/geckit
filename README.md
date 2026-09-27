@@ -118,11 +118,19 @@ The prompt you type every morning, typed once. A shortcut is a saved prompt for 
 
 ## Phone
 
-Answer a waiting command without going back to the Mac. The board and the conversations on your iPhone. Turn on Phone in Settings and scan the code with the GeckIt app. The phone connects to the Mac over WebRTC. The iPhone app is on [TestFlight](https://testflight.apple.com/join/7B7vbk2e), in Apple's review for now.
+Your chats on your iPhone, with full control over them: the board, every conversation, the commands waiting for an answer, new tasks and shortcuts. It is made to be fast on a slow network: the app opens on what it already has and loads only the end of a conversation.
 
-<picture>
-  <img src="docs/screenshots/phone-light.png" alt="The iPhone app: the board, a command waiting for an answer, and a conversation">
-</picture>
+AI asks you to do something on the computer? No need to go back to it: you can control your Mac from the phone. A finger moves the Mac's pointer, a tap clicks, two fingers scroll, and a double tap zooms in.
+
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/2a7f1c86-9ce3-4232-b060-5954dfac22d2">
+    <img src="docs/video/geckit-iphone-light.webp" width="400" alt="On the iPhone: a waiting command is allowed, Claude asks for Chrome's Allow button on the Mac, it is pressed from the phone with the Mac's screen as a trackpad, and Claude checks the result">
+  </a>
+</p>
+
+A waiting command is opened from the board and allowed. Claude runs the tests and asks for a button only a person can press: Chrome on the Mac wants to show notifications. The Mac's screen opens on the phone, the pointer is moved to Allow, and Claude checks the push. [Play it as a video](https://github.com/user-attachments/assets/2a7f1c86-9ce3-4232-b060-5954dfac22d2).
+
+Turn on Phone in Settings and scan the code with the GeckIt app. The phone connects to the Mac over WebRTC. The iPhone app is on [TestFlight](https://testflight.apple.com/join/7B7vbk2e), in Apple's review for now.
 
 ## Correct and Transcribe
 
