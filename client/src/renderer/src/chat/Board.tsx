@@ -7,6 +7,9 @@ import { projectColor } from '../../../shared/project-color'
 import { dictate, languageCode, useDictationLanguage } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
+import { hostOf, outOfReach, outOfReachLine } from '../../../shared/hosts'
+import type { HostView } from '../../../shared/hosts'
+import { HostFolders } from './HostParts'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
@@ -18,7 +21,8 @@ import { PhoneRecord } from './PhoneRecord'
 import { Preview } from './Preview'
 import { Projects } from './Projects'
 import { QuestionsMenu } from './Questions'
-import { emptyProfile, projectName, tint } from './project'
+import { HostTag } from './HostTag'
+import { emptyProfile, projectLabel, projectName, tint } from './project'
 import { STATUS_ICONS, Tags, Views } from './Sidebar'
 import { BoardSearch } from './Switcher'
 import type { Seek } from './Switcher'
@@ -487,7 +491,10 @@ function Card({
       gone = true
     }
   }, [session.id, session.at])
-  const stands = standing(session)
+  // Out of reach, what was working or asking there still is, and the card says so in place of what it last said.
+  const host = chat.hosts.find((one) => one.id === hostOf(session.root))
+  const away = host !== undefined && outOfReach(host.state) && (session.state === 'working' || session.state === 'asks')
+  const stands = away ? { words: outOfReachLine(host.name), tone: 'said-away' } : standing(session)
   const background = session.tasks?.filter(running).length ?? 0
   const queued = session.queued?.length ?? 0
   // The line above already says it is working, so what it says it is doing does not say it again.
@@ -535,6 +542,7 @@ function Card({
           <span className="tinted" style={tint(projectColor(homeOf(session), chat.settings))}>
             {projectName(homeOf(session))}
           </span>
+          <HostTag root={homeOf(session)} />
           {session.project === undefined ? null : (
             <span className="subfolder"> / {session.root.slice(session.project.length + 1)}</span>
           )}
@@ -614,6 +622,8 @@ function Card({
  */
 /** The row that opens the folder picker rather than choosing a project already there. */
 const PICK = '\u0000pick'
+/** Choose a folder on a host, by its id after this. */
+const PICK_ON = '\u0000on:'
 
 interface KeptTask {
   readonly root: string
@@ -655,6 +665,8 @@ export function NewTask({
 }): React.JSX.Element {
   const [kept] = useState(() => keptTask(question))
   const [root, setRoot] = useState(() => kept?.root ?? chat.root ?? shownProjects(chat.settings)[0] ?? '')
+  // A host whose folders are being chosen from, for a project there.
+  const [folderOn, setFolderOn] = useState<HostView | undefined>()
   const [text, setText] = useState(kept?.text ?? '')
   const [goal, setGoal] = useState(kept?.goal ?? '')
   useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal })), [question, root, text, goal])
@@ -765,8 +777,13 @@ export function NewTask({
             className="new-task-where"
             value={root}
             onChange={(event) => {
-              if (event.target.value !== PICK) {
-                setRoot(event.target.value)
+              const value = event.target.value
+              if (value.startsWith(PICK_ON)) {
+                setFolderOn(chat.hosts.find((one) => one.id === value.slice(PICK_ON.length)))
+                return
+              }
+              if (value !== PICK) {
+                setRoot(value)
                 return
               }
               void window.geckit.chat.addProject().then((picked) => {
@@ -774,12 +791,42 @@ export function NewTask({
               })
             }}
           >
-            {shownProjects(chat.settings).map((one) => (
-              <option key={one} value={one}>
-                {projectName(one)}
+            {chat.hosts.length === 0 ? (
+              shownProjects(chat.settings).map((one) => (
+                <option key={one} value={one}>
+                  {projectName(one)}
+                </option>
+              ))
+            ) : (
+              <>
+                <optgroup label="Local">
+                  {shownProjects(chat.settings)
+                    .filter((one) => hostOf(one) === undefined)
+                    .map((one) => (
+                      <option key={one} value={one}>
+                        {projectName(one)}
+                      </option>
+                    ))}
+                </optgroup>
+                {chat.hosts.map((host) => (
+                  <optgroup key={host.id} label={host.name}>
+                    {shownProjects(chat.settings)
+                      .filter((one) => hostOf(one) === host.id)
+                      .map((one) => (
+                        <option key={one} value={one}>
+                          {projectLabel(one)}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+              </>
+            )}
+            <option value={PICK}>{chat.hosts.length === 0 ? 'Choose a folder...' : 'Choose a folder on this computer...'}</option>
+            {chat.hosts.map((host) => (
+              <option key={host.id} value={`${PICK_ON}${host.id}`}>
+                Choose a folder on {host.name}...
               </option>
             ))}
-            <option value={PICK}>Choose a folder...</option>
           </select>
         </label>
       )}
@@ -909,6 +956,13 @@ export function NewTask({
           {question ? 'Ask' : 'Start'}
         </button>
       </div>
+      {folderOn === undefined ? null : (
+        <HostFolders
+          host={folderOn}
+          onClose={() => setFolderOn(undefined)}
+          onAdded={(added) => setRoot(added)}
+        />
+      )}
     </div>
   )
 }

@@ -13,9 +13,11 @@ import type {
   SessionStatus,
 } from '../../../shared/api'
 import { homeOf, resumeCommand, shownProjects } from '../../../shared/api'
+import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { asImage, canShow } from '../pictures'
 import { useSettings } from '../settings'
 import type { Settings } from '../../../shared/api'
+import { useHosts } from './useHosts'
 
 /** What the window is showing: a conversation, or one that has not been sent yet. */
 export type Shown = { readonly kind: 'new' } | { readonly kind: 'session'; readonly id: string }
@@ -49,6 +51,10 @@ const keyOf = (shown: Shown): string => (shown.kind === 'new' ? NEW : shown.id)
 
 export interface Chat {
   readonly settings: Settings
+  /** Other computers conversations run on, and how each stands. */
+  readonly hosts: readonly HostView[]
+  /** What hosts are asking now. */
+  readonly prompts: readonly HostPrompt[]
   readonly change: (change: Partial<Settings>) => void
   readonly root: string | undefined
   /** Whose conversations are listed: one project's, or `ALL`. */
@@ -94,6 +100,8 @@ export interface Chat {
   setScope: (scope: string) => void
   /** That project in the list beside the others already there, or out of it. */
   alsoScope: (root: string) => void
+  /** Exactly these projects in the list: every one of a host's, for All on it. */
+  choose: (roots: readonly string[]) => void
   /** Where a new conversation starts: listing every project, only that changes; listing one, the list moves to it. */
   setRoot: (root: string) => void
   addProject: () => void
@@ -161,6 +169,7 @@ const SHOWN_FOR = 1500
 
 export function useChat(): Chat {
   const [settings, change] = useSettings()
+  const { hosts, prompts } = useHosts()
   const [picked, setPicked] = useState<readonly string[] | undefined>()
   const [started, setStarted] = useState<string | undefined>()
   const [sessions, setSessions] = useState<readonly ChatSession[]>([])
@@ -691,6 +700,8 @@ export function useChat(): Chat {
 
   return {
     settings,
+    hosts,
+    prompts,
     change,
     root,
     scope,
@@ -720,6 +731,7 @@ export function useChat(): Chat {
     chosen,
     setScope,
     alsoScope,
+    choose: listing,
     setRoot: (next) => {
       if (scopeRef.current === ALL) setStarted(next)
       else setScope(next)

@@ -67,10 +67,11 @@ import { readBrowsers } from './sessions/chrome'
 import { claudeFile, deleteClaude, forkPoint, listClaude, readClaudeSession, readGoal, readLinks } from './sessions/disk'
 import { HostDisk } from './hosts/disk'
 import { Hosts } from './hosts/hosts'
-import { hostExists, hostFile, hostFiles, hostGit, hostTerminal, routedClaude, routedShell } from './hosts/route'
+import { hostExists, hostFile, hostFiles, hostGit, hostMcp, hostTaskOutput, hostTerminal, routedClaude, routedShell } from './hosts/route'
 import type { Routes } from './hosts/route'
 import { runsAt } from './hosts/runs'
 import { secretsAt } from './hosts/secrets'
+import { Forwards, localPort, withPort } from './hosts/forward'
 import { hostOf, isRemote } from '../shared/hosts'
 import type { HostAnswer, HostDraft } from '../shared/hosts'
 import { searchClaude } from './sessions/search'
@@ -168,7 +169,7 @@ function buildHosts(): Routes {
     checks: (lines) => tell('hosts:checks', lines),
     secrets,
   })
-  return { hosts, disk: new HostDisk(hosts, folder), runs: runsAt(join(folder, 'runs.json')) }
+  return { hosts, disk: new HostDisk(hosts, folder), runs: runsAt(join(folder, 'runs.json')), forwards: new Forwards(hosts) }
 }
 
 /** Claude Code's files about a root: this computer's, or a host's through its copy here. */
@@ -210,7 +211,8 @@ function build(held: Routes): Sessions {
     claude: routedClaude(held),
     disk: routedDisk(held),
     shell: routedShell(held),
-    mcp: (root, change) => (isRemote(root) ? Promise.resolve(undefined) : readMcp(root, change)),
+    taskOutput: (root, session, task) => (isRemote(root) ? hostTaskOutput(held, root, session, task) : Promise.resolve(undefined)),
+    mcp: (root, change) => (isRemote(root) ? hostMcp(held, root, change) : readMcp(root, change)),
     browsers: (root, pick) => (isRemote(root) ? Promise.resolve(undefined) : readBrowsers(root, pick)),
     changed: (all: readonly ChatSession[]) => {
       // Every conversation it holds, which is more than the window lists: another profile's rows stay held after a switch until they are read again. A general question belongs to no project and is always told.
@@ -587,6 +589,37 @@ const fileFor = (root: string, path: string) =>
 const filesFor = (root: string): Promise<string[]> =>
   isRemote(root) ? (routes === undefined ? Promise.resolve([]) : hostFiles(routes, root)) : projectFiles(root)
 
+/**
+ * A link opened from a conversation. One to `localhost` said in a conversation
+ * on a host is that host's, so its port is carried here first, and the person
+ * told where it landed when the same port was taken.
+ */
+async function openLink(href: string): Promise<void> {
+  const watched = sessions?.watched()
+  const host = watched === undefined ? undefined : hostOf(watched.root)
+  const port = localPort(href)
+  if (host === undefined || port === undefined || routes === undefined || watched === undefined) {
+    void shell.openExternal(href)
+    return
+  }
+  const local = await routes.forwards.open(host, port)
+  if (local === undefined) {
+    void shell.openExternal(href)
+    return
+  }
+  if (local !== port) {
+    const name = routes.hosts.config(host)?.name ?? host
+    tellChats('chat:notice', {
+      session: watched.id,
+      title: `${name}'s ${String(port)} is at localhost:${String(local)} here`,
+      subtitle: '',
+      body: '',
+      asks: false,
+    })
+  }
+  void shell.openExternal(withPort(href, local))
+}
+
 /** What a window may ask about hosts. */
 function wireHosts(): void {
   const hosts = (): Hosts | undefined => routes?.hosts
@@ -596,7 +629,10 @@ function wireHosts(): void {
   ipcMain.handle('hosts:remove', (_event, id: string) => hosts()?.remove(id))
   ipcMain.on('hosts:connect', (_event, id: string) => void hosts()?.connect(id))
   ipcMain.on('hosts:reconnect', (_event, id: string) => hosts()?.reconnect(id))
-  ipcMain.on('hosts:disconnect', (_event, id: string) => hosts()?.disconnect(id))
+  ipcMain.on('hosts:disconnect', (_event, id: string) => {
+    routes?.forwards.closeHost(id)
+    hosts()?.disconnect(id)
+  })
   ipcMain.handle('hosts:folders', (_event, id: string, path: string | undefined) => hosts()?.folders(id, path ?? undefined))
   ipcMain.handle('hosts:addFolder', (_event, id: string, path: string) => hosts()?.addFolder(id, path))
   ipcMain.handle('hosts:prompts', () => hosts()?.prompts() ?? [])
@@ -787,7 +823,8 @@ function wire(): void {
   })
   ipcMain.on('clipboard:write', (_event, text: string, html: string) => clipboard.write({ text, html }))
   ipcMain.on('open:link', (_event, href: string) => {
-    if (/^https?:\/\//.test(href)) void shell.openExternal(href)
+    if (!/^https?:\/\//.test(href)) return
+    void openLink(href)
   })
   ipcMain.handle('shortcuts:save', (_event, draft: ShortcutDraft) => saveShortcut(draft))
   ipcMain.on('shortcuts:remove', (_event, id: string) => removeShortcut(id))
@@ -1028,7 +1065,7 @@ if (!app.requestSingleInstanceLock()) {
     sessions = started
     void started.resumeQueues()
     // What was running on hosts when GeckIt closed is still running there, and is picked up.
-    started.reattach(Object.entries(held.runs.all()).map(([id, run]) => ({ id, root: run.root })))
+    void started.reattach(Object.entries(held.runs.all()).map(([id, run]) => ({ id, root: run.root })))
     nativeTheme.themeSource = getSettings().theme
     guided = getSettings().guideClaude
     void keepGuide(guided)
@@ -1085,6 +1122,7 @@ app.on('window-all-closed', () => undefined)
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   sessions?.dispose()
+  routes?.forwards.dispose()
   routes?.hosts.dispose()
   closePeer()
 })

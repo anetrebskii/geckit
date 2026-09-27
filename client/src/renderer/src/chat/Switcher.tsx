@@ -4,7 +4,7 @@ import type { ChatFound, ChatSession } from '../../../shared/api'
 import { homeOf } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { projectColor } from '../../../shared/project-color'
-import { projectName, tint } from './project'
+import { projectLabel, projectName, tint } from './project'
 import { MOD } from '../ui/Shortcuts'
 import { Dot } from './Tasks'
 import { ago } from './time'
@@ -37,13 +37,13 @@ const MOST = 50
 const used = (session: ChatSession): number => Math.max(session.seen ?? 0, session.at)
 
 const named = (session: ChatSession, words: readonly string[]): boolean => {
-  const against = `${session.title} ${projectName(session.root)} ${session.root} ${session.stands}`.toLowerCase()
+  const against = `${session.title} ${projectLabel(session.root)} ${session.root} ${session.stands}`.toLowerCase()
   return words.every((word) => against.includes(word))
 }
 
 /** The folder, where it is the folder that was typed rather than the project's name. */
 function place(root: string, words: readonly string[]): string {
-  const name = projectName(root)
+  const name = projectLabel(root)
   const byPath = words.some((word) => !name.toLowerCase().includes(word) && root.toLowerCase().includes(word))
   if (!byPath) return name
   const home = window.geckit.home

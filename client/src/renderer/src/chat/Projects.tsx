@@ -4,7 +4,12 @@ import { Icon } from '../ui/Icon'
 import { MOD } from '../ui/Shortcuts'
 import { homeOf, profileOf, shownProjects } from '../../../shared/api'
 import { PROJECT_COLORS, projectColor } from '../../../shared/project-color'
-import { homePath, projectName } from './project'
+import { hostOf, stateLine, targetLine } from '../../../shared/hosts'
+import type { HostView } from '../../../shared/hosts'
+import { AddHost } from './Hosts'
+import { useMinute } from './useHosts'
+import { HostDot, HostFolders } from './HostParts'
+import { homePath, projectLabel, projectName } from './project'
 import type { Chat } from './useChat'
 import { ALL } from './useChat'
 import { HiddenChats } from './HiddenChats'
@@ -15,6 +20,23 @@ import { HiddenChats } from './HiddenChats'
  */
 
 const ADD = ''
+/** A host's own row, which lists every project on it. */
+const ON_HOST = 'host:'
+/** Add a folder on a host. */
+const ADD_ON = 'add:'
+
+const folders = (count: number): string => `${String(count)} ${count === 1 ? 'folder' : 'folders'}`
+
+/** What the picker's button says for what is listed: one project, every one of a host's, or how many. */
+export function chosenName(chat: Chat): string {
+  if (chat.chosen.length === 0) return everyName(chat)
+  if (chat.chosen.length === 1) return projectLabel(chat.scope)
+  const host = chat.hosts.find((one) => {
+    const on = shownProjects(chat.settings).filter((root) => hostOf(root) === one.id)
+    return on.length === chat.chosen.length && on.every((root) => chat.chosen.includes(root))
+  })
+  return host === undefined ? `${String(chat.chosen.length)} projects` : `All on ${host.name}`
+}
 
 /** Every project listed at once: all of them, or all of the profile's in use. */
 function everyName(chat: Chat): string {
@@ -65,16 +87,37 @@ function Waiting({ waits }: { readonly waits: Waits | undefined }): React.JSX.El
   )
 }
 
+interface Row {
+  readonly value: string
+  readonly name: string
+  readonly path: string
+  readonly waits: Waits | undefined
+  readonly work: Work | undefined
+  readonly kind: 'all' | 'project' | 'host' | 'add'
+  /** The host its group is under, or `local`; nothing where there are no hosts. */
+  readonly group?: string
+}
+
+const sumWaits = (all: readonly (Waits | undefined)[]): Waits | undefined =>
+  all.reduce<Waits | undefined>((sum, one) => (one === undefined ? sum : { asks: (sum?.asks ?? 0) + one.asks, unread: (sum?.unread ?? 0) + one.unread }), undefined)
+
+const sumWork = (all: readonly (Work | undefined)[]): Work =>
+  all.reduce<Work>((sum, one) => ({ progress: sum.progress + (one?.progress ?? 0), review: sum.review + (one?.review ?? 0) }), { progress: 0, review: 0 })
+
 function Menu({
   chat,
   anchor,
   onClose,
   onHidden,
+  onFolderOn,
+  onAddHost,
 }: {
   readonly chat: Chat
   readonly anchor: DOMRect
   readonly onClose: () => void
   readonly onHidden: () => void
+  readonly onFolderOn: (host: HostView) => void
+  readonly onAddHost: () => void
 }): React.JSX.Element {
   const [asked, setAsked] = useState('')
   // The project whose colours are laid out under it.
@@ -112,29 +155,65 @@ function Menu({
   )
 
   const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
-  const rows = [
-    { value: ALL, name: everyName(chat), path: `${String(projects.length)} folders`, waits: everywhere, work: standing },
-    ...projects.map((root) => ({
-      value: root,
-      name: projectName(root),
-      path: homePath(root),
-      waits: waits.get(root),
-      work: work.get(root),
-    })),
-  ].filter((row) => words.every((word) => `${row.name} ${row.value}`.toLowerCase().includes(word)))
+  const projectRow = (root: string, group?: string): Row => ({
+    value: root,
+    name: projectName(root),
+    path: homePath(root),
+    waits: waits.get(root),
+    work: work.get(root),
+    kind: 'project',
+    ...(group === undefined ? {} : { group }),
+  })
+  const onHost = (id: string): string[] => projects.filter((root) => hostOf(root) === id)
+  const matches = (row: Row): boolean => row.kind === 'all' || words.every((word) => `${row.name} ${row.value}`.toLowerCase().includes(word))
+  const all: Row = { value: ALL, name: everyName(chat), path: folders(projects.length), waits: everywhere, work: standing, kind: 'all' }
+  const rows: Row[] =
+    chat.hosts.length === 0
+      ? [all, ...projects.map((root) => projectRow(root))].filter(matches)
+      : [
+          all,
+          ...projects.filter((root) => hostOf(root) === undefined).map((root) => projectRow(root, 'local')),
+          ...chat.hosts.flatMap((host): Row[] => [
+            {
+              value: `${ON_HOST}${host.id}`,
+              name: `All on ${host.name}`,
+              path: folders(onHost(host.id).length),
+              waits: sumWaits(onHost(host.id).map((root) => waits.get(root))),
+              work: sumWork(onHost(host.id).map((root) => work.get(root))),
+              kind: 'host',
+              group: host.id,
+            },
+            ...onHost(host.id).map((root) => projectRow(root, host.id)),
+            { value: `${ADD_ON}${host.id}`, name: `Add a folder on ${host.name}...`, path: '', waits: undefined, work: undefined, kind: 'add', group: host.id },
+          ]),
+        ].filter(matches)
   const here = Math.min(at, Math.max(0, rows.length - 1))
 
   const pick = (value: string): void => {
     if (value === ADD) chat.addProject()
-    else chat.setScope(value)
+    else if (value.startsWith(ON_HOST)) chat.choose(onHost(value.slice(ON_HOST.length)))
+    else if (value.startsWith(ADD_ON)) {
+      const host = chat.hosts.find((one) => one.id === value.slice(ADD_ON.length))
+      if (host !== undefined) onFolderOn(host)
+    } else chat.setScope(value)
     onClose()
   }
 
   // The check is the way to list several at once; the row itself still switches to one.
-  const on = (value: string): boolean => (value === ALL ? chat.chosen.length === 0 : chat.chosen.includes(value))
+  const on = (value: string): boolean => {
+    if (value === ALL) return chat.chosen.length === 0
+    if (value.startsWith(ON_HOST)) {
+      const roots = onHost(value.slice(ON_HOST.length))
+      return chat.chosen.length > 0 && roots.length > 0 && roots.every((root) => chat.chosen.includes(root))
+    }
+    return chat.chosen.includes(value)
+  }
   const also = (value: string): void => {
     if (value === ALL) chat.setScope(ALL)
-    else chat.alsoScope(value)
+    else if (value.startsWith(ON_HOST)) {
+      const roots = onHost(value.slice(ON_HOST.length))
+      chat.choose(on(value) ? chat.chosen.filter((root) => !roots.includes(root)) : [...new Set([...chat.chosen, ...roots])])
+    } else chat.alsoScope(value)
   }
 
   return (
@@ -175,6 +254,18 @@ function Menu({
         {rows.length === 0 ? <div className="empty">No project by that name.</div> : null}
         {rows.map((row, index) => (
           <div key={row.value}>
+            {row.group === undefined || rows[index - 1]?.group === row.group ? null : <GroupHead chat={chat} group={row.group} />}
+            {row.kind === 'add' ? (
+              <div
+                role="menuitem"
+                className={`menu-item project-add${index === here ? ' at' : ''}`}
+                onMouseMove={() => setAt(index)}
+                onClick={() => pick(row.value)}
+              >
+                <Icon name="plus" size={12} />
+                {row.name}
+              </div>
+            ) : (
             <div
               role="menuitem"
               className={`menu-item project-row${on(row.value) ? ' on' : ''}${index === here ? ' at' : ''}`}
@@ -197,7 +288,7 @@ function Menu({
               >
                 {on(row.value) ? <Icon name="check" size={13} /> : null}
               </button>
-              {row.value === ALL ? (
+              {row.kind === 'all' || row.kind === 'host' ? (
                 <span className="project-dot-space" />
               ) : (
                 <button
@@ -220,7 +311,7 @@ function Menu({
               </span>
               <Standing work={row.work} />
               <Waiting waits={row.waits} />
-              {row.value === ALL ? (
+              {row.kind === 'all' || row.kind === 'host' ? (
                 <span className="forget-space" />
               ) : (
                 <button
@@ -237,6 +328,7 @@ function Menu({
                 </button>
               )}
             </div>
+            )}
             {painting !== row.value ? null : (
               <div className="project-palette">
                 {PROJECT_COLORS.map((name, color) => (
@@ -260,7 +352,21 @@ function Menu({
           <span style={{ width: 14, flexShrink: 0 }}>
             <Icon name="plus" size={13} />
           </span>
-          Add a project...
+          {chat.hosts.length === 0 ? 'Add a project...' : 'Add a folder on this computer...'}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="menu-item"
+          onClick={() => {
+            onClose()
+            onAddHost()
+          }}
+        >
+          <span style={{ width: 14, flexShrink: 0 }}>
+            <Icon name="plus" size={13} />
+          </span>
+          Add a host...
         </button>
         <button
           type="button"
@@ -281,9 +387,24 @@ function Menu({
   )
 }
 
+/** Over a group of projects: Local, or a host with how it stands. */
+function GroupHead({ chat, group }: { readonly chat: Chat; readonly group: string }): React.JSX.Element {
+  const host = chat.hosts.find((one) => one.id === group)
+  const now = useMinute()
+  return (
+    <div className="projects-group">
+      {host === undefined ? null : <HostDot state={host.state} />}
+      <span className="name">{host === undefined ? 'Local' : host.name}</span>
+      {host === undefined ? null : <span className="says">{host.state === 'up' ? targetLine(host) : stateLine(host, now)}</span>}
+    </div>
+  )
+}
+
 export function Projects({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [anchor, setAnchor] = useState<DOMRect | undefined>()
   const [hidden, setHidden] = useState(false)
+  const [folderOn, setFolderOn] = useState<HostView | undefined>()
+  const [addingHost, setAddingHost] = useState(false)
   return (
     <>
       <button
@@ -294,22 +415,25 @@ export function Projects({ chat }: { readonly chat: Chat }): React.JSX.Element {
       >
         <Icon name="folder" />
         <span className="name">
-          {chat.root === undefined
-            ? 'Choose a project'
-            : chat.chosen.length === 0
-              ? everyName(chat)
-              : chat.chosen.length === 1
-                ? projectName(chat.scope)
-                : `${String(chat.chosen.length)} projects`}
+          {chat.root === undefined ? 'Choose a project' : chosenName(chat)}
         </span>
         <span className="spacer" />
         <span className="keys">{MOD}+K</span>
         <Icon name="down" size={11} />
       </button>
       {anchor === undefined ? null : (
-        <Menu chat={chat} anchor={anchor} onClose={() => setAnchor(undefined)} onHidden={() => setHidden(true)} />
+        <Menu
+          chat={chat}
+          anchor={anchor}
+          onClose={() => setAnchor(undefined)}
+          onHidden={() => setHidden(true)}
+          onFolderOn={setFolderOn}
+          onAddHost={() => setAddingHost(true)}
+        />
       )}
       {hidden ? <HiddenChats chat={chat} onClose={() => setHidden(false)} /> : null}
+      {folderOn === undefined ? null : <HostFolders host={folderOn} onClose={() => setFolderOn(undefined)} onAdded={(root) => chat.setScope(root)} />}
+      {addingHost ? <AddHost onClose={() => setAddingHost(false)} /> : null}
     </>
   )
 }

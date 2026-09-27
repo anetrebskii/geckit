@@ -292,3 +292,24 @@ export function readFileScript(cwd: string, path: string): string {
 export function existsScript(cwd: string, path: string): string {
   return [`cd ${quote(cwd)} 2>/dev/null || cd "$HOME"`, `f=${quote(path)}`, 'case "$f" in "~/"*) f="$HOME/${f#\\~/}";; esac', 'if [ -e "$f" ]; then echo yes; else echo no; fi'].join('\n')
 }
+
+/** Runs `claude` in a folder on the host for a short question, without the variables that take it off the plan. */
+export function claudeHereScript(cwd: string, argv: readonly string[]): string {
+  const unset = OFF_PLAN.map((name) => `-u ${name}`).join(' ')
+  return [PREAMBLE, `cd ${quote(cwd)} || exit 1`, `exec env ${unset} ${argv.map(quote).join(' ')}`].join('\n')
+}
+
+/**
+ * The end of what a task in the background printed, from where the tool on the
+ * host writes it: the file it named, or its own folder in the host's temp
+ * directory, as `tasks.ts` works it out here.
+ */
+export function taskOutputScript(cwd: string, session: string, task: string, file: string | undefined, most: number): string {
+  if (file !== undefined) return `tail -c ${String(most)} ${quote(file)} 2>/dev/null`
+  return [
+    `b=$(cd "\${CLAUDE_CODE_TMPDIR:-/tmp}" && pwd -P)`,
+    `r=$(cd ${quote(cwd)} 2>/dev/null && pwd -P)`,
+    `s=$(printf '%s' "$r" | sed 's/[^A-Za-z0-9]/-/g')`,
+    `tail -c ${String(most)} "$b/claude-$(id -u)/$s/${safeId(session)}/tasks/${safeId(task)}.output" 2>/dev/null`,
+  ].join('\n')
+}

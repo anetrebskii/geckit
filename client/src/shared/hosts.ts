@@ -128,8 +128,11 @@ export function pathOf(root: string): string {
 }
 
 /** A folder on a host, as a project root. */
-export const remoteRoot = (id: string, path: string): string =>
-  `${SCHEME}${id}${path.startsWith('/') ? path : `/${path}`}`.replace(/(.)\/+$/, '$1')
+export function remoteRoot(id: string, path: string): string {
+  const absolute = path.startsWith('/') ? path : `/${path}`
+  const trimmed = absolute.length > 1 ? absolute.replace(/\/+$/, '') : absolute
+  return `${SCHEME}${id}${trimmed === '' ? '/' : trimmed}`
+}
 
 /**
  * What was typed into Address, read the way ssh reads it: `leo@devbox.local:2222`

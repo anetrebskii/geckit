@@ -10,7 +10,9 @@ import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { MOD } from '../ui/Shortcuts'
+import { hostOf, isRemote } from '../../../shared/hosts'
 import { Chrome } from './Chrome'
+import { HostDot } from './HostParts'
 import { Mcp } from './Mcp'
 import { Preview } from './Preview'
 import { Tasks } from './Tasks'
@@ -242,7 +244,22 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const program = programLine(chat.account)
   const note = [program === undefined ? undefined : `${program}.`, cost].filter((line) => line !== undefined).join('\n')
 
-  const cannot = chat.root === undefined || chat.account?.signedIn !== true || chat.account.key === true
+  // On a host it is that host's Claude Code that answers, not this computer's, so only its connection decides.
+  const host = chat.root === undefined ? undefined : chat.hosts.find((one) => one.id === hostOf(chat.root ?? ''))
+  const away =
+    host === undefined
+      ? undefined
+      : host.state === 'lost'
+        ? `Reconnecting to ${host.name}`
+        : host.state === 'needs' || host.state === 'missing' || host.state === 'signin'
+          ? `${host.name} needs you, above`
+          : host.state === 'connecting'
+            ? `Connecting to ${host.name}`
+            : undefined
+  const cannot =
+    chat.root === undefined ||
+    (host === undefined && isRemote(chat.root)) ||
+    (host === undefined && (chat.account?.signedIn !== true || chat.account.key === true))
 
   const { addFiles } = chat
 
@@ -699,7 +716,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {ON_PHONE ? null : (
             <>
               {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
-              {chat.root === undefined ? null : <Chrome root={chat.root} id={chat.session?.id} />}
+              {chat.root === undefined ? null : host === undefined ? (
+                <Chrome root={chat.root} id={chat.session?.id} />
+              ) : (
+                <button type="button" className="picker" disabled title={`Chrome is on this computer, and this conversation runs on ${host.name}`}>
+                  Chrome
+                </button>
+              )}
             </>
           )}
           <Tasks
@@ -756,7 +779,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             </span>
           ) : null}
           <div className="spacer" />
-          {chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
+          {away === undefined ? null : (
+            <span className={`host-waiting ${host?.state ?? ''}`}>
+              {host === undefined ? null : <HostDot state={host.state} />}
+              {away}
+            </span>
+          )}
+          {away !== undefined ? null : chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
             <button
               type="button"
               className="send"
@@ -772,17 +801,17 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {/* Otherwise an empty field offers dictation in the send button's place, as Messages does. */}
           {/* Beside the mic, the language it listens in: a press switches to the other of the two in Settings, and it stays so. */}
           {/* With a picture attached, or Stop in the round button, the mic and language sit to its left, so words can still be said. */}
-          {ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' ? (
+          {away !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' ? (
             <button type="button" className={chat.pictures.length > 0 || chat.working ? 'spoken beside' : 'spoken'} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
               {languageCode(spoken)}
             </button>
           ) : null}
-          {ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
+          {away !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
             <button type="button" className="send mic beside" disabled={cannot} onClick={listen} aria-label={`Dictate in ${spoken}`}>
               <Icon name="mic" size={16} />
             </button>
           ) : null}
-          {ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
+          {away !== undefined ? null : ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
             <button
               type="button"
               className={listening !== undefined ? 'send listening' : 'send'}

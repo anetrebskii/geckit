@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import type { Readable, Writable } from 'node:stream'
 import { createInterface } from 'node:readline'
 
 import type { McpServer } from '../../shared/api'
@@ -34,23 +35,31 @@ export const serversOf = (answer: Json): McpServer[] =>
       : []
   })
 
-export function readMcp(root: string, change?: McpChange): Promise<McpServer[] | undefined> {
+/** What `claude` is started with to be asked about its MCP servers and nothing else. */
+export const MCP_ARGS = [
+  '-p',
+  '--input-format',
+  'stream-json',
+  '--output-format',
+  'stream-json',
+  '--verbose',
+  '--no-session-persistence',
+  '--settings',
+  JSON.stringify({ disableAllHooks: true }),
+]
+
+/** A process to ask, as `readMcp` needs one: here by default, or on a host. */
+export interface Asked {
+  readonly stdin: Writable
+  readonly stdout: Readable
+  on(event: 'close' | 'error', listener: () => void): unknown
+  kill(): boolean
+}
+
+export function readMcp(root: string, change?: McpChange, launch?: () => Asked): Promise<McpServer[] | undefined> {
   return new Promise((done) => {
-    const child = spawn(
-      claudeCommand(),
-      [
-        '-p',
-        '--input-format',
-        'stream-json',
-        '--output-format',
-        'stream-json',
-        '--verbose',
-        '--no-session-persistence',
-        '--settings',
-        JSON.stringify({ disableAllHooks: true }),
-      ],
-      { cwd: root, stdio: ['pipe', 'pipe', 'ignore'], env: planOnly(), windowsHide: true },
-    )
+    const child: Asked =
+      launch?.() ?? spawn(claudeCommand(), MCP_ARGS, { cwd: root, stdio: ['pipe', 'pipe', 'ignore'], env: planOnly(), windowsHide: true })
     let servers: McpServer[] | undefined
     let over = false
     let soon: NodeJS.Timeout | undefined

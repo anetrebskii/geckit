@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { planLine, programLine } from '../../../shared/api'
 import type { GitState, PlanWindow } from '../../../shared/api'
+import { hostOf } from '../../../shared/hosts'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
 import { ago, deletedIn } from './time'
@@ -193,7 +194,14 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const plan = chat.plan
   // Whose plan, and which Claude Code spends it: an older one runs fewer models.
   const program = chat.account?.program
-  const lead = [planLine(chat.account), programLine(chat.account)].filter((part) => part !== undefined).join(' · ')
+  // On a host the plan and the Claude Code are that host's; the windows below belong to this computer's account and are left out.
+  const host = chat.root === undefined ? undefined : chat.hosts.find((one) => one.id === hostOf(chat.root ?? ''))
+  const lead =
+    host === undefined
+      ? [planLine(chat.account), programLine(chat.account)].filter((part) => part !== undefined).join(' · ')
+      : [host.name, host.plan === undefined ? undefined : `Your Claude ${host.plan} plan`, host.version === undefined ? undefined : `Claude Code ${host.version}`]
+          .filter((part) => part !== undefined)
+          .join(' · ')
 
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60_000)
@@ -228,8 +236,8 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {chat.trouble === '' ? lead : chat.trouble}
         </span>
       )}
-      {plan?.fiveHour === undefined ? null : <Window name="5h" window={plan.fiveHour} now={now} />}
-      {plan?.sevenDay === undefined ? null : <Window name="Week" window={plan.sevenDay} now={now} />}
+      {plan?.fiveHour === undefined || host !== undefined ? null : <Window name="5h" window={plan.fiveHour} now={now} />}
+      {plan?.sevenDay === undefined || host !== undefined ? null : <Window name="Week" window={plan.sevenDay} now={now} />}
     </div>
   )
 }
