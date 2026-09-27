@@ -522,19 +522,19 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             explained
             onPick={(value) => chat.setMode(value as SessionMode)}
           />
+          <Picker
+            label={named}
+            choices={models}
+            chosen={chat.model}
+            title="Model"
+            {...(note === '' ? {} : { note })}
+            onOpen={chat.askModels}
+            onPick={(value) => {
+              if (value !== '__asking') chat.setModel(value)
+            }}
+          />
           {ON_PHONE ? null : (
             <>
-              <Picker
-                label={named}
-                choices={models}
-                chosen={chat.model}
-                title="Model"
-                {...(note === '' ? {} : { note })}
-                onOpen={chat.askModels}
-                onPick={(value) => {
-                  if (value !== '__asking') chat.setModel(value)
-                }}
-              />
               {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
               {chat.root === undefined ? null : <Chrome root={chat.root} id={chat.session?.id} />}
             </>
