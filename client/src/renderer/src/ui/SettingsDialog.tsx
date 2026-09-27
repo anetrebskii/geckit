@@ -96,7 +96,16 @@ export function SettingsDialog({
             ))}
           </nav>
           <div className="settings-page">
-            {section === 'general' ? <General settings={settings} change={change} /> : null}
+            {section === 'general' ? (
+              <General
+                settings={settings}
+                change={change}
+                onWelcome={() => {
+                  change({ welcomed: false })
+                  onClose()
+                }}
+              />
+            ) : null}
             {section === 'profiles' ? <Profiles settings={settings} change={change} /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
@@ -124,7 +133,7 @@ interface Part {
   readonly change: (change: Partial<Settings>) => void
 }
 
-function General({ settings, change }: Part): React.JSX.Element {
+function General({ settings, change, onWelcome }: Part & { readonly onWelcome: () => void }): React.JSX.Element {
   const rules = settings.openWith
   const setRule = (at: number, rule: OpenRule | undefined): void =>
     change({
@@ -202,6 +211,15 @@ function General({ settings, change }: Part): React.JSX.Element {
           Writes GECKIT.md in ~/.claude and one line in ~/.claude/CLAUDE.md that reads it, so a session knows about the
           board, goals and the links on a card. Turning this off takes both away again.
         </span>
+      </div>
+
+      <div className="field">
+        <label>Welcome</label>
+        <div>
+          <button type="button" className="quiet" onClick={onWelcome}>
+            Show again
+          </button>
+        </div>
       </div>
     </>
   )
@@ -499,7 +517,7 @@ function Correct({ settings, change }: Part): React.JSX.Element {
   )
 }
 
-function PhoneAccess({ on, change }: { readonly on: boolean; readonly change: (on: boolean) => void }): React.JSX.Element {
+export function PhoneAccess({ on, change }: { readonly on: boolean; readonly change: (on: boolean) => void }): React.JSX.Element {
   const [view, setView] = useState<PhoneView>({ count: 0 })
 
   useEffect(() => {

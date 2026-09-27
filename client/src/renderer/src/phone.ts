@@ -411,6 +411,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       },
       on: (said) => listen('settings:changed', said),
       pickApp: () => Promise.resolve(undefined),
+      accessibility: () => Promise.resolve(true),
+      openAccessibility: nothing,
     },
     update: {
       view: () => call('update.view'),
@@ -542,6 +544,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       openFile: nothing,
       fileMenu: nothing,
       exists: (root, path) => call('chat.exists', root, path),
+      file: (root, path) => call('chat.file', root, path),
       repo: (root) => call('chat.repo', root),
       files: (root) => call('chat.files', root),
       openLink: (href) => void window.open(href, '_blank', 'noopener'),

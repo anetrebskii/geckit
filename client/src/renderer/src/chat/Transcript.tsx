@@ -431,17 +431,21 @@ function Picture({ image, onPicture }: { readonly image: SessionImage; readonly 
   )
 }
 
-/** The one line a run of steps is drawn as, and the line over it once it is open. */
+/** The one line a run of steps is drawn as, with the pictures its steps handed back while it is shut, and the line over it once it is open. */
 function Fold({
   said,
   icon,
   title,
   onPress,
+  images = [],
+  onPicture,
 }: {
   readonly said: string
   readonly icon: 'right' | 'down' | 'spinner'
   readonly title: string
   readonly onPress: () => void
+  readonly images?: readonly SessionImage[]
+  readonly onPicture?: (src: string) => void
 }): React.JSX.Element {
   return (
     <div className="turn step">
@@ -451,6 +455,13 @@ function Fold({
         </span>
         <span className="what">{said}</span>
       </button>
+      {images.length === 0 || onPicture === undefined ? null : (
+        <div className="pictures did-pictures fold-pictures">
+          {images.map((one, index) => (
+            <Picture key={one.ref ?? index} image={one} onPicture={onPicture} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -631,13 +642,13 @@ export const Transcript = memo(function Transcript({
 
   // A conversation reads as what was asked and what was answered: each run of steps between them is one line, opened by a press.
   // On the phone a run arrives as one `steps` item, and its steps are asked for when it is opened.
-  const folds = new Map<string, { readonly first: string; readonly ids: string[]; latest: string | undefined }>()
+  const folds = new Map<string, { readonly first: string; readonly ids: string[]; latest: string | undefined; readonly images: SessionImage[] }>()
   const foldOf = new Map<string, string>()
   let fold: string | undefined
   for (const item of shown) {
     if (item.kind === 'steps') {
       fold = undefined
-      folds.set(item.id, { first: item.id, ids: [...item.ids], latest: item.latest })
+      folds.set(item.id, { first: item.id, ids: [...item.ids], latest: item.latest, images: [...(item.images ?? [])] })
       foldOf.set(item.id, item.id)
       continue
     }
@@ -646,9 +657,12 @@ export const Transcript = memo(function Transcript({
       continue
     }
     fold ??= runKey(item.id)
-    const held = folds.get(fold) ?? { first: item.id, ids: [], latest: undefined }
+    const held = folds.get(fold) ?? { first: item.id, ids: [], latest: undefined, images: [] }
     held.ids.push(item.id)
-    if (item.kind === 'did') held.latest = item.what
+    if (item.kind === 'did') {
+      held.latest = item.what
+      held.images.push(...(item.images ?? []))
+    }
     folds.set(fold, held)
     foldOf.set(item.id, fold)
   }
@@ -704,6 +718,8 @@ export const Transcript = memo(function Transcript({
                 icon={loading || now ? 'spinner' : 'right'}
                 title={loading ? 'Hide what was done' : 'Show what was done'}
                 onPress={loading ? close : open}
+                images={loading ? [] : held.images}
+                onPicture={picture}
               />
             )
           }
@@ -716,6 +732,8 @@ export const Transcript = memo(function Transcript({
                 icon={now ? 'spinner' : 'right'}
                 title="Show what was done"
                 onPress={open}
+                images={held.images}
+                onPicture={picture}
               />
             )
           }

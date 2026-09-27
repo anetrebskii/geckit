@@ -22,4 +22,14 @@ describe('a conversation folded for the phone', () => {
       items[6],
     ])
   })
+
+  it('carries the pictures its steps handed back on the line', () => {
+    const shot = { media: 'image/png', data: 'AAAA' }
+    const items: SessionItem[] = [
+      { kind: 'did', id: 'd1', what: 'Took a screenshot', images: [shot] },
+      { kind: 'did', id: 'd2', what: 'Read b.png', images: [shot, shot] },
+      { kind: 'theirs', id: 't1', text: 'Done' },
+    ]
+    expect(collapse(items)[0]).toEqual({ kind: 'steps', id: 'steps:d1', ids: ['d1', 'd2'], latest: 'Read b.png', images: [shot, shot, shot] })
+  })
 })

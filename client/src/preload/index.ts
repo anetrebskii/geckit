@@ -4,6 +4,7 @@ import type {
   Answered,
   Browser,
   CardAnswer,
+  FileShown,
   ChatFound,
   ChatSession,
   ClaudeAccount,
@@ -69,6 +70,9 @@ const geckit = {
     on: (said: (settings: Settings) => void): (() => void) => listen('settings:changed', said),
     /** The system's picker, opened on the Applications folder. */
     pickApp: (): Promise<string | undefined> => ipcRenderer.invoke('settings:pickApp'),
+    /** Whether GeckIt may press keys in other apps, which pasting what was said needs. Always true off macOS. */
+    accessibility: (): Promise<boolean> => ipcRenderer.invoke('settings:accessibility'),
+    openAccessibility: (): void => ipcRenderer.send('settings:openAccessibility'),
   },
 
   update: {
@@ -188,6 +192,8 @@ const geckit = {
     fileMenu: (root: string, path: string): void => ipcRenderer.send('chat:fileMenu', root, path),
     /** Whether a path said in a conversation is there: from the project, or from the home folder for ~. */
     exists: (root: string, path: string): Promise<boolean> => ipcRenderer.invoke('chat:exists', root, path),
+    /** A file read for the phone to show, which has no application to open it in. */
+    file: (root: string, path: string): Promise<FileShown> => ipcRenderer.invoke('chat:file', root, path),
     repo: (root: string): Promise<string | undefined> => ipcRenderer.invoke('chat:repo', root),
     /** Every file and folder in a project, as paths from it, for @. */
     files: (root: string): Promise<string[]> => ipcRenderer.invoke('chat:files', root),
