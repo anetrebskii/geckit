@@ -30,6 +30,25 @@ export interface Usage {
 
 const PATIENCE = 20_000
 
+/**
+ * One line of what a `claude` given no message answers a `control_request`
+ * with, read the way this computer's own asking and a host's own both do:
+ * which request it is for, whether it went well, and what it said. Nothing
+ * where the line is not one of these at all.
+ */
+export function controlResponse(line: string): { readonly id: string; readonly ok: boolean; readonly answer: Json } | undefined {
+  let message: Json
+  try {
+    message = JSON.parse(line) as Json
+  } catch {
+    return undefined
+  }
+  if (message['type'] !== 'control_response') return undefined
+  const response = (message['response'] ?? {}) as Json
+  const id = typeof response['request_id'] === 'string' ? response['request_id'] : ''
+  return { id, ok: response['subtype'] === 'success', answer: (response['response'] ?? {}) as Json }
+}
+
 export function readUsage(models: readonly string[]): Promise<Usage> {
   return new Promise((done) => {
     const child = spawn(
@@ -77,17 +96,10 @@ export function readUsage(models: readonly string[]): Promise<Usage> {
     }
 
     createInterface({ input: child.stdout }).on('line', (line) => {
-      let message: Json
-      try {
-        message = JSON.parse(line) as Json
-      } catch {
-        return
-      }
-      if (message['type'] !== 'control_response') return
-      const response = (message['response'] ?? {}) as Json
-      const answer = (response['response'] ?? {}) as Json
-      const id = typeof response['request_id'] === 'string' ? response['request_id'] : ''
-      if (response['subtype'] === 'success') {
+      const read = controlResponse(line)
+      if (read === undefined) return
+      const { id, ok, answer } = read
+      if (ok) {
         if (id === 'usage') plan = planOf(answer)
         const model = id.startsWith('window:') ? models[Number(id.slice('window:'.length))] : undefined
         const most = answer['maxTokens']

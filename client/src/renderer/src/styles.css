@@ -4142,8 +4142,19 @@ button.tag:hover {
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
+  /* Held to the window: its buttons give way rather than widening the whole grid, which cut the bar along the bottom off at its right. */
+  min-width: 0;
   padding: 8px 12px 8px 82px;
+  overflow: hidden;
   border-bottom: 1px solid var(--border);
+  container-type: inline-size;
+}
+
+/* Where the head is too narrow for everything, the keys go first: each is in its button's tooltip too. */
+@container (max-width: 1180px) {
+  .board-head .keys {
+    display: none;
+  }
 }
 
 html.framed .board-head {
@@ -8092,4 +8103,9 @@ html.phone .preview-bar .icon-button {
 .add-host .host-remove {
   margin-inline-end: auto;
   color: var(--danger);
+}
+
+/* An account's windows on a bar that shows several; a host out of reach keeps its last numbers, faint, rather than a gap that moves what follows. */
+.status-bar .plan-item.faint {
+  opacity: 0.55;
 }

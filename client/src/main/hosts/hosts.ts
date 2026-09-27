@@ -65,6 +65,7 @@ interface Held {
   problem?: string
   version?: string
   plan?: string
+  who?: string
   timer?: NodeJS.Timeout
   checking: Promise<boolean> | undefined
   /** The connections a remembered password was already handed to: asked twice by the same one, it was wrong. */
@@ -151,6 +152,7 @@ export class Hosts implements HostsLike {
       const held = this.#held.get(host.id)
       const version = held?.version ?? host.seen?.version
       const plan = held?.plan ?? host.seen?.plan
+      const who = held?.who ?? host.seen?.who
       return {
         id: host.id,
         name: host.name,
@@ -163,6 +165,7 @@ export class Hosts implements HostsLike {
         ...(held?.since === undefined ? {} : { since: held.since }),
         ...(version === undefined ? {} : { version }),
         ...(plan === undefined ? {} : { plan }),
+        ...(who === undefined ? {} : { who }),
         ...(held?.problem === undefined ? {} : { problem: held.problem }),
         remembered: this.#deps.secrets.has(host.id),
         canRemember,
@@ -248,6 +251,8 @@ export class Hosts implements HostsLike {
     if (checked.version !== undefined) held.version = checked.version
     const plan = checked.account?.plan
     if (plan !== undefined) held.plan = plan
+    const who = checked.account?.who
+    if (who !== undefined) held.who = who
     if (checked.account?.signedIn === false) {
       this.#set(id, 'signin', `Claude Code on ${host.name} is not signed in.`)
       return false
@@ -273,7 +278,7 @@ export class Hosts implements HostsLike {
 
   #keepSeen(host: HostConfig, checked: Checked): void {
     const seen = { ...host.seen, ...seenOf(checked) }
-    if (host.seen?.version === seen.version && host.seen?.plan === seen.plan) return
+    if (host.seen?.version === seen.version && host.seen?.plan === seen.plan && host.seen?.who === seen.who) return
     const hosts = this.#deps.hosts()
     if (!hosts.some((one) => one.id === host.id)) return
     this.#deps.save(hosts.map((one) => (one.id === host.id ? { ...one, seen } : one)))
@@ -401,6 +406,7 @@ export class Hosts implements HostsLike {
     const held = this.#hold(id)
     if (checked.version !== undefined) held.version = checked.version
     if (checked.account?.plan !== undefined) held.plan = checked.account.plan
+    if (checked.account?.who !== undefined) held.who = checked.account.who
     if (checked.missing) this.#set(id, 'missing', `Claude Code is not installed on ${name}.`)
     else if (checked.account?.signedIn === false) this.#set(id, 'signin', `Claude Code on ${name} is not signed in.`)
     else this.#set(id, 'up')
@@ -670,6 +676,7 @@ const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(don
 const seenOf = (checked: Checked): NonNullable<HostConfig['seen']> => ({
   ...(checked.version === undefined ? {} : { version: checked.version }),
   ...(checked.account?.plan === undefined ? {} : { plan: checked.account.plan }),
+  ...(checked.account?.who === undefined ? {} : { who: checked.account.who }),
 })
 
 /** A word for the local terminal's shell, quoted the way sh quotes. */

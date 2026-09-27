@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, isAbsolute, join } from 'node:path'
@@ -80,6 +81,17 @@ const string = (value: unknown): string => (typeof value === 'string' ? value : 
 const planName = (plan: string): string =>
   plan === '' ? '' : plan.slice(0, 1).toUpperCase() + plan.slice(1).replace(/[_-]+/g, ' ')
 
+/**
+ * An opaque key for an account, the same wherever it is signed in: the org and
+ * the email hashed together, so the same pair always says the same short
+ * string and nothing of the email itself is kept or sent anywhere. Either
+ * missing, and there is nothing to tell one account from another by.
+ */
+export function whoFrom(orgId: string | undefined, email: string | undefined): string | undefined {
+  if (orgId === undefined || orgId === '' || email === undefined || email === '') return undefined
+  return createHash('sha256').update(`${orgId}\n${email}`).digest('hex').slice(0, 16)
+}
+
 /** What a command printed, whatever it exited with: being signed out is an answer and exits 1. */
 const printed = (args: readonly string[]): Promise<string | undefined> =>
   new Promise((done) => {
@@ -104,7 +116,8 @@ export function accountFrom(out: string): ClaudeAccount {
     // Console account, Bedrock, Vertex. The tool says which; the answer here
     // is the same for all of them, so it is not read.
     const plan = planName(string(said['subscriptionType']))
-    return { here: true, signedIn: true, ...(plan === '' ? { key: true } : { plan }) }
+    const who = whoFrom(string(said['orgId']) || undefined, string(said['email']) || undefined)
+    return { here: true, signedIn: true, ...(plan === '' ? { key: true } : { plan }), ...(who === undefined ? {} : { who }) }
   } catch {
     // An older build that answers in a sentence. Here, and unknown.
     return { here: true, signedIn: undefined }

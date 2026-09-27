@@ -437,6 +437,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       models: (root) => call('chat.models', root),
       plan: () => call('chat.plan'),
       onPlan: (said) => listen('chat:plan', said),
+      plans: () => call('chat.plans'),
+      onPlans: (said) => listen('chat:plans', said),
       addProject: () => Promise.resolve(undefined),
       forgetProject: (root) => call('chat.forgetProject', root),
       rememberProject: (root) => call('chat.rememberProject', root),

@@ -33,6 +33,7 @@ import type {
   UpdateView,
   Recording,
   ScreenSource,
+  PlaceUsage,
   Uploaded,
   VoiceMode,
 } from '../shared/api'
@@ -107,6 +108,9 @@ const geckit = {
     /** The plan's windows as last measured. Asking has them measured again; the fresh ones arrive through onPlan. */
     plan: (): Promise<PlanUsage | undefined> => ipcRenderer.invoke('chat:plan'),
     onPlan: (said: (plan: PlanUsage) => void): (() => void) => listen('chat:plan', said),
+    /** Every place's plan, this computer's and each connected host's, as last measured; asking has them measured again, the fresh ones arrive through onPlans. */
+    plans: (): Promise<PlaceUsage[]> => ipcRenderer.invoke('chat:plans'),
+    onPlans: (said: (plans: readonly PlaceUsage[]) => void): (() => void) => listen('chat:plans', said),
     /** The folder picker. The folder chosen is remembered and given back. */
     addProject: (): Promise<string | undefined> => ipcRenderer.invoke('chat:addProject'),
     forgetProject: (root: string): Promise<void> => ipcRenderer.invoke('chat:forgetProject', root),

@@ -1,14 +1,17 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { homeOf, SESSION_STATUSES } from '../../../shared/api'
+import { homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { CardAnswer, ChatSession, SessionCard, SessionStatus } from '../../../shared/api'
+import { hostOf } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
+import { computerName } from './PhoneHosts'
 import { resetsAt } from './PhoneInfo'
+import { accountsOf, placesOf, usageOf } from './plans'
 import { PhoneScope, ScopeButton } from './PhoneScope'
 import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
@@ -157,8 +160,20 @@ export function PhoneBoard({
     window.geckit.chat.answer(session.id, card.item, answer)
   }
 
-  const high = [chat.plan?.fiveHour, chat.plan?.sevenDay].find((one) => one !== undefined && one.part >= 0.9)
-  const highName = high === chat.plan?.fiveHour ? '5-hour window' : 'Week'
+  // The plans of the projects shown, each account once: a host on another account has windows of its own.
+  const placeName = (place: string): string => (place === '' ? computerName() : (chat.hosts.find((one) => one.id === place)?.name ?? place))
+  const inView = chat.chosen.length > 0 ? chat.chosen : shownProjects(chat.settings)
+  const accounts = accountsOf(placesOf(inView.length === 0 ? [''] : inView, hostOf), chat.plans, placeName).map((item) => ({
+    name: placeName(item.places[0] ?? ''),
+    usage: usageOf(item, chat.plan),
+  }))
+  const named = accounts.length > 1
+  const high = accounts
+    .flatMap((one) => [
+      { of: one.name, name: '5-hour window', window: one.usage?.fiveHour },
+      { of: one.name, name: 'Week', window: one.usage?.sevenDay },
+    ])
+    .find((one) => one.window !== undefined && one.window.part >= 0.9)
 
   return (
     <div
@@ -238,10 +253,11 @@ export function PhoneBoard({
           setScrolled((was) => top > 40 || (was && top > 0))
         }}
       >
-        {high === undefined ? null : (
+        {high?.window === undefined ? null : (
           <div className="phone-alert">
-            {highName} at {Math.round(high.part * 100)}%. Resets at{' '}
-            {new Date(high.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+            {named ? `${high.of}: ` : ''}
+            {high.name} at {Math.round(high.window.part * 100)}%. Resets at{' '}
+            {new Date(high.window.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
           </div>
         )}
         {!chat.listed ? (
@@ -330,13 +346,19 @@ export function PhoneBoard({
                 </div>}
               </Fragment>
             ))}
-        {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
+        {accounts.every((one) => one.usage?.fiveHour === undefined && one.usage?.sevenDay === undefined) ? null : (
           <div className="phone-foot">
-            {[
-              chat.plan.fiveHour === undefined ? '' : `5-hour window ${String(Math.round(chat.plan.fiveHour.part * 100))}%, resets ${resetsAt(chat.plan.fiveHour.resetsAt, now)}`,
-              chat.plan.sevenDay === undefined ? '' : `week ${String(Math.round(chat.plan.sevenDay.part * 100))}%, resets ${resetsAt(chat.plan.sevenDay.resetsAt, now)}`,
-            ]
-              .filter((one) => one !== '')
+            {accounts
+              .map((one) =>
+                [
+                  one.usage?.fiveHour === undefined ? '' : `5-hour window ${String(Math.round(one.usage.fiveHour.part * 100))}%${named ? '' : `, resets ${resetsAt(one.usage.fiveHour.resetsAt, now)}`}`,
+                  one.usage?.sevenDay === undefined ? '' : `week ${String(Math.round(one.usage.sevenDay.part * 100))}%${named ? '' : `, resets ${resetsAt(one.usage.sevenDay.resetsAt, now)}`}`,
+                ]
+                  .filter((part) => part !== '')
+                  .join(', '),
+              )
+              .map((line, at) => (named && line !== '' ? `${accounts[at]?.name ?? ''}: ${line}` : line))
+              .filter((line) => line !== '')
               .join(' · ')}
           </div>
         )}

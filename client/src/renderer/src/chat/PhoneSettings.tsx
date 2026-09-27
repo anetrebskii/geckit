@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 
 import { SESSION_MODES, shownProjects } from '../../../shared/api'
 import type { Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, ShortcutDraft, Theme } from '../../../shared/api'
+import { hostOf } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
 import { macs } from '../macs'
 import { phoneCalls } from '../phone-calls'
@@ -14,6 +15,7 @@ import { Cell, Page, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
 import { computerName, PhoneHostFolders, PhoneWhere } from './PhoneHosts'
+import { accountsOf, placesOf, usageOf } from './plans'
 import { homePath, projectLabel } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
@@ -105,6 +107,8 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
   const settings = chat.settings
   const profile = settings.profiles.find((one) => one.id === settings.profile)
   const thisMac = paired?.find((one) => one.current)
+  const placeName = (place: string): string => (place === '' ? (thisMac?.name ?? 'Host') : (chat.hosts.find((one) => one.id === place)?.name ?? place))
+  const accounts = accountsOf(placesOf(['', ...settings.projects], hostOf), chat.plans, placeName)
 
   return (
     <Page title="Settings">
@@ -121,13 +125,26 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
           <div className="phone-group">
             <Cell label={thisMac?.name ?? 'Host'} says={paired.length > 1 ? `${String(paired.length)} hosts paired` : 'Paired'} onPress={() => setSwitching(true)} />
           </div>
-          {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
-            <>
-              <div className="phone-head">Plan usage</div>
-              <Limits chat={chat} />
-              <div className="phone-note">Of the plan the host's Claude Code runs on{chat.account?.plan === undefined ? '' : `, ${chat.account.plan}`}, shared by every conversation on it.</div>
-            </>
-          )}
+          {/* A plan is an account's: one group per account the projects run on, headed by where it was measured once there is more than one. */}
+          {accounts.map((item, at) => {
+            const usage = usageOf(item, chat.plan)
+            if (usage?.fiveHour === undefined && usage?.sevenDay === undefined) return null
+            const place = item.places[0] ?? ''
+            const plan = item.entry?.plan ?? (place === '' ? chat.account?.plan : undefined)
+            return (
+              <Fragment key={place}>
+                <div className="phone-head">{accounts.length === 1 ? 'Plan usage' : `${placeName(place)}${plan === undefined ? '' : ` · ${plan}`}`}</div>
+                <Limits chat={chat} usage={usage} />
+                {at === accounts.length - 1 ? (
+                  <div className="phone-note">
+                    {accounts.length === 1
+                      ? `Of the plan the host's Claude Code runs on${plan === undefined ? '' : `, ${plan}`}, shared by every conversation on it.`
+                      : 'Each account has its own windows, shared by every conversation that runs on it.'}
+                  </div>
+                ) : null}
+              </Fragment>
+            )
+          })}
         </>
       )}
 

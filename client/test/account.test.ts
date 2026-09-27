@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { installedBy, versionOf } from '../src/main/sessions/account'
+import { accountFrom, installedBy, versionOf, whoFrom } from '../src/main/sessions/account'
 import { programLine } from '../src/shared/api'
 
 describe('which Claude Code answers', () => {
@@ -27,5 +27,31 @@ describe('which Claude Code answers', () => {
     expect(programLine(account)).toBeUndefined()
     expect(programLine({ ...account, program: { version: '2.1.274', from: 'Homebrew' } })).toBe('Claude Code 2.1.274 from Homebrew')
     expect(programLine({ ...account, program: { version: '2.1.274' } })).toBe('Claude Code 2.1.274')
+  })
+
+  it('keys an account off its org and email, the same key for the same pair and never the email itself', () => {
+    const key = whoFrom('org-1', 'leo@example.com')
+    expect(key).toBeDefined()
+    expect(key).toHaveLength(16)
+    expect(key).not.toContain('example.com')
+    expect(whoFrom('org-1', 'leo@example.com')).toBe(key)
+    expect(whoFrom('org-2', 'leo@example.com')).not.toBe(key)
+    expect(whoFrom('org-1', 'other@example.com')).not.toBe(key)
+    expect(whoFrom(undefined, 'leo@example.com')).toBeUndefined()
+    expect(whoFrom('org-1', undefined)).toBeUndefined()
+    expect(whoFrom('', '')).toBeUndefined()
+  })
+
+  it('reads who is signed in and on what plan from `claude auth status`, keyed but never with the email', () => {
+    const out = JSON.stringify({ loggedIn: true, subscriptionType: 'max', orgId: 'org-1', email: 'leo@example.com' })
+    const account = accountFrom(out)
+    expect(account).toMatchObject({ here: true, signedIn: true, plan: 'Max' })
+    expect(account.who).toBe(whoFrom('org-1', 'leo@example.com'))
+    expect(JSON.stringify(account)).not.toContain('example.com')
+  })
+
+  it('has no key at all where the tool did not say who, or is signed out', () => {
+    expect(accountFrom(JSON.stringify({ loggedIn: true, subscriptionType: 'max' })).who).toBeUndefined()
+    expect(accountFrom(JSON.stringify({ loggedIn: false })).who).toBeUndefined()
   })
 })

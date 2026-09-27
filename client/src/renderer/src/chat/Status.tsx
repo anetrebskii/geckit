@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 
-import { planLine, programLine } from '../../../shared/api'
-import type { GitState, PlanWindow } from '../../../shared/api'
+import { planLine, programLine, shownProjects } from '../../../shared/api'
+import type { GitState, PlanUsage, PlanWindow } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
 import { ago, deletedIn } from './time'
+import { accountsOf, placesOf } from './plans'
 import type { Chat } from './useChat'
 
 /**
@@ -189,19 +190,48 @@ export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly on
   )
 }
 
+/** One account's two windows, small, for a bar that shows several: its place, then 5h and Week. */
+function Compact({ name, usage, faint, now }: { readonly name: string; readonly usage: PlanUsage | undefined; readonly faint: boolean; readonly now: number }): React.JSX.Element {
+  const part = (window: PlanWindow | undefined): string => (window === undefined ? '—' : `${String(Math.round(window.part * 100))}%`)
+  const tip = [
+    `${name}: the plan these projects run on${faint ? ', as last measured before it went out of reach' : ''}`,
+    usage?.fiveHour === undefined ? undefined : `5h ${part(usage.fiveHour)}, resets in ${until(usage.fiveHour.resetsAt, now)}`,
+    usage?.sevenDay === undefined ? undefined : `Week ${part(usage.sevenDay)}, resets in ${until(usage.sevenDay.resetsAt, now)}`,
+  ]
+  return (
+    <span className={`stat plan-item${faint ? ' faint' : ''}`} title={tip.filter((line) => line !== undefined).join('\n')}>
+      <span>{name}</span>
+      {usage?.fiveHour === undefined ? null : <Meter part={usage.fiveHour.part} />}
+      <span className="value">
+        {part(usage?.fiveHour)} · {part(usage?.sevenDay)}
+      </span>
+    </span>
+  )
+}
+
 export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
-  const plan = chat.plan
   // Whose plan, and which Claude Code spends it: an older one runs fewer models.
   const program = chat.account?.program
-  // On a host the plan and the Claude Code are that host's; the windows below belong to this computer's account and are left out.
-  const host = chat.root === undefined ? undefined : chat.hosts.find((one) => one.id === hostOf(chat.root ?? ''))
+  // The plan of what is in front: an open conversation's account, or every account the projects shown run on, each once.
+  const inFront = chat.session !== undefined ? [chat.session.root] : chat.chosen.length > 0 ? chat.chosen : shownProjects(chat.settings)
+  const hostNamed = (place: string): string => (place === '' ? 'Local' : (chat.hosts.find((one) => one.id === place)?.name ?? place))
+  const items = accountsOf(placesOf(inFront.length === 0 ? [''] : inFront, hostOf), chat.plans, hostNamed)
+  const only = items.length === 1 ? items[0] : undefined
+  const place = only?.places[0] ?? ''
+  const host = place === '' ? undefined : chat.hosts.find((one) => one.id === place)
+  // This computer's windows come fresh with every turn; a host's are its own, measured there.
+  const plan = only === undefined ? undefined : place === '' ? (chat.plan ?? only.entry?.usage) : only.entry?.usage
   const lead =
-    host === undefined
-      ? [planLine(chat.account), programLine(chat.account)].filter((part) => part !== undefined).join(' · ')
-      : [host.name, host.plan === undefined ? undefined : `Your Claude ${host.plan} plan`, host.version === undefined ? undefined : `Claude Code ${host.version}`]
-          .filter((part) => part !== undefined)
-          .join(' · ')
+    only === undefined
+      ? ''
+      : host === undefined
+        ? [place === '' ? undefined : hostNamed(place), planLine(chat.account), programLine(chat.account)].filter((part) => part !== undefined).join(' · ')
+        : [host.name, host.plan === undefined ? undefined : `Your Claude ${host.plan} plan`, host.version === undefined ? undefined : `Claude Code ${host.version}`]
+            .filter((part) => part !== undefined)
+            .join(' · ')
+  const shown = items.slice(0, 2)
+  const rest = items.slice(2)
 
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60_000)
@@ -228,7 +258,27 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
         )
       })}
       <span className="spacer" />
-      {ON_PHONE && chat.trouble === '' ? null : (
+      {ON_PHONE || only !== undefined || chat.trouble !== ''
+        ? null
+        : shown.map((item) => {
+            const at = item.places[0] ?? ''
+            const faint = at !== '' && chat.hosts.find((one) => one.id === at)?.state !== 'up'
+            return (
+              <Compact
+                key={at}
+                name={hostNamed(at)}
+                usage={at === '' ? (chat.plan ?? item.entry?.usage) : item.entry?.usage}
+                faint={faint}
+                now={now}
+              />
+            )
+          })}
+      {ON_PHONE || only !== undefined || rest.length === 0 ? null : (
+        <span className="stat plan-item" title={rest.map((item) => hostNamed(item.places[0] ?? '')).join('\n')}>
+          +{rest.length}
+        </span>
+      )}
+      {(ON_PHONE && chat.trouble === '') || (only === undefined && chat.trouble === '') ? null : (
         <span
           className={`lead${chat.trouble === '' ? '' : ' trouble'}`}
           {...(chat.trouble !== ''
@@ -244,8 +294,8 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {chat.trouble === '' ? lead : chat.trouble}
         </span>
       )}
-      {plan?.fiveHour === undefined || host !== undefined ? null : <Window name="5h" window={plan.fiveHour} now={now} />}
-      {plan?.sevenDay === undefined || host !== undefined ? null : <Window name="Week" window={plan.sevenDay} now={now} />}
+      {only === undefined ? null : plan?.fiveHour === undefined ? <span className="stat plan-item">5h —</span> : <Window name="5h" window={plan.fiveHour} now={now} />}
+      {only === undefined ? null : plan?.sevenDay === undefined ? <span className="stat plan-item">Week —</span> : <Window name="Week" window={plan.sevenDay} now={now} />}
     </div>
   )
 }

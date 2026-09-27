@@ -45,7 +45,7 @@ The one decision everything else follows from: **a host is part of a project's a
 | Composer, existing | While its host is out of reach: the field stays, what is typed is kept, the send button is replaced by "Reconnecting to devbox". "Chrome" is greyed with the reason | Out of reach; Chrome is always greyed on a host |
 | New task form, existing | The Project select groups projects under Local and each host, and ends with "Choose a folder on this computer..." and "Choose a folder on devbox..." for each connected host | Only when a host is added |
 | Folder chooser on a host, new | A sheet shaped like the system's own Open panel: Places down the left (Home, the usual folders the host has, and the root), a path bar of the folder's parts across the top, one level of folders in a list with checkouts marked `git`, a filter field, and Add with the chosen folder's name | "Add a folder on devbox..." |
-| Status bar, existing | Plan and Claude Code are those of the open conversation's host: `devbox · Your Claude Max plan · Claude Code 2.1.270` | A conversation on a host is open |
+| Status bar, existing | The plan of what is in front, by account (see "Plans are an account's" below). A conversation open: its account's line, with its place when that is not Local, `devbox · Your Claude Max plan · 5h 12% · Week 40%`. The board or the list: one line per account in the projects shown, places on one account as one line, `Local 29% · 82%   devbox 12% · 40%`; past two, `+1` with the rest in a popover | Always |
 | Sign-in card, new | A card like a permission card when the host asks for something: a password, a key's passphrase, a one-time code, or trust in its key | The host asked while connecting |
 | Phone | Nothing new: conversations on hosts are on the phone's board as they are on the computer's, carried through it | Always |
 
@@ -74,6 +74,22 @@ block-beta
   style a2 fill:#e5e7eb,stroke:#9ca3af
   style d2 fill:#e5e7eb,stroke:#9ca3af
 ```
+
+### Plans are an account's
+
+The five-hour and weekly windows belong to the account signed in, not to a computer: two hosts on one subscription share them, and a host on another subscription has its own. Showing one computer's windows for everything is the trap Claude Code's own status line falls into with two accounts on one machine (anthropics/claude-code#68772), so GeckIt says whose numbers it shows every time.
+
+| What is in front | What the bar says |
+|---|---|
+| A conversation on Local | Its account: `Your Claude Team plan · Claude Code 2.1.283`, 5h, Week, as today |
+| A conversation on a host | The host's account: `devbox · Your Claude Max plan`, its own 5h and Week, measured there |
+| The board or list, one account among its projects | That account's line, named by its place when it is not Local |
+| The board or list, several accounts | One compact item each, `Local 29% · 82%`, `devbox 12% · 40%`, Local first then by name; places on the same account are one item named by the first of them; more than two: the first two and `+N`, the rest in a popover |
+| A host not connected | Its last numbers, faint, with "as of 14:05" in its tooltip; never a blank that shifts what follows |
+
+The order never changes and each item keeps its place while it is measured ("—" until the first answer), so the bar does not move under the pointer. A host's windows are asked of its own Claude Code while it is connected, at most every five minutes and only while a window or the phone is looking.
+
+On the phone, Settings, Plan usage has a group per account, headed by the place it was measured on (`Alexs MacBook Pro · Team`, `devbox · Max`); with one account everywhere it is one group, as before.
 
 ## 4. Adding a host
 
