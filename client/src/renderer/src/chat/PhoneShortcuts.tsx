@@ -8,13 +8,14 @@ import type { When } from '../../../shared/schedule'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
+import { Sheet } from '../ui/Sheet'
 import { Cell, FullSheet, Page, Switch } from './PhoneKit'
 import { projectName } from './project'
 import { FIRST_CRON, REPEATS, turned } from './ShortcutList'
 import type { Repeats } from './ShortcutList'
 import type { Chat } from './useChat'
 
-/** The Shortcuts tab: saved prompts, each run by hand from its row or on its timetable by the Mac. See docs/ux/phone-parity.md. */
+/** Settings, Shortcuts: saved prompts, each run by hand from its row or on its timetable by the Mac. See docs/ux/phone-tabs.md. */
 
 const busy = (chat: Chat, session: string | undefined): boolean =>
   session !== undefined && chat.everyone.some((one) => one.id === session && (one.state === 'working' || one.state === 'asks'))
@@ -31,7 +32,17 @@ function when(one: Shortcut, chat: Chat, now: number): string {
   return next === undefined ? describeCron(one.cron) : `${describeCron(one.cron)}, next ${lowered(describeTime(next, now))}`
 }
 
-export function PhoneShortcuts({ chat, onEdit }: { readonly chat: Chat; readonly onEdit: (draft: ShortcutDraft) => void }): React.JSX.Element {
+export function PhoneShortcuts({
+  chat,
+  back,
+  onBack,
+  onEdit,
+}: {
+  readonly chat: Chat
+  readonly back: string
+  readonly onBack: () => void
+  readonly onEdit: (draft: ShortcutDraft) => void
+}): React.JSX.Element {
   const [now, setNow] = useState(Date.now)
   const [running, setRunning] = useState<string | undefined>()
   useEffect(() => {
@@ -56,6 +67,8 @@ export function PhoneShortcuts({ chat, onEdit }: { readonly chat: Chat; readonly
   return (
     <Page
       title="Shortcuts"
+      back={back}
+      onBack={onBack}
       actions={
         <button type="button" className="phone-icon" aria-label="New shortcut" onClick={() => onEdit(blank())}>
           <Icon name="plus" size={24} />
@@ -261,5 +274,122 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; r
         />
       ) : null}
     </>
+  )
+}
+
+const WAYS = [
+  { way: 'write', icon: 'pencil', label: 'Write it', says: 'Project, what to do, a goal' },
+  { way: 'say', icon: 'mic', label: 'Say it', says: 'Tell GeckIt what to start, answer or mark' },
+  { way: 'record', icon: 'display', label: 'From a recording', says: 'A screen recording or a video; its words and frames become the task' },
+] as const
+
+// Three ways, a heading, six shortcuts and All shortcuts fit a 6.1-inch screen without the sheet scrolling.
+const IN_SHEET = 6
+// As long as connecting to the Mac is given.
+const START = 20_000
+
+/** The sheet a long press on New task opens: the ways to start one, then the shortcuts, each started by a tap. See docs/ux/phone-tabs.md. */
+export function Ways({
+  chat,
+  onWay,
+  onShortcuts,
+  onClose,
+}: {
+  readonly chat: Chat
+  readonly onWay: (way: (typeof WAYS)[number]['way']) => void
+  readonly onShortcuts: () => void
+  readonly onClose: () => void
+}): React.JSX.Element {
+  const [starting, setStarting] = useState<string | undefined>()
+  const [failed, setFailed] = useState<string | undefined>()
+  const shown = shownProjects(chat.settings)
+  const shortcuts = chat.settings.shortcuts.filter((one) => shown.includes(one.root)).slice(0, IN_SHEET)
+
+  const start = (one: Shortcut): void => {
+    tap('light')
+    setStarting(one.id)
+    setFailed(undefined)
+    const late = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), START))
+    void Promise.race([window.geckit.shortcuts.run(one.id), late])
+      .catch(() => undefined)
+      .then((session) => {
+        setStarting(undefined)
+        if (session === undefined) {
+          tap('warning')
+          setFailed(one.id)
+          return
+        }
+        onClose()
+        chat.goTo(session)
+      })
+  }
+
+  return (
+    <Sheet title="New task" cancel={false} className="phone-ways" onClose={onClose}>
+      <div className="sheet-list" role="menu">
+        {WAYS.map((one) => (
+          <button
+            key={one.way}
+            type="button"
+            role="menuitem"
+            className="sheet-option phone-way"
+            onClick={() => {
+              onClose()
+              onWay(one.way)
+            }}
+          >
+            <Icon name={one.icon} size={22} />
+            <span className="sheet-words">
+              <span className="label">{one.label}</span>
+              <span className="says">{one.says}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      {shortcuts.length === 0 ? null : (
+        <>
+          <div className="phone-ways-head">Shortcuts</div>
+          <div className="sheet-list" role="menu">
+            {shortcuts.map((one) => (
+              <button
+                key={one.id}
+                type="button"
+                role="menuitem"
+                className="sheet-option"
+                disabled={starting !== undefined}
+                onClick={() => start(one)}
+              >
+                <span className="sheet-words">
+                  <span className="label">{one.name}</span>
+                  {starting === one.id ? (
+                    <span className="says phone-ways-starting">
+                      <Icon name="spinner" size={12} />
+                      Starting
+                    </span>
+                  ) : failed === one.id ? (
+                    <span className="says phone-ways-failed">Did not start. Tap to try again.</span>
+                  ) : (
+                    <span className="says" style={{ color: `var(--project-${String(projectColor(one.root, chat.settings))})` }}>
+                      {projectName(one.root)}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ))}
+            <button
+              type="button"
+              role="menuitem"
+              className="sheet-option sheet-cancel"
+              onClick={() => {
+                onClose()
+                onShortcuts()
+              }}
+            >
+              All shortcuts
+            </button>
+          </div>
+        </>
+      )}
+    </Sheet>
   )
 }

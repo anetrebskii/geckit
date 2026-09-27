@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import { SESSION_MODES } from '../../../shared/api'
-import type { Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, Theme } from '../../../shared/api'
+import { SESSION_MODES, shownProjects } from '../../../shared/api'
+import type { Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, ShortcutDraft, Theme } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { macs } from '../macs'
 import { phoneCalls } from '../phone-calls'
@@ -11,6 +11,7 @@ import { Menu } from '../ui/Menu'
 import { LANGUAGES } from '../ui/SettingsDialog'
 import { Cell, Page, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
+import { PhoneShortcuts } from './PhoneShortcuts'
 import { homePath, projectName } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
@@ -29,6 +30,7 @@ type Where =
   | { readonly page: 'add'; readonly path?: string }
   | { readonly page: 'hidden' }
   | { readonly page: 'phrases' }
+  | { readonly page: 'shortcuts' }
 
 const THEMES: readonly { readonly value: Theme; readonly label: string }[] = [
   { value: 'system', label: 'System' },
@@ -36,8 +38,22 @@ const THEMES: readonly { readonly value: Theme; readonly label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ]
 
-export function PhoneSettings({ chat }: { readonly chat: Chat }): React.JSX.Element {
+export function PhoneSettings({
+  chat,
+  shortcuts,
+  onEdit,
+}: {
+  readonly chat: Chat
+  /** When All shortcuts was last pressed on the board, to open Shortcuts over whatever page was left open. */
+  readonly shortcuts: number | undefined
+  readonly onEdit: (draft: ShortcutDraft) => void
+}): React.JSX.Element {
   const [trail, setTrail] = useState<readonly Where[]>([{ page: 'root' }])
+  const [opened, setOpened] = useState(shortcuts)
+  if (opened !== shortcuts) {
+    setOpened(shortcuts)
+    if (shortcuts !== undefined) setTrail([{ page: 'root' }, { page: 'shortcuts' }])
+  }
   const where = trail[trail.length - 1] ?? { page: 'root' }
   const go = (next: Where): void => setTrail([...trail, next])
   const back = (): void => setTrail(trail.slice(0, -1))
@@ -60,6 +76,7 @@ export function PhoneSettings({ chat }: { readonly chat: Chat }): React.JSX.Elem
     )
   if (where.page === 'hidden') return <Hidden chat={chat} back={before()} onBack={back} />
   if (where.page === 'phrases') return <Phrases chat={chat} back={before()} onBack={back} />
+  if (where.page === 'shortcuts') return <PhoneShortcuts chat={chat} back={before()} onBack={back} onEdit={onEdit} />
   return <Root chat={chat} go={go} />
 }
 
@@ -107,6 +124,11 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === settings.chatMode)?.label} onPress={() => setPicking('mode')} />
       </div>
       <div className="phone-note">What a task started from the phone or the Mac runs in, until changed in it.</div>
+
+      <div className="phone-head">Shortcuts</div>
+      <div className="phone-group">
+        <Cell label="Shortcuts" value={String(settings.shortcuts.filter((one) => shownProjects(settings).includes(one.root)).length)} onPress={() => go({ page: 'shortcuts' })} />
+      </div>
 
       <div className="phone-head">Messages</div>
       <div className="phone-group">

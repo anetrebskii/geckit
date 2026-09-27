@@ -501,31 +501,6 @@ html.keyboard .phone-tabs {
 }
 
 /* New task: dictation and a recording under the field. */
-.phone-task-ways {
-  display: flex;
-  gap: 8px;
-  margin: 8px 0 4px;
-}
-
-.phone-task-ways button {
-  display: flex;
-  flex: 1;
-  gap: 6px;
-  align-items: center;
-  justify-content: center;
-  height: 40px;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--accent);
-  background: var(--fill);
-  border-radius: 10px;
-}
-
-.phone-task-ways button.on {
-  color: var(--on-solid);
-  background: var(--danger);
-}
-
 .phone-task-recorded {
   display: flex;
   gap: 8px;
@@ -553,4 +528,40 @@ html.keyboard .phone-tabs {
 
 .phone-remove {
   color: var(--danger);
+}
+
+.phone-tab-badge.unread {
+  background: var(--accent);
+}
+
+/* The New task sheet: the ways to start one, then the shortcuts. See docs/ux/phone-tabs.md. */
+.phone-ways .sheet-option {
+  justify-content: flex-start;
+  gap: 14px;
+}
+
+.phone-ways .sheet-option.sheet-cancel {
+  justify-content: center;
+}
+
+.phone-ways-head {
+  margin: 18px 16px 7px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.phone-ways-starting {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.phone-ways .says.phone-ways-failed {
+  color: var(--danger);
+}
+
+.phone-ways .sheet-option:disabled {
+  opacity: 1;
 }

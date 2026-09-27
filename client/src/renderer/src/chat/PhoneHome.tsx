@@ -5,10 +5,11 @@ import { phoneCalls } from '../phone-calls'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { PhoneBoard } from './PhoneBoard'
+import { PhoneQuestions } from './PhoneQuestions'
 import { PhoneSay } from './PhoneSay'
 import { PhoneSearch } from './PhoneSearch'
 import { PhoneSettings } from './PhoneSettings'
-import { PhoneShortcuts, ShortcutSheet } from './PhoneShortcuts'
+import { ShortcutSheet } from './PhoneShortcuts'
 import type { Seek } from './Switcher'
 import type { Chat } from './useChat'
 import './phone-home.css'
@@ -19,11 +20,11 @@ import './phone-home.css'
  * of it. See docs/ux/phone-parity.md.
  */
 
-type Tab = 'tasks' | 'shortcuts' | 'search' | 'settings'
+type Tab = 'tasks' | 'questions' | 'search' | 'settings'
 
 const TABS: readonly { readonly tab: Tab; readonly label: string; readonly icon: string }[] = [
   { tab: 'tasks', label: 'Tasks', icon: 'board' },
-  { tab: 'shortcuts', label: 'Shortcuts', icon: 'bolt' },
+  { tab: 'questions', label: 'Questions', icon: 'chat' },
   { tab: 'search', label: 'Search', icon: 'search' },
   { tab: 'settings', label: 'Settings', icon: 'settings' },
 ]
@@ -46,6 +47,8 @@ export function PhoneHome({
     return TABS.some((one) => one.tab === kept) ? (kept as Tab) : 'tasks'
   })
   const [saying, setSaying] = useState(false)
+  // When All shortcuts was pressed on the board's New task sheet, for Settings to open Shortcuts.
+  const [shortcuts, setShortcuts] = useState<number | undefined>()
   const [editing, setEditing] = useState<{ readonly draft: ShortcutDraft; readonly at: number } | undefined>()
 
   const choose = (next: Tab): void => {
@@ -68,19 +71,32 @@ export function PhoneHome({
       })
     })
 
+  // A question waiting on an answer is amber, as on Tasks; one with an answer not read yet is the accent.
+  const questionBadge = chat.questions.some((one) => one.state === 'asks') ? 'asks' : chat.questions.some((one) => one.state === 'unread') ? 'unread' : undefined
+
   return (
     <div className="phone-home">
       <div className="phone-tab" hidden={tab !== 'tasks'}>
-        <PhoneBoard chat={chat} onNew={onNew} onAsk={onAsk} onScreen={onScreen} onSay={() => setSaying(true)} onShortcut={shortcutFrom} />
+        <PhoneBoard
+          chat={chat}
+          onNew={onNew}
+          onScreen={onScreen}
+          onSay={() => setSaying(true)}
+          onShortcut={shortcutFrom}
+          onShortcuts={() => {
+            choose('settings')
+            setShortcuts(Date.now())
+          }}
+        />
       </div>
-      <div className="phone-tab" hidden={tab !== 'shortcuts'}>
-        <PhoneShortcuts chat={chat} onEdit={edit} />
+      <div className="phone-tab" hidden={tab !== 'questions'}>
+        <PhoneQuestions chat={chat} onAsk={onAsk} />
       </div>
       <div className="phone-tab" hidden={tab !== 'search'}>
         <PhoneSearch chat={chat} shown={tab === 'search' && chat.shown.kind !== 'session'} onSeek={onSeek} />
       </div>
       <div className="phone-tab" hidden={tab !== 'settings'}>
-        <PhoneSettings chat={chat} />
+        <PhoneSettings chat={chat} shortcuts={shortcuts} onEdit={edit} />
       </div>
       <nav className="phone-tabs" role="tablist">
         {TABS.map((one) => (
@@ -95,6 +111,7 @@ export function PhoneHome({
             <Icon name={one.icon} size={24} />
             <span>{one.label}</span>
             {one.tab === 'tasks' && tab !== 'tasks' && chat.sessions.some((session) => session.state === 'asks') ? <i className="phone-tab-badge" /> : null}
+            {one.tab === 'questions' && tab !== 'questions' && questionBadge !== undefined ? <i className={`phone-tab-badge ${questionBadge}`} /> : null}
           </button>
         ))}
       </nav>
