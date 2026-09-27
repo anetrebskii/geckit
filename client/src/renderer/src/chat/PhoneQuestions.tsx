@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChatSession } from '../../../shared/api'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
-import { DeleteSheet, RowBody } from './PhoneBoard'
+import { Menu } from '../ui/Menu'
+import { RowBody } from './PhoneBoard'
 import { Page } from './PhoneKit'
 import type { Chat } from './useChat'
 
@@ -66,7 +67,15 @@ export function PhoneQuestions({ chat, onAsk }: { readonly chat: Chat; readonly 
           <div className="phone-note">Each is deleted a day after its last answer. Swipe right to keep one, left to delete it.</div>
         </>
       )}
-      {deleting === undefined ? null : <DeleteSheet session={deleting} chat={chat} onClose={() => setDeleting(undefined)} />}
+      {deleting === undefined ? null : (
+        <Menu
+          anchor={new DOMRect()}
+          title={`Delete "${deleting.title === '' ? 'Untitled' : deleting.title}"?`}
+          choices={[{ value: 'delete', label: 'Delete', says: 'Nothing anywhere keeps a copy', danger: true }]}
+          onPick={() => chat.remove([deleting.id])}
+          onClose={() => setDeleting(undefined)}
+        />
+      )}
     </Page>
   )
 }
