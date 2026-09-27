@@ -64,7 +64,7 @@ export function PhoneBoard({
   readonly onSay: () => void
   /** A shortcut made from this conversation's first message. */
   readonly onShortcut: (session: ChatSession) => void
-  /** All shortcuts, from the end of the New task sheet: Settings, Shortcuts. */
+  /** All shortcuts, over the board: from the bolt in the bar or the end of the New task sheet. */
   readonly onShortcuts: () => void
 }): React.JSX.Element {
   const [shown, setShown] = useState<Column>(() => {
@@ -168,6 +168,9 @@ export function PhoneBoard({
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-bar-row">
           <span className="phone-bar-small">Tasks</span>
+          <button type="button" className="phone-icon" aria-label="Shortcuts" onClick={onShortcuts}>
+            <Icon name="bolt" size={24} />
+          </button>
           <button type="button" className="phone-icon" aria-label="Say it" onClick={onSay}>
             <Icon name="mic" size={24} />
           </button>

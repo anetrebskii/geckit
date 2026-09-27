@@ -9,7 +9,7 @@ import { PhoneQuestions } from './PhoneQuestions'
 import { PhoneSay } from './PhoneSay'
 import { PhoneSearch } from './PhoneSearch'
 import { PhoneSettings } from './PhoneSettings'
-import { ShortcutSheet } from './PhoneShortcuts'
+import { PhoneShortcuts, ShortcutSheet } from './PhoneShortcuts'
 import type { Seek } from './Switcher'
 import type { Chat } from './useChat'
 import './phone-home.css'
@@ -47,12 +47,13 @@ export function PhoneHome({
     return TABS.some((one) => one.tab === kept) ? (kept as Tab) : 'tasks'
   })
   const [saying, setSaying] = useState(false)
-  // When All shortcuts was pressed on the board's New task sheet, for Settings to open Shortcuts.
-  const [shortcuts, setShortcuts] = useState<number | undefined>()
+  // Shortcuts opened over the board, from its bolt or from All shortcuts on the New task sheet.
+  const [shortcuts, setShortcuts] = useState(false)
   const [editing, setEditing] = useState<{ readonly draft: ShortcutDraft; readonly at: number } | undefined>()
 
   const choose = (next: Tab): void => {
     tap('light')
+    if (next === tab) setShortcuts(false)
     setTab(next)
     localStorage.setItem('phoneTab', next)
   }
@@ -76,19 +77,21 @@ export function PhoneHome({
 
   return (
     <div className="phone-home">
-      <div className="phone-tab" hidden={tab !== 'tasks'}>
+      <div className="phone-tab" hidden={tab !== 'tasks' || shortcuts}>
         <PhoneBoard
           chat={chat}
           onNew={onNew}
           onScreen={onScreen}
           onSay={() => setSaying(true)}
           onShortcut={shortcutFrom}
-          onShortcuts={() => {
-            choose('settings')
-            setShortcuts(Date.now())
-          }}
+          onShortcuts={() => setShortcuts(true)}
         />
       </div>
+      {tab === 'tasks' && shortcuts ? (
+        <div className="phone-tab">
+          <PhoneShortcuts chat={chat} back="Tasks" onBack={() => setShortcuts(false)} onEdit={edit} />
+        </div>
+      ) : null}
       <div className="phone-tab" hidden={tab !== 'questions'}>
         <PhoneQuestions chat={chat} onAsk={onAsk} />
       </div>
@@ -96,7 +99,7 @@ export function PhoneHome({
         <PhoneSearch chat={chat} shown={tab === 'search' && chat.shown.kind !== 'session'} onSeek={onSeek} />
       </div>
       <div className="phone-tab" hidden={tab !== 'settings'}>
-        <PhoneSettings chat={chat} shortcuts={shortcuts} onEdit={edit} />
+        <PhoneSettings chat={chat} onEdit={edit} />
       </div>
       <nav className="phone-tabs" role="tablist">
         {TABS.map((one) => (

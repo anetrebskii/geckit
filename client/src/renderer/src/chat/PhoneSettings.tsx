@@ -41,20 +41,12 @@ const THEMES: readonly { readonly value: Theme; readonly label: string }[] = [
 
 export function PhoneSettings({
   chat,
-  shortcuts,
   onEdit,
 }: {
   readonly chat: Chat
-  /** When All shortcuts was last pressed on the board, to open Shortcuts over whatever page was left open. */
-  readonly shortcuts: number | undefined
   readonly onEdit: (draft: ShortcutDraft) => void
 }): React.JSX.Element {
   const [trail, setTrail] = useState<readonly Where[]>([{ page: 'root' }])
-  const [opened, setOpened] = useState(shortcuts)
-  if (opened !== shortcuts) {
-    setOpened(shortcuts)
-    if (shortcuts !== undefined) setTrail([{ page: 'root' }, { page: 'shortcuts' }])
-  }
   const where = trail[trail.length - 1] ?? { page: 'root' }
   const go = (next: Where): void => setTrail([...trail, next])
   const back = (): void => setTrail(trail.slice(0, -1))
