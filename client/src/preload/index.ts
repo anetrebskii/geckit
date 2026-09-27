@@ -151,8 +151,9 @@ const geckit = {
     unqueue: (id: string, queued: string): Promise<SessionMessage | undefined> => ipcRenderer.invoke('chat:unqueue', id, queued),
     /** A message waiting in the queue, said again in other words; it keeps its place and its pictures. */
     requeue: (id: string, queued: string, text: string): void => ipcRenderer.send('chat:requeue', id, queued, text),
-    /** Starts a message waiting in the queue as a new conversation, and says which. */
-    delegate: (id: string, queued: string): Promise<string | undefined> => ipcRenderer.invoke('chat:delegate', id, queued),
+    /** Starts a message waiting in the queue as a new conversation, empty or with this one's history as it was then, and says which. */
+    delegate: (id: string, queued: string, history: boolean): Promise<string | undefined> =>
+      ipcRenderer.invoke('chat:delegate', id, queued, history),
     /** How a session may act, chosen under the field: it holds from now, not from the next message. */
     mode: (id: string, mode: SessionMode): void => ipcRenderer.send('chat:mode', id, mode),
     rename: (id: string, title: string): void => ipcRenderer.send('chat:rename', id, title),

@@ -650,6 +650,33 @@ describe('a message sent while it works', () => {
     expect(await built.sessions.delegate(id, queued)).toBeUndefined()
   })
 
+  it('can be started as a copy of this conversation as it stood when it was queued', async () => {
+    let from = ''
+    const built = build({
+      disk: {
+        list: async () => [],
+        read: async (_root, which) => which !== from ? undefined : ({
+          items: [
+            { kind: 'mine', id: 'a', text: 'do the thing', at: 500 },
+            { kind: 'theirs', id: 'b', text: 'done', at: 900 },
+            { kind: 'theirs', id: 'c', text: 'said later', at: 2_000 },
+          ],
+          tasks: [],
+        }),
+        has: async () => false,
+        forkPoint: async (_root, _id, at) => (at === 1_000 ? 'uuid-b' : undefined),
+      },
+    })
+    const id = await started(built)
+    from = id
+    await built.sessions.send(more(id, 'and separately, look at the logs'))
+    const queued = of(built.rows, id)?.queued?.[0]?.id ?? ''
+    const other = await built.sessions.delegate(id, queued, true)
+    expect(built.fake.made.at(-1)).toMatchObject({ id: other, resume: false, fork: { from: id, at: 'uuid-b' } })
+    expect(built.fake.sent.at(-1)).toEqual({ text: 'and separately, look at the logs' })
+    expect((await built.sessions.items(other ?? '')).map((item) => item.id)).toEqual(['a', 'b', expect.stringMatching(/^mine:/)])
+  })
+
   it('does not queue /goal clear, which stops the turn instead', async () => {
     const built = build()
     const id = await started(built)
@@ -1592,6 +1619,27 @@ describe('turns cut off by GeckIt closing', () => {
     await after.sessions.proceed(id)
     after.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     await vi.waitFor(() => expect(after.fake.sent.at(-1)).toEqual({ text: 'and the lint' }))
+    expect(notes.all()[id]?.queued?.map((one) => one.message.text)).toEqual(['then commit'])
+  })
+
+  it('sends what was queued on a start by itself, rather than waiting for a continue nobody may press', async () => {
+    const notes = memoryNotes()
+    const before = build({ notes })
+    const id = await started(before)
+    await before.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'and the tests' })
+    await before.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'then commit' })
+    const after = build({
+      notes,
+      disk: {
+        list: async () => [{ id, title: 'do the thing', stands: '', at: 1, driven: false }],
+        read: async () => undefined,
+        has: async () => true,
+      },
+    })
+    expect(after.sessions.cutOff()).toEqual([])
+    await after.sessions.resumeQueues()
+    expect(after.fake.made[0]).toMatchObject({ id, resume: true })
+    expect(after.fake.sent).toEqual([{ text: 'and the tests' }])
     expect(notes.all()[id]?.queued?.map((one) => one.message.text)).toEqual(['then commit'])
   })
 })

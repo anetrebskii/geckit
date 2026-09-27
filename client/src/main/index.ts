@@ -621,7 +621,9 @@ function wire(): void {
   ipcMain.on('chat:stop', (_event, id: string) => sessions?.stop(id))
   ipcMain.handle('chat:unqueue', (_event, id: string, queued: string) => sessions?.unqueue(id, queued))
   ipcMain.on('chat:requeue', (_event, id: string, queued: string, text: string) => sessions?.requeue(id, queued, text))
-  ipcMain.handle('chat:delegate', (_event, id: string, queued: string) => sessions?.delegate(id, queued))
+  ipcMain.handle('chat:delegate', (_event, id: string, queued: string, history: boolean) =>
+    sessions?.delegate(id, queued, history),
+  )
   ipcMain.on('chat:mode', (_event, id: string, mode: SessionMode) => sessions?.mode(id, mode))
   ipcMain.on('chat:rename', (_event, id: string, title: string) => sessions?.rename(id, title))
   ipcMain.on('chat:mark', (_event, id: string, status: SessionStatus | null) => sessions?.mark(id, status ?? undefined))
@@ -786,7 +788,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.stop': (id: string) => held()?.stop(id),
     'chat.unqueue': (id: string, queued: string) => held()?.unqueue(id, queued),
     'chat.requeue': (id: string, queued: string, text: string) => held()?.requeue(id, queued, text),
-    'chat.delegate': (id: string, queued: string) => held()?.delegate(id, queued),
+    'chat.delegate': (id: string, queued: string, history: boolean) => held()?.delegate(id, queued, history),
     'chat.mode': (id: string, mode: SessionMode) => held()?.mode(id, mode),
     'chat.rename': (id: string, title: string) => held()?.rename(id, title),
     'chat.mark': (id: string, status: SessionStatus | undefined) => held()?.mark(id, status),
@@ -877,6 +879,7 @@ if (!app.requestSingleInstanceLock()) {
     if (!app.isPackaged) app.dock?.setIcon(resolve(import.meta.dirname, '../../assets/icon-dev.png'))
     const started = build()
     sessions = started
+    void started.resumeQueues()
     nativeTheme.themeSource = getSettings().theme
     guided = getSettings().guideClaude
     void keepGuide(guided)

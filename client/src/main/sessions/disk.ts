@@ -347,3 +347,32 @@ export async function readGoal(root: string, id: string): Promise<GoalRead> {
   if (path === undefined) return {}
   return goalOf(await entriesOf(path, (line) => line.includes('"goal_status"')))
 }
+
+/**
+ * The last message of a conversation written by `at`, for a copy of it to end
+ * on. An answer still waiting on a tool at that moment is left out with the
+ * whole of its message, since a copy cannot end on a call with no result.
+ */
+export async function forkPoint(root: string, id: string, at: number): Promise<string | undefined> {
+  const path = await claudeFile(root, id)
+  if (path === undefined) return undefined
+  const said = (await entriesOf(path, (line) => line.includes('"uuid"'))).filter(
+    (entry) =>
+      (entry['type'] === 'user' || entry['type'] === 'assistant') &&
+      entry['isSidechain'] !== true &&
+      typeof entry['uuid'] === 'string' &&
+      Date.parse(String(entry['timestamp'])) <= at,
+  )
+  const messageOf = (entry: Json): unknown => (entry['message'] as Json | undefined)?.['id']
+  const calls = (entry: Json): boolean => {
+    const content = (entry['message'] as Json | undefined)?.['content']
+    return Array.isArray(content) && content.some((block) => (block as Json | null)?.['type'] === 'tool_use')
+  }
+  let end = said.length - 1
+  const last = said[end]
+  if (last?.['type'] === 'assistant' && said.some((entry) => entry['type'] === 'assistant' && messageOf(entry) === messageOf(last) && calls(entry))) {
+    while (end >= 0 && said[end]?.['type'] === 'assistant' && messageOf(said[end] as Json) === messageOf(last)) end -= 1
+  }
+  const point = said[end]?.['uuid']
+  return typeof point === 'string' ? point : undefined
+}

@@ -34,6 +34,8 @@ export interface ClaudeOptions {
   readonly mode: SessionMode
   /** The model chosen under the field, in the tool's own word for it. Without one the tool runs as it is set up. */
   readonly model?: string
+  /** A new conversation that starts as a copy of another, up to the message `at` where one is given. */
+  readonly fork?: { readonly from: string; readonly at?: string }
 }
 
 /** Several questions asked at once, being answered one card at a time. */
@@ -82,6 +84,9 @@ export function holdClaude(
       '--chrome',
       ...(options.model === undefined ? [] : ['--model', options.model]),
       ...(options.resume ? ['--resume', options.id] : ['--session-id', options.id]),
+      ...(options.resume || options.fork === undefined
+        ? []
+        : ['--fork-session', '--resume', options.fork.from, ...(options.fork.at === undefined ? [] : ['--resume-session-at', options.fork.at])]),
     ],
     { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true },
   )
