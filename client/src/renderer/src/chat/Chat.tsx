@@ -9,7 +9,7 @@ import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Board, NewTask, TopBar } from './Board'
 import { CutOffDialog } from './CutOff'
-import { PhoneBoard } from './PhoneBoard'
+import { PhoneHome } from './PhoneHome'
 import { EdgeBack, PhoneNav } from './PhoneNav'
 import { Screen } from './Screen'
 import { Composer } from './Composer'
@@ -76,6 +76,8 @@ export function Chat(): React.JSX.Element {
   const [copied, setCopied] = useState<string | undefined>()
   // The board's New task form is open.
   const [making, setMaking] = useState(false)
+  // On the phone, New task opened to be filled from a recording.
+  const [recordFirst, setRecordFirst] = useState(false)
   const [asking, setAsking] = useState(false)
   const [cut, setCut] = useState<readonly CutOff[] | undefined>()
   useEffect(() => {
@@ -401,7 +403,16 @@ export function Chat(): React.JSX.Element {
         />
       )}
       {board && ON_PHONE ? (
-        <PhoneBoard chat={chat} onNew={() => setMaking(true)} onAsk={() => setAsking(true)} onScreen={() => setScreening(true)} />
+        <PhoneHome
+          chat={chat}
+          onNew={(how) => {
+            setRecordFirst(how === 'record')
+            setMaking(true)
+          }}
+          onAsk={() => setAsking(true)}
+          onScreen={() => setScreening(true)}
+          onSeek={setSeek}
+        />
       ) : board ? (
         <Board chat={chat} onShortcutFrom={shortcutFrom} />
       ) : (
@@ -415,7 +426,7 @@ export function Chat(): React.JSX.Element {
       {making ? (
         <>
           <div className="talk-scrim" onMouseDown={() => setMaking(false)} />
-          <NewTask chat={chat} onClose={() => setMaking(false)} />
+          <NewTask chat={chat} record={recordFirst} onClose={() => setMaking(false)} />
         </>
       ) : null}
       {cut === undefined ? null : <CutOffDialog list={cut} onClose={() => setCut(undefined)} />}

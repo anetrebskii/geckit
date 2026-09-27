@@ -6,7 +6,18 @@ import Speech
 class BridgeController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(DictationPlugin())
+        bridge?.registerPluginInstance(RecordingPlugin())
     }
+}
+
+// The language Correct is set to, by its English name, in this region when there is a choice; the phone's own otherwise.
+func speechRecognizer(_ language: String) -> SFSpeechRecognizer? {
+    let english = Locale(identifier: "en")
+    let named = SFSpeechRecognizer.supportedLocales().filter {
+        english.localizedString(forLanguageCode: $0.languageCode ?? "")?.lowercased() == language.lowercased()
+    }
+    let here = named.first { $0.regionCode == Locale.current.regionCode } ?? named.sorted { $0.identifier < $1.identifier }.first
+    return here.flatMap { SFSpeechRecognizer(locale: $0) } ?? SFSpeechRecognizer()
 }
 
 @objc(DictationPlugin)
@@ -58,7 +69,7 @@ public class DictationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func listen(_ language: String) throws {
         finish()
-        guard let recognizer = recognizer(language), recognizer.isAvailable else {
+        guard let recognizer = speechRecognizer(language), recognizer.isAvailable else {
             throw NSError(domain: "Dictation", code: 1, userInfo: [NSLocalizedDescriptionKey: "Dictation is not available right now."])
         }
         let session = AVAudioSession.sharedInstance()
@@ -85,16 +96,6 @@ public class DictationPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
         }
-    }
-
-    // The language Correct is set to, by its English name, in this region when there is a choice; the phone's own otherwise.
-    private func recognizer(_ language: String) -> SFSpeechRecognizer? {
-        let english = Locale(identifier: "en")
-        let named = SFSpeechRecognizer.supportedLocales().filter {
-            english.localizedString(forLanguageCode: $0.languageCode ?? "")?.lowercased() == language.lowercased()
-        }
-        let here = named.first { $0.regionCode == Locale.current.regionCode } ?? named.sorted { $0.identifier < $1.identifier }.first
-        return here.flatMap { SFSpeechRecognizer(locale: $0) } ?? SFSpeechRecognizer()
     }
 
     private func finish() {

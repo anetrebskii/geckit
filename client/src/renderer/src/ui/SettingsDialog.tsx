@@ -27,7 +27,7 @@ const THEMES: readonly { value: Theme; label: string; says: string }[] = [
   { value: 'dark', label: 'Dark', says: '' },
 ]
 
-const LANGUAGES = [
+export const LANGUAGES = [
   'English',
   'Russian',
   'Spanish',

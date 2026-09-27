@@ -546,6 +546,14 @@ export interface Recording {
   readonly video?: string
 }
 
+/** One level of the Mac's folders, as the phone browses them for a project. */
+export interface Folders {
+  readonly path: string
+  readonly up?: string
+  readonly git: boolean
+  readonly folders: readonly { readonly name: string; readonly path: string; readonly git: boolean }[]
+}
+
 /* ------------------------------------------------------------------ */
 /* Settings                                                            */
 /* ------------------------------------------------------------------ */

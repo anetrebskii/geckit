@@ -21,11 +21,11 @@ const folder = (): string => join(app.getPath('userData'), 'recordings')
  */
 let open: { readonly path: string; kept: boolean } | undefined
 
-export function startRecording(): string {
+export function startRecording(ext = 'webm'): string {
   dropRecording()
   mkdirSync(folder(), { recursive: true })
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const path = join(folder(), `${stamp}.webm`)
+  const path = join(folder(), `${stamp}.${ext.replace(/[^a-z0-9]/gi, '') || 'webm'}`)
   writeFileSync(path, '')
   open = { path, kept: false }
   return path

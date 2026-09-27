@@ -8,6 +8,7 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
+import { PhoneScope, ScopeButton } from './PhoneScope'
 import { macs } from '../macs'
 import type { Macs } from '../macs'
 import { emptyProfile, projectName } from './project'
@@ -51,11 +52,17 @@ export function PhoneBoard({
   onNew,
   onAsk,
   onScreen,
+  onSay,
+  onShortcut,
 }: {
   readonly chat: Chat
-  readonly onNew: () => void
+  readonly onNew: (how?: 'record') => void
   readonly onAsk: () => void
   readonly onScreen: () => void
+  /** Say it: what is said to GeckIt, read into orders. */
+  readonly onSay: () => void
+  /** A shortcut made from this conversation's first message. */
+  readonly onShortcut: (session: ChatSession) => void
 }): React.JSX.Element {
   const [shown, setShown] = useState<Column>(() => {
     const kept = localStorage.getItem('phoneColumn')
@@ -105,7 +112,13 @@ export function PhoneBoard({
     return count
   }, [chat.sessions])
   const asking = shown === 'progress' ? rows.filter((one) => one.state === 'asks') : []
-  const rest = rows.filter((one) => !asking.includes(one))
+  // The starred ones stand together under what asks, in the order they were starred, as the Mac's list keeps them.
+  const starred = chat.settings.favorites.flatMap((id) => rows.filter((one) => one.id === id && !asking.includes(one)))
+  const rest = rows.filter((one) => !asking.includes(one) && !starred.includes(one))
+  const [ways, setWays] = useState(false)
+  const [scoping, setScoping] = useState(false)
+  const newPress = useRef<number | undefined>(undefined)
+  const newHeld = useRef(false)
   const folded = unfolded || asking.length <= FOLD ? 0 : asking.length - FOLD
 
   // Which card each asking session waits on, asked for again whenever one of them moves.
@@ -159,13 +172,35 @@ export function PhoneBoard({
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-bar-row">
           <span className="phone-bar-small">{thisMac?.name ?? 'GeckIt'}</span>
+          <button type="button" className="phone-icon" aria-label="Say it" onClick={onSay}>
+            <Icon name="mic" size={24} />
+          </button>
           <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
             <Icon name="display" size={24} />
           </button>
           <button type="button" className="phone-icon" aria-label="Ask a question" onClick={onAsk}>
             <Icon name="chat" size={24} />
           </button>
-          <button type="button" className="phone-icon" aria-label="New task" onClick={onNew}>
+          {/* A long press offers the other ways to start one, as the arrow beside New task does on the Mac. */}
+          <button
+            type="button"
+            className="phone-icon"
+            aria-label="New task"
+            onContextMenu={(event) => event.preventDefault()}
+            onPointerDown={() => {
+              newHeld.current = false
+              newPress.current = window.setTimeout(() => {
+                newHeld.current = true
+                tap('light')
+                setWays(true)
+              }, PRESS)
+            }}
+            onPointerUp={() => window.clearTimeout(newPress.current)}
+            onPointerLeave={() => window.clearTimeout(newPress.current)}
+            onClick={() => {
+              if (!newHeld.current) onNew()
+            }}
+          >
             <Icon name="compose" size={24} />
           </button>
         </div>
@@ -203,6 +238,7 @@ export function PhoneBoard({
               </button>
             ))}
           </div>
+          <ScopeButton chat={chat} onPress={() => setScoping(true)} />
         </div>
         {high === undefined ? null : (
           <div className="phone-alert">
@@ -242,6 +278,29 @@ export function PhoneBoard({
                   {folded} more
                 </button>
               )}
+            </div>
+          </>
+        )}
+        {starred.length === 0 ? null : (
+          <>
+            <div className="phone-head">Favorites</div>
+            <div className="phone-group">
+              {starred.map((session) => (
+                <Row
+                  key={session.id}
+                  chat={chat}
+                  session={session}
+                  now={now}
+                  column={shown}
+                  open={open === session.id}
+                  waiting={undefined}
+                  onOpen={(on) => setOpen(on ? session.id : undefined)}
+                  onMark={(status) => mark(session, status)}
+                  onMore={() => setMore(session)}
+                  onPress={(at) => setPressed({ session, at })}
+                  onAnswer={() => undefined}
+                />
+              ))}
             </div>
           </>
         )}
@@ -346,6 +405,7 @@ export function PhoneBoard({
           onAnswer={(how) => answer(pressed.session, how)}
           onMark={(status) => mark(pressed.session, status)}
           onRename={() => setRenaming(pressed.session)}
+          onShortcut={() => onShortcut(pressed.session)}
           onClose={() => setPressed(undefined)}
         />
       )}
@@ -364,6 +424,25 @@ export function PhoneBoard({
         />
       )}
       {renaming === undefined ? null : <Rename session={renaming} chat={chat} onClose={() => setRenaming(undefined)} />}
+      {ways ? (
+        <Menu
+          anchor={new DOMRect()}
+          title="New task"
+          explained
+          choices={[
+            { value: 'write', icon: 'pencil', label: 'Write it', says: 'Project, what to do, a goal' },
+            { value: 'say', icon: 'mic', label: 'Say it', says: 'Tell GeckIt what to start, answer or mark' },
+            { value: 'record', icon: 'display', label: 'From a recording', says: 'A screen recording or a video; its words and frames become the task' },
+          ]}
+          onPick={(way) => {
+            if (way === 'write') onNew()
+            if (way === 'say') onSay()
+            if (way === 'record') onNew('record')
+          }}
+          onClose={() => setWays(false)}
+        />
+      ) : null}
+      {scoping ? <PhoneScope chat={chat} onClose={() => setScoping(false)} /> : null}
     </div>
   )
 }
@@ -424,6 +503,7 @@ function RowBody({
           <span style={{ color: `var(--project-${String(projectColor(homeOf(session), chat.settings))})`, fontWeight: 600 }}>
             {projectName(homeOf(session))}
           </span>
+          {chat.settings.favorites.includes(session.id) ? <Icon name="star" size={13} className="phone-row-star" /> : null}
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
           {session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
           {background === 0 ? null : <span className="phone-row-tag">{background} in the background</span>}
@@ -620,6 +700,7 @@ function Pressed({
   onAnswer,
   onMark,
   onRename,
+  onShortcut,
   onClose,
 }: {
   readonly chat: Chat
@@ -630,6 +711,7 @@ function Pressed({
   readonly onAnswer: (how: CardAnswer) => void
   readonly onMark: (status: SessionStatus | undefined) => void
   readonly onRename: () => void
+  readonly onShortcut: () => void
   readonly onClose: () => void
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
@@ -653,6 +735,7 @@ function Pressed({
   }
   const permission = session.state === 'asks' && waiting?.card.kind === 'permission'
   const is = (status: SessionStatus | undefined): boolean => session.status === status
+  const starredOne = chat.settings.favorites.includes(session.id)
 
   return createPortal(
     <>
@@ -697,6 +780,23 @@ function Pressed({
           Rename
           <Icon name="pencil" size={16} />
         </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() =>
+            pick(() => {
+              const favorites = chat.settings.favorites
+              chat.change({ favorites: starredOne ? favorites.filter((id) => id !== session.id) : [...favorites, session.id] })
+            })
+          }
+        >
+          {starredOne ? 'Remove from favorites' : 'Add to favorites'}
+          <Icon name="star" size={16} />
+        </button>
+        <button type="button" role="menuitem" onClick={() => pick(onShortcut)}>
+          Make a shortcut
+          <Icon name="bolt" size={16} />
+        </button>
         {session.state === 'working' ? (
           <button type="button" role="menuitem" onClick={() => pick(() => window.geckit.chat.stop(session.id))}>
             Stop
@@ -736,7 +836,7 @@ export function Rename({ session, chat, onClose }: { readonly session: ChatSessi
 }
 
 /** Every Mac this phone is paired with, the favorites first; a row switches to its Mac, its star and its menu change it. */
-function MacList({
+export function MacList({
   paired,
   onChange,
   onClose,
