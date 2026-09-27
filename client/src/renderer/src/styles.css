@@ -4814,11 +4814,24 @@ html.phone button:active:not(:disabled) {
   letter-spacing: 0.01em;
 }
 
-/* Scrolls with the list until it reaches the bar, then stays under it; the line under it shows once the title has gone. */
+/* The board's title stands above the list rather than in it, so the list's scroll indicator starts under the header, and folds into the bar once the list is scrolled. */
+.phone-board .phone-large {
+  flex: none;
+  height: 41px;
+  overflow: hidden;
+  transition:
+    height var(--settle) var(--ease),
+    opacity var(--settle) var(--ease);
+}
+
+.phone-board .phone-large.folded {
+  height: 0;
+  opacity: 0;
+}
+
+/* The line under it shows once the title has gone. */
 .phone-seg-bar {
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  flex: none;
   padding: 10px 16px 12px;
   background: var(--ground);
   transition: box-shadow var(--settle) var(--ease);

@@ -207,33 +207,37 @@ export function PhoneBoard({
         </div>
       </header>
 
+      <h1 className={`phone-large${scrolled ? ' folded' : ''}`}>Tasks</h1>
+      <div className={`phone-seg-bar${scrolled ? ' scrolled' : ''}`}>
+        <div className="phone-seg" role="tablist" style={{ '--at': COLUMNS.findIndex((one) => one.column === shown) } as React.CSSProperties}>
+          <span className="phone-seg-thumb" />
+          {COLUMNS.map((one) => (
+            <button
+              key={one.column}
+              type="button"
+              role="tab"
+              aria-selected={one.column === shown}
+              className={one.column === shown ? 'on' : ''}
+              onClick={() => {
+                show(one.column)
+                tap('light')
+              }}
+            >
+              {one.title}
+              {chat.listed ? <span className="n">{counts[one.column]}</span> : null}
+            </button>
+          ))}
+        </div>
+        <ScopeButton chat={chat} onPress={() => setScoping(true)} />
+      </div>
+
       <div
         className="phone-list"
-        onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 40)}
+        onScroll={(event) => {
+          const top = event.currentTarget.scrollTop
+          setScrolled((was) => top > 40 || (was && top > 0))
+        }}
       >
-        <h1 className="phone-large">Tasks</h1>
-        <div className={`phone-seg-bar${scrolled ? ' scrolled' : ''}`}>
-          <div className="phone-seg" role="tablist" style={{ '--at': COLUMNS.findIndex((one) => one.column === shown) } as React.CSSProperties}>
-            <span className="phone-seg-thumb" />
-            {COLUMNS.map((one) => (
-              <button
-                key={one.column}
-                type="button"
-                role="tab"
-                aria-selected={one.column === shown}
-                className={one.column === shown ? 'on' : ''}
-                onClick={() => {
-                  show(one.column)
-                  tap('light')
-                }}
-              >
-                {one.title}
-                {chat.listed ? <span className="n">{counts[one.column]}</span> : null}
-              </button>
-            ))}
-          </div>
-          <ScopeButton chat={chat} onPress={() => setScoping(true)} />
-        </div>
         {high === undefined ? null : (
           <div className="phone-alert">
             {highName} at {Math.round(high.part * 100)}%. Resets at{' '}
