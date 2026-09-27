@@ -47,14 +47,13 @@ export function HostsSection({ working }: { readonly working?: (host: string) =>
             <div key={host.id} className="host-row">
               <HostDot state={host.state} />
               <span className="host-lines">
-                <span className="name">
-                  {host.name}
-                  <span className={`host-state${host.state === 'needs' || host.state === 'missing' || host.state === 'signin' ? ' trouble' : ''}`}>{stateLine(host, now)}</span>
-                </span>
+                <span className="name">{host.name}</span>
                 <span className="says">
+                  <span className={`host-state${host.state === 'needs' || host.state === 'missing' || host.state === 'signin' ? ' trouble' : ''}`}>{stateLine(host, now)}</span>
                   {[targetLine(host), host.version === undefined ? undefined : `Claude Code ${host.version}`, host.plan === undefined ? undefined : `Claude ${host.plan}`]
                     .filter((one) => one !== undefined)
-                    .join(' · ')}
+                    .map((one) => ` · ${one}`)
+                    .join('')}
                 </span>
               </span>
               {host.state === 'idle' || host.state === 'needs' || host.state === 'missing' || host.state === 'signin' ? (
@@ -73,9 +72,6 @@ export function HostsSection({ working }: { readonly working?: (host: string) =>
               <button type="button" className="quiet" onClick={() => setEditing(host)}>
                 Edit
               </button>
-              <button type="button" className="quiet" onClick={() => setAsking({ host, what: 'remove' })}>
-                Remove
-              </button>
             </div>
           ))}
         </div>
@@ -86,7 +82,16 @@ export function HostsSection({ working }: { readonly working?: (host: string) =>
         </div>
       </div>
       {adding ? <AddHost onClose={() => setAdding(false)} /> : null}
-      {editing === undefined ? null : <AddHost editing={editing} onClose={() => setEditing(undefined)} />}
+      {editing === undefined ? null : (
+        <AddHost
+          editing={editing}
+          onClose={() => setEditing(undefined)}
+          onRemove={() => {
+            setEditing(undefined)
+            setAsking({ host: editing, what: 'remove' })
+          }}
+        />
+      )}
       {asking === undefined ? null : (
         <Confirm
           host={asking.host}
@@ -155,8 +160,11 @@ export function AddHost({
   editing,
   onClose,
   onAdded,
+  onRemove,
 }: {
   readonly editing?: HostView
+  /** Removing a host is kept in its Edit sheet, as a destructive action is kept off the list it is in. */
+  readonly onRemove?: () => void
   readonly onClose: () => void
   readonly onAdded?: (host: HostView) => void
 }): React.JSX.Element {
@@ -350,6 +358,11 @@ export function AddHost({
         )}
         {problem === undefined || checks.some((one) => one.failed === true) ? null : <div className="error">{problem}</div>}
         <div className="dialog-actions">
+          {editing === undefined || onRemove === undefined ? null : (
+            <button type="button" className="quiet danger host-remove" onClick={onRemove}>
+              Remove host...
+            </button>
+          )}
           {added === undefined ? (
             <button type="button" className="quiet" onClick={onClose}>
               Cancel

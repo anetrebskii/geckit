@@ -7553,9 +7553,13 @@ html.phone .preview-bar .icon-button {
   min-width: 0;
 }
 
+/* One line each, cut at the end rather than run under the buttons: the name, then how it stands and who it is. */
 .host-lines .name {
+  overflow: hidden;
   font-weight: 600;
   color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .host-lines .says {
@@ -7567,11 +7571,7 @@ html.phone .preview-bar .icon-button {
 }
 
 .host-lines .host-state {
-  margin-left: 8px;
-  font-size: 12px;
-  font-weight: 400;
   color: var(--text-dim);
-  white-space: nowrap;
 }
 
 .host-lines .host-state.trouble {
@@ -7579,6 +7579,7 @@ html.phone .preview-bar .icon-button {
 }
 
 .host-row .quiet {
+  flex: none;
   padding: 3px 10px;
   font-size: 12px;
 }
@@ -8092,4 +8093,10 @@ html.phone .preview-bar .icon-button {
 
 .add-host .host-forget {
   align-self: flex-start;
+}
+
+/* Remove, in the Edit sheet, stands apart on the left, away from Save. */
+.add-host .host-remove {
+  margin-inline-end: auto;
+  color: var(--danger);
 }
