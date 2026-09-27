@@ -19,6 +19,8 @@ import { projectName } from './project'
 import type { Chat } from './useChat'
 
 /** A path offered after @, as its name and the folder it is in. */
+const pictures = (count: number): string => (count === 1 ? '1 picture' : `${String(count)} pictures`)
+
 function Offered({ path }: { readonly path: string }): React.JSX.Element {
   const folder = path.endsWith('/')
   const bare = folder ? path.slice(0, -1) : path
@@ -355,7 +357,10 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
       )}
       {queued.length === 0 ? null : (
         <div className="queued">
-          <div className="queued-head">Queued: each goes once Claude has answered the one before</div>
+          <div className="queued-head">
+            {queued.length === 1 ? '1 queued' : `${String(queued.length)} queued`}, each sent once Claude answers the one before
+          </div>
+          <div className="queued-list">
           {queued.map((one) => (
             <div key={one.id} className="queued-one">
               {editing?.id === one.id ? (
@@ -389,11 +394,11 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                   title="Press to say it in other words"
                   onClick={() => setEditing({ id: one.id, text: one.text })}
                 >
-                  {one.text}
+                  {one.text === '' ? <span className="queued-bare">{pictures(one.images)}</span> : one.text}
                 </button>
               )}
-              {one.images === 0 ? null : (
-                <span className="queued-more">{one.images === 1 ? '1 picture' : `${String(one.images)} pictures`}</span>
+              {one.images === 0 || one.text === '' ? null : (
+                <span className="queued-more">{pictures(one.images)}</span>
               )}
               <button
                 type="button"
@@ -415,6 +420,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               </button>
             </div>
           ))}
+          </div>
         </div>
       )}
       {chat.root === undefined || (phrases.length === 0 && !keepable) ? null : (
