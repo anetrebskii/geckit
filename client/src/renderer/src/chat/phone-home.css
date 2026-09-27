@@ -254,6 +254,10 @@ html.keyboard .phone-tabs {
 }
 
 /* Shortcuts */
+.phone-page {
+  position: relative;
+}
+
 .phone-page .phone-large + .phone-group {
   margin-top: 10px;
 }

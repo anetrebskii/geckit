@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 
 /**
@@ -26,6 +27,7 @@ export function Page({
   const [scrolled, setScrolled] = useState(false)
   return (
     <div className="phone-board phone-page">
+      {onBack === undefined ? null : <EdgeBack onBack={onBack} />}
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-bar-row">
           {onBack === undefined ? null : (
@@ -340,3 +342,47 @@ export const tooOld = (error: unknown): string =>
     : error instanceof Error
       ? error.message
       : String(error)
+
+/**
+ * The strip along the left edge of a conversation or a pushed page that takes
+ * it back when dragged, as the system's back swipe does. It moves the pane it
+ * sits in, and lets it go back or spring home.
+ */
+export function EdgeBack({ onBack }: { readonly onBack: () => void }): React.JSX.Element {
+  const drag = useRef<{ x: number; at: number; moved: number } | undefined>(undefined)
+  const pane = (element: Element): HTMLElement | null => element.closest<HTMLElement>('.talk, .phone-page')
+  return (
+    <div
+      className="phone-edge"
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        drag.current = { x: event.clientX, at: Date.now(), moved: 0 }
+        const talk = pane(event.currentTarget)
+        if (talk !== null) talk.style.transition = 'none'
+      }}
+      onPointerMove={(event) => {
+        const held = drag.current
+        const talk = pane(event.currentTarget)
+        if (held === undefined || talk === null) return
+        held.moved = Math.max(0, event.clientX - held.x)
+        talk.style.transform = `translateX(${String(held.moved)}px)`
+      }}
+      onPointerUp={(event) => {
+        const held = drag.current
+        drag.current = undefined
+        const talk = pane(event.currentTarget)
+        if (held === undefined || talk === null) return
+        const fast = held.moved / Math.max(1, Date.now() - held.at) > 0.6
+        talk.style.transition = ''
+        if (held.moved > talk.offsetWidth / 3 || (fast && held.moved > 40)) {
+          tap('light')
+          talk.style.transform = 'translateX(100%)'
+          setTimeout(() => {
+            onBack()
+            talk.style.transform = ''
+          }, 240)
+        } else talk.style.transform = ''
+      }}
+    />
+  )
+}
