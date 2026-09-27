@@ -7,7 +7,7 @@ import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
-import { Board, NewTask, TopBar } from './Board'
+import { Board, keptTask, NewTask, TopBar } from './Board'
 import { CutOffDialog } from './CutOff'
 import { PhoneHome } from './PhoneHome'
 import { EdgeBack, EdgeInfo, PhoneNav } from './PhoneNav'
@@ -77,12 +77,12 @@ export function Chat(): React.JSX.Element {
   // The conversation whose terminal command was just copied, for the check that says so.
   const [copied, setCopied] = useState<string | undefined>()
   // The board's New task form is open.
-  const [making, setMaking] = useState(false)
+  const [making, setMaking] = useState(() => keptTask(false) !== undefined)
   const [infoing, setInfoing] = useState(false)
   const [pulled, setPulled] = useState<number>()
   // On the phone, New task opened to be filled from a recording.
   const [recordFirst, setRecordFirst] = useState(false)
-  const [asking, setAsking] = useState(false)
+  const [asking, setAsking] = useState(() => keptTask(true) !== undefined)
   const [cut, setCut] = useState<readonly CutOff[] | undefined>()
   useEffect(() => {
     if (ON_PHONE) return

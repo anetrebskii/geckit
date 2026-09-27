@@ -34,6 +34,17 @@ const PLAN_EVERY = 5 * 60_000
 const NOTICE_FOR = 8000
 
 const NONE: readonly SessionImage[] = []
+
+const DRAFTS = 'drafts'
+
+/** What was typed and not sent, kept across a restart. */
+function keptDrafts(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(DRAFTS) ?? '{}') as Record<string, string>
+  } catch {
+    return {}
+  }
+}
 const keyOf = (shown: Shown): string => (shown.kind === 'new' ? NEW : shown.id)
 
 export interface Chat {
@@ -156,7 +167,10 @@ export function useChat(): Chat {
   const [items, setItems] = useState<readonly SessionItem[]>([])
   const [itemsFor, setItemsFor] = useState('new')
   const [earlier, setEarlier] = useState({ id: '', left: 0 })
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [drafts, setDrafts] = useState<Record<string, string>>(keptDrafts)
+  useEffect(() => {
+    localStorage.setItem(DRAFTS, JSON.stringify(Object.fromEntries(Object.entries(drafts).filter(([, text]) => text.trim() !== ''))))
+  }, [drafts])
   const [pictures, setPictures] = useState<Record<string, readonly SessionImage[]>>({})
   const [trouble, setTrouble] = useState('')
   const [account, setAccount] = useState<ClaudeAccount | undefined>()
