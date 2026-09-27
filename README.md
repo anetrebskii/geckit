@@ -123,12 +123,10 @@ Your chats on your iPhone, with full control over them: the board, every convers
 AI asks you to do something on the computer? No need to go back to it: you can control your Mac from the phone. A finger moves the Mac's pointer, a tap clicks, two fingers scroll, and a double tap zooms in.
 
 <p align="center">
-  <a href="https://github.com/user-attachments/assets/2a7f1c86-9ce3-4232-b060-5954dfac22d2">
-    <img src="docs/video/geckit-iphone-light.webp" width="400" alt="On the iPhone: a waiting command is allowed, Claude asks for Chrome's Allow button on the Mac, it is pressed from the phone with the Mac's screen as a trackpad, and Claude checks the result">
-  </a>
+  <img src="docs/video/geckit-iphone-light.webp" width="400" alt="On the iPhone: the chats, only trailmap's picked, a chat opened and answered once, and Chrome's Allow button on the Mac pressed from the phone with the Mac's screen as a trackpad">
 </p>
 
-A waiting command is opened from the board and allowed. Claude runs the tests and asks for a button only a person can press: Chrome on the Mac wants to show notifications. The Mac's screen opens on the phone, the pointer is moved to Allow, and Claude checks the push. [Play it as a video](https://github.com/user-attachments/assets/2a7f1c86-9ce3-4232-b060-5954dfac22d2).
+The board shows the chats of every project, then only trailmap's. A chat is opened and gets one reply. Claude runs the tests and asks for a button only a person can press: Chrome on the Mac wants to show notifications. The Mac's screen opens on the phone, and the pointer is moved to Allow.
 
 Turn on Phone in Settings and scan the code with the GeckIt app. The phone connects to the Mac over WebRTC. The iPhone app is on [TestFlight](https://testflight.apple.com/join/7B7vbk2e), in Apple's review for now.
 
