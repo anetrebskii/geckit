@@ -23,13 +23,14 @@ const answering = (question: ChatSession): boolean => question.state === 'workin
 
 /** When a general question goes: a day after its last answer, which one still being answered has not had yet. */
 export function deletedIn(question: ChatSession, now: number): string {
+  if (question.stays === true) return 'Kept'
   if (answering(question)) return 'Deleted a day after it answers'
   return `Deleted in ${left(question.goes ?? question.at + DAY, now)}`
 }
 
 /** What a general question has left, "23h left", or nothing while it is being answered. */
 export function questionLeft(question: ChatSession, now: number): string | undefined {
-  return answering(question) ? undefined : `${left(question.goes ?? question.at + DAY, now)} left`
+  return answering(question) || question.stays === true ? undefined : `${left(question.goes ?? question.at + DAY, now)} left`
 }
 
 /** When a message was said: the time today, with the day before that. */

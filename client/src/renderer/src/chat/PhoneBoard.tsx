@@ -730,28 +730,75 @@ function Pressed({
 }
 
 export function Rename({ session, chat, onClose }: { readonly session: ChatSession; readonly chat: Chat; readonly onClose: () => void }): React.JSX.Element {
-  const [name, setName] = useState(session.title)
+  return (
+    <RenameAlert
+      name={session.title}
+      canSave={(name) => name !== '' && name !== session.title}
+      onSave={(name) => chat.rename(session.id, name)}
+      onClose={onClose}
+    />
+  )
+}
+
+/** Rename as the phone's own apps ask it: a small alert over the middle of what the keyboard leaves, with Cancel and a bold Save that waits for a new name. */
+function RenameAlert({
+  name,
+  placeholder,
+  note,
+  canSave,
+  onSave,
+  onClose,
+}: {
+  readonly name: string
+  readonly placeholder?: string
+  readonly note?: string
+  readonly canSave: (name: string) => boolean
+  readonly onSave: (name: string) => void
+  readonly onClose: () => void
+}): React.JSX.Element {
+  const [given, setGiven] = useState(name)
+  const ready = canSave(given.trim())
   const save = (): void => {
-    if (name.trim() !== '' && name.trim() !== session.title) chat.rename(session.id, name.trim())
+    if (!ready) return
+    onSave(given.trim())
     onClose()
   }
-  return (
-    <Sheet title="Rename" onClose={onClose} cancel={false}>
-      <input
-        className="sheet-field"
-        value={name}
-        autoFocus
-        onChange={(event) => setName(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') save()
-        }}
-      />
-      <div className="sheet-list">
-        <button type="button" className="sheet-option sheet-cancel" onClick={save}>
-          Save
-        </button>
+  return createPortal(
+    <div className="rename-alert-scrim">
+      <div className="rename-alert" role="alertdialog" aria-label="Rename">
+        <div className="rename-alert-text">
+          <div className="rename-alert-title">Rename</div>
+          {note === undefined ? null : <div className="rename-alert-note">{note}</div>}
+          <div className="sheet-field">
+            <input
+              value={given}
+              placeholder={placeholder}
+              autoFocus
+              enterKeyHint="done"
+              onChange={(event) => setGiven(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') save()
+                if (event.key === 'Escape') onClose()
+              }}
+            />
+            {given === '' ? null : (
+              <button type="button" className="sheet-field-clear" aria-label="Clear" onPointerDown={(event) => event.preventDefault()} onClick={() => setGiven('')}>
+                <Icon name="close" size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="rename-alert-actions">
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="default" disabled={!ready} onPointerDown={(event) => event.preventDefault()} onClick={save}>
+            Save
+          </button>
+        </div>
       </div>
-    </Sheet>
+    </div>,
+    document.body,
   )
 }
 
@@ -868,29 +915,14 @@ function RenameMac({
   readonly onSave: (name: string) => void
   readonly onClose: () => void
 }): React.JSX.Element {
-  const [given, setGiven] = useState(name)
-  const save = (): void => {
-    if (given.trim() !== name) onSave(given)
-    onClose()
-  }
   return (
-    <Sheet title="Rename" onClose={onClose} cancel={false}>
-      <input
-        className="sheet-field"
-        value={given}
-        placeholder="The name the Mac gives itself"
-        autoFocus
-        onChange={(event) => setGiven(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') save()
-        }}
-      />
-      <div className="sheet-note">Left empty, it goes back to the name the Mac gives itself.</div>
-      <div className="sheet-list">
-        <button type="button" className="sheet-option sheet-cancel" onClick={save}>
-          Save
-        </button>
-      </div>
-    </Sheet>
+    <RenameAlert
+      name={name}
+      placeholder="The name the Mac gives itself"
+      note="Left empty, it goes back to the name the Mac gives itself."
+      canSave={(given) => given !== name}
+      onSave={onSave}
+      onClose={onClose}
+    />
   )
 }

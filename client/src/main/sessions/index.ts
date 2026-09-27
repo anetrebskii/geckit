@@ -95,6 +95,12 @@ export interface SessionNote {
   readonly created?: number
   /** Every move between columns, oldest first, so what was done can be told with when. */
   readonly moves?: readonly Move[]
+  /** A general question, kept here so a restart does not lose it. */
+  readonly question?: boolean
+  /** When a general question that has gone quiet is deleted. */
+  readonly goes?: number
+  /** A general question kept for good rather than deleted a day after its last answer. */
+  readonly stays?: boolean
 }
 
 export interface Move {
@@ -257,6 +263,8 @@ interface Live {
   readonly question: boolean
   /** When the question is thrown away, counted from when it last went quiet. */
   goes: number | undefined
+  /** A question kept for good, which is never thrown away. */
+  stays: boolean
 }
 
 /** `/goal <condition>` sets one, and `/goal clear` or one of the tool's other words for it ends it early. */
@@ -347,6 +355,30 @@ export class Sessions {
 
   constructor(deps: SessionsDeps) {
     this.#deps = deps
+    // The general questions held when GeckIt last closed, each deleted when its day runs out.
+    for (const [id, note] of Object.entries(deps.notes.all())) {
+      if ((note.question !== true && note.stays !== true) || note.hidden === true) continue
+      const live = this.#fresh(id, homedir(), note.title ?? '', sessionMode(note.mode), true)
+      live.begun = true
+      live.stays = note.stays === true
+      live.at = note.seen ?? live.at
+      if (live.stays) continue
+      live.goes = note.goes ?? live.at + QUESTION_KEPT
+      live.quiet = setTimeout(() => void this.remove([id]), Math.max(0, live.goes - this.#now()))
+    }
+  }
+
+  /** Writes down a general question as it stands, so a restart brings it back with the time it has left. */
+  #keepNote(live: Live): void {
+    const { goes: _goes, stays: _stays, ...note } = this.#deps.notes.all()[live.id] ?? {}
+    this.#deps.notes.set(live.id, {
+      ...note,
+      question: true,
+      title: live.title,
+      seen: live.at,
+      ...(live.stays ? { stays: true } : {}),
+      ...(live.goes === undefined ? {} : { goes: live.goes }),
+    })
   }
 
   #now(): number {
@@ -505,6 +537,7 @@ export class Sessions {
           : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0 })) }),
         ...(live?.question === true ? { question: true } : {}),
         ...(live?.goes === undefined ? {} : { goes: live.goes }),
+        ...(live?.stays === true ? { stays: true } : {}),
         ...(used === undefined && cost === undefined
           ? {}
           : {
@@ -603,6 +636,7 @@ export class Sessions {
       fork: undefined,
       question,
       goes: undefined,
+      stays: false,
     }
     this.#live.set(id, live)
     return live
@@ -653,6 +687,7 @@ export class Sessions {
         message.question === true
           ? this.#fresh(randomUUID(), homedir(), firstLine(message.text, 80), message.mode, true)
           : this.#fresh(randomUUID(), message.root, firstLine(message.text, 80), message.mode)
+      if (live.question) this.#keepNote(live)
     } else if (live.driver === undefined) {
       await this.#reread(live)
     }
@@ -1264,6 +1299,24 @@ export class Sessions {
     this.#changed()
   }
 
+  /** Keeps a general question for good, or lets it go a day after its last answer again. */
+  keep(id: string, stays: boolean): void {
+    const live = this.#live.get(id)
+    if (live?.question !== true || live.stays === stays) return
+    live.stays = stays
+    if (stays) {
+      live.goes = undefined
+      if (live.driver === undefined) clearTimeout(live.quiet)
+      this.#keepNote(live)
+      this.#changed()
+    } else if (live.state === 'idle') {
+      this.#rest(live)
+    } else {
+      this.#keepNote(live)
+      this.#changed()
+    }
+  }
+
   hide(id: string): void {
     this.#note(id, { hidden: true })
     void this.#letGo(id)
@@ -1726,8 +1779,9 @@ export class Sessions {
   /** An idle process is let go of after a while, unless Remote Control or something in the background is keeping it. */
   #rest(live: Live): void {
     clearTimeout(live.quiet)
-    if (live.question) {
+    if (live.question && !live.stays) {
       live.goes = this.#now() + QUESTION_KEPT
+      this.#keepNote(live)
       this.#changed()
     }
     live.quiet = setTimeout(
@@ -1735,7 +1789,7 @@ export class Sessions {
         if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.some(running)) return
         live.driver?.end()
         live.driver = undefined
-        if (live.question) live.quiet = setTimeout(() => void this.remove([live.id]), QUESTION_KEPT - QUIET)
+        if (live.question && !live.stays) live.quiet = setTimeout(() => void this.remove([live.id]), QUESTION_KEPT - QUIET)
       },
       QUIET,
     )

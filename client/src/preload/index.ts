@@ -159,6 +159,8 @@ const geckit = {
     rename: (id: string, title: string): void => ipcRenderer.send('chat:rename', id, title),
     mark: (id: string, status: SessionStatus | undefined): void => ipcRenderer.send('chat:mark', id, status ?? null),
     hide: (id: string): void => ipcRenderer.send('chat:hide', id),
+    /** Keeps a general question for good, or lets it go a day after its last answer again. */
+    keep: (id: string, stays: boolean): void => ipcRenderer.send('chat:keep', id, stays),
     /** Deletes the files the tool keeps them in, and says whose are gone. */
     remove: (ids: readonly string[]): Promise<readonly string[]> => ipcRenderer.invoke('chat:delete', ids),
     /** Which session is in front, so an answer that arrives here is not announced. */

@@ -103,7 +103,22 @@ export function QuestionsMenu({
           <span className="question-title">{title}</span>
           <span className="question-says">{working ? 'Working' : one.stands}</span>
         </button>
-        {left === undefined ? null : <span className="question-left">{left}</span>}
+        {one.stays === true ? (
+          <span className="question-left" title="Kept">
+            <Icon name="pin" size={13} />
+          </span>
+        ) : left === undefined ? null : (
+          <span className="question-left">{left}</span>
+        )}
+        <button
+          type="button"
+          className={`question-pin${one.stays === true ? ' on' : ''}`}
+          aria-label={one.stays === true ? `Stop keeping ${title}` : `Keep ${title}`}
+          title={one.stays === true ? 'Stop keeping' : 'Keep'}
+          onClick={() => chat.keep(one.id, one.stays !== true)}
+        >
+          <Icon name="pin" size={13} />
+        </button>
         <button type="button" className="question-bin" aria-label={`Delete ${title}`} title="Delete" onClick={() => setConfirming(one.id)}>
           <Icon name="trash" size={13} />
         </button>
@@ -141,7 +156,7 @@ export function QuestionsMenu({
           </span>
           <span className="label">New question</span>
         </button>
-        <div className="menu-note">Each is deleted a day after its last answer.</div>
+        <div className="menu-note">Each is deleted a day after its last answer, unless kept.</div>
       </div>
     </>,
     document.body,

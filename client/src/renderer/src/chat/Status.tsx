@@ -204,6 +204,8 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
     <div className="status-bar">
       {chat.questions.map((one) => {
         const working = one.state === 'working' || one.state === 'asks'
+        // A kept question stays in the Questions menu; here it shows only while open or answering.
+        if (one.stays === true && !working && chat.session?.id !== one.id) return null
         return (
           <button
             key={one.id}

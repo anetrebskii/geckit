@@ -146,6 +146,8 @@ export interface Chat {
   hide: (id: string) => void
   /** Throws the conversations away for good. The window asks before this is called. */
   remove: (ids: readonly string[]) => void
+  /** Keeps a general question for good, or lets it go a day after its last answer again. */
+  keep: (id: string, stays: boolean) => void
   terminal: (id: string) => void
   /** Puts the command that continues it in a terminal on the clipboard, and lets go of it here. */
   copyTerminal: (id: string) => void
@@ -661,6 +663,8 @@ export function useChat(): Chat {
       void window.geckit.chat.remove(ids).then((gone) => {
         const shownNow = shownRef.current
         if (shownNow.kind === 'session' && gone.includes(shownNow.id)) open({ kind: 'new' })
+  const keep = useCallback((id: string, stays: boolean) => window.geckit.chat.keep(id, stays), [])
+
       })
     },
     [open],
@@ -803,3 +807,4 @@ export function useChat(): Chat {
     refresh,
   }
 }
+    keep,

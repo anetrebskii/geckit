@@ -524,6 +524,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       rename: (id, title) => send('chat.rename', id, title),
       mark: (id, status) => send('chat.mark', id, status),
       hide: (id) => send('chat.hide', id),
+      keep: (id, stays) => send('chat.keep', id, stays),
       remove: (ids) => call('chat.remove', ids),
       watching: (id) => {
         watched = id
