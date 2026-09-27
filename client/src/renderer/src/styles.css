@@ -5849,6 +5849,11 @@ html.phone .composer-inner > textarea {
   grid-column: 2;
 }
 
+/* The field has no frame on the phone, so the pictures line up with the photo button rather than sit inside a box that is not drawn. */
+html.phone .composer-inner > .pending {
+  padding: 6px 0 8px;
+}
+
 html.phone .composer-inner:focus-within {
   box-shadow: none;
 }
