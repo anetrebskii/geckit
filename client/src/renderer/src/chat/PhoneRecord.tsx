@@ -226,7 +226,7 @@ export function PhoneRecord({ language, onClose }: { readonly language: string; 
         <div className="sheet-list">
           {line(steps.words, 'Listening to it')}
           {line(steps.frames, 'Taking frames')}
-          {line(steps.video, 'Sending the video to the Mac', steps.video === 'going' && share !== undefined ? `${String(Math.round(share * 100))}%` : undefined)}
+          {line(steps.video, 'Sending the video to the host', steps.video === 'going' && share !== undefined ? `${String(Math.round(share * 100))}%` : undefined)}
         </div>
       </Sheet>
     )

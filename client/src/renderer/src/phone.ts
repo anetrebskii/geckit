@@ -32,7 +32,7 @@ const QUIET = 5000
 const HOLD = 60_000
 let dropping: number | undefined
 // What the pill says: what is going on, and the step it is at, kept for the pill made once QUIET has passed.
-let saying = { head: 'Not connected to the Mac', step: 'Trying again' }
+let saying = { head: 'Not connected to the host', step: 'Trying again' }
 
 /** The pill over the page while the link to the Mac is down, once the drop has lasted long enough to be worth saying. */
 export function showDropped(): void {
@@ -192,7 +192,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     one.onClose(() => {
       if (one !== link) return
       down = true
-      for (const waiting of pending.values()) waiting.failed(new Error('The link to the Mac is down'))
+      for (const waiting of pending.values()) waiting.failed(new Error('The link to the host is down'))
       pending.clear()
     })
   }
@@ -217,7 +217,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       }
       const expired = window.setTimeout(() => {
         held.splice(held.indexOf(later), 1)
-        failed(new Error('The link to the Mac is down'))
+        failed(new Error('The link to the host is down'))
       }, HOLD)
       const later = (): void => {
         window.clearTimeout(expired)
@@ -646,11 +646,11 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     control: (order) =>
       call<ScreenControlled | null>('screen.control', order).then(
         // A Mac from before the trackpad answered null, and did not know these orders.
-        (done) => done ?? { error: 'Update GeckIt on the Mac to work it from here' },
+        (done) => done ?? { error: 'Update GeckIt on the host to work it from here' },
         (error: unknown) => ({
           error:
             error instanceof Error && error.message.includes('No such call')
-              ? 'Update GeckIt on the Mac to work it from here'
+              ? 'Update GeckIt on the host to work it from here'
               : error instanceof Error
                 ? error.message
                 : String(error),

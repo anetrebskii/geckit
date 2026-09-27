@@ -128,6 +128,7 @@ export class Hosts implements HostsLike {
       const held = this.#held.get(host.id)
       const version = held?.version ?? host.seen?.version
       const plan = held?.plan ?? host.seen?.plan
+      const machine = host.seen?.machine
       return {
         id: host.id,
         name: host.name,
@@ -140,6 +141,7 @@ export class Hosts implements HostsLike {
         ...(held?.since === undefined ? {} : { since: held.since }),
         ...(version === undefined ? {} : { version }),
         ...(plan === undefined ? {} : { plan }),
+        ...(machine === undefined ? {} : { machine }),
         ...(held?.problem === undefined ? {} : { problem: held.problem }),
         remembered: this.#deps.secrets.has(host.id),
         canRemember,
@@ -208,6 +210,7 @@ export class Hosts implements HostsLike {
       return false
     }
     const checked = readChecked(ran.out.toString('utf8'))
+    this.#keepSeen(host, checked)
     if (checked.missing) {
       this.#set(id, 'missing', `Claude Code is not installed on ${host.name}.`)
       return false
@@ -215,7 +218,6 @@ export class Hosts implements HostsLike {
     if (checked.version !== undefined) held.version = checked.version
     const plan = checked.account?.plan
     if (plan !== undefined) held.plan = plan
-    this.#keepSeen(host, checked.version, plan)
     if (checked.account?.signedIn === false) {
       this.#set(id, 'signin', `Claude Code on ${host.name} is not signed in.`)
       return false
@@ -225,11 +227,11 @@ export class Hosts implements HostsLike {
     return true
   }
 
-  #keepSeen(host: HostConfig, version: string | undefined, plan: string | undefined): void {
-    if (host.seen?.version === version && host.seen?.plan === plan) return
+  #keepSeen(host: HostConfig, checked: Checked): void {
+    const seen = { ...host.seen, ...seenOf(checked) }
+    if (host.seen?.version === seen.version && host.seen?.plan === seen.plan && host.seen?.machine === seen.machine) return
     const hosts = this.#deps.hosts()
     if (!hosts.some((one) => one.id === host.id)) return
-    const seen = { ...(version === undefined ? {} : { version }), ...(plan === undefined ? {} : { plan }) }
     this.#deps.save(hosts.map((one) => (one.id === host.id ? { ...one, seen } : one)))
   }
 
@@ -367,10 +369,7 @@ export class Hosts implements HostsLike {
       return probed
     }
     const { checked } = probed
-    const seen = {
-      ...(checked.version === undefined ? {} : { version: checked.version }),
-      ...(checked.account?.plan === undefined ? {} : { plan: checked.account.plan }),
-    }
+    const seen = seenOf(checked)
     this.#deps.save([...this.#deps.hosts(), { ...host, seen }])
     this.#drafts.delete(id)
     const typed = this.#typed.get(id)
@@ -427,10 +426,7 @@ export class Hosts implements HostsLike {
       return probed
     }
     const { checked } = probed
-    const seen = {
-      ...(checked.version === undefined ? {} : { version: checked.version }),
-      ...(checked.account?.plan === undefined ? {} : { plan: checked.account.plan }),
-    }
+    const seen = seenOf(checked)
     this.#deps.save(this.#deps.hosts().map((one) => (one.id === id ? { ...host, seen } : one)))
     // Not remembered any more forgets what was; a fresh one typed and kept replaces it. Carried over as it was, it is left alone.
     if (!remember) this.#deps.secrets.forget(id)
@@ -553,6 +549,13 @@ export class Hosts implements HostsLike {
     this.#asker.close()
   }
 }
+
+/** What a check says about a host that is worth keeping for when it is not connected. */
+const seenOf = (checked: Checked): NonNullable<HostConfig['seen']> => ({
+  ...(checked.version === undefined ? {} : { version: checked.version }),
+  ...(checked.account?.plan === undefined ? {} : { plan: checked.account.plan }),
+  ...(checked.machine === undefined ? {} : { machine: checked.machine }),
+})
 
 /** A word for the local terminal's shell, quoted the way sh quotes. */
 const shellWord = (word: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`)

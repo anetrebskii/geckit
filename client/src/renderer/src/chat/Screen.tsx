@@ -5,9 +5,10 @@ import type { ScreenControl, ScreenControlled, ScreenModifier } from '../../../s
 import { screenLink } from '../screen-link'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
+import { pairedName } from './PhoneHosts'
 
 /**
- * The Mac's screen on the phone. Look: pinch to get close, drag to move over
+ * The host's screen on the phone, the host being the one the phone works through. Look: pinch to get close, drag to move over
  * it, double tap to go in and back out. Control works it as a trackpad: a
  * finger moves the Mac's pointer, a tap clicks where the pointer is, a hold
  * and then a drag selects or moves, two fingers scroll, a two-finger tap is
@@ -63,7 +64,7 @@ export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX
   const video = useRef<HTMLVideoElement>(null)
   const stage = useRef<HTMLDivElement>(null)
   const [trouble, setTrouble] = useState<string | undefined>(() =>
-    screenLink() === undefined ? 'Only the phone shows the Mac screen.' : undefined,
+    screenLink() === undefined ? 'Only the phone shows the host\'s screen.' : undefined,
   )
   const [live, setLive] = useState(false)
   const [tries, setTries] = useState(0)
@@ -322,7 +323,7 @@ export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX
     <div className={`phone-screen${chrome ? '' : ' bare'}`}>
       <div className={`phone-screen-bar${chrome ? '' : ' hidden'}`}>
         <span className="phone-screen-title">
-          Mac
+          {pairedName() ?? 'Host'}
           {live ? <span className="phone-screen-live">Live</span> : null}
         </span>
         <div className="phone-seg phone-screen-seg" role="tablist" style={{ '--at': mode === 'look' ? 0 : 1 } as React.CSSProperties}>
@@ -415,7 +416,7 @@ export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX
         {live || trouble !== undefined ? null : (
           <div className="phone-screen-note">
             <span className="phone-spin" />
-            Asking the Mac for its screen
+            Asking the host for its screen
           </div>
         )}
         {trouble === undefined ? null : (
@@ -451,7 +452,7 @@ export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX
       <textarea
         ref={field}
         className="phone-screen-typing"
-        aria-label="Type on the Mac"
+        aria-label="Type on the host"
         autoCapitalize="off"
         autoCorrect="off"
         autoComplete="off"
@@ -474,7 +475,7 @@ export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX
           <button
             type="button"
             className={`phone-screen-key${typing ? ' on' : ''}`}
-            aria-label={typing ? 'Hide the keyboard' : 'Type on the Mac'}
+            aria-label={typing ? 'Hide the keyboard' : 'Type on the host'}
             onClick={() => (typing ? field.current?.blur() : field.current?.focus())}
           >
             <Icon name="keyboard" size={20} />

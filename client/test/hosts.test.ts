@@ -27,7 +27,7 @@ import {
 import { sshArgs, sshProblem } from '../src/main/hosts/ssh'
 import { edgesOf, rowFrom, slug } from '../src/main/sessions/disk'
 import type { HostConfig, HostState } from '../src/shared/hosts'
-import { draftProblem, forHowLong, hostIdFor, hostOf, outOfReach, outOfReachLine, parseTarget, pathOf, remoteRoot, stateLine, targetLine } from '../src/shared/hosts'
+import { draftProblem, forHowLong, hostIdFor, machineName, hostOf, outOfReach, outOfReachLine, parseTarget, pathOf, remoteRoot, stateLine, targetLine } from '../src/shared/hosts'
 
 const fixture = (name: string): string => readFileSync(join(import.meta.dirname, 'fixtures', 'hosts', name), 'utf8')
 
@@ -168,6 +168,13 @@ describe('what is run on a host', () => {
     expect(readChecked('@@missing\n')).toEqual({ missing: true })
     expect(readChecked(`@@path /x\n@@version\n2.1.283\n@@auth\n{"loggedIn": false}\n@@end\n`).account).toEqual({ here: true, signedIn: false })
     expect(checkScript()).toContain('auth status')
+  })
+
+  it('reads the name a host gives itself the way the phone is told a paired one', () => {
+    expect(readChecked('@@machine Leonids-MacBook-Pro-2.local\n@@missing\n')).toEqual({ missing: true, machine: 'Leonids MacBook Pro 2' })
+    expect(readChecked('@@machine devbox\n@@path /x\n@@version\n2.1.283\n@@auth\n{"loggedIn": true}\n@@end\n').machine).toBe('devbox')
+    expect(machineName('studio-mini.local.')).toBe('studio mini')
+    expect(checkScript()).toContain('@@machine $(hostname')
   })
 })
 

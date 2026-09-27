@@ -551,7 +551,7 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
         <tr><td>Conversation</td><td>The host and its dot under the title; the pill while it reconnects</td></tr>
         <tr><td>Sign in</td><td>A sheet over anything, answered here or on the computer</td></tr>
         <tr><td>Add a project</td><td>Where first: the computer by name, then each host</td></tr>
-        <tr><td>Settings</td><td>Hosts: see, reconnect, disconnect. Adding one is on the computer</td></tr>
+        <tr><td>Settings</td><td>Hosts: the paired ones, and Over SSH to see, reconnect, disconnect. One word for every other machine</td></tr>
         <tr><td>localhost</td><td>A host's page opens through the computer</td></tr>
       </table>
     </div>
@@ -685,8 +685,8 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
   const cell = (label, val, attrs = '') => `<button class="cell" ${attrs}><span>${label}</span><span class="val">${val}${ICONS.right}</span></button>`
   const drawSettings = () => {
     $('set-list').innerHTML = `
-      <div class="head">Computer</div><div class="group"><button class="cell"><span class="words"><span>${MAC}</span><small>Connected</small></span><span class="val">${ICONS.right}</span></button></div>
-      <div class="head">Board</div><div class="group">${cell('Profiles', 'All projects')}${cell('Projects', String(projects.length), 'id="projects-cell"')}${cell('Hosts', String(hosts.length), 'id="hosts-cell"')}</div>
+      <div class="head">Hosts</div><div class="group"><button class="cell"><span class="words"><span>${MAC}</span><small>2 hosts paired</small></span><span class="val">${ICONS.right}</span></button>${cell('Over SSH', String(hosts.length), 'id="hosts-cell"')}</div>
+      <div class="head">Board</div><div class="group">${cell('Profiles', 'All projects')}${cell('Projects', String(projects.length), 'id="projects-cell"')}</div>
       <div class="head">New tasks</div><div class="group">${cell('Mode', 'Auto')}</div>
       <div class="foot"></div>`
   }
@@ -696,10 +696,10 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
   })
 
   const hostCell = (h, attrs) => `<button class="cell" ${attrs}><span class="lead"><i class="hdot ${h.state}"></i></span><span class="words"><span>${esc(h.name)}</span><small${h.state === 'needs' ? ' class="state-needs"' : ''}>${esc(h.state === 'up' ? h.target : stateWord(h))}</small></span><span class="val">${ICONS.right}</span></button>`
-  const openHosts = () => push('Hosts', 'Settings', `
-      <div class="head">Computer</div><div class="group"><div class="cell"><span class="lead">${ICONS.display}</span><span class="words"><span>${MAC}</span><small>Claude Code 2.1.283 · Claude Max</small></span></div></div>
-      <div class="head">Hosts</div><div class="group">${hosts.map((h) => hostCell(h, `data-host="${h.id}"`)).join('')}</div>
-      <div class="note">Hosts are added on ${MAC}, where the SSH keys are.</div>`, (el) => {
+  const openHosts = () => push('Over SSH', 'Settings', `
+      <div class="head">Through</div><div class="group"><div class="cell"><span class="lead">${ICONS.display}</span><span class="words"><span>${MAC}</span><small>Claude Code 2.1.283 · Claude Max</small></span></div></div>
+      <div class="head">Reached over SSH</div><div class="group">${hosts.map((h) => hostCell(h, `data-host="${h.id}"`)).join('')}</div>
+      <div class="note">Hosts over SSH are added on ${MAC}, where the SSH keys are.</div>`, (el) => {
       el.addEventListener('click', (e) => { const b = e.target.closest('[data-host]'); if (b) openHost(host(b.dataset.host)) })
     })
   const openHost = (h) => {
@@ -714,7 +714,7 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
         ${h.state === 'idle' ? '<button class="cell accent" data-act="connect"><span>Connect</span></button>' : '<button class="cell accent" data-act="reconnect"><span>Reconnect</span></button><button class="cell accent" data-act="disconnect"><span>Disconnect</span></button>'}
       </div>
       <div class="note">Conversations on ${esc(h.name)} run there and keep working when this phone or ${MAC} is away.</div>`
-    const el = push(h.name, 'Hosts', draw(), (el) => {
+    const el = push(h.name, 'Over SSH', draw(), (el) => {
       el.addEventListener('click', (e) => {
         const act = e.target.closest('[data-act]')?.dataset.act
         if (!act) return

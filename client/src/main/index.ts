@@ -84,7 +84,7 @@ import type { Routes } from './hosts/route'
 import { runsAt } from './hosts/runs'
 import { secretsAt } from './hosts/secrets'
 import { Forwards, localPort, withPort } from './hosts/forward'
-import { hostOf, isRemote } from '../shared/hosts'
+import { hostOf, isRemote, machineName } from '../shared/hosts'
 import type { HostAnswer, HostDraft } from '../shared/hosts'
 import { searchClaude } from './sessions/search'
 import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
@@ -160,7 +160,7 @@ const badge = (): void => {
 }
 
 /** How this computer is named, the way the phone is told it: without `.local`, read as words rather than a hostname. */
-const computerName = (): string => hostname().replace(/\.local$/, '').replaceAll('-', ' ')
+const computerName = (): string => machineName(hostname())
 
 /** A host's own name, for a project on it named to the voice model with it. */
 const hostNamed = (id: string): string | undefined => routes?.hosts.config(id)?.name
