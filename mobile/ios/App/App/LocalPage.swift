@@ -22,7 +22,7 @@ public class LocalPagePlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         DispatchQueue.main.async {
-            let shown = UINavigationController(rootViewController: LocalPageController(url: url, handler: LocalPageHandler(plugin: self)))
+            let shown = UINavigationController(rootViewController: LocalPageController(url: url, note: call.getString("note"), handler: LocalPageHandler(plugin: self)))
             self.bridge?.viewController?.present(shown, animated: true)
             call.resolve()
         }
@@ -96,12 +96,14 @@ class LocalPageHandler: NSObject, WKURLSchemeHandler {
 class LocalPageController: UIViewController, WKNavigationDelegate {
     private let web: WKWebView
     private let start: URL
+    private let note: String?
 
-    init(url: URL, handler: LocalPageHandler) {
+    init(url: URL, note: String?, handler: LocalPageHandler) {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(handler, forURLScheme: localScheme)
         web = WKWebView(frame: .zero, configuration: config)
         start = url
+        self.note = note
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -116,6 +118,8 @@ class LocalPageController: UIViewController, WKNavigationDelegate {
         web.navigationDelegate = self
         web.allowsBackForwardNavigationGestures = true
         navigationItem.title = hostOf(start)
+        // Where a host's port could not be had here, the line over the title says where it went.
+        navigationItem.prompt = note
         navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in
             self?.dismiss(animated: true)
         })

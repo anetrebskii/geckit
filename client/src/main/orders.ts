@@ -1,6 +1,7 @@
 import { basename } from 'node:path'
 
 import type { Planned, SessionStatus } from '../shared/api'
+import { hostOf } from '../shared/hosts'
 import { askPlan } from './correct'
 
 /**
@@ -85,14 +86,20 @@ export function ordersOf(answer: string): Order[] {
   return said.flatMap((one) => orderOf(one) ?? [])
 }
 
-/** The name a project is spoken by: the folder's own, which is what the sidebar shows. */
-export const projectSaid = (root: string): string => basename(root)
+/** The name of a host, for a project spoken with it; nothing where the host is no longer known. */
+export type HostNamed = (id: string) => string | undefined
+
+/** The name a project is spoken by: the folder's own, which is what the sidebar shows, and a project on a host with it too. */
+export function projectSaid(root: string, hostName?: HostNamed): string {
+  const id = hostOf(root)
+  return id === undefined ? basename(root) : `${basename(root)} · ${hostName?.(id) ?? id}`
+}
 
 /** What the model is told there is, small enough to go in every time. */
-export function listing(projects: readonly string[], chats: readonly Told[]): string {
-  const where = projects.map((root) => `- ${projectSaid(root)}`).join('\n')
+export function listing(projects: readonly string[], chats: readonly Told[], hostName?: HostNamed): string {
+  const where = projects.map((root) => `- ${projectSaid(root, hostName)}`).join('\n')
   const said = chats
-    .map((one) => `- ${one.id} | ${projectSaid(one.root)} | ${one.state} | ${one.title}`)
+    .map((one) => `- ${one.id} | ${projectSaid(one.root, hostName)} | ${one.state} | ${one.title}`)
     .join('\n')
   return `Projects:\n${where || '- (none)'}\n\nConversations, the newest first, as id | project | how it stands | what it is about:\n${said || '- (none)'}`
 }
@@ -129,8 +136,9 @@ export async function askOrders(
   projects: readonly string[],
   chats: readonly Told[],
   model = '',
+  hostName?: HostNamed,
 ): Promise<{ readonly orders: Order[]; readonly error?: string }> {
-  const answer = await askPlan(`${listing(projects, chats)}\n\nWhat they said:\n${said}`, ORDERS, model)
+  const answer = await askPlan(`${listing(projects, chats, hostName)}\n\nWhat they said:\n${said}`, ORDERS, model)
   if (!answer.ok) return { orders: [], error: answer.error ?? 'It could not be read as orders' }
   return { orders: ordersOf(answer.text ?? '') }
 }
@@ -148,13 +156,14 @@ export function saying(
   orders: readonly Order[],
   projects: readonly string[],
   chats: readonly Told[],
+  hostName?: HostNamed,
 ): { readonly orders: readonly Order[]; readonly lines: readonly Planned[] } {
   const here = new Map(chats.map((one) => [one.id, one]))
   const kept: Order[] = []
   const lines: Planned[] = []
   for (const order of orders) {
     if (order.do === 'start') {
-      if (!projects.some((one) => projectSaid(one) === order.project)) continue
+      if (!projects.some((one) => projectSaid(one, hostName) === order.project)) continue
       kept.push(order)
       // Whole, however long: this is what is about to be sent, and it is being agreed to.
       lines.push({
@@ -200,12 +209,13 @@ export async function carryOut(
   projects: readonly string[],
   chats: readonly Told[],
   doing: Doing,
+  hostName?: HostNamed,
 ): Promise<string[]> {
   const done: string[] = []
   const here = new Map(chats.map((one) => [one.id, one]))
   for (const order of orders) {
     if (order.do === 'start') {
-      const root = projects.find((one) => projectSaid(one) === order.project)
+      const root = projects.find((one) => projectSaid(one, hostName) === order.project)
       if (root === undefined) continue
       await doing.start(root, order.text, order.goal)
       done.push(

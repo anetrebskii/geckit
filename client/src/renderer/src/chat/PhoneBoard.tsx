@@ -13,7 +13,7 @@ import { PhoneScope, ScopeButton } from './PhoneScope'
 import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
 import type { Macs } from '../macs'
-import { emptyProfile, projectLabel } from './project'
+import { awayLine, emptyProfile, projectLabel } from './project'
 import { running } from './Tasks'
 import { ago, byDay, questionLeft } from './time'
 import type { Chat } from './useChat'
@@ -435,9 +435,11 @@ export function RowBody({
   const queued = session.queued?.length ?? 0
   const said = stands.tone === 'working' ? session.stands.replace(/^Working - /, '') : session.stands
   const card = session.state === 'asks' ? waiting?.card : undefined
+  // A conversation on a host out of reach is still working there; its row says so in place of what it last said, which may be old.
+  const away = session.state === 'working' ? awayLine(session) : undefined
   return (
     <>
-      <span className={`phone-dot ${stands.tone}`} />
+      <span className={`phone-dot ${away === undefined ? stands.tone : 'away'}`} />
       <div className="phone-row-text">
         <div className="phone-row-line">
           <span className="phone-row-title">{session.title}</span>
@@ -448,6 +450,8 @@ export function RowBody({
             <div className="phone-row-asks">{card?.title ?? 'Needs an answer'}</div>
             {card?.detail === undefined ? null : <div className="phone-row-cmd">{card.detail}</div>}
           </>
+        ) : away !== undefined ? (
+          <div className="phone-row-said away">{away}</div>
         ) : said === '' ? null : (
           <div className={`phone-row-said${stands.tone === 'working' ? ' doing' : ''}`}>{said}</div>
         )}

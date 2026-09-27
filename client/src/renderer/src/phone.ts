@@ -1,5 +1,6 @@
 import type { Geckit } from '../../preload'
 import type { ChatSession, SessionImage, SessionItem, SessionItems, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
+import { isRemote } from '../../shared/hosts'
 import { pieceOf } from '../../shared/pairing'
 import { collapse, runKey } from '../../shared/steps'
 import { isLocal, toPhone } from '../../shared/local'
@@ -553,10 +554,19 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       repo: (root) => call('chat.repo', root),
       files: (root) => call('chat.files', root),
       // An address on the Mac's localhost means the phone itself here, so it is shown through the Mac instead.
+      // On a host, that address is the host's, not the Mac's, so it is carried there first.
       openLink: (href) => {
         const local = showLocal()
-        if (local !== undefined && isLocal(href)) local(toPhone(href))
-        else window.open(href, '_blank', 'noopener')
+        if (local === undefined || !isLocal(href)) {
+          window.open(href, '_blank', 'noopener')
+          return
+        }
+        const root = rows?.find((one) => one.id === watched)?.root
+        if (root !== undefined && isRemote(root)) {
+          void calls.forwardLink(root, href).then(({ href: carried, moved }) => local(toPhone(carried), moved))
+          return
+        }
+        local(toPhone(href))
       },
       onSessions: (said) => listen('chat:sessions', said),
       onItems: (said) => listen('chat:items', said),
@@ -570,14 +580,16 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onSpotlight: never,
       listening: nothing,
     },
-    // Hosts are reached through the Mac; adding one, and a terminal, are for the Mac itself.
+    // Hosts are reached through the Mac; adding, editing and removing one, and a terminal, are for the Mac itself.
     hosts: {
       list: () => call('hosts.list'),
       onChanged: (said) => listen('hosts:changed', said),
       known: () => Promise.resolve([]),
       check: () => Promise.resolve({ ok: false, problem: 'Hosts are added on the computer running GeckIt.' }),
+      update: () => Promise.resolve({ ok: false, problem: 'Hosts are changed on the computer running GeckIt.' }),
       onChecks: never,
       remove: () => Promise.resolve(),
+      forget: nothing,
       connect: (id) => send('hosts.connect', id),
       reconnect: (id) => send('hosts.reconnect', id),
       disconnect: (id) => send('hosts.disconnect', id),
@@ -658,6 +670,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     dropVideo: () => send('recording.drop'),
     recorded: (recording) => told('chat:recorded', recording),
     localFetch: (asked) => call('local.fetch', asked),
+    forwardLink: (root, href) => call('hosts.forwardLink', root, href),
   }
   Object.defineProperty(window, 'geckitPhone', { value: calls })
 

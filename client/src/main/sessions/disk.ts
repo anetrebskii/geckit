@@ -118,7 +118,7 @@ export function edgesOf(head: Buffer, tail: Buffer | undefined, size: number): E
   return { head: first, tail: linesIn(tail, size - tail.length, size, keep), cut }
 }
 
-async function edges(path: string, size: number): Promise<Edges> {
+export async function edges(path: string, size: number): Promise<Edges> {
   const file = await open(path, 'r')
   try {
     const part = async (from: number, length: number): Promise<Buffer> => {

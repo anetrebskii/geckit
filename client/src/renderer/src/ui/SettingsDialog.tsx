@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import { UPDATE_CHANNELS, appName, channelLabel, profileOf } from '../../../shared/api'
 import type { AIProvider, OpenRule, PhoneView, ProjectProfile, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
-import { homePath, projectName } from '../chat/project'
+import { hostOf } from '../../../shared/hosts'
+import { homePath, projectLabel, projectName } from '../chat/project'
 import { Icon } from './Icon'
 import { Picker } from './Menu'
 import { MOD } from './Shortcuts'
@@ -274,6 +275,17 @@ function Updates({ settings, change }: Part): React.JSX.Element {
 const counted = (count: number): string => `${String(count)} ${count === 1 ? 'project' : 'projects'}`
 
 /**
+ * The projects under where they are, Local first and then each host, as the
+ * project picker groups them; with no project on a host, one list with no heads.
+ */
+function byWhere(settings: Settings): readonly { readonly name?: string; readonly roots: readonly string[] }[] {
+  if (!settings.projects.some((root) => hostOf(root) !== undefined)) return [{ roots: settings.projects }]
+  const local = settings.projects.filter((root) => hostOf(root) === undefined)
+  const hosts = settings.hosts.map((host) => ({ name: host.name, roots: settings.projects.filter((root) => hostOf(root) === host.id) }))
+  return [{ name: 'Local', roots: local }, ...hosts].filter((group) => group.roots.length > 0)
+}
+
+/**
  * The profile in use, and the projects in it.
  *
  * Ticking a profile uses it at once, and it is the one edited under the list:
@@ -355,7 +367,13 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
               <span style={NOTE}>Add a project first, from the project picker.</span>
             ) : (
               <div className="projects-listed">
-                {settings.projects.map((root) => {
+                {byWhere(settings).map((group) => [
+                  group.name === undefined ? null : (
+                    <div key={`head-${group.name}`} className="projects-listed-head">
+                      {group.name}
+                    </div>
+                  ),
+                  ...group.roots.map((root) => {
                   const on = inUse.projects.includes(root)
                   return (
                     <button
@@ -363,7 +381,7 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
                       type="button"
                       role="switch"
                       aria-checked={on}
-                      aria-label={projectName(root)}
+                      aria-label={projectLabel(root)}
                       className={`project-listed${on ? '' : ' off'}`}
                       onClick={() =>
                         edit({ ...inUse, projects: on ? inUse.projects.filter((one) => one !== root) : [...inUse.projects, root] })
@@ -374,7 +392,8 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
                       <span className="says">{homePath(root)}</span>
                     </button>
                   )
-                })}
+                  }),
+                ])}
               </div>
             )}
             <span style={NOTE}>

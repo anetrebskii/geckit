@@ -8,6 +8,7 @@ import { hostOf, pathOf } from '../../shared/hosts'
 import { readGit } from '../git'
 import { holdClaude } from '../sessions/claude'
 import type { ClaudeOptions } from '../sessions/claude'
+import { folders as localFolders } from '../sessions/disk'
 import type { Driver, Heard } from '../sessions/heard'
 import { MCP_ARGS, readMcp } from '../sessions/mcp'
 import type { McpChange } from '../sessions/mcp'
@@ -196,5 +197,16 @@ export async function hostFiles(routes: Routes, root: string): Promise<string[]>
 export function hostTerminal(routes: Routes, root: string, run?: string): string | undefined {
   const id = hostOf(root)
   return id === undefined ? undefined : routes.hosts.terminalCommand(id, pathOf(root), run)
+}
+
+/**
+ * Where a project's conversation files are read from for Search and Hidden
+ * conversations: this computer's own folder for a local root, or the mirror
+ * kept here of a host's, which only has what has already been fetched.
+ */
+export async function foldersFor(routes: Routes | undefined, root: string): Promise<string[]> {
+  const id = hostOf(root)
+  if (id === undefined) return localFolders(root)
+  return routes === undefined ? [] : [routes.disk.mirrorFolder(id, root)]
 }
 

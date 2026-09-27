@@ -4,7 +4,7 @@ import { homeOf } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { Icon } from '../ui/Icon'
 import { Page } from './PhoneKit'
-import { projectName } from './project'
+import { projectLabel } from './project'
 import { Marked, useFound } from './Switcher'
 import type { Seek } from './Switcher'
 import { ago } from './time'
@@ -82,7 +82,7 @@ export function PhoneSearch({ chat, shown, onSeek }: { readonly chat: Chat; read
                   )}
                   <span className="phone-row-meta">
                     <span style={{ color: `var(--project-${String(projectColor(homeOf(row.session), chat.settings))})`, fontWeight: 600 }}>
-                      {projectName(homeOf(row.session))}
+                      {projectLabel(homeOf(row.session))}
                     </span>
                     {row.hit === undefined || row.hit.count < 2 ? null : <span className="phone-row-tag">{row.hit.count} messages</span>}
                   </span>

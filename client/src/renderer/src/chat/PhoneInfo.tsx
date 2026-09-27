@@ -4,7 +4,7 @@ import { homeOf, SESSION_MODES } from '../../../shared/api'
 import type { PlanWindow } from '../../../shared/api'
 import { Menu } from '../ui/Menu'
 import { Cell, Drawer } from './PhoneKit'
-import { projectName } from './project'
+import { projectLabel } from './project'
 import { ago } from './time'
 import { dollars, Meter, tokens, until, useGit } from './Status'
 import type { Chat } from './useChat'
@@ -105,7 +105,7 @@ export function PhoneInfo({
         {spend?.cost === undefined ? null : <Cell label="Cost" says="At API prices; the plan covers it" value={dollars(spend.cost)} />}
         {session.model === undefined ? null : <Cell label="Model" value={session.model} />}
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === session.mode)?.label ?? '-'} />
-        <Cell label="Project" value={projectName(homeOf(session))} />
+        <Cell label="Project" value={projectLabel(homeOf(session))} />
       </div>
       {spend?.used === undefined ? null : <div className="phone-note">Claude Code summarises the conversation when its context fills.</div>}
 
@@ -165,7 +165,7 @@ export function PhoneInfo({
         <Menu
           anchor={new DOMRect()}
           title="Clear the conversation?"
-          note={`A new task starts in ${projectName(homeOf(session))}, with nothing of this one in mind. This one stays on the board.`}
+          note={`A new task starts in ${projectLabel(homeOf(session))}, with nothing of this one in mind. This one stays on the board.`}
           choices={[{ value: 'clear', label: 'Clear', danger: true }]}
           onPick={() => {
             onClose()

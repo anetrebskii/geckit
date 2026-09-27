@@ -539,7 +539,7 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
       <ul class="try">
         <li><b>A row on devbox</b><span>opens its conversation; its host is under the title with its dot</span></li>
         <li><b>The link</b><span>in the answer: opens the host's page through the computer</span></li>
-        <li><b>Send, dropped</b><span>what is typed stays; it says when it will go</span></li>
+        <li><b>Send, dropped</b><span>greyed; what is typed stays, and the line over the field says so</span></li>
         <li><b>Add a project</b><span>Settings, Projects: Where, then a host's folders</span></li>
         <li><b>Escape</b><span>closes a sheet; swipe down does on a phone</span></li>
       </ul>
@@ -634,7 +634,7 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
     if (away(h)) $('convo').insertAdjacentHTML('beforeend', `<div class="offline"><span class="spin"></span>Reconnecting to ${esc(h.name)}</div>`)
     $('c-send').disabled = false
     $('c-send').style.opacity = away(h) ? '0.4' : ''
-    if (!away(h)) $('c-held').innerHTML = ''
+    $('c-held').innerHTML = away(h) ? `<div class="held">${esc(h.name)} is out of reach. What is typed stays until it is back</div>` : ''
   }
   const openConvo = (r) => {
     open = r
@@ -648,10 +648,6 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
     $('lh').addEventListener('click', (e) => { e.preventDefault(); openWeb() })
   }
   const closeConvo = () => { $('convo').classList.remove('open'); open = undefined; for (const t of ['tasks', 'settings']) $('p-' + t).classList.remove('behind') }
-  $('c-send').addEventListener('click', () => {
-    const h = host(open?.host)
-    if (away(h)) $('c-held').innerHTML = `<div class="held">${esc(h.name)} is out of reach. It sends when ${esc(h.name)} is back.</div>`
-  })
 
   const openWeb = () => {
     const h = host(open?.host)

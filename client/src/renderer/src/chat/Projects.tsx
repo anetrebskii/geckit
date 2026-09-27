@@ -158,6 +158,7 @@ function Menu({
   )
 
   const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
+  const profiled = profileOf(chat.settings) !== undefined
   const projectRow = (root: string, group?: string): Row => ({
     value: root,
     name: projectName(root),
@@ -175,6 +176,8 @@ function Menu({
   const group = (id: string | undefined, name: string): Row[] => {
     const key = id ?? LOCAL
     const roots = onHost(id)
+    // Groups follow projects: in a profile, a group it has no projects in is not its business, and is reached from Settings, Hosts.
+    if (profiled && roots.length === 0) return []
     const inside = roots.map((root) => projectRow(root, key)).filter(matches)
     if (words.length > 0 && inside.length === 0) return []
     return [

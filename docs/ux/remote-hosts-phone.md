@@ -42,7 +42,7 @@ These keep hosts from spreading through the app. Every row below follows from th
 | Tasks rows, existing | The project line reads `trailmap · devbox`. A working or asking conversation on a host that is out of reach reads "devbox is out of reach. Still working there" in amber in place of what it said | A project on a host |
 | Conversation header, existing | Under the title, `trailmap · devbox` with the host's dot before it | A conversation on a host |
 | Out-of-reach pill, existing pill | Under the header, the pill the app already uses for a dropped link: "Reconnecting to devbox" with its spinner | The host is out of reach |
-| Composer, existing | The field keeps what is typed; Send is greyed and, pressed, says "devbox is out of reach. It sends when devbox is back." | The host is out of reach |
+| Composer, existing | The field keeps what is typed; Send is greyed, and a line over the field says "devbox is out of reach. What is typed stays until it is back" | The host is out of reach |
 | Sign-in sheet, new | A bottom sheet over whatever is open: the host's question, a secure field, "Remember on <computer>", Sign in, Not now. For a key it has never seen: its fingerprint, Trust, Not now | A host asks while it connects |
 | Settings, Hosts, new row | "Hosts" with how many, under Projects | At least one host |
 | Hosts page, new | The computer first, by its name, then each host: dot, name, `user@address`, how it stands. A footer: "Hosts are added on Alexs MacBook Pro, where the SSH keys are." | Settings, Hosts |
@@ -128,12 +128,12 @@ stateDiagram-v2
 | Folders on devbox | the host asks for a password or a key | Sheet asks | The sign-in sheet over the folders |
 | Sheet asks | answered | Folders on devbox | The sheet goes down; the folders arrive |
 | Sheet asks | Not now | Where | The sheet goes down; the host's row says Not connected |
-| Folders on devbox | pressed Add this folder | Added | Back to Projects, the new one first, `geckit-remote-test · devbox`, and a light tap |
+| Folders on devbox | pressed Add this folder | Added | Back to Projects, the new one in the list as `geckit-remote-test · devbox`, and a light tap |
 | Folders on devbox | could not read | Folders on devbox | "Could not read /srv on devbox." in place of the list; Back still works |
 | Any screen | a host asks, on the computer or the phone | Sheet over it | The sheet; answered anywhere, it goes everywhere |
 | Conversation on a host | the host drops for 10 s | Same, out of reach | The pill; Send greyed |
 | Out of reach | back by itself | Same | The pill goes; what was said meanwhile appears |
-| Out of reach | Send pressed | Same | "devbox is out of reach. It sends when devbox is back." under the field; what was typed stays |
+| Out of reach | typing | Same | The line over the field: "devbox is out of reach. What is typed stays until it is back"; Send greyed |
 
 ## 6. What stays silent
 
@@ -162,7 +162,7 @@ The 1 s and 10 s of `remote-hosts.md` hold on the phone too. Nothing new: the ph
 | Sheet, passphrase | "devbox asks for the passphrase of ~/.ssh/id_ed25519." "Unlock"; "Not now" |
 | Sheet, trust | "This is the first connection to devbox." Then the fingerprint on a line of its own; "Trust"; "Not now" |
 | Pill | "Reconnecting to devbox" |
-| Send while out of reach | "devbox is out of reach. It sends when devbox is back." |
+| Over the field while out of reach | "devbox is out of reach. What is typed stays until it is back" |
 | Hosts footer | "Hosts are added on Alexs MacBook Pro, where the SSH keys are." |
 | Host page, needs the computer | "Claude Code is not installed on devbox. Install it on Alexs MacBook Pro." |
 | Port moved note | "devbox's 3000 is at 3001 on Alexs MacBook Pro" |

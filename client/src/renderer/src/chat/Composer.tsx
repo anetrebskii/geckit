@@ -256,7 +256,11 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           : host.state === 'connecting'
             ? `Connecting to ${host.name}`
             : undefined
+  // The phone has no room in the field for the words, so there the buttons stay, held, and the words go on a line over it.
+  const held = ON_PHONE && away !== undefined
+  const shownAway = held ? undefined : away
   const cannot =
+    held ||
     chat.root === undefined ||
     (host === undefined && isRemote(chat.root)) ||
     (host === undefined && (chat.account?.signedIn !== true || chat.account.key === true))
@@ -779,13 +783,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             </span>
           ) : null}
           <div className="spacer" />
-          {away === undefined ? null : (
+          {shownAway === undefined ? null : (
             <span className={`host-waiting ${host?.state ?? ''}`}>
               {host === undefined ? null : <HostDot state={host.state} />}
               {away}
             </span>
           )}
-          {away !== undefined ? null : chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
+          {shownAway !== undefined ? null : chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
             <button
               type="button"
               className="send"
@@ -801,17 +805,17 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {/* Otherwise an empty field offers dictation in the send button's place, as Messages does. */}
           {/* Beside the mic, the language it listens in: a press switches to the other of the two in Settings, and it stays so. */}
           {/* With a picture attached, or Stop in the round button, the mic and language sit to its left, so words can still be said. */}
-          {away !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' ? (
+          {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' ? (
             <button type="button" className={chat.pictures.length > 0 || chat.working ? 'spoken beside' : 'spoken'} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
               {languageCode(spoken)}
             </button>
           ) : null}
-          {away !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
+          {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
             <button type="button" className="send mic beside" disabled={cannot} onClick={listen} aria-label={`Dictate in ${spoken}`}>
               <Icon name="mic" size={16} />
             </button>
           ) : null}
-          {away !== undefined ? null : ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
+          {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
             <button
               type="button"
               className={listening !== undefined ? 'send listening' : 'send'}
@@ -839,7 +843,11 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           )}
         </div>
         {/* The chip row has no room for the hint, so on the phone it has a line of its own over the field. */}
-        {ON_PHONE && command ? (
+        {held && host !== undefined ? (
+          <div className="phone-hint away">
+            {host.state === 'lost' ? `${host.name} is out of reach. What is typed stays until it is back` : host.state === 'connecting' ? away : `${host.name} needs you`}
+          </div>
+        ) : ON_PHONE && command ? (
           <div className="phone-hint command">Runs in {projectName(chat.root)} now. Claude sees what it prints with your next message</div>
         ) : ON_PHONE && chat.working && (draft !== '' || chat.pictures.length > 0) ? (
           <div className="phone-hint">Waits its turn: it goes once Claude has answered</div>

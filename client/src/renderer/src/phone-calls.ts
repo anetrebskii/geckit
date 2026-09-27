@@ -20,6 +20,8 @@ export interface PhoneCalls {
   readonly recorded: (recording: Recording) => void
   /** A request from a page off the Mac's localhost, made there. */
   readonly localFetch: (asked: LocalAsk) => Promise<LocalAnswer>
+  /** A `localhost` link opened on the phone, in a conversation on a host: carried to this computer, and opened at the port it landed on. */
+  readonly forwardLink: (root: string, href: string) => Promise<{ readonly href: string; readonly moved?: string }>
 }
 
 export const phoneCalls = (): PhoneCalls | undefined => (window as { geckitPhone?: PhoneCalls }).geckitPhone

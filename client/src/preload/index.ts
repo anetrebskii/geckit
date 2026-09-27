@@ -231,8 +231,13 @@ const geckit = {
     /** Reaches a host not yet added, and keeps it once it was reached; what it checks arrives through onChecks. */
     check: (draft: HostDraft): Promise<{ readonly ok: true; readonly host: HostView } | { readonly ok: false; readonly problem: string }> =>
       ipcRenderer.invoke('hosts:check', draft),
+    /** Edits a host already kept. Only its name changed is saved without a connection; anything else is checked again, what it checks arriving through onChecks too. */
+    update: (id: string, draft: HostDraft): Promise<{ readonly ok: true; readonly host: HostView } | { readonly ok: false; readonly problem: string }> =>
+      ipcRenderer.invoke('hosts:update', id, draft),
     onChecks: (said: (lines: readonly HostCheck[]) => void): (() => void) => listen('hosts:checks', said),
     remove: (id: string): Promise<void> => ipcRenderer.invoke('hosts:remove', id),
+    /** Lets go of a stored password without removing the host. */
+    forget: (id: string): void => ipcRenderer.send('hosts:forget', id),
     connect: (id: string): void => ipcRenderer.send('hosts:connect', id),
     reconnect: (id: string): void => ipcRenderer.send('hosts:reconnect', id),
     disconnect: (id: string): void => ipcRenderer.send('hosts:disconnect', id),

@@ -1,5 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createServer } from 'node:net'
+import { connect, createServer } from 'node:net'
 
 import type { Hosts } from './hosts'
 import { spawnOn } from './ssh'
@@ -23,13 +23,33 @@ export function localPort(href: string): number | undefined {
 export const withPort = (href: string, port: number): string =>
   href.replace(/^(https?:\/\/)(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(?::\d+)?/i, `$1localhost:${String(port)}`)
 
-/** Whether nothing here listens on a port. */
-const free = (port: number): Promise<boolean> =>
+/** Whether something here answers on a port at an address. */
+const answers = (port: number, host: string): Promise<boolean> =>
   new Promise((done) => {
+    const probe = connect({ port, host, timeout: 500 })
+    const end = (yes: boolean): void => {
+      probe.destroy()
+      done(yes)
+    }
+    probe.once('connect', () => end(true))
+    probe.once('timeout', () => end(false))
+    probe.once('error', () => end(false))
+  })
+
+/**
+ * Whether nothing here listens on a port. A server that took the port for
+ * IPv6 alone, as a dev server on macOS does for `localhost`, leaves 127.0.0.1
+ * free to bind, and a browser asking for localhost would still reach it rather
+ * than the host; so a port that answers on either address is taken.
+ */
+const free = async (port: number): Promise<boolean> => {
+  if ((await answers(port, '127.0.0.1')) || (await answers(port, '::1'))) return false
+  return new Promise((done) => {
     const probe = createServer()
     probe.once('error', () => done(false))
     probe.listen(port, '127.0.0.1', () => probe.close(() => done(true)))
   })
+}
 
 export class Forwards {
   readonly #hosts: Hosts

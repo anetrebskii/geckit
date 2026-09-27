@@ -15,6 +15,7 @@ export function HostsSection({ working }: { readonly working?: (host: string) =>
   const { hosts } = useHosts()
   const [account, setAccount] = useState<ClaudeAccount | undefined>()
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<HostView | undefined>()
   const [asking, setAsking] = useState<{ readonly host: HostView; readonly what: 'disconnect' | 'remove' } | undefined>()
   const now = useMinute()
 
@@ -69,6 +70,9 @@ export function HostsSection({ working }: { readonly working?: (host: string) =>
                   Disconnect
                 </button>
               )}
+              <button type="button" className="quiet" onClick={() => setEditing(host)}>
+                Edit
+              </button>
               <button type="button" className="quiet" onClick={() => setAsking({ host, what: 'remove' })}>
                 Remove
               </button>
@@ -82,6 +86,7 @@ export function HostsSection({ working }: { readonly working?: (host: string) =>
         </div>
       </div>
       {adding ? <AddHost onClose={() => setAdding(false)} /> : null}
+      {editing === undefined ? null : <AddHost editing={editing} onClose={() => setEditing(undefined)} />}
       {asking === undefined ? null : (
         <Confirm
           host={asking.host}
@@ -142,18 +147,30 @@ const localUser = (): string => {
  * Add a host: the fields every SSH client asks for, filled in where they can
  * be. `user@address:port` typed into Address fills all three; a Host from the
  * SSH config is offered as it is typed and brings what the config says.
+ *
+ * Edit is the same sheet filled in, its button Save: a change to how the host
+ * is reached is checked again as adding it was, and a new name alone is not.
  */
-export function AddHost({ onClose, onAdded }: { readonly onClose: () => void; readonly onAdded?: (host: HostView) => void }): React.JSX.Element {
-  const [address, setAddress] = useState('')
-  const [user, setUser] = useState(localUser)
-  const [port, setPort] = useState('22')
-  const [auth, setAuth] = useState<HostAuth>('key')
-  const [keyFile, setKeyFile] = useState('')
-  const [ownKey, setOwnKey] = useState(false)
+export function AddHost({
+  editing,
+  onClose,
+  onAdded,
+}: {
+  readonly editing?: HostView
+  readonly onClose: () => void
+  readonly onAdded?: (host: HostView) => void
+}): React.JSX.Element {
+  const [address, setAddress] = useState(editing?.address ?? '')
+  const [user, setUser] = useState(editing?.user ?? localUser)
+  const [port, setPort] = useState(String(editing?.port ?? 22))
+  const [auth, setAuth] = useState<HostAuth>(editing?.auth ?? 'key')
+  const [keyFile, setKeyFile] = useState(editing?.keyFile ?? '')
+  const [ownKey, setOwnKey] = useState(editing?.keyFile !== undefined)
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
-  const [name, setName] = useState('')
-  const [named, setNamed] = useState(false)
+  const [forgotten, setForgotten] = useState(false)
+  const [name, setName] = useState(editing?.name ?? '')
+  const [named, setNamed] = useState(editing !== undefined)
   const [known, setKnown] = useState<readonly KnownHost[]>([])
   const [checks, setChecks] = useState<readonly HostCheck[]>([])
   const [running, setRunning] = useState(false)
@@ -190,30 +207,35 @@ export function AddHost({ onClose, onAdded }: { readonly onClose: () => void; re
     if (!named) setName(one.host)
   }
 
+  const draft = {
+    name,
+    address: address.trim(),
+    user: user.trim(),
+    port: Number(port),
+    auth,
+    ...(auth === 'key' && ownKey && keyFile.trim() !== '' ? { keyFile: keyFile.trim() } : {}),
+    ...(auth === 'password' && (editing === undefined || password !== '') ? { password, remember: remember && canRemember } : {}),
+  }
+  const remembered = editing?.remembered === true && !forgotten && auth === 'password'
+
   const connect = async (): Promise<void> => {
     setRunning(true)
     setProblem(undefined)
     setChecks([])
-    const said = await window.geckit.hosts.check({
-      name,
-      address: address.trim(),
-      user: user.trim(),
-      port: Number(port),
-      auth,
-      ...(auth === 'key' && ownKey && keyFile.trim() !== '' ? { keyFile: keyFile.trim() } : {}),
-      ...(auth === 'password' ? { password, remember: remember && canRemember } : {}),
-    })
+    const said = editing === undefined ? await window.geckit.hosts.check(draft) : await window.geckit.hosts.update(editing.id, draft)
     setRunning(false)
-    if (said.ok) {
+    if (!said.ok) setProblem(said.problem)
+    else if (editing !== undefined) onClose()
+    else {
       setAdded(said.host)
       onAdded?.(said.host)
-    } else setProblem(said.problem)
+    }
   }
 
   return (
     <div className="dialog-scrim" onMouseDown={onClose}>
       <div className="dialog add-host" onMouseDown={(event) => event.stopPropagation()}>
-        <h2>Add a host</h2>
+        <h2>{editing === undefined ? 'Add a host' : `Edit ${editing.name}`}</h2>
         <div className="add-host-grid">
           <div className="field">
             <label htmlFor="host-address">Address</label>
@@ -269,11 +291,30 @@ export function AddHost({ onClose, onAdded }: { readonly onClose: () => void; re
             </>
           ) : (
             <>
-              <input type="password" value={password} placeholder="Password" aria-label="Password" onChange={(event) => setPassword(event.target.value)} />
-              <label className="check">
-                <input type="checkbox" checked={remember && canRemember} disabled={!canRemember} onChange={(event) => setRemember(event.target.checked)} />
-                Remember on this computer
-              </label>
+              <input
+                type="password"
+                value={password}
+                placeholder={remembered ? 'Remembered' : editing?.auth === 'password' ? 'Asked for when connecting' : 'Password'}
+                aria-label="Password"
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              {remembered ? (
+                <button
+                  type="button"
+                  className="quiet host-forget"
+                  onClick={() => {
+                    window.geckit.hosts.forget(editing.id)
+                    setForgotten(true)
+                  }}
+                >
+                  Forget the password
+                </button>
+              ) : (
+                <label className="check">
+                  <input type="checkbox" checked={remember && canRemember} disabled={!canRemember} onChange={(event) => setRemember(event.target.checked)} />
+                  Remember on this computer
+                </label>
+              )}
               <span className="hint">
                 {canRemember
                   ? "Kept in the system's credential store, not in GeckIt's settings. Not remembered, it is asked for each time."
@@ -316,7 +357,7 @@ export function AddHost({ onClose, onAdded }: { readonly onClose: () => void; re
           ) : null}
           {added === undefined ? (
             <button type="button" className="primary" disabled={running || address.trim() === ''} onClick={() => void connect()}>
-              {running ? 'Connecting...' : 'Connect'}
+              {running ? (editing === undefined ? 'Connecting...' : 'Saving...') : editing === undefined ? 'Connect' : 'Save'}
             </button>
           ) : (
             <button type="button" className="primary" onClick={onClose}>

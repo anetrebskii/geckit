@@ -156,7 +156,7 @@ const urls = new Map<string, string>()
 }
 
 interface LocalPage {
-  open(options: { url: string }): Promise<void>
+  open(options: { url: string; note?: string }): Promise<void>
   respond(options: { id: string; status: number; headers: Record<string, string>; body: string; moved?: string }): Promise<void>
   addListener(
     event: 'request',
@@ -166,7 +166,9 @@ interface LocalPage {
 const localPage = registerPlugin<LocalPage>('LocalPage')
 
 // A page off the Mac's localhost, in the app's own view: each request it makes is made on the Mac, over the link.
-;(window as { geckitLocal?: (url: string) => void }).geckitLocal = (url) => void localPage.open({ url }).catch(() => undefined)
+// A note, when the page's port moved on the way, is said over its title.
+;(window as { geckitLocal?: (url: string, note?: string) => void }).geckitLocal = (url, note) =>
+  void localPage.open({ url, ...(note === undefined ? {} : { note }) }).catch(() => undefined)
 void localPage
   .addListener('request', (asked) => {
     const answered = phoneCalls()?.localFetch({ ...asked, headers: Object.entries(asked.headers) })

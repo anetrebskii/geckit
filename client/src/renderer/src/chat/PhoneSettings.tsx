@@ -13,7 +13,8 @@ import { Limits } from './PhoneInfo'
 import { Cell, Page, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
-import { homePath, projectName } from './project'
+import { PhoneHost, PhoneHostFolders, PhoneHostList, PhoneWhere } from './PhoneHosts'
+import { homePath, projectLabel } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
 
@@ -28,7 +29,10 @@ type Where =
   | { readonly page: 'profiles' }
   | { readonly page: 'profile'; readonly id: string }
   | { readonly page: 'projects' }
-  | { readonly page: 'add'; readonly path?: string }
+  | { readonly page: 'where' }
+  | { readonly page: 'add'; readonly host?: string }
+  | { readonly page: 'hosts' }
+  | { readonly page: 'host'; readonly id: string }
   | { readonly page: 'hidden' }
   | { readonly page: 'phrases' }
   | { readonly page: 'shortcuts' }
@@ -52,21 +56,41 @@ export function PhoneSettings({
   const back = (): void => setTrail(trail.slice(0, -1))
   const before = (): string => {
     const one = trail[trail.length - 2]
-    return one === undefined ? 'Settings' : one.page === 'root' ? 'Settings' : one.page === 'profiles' ? 'Profiles' : one.page === 'projects' ? 'Projects' : 'Back'
+    return one === undefined || one.page === 'root'
+      ? 'Settings'
+      : one.page === 'profiles'
+        ? 'Profiles'
+        : one.page === 'projects'
+          ? 'Projects'
+          : one.page === 'hosts'
+            ? 'Hosts'
+            : one.page === 'where'
+              ? 'Where'
+              : 'Back'
   }
 
   if (where.page === 'profiles') return <Profiles chat={chat} back={before()} onBack={back} onOpen={(id) => go({ page: 'profile', id })} />
   if (where.page === 'profile') return <Profile chat={chat} id={where.id} back={before()} onBack={back} />
-  if (where.page === 'projects') return <Projects chat={chat} back={before()} onBack={back} onAdd={() => go({ page: 'add' })} />
+  // With a host added, a new project is first asked where it is; without one, it is the computer's folders as before.
+  if (where.page === 'projects') return <Projects chat={chat} back={before()} onBack={back} onAdd={() => go(chat.hosts.length === 0 ? { page: 'add' } : { page: 'where' })} />
+  if (where.page === 'where')
+    return (
+      <Page title="Where" back={before()} onBack={back}>
+        <PhoneWhere chat={chat} onComputer={() => go({ page: 'add' })} onHost={(id) => go({ page: 'add', host: id })} />
+      </Page>
+    )
   if (where.page === 'add')
     return (
       <AddProject
         chat={chat}
+        {...(where.host === undefined ? {} : { host: where.host })}
         back={before()}
         onBack={back}
-        onAdded={() => setTrail(trail.filter((one) => one.page !== 'add'))}
+        onAdded={() => setTrail(trail.filter((one) => one.page !== 'add' && one.page !== 'where'))}
       />
     )
+  if (where.page === 'hosts') return <PhoneHostList chat={chat} back={before()} onBack={back} onOpen={(id) => go({ page: 'host', id })} />
+  if (where.page === 'host') return <PhoneHost chat={chat} id={where.id} back={before()} onBack={back} />
   if (where.page === 'hidden') return <Hidden chat={chat} back={before()} onBack={back} />
   if (where.page === 'phrases') return <Phrases chat={chat} back={before()} onBack={back} />
   if (where.page === 'shortcuts') return <PhoneShortcuts chat={chat} back={before()} onBack={back} onEdit={onEdit} />
@@ -116,6 +140,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       <div className="phone-group">
         <Cell label="Profiles" value={profile?.name ?? 'All projects'} onPress={() => go({ page: 'profiles' })} />
         <Cell label="Projects" value={String(settings.projects.length)} onPress={() => go({ page: 'projects' })} />
+        {chat.hosts.length === 0 ? null : <Cell label="Hosts" value={String(chat.hosts.length)} onPress={() => go({ page: 'hosts' })} />}
         <Cell label="Hidden conversations" onPress={() => go({ page: 'hidden' })} />
       </div>
 
@@ -255,7 +280,7 @@ function Profile({ chat, id, back, onBack }: { readonly chat: Chat; readonly id:
           return (
             <Cell
               key={root}
-              label={<span style={{ color: `var(--project-${String(projectColor(root, settings))})` }}>{projectName(root)}</span>}
+              label={<span style={{ color: `var(--project-${String(projectColor(root, settings))})` }}>{projectLabel(root)}</span>}
               says={homePath(root)}
               chosen={on}
               onPress={() => {
@@ -297,12 +322,12 @@ function Projects({ chat, back, onBack, onAdd }: { readonly chat: Chat; readonly
               label={
                 <>
                   <span className="phone-project-dot" style={{ background: `var(--project-${String(projectColor(root, settings))})` }} />
-                  {projectName(root)}
+                  {projectLabel(root)}
                 </>
               }
               says={homePath(root)}
             />
-            <button type="button" className="phone-icon" aria-label={`Forget ${projectName(root)}`} onClick={() => setForgetting(root)}>
+            <button type="button" className="phone-icon" aria-label={`Forget ${projectLabel(root)}`} onClick={() => setForgetting(root)}>
               <Icon name="more" size={20} />
             </button>
           </div>
@@ -314,7 +339,7 @@ function Projects({ chat, back, onBack, onAdd }: { readonly chat: Chat; readonly
       {forgetting === undefined ? null : (
         <Menu
           anchor={new DOMRect()}
-          title={projectName(forgetting)}
+          title={projectLabel(forgetting)}
           choices={[{ value: 'forget', label: 'Forget', says: 'Its conversations stay on the Mac', danger: true }]}
           onPick={() => chat.forgetProject(forgetting)}
           onClose={() => setForgetting(undefined)}
@@ -326,18 +351,21 @@ function Projects({ chat, back, onBack, onAdd }: { readonly chat: Chat; readonly
 
 function AddProject({
   chat,
+  host,
   back,
   onBack,
   onAdded,
 }: {
   readonly chat: Chat
+  readonly host?: string
   readonly back: string
   readonly onBack: () => void
   readonly onAdded: () => void
 }): React.JSX.Element {
+  const on = host === undefined ? undefined : chat.hosts.find((one) => one.id === host)
   return (
     <Page title="Choose a folder" back={back} onBack={onBack}>
-      <Folders chat={chat} onAdded={onAdded} />
+      {on === undefined ? <Folders chat={chat} onAdded={onAdded} /> : <PhoneHostFolders chat={chat} host={on} onAdded={onAdded} />}
     </Page>
   )
 }
@@ -428,7 +456,7 @@ function Hidden({ chat, back, onBack }: { readonly chat: Chat; readonly back: st
       ) : (
         folders.map((folder) => (
           <div key={folder.path}>
-            <div className="phone-head phone-path">{folder.project === undefined ? homePath(folder.path) : projectName(folder.project)}</div>
+            <div className="phone-head phone-path">{folder.project === undefined ? homePath(folder.path) : projectLabel(folder.project)}</div>
             <div className="phone-group">
               {folder.chats.map((one) => (
                 <Cell key={one.id} label={one.title === '' ? 'Untitled' : one.title} says={one.stands}>
