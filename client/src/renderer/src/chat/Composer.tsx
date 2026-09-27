@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { modelName, programLine, SESSION_MODES } from '../../../shared/api'
-import type { SessionMode } from '../../../shared/api'
+import type { SessionImage, SessionMode } from '../../../shared/api'
 import { mentionAt, pathsFor } from '../../../shared/paths'
 import { dictate, languageCode, useDictationLanguage } from '../dictate'
 import { ON_PHONE } from '../on-phone'
@@ -19,6 +19,61 @@ import { projectName } from './project'
 import type { Chat } from './useChat'
 
 /** A path offered after @, as its name and the folder it is in. */
+// A queued picture is drawn as a small square and fills the screen when pressed; each size is asked for once.
+const SQUARE = 44 * 3
+const WHOLE = 1200
+const queuedPictures = new Map<string, Promise<string | undefined>>()
+
+function queuedPicture(session: string, queued: string, index: number, width: number): Promise<string | undefined> {
+  const key = `${session}\n${queued}\n${String(index)}\n${String(width)}`
+  let held = queuedPictures.get(key)
+  if (held === undefined) {
+    held = window.geckit.chat
+      .queuedPicture(session, queued, index, width)
+      .then((one: SessionImage | undefined) => (one === undefined ? undefined : `data:${one.media};base64,${one.data}`))
+      .catch(() => undefined)
+    queuedPictures.set(key, held)
+    if (queuedPictures.size > 40) queuedPictures.delete(queuedPictures.keys().next().value ?? '')
+  }
+  return held
+}
+
+function QueuedPicture({
+  session,
+  queued,
+  index,
+  onLook,
+}: {
+  readonly session: string
+  readonly queued: string
+  readonly index: number
+  readonly onLook: (src: string) => void
+}): React.JSX.Element {
+  const [src, setSrc] = useState<string>()
+  useEffect(() => {
+    let gone = false
+    void queuedPicture(session, queued, index, SQUARE).then((got) => {
+      if (!gone) setSrc(got)
+    })
+    return () => {
+      gone = true
+    }
+  }, [session, queued, index])
+  return (
+    <button
+      type="button"
+      className="queued-picture"
+      aria-label="See this picture"
+      title="See this picture"
+      onClick={() => {
+        if (src !== undefined) void queuedPicture(session, queued, index, WHOLE).then((whole) => onLook(whole ?? src))
+      }}
+    >
+      {src === undefined ? null : <img src={src} alt="" />}
+    </button>
+  )
+}
+
 const pictures = (count: number): string => (count === 1 ? '1 picture' : `${String(count)} pictures`)
 
 function Offered({ path }: { readonly path: string }): React.JSX.Element {
@@ -222,6 +277,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         : `Checked ${String(goal.checks)} ${goal.checks === 1 ? 'time' : 'times'}, and it does not hold yet${goal.reason === undefined ? '.' : `: ${goal.reason}`}`
 
   const queued = chat.session?.queued ?? []
+  const session = chat.session?.id
   const phrases = chat.settings.phrases.filter((one) => one.trim() !== '')
   const draft = chat.draft.trim()
   // Each press adds its phrase on a line of its own, so a few presses make the message.
@@ -363,6 +419,11 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           <div className="queued-list">
           {queued.map((one) => (
             <div key={one.id} className="queued-one">
+              {session === undefined
+                ? null
+                : Array.from({ length: Math.min(one.images, 3) }, (_none, index) => (
+                    <QueuedPicture key={index} session={session} queued={one.id} index={index} onLook={setLooking} />
+                  ))}
               {editing?.id === one.id ? (
                 <textarea
                   className="queued-edit"
@@ -397,9 +458,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                   {one.text === '' ? <span className="queued-bare">{pictures(one.images)}</span> : one.text}
                 </button>
               )}
-              {one.images === 0 || one.text === '' ? null : (
-                <span className="queued-more">{pictures(one.images)}</span>
-              )}
+              {one.images <= 3 ? null : <span className="queued-more">+{String(one.images - 3)}</span>}
               <button
                 type="button"
                 className="icon-button"
@@ -492,9 +551,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 </button>
               </span>
             ))}
-            {looking === undefined ? null : <Preview src={looking} onClose={() => setLooking(undefined)} />}
           </div>
         )}
+        {looking === undefined ? null : <Preview src={looking} onClose={() => setLooking(undefined)} />}
         {found === undefined ? null : (
           <div className="mentions" role="listbox" ref={offered}>
             {found.length === 0 ? (

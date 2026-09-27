@@ -274,6 +274,17 @@ const joined = (link: Link): void => {
       )
       return
     }
+    if (message.name === 'chat.queuedPicture') {
+      const [id, queued, index, width] = message.args as [string, string, number, number]
+      void window.geckit.peer
+        .call('chat.queuedPicture', [id, queued, index])
+        .then((image) => (image === undefined || image === null ? null : scaledTo(image as SessionImage, width).catch(() => image)))
+        .then(
+          (value) => link.send({ t: 'reply', id: message.id, value }),
+          (error: unknown) => link.send({ t: 'reply', id: message.id, error: error instanceof Error ? error.message : String(error) }),
+        )
+      return
+    }
     if (message.name === 'chat.turns' || message.name === 'chat.turnsBefore' || message.name === 'chat.steps') {
       const id = message.args[0] as string
       void wholeOf(id, message.name === 'chat.turns')
