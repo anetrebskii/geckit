@@ -5962,7 +5962,7 @@ html.phone .talk.over {
   white-space: nowrap;
 }
 
-.phone-nav-title span {
+.phone-nav-title > span {
   display: block;
   overflow: hidden;
   font-size: 12px;
