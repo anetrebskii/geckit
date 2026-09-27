@@ -7,6 +7,7 @@ class BridgeController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(DictationPlugin())
         bridge?.registerPluginInstance(RecordingPlugin())
+        bridge?.registerPluginInstance(LocalPagePlugin())
     }
 }
 

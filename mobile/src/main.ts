@@ -10,6 +10,7 @@ import './pair.css'
 import { dial } from '../../client/src/renderer/src/link'
 import type { Dialing, Link } from '../../client/src/renderer/src/link'
 import { installGeckit, sayDropped, showDropped } from '../../client/src/renderer/src/phone'
+import { phoneCalls } from '../../client/src/renderer/src/phone-calls'
 import type { Boot, Installed } from '../../client/src/renderer/src/phone'
 import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
@@ -153,6 +154,34 @@ const urls = new Map<string, string>()
     void recording.drop({ path: video.path }).catch(() => undefined)
   },
 }
+
+interface LocalPage {
+  open(options: { url: string }): Promise<void>
+  respond(options: { id: string; status: number; headers: Record<string, string>; body: string; moved?: string }): Promise<void>
+  addListener(
+    event: 'request',
+    said: (asked: { id: string; url: string; method: string; headers: Record<string, string>; body: string }) => void,
+  ): Promise<PluginListenerHandle>
+}
+const localPage = registerPlugin<LocalPage>('LocalPage')
+
+// A page off the Mac's localhost, in the app's own view: each request it makes is made on the Mac, over the link.
+;(window as { geckitLocal?: (url: string) => void }).geckitLocal = (url) => void localPage.open({ url }).catch(() => undefined)
+void localPage
+  .addListener('request', (asked) => {
+    const answered = phoneCalls()?.localFetch({ ...asked, headers: Object.entries(asked.headers) })
+    void (answered ?? Promise.reject(new Error('Not joined to the Mac yet')))
+      .then(({ headers, ...answer }) => localPage.respond({ id: asked.id, headers: Object.fromEntries(headers), ...answer }))
+      .catch((error: unknown) =>
+        localPage.respond({
+          id: asked.id,
+          status: 502,
+          headers: { 'content-type': 'text/plain; charset=utf-8' },
+          body: btoa(String.fromCharCode(...new TextEncoder().encode(`The Mac did not answer: ${error instanceof Error ? error.message : String(error)}`))),
+        }),
+      )
+  })
+  .catch(() => undefined)
 
 // The arrows and Done over the keys are for forms of many fields; the composer is one.
 void Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => undefined)
