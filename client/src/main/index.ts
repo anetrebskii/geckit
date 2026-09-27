@@ -43,10 +43,12 @@ import type {
   ShellCommand,
   TranscribeRequest,
   Recording,
+  ScreenControl,
   ScreenSource,
   SessionImage,
 } from '../shared/api'
 import track from './analytics'
+import { control } from './control'
 import { correct } from './correct'
 import { askOrders, carryOut, saying } from './orders'
 import type { Order, Told } from './orders'
@@ -689,15 +691,25 @@ function wire(): void {
   ipcMain.handle('peer:screen', async (event) => {
     if (event.sender !== shownPeer()?.webContents) return { error: 'Not the phone' }
     // Asking for the screens is also what puts GeckIt in the Mac's list to allow, and what asks the first time.
-    const screens = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+    let screens = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
     if (process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
       return {
         error:
           'The Mac has not allowed GeckIt to record its screen. On the Mac: System Settings, Privacy & Security, Screen & System Audio Recording, turn on GeckIt, then quit and reopen it.',
       }
     }
+    // A display that has gone to sleep is not listed at all, so it is woken as a touch of the keyboard would and asked again.
+    if (screens.length === 0 && process.platform === 'darwin') {
+      execFile('caffeinate', ['-u', '-t', '5'])
+      for (let tries = 0; tries < 10 && screens.length === 0; tries++) {
+        await new Promise((done) => setTimeout(done, 400))
+        screens = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+      }
+    }
     const first = screens[0]
-    return first === undefined ? { error: 'The Mac has no screen to show' } : { id: first.id }
+    if (first === undefined) return { error: 'The Mac has no screen to show. Its lid may be closed, or it is asleep.' }
+    shownDisplay = first.display_id
+    return { id: first.id }
   })
   ipcMain.on('peer:state', (event, count: number, trouble: string | null) => {
     if (event.sender !== shownPeer()?.webContents) return
@@ -735,6 +747,8 @@ let phoneOn = false
 let phoneKey = ''
 let phoneState: { readonly count: number; readonly trouble?: string } = { count: 0 }
 let phoneCode: { readonly key: string; readonly qr: string } | undefined
+// The display the phone is shown, which its touches land on.
+let shownDisplay: string | undefined
 // While Phone is on the Mac does not fall asleep by itself, which would leave the phone nothing to reach; the screen still turns off, and a closed lid still sleeps.
 let awake: number | undefined
 
@@ -806,6 +820,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.forgetProject': (root: string) => forgetProject(root),
     'chat.folders': (path: string | undefined) => foldersIn(path),
     'mac.version': () => app.getVersion(),
+    'screen.control': (order: ScreenControl) => control(order, shownDisplay),
     'chat.firstAsked': async (id: string) => {
       const first = (await held()?.items(id))?.find((item) => item.kind === 'mine')
       return first?.kind === 'mine' ? first.text : ''

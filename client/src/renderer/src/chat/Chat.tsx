@@ -466,7 +466,7 @@ export function Chat(): React.JSX.Element {
       <div className={`talk${board ? ' over' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}`} hidden={board && !overBoard}>
         {ON_PHONE && overBoard ? <EdgeBack onBack={() => chat.open({ kind: 'new' })} /> : null}
         {ON_PHONE ? (
-          <PhoneNav chat={chat} links={links} />
+          <PhoneNav chat={chat} links={links} onScreen={() => setScreening(true)} />
         ) : (
           <div className="talk-head drag">
             {chat.session === undefined ? (

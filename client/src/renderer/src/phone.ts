@@ -1,5 +1,5 @@
 import type { Geckit } from '../../preload'
-import type { ChatSession, SessionImage, SessionItem, SessionItems, SessionNotice, Settings } from '../../shared/api'
+import type { ChatSession, SessionImage, SessionItem, SessionItems, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
 import { pieceOf } from '../../shared/pairing'
 import { collapse, runKey } from '../../shared/steps'
 import type { Piece } from '../../shared/pairing'
@@ -122,7 +122,7 @@ const KEEP_AFTER = 1000
 /** A Mac from before a call was there says so, and the phone does what it did then. */
 function orAsBefore<T>(asked: Promise<T>, before: () => Promise<T>): Promise<T> {
   return asked.catch((error: unknown) => {
-    if (error instanceof Error && error.message.startsWith('No such call')) return before()
+    if (error instanceof Error && error.message.includes('No such call')) return before()
     throw error
   })
 }
@@ -601,6 +601,19 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       return stream
     },
     stop: () => send('screen.stop'),
+    control: (order) =>
+      call<ScreenControlled | null>('screen.control', order).then(
+        // A Mac from before the trackpad answered null, and did not know these orders.
+        (done) => done ?? { error: 'Update GeckIt on the Mac to work it from here' },
+        (error: unknown) => ({
+          error:
+            error instanceof Error && error.message.includes('No such call')
+              ? 'Update GeckIt on the Mac to work it from here'
+              : error instanceof Error
+                ? error.message
+                : String(error),
+        }),
+      ),
   }
   Object.defineProperty(window, 'geckitScreen', { value: screen })
   const calls: PhoneCalls = {
