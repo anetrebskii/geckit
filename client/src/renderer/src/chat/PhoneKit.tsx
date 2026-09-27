@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Icon } from '../ui/Icon'
@@ -118,6 +118,7 @@ export function FullSheet({
   action,
   ready = true,
   onAction,
+  tool,
   onClose,
   children,
 }: {
@@ -125,11 +126,58 @@ export function FullSheet({
   readonly action?: string
   readonly ready?: boolean
   readonly onAction?: () => void
+  readonly tool?: React.ReactNode
   readonly onClose: () => void
   readonly children: React.ReactNode
 }): React.JSX.Element {
   const [dragged, setDragged] = useState<number | undefined>()
   const from = useRef<number | undefined>(undefined)
+  const body = useRef<HTMLDivElement>(null)
+  const close = useRef(onClose)
+  useEffect(() => {
+    close.current = onClose
+  }, [onClose])
+
+  // Pulled down from its top, the content takes the sheet with it, as the bar does.
+  useEffect(() => {
+    const form = body.current
+    if (form === null) return
+    let start: number | undefined
+    let pulled = 0
+    const down = (event: TouchEvent): void => {
+      start = form.scrollTop <= 0 && event.touches.length === 1 ? event.touches[0]?.clientY : undefined
+      pulled = 0
+    }
+    const move = (event: TouchEvent): void => {
+      const at = event.touches[0]?.clientY
+      if (start === undefined || at === undefined) return
+      const by = at - start
+      if (pulled === 0 && (by <= 0 || form.scrollTop > 0)) {
+        if (by < 0) start = undefined
+        return
+      }
+      event.preventDefault()
+      pulled = Math.max(1, by)
+      setDragged(pulled)
+    }
+    const up = (): void => {
+      if (start === undefined || pulled === 0) return
+      start = undefined
+      setDragged(undefined)
+      if (pulled > 110) close.current()
+    }
+    form.addEventListener('touchstart', down, { passive: true })
+    form.addEventListener('touchmove', move, { passive: false })
+    form.addEventListener('touchend', up)
+    form.addEventListener('touchcancel', up)
+    return () => {
+      form.removeEventListener('touchstart', down)
+      form.removeEventListener('touchmove', move)
+      form.removeEventListener('touchend', up)
+      form.removeEventListener('touchcancel', up)
+    }
+  }, [])
+
   return createPortal(
     <>
       <div className="sheet-scrim" onClick={onClose} />
@@ -162,14 +210,16 @@ export function FullSheet({
           </button>
           <b>{title}</b>
           {action === undefined ? (
-            <span />
+            (tool ?? <span />)
           ) : (
             <button type="button" className="strong" disabled={!ready} onClick={onAction}>
               {action}
             </button>
           )}
         </div>
-        <div className="phone-task-form">{children}</div>
+        <div ref={body} className="phone-task-form">
+          {children}
+        </div>
       </div>
     </>,
     document.body,

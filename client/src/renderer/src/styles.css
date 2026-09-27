@@ -5413,6 +5413,7 @@ html.phone button:active:not(:disabled) {
   min-height: 0;
   padding: 8px 16px calc(var(--bottom) + 16px);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .phone-task-form:has(> .file-view-page) {
@@ -5436,6 +5437,34 @@ html.phone button:active:not(:disabled) {
 
 .file-view-prose {
   padding-bottom: 16px;
+}
+
+/* A file is read, not glanced at: the text fills the sheet edge to edge, with no box around it. */
+
+.phone-task-form:has(> .file-view-text) {
+  padding: 0 0 var(--bottom);
+}
+
+.file-view-text {
+  padding: 4px 16px 24px;
+  margin: 0;
+  font-family: var(--font-code);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.phone-task-bar .file-view-copy {
+  width: 44px;
+  justify-self: end;
+  justify-content: center;
+}
+
+.phone-task-bar .file-view-copy svg {
+  width: 19px;
+  height: 19px;
 }
 
 .phone-task-label {

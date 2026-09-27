@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import type { FileShown } from '../../../shared/api'
-import { Code } from './Code'
+import { CopyButton } from './Code'
 import { FullSheet, tooOld } from './PhoneKit'
 import { Preview } from './Preview'
 import { Prose } from './Prose'
@@ -26,7 +26,15 @@ export function FileView({ root, path, onClose }: { readonly root: string; reado
 
   if (shown?.kind === 'picture') return <Preview src={`data:${shown.image.media};base64,${shown.image.data}`} onClose={onClose} />
   return (
-    <FullSheet title={path.split('/').at(-1) ?? path} onClose={onClose}>
+    <FullSheet
+      title={path.split('/').at(-1) ?? path}
+      tool={
+        shown?.kind === 'text' || shown?.kind === 'markdown' ? (
+          <CopyButton className="file-view-copy" title="Copy" copy={() => navigator.clipboard.writeText(shown.text)} />
+        ) : undefined
+      }
+      onClose={onClose}
+    >
       {shown === undefined ? (
         <p className="file-view-said">Reading it on the Mac...</p>
       ) : shown.kind === 'none' ? (
@@ -38,7 +46,7 @@ export function FileView({ root, path, onClose }: { readonly root: string; reado
           <Prose text={shown.text} />
         </div>
       ) : (
-        <Code detail>{shown.text}</Code>
+        <pre className="file-view-text">{shown.text}</pre>
       )}
     </FullSheet>
   )
