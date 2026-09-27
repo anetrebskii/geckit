@@ -35,7 +35,7 @@ import { linksIn, workItem } from '../../shared/links'
 import { claudeAccount, claudeProgram } from './account'
 import { holdClaude } from './claude'
 import { browsersOf, readBrowsers } from './chrome'
-import { claudeFile, deleteClaude, everyClaude, listClaude, readClaudeSession, readGoal, readLinks } from './disk'
+import { claudeFile, deleteClaude, everyClaude, forkPoint, listClaude, readClaudeSession, readGoal, readLinks } from './disk'
 import type { GoalRead } from './claude-read'
 import type { Conversation } from './disk'
 import { cardId } from './heard'
@@ -122,6 +122,8 @@ export function withMoves(was: SessionNote | undefined, note: SessionNote, at: n
 interface Queued {
   readonly id: string
   readonly message: SessionMessage
+  /** When it was queued, which is where a conversation started with it copies this one up to. */
+  readonly at?: number
 }
 
 export interface NotesStore {
@@ -175,6 +177,7 @@ export interface SessionsDeps {
     has(root: string, id: string): Promise<boolean>
     delete?(root: string, id: string): Promise<boolean>
     goal?(root: string, id: string): Promise<GoalRead>
+    forkPoint?(root: string, id: string, at: number): Promise<string | undefined>
     every?: typeof everyClaude
   }
   readonly there?: (path: string) => Promise<boolean>
@@ -248,6 +251,8 @@ interface Live {
   clearing: boolean
   /** Messages sent while it worked, oldest first. */
   queued: Queued[]
+  /** Started as a copy of another conversation, which its first run is told. */
+  fork: { readonly from: string; readonly at?: string } | undefined
   /** A general question, which is never listed and is thrown away a day after it has gone quiet. */
   readonly question: boolean
   /** When the question is thrown away, counted from when it last went quiet. */
@@ -595,6 +600,7 @@ export class Sessions {
       goal: undefined,
       clearing: false,
       queued: [],
+      fork: undefined,
       question,
       goes: undefined,
     }
@@ -662,7 +668,7 @@ export class Sessions {
       // A goal waiting its turn stands on the row already, as one sent straight away does.
       const waiting = goalSent(message.text)
       if (waiting !== undefined && waiting !== '') live.goal = { condition: waiting, checks: 0 }
-      this.#queue(live, [...live.queued, { id: `queued:${randomUUID()}`, message: { ...message, session: live.id } }])
+      this.#queue(live, [...live.queued, { id: `queued:${randomUUID()}`, message: { ...message, session: live.id }, at: this.#now() }])
       this.#changed()
       return live.id
     }
@@ -887,6 +893,7 @@ export class Sessions {
         resume,
         mode: live.mode,
         ...(live.chosen === undefined ? {} : { model: live.chosen }),
+        ...(resume || live.fork === undefined ? {} : { fork: live.fork }),
       },
       (heard) => this.#hear(live, heard),
       () => {
@@ -1099,12 +1106,39 @@ export class Sessions {
     this.#changed()
   }
 
-  /** A message taken out of the queue and started as a conversation of its own, in the same project and mode. */
-  async delegate(id: string, queued: string): Promise<string | undefined> {
+  /**
+   * A message taken out of the queue and started as a conversation of its own, in the same project and mode:
+   * empty, or with this one's history as it stood when the message was queued.
+   */
+  async delegate(id: string, queued: string, history = false): Promise<string | undefined> {
+    const from = this.#live.get(id) ?? this.#adopt(id)
+    const at = from?.queued.find((one) => one.id === queued)?.at ?? this.#now()
     const taken = this.unqueue(id, queued)
-    if (taken === undefined) return undefined
+    if (taken === undefined || from === undefined) return undefined
     const { session: _from, again: _again, ...message } = taken
-    return this.send({ ...message, mode: this.#live.get(id)?.mode ?? message.mode })
+    const mode = from.mode
+    if (!history) return this.send({ ...message, mode })
+    const point = await (this.#deps.disk?.forkPoint ?? forkPoint)(from.root, id, at).catch(() => undefined)
+    const live = this.#fresh(randomUUID(), from.root, firstLine(message.text, 80), mode)
+    live.fork = { from: id, ...(point === undefined ? {} : { at: point }) }
+    const read = await (this.#deps.disk?.read ?? readClaudeSession)(from.root, id).catch(() => undefined)
+    const items = read?.items ?? []
+    const upTo = items.findLastIndex((item) => 'at' in item && item.at !== undefined && item.at <= at)
+    for (const item of items.slice(0, upTo + 1)) live.items.set(item.id, item)
+    return this.send({ ...message, mode, session: live.id })
+  }
+
+  /** On a start, the queues a closed GeckIt left waiting go on: the first message of each is sent, and the rest follow it. */
+  async resumeQueues(): Promise<void> {
+    for (const [id, note] of Object.entries(this.#deps.notes.all())) {
+      const first = note.queued?.[0]
+      if (first === undefined || this.#live.get(id)?.state === 'working') continue
+      if (!this.#rows.has(id) && !this.#live.has(id)) await this.list([first.message.root])
+      const live = this.#live.get(id) ?? this.#adopt(id)
+      if (live === undefined || live.state === 'working' || live.state === 'asks') continue
+      this.#queue(live, live.queued.slice(1))
+      await this.send({ ...first.message, session: id, mode: live.mode })
+    }
   }
 
   /** Marked in review, blocked or done; nothing takes the mark off. */
@@ -1119,7 +1153,7 @@ export class Sessions {
   cutOff(): CutOff[] {
     return Object.entries(this.#deps.notes.all())
       .flatMap(([id, note]) =>
-        note.cut === undefined || note.hidden === true || this.#live.has(id)
+        note.cut === undefined || note.hidden === true || this.#live.has(id) || (note.queued?.length ?? 0) > 0
           ? []
           : [{ id, root: note.cut.root, title: note.title ?? '', at: note.cut.at }],
       )

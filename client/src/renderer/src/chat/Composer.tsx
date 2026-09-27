@@ -55,6 +55,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [closed, setClosed] = useState<number | undefined>()
   const [editing, setEditing] = useState<{ readonly id: string; readonly text: string } | undefined>()
   const [dropping, setDropping] = useState<string | undefined>()
+  const [branching, setBranching] = useState<string | undefined>()
   // The phrase a long press or a right click is on, asked about before it goes.
   const [unphrasing, setUnphrasing] = useState<{ readonly phrase: string; readonly at: DOMRect } | undefined>()
   const phraseHeld = useRef<{ timer: number; held: boolean }>({ timer: 0, held: false })
@@ -228,6 +229,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   }
   const keepable = draft !== '' && !draft.includes('\n') && !phrases.some((one) => one.trim() === draft)
   const dropped = queued.find((one) => one.id === dropping)
+  const branched = queued.find((one) => one.id === branching)
 
   return (
     <div className="composer">
@@ -250,6 +252,41 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 }}
               >
                 Cancel it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {branched === undefined ? null : (
+        <div className="dialog-scrim" onMouseDown={() => setBranching(undefined)}>
+          <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
+            <h2>Start a new conversation with it?</h2>
+            <p className="queued-dropped">{branched.text}</p>
+            <p>It can carry this conversation as it stood when the message was queued, or start empty.</p>
+            <div className="dialog-actions">
+              <button type="button" className="quiet" onClick={() => setBranching(undefined)}>
+                Keep it here
+              </button>
+              <button
+                type="button"
+                className="quiet"
+                onClick={() => {
+                  chat.delegate(branched.id, false)
+                  setBranching(undefined)
+                }}
+              >
+                Empty
+              </button>
+              <button
+                type="button"
+                className="primary"
+                autoFocus
+                onClick={() => {
+                  chat.delegate(branched.id, true)
+                  setBranching(undefined)
+                }}
+              >
+                With this conversation
               </button>
             </div>
           </div>
@@ -302,7 +339,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 className="icon-button"
                 aria-label="Start a new conversation with it"
                 title="Start a new conversation with it, in this project, rather than wait here"
-                onClick={() => chat.delegate(one.id)}
+                onClick={() => setBranching(one.id)}
               >
                 <Icon name="branch" size={12} />
               </button>

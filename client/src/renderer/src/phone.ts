@@ -517,7 +517,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       stop: (id) => send('chat.stop', id),
       unqueue: (id, queued) => call('chat.unqueue', id, queued),
       requeue: (id, queued, text) => send('chat.requeue', id, queued, text),
-      delegate: (id, queued) => call('chat.delegate', id, queued),
+      delegate: (id, queued, history) => call('chat.delegate', id, queued, history),
       mode: (id, mode) => send('chat.mode', id, mode),
       rename: (id, title) => send('chat.rename', id, title),
       mark: (id, status) => send('chat.mark', id, status),
