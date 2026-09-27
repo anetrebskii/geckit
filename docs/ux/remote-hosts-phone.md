@@ -33,6 +33,20 @@ These keep hosts from spreading through the app. Every row below follows from th
 3. **The computer running GeckIt is the gateway.** The phone reaches hosts through it, as it reaches everything: the hosts are usually on a network only that computer is on, and the SSH keys stay on it. Hosts are added and edited on the computer; on the phone they are used.
 4. **Groups follow projects.** A host, or Local, appears in a list only where that list has its projects.
 
+### One word, two ways to a host
+
+The phone was already paired with one or more computers running GeckIt, and switched between them; hosts reached over SSH looked like a second kind of remote. They are one thing, a host, reached two ways:
+
+| | Paired with the phone | Over SSH |
+|---|---|---|
+| What runs there | GeckIt: its own board, settings, keys | Only `claude` and the files; a server with no screen will do |
+| Who connects | The phone, to it, from anywhere | The host the phone works through, from its own network |
+| Added | On the phone, by scanning the code in its Settings | On the host that reaches it, where the keys are |
+
+So the phone always sees through one host, and that host's hosts over SSH are under it. Every string on the phone that said "Mac" says "host", or the host's name where it is known: "Hosts this phone is paired with", "Add a host", "Not connected to the host", "GeckIt on Alexs MacBook Pro". GeckIt runs on Windows and Linux too, so "Mac" was wrong anyway. In this document "the computer" is the host the phone works through; the phone itself never says "computer".
+
+A machine can be both: GeckIt runs on it and it is also a host over SSH of another. Nothing forbids that, and nothing is hidden; the check that reaches a host over SSH reads the name it gives itself, and where that is the name a paired host told the phone, its row says "Also paired with this phone" and its page offers "Switch to <name>", to work there directly.
+
 ## 3. What is added or changed
 
 ### The phone
@@ -44,9 +58,9 @@ These keep hosts from spreading through the app. Every row below follows from th
 | Out-of-reach pill, existing pill | Under the header, the pill the app already uses for a dropped link: "Reconnecting to devbox" with its spinner | The host is out of reach |
 | Composer, existing | The field keeps what is typed; Send is greyed, and a line over the field says "devbox is out of reach. What is typed stays until it is back" | The host is out of reach |
 | Sign-in sheet, new | A bottom sheet over whatever is open: the host's question, a secure field, "Remember on <computer>", Sign in, Not now. For a key it has never seen: its fingerprint, Trust, Not now | A host asks while it connects |
-| Settings, Hosts, new row | "Hosts" with how many, under Projects | At least one host |
-| Hosts page, new | The computer first, by its name, then each host: dot, name, `user@address`, how it stands. A footer: "Hosts are added on Alexs MacBook Pro, where the SSH keys are." | Settings, Hosts |
-| Host page, new | How it stands and since when, Claude Code version and plan, Reconnect or Connect, Disconnect | A host pressed |
+| Settings, Hosts, the section that was "Mac" | The host worked through, by its name, "Paired" or "3 hosts paired", opening the list of paired hosts as before (switch, rename, forget, Add a host); under it "Over SSH" with how many | Always; "Over SSH" with at least one |
+| Over SSH page, new | "Through": the host worked through, by its name. "Reached over SSH": each host: dot, name, `user@address`, how it stands, or "Also paired with this phone". A footer: "Hosts over SSH are added on Alexs MacBook Pro, where the SSH keys are." | Settings, Hosts, Over SSH |
+| Host page, new | How it stands and since when, Claude Code version and plan, Reconnect or Connect, Disconnect; "Switch to <name>" where it is also paired | A host pressed |
 | Add a project, existing | First "Where": the computer by its name, then each host with its dot. Then the folders of the one chosen, one level at a time, as today, the host's name over them | Settings, Projects, Add a project, or the project list of New task |
 | `localhost` link in a conversation on a host, existing web view | Opens the host's page through the computer; a note at the top when the port moved: "devbox's 3000 is at 3001 on Alexs MacBook Pro" | A `localhost` link pressed |
 
@@ -193,7 +207,9 @@ The 1 s and 10 s of `remote-hosts.md` hold on the phone too. Nothing new: the ph
 | Question | Verdict | Why |
 |---|---|---|
 | The phone reaches hosts directly, or through the computer | Through the computer | Principle 3; the keys and the network are there |
-| What the phone calls the computer | Its name | "Local" and "this computer" both mean the phone when read on it |
+| What the phone calls the computer | Its name, and "host" where no name fits | "Local" and "this computer" both mean the phone when read on it; one word for every other machine |
+| Paired hosts and hosts over SSH | One word, two ways to reach; one Settings section | Two words would read as two kinds of remote, which they are not |
+| A machine both paired and over SSH | Said on its row, with Switch to on its page | Forbidding it would take away working on it from the other's board; hiding it would show the same conversations twice with no word why |
 | Hosts filtered by profile | By their projects | Principle 4; no new setting |
 | Edit a host | The Add sheet, filled | One sheet, two uses; no screen of its own |
 | Password questions on the phone | A system-like sheet over anything | A question with nowhere to be answered stops the work, and a sheet is how iOS asks |

@@ -114,7 +114,7 @@ export function PhoneShortcuts({
           ))}
         </div>
       )}
-      <div className="phone-note">Timetables run on the Mac while GeckIt is open there.</div>
+      <div className="phone-note">Timetables run on the host while GeckIt is open there.</div>
     </Page>
   )
 }

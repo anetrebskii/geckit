@@ -338,7 +338,7 @@ export function Drawer({
 /** What a Mac from before a call was there says, put in words the person can act on. */
 export const tooOld = (error: unknown): string =>
   error instanceof Error && error.message.startsWith('No such call')
-    ? 'Update GeckIt on the Mac for this.'
+    ? 'Update GeckIt on the host for this.'
     : error instanceof Error
       ? error.message
       : String(error)

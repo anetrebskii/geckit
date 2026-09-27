@@ -179,7 +179,7 @@ export function PhoneBoard({
           <button type="button" className="phone-icon" aria-label="Say it" onClick={onSay}>
             <Icon name="mic" size={24} />
           </button>
-          <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
+          <button type="button" className="phone-icon" aria-label="The host's screen" onClick={onScreen}>
             <Icon name="display" size={24} />
           </button>
           {/* A long press offers the other ways to start one, as the arrow beside New task does on the Mac. */}
@@ -799,7 +799,7 @@ export function HideSheet({ session, chat, onClose }: { readonly session: ChatSe
     <Menu
       anchor={new DOMRect()}
       title={`Hide "${session.title === '' ? 'Untitled' : session.title}"?`}
-      choices={[{ value: 'hide', label: 'Hide', says: 'Kept on the Mac; Settings, Hidden conversations brings it back' }]}
+      choices={[{ value: 'hide', label: 'Hide', says: 'Kept on the host; Settings, Hidden conversations brings it back' }]}
       onPick={() => chat.hide(session.id)}
       onClose={onClose}
     />
@@ -915,7 +915,7 @@ export function MacList({
 
   return (
     <>
-      <Sheet title="Macs this phone is paired with" onClose={onClose}>
+      <Sheet title="Hosts this phone is paired with" onClose={onClose}>
         <div className="sheet-list">
           {rows.map((mac) => (
             <div key={mac.at} className={`sheet-option phone-mac${mac.favorite ? ' favorite' : ''}`}>
@@ -955,7 +955,7 @@ export function MacList({
             }}
           >
             <span className="sheet-words">
-              <span className="label">Add a Mac</span>
+              <span className="label">Add a host</span>
               <span className="says">Scan the code in its GeckIt Settings</span>
             </span>
           </button>
@@ -1007,8 +1007,8 @@ function RenameMac({
   return (
     <RenameAlert
       name={name}
-      placeholder="The name the Mac gives itself"
-      note="Left empty, it goes back to the name the Mac gives itself."
+      placeholder="The name the host gives itself"
+      note="Left empty, it goes back to the name the host gives itself."
       canSave={(given) => given !== name}
       onSave={onSave}
       onClose={onClose}

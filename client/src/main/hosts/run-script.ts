@@ -243,6 +243,7 @@ export function resolveScript(path: string): string {
 export function checkScript(): string {
   return [
     PREAMBLE,
+    'echo "@@machine $(hostname 2>/dev/null)"',
     `c=$(command -v claude) || { echo '@@missing'; exit 0; }`,
     'echo "@@path $c"',
     'echo "@@version"',
@@ -254,13 +255,22 @@ export function checkScript(): string {
 }
 
 /** What the check printed, read into its parts. */
-export function readCheck(out: string): { readonly missing: boolean; readonly path?: string; readonly version?: string; readonly auth?: string } {
-  if (out.includes('@@missing')) return { missing: true }
+export function readCheck(out: string): {
+  readonly missing: boolean
+  readonly machine?: string
+  readonly path?: string
+  readonly version?: string
+  readonly auth?: string
+} {
+  const machine = /^@@machine (.+)$/m.exec(out)?.[1]?.trim()
+  const named = machine === undefined || machine === '' ? {} : { machine }
+  if (out.includes('@@missing')) return { missing: true, ...named }
   const path = /^@@path (.+)$/m.exec(out)?.[1]?.trim()
   const version = /@@version\n([^\n]*)/.exec(out)?.[1]?.trim()
   const auth = /@@auth\n([\s\S]*?)\n?@@end/.exec(out)?.[1]?.trim()
   return {
     missing: false,
+    ...named,
     ...(path === undefined ? {} : { path }),
     ...(version === undefined || version === '' ? {} : { version }),
     ...(auth === undefined || auth === '' ? {} : { auth }),

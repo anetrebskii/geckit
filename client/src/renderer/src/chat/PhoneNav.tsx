@@ -56,7 +56,7 @@ export function PhoneNav({
         )}
       </div>
       <span className="phone-nav-end">
-        <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
+        <button type="button" className="phone-icon" aria-label="The host's screen" onClick={onScreen}>
           <Icon name="display" size={24} />
         </button>
         {session === undefined ? null : (

@@ -48,7 +48,7 @@ function keptMacs(): KeptMac[] {
   return one === null ? [] : [{ link: one }]
 }
 
-const nameOf = (mac: KeptMac, at: number): string => mac.given ?? mac.name ?? `Mac ${String(at + 1)}`
+const nameOf = (mac: KeptMac, at: number): string => mac.given ?? mac.name ?? `Host ${String(at + 1)}`
 
 function change(index: number, how: (mac: KeptMac) => KeptMac): void {
   localStorage.setItem(MACS, JSON.stringify(keptMacs().map((mac, at) => (at === index ? how(mac) : mac))))
@@ -62,7 +62,7 @@ function useMac(link: string | undefined): void {
 }
 
 ;(window as { geckitMacs?: Macs }).geckitMacs = {
-  list: () => keptMacs().map((mac, at) => ({ name: nameOf(mac, at), current: isCurrent(mac), favorite: mac.favorite === true })),
+  list: () => keptMacs().map((mac, at) => ({ name: nameOf(mac, at), ...(mac.name === undefined ? {} : { told: mac.name }), current: isCurrent(mac), favorite: mac.favorite === true })),
   switchTo: (index) => useMac(keptMacs()[index]?.link),
   add: () => void scan(),
   forget: (index) => {
@@ -172,14 +172,14 @@ const localPage = registerPlugin<LocalPage>('LocalPage')
 void localPage
   .addListener('request', (asked) => {
     const answered = phoneCalls()?.localFetch({ ...asked, headers: Object.entries(asked.headers) })
-    void (answered ?? Promise.reject(new Error('Not joined to the Mac yet')))
+    void (answered ?? Promise.reject(new Error('Not joined to the host yet')))
       .then(({ headers, ...answer }) => localPage.respond({ id: asked.id, headers: Object.fromEntries(headers), ...answer }))
       .catch((error: unknown) =>
         localPage.respond({
           id: asked.id,
           status: 502,
           headers: { 'content-type': 'text/plain; charset=utf-8' },
-          body: btoa(String.fromCharCode(...new TextEncoder().encode(`The Mac did not answer: ${error instanceof Error ? error.message : String(error)}`))),
+          body: btoa(String.fromCharCode(...new TextEncoder().encode(`The host did not answer: ${error instanceof Error ? error.message : String(error)}`))),
         }),
       )
   })
@@ -253,7 +253,7 @@ function notPaired(wrong = false): void {
       picture('pair-icon', `<img src="${icon}" alt="">`),
       line('GeckIt', 'pair-name', 'h1'),
       line('Your conversations with Claude Code, on your iPhone.'),
-      steps(['Open GeckIt on your Mac', 'Settings, then turn on Phone', 'Scan the code']),
+      steps(['Open GeckIt on your host', 'Settings, then turn on Phone', 'Scan the code']),
       ...(wrong ? [line('That is not a GeckIt code.', 'pair-error')] : []),
     ],
     [button('Scan', 'pair-fill', () => void scan())],
@@ -293,7 +293,7 @@ function bootOf(link: Link): Promise<Boot> {
       if (message.error === undefined) done(message.value as Boot)
       else failed(new Error(message.error))
     })
-    link.onClose(() => failed(new Error('The Mac did not answer')))
+    link.onClose(() => failed(new Error('The host did not answer')))
     link.send({ t: 'call', id: -1, name: 'boot', args: [] })
   })
 }
@@ -390,7 +390,7 @@ async function connect(): Promise<void> {
   // A Mac this phone has talked to before: its conversations are up at once, and the link is made under them.
   const before = started ? undefined : keptBoot(pairing)
   if (before !== undefined) {
-    const name = macs[here] === undefined ? (before.name ?? 'the Mac') : nameOf(macs[here], here)
+    const name = macs[here] === undefined ? (before.name ?? 'the host') : nameOf(macs[here], here)
     started = true
     installed = installGeckit(undefined, before, macOf(pairing))
     const opened = import('../../client/src/renderer/src/chat/main')
@@ -405,7 +405,7 @@ async function connect(): Promise<void> {
   const ours = macs[here]
   const label = ours === undefined ? undefined : nameOf(ours, here)
   const step = connecting(
-    label ?? 'the Mac',
+    label ?? 'the host',
     others.map(({ mac, at }) => button(`Connect to ${nameOf(mac, at)}`, 'pair-plain', () => useMac(mac.link))),
   )
   let link: Link
@@ -426,7 +426,7 @@ async function connect(): Promise<void> {
           'pair-away',
           '<svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><rect x="8" y="12" width="40" height="26" rx="3"/><path d="M20 46h16M28 38v8M8 8l40 40"/></svg>',
         ),
-        line(`${label ?? 'The Mac'} did not answer.`, 'pair-title', 'h2'),
+        line(`${label ?? 'The host'} did not answer.`, 'pair-title', 'h2'),
         line('GeckIt has to be open there, with Phone turned on in Settings.'),
       ],
       [
@@ -446,7 +446,7 @@ async function connect(): Promise<void> {
   current = link
   installed = installGeckit(link, boot, macOf(pairing))
   const { swap } = installed
-  const name = boot.name ?? macs[here]?.name ?? 'the Mac'
+  const name = boot.name ?? macs[here]?.name ?? 'the host'
   link.onClose(() => void mend(pairing, swap, name))
   await import('../../client/src/renderer/src/chat/main')
 }
@@ -462,7 +462,7 @@ let installed: Installed | undefined
  */
 async function mend(pairing: Pairing, swap: (next: Link) => void, mac: string, first = false): Promise<void> {
   showDropped()
-  const said = stageSaid('the Mac')
+  const said = stageSaid('the host')
   const head = `${first ? 'Connecting' : 'Reconnecting'} to ${mac}`
   let step = 'Trying again'
   let since = Date.now()

@@ -13,7 +13,7 @@ import { Limits } from './PhoneInfo'
 import { Cell, Page, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
-import { PhoneHost, PhoneHostFolders, PhoneHostList, PhoneWhere } from './PhoneHosts'
+import { computerName, PhoneHost, PhoneHostFolders, PhoneHostList, PhoneWhere } from './PhoneHosts'
 import { homePath, projectLabel } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
@@ -63,7 +63,7 @@ export function PhoneSettings({
         : one.page === 'projects'
           ? 'Projects'
           : one.page === 'hosts'
-            ? 'Hosts'
+            ? 'Over SSH'
             : one.page === 'where'
               ? 'Where'
               : 'Back'
@@ -122,15 +122,17 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
 
       {paired === undefined ? null : (
         <>
-          <div className="phone-head">Mac</div>
+          {/* Every other machine is a host: the ones paired with this phone, which it switches between, and the ones the host it works through reaches over SSH. */}
+          <div className="phone-head">Hosts</div>
           <div className="phone-group">
-            <Cell label={thisMac?.name ?? 'Mac'} says={paired.length > 1 ? `${String(paired.length)} Macs paired` : 'Paired'} onPress={() => setSwitching(true)} />
+            <Cell label={thisMac?.name ?? 'Host'} says={paired.length > 1 ? `${String(paired.length)} hosts paired` : 'Paired'} onPress={() => setSwitching(true)} />
+            {chat.hosts.length === 0 ? null : <Cell label="Over SSH" value={String(chat.hosts.length)} onPress={() => go({ page: 'hosts' })} />}
           </div>
           {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
             <>
               <div className="phone-head">Plan usage</div>
               <Limits chat={chat} />
-              <div className="phone-note">Of the plan the Mac's Claude Code runs on{chat.account?.plan === undefined ? '' : `, ${chat.account.plan}`}, shared by every conversation on it.</div>
+              <div className="phone-note">Of the plan the host's Claude Code runs on{chat.account?.plan === undefined ? '' : `, ${chat.account.plan}`}, shared by every conversation on it.</div>
             </>
           )}
         </>
@@ -140,7 +142,6 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       <div className="phone-group">
         <Cell label="Profiles" value={profile?.name ?? 'All projects'} onPress={() => go({ page: 'profiles' })} />
         <Cell label="Projects" value={String(settings.projects.length)} onPress={() => go({ page: 'projects' })} />
-        {chat.hosts.length === 0 ? null : <Cell label="Hosts" value={String(chat.hosts.length)} onPress={() => go({ page: 'hosts' })} />}
         <Cell label="Hidden conversations" onPress={() => go({ page: 'hidden' })} />
       </div>
 
@@ -148,7 +149,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       <div className="phone-group">
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === settings.chatMode)?.label} onPress={() => setPicking('mode')} />
       </div>
-      <div className="phone-note">What a task started from the phone or the Mac runs in, until changed in it.</div>
+      <div className="phone-note">What a task started from the phone or the host runs in, until changed in it.</div>
 
       <div className="phone-head">Shortcuts</div>
       <div className="phone-group">
@@ -168,7 +169,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
 
       <div className="phone-head">About</div>
       <div className="phone-group">
-        <Cell label="GeckIt on the Mac" value={version ?? '-'} />
+        <Cell label={`GeckIt on ${thisMac?.name ?? 'the host'}`} value={version ?? '-'} />
         <Cell label="Claude Code" value={chat.account?.program?.version ?? '-'} />
         {chat.account?.plan === undefined ? null : <Cell label="Plan" value={chat.account.plan} />}
       </div>
@@ -237,7 +238,7 @@ function Profiles({
           </div>
         ))}
       </div>
-      <div className="phone-note">The one ticked is what this phone shows; the Mac chooses its own. The profiles themselves are the Mac's.</div>
+      <div className="phone-note">The one ticked is what this phone shows; the host chooses its own. The profiles themselves are the host's.</div>
       <div className="phone-group phone-form-group">
         <Cell
           label="New profile"
@@ -340,7 +341,7 @@ function Projects({ chat, back, onBack, onAdd }: { readonly chat: Chat; readonly
         <Menu
           anchor={new DOMRect()}
           title={projectLabel(forgetting)}
-          choices={[{ value: 'forget', label: 'Forget', says: 'Its conversations stay on the Mac', danger: true }]}
+          choices={[{ value: 'forget', label: 'Forget', says: 'Its conversations stay on the host', danger: true }]}
           onPick={() => chat.forgetProject(forgetting)}
           onClose={() => setForgetting(undefined)}
         />
@@ -407,7 +408,7 @@ export function Folders({
   const had = shown !== undefined && chat.settings.projects.includes(shown.path)
 
   return shown === undefined ? (
-    <div className="phone-empty">{trouble ?? "Reading the Mac's folders"}</div>
+    <div className="phone-empty">{trouble ?? `Reading ${computerName()}...`}</div>
   ) : (
     <>
       <div className="phone-head phone-path">{homePath(shown.path)}</div>
@@ -448,7 +449,7 @@ function Hidden({ chat, back, onBack }: { readonly chat: Chat; readonly back: st
   }, [])
   return (
     <Page title="Hidden" back={back} onBack={onBack}>
-      <div className="phone-note phone-lead">Kept by Claude Code on the Mac and not on the board.</div>
+      <div className="phone-note phone-lead">Kept by Claude Code on the host and not on the board.</div>
       {folders === undefined ? (
         <div className="phone-empty">Reading conversations</div>
       ) : folders.length === 0 ? (
