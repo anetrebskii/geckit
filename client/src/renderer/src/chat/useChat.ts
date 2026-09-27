@@ -658,13 +658,13 @@ export function useChat(): Chat {
     [open],
   )
 
+  const keep = useCallback((id: string, stays: boolean) => window.geckit.chat.keep(id, stays), [])
+
   const remove = useCallback(
     (ids: readonly string[]) => {
       void window.geckit.chat.remove(ids).then((gone) => {
         const shownNow = shownRef.current
         if (shownNow.kind === 'session' && gone.includes(shownNow.id)) open({ kind: 'new' })
-  const keep = useCallback((id: string, stays: boolean) => window.geckit.chat.keep(id, stays), [])
-
       })
     },
     [open],
@@ -801,10 +801,10 @@ export function useChat(): Chat {
     rename,
     mark,
     hide,
+    keep,
     remove,
     terminal,
     copyTerminal,
     refresh,
   }
 }
-    keep,
