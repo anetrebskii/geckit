@@ -5486,21 +5486,127 @@ html.phone button:active:not(:disabled) {
   min-height: 132px;
 }
 
-.phone-task-photo {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  height: 44px;
-  margin-top: 6px;
-  padding: 0 16px;
-  font-size: 17px;
-  color: var(--accent);
-}
-
 .phone-task-note {
   margin: 7px 16px 0;
   font-size: 13px;
   color: var(--text-faint);
+}
+
+/* New task and Question on the phone: the text fills the sheet as a note does, and what adds to it rides on the keyboard, as in Notes and Mail. */
+.phone-compose .phone-task-form {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 16px 12px;
+}
+
+.phone-compose .phone-task-group {
+  flex: none;
+  overflow: hidden;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.phone-compose .phone-task-cell {
+  position: relative;
+  background: none;
+  border-radius: 0;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 17px;
+  color: var(--text);
+}
+
+.phone-compose .phone-task-cell + .phone-task-cell::before {
+  position: absolute;
+  top: 0;
+  inset-inline: 16px 0;
+  height: 0.5px;
+  content: '';
+  background: var(--separator);
+}
+
+.phone-compose .phone-task-goal {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  height: 44px;
+  font-size: 17px;
+  color: var(--text);
+  text-align: end;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.phone-compose .phone-task-goal::placeholder {
+  color: var(--text-faint);
+}
+
+.phone-compose .phone-task-text {
+  flex: 1;
+  width: 100%;
+  min-height: 120px;
+  margin-top: 14px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 22px;
+  color: var(--text);
+  resize: none;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.phone-compose .phone-task-form > .phone-task-text:first-child {
+  margin-top: 4px;
+}
+
+.phone-compose .phone-task-text::placeholder {
+  color: var(--text-faint);
+}
+
+/* Rides on the keyboard while it is up, and on the home indicator when it is not. */
+.phone-task-tools {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 8px var(--bottom);
+  background: var(--sheet);
+  box-shadow: 0 -0.5px 0 var(--separator);
+}
+
+html.keyboard .phone-task-tools {
+  padding-bottom: 4px;
+  margin-bottom: var(--keyboard, 0px);
+}
+
+.phone-task-tools button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+  border-radius: 22px;
+}
+
+.phone-task-tools button.on {
+  color: var(--danger);
+}
+
+.phone-task-tools-note {
+  flex: 1;
+  min-width: 0;
+  padding-inline-end: 8px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: end;
 }
 
 .phone-task .pending {

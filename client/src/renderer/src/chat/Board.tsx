@@ -971,7 +971,7 @@ function PhoneNewTask({
     <>
       <div className="sheet-scrim" onClick={leave} />
       <div
-        className={`phone-task${dragged === undefined ? '' : ' dragging'}`}
+        className={`phone-task phone-compose${dragged === undefined ? '' : ' dragging'}`}
         role="dialog"
         aria-label={question ? 'Ask a question' : 'New task'}
         style={dragged === undefined ? undefined : { transform: `translateY(${String(dragged)}px)` }}
@@ -1005,34 +1005,32 @@ function PhoneNewTask({
         <div className="phone-task-form">
           {question ? null : (
             <>
-              <div className="phone-task-label">Project</div>
-              <button type="button" className="phone-task-cell" onClick={() => setChoosing(true)}>
-                Project
-                <span>
-                  {root === '' ? 'None' : projectName(root)}
-                  <Icon name="right" size={14} />
-                </span>
-              </button>
+              <div className="phone-task-group">
+                <button type="button" className="phone-task-cell" onClick={() => setChoosing(true)}>
+                  Project
+                  <span>
+                    {root === '' ? 'None' : projectName(root)}
+                    <Icon name="right" size={14} />
+                  </span>
+                </button>
+                <label className="phone-task-cell">
+                  Goal
+                  <input className="phone-task-goal" value={goal} placeholder="None" onChange={(event) => onGoal(event.target.value)} />
+                </label>
+              </div>
+              <div className="phone-task-note">
+                {goal.trim() === '' ? 'Without a goal, it stops when Claude is done.' : 'Claude keeps working until this holds, then the card goes to In review.'}
+              </div>
             </>
           )}
-          <div className="phone-task-label">{question ? 'Question' : 'What to do'}</div>
           <textarea
             ref={field}
             className="phone-task-text"
             value={text}
-            placeholder={listening ? 'Listening' : question ? 'Anything, not about a project' : 'Ask Claude Code'}
+            aria-label={question ? 'Question' : 'What to do'}
+            placeholder={listening ? 'Listening' : question ? 'Ask anything; it is not a task' : 'What to do'}
             onChange={(event) => onText(event.target.value)}
           />
-          <div className="phone-task-ways">
-            <button type="button" className={listening ? 'on' : ''} onClick={dictating}>
-              <Icon name={listening ? 'stop' : 'mic'} size={18} />
-              {listening ? 'Stop' : 'Dictate'}
-            </button>
-            <button type="button" onClick={() => setRecording(true)}>
-              <Icon name="display" size={18} />
-              From a recording
-            </button>
-          </div>
           {recorded === undefined ? null : (
             <div className="phone-task-recorded">
               <Icon name="display" size={16} />
@@ -1068,9 +1066,17 @@ function PhoneNewTask({
               {looking === undefined ? null : <Preview src={looking} onClose={() => setLooking(undefined)} />}
             </div>
           )}
-          <button type="button" className="phone-task-photo" onClick={() => photos.current?.click()}>
-            <Icon name="photo" size={20} />
-            Add photo
+        </div>
+        {/* What adds to the text sits on the keyboard, as in Notes and Mail, so it is in reach while typing. */}
+        <div className="phone-task-tools">
+          <button type="button" className={listening ? 'on' : ''} aria-label={listening ? 'Stop dictating' : `Dictate in ${chat.settings.nativeLanguage}`} onClick={dictating}>
+            <Icon name={listening ? 'stop' : 'mic'} size={22} />
+          </button>
+          <button type="button" aria-label="From a recording" onClick={() => setRecording(true)}>
+            <Icon name="display" size={22} />
+          </button>
+          <button type="button" aria-label="Add photo" onClick={() => photos.current?.click()}>
+            <Icon name="photo" size={22} />
           </button>
           <input
             ref={photos}
@@ -1083,17 +1089,7 @@ function PhoneNewTask({
               event.target.value = ''
             }}
           />
-          {question ? (
-            <div className="phone-task-note">Not on the board. It is deleted a day after the last answer.</div>
-          ) : (
-            <>
-              <div className="phone-task-label">Goal</div>
-              <input className="phone-task-goal" value={goal} placeholder="When it is done, as a condition" onChange={(event) => onGoal(event.target.value)} />
-              <div className="phone-task-note">
-                {goal.trim() === '' ? 'Without a goal, it stops when Claude is done.' : 'Claude keeps working until this holds, then the card goes to In review.'}
-              </div>
-            </>
-          )}
+          {question ? <span className="phone-task-tools-note">Deleted a day after its last answer.</span> : null}
         </div>
       </div>
       {choosing ? (

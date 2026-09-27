@@ -9,6 +9,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { PhoneScope, ScopeButton } from './PhoneScope'
+import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
 import type { Macs } from '../macs'
 import { emptyProfile, projectName } from './project'
@@ -50,19 +51,20 @@ interface Waiting {
 export function PhoneBoard({
   chat,
   onNew,
-  onAsk,
   onScreen,
   onSay,
   onShortcut,
+  onShortcuts,
 }: {
   readonly chat: Chat
   readonly onNew: (how?: 'record') => void
-  readonly onAsk: () => void
   readonly onScreen: () => void
   /** Say it: what is said to GeckIt, read into orders. */
   readonly onSay: () => void
   /** A shortcut made from this conversation's first message. */
   readonly onShortcut: (session: ChatSession) => void
+  /** All shortcuts, from the end of the New task sheet: Settings, Shortcuts. */
+  readonly onShortcuts: () => void
 }): React.JSX.Element {
   const [shown, setShown] = useState<Column>(() => {
     const kept = localStorage.getItem('phoneColumn')
@@ -76,7 +78,6 @@ export function PhoneBoard({
   const [now, setNow] = useState(() => Date.now())
   const [waiting, setWaiting] = useState<ReadonlyMap<string, Waiting>>(new Map())
   const [pressed, setPressed] = useState<{ readonly session: ChatSession; readonly at: DOMRect } | undefined>()
-  const [deleting, setDeleting] = useState<ChatSession | undefined>()
   const [more, setMore] = useState<ChatSession | undefined>()
   const [renaming, setRenaming] = useState<ChatSession | undefined>()
   // The row whose actions are showing; a touch anywhere else puts it back.
@@ -92,10 +93,6 @@ export function PhoneBoard({
       return next
     })
   }
-  const [switching, setSwitching] = useState(false)
-  // Read again after a rename or a star; a scan, a switch or forgetting the Mac in use start the page over.
-  const [paired, setPaired] = useState(() => macs()?.list())
-  const thisMac = paired?.find((one) => one.current)
 
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60_000)
@@ -169,15 +166,12 @@ export function PhoneBoard({
     >
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-bar-row">
-          <span className="phone-bar-small">{thisMac?.name ?? 'GeckIt'}</span>
+          <span className="phone-bar-small">Tasks</span>
           <button type="button" className="phone-icon" aria-label="Say it" onClick={onSay}>
             <Icon name="mic" size={24} />
           </button>
           <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
             <Icon name="display" size={24} />
-          </button>
-          <button type="button" className="phone-icon" aria-label="Ask a question" onClick={onAsk}>
-            <Icon name="chat" size={24} />
           </button>
           {/* A long press offers the other ways to start one, as the arrow beside New task does on the Mac. */}
           <button
@@ -208,14 +202,7 @@ export function PhoneBoard({
         className="phone-list"
         onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 40)}
       >
-        {paired === undefined ? (
-          <h1 className="phone-large">GeckIt</h1>
-        ) : (
-          <button type="button" className="phone-large phone-macs" onClick={() => setSwitching(true)}>
-            {thisMac?.name ?? 'GeckIt'}
-            <Icon name="down" size={20} />
-          </button>
-        )}
+        <h1 className="phone-large">Tasks</h1>
         <div className={`phone-seg-bar${scrolled ? ' scrolled' : ''}`}>
           <div className="phone-seg" role="tablist" style={{ '--at': COLUMNS.findIndex((one) => one.column === shown) } as React.CSSProperties}>
             <span className="phone-seg-thumb" />
@@ -318,34 +305,6 @@ export function PhoneBoard({
                 </div>}
               </Fragment>
             ))}
-        {chat.questions.length === 0 ? null : (
-          <>
-            <div className="phone-head">Questions</div>
-            <div className="phone-group">
-              {[...chat.questions]
-                .sort((one, other) => other.at - one.at)
-                .map((session) => (
-                  <div key={session.id} className="phone-question">
-                    <button type="button" className="phone-row" onClick={() => chat.open({ kind: 'session', id: session.id })}>
-                      <RowBody chat={chat} session={session} now={now} waiting={undefined} />
-                    </button>
-                    <button
-                      type="button"
-                      className="phone-question-remove"
-                      aria-label={`Delete ${session.title}`}
-                      onClick={() => {
-                        tap('light')
-                        setDeleting(session)
-                      }}
-                    >
-                      <Icon name="trash" size={18} />
-                    </button>
-                  </div>
-                ))}
-            </div>
-            <div className="phone-note">Each is deleted a day after its last answer.</div>
-          </>
-        )}
         {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
           <div className="phone-foot">
             {[
@@ -358,18 +317,6 @@ export function PhoneBoard({
         )}
       </div>
 
-      {switching && paired !== undefined ? (
-        <MacList paired={paired} onChange={() => setPaired(macs()?.list())} onClose={() => setSwitching(false)} />
-      ) : null}
-      {deleting === undefined ? null : (
-        <Menu
-          anchor={new DOMRect()}
-          title={`Delete "${deleting.title === '' ? 'Untitled' : deleting.title}"?`}
-          choices={[{ value: 'delete', label: 'Delete', says: 'Nothing anywhere keeps a copy', danger: true }]}
-          onPick={() => chat.remove([deleting.id])}
-          onClose={() => setDeleting(undefined)}
-        />
-      )}
       {pressed === undefined ? null : (
         <Pressed
           chat={chat}
@@ -400,20 +347,14 @@ export function PhoneBoard({
       )}
       {renaming === undefined ? null : <Rename session={renaming} chat={chat} onClose={() => setRenaming(undefined)} />}
       {ways ? (
-        <Menu
-          anchor={new DOMRect()}
-          title="New task"
-          explained
-          choices={[
-            { value: 'write', icon: 'pencil', label: 'Write it', says: 'Project, what to do, a goal' },
-            { value: 'say', icon: 'mic', label: 'Say it', says: 'Tell GeckIt what to start, answer or mark' },
-            { value: 'record', icon: 'display', label: 'From a recording', says: 'A screen recording or a video; its words and frames become the task' },
-          ]}
-          onPick={(way) => {
+        <Ways
+          chat={chat}
+          onWay={(way) => {
             if (way === 'write') onNew()
             if (way === 'say') onSay()
             if (way === 'record') onNew('record')
           }}
+          onShortcuts={onShortcuts}
           onClose={() => setWays(false)}
         />
       ) : null}
@@ -439,7 +380,7 @@ function swipes(column: Column): { readonly lead: { status: SessionStatus | unde
   return { lead: { status: undefined, label: 'In progress', tone: 'back' }, trail: { status: 'review', label: 'In review', tone: 'review' } }
 }
 
-function RowBody({
+export function RowBody({
   chat,
   session,
   now,
