@@ -90,6 +90,7 @@ The host states are those of `remote-hosts.md`. On the phone:
 | Connecting, after 1 s | The dot pulses in the header | Nothing |
 | Lost, after 10 s | Amber line on its working rows; pill "Reconnecting to devbox"; Send greyed | Wait: the computer reconnects by itself |
 | Needs you | The sign-in sheet, over whatever is open, on the phone and on the computer at once; the first to answer takes it off both | Answer, or Not now |
+| Needs you, its key changed | Not a sheet: nothing to answer here. The line over the field and the row in Where read "devbox's key has changed. Check it on Alexs MacBook Pro." | Go to the computer; only there is the new key seen and trusted |
 | No Claude Code, Not signed in | The line over the field says the host needs you; it is fixed on the computer | Go to the computer |
 | The computer is asleep or out of reach | Nothing new: the app's own "Reconnecting" pill for the computer, as today | Wake the computer |
 
@@ -161,19 +162,22 @@ The 1 s and 10 s of `remote-hosts.md` hold on the phone too. Nothing new: the ph
 | Where, footer with hosts | "Folders on hosts are read over their connection." |
 | Folders on a host, while reading | "Reading devbox..." |
 | Folders, could not read | "Could not read /srv on devbox." |
+| Folders, empty | "No folders inside trailmap" |
 | Folders, add | "Add this folder" |
+| Row or field, its key changed | "devbox's key has changed. Check it on Alexs MacBook Pro." |
 | Sheet, password | "devbox asks for the password of leo." Field placeholder "Password"; switch "Remember on Alexs MacBook Pro"; "Sign in"; "Not now" |
 | Sheet, passphrase | "devbox asks for the passphrase of ~/.ssh/id_ed25519." "Unlock"; "Not now" |
 | Sheet, trust | "This is the first connection to devbox." Then the fingerprint on a line of its own; "Trust"; "Not now" |
 | Pill | "Reconnecting to devbox" |
 | Over the field while out of reach | "devbox is out of reach. What is typed stays until it is back" |
 | Port moved note | "devbox's 3000 is at 3001 on Alexs MacBook Pro" |
+| `localhost` link, could not carry | "Could not bring devbox's 3000 here. Check that devbox is connected, then open the link again.", a brief pill over the page, since there is nowhere else on the phone to say it |
 | Edit sheet button | "Save" |
 | Forget password | "Forget the password" |
 
 ## 9. Edge cases
 
-- **A sign-in question while the phone is closed.** It is a notification, as a waiting card is today: "devbox asks for a password"; opened, the sheet is up.
+- **A sign-in question while the phone is closed.** The phone hears nothing while it is closed: it is reached over the live link only, and iOS puts that to sleep in the background, for waiting cards as much as for this. Opened again, the sheet is up at once. On the computer the question comes up as it does now. A notification on a closed phone needs push, which is a feature of the whole phone app and not of hosts.
 - **The same question answered on the computer first.** The sheet on the phone goes down by itself.
 - **A host removed while its folders are open on the phone.** Back to Where, the host gone from it.
 - **Two folders named the same on two hosts.** Told apart by the label everywhere.
