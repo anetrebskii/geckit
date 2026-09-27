@@ -9,6 +9,8 @@ export interface PickedVideo {
 export interface Picking {
   /** Nothing when the picker was closed without a video. */
   readonly pick: () => Promise<PickedVideo | undefined>
+  /** The newest screen recording made after `since` (ms), with when it was made and a picture from its middle; nothing when there is none yet. */
+  readonly latest: (since: number) => Promise<(PickedVideo & { readonly made: number; readonly thumb: string }) | undefined>
   readonly words: (video: PickedVideo, language: string) => Promise<string>
   readonly frames: (video: PickedVideo, count: number) => Promise<readonly { readonly at: number; readonly data: string }[]>
   /** Bytes `from` up to `to` of the file, to be sent to the Mac a piece at a time without holding the whole video. */

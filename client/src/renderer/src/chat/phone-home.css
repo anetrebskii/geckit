@@ -500,6 +500,37 @@ html.keyboard .phone-tabs {
   color: var(--accent);
 }
 
+.phone-record-how {
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.phone-record-num {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--bg-raised);
+  border-radius: 50%;
+}
+
+.phone-record-thumb {
+  display: block;
+  max-width: 100%;
+  max-height: 42vh;
+  margin: 8px auto 0;
+  border-radius: 12px;
+}
+
+.phone-record-length {
+  text-align: center;
+}
+
 /* New task: dictation and a recording under the field. */
 .phone-task-recorded {
   display: flex;
