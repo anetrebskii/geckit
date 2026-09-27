@@ -89,6 +89,7 @@ import {
 } from './hosts/route'
 import type { Routes } from './hosts/route'
 import { claudeModels } from './sessions/models'
+import { Plans } from './plans'
 import { runsAt } from './hosts/runs'
 import { secretsAt } from './hosts/secrets'
 import { Forwards, localPort, withPort } from './hosts/forward'
@@ -131,6 +132,8 @@ const RECORD = ANYWHERE.record
 
 let sessions: Sessions | undefined
 let routes: Routes | undefined
+/** Every place's plan: this computer's, and each host that has a project on it. Built once, over `sessions` and `routes` however they stand when it is asked. */
+let plans: Plans | undefined
 /** How each host last stood, so a move into Connected is told apart from every other change. */
 const hostWasUp = new Map<string, boolean>()
 let cutOffered = false
@@ -159,6 +162,16 @@ const tell = (channel: string, ...args: unknown[]): void => {
 const tellChats = (channel: string, value: unknown): void => {
   shownChat()?.webContents.send(channel, value)
   shownPeer()?.webContents.send('peer:tell', channel, value)
+}
+
+/** Built once: `sessions` and `routes` are read through closures, so it works whatever they stand at when it is asked, including before either exists. */
+function buildPlans(): Plans {
+  return new Plans({
+    sessions: () => sessions,
+    routes: () => routes,
+    projects: () => getSettings().projects,
+    changed: (places) => tellChats('chat:plans', places),
+  })
 }
 
 const badge = (): void => {
@@ -204,6 +217,7 @@ function buildHosts(): Routes {
         if (was === true || view.state !== 'up') continue
         const roots = getSettings().projects.filter((root) => hostOf(root) === view.id)
         if (roots.length > 0) void sessions?.refresh(roots)
+        plans?.hostUp(view.id)
       }
       tell('hosts:changed', views)
     },
@@ -842,6 +856,7 @@ function wire(): void {
     void sessions?.measure()
     return sessions?.plan()
   })
+  ipcMain.handle('chat:plans', () => plans?.asked() ?? [])
   ipcMain.handle('chat:git', (event, root: string) =>
     gitFor(root, (state) => {
       if (!event.sender.isDestroyed()) event.sender.send('chat:git', { root, state })
@@ -1064,6 +1079,7 @@ function phoneCalls(): Record<string, PhoneCall> {
       void held()?.measure()
       return held()?.plan()
     },
+    'chat.plans': () => plans?.asked() ?? [],
     'chat.list': (root: string | undefined) => listChats(root, getSettings().projects),
     'chat.hidden': (older: boolean) => held()?.hidden(getSettings().projects, older) ?? [],
     'chat.bring': (id: string) => held()?.bring(id),
@@ -1199,6 +1215,7 @@ if (!app.requestSingleInstanceLock()) {
     routes = held
     const started = build(held)
     sessions = started
+    plans = buildPlans()
     void started.resumeQueues()
     // What was running on hosts when GeckIt closed is still running there, and is picked up. Their hosts are
     // reached first: one not connected is read from the copy kept here, and a conversation begun just before
@@ -1262,6 +1279,7 @@ app.on('window-all-closed', () => undefined)
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   sessions?.dispose()
+  plans?.dispose()
   // A debounced write still owed to a run's offset is not lost to the second it was waiting out.
   void routes?.runs.flush()
   routes?.forwards.dispose()

@@ -5,6 +5,7 @@ import type {
   ChatSession,
   ClaudeAccount,
   ModelsSaid,
+  PlaceUsage,
   PlanUsage,
   SessionImage,
   SessionItem,
@@ -92,6 +93,8 @@ export interface Chat {
   readonly account: ClaudeAccount | undefined
   /** How much of the plan is spent, once a turn has said. */
   readonly plan: PlanUsage | undefined
+  /** Every place's plan, by the account it runs on: this computer's and each host's with projects here. */
+  readonly plans: readonly PlaceUsage[]
   readonly models: ModelsSaid
   /** The mode and model the next message goes with, on a new session or an old one. */
   readonly mode: SessionMode
@@ -201,6 +204,7 @@ export function useChat(): Chat {
   }, [uploads])
   const [account, setAccount] = useState<ClaudeAccount | undefined>()
   const [plan, setPlan] = useState<PlanUsage | undefined>()
+  const [plans, setPlans] = useState<readonly PlaceUsage[]>([])
   // Which Claude Code the list is of, this computer's ('') or a host's by id: each has its own models, and a list is never shown for the other.
   const [models, setModels] = useState<{ readonly on: string; readonly said: ModelsSaid }>({ on: '', said: 'unasked' })
   const [focusSeed, setFocusSeed] = useState(0)
@@ -256,16 +260,21 @@ export function useChat(): Chat {
   // coming to the front, and every few minutes while the window is seen.
   useEffect(() => {
     const ask = (): void => {
-      if (document.visibilityState === 'visible') void window.geckit.chat.plan().then(setPlan)
+      if (document.visibilityState !== 'visible') return
+      void window.geckit.chat.plan().then(setPlan)
+      // A computer from before plans were measured per account says nothing here, and its one plan is still shown.
+      void window.geckit.chat.plans().then(setPlans, () => undefined)
     }
     ask()
     const every = setInterval(ask, PLAN_EVERY)
     window.addEventListener('focus', ask)
     const off = window.geckit.chat.onPlan(setPlan)
+    const offPlans = window.geckit.chat.onPlans(setPlans)
     return () => {
       clearInterval(every)
       window.removeEventListener('focus', ask)
       off()
+      offPlans()
     }
   }, [])
 
@@ -784,6 +793,7 @@ export function useChat(): Chat {
     uploading: (uploads[keyOf(shown)] ?? 0) > 0,
     account,
     plan,
+    plans,
     models: models.said,
     mode,
     model,

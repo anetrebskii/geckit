@@ -164,6 +164,22 @@ export interface PlanUsage {
   readonly sevenDay?: PlanWindow
 }
 
+/**
+ * One account's plan as a place that runs on it measured it: this computer, or
+ * a host. A plan is an account's, not a computer's, so two places signed in to
+ * the same account say the same `account`, and are one line wherever plans are
+ * shown; a host on another account is a line of its own.
+ */
+export interface PlaceUsage {
+  /** '' for this computer, a host's id otherwise. */
+  readonly place: string
+  /** Who is signed in there, as an opaque key the same for the same account anywhere; absent where it could not be read. */
+  readonly account?: string
+  /** "Team", "Max": the tool's own word for the plan. */
+  readonly plan?: string
+  readonly usage?: PlanUsage
+}
+
 /** The shortcuts that work in any application, as Electron registers them. */
 export const ANYWHERE = {
   correct: 'CommandOrControl+C+D',
@@ -395,6 +411,8 @@ export interface ClaudeAccount {
   readonly plan?: string
   /** Signed in, and not with a plan: a key, a token, a Console account, a cloud provider. */
   readonly key?: boolean
+  /** Who is signed in, as an opaque key: the same account on another computer says the same. */
+  readonly who?: string
   /** The Claude Code that answers, which is also what the models and their windows were asked of. */
   readonly program?: ClaudeProgram
 }
@@ -458,8 +476,8 @@ export function modelName(id: string): string {
 
 /** Whose plan a question is about to be spent from, for the line over the composer. */
 export function planLine(account: ClaudeAccount | undefined): string {
-  if (account === undefined || !account.here) return 'claude is not on this machine'
-  if (account.signedIn === undefined) return 'On this machine'
+  if (account === undefined || !account.here) return 'claude is not on this computer'
+  if (account.signedIn === undefined) return 'On this computer'
   if (!account.signedIn) return 'Nobody is signed in. Run claude auth login in a terminal.'
   if (account.key === true) return 'Signed in with an API key, not a plan'
   return account.plan === undefined ? 'Your Claude plan' : `Your Claude ${account.plan} plan`
