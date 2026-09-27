@@ -219,6 +219,8 @@ export function foldersScript(path: string | undefined): string {
   return [
     path === undefined || path === '' ? 'cd "$HOME"' : `cd ${quote(path)} 2>/dev/null || cd "$HOME"`,
     'pwd -P',
+    'echo "@os $(uname -s 2>/dev/null)"',
+    'echo "@home $HOME"',
     'if [ -e .git ]; then echo "@git"; fi',
     'for e in * .[!.]*; do',
     '  [ -d "$e" ] || continue',

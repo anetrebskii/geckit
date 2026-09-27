@@ -355,6 +355,8 @@ export class Hosts {
     if (ran.code !== 0 || !resolved.startsWith('/')) return undefined
     const root = remoteRoot(id, resolved)
     this.#deps.remember(root)
+    // It was just reached, so it is shown as it stands rather than as not connected.
+    void this.connect(id)
     return root
   }
 

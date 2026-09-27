@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 
-import type { Folders } from '../../../shared/api'
 import { forHowLong, stateLine, targetLine } from '../../../shared/hosts'
 import type { HostPrompt, HostState, HostView } from '../../../shared/hosts'
-import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
-import { useEscape, useMinute } from './useHosts'
+import { useMinute } from './useHosts'
 
 /** How a host stands, as a dot: solid when connected, hollow when not, amber out of reach, red when it needs the person. */
 export function HostDot({ state }: { readonly state: HostState }): React.JSX.Element {
@@ -125,102 +123,6 @@ export function HostTroubleCard({ host }: { readonly host: HostView }): React.JS
         <button type="button" className="quiet" onClick={() => window.geckit.hosts.reconnect(host.id)}>
           Try again
         </button>
-      </div>
-    </div>
-  )
-}
-
-/** Choose a folder on a host: its folders read from there as they are opened, the ones holding a checkout marked. */
-export function HostFolders({ host, onClose, onAdded }: { readonly host: HostView; readonly onClose: () => void; readonly onAdded: (root: string) => void }): React.JSX.Element {
-  const [folders, setFolders] = useState<Folders | undefined>()
-  const [path, setPath] = useState('')
-  const [trouble, setTrouble] = useState<string | undefined>()
-  const [adding, setAdding] = useState(false)
-
-  const open = (where: string | undefined): void => {
-    setTrouble(undefined)
-    read(where)
-  }
-  const read = (where: string | undefined): void => {
-    void window.geckit.hosts.folders(host.id, where).then((found) => {
-      if (found === undefined) {
-        setTrouble(`Could not read the folders on ${host.name}.`)
-        return
-      }
-      setFolders(found)
-      setPath(found.path)
-    })
-  }
-  // The host's home is read once, as the dialog opens.
-  const first = useRef(host.id)
-  useEffect(() => {
-    void window.geckit.hosts.folders(first.current, undefined).then((found) => {
-      if (found === undefined) {
-        setTrouble('Could not read the folders on the host.')
-        return
-      }
-      setFolders(found)
-      setPath(found.path)
-    })
-  }, [])
-
-  useEscape(onClose)
-
-  const add = (): void => {
-    setAdding(true)
-    void window.geckit.hosts.addFolder(host.id, path).then((root) => {
-      setAdding(false)
-      if (root === undefined) {
-        setTrouble(`${path} is not a folder on ${host.name}.`)
-        return
-      }
-      onAdded(root)
-      onClose()
-    })
-  }
-
-  return (
-    <div className="dialog-scrim" onMouseDown={onClose}>
-      <div className="dialog host-folders" onMouseDown={(event) => event.stopPropagation()}>
-        <h2>Choose a folder on {host.name}</h2>
-        <div className="field">
-          <label htmlFor="host-folder">Folder</label>
-          <input
-            id="host-folder"
-            type="text"
-            spellCheck={false}
-            value={path}
-            onChange={(event) => setPath(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') open(path)
-            }}
-          />
-        </div>
-        <div className="host-tree">
-          {folders?.up === undefined ? null : (
-            <button type="button" onClick={() => open(folders.up)}>
-              <Icon name="left" size={12} /> <span className="name">..</span>
-            </button>
-          )}
-          {folders === undefined ? <div className="empty">Reading {host.name}...</div> : null}
-          {folders?.folders.map((one) => (
-            <button key={one.path} type="button" onClick={() => open(one.path)} onDoubleClick={() => open(one.path)}>
-              <Icon name="folder" size={12} />
-              <span className="name">{one.name}</span>
-              {one.git ? <span className="git">git</span> : null}
-            </button>
-          ))}
-        </div>
-        <span className="hint">Read from {host.name} as you open them. Folders with git are marked.</span>
-        {trouble === undefined ? null : <div className="error">{trouble}</div>}
-        <div className="dialog-actions">
-          <button type="button" className="quiet" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="button" className="primary" disabled={adding || path === ''} onClick={add}>
-            {adding ? 'Adding...' : `Add ${path.split('/').filter((part) => part !== '').pop() ?? 'folder'}`}
-          </button>
-        </div>
       </div>
     </div>
   )
