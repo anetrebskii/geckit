@@ -2723,6 +2723,15 @@ button.tag:hover {
   margin-bottom: 6px;
 }
 
+.queued-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 104px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .queued-head {
   padding: 0 4px;
   font-size: 11px;
@@ -2793,6 +2802,11 @@ button.tag:hover {
   padding: 11px 16px;
   font-size: 15px;
   border-radius: 12px;
+}
+
+.queued-bare {
+  font-style: italic;
+  color: var(--text-faint);
 }
 
 .queued-more {
@@ -6131,6 +6145,11 @@ html.phone .composer-inner.command textarea {
 /* A thumb edits, starts elsewhere or cancels a queued message, and Safari zooms into an edit field under 16px. */
 html.phone .queued-head {
   font-size: 13px;
+}
+
+/* Two rows and part of a third, so a longer queue shows it scrolls and the transcript keeps the screen. */
+html.phone .queued-list {
+  max-height: 112px;
 }
 
 html.phone .queued-one {
