@@ -128,7 +128,6 @@ export class Hosts implements HostsLike {
       const held = this.#held.get(host.id)
       const version = held?.version ?? host.seen?.version
       const plan = held?.plan ?? host.seen?.plan
-      const machine = host.seen?.machine
       return {
         id: host.id,
         name: host.name,
@@ -141,7 +140,6 @@ export class Hosts implements HostsLike {
         ...(held?.since === undefined ? {} : { since: held.since }),
         ...(version === undefined ? {} : { version }),
         ...(plan === undefined ? {} : { plan }),
-        ...(machine === undefined ? {} : { machine }),
         ...(held?.problem === undefined ? {} : { problem: held.problem }),
         remembered: this.#deps.secrets.has(host.id),
         canRemember,
@@ -229,7 +227,7 @@ export class Hosts implements HostsLike {
 
   #keepSeen(host: HostConfig, checked: Checked): void {
     const seen = { ...host.seen, ...seenOf(checked) }
-    if (host.seen?.version === seen.version && host.seen?.plan === seen.plan && host.seen?.machine === seen.machine) return
+    if (host.seen?.version === seen.version && host.seen?.plan === seen.plan) return
     const hosts = this.#deps.hosts()
     if (!hosts.some((one) => one.id === host.id)) return
     this.#deps.save(hosts.map((one) => (one.id === host.id ? { ...one, seen } : one)))
@@ -554,7 +552,6 @@ export class Hosts implements HostsLike {
 const seenOf = (checked: Checked): NonNullable<HostConfig['seen']> => ({
   ...(checked.version === undefined ? {} : { version: checked.version }),
   ...(checked.account?.plan === undefined ? {} : { plan: checked.account.plan }),
-  ...(checked.machine === undefined ? {} : { machine: checked.machine }),
 })
 
 /** A word for the local terminal's shell, quoted the way sh quotes. */

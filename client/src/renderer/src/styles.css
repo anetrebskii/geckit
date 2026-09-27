@@ -8030,7 +8030,7 @@ html.phone .preview-bar .icon-button {
   color: var(--text-dim);
 }
 
-/* A host's question, over whatever is open: what it asks, from where, the field, and the one thing to do. */
+/* A host's question, over whatever is open: what it asks, the field, and the one thing to do. */
 .host-sheet .sheet-body {
   display: flex;
   flex-direction: column;
@@ -8042,13 +8042,6 @@ html.phone .preview-bar .icon-button {
   padding: 0 8px;
   font-size: 17px;
   font-weight: 600;
-  text-align: center;
-}
-
-.host-sheet-from {
-  margin-top: -6px;
-  font-size: 13px;
-  color: var(--text-faint);
   text-align: center;
 }
 

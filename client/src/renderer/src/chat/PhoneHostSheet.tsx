@@ -31,7 +31,6 @@ export function PhoneHostSheet({ prompt, host }: { readonly prompt: HostPrompt; 
   return (
     <Sheet onClose={notNow} cancel={false} className="host-sheet">
       <div className="host-sheet-ask">{words}</div>
-      <div className="host-sheet-from">Asked through {computer}</div>
       {print === undefined ? null : <div className="host-sheet-print">{print}</div>}
       {typed ? (
         <div className="sheet-field">

@@ -28,7 +28,7 @@ export interface HostConfig {
   /** A password is kept for it. */
   readonly remember?: boolean
   /** What it last said about itself, shown while it is not connected. */
-  readonly seen?: { readonly version?: string; readonly plan?: string; readonly machine?: string }
+  readonly seen?: { readonly version?: string; readonly plan?: string }
 }
 
 /** What the Add a host sheet sends: a host not yet reached, and the password typed, if any. */
@@ -66,8 +66,6 @@ export interface HostView {
   readonly since?: number
   readonly version?: string
   readonly plan?: string
-  /** What the host calls itself, as `machineName` says it: how a host the phone is also paired with is known. */
-  readonly machine?: string
   /** The line for a state that needs the person, as it is shown. */
   readonly problem?: string
   readonly remembered: boolean
@@ -230,9 +228,5 @@ export const outOfReach = (state: HostState | undefined): boolean => state === '
 /** The second line of a working or asking conversation whose host is out of reach. */
 export const outOfReachLine = (name: string): string => `${name} is out of reach. Still working there`
 
-/**
- * A computer's own name as people read it: its hostname without `.local`,
- * dashes as spaces. The phone is told a computer by this name, and a host that
- * says the same about itself is that computer.
- */
+/** A computer's own name as people read it: its hostname without `.local`, dashes as spaces, as the phone is told it. */
 export const machineName = (hostname: string): string => hostname.trim().replace(/\.local\.?$/i, '').replaceAll('-', ' ')

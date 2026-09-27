@@ -530,7 +530,6 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
         <button data-j="password">devbox asks for a password</button>
         <button data-j="trust">First connection: trust</button>
         <button data-j="add">Add a project on a host</button>
-        <button data-j="hosts">Settings, Hosts</button>
         <button data-j="reset">Start over</button>
       </div>
     </div>
@@ -551,7 +550,7 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
         <tr><td>Conversation</td><td>The host and its dot under the title; the pill while it reconnects</td></tr>
         <tr><td>Sign in</td><td>A sheet over anything, answered here or on the computer</td></tr>
         <tr><td>Add a project</td><td>Where first: the computer by name, then each host</td></tr>
-        <tr><td>Settings</td><td>Hosts: the paired ones, and Over SSH to see, reconnect, disconnect. One word for every other machine</td></tr>
+        <tr><td>Settings</td><td>Host: the one it is paired with, as before, saying host where it said Mac. The computer's own hosts are only labels here</td></tr>
         <tr><td>localhost</td><td>A host's page opens through the computer</td></tr>
       </table>
     </div>
@@ -685,47 +684,16 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
   const cell = (label, val, attrs = '') => `<button class="cell" ${attrs}><span>${label}</span><span class="val">${val}${ICONS.right}</span></button>`
   const drawSettings = () => {
     $('set-list').innerHTML = `
-      <div class="head">Hosts</div><div class="group"><button class="cell"><span class="words"><span>${MAC}</span><small>2 hosts paired</small></span><span class="val">${ICONS.right}</span></button>${cell('Over SSH', String(hosts.length), 'id="hosts-cell"')}</div>
+      <div class="head">Host</div><div class="group"><button class="cell"><span class="words"><span>${MAC}</span><small>2 hosts paired</small></span><span class="val">${ICONS.right}</span></button></div>
       <div class="head">Board</div><div class="group">${cell('Profiles', 'All projects')}${cell('Projects', String(projects.length), 'id="projects-cell"')}</div>
       <div class="head">New tasks</div><div class="group">${cell('Mode', 'Auto')}</div>
       <div class="foot"></div>`
   }
   $('set-list').addEventListener('click', (e) => {
-    if (e.target.closest('#hosts-cell')) openHosts()
     if (e.target.closest('#projects-cell')) openProjects()
   })
 
   const hostCell = (h, attrs) => `<button class="cell" ${attrs}><span class="lead"><i class="hdot ${h.state}"></i></span><span class="words"><span>${esc(h.name)}</span><small${h.state === 'needs' ? ' class="state-needs"' : ''}>${esc(h.state === 'up' ? h.target : stateWord(h))}</small></span><span class="val">${ICONS.right}</span></button>`
-  const openHosts = () => push('Over SSH', 'Settings', `
-      <div class="head">Through</div><div class="group"><div class="cell"><span class="lead">${ICONS.display}</span><span class="words"><span>${MAC}</span><small>Claude Code 2.1.283 · Claude Max</small></span></div></div>
-      <div class="head">Reached over SSH</div><div class="group">${hosts.map((h) => hostCell(h, `data-host="${h.id}"`)).join('')}</div>
-      <div class="note">Hosts over SSH are added on ${MAC}, where the SSH keys are.</div>`, (el) => {
-      el.addEventListener('click', (e) => { const b = e.target.closest('[data-host]'); if (b) openHost(host(b.dataset.host)) })
-    })
-  const openHost = (h) => {
-    const draw = () => `
-      <div class="group" style="margin-top:16px">
-        <div class="cell"><span>Status</span><span class="val" style="gap:6px"><i class="hdot ${h.state}"></i>${esc(stateWord(h))}</span></div>
-        <div class="cell"><span>Address</span><span class="val">${esc(h.target)}</span></div>
-        <div class="cell"><span>Claude Code</span><span class="val">${esc(h.cc)}</span></div>
-        <div class="cell"><span>Plan</span><span class="val">Claude ${esc(h.plan)}</span></div>
-      </div>
-      <div class="group" style="margin-top:28px">
-        ${h.state === 'idle' ? '<button class="cell accent" data-act="connect"><span>Connect</span></button>' : '<button class="cell accent" data-act="reconnect"><span>Reconnect</span></button><button class="cell accent" data-act="disconnect"><span>Disconnect</span></button>'}
-      </div>
-      <div class="note">Conversations on ${esc(h.name)} run there and keep working when this phone or ${MAC} is away.</div>`
-    const el = push(h.name, 'Over SSH', draw(), (el) => {
-      el.addEventListener('click', (e) => {
-        const act = e.target.closest('[data-act]')?.dataset.act
-        if (!act) return
-        if (act === 'disconnect') h.state = 'idle'
-        else { h.state = 'connecting'; setTimeout(() => { h.state = 'up'; h.since = 'a moment'; refresh() }, 1400) }
-        refresh()
-      })
-    })
-    el.dataset.hostPage = h.id
-  }
-
   const openProjects = () => push('Projects', 'Settings', projectsHtml(), (el) => {
     el.addEventListener('click', (e) => { if (e.target.closest('[data-add]')) openWhere() })
   })
@@ -786,7 +754,7 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
     const body = kind === 'trust'
       ? `<div class="ask-title">This is the first connection to ${esc(h.name)}.</div><div class="from">Its key</div><div class="print">SHA256:zQ5kk2Hs0/g6KsC//BZYx9/x9Jmudcwr6UfLj7/aiSc</div>
          <div class="stack"><button class="btn-fill" data-yes>Trust</button><button class="btn-plain" data-no>Not now</button></div>`
-      : `<div class="ask-title">${esc(h.name)} asks for the password of leo.</div><div class="from">Asked through ${MAC}</div>
+      : `<div class="ask-title">${esc(h.name)} asks for the password of leo.</div>
          <input class="secure" type="password" placeholder="Password" aria-label="Password" />
          <div class="remember"><span>Remember on ${MAC}</span><button class="switch on" role="switch" aria-checked="true" data-rem><span></span></button></div>
          <div class="stack"><button class="btn-fill" data-yes disabled style="opacity:.45">Sign in</button><button class="btn-plain" data-no>Not now</button></div>`
@@ -835,7 +803,6 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
     if (j === 'password') signIn(devbox, 'password')
     if (j === 'trust') signIn(host('staging'), 'trust')
     if (j === 'add') { closeSheet(); popAll(); closeConvo(); setTab('settings'); asking = false; openProjects(); setTimeout(openWhere, 380) }
-    if (j === 'hosts') { closeSheet(); popAll(); closeConvo(); setTab('settings'); openHosts() }
     if (j === 'reset') reset()
   })
   document.getElementById('themes').addEventListener('click', (e) => {
@@ -857,7 +824,6 @@ pre.code { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(-
     if (scene === 'convo-drop') { host('devbox').state = 'lost'; refresh(); openConvo(tasks[0]) }
     else if (scene === 'folders') { setTab('settings'); openProjects(); setTimeout(openWhere, 380); setTimeout(() => openFolders(host('devbox'), '/home/leo'), 800) }
     else if (scene === 'web') { openConvo(tasks[0]); setTimeout(() => { openWeb(); window.scrollTo(0, 0) }, 400) }
-    else if (scene === 'host') { setTab('settings'); openHosts(); setTimeout(() => openHost(host('devbox')), 400) }
     else document.querySelector(`[data-j="${scene}"]`)?.click()
   }, 200)
   const theme = new URLSearchParams(location.search).get('theme')

@@ -1,6 +1,5 @@
 import type { ClaudeAccount, Folders } from '../../shared/api'
 import type { KnownHost } from '../../shared/hosts'
-import { machineName } from '../../shared/hosts'
 import { accountFrom, versionOf } from '../sessions/account'
 import { readCheck } from './run-script'
 
@@ -77,17 +76,14 @@ export function readFolders(out: string): Folders {
 /** What a host's check says: whether Claude Code is there, which version, and who is signed in. */
 export interface Checked {
   readonly missing: boolean
-  /** Its hostname, as `machineName` reads it. */
-  readonly machine?: string
   readonly version?: string
   readonly account?: ClaudeAccount
 }
 
 export function readChecked(out: string): Checked {
   const said = readCheck(out)
-  const machine = said.machine === undefined ? {} : { machine: machineName(said.machine) }
-  if (said.missing) return { missing: true, ...machine }
+  if (said.missing) return { missing: true }
   const version = said.version === undefined ? undefined : versionOf(said.version)
   const account = said.auth === undefined ? undefined : accountFrom(said.auth)
-  return { missing: false, ...machine, ...(version === undefined ? {} : { version }), ...(account === undefined ? {} : { account }) }
+  return { missing: false, ...(version === undefined ? {} : { version }), ...(account === undefined ? {} : { account }) }
 }

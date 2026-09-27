@@ -1,34 +1,23 @@
 import { useEffect, useState } from 'react'
 
 import type { Folders as FolderList } from '../../../shared/api'
-import { forHowLong, remoteRoot, stateLine, targetLine } from '../../../shared/hosts'
-import type { HostState, HostView } from '../../../shared/hosts'
+import { remoteRoot, stateLine } from '../../../shared/hosts'
+import type { HostView } from '../../../shared/hosts'
 import { macs } from '../macs'
 import { tap } from '../tap'
 import { HostDot } from './HostParts'
-import { Cell, Page } from './PhoneKit'
+import { Cell } from './PhoneKit'
 import { useMinute } from './useHosts'
 import type { Chat } from './useChat'
 
 /**
- * Hosts on the phone. Every other machine is a host, reached one of two ways:
- * paired with the phone, where GeckIt runs and the phone switches between
- * them, or over SSH from the host it works through, which holds the keys and
- * is on their network. So these are seen, connected and their folders added
- * here, and added and changed there. The host worked through goes by its own
- * name: on the phone nothing is Local. See docs/ux/remote-hosts-phone.md.
+ * Hosts on the phone. The phone is paired with a host where GeckIt runs and
+ * takes everything from it, the projects it has on other hosts too: those are
+ * only labels here, and a folder on one is chosen the way one of its own is.
+ * They are connected and managed on that host. The host the phone works
+ * through goes by its own name: on the phone nothing is Local.
+ * See docs/ux/remote-hosts-phone.md.
  */
-
-/** How a host stands in a word or two, for a row with room for no more; since when is a row of its own. */
-const STATE_WORD: Readonly<Record<HostState, string>> = {
-  idle: 'Not connected',
-  connecting: 'Connecting',
-  up: 'Connected',
-  lost: 'Out of reach',
-  needs: 'Needs you',
-  missing: 'No Claude Code',
-  signin: 'Not signed in',
-}
 
 /** The name of the host this phone is working through now, where it has one. */
 export const pairedName = (): string | undefined => macs()?.list().find((one) => one.current)?.name
@@ -36,20 +25,8 @@ export const pairedName = (): string | undefined => macs()?.list().find((one) =>
 /** What the phone calls the host it works through, in a sentence. */
 export const computerName = (): string => pairedName() ?? 'the host'
 
-/**
- * The paired host a host over SSH is, where GeckIt runs on it too: known by
- * the name it gives itself, which both the pairing and the SSH check read.
- */
-export function pairedAs(host: HostView): { readonly name: string; readonly at: number; readonly current: boolean } | undefined {
-  if (host.machine === undefined) return undefined
-  const at = (macs()?.list() ?? []).findIndex((one) => (one.told ?? one.name) === host.machine)
-  const one = macs()?.list()[at]
-  return one === undefined ? undefined : { name: one.name, at, current: one.current }
-}
-
-/** A host as a row: its dot, its name, and who it signs in as or how it stands when that is not connected. */
+/** A host as a row: its dot and its name, and how it stands where it is not connected. */
 function HostCell({ host, now, onPress }: { readonly host: HostView; readonly now: number; readonly onPress: () => void }): React.JSX.Element {
-  const paired = pairedAs(host)
   return (
     <Cell
       label={
@@ -58,146 +35,22 @@ function HostCell({ host, now, onPress }: { readonly host: HostView; readonly no
           {host.name}
         </span>
       }
-      says={paired !== undefined && !paired.current ? 'Also paired with this phone' : host.state === 'up' ? targetLine(host) : stateLine(host, now)}
+      {...(host.state === 'up' ? {} : { says: stateLine(host, now) })}
       onPress={onPress}
     />
   )
 }
 
-/** Settings, Hosts: the computer first, then each host. */
-export function PhoneHostList({
-  chat,
-  back,
-  onBack,
-  onOpen,
-}: {
-  readonly chat: Chat
-  readonly back: string
-  readonly onBack: () => void
-  readonly onOpen: (id: string) => void
-}): React.JSX.Element {
-  const now = useMinute()
-  const computer = computerName()
-  const program = chat.account?.program?.version
-  return (
-    <Page title="Over SSH" back={back} onBack={onBack}>
-      <div className="phone-head">Through</div>
-      <div className="phone-group">
-        <Cell
-          label={computer}
-          icon="display"
-          says={[program === undefined ? undefined : `Claude Code ${program}`, chat.account?.plan === undefined ? undefined : `Claude ${chat.account.plan}`]
-            .filter((one) => one !== undefined)
-            .join(' · ')}
-        />
-      </div>
-      <div className="phone-head">Reached over SSH</div>
-      <div className="phone-group">
-        {chat.hosts.map((host) => (
-          <HostCell key={host.id} host={host} now={now} onPress={() => onOpen(host.id)} />
-        ))}
-      </div>
-      <div className="phone-note">Hosts over SSH are added on {computer}, where the SSH keys are.</div>
-    </Page>
-  )
-}
-
-/** One host: how it stands and since when, what it runs, and Connect or Reconnect and Disconnect. */
-export function PhoneHost({ chat, id, back, onBack }: { readonly chat: Chat; readonly id: string; readonly back: string; readonly onBack: () => void }): React.JSX.Element {
-  const now = useMinute()
-  const host = chat.hosts.find((one) => one.id === id)
-  const computer = computerName()
-  if (host === undefined) return <Page title="Host" back={back} onBack={onBack}>{null}</Page>
-  const paired = pairedAs(host)
-  const down = host.state === 'idle' || host.state === 'needs' || host.state === 'missing' || host.state === 'signin'
-  const trouble = host.state === 'missing' || host.state === 'signin'
-  return (
-    <Page title={host.name} back={back} onBack={onBack}>
-      <div className="phone-group">
-        <Cell
-          label="Status"
-          value={
-            <span className="phone-host-name">
-              <HostDot state={host.state} />
-              {STATE_WORD[host.state]}
-            </span>
-          }
-        />
-        {host.state === 'up' && host.since !== undefined ? <Cell label="Connected for" value={forHowLong(now - host.since)} /> : null}
-        <Cell label="Address" value={targetLine(host)} />
-        <Cell label="Claude Code" value={host.version ?? '-'} />
-        {host.plan === undefined ? null : <Cell label="Plan" value={`Claude ${host.plan}`} />}
-      </div>
-      {(trouble || host.state === 'needs') && host.problem !== undefined ? (
-        <div className="phone-note">
-          {host.problem}
-          {host.state === 'missing' ? ` Install it from ${computer}.` : host.state === 'signin' ? ` Sign in on ${host.name} from ${computer}.` : ''}
-        </div>
-      ) : null}
-      <div className="phone-group phone-form-group">
-        {down ? (
-          <Cell
-            label="Connect"
-            accent
-            onPress={() => {
-              tap('light')
-              window.geckit.hosts.reconnect(host.id)
-            }}
-          />
-        ) : (
-          <>
-            <Cell
-              label="Reconnect"
-              accent
-              onPress={() => {
-                tap('light')
-                window.geckit.hosts.reconnect(host.id)
-              }}
-            />
-            <Cell
-              label="Disconnect"
-              accent
-              onPress={() => {
-                tap('light')
-                window.geckit.hosts.disconnect(host.id)
-              }}
-            />
-          </>
-        )}
-      </div>
-      <div className="phone-note">Conversations on {host.name} run there and keep working while this phone or {computer} is away.</div>
-      {paired === undefined || paired.current ? null : (
-        <>
-          <div className="phone-group phone-form-group">
-            <Cell
-              label={`Switch to ${paired.name}`}
-              accent
-              onPress={() => {
-                tap('light')
-                macs()?.switchTo(paired.at)
-              }}
-            />
-          </div>
-          <div className="phone-note">GeckIt runs on {host.name} too, and this phone is paired with it: switched to, its own board is here, without {computer} in between.</div>
-        </>
-      )}
-    </Page>
-  )
-}
-
-/** Where a new project is: the computer by its name, then each host with how it stands. */
+/** Where a new project is: the host the phone works through, by its name, then the other hosts it has projects on. */
 export function PhoneWhere({ chat, onComputer, onHost }: { readonly chat: Chat; readonly onComputer: () => void; readonly onHost: (id: string) => void }): React.JSX.Element {
   const now = useMinute()
   return (
-    <>
-      <div className="phone-group">
-        <Cell label={computerName()} icon="display" says="Its folders" onPress={onComputer} />
-        {chat.hosts.map((host) => (
-          <HostCell key={host.id} host={host} now={now} onPress={() => onHost(host.id)} />
-        ))}
-      </div>
-      <div className="phone-note">Folders on hosts are read over their connection.</div>
-    </>
+    <div className="phone-group">
+      <Cell label={computerName()} icon="display" onPress={onComputer} />
+      {chat.hosts.map((host) => (
+        <HostCell key={host.id} host={host} now={now} onPress={() => onHost(host.id)} />
+      ))}
+    </div>
   )
 }
 
