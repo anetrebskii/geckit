@@ -624,6 +624,7 @@ function wire(): void {
   )
   ipcMain.on('chat:stop', (_event, id: string) => sessions?.stop(id))
   ipcMain.handle('chat:unqueue', (_event, id: string, queued: string) => sessions?.unqueue(id, queued))
+  ipcMain.handle('chat:queuedPicture', (_event, id: string, queued: string, index: number) => sessions?.queuedPicture(id, queued, index))
   ipcMain.on('chat:requeue', (_event, id: string, queued: string, text: string) => sessions?.requeue(id, queued, text))
   ipcMain.handle('chat:delegate', (_event, id: string, queued: string, history: boolean) =>
     sessions?.delegate(id, queued, history),
@@ -804,6 +805,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.answer': (id: string, card: string, answer: CardAnswer | string) => held()?.answer(id, card, answer),
     'chat.stop': (id: string) => held()?.stop(id),
     'chat.unqueue': (id: string, queued: string) => held()?.unqueue(id, queued),
+    'chat.queuedPicture': (id: string, queued: string, index: number) => held()?.queuedPicture(id, queued, index),
     'chat.requeue': (id: string, queued: string, text: string) => held()?.requeue(id, queued, text),
     'chat.delegate': (id: string, queued: string, history: boolean) => held()?.delegate(id, queued, history),
     'chat.mode': (id: string, mode: SessionMode) => held()?.mode(id, mode),

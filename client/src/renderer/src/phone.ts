@@ -518,6 +518,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       answer: (id, card, answer) => send('chat.answer', id, card, answer),
       stop: (id) => send('chat.stop', id),
       unqueue: (id, queued) => call('chat.unqueue', id, queued),
+      queuedPicture: (id, queued, index, width) =>
+        call<SessionImage | null>('chat.queuedPicture', id, queued, index, width).then((one) => one ?? undefined),
       requeue: (id, queued, text) => send('chat.requeue', id, queued, text),
       delegate: (id, queued, history) => call('chat.delegate', id, queued, history),
       mode: (id, mode) => send('chat.mode', id, mode),

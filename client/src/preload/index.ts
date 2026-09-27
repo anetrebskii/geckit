@@ -149,6 +149,9 @@ const geckit = {
     stop: (id: string): void => ipcRenderer.send('chat:stop', id),
     /** Takes a message out of the queue before it goes, and gives it back. */
     unqueue: (id: string, queued: string): Promise<SessionMessage | undefined> => ipcRenderer.invoke('chat:unqueue', id, queued),
+    /** A picture waiting with a queued message; the phone is sent it at the width it is drawn, this window whole. */
+    queuedPicture: (id: string, queued: string, index: number, _width: number): Promise<SessionImage | undefined> =>
+      ipcRenderer.invoke('chat:queuedPicture', id, queued, index),
     /** A message waiting in the queue, said again in other words; it keeps its place and its pictures. */
     requeue: (id: string, queued: string, text: string): void => ipcRenderer.send('chat:requeue', id, queued, text),
     /** Starts a message waiting in the queue as a new conversation, empty or with this one's history as it was then, and says which. */

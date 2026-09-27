@@ -2804,6 +2804,25 @@ button.tag:hover {
   border-radius: 12px;
 }
 
+.queued-picture {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg-raised);
+  border: 0;
+  border-radius: 5px;
+  cursor: zoom-in;
+}
+
+.queued-picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .queued-bare {
   font-style: italic;
   color: var(--text-faint);
@@ -6157,6 +6176,12 @@ html.phone .queued-one {
   padding: 4px 4px 4px 14px;
   font-size: 15px;
   border-radius: 12px;
+}
+
+html.phone .queued-picture {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
 }
 
 html.phone .queued-edit {

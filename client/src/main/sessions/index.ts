@@ -18,6 +18,7 @@ import type {
   McpServer,
   PlanUsage,
   SessionGoal,
+  SessionImage,
   SessionItem,
   SessionItems,
   SessionMessage,
@@ -1124,6 +1125,12 @@ export class Sessions {
     this.#queue(live, live.queued.filter((one) => one !== taken))
     this.#changed()
     return taken.message
+  }
+
+  /** A picture that waits with a queued message, whole. */
+  queuedPicture(id: string, queued: string, index: number): SessionImage | undefined {
+    const live = this.#live.get(id) ?? this.#adopt(id)
+    return live?.queued.find((one) => one.id === queued)?.message.images?.[index]
   }
 
   /** A message waiting in the queue, said again in other words. Its place in the queue and its pictures stay. */
