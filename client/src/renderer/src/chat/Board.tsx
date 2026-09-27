@@ -7,7 +7,7 @@ import { projectColor } from '../../../shared/project-color'
 import { dictate, languageCode, useDictationLanguage } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
-import { hostOf, outOfReach, outOfReachLine } from '../../../shared/hosts'
+import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
 import type { HostView } from '../../../shared/hosts'
 import { HostFolders } from './HostFolders'
 import { Icon } from '../ui/Icon'
@@ -727,8 +727,8 @@ export function NewTask({
 
   const start = (): void => {
     if ((root === '' && !question) || !ready) return
-    // What the frames are and where the video is goes under the words, for Claude rather than for the form.
-    const note = recorded === undefined ? '' : recordedNote(recorded.seconds, frames, recorded.videos.join(' and ') || undefined)
+    // What the frames are and where the video is goes under the words, for Claude rather than for the form; on a host the video is not there, so only the frames are said.
+    const note = recorded === undefined ? '' : recordedNote(recorded.seconds, frames, recorded.videos.join(' and ') || undefined, !question && isRemote(root))
     const said = note === '' ? text.trim() : `${text.trim()}\n\n${note}`.trim()
     const sent = [...pictures, ...frames.map((one) => one.image)]
     if (question) chat.ask(said, sent)
@@ -1088,7 +1088,7 @@ function PhoneNewTask({
                 <button type="button" className="phone-task-cell" onClick={() => setChoosing(true)}>
                   Project
                   <span>
-                    {root === '' ? 'None' : projectName(root)}
+                    <span className="phone-task-cell-text">{root === '' ? 'None' : projectLabel(root)}</span>
                     <Icon name="right" size={14} />
                   </span>
                 </button>

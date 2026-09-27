@@ -26,6 +26,7 @@ import { newKey, pairingLink, SIGNAL } from '../shared/pairing'
 import type {
   Answered,
   CardAnswer,
+  ChatFound,
   ChatSession,
   ClaudeAccount,
   CorrectRequest,
@@ -64,10 +65,21 @@ import { Sessions } from './sessions'
 import type { McpChange } from './sessions/mcp'
 import { readMcp } from './sessions/mcp'
 import { readBrowsers } from './sessions/chrome'
-import { claudeFile, deleteClaude, forkPoint, listClaude, readClaudeSession, readGoal, readLinks } from './sessions/disk'
+import { claudeFile, deleteClaude, everyClaude, forkPoint, listClaude, readClaudeSession, readGoal, readLinks } from './sessions/disk'
 import { HostDisk } from './hosts/disk'
 import { Hosts } from './hosts/hosts'
-import { hostExists, hostFile, hostFiles, hostGit, hostMcp, hostTaskOutput, hostTerminal, routedClaude, routedShell } from './hosts/route'
+import {
+  foldersFor,
+  hostExists,
+  hostFile,
+  hostFiles,
+  hostGit,
+  hostMcp,
+  hostTaskOutput,
+  hostTerminal,
+  routedClaude,
+  routedShell,
+} from './hosts/route'
 import type { Routes } from './hosts/route'
 import { runsAt } from './hosts/runs'
 import { secretsAt } from './hosts/secrets'
@@ -111,6 +123,8 @@ const RECORD = ANYWHERE.record
 
 let sessions: Sessions | undefined
 let routes: Routes | undefined
+/** How each host last stood, so a move into Connected is told apart from every other change. */
+const hostWasUp = new Map<string, boolean>()
 let cutOffered = false
 /** What GECKIT.md was last kept at, so it is only written when the switch moves. */
 let guided: boolean | undefined
@@ -145,6 +159,12 @@ const badge = (): void => {
   app.dock?.setBadge(wanting === 0 ? '' : String(wanting))
 }
 
+/** How this computer is named, the way the phone is told it: without `.local`, read as words rather than a hostname. */
+const computerName = (): string => hostname().replace(/\.local$/, '').replaceAll('-', ' ')
+
+/** A host's own name, for a project on it named to the voice model with it. */
+const hostNamed = (id: string): string | undefined => routes?.hosts.config(id)?.name
+
 /** Everything about other computers: who they are, what runs on them, and their conversations' files. */
 function buildHosts(): Routes {
   const folder = join(app.getPath('userData'), 'hosts')
@@ -156,10 +176,22 @@ function buildHosts(): Routes {
     save: (list) => setSettings({ hosts: list }),
     forgetProjects: (id) => {
       for (const root of getSettings().projects.filter((one) => hostOf(one) === id)) forgetProject(root)
+      for (const shortcut of getSettings().shortcuts.filter((one) => hostOf(one.root) === id)) removeShortcut(shortcut.id)
+      for (const [session, run] of Object.entries(routes?.runs.all() ?? {})) if (run.host === id) routes?.runs.delete(session)
       void routes?.disk.forget(id)
     },
     remember: (root) => rememberProject(root),
-    changed: (views) => tell('hosts:changed', views),
+    changed: (views) => {
+      // A host that just came up had nothing read from it while it was not connected: read again now, and told.
+      for (const view of views) {
+        const was = hostWasUp.get(view.id)
+        hostWasUp.set(view.id, view.state === 'up')
+        if (was === true || view.state !== 'up') continue
+        const roots = getSettings().projects.filter((root) => hostOf(root) === view.id)
+        if (roots.length > 0) void sessions?.refresh(roots)
+      }
+      tell('hosts:changed', views)
+    },
     prompt: (prompt) => {
       tell('hosts:prompt', prompt)
       // A host asking while nothing of GeckIt's is in front brings the window up to answer it.
@@ -191,6 +223,8 @@ function routedDisk(held: Routes): NonNullable<ConstructorParameters<typeof Sess
     goal: (root, id) => (isRemote(root) ? held.disk.goal(root, id) : local.goal(root, id)),
     forkPoint: (root, id, at) => (isRemote(root) ? held.disk.forkPoint(root, id, at) : local.forkPoint(root, id, at)),
     links: (root, id) => (isRemote(root) ? held.disk.links(root, id) : local.links(root, id)),
+    // Hidden conversations looks everywhere at once: this computer's own folder, and every host's mirror.
+    every: async (from, to, wanted) => [...(await everyClaude(from, to, wanted)), ...(await held.disk.every(from, to, wanted))],
   }
 }
 
@@ -373,7 +407,7 @@ async function readRecorded(recording: Recording): Promise<Answered> {
     planned = undefined
     return { ok: false, error: 'No project fits what was said. Name the project and try again.' }
   }
-  planned = { orders: [start], told: planned.told, images: pictures(recording), note: recordedNote(recording.seconds, recording.frames, recording.video) }
+  planned = { orders: [start], told: planned.told, images: pictures(recording), recording }
   return { ok: true, plan: [line], heard: recording.text }
 }
 
@@ -445,8 +479,8 @@ let planned:
       readonly told: readonly Told[]
       /** A recording's frames, which go with the task it starts. */
       readonly images?: readonly SessionImage[]
-      /** What the frames are and where the video is, under the task. */
-      readonly note?: string
+      /** The recording the task is about, its note written once the project it starts in is known: on a host, the video is not there to point to. */
+      readonly recording?: Recording
     }
   | undefined
 
@@ -462,9 +496,9 @@ async function readSaid(said: string): Promise<Answered> {
     root: one.root,
     state: one.state,
   }))
-  const read = await askOrders(said, projects, told)
+  const read = await askOrders(said, projects, told, undefined, hostNamed)
   if (read.error !== undefined) return { ok: false, error: read.error }
-  const { orders, lines } = saying(read.orders, projects, told)
+  const { orders, lines } = saying(read.orders, projects, told, hostNamed)
   if (orders.length === 0) return { ok: false, error: `Nothing to do in "${said}"` }
   planned = { orders, told }
   return { ok: true, plan: lines, heard: said }
@@ -478,31 +512,40 @@ async function carryOutPlanned(open: (id: string) => void = openChat): Promise<A
   if (held === undefined || plan === undefined) return { ok: false, error: 'There is nothing waiting to be done' }
   const projects = getSettings().projects
   const mode = getSettings().chatMode
-  const did = await carryOut(plan.orders, projects, plan.told, {
-    // The work goes first and the goal after it: a goal on its own tells Claude to
-    // start working toward it, with nothing yet said about what the work is.
-    start: async (root, text, goal) => {
-      if (plan.note !== undefined) keepRecording()
-      const id = await held.send({
-        root,
-        mode,
-        text: plan.note === undefined ? text : `${text}\n\n${plan.note}`,
-        ...(plan.images === undefined || plan.images.length === 0 ? {} : { images: plan.images }),
-      })
-      if (goal !== undefined) await held.send({ session: id, root, mode, text: `/goal ${goal}` })
-      return id
+  const did = await carryOut(
+    plan.orders,
+    projects,
+    plan.told,
+    {
+      // The work goes first and the goal after it: a goal on its own tells Claude to
+      // start working toward it, with nothing yet said about what the work is.
+      start: async (root, text, goal) => {
+        const recording = plan.recording
+        if (recording !== undefined) keepRecording()
+        // The video is on this computer; a task on a host is told only of the frames, which went with it.
+        const note = recording === undefined ? undefined : recordedNote(recording.seconds, recording.frames, recording.video, isRemote(root))
+        const id = await held.send({
+          root,
+          mode,
+          text: note === undefined ? text : `${text}\n\n${note}`,
+          ...(plan.images === undefined || plan.images.length === 0 ? {} : { images: plan.images }),
+        })
+        if (goal !== undefined) await held.send({ session: id, root, mode, text: `/goal ${goal}` })
+        return id
+      },
+      say: async (id, text) => {
+        const chat = plan.told.find((one) => one.id === id)
+        if (chat !== undefined) await held.send({ session: id, root: chat.root, mode, text })
+      },
+      stop: (id) => held.stop(id),
+      mark: (id, status) => held.mark(id, status),
+      open,
+      delete: async (id) => {
+        unfavorite(await held.remove([id]))
+      },
     },
-    say: async (id, text) => {
-      const chat = plan.told.find((one) => one.id === id)
-      if (chat !== undefined) await held.send({ session: id, root: chat.root, mode, text })
-    },
-    stop: (id) => held.stop(id),
-    mark: (id, status) => held.mark(id, status),
-    open,
-    delete: async (id) => {
-      unfavorite(await held.remove([id]))
-    },
-  })
+    hostNamed,
+  )
   return did.length === 0 ? { ok: false, error: 'None of that could be done' } : { ok: true, text: did.join('\n') }
 }
 
@@ -549,6 +592,10 @@ function openTerminal(root: string, run: string): void {
 /* ------------------------------------------------------------------ */
 /* What a window may ask                                               */
 /* ------------------------------------------------------------------ */
+
+/** Search, routed the same way the conversation files themselves are: this computer's own, or a host's mirror. */
+const searchChats = (roots: readonly string[], asked: string): Promise<ChatFound[]> =>
+  searchClaude(roots, asked, (root) => foldersFor(routes, root))
 
 function listChats(root: string | undefined, every: readonly string[]): Promise<ChatSession[]> {
   // Nothing for the project comes over as null, which is not a folder name.
@@ -620,12 +667,32 @@ async function openLink(href: string): Promise<void> {
   void shell.openExternal(withPort(href, local))
 }
 
+/**
+ * A `localhost` link opened on the phone, in a conversation on a host: its
+ * port is carried here the same way `openLink` carries the Mac's own, and the
+ * phone is given the local port to open through its own page instead, with a
+ * word for where it landed when the same port was already taken here.
+ */
+async function forwardLink(root: string, href: string): Promise<{ readonly href: string; readonly moved?: string }> {
+  const id = hostOf(root)
+  const port = localPort(href)
+  if (id === undefined || port === undefined || routes === undefined) return { href }
+  const local = await routes.forwards.open(id, port)
+  if (local === undefined) return { href }
+  const next = withPort(href, local)
+  if (local === port) return { href: next }
+  const name = routes.hosts.config(id)?.name ?? id
+  return { href: next, moved: `${name}'s ${String(port)} is at ${String(local)} on ${computerName()}` }
+}
+
 /** What a window may ask about hosts. */
 function wireHosts(): void {
   const hosts = (): Hosts | undefined => routes?.hosts
   ipcMain.handle('hosts:list', () => hosts()?.views() ?? [])
   ipcMain.handle('hosts:known', () => hosts()?.known() ?? [])
   ipcMain.handle('hosts:check', (_event, draft: HostDraft) => hosts()?.check(draft) ?? { ok: false, problem: 'Not ready yet.' })
+  ipcMain.handle('hosts:update', (_event, id: string, draft: HostDraft) => hosts()?.update(id, draft) ?? { ok: false, problem: 'Not ready yet.' })
+  ipcMain.on('hosts:forget', (_event, id: string) => hosts()?.forget(id))
   ipcMain.handle('hosts:remove', (_event, id: string) => hosts()?.remove(id))
   ipcMain.on('hosts:connect', (_event, id: string) => void hosts()?.connect(id))
   ipcMain.on('hosts:reconnect', (_event, id: string) => hosts()?.reconnect(id))
@@ -743,7 +810,7 @@ function wire(): void {
   ipcMain.handle('chat:bring', (_event, id: string) => sessions?.bring(id))
   ipcMain.handle('chat:list', (_event, root: string | undefined) => listChats(root, shownProjects(getSettings())))
   ipcMain.handle('chat:search', (_event, asked: string, root: string | undefined) =>
-    searchClaude(typeof root === 'string' && root !== '' ? [root] : shownProjects(getSettings()), asked),
+    searchChats(typeof root === 'string' && root !== '' ? [root] : shownProjects(getSettings()), asked),
   )
   // The window asks first, in its own words; by here it has been answered.
   ipcMain.handle('chat:delete', (_event, ids: readonly string[]) => deleteChats(ids))
@@ -918,7 +985,7 @@ function phoneCalls(): Record<string, PhoneCall> {
   const held = (): Sessions | undefined => sessions
   return {
     // The name the phone lists this Mac under, as the network knows it: Alexs-MacBook-Pro.local reads Alexs MacBook Pro.
-    boot: () => ({ home: homedir(), platform: process.platform, name: hostname().replace(/\.local$/, '').replaceAll('-', ' ') }),
+    boot: () => ({ home: homedir(), platform: process.platform, name: computerName() }),
     'settings.get': () => phoneSettings(getSettings()),
     'settings.set': (change: Partial<Settings>) => setSettings(change),
     'update.view': () => updateView(),
@@ -943,7 +1010,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.links': (id: string) => held()?.links(id) ?? [],
     'chat.waiting': (id: string) => waitingCard(id),
     'chat.search': (asked: string, root: string | undefined) =>
-      searchClaude(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
+      searchChats(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
     'chat.send': (message: SessionMessage) => held()?.send(message),
     'chat.shell': (asked: ShellCommand) => held()?.shell(asked),
     'chat.stopShell': (id: string, item: string) => held()?.stopShell(id, item),
@@ -984,6 +1051,8 @@ function phoneCalls(): Record<string, PhoneCall> {
     'hosts.addFolder': (id: string, path: string) => routes?.hosts.addFolder(id, path),
     'hosts.prompts': () => routes?.hosts.prompts() ?? [],
     'hosts.answer': (answer: HostAnswer) => routes?.hosts.answer(answer),
+    // A `localhost` link opened on the phone, in a conversation on a host: carried here, the way the Mac's own openLink carries it.
+    'hosts.forwardLink': (root: string, href: string) => forwardLink(root, href),
     'chat.forgetProject': (root: string) => forgetProject(root),
     'chat.folders': (path: string | undefined) => foldersIn(path),
     'mac.version': () => app.getVersion(),

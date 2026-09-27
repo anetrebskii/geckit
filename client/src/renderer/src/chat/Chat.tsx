@@ -19,6 +19,7 @@ import { NameField } from './NameField'
 import { projectColor } from '../../../shared/project-color'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import { HostChip, HostPromptCard, HostTroubleCard } from './HostParts'
+import { PhoneHostSheet } from './PhoneHostSheet'
 import { homePath, projectLabel, projectName, tint } from './project'
 import { Sidebar, Tags } from './Sidebar'
 import { Status, TalkStatus } from './Status'
@@ -478,6 +479,12 @@ export function Chat(): React.JSX.Element {
       <div className={`talk${board ? ' over' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}`} hidden={board && !overBoard}>
         {ON_PHONE && overBoard ? <EdgeBack onBack={() => chat.open({ kind: 'new' })} /> : null}
         {ON_PHONE && overBoard && chat.session !== undefined ? <EdgeInfo onPull={setPulled} onOpen={() => setInfoing(true)} /> : null}
+        {ON_PHONE && overBoard && host?.state === 'lost' ? (
+          <div className="phone-offline phone-host-away" role="status">
+            <span className="phone-spin" />
+            Reconnecting to {host.name}
+          </div>
+        ) : null}
         {ON_PHONE ? (
           <PhoneNav
             chat={chat}
@@ -684,7 +691,12 @@ export function Chat(): React.JSX.Element {
       <Status chat={chat} />
 
       <Notices chat={chat} />
-      {chat.prompts.length === 0 && (host === undefined || !['missing', 'signin', 'needs'].includes(host.state)) ? null : (
+      {/* On the phone a host's question is a sheet over whatever is open, one at a time, the oldest first; what stands in the way of a host is on its page in Settings, since only the computer can fix it. */}
+      {ON_PHONE ? (
+        chat.prompts[0] === undefined ? null : (
+          <PhoneHostSheet key={chat.prompts[0].id} prompt={chat.prompts[0]} host={chat.hosts.find((one) => one.id === chat.prompts[0]?.host)} />
+        )
+      ) : chat.prompts.length === 0 && (host === undefined || !['missing', 'signin', 'needs'].includes(host.state)) ? null : (
         <div className="host-prompts">
           {chat.prompts.map((prompt) => (
             <HostPromptCard key={prompt.id} prompt={prompt} canRemember={chat.hosts.find((one) => one.id === prompt.host)?.canRemember ?? false} />

@@ -1583,6 +1583,19 @@ html.framed .topbar {
 }
 
 /* A conversation's title is long, so it gives way and the project and time stay whole. */
+/* Where the projects under it are, Local or a host, once any project is on a host. */
+.projects-listed-head {
+  grid-column: 1 / -1;
+  padding: 7px 8px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.projects-listed-head:first-child {
+  padding-top: 3px;
+}
+
 .projects-listed.cut-off {
   grid-template-columns: auto minmax(0, 1fr) max-content;
 }
@@ -5695,6 +5708,19 @@ html.keyboard .sheet {
   color: var(--text-faint);
 }
 
+/* A project on a host has a longer name: it is cut on one line rather than wrapped under the label. */
+.phone-task-cell span {
+  min-width: 0;
+  margin-inline-start: 16px;
+}
+
+.phone-task-cell .phone-task-cell-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .phone-task-text,
 .phone-task-goal {
   width: 100%;
@@ -5926,8 +5952,12 @@ html.phone .talk.over {
 }
 
 .phone-nav-title span {
+  display: block;
+  overflow: hidden;
   font-size: 12px;
   color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .phone-nav .phone-icon {
@@ -7950,4 +7980,116 @@ html.phone .preview-bar .icon-button {
 .menu-item.project-add:hover {
   color: var(--text);
   background: var(--bg-hover);
+}
+
+/*
+ * Hosts on the phone. A host is shown as everywhere else, by its dot and its
+ * name after the project; out of reach it takes the amber of anything that
+ * waits. See docs/ux/remote-hosts-phone.md.
+ */
+.phone-dot.away {
+  background: var(--review-solid);
+}
+
+.phone-row-said.away,
+.phone-hint.away {
+  color: var(--warning-text);
+}
+
+.phone-nav-title span .host-dot {
+  margin-inline-end: 5px;
+  vertical-align: 1px;
+}
+
+.phone-offline.phone-host-away {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.phone-host-name {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.phone-host-name .host-dot {
+  width: 9px;
+  height: 9px;
+}
+
+.phone-host-path {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.phone-host-path b {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+/* A host's question, over whatever is open: what it asks, from where, the field, and the one thing to do. */
+.host-sheet .sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 4px;
+}
+
+.host-sheet-ask {
+  padding: 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.host-sheet-from {
+  margin-top: -6px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.host-sheet-print {
+  padding: 12px 16px;
+  font-family: var(--font-code);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+  overflow-wrap: anywhere;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.host-sheet .sheet-field input {
+  font-size: 17px;
+}
+
+.host-sheet-remember .sheet-option {
+  font-size: 16px;
+}
+
+.host-sheet-go {
+  height: 50px;
+  margin-top: 4px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  border-radius: 12px;
+}
+
+.host-sheet-go:disabled {
+  opacity: 0.45;
+}
+
+.host-sheet-not {
+  height: 44px;
+  font-size: 17px;
+  color: var(--accent);
+}
+
+.add-host .host-forget {
+  align-self: flex-start;
 }

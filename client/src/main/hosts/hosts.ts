@@ -10,6 +10,7 @@ import type { HostAnswer, HostCheck, HostConfig, HostDraft, HostPrompt, HostStat
 import { readPrompt, startAskpass } from './askpass'
 import type { Asker } from './askpass'
 import { readChecked, readFolders, readSshConfig } from './read'
+import type { Checked } from './read'
 import type { RemoteRun } from './run'
 import { checkScript, foldersScript, installScript, resolveScript } from './run-script'
 import type { Secrets } from './secrets'
@@ -72,7 +73,14 @@ interface Asked {
   readonly done: (answer: string | undefined) => void
 }
 
-export class Hosts {
+/** What `HostDisk` and the other routing need from `Hosts`, kept narrow so a test can hand it a fake. */
+export interface HostsLike {
+  config(id: string): HostConfig | undefined
+  setup(): SshSetup
+  state(id: string): HostState
+}
+
+export class Hosts implements HostsLike {
   readonly #deps: HostsDeps
   readonly #held = new Map<string, Held>()
   /** Hosts being added, not yet in Settings, reachable by id while their check runs. */
@@ -256,12 +264,27 @@ export class Hosts {
   }
 
   remove(id: string): void {
+    // Stopped there before its config goes: killed after, it would be reached
+    // by its address rather than its host's, which is nobody.
+    const runs = this.#held.get(id)?.runs.keys() ?? []
+    for (const run of runs) run.kill()
     this.disconnect(id)
     this.#deps.secrets.forget(id)
     this.#typed.delete(id)
     this.#held.delete(id)
     this.#deps.save(this.#deps.hosts().filter((one) => one.id !== id))
     this.#deps.forgetProjects(id)
+    this.#tell()
+  }
+
+  /** A stored password let go without removing the host: the next connection asks for it again. */
+  forget(id: string): void {
+    this.#deps.secrets.forget(id)
+    this.#typed.delete(id)
+    const hosts = this.#deps.hosts()
+    if (hosts.some((one) => one.id === id && one.remember === true)) {
+      this.#deps.save(hosts.map((one) => (one.id === id ? { ...one, remember: false } : one)))
+    }
     this.#tell()
   }
 
@@ -272,6 +295,48 @@ export class Hosts {
     } catch {
       return []
     }
+  }
+
+  /**
+   * Reaches a host and tells the checks line by line, as Add a host and Edit a
+   * host both show them. The last line is Claude Code's version and whether it
+   * is signed in, or why it could not be reached at all.
+   */
+  async #probe(host: HostConfig, name: string): Promise<{ readonly ok: true; readonly checked: Checked } | { readonly ok: false; readonly problem: string }> {
+    this.#deps.checks?.([{ text: `Reaching ${name}`, done: false }])
+    const ran = await runOn(host, this.setup(), checkScript(), { timeout: 25_000 })
+    if (ran.code !== 0) {
+      const why = ran.code === null ? `Could not reach ${name}: timed out after 20 s.` : sshProblem(ran.err, name)
+      this.#deps.checks?.([{ text: why, done: true, failed: true }])
+      return { ok: false, problem: why }
+    }
+    const checked = readChecked(ran.out.toString('utf8'))
+    const reached: HostCheck[] = [
+      { text: `Reached ${name}`, done: true },
+      checked.missing
+        ? { text: `Claude Code is not installed on ${name}.`, done: true, failed: true }
+        : { text: `Claude Code ${checked.version ?? ''}`.trim(), done: true },
+      ...(checked.missing
+        ? []
+        : [
+            checked.account?.signedIn === false
+              ? { text: `Claude Code on ${name} is not signed in.`, done: true, failed: true }
+              : { text: `Signed in${checked.account?.plan === undefined ? '' : `: Claude ${checked.account.plan}`}`, done: true },
+          ]),
+    ]
+    this.#deps.checks?.(reached)
+    return { ok: true, checked }
+  }
+
+  /** What a probe said, kept where the person is told about the host and held for the connection it started. */
+  #settle(id: string, name: string, checked: Checked): HostView | undefined {
+    const held = this.#hold(id)
+    if (checked.version !== undefined) held.version = checked.version
+    if (checked.account?.plan !== undefined) held.plan = checked.account.plan
+    if (checked.missing) this.#set(id, 'missing', `Claude Code is not installed on ${name}.`)
+    else if (checked.account?.signedIn === false) this.#set(id, 'signin', `Claude Code on ${name} is not signed in.`)
+    else this.#set(id, 'up')
+    return this.views().find((one) => one.id === id)
   }
 
   /**
@@ -295,17 +360,13 @@ export class Hosts {
     }
     this.#drafts.set(id, host)
     if (draft.auth === 'password' && draft.password !== undefined && draft.password !== '') this.#typed.set(id, draft.password)
-    const lines: HostCheck[] = [{ text: `Reaching ${name}`, done: false }]
-    this.#deps.checks?.(lines)
-    const ran = await runOn(host, this.setup(), checkScript(), { timeout: 25_000 })
-    if (ran.code !== 0) {
+    const probed = await this.#probe(host, name)
+    if (!probed.ok) {
       this.#drafts.delete(id)
       this.#typed.delete(id)
-      const why = ran.code === null ? `Could not reach ${name}: timed out after 20 s.` : sshProblem(ran.err, name)
-      this.#deps.checks?.([{ text: why, done: true, failed: true }])
-      return { ok: false, problem: why }
+      return probed
     }
-    const checked = readChecked(ran.out.toString('utf8'))
+    const { checked } = probed
     const seen = {
       ...(checked.version === undefined ? {} : { version: checked.version }),
       ...(checked.account?.plan === undefined ? {} : { plan: checked.account.plan }),
@@ -314,27 +375,67 @@ export class Hosts {
     this.#drafts.delete(id)
     const typed = this.#typed.get(id)
     if (host.remember === true && typed !== undefined) this.#deps.secrets.set(id, typed)
-    const reached: HostCheck[] = [
-      { text: `Reached ${name}`, done: true },
-      checked.missing
-        ? { text: `Claude Code is not installed on ${name}.`, done: true, failed: true }
-        : { text: `Claude Code ${checked.version ?? ''}`.trim(), done: true },
-      ...(checked.missing
-        ? []
-        : [
-            checked.account?.signedIn === false
-              ? { text: `Claude Code on ${name} is not signed in.`, done: true, failed: true }
-              : { text: `Signed in${checked.account?.plan === undefined ? '' : `: Claude ${checked.account.plan}`}`, done: true },
-          ]),
-    ]
-    this.#deps.checks?.(reached)
-    const held = this.#hold(id)
-    if (checked.version !== undefined) held.version = checked.version
-    if (checked.account?.plan !== undefined) held.plan = checked.account.plan
-    if (checked.missing) this.#set(id, 'missing', `Claude Code is not installed on ${name}.`)
-    else if (checked.account?.signedIn === false) this.#set(id, 'signin', `Claude Code on ${name} is not signed in.`)
-    else this.#set(id, 'up')
-    const view = this.views().find((one) => one.id === id)
+    const view = this.#settle(id, name, checked)
+    return view === undefined ? { ok: false, problem: `Could not keep ${name}.` } : { ok: true, host: view }
+  }
+
+  /**
+   * Edits a host already kept. Only its name changed, and nothing about how it
+   * is reached, is saved without a connection; anything else is checked again
+   * the way Add a host checks it, and the old config stands where that fails,
+   * so a project on it never moves under a root that no longer works.
+   */
+  async update(id: string, draft: HostDraft): Promise<{ readonly ok: true; readonly host: HostView } | { readonly ok: false; readonly problem: string }> {
+    const existing = this.config(id)
+    if (existing === undefined) return { ok: false, problem: 'That host is not here any more.' }
+    const problem = draftProblem(draft)
+    if (problem !== undefined) return { ok: false, problem }
+    const name = draft.name.trim() === '' ? draft.address.trim() : draft.name.trim()
+    const keyFile = draft.auth === 'key' && draft.keyFile !== undefined && draft.keyFile !== '' ? draft.keyFile : undefined
+    const passwordTyped = draft.auth === 'password' && draft.password !== undefined && draft.password !== ''
+    const sameConnection =
+      existing.address === draft.address.trim() &&
+      existing.user === draft.user.trim() &&
+      existing.port === draft.port &&
+      existing.auth === draft.auth &&
+      (existing.keyFile ?? '') === (keyFile ?? '') &&
+      !passwordTyped
+    if (sameConnection) {
+      if (existing.name !== name) {
+        this.#deps.save(this.#deps.hosts().map((one) => (one.id === id ? { ...one, name } : one)))
+        this.#tell()
+      }
+      const view = this.views().find((one) => one.id === id)
+      return view === undefined ? { ok: false, problem: `Could not keep ${name}.` } : { ok: true, host: view }
+    }
+    // Remembered as it stood unless a fresh password says otherwise, or the auth moved off a password altogether.
+    const remember = draft.auth !== 'password' ? false : passwordTyped ? draft.remember === true : existing.auth === 'password' && existing.remember === true
+    const host: HostConfig = {
+      id,
+      name,
+      address: draft.address.trim(),
+      user: draft.user.trim(),
+      port: draft.port,
+      auth: draft.auth,
+      ...(keyFile === undefined ? {} : { keyFile }),
+      ...(remember ? { remember: true } : {}),
+    }
+    if (passwordTyped) this.#typed.set(id, draft.password as string)
+    const probed = await this.#probe(host, name)
+    if (!probed.ok) {
+      if (passwordTyped) this.#typed.delete(id)
+      return probed
+    }
+    const { checked } = probed
+    const seen = {
+      ...(checked.version === undefined ? {} : { version: checked.version }),
+      ...(checked.account?.plan === undefined ? {} : { plan: checked.account.plan }),
+    }
+    this.#deps.save(this.#deps.hosts().map((one) => (one.id === id ? { ...host, seen } : one)))
+    // Not remembered any more forgets what was; a fresh one typed and kept replaces it. Carried over as it was, it is left alone.
+    if (!remember) this.#deps.secrets.forget(id)
+    else if (passwordTyped) this.#deps.secrets.set(id, draft.password as string)
+    const view = this.#settle(id, name, checked)
     return view === undefined ? { ok: false, problem: `Could not keep ${name}.` } : { ok: true, host: view }
   }
 

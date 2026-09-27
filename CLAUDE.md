@@ -57,7 +57,9 @@ A conversation can run on another computer reached over SSH, a host; this comput
 - `hosts/run-script.ts` holds every script run on a host. `claude` there is started apart from the connection (a FIFO in, a file out, its own session, `env -u` the off-plan variables), and `hosts/run.ts` reads the file from the byte it reached, so a dropped connection, a closed lid or GeckIt quitting lose nothing; `hosts/runs.json` has the runs picked up again at the next start (`Sessions.reattach`). A run nobody looked at and that said nothing for 12 h is stopped by its reaper.
 - `hosts/disk.ts` lists a host's conversation files by the two ends of each changed file, and keeps a copy of each opened one here, adding only what grew, so `sessions/disk.ts` reads them unchanged.
 - `hosts/forward.ts` carries a `localhost` link said in a conversation on a host to this computer over ssh.
-- The design is `docs/ux/remote-hosts.md` and the prototype `docs/design/remote-hosts.html`; the Spec Kit artifacts are in `specs/001-remote-hosts/`.
+- A host that is not connected is not reached to list the board: `hosts/disk.ts` answers the last listing, kept in `hosts/<id>/listed/`, and the copies here, and the projects are read again when it comes up. Search and Hidden read those copies too. Edit is `Hosts.update`: a new name alone is saved, a change to how it is reached is checked again first.
+- The phone reaches hosts only through this computer (`chat/PhoneHosts.tsx`, `chat/PhoneHostSheet.tsx`): it lists them with Connect and Disconnect, adds a folder on one under Where, answers what ssh asks in a sheet, and opens a host's `localhost` page through the forward here (`hosts.forwardLink`), the moved port said over the page's title. Adding or changing a host is on the computer, where the keys are.
+- The design is `docs/ux/remote-hosts.md` and `docs/ux/remote-hosts-phone.md`, the prototypes `docs/design/remote-hosts.html` and `docs/design/remote-hosts-phone.html`; the Spec Kit artifacts are in `specs/001-remote-hosts/` and `specs/002-hosts-phone/`.
 
 ### Correct
 

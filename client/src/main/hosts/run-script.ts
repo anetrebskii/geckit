@@ -188,7 +188,8 @@ export function edgesScript(files: readonly { readonly file: string; readonly si
     if (one.size <= EDGE * 2) {
       lines.push(`base64 < ${quote(file)}`, `printf '@@\\n@@.\\n'`)
     } else {
-      lines.push(`head -c ${String(EDGE)} ${quote(file)} | base64`, `printf '@@\\n'`, `tail -c ${String(EDGE)} ${quote(file)} | base64`, `printf '@@.\\n'`)
+      // Every slug starts with a dash, which head and tail would read as an option: the file is named from here.
+      lines.push(`head -c ${String(EDGE)} ${quote(`./${file}`)} | base64`, `printf '@@\\n'`, `tail -c ${String(EDGE)} ${quote(`./${file}`)} | base64`, `printf '@@.\\n'`)
     }
   }
   return lines.join('\n')

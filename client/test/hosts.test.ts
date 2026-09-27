@@ -1,10 +1,14 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
 import { readPrompt } from '../src/main/hosts/askpass'
-import { readEdges, readListing } from '../src/main/hosts/disk'
+import { HostDisk, readEdges, readListing } from '../src/main/hosts/disk'
+import type { HostsLike } from '../src/main/hosts/hosts'
 import { lineSplitter } from '../src/main/hosts/lines'
 import { readChecked, readFolders, readSshConfig } from '../src/main/hosts/read'
 import { retryAfter } from '../src/main/hosts/run'
@@ -21,10 +25,19 @@ import {
   startScript,
 } from '../src/main/hosts/run-script'
 import { sshArgs, sshProblem } from '../src/main/hosts/ssh'
-import { edgesOf, rowFrom } from '../src/main/sessions/disk'
+import { edgesOf, rowFrom, slug } from '../src/main/sessions/disk'
+import type { HostConfig, HostState } from '../src/shared/hosts'
 import { draftProblem, forHowLong, hostIdFor, hostOf, outOfReach, outOfReachLine, parseTarget, pathOf, remoteRoot, stateLine, targetLine } from '../src/shared/hosts'
 
 const fixture = (name: string): string => readFileSync(join(import.meta.dirname, 'fixtures', 'hosts', name), 'utf8')
+
+/** A fake standing in for `Hosts`, so a host's connection is never really reached in a test. */
+const fakeHost: HostConfig = { id: 'devbox', name: 'devbox', address: 'devbox.local', user: 'leo', port: 22, auth: 'key' }
+const fakeHosts = (state: HostState): HostsLike => ({
+  config: (id) => (id === fakeHost.id ? fakeHost : undefined),
+  setup: () => ({ env: {} }),
+  state: () => state,
+})
 
 describe('a project root that names a host', () => {
   it('is read into the host and the path, and a local one names none', () => {
@@ -129,8 +142,23 @@ describe('what is run on a host', () => {
       { file: '-home-leo-trailmap/b-2.jsonl', size: 1_000_000 },
     ])
     expect(script).toContain("base64 < '-home-leo-trailmap/a-1.jsonl'")
-    expect(script).toContain("head -c 65536 '-home-leo-trailmap/b-2.jsonl' | base64")
-    expect(script).toContain("tail -c 65536 '-home-leo-trailmap/b-2.jsonl' | base64")
+    expect(script).toContain("head -c 65536 './-home-leo-trailmap/b-2.jsonl' | base64")
+    expect(script).toContain("tail -c 65536 './-home-leo-trailmap/b-2.jsonl' | base64")
+  })
+
+  it('reads both ends of a long file whose folder starts with a dash, as every slug does', () => {
+    const home = mkdtempSync(join(tmpdir(), 'geckit-edges-'))
+    const folder = join(home, 'projects', '-home-leo-trailmap')
+    mkdirSync(folder, { recursive: true })
+    const first = `${JSON.stringify({ type: 'user', message: { role: 'user', content: 'Faster tile cache build' } })}\n`
+    writeFileSync(join(folder, 'b-2.jsonl'), first + 'x'.repeat(200_000) + '\n')
+    const out = execFileSync('sh', ['-c', edgesScript([{ file: '-home-leo-trailmap/b-2.jsonl', size: 200_000 + first.length + 1 }])], {
+      env: { ...process.env, CLAUDE_CONFIG_DIR: home },
+    }).toString()
+    const ends = readEdges(out).get('-home-leo-trailmap/b-2.jsonl')
+    expect(ends?.head.toString().startsWith(first)).toBe(true)
+    expect(ends?.tail?.length).toBe(65536)
+    rmSync(home, { recursive: true, force: true })
   })
 
   it('reads what the check printed', () => {
@@ -232,6 +260,63 @@ describe("a host's conversation files", () => {
     expect(ends?.tail).toBeUndefined()
     const row = rowFrom({ id: 'a-1', at: 5 }, edgesOf(ends?.head ?? Buffer.alloc(0), ends?.tail, head.length))
     expect(row).toMatchObject({ id: 'a-1', title: 'Make the tile cache build faster', model: 'claude-opus-5', cwd: '/home/leo/trailmap', at: 5 })
+  })
+})
+
+describe('a host that is not connected', () => {
+  const root = remoteRoot('devbox', '/home/leo/trailmap')
+
+  it('answers a list from what was kept here, without reaching it', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-hosts-'))
+    try {
+      const kept = [{ id: 'a-1', title: 'Make the tile cache build faster', stands: 'Done', at: 5, driven: false }]
+      const path = join(folder, fakeHost.id, 'listed', `${slug('/home/leo/trailmap')}.json`)
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(path, JSON.stringify(kept))
+      const disk = new HostDisk(fakeHosts('lost'), folder)
+      await expect(disk.list(root)).resolves.toEqual(kept)
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
+  })
+
+  it('answers a list of nothing where nothing was ever kept', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-hosts-'))
+    try {
+      const disk = new HostDisk(fakeHosts('idle'), folder)
+      await expect(disk.list(root)).resolves.toEqual([])
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
+  })
+
+  it('reads a conversation from the copy already here, without reaching it', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-hosts-'))
+    try {
+      const file = join(folder, fakeHost.id, 'projects', slug('/home/leo/trailmap'), 'a-1.jsonl')
+      await mkdir(dirname(file), { recursive: true })
+      await writeFile(
+        file,
+        `${JSON.stringify({ type: 'user', message: { role: 'user', content: 'Make the tile cache build faster' }, cwd: '/home/leo/trailmap' })}\n`,
+      )
+      const disk = new HostDisk(fakeHosts('needs'), folder)
+      const conversation = await disk.read(root, 'a-1')
+      expect(conversation?.items.some((item) => item.kind === 'mine')).toBe(true)
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
+  })
+
+  it('has nothing to read where no copy was ever kept', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-hosts-'))
+    try {
+      const disk = new HostDisk(fakeHosts('idle'), folder)
+      await expect(disk.read(root, 'a-1')).resolves.toBeUndefined()
+      await expect(disk.goal(root, 'a-1')).resolves.toEqual({})
+      await expect(disk.forkPoint(root, 'a-1', Date.now())).resolves.toBeUndefined()
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
   })
 })
 

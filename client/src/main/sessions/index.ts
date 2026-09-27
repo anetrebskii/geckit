@@ -31,6 +31,7 @@ import type {
   WorkItem,
 } from '../../shared/api'
 import { sessionMode } from '../../shared/api'
+import { isRemote } from '../../shared/hosts'
 import type { Link } from '../../shared/links'
 import { linksIn, workItem } from '../../shared/links'
 import { claudeAccount, claudeProgram } from './account'
@@ -481,6 +482,12 @@ export class Sessions {
     // A model not seen before is measured, so its rows can say how much context it holds.
     if ([...this.#rows.values()].some((row) => row.model !== undefined && !this.#windows.has(row.model))) void this.measure()
     return this.#listed(roots)
+  }
+
+  /** Reads a host's projects again once it comes up, and tells the windows: its conversations were not read while it was not connected. */
+  async refresh(roots: readonly string[]): Promise<void> {
+    await this.list(roots)
+    this.#changed()
   }
 
   #listed(roots?: readonly string[]): ChatSession[] {
@@ -1480,10 +1487,10 @@ export class Sessions {
     return state === 'working' || state === 'asks'
   }
 
-  /** What quitting would stop. */
+  /** What quitting would stop. A conversation on a host keeps running there, and does not hold a restart back. */
   working(): string[] {
     return [...this.#live.values()]
-      .filter((live) => live.state === 'working' || live.state === 'asks')
+      .filter((live) => (live.state === 'working' || live.state === 'asks') && !isRemote(live.root))
       .map((live) => this.#deps.notes.all()[live.id]?.title ?? live.title)
   }
 

@@ -10,7 +10,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { Cell, FullSheet, Page, Switch } from './PhoneKit'
-import { projectName } from './project'
+import { projectLabel } from './project'
 import { FIRST_CRON, REPEATS, turned } from './ShortcutList'
 import type { Repeats } from './ShortcutList'
 import type { Chat } from './useChat'
@@ -89,7 +89,7 @@ export function PhoneShortcuts({
               <button type="button" className="phone-shortcut-text" onClick={() => onEdit(one)}>
                 <span className="phone-row-title">{one.name}</span>
                 <span className="phone-shortcut-when">
-                  <b style={{ color: `var(--project-${String(projectColor(one.root, chat.settings))})` }}>{projectName(one.root)}</b>
+                  <b style={{ color: `var(--project-${String(projectColor(one.root, chat.settings))})` }}>{projectLabel(one.root)}</b>
                   {' '}
                   {when(one, chat, now)}
                 </span>
@@ -171,7 +171,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; r
           }}
         />
         <div className="phone-group phone-form-group">
-          <Cell label="Project" value={draft.root === '' ? 'None' : projectName(draft.root)} onPress={() => setPicking('project')} />
+          <Cell label="Project" value={draft.root === '' ? 'None' : projectLabel(draft.root)} onPress={() => setPicking('project')} />
           <Cell label="Mode" value={MODE_LABEL(draft.mode)} onPress={() => setPicking('mode')} />
         </div>
         <div className="phone-group phone-form-group">
@@ -222,7 +222,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; r
           anchor={new DOMRect()}
           title="Runs in"
           chosen={draft.root}
-          choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectName(one) }))}
+          choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectLabel(one) }))}
           onPick={(root) => change({ root })}
           onClose={() => setPicking(undefined)}
         />
@@ -370,7 +370,7 @@ export function Ways({
                     <span className="says phone-ways-failed">Did not start. Tap to try again.</span>
                   ) : (
                     <span className="says" style={{ color: `var(--project-${String(projectColor(one.root, chat.settings))})` }}>
-                      {projectName(one.root)}
+                      {projectLabel(one.root)}
                     </span>
                   )}
                 </span>
