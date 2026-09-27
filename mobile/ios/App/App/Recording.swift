@@ -1,16 +1,18 @@
 import AVFoundation
 import Capacitor
+import Photos
 import PhotosUI
 import Speech
 import UniformTypeIdentifiers
 
-// A video picked from Photos, where the system's screen recordings land, read on the phone into the words said in it and a few frames.
+// A video from Photos, picked or the screen recording just made, read on the phone into the words said in it and a few frames.
 @objc(RecordingPlugin)
 public class RecordingPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewControllerDelegate {
     public let identifier = "RecordingPlugin"
     public let jsName = "Recording"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "pick", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "latest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "words", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "frames", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "drop", returnType: CAPPluginReturnPromise),
@@ -63,6 +65,62 @@ public class RecordingPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewControlle
                 "seconds": CMTimeGetSeconds(asset.duration),
                 "bytes": size,
             ])
+        }
+    }
+
+    // The newest screen recording made since the time given, which is how one made from Control Center comes back without being picked.
+    @objc func latest(_ call: CAPPluginCall) {
+        let since = Date(timeIntervalSince1970: (call.getDouble("since") ?? 0) / 1000)
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+            guard status == .authorized else {
+                // With limited access a recording made later is not among what GeckIt may see.
+                call.reject(status == .limited
+                    ? "GeckIt sees a new recording only with full access to Photos. Allow it in Settings, GeckIt, Photos, or choose the video."
+                    : "GeckIt may not look in Photos. Allow it in Settings, GeckIt, Photos, or choose the video.")
+                return
+            }
+            let options = PHFetchOptions()
+            options.predicate = NSPredicate(format: "creationDate > %@ AND (mediaSubtypes & %d) != 0", since as NSDate, Int(PHAssetMediaSubtype.videoScreenRecording.rawValue))
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            options.fetchLimit = 1
+            guard let asset = PHAsset.fetchAssets(with: .video, options: options).firstObject else {
+                call.resolve([:])
+                return
+            }
+            let request = PHVideoRequestOptions()
+            request.isNetworkAccessAllowed = true
+            request.version = .current
+            PHImageManager.default().requestAVAsset(forVideo: asset, options: request) { video, _, _ in
+                guard let url = (video as? AVURLAsset)?.url else {
+                    call.reject("The recording could not be read.")
+                    return
+                }
+                let ext = url.pathExtension.isEmpty ? "mov" : url.pathExtension.lowercased()
+                let kept = FileManager.default.temporaryDirectory.appendingPathComponent("recording-\(UUID().uuidString).\(ext)")
+                do {
+                    try FileManager.default.copyItem(at: url, to: kept)
+                } catch {
+                    call.reject(error.localizedDescription)
+                    return
+                }
+                let copy = AVURLAsset(url: kept)
+                let seconds = CMTimeGetSeconds(copy.duration)
+                let generator = AVAssetImageGenerator(asset: copy)
+                generator.appliesPreferredTrackTransform = true
+                generator.maximumSize = CGSize(width: 480, height: 480)
+                let middle = CMTime(seconds: seconds / 2, preferredTimescale: 600)
+                let thumb = (try? generator.copyCGImage(at: middle, actualTime: nil)).flatMap { UIImage(cgImage: $0).jpegData(compressionQuality: 0.7) }
+                let size = (try? kept.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                call.resolve([
+                    "path": kept.path,
+                    "url": kept.absoluteString,
+                    "ext": ext,
+                    "seconds": seconds,
+                    "bytes": size,
+                    "made": (asset.creationDate ?? Date()).timeIntervalSince1970 * 1000,
+                    "thumb": thumb?.base64EncodedString() ?? "",
+                ])
+            }
         }
     }
 

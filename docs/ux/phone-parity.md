@@ -27,7 +27,7 @@ On the phone Alex can look at the board, answer cards and start a task by typing
 | New task sheet, existing | Under the field: "Dictate" and "From a recording". After a recording, its frames with the pictures and "From a 0:42 recording. Claude gets the video too." with an x | Always; the line after a recording |
 | Ask sheet, existing | The same two buttons | Always |
 | Say it sheet (new) | A breathing microphone, the words as iOS hears them, Done; then what will be done, one line each, with Do it and Cancel; then what was done | Say it is pressed |
-| Recording sheet (new) | What the recording is going through: "Listening to it", "Taking frames", "Sending the video to the Mac", each with a check once done | A recording was picked |
+| Recording sheet (new) | First how to record from Control Center, in four steps, with "Choose a video instead"; back in GeckIt the screen recording made since then is offered as "Use this recording?" with a picture from its middle and its length, "Not this one" and "Use it"; then what the recording is going through: "Listening to it", "Taking frames", "Sending the video to the Mac", each with a check once done | From a recording was pressed |
 | Shortcuts tab (new) | The shortcuts as an inset list: name, project, when it runs next or "By hand", a Run button on each, a switch for its timetable; + in the bar | Shortcuts chosen |
 | Shortcut sheet (new) | Name, Project, Prompt, Goal, Mode, Repeats with its time, Timetable on, Run now, Delete | A shortcut or + is pressed, or Make a shortcut |
 | Search tab (new) | A search field at the top, taking the keyboard; conversations used last while it is empty; found by name, then "In what was said" with the line that matched | Search chosen |
@@ -63,8 +63,10 @@ block-beta
 | Plan | The Mac read the words as orders | One line per thing that will happen, the words that will be sent in full | Do it, or Cancel |
 | Nothing to do | The Mac read no order in them | The Mac's own reason, and Try again | Says it again, or Cancel |
 | Done out loud | Do it was pressed | What was done, one line each; Close | Closes it; a conversation it opened is open |
-| Picking a recording | From a recording was pressed | iOS's own video picker | Picks one, or Cancel |
-| Reading the recording | A video was picked | The three steps with checks | Waits, or Cancel |
+| Waiting for a recording | From a recording was pressed | The four steps to record from Control Center; Photos access asked for the first time | Leaves to record, Choose a video instead, or Cancel |
+| Offered | GeckIt is in front again and a screen recording was made since the sheet opened | "Use this recording?", its picture and length | Use it, Not this one (waits for the next), or Cancel |
+| Picking a recording | Choose a video instead was pressed | iOS's own video picker | Picks one, or Cancel back to waiting |
+| Reading the recording | Use it, or a video was picked | The three steps with checks | Waits, or Cancel |
 | Filled | The recording was read | The form with the words at the end of the field, the frames among the pictures, the recording line | Reads it over, Start |
 | No words in it | The recording has no speech | The form with the frames and "Nothing was said in it. Write what to do." | Writes it, Start |
 | Shortcuts empty | No shortcut in the scope | "No shortcuts. A shortcut is a prompt you run by hand or on a timetable." and New shortcut | Makes one |
@@ -91,6 +93,8 @@ stateDiagram-v2
   state "Nothing to do" as nothing
   state "New task" as form
   state "Picking" as picking
+  state "Waiting for a recording" as waiting
+  state "Use this recording?" as offered
   state "Reading recording" as rec
   state "Filled" as filled
   state "Conversation" as convo
@@ -107,8 +111,13 @@ stateDiagram-v2
   did --> board: Close
   did --> convo: an Open order
   board --> form: New task
-  form --> picking: From a recording
-  picking --> form: Cancel
+  form --> waiting: From a recording
+  waiting --> offered: back with a new screen recording
+  offered --> waiting: Not this one
+  offered --> rec: Use it
+  waiting --> picking: Choose a video instead
+  waiting --> form: Cancel
+  picking --> waiting: Cancel
   picking --> rec: video picked
   rec --> filled: read
   rec --> form: Cancel or failed
@@ -145,7 +154,11 @@ stateDiagram-v2
 | Done out loud | Carried out an Open order, by itself | Conversation | That conversation over the board once Close is pressed |
 | Board | Long presses New task | The ways menu | Write it, Say it, From a recording |
 | New task | Presses Dictate | Listening, in the field | The field fills after what was typed; Dictate turns to Stop |
-| New task | Presses From a recording | Picking | iOS's picker, videos only, screen recordings among them |
+| New task | Presses From a recording | Waiting for a recording | The four steps; Photos access asked the first time |
+| Waiting for a recording | Records from Control Center and comes back | Offered | "Use this recording?" as soon as GeckIt is in front |
+| Offered | Presses Use it | Reading the recording | The three steps |
+| Offered | Presses Not this one | Waiting for a recording | The next recording made is offered instead |
+| Waiting for a recording | Presses Choose a video instead | Picking | iOS's picker, videos only |
 | Picking | Picks a video | Reading the recording | The three steps; the first check within seconds |
 | Reading the recording | The video is read and sent, by itself | Filled | The form, with the words, frames and recording line |
 | Reading the recording | Presses Cancel | New task | The form as it was; nothing is kept on the Mac |

@@ -118,6 +118,7 @@ let hearing: PluginListenerHandle[] = []
 
 interface Recording {
   pick(): Promise<Partial<PickedVideo> & { url?: string }>
+  latest(options: { since: number }): Promise<Partial<PickedVideo> & { url?: string; made?: number; thumb?: string }>
   words(options: { path: string; language: string }): Promise<{ text: string }>
   frames(options: { path: string; count: number }): Promise<{ frames: { at: number; data: string }[] }>
   drop(options: { path: string }): Promise<void>
@@ -132,6 +133,12 @@ const urls = new Map<string, string>()
     if (got.path === undefined || got.url === undefined) return undefined
     urls.set(got.path, got.url)
     return { path: got.path, ext: got.ext ?? 'mov', seconds: got.seconds ?? 0, bytes: got.bytes ?? 0 }
+  },
+  latest: async (since) => {
+    const got = await recording.latest({ since })
+    if (got.path === undefined || got.url === undefined) return undefined
+    urls.set(got.path, got.url)
+    return { path: got.path, ext: got.ext ?? 'mov', seconds: got.seconds ?? 0, bytes: got.bytes ?? 0, made: got.made ?? since, thumb: got.thumb ?? '' }
   },
   words: async (video, language) => (await recording.words({ path: video.path, language })).text,
   frames: async (video, count) => (await recording.frames({ path: video.path, count })).frames,
