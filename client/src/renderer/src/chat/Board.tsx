@@ -13,6 +13,7 @@ import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
 import { HiddenChats } from './HiddenChats'
 import { NameField } from './NameField'
+import { PhoneProject } from './PhoneProject'
 import { PhoneRecord } from './PhoneRecord'
 import { Preview } from './Preview'
 import { Projects } from './Projects'
@@ -1114,16 +1115,7 @@ function PhoneNewTask({
           {question ? <span className="phone-task-tools-note">Deleted a day after its last answer.</span> : null}
         </div>
       </div>
-      {choosing ? (
-        <Menu
-          anchor={new DOMRect()}
-          title="Start it in"
-          chosen={root}
-          choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectName(one) }))}
-          onPick={onRoot}
-          onClose={() => setChoosing(false)}
-        />
-      ) : null}
+      {choosing ? <PhoneProject chat={chat} root={root} onPick={onRoot} onClose={() => setChoosing(false)} /> : null}
       {recording ? <PhoneRecord language={chat.settings.nativeLanguage} onClose={() => setRecording(false)} /> : null}
       {asking ? (
         <Menu

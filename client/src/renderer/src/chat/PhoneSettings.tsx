@@ -351,8 +351,20 @@ function AddProject({
 }
 
 /** The Mac's folders one level at a time, from its home, with the one shown added as a project at the bottom. */
-export function Folders({ chat, onAdded }: { readonly chat: Chat; readonly onAdded: (root: string) => void }): React.JSX.Element {
-  const [at, setAt] = useState<string | undefined>()
+export function Folders({
+  chat,
+  from,
+  onShown,
+  onAdded,
+}: {
+  readonly chat: Chat
+  /** The folder it opens in, the Mac's home when not given. */
+  readonly from?: string
+  /** The folder shown, for a sheet that picks it from its bar; then there is no row for it at the bottom. */
+  readonly onShown?: (folder: FolderList) => void
+  readonly onAdded?: (root: string) => void
+}): React.JSX.Element {
+  const [at, setAt] = useState<string | undefined>(from)
   const [shown, setShown] = useState<FolderList | undefined>()
   const [trouble, setTrouble] = useState<string | undefined>()
   useEffect(() => {
@@ -363,6 +375,7 @@ export function Folders({ chat, onAdded }: { readonly chat: Chat; readonly onAdd
         if (!here) return
         setTrouble(undefined)
         setShown(read)
+        onShown?.(read)
       })
       .catch((error: unknown) => {
         if (here) setTrouble(tooOld(error))
@@ -370,7 +383,7 @@ export function Folders({ chat, onAdded }: { readonly chat: Chat; readonly onAdd
     return () => {
       here = false
     }
-  }, [at])
+  }, [at, onShown])
   const had = shown !== undefined && chat.settings.projects.includes(shown.path)
 
   return shown === undefined ? (
@@ -385,22 +398,24 @@ export function Folders({ chat, onAdded }: { readonly chat: Chat; readonly onAdd
         ))}
         {shown.folders.length === 0 ? <Cell label="No folders in it" /> : null}
       </div>
-      <div className="phone-group phone-form-group">
-        <Cell
-          label={had ? 'Already a project' : 'Add this folder'}
-          says={shown.git ? 'Git repository' : homePath(shown.path)}
-          accent={!had}
-          {...(had
-            ? {}
-            : {
-                onPress: () => {
-                  tap('done')
-                  void window.geckit.chat.rememberProject(shown.path).then(() => chat.refresh())
-                  onAdded(shown.path)
-                },
-              })}
-        />
-      </div>
+      {onShown !== undefined ? null : (
+        <div className="phone-group phone-form-group">
+          <Cell
+            label={had ? 'Already a project' : 'Add this folder'}
+            says={shown.git ? 'Git repository' : homePath(shown.path)}
+            accent={!had}
+            {...(had
+              ? {}
+              : {
+                  onPress: () => {
+                    tap('done')
+                    void window.geckit.chat.rememberProject(shown.path).then(() => chat.refresh())
+                    onAdded?.(shown.path)
+                  },
+                })}
+          />
+        </div>
+      )}
     </>
   )
 }

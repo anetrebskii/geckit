@@ -119,10 +119,15 @@ export function FullSheet({
   ready = true,
   onAction,
   tool,
+  back,
+  onBack,
   onClose,
   children,
 }: {
   readonly title: string
+  /** A page pushed inside the sheet: the page it goes back to, in place of Cancel. */
+  readonly back?: string
+  readonly onBack?: () => void
   readonly action?: string
   readonly ready?: boolean
   readonly onAction?: () => void
@@ -205,9 +210,16 @@ export function FullSheet({
             if (far) onClose()
           }}
         >
-          <button type="button" onClick={onClose}>
-            {action === undefined ? 'Done' : 'Cancel'}
-          </button>
+          {onBack === undefined ? (
+            <button type="button" onClick={onClose}>
+              {action === undefined ? 'Done' : 'Cancel'}
+            </button>
+          ) : (
+            <button type="button" className="phone-back" onClick={onBack}>
+              <Icon name="left" size={22} />
+              {back ?? 'Back'}
+            </button>
+          )}
           <b>{title}</b>
           {action === undefined ? (
             (tool ?? <span />)

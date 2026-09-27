@@ -648,3 +648,14 @@ html.keyboard .phone-tabs {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
+/* A list pushed inside a full sheet stands on the form's own margin, as .phone-group does there. */
+.phone-full .phone-task-form .phone-head {
+  margin-inline: 16px;
+}
+
+.phone-sheet-note {
+  margin: 7px 16px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
