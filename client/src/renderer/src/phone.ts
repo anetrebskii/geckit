@@ -524,7 +524,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       watching: (id) => {
         watched = id
         // Behind another app it watches nothing, and what it had open is still what the Mac sends it.
-        if (id === undefined || id === opened) return
+        if (id === undefined) return
+        send('chat.read', id)
+        if (id === opened) return
         opened = id
         send('chat.watching', id)
       },
