@@ -4,7 +4,7 @@ import { ANYWHERE, homeOf, SESSION_STATUSES, shownProjects } from '../../../shar
 import type { ChatSession, RecordedFrame, SessionImage, SessionStatus } from '../../../shared/api'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
-import { dictate } from '../dictate'
+import { dictate, languageCode, useDictationLanguage } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { Icon } from '../ui/Icon'
@@ -958,18 +958,20 @@ function PhoneNewTask({
   const [listening, setListening] = useState(false)
   // Dictation goes after what was already typed, as the composer's does.
   const typed = useRef('')
+  const [spoken, flipSpoken] = useDictationLanguage(chat.settings.nativeLanguage, chat.settings.secondLanguage)
   const dictating = (): void => {
     const ear = dictate()
     if (ear === undefined) return
     if (listening) {
       ear.stop()
+      setListening(false)
       return
     }
     typed.current = text.trim() === '' ? '' : `${text.trimEnd()} `
     setListening(true)
     ear
       .start(
-        chat.settings.nativeLanguage,
+        spoken,
         (heard) => onText(`${typed.current}${heard}`),
         () => setListening(false),
       )
@@ -1092,8 +1094,11 @@ function PhoneNewTask({
         </div>
         {/* What adds to the text sits on the keyboard, as in Notes and Mail, so it is in reach while typing. */}
         <div className="phone-task-tools">
-          <button type="button" className={listening ? 'on' : ''} aria-label={listening ? 'Stop dictating' : `Dictate in ${chat.settings.nativeLanguage}`} onClick={dictating}>
+          <button type="button" className={listening ? 'on' : ''} aria-label={listening ? 'Stop dictating' : `Dictate in ${spoken}`} onClick={dictating}>
             <Icon name={listening ? 'stop' : 'mic'} size={22} />
+          </button>
+          <button type="button" className="spoken" disabled={listening} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
+            {languageCode(spoken)}
           </button>
           <button type="button" aria-label="From a recording" onClick={() => setRecording(true)}>
             <Icon name="display" size={22} />
