@@ -170,11 +170,9 @@ describe('what is run on a host', () => {
     expect(checkScript()).toContain('auth status')
   })
 
-  it('reads the name a host gives itself the way the phone is told a paired one', () => {
-    expect(readChecked('@@machine Leonids-MacBook-Pro-2.local\n@@missing\n')).toEqual({ missing: true, machine: 'Leonids MacBook Pro 2' })
-    expect(readChecked('@@machine devbox\n@@path /x\n@@version\n2.1.283\n@@auth\n{"loggedIn": true}\n@@end\n').machine).toBe('devbox')
+  it('reads a computer\'s name the way the phone is told it', () => {
+    expect(machineName('Leonids-MacBook-Pro-2.local')).toBe('Leonids MacBook Pro 2')
     expect(machineName('studio-mini.local.')).toBe('studio mini')
-    expect(checkScript()).toContain('@@machine $(hostname')
   })
 })
 

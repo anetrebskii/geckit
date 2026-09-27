@@ -13,7 +13,7 @@
 ### Session 2026-09-28
 
 - Q: Does the phone reach hosts itself? → A: No; through the computer running GeckIt, which has the keys and the network (principle 3 of the design).
-- Q: Can a host be added or edited on the phone? → A: No; it is seen, connected, disconnected and its folders added there.
+- Q: Can a host be added or edited on the phone? → A: No; the phone shows the computer's hosts only as the labels of their projects, and adds a folder on one under Where. Connecting to a host over SSH from the phone itself is a topic of its own.
 - Q: What is the computer called on the phone? → A: By its name, never "Local".
 - Q: Where is the moved port said on the phone, whose page opens in a native view? → A: In the view's own bar, as the line iOS puts over a title (`navigationItem.prompt`).
 
@@ -37,9 +37,9 @@ In Settings, Projects, Add a project (and in a new task's Choose a folder), the 
 
 **Independent Test**: Add `~/geckit-remote-test` on the host from the phone; it appears first in Projects as `geckit-remote-test · <host>`.
 
-### User Story 3 - See and reconnect hosts from the phone (Priority: P2)
+### User Story 3 - One kind of host on the phone (Priority: P2)
 
-Settings has Hosts: the computer first, then each host with its dot and how it stands; a host's page has Connect or Reconnect and Disconnect. Adding is said to be on the computer.
+The phone connects only by pairing with a host where GeckIt runs. The projects that host has on other hosts come with it as labels; the phone has no list of them and nothing to connect them with. Every "Mac" on the phone says "host", or the host's name.
 
 ### User Story 4 - A host's localhost page on the phone (Priority: P2)
 

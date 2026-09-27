@@ -13,7 +13,7 @@ import { Limits } from './PhoneInfo'
 import { Cell, Page, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
-import { computerName, PhoneHost, PhoneHostFolders, PhoneHostList, PhoneWhere } from './PhoneHosts'
+import { computerName, PhoneHostFolders, PhoneWhere } from './PhoneHosts'
 import { homePath, projectLabel } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
@@ -31,8 +31,6 @@ type Where =
   | { readonly page: 'projects' }
   | { readonly page: 'where' }
   | { readonly page: 'add'; readonly host?: string }
-  | { readonly page: 'hosts' }
-  | { readonly page: 'host'; readonly id: string }
   | { readonly page: 'hidden' }
   | { readonly page: 'phrases' }
   | { readonly page: 'shortcuts' }
@@ -62,9 +60,7 @@ export function PhoneSettings({
         ? 'Profiles'
         : one.page === 'projects'
           ? 'Projects'
-          : one.page === 'hosts'
-            ? 'Over SSH'
-            : one.page === 'where'
+          : one.page === 'where'
               ? 'Where'
               : 'Back'
   }
@@ -89,8 +85,6 @@ export function PhoneSettings({
         onAdded={() => setTrail(trail.filter((one) => one.page !== 'add' && one.page !== 'where'))}
       />
     )
-  if (where.page === 'hosts') return <PhoneHostList chat={chat} back={before()} onBack={back} onOpen={(id) => go({ page: 'host', id })} />
-  if (where.page === 'host') return <PhoneHost chat={chat} id={where.id} back={before()} onBack={back} />
   if (where.page === 'hidden') return <Hidden chat={chat} back={before()} onBack={back} />
   if (where.page === 'phrases') return <Phrases chat={chat} back={before()} onBack={back} />
   if (where.page === 'shortcuts') return <PhoneShortcuts chat={chat} back={before()} onBack={back} onEdit={onEdit} />
@@ -122,11 +116,10 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
 
       {paired === undefined ? null : (
         <>
-          {/* Every other machine is a host: the ones paired with this phone, which it switches between, and the ones the host it works through reaches over SSH. */}
-          <div className="phone-head">Hosts</div>
+          {/* The host this phone works through, and the others it is paired with; the projects that host has on other hosts come with it. */}
+          <div className="phone-head">Host</div>
           <div className="phone-group">
             <Cell label={thisMac?.name ?? 'Host'} says={paired.length > 1 ? `${String(paired.length)} hosts paired` : 'Paired'} onPress={() => setSwitching(true)} />
-            {chat.hosts.length === 0 ? null : <Cell label="Over SSH" value={String(chat.hosts.length)} onPress={() => go({ page: 'hosts' })} />}
           </div>
           {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
             <>

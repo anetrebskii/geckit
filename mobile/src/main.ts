@@ -62,7 +62,7 @@ function useMac(link: string | undefined): void {
 }
 
 ;(window as { geckitMacs?: Macs }).geckitMacs = {
-  list: () => keptMacs().map((mac, at) => ({ name: nameOf(mac, at), ...(mac.name === undefined ? {} : { told: mac.name }), current: isCurrent(mac), favorite: mac.favorite === true })),
+  list: () => keptMacs().map((mac, at) => ({ name: nameOf(mac, at), current: isCurrent(mac), favorite: mac.favorite === true })),
   switchTo: (index) => useMac(keptMacs()[index]?.link),
   add: () => void scan(),
   forget: (index) => {

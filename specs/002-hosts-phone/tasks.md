@@ -19,7 +19,7 @@
 - [x] T111 [P] [US1] Header: the host's dot and `project · host` in `PhoneNav.tsx`
 - [x] T112 [US1] The pill "Reconnecting to <host>" and the held Send on the phone
 - [x] T113 [US1] `PhoneHostSheet.tsx`: password, passphrase, code, trust; "Remember on <computer>"; in place of the cards on the phone
-- [x] T114 [US3] Settings, Hosts row; `PhoneHosts.tsx` with the Hosts page and the host page
+- [x] T114 [US3] Settings, Host: the section that was Mac; the phone says host where it said Mac (a Hosts page with Connect and Disconnect was built and taken out again: on the phone it read as the host connecting hosts)
 - [x] T115 [US2] Where page and host folders in Settings, Add a project, and in the new task's project sheet
 - [x] T116 [US1] Project, profile and Hidden lists label host projects
 - [x] T117 [US4] iOS: `LocalPage.open({ url, note })` puts the note over the title
