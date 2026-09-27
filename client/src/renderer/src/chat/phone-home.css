@@ -28,7 +28,7 @@
   grid-template-columns: repeat(4, 1fr);
   padding-bottom: var(--bottom);
   background: var(--ground);
-  box-shadow: 0 -0.5px 0 var(--separator);
+  box-shadow: inset 0 0.5px 0 var(--separator);
 }
 
 html.keyboard .phone-tabs {
