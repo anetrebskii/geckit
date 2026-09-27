@@ -541,6 +541,28 @@ export type VoiceMode = 'paste' | 'orders' | 'record' | 'fill'
 /** The screen the capsule records, or why it cannot. */
 export type ScreenSource = { readonly id: string } | { readonly denied: true } | { readonly error: string }
 
+/** A key held with another, as the phone's key row holds them. */
+export type ScreenModifier = 'command' | 'option' | 'control' | 'shift'
+
+/**
+ * What the phone does to the Mac it is shown, as a trackpad would: everything
+ * happens where the Mac's pointer is. Distances are fractions of the shown
+ * screen's width and height; `count` is which click of a double click this is,
+ * as the Mac counts them; `key` is a name such as `return` or `left`, or one
+ * character.
+ */
+export type ScreenControl =
+  | { readonly kind: 'where' }
+  | { readonly kind: 'move'; readonly dx: number; readonly dy: number }
+  | { readonly kind: 'press'; readonly down: boolean }
+  | { readonly kind: 'click'; readonly button: 'left' | 'right'; readonly count: number }
+  | { readonly kind: 'scroll'; readonly dx: number; readonly dy: number }
+  | { readonly kind: 'type'; readonly text: string }
+  | { readonly kind: 'key'; readonly key: string; readonly modifiers: readonly ScreenModifier[] }
+
+/** Where the pointer is on the shown screen afterwards, as fractions of it, or why the Mac would not do it. */
+export type ScreenControlled = { readonly x: number; readonly y: number } | { readonly error: string }
+
 /** A still from a screen recording, taken so many seconds in. */
 export interface RecordedFrame {
   readonly at: number

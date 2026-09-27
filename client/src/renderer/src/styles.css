@@ -5720,6 +5720,11 @@ html.phone .talk.over {
   justify-self: end;
 }
 
+.phone-nav-end {
+  display: flex;
+  justify-self: end;
+}
+
 html.phone .transcript {
   padding: 16px 0 24px;
   overscroll-behavior: contain;
@@ -6123,7 +6128,7 @@ body:has(.talk.over:not([hidden])) .phone-offline {
   animation: spin 800ms linear infinite;
 }
 
-/* The Mac's screen: black edge to edge, the bars over it fading away on a tap. */
+/* The Mac's screen: black edge to edge, with the bars above and below the picture rather than over it, so nothing of it is covered. */
 .phone-screen {
   position: fixed;
   inset: 0;
@@ -6148,8 +6153,9 @@ body:has(.talk.over:not([hidden])) .phone-offline {
 }
 
 .phone-screen-note {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -6172,22 +6178,15 @@ body:has(.talk.over:not([hidden])) .phone-offline {
 }
 
 .phone-screen-bar {
-  position: absolute;
-  inset: 0 0 auto;
   display: flex;
-  gap: 4px;
+  flex: none;
+  gap: 8px;
   align-items: center;
-  padding: calc(var(--top) + 4px) 8px 4px 16px;
-  background: var(--screen-bar);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  transition: opacity var(--settle) var(--ease), transform var(--settle) var(--ease);
+  padding: calc(var(--top) + 2px) max(8px, env(safe-area-inset-right)) 2px max(16px, env(safe-area-inset-left));
 }
 
 .phone-screen-bar.hidden {
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(-100%);
+  display: none;
 }
 
 .phone-screen-title {
@@ -6197,6 +6196,8 @@ body:has(.talk.over:not([hidden])) .phone-offline {
   font-size: 17px;
   font-weight: 600;
 }
+  display: flex;
+  flex-direction: column;
 
 .phone-screen-live {
   padding: 1px 6px;
@@ -6261,6 +6262,7 @@ html.phone .task-row .how {
 }
 
 .tasks-sheet .dialog.tasks + .sheet-list {
+  flex: none;
   margin-top: 10px;
 }
 
@@ -6276,7 +6278,21 @@ html.phone .task-row .how {
 .phone-macs > svg {
   flex: none;
   margin-top: 4px;
+/* Look or Control, drawn light on the black whatever the theme. */
+.phone-screen-seg {
+  flex: 0 1 180px;
+  margin: 0 0 0 8px;
+  background: rgb(255 255 255 / 12%);
+}
+
+.phone-screen-seg .phone-seg-thumb {
+  width: calc((100% - 4px) / 2);
+  background: rgb(255 255 255 / 24%);
+  box-shadow: none;
+}
+
   color: var(--accent);
+  flex: none;
 }
 
 .phone-bar-small,
@@ -6284,6 +6300,13 @@ html.phone .task-row .how {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+.phone-screen-done.icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  padding: 0;
+}
+
 }
 
 /* A Mac in the list: its star, its name that switches to it, and its menu, each a target of its own. */
@@ -6297,6 +6320,83 @@ html.phone .task-row .how {
 }
 
 .phone-mac-star,
+/* How the trackpad is worked, until the first touch. */
+.phone-screen-hint {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+  background: var(--screen-bar);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 12px;
+}
+
+/* Why the Mac would not be worked from here, over the top of the picture until pressed away. */
+.phone-screen-refused {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  left: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--screen-text);
+  text-align: left;
+  background: var(--screen-bar);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 12px;
+}
+
+/* Only there to bring up the phone's keyboard; 16px so the phone does not zoom in on it. */
+.phone-screen-typing {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  font-size: 16px;
+  opacity: 0;
+  resize: none;
+}
+
+/* The keys the phone's keyboard has not got, along the bottom and over the keyboard once it is up; a modifier stays down for the next key. */
+.phone-screen-keys {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  padding: 6px max(8px, env(safe-area-inset-right)) max(6px, var(--bottom)) max(8px, env(safe-area-inset-left));
+  margin-bottom: var(--keyboard, 0px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.phone-screen-keys.hidden {
+  display: none;
+}
+
+.phone-screen-key {
+  display: grid;
+  flex: 1 0 36px;
+  place-items: center;
+  height: 40px;
+  font-size: 16px;
+  color: var(--screen-text);
+  background: rgb(255 255 255 / 14%);
+  border-radius: 8px;
+}
+
+.phone-screen-key.on {
+  color: #000000;
+  background: var(--screen-text);
+}
+
 .phone-mac-more {
   display: grid;
   flex: none;
@@ -6360,7 +6460,7 @@ html.phone .preview img {
 
 html.phone .preview-bar {
   top: calc(var(--top) + 8px);
-  right: 12px;
+  right: max(12px, env(safe-area-inset-right));
   padding: 0;
   opacity: calc(1 - var(--leaving, 0) * 2);
   background: rgb(255 255 255 / 16%);

@@ -12,7 +12,15 @@ import { projectName } from './project'
 import type { Chat } from './useChat'
 
 /** The conversation's bar on the phone: back to the board, what it is, and everything else under More. */
-export function PhoneNav({ chat, links }: { readonly chat: Chat; readonly links: readonly Link[] }): React.JSX.Element {
+export function PhoneNav({
+  chat,
+  links,
+  onScreen,
+}: {
+  readonly chat: Chat
+  readonly links: readonly Link[]
+  readonly onScreen: () => void
+}): React.JSX.Element {
   const [more, setMore] = useState(false)
   const [listing, setListing] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -27,13 +35,16 @@ export function PhoneNav({ chat, links }: { readonly chat: Chat; readonly links:
         <b>{session?.title ?? 'New conversation'}</b>
         {session === undefined ? null : <span>{projectName(homeOf(session))}</span>}
       </div>
-      {session === undefined ? (
-        <span />
-      ) : (
-        <button type="button" className="phone-icon" aria-label="More" onClick={() => setMore(true)}>
-          <Icon name="more" size={24} />
+      <span className="phone-nav-end">
+        <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
+          <Icon name="display" size={24} />
         </button>
-      )}
+        {session === undefined ? null : (
+          <button type="button" className="phone-icon" aria-label="More" onClick={() => setMore(true)}>
+            <Icon name="more" size={24} />
+          </button>
+        )}
+      </span>
       {more && session !== undefined ? (
         <Menu
           anchor={new DOMRect()}
