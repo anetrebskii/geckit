@@ -19,11 +19,15 @@ import type { HostPrompt } from '../../shared/hosts'
 
 const WINDOWS = process.platform === 'win32'
 
-/** The helper ssh runs, in plain Node: one question out, one answer back, exit 1 for none. */
+/**
+ * The helper ssh runs, in plain Node: one question out, one answer back, exit
+ * 1 for none. Its own parent process is ssh itself, so its pid tells apart
+ * which connection is asking where two are open on the same host at once.
+ */
 const HELPER = `const net = require('node:net')
 const socket = net.connect(process.env.GECKIT_ASKPASS_SOCKET)
 let got = ''
-socket.on('connect', () => socket.write(JSON.stringify({ token: process.env.GECKIT_ASKPASS_TOKEN, host: process.env.GECKIT_HOST || '', prompt: process.argv.slice(2).join(' ') }) + '\\n'))
+socket.on('connect', () => socket.write(JSON.stringify({ token: process.env.GECKIT_ASKPASS_TOKEN, host: process.env.GECKIT_HOST || '', prompt: process.argv.slice(2).join(' '), pid: process.ppid }) + '\\n'))
 socket.on('data', (chunk) => { got += chunk.toString('utf8') })
 socket.on('end', () => {
   try {
@@ -70,9 +74,16 @@ export interface Asker {
 
 /**
  * Listens for the helper and hands each question to `ask`, which answers with
- * the words or with nothing for Not now.
+ * the words or with nothing for Not now. `ask` is given a way to register
+ * what to do if the ssh that asked is gone before it answers - killed by its
+ * own command's timeout, most often - so whatever is waiting on it is not
+ * left waiting on a connection that no longer exists.
  */
-export function startAskpass(folder: string, executable: string, ask: (host: string, prompt: string) => Promise<string | undefined>): Asker {
+export function startAskpass(
+  folder: string,
+  executable: string,
+  ask: (host: string, prompt: string, pid: number | undefined, abandoned: (fn: () => void) => void) => Promise<string | undefined>,
+): Asker {
   mkdirSync(folder, { recursive: true, mode: 0o700 })
   const token = randomBytes(24).toString('hex')
   const socket = WINDOWS
@@ -92,11 +103,16 @@ export function startAskpass(folder: string, executable: string, ask: (host: str
 
   const server: Server = createServer((connection) => {
     let got = ''
+    let settled = false
+    let onGone: (() => void) | undefined
+    connection.on('close', () => {
+      if (!settled) onGone?.()
+    })
     connection.on('data', (chunk: Buffer) => {
       got += chunk.toString('utf8')
       const end = got.indexOf('\n')
       if (end < 0) return
-      let asked: { token?: unknown; host?: unknown; prompt?: unknown } = {}
+      let asked: { token?: unknown; host?: unknown; prompt?: unknown; pid?: unknown } = {}
       try {
         asked = JSON.parse(got.slice(0, end)) as typeof asked
       } catch {
@@ -107,9 +123,13 @@ export function startAskpass(folder: string, executable: string, ask: (host: str
         connection.end()
         return
       }
-      void ask(asked.host, asked.prompt)
+      const pid = typeof asked.pid === 'number' ? asked.pid : undefined
+      void ask(asked.host, asked.prompt, pid, (fn) => (onGone = fn))
         .catch(() => undefined)
-        .then((answer) => connection.end(JSON.stringify(answer === undefined ? {} : { answer })))
+        .then((answer) => {
+          settled = true
+          connection.end(JSON.stringify(answer === undefined ? {} : { answer }))
+        })
     })
     connection.on('error', () => undefined)
   })

@@ -35,6 +35,12 @@ export interface RunOptions {
   readonly attach?: number
   /** The bytes of output read so far, each time that grows, so a restart of GeckIt reads on from there. */
   readonly read?: (offset: number) => void
+  /**
+   * Where the earliest question Claude Code asked and nobody has answered yet
+   * begins, or nothing: a restart reads on from there, so the card comes up
+   * again rather than the conversation waiting on an answer it cannot see.
+   */
+  readonly pending?: (offset: number | undefined) => void
   /** The connection came up, or went. */
   readonly link?: (up: boolean) => void
   /** Reaches the host first: nothing where a conversation can run there, or why it cannot. */
@@ -59,6 +65,10 @@ export class RemoteRun extends EventEmitter {
   #started = false
   /** Disconnected by hand: nothing reconnects until Connect. */
   #paused = false
+  /** What `kill`'s own stop script settles to, for something that needs to know it is done there. */
+  #stopped: Promise<void> | undefined
+  /** Questions Claude Code asked and has had no answer to, by id, at the byte each began. */
+  readonly #asked = new Map<string, number>()
 
   constructor(options: RunOptions) {
     super()
@@ -127,7 +137,9 @@ export class RemoteRun extends EventEmitter {
         return
       }
       first = false
+      const began = this.#offset
       this.#offset += bytes
+      this.#heard(line, began)
       if (line.startsWith('{"type":"geckit_exit"')) {
         ended = true
         this.#options.read?.(this.#offset)
@@ -185,6 +197,27 @@ export class RemoteRun extends EventEmitter {
     if (this.#writer === undefined) this.#openWriter()
   }
 
+  /**
+   * Drops whatever connection is open and opens another at once, reading
+   * `#options.host()` again rather than what an open connection was made
+   * with: for a host edited to another address or account underneath a run
+   * still going, so it moves to the new one instead of carrying on, however
+   * briefly, against the old.
+   */
+  reconnect(): void {
+    if (this.#over || this.#paused || !this.#started) return
+    clearTimeout(this.#timer)
+    this.#tries = 0
+    const reader = this.#reader
+    const writer = this.#writer
+    this.#reader = undefined
+    this.#writer = undefined
+    reader?.kill()
+    writer?.kill()
+    this.#read()
+    this.#openWriter()
+  }
+
   /** The writer: what is sent goes into the run's input, over a connection of its own. */
   #openWriter(): void {
     if (this.#over || this.#paused || !this.#started || this.#writer !== undefined) return
@@ -205,7 +238,23 @@ export class RemoteRun extends EventEmitter {
     writer.on('error', gone)
   }
 
+  /** Keeps the questions asked and not answered, and says where the earliest of them begins. */
+  #heard(line: string, began: number): void {
+    if (!line.startsWith('{"type":"control_')) return
+    const said = readControl(line)
+    if (said === undefined) return
+    if (said.type === 'control_request') this.#asked.set(said.id, began)
+    else this.#asked.delete(said.id)
+    this.#options.pending?.(this.#asked.size === 0 ? undefined : Math.min(...this.#asked.values()))
+  }
+
   #write(chunk: Buffer): void {
+    // An answer going to Claude Code settles the question it answers.
+    for (const line of chunk.toString('utf8').split('\n')) {
+      const said = line.startsWith('{"type":"control_response"') ? readControl(line) : undefined
+      if (said === undefined || !this.#asked.delete(said.id)) continue
+      this.#options.pending?.(this.#asked.size === 0 ? undefined : Math.min(...this.#asked.values()))
+    }
     if (this.#over) return
     const writer = this.#writer
     if (writer === undefined || writer.exitCode !== null || !writer.stdin.writable) {
@@ -223,8 +272,13 @@ export class RemoteRun extends EventEmitter {
     const setup = this.#options.setup()
     const id = this.#options.id
     this.#end()
-    void runOn(host, setup, stopScript(id), { timeout: 30_000 })
+    this.#stopped = runOn(host, setup, stopScript(id), { timeout: 30_000 }).then(() => undefined)
     return true
+  }
+
+  /** Settles once the stop script sent by `kill` has finished on the host, or at once where nothing was sent. */
+  stopped(): Promise<void> {
+    return this.#stopped ?? Promise.resolve()
   }
 
   /** Lets go of it here and leaves it running there, for GeckIt quitting. */
@@ -246,5 +300,16 @@ export class RemoteRun extends EventEmitter {
     this.stdout.end()
     this.stderr.end()
     this.emit('close', 0)
+  }
+}
+
+/** A control line's type and the id of the question it asks, answers or takes back; nothing for any other line. */
+export function readControl(line: string): { readonly type: string; readonly id: string } | undefined {
+  try {
+    const read = JSON.parse(line) as { type?: unknown; request_id?: unknown; response?: { request_id?: unknown } }
+    const id = typeof read.request_id === 'string' ? read.request_id : typeof read.response?.request_id === 'string' ? read.response.request_id : undefined
+    return typeof read.type === 'string' && id !== undefined ? { type: read.type, id } : undefined
+  } catch {
+    return undefined
   }
 }

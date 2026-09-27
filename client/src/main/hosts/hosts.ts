@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import type { Folders } from '../../shared/api'
 import { draftProblem, hostIdFor, remoteRoot } from '../../shared/hosts'
 import type { HostAnswer, HostCheck, HostConfig, HostDraft, HostPrompt, HostState, HostView, KnownHost } from '../../shared/hosts'
+import { setAsking } from './asking'
 import { readPrompt, startAskpass } from './askpass'
 import type { Asker } from './askpass'
 import { readChecked, readFolders, readSshConfig } from './read'
@@ -14,8 +15,8 @@ import type { Checked } from './read'
 import type { RemoteRun } from './run'
 import { checkScript, foldersScript, installScript, resolveScript } from './run-script'
 import type { Secrets } from './secrets'
-import { controlFolder, runOn, sshArgs, sshProblem, sshProgram } from './ssh'
-import type { SshSetup } from './ssh'
+import { controlFolder, isConnectionFailure, runOn, sshArgs, sshProblem, sshProgram } from './ssh'
+import type { Ran, SshSetup } from './ssh'
 
 /**
  * Every host, how each stands, and everything asked of a person to reach one.
@@ -48,6 +49,10 @@ export interface HostsDeps {
   readonly checks?: (lines: readonly HostCheck[]) => void
   readonly secrets: Secrets
   readonly now?: () => number
+  /** A host's own forwarded ports, let go of because it is no longer the same computer underneath. */
+  readonly forwardsChanged?: (host: string) => void
+  /** The mirror and listing kept of a host's conversations, thrown away because it no longer names the same computer. */
+  readonly diskForget?: (host: string) => void
 }
 
 interface Held {
@@ -61,8 +66,8 @@ interface Held {
   plan?: string
   timer?: NodeJS.Timeout
   checking: Promise<boolean> | undefined
-  /** A remembered password was handed to ssh for the connection being made. */
-  usedStored: boolean
+  /** The ssh processes (by pid) a remembered password was already handed to: asked twice by the same one, it was wrong. */
+  usedStored: Set<number>
   /** Not now was pressed on a card for the connection being made. */
   declined: boolean
   readonly runs: Map<RemoteRun, boolean>
@@ -70,7 +75,8 @@ interface Held {
 
 interface Asked {
   readonly prompt: HostPrompt
-  readonly done: (answer: string | undefined) => void
+  /** Every connection waiting on the same question at once; each is answered together, and each can also be dropped on its own. */
+  readonly dones: Set<(answer: string | undefined) => void>
 }
 
 /** What `HostDisk` and the other routing need from `Hosts`, kept narrow so a test can hand it a fake. */
@@ -78,6 +84,8 @@ export interface HostsLike {
   config(id: string): HostConfig | undefined
   setup(): SshSetup
   state(id: string): HostState
+  /** A command's own connection to an 'up' host failed rather than the command on it: the host goes `lost` and is tried again. */
+  noteFailure?(id: string, ran: Ran): void
 }
 
 export class Hosts implements HostsLike {
@@ -94,7 +102,7 @@ export class Hosts implements HostsLike {
   constructor(deps: HostsDeps) {
     this.#deps = deps
     this.#control = controlFolder(deps.folder)
-    this.#asker = startAskpass(deps.folder, deps.executable, (host, prompt) => this.#ask(host, prompt))
+    this.#asker = startAskpass(deps.folder, deps.executable, (host, prompt, pid, abandoned) => this.#ask(host, prompt, pid, abandoned))
   }
 
   #now(): number {
@@ -112,7 +120,7 @@ export class Hosts implements HostsLike {
   #hold(id: string): Held {
     let held = this.#held.get(id)
     if (held === undefined) {
-      held = { state: 'idle', shown: 'idle', checking: undefined, usedStored: false, declined: false, runs: new Map() }
+      held = { state: 'idle', shown: 'idle', checking: undefined, usedStored: new Set(), declined: false, runs: new Map() }
       this.#held.set(id, held)
     }
     return held
@@ -120,6 +128,15 @@ export class Hosts implements HostsLike {
 
   state(id: string): HostState {
     return this.#held.get(id)?.shown ?? 'idle'
+  }
+
+  /** A command's own connection to a host thought `up` failed: it is out of reach for now rather than the command having gone wrong, so it goes `lost` and is tried again. */
+  noteFailure(id: string, ran: Ran): void {
+    if (!isConnectionFailure(ran.code, ran.err)) return
+    const held = this.#held.get(id)
+    if (held === undefined || held.state !== 'up') return
+    this.#set(id, 'lost')
+    this.reconnect(id)
   }
 
   views(): HostView[] {
@@ -193,12 +210,12 @@ export class Hosts implements HostsLike {
     if (host === undefined) return false
     const held = this.#hold(id)
     held.declined = false
-    held.usedStored = false
     this.#set(id, 'connecting')
-    const ran = await runOn(host, this.setup(), checkScript(), { timeout: 25_000 })
+    let pid: number | undefined
+    const ran = await runOn(host, this.setup(), checkScript(), { timeout: 25_000, onPid: (own) => (pid = own) })
     if (ran.code !== 0) {
       // A remembered password the host no longer takes is forgotten, and the person asked for it once.
-      if (!again && held.usedStored && /Permission denied/i.test(ran.err)) {
+      if (!again && pid !== undefined && held.usedStored.has(pid) && /Permission denied/i.test(ran.err)) {
         this.#deps.secrets.forget(id)
         this.#typed.delete(id)
         return this.#check(id, true)
@@ -242,7 +259,8 @@ export class Hosts implements HostsLike {
     })
     return (up) => {
       held.runs.set(run, up)
-      if (up && held.state !== 'up' && held.state !== 'connecting') this.#set(id, 'up')
+      // A run attaching at all says the host is reachable, whatever it was shown as a moment ago.
+      if (up && held.state !== 'up') this.#set(id, 'up')
       if (!up && held.state === 'up') this.#set(id, 'lost')
     }
   }
@@ -263,12 +281,27 @@ export class Hosts implements HostsLike {
     if (host !== undefined && this.#control !== undefined) void runExit(host, this.setup())
   }
 
-  remove(id: string): void {
+  /** Every card up for a host, answered as Not now, so nothing is left waiting on a host that has just gone. */
+  #dropCards(id: string): void {
+    for (const [askId, asked] of [...this.#asked.entries()]) {
+      if (asked.prompt.host !== id) continue
+      this.#asked.delete(askId)
+      this.#deps.answered(askId)
+      for (const done of asked.dones) done(undefined)
+    }
+    setAsking(id, false)
+  }
+
+  async remove(id: string): Promise<void> {
     // Stopped there before its config goes: killed after, it would be reached
-    // by its address rather than its host's, which is nobody.
-    const runs = this.#held.get(id)?.runs.keys() ?? []
+    // by its address rather than its host's, which is nobody. Its own stop
+    // script is given a moment to finish over the shared connection before
+    // that connection is closed out from under it.
+    const runs = [...(this.#held.get(id)?.runs.keys() ?? [])]
     for (const run of runs) run.kill()
+    await Promise.race([Promise.allSettled(runs.map((run) => run.stopped())), wait(5_000)])
     this.disconnect(id)
+    this.#dropCards(id)
     this.#deps.secrets.forget(id)
     this.#typed.delete(id)
     this.#held.delete(id)
@@ -281,6 +314,7 @@ export class Hosts implements HostsLike {
   forget(id: string): void {
     this.#deps.secrets.forget(id)
     this.#typed.delete(id)
+    this.#held.get(id)?.usedStored.clear()
     const hosts = this.#deps.hosts()
     if (hosts.some((one) => one.id === id && one.remember === true)) {
       this.#deps.save(hosts.map((one) => (one.id === id ? { ...one, remember: false } : one)))
@@ -429,6 +463,12 @@ export class Hosts implements HostsLike {
     // Not remembered any more forgets what was; a fresh one typed and kept replaces it. Carried over as it was, it is left alone.
     if (!remember) this.#deps.secrets.forget(id)
     else if (passwordTyped) this.#deps.secrets.set(id, draft.password as string)
+    // How it is reached moved out from under the old shared connection and its forwards: closed rather than left to mix an old machine's bytes with a new one's.
+    if (this.#control !== undefined) void runExit(existing, this.setup())
+    this.#deps.forwardsChanged?.(id)
+    this.#held.get(id)?.usedStored.clear()
+    for (const run of this.#held.get(id)?.runs.keys() ?? []) run.reconnect()
+    if (existing.address !== host.address) this.#deps.diskForget?.(id)
     const view = this.#settle(id, name, checked)
     return view === undefined ? { ok: false, problem: `Could not keep ${name}.` } : { ok: true, host: view }
   }
@@ -476,38 +516,54 @@ export class Hosts implements HostsLike {
 
   // --- what ssh asks ---------------------------------------------------------
 
-  async #ask(id: string, prompt: string): Promise<string | undefined> {
+  /**
+   * `abandoned` is told, once, if the ssh that asked this is gone before it is
+   * answered - killed by its own command's timeout, say - so a card is never
+   * left up nor a state moved for a connection nobody is waiting on any more.
+   */
+  async #ask(id: string, prompt: string, pid: number | undefined, abandoned: (fn: () => void) => void): Promise<string | undefined> {
     const host = this.config(id)
     if (host === undefined) return undefined
     const read = readPrompt(prompt, host.name, host.user)
     const held = this.#hold(id)
     if (read.kind === 'password') {
       const stored = this.#deps.secrets.get(id) ?? this.#typed.get(id)
-      if (stored !== undefined && !held.usedStored) {
-        held.usedStored = true
+      if (stored !== undefined && (pid === undefined || !held.usedStored.has(pid))) {
+        if (pid !== undefined) {
+          held.usedStored.add(pid)
+          if (held.usedStored.size > 50) held.usedStored.clear()
+        }
         return stored
       }
-      held.usedStored = false
     }
     // The same question while one is up, from another connection being made at the same time, waits on that one.
     const same = [...this.#asked.values()].find((one) => one.prompt.host === id && one.prompt.kind === read.kind)
     if (same !== undefined) {
       return new Promise((done) => {
-        const first = same.done
-        this.#asked.set(same.prompt.id, {
-          prompt: same.prompt,
-          done: (answer) => {
-            first(answer)
-            done(answer)
-          },
+        same.dones.add(done)
+        abandoned(() => {
+          same.dones.delete(done)
+          done(undefined)
         })
       })
     }
     const asked: HostPrompt = { id: randomUUID(), host: id, ...read }
+    const entry: Asked = { prompt: asked, dones: new Set() }
+    this.#asked.set(asked.id, entry)
+    setAsking(id, true)
     this.#set(id, 'needs', read.text)
     return new Promise((done) => {
-      this.#asked.set(asked.id, { prompt: asked, done })
+      entry.dones.add(done)
       this.#deps.prompt(asked)
+      abandoned(() => {
+        entry.dones.delete(done)
+        done(undefined)
+        // Nobody is left waiting on this question: the card goes, and where it left the host stands, since nothing was answered.
+        if (entry.dones.size > 0 || this.#asked.get(asked.id) !== entry) return
+        this.#asked.delete(asked.id)
+        this.#deps.answered(asked.id)
+        if (![...this.#asked.values()].some((one) => one.prompt.host === id)) setAsking(id, false)
+      })
     })
   }
 
@@ -522,31 +578,35 @@ export class Hosts implements HostsLike {
     this.#asked.delete(answer.id)
     this.#deps.answered(answer.id)
     const id = asked.prompt.host
+    if (![...this.#asked.values()].some((one) => one.prompt.host === id)) setAsking(id, false)
     const held = this.#hold(id)
     if (answer.answer === undefined) {
       held.declined = true
-      asked.done(undefined)
+      for (const done of asked.dones) done(undefined)
       return
     }
     if (asked.prompt.kind === 'password') {
       this.#typed.set(id, answer.answer)
-      held.usedStored = true
       if (answer.remember === true) {
         this.#deps.secrets.set(id, answer.answer)
         this.#deps.save(this.#deps.hosts().map((one) => (one.id === id ? { ...one, remember: true } : one)))
       }
     }
-    this.#set(id, 'connecting')
-    asked.done(asked.prompt.kind === 'trust' ? 'yes' : answer.answer)
+    // Nobody is left waiting on this answer: the connection that asked has already gone, and the host is not moved as if one were coming.
+    if (asked.dones.size > 0) this.#set(id, 'connecting')
+    for (const done of asked.dones) done(asked.prompt.kind === 'trust' ? 'yes' : answer.answer)
   }
 
   dispose(): void {
     for (const held of this.#held.values()) clearTimeout(held.timer)
-    for (const asked of this.#asked.values()) asked.done(undefined)
+    for (const asked of this.#asked.values()) for (const done of asked.dones) done(undefined)
     this.#asked.clear()
     this.#asker.close()
   }
 }
+
+/** A short wait with nothing riding on it finishing, so an await never blocks past a sane bound. */
+const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
 
 /** What a check says about a host that is worth keeping for when it is not connected. */
 const seenOf = (checked: Checked): NonNullable<HostConfig['seen']> => ({
@@ -560,8 +620,10 @@ const shellWord = (word: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(wor
 /** Closes the shared connection to a host, so Disconnect lets go of it at once. */
 function runExit(host: HostConfig, setup: SshSetup): Promise<void> {
   const args = sshArgs(host, setup)
-  const at = args.lastIndexOf(host.address)
+  // `sshArgs` ends its own options with `--` right before the address: the control command goes in ahead of that, not after it, so it is read as ssh's own option rather than as more of the destination.
+  const at = args.lastIndexOf('--')
+  const before = at < 0 ? args.slice(0, args.lastIndexOf(host.address)) : args.slice(0, at)
   return new Promise((done) => {
-    execFile(sshProgram(), [...args.slice(0, at), '-O', 'exit', host.address], { env: { ...process.env, ...setup.env }, timeout: 5_000 }, () => done())
+    execFile(sshProgram(), [...before, '-O', 'exit', '--', host.address], { env: { ...process.env, ...setup.env }, timeout: 5_000 }, () => done())
   })
 }

@@ -27,7 +27,7 @@ async function screenTrack(): Promise<MediaStreamTrack> {
     } as MediaTrackConstraints,
   })
   const track = stream.getVideoTracks()[0]
-  if (track === undefined) throw new Error('The Mac gave no picture of its screen')
+  if (track === undefined) throw new Error('The host gave no picture of its screen')
   // Encoded for sharp text rather than smooth motion.
   track.contentHint = 'text'
   return track

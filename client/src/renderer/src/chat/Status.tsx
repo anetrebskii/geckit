@@ -231,7 +231,15 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
       {ON_PHONE && chat.trouble === '' ? null : (
         <span
           className={`lead${chat.trouble === '' ? '' : ' trouble'}`}
-          {...(chat.trouble === '' && program?.path !== undefined ? { title: `GeckIt starts ${program.path}` } : {})}
+          {...(chat.trouble !== ''
+            ? {}
+            : host !== undefined
+              ? host.version === undefined
+                ? {}
+                : { title: `Runs on ${host.name}, Claude Code ${host.version}` }
+              : program?.path !== undefined
+                ? { title: `GeckIt starts ${program.path}` }
+                : {})}
         >
           {chat.trouble === '' ? lead : chat.trouble}
         </span>

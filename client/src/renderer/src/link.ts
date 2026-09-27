@@ -250,12 +250,12 @@ export async function dial(pairing: Pairing, within = 45_000, step: (at: Dialing
     step('mac')
     const box = await answerTo(room, id, until)
     const answer = box === undefined ? undefined : await unseal<Signed>(pairing.key, box)
-    if (answer === undefined) throw new Error('The Mac did not answer')
+    if (answer === undefined) throw new Error('The host did not answer')
     await peer.setRemoteDescription({ type: 'answer', sdp: answer.sdp })
     step('joining')
     await Promise.race([
       opened(channel),
-      new Promise((_done, failed) => setTimeout(() => failed(new Error('The Mac did not answer')), Math.max(0, until - Date.now()))),
+      new Promise((_done, failed) => setTimeout(() => failed(new Error('The host did not answer')), Math.max(0, until - Date.now()))),
     ])
     return linkOver(channel, peer, video, () => stream ?? new MediaStream([video.receiver.track]))
   } catch (error) {
@@ -292,7 +292,7 @@ export function listen(pairing: Pairing, joined: (link: Link) => void, trouble: 
     await post(room, 'answers', id, await seal(pairing.key, back))
   }
 
-  const unreachable = 'The pairing service did not answer. Phones cannot find this Mac until it does.'
+  const unreachable = 'The pairing service did not answer. Phones cannot find this computer until it does.'
   void roomOf(pairing.key).then((room) => {
     if (stopped) return
     const seen = (): void => void setDoc(doc(firestore(), 'rooms', room), { seen: serverTimestamp() }).catch(() => undefined)

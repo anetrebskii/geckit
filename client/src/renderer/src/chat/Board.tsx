@@ -22,7 +22,7 @@ import { Preview } from './Preview'
 import { Projects } from './Projects'
 import { QuestionsMenu } from './Questions'
 import { HostTag } from './HostTag'
-import { emptyProfile, projectLabel, projectName, tint } from './project'
+import { emptyProfile, hostName, projectLabel, projectName, tint } from './project'
 import { STATUS_ICONS, Tags, Views } from './Sidebar'
 import { BoardSearch } from './Switcher'
 import type { Seek } from './Switcher'
@@ -98,7 +98,7 @@ export function TopBar({
         type="button"
         className="icon-button no-drag"
         aria-label="Hidden conversations"
-        title="Hidden conversations: kept by Claude Code on this Mac and not on the board"
+        title="Hidden conversations: kept by Claude Code and not on the board"
         onClick={() => setHidden(true)}
       >
         <Icon name="hidden" />
@@ -676,6 +676,8 @@ export function NewTask({
   const [over, setOver] = useState(false)
   const [recorded, setRecorded] = useState<Recorded | undefined>(undefined)
   const [looking, setLooking] = useState<string | undefined>()
+  // A file dropped for a project on a host cannot be read there, so it is copied over first; this says so while it goes.
+  const [copying, setCopying] = useState<{ readonly text: string; readonly failed: boolean } | undefined>()
   const field = useRef<HTMLTextAreaElement>(null)
   useEffect(() => field.current?.focus(), [])
 
@@ -710,13 +712,29 @@ export function NewTask({
   const ready = text.trim() !== '' || pictures.length > 0 || frames.length > 0
 
   // Pictures are carried with the first message; anything else goes into the field as its path, as the composer does.
+  const addPath = (path: string): void =>
+    setText((now) => `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${path.includes(' ') ? `"${path}"` : path} `)
   const take = (files: readonly File[]): void => {
-    const paths = files
-      .filter((one) => !canShow(one))
-      .map((one) => window.geckit.pathFor(one))
-      .filter((path) => path !== '')
-      .map((path) => (path.includes(' ') ? `"${path}"` : path))
-    if (paths.length > 0) setText((now) => `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${paths.join(' ')} `)
+    const target = root
+    for (const one of files.filter((one) => !canShow(one))) {
+      const local = window.geckit.pathFor(one)
+      if (local === '') continue
+      if (target === '' || !isRemote(target)) {
+        addPath(local)
+        continue
+      }
+      const there = hostName(target) ?? target
+      const busy = `Copying ${one.name} to ${there}...`
+      setCopying({ text: busy, failed: false })
+      void window.geckit.chat.upload(target, local).then((remote) => {
+        setCopying((now) => (now?.text === busy ? undefined : now))
+        if (remote === undefined) {
+          setCopying({ text: `Could not copy ${one.name} to ${there}`, failed: true })
+          return
+        }
+        addPath(remote)
+      })
+    }
     const wanted = files.filter(canShow)
     if (wanted.length === 0) return
     void Promise.all(wanted.map((file) => asImage(file).catch(() => undefined))).then((read) => {
@@ -756,6 +774,7 @@ export function NewTask({
         frames={frames.map((one) => one.image)}
         recorded={recorded === undefined ? undefined : { seconds: recorded.seconds, video: recorded.videos.length > 0 }}
         onUnrecord={() => setRecorded(undefined)}
+        copying={copying}
       />
     )
   }
@@ -880,6 +899,7 @@ export function NewTask({
           Dictate
         </button>
       </div>
+      {copying === undefined ? null : <p className={copying.failed ? 'error' : 'new-task-why'}>{copying.text}</p>}
       {pictures.length === 0 && frames.length === 0 ? null : (
         <div className="pending">
           {frames.map((one) => (
@@ -986,6 +1006,7 @@ function PhoneNewTask({
   frames,
   recorded,
   onUnrecord,
+  copying,
 }: {
   readonly chat: Chat
   readonly question: boolean
@@ -998,6 +1019,8 @@ function PhoneNewTask({
   readonly frames: readonly SessionImage[]
   readonly recorded: { readonly seconds: number; readonly video: boolean } | undefined
   readonly onUnrecord: () => void
+  /** A file being copied to a host for this task, or what went wrong copying it. */
+  readonly copying: { readonly text: string; readonly failed: boolean } | undefined
   readonly onRoot: (root: string) => void
   readonly onText: (text: string) => void
   readonly onGoal: (goal: string) => void
@@ -1110,6 +1133,9 @@ function PhoneNewTask({
             placeholder={listening ? 'Listening' : question ? 'Ask anything; it is not a task' : 'What to do'}
             onChange={(event) => onText(event.target.value)}
           />
+          {copying === undefined ? null : (
+            <div className={copying.failed ? 'phone-task-note error' : 'phone-task-note'}>{copying.text}</div>
+          )}
           {recorded === undefined ? null : (
             <div className="phone-task-recorded">
               <Icon name="display" size={16} />

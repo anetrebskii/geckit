@@ -31,7 +31,7 @@ import type {
   WorkItem,
 } from '../../shared/api'
 import { sessionMode } from '../../shared/api'
-import { isRemote } from '../../shared/hosts'
+import { hostOf, isRemote, pathOf, remoteRoot } from '../../shared/hosts'
 import type { Link } from '../../shared/links'
 import { linksIn, workItem } from '../../shared/links'
 import { claudeAccount, claudeProgram } from './account'
@@ -191,7 +191,8 @@ export interface SessionsDeps {
   }
   readonly there?: (path: string) => Promise<boolean>
   readonly claudeAccount?: () => Promise<ClaudeAccount>
-  readonly claudeModels?: () => Promise<ClaudeModel[] | undefined>
+  /** The models the tool has, for a project's own root where one is given: a host's may not be this computer's. */
+  readonly claudeModels?: (root?: string) => Promise<ClaudeModel[] | undefined>
   readonly claudeProgram?: () => Promise<ClaudeProgram | undefined>
   readonly usage?: (models: readonly string[]) => Promise<Usage>
   readonly mcp?: (root: string, change?: McpChange) => Promise<McpServer[] | undefined>
@@ -199,8 +200,8 @@ export interface SessionsDeps {
   readonly shell?: typeof runShell
   /** What a task in the background printed, where it is not on this computer to read. */
   readonly taskOutput?: (root: string, session: string, task: BackgroundTask) => Promise<TaskOutput | undefined>
-  /** Opens a terminal in the folder with the command typed in, for one that wants a keyboard. Without it, it is run here anyway. */
-  readonly terminal?: (root: string, command: string) => void
+  /** Opens a terminal in the folder with the command typed in, for one that wants a keyboard. Without it, it is run here anyway. `status` is where it is to write the exit code once the command is done, for one that wants a keyboard. */
+  readonly terminal?: (root: string, command: string, status?: string) => void
   readonly now?: () => number
 }
 
@@ -314,6 +315,16 @@ const there = (path: string): Promise<boolean> =>
     (found) => found.isDirectory(),
     () => false,
   )
+
+/**
+ * `below` as a host's own listing gives it back: a raw path on the host's
+ * computer, since that is all a script run over ssh knows to say. Read here as
+ * a project root is everywhere else, `ssh://<host><path>`, unless it is one already.
+ */
+const belowRoot = (root: string, below: string): string => {
+  const host = hostOf(root)
+  return host === undefined || isRemote(below) ? below : remoteRoot(host, below)
+}
 
 
 /** What "for this session" is remembered under, or nothing where it cannot be. */
@@ -455,7 +466,9 @@ export class Sessions {
    * asks here, and is answered from what was kept until another version of
    * Claude Code answers.
    */
-  async models(): Promise<ClaudeModel[] | undefined> {
+  async models(root?: string): Promise<ClaudeModel[] | undefined> {
+    // A host's own claude may name other models than this computer's, and is not kept the same way: it is asked fresh each time, and nothing is said where it cannot be asked cheaply.
+    if (root !== undefined && isRemote(root)) return (this.#deps.claudeModels ?? claudeModels)(root)
     await this.#look()
     if (this.#models === undefined) {
       this.#models = (this.#deps.claudeModels ?? claudeModels)()
@@ -476,7 +489,7 @@ export class Sessions {
         // A folder below two projects is the nearer one's.
         const held = this.#rows.get(row.id)
         if (below !== undefined && held !== undefined && (held.project ?? held.root).length > root.length) continue
-        this.#rows.set(row.id, below === undefined ? { ...row, root } : { ...row, root: below, project: root })
+        this.#rows.set(row.id, below === undefined ? { ...row, root } : { ...row, root: belowRoot(root, below), project: root })
       }
     }
     // A model not seen before is measured, so its rows can say how much context it holds.
@@ -763,8 +776,10 @@ export class Sessions {
 
     // A session runs on a plan or not at all. Asked of the tool again here,
     // where something is about to be started, because what the window was told
-    // is as old as its last look.
-    if (live.driver === undefined && (await this.account()).key === true) {
+    // is as old as its last look. A host's own claude is checked by starting
+    // it, not by this computer's account: this computer may be signed in with
+    // a key while the host it reaches is on a plan, or the other way round.
+    if (live.driver === undefined && !isRemote(live.root) && (await this.account()).key === true) {
       this.#deps.items({ id: live.id, items: [mine], gone })
       this.#ended(live, { kind: 'ended', how: 'offPlan' })
       return live.id
@@ -913,6 +928,8 @@ export class Sessions {
     if (elsewhere !== undefined) {
       const read = await elsewhere(live.root, live.id, one)
       if (read !== undefined) return read
+      // A host not reached for it is not a reason to read this computer's own files instead: there is nothing of this task's here.
+      if (isRemote(live.root)) return undefined
     }
     return taskOutput(live.root, one.output ?? (await taskFile(live.root, live.id, one.id)), one.kind)
   }
@@ -974,7 +991,10 @@ export class Sessions {
       this.#remoteOff(live)
       return {}
     }
-    if ((await this.account()).key === true) return { error: 'That claude is signed in with an API key, and GeckIt only runs sessions on a plan.' }
+    // This computer's own account is what a local session runs on; a host's is its own, and is not asked here.
+    if (!isRemote(live.root) && (await this.account()).key === true) {
+      return { error: 'That claude is signed in with an API key, and GeckIt only runs sessions on a plan.' }
+    }
     try {
       await this.#hold(live)
       return { url: await this.#remoteOn(live) }
@@ -1054,10 +1074,12 @@ export class Sessions {
     }
 
     const before = [...live.items.keys()]
+    // The tool names paths on its own computer, so a card about a host is read against that, not the `ssh://` root that names it.
+    const folder = pathOf(live.root)
     const folded: SessionItem = {
       kind: 'card',
       id: cardId(ask),
-      card: { ...cardFor(wanted, live.root), answered: answeredLine(wanted, answer, live.root) },
+      card: { ...cardFor(wanted, folder), answered: answeredLine(wanted, answer, folder) },
     }
     live.items.set(folded.id, folded)
     live.kept.push({ after: before[before.indexOf(folded.id) - 1], item: folded })
@@ -1680,12 +1702,13 @@ export class Sessions {
     }
 
     // A session that only reads and wants to write is proposing to start.
+    const folder = pathOf(live.root)
     const put: Wanted =
       live.mode === 'plan' && wanted.kind === 'write'
-        ? { kind: 'start', plan: `Change ${wanted.paths.map((path) => shown(live.root, path)).join(', ')}` }
+        ? { kind: 'start', plan: `Change ${wanted.paths.map((path) => shown(folder, path)).join(', ')}` }
         : wanted
     live.asks.set(ask, put)
-    const card: SessionItem = { kind: 'card', id: cardId(ask), card: cardFor(put, live.root) }
+    const card: SessionItem = { kind: 'card', id: cardId(ask), card: cardFor(put, folder) }
     // The tool says "running" before it asks whether it may. Nothing is running
     // while the card is up, and left where it was the line would end up above
     // the answer that let it run.
@@ -1782,10 +1805,14 @@ export class Sessions {
         live.state = 'idle'
         live.stands = 'Not sent'
         // Said with the answer that refused it: where only the tool's first
-        // line knew about the key, asking `auth status` again would not.
-        void this.account().then((account) =>
-          this.#deps.account(signal.how === 'offPlan' ? { ...account, key: true } : account),
-        )
+        // line knew about the key, asking `auth status` again would not. A
+        // host's own claude is not this computer's account, so nothing here
+        // is told to every window over it: the row above already says Not sent.
+        if (!isRemote(live.root)) {
+          void this.account().then((account) =>
+            this.#deps.account(signal.how === 'offPlan' ? { ...account, key: true } : account),
+          )
+        }
         break
       }
     }

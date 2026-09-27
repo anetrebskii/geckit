@@ -12,6 +12,13 @@ export interface RunRecord {
   readonly root: string
   readonly offset: number
   readonly started: number
+  /**
+   * The byte the earliest control_request not yet answered began at, if one
+   * is outstanding. `read` never carries the offset kept here past this: a
+   * restart's reattach then reads from before that request rather than after
+   * it, so the card it waits on is asked again instead of lost.
+   */
+  readonly pending?: number
 }
 
 export interface RunsStore {
@@ -20,7 +27,11 @@ export interface RunsStore {
   set(session: string, record: RunRecord): void
   /** Only the offset has moved: written a little later, since it moves with every line. */
   read(session: string, offset: number): void
+  /** The byte an unanswered control_request began at; nothing once it is answered or there is none. */
+  pending(session: string, offset: number | undefined): void
   delete(session: string): void
+  /** Waits for a debounced write still owed to land, for quitting without losing the last second of it. */
+  flush(): Promise<void>
 }
 
 export function runsAt(path: string): RunsStore {
@@ -51,8 +62,17 @@ export function runsAt(path: string): RunsStore {
     },
     read(session, offset) {
       const was = runs[session]
-      if (was === undefined || was.offset === offset) return
-      runs = { ...runs, [session]: { ...was, offset } }
+      if (was === undefined) return
+      const capped = was.pending === undefined ? offset : Math.min(offset, was.pending)
+      if (was.offset === capped) return
+      runs = { ...runs, [session]: { ...was, offset: capped } }
+      soon ??= setTimeout(write, 1_000)
+    },
+    pending(session, offset) {
+      const was = runs[session]
+      if (was === undefined || was.pending === offset) return
+      const { pending: _gone, ...rest } = was
+      runs = { ...runs, [session]: offset === undefined ? rest : { ...rest, pending: offset } }
       soon ??= setTimeout(write, 1_000)
     },
     delete(session) {
@@ -60,6 +80,9 @@ export function runsAt(path: string): RunsStore {
       const { [session]: _gone, ...rest } = runs
       runs = rest
       write()
+    },
+    async flush() {
+      if (soon !== undefined) write()
     },
   }
 }

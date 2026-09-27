@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { HostConfig } from '../../shared/hosts'
+import { isAsking } from './asking'
 import { quote } from './run-script'
 
 /**
@@ -26,11 +27,15 @@ export interface SshSetup {
   readonly env: Readonly<Record<string, string>>
 }
 
-/** The ssh that is started: Windows keeps its own OpenSSH where the path may not reach it. */
+/** The ssh that is started: Windows keeps its own OpenSSH where the path may not reach it, falling back to whatever `ssh` is on the path where that build is missing. */
 export function sshProgram(): string {
   if (!WINDOWS) return 'ssh'
   const system = join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'OpenSSH', 'ssh.exe')
-  return system
+  try {
+    return existsSync(system) ? system : 'ssh'
+  } catch {
+    return 'ssh'
+  }
 }
 
 /** A socket path short enough for the system's limit on them, which a long profile folder can pass. */
@@ -56,8 +61,14 @@ export interface SshOptions {
   readonly alone?: boolean
 }
 
+/** A word that would be read as an option of ssh's own rather than the value it is, had it gone in unguarded. */
+const looksLikeOption = (word: string): boolean => word.startsWith('-')
+
 /** Everything before the command: how to reach the host, and how the connection should behave. */
 export function sshArgs(host: Pick<HostConfig, 'address' | 'user' | 'port' | 'auth' | 'keyFile'>, setup: Pick<SshSetup, 'control'>, options: SshOptions = {}): string[] {
+  if (looksLikeOption(host.address)) throw new Error('Not a host address.')
+  if (looksLikeOption(host.user)) throw new Error('Not a user name.')
+  if (host.keyFile !== undefined && looksLikeOption(host.keyFile)) throw new Error('Not a key file.')
   const args = [
     options.tty === true ? '-tt' : '-T',
     '-o',
@@ -81,7 +92,8 @@ export function sshArgs(host: Pick<HostConfig, 'address' | 'user' | 'port' | 'au
     args.push('-o', 'ControlMaster=auto', '-o', `ControlPath=${join(setup.control, '%C')}`, '-o', 'ControlPersist=600')
   }
   if (options.forward !== undefined) args.push('-N', '-o', 'ExitOnForwardFailure=yes', '-L', options.forward)
-  args.push(host.address)
+  // Ends ssh's own option parsing, so an address that somehow still began with a dash could never be read as one.
+  args.push('--', host.address)
   return args
 }
 
@@ -105,18 +117,29 @@ export interface Ran {
   readonly err: string
 }
 
+export interface RunOnOptions {
+  readonly input?: string | Buffer
+  readonly timeout?: number
+  /** The ssh client's own pid, told as soon as it is spawned, for telling apart which connection an askpass question came from. */
+  readonly onPid?: (pid: number | undefined) => void
+}
+
 /** A script run to its end on a host: what it printed and how it exited. */
-export function runOn(
-  host: HostConfig,
-  setup: SshSetup,
-  script: string,
-  { input, timeout = 60_000 }: { readonly input?: string | Buffer; readonly timeout?: number } = {},
-): Promise<Ran> {
+export function runOn(host: HostConfig, setup: SshSetup, script: string, { input, timeout = 60_000, onPid }: RunOnOptions = {}): Promise<Ran> {
   return new Promise((done) => {
     const child = spawnOn(host, setup, script)
+    onPid?.(child.pid)
     const out: Buffer[] = []
     let err = ''
-    const timer = setTimeout(() => child.kill(), timeout)
+    let timer: NodeJS.Timeout
+    // A card up for this host is not idle time: someone may still be typing into it, so the clock waits for them rather than killing the connection under them.
+    const arm = (): void => {
+      timer = setTimeout(() => {
+        if (isAsking(host.id)) arm()
+        else child.kill()
+      }, timeout)
+    }
+    arm()
     child.stdout.on('data', (chunk: Buffer) => out.push(chunk))
     child.stderr.on('data', (chunk: Buffer) => {
       err = `${err}${chunk.toString('utf8')}`.slice(-4_000)
@@ -149,4 +172,17 @@ export function sshProblem(err: string, name: string): string {
   if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i.test(said)) return `${name}'s key could not be trusted.`
   const last = said.split('\n').filter((line) => line.trim() !== '').pop()
   return last === undefined ? `Could not reach ${name}.` : `Could not reach ${name}: ${last}`
+}
+
+/**
+ * ssh's own failure to reach a host at all, rather than the script it ran
+ * failing on the host: a host thought to be up that answers this way has
+ * gone quiet underneath (sleep, a network change) rather than had a command
+ * go wrong on it.
+ */
+export function isConnectionFailure(code: number | null, err: string): boolean {
+  if (code !== 255) return false
+  return /Could not resolve hostname|nodename nor servname|Name or service not known|timed out|Operation timed out|Connection timed out|Connection refused|No route to host|Network is unreachable|Host is down|Broken pipe|Connection reset|Connection closed by remote host/i.test(
+    err,
+  )
 }

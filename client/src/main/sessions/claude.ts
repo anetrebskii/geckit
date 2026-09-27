@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
 
 import type { CardAnswer, SessionMode } from '../../shared/api'
+import { pathOf } from '../../shared/hosts'
 import { claudeCommand, planOnly } from './account'
 import { AGAIN, claudeState, readClaude, REFUSED } from './claude-read'
 import type { ClaudeRequest } from './claude-read'
@@ -96,7 +97,8 @@ export function holdClaude(
   /** The process is gone, by itself or because it was let go. */
   left: () => void,
 ): Driver {
-  const state = claudeState(options.root)
+  // The tool names paths on its own computer, so a card or a written-file line about a host is read against that, not the `ssh://` root that names it here.
+  const state = claudeState(pathOf(options.root))
   const requests = new Map<string, ClaudeRequest>()
   const asked = new Map<string, Asked>()
   // Requests of ours on the control channel, waiting for the tool to answer them.

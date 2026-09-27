@@ -17,7 +17,7 @@ import { Mcp } from './Mcp'
 import { Preview } from './Preview'
 import { Tasks } from './Tasks'
 import type { Choice } from '../ui/Menu'
-import { projectName } from './project'
+import { projectLabel } from './project'
 import type { Chat } from './useChat'
 
 /** A path offered after @, as its name and the folder it is in. */
@@ -231,6 +231,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
       ? 'Default'
       : chat.model
 
+  // On a host it is that host's Claude Code that answers, not this computer's, so only its connection decides.
+  const host = chat.root === undefined ? undefined : chat.hosts.find((one) => one.id === hostOf(chat.root ?? ''))
+
   // Another model has no cache of this conversation, so it reads all of it again.
   const again = 'Another model reads the whole conversation again at your next message'
   const used = chat.session?.spend?.used
@@ -240,12 +243,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
       : used === undefined
         ? `${again}.`
         : `${again}: about ${(Math.round(used / 1000) * 1000).toLocaleString('en-US')} tokens from your plan.`
-  // Which Claude Code named these, since an older one names fewer.
-  const program = programLine(chat.account)
+  // Which Claude Code named these: this computer's for a local project, that host's for one on a host, since an older one names fewer.
+  const program = host === undefined ? programLine(chat.account) : host.version === undefined ? undefined : `Claude Code ${host.version}`
   const note = [program === undefined ? undefined : `${program}.`, cost].filter((line) => line !== undefined).join('\n')
-
-  // On a host it is that host's Claude Code that answers, not this computer's, so only its connection decides.
-  const host = chat.root === undefined ? undefined : chat.hosts.find((one) => one.id === hostOf(chat.root ?? ''))
   const away =
     host === undefined
       ? undefined
@@ -578,7 +578,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         {found === undefined ? null : (
           <div className="mentions" role="listbox" ref={offered}>
             {found.length === 0 ? (
-              <div className="empty">Nothing in {projectName(root ?? '')} by that name</div>
+              <div className="empty">Nothing in {projectLabel(root ?? '')} by that name</div>
             ) : (
               found.map((path, index) => (
                 <div
@@ -779,7 +779,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           ) : null}
           {command ? (
             <span className="composer-hint command">
-              Runs in {projectName(chat.root)}. Claude sees what it prints with your next message
+              Runs in {projectLabel(chat.root)}. Claude sees what it prints with your next message
             </span>
           ) : null}
           <div className="spacer" />
@@ -848,7 +848,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             {host.state === 'lost' ? `${host.name} is out of reach. What is typed stays until it is back` : host.state === 'connecting' ? away : `${host.name} needs you`}
           </div>
         ) : ON_PHONE && command ? (
-          <div className="phone-hint command">Runs in {projectName(chat.root)} now. Claude sees what it prints with your next message</div>
+          <div className="phone-hint command">Runs in {projectLabel(chat.root)} now. Claude sees what it prints with your next message</div>
         ) : ON_PHONE && chat.working && (draft !== '' || chat.pictures.length > 0) ? (
           <div className="phone-hint">Waits its turn: it goes once Claude has answered</div>
         ) : null}

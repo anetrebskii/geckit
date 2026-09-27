@@ -20,11 +20,12 @@ import {
   listScript,
   quote,
   readCheck,
+  readGrow,
   safeFile,
   safeId,
   startScript,
 } from '../src/main/hosts/run-script'
-import { sshArgs, sshProblem } from '../src/main/hosts/ssh'
+import { isConnectionFailure, sshArgs, sshProblem } from '../src/main/hosts/ssh'
 import { edgesOf, rowFrom, slug } from '../src/main/sessions/disk'
 import type { HostConfig, HostState } from '../src/shared/hosts'
 import { draftProblem, forHowLong, hostIdFor, machineName, hostOf, outOfReach, outOfReachLine, parseTarget, pathOf, remoteRoot, stateLine, targetLine } from '../src/shared/hosts'
@@ -68,10 +69,13 @@ describe('what is typed into Address', () => {
   })
 
   it('says what stands in the way of connecting', () => {
-    expect(draftProblem({ address: '', port: 22, name: '' })).toBe('Type the address of the host.')
-    expect(draftProblem({ address: 'dev box', port: 22, name: '' })).toBe('The address has a space in it.')
-    expect(draftProblem({ address: 'devbox', port: 0, name: '' })).toBe('The port is a number from 1 to 65535.')
-    expect(draftProblem({ address: 'devbox', port: 22, name: 'devbox' })).toBeUndefined()
+    expect(draftProblem({ address: '', port: 22, name: '', user: '' })).toBe('Type the address of the host.')
+    expect(draftProblem({ address: 'dev box', port: 22, name: '', user: '' })).toBe('The address has a space in it.')
+    expect(draftProblem({ address: '-oProxyCommand=x', port: 22, name: '', user: '' })).toBe('The address cannot start with a dash.')
+    expect(draftProblem({ address: 'devbox', port: 22, name: '', user: '-oProxyCommand=x' })).toBe('The user cannot start with a dash.')
+    expect(draftProblem({ address: 'devbox', port: 22, name: '', user: '', keyFile: '-oProxyCommand=x' })).toBe('The key file cannot start with a dash.')
+    expect(draftProblem({ address: 'devbox', port: 0, name: '', user: '' })).toBe('The port is a number from 1 to 65535.')
+    expect(draftProblem({ address: 'devbox', port: 22, name: 'devbox', user: '' })).toBeUndefined()
   })
 })
 
@@ -174,6 +178,13 @@ describe('what is run on a host', () => {
     expect(machineName('Leonids-MacBook-Pro-2.local')).toBe('Leonids MacBook Pro 2')
     expect(machineName('studio-mini.local.')).toBe('studio mini')
   })
+
+  it('reads what a file grew by after the size the host says it is now', () => {
+    const grown = Buffer.from('hello\nworld\n')
+    const out = Buffer.concat([Buffer.from('@@size 42\n'), grown])
+    expect(readGrow(out)).toEqual({ size: 42, grown })
+    expect(readGrow(Buffer.from('@@size 0\n'))).toEqual({ size: 0, grown: Buffer.alloc(0) })
+  })
 })
 
 describe('the ssh a host is reached with', () => {
@@ -198,6 +209,25 @@ describe('the ssh a host is reached with', () => {
     expect(sshProblem('ssh: Could not resolve hostname devbox: nodename nor servname provided', 'devbox')).toBe('Could not reach devbox: no host by that name.')
     expect(sshProblem('ssh: connect to host devbox port 22: Operation timed out', 'devbox')).toBe('Could not reach devbox: timed out after 20 s.')
     expect(sshProblem('leo@devbox: Permission denied (publickey,password).', 'devbox')).toBe('devbox did not accept the sign-in.')
+  })
+
+  it('ends its own options with -- right before the address, so nothing about it is read as one', () => {
+    const args = sshArgs(host, {})
+    expect(args.at(-2)).toBe('--')
+    expect(args.at(-1)).toBe('devbox.local')
+  })
+
+  it('refuses an address, user or key file that would be read as an option of its own', () => {
+    expect(() => sshArgs({ ...host, address: '-oProxyCommand=x' }, {})).toThrow()
+    expect(() => sshArgs({ ...host, user: '-oProxyCommand=x' }, {})).toThrow()
+    expect(() => sshArgs({ ...host, keyFile: '-oProxyCommand=x' }, {})).toThrow()
+  })
+
+  it('tells apart its own failure to connect at all from the script it ran going wrong', () => {
+    expect(isConnectionFailure(255, 'ssh: connect to host devbox port 22: Operation timed out')).toBe(true)
+    expect(isConnectionFailure(255, 'ssh: Could not resolve hostname devbox: nodename nor servname provided')).toBe(true)
+    expect(isConnectionFailure(1, 'ssh: connect to host devbox port 22: Operation timed out')).toBe(false)
+    expect(isConnectionFailure(255, 'bash: some-command: command not found')).toBe(false)
   })
 })
 
@@ -323,6 +353,35 @@ describe('a host that is not connected', () => {
       await rm(folder, { recursive: true, force: true })
     }
   })
+
+  it('says a conversation is there, not gone, where a mirror of it is kept here', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-hosts-'))
+    try {
+      const file = join(folder, fakeHost.id, 'projects', slug('/home/leo/trailmap'), 'a-1.jsonl')
+      await mkdir(dirname(file), { recursive: true })
+      await writeFile(file, `${JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } })}\n`)
+      const disk = new HostDisk(fakeHosts('idle'), folder)
+      await expect(disk.has(root, 'a-1')).resolves.toBe(true)
+      await expect(disk.has(root, 'b-2')).resolves.toBe(false)
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
+  })
+
+  it('says a conversation is there where only its row in the last listing is kept, no mirror of it yet', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-hosts-'))
+    try {
+      const kept = [{ id: 'a-1', title: 'Make the tile cache build faster', stands: 'Done', at: 5, driven: false }]
+      const path = join(folder, fakeHost.id, 'listed', `${slug('/home/leo/trailmap')}.json`)
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(path, JSON.stringify(kept))
+      const disk = new HostDisk(fakeHosts('lost'), folder)
+      await expect(disk.has(root, 'a-1')).resolves.toBe(true)
+      await expect(disk.has(root, 'b-2')).resolves.toBe(false)
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('the SSH config', () => {
@@ -364,5 +423,10 @@ describe('a localhost link said on a host', () => {
     expect(localPort('https://example.com:3000')).toBeUndefined()
     expect(localPort('http://localhostile.com')).toBeUndefined()
     expect(withPort('http://127.0.0.1:3000/app', 3001)).toBe('http://localhost:3001/app')
+  })
+
+  it('is carried over a forward bound to loopback by name, not left to ssh\'s own default', async () => {
+    const { bindSpec } = await import('../src/main/hosts/forward')
+    expect(bindSpec(8080, 80)).toBe('127.0.0.1:8080:localhost:80')
   })
 })

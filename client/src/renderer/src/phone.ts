@@ -434,7 +434,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     chat: {
       open: nothing,
       account: () => call('chat.account'),
-      models: () => call('chat.models'),
+      models: (root) => call('chat.models', root),
       plan: () => call('chat.plan'),
       onPlan: (said) => listen('chat:plan', said),
       addProject: () => Promise.resolve(undefined),
@@ -553,6 +553,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       file: (root, path) => call('chat.file', root, path),
       repo: (root) => call('chat.repo', root),
       files: (root) => call('chat.files', root),
+      // The phone has nothing of this Mac's own files to carry anywhere.
+      upload: () => Promise.resolve(undefined),
       // An address on the Mac's localhost means the phone itself here, so it is shown through the Mac instead.
       // On a host, that address is the host's, not the Mac's, so it is carried there first.
       openLink: (href) => {
@@ -601,6 +603,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       answer: (answer) => send('hosts.answer', answer),
       install: () => Promise.resolve({ ok: false, text: 'Claude Code is installed on a host from the computer running GeckIt.' }),
       terminal: nothing,
+      // A terminal on the phone is the Mac's own to open, not one of its own.
+      resumeLine: () => Promise.resolve(undefined),
     },
     voice: {
       done: () => Promise.resolve({ ok: false, error: 'Not on the phone' }),

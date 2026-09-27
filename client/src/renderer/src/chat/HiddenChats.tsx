@@ -4,7 +4,7 @@ import { shownProjects } from '../../../shared/api'
 import type { HiddenFolder, HiddenReason } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { Icon } from '../ui/Icon'
-import { homePath, projectName, tint } from './project'
+import { projectLabel, rootLabel, tint } from './project'
 import { ago } from './time'
 import type { Chat } from './useChat'
 
@@ -92,7 +92,7 @@ export function HiddenChats({ chat, onClose }: { readonly chat: Chat; readonly o
         onMouseDown={(event) => event.stopPropagation()}
       >
         <h2 id="hidden-title">Hidden conversations</h2>
-        <p>Kept by Claude Code on this Mac and not on the board.</p>
+        <p>Kept by Claude Code and not on the board.</p>
         <div className="hidden-body">
           {folders === undefined ? (
             <div className="empty">Reading conversations...</div>
@@ -106,12 +106,12 @@ export function HiddenChats({ chat, onClose }: { readonly chat: Chat; readonly o
                 <div key={folder.path}>
                   <div className="hidden-folder">
                     <Icon name="folder" size={13} />
-                    <span className="path" title={folder.path}>
-                      {homePath(folder.path)}
+                    <span className="path" title={rootLabel(folder.path)}>
+                      {rootLabel(folder.path)}
                     </span>
                     {folder.project === undefined ? null : (
                       <span className="tinted" style={tint(projectColor(folder.project, chat.settings))}>
-                        in {projectName(folder.project)}
+                        in {projectLabel(folder.project)}
                       </span>
                     )}
                     <span className="spacer" />

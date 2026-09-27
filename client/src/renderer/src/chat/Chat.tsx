@@ -174,6 +174,26 @@ export function Chat(): React.JSX.Element {
   )
   const links = useMemo(() => linksIn(chat.items), [chat.items])
 
+  // What Copy the terminal command puts on the clipboard: a local `cd` and resume, known at once; a host's own terminal line, asked for.
+  const sessionRoot = chat.session?.root
+  const sessionId = chat.session?.id
+  const localLine =
+    sessionRoot === undefined || sessionId === undefined || isRemote(sessionRoot)
+      ? undefined
+      : `cd ${JSON.stringify(sessionRoot)} && ${resumeCommand(sessionId)}`
+  const [hostLine, setHostLine] = useState<{ readonly id: string; readonly line: string | undefined } | undefined>()
+  useEffect(() => {
+    if (sessionRoot === undefined || sessionId === undefined || !isRemote(sessionRoot)) return
+    let here = true
+    void window.geckit.hosts.resumeLine(sessionRoot, sessionId).then((said) => {
+      if (here) setHostLine({ id: sessionId, line: said })
+    })
+    return () => {
+      here = false
+    }
+  }, [sessionRoot, sessionId])
+  const terminalLine = localLine ?? (sessionId !== undefined && hostLine?.id === sessionId ? hostLine.line : undefined)
+
   useEffect(() => {
     const modifier = MOD === 'Cmd' ? 'Meta' : 'Control'
     let timer: number | undefined
@@ -598,7 +618,9 @@ export function Chat(): React.JSX.Element {
                   title={
                     copied === chat.session.id
                       ? 'Copied'
-                      : `Copy the command that continues it in a terminal: ${resumeCommand(chat.session.id)}`
+                      : terminalLine === undefined
+                        ? 'Copy the command that continues it in a terminal'
+                        : `Copy the command that continues it in a terminal: ${terminalLine}`
                   }
                   aria-label="Copy the terminal command"
                   onClick={() => {
@@ -641,13 +663,21 @@ export function Chat(): React.JSX.Element {
             <div className="turn" style={{ paddingTop: 40, color: 'var(--text-dim)' }}>
               {chat.root === undefined
                 ? 'Choose a project folder on the left. Everything asked here runs in that folder.'
-                : chat.account?.here !== true
-                  ? 'Claude Code is not on this machine. Install it, then reopen this window.'
-                  : chat.account.signedIn === false
-                    ? 'Nobody is signed in. Run claude auth login in a terminal, then reopen this window.'
-                    : chat.account.key === true
-                      ? 'That claude is signed in with an API key. GeckIt only runs sessions on a plan, so nothing would be started here.'
-                      : `Ask anything about ${projectName(chat.root)}. What it may do without asking is under the field.`}
+                : host !== undefined
+                  ? host.state === 'lost'
+                    ? `Reconnecting to ${host.name}`
+                    : host.state === 'connecting'
+                      ? `Connecting to ${host.name}`
+                      : host.state === 'needs' || host.state === 'missing' || host.state === 'signin'
+                        ? `${host.name} needs you, above`
+                        : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`
+                  : chat.account?.here !== true
+                    ? 'Claude Code is not on this computer. Install it, then reopen this window.'
+                    : chat.account.signedIn === false
+                      ? 'Nobody is signed in. Run claude auth login in a terminal, then reopen this window.'
+                      : chat.account.key === true
+                        ? 'That claude is signed in with an API key. GeckIt only runs sessions on a plan, so nothing would be started here.'
+                        : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`}
             </div>
           </div>
         ) : chat.shown.kind === 'session' && chat.itemsFor !== chat.shown.id && chat.items.length === 0 ? (
@@ -807,7 +837,7 @@ export function Chat(): React.JSX.Element {
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
             <h2>Clear the conversation?</h2>
             <p>
-              The next message starts a new conversation in {projectName(homeOf(chat.session))}, with nothing of this one
+              The next message starts a new conversation in {projectLabel(homeOf(chat.session))}, with nothing of this one
               in mind. This one stays in the list.
             </p>
             <div className="dialog-actions">

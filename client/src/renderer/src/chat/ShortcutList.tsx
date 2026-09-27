@@ -7,7 +7,7 @@ import type { When } from '../../../shared/schedule'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 import { projectColor } from '../../../shared/project-color'
-import { homePath, projectName, tint } from './project'
+import { homePath, projectLabel, tint } from './project'
 import type { Chat } from './useChat'
 
 /** Saved prompts, each run a new conversation in its project: by hand, from here or the menu bar, or on a timetable. */
@@ -108,7 +108,7 @@ export function ShortcutList({
                   <button type="button" className="shortcut-text" title="Edit" onClick={() => setEditing(one)}>
                     <span className="shortcut-name">{one.name}</span>
                     <span className="shortcut-when">
-                      <span className="tinted" style={tint(projectColor(one.root, chat.settings))}>{projectName(one.root)}</span>
+                      <span className="tinted" style={tint(projectColor(one.root, chat.settings))}>{projectLabel(one.root)}</span>
                       {one.cron === undefined ? null : <span>{one.on ? describeCron(one.cron) : 'Timetable paused'}</span>}
                       {running ? (
                         <span>Running now</span>
@@ -225,8 +225,8 @@ function Editor({
         <div className="field">
           <label>Project</label>
           <Picker
-            label={draft.root === '' ? 'Choose a project' : projectName(draft.root)}
-            choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectName(one), says: homePath(one) }))}
+            label={draft.root === '' ? 'Choose a project' : projectLabel(draft.root)}
+            choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectLabel(one), says: homePath(one) }))}
             chosen={draft.root}
             {...(draft.root === '' ? {} : { tip: homePath(draft.root) })}
             className="select"

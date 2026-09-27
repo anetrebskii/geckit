@@ -42,6 +42,12 @@ export const homePath = (path: string): string => {
   return home !== '' && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path
 }
 
+/** A root as one readable line, never the raw `ssh://` address: its path, or `host · path` on a host. */
+export const rootLabel = (root: string): string => {
+  const host = hostName(root)
+  return host === undefined ? homePath(root) : `${host} · ${homePath(root)}`
+}
+
 /** The project's colour as a variable the `tinted` rule reads, so a row that is open can say its own colour over it. */
 export const tint = (color: number): React.CSSProperties => ({ ['--tint']: `var(--project-${String(color)})` }) as React.CSSProperties
 
