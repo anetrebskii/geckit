@@ -57,6 +57,8 @@ import { foldersIn } from './folders'
 import { fetchGit, gitRepo, gitState } from './git'
 import { keepGuide } from './guide'
 import { fileShown } from './file-shown'
+import { localFetch } from './local-page'
+import type { LocalAsk } from '../shared/local'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import type { McpChange } from './sessions/mcp'
@@ -815,6 +817,8 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.git': (root: string) => gitFor(root, (state) => shownPeer()?.webContents.send('peer:tell', 'chat:git', { root, state })),
     'chat.exists': (root: string, path: string) => isThere(root, path),
     'chat.file': (root: string, path: string) => fileShown(root, path),
+    // A page a session serves on the Mac's localhost, opened on the phone: each of its requests is made here.
+    'local.fetch': (asked: LocalAsk) => localFetch(asked),
     'chat.repo': (root: string) => gitRepo(root),
     'chat.files': (root: string) => projectFiles(root),
     'chat.forgetProject': (root: string) => forgetProject(root),

@@ -1,4 +1,5 @@
 import type { Answered, Folders, Recording } from '../../shared/api'
+import type { LocalAnswer, LocalAsk } from '../../shared/local'
 
 /** What only the phone asks the Mac for, beside `window.geckit`; nothing on the Mac itself. */
 export interface PhoneCalls {
@@ -17,6 +18,8 @@ export interface PhoneCalls {
   readonly dropVideo: () => void
   /** A recording read on the phone, handed to the New task form that is open, as the Mac's capsule hands one. */
   readonly recorded: (recording: Recording) => void
+  /** A request from a page off the Mac's localhost, made there. */
+  readonly localFetch: (asked: LocalAsk) => Promise<LocalAnswer>
 }
 
 export const phoneCalls = (): PhoneCalls | undefined => (window as { geckitPhone?: PhoneCalls }).geckitPhone

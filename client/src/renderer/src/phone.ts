@@ -2,10 +2,12 @@ import type { Geckit } from '../../preload'
 import type { ChatSession, SessionImage, SessionItem, SessionItems, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
 import { pieceOf } from '../../shared/pairing'
 import { collapse, runKey } from '../../shared/steps'
+import { isLocal, toPhone } from '../../shared/local'
 import type { Piece } from '../../shared/pairing'
 import { OWN } from './phone-calls'
 import type { PhoneCalls } from './phone-calls'
 import { keep, readKept } from './kept'
+import { showLocal } from './local-page'
 import type { Link } from './link'
 import type { ScreenLink } from './screen-link'
 
@@ -547,7 +549,12 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       file: (root, path) => call('chat.file', root, path),
       repo: (root) => call('chat.repo', root),
       files: (root) => call('chat.files', root),
-      openLink: (href) => void window.open(href, '_blank', 'noopener'),
+      // An address on the Mac's localhost means the phone itself here, so it is shown through the Mac instead.
+      openLink: (href) => {
+        const local = showLocal()
+        if (local !== undefined && isLocal(href)) local(toPhone(href))
+        else window.open(href, '_blank', 'noopener')
+      },
       onSessions: (said) => listen('chat:sessions', said),
       onItems: (said) => listen('chat:items', said),
       onAccount: (said) => listen('chat:accountChanged', said),
@@ -627,6 +634,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     keepVideo: () => send('recording.keep'),
     dropVideo: () => send('recording.drop'),
     recorded: (recording) => told('chat:recorded', recording),
+    localFetch: (asked) => call('local.fetch', asked),
   }
   Object.defineProperty(window, 'geckitPhone', { value: calls })
 
