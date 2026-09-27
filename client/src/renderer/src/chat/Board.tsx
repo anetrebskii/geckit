@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ANYWHERE, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { ANYWHERE, homeOf, profileOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, RecordedFrame, SessionImage, SessionStatus } from '../../../shared/api'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
@@ -786,6 +786,9 @@ export function NewTask({
     )
   }
 
+  const profiled = profileOf(chat.settings) !== undefined
+  const localProjects = shownProjects(chat.settings).filter((one) => hostOf(one) === undefined)
+
   return (
     <div
       className="new-task"
@@ -825,34 +828,41 @@ export function NewTask({
               ))
             ) : (
               <>
-                <optgroup label="Local">
-                  {shownProjects(chat.settings)
-                    .filter((one) => hostOf(one) === undefined)
-                    .map((one) => (
+                {/* Groups follow projects: in a profile, a group it has no projects in is not its business, and is reached from Settings, Hosts. */}
+                {profiled && localProjects.length === 0 ? null : (
+                  <optgroup label="Local">
+                    {localProjects.map((one) => (
                       <option key={one} value={one}>
                         {projectName(one)}
                       </option>
                     ))}
-                </optgroup>
-                {chat.hosts.map((host) => (
-                  <optgroup key={host.id} label={host.name}>
-                    {shownProjects(chat.settings)
-                      .filter((one) => hostOf(one) === host.id)
-                      .map((one) => (
+                  </optgroup>
+                )}
+                {chat.hosts.map((host) => {
+                  const onHost = shownProjects(chat.settings).filter((one) => hostOf(one) === host.id)
+                  // Unlike Local, a host group is never its own destination here: with nothing to pick under it, it stays out of the list, in or out of a profile.
+                  if (onHost.length === 0) return null
+                  return (
+                    <optgroup key={host.id} label={host.name}>
+                      {onHost.map((one) => (
                         <option key={one} value={one}>
                           {projectLabel(one)}
                         </option>
                       ))}
-                  </optgroup>
-                ))}
+                    </optgroup>
+                  )
+                })}
               </>
             )}
             <option value={PICK}>{chat.hosts.length === 0 ? 'Choose a folder...' : 'Choose a folder on this computer...'}</option>
-            {chat.hosts.map((host) => (
-              <option key={host.id} value={`${PICK_ON}${host.id}`}>
-                Choose a folder on {host.name}...
-              </option>
-            ))}
+            {/* A folder is only ever added on a host reached now: one not connected has nothing to read it with. */}
+            {chat.hosts
+              .filter((host) => host.state === 'up')
+              .map((host) => (
+                <option key={host.id} value={`${PICK_ON}${host.id}`}>
+                  Choose a folder on {host.name}...
+                </option>
+              ))}
           </select>
         </label>
       )}

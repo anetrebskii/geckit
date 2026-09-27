@@ -2315,6 +2315,18 @@ button.tag:hover {
   border-bottom: 1px solid var(--border);
 }
 
+/* Everything in the head stays on its one line; the title gives way first, then the project, never a second line. */
+.talk-head > * {
+  white-space: nowrap;
+}
+
+.talk-head > .tinted {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .talk-head .title {
   overflow: hidden;
   font-weight: 500;
@@ -6461,6 +6473,25 @@ body:has(.talk.over:not([hidden])) .phone-offline {
   bottom: auto;
 }
 
+/* Something the phone could not do, with nowhere else to say it: the same pill as the offline one, gone by itself. */
+.phone-notice {
+  position: fixed;
+  bottom: calc(var(--bottom) + 16px);
+  left: 50%;
+  z-index: 55;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-dim);
+  text-align: center;
+  background: var(--bg-raised);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  animation: fade var(--settle) var(--ease) both;
+}
+
 .phone-spin {
   flex: none;
   width: 14px;
@@ -7480,14 +7511,14 @@ html.phone .preview-bar .icon-button {
 /* What a host asks, over the window, where it is seen whatever is open. */
 .host-prompts {
   position: fixed;
-  top: 56px;
-  left: 50%;
+  inset-block-start: 56px;
+  inset-inline: 0;
   z-index: 55;
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: min(460px, 92vw);
-  transform: translateX(-50%);
+  margin-inline: auto;
 }
 
 .host-prompt {
@@ -7496,8 +7527,8 @@ html.phone .preview-bar .icon-button {
   gap: 8px;
   padding: 12px 14px;
   background: var(--bg-raised);
+  /* A question, not an alarm: red is kept for what destroys something, and this asks for a password or a key. */
   border: 1px solid var(--border);
-  border-left: 3px solid var(--danger);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   animation: lift var(--settle) var(--ease) both;
@@ -7511,6 +7542,27 @@ html.phone .preview-bar .icon-button {
 .host-prompt-actions {
   display: flex;
   gap: 8px;
+  justify-content: flex-end;
+}
+
+.host-prompt-note {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.host-prompt-note.trouble {
+  color: var(--danger);
+}
+
+/* A fingerprint is read character by character against another screen: set apart, in the code face, broken anywhere. */
+.host-print {
+  padding: 8px 10px;
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
 }
 
 .host-prompt .check {
@@ -7589,10 +7641,30 @@ html.phone .preview-bar .icon-button {
   color: var(--danger);
 }
 
+/* A changed key's fingerprint, on the row that asks about it: cut at its end like the lines above it, not the card's own set-apart block. */
+.host-lines .print {
+  overflow: hidden;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .host-row .quiet {
   flex: none;
   padding: 3px 10px;
   font-size: 12px;
+}
+
+/* What Install it said when it failed, beside the row's own button rather than its own card. */
+.host-row .row-said {
+  overflow: hidden;
+  max-width: 160px;
+  font-size: 11px;
+  color: var(--danger);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Add a host: Address wide, User and Port beside it. */
@@ -7753,6 +7825,12 @@ html.phone .preview-bar .icon-button {
   border-radius: var(--radius);
 }
 
+.folder-filter:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* The field's ring is its frame's, above, as the system's search field draws it. */
 .folder-filter input[type='text'] {
   width: 100%;
   min-width: 0;
@@ -7956,14 +8034,13 @@ html.phone .preview-bar .icon-button {
   color: var(--text-faint);
 }
 
+/* A group's head is a name, Local or a host's, and a host's is its own spelling: set as it is written, not in capitals. */
 .projects-group .group-name {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
   color: var(--text-dim);
   text-overflow: ellipsis;
-  text-transform: uppercase;
 }
 
 .projects-group.on .group-name {
@@ -8085,8 +8162,9 @@ html.phone .preview-bar .icon-button {
   border-radius: 12px;
 }
 
-.host-sheet-go:disabled {
-  opacity: 0.45;
+.host-sheet-go.even {
+  color: var(--accent);
+  background: var(--bg-raised);
 }
 
 .host-sheet-not {

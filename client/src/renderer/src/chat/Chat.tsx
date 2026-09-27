@@ -20,6 +20,7 @@ import { projectColor } from '../../../shared/project-color'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import { HostChip, HostPromptCard, HostTroubleCard } from './HostParts'
 import { PhoneHostSheet } from './PhoneHostSheet'
+import { computerName, needsComputer } from './PhoneHosts'
 import { homePath, projectLabel, projectName, tint } from './project'
 import { Sidebar, Tags } from './Sidebar'
 import { Status, TalkStatus } from './Status'
@@ -100,10 +101,6 @@ export function Chat(): React.JSX.Element {
   const { addFiles, send, root } = chat
   // The host the open conversation, or the one about to start, runs on.
   const host = root === undefined ? undefined : chat.hosts.find((one) => one.id === hostOf(root))
-  const workingOn = useCallback(
-    (id: string) => chat.everyone.filter((one) => hostOf(one.root) === id && (one.state === 'working' || one.state === 'asks')).length,
-    [chat.everyone],
-  )
 
   // The transcript is drawn again whenever one of these is, so they are made
   // once rather than on every keystroke in the field below it.
@@ -671,7 +668,11 @@ export function Chat(): React.JSX.Element {
                     : host.state === 'connecting'
                       ? `Connecting to ${host.name}`
                       : host.state === 'needs' || host.state === 'missing' || host.state === 'signin'
-                        ? `${host.name} needs you, above`
+                        ? ON_PHONE
+                          ? needsComputer(host, chat.prompts)
+                            ? `${host.name} needs you on ${computerName()}${host.problem === undefined ? '.' : `: ${host.problem}`}`
+                            : `${host.name} needs you`
+                          : `${host.name} needs you, above`
                         : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`
                   : chat.account?.here !== true
                     ? 'Claude Code is not on this computer. Install it, then reopen this window.'
@@ -731,7 +732,12 @@ export function Chat(): React.JSX.Element {
       ) : chat.prompts.length === 0 && (host === undefined || !['missing', 'signin', 'needs'].includes(host.state)) ? null : (
         <div className="host-prompts">
           {chat.prompts.map((prompt) => (
-            <HostPromptCard key={prompt.id} prompt={prompt} canRemember={chat.hosts.find((one) => one.id === prompt.host)?.canRemember ?? false} />
+            <HostPromptCard
+              key={prompt.id}
+              prompt={prompt}
+              hostName={chat.hosts.find((one) => one.id === prompt.host)?.name ?? prompt.host}
+              canRemember={chat.hosts.find((one) => one.id === prompt.host)?.canRemember ?? false}
+            />
           ))}
           {host === undefined || chat.prompts.some((one) => one.host === host.id) ? null : <HostTroubleCard host={host} />}
         </div>
@@ -759,7 +765,7 @@ export function Chat(): React.JSX.Element {
       )}
       {switching ? <Switcher chat={chat} onClose={() => setSwitching(false)} onSeek={setSeek} /> : null}
       {setting ? (
-        <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} working={workingOn} />
+        <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />
       ) : null}
       {keys ? <ShortcutsDialog onClose={closeKeys} /> : null}
       {chat.settings.welcomed || ON_PHONE ? null : <Welcome chat={chat} />}

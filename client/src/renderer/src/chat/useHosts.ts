@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { knowHosts } from './project'
@@ -38,6 +38,30 @@ export function useHosts(): HostsState {
   }, [])
   useEffect(() => knowHosts(hosts), [hosts])
   return { hosts, prompts }
+}
+
+/**
+ * While a host's folders are open on the phone: if the host is gone (removed
+ * on the computer it was reached through), or a card there was answered Not
+ * now, which always leaves a host Not connected, go back where `onGone` says.
+ */
+export function useHostBounce(hosts: readonly HostView[], hostId: string | undefined, onGone: () => void): void {
+  const host = hostId === undefined ? undefined : hosts.find((one) => one.id === hostId)
+  // Set once the host is seen past Not connected, so opening on an already idle host does not bounce at once.
+  const seen = useRef(false)
+  useEffect(() => {
+    if (hostId === undefined) {
+      seen.current = false
+      return
+    }
+    if (host === undefined) {
+      onGone()
+      return
+    }
+    if (host.state !== 'idle') seen.current = true
+    else if (seen.current) onGone()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hostId, host?.state, host === undefined])
 }
 
 /** Escape closes this dialog alone, not the one it was opened over. */

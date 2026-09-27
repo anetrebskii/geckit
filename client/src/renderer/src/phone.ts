@@ -69,6 +69,20 @@ function hideDropped(): void {
   document.querySelector('.phone-offline')?.remove()
 }
 
+// How long a notice sits over the page before it goes by itself.
+const NOTICE = 4000
+
+/** A brief pill over the page for something that could not be done, with nowhere else on the phone to say it. */
+export function showNotice(text: string): void {
+  document.querySelector('.phone-notice')?.remove()
+  const line = document.createElement('div')
+  line.className = 'phone-notice'
+  line.setAttribute('role', 'status')
+  line.textContent = text
+  document.body.append(line)
+  window.setTimeout(() => line.remove(), NOTICE)
+}
+
 /**
  * Installs `window.geckit` over the link, and gives back what puts a new link
  * under it once the old one drops: the page stays as it was, and is brought up
@@ -567,7 +581,13 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
         }
         const root = rows?.find((one) => one.id === watched)?.root
         if (root !== undefined && isRemote(root)) {
-          void calls.forwardLink(root, href).then(({ href: carried, moved }) => local(toPhone(carried), moved))
+          void calls.forwardLink(root, href).then(({ href: carried, moved, problem }) => {
+            if (problem !== undefined) {
+              showNotice(problem)
+              return
+            }
+            local(toPhone(carried), moved)
+          })
           return
         }
         local(toPhone(href))
@@ -599,11 +619,17 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       disconnect: (id) => send('hosts.disconnect', id),
       folders: (id, path) => call('hosts.folders', id, path),
       addFolder: (id, path) => call('hosts.addFolder', id, path),
+      addFolderSaying: (id, path) => call('hosts.addFolderSaying', id, path),
       prompts: () => call('hosts.prompts'),
       onPrompt: (said) => listen('hosts:prompt', said),
       onAnswered: (said) => listen('hosts:answered', said),
       answer: (answer) => send('hosts.answer', answer),
       install: () => Promise.resolve({ ok: false, text: 'Claude Code is installed on a host from the computer running GeckIt.' }),
+      // Trusting a changed key is fixed on the computer; the phone's own card says to look there instead of offering to.
+      trustNewKey: () => Promise.resolve({ ok: false, problem: 'A changed key is trusted on the computer running GeckIt.' }),
+      running: (id) => call('hosts.running', id),
+      working: (id) => call('hosts.working', id),
+      conversations: (id) => call('hosts.conversations', id),
       terminal: nothing,
       // A terminal on the phone is the Mac's own to open, not one of its own.
       resumeLine: () => Promise.resolve(undefined),

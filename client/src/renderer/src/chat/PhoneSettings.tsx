@@ -19,6 +19,7 @@ import { accountsOf, placesOf, usageOf } from './plans'
 import { homePath, projectLabel } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
+import { useHostBounce } from './useHosts'
 
 /**
  * The Settings tab: what of the Mac's Settings is done from a hand, and the
@@ -374,9 +375,11 @@ function AddProject({
   readonly onAdded: () => void
 }): React.JSX.Element {
   const on = host === undefined ? undefined : chat.hosts.find((one) => one.id === host)
+  // The host removed while its folders are open, or a card there answered Not now, which always leaves it Not connected: back rather than the computer's folders in its place.
+  useHostBounce(chat.hosts, host, onBack)
   return (
     <Page title="Choose a folder" back={back} onBack={onBack}>
-      {on === undefined ? <Folders chat={chat} onAdded={onAdded} /> : <PhoneHostFolders chat={chat} host={on} onAdded={onAdded} />}
+      {host !== undefined && on === undefined ? null : on === undefined ? <Folders chat={chat} onAdded={onAdded} /> : <PhoneHostFolders chat={chat} host={on} onAdded={onAdded} />}
     </Page>
   )
 }
@@ -427,7 +430,9 @@ export function Folders({
         {shown.folders.map((one) => (
           <Cell key={one.path} label={one.name} icon="folder" {...(one.git ? { says: 'Git repository' } : {})} onPress={() => setAt(one.path)} />
         ))}
-        {shown.folders.length === 0 ? <Cell label="No folders in it" /> : null}
+        {shown.folders.length === 0 ? (
+          <Cell label={`No folders inside ${shown.path.split('/').filter((part) => part !== '').pop() ?? computerName()}`} />
+        ) : null}
       </div>
       {onShown !== undefined ? null : (
         <div className="phone-group phone-form-group">

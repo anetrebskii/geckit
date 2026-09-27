@@ -14,6 +14,7 @@ import { hostOf, isRemote } from '../../../shared/hosts'
 import { Chrome } from './Chrome'
 import { HostDot } from './HostParts'
 import { Mcp } from './Mcp'
+import { computerName, needsComputer } from './PhoneHosts'
 import { Preview } from './Preview'
 import { Tasks } from './Tasks'
 import type { Choice } from '../ui/Menu'
@@ -846,7 +847,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         {/* The chip row has no room for the hint, so on the phone it has a line of its own over the field. */}
         {held && host !== undefined ? (
           <div className="phone-hint away">
-            {host.state === 'lost' ? `${host.name} is out of reach. What is typed stays until it is back` : host.state === 'connecting' ? away : `${host.name} needs you`}
+            {host.state === 'lost'
+              ? `${host.name} is out of reach. What is typed stays until it is back`
+              : host.state === 'connecting'
+                ? away
+                : needsComputer(host, chat.prompts)
+                  ? `${host.name} needs you on ${computerName()}${host.problem === undefined ? '.' : `: ${host.problem}`}`
+                  : `${host.name} needs you`}
           </div>
         ) : ON_PHONE && command ? (
           <div className="phone-hint command">Runs in {projectLabel(chat.root)} now. Claude sees what it prints with your next message</div>

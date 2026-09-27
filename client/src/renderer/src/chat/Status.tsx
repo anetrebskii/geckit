@@ -5,7 +5,7 @@ import type { GitState, PlanUsage, PlanWindow } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
-import { ago, deletedIn } from './time'
+import { ago, clockTime, deletedIn } from './time'
 import { accountsOf, placesOf } from './plans'
 import type { Chat } from './useChat'
 
@@ -191,10 +191,23 @@ export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly on
 }
 
 /** One account's two windows, small, for a bar that shows several: its place, then 5h and Week. */
-function Compact({ name, usage, faint, now }: { readonly name: string; readonly usage: PlanUsage | undefined; readonly faint: boolean; readonly now: number }): React.JSX.Element {
+function Compact({
+  name,
+  usage,
+  faint,
+  at,
+  now,
+}: {
+  readonly name: string
+  readonly usage: PlanUsage | undefined
+  readonly faint: boolean
+  /** When this place's usage last changed, for a faint item's tooltip. */
+  readonly at: number | undefined
+  readonly now: number
+}): React.JSX.Element {
   const part = (window: PlanWindow | undefined): string => (window === undefined ? '—' : `${String(Math.round(window.part * 100))}%`)
   const tip = [
-    `${name}: the plan these projects run on${faint ? ', as last measured before it went out of reach' : ''}`,
+    `${name}: the plan these projects run on${faint ? `, as of ${at === undefined ? 'last measured' : clockTime(at)}` : ''}`,
     usage?.fiveHour === undefined ? undefined : `5h ${part(usage.fiveHour)}, resets in ${until(usage.fiveHour.resetsAt, now)}`,
     usage?.sevenDay === undefined ? undefined : `Week ${part(usage.sevenDay)}, resets in ${until(usage.sevenDay.resetsAt, now)}`,
   ]
@@ -269,6 +282,7 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 name={hostNamed(at)}
                 usage={at === '' ? (chat.plan ?? item.entry?.usage) : item.entry?.usage}
                 faint={faint}
+                at={chat.plansAt[at]}
                 now={now}
               />
             )

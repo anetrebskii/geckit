@@ -95,6 +95,8 @@ export interface Chat {
   readonly plan: PlanUsage | undefined
   /** Every place's plan, by the account it runs on: this computer's and each host's with projects here. */
   readonly plans: readonly PlaceUsage[]
+  /** When each place's usage was last measured, by the place: what a faint plan item's tooltip says it is as of. */
+  readonly plansAt: Readonly<Record<string, number>>
   readonly models: ModelsSaid
   /** The mode and model the next message goes with, on a new session or an old one. */
   readonly mode: SessionMode
@@ -204,7 +206,18 @@ export function useChat(): Chat {
   }, [uploads])
   const [account, setAccount] = useState<ClaudeAccount | undefined>()
   const [plan, setPlan] = useState<PlanUsage | undefined>()
-  const [plans, setPlans] = useState<readonly PlaceUsage[]>([])
+  const [plans, setPlansState] = useState<readonly PlaceUsage[]>([])
+  // When a place's usage was last measured, so a faint plan item's tooltip can say as of when it was last asked. Every answer or tell counts, whether or not its numbers moved: it says when it was last known fresh, not when it last changed.
+  const [plansAt, setPlansAt] = useState<Readonly<Record<string, number>>>({})
+  const setPlans = useCallback((all: readonly PlaceUsage[]): void => {
+    const at = Date.now()
+    setPlansState(all)
+    setPlansAt((held) => {
+      const next = { ...held }
+      for (const one of all) next[one.place] = at
+      return next
+    })
+  }, [])
   // Which Claude Code the list is of, this computer's ('') or a host's by id: each has its own models, and a list is never shown for the other.
   const [models, setModels] = useState<{ readonly on: string; readonly said: ModelsSaid }>({ on: '', said: 'unasked' })
   const [focusSeed, setFocusSeed] = useState(0)
@@ -276,7 +289,7 @@ export function useChat(): Chat {
       off()
       offPlans()
     }
-  }, [])
+  }, [setPlans])
 
   useEffect(() => {
     void window.geckit.chat.list(undefined).then((all) => setEveryone(all.filter((one) => one.question !== true)))
@@ -794,6 +807,7 @@ export function useChat(): Chat {
     account,
     plan,
     plans,
+    plansAt,
     models: models.said,
     mode,
     model,

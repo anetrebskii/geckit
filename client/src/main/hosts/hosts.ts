@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -16,7 +16,22 @@ import { retryAfter } from './run'
 import type { RemoteRun } from './run'
 import { checkScript, foldersScript, installScript, resolveScript } from './run-script'
 import type { Secrets } from './secrets'
-import { badArgsProblem, controlFolder, isConnectionFailure, runOn, sshArgs, sshProblem, sshProgram } from './ssh'
+import {
+  badArgsProblem,
+  changedKeyPrint,
+  changedKeyProblem,
+  controlFolder,
+  isChangedKeyProblem,
+  isConnectionFailure,
+  knownHostsTargets,
+  removeWithLines,
+  runOn,
+  sshArgs,
+  sshConfigTarget,
+  sshKeygenProgram,
+  sshProblem,
+  sshProgram,
+} from './ssh'
 import type { Ran, SshSetup } from './ssh'
 
 /**
@@ -76,6 +91,16 @@ interface Held {
   /** A blip's own retry, separate from a live run's: cleared once it comes up, the person acts, or a card is up for it. */
   retry?: NodeJS.Timeout
   retries: number
+  /** Ever reached 'up' since GeckIt started: a connection failure before this ever happened is told outright rather than retried in silence. */
+  everUp: boolean
+  /** When it first went `lost`, so a retry meanwhile never resets the 10 s before Lost is shown, nor the moment it is. Gone once it is `up` again or the person acts. */
+  lostAt?: number
+  /** The host's key changed since it was last reached, until the person trusts the new one or the check moves on to something else. */
+  changedKey?: {
+    readonly print?: string
+    /** The exact `ssh-keygen -f <file> -R <target>` ssh itself printed for this, where it said one: the more exact of the two ways Trust the new key has of finding what to forget. */
+    readonly removeWith?: readonly { readonly file: string; readonly target: string }[]
+  }
 }
 
 interface Asked {
@@ -127,7 +152,7 @@ export class Hosts implements HostsLike {
   #hold(id: string): Held {
     let held = this.#held.get(id)
     if (held === undefined) {
-      held = { state: 'idle', shown: 'idle', checking: undefined, usedStored: new Set(), declined: false, runs: new Map(), retries: 0 }
+      held = { state: 'idle', shown: 'idle', checking: undefined, usedStored: new Set(), declined: false, runs: new Map(), retries: 0, everUp: false }
       this.#held.set(id, held)
     }
     return held
@@ -167,6 +192,7 @@ export class Hosts implements HostsLike {
         ...(plan === undefined ? {} : { plan }),
         ...(who === undefined ? {} : { who }),
         ...(held?.problem === undefined ? {} : { problem: held.problem }),
+        ...(held?.changedKey === undefined ? {} : { changedKey: held.changedKey }),
         remembered: this.#deps.secrets.has(host.id),
         canRemember,
       }
@@ -177,26 +203,66 @@ export class Hosts implements HostsLike {
     this.#deps.changed(this.views())
   }
 
-  /** Moves a host to a state, shown at once or after its wait. */
+  /**
+   * Moves a host to a state, shown at once or after its wait.
+   *
+   * A retry made while a drop is still within its 10 s grace, or already
+   * shown Lost, never itself changes what is shown: `lostAt`, set once at the
+   * first drop and gone only once it is `up` again or the person acts, is
+   * what the 10 s is counted from and what a `connecting` in between defers
+   * to, so retries never flicker between Connecting and Lost.
+   */
   #set(id: string, state: HostState, problem?: string): void {
     const held = this.#hold(id)
     const was = held.state
     held.state = state
-    clearTimeout(held.timer)
-    if (problem === undefined) delete held.problem
-    else held.problem = problem
-    if (state === 'up' && was !== 'up') held.since = this.#now()
-    const wait = state === 'connecting' && held.shown !== 'lost' ? SHOW_CONNECTING : state === 'lost' ? SHOW_LOST : 0
-    if (wait === 0) {
-      held.shown = state
+    // A retry's own `connecting` while a drop already stands as Lost (or is still within its grace) says nothing new about why: the reason kept for it is left alone rather than cleared and then only sometimes put back once the retry itself fails.
+    const keepProblem = state === 'connecting' && held.lostAt !== undefined
+    if (!keepProblem) {
+      if (problem === undefined) delete held.problem
+      else held.problem = problem
+    }
+    if (state === 'up') {
+      if (was !== 'up') held.since = this.#now()
+      held.everUp = true
+      clearTimeout(held.timer)
+      delete held.lostAt
+      held.shown = 'up'
       this.#tell()
       return
     }
-    held.timer = setTimeout(() => {
-      if (held.state !== state) return
-      held.shown = state
+    if (state === 'lost') {
+      if (held.lostAt === undefined) {
+        held.lostAt = this.#now()
+        clearTimeout(held.timer)
+        held.timer = setTimeout(() => {
+          if (held.lostAt === undefined) return
+          held.shown = 'lost'
+          this.#tell()
+        }, SHOW_LOST)
+      }
       this.#tell()
-    }, wait)
+      return
+    }
+    if (state === 'connecting') {
+      // Already counting down to Lost, or already shown it: left exactly as it is until the check succeeds or the grace runs out.
+      if (held.lostAt !== undefined || held.shown === 'lost') {
+        this.#tell()
+        return
+      }
+      clearTimeout(held.timer)
+      held.timer = setTimeout(() => {
+        if (held.state !== 'connecting') return
+        held.shown = 'connecting'
+        this.#tell()
+      }, SHOW_CONNECTING)
+      this.#tell()
+      return
+    }
+    clearTimeout(held.timer)
+    delete held.lostAt
+    held.shown = state
+    this.#tell()
   }
 
   /** Reaches the host and asks it about Claude Code, once at a time; true where a conversation can run there. */
@@ -219,6 +285,7 @@ export class Hosts implements HostsLike {
     if (host === undefined) return false
     const held = this.#hold(id)
     held.declined = false
+    delete held.changedKey
     clearTimeout(held.retry)
     this.#set(id, 'connecting')
     let conn: string | undefined
@@ -231,13 +298,26 @@ export class Hosts implements HostsLike {
         return this.#check(id, true)
       }
       if (held.declined) {
+        // `answer` itself already reset the retries the moment Not now was pressed: this only settles the state, on whatever this run's own failure turned out to be once it caught up with that.
         this.#set(id, 'idle')
-      } else if (isConnectionFailure(ran.code, ran.err)) {
-        // A blip rather than a real problem: tried again with the same backoff a live run's own reconnect uses, until it comes up, the person acts, or a card is up.
-        this.#set(id, 'lost')
+      } else if (isChangedKeyProblem(ran.err)) {
+        const print = changedKeyPrint(ran.err)
+        const removeWith = removeWithLines(ran.err)
+        held.changedKey = { ...(print === undefined ? {} : { print }), ...(removeWith.length === 0 ? {} : { removeWith }) }
+        this.#set(id, 'needs', changedKeyProblem(host.name))
+      } else if (isConnectionFailure(ran.code, ran.err) && held.everUp) {
+        // A blip rather than a real problem, on a host that has answered before: tried again with the same backoff a live run's own reconnect uses, until it comes up, the person acts, or a card is up. Told outright once 5 retries in a row have failed, so it is not Lost forever with no reason.
+        this.#set(id, 'lost', held.retries >= 5 ? sshProblem(ran.err, host.name, host.user) : undefined)
         this.#retryCheck(id)
+      } else if (isConnectionFailure(ran.code, ran.err)) {
+        // Never reached this run: said outright rather than retried in silence, so the person is not left watching a hollow dot that never explains itself.
+        this.#set(id, 'needs', sshProblem(ran.err, host.name, host.user))
       } else {
-        this.#set(id, 'needs', badArgsProblem(ran.err, host.name) ?? (ran.timedOut === true ? `Could not reach ${host.name}: timed out after 20 s.` : ran.code === null ? `The connection to ${host.name} was closed.` : sshProblem(ran.err, host.name)))
+        this.#set(
+          id,
+          'needs',
+          badArgsProblem(ran.err, host.name) ?? (ran.timedOut === true ? `Could not reach ${host.name}: timed out after 20 s.` : ran.code === null ? `The connection to ${host.name} was closed.` : sshProblem(ran.err, host.name, host.user)),
+        )
       }
       return false
     }
@@ -297,6 +377,11 @@ export class Hosts implements HostsLike {
       if (up && held.state !== 'up') this.#set(id, 'up')
       if (!up && held.state === 'up') this.#set(id, 'lost')
     }
+  }
+
+  /** How many runs Remove would stop on the host now, idle ones too, since Remove kills every one of them whatever it is doing. Disconnect asks `Sessions` instead for how many are actually working or waiting on an answer, which is what it means by "working there". */
+  running(id: string): number {
+    return this.#held.get(id)?.runs.size ?? 0
   }
 
   /** Tries at once, for Reconnect. */
@@ -367,6 +452,46 @@ export class Hosts implements HostsLike {
   }
 
   /**
+   * The person trusts a host's changed key: its old entry is forgotten from
+   * wherever ssh itself would look for it, so the next connection sees it as
+   * unknown rather than changed, and is reached again at once. Nothing is
+   * removed, and a reason is given instead, where the host does not currently
+   * have a changed key to trust.
+   */
+  async trustNewKey(id: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly problem: string }> {
+    const host = this.config(id)
+    if (host === undefined) return { ok: false, problem: 'That host is not here any more.' }
+    const held = this.#hold(id)
+    const changedKey = held.changedKey
+    if (changedKey === undefined) return { ok: false, problem: `${host.name}'s key has not changed.` }
+    const entries = changedKey.removeWith !== undefined && changedKey.removeWith.length > 0 ? changedKey.removeWith : await this.#guessRemoval(host)
+    if (entries.length === 0) return { ok: false, problem: `Could not tell where ${host.name}'s old key is kept. Remove it yourself with ssh-keygen -R, then try again.` }
+    const removed = await Promise.all(entries.map((one) => forgetKnownHost(one.file, one.target)))
+    if (!removed.every((one) => one)) return { ok: false, problem: `Could not forget ${host.name}'s old key. Remove it yourself with ssh-keygen -R, then try again.` }
+    delete held.changedKey
+    void this.connect(id)
+    return { ok: true }
+  }
+
+  /**
+   * Where a changed key is forgotten from when ssh did not print its own
+   * "remove with:" line: asked of ssh itself, with `ssh -G`, which reads an
+   * alias, a `HostKeyAlias`, a config port and every `UserKnownHostsFile` the
+   * way ssh reads them rather than guessed from the address and port alone;
+   * `knownHostsTargets` and ssh's own default file stand in only where even
+   * that could not be asked.
+   */
+  async #guessRemoval(host: HostConfig): Promise<{ readonly file: string; readonly target: string }[]> {
+    const resolved = await sshConfigTarget(host, this.setup())
+    const fallbackFile = join(homedir(), '.ssh', 'known_hosts')
+    if (resolved === undefined) return knownHostsTargets(host).map((target) => ({ file: fallbackFile, target }))
+    const names = resolved.hostKeyAlias !== undefined ? [resolved.hostKeyAlias] : [resolved.hostname === '' ? host.address : resolved.hostname]
+    const targets = resolved.port === 22 ? names : [...names, ...names.map((name) => `[${name}]:${String(resolved.port)}`)]
+    const files = resolved.knownHostsFiles.length > 0 ? resolved.knownHostsFiles : [fallbackFile]
+    return files.flatMap((file) => targets.map((target) => ({ file, target })))
+  }
+
+  /**
    * Reaches a host and tells the checks line by line, as Add a host and Edit a
    * host both show them. The last line is Claude Code's version and whether it
    * is signed in, or why it could not be reached at all.
@@ -379,7 +504,7 @@ export class Hosts implements HostsLike {
     this.#deps.checks?.([{ text: `Reaching ${name}`, done: false }])
     const ran = await runOn(host, this.setup(), checkScript(), { timeout: 25_000, ...(options.alone === undefined ? {} : { alone: options.alone }) })
     if (ran.code !== 0) {
-      const why = badArgsProblem(ran.err, name) ?? (ran.timedOut === true ? `Could not reach ${name}: timed out after 20 s.` : ran.code === null ? `The connection to ${name} was closed.` : sshProblem(ran.err, name))
+      const why = badArgsProblem(ran.err, name) ?? (ran.timedOut === true ? `Could not reach ${name}: timed out after 20 s.` : ran.code === null ? `The connection to ${name} was closed.` : sshProblem(ran.err, name, host.user))
       this.#deps.checks?.([{ text: why, done: true, failed: true }])
       return { ok: false, problem: why }
     }
@@ -536,6 +661,24 @@ export class Hosts implements HostsLike {
     return root
   }
 
+  /** `addFolder`, but with why it failed rather than only that it did: not reached at all, or the path is not a folder there. */
+  async addFolderSaying(id: string, path: string): Promise<{ readonly root: string } | { readonly problem: string }> {
+    const host = this.config(id)
+    if (host === undefined) return { problem: 'That host is not here any more.' }
+    const ran = await runOn(host, this.setup(), resolveScript(path), { timeout: 30_000 })
+    if (isConnectionFailure(ran.code, ran.err)) {
+      this.noteFailure(id, ran)
+      return { problem: `Could not add ${path}: ${host.name} did not answer. Try again once it is connected.` }
+    }
+    const resolved = ran.out.toString('utf8').trim().split('\n').pop() ?? ''
+    if (ran.code !== 0 || !resolved.startsWith('/')) return { problem: `${path} is not a folder on ${host.name}.` }
+    const root = remoteRoot(id, resolved)
+    this.#deps.remember(root)
+    // It was just reached, so it is shown as it stands rather than as not connected.
+    void this.connect(id)
+    return { root }
+  }
+
   /** Runs the official installer on the host, then looks again. */
   async install(id: string): Promise<{ readonly ok: boolean; readonly text: string }> {
     const host = this.config(id)
@@ -641,6 +784,11 @@ export class Hosts implements HostsLike {
     const held = this.#hold(id)
     if (answer.answer === undefined) {
       held.declined = true
+      // Not now leaves nothing behind for the next drop to trip over: a retry already waiting for this one is dropped too, and the backoff starts from its shortest wait again rather than carrying on from how long this attempt had already been failing.
+      clearTimeout(held.retry)
+      held.retries = 0
+      // Not now always leaves the host Not connected with nothing to say, whether this card came from `#check`'s own connection or from a live run reconnecting on its own: nobody is left waiting on an answer that is never coming.
+      this.#set(id, 'idle')
       for (const done of asked.dones) done(undefined)
       return
     }
@@ -690,5 +838,18 @@ function runExit(host: HostConfig, setup: SshSetup): Promise<void> {
   const before = at < 0 ? args.slice(0, args.lastIndexOf(host.address)) : args.slice(0, at)
   return new Promise((done) => {
     execFile(sshProgram(), [...before, '-O', 'exit', '--', host.address], { env: { ...process.env, ...setup.env }, timeout: 5_000 }, () => done())
+  })
+}
+
+/**
+ * Forgets one target from one `known_hosts` file, the way `ssh-keygen -R`
+ * itself would from a terminal; true also where the file is not there, since
+ * there is nothing in it to trust again either way, and asking ssh-keygen for
+ * a file it cannot open would only be told the same in a longer way.
+ */
+function forgetKnownHost(file: string, target: string): Promise<boolean> {
+  if (!existsSync(file)) return Promise.resolve(true)
+  return new Promise((done) => {
+    execFile(sshKeygenProgram(), ['-f', file, '-R', target], { timeout: 5_000 }, (error) => done(error === null))
   })
 }

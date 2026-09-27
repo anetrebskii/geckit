@@ -1,22 +1,32 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import type { ClaudeAccount } from '../../../shared/api'
-import { parseTarget, stateLine, targetLine } from '../../../shared/hosts'
+import { besideName, parseTarget, stateLine } from '../../../shared/hosts'
 import type { HostAuth, HostCheck, HostView, KnownHost } from '../../../shared/hosts'
 import { Icon } from '../ui/Icon'
 import { HostDot } from './HostParts'
 import { useEscape, useHosts, useMinute } from './useHosts'
 
+/** Disconnect at once when nothing is working there; otherwise ask, with the count read fresh from the host. */
+export function askDisconnect(host: HostView, ask: (working: number) => void): void {
+  void window.geckit.hosts.working(host.id).then((working) => {
+    if (working > 0) ask(working)
+    else window.geckit.hosts.disconnect(host.id)
+  })
+}
+
 /**
  * Settings, Hosts: this computer first, as Local, then every host with how it
  * stands, the Claude Code there and whose plan it runs on; and Add a host.
  */
-export function HostsSection({ working }: { readonly working?: (host: string) => number }): React.JSX.Element {
+export function HostsSection(): React.JSX.Element {
   const { hosts } = useHosts()
   const [account, setAccount] = useState<ClaudeAccount | undefined>()
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<HostView | undefined>()
-  const [asking, setAsking] = useState<{ readonly host: HostView; readonly what: 'disconnect' | 'remove' } | undefined>()
+  const [asking, setAsking] = useState<
+    { readonly host: HostView; readonly what: 'disconnect' | 'remove'; readonly running: number; readonly total?: number } | undefined
+  >()
   const now = useMinute()
 
   useEffect(() => {
@@ -50,25 +60,18 @@ export function HostsSection({ working }: { readonly working?: (host: string) =>
                 <span className="name">{host.name}</span>
                 <span className="says">
                   <span className={`host-state${host.state === 'needs' || host.state === 'missing' || host.state === 'signin' ? ' trouble' : ''}`}>{stateLine(host, now)}</span>
-                  {[targetLine(host), host.version === undefined ? undefined : `Claude Code ${host.version}`, host.plan === undefined ? undefined : `Claude ${host.plan}`]
+                  {[besideName(host), host.version === undefined ? undefined : `Claude Code ${host.version}`, host.plan === undefined ? undefined : `Claude ${host.plan}`]
                     .filter((one) => one !== undefined)
                     .map((one) => ` · ${one}`)
                     .join('')}
                 </span>
+                {host.changedKey?.print === undefined ? null : (
+                  <span className="print" title={host.changedKey.print}>
+                    {host.changedKey.print}
+                  </span>
+                )}
               </span>
-              {host.state === 'idle' || host.state === 'needs' || host.state === 'missing' || host.state === 'signin' ? (
-                <button type="button" className="quiet" onClick={() => window.geckit.hosts.connect(host.id)}>
-                  {host.state === 'idle' ? 'Connect' : 'Try again'}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="quiet"
-                  onClick={() => ((working?.(host.id) ?? 0) > 0 ? setAsking({ host, what: 'disconnect' }) : window.geckit.hosts.disconnect(host.id))}
-                >
-                  Disconnect
-                </button>
-              )}
+              <RowAction host={host} onDisconnect={() => askDisconnect(host, (running) => setAsking({ host, what: 'disconnect', running }))} />
               <button type="button" className="quiet" onClick={() => setEditing(host)}>
                 Edit
               </button>
@@ -87,8 +90,10 @@ export function HostsSection({ working }: { readonly working?: (host: string) =>
           editing={editing}
           onClose={() => setEditing(undefined)}
           onRemove={() => {
-            setEditing(undefined)
-            setAsking({ host: editing, what: 'remove' })
+            const host = editing
+            void Promise.all([window.geckit.hosts.running(host.id), window.geckit.hosts.conversations(host.id)]).then(([running, total]) =>
+              setAsking({ host, what: 'remove', running, total }),
+            )
           }}
         />
       )}
@@ -96,17 +101,131 @@ export function HostsSection({ working }: { readonly working?: (host: string) =>
         <Confirm
           host={asking.host}
           what={asking.what}
-          working={working?.(asking.host.id) ?? 0}
+          running={asking.running}
+          {...(asking.total === undefined ? {} : { total: asking.total })}
           onClose={() => setAsking(undefined)}
+          onConfirm={() => {
+            if (asking.what === 'remove') setEditing(undefined)
+          }}
         />
       )}
     </>
   )
 }
 
-/** Disconnect while something works there, or Remove: asked in the words the design gives. */
-function Confirm({ host, what, working, onClose }: { readonly host: HostView; readonly what: 'disconnect' | 'remove'; readonly working: number; readonly onClose: () => void }): React.JSX.Element {
-  const count = `${String(working)} ${working === 1 ? 'conversation is' : 'conversations are'}`
+/** What a row's own button does, by the host's state: connect, fix what stands in the way, or disconnect. */
+function RowAction({ host, onDisconnect }: { readonly host: HostView; readonly onDisconnect: () => void }): React.JSX.Element {
+  const [installing, setInstalling] = useState(false)
+  const [installSaid, setInstallSaid] = useState<string | undefined>()
+  const [trusting, setTrusting] = useState(false)
+  const [trustSaid, setTrustSaid] = useState<string | undefined>()
+  if (host.changedKey !== undefined) {
+    return (
+      <>
+        {/* Dismisses the row, not tries the drop again: as answered elsewhere, its Not now is one that lets go rather than one that retries. */}
+        <button type="button" className="quiet" onClick={() => window.geckit.hosts.disconnect(host.id)}>
+          Not now
+        </button>
+        <button
+          type="button"
+          className="quiet"
+          disabled={trusting}
+          onClick={() => {
+            setTrusting(true)
+            setTrustSaid(undefined)
+            void window.geckit.hosts.trustNewKey(host.id).then((done) => {
+              setTrusting(false)
+              if (!done.ok) setTrustSaid(done.problem)
+            })
+          }}
+        >
+          {trusting ? 'Trusting...' : 'Trust the new key'}
+        </button>
+        {trustSaid === undefined ? null : (
+          <span className="row-said" title={trustSaid}>
+            {trustSaid}
+          </span>
+        )}
+      </>
+    )
+  }
+  if (host.state === 'idle') {
+    return (
+      <button type="button" className="quiet" onClick={() => window.geckit.hosts.connect(host.id)}>
+        Connect
+      </button>
+    )
+  }
+  if (host.state === 'missing') {
+    return (
+      <>
+        <button
+          type="button"
+          className="quiet"
+          disabled={installing}
+          onClick={() => {
+            setInstalling(true)
+            setInstallSaid(undefined)
+            void window.geckit.hosts.install(host.id).then((done) => {
+              setInstalling(false)
+              setInstallSaid(done.ok ? undefined : done.text)
+            })
+          }}
+        >
+          {installing ? 'Installing...' : 'Install it'}
+        </button>
+        {installSaid === undefined ? null : (
+          <span className="row-said" title={installSaid}>
+            {installSaid}
+          </span>
+        )}
+      </>
+    )
+  }
+  if (host.state === 'signin') {
+    return (
+      <button type="button" className="quiet" onClick={() => window.geckit.hosts.terminal(host.id, 'claude /login')}>
+        Sign in on {host.name}
+      </button>
+    )
+  }
+  if (host.state === 'needs') {
+    return (
+      <button type="button" className="quiet" onClick={() => window.geckit.hosts.reconnect(host.id)}>
+        Try again
+      </button>
+    )
+  }
+  return (
+    <button type="button" className="quiet" onClick={onDisconnect}>
+      Disconnect
+    </button>
+  )
+}
+
+/** Disconnect while something works there, or Remove: asked in the words the design gives, with the count read fresh from the host. */
+export function Confirm({
+  host,
+  what,
+  running,
+  total,
+  onClose,
+  onConfirm,
+}: {
+  readonly host: HostView
+  readonly what: 'disconnect' | 'remove'
+  /** Disconnect: how many are working or asking there now. Remove: how many runs it would stop, idle ones too. */
+  readonly running: number
+  /** Remove only: every conversation on the host, listed here or not, that stays behind. */
+  readonly total?: number
+  readonly onClose: () => void
+  /** Beyond closing: what the caller still has open and should put away too. */
+  readonly onConfirm?: () => void
+}): React.JSX.Element {
+  // Escape closes this alone: opened over Edit, it must not take that sheet down with it.
+  useEscape(onClose)
+  const count = `${String(running)} ${running === 1 ? 'conversation is' : 'conversations are'}`
+  const kept = total ?? 0
   return (
     <div className="dialog-scrim" onMouseDown={onClose}>
       <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
@@ -118,7 +237,10 @@ function Confirm({ host, what, working, onClose }: { readonly host: HostView; re
         ) : (
           <>
             <h2>Remove {host.name}?</h2>
-            <p>Its conversations stay on {host.name} and leave this list.</p>
+            <p>
+              Its {String(kept)} {kept === 1 ? 'conversation stays' : 'conversations stay'} on {host.name} and leave this list.
+              {running === 0 ? '' : ` The ${String(running)} working there now ${running === 1 ? 'is' : 'are'} stopped.`}
+            </p>
           </>
         )}
         <div className="dialog-actions">
@@ -131,6 +253,7 @@ function Confirm({ host, what, working, onClose }: { readonly host: HostView; re
             onClick={() => {
               if (what === 'disconnect') window.geckit.hosts.disconnect(host.id)
               else void window.geckit.hosts.remove(host.id)
+              onConfirm?.()
               onClose()
             }}
           >
@@ -241,7 +364,8 @@ export function AddHost({
   }
 
   return (
-    <div className="dialog-scrim" onMouseDown={onClose}>
+    // A stray click outside never closes this: typed fields, and a connection under way, are not lost to a mis-click. Cancel and Escape still do.
+    <div className="dialog-scrim">
       <div className="dialog add-host" onMouseDown={(event) => event.stopPropagation()}>
         <h2>{editing === undefined ? 'Add a host' : `Edit ${editing.name}`}</h2>
         <div className="add-host-grid">
@@ -356,7 +480,12 @@ export function AddHost({
             ))}
           </ul>
         )}
-        {problem === undefined || checks.some((one) => one.failed === true) ? null : <div className="error">{problem}</div>}
+        {problem === undefined || checks.some((one) => one.failed === true) ? null : (
+          <div className="error">
+            {problem}
+            {editing === undefined ? null : <div className="hint">{editing.name} is kept as it was.</div>}
+          </div>
+        )}
         <div className="dialog-actions">
           {editing === undefined || onRemove === undefined ? null : (
             <button type="button" className="quiet danger host-remove" onClick={onRemove}>
