@@ -40,6 +40,9 @@ const columnOf = (session: ChatSession): Column =>
 const FULL = 0.5
 const ACTION = 84
 const PRESS = 450
+// A release faster than this, in px/ms, is a flick; its end is projected this many ms ahead.
+const FLICK = 0.35
+const PROJECT = 180
 // Three asks fit above the fold with the rest of the column still in sight.
 const FOLD = 3
 
@@ -81,6 +84,8 @@ export function PhoneBoard({
   const [pressed, setPressed] = useState<{ readonly session: ChatSession; readonly at: DOMRect } | undefined>()
   const [more, setMore] = useState<ChatSession | undefined>()
   const [renaming, setRenaming] = useState<ChatSession | undefined>()
+  const [deleting, setDeleting] = useState<ChatSession | undefined>()
+  const [hiding, setHiding] = useState<ChatSession | undefined>()
   // The row whose actions are showing; a touch anywhere else puts it back.
   const [open, setOpen] = useState<string | undefined>()
   const [unfolded, setUnfolded] = useState(false)
@@ -223,7 +228,7 @@ export function PhoneBoard({
                 }}
               >
                 {one.title}
-                <span className="n">{counts[one.column]}</span>
+                {chat.listed ? <span className="n">{counts[one.column]}</span> : null}
               </button>
             ))}
           </div>
@@ -235,7 +240,19 @@ export function PhoneBoard({
             {new Date(high.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
           </div>
         )}
-        {rows.length === 0 ? (
+        {!chat.listed ? (
+          <div className="phone-group" aria-busy="true" aria-label="Reading the conversations">
+            {[0, 1, 2].map((one) => (
+              <div key={one} className="phone-row">
+                <span className="phone-dot skeleton-dot" />
+                <div className="phone-row-text">
+                  <div className="skeleton-line" />
+                  <div className="skeleton-line short" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
           <div className="phone-empty">
             {emptyProfile(chat.settings) === undefined
               ? COLUMNS.find((one) => one.column === shown)?.empty
@@ -332,6 +349,8 @@ export function PhoneBoard({
           onMark={(status) => mark(pressed.session, status)}
           onRename={() => setRenaming(pressed.session)}
           onShortcut={() => onShortcut(pressed.session)}
+          onHide={() => setHiding(pressed.session)}
+          onDelete={() => setDeleting(pressed.session)}
           onClose={() => setPressed(undefined)}
         />
       )}
@@ -344,11 +363,19 @@ export function PhoneBoard({
           choices={[
             ...SESSION_STATUSES.map((one) => ({ value: one.status, label: one.label, says: one.why })),
             { value: '', label: 'No status', says: 'In progress, with nothing marked' },
+            { value: 'hide', label: 'Hide from this list', says: 'Asked about first', icon: 'hidden' },
+            { value: 'delete', label: 'Delete', says: 'Asked about first', danger: true, icon: 'trash' },
           ]}
-          onPick={(value) => mark(more, value === '' ? undefined : (value as SessionStatus))}
+          onPick={(value) => {
+            if (value === 'hide') setHiding(more)
+            else if (value === 'delete') setDeleting(more)
+            else mark(more, value === '' ? undefined : (value as SessionStatus))
+          }}
           onClose={() => setMore(undefined)}
         />
       )}
+      {deleting === undefined ? null : <DeleteSheet session={deleting} chat={chat} onClose={() => setDeleting(undefined)} />}
+      {hiding === undefined ? null : <HideSheet session={hiding} chat={chat} onClose={() => setHiding(undefined)} />}
       {renaming === undefined ? null : <Rename session={renaming} chat={chat} onClose={() => setRenaming(undefined)} />}
       {ways ? (
         <Ways
@@ -401,6 +428,7 @@ export function RowBody({
 }): React.JSX.Element {
   const stands = standing(session)
   const background = session.tasks?.filter(running).length ?? 0
+  const queued = session.queued?.length ?? 0
   const said = stands.tone === 'working' ? session.stands.replace(/^Working - /, '') : session.stands
   const card = session.state === 'asks' ? waiting?.card : undefined
   return (
@@ -427,6 +455,7 @@ export function RowBody({
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
           {session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
           {background === 0 ? null : <span className="phone-row-tag">{background} in the background</span>}
+          {queued === 0 ? null : <span className="phone-row-tag">{queued} queued</span>}
         </div>
         {card === undefined || onAnswer === undefined ? null : card.kind === 'permission' ? (
           <div className="phone-row-answer">
@@ -470,7 +499,7 @@ function Row({
 }): React.JSX.Element {
   const [x, setX] = useState(0)
   const [moving, setMoving] = useState(false)
-  const touch = useRef<{ x: number; y: number; from: number; way?: 'side' | 'down'; timer: number; pressed: boolean } | undefined>(undefined)
+  const touch = useRef<{ x: number; y: number; from: number; way?: 'side' | 'down'; timer: number; pressed: boolean; at: number; t: number; v: number } | undefined>(undefined)
   const row = useRef<HTMLDivElement>(null)
   // React's touch listeners are passive, and only a non-passive one can keep the list still under a sideways swipe.
   useEffect(() => {
@@ -489,9 +518,15 @@ function Row({
   // Closed from outside by a touch on another row, which leaves only this row's own moves to show.
   const offset = open || moving || committed ? x : 0
 
-  const settle = (at: number): void => {
+  // A flick decides by where it was headed, as UIKit projects a released finger, so a quick swipe back closes the row however far it was.
+  const settle = (at: number, v: number): void => {
     setMoving(false)
-    if (at < -width * FULL) {
+    const flick = Math.abs(v) > FLICK ? Math.sign(v) : 0
+    const end = at + v * PROJECT
+    if (flick !== 0 && Math.sign(at) !== 0 && flick !== Math.sign(at)) {
+      setX(0)
+      onOpen(false)
+    } else if (at < -width * FULL) {
       tap('firm')
       setCommitted(true)
       setX(-width)
@@ -501,10 +536,10 @@ function Row({
       setCommitted(true)
       setX(width)
       setTimeout(() => onMark(lead.status), 220)
-    } else if (at < -48) {
+    } else if (end < -48) {
       setX(-ACTION * 2)
       onOpen(true)
-    } else if (at > 48) {
+    } else if (end > 48) {
       setX(ACTION + 12)
       onOpen(true)
     } else {
@@ -561,6 +596,9 @@ function Row({
             y: event.clientY,
             from: offset,
             pressed: false,
+            at: offset,
+            t: event.timeStamp,
+            v: 0,
             timer: window.setTimeout(() => {
               if (touch.current === undefined || touch.current.way !== undefined) return
               touch.current.pressed = true
@@ -582,17 +620,23 @@ function Row({
               setMoving(true)
             }
           }
-          if (held.way === 'side') setX(Math.max(-width, Math.min(width, held.from + dx)))
+          if (held.way !== 'side') return
+          const at = Math.max(-width, Math.min(width, held.from + dx))
+          const dt = event.timeStamp - held.t
+          if (dt > 0) held.v = held.v * 0.2 + ((at - held.at) / dt) * 0.8
+          held.at = at
+          held.t = event.timeStamp
+          setX(at)
         }}
-        onPointerUp={() => {
+        onPointerUp={(event) => {
           const held = touch.current
           touch.current = undefined
           if (held === undefined) return
           window.clearTimeout(held.timer)
           if (held.pressed) return
-          if (held.way === 'side') settle(x)
+          if (held.way === 'side') settle(held.at, event.timeStamp - held.t > 80 ? 0 : held.v)
           else if (held.way === undefined) {
-            if (open) settle(0)
+            if (open) settle(0, 0)
             else chat.show(session)
           }
         }}
@@ -601,7 +645,7 @@ function Row({
           touch.current = undefined
           if (held === undefined) return
           window.clearTimeout(held.timer)
-          if (held.way === 'side') settle(x)
+          if (held.way === 'side') settle(held.at, 0)
         }}
       >
         <RowBody chat={chat} session={session} now={now} waiting={waiting} onAnswer={onAnswer} dayHeaded={column === 'done'} />
@@ -621,6 +665,8 @@ function Pressed({
   onMark,
   onRename,
   onShortcut,
+  onHide,
+  onDelete,
   onClose,
 }: {
   readonly chat: Chat
@@ -632,6 +678,8 @@ function Pressed({
   readonly onMark: (status: SessionStatus | undefined) => void
   readonly onRename: () => void
   readonly onShortcut: () => void
+  readonly onHide: () => void
+  readonly onDelete: () => void
   readonly onClose: () => void
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
@@ -723,9 +771,42 @@ function Pressed({
             <Icon name="stop" size={16} />
           </button>
         ) : null}
+        <div className="gap" />
+        <button type="button" role="menuitem" onClick={() => pick(onHide)}>
+          Hide from this list
+          <Icon name="hidden" size={16} />
+        </button>
+        <button type="button" role="menuitem" className="danger" onClick={() => pick(onDelete)}>
+          Delete
+          <Icon name="trash" size={16} />
+        </button>
       </div>
     </>,
     document.body,
+  )
+}
+
+export function HideSheet({ session, chat, onClose }: { readonly session: ChatSession; readonly chat: Chat; readonly onClose: () => void }): React.JSX.Element {
+  return (
+    <Menu
+      anchor={new DOMRect()}
+      title={`Hide "${session.title === '' ? 'Untitled' : session.title}"?`}
+      choices={[{ value: 'hide', label: 'Hide', says: 'Kept on the Mac; Settings, Hidden conversations brings it back' }]}
+      onPick={() => chat.hide(session.id)}
+      onClose={onClose}
+    />
+  )
+}
+
+export function DeleteSheet({ session, chat, onClose }: { readonly session: ChatSession; readonly chat: Chat; readonly onClose: () => void }): React.JSX.Element {
+  return (
+    <Menu
+      anchor={new DOMRect()}
+      title={`Delete "${session.title === '' ? 'Untitled' : session.title}"?`}
+      choices={[{ value: 'delete', label: 'Delete', says: 'Nothing anywhere keeps a copy', danger: true }]}
+      onPick={() => chat.remove([session.id])}
+      onClose={onClose}
+    />
   )
 }
 

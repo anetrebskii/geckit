@@ -7,7 +7,7 @@ import type { Link } from '../../../shared/links'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
-import { Rename } from './PhoneBoard'
+import { DeleteSheet, HideSheet, Rename } from './PhoneBoard'
 import { contextLine, PhoneInfo } from './PhoneInfo'
 import { projectName } from './project'
 import type { Chat } from './useChat'
@@ -33,6 +33,8 @@ export function PhoneNav({
   const [more, setMore] = useState(false)
   const [listing, setListing] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [hiding, setHiding] = useState(false)
   const session = chat.session
   return (
     <div className="phone-nav">
@@ -69,12 +71,16 @@ export function PhoneNav({
             { value: 'info', label: 'Conversation', says: 'Context, cost, the plan, Compact and Clear' },
             { value: 'rename', label: 'Rename', icon: 'pencil' },
             ...(chat.working ? [{ value: 'stop', label: 'Stop', says: 'Interrupts Claude; the conversation stays', icon: 'stop' }] : []),
+            { value: 'hide', label: 'Hide from this list', says: 'Asked about first', icon: 'hidden' },
+            { value: 'delete', label: 'Delete', says: 'Asked about first', danger: true, icon: 'trash' },
           ]}
           onPick={(value) => {
             if (value === 'links') setListing(true)
             else if (value === 'info') onInfo(true)
             else if (value === 'rename') setRenaming(true)
             else if (value === 'stop') chat.stop()
+            else if (value === 'hide') setHiding(true)
+            else if (value === 'delete') setDeleting(true)
             else chat.mark(session.id, value === '' ? undefined : (value as SessionStatus))
           }}
           onClose={() => setMore(false)}
@@ -94,6 +100,8 @@ export function PhoneNav({
         />
       ) : null}
       {(info || pulled !== undefined) && session !== undefined ? <PhoneInfo chat={chat} {...(pulled === undefined ? {} : { pulled })} onClear={onClear} onClose={() => onInfo(false)} /> : null}
+      {hiding && session !== undefined ? <HideSheet session={session} chat={chat} onClose={() => setHiding(false)} /> : null}
+      {deleting && session !== undefined ? <DeleteSheet session={session} chat={chat} onClose={() => setDeleting(false)} /> : null}
       {renaming && session !== undefined ? <Rename session={session} chat={chat} onClose={() => setRenaming(false)} /> : null}
     </div>
   )

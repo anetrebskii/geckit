@@ -54,6 +54,8 @@ export interface Chat {
   /** Whose conversations are listed: one project's, or `ALL`. */
   readonly scope: string
   readonly sessions: readonly ChatSession[]
+  /** The list has been read at least once, so an empty one means there is nothing. */
+  readonly listed: boolean
   /** Every project's conversations, whichever is listed. */
   readonly everyone: readonly ChatSession[]
   /** General questions still open, newest first; each is gone a day after its last answer. */
@@ -144,10 +146,10 @@ export interface Chat {
   /** In review, blocked or done; nothing takes the mark off. */
   mark: (id: string, status: SessionStatus | undefined) => void
   hide: (id: string) => void
-  /** Throws the conversations away for good. The window asks before this is called. */
-  remove: (ids: readonly string[]) => void
   /** Keeps a general question for good, or lets it go a day after its last answer again. */
   keep: (id: string, stays: boolean) => void
+  /** Throws the conversations away for good. The window asks before this is called. */
+  remove: (ids: readonly string[]) => void
   terminal: (id: string) => void
   /** Puts the command that continues it in a terminal on the clipboard, and lets go of it here. */
   copyTerminal: (id: string) => void
@@ -162,6 +164,7 @@ export function useChat(): Chat {
   const [picked, setPicked] = useState<readonly string[] | undefined>()
   const [started, setStarted] = useState<string | undefined>()
   const [sessions, setSessions] = useState<readonly ChatSession[]>([])
+  const [listed, setListed] = useState(false)
   const [everyone, setEveryone] = useState<readonly ChatSession[]>([])
   const [questions, setQuestions] = useState<readonly ChatSession[]>([])
   const [notices, setNotices] = useState<readonly SessionNotice[]>([])
@@ -213,6 +216,7 @@ export function useChat(): Chat {
     const one = chosenRef.current.length === 1 ? chosenRef.current[0] : undefined
     void window.geckit.chat.list(one).then((all) => {
       setSessions(all.filter(within))
+      setListed(true)
       // Asked for every project, this is every project: the counts are made from the same answer.
       if (one === undefined) setEveryone(all.filter((session) => session.question !== true))
     })
@@ -248,6 +252,7 @@ export function useChat(): Chat {
     let asked = new Set<string>()
     return window.geckit.chat.onSessions((all) => {
       setSessions(all.filter(within))
+      setListed(true)
       setEveryone(all.filter((one) => one.question !== true))
       const now = all.filter((one) => one.question === true)
       setQuestions(now)
@@ -690,6 +695,7 @@ export function useChat(): Chat {
     root,
     scope,
     sessions,
+    listed,
     earlier: shown.kind === 'session' && earlier.id === shown.id ? earlier.left : 0,
     showEarlier,
     loadSteps,

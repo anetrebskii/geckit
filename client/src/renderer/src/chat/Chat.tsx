@@ -632,6 +632,17 @@ export function Chat(): React.JSX.Element {
                       : `Ask anything about ${projectName(chat.root)}. What it may do without asking is under the field.`}
             </div>
           </div>
+        ) : chat.shown.kind === 'session' && chat.itemsFor !== chat.shown.id && chat.items.length === 0 ? (
+          <div className="transcript" aria-busy="true" aria-label="Reading the conversation">
+            <div className="turn">
+              <div className="skeleton-bubble" />
+            </div>
+            <div className="turn">
+              <div className="skeleton-line" />
+              <div className="skeleton-line" />
+              <div className="skeleton-line short" />
+            </div>
+          </div>
         ) : (
           <Files value={files}>
             <Transcript

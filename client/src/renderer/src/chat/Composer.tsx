@@ -546,7 +546,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               : ON_PHONE
                 ? listening !== undefined
                   ? `Listening in ${listening}`
-                  : (unheard ?? 'Message')
+                  : (unheard ?? (chat.working ? 'Queue a message, or ! and a command' : 'Message, or ! and a command'))
                 : chat.working
                   ? 'Send more: it waits until Claude finishes. ! runs a command now'
                   : 'Ask Claude Code. @ picks a file, ! runs a command'
@@ -744,6 +744,12 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             </button>
           )}
         </div>
+        {/* The chip row has no room for the hint, so on the phone it has a line of its own over the field. */}
+        {ON_PHONE && command ? (
+          <div className="phone-hint command">Runs in {projectName(chat.root)} now. Claude sees what it prints with your next message</div>
+        ) : ON_PHONE && chat.working && (draft !== '' || chat.pictures.length > 0) ? (
+          <div className="phone-hint">Waits its turn: it goes once Claude has answered</div>
+        ) : null}
       </div>
     </div>
   )
