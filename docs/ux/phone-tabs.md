@@ -18,9 +18,9 @@ The Tasks tab carries three things that are not tasks. Its large title is the Ma
 |---|---|---|
 | Tab bar (`PhoneHome.tsx`) | Tasks, Questions, Search, Settings. Shortcuts goes, Questions takes its place | Always |
 | Tasks, large title (`PhoneBoard.tsx`) | "Tasks", no picker, no arrow. The small title on scroll is "Tasks" too | Always |
-| Tasks, header | Three icons: Say it, The Mac's screen, New task. "Ask a question" goes | Always |
+| Tasks, header | Four icons: Shortcuts, Say it, The Mac's screen, New task. "Ask a question" goes. Shortcuts opens the same list as Settings, Shortcuts, over the board, with "< Tasks" to go back; tapping the Tasks tab again goes back too | Always |
 | Tasks, list | The Questions group and its note go from the bottom | Always |
-| New task, long press sheet (existing) | Under Write it, Say it, From a recording: a "Shortcuts" part with each shortcut as a row, name and project; a tap runs it. Last row "All shortcuts" | The board's projects hold a shortcut |
+| New task, long press sheet (existing) | Under Write it, Say it, From a recording: a "Shortcuts" part with each shortcut as a row, name and project; a tap runs it. Last row "All shortcuts", which opens the list over the board | The board's projects hold a shortcut |
 | Questions tab (new) | Large title "Questions", a compose icon in the header, the questions newest first, each with "23h left" on the right and a bin, the note "Each is deleted a day after its last answer." | Questions chosen |
 | Questions tab icon | A dot, as Tasks has for Needs an answer | A question has an answer not read yet, and another tab is chosen |
 | Settings, new group "Shortcuts" between New tasks and Messages | One cell, "Shortcuts" with the count, opening the list the Shortcuts tab shows today: Run, the timetable switch, + in the bar, the note on timetables | Always |
