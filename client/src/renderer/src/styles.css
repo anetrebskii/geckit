@@ -5773,28 +5773,130 @@ html.phone .send.listening {
   animation: breathe 1.6s ease-in-out infinite;
 }
 
-/* Notices come down from the top as the system's banners do. */
+/* Notices come down from the top as the system's banners do, newest first, and are pushed back up to put them away. */
 html.phone .notices {
-  top: calc(var(--top) + 4px);
+  top: calc(var(--top) + 6px);
   right: 8px;
   left: 8px;
   width: auto;
+  gap: 6px;
 }
 
-html.phone .notice {
-  padding: 12px 10px 12px 14px;
+html.phone .notice.banner {
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px 12px 12px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
   background: var(--glass);
   backdrop-filter: saturate(180%) blur(30px);
   -webkit-backdrop-filter: saturate(180%) blur(30px);
   border: 0;
-  border-radius: 22px;
+  border-radius: 24px;
   box-shadow: var(--lift);
-  animation: banner 420ms var(--ease) both;
+  transition:
+    transform 320ms var(--ease),
+    opacity 320ms var(--ease);
+  animation: banner 420ms var(--ease) backwards;
 }
 
-html.phone .notice .title,
-html.phone .notice .body {
+html.phone .notice.banner:active:not(.leaving) {
+  background: var(--bg-raised);
+}
+
+html.phone .notice.banner.leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+html.phone .banner-icon {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: #fff;
+  background: var(--fill-strong);
+  border-radius: 10px;
+}
+
+html.phone .banner-icon::after {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 12px;
+  height: 12px;
+  content: '';
+  background: var(--accent);
+  border: 2.5px solid var(--bg-raised);
+  border-radius: 50%;
+}
+
+html.phone .notice.banner.asks .banner-icon::after {
+  background: var(--warning-text);
+}
+
+html.phone .notice.banner.plain .banner-icon::after {
+  display: none;
+}
+
+html.phone .notice.banner .lines {
+  gap: 1px;
+}
+
+html.phone .banner-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+html.phone .banner-what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+html.phone .notice.banner.done .banner-what {
+  color: var(--accent);
+}
+
+html.phone .notice.banner.asks .banner-what {
+  color: var(--warning-text);
+}
+
+html.phone .banner-project {
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+html.phone .banner-when {
+  flex: none;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+html.phone .notice.banner .title {
+  overflow: hidden;
   font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+html.phone .notice.banner .body {
+  display: -webkit-box;
+  font-size: 15px;
+  line-height: 1.3;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 @keyframes banner {
