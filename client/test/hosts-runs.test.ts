@@ -62,6 +62,22 @@ describe('the runs on hosts, kept across a restart', () => {
     }
   })
 
+  it("moves the offset on to where the run has actually reached the moment its pending question clears, rather than leaving it capped until the next line happens to arrive", async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-runs-'))
+    try {
+      const runs = runsAt(join(folder, 'runs.json'))
+      runs.set('s-1', { host: 'devbox', root: 'ssh://devbox/home/leo', offset: 0, started: 1 })
+      runs.read('s-1', 100)
+      runs.pending('s-1', 100)
+      // Answered: cleared with the run's own offset right then, a long quiet tool call having moved it on without a line of output.
+      runs.pending('s-1', undefined, 340)
+      expect(runs.get('s-1')).toEqual({ host: 'devbox', root: 'ssh://devbox/home/leo', started: 1, offset: 340 })
+      // A quit right there and a restart reads on from 340, not replaying the request already answered.
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
+  })
+
   it('reads a record back from disk once a debounced write has landed', async () => {
     const folder = await mkdtemp(join(tmpdir(), 'geckit-runs-'))
     try {

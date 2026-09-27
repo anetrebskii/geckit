@@ -284,7 +284,7 @@ function Editor({
             choices={models}
             chosen={model}
             className="select"
-            onOpen={chat.askModels}
+            onOpen={() => chat.askModels(draft.root === '' ? undefined : draft.root)}
             onPick={(value) => {
               if (value === '__asking') return
               const { model: _model, ...rest } = draft

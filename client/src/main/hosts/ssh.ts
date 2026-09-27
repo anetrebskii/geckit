@@ -1,8 +1,11 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { EventEmitter } from 'node:events'
 import { existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough, Writable } from 'node:stream'
 
 import type { HostConfig } from '../../shared/hosts'
 import { isAsking } from './asking'
@@ -100,43 +103,112 @@ export function sshArgs(host: Pick<HostConfig, 'address' | 'user' | 'port' | 'au
 /** The command given to ssh for a script: `sh -c '<script>'`, read by whichever shell the account logs in with. */
 export const remoteCommand = (script: string): string => `sh -c ${quote(script)}`
 
-/** One ssh running a script on a host, its streams left to the caller. */
-export function spawnOn(host: HostConfig, setup: SshSetup, script: string, options: SshOptions = {}): ChildProcessWithoutNullStreams {
-  const args = sshArgs(host, setup, options)
+/**
+ * A running ssh, told apart from any other by `conn` rather than by its own
+ * pid: on Windows the pid an askpass question arrives with is the launcher's
+ * cmd.exe, not ssh's, so identity is carried instead in an id minted before
+ * ssh is even spawned and handed to it in `GECKIT_ASKPASS_CONN` (see
+ * `askpass.ts`), which crosses that hop unharmed.
+ */
+export type SshChild = ChildProcessWithoutNullStreams & { readonly conn: string }
+
+/** What a thrown `sshArgs` message becomes for a person, named for the host it was about. */
+export function badArgsProblem(reason: string, name: string): string | undefined {
+  if (reason === 'Not a host address.') return `The address of ${name} starts with a dash.`
+  if (reason === 'Not a user name.') return `The user name of ${name} starts with a dash.`
+  if (reason === 'Not a key file.') return `The key file of ${name} starts with a dash.`
+  return undefined
+}
+
+/**
+ * Stands in for ssh where `sshArgs` refused the config outright (an address,
+ * user or key file that would be read as one of ssh's own options): closes at
+ * once with the reason on stderr, so a caller in a timer (a reconnect, a
+ * retry) sees an ordinary failed run rather than a thrown exception it has no
+ * chance to catch.
+ */
+class FailedChild extends EventEmitter {
+  readonly stdout = new PassThrough()
+  readonly stderr = new PassThrough()
+  readonly stdin: Writable
+  readonly conn = ''
+  readonly pid: number | undefined = undefined
+  exitCode: number | null = null
+
+  constructor(reason: string) {
+    super()
+    this.stdin = new Writable({ write: (_chunk, _encoding, done) => done() })
+    setImmediate(() => {
+      this.stderr.end(reason)
+      this.stdout.end()
+      this.exitCode = 1
+      this.emit('close', 1)
+    })
+  }
+
+  kill(): boolean {
+    return true
+  }
+}
+
+/** One ssh running a script on a host, its streams left to the caller. Never throws: a config `sshArgs` refuses is instead a child that fails at once, its reason on stderr. */
+export function spawnOn(host: HostConfig, setup: SshSetup, script: string, options: SshOptions = {}): SshChild {
+  let args: string[]
+  try {
+    args = sshArgs(host, setup, options)
+  } catch (error) {
+    return new FailedChild(error instanceof Error ? error.message : 'Not a usable host config.') as unknown as SshChild
+  }
   if (options.forward === undefined) args.push(remoteCommand(script))
-  return spawn(sshProgram(), args, {
+  const conn = randomUUID()
+  const child = spawn(sshProgram(), args, {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, ...setup.env, GECKIT_HOST: host.id },
+    env: { ...process.env, ...setup.env, GECKIT_HOST: host.id, GECKIT_ASKPASS_CONN: conn },
     windowsHide: true,
   })
+  return Object.assign(child, { conn })
 }
 
 export interface Ran {
   readonly code: number | null
   readonly out: Buffer
   readonly err: string
+  /** Its own timeout ended it, rather than something else closing it. */
+  readonly timedOut?: boolean
 }
+
+/** How long a connection that is itself waiting on a card is given beyond its own timeout, in total, before it is killed anyway. */
+const MAX_ASKING_EXTENSION = 5 * 60_000
 
 export interface RunOnOptions {
   readonly input?: string | Buffer
   readonly timeout?: number
-  /** The ssh client's own pid, told as soon as it is spawned, for telling apart which connection an askpass question came from. */
-  readonly onPid?: (pid: number | undefined) => void
+  /** No shared connection: for probing fresh credentials, which must not ride on an already-authenticated master. */
+  readonly alone?: boolean
+  /** The ssh process's own connection id and pid, told as soon as it is spawned, for telling apart which connection an askpass question came from (the id crosses platforms; the pid does not, see askpass.ts). */
+  readonly onConnection?: (conn: string, pid: number | undefined) => void
 }
 
 /** A script run to its end on a host: what it printed and how it exited. */
-export function runOn(host: HostConfig, setup: SshSetup, script: string, { input, timeout = 60_000, onPid }: RunOnOptions = {}): Promise<Ran> {
+export function runOn(host: HostConfig, setup: SshSetup, script: string, { input, timeout = 60_000, alone, onConnection }: RunOnOptions = {}): Promise<Ran> {
   return new Promise((done) => {
-    const child = spawnOn(host, setup, script)
-    onPid?.(child.pid)
+    const child = spawnOn(host, setup, script, alone === undefined ? {} : { alone })
+    onConnection?.(child.conn, child.pid)
     const out: Buffer[] = []
     let err = ''
     let timer: NodeJS.Timeout
-    // A card up for this host is not idle time: someone may still be typing into it, so the clock waits for them rather than killing the connection under them.
+    let extended = 0
+    let timedOut = false
+    // A card up for the connection itself is not idle time: someone may still be typing into it, so the clock waits for them rather than killing it out from under them - but only it, and only for so long.
     const arm = (): void => {
       timer = setTimeout(() => {
-        if (isAsking(host.id)) arm()
-        else child.kill()
+        if (isAsking(child.conn) && extended < MAX_ASKING_EXTENSION) {
+          extended += timeout
+          arm()
+        } else {
+          timedOut = true
+          child.kill()
+        }
       }, timeout)
     }
     arm()
@@ -151,7 +223,7 @@ export function runOn(host: HostConfig, setup: SshSetup, script: string, { input
     })
     child.on('close', (code) => {
       clearTimeout(timer)
-      done({ code, out: Buffer.concat(out), err: err.trim() })
+      done({ code, out: Buffer.concat(out), err: err.trim(), ...(timedOut ? { timedOut } : {}) })
     })
     if (input !== undefined) child.stdin.end(input)
     else child.stdin.end()

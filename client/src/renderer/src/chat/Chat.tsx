@@ -191,7 +191,7 @@ export function Chat(): React.JSX.Element {
     return () => {
       here = false
     }
-  }, [sessionRoot, sessionId])
+  }, [sessionRoot, sessionId, host?.state])
   const terminalLine = localLine ?? (sessionId !== undefined && hostLine?.id === sessionId ? hostLine.line : undefined)
 
   useEffect(() => {
@@ -626,9 +626,11 @@ export function Chat(): React.JSX.Element {
                   onClick={() => {
                     if (chat.session === undefined) return
                     const id = chat.session.id
-                    chat.copyTerminal(id)
-                    setCopied(id)
-                    setTimeout(() => setCopied((now) => (now === id ? undefined : now)), 1500)
+                    void chat.copyTerminal(id).then((done) => {
+                      if (!done) return
+                      setCopied(id)
+                      setTimeout(() => setCopied((now) => (now === id ? undefined : now)), 1500)
+                    })
                   }}
                 >
                   <Icon name={copied === chat.session.id ? 'check' : 'terminal'} />

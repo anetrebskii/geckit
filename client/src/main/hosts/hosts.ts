@@ -12,10 +12,11 @@ import { readPrompt, startAskpass } from './askpass'
 import type { Asker } from './askpass'
 import { readChecked, readFolders, readSshConfig } from './read'
 import type { Checked } from './read'
+import { retryAfter } from './run'
 import type { RemoteRun } from './run'
 import { checkScript, foldersScript, installScript, resolveScript } from './run-script'
 import type { Secrets } from './secrets'
-import { controlFolder, isConnectionFailure, runOn, sshArgs, sshProblem, sshProgram } from './ssh'
+import { badArgsProblem, controlFolder, isConnectionFailure, runOn, sshArgs, sshProblem, sshProgram } from './ssh'
 import type { Ran, SshSetup } from './ssh'
 
 /**
@@ -66,17 +67,22 @@ interface Held {
   plan?: string
   timer?: NodeJS.Timeout
   checking: Promise<boolean> | undefined
-  /** The ssh processes (by pid) a remembered password was already handed to: asked twice by the same one, it was wrong. */
-  usedStored: Set<number>
+  /** The connections a remembered password was already handed to: asked twice by the same one, it was wrong. */
+  usedStored: Set<string>
   /** Not now was pressed on a card for the connection being made. */
   declined: boolean
   readonly runs: Map<RemoteRun, boolean>
+  /** A blip's own retry, separate from a live run's: cleared once it comes up, the person acts, or a card is up for it. */
+  retry?: NodeJS.Timeout
+  retries: number
 }
 
 interface Asked {
   readonly prompt: HostPrompt
   /** Every connection waiting on the same question at once; each is answered together, and each can also be dropped on its own. */
   readonly dones: Set<(answer: string | undefined) => void>
+  /** Whether the host stood 'up' the moment this was asked, so answering it can put it back rather than leave it 'connecting' with nothing left to move it on. */
+  readonly wasUp: boolean
 }
 
 /** What `HostDisk` and the other routing need from `Hosts`, kept narrow so a test can hand it a fake. */
@@ -102,7 +108,7 @@ export class Hosts implements HostsLike {
   constructor(deps: HostsDeps) {
     this.#deps = deps
     this.#control = controlFolder(deps.folder)
-    this.#asker = startAskpass(deps.folder, deps.executable, (host, prompt, pid, abandoned) => this.#ask(host, prompt, pid, abandoned))
+    this.#asker = startAskpass(deps.folder, deps.executable, (host, prompt, conn, abandoned) => this.#ask(host, prompt, conn, abandoned))
   }
 
   #now(): number {
@@ -120,7 +126,7 @@ export class Hosts implements HostsLike {
   #hold(id: string): Held {
     let held = this.#held.get(id)
     if (held === undefined) {
-      held = { state: 'idle', shown: 'idle', checking: undefined, usedStored: new Set(), declined: false, runs: new Map() }
+      held = { state: 'idle', shown: 'idle', checking: undefined, usedStored: new Set(), declined: false, runs: new Map(), retries: 0 }
       this.#held.set(id, held)
     }
     return held
@@ -210,20 +216,29 @@ export class Hosts implements HostsLike {
     if (host === undefined) return false
     const held = this.#hold(id)
     held.declined = false
+    clearTimeout(held.retry)
     this.#set(id, 'connecting')
-    let pid: number | undefined
-    const ran = await runOn(host, this.setup(), checkScript(), { timeout: 25_000, onPid: (own) => (pid = own) })
+    let conn: string | undefined
+    const ran = await runOn(host, this.setup(), checkScript(), { timeout: 25_000, onConnection: (own) => (conn = own) })
     if (ran.code !== 0) {
       // A remembered password the host no longer takes is forgotten, and the person asked for it once.
-      if (!again && pid !== undefined && held.usedStored.has(pid) && /Permission denied/i.test(ran.err)) {
+      if (!again && conn !== undefined && held.usedStored.has(conn) && /Permission denied/i.test(ran.err)) {
         this.#deps.secrets.forget(id)
         this.#typed.delete(id)
         return this.#check(id, true)
       }
-      if (held.declined) this.#set(id, 'idle')
-      else this.#set(id, 'needs', ran.code === null ? `Could not reach ${host.name}: timed out after 20 s.` : sshProblem(ran.err, host.name))
+      if (held.declined) {
+        this.#set(id, 'idle')
+      } else if (isConnectionFailure(ran.code, ran.err)) {
+        // A blip rather than a real problem: tried again with the same backoff a live run's own reconnect uses, until it comes up, the person acts, or a card is up.
+        this.#set(id, 'lost')
+        this.#retryCheck(id)
+      } else {
+        this.#set(id, 'needs', badArgsProblem(ran.err, host.name) ?? (ran.timedOut === true ? `Could not reach ${host.name}: timed out after 20 s.` : ran.code === null ? `The connection to ${host.name} was closed.` : sshProblem(ran.err, host.name)))
+      }
       return false
     }
+    held.retries = 0
     const checked = readChecked(ran.out.toString('utf8'))
     this.#keepSeen(host, checked)
     if (checked.missing) {
@@ -240,6 +255,20 @@ export class Hosts implements HostsLike {
     this.#set(id, 'up')
     for (const run of held.runs.keys()) run.now()
     return true
+  }
+
+  /** Tries `#check` again after a blip (see `#check`'s own `isConnectionFailure` branch), stopping once it comes up, the person disconnects or removes the host, or a card is up for it. */
+  #retryCheck(id: string): void {
+    const held = this.#hold(id)
+    clearTimeout(held.retry)
+    const wait = retryAfter(held.retries)
+    held.retries += 1
+    held.retry = setTimeout(() => {
+      const now = this.#held.get(id)
+      if (now === undefined || now.state !== 'lost' || this.config(id) === undefined) return
+      if ([...this.#asked.values()].some((one) => one.prompt.host === id)) return
+      void this.connect(id)
+    }, wait)
   }
 
   #keepSeen(host: HostConfig, checked: Checked): void {
@@ -276,6 +305,8 @@ export class Hosts implements HostsLike {
   disconnect(id: string): void {
     const host = this.config(id)
     const held = this.#hold(id)
+    clearTimeout(held.retry)
+    held.retries = 0
     for (const run of held.runs.keys()) run.pause()
     this.#set(id, 'idle')
     if (host !== undefined && this.#control !== undefined) void runExit(host, this.setup())
@@ -289,7 +320,6 @@ export class Hosts implements HostsLike {
       this.#deps.answered(askId)
       for (const done of asked.dones) done(undefined)
     }
-    setAsking(id, false)
   }
 
   async remove(id: string): Promise<void> {
@@ -336,11 +366,15 @@ export class Hosts implements HostsLike {
    * host both show them. The last line is Claude Code's version and whether it
    * is signed in, or why it could not be reached at all.
    */
-  async #probe(host: HostConfig, name: string): Promise<{ readonly ok: true; readonly checked: Checked } | { readonly ok: false; readonly problem: string }> {
+  async #probe(
+    host: HostConfig,
+    name: string,
+    options: { readonly alone?: boolean } = {},
+  ): Promise<{ readonly ok: true; readonly checked: Checked } | { readonly ok: false; readonly problem: string }> {
     this.#deps.checks?.([{ text: `Reaching ${name}`, done: false }])
-    const ran = await runOn(host, this.setup(), checkScript(), { timeout: 25_000 })
+    const ran = await runOn(host, this.setup(), checkScript(), { timeout: 25_000, ...(options.alone === undefined ? {} : { alone: options.alone }) })
     if (ran.code !== 0) {
-      const why = ran.code === null ? `Could not reach ${name}: timed out after 20 s.` : sshProblem(ran.err, name)
+      const why = badArgsProblem(ran.err, name) ?? (ran.timedOut === true ? `Could not reach ${name}: timed out after 20 s.` : ran.code === null ? `The connection to ${name} was closed.` : sshProblem(ran.err, name))
       this.#deps.checks?.([{ text: why, done: true, failed: true }])
       return { ok: false, problem: why }
     }
@@ -452,7 +486,8 @@ export class Hosts implements HostsLike {
       ...(remember ? { remember: true } : {}),
     }
     if (passwordTyped) this.#typed.set(id, draft.password as string)
-    const probed = await this.#probe(host, name)
+    // Alone, not over the old master: reusing it would silently ride on credentials that may no longer be the ones just typed, so it would never truly test them.
+    const probed = await this.#probe(host, name, { alone: true })
     if (!probed.ok) {
       if (passwordTyped) this.#typed.delete(id)
       return probed
@@ -520,51 +555,70 @@ export class Hosts implements HostsLike {
    * `abandoned` is told, once, if the ssh that asked this is gone before it is
    * answered - killed by its own command's timeout, say - so a card is never
    * left up nor a state moved for a connection nobody is waiting on any more.
+   *
+   * `conn` names the very ssh process asking, not the host: while it waits it
+   * is marked so its own command is given more time rather than killed under
+   * it (see `ssh.ts`'s `runOn`), and that mark comes off however its own wait
+   * ends, whether it asked the card itself or only joined one already up.
    */
-  async #ask(id: string, prompt: string, pid: number | undefined, abandoned: (fn: () => void) => void): Promise<string | undefined> {
+  async #ask(id: string, prompt: string, conn: string, abandoned: (fn: () => void) => void): Promise<string | undefined> {
     const host = this.config(id)
     if (host === undefined) return undefined
     const read = readPrompt(prompt, host.name, host.user)
     const held = this.#hold(id)
     if (read.kind === 'password') {
       const stored = this.#deps.secrets.get(id) ?? this.#typed.get(id)
-      if (stored !== undefined && (pid === undefined || !held.usedStored.has(pid))) {
-        if (pid !== undefined) {
-          held.usedStored.add(pid)
-          if (held.usedStored.size > 50) held.usedStored.clear()
-        }
+      if (stored !== undefined && !held.usedStored.has(conn)) {
+        held.usedStored.add(conn)
+        if (held.usedStored.size > 50) held.usedStored.clear()
         return stored
       }
     }
+    setAsking(conn, true)
+    const settled =
+      (resolve: (answer: string | undefined) => void) =>
+      (answer: string | undefined): void => {
+        setAsking(conn, false)
+        resolve(answer)
+      }
     // The same question while one is up, from another connection being made at the same time, waits on that one.
     const same = [...this.#asked.values()].find((one) => one.prompt.host === id && one.prompt.kind === read.kind)
     if (same !== undefined) {
-      return new Promise((done) => {
+      return new Promise((resolve) => {
+        const done = settled(resolve)
         same.dones.add(done)
         abandoned(() => {
           same.dones.delete(done)
           done(undefined)
+          this.#dropIfOrphaned(same.prompt.id, same)
         })
       })
     }
     const asked: HostPrompt = { id: randomUUID(), host: id, ...read }
-    const entry: Asked = { prompt: asked, dones: new Set() }
+    const entry: Asked = { prompt: asked, dones: new Set(), wasUp: held.state === 'up' }
     this.#asked.set(asked.id, entry)
-    setAsking(id, true)
     this.#set(id, 'needs', read.text)
-    return new Promise((done) => {
+    return new Promise((resolve) => {
+      const done = settled(resolve)
       entry.dones.add(done)
       this.#deps.prompt(asked)
       abandoned(() => {
         entry.dones.delete(done)
         done(undefined)
-        // Nobody is left waiting on this question: the card goes, and where it left the host stands, since nothing was answered.
-        if (entry.dones.size > 0 || this.#asked.get(asked.id) !== entry) return
-        this.#asked.delete(asked.id)
-        this.#deps.answered(asked.id)
-        if (![...this.#asked.values()].some((one) => one.prompt.host === id)) setAsking(id, false)
+        this.#dropIfOrphaned(asked.id, entry)
       })
     })
+  }
+
+  /**
+   * Nobody is left waiting on a card: it goes, whether the last to let go is
+   * the connection that asked it or only one that joined the same question,
+   * and where it left the host stands since nothing was answered.
+   */
+  #dropIfOrphaned(askId: string, entry: Asked): void {
+    if (entry.dones.size > 0 || this.#asked.get(askId) !== entry) return
+    this.#asked.delete(askId)
+    this.#deps.answered(askId)
   }
 
   /** What is being asked now, for a window that opened after it was. */
@@ -578,7 +632,6 @@ export class Hosts implements HostsLike {
     this.#asked.delete(answer.id)
     this.#deps.answered(answer.id)
     const id = asked.prompt.host
-    if (![...this.#asked.values()].some((one) => one.prompt.host === id)) setAsking(id, false)
     const held = this.#hold(id)
     if (answer.answer === undefined) {
       held.declined = true
@@ -592,13 +645,18 @@ export class Hosts implements HostsLike {
         this.#deps.save(this.#deps.hosts().map((one) => (one.id === id ? { ...one, remember: true } : one)))
       }
     }
-    // Nobody is left waiting on this answer: the connection that asked has already gone, and the host is not moved as if one were coming.
-    if (asked.dones.size > 0) this.#set(id, 'connecting')
+    if (asked.dones.size > 0) {
+      // A check already running settles the state itself once it finishes; otherwise this was the host's own connection, so it stands as it did (up) rather than hang at 'connecting' with nothing left to move it on.
+      this.#set(id, held.checking !== undefined ? 'connecting' : asked.wasUp ? 'up' : 'connecting')
+    }
     for (const done of asked.dones) done(asked.prompt.kind === 'trust' ? 'yes' : answer.answer)
   }
 
   dispose(): void {
-    for (const held of this.#held.values()) clearTimeout(held.timer)
+    for (const held of this.#held.values()) {
+      clearTimeout(held.timer)
+      clearTimeout(held.retry)
+    }
     for (const asked of this.#asked.values()) for (const done of asked.dones) done(undefined)
     this.#asked.clear()
     this.#asker.close()

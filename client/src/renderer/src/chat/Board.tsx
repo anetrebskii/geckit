@@ -413,7 +413,7 @@ export function Board({
               const one = chat.everyone.find((session) => session.id === menu.id)
               if (one !== undefined) onShortcutFrom(one)
             }
-            if (value === 'copy') chat.copyTerminal(menu.id)
+            if (value === 'copy') void chat.copyTerminal(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)
             if (value === 'hide') hide(targets(menu.id))
             if (value === 'delete') {
@@ -709,13 +709,16 @@ export function NewTask({
   )
   const room = Math.max(0, MOST_FRAMES - pictures.length)
   const frames = recorded === undefined || room === 0 ? [] : thinFrames(recorded.frames, room)
-  const ready = text.trim() !== '' || pictures.length > 0 || frames.length > 0
+  // A file still on its way to a host holds the task back until its path is in the words.
+  const [uploading, setUploading] = useState(0)
+  const ready = uploading === 0 && (text.trim() !== '' || pictures.length > 0 || frames.length > 0)
 
   // Pictures are carried with the first message; anything else goes into the field as its path, as the composer does.
   const addPath = (path: string): void =>
     setText((now) => `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${path.includes(' ') ? `"${path}"` : path} `)
   const take = (files: readonly File[]): void => {
-    const target = root
+    // A general question runs on this computer whatever project the board is on, so nothing of it goes to a host.
+    const target = question ? '' : root
     for (const one of files.filter((one) => !canShow(one))) {
       const local = window.geckit.pathFor(one)
       if (local === '') continue
@@ -723,17 +726,21 @@ export function NewTask({
         addPath(local)
         continue
       }
-      const there = hostName(target) ?? target
-      const busy = `Copying ${one.name} to ${there}...`
+      const busy = `Copying ${one.name} to ${hostName(target) ?? target}...`
       setCopying({ text: busy, failed: false })
-      void window.geckit.chat.upload(target, local).then((remote) => {
-        setCopying((now) => (now?.text === busy ? undefined : now))
-        if (remote === undefined) {
-          setCopying({ text: `Could not copy ${one.name} to ${there}`, failed: true })
-          return
-        }
-        addPath(remote)
-      })
+      setUploading((now) => now + 1)
+      void window.geckit.chat
+        .upload(target, local)
+        .catch(() => ({ problem: `Could not copy ${one.name}.` }))
+        .then((landed) => {
+          setUploading((now) => Math.max(0, now - 1))
+          if ('problem' in landed) {
+            setCopying({ text: landed.problem, failed: true })
+            return
+          }
+          setCopying((now) => (now?.text === busy ? undefined : now))
+          addPath(landed.path)
+        })
     }
     const wanted = files.filter(canShow)
     if (wanted.length === 0) return

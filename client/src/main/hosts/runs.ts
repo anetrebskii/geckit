@@ -27,8 +27,14 @@ export interface RunsStore {
   set(session: string, record: RunRecord): void
   /** Only the offset has moved: written a little later, since it moves with every line. */
   read(session: string, offset: number): void
-  /** The byte an unanswered control_request began at; nothing once it is answered or there is none. */
-  pending(session: string, offset: number | undefined): void
+  /**
+   * The byte an unanswered control_request began at; nothing once it is
+   * answered or there is none. Clearing it takes `at`, the run's own offset
+   * right then, written in the same turn: without it the kept offset stays
+   * capped at the question until the next line happens to arrive, and a quit
+   * in between (a quiet tool call, say) replays a card already answered.
+   */
+  pending(session: string, offset: number | undefined, at?: number): void
   delete(session: string): void
   /** Waits for a debounced write still owed to land, for quitting without losing the last second of it. */
   flush(): Promise<void>
@@ -68,11 +74,14 @@ export function runsAt(path: string): RunsStore {
       runs = { ...runs, [session]: { ...was, offset: capped } }
       soon ??= setTimeout(write, 1_000)
     },
-    pending(session, offset) {
+    pending(session, offset, at) {
       const was = runs[session]
-      if (was === undefined || was.pending === offset) return
+      if (was === undefined) return
+      const settledOffset = at === undefined ? was.offset : Math.max(was.offset, at)
+      if (was.pending === offset && was.offset === settledOffset) return
       const { pending: _gone, ...rest } = was
-      runs = { ...runs, [session]: offset === undefined ? rest : { ...rest, pending: offset } }
+      const withOffset = { ...rest, offset: settledOffset }
+      runs = { ...runs, [session]: offset === undefined ? withOffset : { ...withOffset, pending: offset } }
       soon ??= setTimeout(write, 1_000)
     },
     delete(session) {

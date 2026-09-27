@@ -761,7 +761,7 @@ export function Sidebar({
               const one = chat.everyone.find((session) => session.id === menu.id)
               if (one !== undefined) onShortcutFrom(one)
             }
-            if (value === 'copy') chat.copyTerminal(menu.id)
+            if (value === 'copy') void chat.copyTerminal(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)
             if (value === 'hide') chat.hide(menu.id)
             if (value === 'select') {

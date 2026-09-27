@@ -39,8 +39,11 @@ export interface RunOptions {
    * Where the earliest question Claude Code asked and nobody has answered yet
    * begins, or nothing: a restart reads on from there, so the card comes up
    * again rather than the conversation waiting on an answer it cannot see.
+   * Cleared with `at`, the run's own offset right then, so a restart just
+   * after the last one settles reads on from there rather than staying capped
+   * at a question already answered.
    */
-  readonly pending?: (offset: number | undefined) => void
+  readonly pending?: (offset: number | undefined, at?: number) => void
   /** The connection came up, or went. */
   readonly link?: (up: boolean) => void
   /** Reaches the host first: nothing where a conversation can run there, or why it cannot. */
@@ -228,7 +231,11 @@ export class RemoteRun extends EventEmitter {
     writer.stderr.resume()
     // A line cut off by the last connection dropping mid-write is ended here, so the next one is whole.
     writer.stdin.write('\n')
-    for (const chunk of this.#waiting.splice(0)) writer.stdin.write(chunk)
+    // Only reaching a live writer settles the questions these answer (see `#settle`): buffered here, they are not yet, so a quit before this moment still finds them outstanding and asks the card again.
+    for (const chunk of this.#waiting.splice(0)) {
+      writer.stdin.write(chunk)
+      this.#settle(chunk)
+    }
     const gone = (): void => {
       if (this.#writer === writer) this.#writer = undefined
       // What was being written when it went is the reader's business to notice; the next write opens another.
@@ -238,23 +245,35 @@ export class RemoteRun extends EventEmitter {
     writer.on('error', gone)
   }
 
-  /** Keeps the questions asked and not answered, and says where the earliest of them begins. */
+  /** Where the earliest question still asked and not answered begins, or the run's own offset once none is: told on so the offset kept for a restart is never capped behind one already settled (see `runs.ts`'s `pending`). */
+  #tellPending(): void {
+    const earliest = this.#asked.size === 0 ? undefined : Math.min(...this.#asked.values())
+    this.#options.pending?.(earliest, earliest === undefined ? this.#offset : undefined)
+  }
+
+  /** Keeps the questions asked and not answered, and says where the earliest of them begins. Only a `can_use_tool` request is ever answered (see `claude-read.ts`); tracking any other subtype would pin the offset behind a request nobody will settle. */
   #heard(line: string, began: number): void {
     if (!line.startsWith('{"type":"control_')) return
     const said = readControl(line)
     if (said === undefined) return
-    if (said.type === 'control_request') this.#asked.set(said.id, began)
-    else this.#asked.delete(said.id)
-    this.#options.pending?.(this.#asked.size === 0 ? undefined : Math.min(...this.#asked.values()))
+    if (said.type === 'control_request') {
+      if (requestSubtype(line) === 'can_use_tool') this.#asked.set(said.id, began)
+    } else {
+      this.#asked.delete(said.id)
+    }
+    this.#tellPending()
   }
 
-  #write(chunk: Buffer): void {
-    // An answer going to Claude Code settles the question it answers.
+  /** An answer going to Claude Code settles the question it answers, but only once it has actually reached a live writer (see `#openWriter` and the direct-write branch below): buffered while none is, it stays outstanding, so a quit before one opens does not move the offset past a request nothing has truly carried yet. */
+  #settle(chunk: Buffer): void {
     for (const line of chunk.toString('utf8').split('\n')) {
       const said = line.startsWith('{"type":"control_response"') ? readControl(line) : undefined
       if (said === undefined || !this.#asked.delete(said.id)) continue
-      this.#options.pending?.(this.#asked.size === 0 ? undefined : Math.min(...this.#asked.values()))
+      this.#tellPending()
     }
+  }
+
+  #write(chunk: Buffer): void {
     if (this.#over) return
     const writer = this.#writer
     if (writer === undefined || writer.exitCode !== null || !writer.stdin.writable) {
@@ -263,6 +282,7 @@ export class RemoteRun extends EventEmitter {
       return
     }
     writer.stdin.write(chunk)
+    this.#settle(chunk)
   }
 
   /** Stops the run on the host too. */
@@ -309,6 +329,16 @@ export function readControl(line: string): { readonly type: string; readonly id:
     const read = JSON.parse(line) as { type?: unknown; request_id?: unknown; response?: { request_id?: unknown } }
     const id = typeof read.request_id === 'string' ? read.request_id : typeof read.response?.request_id === 'string' ? read.response.request_id : undefined
     return typeof read.type === 'string' && id !== undefined ? { type: read.type, id } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** A control_request line's own subtype, which decides whether GeckIt will ever answer it (see `claude-read.ts`, where only `can_use_tool` becomes a card). */
+function requestSubtype(line: string): string | undefined {
+  try {
+    const read = JSON.parse(line) as { request?: { subtype?: unknown } }
+    return typeof read.request?.subtype === 'string' ? read.request.subtype : undefined
   } catch {
     return undefined
   }

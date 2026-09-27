@@ -261,6 +261,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const shownAway = held ? undefined : away
   const cannot =
     held ||
+    chat.uploading ||
     chat.root === undefined ||
     (host === undefined && isRemote(chat.root)) ||
     (host === undefined && (chat.account?.signedIn !== true || chat.account.key === true))
@@ -712,7 +713,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             chosen={chat.model}
             title="Model"
             {...(note === '' ? {} : { note })}
-            onOpen={chat.askModels}
+            onOpen={() => chat.askModels()}
             onPick={(value) => {
               if (value !== '__asking') chat.setModel(value)
             }}

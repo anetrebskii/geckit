@@ -320,6 +320,9 @@ export type FileShown =
   | { readonly kind: 'none'; readonly why: string }
 
 /** What the tool said it has, or that it is being asked, or that it did not say. */
+/** A file handed to a conversation on a host: where it landed there, or why it did not. */
+export type Uploaded = { readonly path: string } | { readonly problem: string }
+
 export type ModelsSaid = 'unasked' | 'asking' | 'unsaid' | readonly ClaudeModel[]
 
 /** A conversation whose turn was running when GeckIt last closed, offered on the next start to be continued. */

@@ -33,6 +33,7 @@ import type {
   UpdateView,
   Recording,
   ScreenSource,
+  Uploaded,
   VoiceMode,
 } from '../shared/api'
 import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from '../shared/hosts'
@@ -207,7 +208,7 @@ const geckit = {
     /** Every file and folder in a project, as paths from it, for @. */
     files: (root: string): Promise<string[]> => ipcRenderer.invoke('chat:files', root),
     /** A file carried to a project on a host, for a message to point at: where it landed there, or unchanged for a local root. */
-    upload: (root: string, path: string): Promise<string | undefined> => ipcRenderer.invoke('chat:upload', root, path),
+    upload: (root: string, path: string): Promise<Uploaded> => ipcRenderer.invoke('chat:upload', root, path),
     openLink: (href: string): void => ipcRenderer.send('open:link', href),
     onSessions: (said: (sessions: readonly ChatSession[]) => void): (() => void) =>
       listen('chat:sessions', said),

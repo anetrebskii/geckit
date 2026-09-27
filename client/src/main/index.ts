@@ -1,5 +1,5 @@
 import { exec, execFile } from 'node:child_process'
-import { stat } from 'node:fs/promises'
+import { stat, writeFile } from 'node:fs/promises'
 import { homedir, hostname } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -28,6 +28,7 @@ import type {
   Answered,
   CardAnswer,
   ChatFound,
+  CutOff,
   ChatSession,
   ClaudeAccount,
   CorrectRequest,
@@ -75,6 +76,7 @@ import {
   hostFile,
   hostFiles,
   hostGit,
+  hostIsDir,
   hostMcp,
   hostModels,
   hostRepo,
@@ -94,7 +96,7 @@ import { hostOf, isRemote, machineName } from '../shared/hosts'
 import type { HostAnswer, HostDraft } from '../shared/hosts'
 import { searchClaude } from './sessions/search'
 import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
-import { forgetProject, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
+import { forgetProject, forgetRoots, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
 import { addToRecording, dropRecording, keepRecording, startRecording, sweepRecordings } from './recordings'
 import { recordedNote } from '../shared/recording'
@@ -185,19 +187,13 @@ function buildHosts(): Routes {
     hosts: () => getSettings().hosts,
     save: (list) => setSettings({ hosts: list }),
     forgetProjects: (id) => {
-      const roots = getSettings().projects.filter((one) => hostOf(one) === id)
-      for (const root of roots) forgetProject(root)
+      // Every trace of its roots goes at once: the list, profiles, colours and Chat's filter.
+      forgetRoots((root) => hostOf(root) === id)
       for (const shortcut of getSettings().shortcuts.filter((one) => hostOf(one.root) === id)) removeShortcut(shortcut.id)
       for (const [session, run] of Object.entries(routes?.runs.all() ?? {})) if (run.host === id) routes?.runs.delete(session)
+      // A favorite kept by id, not root, is only let go of for what is still held in memory: one never listed this run is not reached by this.
+      unfavorite(sessions?.ids((root) => hostOf(root) === id) ?? [])
       void routes?.disk.forget(id)
-      // `forgetProject` drops a root from the projects list itself; what else is keyed by a root of its is dropped here, once, for all of them.
-      if (roots.length > 0) {
-        const { projectColors, chatProjects } = getSettings()
-        setSettings({
-          projectColors: Object.fromEntries(Object.entries(projectColors).filter(([root]) => !roots.includes(root))),
-          chatProjects: chatProjects.filter((root) => !roots.includes(root)),
-        })
-      }
     },
     remember: (root) => rememberProject(root),
     changed: (views) => {
@@ -263,7 +259,12 @@ function terminalFor(root: string, run: string, status?: string): void {
     return
   }
   const line = hostTerminal(routes, root, run)
-  if (line !== undefined) openTerminal(homedir(), withStatus(line))
+  if (line !== undefined) {
+    openTerminal(homedir(), withStatus(line))
+    return
+  }
+  // Its host is gone: nothing opens to write the status file, so a `!` command waiting on it is ended here instead of polling forever.
+  if (status !== undefined) void writeFile(status, '1').catch(() => undefined)
 }
 
 /**
@@ -275,7 +276,7 @@ function terminalFor(root: string, run: string, status?: string): void {
 async function thereFor(path: string): Promise<boolean> {
   if (!isRemote(path)) return stat(path).then((found) => found.isDirectory(), () => false)
   if (getSettings().projects.includes(path)) return true
-  return routes === undefined ? false : hostExists(routes, path, '.')
+  return routes === undefined ? false : hostIsDir(routes, path)
 }
 
 function build(held: Routes): Sessions {
@@ -730,6 +731,13 @@ async function forwardLink(root: string, href: string): Promise<{ readonly href:
   return { href: next, moved: `${name}'s ${String(port)} is at ${String(local)} on ${computerName()}` }
 }
 
+/**
+ * What closing GeckIt cut off, to be offered Continue. A conversation on a host
+ * was not cut: it runs on there and is picked up once its host is reached, so
+ * it is left out even while its pickup is still waiting on the connection.
+ */
+const cutOffHere = (): CutOff[] => (sessions?.cutOff() ?? []).filter((one) => routes?.runs.get(one.id) === undefined)
+
 /** What a window may ask about hosts. */
 function wireHosts(): void {
   const hosts = (): Hosts | undefined => routes?.hosts
@@ -872,7 +880,7 @@ function wire(): void {
   ipcMain.handle('chat:cutOff', () => {
     if (cutOffered) return []
     cutOffered = true
-    return sessions?.cutOff() ?? []
+    return cutOffHere()
   })
   ipcMain.on('chat:proceed', (_event, ids: readonly string[]) => {
     for (const id of ids) void sessions?.proceed(id)
@@ -914,7 +922,9 @@ function wire(): void {
     sessions?.handOver(id)
     terminalFor(root, resumeCommand(id))
   })
-  ipcMain.handle('chat:upload', (_event, root: string, path: string) => (isRemote(root) ? (routes === undefined ? undefined : hostUpload(routes, root, path)) : path))
+  ipcMain.handle('chat:upload', (_event, root: string, path: string) =>
+    isRemote(root) ? (routes === undefined ? { problem: 'Not ready yet.' } : hostUpload(routes, root, path)) : { path },
+  )
   ipcMain.handle('chat:shell', (_event, asked: ShellCommand) => sessions?.shell(asked))
   ipcMain.on('chat:stopShell', (_event, id: string, item: string) => sessions?.stopShell(id, item))
   ipcMain.on('chat:typeShell', (_event, id: string, item: string, text: string) => sessions?.typeShell(id, item, text))
@@ -1190,8 +1200,12 @@ if (!app.requestSingleInstanceLock()) {
     const started = build(held)
     sessions = started
     void started.resumeQueues()
-    // What was running on hosts when GeckIt closed is still running there, and is picked up.
-    void started.reattach(Object.entries(held.runs.all()).map(([id, run]) => ({ id, root: run.root })))
+    // What was running on hosts when GeckIt closed is still running there, and is picked up. Their hosts are
+    // reached first: one not connected is read from the copy kept here, and a conversation begun just before
+    // quitting has none yet, so it would come back without what was said in it.
+    const running = Object.entries(held.runs.all()).map(([id, run]) => ({ id, root: run.root }))
+    const reached = [...new Set(running.map((run) => hostOf(run.root)).filter((id) => id !== undefined))].map((id) => held.hosts.ensure(id))
+    void Promise.allSettled(reached).then(() => started.reattach(running))
     nativeTheme.themeSource = getSettings().theme
     guided = getSettings().guideClaude
     void keepGuide(guided)

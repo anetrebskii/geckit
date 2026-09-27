@@ -554,7 +554,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       repo: (root) => call('chat.repo', root),
       files: (root) => call('chat.files', root),
       // The phone has nothing of this Mac's own files to carry anywhere.
-      upload: () => Promise.resolve(undefined),
+      upload: () => Promise.resolve({ problem: 'A file on the phone is not copied to a host.' }),
       // An address on the Mac's localhost means the phone itself here, so it is shown through the Mac instead.
       // On a host, that address is the host's, not the Mac's, so it is carried there first.
       openLink: (href) => {

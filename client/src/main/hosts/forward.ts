@@ -111,7 +111,13 @@ export class Forwards {
       }, POLL_EVERY)
       const limit = setTimeout(() => finish(false), READY_WITHIN)
     })
-    return ready ? local : undefined
+    if (!ready) {
+      // Not proven ready by its own deadline: killed rather than left running and later handed out as open, a password host's card still up counted among them.
+      child.kill()
+      if (this.#open.get(key)?.child === child) this.#open.delete(key)
+      return undefined
+    }
+    return local
   }
 
   closeHost(id: string): void {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { basename, extname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
-import type { BackgroundTask, ClaudeModel, FileShown, GitState, McpServer, TaskOutput } from '../../shared/api'
+import type { BackgroundTask, ClaudeModel, FileShown, GitState, McpServer, TaskOutput, Uploaded } from '../../shared/api'
 import { resumeCommand } from '../../shared/api'
 import { hostOf, pathOf } from '../../shared/hosts'
 import type { HostConfig } from '../../shared/hosts'
@@ -23,7 +23,7 @@ import type { HostDisk } from './disk'
 import type { Forwards } from './forward'
 import type { Hosts } from './hosts'
 import { RemoteRun } from './run'
-import { claudeHereScript, existsScript, filesScript, quote, readFileScript, shellScript, taskOutputScript } from './run-script'
+import { claudeHereScript, dirScript, existsScript, filesScript, quote, readFileScript, shellScript, taskOutputScript, uploadScript } from './run-script'
 import type { RunsStore } from './runs'
 import { runOn, spawnOn } from './ssh'
 
@@ -71,7 +71,7 @@ export function routedClaude(routes: Routes) {
         },
         started: () => routes.runs.set(options.id, { host: id, root: options.root, offset: 0, started: Date.now() }),
         read: (offset) => routes.runs.read(options.id, offset),
-        pending: (offset) => routes.runs.pending(options.id, offset),
+        pending: (offset, at) => routes.runs.pending(options.id, offset, at),
         link: (up) => link(up),
       })
       const link = routes.hosts.track(id, run)
@@ -203,6 +203,15 @@ export async function hostExists(routes: Routes, root: string, path: string): Pr
   return ran.out.toString('utf8').trim() === 'yes'
 }
 
+/** Whether a folder itself is still on a host, for whether it is still a project. */
+export async function hostIsDir(routes: Routes, root: string): Promise<boolean> {
+  const id = hostOf(root)
+  const host = id === undefined ? undefined : routes.hosts.config(id)
+  if (host === undefined || routes.hosts.state(host.id) !== 'up') return false
+  const ran = await ranOn(routes, host, dirScript(pathOf(root)), { timeout: 15_000 })
+  return ran.out.toString('utf8').trim() === 'yes'
+}
+
 /** Every file of a project on a host, as paths from it, for @. */
 export async function hostFiles(routes: Routes, root: string): Promise<string[]> {
   const id = hostOf(root)
@@ -240,16 +249,40 @@ export async function foldersFor(routes: Routes | undefined, root: string): Prom
 /** How long a host's own claude is waited on for the models it names. */
 const MODELS_PATIENCE = 20_000
 
+/** How long a host's models are kept before they are asked for again. */
+const MODELS_FRESH = 5 * 60_000
+
+/** What was last asked of a host's own claude for its models: when, with what version seen then, and its answer, so two menus opened together share the one call in flight. */
+const modelsAsked = new Map<string, { readonly at: number; readonly version: string | undefined; readonly models: Promise<ClaudeModel[] | undefined> }>()
+
 /**
  * Which models a host's own claude has, greeted the same way this computer's
  * is in `sessions/models.ts`, over the connection instead of a child process
  * here. Nothing where the host is not up, so the menu shows no list rather
  * than a wrong one.
+ *
+ * Kept for a few minutes, since starting `claude` on a host for this is not
+ * cheap and the menu can be opened again and again; dropped early where the
+ * host's own version is seen to have changed, since an older or newer build
+ * may name different models.
  */
 export function hostModels(routes: Routes, root: string): Promise<ClaudeModel[] | undefined> {
   const id = hostOf(root)
   const host = id === undefined ? undefined : routes.hosts.config(id)
   if (host === undefined || routes.hosts.state(host.id) !== 'up') return Promise.resolve(undefined)
+  const version = host.seen?.version
+  const kept = modelsAsked.get(host.id)
+  if (kept !== undefined && kept.version === version && Date.now() - kept.at < MODELS_FRESH) return kept.models
+  const models = askHostModels(routes, host, root)
+  modelsAsked.set(host.id, { at: Date.now(), version, models })
+  // Not having said is not kept: the next opening of the menu asks again, rather than the menu showing no list for the whole of the freshness window.
+  void models.then((said) => {
+    if (said === undefined && modelsAsked.get(host.id)?.models === models) modelsAsked.delete(host.id)
+  })
+  return models
+}
+
+function askHostModels(routes: Routes, host: HostConfig, root: string): Promise<ClaudeModel[] | undefined> {
   const child = spawnOn(
     host,
     routes.hosts.setup(),
@@ -297,26 +330,21 @@ const UPLOAD_TIMEOUT = 300_000
  * on the host. For a local root the path is simply handed back unchanged;
  * nothing is copied.
  */
-export async function hostUpload(routes: Routes, root: string, path: string): Promise<string | undefined> {
+export async function hostUpload(routes: Routes, root: string, path: string): Promise<Uploaded> {
   const id = hostOf(root)
-  if (id === undefined) return path
+  if (id === undefined) return { path }
   const host = routes.hosts.config(id)
-  if (host === undefined || routes.hosts.state(host.id) !== 'up') return undefined
-  const found = await stat(path).catch(() => undefined)
-  if (found === undefined || !found.isFile() || found.size > UPLOAD_CAP) return undefined
-  const data = await readFile(path).catch(() => undefined)
-  if (data === undefined) return undefined
   const name = basename(path)
-  // `cat` reads the upload from stdin and writes nothing of its own, leaving stdout free for the one line that says where it landed.
-  const script = [
-    `d="$HOME/.geckit/uploads/${randomUUID()}"`,
-    'mkdir -p "$d" || exit 1',
-    `cat > "$d/"${quote(name)} || exit 1`,
-    `printf '%s/%s' "$d" ${quote(name)}`,
-  ].join('\n')
-  const ran = await ranOn(routes, host, script, { input: data, timeout: UPLOAD_TIMEOUT })
-  if (ran.code !== 0) return undefined
-  const there = ran.out.toString('utf8').trim()
-  return there === '' ? undefined : there
+  if (host === undefined) return { problem: `Could not copy ${name}: that host is not here any more.` }
+  if (routes.hosts.state(host.id) !== 'up') return { problem: `Could not copy ${name}: ${host.name} is not connected.` }
+  const found = await stat(path).catch(() => undefined)
+  if (found === undefined) return { problem: `Could not copy ${name}: it is not there any more.` }
+  if (!found.isFile()) return { problem: `Could not copy ${name} to ${host.name}: only files are copied, not folders.` }
+  if (found.size > UPLOAD_CAP) return { problem: `Could not copy ${name} to ${host.name}: it is over 100 MB.` }
+  const data = await readFile(path).catch(() => undefined)
+  if (data === undefined) return { problem: `Could not read ${name}.` }
+  const ran = await ranOn(routes, host, uploadScript(randomUUID(), name), { input: data, timeout: UPLOAD_TIMEOUT })
+  const there = ran.code === 0 ? ran.out.toString('utf8').trim() : ''
+  return there === '' ? { problem: `Could not copy ${name} to ${host.name}.` } : { path: there }
 }
 

@@ -25,7 +25,7 @@ import {
   safeId,
   startScript,
 } from '../src/main/hosts/run-script'
-import { isConnectionFailure, sshArgs, sshProblem } from '../src/main/hosts/ssh'
+import { badArgsProblem, isConnectionFailure, runOn, spawnOn, sshArgs, sshProblem } from '../src/main/hosts/ssh'
 import { edgesOf, rowFrom, slug } from '../src/main/sessions/disk'
 import type { HostConfig, HostState } from '../src/shared/hosts'
 import { draftProblem, forHowLong, hostIdFor, machineName, hostOf, outOfReach, outOfReachLine, parseTarget, pathOf, remoteRoot, stateLine, targetLine } from '../src/shared/hosts'
@@ -223,6 +223,16 @@ describe('the ssh a host is reached with', () => {
     expect(() => sshArgs({ ...host, keyFile: '-oProxyCommand=x' }, {})).toThrow()
   })
 
+  it('fails gracefully rather than throwing where sshArgs refuses the config, so a caller in a timer is never left with an exception it cannot catch', async () => {
+    const bad = { ...host, id: 'devbox', name: 'devbox', address: '-oProxyCommand=x' }
+    const child = spawnOn(bad, { env: {} }, 'echo hi')
+    expect(() => child.stdout.on('data', () => undefined)).not.toThrow()
+    const ran = await runOn(bad, { env: {} }, 'echo hi', { timeout: 1_000 })
+    expect(ran.code).not.toBe(0)
+    expect(ran.err).toBe('Not a host address.')
+    expect(badArgsProblem(ran.err, 'devbox')).toBe('The address of devbox starts with a dash.')
+  })
+
   it('tells apart its own failure to connect at all from the script it ran going wrong', () => {
     expect(isConnectionFailure(255, 'ssh: connect to host devbox port 22: Operation timed out')).toBe(true)
     expect(isConnectionFailure(255, 'ssh: Could not resolve hostname devbox: nodename nor servname provided')).toBe(true)
@@ -310,6 +320,24 @@ describe('a host that is not connected', () => {
       await writeFile(path, JSON.stringify(kept))
       const disk = new HostDisk(fakeHosts('lost'), folder)
       await expect(disk.list(root)).resolves.toEqual(kept)
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
+  })
+
+  it('lists a conversation never opened here for Hidden from its project\'s last listing, on its host', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-hosts-'))
+    try {
+      const kept = [
+        { id: 'a-1', title: 'Make the tile cache build faster', stands: 'Done', at: 5, driven: false, cwd: '/home/leo/trailmap' },
+        { id: 'a-2', title: 'Too new for the window', stands: '', at: 50, driven: false, cwd: '/home/leo/trailmap' },
+      ]
+      const path = join(folder, fakeHost.id, 'listed', `${slug('/home/leo/trailmap')}.json`)
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(path, JSON.stringify(kept))
+      const disk = new HostDisk(fakeHosts('idle'), folder)
+      const found = await disk.every(0, 10, () => true)
+      expect(found.map((one) => [one.id, one.cwd])).toEqual([['a-1', root]])
     } finally {
       await rm(folder, { recursive: true, force: true })
     }

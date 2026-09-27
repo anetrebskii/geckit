@@ -21,13 +21,21 @@ const WINDOWS = process.platform === 'win32'
 
 /**
  * The helper ssh runs, in plain Node: one question out, one answer back, exit
- * 1 for none. Its own parent process is ssh itself, so its pid tells apart
- * which connection is asking where two are open on the same host at once.
+ * 1 for none. It carries `GECKIT_ASKPASS_CONN`, minted before ssh itself was
+ * even spawned (see `ssh.ts`), so which connection is asking is known even on
+ * Windows, where the launcher's own cmd.exe - not ssh - is its real parent.
+ *
+ * On every other platform its parent process is ssh itself, so it also polls
+ * that pid: ssh killed mid-prompt (a command's own timeout, say) does not
+ * send this a signal of its own - only its parent going - and a helper left
+ * running would hold the socket open forever, so `abandoned` never fires and
+ * whatever was waiting on the question never learns it must stop. Killing
+ * itself once the parent is gone closes the socket instead, which does.
  */
 const HELPER = `const net = require('node:net')
 const socket = net.connect(process.env.GECKIT_ASKPASS_SOCKET)
 let got = ''
-socket.on('connect', () => socket.write(JSON.stringify({ token: process.env.GECKIT_ASKPASS_TOKEN, host: process.env.GECKIT_HOST || '', prompt: process.argv.slice(2).join(' '), pid: process.ppid }) + '\\n'))
+socket.on('connect', () => socket.write(JSON.stringify({ token: process.env.GECKIT_ASKPASS_TOKEN, host: process.env.GECKIT_HOST || '', prompt: process.argv.slice(2).join(' '), conn: process.env.GECKIT_ASKPASS_CONN || '' }) + '\\n'))
 socket.on('data', (chunk) => { got += chunk.toString('utf8') })
 socket.on('end', () => {
   try {
@@ -37,6 +45,13 @@ socket.on('end', () => {
   process.exit(1)
 })
 socket.on('error', () => process.exit(1))
+if (process.platform !== 'win32') {
+  const parent = process.ppid
+  const watch = setInterval(() => {
+    try { process.kill(parent, 0) } catch { process.exit(1) }
+  }, 1000)
+  watch.unref()
+}
 `
 
 /** What a question from ssh is, read from its words, and the card that asks it. */
@@ -82,7 +97,7 @@ export interface Asker {
 export function startAskpass(
   folder: string,
   executable: string,
-  ask: (host: string, prompt: string, pid: number | undefined, abandoned: (fn: () => void) => void) => Promise<string | undefined>,
+  ask: (host: string, prompt: string, conn: string, abandoned: (fn: () => void) => void) => Promise<string | undefined>,
 ): Asker {
   mkdirSync(folder, { recursive: true, mode: 0o700 })
   const token = randomBytes(24).toString('hex')
@@ -112,19 +127,18 @@ export function startAskpass(
       got += chunk.toString('utf8')
       const end = got.indexOf('\n')
       if (end < 0) return
-      let asked: { token?: unknown; host?: unknown; prompt?: unknown; pid?: unknown } = {}
+      let asked: { token?: unknown; host?: unknown; prompt?: unknown; conn?: unknown } = {}
       try {
         asked = JSON.parse(got.slice(0, end)) as typeof asked
       } catch {
         connection.end()
         return
       }
-      if (asked.token !== token || typeof asked.prompt !== 'string' || typeof asked.host !== 'string') {
+      if (asked.token !== token || typeof asked.prompt !== 'string' || typeof asked.host !== 'string' || typeof asked.conn !== 'string') {
         connection.end()
         return
       }
-      const pid = typeof asked.pid === 'number' ? asked.pid : undefined
-      void ask(asked.host, asked.prompt, pid, (fn) => (onGone = fn))
+      void ask(asked.host, asked.prompt, asked.conn, (fn) => (onGone = fn))
         .catch(() => undefined)
         .then((answer) => {
           settled = true
