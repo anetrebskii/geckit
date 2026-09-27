@@ -16,12 +16,12 @@ import type { Chat } from './useChat'
  * after, without waiting for a turn.
  */
 
-const tokens = (count: number): string =>
+export const tokens = (count: number): string =>
   count >= 1_000_000 ? `${String(Math.round(count / 100_000) / 10)}M` : `${String(Math.round(count / 1000))}k`
 
-const dollars = (cost: number): string => `$${cost < 10 ? cost.toFixed(2) : String(Math.round(cost))}`
+export const dollars = (cost: number): string => `$${cost < 10 ? cost.toFixed(2) : String(Math.round(cost))}`
 
-function until(at: number, now: number): string {
+export function until(at: number, now: number): string {
   const minutes = Math.max(0, Math.round((at - now) / 60_000))
   const days = Math.floor(minutes / 1440)
   const hours = Math.floor((minutes % 1440) / 60)
@@ -33,7 +33,7 @@ function until(at: number, now: number): string {
 /** The same thresholds a terminal status line uses: fine, getting there, nearly out. */
 const tone = (part: number): string => (part >= 0.9 ? 'high' : part >= 0.7 ? 'mid' : 'low')
 
-function Meter({ part }: { readonly part: number }): React.JSX.Element {
+export function Meter({ part }: { readonly part: number }): React.JSX.Element {
   return (
     <span className={`meter ${tone(part)}`}>
       <span style={{ width: `${String(Math.min(100, Math.round(part * 100)))}%` }} />
@@ -104,21 +104,9 @@ function Git({ git, now }: { readonly git: GitState; readonly now: number }): Re
   )
 }
 
-export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly onClear: () => void }): React.JSX.Element {
-  const [now, setNow] = useState(() => Date.now())
+/** Where the project's checkout stands, looked at again when the project changes, when a turn starts or ends, and when the window comes back to the front, which is when a commit made in a terminal would have happened. */
+export function useGit(root: string | undefined, state: unknown): GitState | undefined {
   const [git, setGit] = useState<{ readonly root: string; readonly state: GitState | undefined }>()
-  const root = chat.session?.root ?? chat.root
-  const state = chat.session?.state
-  const spend = chat.session?.spend
-
-  useEffect(() => {
-    const tick = setInterval(() => setNow(Date.now()), 60_000)
-    return () => clearInterval(tick)
-  }, [])
-
-  // Looked at again when the project changes, when a turn starts or ends, and
-  // when the window comes back to the front, which is when a commit made in a
-  // terminal would have happened.
   useEffect(() => {
     if (root === undefined) return
     let current = true
@@ -138,8 +126,18 @@ export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly on
       off()
     }
   }, [root, state])
+  return git !== undefined && git.root === root ? git.state : undefined
+}
 
-  const shownGit = git !== undefined && git.root === root ? git.state : undefined
+export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly onClear: () => void }): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now())
+  const spend = chat.session?.spend
+  const shownGit = useGit(chat.session?.root ?? chat.root, chat.session?.state)
+
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(tick)
+  }, [])
 
   return (
     <div className="talk-status">

@@ -10,7 +10,7 @@ import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Board, NewTask, TopBar } from './Board'
 import { CutOffDialog } from './CutOff'
 import { PhoneHome } from './PhoneHome'
-import { EdgeBack, PhoneNav } from './PhoneNav'
+import { EdgeBack, EdgeInfo, PhoneNav } from './PhoneNav'
 import { Screen } from './Screen'
 import { FileView } from './FileView'
 import { Composer } from './Composer'
@@ -78,6 +78,8 @@ export function Chat(): React.JSX.Element {
   const [copied, setCopied] = useState<string | undefined>()
   // The board's New task form is open.
   const [making, setMaking] = useState(false)
+  const [infoing, setInfoing] = useState(false)
+  const [pulled, setPulled] = useState<number>()
   // On the phone, New task opened to be filled from a recording.
   const [recordFirst, setRecordFirst] = useState(false)
   const [asking, setAsking] = useState(false)
@@ -465,8 +467,21 @@ export function Chat(): React.JSX.Element {
 
       <div className={`talk${board ? ' over' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}`} hidden={board && !overBoard}>
         {ON_PHONE && overBoard ? <EdgeBack onBack={() => chat.open({ kind: 'new' })} /> : null}
+        {ON_PHONE && overBoard && chat.session !== undefined ? <EdgeInfo onPull={setPulled} onOpen={() => setInfoing(true)} /> : null}
         {ON_PHONE ? (
-          <PhoneNav chat={chat} links={links} onScreen={() => setScreening(true)} />
+          <PhoneNav
+            chat={chat}
+            links={links}
+            onScreen={() => setScreening(true)}
+            info={infoing}
+            pulled={pulled}
+            onInfo={setInfoing}
+            onClear={() => {
+              if (chat.session !== undefined) chat.setRoot(homeOf(chat.session))
+              chat.startNew()
+              setMaking(true)
+            }}
+          />
         ) : (
           <div className="talk-head drag">
             {chat.session === undefined ? (

@@ -9,6 +9,7 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { LANGUAGES } from '../ui/SettingsDialog'
+import { Limits } from './PhoneInfo'
 import { Cell, Page, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
@@ -109,6 +110,13 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
           <div className="phone-group">
             <Cell label={thisMac?.name ?? 'Mac'} says={paired.length > 1 ? `${String(paired.length)} Macs paired` : 'Paired'} onPress={() => setSwitching(true)} />
           </div>
+          {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
+            <>
+              <div className="phone-head">Plan usage</div>
+              <Limits chat={chat} />
+              <div className="phone-note">Of the plan the Mac's Claude Code runs on{chat.account?.plan === undefined ? '' : `, ${chat.account.plan}`}, shared by every conversation on it.</div>
+            </>
+          )}
         </>
       )}
 
