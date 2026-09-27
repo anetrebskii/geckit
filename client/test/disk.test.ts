@@ -98,6 +98,17 @@ describe('the conversations about a folder', () => {
     expect((await listClaude(ROOT))[0]).toMatchObject({ id: 'ggg', title: 'What is in it?' })
   })
 
+  it('names one whose first message has a picture too big to read past', async () => {
+    const picture = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'x'.repeat(300 * 1024) } }
+    conversation('hhh', [
+      line({ type: 'user', uuid: 'u1', message: { role: 'user', content: [{ type: 'text', text: 'Why is this card blue?' }, picture] } }),
+      ...Array.from({ length: 3 }, (_, index) =>
+        line({ type: 'user', uuid: `r${String(index)}`, message: { role: 'user', content: [{ type: 'tool_result', content: 'y'.repeat(40 * 1024) }] } }),
+      ),
+    ])
+    expect((await listClaude(ROOT))[0]).toMatchObject({ id: 'hhh', title: 'Why is this card blue?' })
+  })
+
   it('leaves out what nobody said anything in', async () => {
     conversation('eee', [line({ type: 'summary', summary: 'nothing' })])
     expect(await listClaude(ROOT)).toEqual([])

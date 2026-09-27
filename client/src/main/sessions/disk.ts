@@ -85,15 +85,17 @@ const EDGE = 64 * 1024
 /** How many conversations are read for the list. */
 const MOST = 200
 
-async function edges(path: string, size: number): Promise<{ head: Json[]; tail: Json[] }> {
+async function edges(path: string, size: number): Promise<{ head: Json[]; tail: Json[]; cut: string }> {
   const file = await open(path, 'r')
+  let cut = ''
   try {
     const lines = async (from: number, length: number): Promise<Json[]> => {
       const { buffer, bytesRead } = await file.read(Buffer.alloc(length), 0, length, from)
       const whole = buffer.subarray(0, bytesRead).toString('utf8').split('\n')
       // A window into the middle of a file starts and ends mid-line.
       if (from > 0) whole.shift()
-      if (from + length < size) whole.pop()
+      if (from + length < size && from === 0) cut = whole.pop() ?? ''
+      else if (from + length < size) whole.pop()
       return whole.flatMap((line) => {
         try {
           return line.trim() === '' ? [] : [JSON.parse(line) as Json]
@@ -102,11 +104,20 @@ async function edges(path: string, size: number): Promise<{ head: Json[]; tail: 
         }
       })
     }
-    if (size <= EDGE * 2) return { head: await lines(0, size), tail: [] }
-    return { head: await lines(0, EDGE), tail: await lines(size - EDGE, EDGE) }
+    if (size <= EDGE * 2) return { head: await lines(0, size), tail: [], cut }
+    return { head: await lines(0, EDGE), tail: await lines(size - EDGE, EDGE), cut }
   } finally {
     await file.close()
   }
+}
+
+/** The words of a message with a picture, which runs past the end of the head; they come before the picture. */
+function cutWords(line: string): string {
+  if (!line.includes('"type":"user"') || line.includes('"isSidechain":true') || line.includes('"isMeta":true')) return ''
+  const found = /"content":\[\{"type":"text","text":("(?:[^"\\]|\\.)*")/.exec(line)?.[1]
+  if (found === undefined) return ''
+  const words = string(JSON.parse(found))
+  return /^\s*(<|\[Request interrupted|Caveat:)/.test(words) ? '' : words
 }
 
 /**
@@ -188,12 +199,12 @@ async function rowsOf<File extends Kept>(files: File[], kept: (row: Found, file:
   const found: Found[] = []
   for (const file of files) {
     if (found.length >= most) break
-    const { head, tail } = await edges(file.path, file.size).catch(() => ({ head: [], tail: [] }))
+    const { head, tail, cut } = await edges(file.path, file.size).catch(() => ({ head: [], tail: [], cut: '' }))
     const all = [...head, ...tail]
     const named = (type: string, key: string): string =>
       string([...all].reverse().find((entry) => string(entry['type']) === type)?.[key])
 
-    const asked = head.map(typed).find((words) => words.trim() !== '') ?? ''
+    const asked = head.map(typed).find((words) => words.trim() !== '') || cutWords(cut)
     // A first message that is one pasted file fills the head on its own, and the
     // words are past the end of it; the other end still has some.
     const said = asked || (tail.map(typed).find((words) => words.trim() !== '') ?? '')
