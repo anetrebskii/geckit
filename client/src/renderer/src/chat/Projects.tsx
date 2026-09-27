@@ -10,7 +10,7 @@ import { AddHost } from './Hosts'
 import { useMinute } from './useHosts'
 import { HostFolders } from './HostFolders'
 import { HostDot } from './HostParts'
-import { homePath, projectLabel, projectName } from './project'
+import { homePath, projectLabel, projectName, rootLabel } from './project'
 import type { Chat } from './useChat'
 import { ALL } from './useChat'
 import { HiddenChats } from './HiddenChats'
@@ -216,6 +216,8 @@ function Menu({
   }
 
   // The check is the way to list several at once; the row itself still switches to one.
+  // A project's row says its host too, in what an aria label or a tooltip reads; Every project and a group's own row keep their plain name.
+  const said = (row: Row): string => (row.kind === 'project' ? projectLabel(row.value) : row.name)
   const on = (value: string): boolean => {
     if (value === ALL) return chat.chosen.length === 0
     if (value.startsWith(ON_HOST)) {
@@ -305,7 +307,7 @@ function Menu({
               <button
                 type="button"
                 className={`project-pick${on(row.value) ? ' on' : ''}`}
-                aria-label={on(row.value) ? `Stop listing ${row.name}` : `List ${row.name} as well`}
+                aria-label={on(row.value) ? `Stop listing ${said(row)}` : `List ${said(row)} as well`}
                 title={row.value === ALL ? 'Every project' : 'List it as well as the others'}
                 onClick={(event) => {
                   event.stopPropagation()
@@ -331,7 +333,7 @@ function Menu({
               )}
               <span className="lines">
                 <span className="name">{row.name}</span>
-                <span className="says" title={row.value === ALL ? undefined : row.value}>
+                <span className="says" title={row.value === ALL ? undefined : rootLabel(row.value)}>
                   {row.path}
                 </span>
               </span>
@@ -343,7 +345,7 @@ function Menu({
                 <button
                   type="button"
                   className="icon-button forget"
-                  aria-label={`Take ${row.name} off the list`}
+                  aria-label={`Take ${said(row)} off the list`}
                   title="Take it off the list. The folder and its conversations stay where they are."
                   onClick={(event) => {
                     event.stopPropagation()

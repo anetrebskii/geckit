@@ -195,9 +195,29 @@ export function edgesScript(files: readonly { readonly file: string; readonly si
   return lines.join('\n')
 }
 
-/** What a file has grown by since a byte, raw. */
+/**
+ * What a file has grown by since a byte, raw, after one line of its own,
+ * `@@size <n>`, the file's size right now: smaller than the byte asked from
+ * says the file was cut short or begun again on the host, rather than only
+ * grown, so the mirror kept here is not simply carried on from stale bytes.
+ */
 export function growScript(file: string, from: number): string {
-  return [PROJECTS, `tail -c +${String(Math.max(0, Math.floor(from)) + 1)} "$b"/${quote(safeFile(file))}`].join('\n')
+  const safe = safeFile(file)
+  return [
+    PROJECTS,
+    `f="$b"/${quote(safe)}`,
+    `[ -f "$f" ] || { printf '@@size 0\\n'; exit 0; }`,
+    `printf '@@size %s\\n' "$(wc -c <"$f")"`,
+    `tail -c +${String(Math.max(0, Math.floor(from)) + 1)} "$f"`,
+  ].join('\n')
+}
+
+/** What `growScript` printed: the file's size on the host right now, and whatever grew past the byte asked from. */
+export function readGrow(out: Buffer): { readonly size: number; readonly grown: Buffer } {
+  const nl = out.indexOf(10)
+  const head = (nl < 0 ? out : out.subarray(0, nl)).toString('utf8')
+  const size = Number(/^@@size (\d+)$/.exec(head)?.[1] ?? 0)
+  return { size, grown: nl < 0 ? Buffer.alloc(0) : out.subarray(nl + 1) }
 }
 
 /** Whether a file is there: prints `yes` or `no`. */

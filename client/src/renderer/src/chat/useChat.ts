@@ -13,10 +13,12 @@ import type {
   SessionStatus,
 } from '../../../shared/api'
 import { homeOf, resumeCommand, shownProjects } from '../../../shared/api'
+import { hostOf, isRemote } from '../../../shared/hosts'
 import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { asImage, canShow } from '../pictures'
 import { useSettings } from '../settings'
 import type { Settings } from '../../../shared/api'
+import { hostName } from './project'
 import { useHosts } from './useHosts'
 
 /** What the window is showing: a conversation, or one that has not been sent yet. */
@@ -418,18 +420,40 @@ export function useChat(): Chat {
     })
   }, [session, working])
 
+  // A path typed into the field, once known: quoted if it has a space in it, added after what is already there.
+  const addPath = (key: string, path: string): void => {
+    const quoted = path.includes(' ') ? `"${path}"` : path
+    setDrafts((held) => {
+      const now = held[key] ?? ''
+      return { ...held, [key]: `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${quoted} ` }
+    })
+  }
+
   const addFiles = useCallback((files: readonly File[]) => {
-    const paths = files
-      .filter((one) => !canShow(one))
-      .map((one) => window.geckit.pathFor(one))
-      .filter((path) => path !== '')
-      .map((path) => (path.includes(' ') ? `"${path}"` : path))
-    if (paths.length > 0) {
-      setDrafts((held) => {
-        const key = keyOf(shownRef.current)
-        const now = held[key] ?? ''
-        return { ...held, [key]: `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${paths.join(' ')} ` }
-      })
+    const dropped = files.filter((one) => !canShow(one))
+    if (dropped.length > 0) {
+      const where = rootRef.current
+      const key = keyOf(shownRef.current)
+      for (const one of dropped) {
+        const local = window.geckit.pathFor(one)
+        if (local === '') continue
+        // What was dropped is a path on this computer; a host cannot read it, so it is copied there first.
+        if (where === undefined || !isRemote(where)) {
+          addPath(key, local)
+          continue
+        }
+        const there = hostName(where) ?? where
+        const busy = `Copying ${one.name} to ${there}...`
+        setTrouble(busy)
+        void window.geckit.chat.upload(where, local).then((remote) => {
+          setTrouble((now) => (now === busy ? '' : now))
+          if (remote === undefined) {
+            setTrouble(`Could not copy ${one.name} to ${there}`)
+            return
+          }
+          addPath(key, remote)
+        })
+      }
     }
 
     const wanted = files.filter(canShow)
@@ -528,7 +552,7 @@ export function useChat(): Chat {
               setDrafts((all) => ({ ...all, [key]: text }))
               setPictures((all) => ({ ...all, [key]: carried }))
             }
-            setTrouble('Not sent: the Mac could not be reached')
+            setTrouble('Not sent: the host could not be reached')
           },
         )
     },
@@ -692,7 +716,14 @@ export function useChat(): Chat {
   const copyTerminal = useCallback((id: string) => {
     const where = sessionsRef.current.find((one) => one.id === id)?.root ?? rootRef.current
     if (where === undefined) return
-    void navigator.clipboard.writeText(`cd ${JSON.stringify(where)} && ${resumeCommand(id)}`)
+    // On a host, the line a local terminal would type is that host's own; nothing here says `cd` into an address ssh does not read.
+    const line =
+      hostOf(where) === undefined
+        ? Promise.resolve<string | undefined>(`cd ${JSON.stringify(where)} && ${resumeCommand(id)}`)
+        : window.geckit.hosts.resumeLine(where, id)
+    void line.then((said) => {
+      if (said !== undefined) void navigator.clipboard.writeText(said)
+    })
     window.geckit.chat.handOver(id)
   }, [])
 
@@ -770,10 +801,10 @@ export function useChat(): Chat {
         )
       }
     },
-    // Asked at every opening: main keeps the answer, and asks Claude Code again once another version of it answers.
+    // Asked at every opening: main keeps the answer, and asks Claude Code again once another version of it answers. On a host it is that host's models, not this computer's.
     askModels: () => {
       if (!Array.isArray(models)) setModels('asking')
-      void window.geckit.chat.models().then((said) => setModels((held) => said ?? (Array.isArray(held) ? held : 'unsaid')))
+      void window.geckit.chat.models(rootRef.current).then((said) => setModels((held) => said ?? (Array.isArray(held) ? held : 'unsaid')))
     },
     send,
     ask,

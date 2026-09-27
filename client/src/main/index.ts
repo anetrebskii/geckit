@@ -1,4 +1,5 @@
 import { exec, execFile } from 'node:child_process'
+import { stat } from 'node:fs/promises'
 import { homedir, hostname } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -75,12 +76,17 @@ import {
   hostFiles,
   hostGit,
   hostMcp,
+  hostModels,
+  hostRepo,
+  hostResumeLine,
   hostTaskOutput,
   hostTerminal,
+  hostUpload,
   routedClaude,
   routedShell,
 } from './hosts/route'
 import type { Routes } from './hosts/route'
+import { claudeModels } from './sessions/models'
 import { runsAt } from './hosts/runs'
 import { secretsAt } from './hosts/secrets'
 import { Forwards, localPort, withPort } from './hosts/forward'
@@ -169,16 +175,29 @@ const hostNamed = (id: string): string | undefined => routes?.hosts.config(id)?.
 function buildHosts(): Routes {
   const folder = join(app.getPath('userData'), 'hosts')
   const secrets = secretsAt(join(folder, 'secrets.json'))
+  // Both are made from the hosts they serve, and a host reached some other way now has both let go of what they hold for it.
+  const made: { forwards?: Forwards; disk?: HostDisk } = {}
   const hosts = new Hosts({
+    forwardsChanged: (id) => made.forwards?.closeHost(id),
+    diskForget: (id) => void made.disk?.forget(id),
     folder,
     executable: process.execPath,
     hosts: () => getSettings().hosts,
     save: (list) => setSettings({ hosts: list }),
     forgetProjects: (id) => {
-      for (const root of getSettings().projects.filter((one) => hostOf(one) === id)) forgetProject(root)
+      const roots = getSettings().projects.filter((one) => hostOf(one) === id)
+      for (const root of roots) forgetProject(root)
       for (const shortcut of getSettings().shortcuts.filter((one) => hostOf(one.root) === id)) removeShortcut(shortcut.id)
       for (const [session, run] of Object.entries(routes?.runs.all() ?? {})) if (run.host === id) routes?.runs.delete(session)
       void routes?.disk.forget(id)
+      // `forgetProject` drops a root from the projects list itself; what else is keyed by a root of its is dropped here, once, for all of them.
+      if (roots.length > 0) {
+        const { projectColors, chatProjects } = getSettings()
+        setSettings({
+          projectColors: Object.fromEntries(Object.entries(projectColors).filter(([root]) => !roots.includes(root))),
+          chatProjects: chatProjects.filter((root) => !roots.includes(root)),
+        })
+      }
     },
     remember: (root) => rememberProject(root),
     changed: (views) => {
@@ -201,7 +220,9 @@ function buildHosts(): Routes {
     checks: (lines) => tell('hosts:checks', lines),
     secrets,
   })
-  return { hosts, disk: new HostDisk(hosts, folder), runs: runsAt(join(folder, 'runs.json')), forwards: new Forwards(hosts) }
+  made.disk = new HostDisk(hosts, folder)
+  made.forwards = new Forwards(hosts)
+  return { hosts, disk: made.disk, runs: runsAt(join(folder, 'runs.json')), forwards: made.forwards }
 }
 
 /** Claude Code's files about a root: this computer's, or a host's through its copy here. */
@@ -228,14 +249,33 @@ function routedDisk(held: Routes): NonNullable<ConstructorParameters<typeof Sess
   }
 }
 
-/** A terminal for a root: in its folder here, or signed in to its host and in its folder there. */
-function terminalFor(root: string, run: string): void {
+/**
+ * A terminal for a root: in its folder here, or signed in to its host and in
+ * its folder there. `status` is where a command that wants a keyboard is to
+ * write its exit code once it is done; appended after the whole of what runs
+ * here, which for a host is the ssh line itself, so it is this computer's
+ * shell that writes it once ssh is back, and not the host's.
+ */
+function terminalFor(root: string, run: string, status?: string): void {
+  const withStatus = (line: string): string => (status === undefined ? line : `${line}; echo $? > ${JSON.stringify(status)}`)
   if (!isRemote(root) || routes === undefined) {
-    openTerminal(root, run)
+    openTerminal(root, withStatus(run))
     return
   }
   const line = hostTerminal(routes, root, run)
-  if (line !== undefined) openTerminal(homedir(), line)
+  if (line !== undefined) openTerminal(homedir(), withStatus(line))
+}
+
+/**
+ * Whether a folder that held a hidden conversation is still a project, for
+ * Hidden conversations: this computer's own is stated locally, and a host's
+ * from settings where it is already a project there, or from the host itself
+ * where it is up and reachable.
+ */
+async function thereFor(path: string): Promise<boolean> {
+  if (!isRemote(path)) return stat(path).then((found) => found.isDirectory(), () => false)
+  if (getSettings().projects.includes(path)) return true
+  return routes === undefined ? false : hostExists(routes, path, '.')
 }
 
 function build(held: Routes): Sessions {
@@ -245,9 +285,11 @@ function build(held: Routes): Sessions {
     claude: routedClaude(held),
     disk: routedDisk(held),
     shell: routedShell(held),
+    there: thereFor,
     taskOutput: (root, session, task) => (isRemote(root) ? hostTaskOutput(held, root, session, task) : Promise.resolve(undefined)),
     mcp: (root, change) => (isRemote(root) ? hostMcp(held, root, change) : readMcp(root, change)),
     browsers: (root, pick) => (isRemote(root) ? Promise.resolve(undefined) : readBrowsers(root, pick)),
+    claudeModels: (root) => (root !== undefined && isRemote(root) ? hostModels(held, root) : claudeModels()),
     changed: (all: readonly ChatSession[]) => {
       // Every conversation it holds, which is more than the window lists: another profile's rows stay held after a switch until they are read again. A general question belongs to no project and is always told.
       const settings = getSettings()
@@ -636,6 +678,9 @@ const fileFor = (root: string, path: string) =>
 const filesFor = (root: string): Promise<string[]> =>
   isRemote(root) ? (routes === undefined ? Promise.resolve([]) : hostFiles(routes, root)) : projectFiles(root)
 
+const repoFor = (root: string): Promise<string | undefined> =>
+  isRemote(root) ? (routes === undefined ? Promise.resolve(undefined) : hostRepo(routes, root)) : gitRepo(root)
+
 /**
  * A link opened from a conversation. One to `localhost` said in a conversation
  * on a host is that host's, so its port is carried here first, and the person
@@ -693,7 +738,10 @@ function wireHosts(): void {
   ipcMain.handle('hosts:check', (_event, draft: HostDraft) => hosts()?.check(draft) ?? { ok: false, problem: 'Not ready yet.' })
   ipcMain.handle('hosts:update', (_event, id: string, draft: HostDraft) => hosts()?.update(id, draft) ?? { ok: false, problem: 'Not ready yet.' })
   ipcMain.on('hosts:forget', (_event, id: string) => hosts()?.forget(id))
-  ipcMain.handle('hosts:remove', (_event, id: string) => hosts()?.remove(id))
+  ipcMain.handle('hosts:remove', (_event, id: string) => {
+    routes?.forwards.closeHost(id)
+    return hosts()?.remove(id)
+  })
   ipcMain.on('hosts:connect', (_event, id: string) => void hosts()?.connect(id))
   ipcMain.on('hosts:reconnect', (_event, id: string) => hosts()?.reconnect(id))
   ipcMain.on('hosts:disconnect', (_event, id: string) => {
@@ -706,9 +754,12 @@ function wireHosts(): void {
   ipcMain.on('hosts:answer', (_event, answer: HostAnswer) => hosts()?.answer(answer))
   ipcMain.handle('hosts:install', (_event, id: string) => hosts()?.install(id) ?? { ok: false, text: 'Not ready yet.' })
   ipcMain.on('hosts:terminal', (_event, id: string, run: string | undefined) => {
+    // Off macOS there is no terminal to open one in; pretending to would only silently open the home folder.
+    if (process.platform !== 'darwin') return
     const line = hosts()?.terminalCommand(id, undefined, run ?? undefined)
     if (line !== undefined) openTerminal(homedir(), line)
   })
+  ipcMain.handle('hosts:resumeLine', (_event, root: string, id: string) => (routes === undefined ? undefined : hostResumeLine(routes, root, id)))
 }
 
 function wire(): void {
@@ -778,7 +829,7 @@ function wire(): void {
   ipcMain.on('chat:open', () => openChat())
   ipcMain.on('chat:listening', () => chatListening())
   ipcMain.handle('chat:account', () => sessions?.account())
-  ipcMain.handle('chat:models', () => sessions?.models())
+  ipcMain.handle('chat:models', (_event, root: string | undefined) => sessions?.models(root ?? undefined))
   ipcMain.handle('chat:plan', () => {
     void sessions?.measure()
     return sessions?.plan()
@@ -858,9 +909,12 @@ function wire(): void {
   )
   ipcMain.on('chat:handOver', (_event, id: string) => sessions?.handOver(id))
   ipcMain.on('chat:terminal', (_event, id: string, root: string) => {
+    // Off macOS there is no terminal to open one in; pretending to would only silently open the folder.
+    if (process.platform !== 'darwin') return
     sessions?.handOver(id)
     terminalFor(root, resumeCommand(id))
   })
+  ipcMain.handle('chat:upload', (_event, root: string, path: string) => (isRemote(root) ? (routes === undefined ? undefined : hostUpload(routes, root, path)) : path))
   ipcMain.handle('chat:shell', (_event, asked: ShellCommand) => sessions?.shell(asked))
   ipcMain.on('chat:stopShell', (_event, id: string, item: string) => sessions?.stopShell(id, item))
   ipcMain.on('chat:typeShell', (_event, id: string, item: string, text: string) => sessions?.typeShell(id, item, text))
@@ -874,7 +928,7 @@ function wire(): void {
   })
   ipcMain.handle('chat:exists', (_event, root: string, path: string) => existsFor(root, path))
   ipcMain.handle('chat:file', (_event, root: string, path: string) => fileFor(root, path))
-  ipcMain.handle('chat:repo', (_event, root: string) => (isRemote(root) ? undefined : gitRepo(root)))
+  ipcMain.handle('chat:repo', (_event, root: string) => repoFor(root))
   ipcMain.handle('chat:files', (_event, root: string) => filesFor(root))
   ipcMain.on('chat:openFile', (_event, root: string, path: string) => {
     if (!isRemote(root)) openFile(getSettings().openWith, root, path)
@@ -995,7 +1049,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'shortcuts.remove': (id: string) => removeShortcut(id),
     'shortcuts.run': (id: string) => runShortcut(id, 'hand'),
     'chat.account': () => held()?.account(),
-    'chat.models': () => held()?.models(),
+    'chat.models': (root: string | undefined) => held()?.models(root),
     'chat.plan': () => {
       void held()?.measure()
       return held()?.plan()
@@ -1040,13 +1094,16 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.file': (root: string, path: string) => fileFor(root, path),
     // A page a session serves on the Mac's localhost, opened on the phone: each of its requests is made here.
     'local.fetch': (asked: LocalAsk) => localFetch(asked),
-    'chat.repo': (root: string) => (isRemote(root) ? undefined : gitRepo(root)),
+    'chat.repo': (root: string) => repoFor(root),
     'chat.files': (root: string) => filesFor(root),
     // The phone reaches hosts only through this computer: it sees them, answers what they ask, and adds their folders.
     'hosts.list': () => routes?.hosts.views() ?? [],
     'hosts.connect': (id: string) => void routes?.hosts.connect(id),
     'hosts.reconnect': (id: string) => routes?.hosts.reconnect(id),
-    'hosts.disconnect': (id: string) => routes?.hosts.disconnect(id),
+    'hosts.disconnect': (id: string) => {
+      routes?.forwards.closeHost(id)
+      routes?.hosts.disconnect(id)
+    },
     'hosts.folders': (id: string, path: string | undefined) => routes?.hosts.folders(id, path),
     'hosts.addFolder': (id: string, path: string) => routes?.hosts.addFolder(id, path),
     'hosts.prompts': () => routes?.hosts.prompts() ?? [],
@@ -1191,6 +1248,8 @@ app.on('window-all-closed', () => undefined)
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   sessions?.dispose()
+  // A debounced write still owed to a run's offset is not lost to the second it was waiting out.
+  void routes?.runs.flush()
   routes?.forwards.dispose()
   routes?.hosts.dispose()
   closePeer()

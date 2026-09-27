@@ -8,7 +8,7 @@ import type { GoalRead } from '../sessions/claude-read'
 import { edges, edgesOf, forkPointAt, goalAt, linksAt, readSessionAt, rowFrom, slug } from '../sessions/disk'
 import type { Conversation, Found } from '../sessions/disk'
 import type { HostsLike } from './hosts'
-import { deleteScript, edgesScript, growScript, hasScript, listScript } from './run-script'
+import { deleteScript, edgesScript, growScript, hasScript, listScript, readGrow } from './run-script'
 import { runOn } from './ssh'
 
 /**
@@ -84,6 +84,8 @@ export class HostDisk {
   /** Rows read before, by file, kept while the file is the size and age it was. */
   readonly #rows = new Map<string, { readonly size: number; readonly at: number; readonly row: Found | undefined }>()
   readonly #listed = new Map<string, { readonly at: number; readonly rows: Promise<(Found & { readonly below?: string })[]> }>()
+  /** One file mirrored at a time: the promise of whichever fetch for it is already in flight. */
+  readonly #mirroring = new Map<string, Promise<string | undefined>>()
 
   constructor(hosts: HostsLike, folder: string) {
     this.#hosts = hosts
@@ -152,7 +154,10 @@ export class HostDisk {
     const path = pathOf(root)
     const own = slug(path)
     const ran = await runOn(host, this.#hosts.setup(), listScript(own), { timeout: 30_000 })
-    if (ran.code !== 0) return undefined
+    if (ran.code !== 0) {
+      this.#hosts.noteFailure?.(host.id, ran)
+      return undefined
+    }
     const files = readListing(ran.out.toString('utf8')).sort((one, other) => other.at - one.at)
     const near = (file: Listed): boolean => !file.file.startsWith(`${own}/`)
     const below = (cwd: string | undefined): string | undefined => (cwd !== undefined && cwd !== path && within(cwd, path) ? cwd : undefined)
@@ -189,24 +194,49 @@ export class HostDisk {
    * The copy of one conversation's file here, brought up to date. A host that
    * is not connected is not reached for this either - the copy already here
    * answers `read`, `goal` and `forkPoint` as it last stood.
+   *
+   * Two calls for the same file are never let run at once - each waits its
+   * turn behind the one before it - so the bytes grown are never fetched
+   * twice and appended twice.
    */
   async #mirror(root: string, id: string): Promise<string | undefined> {
     const host = this.#host(root)
     if (host === undefined || !/^[A-Za-z0-9-]+$/.test(id)) return undefined
     const file = `${slug(pathOf(root))}/${id}.jsonl`
     const local = join(this.#folder, host.id, 'projects', file)
+    const before = this.#mirroring.get(file) ?? Promise.resolve()
+    const turn = before.catch(() => undefined).then(() => this.#mirrorOnce(host, file, local))
+    this.#mirroring.set(file, turn)
+    try {
+      return await turn
+    } finally {
+      if (this.#mirroring.get(file) === turn) this.#mirroring.delete(file)
+    }
+  }
+
+  /** One fetch of what a file grew by, never two of them at once for the same file (see `#mirror`). */
+  async #mirrorOnce(host: HostConfig, file: string, local: string): Promise<string | undefined> {
     const size = await stat(local).then(
       (found) => found.size,
       () => 0,
     )
     if (this.#hosts.state(host.id) !== 'up') return size > 0 ? local : undefined
-    const ran = await runOn(host, this.#hosts.setup(), growScript(file, size), { timeout: 120_000 })
-    if (ran.code !== 0) return size > 0 ? local : undefined
+    const ran = await runOn(host, this.#hosts.setup(), growScript(file, size), { timeout: 20_000 })
+    if (ran.code !== 0) {
+      this.#hosts.noteFailure?.(host.id, ran)
+      return size > 0 ? local : undefined
+    }
+    const { size: remote, grown } = readGrow(ran.out)
+    // Smaller than the mirror already kept: the file was cut short or begun again on the host, so what is kept here is dropped and it is fetched whole.
+    if (remote < size) {
+      await rm(local, { force: true })
+      return this.#mirrorOnce(host, file, local)
+    }
     await mkdir(dirname(local), { recursive: true })
-    if (ran.out.length > 0) {
+    if (grown.length > 0) {
       // Only whole lines are kept, so the next time starts where a line does.
-      const end = ran.out.lastIndexOf(10)
-      if (end >= 0) await appendFile(local, ran.out.subarray(0, end + 1))
+      const end = grown.lastIndexOf(10)
+      if (end >= 0) await appendFile(local, grown.subarray(0, end + 1))
       else if (size === 0) return undefined
     } else if (size === 0) {
       return undefined
@@ -219,11 +249,34 @@ export class HostDisk {
     return local === undefined ? undefined : readSessionAt(local, pathOf(root))
   }
 
+  /**
+   * Whether a conversation is on its host. A card is not worth asking for
+   * this, and neither is a wrong answer worth Sessions starting a fresh run
+   * in place of one only out of reach for now: not up, or the call itself
+   * failing, answers from what is kept here rather than saying it is gone.
+   */
   async has(root: string, id: string): Promise<boolean> {
     const host = this.#host(root)
     if (host === undefined || !/^[A-Za-z0-9-]+$/.test(id)) return false
-    const ran = await runOn(host, this.#hosts.setup(), hasScript(`${slug(pathOf(root))}/${id}.jsonl`), { timeout: 30_000 })
-    return ran.out.toString('utf8').trim() === 'yes'
+    const file = `${slug(pathOf(root))}/${id}.jsonl`
+    const known = await this.#knownHere(root, id, file)
+    if (this.#hosts.state(host.id) !== 'up') return known
+    const ran = await runOn(host, this.#hosts.setup(), hasScript(file), { timeout: 30_000 })
+    if (ran.code !== 0) {
+      this.#hosts.noteFailure?.(host.id, ran)
+      return known
+    }
+    return ran.out.toString('utf8').trim() === 'yes' || known
+  }
+
+  /** A copy kept here, or a row of it in the last listing read: either says it was seen, whether or not the host answers now. */
+  async #knownHere(root: string, id: string, file: string): Promise<boolean> {
+    const host = this.#host(root)
+    if (host === undefined) return false
+    const local = join(this.#folder, host.id, 'projects', file)
+    if (await stat(local).then(() => true, () => false)) return true
+    const rows = await this.#cachedListing(root)
+    return rows.some((row) => row.id === id)
   }
 
   async delete(root: string, id: string): Promise<boolean> {
@@ -231,6 +284,7 @@ export class HostDisk {
     if (host === undefined || !/^[A-Za-z0-9-]+$/.test(id)) return false
     const file = `${slug(pathOf(root))}/${id}.jsonl`
     const ran = await runOn(host, this.#hosts.setup(), deleteScript(file), { timeout: 30_000 })
+    if (ran.code !== 0) this.#hosts.noteFailure?.(host.id, ran)
     await rm(join(this.#folder, host.id, 'projects', file), { force: true })
     this.#listed.delete(root)
     return ran.code === 0

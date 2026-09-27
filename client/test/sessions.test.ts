@@ -1401,15 +1401,15 @@ describe('commands typed after !', () => {
 
   it('opens one that wants a keyboard in a terminal instead, waits for it there, and tells Claude how it ended', async () => {
     const shell = fakeShell()
-    const opened: [string, string][] = []
-    const built = build({ shell: shell.shell, terminal: (root, command) => opened.push([root, command]) })
+    const opened: [string, string, string | undefined][] = []
+    const built = build({ shell: shell.shell, terminal: (root, command, status) => opened.push([root, command, status]) })
     const id = await built.sessions.shell({ root: ROOT, command: 'gh auth login' })
     expect(shell.ran).toEqual([])
     expect(built.fanned[0]?.items[0]).toMatchObject({ kind: 'shell', terminal: true, running: true })
 
-    const [root, typed] = opened[0] ?? []
+    const [root, typed, status] = opened[0] ?? []
     expect(root).toBe(ROOT)
-    const status = /^gh auth login; echo \$\? > "(.+)"$/.exec(typed ?? '')?.[1]
+    expect(typed).toBe('gh auth login')
     expect(status).toBeDefined()
     await writeFile(status ?? '', '1\n')
     await vi.waitFor(() => expect(last(built.fanned)?.items[0]).not.toHaveProperty('running'), { timeout: 3000 })

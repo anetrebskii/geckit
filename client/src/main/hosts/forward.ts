@@ -51,38 +51,67 @@ const free = async (port: number): Promise<boolean> => {
   })
 }
 
+/** How long a forward is given to prove itself, from ssh starting to the port taking a connection: long enough for a card to be answered. */
+const READY_WITHIN = 10_000
+const POLL_EVERY = 300
+
+/** The `-L` value for a forward, bound to loopback by name rather than left to ssh's own default, which is not the same on every platform. */
+export const bindSpec = (local: number, port: number): string => `127.0.0.1:${String(local)}:localhost:${String(port)}`
+
 export class Forwards {
   readonly #hosts: Hosts
   readonly #open = new Map<string, { readonly local: number; readonly child: ChildProcessWithoutNullStreams }>()
+  /** One open() at a time per host and port: the second waits on the first rather than starting a forward of its own. */
+  readonly #opening = new Map<string, Promise<number | undefined>>()
 
   constructor(hosts: Hosts) {
     this.#hosts = hosts
   }
 
   /** The port on this computer that reaches `port` on the host, opened if it is not yet. */
-  async open(id: string, port: number): Promise<number | undefined> {
+  open(id: string, port: number): Promise<number | undefined> {
     const key = `${id}:${String(port)}`
     const was = this.#open.get(key)
-    if (was !== undefined && was.child.exitCode === null) return was.local
+    if (was !== undefined && was.child.exitCode === null) return Promise.resolve(was.local)
+    const already = this.#opening.get(key)
+    if (already !== undefined) return already
+    const opening = this.#openNow(key, id, port).finally(() => {
+      if (this.#opening.get(key) === opening) this.#opening.delete(key)
+    })
+    this.#opening.set(key, opening)
+    return opening
+  }
+
+  async #openNow(key: string, id: string, port: number): Promise<number | undefined> {
     const host = this.#hosts.config(id)
     if (host === undefined) return undefined
     let local = port < 1024 ? 8000 + port : port
     while (!(await free(local)) && local < 65535) local += 1
-    const child = spawnOn(host, this.#hosts.setup(), '', { forward: `${String(local)}:localhost:${String(port)}`, alone: true })
+    const child = spawnOn(host, this.#hosts.setup(), '', { forward: bindSpec(local, port), alone: true })
     child.stdin.end()
     this.#open.set(key, { local, child })
     child.once('close', () => {
       if (this.#open.get(key)?.child === child) this.#open.delete(key)
     })
-    // The forward is ready once ssh has not failed to make it within a moment.
-    const failed = await new Promise<boolean>((done) => {
-      const timer = setTimeout(() => done(false), 1_500)
-      child.once('close', () => {
-        clearTimeout(timer)
-        done(true)
-      })
+    // Ready once the port itself takes a connection, not merely once ssh has not yet failed: a password host puts a card up first, and the port is not there until it is answered.
+    const ready = await new Promise<boolean>((done) => {
+      let settled = false
+      const finish = (yes: boolean): void => {
+        if (settled) return
+        settled = true
+        clearInterval(poll)
+        clearTimeout(limit)
+        done(yes)
+      }
+      child.once('close', () => finish(false))
+      const poll = setInterval(() => {
+        void answers(local, '127.0.0.1').then((yes) => {
+          if (yes) finish(true)
+        })
+      }, POLL_EVERY)
+      const limit = setTimeout(() => finish(false), READY_WITHIN)
     })
-    return failed ? undefined : local
+    return ready ? local : undefined
   }
 
   closeHost(id: string): void {

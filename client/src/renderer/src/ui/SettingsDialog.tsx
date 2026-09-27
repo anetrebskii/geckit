@@ -24,7 +24,7 @@ const PROVIDERS: readonly { value: AIProvider; label: string }[] = [
 ]
 
 const THEMES: readonly { value: Theme; label: string; says: string }[] = [
-  { value: 'system', label: 'System', says: 'as the machine is set' },
+  { value: 'system', label: 'System', says: 'as the system is set' },
   { value: 'light', label: 'Light', says: '' },
   { value: 'dark', label: 'Dark', says: '' },
 ]
@@ -561,7 +561,7 @@ export function PhoneAccess({ on, change }: { readonly on: boolean; readonly cha
         Open the conversations on your phone
       </label>
       <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
-        Scan the code with the GeckIt app on your iPhone. The phone talks to this Mac directly, and only with the key in this code.
+        Scan the code with the GeckIt app on your iPhone. The phone talks to this computer directly, and only with the key in this code.
       </span>
       {on && view.qr !== undefined ? (
         <div className="phone-link">

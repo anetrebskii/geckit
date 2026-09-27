@@ -43,3 +43,8 @@
 - [x] T135 A listing that failed wrote an empty cache over the last one; a failed read keeps it
 - [x] T136 A port taken here for IPv6 alone looked free, so a host's page and a local dev server shared `localhost`; a port that answers on 127.0.0.1 or ::1 is taken
 - [x] T137 A typed password not remembered was dropped after Add a host; it is kept while GeckIt runs, as before
+
+## From the audit of the whole host path
+
+- [x] T140 Audited main, the renderer and the host lifecycle for places that took a root to be local (three read-only passes) and fixed what they found: a conversation in a subfolder of a host project is on the host; permission cards read paths against the host's own folder; models are the host's own claude's; a file dropped on a host conversation is copied there; a terminal's exit status is written here; the account gate and off-plan broadcast are this computer's only; background task output is not read from this computer for a host
+- [x] T141 ssh questions left unanswered by a connection that went away are taken off; a card up for a host holds that command's timeout; a stored password is offered to each new connection; a run attaching while connecting shows the host up; reattach does not read past an unanswered request; runs.json is written on quit

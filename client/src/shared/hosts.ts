@@ -182,9 +182,13 @@ export function hostIdFor(name: string, taken: readonly string[]): string {
 }
 
 /** Why a draft cannot be connected, or nothing where it can. */
-export function draftProblem(draft: Pick<HostDraft, 'address' | 'port' | 'name'>): string | undefined {
+export function draftProblem(draft: Pick<HostDraft, 'address' | 'port' | 'name' | 'user' | 'keyFile'>): string | undefined {
   if (draft.address.trim() === '') return 'Type the address of the host.'
   if (/\s/.test(draft.address.trim())) return 'The address has a space in it.'
+  // Read by ssh itself, so one starting with a dash would be taken for an option rather than a destination.
+  if (draft.address.trim().startsWith('-')) return 'The address cannot start with a dash.'
+  if (draft.user.trim().startsWith('-')) return 'The user cannot start with a dash.'
+  if (draft.keyFile !== undefined && draft.keyFile.trim().startsWith('-')) return 'The key file cannot start with a dash.'
   if (!Number.isInteger(draft.port) || draft.port < 1 || draft.port > 65535) return 'The port is a number from 1 to 65535.'
   if (draft.name.trim().length > 40) return 'The name is at most 40 characters.'
   return undefined

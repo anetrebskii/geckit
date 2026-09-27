@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 
 import { Code } from './Code'
 import { issuesIn } from '../../../shared/issues'
+import { isRemote } from '../../../shared/hosts'
 import { pathIn, pathOfLink, pathsIn } from '../../../shared/paths'
 
 /**
@@ -27,6 +28,10 @@ interface Node {
 export type FileHow = 'open' | 'reveal' | 'menu'
 
 export const OPENS = 'Open it. Cmd+click shows it in the Finder, right-click chooses what opens it.'
+/** A file on a host has nothing here to reveal it in or hand it to: pressing it only reads it in this window. */
+export const OPENS_ON_HOST = 'Open it, read here: a host has no Finder or application on this computer to open it in.'
+/** What pressing a file promises, which differs for a project on a host. */
+export const opensTitle = (root: string | undefined): string => (root !== undefined && isRemote(root) ? OPENS_ON_HOST : OPENS)
 
 /** The project the paths in an answer are said from, and what pressing one does. */
 export const Files = createContext<
@@ -79,7 +84,7 @@ function Mention({
       className="file-link"
       role="link"
       tabIndex={0}
-      title={OPENS}
+      title={opensTitle(files.root)}
       onClick={(event) => {
         // Letting go after selecting part of it is not a press.
         if (window.getSelection()?.isCollapsed === false) return

@@ -101,7 +101,8 @@ const geckit = {
   chat: {
     open: (): void => ipcRenderer.send('chat:open'),
     account: (): Promise<ClaudeAccount> => ipcRenderer.invoke('chat:account'),
-    models: (): Promise<ClaudeModel[] | undefined> => ipcRenderer.invoke('chat:models'),
+    /** A project's own root asks a host's own claude, where one is given; without it, this computer's. */
+    models: (root?: string): Promise<ClaudeModel[] | undefined> => ipcRenderer.invoke('chat:models', root),
     /** The plan's windows as last measured. Asking has them measured again; the fresh ones arrive through onPlan. */
     plan: (): Promise<PlanUsage | undefined> => ipcRenderer.invoke('chat:plan'),
     onPlan: (said: (plan: PlanUsage) => void): (() => void) => listen('chat:plan', said),
@@ -205,6 +206,8 @@ const geckit = {
     repo: (root: string): Promise<string | undefined> => ipcRenderer.invoke('chat:repo', root),
     /** Every file and folder in a project, as paths from it, for @. */
     files: (root: string): Promise<string[]> => ipcRenderer.invoke('chat:files', root),
+    /** A file carried to a project on a host, for a message to point at: where it landed there, or unchanged for a local root. */
+    upload: (root: string, path: string): Promise<string | undefined> => ipcRenderer.invoke('chat:upload', root, path),
     openLink: (href: string): void => ipcRenderer.send('open:link', href),
     onSessions: (said: (sessions: readonly ChatSession[]) => void): (() => void) =>
       listen('chat:sessions', said),
@@ -253,6 +256,8 @@ const geckit = {
     install: (id: string): Promise<{ readonly ok: boolean; readonly text: string }> => ipcRenderer.invoke('hosts:install', id),
     /** A terminal signed in to the host, running `run` there where one is given. */
     terminal: (id: string, run?: string): void => ipcRenderer.send('hosts:terminal', id, run ?? null),
+    /** What a terminal types to resume a particular conversation on a host; nothing for a local root. */
+    resumeLine: (root: string, id: string): Promise<string | undefined> => ipcRenderer.invoke('hosts:resumeLine', root, id),
   },
 
   voice: {

@@ -109,6 +109,22 @@ export function forgetProject(root: string): Settings {
   })
 }
 
+/**
+ * Every trace of every root a test says yes to - a whole host going, say,
+ * rather than one project by hand - taken off the list, its place in a
+ * profile, its colour, and Chat's own filter: `forgetProject` alone left
+ * those last two standing after their root was already gone.
+ */
+export function forgetRoots(matches: (root: string) => boolean): Settings {
+  const now = getSettings()
+  return setSettings({
+    projects: now.projects.filter((one) => !matches(one)),
+    profiles: now.profiles.map((one) => ({ ...one, projects: one.projects.filter((kept) => !matches(kept)) })),
+    projectColors: Object.fromEntries(Object.entries(now.projectColors).filter(([root]) => !matches(root))),
+    chatProjects: now.chatProjects.filter((one) => !matches(one)),
+  })
+}
+
 /** What the tool's own session file will not say back, kept beside it. */
 export function notesStore(): NotesStore {
   let notes = read<Record<string, SessionNote>>(NOTES, {}) ?? {}
