@@ -84,8 +84,8 @@ export class HostDisk {
   /** Rows read before, by file, kept while the file is the size and age it was. */
   readonly #rows = new Map<string, { readonly size: number; readonly at: number; readonly row: Found | undefined }>()
   readonly #listed = new Map<string, { readonly at: number; readonly rows: Promise<(Found & { readonly below?: string })[]> }>()
-  /** One file mirrored at a time: the promise of whichever fetch for it is already in flight. */
-  readonly #mirroring = new Map<string, Promise<string | undefined>>()
+  /** One file touched at a time: the promise of whichever fetch or delete for it is already in flight, so neither ever lands after the other. */
+  readonly #mirroring = new Map<string, Promise<unknown>>()
 
   constructor(hosts: HostsLike, folder: string) {
     this.#hosts = hosts
@@ -279,15 +279,51 @@ export class HostDisk {
     return rows.some((row) => row.id === id)
   }
 
+  /**
+   * Deletes a conversation on its host, its mirror here, and its row in the
+   * listing kept for when the host is not connected - the last of those is
+   * what `has` and a board shown from a cached listing read, so left behind
+   * it would keep saying a deleted conversation is still there. Goes through
+   * the same one-at-a-time queue as `#mirror`, so a fetch already in flight
+   * for the file cannot land after the delete and leave a mirror behind it.
+   */
   async delete(root: string, id: string): Promise<boolean> {
     const host = this.#host(root)
     if (host === undefined || !/^[A-Za-z0-9-]+$/.test(id)) return false
     const file = `${slug(pathOf(root))}/${id}.jsonl`
+    const local = join(this.#folder, host.id, 'projects', file)
+    const before = this.#mirroring.get(file) ?? Promise.resolve()
+    const turn = before.catch(() => undefined).then(() => this.#deleteOnce(host, root, id, file, local))
+    this.#mirroring.set(file, turn)
+    try {
+      return await turn
+    } finally {
+      if (this.#mirroring.get(file) === turn) this.#mirroring.delete(file)
+    }
+  }
+
+  /** One delete, never run at the same time as a fetch of the same file's mirror (see `delete`). */
+  async #deleteOnce(host: HostConfig, root: string, id: string, file: string, local: string): Promise<boolean> {
     const ran = await runOn(host, this.#hosts.setup(), deleteScript(file), { timeout: 30_000 })
     if (ran.code !== 0) this.#hosts.noteFailure?.(host.id, ran)
-    await rm(join(this.#folder, host.id, 'projects', file), { force: true })
+    await rm(local, { force: true })
+    this.#rows.delete(file)
     this.#listed.delete(root)
+    await this.#dropFromCachedListing(host.id, root, id)
     return ran.code === 0
+  }
+
+  /** The row of a deleted conversation dropped from the listing kept on disk for when the host is not connected, so `has` and a board shown from it do not go on saying it is there. */
+  async #dropFromCachedListing(hostId: string, root: string, id: string): Promise<void> {
+    const path = this.#listingPath(hostId, root)
+    const rows = await readFile(path, 'utf8').then(
+      (text) => JSON.parse(text) as (Found & { readonly below?: string })[],
+      () => undefined,
+    )
+    if (rows === undefined) return
+    const kept = rows.filter((row) => row.id !== id)
+    if (kept.length === rows.length) return
+    await writeFile(path, JSON.stringify(kept)).catch(() => undefined)
   }
 
   async goal(root: string, id: string): Promise<GoalRead> {
@@ -309,14 +345,16 @@ export class HostDisk {
   }
 
   /**
-   * Every conversation mirrored from any host, last written from one time up
+   * Every conversation known here from any host, last written from one time up
    * to another, for Hidden conversations: the same search `everyClaude` does
-   * of `~/.claude/projects`, but of what has been fetched from hosts into the
-   * copies kept here. `cwd` comes back as the project's root, host and all, so
-   * it is matched against a project the way a local row's already is.
+   * of `~/.claude/projects`, but of the copies kept here and, for one never
+   * opened here, the row its project's last listing kept of it, so nothing is
+   * asked of a host for it. `cwd` comes back as the project's root, host and
+   * all, so it is matched against a project the way a local row's already is.
    */
   async every(from: number, to: number, wanted: (id: string) => boolean): Promise<Found[]> {
     const found: Found[] = []
+    const seen = new Set<string>()
     for (const hostId of await readdir(this.#folder).catch(() => [])) {
       const host = this.#hosts.config(hostId)
       if (host === undefined) continue
@@ -332,6 +370,19 @@ export class HostDisk {
           if (file === undefined || file.size === 0 || file.mtimeMs < from || file.mtimeMs >= to) continue
           const row = rowFrom({ id, at: file.mtimeMs }, await edges(path, file.size).catch(() => ({ head: [], tail: [], cut: '' })))
           if (row === undefined) continue
+          seen.add(id)
+          found.push(row.cwd === undefined ? row : { ...row, cwd: remoteRoot(hostId, row.cwd) })
+        }
+      }
+      const listed = join(this.#folder, hostId, 'listed')
+      for (const name of await readdir(listed).catch(() => [])) {
+        const rows = await readFile(join(listed, name), 'utf8').then(
+          (text) => JSON.parse(text) as (Found & { readonly below?: string })[],
+          () => [],
+        )
+        for (const { below: _below, ...row } of rows) {
+          if (seen.has(row.id) || row.at < from || row.at >= to || !wanted(row.id)) continue
+          seen.add(row.id)
           found.push(row.cwd === undefined ? row : { ...row, cwd: remoteRoot(hostId, row.cwd) })
         }
       }
@@ -339,9 +390,16 @@ export class HostDisk {
     return found
   }
 
-  /** Forgets a host's copies when it is removed. */
+  /**
+   * Forgets a host's copies when it is removed: the folders on disk, and what
+   * was kept of it in memory, so a list or a row read a moment later never
+   * answers from a host that is no longer here.
+   */
   async forget(host: string): Promise<void> {
     await rm(join(this.#folder, host, 'projects'), { recursive: true, force: true })
     await rm(join(this.#folder, host, 'listed'), { recursive: true, force: true })
+    for (const root of [...this.#listed.keys()]) if (hostOf(root) === host) this.#listed.delete(root)
+    // Rows are kept by the host's own path, which does not name the host: cleared whole rather than left to answer for a host that is gone.
+    this.#rows.clear()
   }
 }

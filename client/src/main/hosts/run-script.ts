@@ -287,6 +287,21 @@ export function readCheck(out: string): { readonly missing: boolean; readonly pa
   }
 }
 
+/**
+ * A file dropped on a conversation on a host, written there from stdin into a
+ * folder of its own under `~/.geckit/uploads`; prints only where it landed.
+ * Copies older than a week are let go on the way, since nothing else would.
+ */
+export function uploadScript(id: string, name: string): string {
+  const d = `"$HOME/.geckit/uploads/${safeId(id)}"`
+  return [
+    'find "$HOME/.geckit/uploads" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} + 2>/dev/null',
+    `mkdir -p ${d} || exit 1`,
+    `cat > ${d}/${quote(name)} || exit 1`,
+    `printf '%s/%s' ${d} ${quote(name)}`,
+  ].join('\n')
+}
+
 /** Runs a command in a folder on the host, with a login shell's setup, as a `!` command runs here. */
 export function shellScript(cwd: string, command: string): string {
   return [PREAMBLE, `cd ${quote(cwd)} || exit 1`, `exec "\${SHELL:-/bin/sh}" -lc ${quote(command)}`].join('\n')
@@ -314,6 +329,15 @@ export function readFileScript(cwd: string, path: string): string {
 /** Prints `yes` or `no` for whether a path said in a conversation is there. */
 export function existsScript(cwd: string, path: string): string {
   return [`cd ${quote(cwd)} 2>/dev/null || cd "$HOME"`, `f=${quote(path)}`, 'case "$f" in "~/"*) f="$HOME/${f#\\~/}";; esac', 'if [ -e "$f" ]; then echo yes; else echo no; fi'].join('\n')
+}
+
+/**
+ * Prints `yes` or `no` for whether a folder itself is there, with no fallback
+ * to `$HOME` on a missing one: a folder that a hidden conversation once ran in
+ * and that is gone must read as gone, not as `$HOME` standing in for it.
+ */
+export function dirScript(path: string): string {
+  return `if [ -d ${quote(path)} ]; then echo yes; else echo no; fi`
 }
 
 /** Runs `claude` in a folder on the host for a short question, without the variables that take it off the plan. */

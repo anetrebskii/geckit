@@ -87,6 +87,8 @@ export interface Chat {
   readonly pictures: readonly SessionImage[]
   /** Said when something was pasted that cannot be sent. */
   readonly trouble: string
+  /** A file dropped on a conversation on a host is still being copied there: the message waits for its path. */
+  readonly uploading: boolean
   readonly account: ClaudeAccount | undefined
   /** How much of the plan is spent, once a turn has said. */
   readonly plan: PlanUsage | undefined
@@ -121,7 +123,8 @@ export interface Chat {
   dropPicture: (at: number) => void
   setMode: (mode: SessionMode) => void
   setModel: (model: string) => void
-  askModels: () => void
+  /** Asks which models the Claude Code that runs a project has: the chat's own project where none is given. */
+  askModels: (root?: string) => void
   send: (again?: string, said?: string) => void
   /** A general question, in no project, which the board and the list never show. */
   ask: (text: string, images?: readonly SessionImage[]) => void
@@ -162,7 +165,8 @@ export interface Chat {
   remove: (ids: readonly string[]) => void
   terminal: (id: string) => void
   /** Puts the command that continues it in a terminal on the clipboard, and lets go of it here. */
-  copyTerminal: (id: string) => void
+  /** Copies the line that continues a conversation in a terminal, and lets go of it here; answers whether a line was copied. */
+  copyTerminal: (id: string) => Promise<boolean>
   refresh: () => void
 }
 
@@ -189,9 +193,16 @@ export function useChat(): Chat {
   }, [drafts])
   const [pictures, setPictures] = useState<Record<string, readonly SessionImage[]>>({})
   const [trouble, setTrouble] = useState('')
+  // Files still being copied to a host, by the conversation they were dropped on.
+  const [uploads, setUploads] = useState<Readonly<Record<string, number>>>({})
+  const uploadsRef = useRef(uploads)
+  useEffect(() => {
+    uploadsRef.current = uploads
+  }, [uploads])
   const [account, setAccount] = useState<ClaudeAccount | undefined>()
   const [plan, setPlan] = useState<PlanUsage | undefined>()
-  const [models, setModels] = useState<ModelsSaid>('unasked')
+  // Which Claude Code the list is of, this computer's ('') or a host's by id: each has its own models, and a list is never shown for the other.
+  const [models, setModels] = useState<{ readonly on: string; readonly said: ModelsSaid }>({ on: '', said: 'unasked' })
   const [focusSeed, setFocusSeed] = useState(0)
   // The projects the list shows, kept from last time. None of them is every one of the profile's.
   const chosen = useMemo<readonly string[]>(() => {
@@ -431,6 +442,7 @@ export function useChat(): Chat {
 
   const addFiles = useCallback((files: readonly File[]) => {
     const dropped = files.filter((one) => !canShow(one))
+    let copying = false
     if (dropped.length > 0) {
       const where = rootRef.current
       const key = keyOf(shownRef.current)
@@ -442,23 +454,30 @@ export function useChat(): Chat {
           addPath(key, local)
           continue
         }
-        const there = hostName(where) ?? where
-        const busy = `Copying ${one.name} to ${there}...`
+        const busy = `Copying ${one.name} to ${hostName(where) ?? where}...`
+        const count = (by: number): void => setUploads((held) => ({ ...held, [key]: Math.max(0, (held[key] ?? 0) + by) }))
+        copying = true
+        count(1)
         setTrouble(busy)
-        void window.geckit.chat.upload(where, local).then((remote) => {
-          setTrouble((now) => (now === busy ? '' : now))
-          if (remote === undefined) {
-            setTrouble(`Could not copy ${one.name} to ${there}`)
-            return
-          }
-          addPath(key, remote)
-        })
+        void window.geckit.chat
+          .upload(where, local)
+          .catch(() => ({ problem: `Could not copy ${one.name}.` }))
+          .then((landed) => {
+            count(-1)
+            if ('problem' in landed) {
+              setTrouble(landed.problem)
+              return
+            }
+            setTrouble((now) => (now === busy ? '' : now))
+            addPath(key, landed.path)
+          })
       }
     }
 
     const wanted = files.filter(canShow)
     if (wanted.length === 0) return
-    setTrouble('')
+    // A copy under way keeps its line; only a drop of pictures alone starts from a clean one.
+    if (!copying) setTrouble('')
     void Promise.all(wanted.map((file) => asImage(file).catch(() => undefined))).then((read) => {
       const kept = read.filter((one): one is SessionImage => one !== undefined)
       if (kept.length < wanted.length) setTrouble('A picture was too big to send')
@@ -502,6 +521,8 @@ export function useChat(): Chat {
       // Words given here, as Continue gives them, go without touching what is typed in the field.
       const text = said ?? now.drafts[key] ?? ''
       const carried = said === undefined ? (now.pictures[key] ?? []) : []
+      // The path of a file still on its way to the host is not in the words yet; it goes once it is.
+      if (said === undefined && (uploadsRef.current[key] ?? 0) > 0) return
       if (where === undefined || (again === undefined && text.trim() === '' && carried.length === 0)) return
       // A message that starts with ! is a command for the project folder, as in the terminal.
       const command = again === undefined && said === undefined && text.trim().startsWith('!') ? text.trim().slice(1).trim() : undefined
@@ -715,16 +736,24 @@ export function useChat(): Chat {
 
   const copyTerminal = useCallback((id: string) => {
     const where = sessionsRef.current.find((one) => one.id === id)?.root ?? rootRef.current
-    if (where === undefined) return
+    if (where === undefined) return Promise.resolve(false)
     // On a host, the line a local terminal would type is that host's own; nothing here says `cd` into an address ssh does not read.
     const line =
       hostOf(where) === undefined
         ? Promise.resolve<string | undefined>(`cd ${JSON.stringify(where)} && ${resumeCommand(id)}`)
         : window.geckit.hosts.resumeLine(where, id)
-    void line.then((said) => {
-      if (said !== undefined) void navigator.clipboard.writeText(said)
-    })
-    window.geckit.chat.handOver(id)
+    // Handed over only once the line is on the clipboard: a host out of reach gives none, and the conversation stays here.
+    return line
+      .then(async (said) => {
+        if (said === undefined) {
+          setTrouble(`Could not reach ${hostName(where) ?? where} for the line that continues it`)
+          return false
+        }
+        await navigator.clipboard.writeText(said)
+        window.geckit.chat.handOver(id)
+        return true
+      })
+      .catch(() => false)
   }, [])
 
   const startNew = useCallback(() => open({ kind: 'new' }), [open])
@@ -752,9 +781,10 @@ export function useChat(): Chat {
     draft,
     pictures: pictures[keyOf(shown)] ?? NONE,
     trouble,
+    uploading: (uploads[keyOf(shown)] ?? 0) > 0,
     account,
     plan,
-    models,
+    models: models.said,
     mode,
     model,
     working,
@@ -802,9 +832,14 @@ export function useChat(): Chat {
       }
     },
     // Asked at every opening: main keeps the answer, and asks Claude Code again once another version of it answers. On a host it is that host's models, not this computer's.
-    askModels: () => {
-      if (!Array.isArray(models)) setModels('asking')
-      void window.geckit.chat.models(rootRef.current).then((said) => setModels((held) => said ?? (Array.isArray(held) ? held : 'unsaid')))
+    askModels: (root) => {
+      const where = root ?? rootRef.current
+      const on = where === undefined ? '' : (hostOf(where) ?? '')
+      setModels((held) => (held.on === on && Array.isArray(held.said) ? held : { on, said: 'asking' }))
+      // An answer for a Claude Code asked about before another was is not this one's, and is let go.
+      void window.geckit.chat
+        .models(where)
+        .then((said) => setModels((held) => (held.on !== on ? held : { on, said: said ?? (Array.isArray(held.said) ? held.said : 'unsaid') })))
     },
     send,
     ask,

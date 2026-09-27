@@ -71,19 +71,21 @@ describe('a file carried to a host', () => {
 
   it('is handed back unchanged for a local root, nothing read or reached', async () => {
     const routes = fakeRoutes('idle')
-    expect(await hostUpload(routes, '/Users/leo/trailmap', join(folder, 'shot.png'))).toBe(join(folder, 'shot.png'))
+    expect(await hostUpload(routes, '/Users/leo/trailmap', join(folder, 'shot.png'))).toEqual({ path: join(folder, 'shot.png') })
   })
 
-  it('is nothing where the host is not up, without a connection attempted', async () => {
+  it('is a problem where the host is not up, without a connection attempted', async () => {
     const path = join(folder, 'shot.png')
     await writeFile(path, 'x')
     const routes = fakeRoutes('lost')
-    expect(await hostUpload(routes, 'ssh://devbox/home/leo/trailmap', path)).toBeUndefined()
+    expect(await hostUpload(routes, 'ssh://devbox/home/leo/trailmap', path)).toEqual({ problem: 'Could not copy shot.png: devbox is not connected.' })
   })
 
-  it('is nothing for a file that is not there, even where the host is up', async () => {
+  it('is a problem for a file that is not there, even where the host is up', async () => {
     const routes = fakeRoutes('up')
-    expect(await hostUpload(routes, 'ssh://devbox/home/leo/trailmap', join(folder, 'missing.png'))).toBeUndefined()
+    expect(await hostUpload(routes, 'ssh://devbox/home/leo/trailmap', join(folder, 'missing.png'))).toEqual({
+      problem: 'Could not copy missing.png: it is not there any more.',
+    })
   })
 })
 

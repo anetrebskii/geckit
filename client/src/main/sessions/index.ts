@@ -321,7 +321,7 @@ const there = (path: string): Promise<boolean> =>
  * computer, since that is all a script run over ssh knows to say. Read here as
  * a project root is everywhere else, `ssh://<host><path>`, unless it is one already.
  */
-const belowRoot = (root: string, below: string): string => {
+export const belowRoot = (root: string, below: string): string => {
   const host = hostOf(root)
   return host === undefined || isRemote(below) ? below : remoteRoot(host, below)
 }
@@ -1331,22 +1331,31 @@ export class Sessions {
       return note?.here === true || note?.shown === true || (row !== undefined && !row.driven)
     }
     const found = await (this.#deps.disk?.every ?? everyClaude)(older ? 0 : edge, older ? edge : Infinity, (id) => !listed(id))
+    // Which reason, if any, keeps each row worth showing, before a folder is even asked for: figured once per row so a folder shared by several rows is asked about only once below.
+    const candidates = found
+      .map((row) => {
+        const where = row.cwd ?? ''
+        const project = projectOf(where, projects)
+        const note = notes[row.id]
+        // A program's conversation in the home folder is a general question asked here, which is never listed.
+        if (row.driven && where === homedir() && note?.hidden !== true) return undefined
+        const reason: HiddenReason | undefined =
+          note?.hidden === true
+            ? 'hidden'
+            : row.driven && note?.here !== true && note?.shown !== true
+              ? 'driven'
+              : project === undefined && note?.here !== true
+                ? 'terminal'
+                : undefined
+        return reason === undefined ? undefined : { row, where, note, reason }
+      })
+      .filter((one): one is NonNullable<typeof one> => one !== undefined)
+    const ask = this.#deps.there ?? there
+    const folderNames = [...new Set(candidates.map((one) => one.where))]
+    const standing = new Map(await Promise.all(folderNames.map(async (where): Promise<[string, boolean]> => [where, await ask(where)])))
     const folders = new Map<string, HiddenChat[]>()
-    for (const row of found) {
-      const where = row.cwd ?? ''
-      const project = projectOf(where, projects)
-      const note = notes[row.id]
-      // A program's conversation in the home folder is a general question asked here, which is never listed.
-      if (row.driven && where === homedir() && note?.hidden !== true) continue
-      const reason: HiddenReason | undefined =
-        note?.hidden === true
-          ? 'hidden'
-          : row.driven && note?.here !== true && note?.shown !== true
-            ? 'driven'
-            : project === undefined && note?.here !== true
-              ? 'terminal'
-              : undefined
-      if (reason === undefined || !(await (this.#deps.there ?? there)(where))) continue
+    for (const { row, where, note, reason } of candidates) {
+      if (standing.get(where) !== true) continue
       const chats = folders.get(where) ?? []
       chats.push({ id: row.id, title: note?.title ?? row.title, stands: row.stands, at: row.at, reason })
       folders.set(where, chats)
@@ -1387,6 +1396,19 @@ export class Sessions {
     this.#note(id, { hidden: true })
     void this.#letGo(id)
     this.#changed()
+  }
+
+  /**
+   * Every conversation's id held here, live or only listed, whose root a test
+   * says yes to - a host going for good, say, asking what else that keeps
+   * track of one by id (favorites) should let go of too. Only what has already
+   * been read into memory this run: one never listed here is not among these.
+   */
+  ids(matches: (root: string) => boolean): string[] {
+    const ids = new Set<string>()
+    for (const [id, row] of this.#rows) if (matches(row.root)) ids.add(id)
+    for (const [id, live] of this.#live) if (matches(live.root)) ids.add(id)
+    return [...ids]
   }
 
   /**

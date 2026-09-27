@@ -767,6 +767,20 @@ describe('the list', () => {
     expect(all[0]).toMatchObject({ id: 'below', root: `${ROOT}/client`, project: ROOT })
   })
 
+  it('gives back every id whose root matches, held or only listed, for a host going for good to let favorites of it go too', async () => {
+    const built = build({
+      disk: {
+        list: async () => [{ id: 'from-a-terminal', title: 'Written elsewhere', stands: '', at: 500, driven: false }],
+        read: async () => undefined,
+        has: async () => false,
+      },
+    })
+    const live = await started(built)
+    await built.sessions.list([ROOT])
+    expect(built.sessions.ids((root) => root === ROOT).sort()).toEqual(['from-a-terminal', live].sort())
+    expect(built.sessions.ids((root) => root === '/somewhere/else')).toEqual([])
+  })
+
   it('keeps one below two projects under the nearer', async () => {
     const outer = '/work'
     const built = build({
@@ -840,6 +854,26 @@ describe('the list', () => {
       },
       { path: '/work/notes', chats: [{ id: 'notes', title: 'notes', stands: '', at: 600, reason: 'terminal' }] },
     ])
+  })
+
+  it('asks whether a folder is there only once, however many rows of it are found', async () => {
+    const kept = (id: string, cwd: string, at: number): Found => ({ id, title: id, stands: '', at, driven: false, cwd })
+    const asked: string[] = []
+    const built = build({
+      disk: {
+        list: async () => [],
+        read: async () => undefined,
+        has: async () => false,
+        every: async () => [kept('one', '/work/notes', 900), kept('two', '/work/notes', 800), kept('three', '/work/notes', 700)],
+      },
+      there: async (path) => {
+        asked.push(path)
+        return true
+      },
+    })
+    const folders = await built.sessions.hidden([ROOT], false)
+    expect(asked).toEqual(['/work/notes'])
+    expect(folders[0]?.chats.map((one) => one.id)).toEqual(['one', 'two', 'three'])
   })
 
   it('lists several projects at once, newest first', async () => {
