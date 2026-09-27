@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { modelName, programLine, SESSION_MODES } from '../../../shared/api'
 import type { SessionMode } from '../../../shared/api'
 import { mentionAt, pathsFor } from '../../../shared/paths'
-import { dictate } from '../dictate'
+import { dictate, languageCode, useDictationLanguage } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
@@ -60,7 +60,8 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   // The phrase a long press or a right click is on, asked about before it goes.
   const [unphrasing, setUnphrasing] = useState<{ readonly phrase: string; readonly at: DOMRect } | undefined>()
   const phraseHeld = useRef<{ timer: number; held: boolean }>({ timer: 0, held: false })
-  const [listening, setListening] = useState(false)
+  const [listening, setListening] = useState<string | undefined>()
+  const [spoken, flipSpoken] = useDictationLanguage(chat.settings.nativeLanguage, chat.settings.secondLanguage)
   const [unheard, setUnheard] = useState<string | undefined>()
   const [looking, setLooking] = useState<string | undefined>()
   const submit = (): void => {
@@ -192,18 +193,19 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const listen = (): void => {
     const ears = dictate()
     if (ears === undefined) return
-    if (listening) {
+    if (listening !== undefined) {
       ears.stop()
+      setListening(undefined)
       return
     }
     const kept = chat.draft.trimEnd()
     setUnheard(undefined)
-    setListening(true)
+    setListening(spoken)
     tap('light')
     ears
-      .start(chat.settings.nativeLanguage, (text) => chat.setDraft(kept === '' ? text : `${kept} ${text}`), () => setListening(false))
+      .start(spoken, (text) => chat.setDraft(kept === '' ? text : `${kept} ${text}`), () => setListening(undefined))
       .catch((error: unknown) => {
-        setListening(false)
+        setListening(undefined)
         setUnheard(error instanceof Error ? error.message : String(error))
       })
   }
@@ -542,15 +544,15 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             chat.root === undefined
               ? 'Add a project folder first'
               : ON_PHONE
-                ? listening
-                  ? 'Listening'
+                ? listening !== undefined
+                  ? `Listening in ${listening}`
                   : (unheard ?? 'Message')
                 : chat.working
                   ? 'Send more: it waits until Claude finishes. ! runs a command now'
                   : 'Ask Claude Code. @ picks a file, ! runs a command'
           }
           disabled={chat.root === undefined}
-          readOnly={listening}
+          readOnly={listening !== undefined}
           onChange={(event) => {
             recall.current = undefined
             chat.setDraft(event.target.value)
@@ -689,7 +691,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             </span>
           ) : null}
           <div className="spacer" />
-          {chat.working && !listening && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
+          {chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
             <button
               type="button"
               className="send"
@@ -703,15 +705,27 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           ) : null}
           {/* The phone has room for one round button in the field: typed text makes it Queue, and Stop stays under More. */}
           {/* On the phone an empty field offers dictation in the send button's place, as Messages does. */}
-          {ON_PHONE && dictate() !== undefined && (listening || (!chat.working && chat.draft.trim() === '' && chat.pictures.length === 0)) ? (
+          {/* Beside the mic, the language it listens in: a press switches to the other of the two in Settings, and it stays so. */}
+          {/* With a picture attached Send keeps its place, and the mic and language sit to its left, so words can still be said to go with it. */}
+          {ON_PHONE && dictate() !== undefined && listening === undefined && !chat.working && chat.draft.trim() === '' ? (
+            <button type="button" className={chat.pictures.length > 0 ? 'spoken beside' : 'spoken'} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
+              {languageCode(spoken)}
+            </button>
+          ) : null}
+          {ON_PHONE && dictate() !== undefined && listening === undefined && !chat.working && chat.draft.trim() === '' && chat.pictures.length > 0 ? (
+            <button type="button" className="send mic beside" disabled={cannot} onClick={listen} aria-label={`Dictate in ${spoken}`}>
+              <Icon name="mic" size={16} />
+            </button>
+          ) : null}
+          {ON_PHONE && dictate() !== undefined && (listening !== undefined || (!chat.working && chat.draft.trim() === '' && chat.pictures.length === 0)) ? (
             <button
               type="button"
-              className={listening ? 'send listening' : 'send'}
+              className={listening !== undefined ? 'send listening' : 'send'}
               disabled={cannot}
               onClick={listen}
-              aria-label={listening ? 'Stop dictating' : 'Dictate'}
+              aria-label={listening !== undefined ? 'Stop dictating' : `Dictate in ${spoken}`}
             >
-              <Icon name={listening ? 'stop' : 'mic'} size={listening ? 12 : 16} />
+              <Icon name={listening !== undefined ? 'stop' : 'mic'} size={listening !== undefined ? 12 : 16} />
             </button>
           ) : chat.working && ON_PHONE && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? null : chat.working ? (
             <button type="button" className="send stop" onClick={chat.stop} title={chat.settings.chatView === 'board' ? `Stop (${MOD}+.)` : `Stop (Esc, ${MOD}+.)`} aria-label="Stop">
