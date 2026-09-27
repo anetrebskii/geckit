@@ -632,6 +632,7 @@ function wire(): void {
   ipcMain.on('chat:rename', (_event, id: string, title: string) => sessions?.rename(id, title))
   ipcMain.on('chat:mark', (_event, id: string, status: SessionStatus | null) => sessions?.mark(id, status ?? undefined))
   ipcMain.on('chat:hide', (_event, id: string) => hideChat(id))
+  ipcMain.on('chat:keep', (_event, id: string, stays: boolean) => sessions?.keep(id, stays))
   ipcMain.on('chat:watching', (_event, id: string | undefined) =>
     sessions?.watching(watchingChat() ? id : undefined),
   )
@@ -809,6 +810,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.rename': (id: string, title: string) => held()?.rename(id, title),
     'chat.mark': (id: string, status: SessionStatus | undefined) => held()?.mark(id, status),
     'chat.hide': (id: string) => hideChat(id),
+    'chat.keep': (id: string, stays: boolean) => held()?.keep(id, stays),
     'chat.remove': (ids: readonly string[]) => deleteChats(ids),
     'chat.read': (id: string) => held()?.read(id),
     'chat.remote': (id: string, on: boolean) => held()?.remote(id, on) ?? { error: 'Not ready yet.' },

@@ -224,6 +224,8 @@ export interface ChatSession {
   readonly question?: boolean
   /** When a general question that has gone quiet is deleted. */
   readonly goes?: number
+  /** A general question kept for good. */
+  readonly stays?: boolean
 }
 
 export interface QueuedMessage {

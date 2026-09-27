@@ -1553,6 +1553,56 @@ describe('general questions', () => {
     expect(of(built.rows, id)).toBeUndefined()
     expect(deleted).toEqual([id])
   })
+
+  it('keeps one for good, across a restart, and lets it go a day after once it is no longer kept', async () => {
+    const deleted: string[] = []
+    const notes = memoryNotes()
+    const disk = {
+      list: async () => [],
+      read: async () => undefined,
+      has: async () => false,
+      delete: async (_root: string, id: string) => (deleted.push(id), true),
+    }
+    const built = build({ notes, disk })
+    const id = await built.sessions.send({ root: ROOT, mode: 'auto', text: 'What is a monad?', question: true })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.keep(id, true)
+    expect(of(built.rows, id)).toMatchObject({ question: true, stays: true })
+    expect(of(built.rows, id)?.goes).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(2 * 24 * 60 * 60_000)
+    expect(deleted).toEqual([])
+
+    const after = build({ notes, disk })
+    after.sessions.keep(id, false)
+    expect(of(after.rows, id)).toMatchObject({ question: true, title: 'What is a monad?' })
+    expect(of(after.rows, id)?.stays).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
+    expect(deleted).toEqual([id])
+  })
+
+  it('brings one back after a restart with the time it had left, and deletes it then', async () => {
+    const deleted: string[] = []
+    const notes = memoryNotes()
+    const disk = {
+      list: async () => [],
+      read: async () => undefined,
+      has: async () => false,
+      delete: async (_root: string, id: string) => (deleted.push(id), true),
+    }
+    // The GeckIt that closed: its timers went with it.
+    const built = build({ notes, disk: { ...disk, delete: async () => true } })
+    const id = await built.sessions.send({ root: ROOT, mode: 'auto', text: 'What is a monad?', question: true })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+
+    const after = build({ notes, disk })
+    after.sessions.keep(id, true)
+    after.sessions.keep(id, false)
+    expect(of(after.rows, id)).toMatchObject({ question: true, title: 'What is a monad?', goes: 1_000 + 24 * 60 * 60_000 })
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000 - 60_000)
+    expect(deleted).toEqual([])
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(deleted).toEqual([id])
+  })
 })
 
 describe('turns cut off by GeckIt closing', () => {

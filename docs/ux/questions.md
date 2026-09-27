@@ -21,7 +21,10 @@ A general question (Ask, Cmd+Shift+N) used to vanish 5 minutes after its answer,
 | Same menu | The line under the title is cut to one line | Always |
 | Mac, bottom bar question chip (existing, `Status.tsx`) | Tooltip ends with "Deleted in 23h" | Hover |
 | Phone, Questions list (existing, `PhoneBoard.tsx`) | The time on the right of the row reads "23h left" instead of when it last changed; the tag under the row goes | Always |
-| Phone, Questions list | Bin at the row's end, then the Delete sheet (unchanged) | Always |
+| Phone, Questions list | Swipe left uncovers a red Delete, then the Delete sheet; a full swipe goes straight to the sheet | Always |
+| Phone, Questions list | Swipe right uncovers Keep (Unkeep on a kept one); a full swipe does it. Kept ones stand under their own "Kept" heading, with no time left | Always |
+| Mac, "Open questions" menu | A pin beside the bin keeps one for good; a kept one shows the pin where its time left was | Pointer over the row |
+| Mac, bottom bar question chips | A kept question has no chip, unless it is open or being answered | Always |
 
 ```mermaid
 block-beta
@@ -193,3 +196,7 @@ stateDiagram-v2
 | Confirm without a modal and without closing the popup | sections 4, 10 |
 
 **Missing from the requirements:** whether questions should survive GeckIt quitting.
+
+## Kept questions
+
+A kept question is never deleted by time. Every question is written into the session notes with when it goes (`question`, `goes`, `stays`), so a restart brings each back with the time it had left, and deletes it then. Unkeeping it starts its day again from that moment.

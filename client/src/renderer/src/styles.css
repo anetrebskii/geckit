@@ -577,6 +577,7 @@ textarea {
   pointer-events: none;
 }
 
+.question-pin,
 .question-bin {
   position: absolute;
   top: 5px;
@@ -594,9 +595,24 @@ textarea {
   visibility: hidden;
 }
 
+.question-pin {
+  right: 31px;
+}
+
+.question-item:hover .question-pin,
 .question-item:hover .question-bin,
+.question-pin:focus-visible,
 .question-bin:focus-visible {
   opacity: 1;
+}
+
+.question-pin:hover {
+  color: var(--text);
+  background: var(--border);
+}
+
+.question-pin.on {
+  color: var(--accent);
 }
 
 .question-bin:hover {
@@ -4874,37 +4890,6 @@ html.phone button:active:not(:disabled) {
   border-radius: 12px;
 }
 
-.phone-question {
-  display: flex;
-  align-items: stretch;
-  background: var(--bg-raised);
-}
-
-.phone-question .phone-row {
-  flex: 1;
-  min-width: 0;
-  color: inherit;
-  text-align: left;
-  border: 0;
-}
-
-.phone-question-remove {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  flex-shrink: 0;
-  color: var(--text-faint);
-  border: 0;
-}
-
-.phone-question-remove:active {
-  color: var(--danger);
-}
-
-.phone-question + .phone-question {
-  box-shadow: inset 0 0.5px 0 var(--border);
-}
-
 .phone-note {
   margin: 7px 32px 0;
   font-size: 13px;
@@ -5010,6 +4995,14 @@ html.phone button:active:not(:disabled) {
 }
 
 .phone-row-star {
+.phone-action.keep {
+  background: var(--review-solid);
+}
+
+.phone-action.delete {
+  background: var(--danger-solid);
+}
+
   color: var(--accent);
 }
 
@@ -5253,12 +5246,21 @@ html.phone button:active:not(:disabled) {
   padding: 0 16px calc(var(--bottom) + 12px);
   background: var(--sheet);
   border-radius: 14px 14px 0 0;
-  transition: transform 280ms var(--ease);
+  transition:
+    transform 280ms var(--ease),
+    bottom 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
   animation: sheet 360ms var(--ease) both;
 }
 
 .sheet.dragging {
   transition: none;
+}
+
+/* The web view does not shrink for the keyboard, so a sheet with a field in it stands on the keys rather than under them. */
+html.keyboard .sheet {
+  bottom: var(--keyboard);
+  max-height: calc(100% - var(--top) - 10px - var(--keyboard));
+  padding-bottom: 12px;
 }
 
 @keyframes sheet {
@@ -5366,13 +5368,115 @@ html.phone button:active:not(:disabled) {
 }
 
 .sheet-field {
-  width: 100%;
+  display: flex;
+  align-items: center;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.sheet-field input {
+  flex: 1;
+  min-width: 0;
   padding: 11px 16px;
   color: var(--text);
-  background: var(--bg-raised);
+  background: none;
   border: 0;
-  border-radius: 12px;
   outline: none;
+}
+
+.sheet-field-clear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: 0 12px 0 -4px;
+  padding: 0;
+  color: var(--bg-raised);
+  background: var(--text-faint);
+  border: 0;
+  border-radius: 50%;
+}
+
+/* Centred in what the keyboard leaves of the screen, as the system's alerts are. */
+.rename-alert-scrim {
+  position: fixed;
+  inset: 0 0 var(--keyboard, 0px);
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+  animation: fade 200ms var(--ease) both;
+}
+
+.rename-alert {
+  width: 290px;
+  overflow: hidden;
+  text-align: center;
+  background: var(--sheet);
+  border-radius: 14px;
+  animation: rename-alert 200ms var(--ease) both;
+}
+
+@keyframes rename-alert {
+  from {
+    transform: scale(1.1);
+    opacity: 0;
+  }
+}
+
+.rename-alert-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 19px 16px 16px;
+}
+
+.rename-alert-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.rename-alert-note {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.rename-alert .sheet-field {
+  margin-top: 8px;
+  border-radius: 8px;
+}
+
+.rename-alert .sheet-field input {
+  padding: 8px 10px;
+  font-size: 16px;
+}
+
+.rename-alert-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 0.5px solid var(--separator);
+}
+
+.rename-alert-actions button {
+  height: 44px;
+  padding: 0;
+  font-size: 17px;
+  color: var(--accent);
+  background: none;
+  border: 0;
+}
+
+.rename-alert-actions button + button {
+  border-left: 0.5px solid var(--separator);
+}
+
+.rename-alert-actions button.default {
+  font-weight: 600;
+}
+
+.rename-alert-actions button:disabled {
+  color: var(--text-faint);
 }
 
 /* New task: a sheet almost the height of the screen, the way Mail's new message is. */
