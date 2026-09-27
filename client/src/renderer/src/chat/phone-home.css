@@ -367,6 +367,21 @@ html.keyboard .phone-tabs {
   border-radius: 50%;
 }
 
+.phone-search-hide {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--keyboard, 0px) + 10px);
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--text);
+  background: var(--bg-raised);
+  border-radius: 50%;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 30%);
+}
+
 .phone-found {
   position: relative;
   display: flex;

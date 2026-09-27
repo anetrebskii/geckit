@@ -13,6 +13,7 @@ import type { Chat } from './useChat'
 /** The Search tab: the Mac's Cmd+P, conversations by name and then by what was said in them. See docs/ux/phone-parity.md. */
 export function PhoneSearch({ chat, shown, onSeek }: { readonly chat: Chat; readonly shown: boolean; readonly onSeek: (seek: Seek) => void }): React.JSX.Element {
   const [asked, setAsked] = useState('')
+  const [typing, setTyping] = useState(false)
   const { found, words } = useFound(chat, asked)
   const field = useRef<HTMLInputElement>(null)
   const [now] = useState(() => Date.now())
@@ -36,6 +37,8 @@ export function PhoneSearch({ chat, shown, onSeek }: { readonly chat: Chat; read
           placeholder="Conversations and what was said"
           value={asked}
           onChange={(event) => setAsked(event.target.value)}
+          onFocus={() => setTyping(true)}
+          onBlur={() => setTyping(false)}
         />
         {asked === '' ? null : (
           <button type="button" aria-label="Clear" onClick={() => setAsked('')}>
@@ -43,6 +46,11 @@ export function PhoneSearch({ chat, shown, onSeek }: { readonly chat: Chat; read
           </button>
         )}
       </div>
+      {typing ? (
+        <button type="button" className="phone-search-hide" aria-label="Hide the keyboard" onClick={() => field.current?.blur()}>
+          <Icon name="keyboard-hide" size={22} />
+        </button>
+      ) : null}
       {words.length > 0 && found.length === 0 ? <div className="phone-empty">Nothing called that, and nothing said like it.</div> : null}
       {words.length === 0 ? <div className="phone-head">Recent</div> : null}
       {[found.slice(0, split), found.slice(split)].map((part, index) =>
