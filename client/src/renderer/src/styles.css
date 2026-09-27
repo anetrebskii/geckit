@@ -2389,6 +2389,30 @@ button.tag:hover {
   user-select: text;
 }
 
+.skeleton-line,
+.skeleton-bubble,
+.skeleton-dot {
+  background: var(--bg-hover);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: 12px;
+  margin: 6px 0 10px;
+  border-radius: 6px;
+}
+
+.skeleton-line.short {
+  width: 55%;
+}
+
+.skeleton-bubble {
+  width: 60%;
+  height: 38px;
+  margin-left: auto;
+  border-radius: var(--radius-lg);
+}
+
 .when {
   margin-top: 4px;
   font-size: 12px;
@@ -2810,6 +2834,7 @@ button.tag:hover {
 }
 
 .pending-one img {
+  cursor: zoom-in;
   width: 56px;
   height: 56px;
   object-fit: cover;
@@ -2834,7 +2859,6 @@ button.tag:hover {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
-  cursor: zoom-in;
 }
 
 .pictures img {
@@ -2896,9 +2920,14 @@ button.tag:hover {
   max-width: 92%;
   max-height: 86%;
   user-select: none;
+  -webkit-touch-callout: none;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   transform-origin: center;
+}
+
+.preview.easing img {
+  transition: transform 0.25s var(--ease);
 }
 
 .preview-bar {
@@ -2920,16 +2949,11 @@ button.tag:hover {
   min-width: 52px;
   font-variant-numeric: tabular-nums;
 }
-  -webkit-touch-callout: none;
 
 .composer textarea {
   display: block;
   width: 100%;
   max-height: 260px;
-.preview.easing img {
-  transition: transform 0.25s var(--ease);
-}
-
   padding: 10px 12px 4px;
   font-size: 14px;
   line-height: 1.5;
@@ -4971,6 +4995,14 @@ html.phone button:active:not(:disabled) {
   background: var(--more-solid);
 }
 
+.phone-action.keep {
+  background: var(--review-solid);
+}
+
+.phone-action.delete {
+  background: var(--danger-solid);
+}
+
 .phone-row {
   position: relative;
   display: grid;
@@ -4995,14 +5027,6 @@ html.phone button:active:not(:disabled) {
 }
 
 .phone-row-star {
-.phone-action.keep {
-  background: var(--review-solid);
-}
-
-.phone-action.delete {
-  background: var(--danger-solid);
-}
-
   color: var(--accent);
 }
 
@@ -5220,6 +5244,10 @@ html.phone button:active:not(:disabled) {
 .phone-menu button.accent {
   font-weight: 600;
   color: var(--accent);
+}
+
+.phone-menu button.danger {
+  color: var(--danger-solid);
 }
 
 .phone-menu .gap {
@@ -5831,6 +5859,11 @@ html.phone .talk.over {
   justify-self: start;
 }
 
+.phone-nav-end {
+  display: flex;
+  justify-self: end;
+}
+
 .phone-nav-title {
   min-width: 0;
   max-width: 220px;
@@ -5852,11 +5885,6 @@ html.phone .talk.over {
 }
 
 .phone-nav .phone-icon {
-  justify-self: end;
-}
-
-.phone-nav-end {
-  display: flex;
   justify-self: end;
 }
 
@@ -6074,6 +6102,51 @@ html.phone .composer-bar .goal-picker {
 html.phone .composer-bar .spacer,
 html.phone .composer-hint {
   display: none;
+}
+
+/* On the phone the whole block has no border, so a command marks the field itself. */
+html.phone .composer-inner.command,
+html.phone .composer-inner.command:focus-within {
+  border: 0;
+  box-shadow: none;
+}
+
+html.phone .composer-inner.command textarea {
+  font-size: 16px;
+  border-color: var(--warning-text);
+  box-shadow: 0 0 0 3px var(--warning-bg);
+}
+
+.phone-hint {
+  order: -1;
+  padding: 0 16px 6px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.phone-hint.command {
+  color: var(--warning-text);
+}
+
+/* A thumb edits, starts elsewhere or cancels a queued message, and Safari zooms into an edit field under 16px. */
+html.phone .queued-head {
+  font-size: 13px;
+}
+
+html.phone .queued-one {
+  gap: 4px;
+  padding: 4px 4px 4px 14px;
+  font-size: 15px;
+  border-radius: 12px;
+}
+
+html.phone .queued-edit {
+  font-size: 17px;
+}
+
+html.phone .queued-one .icon-button {
+  width: 36px;
+  height: 36px;
 }
 
 /* Held to the field's last line, and not clipped by the chip row it sits in, which is not what it is placed against. */
@@ -6305,14 +6378,17 @@ body:has(.talk.over:not([hidden])) .phone-offline {
   position: fixed;
   inset: 0;
   z-index: 70;
+  display: flex;
+  flex-direction: column;
   color: var(--screen-text);
   background: var(--screen);
   animation: fade var(--settle) var(--ease) both;
 }
 
 .phone-screen-stage {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   touch-action: none;
 }
@@ -6325,9 +6401,8 @@ body:has(.talk.over:not([hidden])) .phone-offline {
 }
 
 .phone-screen-note {
-  position: relative;
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -6363,13 +6438,12 @@ body:has(.talk.over:not([hidden])) .phone-offline {
 
 .phone-screen-title {
   display: flex;
+  flex: none;
   gap: 8px;
   align-items: center;
   font-size: 17px;
   font-weight: 600;
 }
-  display: flex;
-  flex-direction: column;
 
 .phone-screen-live {
   padding: 1px 6px;
@@ -6380,76 +6454,6 @@ body:has(.talk.over:not([hidden])) .phone-offline {
   border-radius: 4px;
 }
 
-.phone-screen-done {
-  height: 44px;
-  padding: 0 10px;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--screen-text);
-}
-
-.phone-screen-peek {
-  position: absolute;
-  top: calc(var(--top) + 6px);
-  right: 12px;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  color: var(--screen-text);
-  background: var(--screen-bar);
-  border-radius: 16px;
-}
-
-/* The Background sheet on a phone: the name has the width to itself, and what it cost and how it stands stand under it. */
-html.phone .task-row {
-  flex-wrap: wrap;
-  row-gap: 2px;
-}
-
-html.phone .task-row .what {
-  flex: 1 0 calc(100% - 26px);
-  white-space: normal;
-}
-
-html.phone .task-row .lasted {
-  margin-inline-start: 26px;
-}
-
-html.phone .task-row .how {
-  min-width: 0;
-  text-align: start;
-}
-
-/* The Background window as a sheet on the phone: the list sits in the sheet's own grouped box rather than a dialog of its own. */
-.tasks-sheet .dialog.tasks {
-  width: auto;
-  max-height: none;
-  padding: 12px 16px;
-  overflow: visible;
-  border: 0;
-  border-radius: 12px;
-  box-shadow: none;
-  animation: none;
-}
-
-.tasks-sheet .dialog.tasks + .sheet-list {
-  flex: none;
-  margin-top: 10px;
-}
-
-/* The large title names the Mac the board is from, and opens the list of Macs this phone is paired with. */
-.phone-macs {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  max-width: calc(100% - 32px);
-  text-align: start;
-}
-
-.phone-macs > svg {
-  flex: none;
-  margin-top: 4px;
 /* Look or Control, drawn light on the black whatever the theme. */
 .phone-screen-seg {
   flex: 0 1 180px;
@@ -6463,15 +6467,15 @@ html.phone .task-row .how {
   box-shadow: none;
 }
 
-  color: var(--accent);
+.phone-screen-done {
   flex: none;
+  height: 44px;
+  padding: 0 10px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--screen-text);
 }
 
-.phone-bar-small,
-.phone-macs {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 .phone-screen-done.icon {
   display: grid;
   place-items: center;
@@ -6479,19 +6483,19 @@ html.phone .task-row .how {
   padding: 0;
 }
 
+.phone-screen-peek {
+  position: absolute;
+  top: calc(var(--top) + 6px);
+  right: max(12px, env(safe-area-inset-right));
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--screen-text);
+  background: var(--screen-bar);
+  border-radius: 16px;
 }
 
-/* A Mac in the list: its star, its name that switches to it, and its menu, each a target of its own. */
-.phone-mac {
-  gap: 0;
-  padding: 0;
-}
-
-.phone-mac + .phone-mac::before {
-  inset-inline-start: 48px;
-}
-
-.phone-mac-star,
 /* How the trackpad is worked, until the first touch. */
 .phone-screen-hint {
   position: absolute;
@@ -6569,6 +6573,75 @@ html.phone .task-row .how {
   background: var(--screen-text);
 }
 
+/* The Background sheet on a phone: the name has the width to itself, and what it cost and how it stands stand under it. */
+html.phone .task-row {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+html.phone .task-row .what {
+  flex: 1 0 calc(100% - 26px);
+  white-space: normal;
+}
+
+html.phone .task-row .lasted {
+  margin-inline-start: 26px;
+}
+
+html.phone .task-row .how {
+  min-width: 0;
+  text-align: start;
+}
+
+/* The Background window as a sheet on the phone: the list sits in the sheet's own grouped box rather than a dialog of its own. */
+.tasks-sheet .dialog.tasks {
+  width: auto;
+  max-height: none;
+  padding: 12px 16px;
+  overflow: visible;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+  animation: none;
+}
+
+.tasks-sheet .dialog.tasks + .sheet-list {
+  margin-top: 10px;
+}
+
+/* The large title names the Mac the board is from, and opens the list of Macs this phone is paired with. */
+.phone-macs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  max-width: calc(100% - 32px);
+  text-align: start;
+}
+
+.phone-macs > svg {
+  flex: none;
+  margin-top: 4px;
+  color: var(--accent);
+}
+
+.phone-bar-small,
+.phone-macs {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A Mac in the list: its star, its name that switches to it, and its menu, each a target of its own. */
+.phone-mac {
+  gap: 0;
+  padding: 0;
+}
+
+.phone-mac + .phone-mac::before {
+  inset-inline-start: 48px;
+}
+
+.phone-mac-star,
 .phone-mac-more {
   display: grid;
   flex: none;
@@ -6632,7 +6705,7 @@ html.phone .preview img {
 
 html.phone .preview-bar {
   top: calc(var(--top) + 8px);
-  right: max(12px, env(safe-area-inset-right));
+  right: 12px;
   padding: 0;
   opacity: calc(1 - var(--leaving, 0) * 2);
   background: rgb(255 255 255 / 16%);
