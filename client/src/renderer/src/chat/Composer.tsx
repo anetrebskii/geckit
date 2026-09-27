@@ -8,6 +8,7 @@ import { ON_PHONE } from '../on-phone'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
+import { Sheet } from '../ui/Sheet'
 import { MOD } from '../ui/Shortcuts'
 import { Chrome } from './Chrome'
 import { Mcp } from './Mcp'
@@ -233,60 +234,118 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
 
   return (
     <div className="composer">
-      {dropped === undefined ? null : (
+      {dropped === undefined ? null : ON_PHONE ? (
+        <Sheet title="Cancel this message?" onClose={() => setDropping(undefined)} cancel={false}>
+          <p className="branch-quote">{dropped.text}</p>
+          <div className="sheet-list">
+            <button
+              type="button"
+              className="sheet-option danger"
+              onClick={() => {
+                chat.unqueue(dropped.id)
+                setDropping(undefined)
+              }}
+            >
+              <span className="sheet-words">
+                <span className="label">Cancel message</span>
+                <span className="says">It will not be sent</span>
+              </span>
+            </button>
+          </div>
+          <div className="sheet-list sheet-keep">
+            <button type="button" className="sheet-option sheet-cancel" onClick={() => setDropping(undefined)}>
+              Keep it
+            </button>
+          </div>
+        </Sheet>
+      ) : (
         <div className="dialog-scrim" onMouseDown={() => setDropping(undefined)}>
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
             <h2>Cancel this message?</h2>
-            <p className="queued-dropped">{dropped.text}</p>
+            <p className="branch-quote">{dropped.text}</p>
             <div className="dialog-actions">
               <button type="button" className="quiet" onClick={() => setDropping(undefined)}>
                 Keep it
               </button>
               <button
                 type="button"
-                className="primary"
+                className="primary danger"
                 autoFocus
+                title="It will not be sent"
                 onClick={() => {
                   chat.unqueue(dropped.id)
                   setDropping(undefined)
                 }}
               >
-                Cancel it
+                Cancel message
               </button>
             </div>
           </div>
         </div>
       )}
-      {branched === undefined ? null : (
+      {branched === undefined ? null : ON_PHONE ? (
+        <Sheet title="Start a new conversation" onClose={() => setBranching(undefined)}>
+          <p className="branch-quote">{branched.text}</p>
+          <div className="sheet-list">
+            <button
+              type="button"
+              className="sheet-option"
+              onClick={() => {
+                chat.delegate(branched.id, true)
+                setBranching(undefined)
+              }}
+            >
+              <span className="sheet-words">
+                <span className="label">Copy this conversation</span>
+                <span className="says">Everything up to when you queued it</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="sheet-option"
+              onClick={() => {
+                chat.delegate(branched.id, false)
+                setBranching(undefined)
+              }}
+            >
+              <span className="sheet-words">
+                <span className="label">Start empty</span>
+                <span className="says">Only this message, in the same project</span>
+              </span>
+            </button>
+          </div>
+        </Sheet>
+      ) : (
         <div className="dialog-scrim" onMouseDown={() => setBranching(undefined)}>
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
             <h2>Start a new conversation with it?</h2>
-            <p className="queued-dropped">{branched.text}</p>
-            <p>It can carry this conversation as it stood when the message was queued, or start empty.</p>
+            <p className="branch-quote">{branched.text}</p>
             <div className="dialog-actions">
               <button type="button" className="quiet" onClick={() => setBranching(undefined)}>
-                Keep it here
+                Cancel
               </button>
               <button
                 type="button"
                 className="quiet"
+                title="Only this message, in the same project"
                 onClick={() => {
                   chat.delegate(branched.id, false)
                   setBranching(undefined)
                 }}
               >
-                Empty
+                Start empty
               </button>
               <button
                 type="button"
                 className="primary"
                 autoFocus
+                title="Everything up to when it was queued, then this message"
                 onClick={() => {
                   chat.delegate(branched.id, true)
                   setBranching(undefined)
                 }}
               >
-                With this conversation
+                Copy this conversation
               </button>
             </div>
           </div>
