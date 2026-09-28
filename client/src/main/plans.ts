@@ -41,36 +41,28 @@ function samePlan(one: PlanUsage | undefined, other: PlanUsage | undefined): boo
   return JSON.stringify(one ?? null) === JSON.stringify(other ?? null)
 }
 
-/** How long asking keeps hosts measured after nobody has asked in a while: a window closed, or the phone gone quiet, stops the polling rather than run it forever with nothing looking. */
-const WATCHED_FOR = 5 * 60_000
-
-/** How often a host up and watched is asked again. */
-const REMEASURE_EVERY = 5 * 60_000
-
 export interface PlansDeps {
-  readonly sessions: () => Pick<Sessions, 'plan' | 'account' | 'measure'> | undefined
+  readonly sessions: () => Pick<Sessions, 'plan' | 'knownAccount' | 'measure'> | undefined
   readonly routes: () => Routes | undefined
   /** Every project's root, Settings' own list, for which hosts belong in the list at all. */
   readonly projects: () => readonly string[]
   readonly changed: (places: readonly PlaceUsage[]) => void
-  readonly now?: () => number
 }
+
+/**
+ * Nothing here runs on a timer: every plan is measured when a window or the
+ * phone asks, which is when a person opens one or brings it to the front, and
+ * each place keeps its own answer for a while. What Claude Code sees from
+ * GeckIt is then what a person did, never a beat of its own.
+ */
 
 export class Plans {
   readonly #deps: PlansDeps
   /** A host's usage as it was last measured, kept once it is up so a drop keeps showing it, greyed. */
   readonly #usage = new Map<string, PlanUsage | undefined>()
-  #lastAsked = -Infinity
-  readonly #timer: ReturnType<typeof setInterval>
 
   constructor(deps: PlansDeps) {
     this.#deps = deps
-    this.#timer = setInterval(() => void this.#tick(), REMEASURE_EVERY)
-    this.#timer.unref?.()
-  }
-
-  #now(): number {
-    return this.#deps.now?.() ?? Date.now()
   }
 
   #hostPlaces(): readonly HostPlace[] {
@@ -85,7 +77,7 @@ export class Plans {
   /** Every place with a plan, as it stands right now: this computer's last measurement, and each host's. */
   async list(): Promise<PlaceUsage[]> {
     const sessions = this.#deps.sessions()
-    const account = await sessions?.account()
+    const account = await sessions?.knownAccount()
     const usage = sessions?.plan()
     const local: PlaceUsage = {
       place: '',
@@ -96,9 +88,8 @@ export class Plans {
     return [local, ...this.#hostPlaces().map((host) => placeFor(host, this.#usage.get(host.id)))]
   }
 
-  /** The list at once, and everything it can measure asked again. */
+  /** The list at once, and everything it can measure asked again, each place no sooner than it keeps its last answer. */
   async asked(): Promise<PlaceUsage[]> {
-    this.#lastAsked = this.#now()
     const list = await this.list()
     void this.#deps.sessions()?.measure()
     void this.#measureHosts()
@@ -108,11 +99,6 @@ export class Plans {
   /** A host just came up: what it was showing while it was not connected may be another account's plan by now. */
   hostUp(id: string): void {
     if (this.#hostPlaces().some((host) => host.id === id)) void this.#measureHosts()
-  }
-
-  async #tick(): Promise<void> {
-    if (this.#now() - this.#lastAsked > WATCHED_FOR) return
-    await this.#measureHosts()
   }
 
   async #measureHosts(): Promise<void> {
@@ -132,9 +118,5 @@ export class Plans {
         }),
     )
     if (changed) this.#deps.changed(await this.list())
-  }
-
-  dispose(): void {
-    clearInterval(this.#timer)
   }
 }

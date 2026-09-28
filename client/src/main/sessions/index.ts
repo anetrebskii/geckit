@@ -298,8 +298,15 @@ const ended = (tasks: readonly BackgroundTask[]): readonly BackgroundTask[] =>
 /** How long Stop waits to be heard before the process is ended instead. */
 const STOP_HEARD = 5_000
 
-/** How long the plan's windows, once asked, are taken to stand. */
-const MEASURED_FOR = 60_000
+/**
+ * How long the plan's windows, once asked or heard from a turn, are taken to
+ * stand. Measuring starts a `claude` of its own, so it is kept to what a person
+ * does: a window opened or come to the front, and no more often than this.
+ */
+const MEASURED_FOR = 10 * 60_000
+
+/** How long which Claude Code answers, once looked at, is taken to stand: `claude --version` is only read here, and is cheap. */
+const LOOKED_FOR = 60_000
 
 /** How far back Hidden conversations reads before it is asked for older ones: what is looked for there is remembered as recent. */
 const HIDDEN_FOR = 30 * 24 * 60 * 60_000
@@ -356,6 +363,8 @@ export class Sessions {
   readonly #rows = new Map<string, Row>()
   #watching: string | undefined
   #plan: PlanUsage | undefined
+  /** Who is signed in, as last asked, for the list of plans that is drawn far more often than anyone signs in or out. */
+  #account: ClaudeAccount | undefined
   /** How much context each model may hold, as the tool measures it; nothing for one it would not say. */
   readonly #windows = new Map<string, number | undefined>()
   #measured = -Infinity
@@ -417,7 +426,13 @@ export class Sessions {
 
   async account(): Promise<ClaudeAccount> {
     const [account, program] = await Promise.all([(this.#deps.claudeAccount ?? claudeAccount)(), this.#look()])
-    return program === undefined ? account : { ...account, program }
+    this.#account = program === undefined ? account : { ...account, program }
+    return this.#account
+  }
+
+  /** Who is signed in as last asked, asked only where it never was: what the list of plans names each place with, without a `claude` started for every time it is drawn. */
+  async knownAccount(): Promise<ClaudeAccount> {
+    return this.#account ?? (await this.account())
   }
 
   /**
@@ -426,7 +441,7 @@ export class Sessions {
    * was updated, and GeckIt may have been open for weeks.
    */
   async #look(): Promise<ClaudeProgram | undefined> {
-    if (this.#looking === undefined && this.#now() - this.#looked >= MEASURED_FOR) {
+    if (this.#looking === undefined && this.#now() - this.#looked >= LOOKED_FOR) {
       this.#looked = this.#now()
       this.#looking = (this.#deps.claudeProgram ?? claudeProgram)()
         .then((program) => {
@@ -1489,8 +1504,8 @@ export class Sessions {
 
   /**
    * Ask the tool, without a turn, how much of the plan is spent and how much
-   * context the models in the list may hold. The plan is asked at most once a
-   * minute however often a window comes to the front; a model not measured
+   * context the models in the list may hold. The plan is asked at most once in
+   * `MEASURED_FOR` however often a window comes to the front; a model not measured
    * yet is asked about whenever it turns up, after the one being asked now.
    */
   measure(): Promise<void> {
@@ -1499,9 +1514,10 @@ export class Sessions {
     for (const row of this.#rows.values()) if (row.model !== undefined) models.add(row.model)
     for (const live of this.#live.values()) if (live.model !== undefined) models.add(live.model)
     const unknown = [...models].filter((model) => !this.#windows.has(model))
+    // Looked at even where the plan is not asked again: another version has the windows measured anew by itself.
+    void this.#look()
     if (unknown.length === 0 && this.#now() - this.#measured < MEASURED_FOR) return Promise.resolve()
     this.#measured = this.#now()
-    void this.#look()
     const generation = this.#generation
     this.#measuring = (this.#deps.usage ?? readUsage)(unknown)
       .then((usage) => {
@@ -1667,8 +1683,13 @@ export class Sessions {
         if (live.state === 'idle') this.#changed()
         return
       case 'plan':
-        this.#plan = signal.plan
-        this.#deps.plan?.(signal.plan)
+        // A host's run says its own account's windows, not this computer's.
+        if (isRemote(live.root)) return
+        // A turn may say only one window, and the other one still stands.
+        this.#plan = { ...this.#plan, ...signal.plan }
+        // Fresh from the turn, so asking again soon would only start a `claude` for the same numbers.
+        if (signal.plan.fiveHour !== undefined && signal.plan.sevenDay !== undefined) this.#measured = this.#now()
+        this.#deps.plan?.(this.#plan)
         return
       case 'task': {
         const { task } = signal
