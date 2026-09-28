@@ -14,6 +14,7 @@ import { computerName } from './PhoneHosts'
 import { resetsAt } from './PhoneInfo'
 import { accountsOf, placesOf, usageOf } from './plans'
 import { PhoneScope, ScopeButton } from './PhoneScope'
+import { startedLine } from './Request'
 import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
 import type { Macs } from '../macs'
@@ -558,6 +559,8 @@ export function RowBody({
   const card = session.state === 'asks' ? waiting?.card : undefined
   // A conversation on a host out of reach is still working there; its row says so in place of what it last said, which may be old.
   const away = session.state === 'working' ? awayLine(session) : undefined
+  const parent = session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)
+  const started = startedLine(chat.sessions, session.id)
   return (
     <>
       <span className={`phone-dot ${away === undefined ? stands.tone : 'away'}`} />
@@ -586,6 +589,12 @@ export function RowBody({
           {background === 0 ? null : <span className="phone-row-tag">{background} in the background</span>}
           {queued === 0 ? null : <span className="phone-row-tag">{queued} queued</span>}
         </div>
+        {parent === undefined ? null : (
+          <div className="phone-row-from">
+            From <b>{parent.title}</b>
+          </div>
+        )}
+        {started === undefined ? null : <div className="phone-row-from">{started}</div>}
         {card === undefined || onAnswer === undefined ? null : card.kind === 'permission' ? (
           <div className="phone-row-answer">
             <button type="button" className="phone-button grey" onClick={() => onAnswer('no')}>

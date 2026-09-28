@@ -23,10 +23,12 @@ function build(limit = 0): {
   readonly fanned: SessionItems[]
   readonly notices: SessionNotice[]
   readonly answered: [string, string][]
+  readonly pauses: number[]
   hear: (ask: string, command: string) => void
 } {
   const sent: string[] = []
   const answered: [string, string][] = []
+  const pauses: number[] = []
   let heard: Parameters<typeof holdClaude>[1] | undefined
   const claude: typeof holdClaude = (_options, hear) => {
     heard = hear
@@ -57,10 +59,15 @@ function build(limit = 0): {
     usage: async () => ({ windows: new Map() }),
     now: () => 1_000,
     limit: () => limit,
+    later: (run, ms) => {
+      pauses.push(ms)
+      run()
+      return () => undefined
+    },
   })
   const hear = (ask: string, command: string): void =>
     heard?.({ items: [], gone: [], signals: [{ kind: 'asks', ask, wanted: { kind: 'command', command } }] })
-  return { sessions, sent, rows, fanned, notices, answered, hear }
+  return { sessions, sent, rows, fanned, notices, answered, pauses, hear }
 }
 
 const TASKS: Asking[] = [
@@ -112,6 +119,18 @@ describe('a request to start conversations', () => {
       tasks: [{ started: child, note: 'use the fixture' }, { title: 'Honour Retry-After' }],
     })
     expect(request(built.fanned)?.tasks[1]?.started).toBeUndefined()
+  })
+
+  it('starts ticked tasks 3 to 10 s apart', async () => {
+    const built = build()
+    const asker = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'look around' })
+    const answer = built.sessions.request(asker, TASKS, 'auto', new AbortController().signal)
+    await built.sessions.answerRequest(request(built.fanned)?.id ?? '', { start: [true, true], notes: [], where: 'mac' })
+    const said = await answer
+    expect(said?.tasks.map((task) => task.answer)).toEqual(['started', 'started'])
+    expect(built.pauses).toHaveLength(1)
+    expect(built.pauses[0]).toBeGreaterThanOrEqual(3_000)
+    expect(built.pauses[0]).toBeLessThanOrEqual(10_000)
   })
 
   it('begins the ticked tasks as conversations waiting for a slot where as many are working as the limit, and says so to the command', async () => {

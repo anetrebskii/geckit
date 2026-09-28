@@ -6,6 +6,7 @@ import { hostOf } from '../../../shared/hosts'
 import { Menu } from '../ui/Menu'
 import { Cell, Drawer } from './PhoneKit'
 import { projectLabel } from './project'
+import { startedLine } from './Request'
 import { ago } from './time'
 import { dollars, Meter, tokens, until, useGit } from './Status'
 import { accountsOf, usageOf } from './plans'
@@ -88,6 +89,8 @@ export function PhoneInfo({
   const git = useGit(session?.root ?? chat.root, session?.state)
   if (session === undefined) return null
   const spend = session.spend
+  const parent = session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)
+  const started = startedLine(chat.sessions, session.id)
   const upstream = git?.upstream
 
   return (
@@ -114,6 +117,17 @@ export function PhoneInfo({
         {session.model === undefined ? null : <Cell label="Model" value={session.model} />}
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === session.mode)?.label ?? '-'} />
         <Cell label="Project" value={projectLabel(homeOf(session))} />
+        {parent === undefined ? null : (
+          <Cell
+            label="From"
+            value={parent.title}
+            onPress={() => {
+              onClose()
+              chat.goTo(parent.id)
+            }}
+          />
+        )}
+        {started === undefined ? null : <Cell label="Started" value={started.replace(/^Started /, '')} />}
       </div>
       {spend?.used === undefined ? null : <div className="phone-note">Claude Code summarises the conversation when its context fills.</div>}
 

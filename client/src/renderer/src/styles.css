@@ -2985,6 +2985,27 @@ html.phone .request-said {
   font-size: 14px;
 }
 
+html.phone .request-foot {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+html.phone .request-foot .request-reply-add,
+html.phone .request-foot .request-reply {
+  flex-basis: 100%;
+}
+
+html.phone .request-foot .spacer {
+  display: none;
+}
+
+html.phone .request-foot button.quiet,
+html.phone .request-foot button.primary {
+  flex: 1;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
 html.phone .request-body input,
 html.phone .request-foot .request-reply {
   min-height: 44px;
@@ -5630,6 +5651,20 @@ html.phone button:active:not(:disabled) {
   white-space: nowrap;
   background: var(--bg-sunken);
   border-radius: 8px;
+}
+
+.phone-row-from {
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-row-from b {
+  font-weight: 500;
+  color: var(--accent);
 }
 
 .phone-row-meta {

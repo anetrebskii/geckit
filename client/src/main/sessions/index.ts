@@ -310,8 +310,10 @@ const QUIET = 10 * 60_000
 
 /** How long a general question is kept once it has gone quiet. */
 const QUESTION_KEPT = 24 * 60 * 60_000
-/** A job done, the queue is looked at after a pause somewhere in here, so a conversation answered straight away keeps going. */
+/** A job done, the queue is looked at after a pause somewhere in here, so a conversation answered straight away keeps going. Approved tasks start this far apart too. */
 const PAUSE = { least: 3_000, most: 10_000 }
+
+const pause = (): number => PAUSE.least + Math.random() * (PAUSE.most - PAUSE.least)
 
 function after(run: () => void, ms: number): () => void {
   const timer = setTimeout(run, ms)
@@ -698,11 +700,13 @@ export class Sessions {
   #glance(): void {
     if (this.#glancing !== undefined) return
     const limit = this.#deps.limit?.() ?? 0
-    const pause = limit === 0 ? 0 : PAUSE.least + Math.random() * (PAUSE.most - PAUSE.least)
-    this.#glancing = (this.#deps.later ?? after)(() => {
-      this.#glancing = undefined
-      for (const id of letGo(this.#standing(this.#listed()), this.#deps.limit?.() ?? 0, this.#deps.order?.() ?? [])) this.carryOn(id)
-    }, pause)
+    this.#glancing = (this.#deps.later ?? after)(
+      () => {
+        this.#glancing = undefined
+        for (const id of letGo(this.#standing(this.#listed()), this.#deps.limit?.() ?? 0, this.#deps.order?.() ?? [])) this.carryOn(id)
+      },
+      limit === 0 ? 0 : pause(),
+    )
   }
 
   /** Queued messages holding every word asked, in these projects: all there is to find in a conversation not begun yet, which has no file. */
@@ -764,7 +768,7 @@ export class Sessions {
     })
   }
 
-  /** The person's answer to a request: the ticked tasks start, each with its note, and the rest are refused. */
+  /** The person's answer to a request: the ticked tasks start a pause apart, each with its note, and the rest are refused. */
   async answerRequest(request: string, choice: RequestChoice): Promise<void> {
     const pending = this.#requests.get(request)
     const live = pending === undefined ? undefined : this.#live.get(pending.session)
@@ -783,6 +787,7 @@ export class Sessions {
       const note = choice.notes[index]?.trim() || undefined
       const text = note === undefined ? task.text : `${task.text}\n\nNote: ${note}`
       const noted = note === undefined ? {} : { note }
+      if (tasks.some((one) => one.started !== undefined)) await new Promise<void>((resolve) => (this.#deps.later ?? after)(resolve, pause()))
       const id = await this.send({ root, mode: pending.mode, text })
       this.#note(id, { parent: live.id })
       if (task.goal !== undefined) await this.send({ session: id, root, mode: pending.mode, text: `/goal ${task.goal}` })
