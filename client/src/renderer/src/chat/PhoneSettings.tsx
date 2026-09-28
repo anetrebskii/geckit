@@ -14,12 +14,12 @@ import { Limits } from './PhoneInfo'
 import { Cell, Page, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
-import { computerName, PhoneHostFolders, PhoneWhere } from './PhoneHosts'
+import { computerName } from './PhoneHosts'
+import { PhoneProject } from './PhoneProject'
 import { accountsOf, placesOf, usageOf } from './plans'
 import { homePath, projectLabel } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
-import { useHostBounce } from './useHosts'
 
 /**
  * The Settings tab: what of the Mac's Settings is done from a hand, and the
@@ -32,8 +32,6 @@ type Where =
   | { readonly page: 'profiles' }
   | { readonly page: 'profile'; readonly id: string }
   | { readonly page: 'projects' }
-  | { readonly page: 'where' }
-  | { readonly page: 'add'; readonly host?: string }
   | { readonly page: 'hidden' }
   | { readonly page: 'phrases' }
   | { readonly page: 'shortcuts' }
@@ -63,31 +61,12 @@ export function PhoneSettings({
         ? 'Profiles'
         : one.page === 'projects'
           ? 'Projects'
-          : one.page === 'where'
-              ? 'Where'
-              : 'Back'
+          : 'Back'
   }
 
   if (where.page === 'profiles') return <Profiles chat={chat} back={before()} onBack={back} onOpen={(id) => go({ page: 'profile', id })} />
   if (where.page === 'profile') return <Profile chat={chat} id={where.id} back={before()} onBack={back} />
-  // With a host added, a new project is first asked where it is; without one, it is the computer's folders as before.
-  if (where.page === 'projects') return <Projects chat={chat} back={before()} onBack={back} onAdd={() => go(chat.hosts.length === 0 ? { page: 'add' } : { page: 'where' })} />
-  if (where.page === 'where')
-    return (
-      <Page title="Where" back={before()} onBack={back}>
-        <PhoneWhere chat={chat} onComputer={() => go({ page: 'add' })} onHost={(id) => go({ page: 'add', host: id })} />
-      </Page>
-    )
-  if (where.page === 'add')
-    return (
-      <AddProject
-        chat={chat}
-        {...(where.host === undefined ? {} : { host: where.host })}
-        back={before()}
-        onBack={back}
-        onAdded={() => setTrail(trail.filter((one) => one.page !== 'add' && one.page !== 'where'))}
-      />
-    )
+  if (where.page === 'projects') return <Projects chat={chat} back={before()} onBack={back} />
   if (where.page === 'hidden') return <Hidden chat={chat} back={before()} onBack={back} />
   if (where.page === 'phrases') return <Phrases chat={chat} back={before()} onBack={back} />
   if (where.page === 'shortcuts') return <PhoneShortcuts chat={chat} back={before()} onBack={back} onEdit={onEdit} />
@@ -334,8 +313,9 @@ function Profile({ chat, id, back, onBack }: { readonly chat: Chat; readonly id:
   )
 }
 
-function Projects({ chat, back, onBack, onAdd }: { readonly chat: Chat; readonly back: string; readonly onBack: () => void; readonly onAdd: () => void }): React.JSX.Element {
+function Projects({ chat, back, onBack }: { readonly chat: Chat; readonly back: string; readonly onBack: () => void }): React.JSX.Element {
   const [forgetting, setForgetting] = useState<string | undefined>()
+  const [adding, setAdding] = useState(false)
   const settings = chat.settings
   return (
     <Page title="Projects" back={back} onBack={onBack}>
@@ -358,8 +338,9 @@ function Projects({ chat, back, onBack, onAdd }: { readonly chat: Chat; readonly
         ))}
       </div>
       <div className="phone-group phone-form-group">
-        <Cell label="Add a project" accent onPress={onAdd} />
+        <Cell label="Add a project" accent onPress={() => setAdding(true)} />
       </div>
+      {adding ? <PhoneProject chat={chat} add onClose={() => setAdding(false)} /> : null}
       {forgetting === undefined ? null : (
         <Menu
           anchor={new DOMRect()}
@@ -373,42 +354,14 @@ function Projects({ chat, back, onBack, onAdd }: { readonly chat: Chat; readonly
   )
 }
 
-function AddProject({
-  chat,
-  host,
-  back,
-  onBack,
-  onAdded,
-}: {
-  readonly chat: Chat
-  readonly host?: string
-  readonly back: string
-  readonly onBack: () => void
-  readonly onAdded: () => void
-}): React.JSX.Element {
-  const on = host === undefined ? undefined : chat.hosts.find((one) => one.id === host)
-  // The host removed while its folders are open, or a card there answered Not now, which always leaves it Not connected: back rather than the computer's folders in its place.
-  useHostBounce(chat.hosts, host, onBack)
-  return (
-    <Page title="Choose a folder" back={back} onBack={onBack}>
-      {host !== undefined && on === undefined ? null : on === undefined ? <Folders chat={chat} onAdded={onAdded} /> : <PhoneHostFolders chat={chat} host={on} onAdded={onAdded} />}
-    </Page>
-  )
-}
-
-/** The Mac's folders one level at a time, from its home, with the one shown added as a project at the bottom. */
+/** The Mac's folders one level at a time, from its home, the one shown told to the sheet that picks it from its bar. */
 export function Folders({
-  chat,
   from,
   onShown,
-  onAdded,
 }: {
-  readonly chat: Chat
   /** The folder it opens in, the Mac's home when not given. */
   readonly from?: string
-  /** The folder shown, for a sheet that picks it from its bar; then there is no row for it at the bottom. */
-  readonly onShown?: (folder: FolderList) => void
-  readonly onAdded?: (root: string) => void
+  readonly onShown: (folder: FolderList) => void
 }): React.JSX.Element {
   const [at, setAt] = useState<string | undefined>(from)
   const [shown, setShown] = useState<FolderList | undefined>()
@@ -421,7 +374,7 @@ export function Folders({
         if (!here) return
         setTrouble(undefined)
         setShown(read)
-        onShown?.(read)
+        onShown(read)
       })
       .catch((error: unknown) => {
         if (here) setTrouble(tooOld(error))
@@ -430,7 +383,6 @@ export function Folders({
       here = false
     }
   }, [at, onShown])
-  const had = shown !== undefined && chat.settings.projects.includes(shown.path)
 
   return shown === undefined ? (
     <div className="phone-empty">{trouble ?? `Reading ${computerName()}...`}</div>
@@ -446,24 +398,6 @@ export function Folders({
           <Cell label={`No folders inside ${shown.path.split('/').filter((part) => part !== '').pop() ?? computerName()}`} />
         ) : null}
       </div>
-      {onShown !== undefined ? null : (
-        <div className="phone-group phone-form-group">
-          <Cell
-            label={had ? 'Already a project' : 'Add this folder'}
-            says={shown.git ? 'Git repository' : homePath(shown.path)}
-            accent={!had}
-            {...(had
-              ? {}
-              : {
-                  onPress: () => {
-                    tap('done')
-                    void window.geckit.chat.rememberProject(shown.path).then(() => chat.refresh())
-                    onAdded?.(shown.path)
-                  },
-                })}
-          />
-        </div>
-      )}
     </>
   )
 }

@@ -5,8 +5,8 @@ import { projectColor } from '../../../shared/project-color'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Sheet } from '../ui/Sheet'
-import { Cell, FullSheet } from './PhoneKit'
-import { Folders } from './PhoneSettings'
+import { Cell } from './PhoneKit'
+import { PhoneProject } from './PhoneProject'
 import { projectLabel } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
@@ -75,11 +75,7 @@ export function PhoneScope({ chat, onClose }: { readonly chat: Chat; readonly on
         </div>
         <div className="sheet-note">Nothing ticked shows every project{profileOf(settings) === undefined ? '' : ` in ${profileOf(settings)?.name ?? ''}`}. On this phone only.</div>
       </Sheet>
-      {adding ? (
-        <FullSheet title="Choose a folder" onClose={() => setAdding(false)}>
-          <Folders chat={chat} onAdded={() => setAdding(false)} />
-        </FullSheet>
-      ) : null}
+      {adding ? <PhoneProject chat={chat} add onClose={() => setAdding(false)} /> : null}
     </>
   )
 }

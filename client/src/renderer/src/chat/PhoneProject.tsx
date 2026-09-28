@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { shownProjects } from '../../../shared/api'
 import type { Folders as FolderList } from '../../../shared/api'
-import { hostOf } from '../../../shared/hosts'
+import { hostOf, remoteRoot } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
 import { tap } from '../tap'
 import { Cell, FullSheet } from './PhoneKit'
@@ -15,25 +15,28 @@ import { useHostBounce } from './useHosts'
 /** Which step of choosing a folder the sheet is at: where it is, then the folders there, on the computer or a host. */
 type Step = { readonly step: 'list' } | { readonly step: 'where' } | { readonly step: 'folders'; readonly host?: string }
 
-/** Where a new task starts, drawn as Settings draws its lists: the projects with their colour and path, and the folders of the computer or a host for one that is not a project yet. */
+/** Where a new task starts, drawn as Settings draws its lists: the projects with their colour and path, and the folders of the computer or a host for one that is not a project yet. With `add`, only the folders, and the one chosen is added as a project. */
 export function PhoneProject({
   chat,
-  root,
+  root = '',
+  add = false,
   onPick,
   onClose,
 }: {
   readonly chat: Chat
-  readonly root: string
-  readonly onPick: (root: string) => void
+  readonly root?: string
+  readonly add?: boolean
+  readonly onPick?: (root: string) => void
   readonly onClose: () => void
 }): React.JSX.Element {
-  const [at, setAt] = useState<Step>({ step: 'list' })
+  const first: Step = chat.hosts.length === 0 ? { step: 'folders' } : { step: 'where' }
+  const [at, setAt] = useState<Step>(add ? first : { step: 'list' })
   const [folder, setFolder] = useState<FolderList | undefined>()
   const [adding, setAdding] = useState(false)
   const [trouble, setTrouble] = useState<string | undefined>()
   const pick = (one: string): void => {
-    tap('light')
-    onPick(one)
+    tap(add ? 'done' : 'light')
+    onPick?.(one)
     onClose()
   }
   const onShownFolder = (found: FolderList): void => {
@@ -45,6 +48,7 @@ export function PhoneProject({
   const host = onHostId === undefined ? undefined : chat.hosts.find((one) => one.id === onHostId)
   // The host removed while its folders are open, or a card there answered Not now, which always leaves it Not connected: back to Where, never the computer's folders in its place.
   useHostBounce(chat.hosts, onHostId, () => setAt({ step: 'where' }))
+  const had = folder !== undefined && chat.settings.projects.includes(host === undefined ? folder.path : remoteRoot(host.id, folder.path))
   const here = (): void => {
     if (folder === undefined) return
     if (host !== undefined) {
@@ -69,22 +73,23 @@ export function PhoneProject({
   const near = root === '' || hostOf(root) !== undefined ? undefined : root.slice(0, root.lastIndexOf('/')) || undefined
   const choose = (): void => {
     setFolder(undefined)
-    setAt(chat.hosts.length === 0 ? { step: 'folders' } : { step: 'where' })
+    setAt(first)
   }
 
   const title = at.step === 'list' ? 'Project' : at.step === 'where' ? 'Where' : (folder?.path.split('/').pop() ?? 'Choose a folder')
+  const action = { action: adding ? 'Adding...' : add ? (had ? 'Added' : 'Add') : 'Start here', ready: folder !== undefined && !adding && !(add && had), onAction: here }
   const bar =
     at.step === 'list'
       ? {}
       : at.step === 'where'
-        ? { back: 'Project', onBack: () => setAt({ step: 'list' }) }
-        : {
-            back: chat.hosts.length === 0 ? 'Project' : 'Where',
-            onBack: () => setAt(chat.hosts.length === 0 ? { step: 'list' } : { step: 'where' }),
-            action: adding ? 'Adding...' : 'Start here',
-            ready: folder !== undefined && !adding,
-            onAction: here,
-          }
+        ? add
+          ? {}
+          : { back: 'Project', onBack: () => setAt({ step: 'list' }) }
+        : chat.hosts.length === 0
+          ? add
+            ? action
+            : { back: 'Project', onBack: () => setAt({ step: 'list' }), ...action }
+          : { back: 'Where', onBack: () => setAt({ step: 'where' }), ...action }
 
   return (
     <FullSheet title={title} {...bar} onClose={onClose}>
@@ -100,9 +105,9 @@ export function PhoneProject({
       ) : at.step === 'folders' ? (
         <>
           {onHostId !== undefined && host === undefined ? null : host === undefined ? (
-            <Folders chat={chat} {...(near === undefined ? {} : { from: near })} onShown={onShownFolder} />
+            <Folders {...(near === undefined ? {} : { from: near })} onShown={onShownFolder} />
           ) : (
-            <PhoneHostFolders chat={chat} host={host} onShown={onShownFolder} />
+            <PhoneHostFolders host={host} onShown={onShownFolder} />
           )}
           {trouble === undefined ? null : <div className="phone-note phone-lead">{trouble}</div>}
         </>

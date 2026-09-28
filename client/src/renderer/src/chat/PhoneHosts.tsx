@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import type { Folders as FolderList } from '../../../shared/api'
-import { remoteRoot, stateLine } from '../../../shared/hosts'
+import { stateLine } from '../../../shared/hosts'
 import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { macs } from '../macs'
-import { tap } from '../tap'
 import { HostDot } from './HostParts'
 import { Cell } from './PhoneKit'
 import { useMinute } from './useHosts'
@@ -78,20 +77,15 @@ export function PhoneWhere({ chat, onComputer, onHost }: { readonly chat: Chat; 
  * its folders are read asks in the sheet over this page.
  */
 export function PhoneHostFolders({
-  chat,
   host,
   onShown,
-  onAdded,
 }: {
-  readonly chat: Chat
   readonly host: HostView
-  readonly onShown?: (folder: FolderList) => void
-  readonly onAdded?: (root: string) => void
+  readonly onShown: (folder: FolderList) => void
 }): React.JSX.Element {
   const [at, setAt] = useState<string | undefined>()
   const [shown, setShown] = useState<FolderList | undefined>()
   const [trouble, setTrouble] = useState<string | undefined>()
-  const [adding, setAdding] = useState(false)
   useEffect(() => {
     let here = true
     void window.geckit.hosts.folders(host.id, at).then(
@@ -103,7 +97,7 @@ export function PhoneHostFolders({
         }
         setTrouble(undefined)
         setShown(read)
-        onShown?.(read)
+        onShown(read)
       },
       () => {
         if (here) setTrouble(`Could not read ${at ?? 'the home folder'} on ${host.name}.`)
@@ -113,7 +107,6 @@ export function PhoneHostFolders({
       here = false
     }
   }, [at, host.id, host.name, onShown])
-  const had = shown !== undefined && chat.settings.projects.includes(remoteRoot(host.id, shown.path))
 
   if (shown === undefined) return <div className="phone-empty">{trouble ?? `Reading ${host.name}...`}</div>
   return (
@@ -135,32 +128,6 @@ export function PhoneHostFolders({
           <Cell label={`No folders inside ${shown.path.split('/').filter((part) => part !== '').pop() ?? host.name}`} />
         ) : null}
       </div>
-      {onShown !== undefined ? null : (
-        <div className="phone-group phone-form-group">
-          <Cell
-            label={had ? 'Already a project' : adding ? 'Adding...' : 'Add this folder'}
-            says={`${host.name} · ${shown.path}`}
-            accent={!had}
-            {...(had || adding
-              ? {}
-              : {
-                  onPress: () => {
-                    setAdding(true)
-                    void window.geckit.hosts.addFolderSaying(host.id, shown.path).then((said) => {
-                      setAdding(false)
-                      if ('problem' in said) {
-                        setTrouble(said.problem)
-                        return
-                      }
-                      tap('done')
-                      chat.refresh()
-                      onAdded?.(said.root)
-                    })
-                  },
-                })}
-          />
-        </div>
-      )}
     </>
   )
 }
