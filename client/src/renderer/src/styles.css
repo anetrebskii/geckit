@@ -8243,3 +8243,189 @@ html.phone .preview-bar .icon-button {
 .status-bar .plan-item.faint {
   opacity: 0.55;
 }
+
+/*
+ * What a host is, in motion, 5 s a round: the middle card here is sent, a dot
+ * crosses to the host, Claude Code writes there, and a dot brings the answer
+ * back to the card. Still, it stands at the answer.
+ */
+.hosts-motion {
+  display: grid;
+  grid-template-columns: 1fr minmax(64px, 1.2fr) 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 14px 16px 10px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.hm-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.hm-box {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  max-width: 132px;
+  height: 64px;
+  padding: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+}
+
+.hm-label {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.hm-card {
+  height: 12px;
+  background: var(--fill);
+  border-radius: 3px;
+}
+
+.hm-card.hm-sent {
+  animation: hm-sent 5s var(--ease) infinite;
+}
+
+.hm-there {
+  gap: 6px;
+  font-family: var(--font-code);
+}
+
+.hm-prompt {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-dim);
+}
+
+.hm-spark {
+  color: #d97757;
+}
+
+.hm-line {
+  height: 5px;
+  background: var(--text-faint);
+  border-radius: 3px;
+  opacity: 0.5;
+  transform-origin: left;
+  animation: hm-line 5s linear infinite;
+}
+
+.hm-line:nth-of-type(3) {
+  width: 80%;
+  animation-name: hm-line-2;
+}
+
+.hm-line:nth-of-type(4) {
+  width: 55%;
+  animation-name: hm-line-3;
+}
+
+.hm-wire {
+  position: relative;
+  height: 64px;
+}
+
+.hm-wire::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  border-top: 1.5px dashed var(--border-strong);
+  content: '';
+}
+
+.hm-ssh {
+  position: absolute;
+  top: calc(50% + 8px);
+  left: 50%;
+  font-family: var(--font-code);
+  font-size: 10px;
+  color: var(--text-faint);
+  transform: translateX(-50%);
+}
+
+.hm-dot {
+  position: absolute;
+  top: calc(50% - 3.25px);
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  opacity: 0;
+}
+
+.hm-out {
+  animation: hm-out 5s var(--ease) infinite;
+}
+
+.hm-back {
+  animation: hm-back 5s var(--ease) infinite;
+}
+
+@keyframes hm-sent {
+  0%, 4% { background: var(--fill); box-shadow: none; }
+  8%, 30% { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+  76% { background: var(--fill); box-shadow: none; }
+  82%, 92% { background: var(--accent); box-shadow: none; }
+  100% { background: var(--fill); }
+}
+
+@keyframes hm-out {
+  0%, 10% { left: 0; opacity: 0; }
+  13% { opacity: 1; }
+  30% { left: calc(100% - 8px); opacity: 1; }
+  33%, 100% { left: calc(100% - 8px); opacity: 0; }
+}
+
+@keyframes hm-back {
+  0%, 62% { left: calc(100% - 8px); opacity: 0; }
+  65% { opacity: 1; }
+  80% { left: 0; opacity: 1; }
+  83%, 100% { left: 0; opacity: 0; }
+}
+
+@keyframes hm-line {
+  0%, 33% { transform: scaleX(0); }
+  43%, 92% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+
+@keyframes hm-line-2 {
+  0%, 43% { transform: scaleX(0); }
+  51%, 92% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+
+@keyframes hm-line-3 {
+  0%, 51% { transform: scaleX(0); }
+  59%, 92% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hosts-motion * {
+    animation: none !important;
+  }
+
+  .hm-card.hm-sent {
+    background: var(--accent);
+  }
+}
+
+.hosts-section-motion {
+  margin: 6px 0 4px;
+}
+
+.add-host .hosts-motion {
+  margin: 0 0 16px;
+}

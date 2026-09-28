@@ -197,3 +197,35 @@ export function HostTroubleCard({ host }: { readonly host: HostView }): React.JS
     </div>
   )
 }
+
+/** What a host is, in motion: a message leaves the board here, Claude Code works on the host, and the answer comes back. */
+export function HostsMotion(): React.JSX.Element {
+  return (
+    <div className="hosts-motion" aria-hidden="true">
+      <div className="hm-side">
+        <div className="hm-box hm-here">
+          <span className="hm-card" />
+          <span className="hm-card hm-sent" />
+          <span className="hm-card" />
+        </div>
+        <span className="hm-label">This computer</span>
+      </div>
+      <div className="hm-wire">
+        <span className="hm-ssh">SSH</span>
+        <span className="hm-dot hm-out" />
+        <span className="hm-dot hm-back" />
+      </div>
+      <div className="hm-side">
+        <div className="hm-box hm-there">
+          <span className="hm-prompt">
+            <span className="hm-spark">*</span> claude
+          </span>
+          <span className="hm-line" />
+          <span className="hm-line" />
+          <span className="hm-line" />
+        </div>
+        <span className="hm-label">The host</span>
+      </div>
+    </div>
+  )
+}

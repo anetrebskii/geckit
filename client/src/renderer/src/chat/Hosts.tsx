@@ -4,7 +4,7 @@ import type { ClaudeAccount } from '../../../shared/api'
 import { besideName, parseTarget, stateLine } from '../../../shared/hosts'
 import type { HostAuth, HostCheck, HostView, KnownHost } from '../../../shared/hosts'
 import { Icon } from '../ui/Icon'
-import { HostDot } from './HostParts'
+import { HostDot, HostsMotion } from './HostParts'
 import { useEscape, useHosts, useMinute } from './useHosts'
 
 /** Disconnect at once when nothing is working there; otherwise ask, with the count read fresh from the host. */
@@ -42,9 +42,13 @@ export function HostsSection(): React.JSX.Element {
       <div className="field">
         <label>Hosts</label>
         <span className="hosts-lead">
-          Conversations on a host run there, on the Claude Code and the plan signed in there, and keep working when this
-          computer sleeps or the connection drops. Their projects are listed with the host's name after them.
+          GeckIt runs Claude Code on another computer over SSH, and you work with it here as if it ran on this one. It works on that computer's files, with the Claude Code and plan signed in there, and keeps going when this computer sleeps or the connection drops.
         </span>
+        {hosts.length === 0 ? (
+          <div className="hosts-section-motion">
+            <HostsMotion />
+          </div>
+        ) : null}
         <div className="hosts-list">
           <div className="host-row">
             <HostDot state="up" />
@@ -391,11 +395,14 @@ export function AddHost({
   }
 
   return (
-    // A stray click outside never closes this: typed fields, and a connection under way, are not lost to a mis-click. Cancel and Escape still do.
-    <div className="dialog-scrim">
+    // A click outside closes it as Cancel does, except while a connection is under way.
+    <div className="dialog-scrim" onMouseDown={running ? undefined : onClose}>
       <div className="dialog add-host" onMouseDown={(event) => event.stopPropagation()}>
         <h2>{editing === undefined ? 'Add a host' : `Edit ${editing.name}`}</h2>
-        <p className="add-host-lead">Uses the SSH settings already on this computer. Nothing is installed on the host.</p>
+        <p className="add-host-lead">
+          GeckIt signs in over SSH with the settings already on this computer and runs the Claude Code there for you, as if it were here. It installs nothing of its own on the host.
+        </p>
+        {editing === undefined ? <HostsMotion /> : null}
         <div className="add-host-grid">
           <div className="field">
             <label htmlFor="host-address">Address</label>
