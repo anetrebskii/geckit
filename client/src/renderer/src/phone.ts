@@ -720,12 +720,13 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     can(next)
     if (opened !== undefined) send('chat.watching', opened)
     for (const later of held.splice(0)) later()
-    // Told again as if the Mac had told it: the list, the plan, the settings, and the end of the conversation on screen.
+    // Told again as if the Mac had told it: the list, the plan, the count working, the settings, and the end of the conversation on screen.
     void call<ChatSession[]>('chat.list', undefined).then((all) => {
       settled.add('list')
       told('chat:sessions', all)
     })
     void call('chat.plan').then((plan) => told('chat:plan', plan))
+    void call('lineup.state').then((lineup) => told('lineup:changed', lineup))
     void call<Settings>('settings.get').then((settings) => {
       settled.add('settings')
       told('settings:changed', settings)
