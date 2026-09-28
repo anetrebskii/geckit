@@ -1035,6 +1035,28 @@ describe('what the status bar is drawn from', () => {
     expect(built.sessions.plan()).toEqual(plan)
   })
 
+  it('keeps the weekly window and measures again when a turn says only the five-hour one', async () => {
+    let clock = 1_000
+    const asked: (readonly string[])[] = []
+    const built = build({
+      now: () => clock,
+      usage: async (models) => {
+        asked.push(models)
+        return { plan, windows: new Map(models.map((model) => [model, 400_000])) }
+      },
+    })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'hello' })
+    built.fake.hear({ signals: [{ kind: 'started', session: id, key: false, model: OPUS }] })
+    await built.sessions.measure()
+    clock += 10 * 60_000
+    const fiveHour = { part: 0.2, resetsAt: 6_000 }
+    built.fake.hear({ signals: [{ kind: 'plan', plan: { fiveHour } }] })
+
+    expect(built.sessions.plan()).toEqual({ ...plan, fiveHour })
+    await built.sessions.measure()
+    expect(asked).toEqual([[OPUS], []])
+  })
+
   it('measures a model first seen in a project\'s list', async () => {
     const built = build({
       disk: {

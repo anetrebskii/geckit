@@ -1685,10 +1685,11 @@ export class Sessions {
       case 'plan':
         // A host's run says its own account's windows, not this computer's.
         if (isRemote(live.root)) return
-        this.#plan = signal.plan
+        // A turn may say only one window, and the other one still stands.
+        this.#plan = { ...this.#plan, ...signal.plan }
         // Fresh from the turn, so asking again soon would only start a `claude` for the same numbers.
-        this.#measured = this.#now()
-        this.#deps.plan?.(signal.plan)
+        if (signal.plan.fiveHour !== undefined && signal.plan.sevenDay !== undefined) this.#measured = this.#now()
+        this.#deps.plan?.(this.#plan)
         return
       case 'task': {
         const { task } = signal
