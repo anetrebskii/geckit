@@ -5479,11 +5479,14 @@ html.phone button:active:not(:disabled) {
 .phone-list {
   flex: 1;
   min-height: 0;
-  padding-top: 41px;
   padding-bottom: calc(var(--bottom) + 18px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scroll-timeline: --tasks y;
+}
+
+.phone-top + .phone-list {
+  padding-top: 41px;
 }
 
 .phone-alert {
