@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/icon-walk.svg" width="112" alt=""></p>
 
-<h1 align="center">GeckIt, an alternative Claude Code desktop client</h1>
+<h1 align="center">GeckIt, an alternative desktop client for Claude Code</h1>
 
 <p align="center">Built by an engineer obsessed with personal productivity.</p>
 
@@ -16,6 +16,8 @@ GeckIt makes your Claude Code chats into a Kanban board with tasks and projects.
 </p>
 
 <p align="center">Free and open source. The board runs your own Claude Code on your Claude subscription, with no API key.</p>
+
+<p align="center">GeckIt is not made by Anthropic and is not affiliated with it. Claude and Claude Code are trademarks of Anthropic.</p>
 
 <a href="https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec">
   <img src="docs/video/geckit-light.webp" alt="A new task with a goal is started, Claude works on it, a question from another task is answered, and the new card moves to In review by itself">
@@ -167,6 +169,27 @@ The board and Correct need [Claude Code](https://code.claude.com/docs/en/overvie
 The Windows installer is not signed, so SmartScreen warns about it: More info, then Run anyway. It installs for your user only, into `%LOCALAPPDATA%\Programs\geckit`, without administrator rights.
 
 Do not keep one conversation open in GeckIt and in a terminal at the same time: two `claude` processes would write to the same history file.
+
+## Anthropic's terms
+
+Checked against Anthropic's terms on September 28, 2026.
+
+GeckIt follows the rules Anthropic sets for apps that run Claude Code:
+
+- It runs the `claude` you installed, as Anthropic publishes it.
+- You sign in with Claude Code's own login. GeckIt does not read, keep or send your credentials or tokens, and cannot sign anybody in.
+- An API key or another provider set in your environment is left out when GeckIt starts `claude`, so every conversation runs on your own plan.
+- There is no GeckIt server between you and Anthropic. `claude` talks to Anthropic from your computer or your host, and the phone reaches it only through your computer.
+
+Your account is under your own agreement with Anthropic, and Anthropic decides how it is enforced. Please respect it:
+
+- Use your own account. Do not share one plan between people.
+- Keep to your own work. Pro and Max limits assume "ordinary, individual usage", so do not run conversations for other people or sell access to them.
+- On a host, sign in to `claude` there yourself, with your own account.
+- Settings, Conversations working at once, is 6 by default. Many conversations working for hours is not what a plan's limits assume.
+- Follow the [Usage Policy](https://www.anthropic.com/legal/aup) and the [Consumer Terms](https://www.anthropic.com/legal/consumer-terms).
+
+The rules for apps built on Claude Code are on the [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) page. Anthropic changes them from time to time, and GeckIt cannot answer for how they are enforced.
 
 ## Build from source
 
