@@ -5,7 +5,9 @@ import type { ChatSession, Lineup, SessionItem } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
+import { Menu } from '../ui/Menu'
 import { projectName, tint } from './project'
+import { startedFrom } from './started'
 import type { Chat } from './useChat'
 
 /**
@@ -21,7 +23,8 @@ export const conversations = (count: number): string => (count === 1 ? 'a conver
 
 /** How a started conversation stands, in the words its row and the asker's board card use. */
 export function childSaid(session: ChatSession): { readonly words: string; readonly tone: string } {
-  if (session.state === 'working' || session.state === 'asks') return { words: 'working', tone: 'said-working' }
+  if (session.state === 'asks') return { words: 'asking you', tone: 'said-asks' }
+  if (session.state === 'working') return { words: 'working', tone: 'said-working' }
   if (session.waits === true) return { words: 'queued', tone: '' }
   if (session.status === 'review') return { words: 'in review', tone: 'said-review' }
   if (session.status === 'blocked') return { words: 'blocked', tone: 'said-asks' }
@@ -351,4 +354,64 @@ export function startedLine(sessions: readonly ChatSession[], id: string): strin
     counts.set(words, (counts.get(words) ?? 0) + 1)
   }
   return `Started ${String(children.length)} - ${[...counts].map(([words, count]) => `${String(count)} ${words}`).join(', ')}`
+}
+
+/** The list "Started 3" opens on the Mac, from the head or the board card: a row a conversation, pressed to open it. */
+export function StartedMenu({
+  chat,
+  id,
+  anchor,
+  onClose,
+}: {
+  readonly chat: Chat
+  readonly id: string
+  readonly anchor: DOMRect
+  readonly onClose: () => void
+}): React.JSX.Element {
+  return (
+    <Menu anchor={anchor} choices={[]} title="Started from this conversation" onPick={() => undefined} onClose={onClose}>
+      {startedFrom(chat.sessions, id).map(({ session, depth }) => {
+        const said = childSaid(session)
+        return (
+          <button
+            key={session.id}
+            type="button"
+            role="menuitem"
+            className="menu-item started-row"
+            style={{ '--depth': Math.min(depth, 2) } as React.CSSProperties}
+            onClick={() => {
+              onClose()
+              chat.goTo(session.id)
+            }}
+          >
+            <span className={`state-said ${said.tone}`}>
+              <span className="state-dot" />
+            </span>
+            <span className="started-words">
+              <span className="started-title">{session.title}</span>
+              <span className="started-meta">
+                <span className="tinted" style={tint(projectColor(homeOf(session), chat.settings))}>
+                  {projectName(homeOf(session))}
+                </span>
+                {' · '}
+                <span className={`state-said ${said.tone}`}>{said.words}</span>
+              </span>
+            </span>
+          </button>
+        )
+      })}
+    </Menu>
+  )
+}
+
+/** The way back from a started conversation to the one that asked for it, where "Started 3" stands in the parent. */
+export function Back({ chat, session }: { readonly chat: Chat; readonly session: ChatSession }): React.JSX.Element | null {
+  const parent = session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)
+  if (parent === undefined) return null
+  return (
+    <button type="button" className="picker head-back no-drag" title="Open the conversation that started this one" onClick={() => chat.goTo(parent.id)}>
+      <Icon name="left" size={11} />
+      <span>{parent.title}</span>
+    </button>
+  )
 }

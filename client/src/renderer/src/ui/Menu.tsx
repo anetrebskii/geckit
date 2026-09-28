@@ -36,6 +36,7 @@ export function Menu({
   note,
   onPick,
   onClose,
+  children,
 }: {
   readonly anchor: DOMRect
   readonly choices: readonly Choice[]
@@ -47,6 +48,8 @@ export function Menu({
   readonly note?: string
   readonly onPick: (value: string) => void
   readonly onClose: () => void
+  /** Rows of its own drawn after the choices, for a list whose rows say more than a name. */
+  readonly children?: React.ReactNode
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState<{ left: number; top: number; height: number } | undefined>()
@@ -102,6 +105,7 @@ export function Menu({
               {choice.value === chosen || choice.on === true ? <Icon name="check" size={16} /> : null}
             </button>
           ))}
+          {children}
         </div>
         {note === undefined ? null : <div className="sheet-note">{note}</div>}
       </Sheet>
@@ -147,6 +151,7 @@ export function Menu({
             {choice.says === undefined ? null : <span className="says">{choice.says}</span>}
           </button>
         ))}
+        {children}
         {note === undefined ? null : <div className="menu-note">{note}</div>}
       </div>
     </>,

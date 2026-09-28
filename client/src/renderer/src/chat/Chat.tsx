@@ -20,7 +20,8 @@ import { projectColor } from '../../../shared/project-color'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import { HostChip, HostPromptCard, HostTroubleCard } from './HostParts'
 import { PhoneHostSheet } from './PhoneHostSheet'
-import { From, RequestChat } from './Request'
+import { Back, RequestChat, StartedMenu } from './Request'
+import { startedCount } from './started'
 import { computerName, needsComputer } from './PhoneHosts'
 import { homePath, projectLabel, projectName, tint } from './project'
 import { Sidebar, Tags } from './Sidebar'
@@ -85,6 +86,7 @@ export function Chat(): React.JSX.Element {
   // The board's New task form is open.
   const [making, setMaking] = useState(() => keptTask(false) !== undefined)
   const [infoing, setInfoing] = useState(false)
+  const [kids, setKids] = useState<DOMRect | undefined>()
   const [pulled, setPulled] = useState<number>()
   // On the phone, New task opened to be filled from a recording.
   const [recordFirst, setRecordFirst] = useState(false)
@@ -548,7 +550,6 @@ export function Chat(): React.JSX.Element {
                 </span>
                 {host === undefined ? null : <HostChip host={host} onTerminal={() => window.geckit.hosts.terminal(host.id)} />}
                 <Tags session={chat.session} marked={false} />
-                <From chat={chat} session={chat.session} className="head-from no-drag" />
               </>
             ) : chat.root === undefined ? null : (
               <Picker
@@ -565,6 +566,21 @@ export function Chat(): React.JSX.Element {
               <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{chat.session.model}</span>
             )}
             <div className="spacer" />
+            {chat.session === undefined ? null : <Back chat={chat} session={chat.session} />}
+            {chat.session === undefined || startedCount(chat.sessions, chat.session.id) === 0 ? null : (
+              <button
+                type="button"
+                className="picker no-drag"
+                title="Conversations started from this one"
+                onClick={(event) => setKids(event.currentTarget.getBoundingClientRect())}
+              >
+                Started {startedCount(chat.sessions, chat.session.id)}
+                <Icon name="down" size={11} />
+              </button>
+            )}
+            {kids === undefined || chat.session === undefined ? null : (
+              <StartedMenu chat={chat} id={chat.session.id} anchor={kids} onClose={() => setKids(undefined)} />
+            )}
             {links.length === 0 ? null : (
               <Picker
                 label="Links"

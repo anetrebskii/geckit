@@ -20,7 +20,7 @@ import { NameField } from './NameField'
 import { PhoneProject } from './PhoneProject'
 import { PhoneRecord } from './PhoneRecord'
 import { Preview } from './Preview'
-import { From, startedLine } from './Request'
+import { From, startedLine, StartedMenu } from './Request'
 import { Projects } from './Projects'
 import { queueWhy } from './Queued'
 import { QuestionsMenu } from './Questions'
@@ -527,6 +527,7 @@ function Card({
   // The links written in it, counted on the card and listed where the button opens.
   const [links, setLinks] = useState<readonly Link[]>([])
   const [listing, setListing] = useState<DOMRect | undefined>()
+  const [kids, setKids] = useState<DOMRect | undefined>()
   useEffect(() => {
     let gone = false
     void window.geckit.chat.links(session.id).then((found) => {
@@ -657,7 +658,26 @@ function Card({
           <span>{detail}</span>
         </div>
       )}
-      {started === undefined ? null : <div className="board-card-kids">{started}</div>}
+      {started === undefined ? null : (
+        <div className="board-card-kids">
+          <button
+            type="button"
+            title="Show them"
+            onClick={(event) => {
+              event.stopPropagation()
+              setKids(event.currentTarget.getBoundingClientRect())
+            }}
+          >
+            {started}
+          </button>
+        </div>
+      )}
+      {/* Drawn over the page but inside the card in React, so a row pressed must not also open the card. */}
+      {kids === undefined ? null : (
+        <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+          <StartedMenu chat={chat} id={session.id} anchor={kids} onClose={() => setKids(undefined)} />
+        </span>
+      )}
     </div>
   )
 }

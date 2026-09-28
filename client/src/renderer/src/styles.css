@@ -3016,15 +3016,13 @@ html.phone .request-foot .request-reply {
 
 /* The parent's children, counted on its board card, and the parent named on a child's card and head. */
 .board-card-kids,
-.board-card-from,
-.head-from {
+.board-card-from {
   margin-top: 4px;
   font-size: 12px;
   color: var(--text-faint);
 }
 
-.board-card-from button,
-.head-from button {
+.board-card-from button {
   padding: 0;
   font: inherit;
   color: var(--accent);
@@ -3046,8 +3044,68 @@ html.phone .request-foot .request-reply {
 }
 
 
-.head-from {
-  margin-top: 0;
+/* The count on a parent's card opens the list of what it started, over the board. */
+.board-card-kids button {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.board-card-kids button:hover {
+  color: var(--text-dim);
+  text-decoration: underline;
+}
+
+/* What "Started 3" opens: a row a conversation, its title over its project and how it stands, what it started indented under it. */
+.menu-item.started-row {
+  align-items: flex-start;
+  gap: 9px;
+  width: 340px;
+  padding: 7px 10px 7px calc(10px + var(--depth) * 16px);
+  white-space: normal;
+}
+
+.started-row > .state-said {
+  flex: none;
+  margin-top: 6px;
+}
+
+.started-words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.started-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.started-meta {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* In a started conversation, the way back to the one that started it, where "Started 3" stands in that one. */
+.head-back {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  max-width: 220px;
+}
+
+.head-back span {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -5374,7 +5432,8 @@ html.phone button:active:not(:disabled) {
   min-height: 0;
   padding-bottom: calc(var(--bottom) + 18px);
   overflow-y: auto;
-  overscroll-behavior: contain;
+  /* No bounce: pulled past the top, iOS drew the scroll indicator beside the title, which scrolls in the list. */
+  overscroll-behavior: none;
 }
 
 .phone-alert {
@@ -6492,6 +6551,37 @@ html.phone .talk.over {
 
 .phone-nav .phone-icon {
   justify-self: end;
+}
+
+.phone-nav-started {
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: 0;
+}
+
+/* The drawer's "Started here": a row a conversation, what it started indented under it. */
+.phone-started {
+  position: relative;
+}
+
+.phone-started .phone-cell {
+  padding-inline-start: calc(16px + var(--depth) * 16px);
+}
+
+.phone-started + .phone-started::before {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  inset-inline: calc(16px + var(--depth) * 16px) 0;
+  height: 0.5px;
+  content: '';
+  background: var(--separator);
+}
+
+.phone-started .phone-cell-value {
+  font-size: 15px;
 }
 
 html.phone .transcript {

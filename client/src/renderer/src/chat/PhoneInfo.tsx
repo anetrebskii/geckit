@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { homeOf, SESSION_MODES } from '../../../shared/api'
 import type { PlanUsage, PlanWindow } from '../../../shared/api'
@@ -6,7 +6,8 @@ import { hostOf } from '../../../shared/hosts'
 import { Menu } from '../ui/Menu'
 import { Cell, Drawer } from './PhoneKit'
 import { projectLabel } from './project'
-import { startedLine } from './Request'
+import { childSaid } from './Request'
+import { startedFrom } from './started'
 import { ago } from './time'
 import { dollars, Meter, tokens, until, useGit } from './Status'
 import { accountsOf, usageOf } from './plans'
@@ -70,11 +71,14 @@ export const contextLine = (chat: Chat): string | undefined => {
 export function PhoneInfo({
   chat,
   pulled,
+  atStarted = false,
   onClear,
   onClose,
 }: {
   readonly chat: Chat
   readonly pulled?: number
+  /** Opened from "Started 3" under the title, so it opens scrolled to them. */
+  readonly atStarted?: boolean
   readonly onClear: () => void
   readonly onClose: () => void
 }): React.JSX.Element | null {
@@ -87,10 +91,14 @@ export function PhoneInfo({
   const [now] = useState(() => Date.now())
   const session = chat.session
   const git = useGit(session?.root ?? chat.root, session?.state)
+  const startedHead = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (atStarted) startedHead.current?.scrollIntoView({ block: 'start' })
+  }, [atStarted])
   if (session === undefined) return null
   const spend = session.spend
   const parent = session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)
-  const started = startedLine(chat.sessions, session.id)
+  const started = startedFrom(chat.sessions, session.id)
   const upstream = git?.upstream
 
   return (
@@ -127,9 +135,39 @@ export function PhoneInfo({
             }}
           />
         )}
-        {started === undefined ? null : <Cell label="Started" value={started.replace(/^Started /, '')} />}
       </div>
       {spend?.used === undefined ? null : <div className="phone-note">Claude Code summarises the conversation when its context fills.</div>}
+
+      {started.length === 0 ? null : (
+        <>
+          <div ref={startedHead} className="phone-head">
+            Started here
+          </div>
+          <div className="phone-group">
+            {started.map(({ session: child, depth }) => {
+              const said = childSaid(child)
+              return (
+                <div key={child.id} className="phone-started" style={{ '--depth': Math.min(depth, 2) } as React.CSSProperties}>
+                  <Cell
+                    label={child.title}
+                    says={projectLabel(homeOf(child))}
+                    value={
+                      <span className={`state-said ${said.tone}`}>
+                        <span className="state-dot" />
+                        {said.words}
+                      </span>
+                    }
+                    onPress={() => {
+                      onClose()
+                      chat.goTo(child.id)
+                    }}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
 
       {git === undefined ? null : (
         <>

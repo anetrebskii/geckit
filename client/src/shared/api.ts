@@ -295,6 +295,8 @@ export interface ChatSession {
   readonly stays?: boolean
   /** The conversation that asked for this one with `geckit start`. */
   readonly parent?: string
+  /** When GeckIt first wrote anything about it, which orders what one conversation started. */
+  readonly created?: number
 }
 
 export interface QueuedMessage {

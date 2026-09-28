@@ -6,5 +6,5 @@
     "composite": true
   },
   "include": ["src/main", "src/cli","src/preload", "src/shared", "test", "electron.vite.config.ts", "eslint.config.js"],
-  "exclude": ["test/peer.test.ts", "test/phone.test.ts", "test/plans.test.ts", "test/transcript.test.ts"]
+  "exclude": ["test/peer.test.ts", "test/phone.test.ts", "test/plans.test.ts", "test/started.test.ts", "test/transcript.test.ts"]
 }

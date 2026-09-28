@@ -645,6 +645,7 @@ export class Sessions {
         ...(live?.goes === undefined ? {} : { goes: live.goes }),
         ...(live?.stays === true ? { stays: true } : {}),
         ...(note?.parent === undefined ? {} : { parent: note.parent }),
+        ...(note?.created === undefined ? {} : { created: note.created }),
         ...(used === undefined && cost === undefined
           ? {}
           : {

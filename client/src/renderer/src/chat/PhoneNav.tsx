@@ -12,6 +12,7 @@ import { DeleteSheet, HideSheet, Rename } from './PhoneBoard'
 import { contextLine, PhoneInfo } from './PhoneInfo'
 import { HostDot } from './HostParts'
 import { projectLabel } from './project'
+import { startedCount } from './started'
 import type { Chat } from './useChat'
 
 /** The conversation's bar on the phone: back to the board, what it is, and everything else under More. */
@@ -37,7 +38,10 @@ export function PhoneNav({
   const [renaming, setRenaming] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [hiding, setHiding] = useState(false)
+  const [atStarted, setAtStarted] = useState(false)
   const session = chat.session
+  const started = session === undefined ? 0 : startedCount(chat.sessions, session.id)
+  const parent = session?.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)
   const on = session === undefined ? undefined : hostOf(homeOf(session))
   const host = on === undefined ? undefined : chat.hosts.find((one) => one.id === on)
   return (
@@ -52,6 +56,29 @@ export function PhoneNav({
           <span>
             {host === undefined ? null : <HostDot state={host.state} />}
             {[projectLabel(homeOf(session)), contextLine(chat)].filter((one) => one !== undefined).join(' · ')}
+            {parent === undefined ? null : (
+              <>
+                {' · '}
+                <button type="button" className="phone-nav-started" onClick={() => chat.goTo(parent.id)}>
+                  From {parent.title}
+                </button>
+              </>
+            )}
+            {started === 0 ? null : (
+              <>
+                {' · '}
+                <button
+                  type="button"
+                  className="phone-nav-started"
+                  onClick={() => {
+                    setAtStarted(true)
+                    onInfo(true)
+                  }}
+                >
+                  Started {started}
+                </button>
+              </>
+            )}
           </span>
         )}
       </div>
@@ -108,7 +135,18 @@ export function PhoneNav({
           onClose={() => setListing(false)}
         />
       ) : null}
-      {(info || pulled !== undefined) && session !== undefined ? <PhoneInfo chat={chat} {...(pulled === undefined ? {} : { pulled })} onClear={onClear} onClose={() => onInfo(false)} /> : null}
+      {(info || pulled !== undefined) && session !== undefined ? (
+        <PhoneInfo
+          chat={chat}
+          {...(pulled === undefined ? {} : { pulled })}
+          atStarted={atStarted}
+          onClear={onClear}
+          onClose={() => {
+            setAtStarted(false)
+            onInfo(false)
+          }}
+        />
+      ) : null}
       {hiding && session !== undefined ? <HideSheet session={session} chat={chat} onClose={() => setHiding(false)} /> : null}
       {deleting && session !== undefined ? <DeleteSheet session={session} chat={chat} onClose={() => setDeleting(false)} /> : null}
       {renaming && session !== undefined ? <Rename session={session} chat={chat} onClose={() => setRenaming(false)} /> : null}
