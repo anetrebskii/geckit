@@ -30,6 +30,13 @@ describe('the slot rule', () => {
     expect(letGo(all, 1, ['c', 'b', 'a'])).toEqual([])
     expect(letGo(all, 0, [])).toEqual(['a', 'b', 'c'])
   })
+
+  it('neither counts a general question nor holds one back', () => {
+    const all = [one('q', { state: 'working', question: true }), one('r', { waiting: true, question: true }), one('a', { waiting: true }), one('d', { state: 'working' })]
+    expect(taken(all)).toBe(1)
+    expect(letGo(all, 1, [])).toEqual(['r'])
+    expect(letGo(all, 2, [])).toEqual(['r', 'a'])
+  })
 })
 
 function build(limit: number): {

@@ -701,6 +701,7 @@ export class Sessions {
         state: one.state,
         at: one.at,
         ...(one.status === undefined ? {} : { status: one.status }),
+        ...(one.question === true ? { question: true } : {}),
         waiting: live !== undefined && this.#waiting(live),
       }
     })
