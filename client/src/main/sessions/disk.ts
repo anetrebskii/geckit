@@ -74,6 +74,14 @@ export async function claudeFile(root: string, id: string): Promise<string | und
   return undefined
 }
 
+/** The first line of the last thing said in one conversation, or nothing where it is not kept. */
+export async function standsIn(root: string, id: string): Promise<string> {
+  const path = await claudeFile(root, id)
+  if (path === undefined) return ''
+  const { size, mtimeMs } = await stat(path)
+  return rowFrom({ id, at: mtimeMs }, await edges(path, size))?.stands ?? ''
+}
+
 /**
  * The most that is read of a file for its row. A conversation with pasted
  * screenshots runs to tens of megabytes, and a folder somebody works in every

@@ -44,7 +44,7 @@ import { linksIn, workItem } from '../../shared/links'
 import { claudeAccount, claudeProgram } from './account'
 import { holdClaude } from './claude'
 import { browsersOf, readBrowsers } from './chrome'
-import { claudeFile, deleteClaude, everyClaude, forkPoint, listClaude, readClaudeSession, readGoal, readLinks } from './disk'
+import { claudeFile, deleteClaude, everyClaude, forkPoint, listClaude, readClaudeSession, readGoal, readLinks, standsIn } from './disk'
 import type { GoalRead } from './claude-read'
 import type { Conversation } from './disk'
 import { cardId } from './heard'
@@ -459,6 +459,17 @@ export class Sessions {
       live.stays = note.stays === true
       live.at = note.seen ?? live.at
       live.stands = note.stands ?? ''
+      // Kept before its last answer was written down: the transcript has it.
+      if (note.stands === undefined) {
+        void standsIn(live.root, id)
+          .then((stands) => {
+            if (stands === '' || live.stands !== '' || live.state !== 'idle') return
+            live.stands = stands
+            this.#keepNote(live)
+            this.#changed()
+          })
+          .catch(() => undefined)
+      }
       if (live.stays) continue
       live.goes = note.goes ?? live.at + QUESTION_KEPT
       live.quiet = setTimeout(() => void this.remove([id]), Math.max(0, live.goes - this.#now()))
