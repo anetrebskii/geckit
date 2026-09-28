@@ -83,6 +83,7 @@ html.keyboard .phone-tabs {
 .phone-cell + .phone-cell-pair::before,
 .phone-cell-pair + .phone-cell::before {
   position: absolute;
+  z-index: 1;
   top: 0;
   inset-inline: 16px 0;
   height: 0.5px;
