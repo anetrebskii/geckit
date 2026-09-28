@@ -1,5 +1,6 @@
 import type { Geckit } from '../../preload'
 import type { ChatSession, SessionImage, SessionItem, SessionItems, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
+import { isRemote } from '../../shared/hosts'
 import { pieceOf } from '../../shared/pairing'
 import { collapse, runKey } from '../../shared/steps'
 import { isLocal, toPhone } from '../../shared/local'
@@ -31,7 +32,7 @@ const QUIET = 5000
 const HOLD = 60_000
 let dropping: number | undefined
 // What the pill says: what is going on, and the step it is at, kept for the pill made once QUIET has passed.
-let saying = { head: 'Not connected to the Mac', step: 'Trying again' }
+let saying = { head: 'Not connected to the host', step: 'Trying again' }
 
 /** The pill over the page while the link to the Mac is down, once the drop has lasted long enough to be worth saying. */
 export function showDropped(): void {
@@ -66,6 +67,20 @@ function hideDropped(): void {
   window.clearTimeout(dropping)
   dropping = undefined
   document.querySelector('.phone-offline')?.remove()
+}
+
+// How long a notice sits over the page before it goes by itself.
+const NOTICE = 4000
+
+/** A brief pill over the page for something that could not be done, with nowhere else on the phone to say it. */
+export function showNotice(text: string): void {
+  document.querySelector('.phone-notice')?.remove()
+  const line = document.createElement('div')
+  line.className = 'phone-notice'
+  line.setAttribute('role', 'status')
+  line.textContent = text
+  document.body.append(line)
+  window.setTimeout(() => line.remove(), NOTICE)
 }
 
 /**
@@ -191,7 +206,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     one.onClose(() => {
       if (one !== link) return
       down = true
-      for (const waiting of pending.values()) waiting.failed(new Error('The link to the Mac is down'))
+      for (const waiting of pending.values()) waiting.failed(new Error('The link to the host is down'))
       pending.clear()
     })
   }
@@ -216,7 +231,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       }
       const expired = window.setTimeout(() => {
         held.splice(held.indexOf(later), 1)
-        failed(new Error('The link to the Mac is down'))
+        failed(new Error('The link to the host is down'))
       }, HOLD)
       const later = (): void => {
         window.clearTimeout(expired)
@@ -433,9 +448,11 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     chat: {
       open: nothing,
       account: () => call('chat.account'),
-      models: () => call('chat.models'),
+      models: (root) => call('chat.models', root),
       plan: () => call('chat.plan'),
       onPlan: (said) => listen('chat:plan', said),
+      plans: () => call('chat.plans'),
+      onPlans: (said) => listen('chat:plans', said),
       addProject: () => Promise.resolve(undefined),
       forgetProject: (root) => call('chat.forgetProject', root),
       rememberProject: (root) => call('chat.rememberProject', root),
@@ -552,11 +569,28 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       file: (root, path) => call('chat.file', root, path),
       repo: (root) => call('chat.repo', root),
       files: (root) => call('chat.files', root),
+      // The phone has nothing of this Mac's own files to carry anywhere.
+      upload: () => Promise.resolve({ problem: 'A file on the phone is not copied to a host.' }),
       // An address on the Mac's localhost means the phone itself here, so it is shown through the Mac instead.
+      // On a host, that address is the host's, not the Mac's, so it is carried there first.
       openLink: (href) => {
         const local = showLocal()
-        if (local !== undefined && isLocal(href)) local(toPhone(href))
-        else window.open(href, '_blank', 'noopener')
+        if (local === undefined || !isLocal(href)) {
+          window.open(href, '_blank', 'noopener')
+          return
+        }
+        const root = rows?.find((one) => one.id === watched)?.root
+        if (root !== undefined && isRemote(root)) {
+          void calls.forwardLink(root, href).then(({ href: carried, moved, problem }) => {
+            if (problem !== undefined) {
+              showNotice(problem)
+              return
+            }
+            local(toPhone(carried), moved)
+          })
+          return
+        }
+        local(toPhone(href))
       },
       onSessions: (said) => listen('chat:sessions', said),
       onItems: (said) => listen('chat:items', said),
@@ -569,6 +603,36 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
         }),
       onSpotlight: never,
       listening: nothing,
+    },
+    // Hosts are reached through the Mac; adding, editing and removing one, and a terminal, are for the Mac itself.
+    hosts: {
+      list: () => call('hosts.list'),
+      onChanged: (said) => listen('hosts:changed', said),
+      known: () => Promise.resolve([]),
+      check: () => Promise.resolve({ ok: false, problem: 'Hosts are added on the computer running GeckIt.' }),
+      update: () => Promise.resolve({ ok: false, problem: 'Hosts are changed on the computer running GeckIt.' }),
+      onChecks: never,
+      remove: () => Promise.resolve(),
+      forget: nothing,
+      connect: (id) => send('hosts.connect', id),
+      reconnect: (id) => send('hosts.reconnect', id),
+      disconnect: (id) => send('hosts.disconnect', id),
+      folders: (id, path) => call('hosts.folders', id, path),
+      addFolder: (id, path) => call('hosts.addFolder', id, path),
+      addFolderSaying: (id, path) => call('hosts.addFolderSaying', id, path),
+      prompts: () => call('hosts.prompts'),
+      onPrompt: (said) => listen('hosts:prompt', said),
+      onAnswered: (said) => listen('hosts:answered', said),
+      answer: (answer) => send('hosts.answer', answer),
+      install: () => Promise.resolve({ ok: false, text: 'Claude Code is installed on a host from the computer running GeckIt.' }),
+      // Trusting a changed key is fixed on the computer; the phone's own card says to look there instead of offering to.
+      trustNewKey: () => Promise.resolve({ ok: false, problem: 'A changed key is trusted on the computer running GeckIt.' }),
+      running: (id) => call('hosts.running', id),
+      working: (id) => call('hosts.working', id),
+      conversations: (id) => call('hosts.conversations', id),
+      terminal: nothing,
+      // A terminal on the phone is the Mac's own to open, not one of its own.
+      resumeLine: () => Promise.resolve(undefined),
     },
     voice: {
       done: () => Promise.resolve({ ok: false, error: 'Not on the phone' }),
@@ -614,11 +678,11 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     control: (order) =>
       call<ScreenControlled | null>('screen.control', order).then(
         // A Mac from before the trackpad answered null, and did not know these orders.
-        (done) => done ?? { error: 'Update GeckIt on the Mac to work it from here' },
+        (done) => done ?? { error: 'Update GeckIt on the host to work it from here' },
         (error: unknown) => ({
           error:
             error instanceof Error && error.message.includes('No such call')
-              ? 'Update GeckIt on the Mac to work it from here'
+              ? 'Update GeckIt on the host to work it from here'
               : error instanceof Error
                 ? error.message
                 : String(error),
@@ -638,6 +702,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     dropVideo: () => send('recording.drop'),
     recorded: (recording) => told('chat:recorded', recording),
     localFetch: (asked) => call('local.fetch', asked),
+    forwardLink: (root, href) => call('hosts.forwardLink', root, href),
   }
   Object.defineProperty(window, 'geckitPhone', { value: calls })
 

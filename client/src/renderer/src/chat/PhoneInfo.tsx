@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 
 import { homeOf, SESSION_MODES } from '../../../shared/api'
-import type { PlanWindow } from '../../../shared/api'
+import type { PlanUsage, PlanWindow } from '../../../shared/api'
+import { hostOf } from '../../../shared/hosts'
 import { Menu } from '../ui/Menu'
 import { Cell, Drawer } from './PhoneKit'
-import { projectName } from './project'
+import { projectLabel } from './project'
 import { ago } from './time'
 import { dollars, Meter, tokens, until, useGit } from './Status'
+import { accountsOf, usageOf } from './plans'
 import type { Chat } from './useChat'
 
 /** When a window starts again: the time today, the weekday and time within a week, the date beyond. */
@@ -35,13 +37,14 @@ export function Limit({ name, window, now }: { readonly name: string; readonly w
 }
 
 /** The plan's windows, shared by every conversation on the Mac. */
-export function Limits({ chat }: { readonly chat: Chat }): React.JSX.Element | null {
+export function Limits({ chat, usage }: { readonly chat: Chat; readonly usage?: PlanUsage | undefined }): React.JSX.Element | null {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60_000)
     return () => clearInterval(tick)
   }, [])
-  const plan = chat.plan
+  // An account's own windows where one is given, this computer's otherwise.
+  const plan = usage ?? chat.plan
   if (plan?.fiveHour === undefined && plan?.sevenDay === undefined) return null
   return (
     <div className="phone-group">
@@ -74,6 +77,11 @@ export function PhoneInfo({
   readonly onClear: () => void
   readonly onClose: () => void
 }): React.JSX.Element | null {
+  // The plan this conversation spends is its account's: a host's own where it runs on one.
+  const at = chat.session === undefined ? '' : (hostOf(chat.session.root) ?? '')
+  const item = accountsOf([at], chat.plans, (place) => place)[0]
+  const mine = item === undefined ? chat.plan : usageOf(item, chat.plan)
+  const mineName = at === '' ? undefined : (chat.hosts.find((one) => one.id === at)?.name ?? at)
   const [asking, setAsking] = useState<'compact' | 'clear'>()
   const [now] = useState(() => Date.now())
   const session = chat.session
@@ -105,7 +113,7 @@ export function PhoneInfo({
         {spend?.cost === undefined ? null : <Cell label="Cost" says="At API prices; the plan covers it" value={dollars(spend.cost)} />}
         {session.model === undefined ? null : <Cell label="Model" value={session.model} />}
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === session.mode)?.label ?? '-'} />
-        <Cell label="Project" value={projectName(homeOf(session))} />
+        <Cell label="Project" value={projectLabel(homeOf(session))} />
       </div>
       {spend?.used === undefined ? null : <div className="phone-note">Claude Code summarises the conversation when its context fills.</div>}
 
@@ -142,10 +150,10 @@ export function PhoneInfo({
         <Cell label="Clear" says="Start a new task in this project" danger onPress={() => setAsking('clear')} />
       </div>
 
-      {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
+      {mine?.fiveHour === undefined && mine?.sevenDay === undefined ? null : (
         <>
-          <div className="phone-head">Plan</div>
-          <Limits chat={chat} />
+          <div className="phone-head">{mineName === undefined ? 'Plan' : `Plan on ${mineName}`}</div>
+          <Limits chat={chat} usage={mine} />
         </>
       )}
 
@@ -165,7 +173,7 @@ export function PhoneInfo({
         <Menu
           anchor={new DOMRect()}
           title="Clear the conversation?"
-          note={`A new task starts in ${projectName(homeOf(session))}, with nothing of this one in mind. This one stays on the board.`}
+          note={`A new task starts in ${projectLabel(homeOf(session))}, with nothing of this one in mind. This one stays on the board.`}
           choices={[{ value: 'clear', label: 'Clear', danger: true }]}
           onPick={() => {
             onClose()

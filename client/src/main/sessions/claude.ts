@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process'
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
+import type { Readable, Writable } from 'node:stream'
 
 import type { CardAnswer, SessionMode } from '../../shared/api'
+import { pathOf } from '../../shared/hosts'
 import { claudeCommand, planOnly } from './account'
 import { AGAIN, claudeState, readClaude, REFUSED } from './claude-read'
 import type { ClaudeRequest } from './claude-read'
@@ -36,6 +37,49 @@ export interface ClaudeOptions {
   readonly model?: string
   /** A new conversation that starts as a copy of another, up to the message `at` where one is given. */
   readonly fork?: { readonly from: string; readonly at?: string }
+  /** Starts it somewhere other than this computer, with the arguments it would be started with here. */
+  readonly launch?: (args: readonly string[]) => Held
+}
+
+/**
+ * The process a conversation is held by: a child of this one, or a run on a
+ * host that looks like one. `leave` lets go of it without stopping it.
+ */
+export interface Held {
+  readonly stdin: Writable
+  readonly stdout: Readable
+  readonly stderr: Readable
+  on(event: 'close', listener: () => void): unknown
+  on(event: 'error', listener: (error: Error) => void): unknown
+  once(event: 'close' | 'error', listener: () => void): unknown
+  kill(): boolean
+  leave?(): void
+}
+
+/** What `claude` is started with for a conversation, the same wherever it runs. */
+export function claudeArgs(options: Pick<ClaudeOptions, 'id' | 'resume' | 'mode' | 'model' | 'fork'>): string[] {
+  return [
+    '-p',
+    '--input-format',
+    'stream-json',
+    '--output-format',
+    'stream-json',
+    '--include-partial-messages',
+    '--verbose',
+    '--permission-mode',
+    options.mode,
+    '--permission-prompt-tool',
+    'stdio',
+    // Print mode leaves the browser out unless it is asked for, so a session
+    // here would have none of the tools a terminal one has. Without the
+    // extension the server simply does not connect.
+    '--chrome',
+    ...(options.model === undefined ? [] : ['--model', options.model]),
+    ...(options.resume ? ['--resume', options.id] : ['--session-id', options.id]),
+    ...(options.resume || options.fork === undefined
+      ? []
+      : ['--fork-session', '--resume', options.fork.from, ...(options.fork.at === undefined ? [] : ['--resume-session-at', options.fork.at])]),
+  ]
 }
 
 /** Several questions asked at once, being answered one card at a time. */
@@ -53,7 +97,8 @@ export function holdClaude(
   /** The process is gone, by itself or because it was let go. */
   left: () => void,
 ): Driver {
-  const state = claudeState(options.root)
+  // The tool names paths on its own computer, so a card or a written-file line about a host is read against that, not the `ssh://` root that names it here.
+  const state = claudeState(pathOf(options.root))
   const requests = new Map<string, ClaudeRequest>()
   const asked = new Map<string, Asked>()
   // Requests of ours on the control channel, waiting for the tool to answer them.
@@ -64,32 +109,9 @@ export function holdClaude(
   let over = false
   let last = ''
 
-  const child: ChildProcessWithoutNullStreams = spawn(
-    claudeCommand(),
-    [
-      '-p',
-      '--input-format',
-      'stream-json',
-      '--output-format',
-      'stream-json',
-      '--include-partial-messages',
-      '--verbose',
-      '--permission-mode',
-      options.mode,
-      '--permission-prompt-tool',
-      'stdio',
-      // Print mode leaves the browser out unless it is asked for, so a session
-      // here would have none of the tools a terminal one has. Without the
-      // extension the server simply does not connect.
-      '--chrome',
-      ...(options.model === undefined ? [] : ['--model', options.model]),
-      ...(options.resume ? ['--resume', options.id] : ['--session-id', options.id]),
-      ...(options.resume || options.fork === undefined
-        ? []
-        : ['--fork-session', '--resume', options.fork.from, ...(options.fork.at === undefined ? [] : ['--resume-session-at', options.fork.at])]),
-    ],
-    { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true },
-  )
+  const args = claudeArgs(options)
+  const child: Held =
+    options.launch?.(args) ?? spawn(claudeCommand(), args, { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true })
   const closed = new Promise<void>((resolve) => {
     child.once('close', () => resolve())
     child.once('error', () => resolve())
@@ -285,6 +307,16 @@ export function holdClaude(
       child.kill()
       left()
       return closed
+    },
+
+    leave() {
+      if (over) return
+      if (child.leave === undefined) {
+        void this.end()
+        return
+      }
+      over = true
+      child.leave()
     },
   }
 }

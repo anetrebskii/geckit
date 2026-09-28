@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 
 import { homeOf, SESSION_STATUSES } from '../../../shared/api'
 import type { SessionStatus } from '../../../shared/api'
+import { hostOf } from '../../../shared/hosts'
 import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
 import { tap } from '../tap'
@@ -9,7 +10,8 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { DeleteSheet, HideSheet, Rename } from './PhoneBoard'
 import { contextLine, PhoneInfo } from './PhoneInfo'
-import { projectName } from './project'
+import { HostDot } from './HostParts'
+import { projectLabel } from './project'
 import type { Chat } from './useChat'
 
 /** The conversation's bar on the phone: back to the board, what it is, and everything else under More. */
@@ -36,6 +38,8 @@ export function PhoneNav({
   const [deleting, setDeleting] = useState(false)
   const [hiding, setHiding] = useState(false)
   const session = chat.session
+  const on = session === undefined ? undefined : hostOf(homeOf(session))
+  const host = on === undefined ? undefined : chat.hosts.find((one) => one.id === on)
   return (
     <div className="phone-nav">
       <button type="button" className="phone-back" onClick={() => chat.open({ kind: 'new' })}>
@@ -44,10 +48,15 @@ export function PhoneNav({
       </button>
       <div className="phone-nav-title">
         <b>{session?.title ?? 'New conversation'}</b>
-        {session === undefined ? null : <span>{[projectName(homeOf(session)), contextLine(chat)].filter((one) => one !== undefined).join(' · ')}</span>}
+        {session === undefined ? null : (
+          <span>
+            {host === undefined ? null : <HostDot state={host.state} />}
+            {[projectLabel(homeOf(session)), contextLine(chat)].filter((one) => one !== undefined).join(' · ')}
+          </span>
+        )}
       </div>
       <span className="phone-nav-end">
-        <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
+        <button type="button" className="phone-icon" aria-label="The host's screen" onClick={onScreen}>
           <Icon name="display" size={24} />
         </button>
         {session === undefined ? null : (

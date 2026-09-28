@@ -160,10 +160,15 @@ const LOOK_EVERY = 1_000
  * A command that wants a keyboard, typed into a terminal with a line after it
  * that writes down how it exited, so it is followed like one run here. What it
  * printed stays in the terminal.
+ *
+ * `status` is a file on this computer, whatever runs the command: local, it is
+ * written where the command itself ran; on a host, `open` is left to embed the
+ * line that writes it after the connection to the host has closed, so it is
+ * this computer's shell that writes it and not the host's.
  */
-export function runInTerminal(root: string, command: string, open: (root: string, run: string) => void): Running {
+export function runInTerminal(root: string, command: string, open: (root: string, run: string, status: string) => void): Running {
   const status = join(tmpdir(), `geckit-${randomUUID()}`)
-  open(root, `${command}; echo $? > ${JSON.stringify(status)}`)
+  open(root, command, status)
   let finish: (ran: Ran) => void = () => undefined
   const done = new Promise<Ran>((resolve) => (finish = resolve))
   const look = setInterval(() => {

@@ -5,6 +5,7 @@ import type {
   Browser,
   CardAnswer,
   FileShown,
+  Folders,
   ChatFound,
   ChatSession,
   ClaudeAccount,
@@ -32,8 +33,11 @@ import type {
   UpdateView,
   Recording,
   ScreenSource,
+  PlaceUsage,
+  Uploaded,
   VoiceMode,
 } from '../shared/api'
+import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from '../shared/hosts'
 import type { Link } from '../shared/links'
 import { pieceOf } from '../shared/pairing'
 import type { Pairing, Piece } from '../shared/pairing'
@@ -99,10 +103,14 @@ const geckit = {
   chat: {
     open: (): void => ipcRenderer.send('chat:open'),
     account: (): Promise<ClaudeAccount> => ipcRenderer.invoke('chat:account'),
-    models: (): Promise<ClaudeModel[] | undefined> => ipcRenderer.invoke('chat:models'),
+    /** A project's own root asks a host's own claude, where one is given; without it, this computer's. */
+    models: (root?: string): Promise<ClaudeModel[] | undefined> => ipcRenderer.invoke('chat:models', root),
     /** The plan's windows as last measured. Asking has them measured again; the fresh ones arrive through onPlan. */
     plan: (): Promise<PlanUsage | undefined> => ipcRenderer.invoke('chat:plan'),
     onPlan: (said: (plan: PlanUsage) => void): (() => void) => listen('chat:plan', said),
+    /** Every place's plan, this computer's and each connected host's, as last measured; asking has them measured again, the fresh ones arrive through onPlans. */
+    plans: (): Promise<PlaceUsage[]> => ipcRenderer.invoke('chat:plans'),
+    onPlans: (said: (plans: readonly PlaceUsage[]) => void): (() => void) => listen('chat:plans', said),
     /** The folder picker. The folder chosen is remembered and given back. */
     addProject: (): Promise<string | undefined> => ipcRenderer.invoke('chat:addProject'),
     forgetProject: (root: string): Promise<void> => ipcRenderer.invoke('chat:forgetProject', root),
@@ -203,6 +211,8 @@ const geckit = {
     repo: (root: string): Promise<string | undefined> => ipcRenderer.invoke('chat:repo', root),
     /** Every file and folder in a project, as paths from it, for @. */
     files: (root: string): Promise<string[]> => ipcRenderer.invoke('chat:files', root),
+    /** A file carried to a project on a host, for a message to point at: where it landed there, or unchanged for a local root. */
+    upload: (root: string, path: string): Promise<Uploaded> => ipcRenderer.invoke('chat:upload', root, path),
     openLink: (href: string): void => ipcRenderer.send('open:link', href),
     onSessions: (said: (sessions: readonly ChatSession[]) => void): (() => void) =>
       listen('chat:sessions', said),
@@ -218,6 +228,52 @@ const geckit = {
     onSpotlight: (said: (again: boolean) => void): (() => void) => listen('chat:spotlight', said),
     /** Everything above is listened for: what main held while the window loaded can come now. */
     listening: (): void => ipcRenderer.send('chat:listening'),
+  },
+
+  /** Other computers conversations run on, reached over SSH. */
+  hosts: {
+    list: (): Promise<HostView[]> => ipcRenderer.invoke('hosts:list'),
+    onChanged: (said: (hosts: readonly HostView[]) => void): (() => void) => listen('hosts:changed', said),
+    /** The hosts in the person's SSH config, offered as an address is typed. */
+    known: (): Promise<KnownHost[]> => ipcRenderer.invoke('hosts:known'),
+    /** Reaches a host not yet added, and keeps it once it was reached; what it checks arrives through onChecks. */
+    check: (draft: HostDraft): Promise<{ readonly ok: true; readonly host: HostView } | { readonly ok: false; readonly problem: string }> =>
+      ipcRenderer.invoke('hosts:check', draft),
+    /** Edits a host already kept. Only its name changed is saved without a connection; anything else is checked again, what it checks arriving through onChecks too. */
+    update: (id: string, draft: HostDraft): Promise<{ readonly ok: true; readonly host: HostView } | { readonly ok: false; readonly problem: string }> =>
+      ipcRenderer.invoke('hosts:update', id, draft),
+    onChecks: (said: (lines: readonly HostCheck[]) => void): (() => void) => listen('hosts:checks', said),
+    remove: (id: string): Promise<void> => ipcRenderer.invoke('hosts:remove', id),
+    /** Lets go of a stored password without removing the host. */
+    forget: (id: string): void => ipcRenderer.send('hosts:forget', id),
+    connect: (id: string): void => ipcRenderer.send('hosts:connect', id),
+    reconnect: (id: string): void => ipcRenderer.send('hosts:reconnect', id),
+    disconnect: (id: string): void => ipcRenderer.send('hosts:disconnect', id),
+    /** One level of a host's folders, from its home where no path is given. */
+    folders: (id: string, path?: string): Promise<Folders | undefined> => ipcRenderer.invoke('hosts:folders', id, path ?? null),
+    /** A folder on a host as a project; the project's root is given back. */
+    addFolder: (id: string, path: string): Promise<string | undefined> => ipcRenderer.invoke('hosts:addFolder', id, path),
+    /** `addFolder`, but with why it failed rather than only that it did. */
+    addFolderSaying: (id: string, path: string): Promise<{ readonly root: string } | { readonly problem: string }> =>
+      ipcRenderer.invoke('hosts:addFolderSaying', id, path),
+    /** What hosts are asking now, and each new question as it is asked. */
+    prompts: (): Promise<HostPrompt[]> => ipcRenderer.invoke('hosts:prompts'),
+    onPrompt: (said: (prompt: HostPrompt) => void): (() => void) => listen('hosts:prompt', said),
+    onAnswered: (said: (id: string) => void): (() => void) => listen('hosts:answered', said),
+    answer: (answer: HostAnswer): void => ipcRenderer.send('hosts:answer', answer),
+    install: (id: string): Promise<{ readonly ok: boolean; readonly text: string }> => ipcRenderer.invoke('hosts:install', id),
+    /** Forgets a host's changed key from wherever ssh itself keeps it and reaches it again; why it could not, where it could not. */
+    trustNewKey: (id: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly problem: string }> => ipcRenderer.invoke('hosts:trustNewKey', id),
+    /** How many runs Remove would stop on the host now, idle ones too. */
+    running: (id: string): Promise<number> => ipcRenderer.invoke('hosts:running', id),
+    /** How many conversations on the host are actually working or waiting on an answer now, for Disconnect. */
+    working: (id: string): Promise<number> => ipcRenderer.invoke('hosts:working', id),
+    /** How many conversations on the host are listed at all, for Remove to say how many stay behind. */
+    conversations: (id: string): Promise<number> => ipcRenderer.invoke('hosts:conversations', id),
+    /** A terminal signed in to the host, running `run` there where one is given. */
+    terminal: (id: string, run?: string): void => ipcRenderer.send('hosts:terminal', id, run ?? null),
+    /** What a terminal types to resume a particular conversation on a host; nothing for a local root. */
+    resumeLine: (root: string, id: string): Promise<string | undefined> => ipcRenderer.invoke('hosts:resumeLine', root, id),
   },
 
   voice: {

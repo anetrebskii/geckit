@@ -7,7 +7,7 @@ import { Icon } from '../ui/Icon'
 import { Sheet } from '../ui/Sheet'
 import { Cell, FullSheet } from './PhoneKit'
 import { Folders } from './PhoneSettings'
-import { projectName } from './project'
+import { projectLabel } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
 
@@ -15,7 +15,7 @@ import type { Chat } from './useChat'
 
 function scopeName(chat: Chat): string {
   const profile = profileOf(chat.settings)
-  if (chat.chosen.length === 1) return projectName(chat.chosen[0] ?? '')
+  if (chat.chosen.length === 1) return projectLabel(chat.chosen[0] ?? '')
   if (chat.chosen.length > 1) return `${String(chat.chosen.length)} projects`
   return profile?.name ?? 'All projects'
 }
@@ -61,7 +61,7 @@ export function PhoneScope({ chat, onClose }: { readonly chat: Chat; readonly on
               label={
                 <>
                   <span className="phone-project-dot" style={{ background: `var(--project-${String(projectColor(root, settings))})` }} />
-                  {projectName(root)}
+                  {projectLabel(root)}
                 </>
               }
               chosen={chat.chosen.includes(root)}

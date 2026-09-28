@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 
 import type { FileShown } from '../../../shared/api'
+import { ON_PHONE } from '../on-phone'
 import { CopyButton } from './Code'
+import { computerName } from './PhoneHosts'
 import { FullSheet, tooOld } from './PhoneKit'
+import { hostName } from './project'
 import { Preview } from './Preview'
 import { Prose } from './Prose'
 
@@ -25,6 +28,8 @@ export function FileView({ root, path, onClose }: { readonly root: string; reado
   }, [root, path])
 
   if (shown?.kind === 'picture') return <Preview src={`data:${shown.image.media};base64,${shown.image.data}`} onClose={onClose} />
+  // On the phone it always comes from the host it works through, whichever host actually holds it; on the desktop, that file's own host.
+  const readingOn = ON_PHONE ? computerName() : (hostName(root) ?? 'this computer')
   return (
     <FullSheet
       title={path.split('/').at(-1) ?? path}
@@ -36,7 +41,7 @@ export function FileView({ root, path, onClose }: { readonly root: string; reado
       onClose={onClose}
     >
       {shown === undefined ? (
-        <p className="file-view-said">Reading it on the Mac...</p>
+        <p className="file-view-said">Reading it on {readingOn}...</p>
       ) : shown.kind === 'none' ? (
         <p className="file-view-said">{shown.why}</p>
       ) : shown.kind === 'page' ? (

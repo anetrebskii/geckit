@@ -44,7 +44,7 @@ export interface Found {
 
 const string = (value: unknown): string => (typeof value === 'string' ? value : '')
 
-const slug = (root: string): string => root.replace(/[^A-Za-z0-9]/g, '-')
+export const slug = (root: string): string => root.replace(/[^A-Za-z0-9]/g, '-')
 
 // Somebody who keeps the tool's folder elsewhere says so the way the tool asks them to.
 const base = (): string => join(process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude'), 'projects')
@@ -80,32 +80,53 @@ export async function claudeFile(root: string, id: string): Promise<string | und
  * day has hundreds of them; the title is near one end and the last thing said
  * is near the other.
  */
-const EDGE = 64 * 1024
+export const EDGE = 64 * 1024
 
 /** How many conversations are read for the list. */
 const MOST = 200
 
-async function edges(path: string, size: number): Promise<{ head: Json[]; tail: Json[]; cut: string }> {
-  const file = await open(path, 'r')
-  let cut = ''
-  try {
-    const lines = async (from: number, length: number): Promise<Json[]> => {
-      const { buffer, bytesRead } = await file.read(Buffer.alloc(length), 0, length, from)
-      const whole = buffer.subarray(0, bytesRead).toString('utf8').split('\n')
-      // A window into the middle of a file starts and ends mid-line.
-      if (from > 0) whole.shift()
-      if (from + length < size && from === 0) cut = whole.pop() ?? ''
-      else if (from + length < size) whole.pop()
-      return whole.flatMap((line) => {
-        try {
-          return line.trim() === '' ? [] : [JSON.parse(line) as Json]
-        } catch {
-          return []
-        }
-      })
+/** The lines of a window into a file: one that starts past the beginning or ends before the end starts and ends mid-line. */
+function linesIn(bytes: Buffer, from: number, size: number, keepCut: (cut: string) => void): Json[] {
+  const whole = bytes.toString('utf8').split('\n')
+  if (from > 0) whole.shift()
+  if (from + bytes.length < size && from === 0) keepCut(whole.pop() ?? '')
+  else if (from + bytes.length < size) whole.pop()
+  return whole.flatMap((line) => {
+    try {
+      return line.trim() === '' ? [] : [JSON.parse(line) as Json]
+    } catch {
+      return []
     }
-    if (size <= EDGE * 2) return { head: await lines(0, size), tail: [], cut }
-    return { head: await lines(0, EDGE), tail: await lines(size - EDGE, EDGE), cut }
+  })
+}
+
+/** The two ends of a file, as a row is read from them: the file's first part, and its last where it is longer than both. */
+export interface Edges {
+  readonly head: Json[]
+  readonly tail: Json[]
+  readonly cut: string
+}
+
+/** The ends of a file from its bytes: all of it where it is short, or its first and last `EDGE` bytes. */
+export function edgesOf(head: Buffer, tail: Buffer | undefined, size: number): Edges {
+  let cut = ''
+  const keep = (line: string): void => {
+    cut = line
+  }
+  if (tail === undefined || size <= EDGE * 2) return { head: linesIn(head, 0, size, keep), tail: [], cut }
+  const first = linesIn(head, 0, size, keep)
+  return { head: first, tail: linesIn(tail, size - tail.length, size, keep), cut }
+}
+
+export async function edges(path: string, size: number): Promise<Edges> {
+  const file = await open(path, 'r')
+  try {
+    const part = async (from: number, length: number): Promise<Buffer> => {
+      const { buffer, bytesRead } = await file.read(Buffer.alloc(length), 0, length, from)
+      return buffer.subarray(0, bytesRead)
+    }
+    if (size <= EDGE * 2) return edgesOf(await part(0, size), undefined, size)
+    return edgesOf(await part(0, EDGE), await part(size - EDGE, EDGE), size)
   } finally {
     await file.close()
   }
@@ -199,46 +220,50 @@ async function rowsOf<File extends Kept>(files: File[], kept: (row: Found, file:
   const found: Found[] = []
   for (const file of files) {
     if (found.length >= most) break
-    const { head, tail, cut } = await edges(file.path, file.size).catch(() => ({ head: [], tail: [], cut: '' }))
-    const all = [...head, ...tail]
-    const named = (type: string, key: string): string =>
-      string([...all].reverse().find((entry) => string(entry['type']) === type)?.[key])
-
-    const asked = head.map(typed).find((words) => words.trim() !== '') || cutWords(cut)
-    // A first message that is one pasted file fills the head on its own, and the
-    // words are past the end of it; the other end still has some.
-    const said = asked || (tail.map(typed).find((words) => words.trim() !== '') ?? '')
-    const title = named('custom-title', 'customTitle') || named('ai-title', 'aiTitle') || firstLine(said, 80)
-    // A file with nobody in it: opened and closed, or the tool's own bookkeeping.
-    if (title === '') continue
-
-    const entrypoint = string(all.find((entry) => string(entry['entrypoint']) !== '')?.['entrypoint'])
-    // `<synthetic>` is the tool speaking for itself - a limit, a refusal - and not a model.
-    const model = [...all]
-      .reverse()
-      .map((entry) =>
-        string(entry['type']) === 'assistant'
-          ? string(((entry['message'] ?? {}) as Json)['model'])
-          : '',
-      )
-      .find((name) => name !== '' && name !== '<synthetic>')
-    const used = lastContext(tail.length > 0 ? tail : head)
-    const work = workItem(asked)
-    const cwd = string(all.find((entry) => string(entry['cwd']) !== '')?.['cwd'])
-    const row: Found = {
-      id: file.id,
-      title,
-      stands: lastSaid(tail.length > 0 ? tail : head) || firstLine(named('last-prompt', 'lastPrompt')),
-      at: file.at,
-      driven: entrypoint.startsWith('sdk'),
-      ...(model === undefined ? {} : { model }),
-      ...(used === undefined ? {} : { used }),
-      ...(work === undefined ? {} : { work }),
-      ...(cwd === '' ? {} : { cwd }),
-    }
-    if (kept(row, file)) found.push(row)
+    const row = rowFrom(file, await edges(file.path, file.size).catch(() => ({ head: [], tail: [], cut: '' })))
+    if (row !== undefined && kept(row, file)) found.push(row)
   }
   return found
+}
+
+/** A conversation's row from the two ends of its file, or nothing for a file with nobody in it. */
+export function rowFrom(file: { readonly id: string; readonly at: number }, { head, tail, cut }: Edges): Found | undefined {
+  const all = [...head, ...tail]
+  const named = (type: string, key: string): string =>
+    string([...all].reverse().find((entry) => string(entry['type']) === type)?.[key])
+
+  const asked = head.map(typed).find((words) => words.trim() !== '') || cutWords(cut)
+  // A first message that is one pasted file fills the head on its own, and the
+  // words are past the end of it; the other end still has some.
+  const said = asked || (tail.map(typed).find((words) => words.trim() !== '') ?? '')
+  const title = named('custom-title', 'customTitle') || named('ai-title', 'aiTitle') || firstLine(said, 80)
+  // A file with nobody in it: opened and closed, or the tool's own bookkeeping.
+  if (title === '') return undefined
+
+  const entrypoint = string(all.find((entry) => string(entry['entrypoint']) !== '')?.['entrypoint'])
+  // `<synthetic>` is the tool speaking for itself - a limit, a refusal - and not a model.
+  const model = [...all]
+    .reverse()
+    .map((entry) =>
+      string(entry['type']) === 'assistant'
+        ? string(((entry['message'] ?? {}) as Json)['model'])
+        : '',
+    )
+    .find((name) => name !== '' && name !== '<synthetic>')
+  const used = lastContext(tail.length > 0 ? tail : head)
+  const work = workItem(asked)
+  const cwd = string(all.find((entry) => string(entry['cwd']) !== '')?.['cwd'])
+  return {
+    id: file.id,
+    title,
+    stands: lastSaid(tail.length > 0 ? tail : head) || firstLine(named('last-prompt', 'lastPrompt')),
+    at: file.at,
+    driven: entrypoint.startsWith('sdk'),
+    ...(model === undefined ? {} : { model }),
+    ...(used === undefined ? {} : { used }),
+    ...(work === undefined ? {} : { work }),
+    ...(cwd === '' ? {} : { cwd }),
+  }
 }
 
 const CHUNK = 2 * 1024 * 1024
@@ -296,7 +321,11 @@ const KEEP = 8
 
 export async function readClaudeSession(root: string, id: string): Promise<Conversation | undefined> {
   const path = await claudeFile(root, id)
-  if (path === undefined) return undefined
+  return path === undefined ? undefined : readSessionAt(path, root)
+}
+
+/** One conversation from its file, wherever the file is; `root` is the folder its paths are shown from. */
+export async function readSessionAt(path: string, root: string): Promise<Conversation> {
   const found = await stat(path)
   const was = kept.get(path)
   if (was !== undefined && was.size === found.size && was.written === found.mtimeMs) return was.conversation
@@ -327,7 +356,11 @@ const linked = new Map<string, { readonly size: number; readonly written: number
  */
 export async function readLinks(root: string, id: string): Promise<Link[]> {
   const path = await claudeFile(root, id)
-  if (path === undefined) return []
+  return path === undefined ? [] : linksAt(path)
+}
+
+/** The links written in a conversation's file, wherever the file is. */
+export async function linksAt(path: string): Promise<Link[]> {
   const found = await stat(path)
   const was = linked.get(path)
   if (was !== undefined && was.size === found.size && was.written === found.mtimeMs) return was.links
@@ -344,7 +377,10 @@ const LINKED = 200
 /** Where a conversation's goal stands, from its lines about goals alone. */
 export async function readGoal(root: string, id: string): Promise<GoalRead> {
   const path = await claudeFile(root, id)
-  if (path === undefined) return {}
+  return path === undefined ? {} : goalAt(path)
+}
+
+export async function goalAt(path: string): Promise<GoalRead> {
   return goalOf(await entriesOf(path, (line) => line.includes('"goal_status"')))
 }
 
@@ -355,7 +391,10 @@ export async function readGoal(root: string, id: string): Promise<GoalRead> {
  */
 export async function forkPoint(root: string, id: string, at: number): Promise<string | undefined> {
   const path = await claudeFile(root, id)
-  if (path === undefined) return undefined
+  return path === undefined ? undefined : forkPointAt(path, at)
+}
+
+export async function forkPointAt(path: string, at: number): Promise<string | undefined> {
   const said = (await entriesOf(path, (line) => line.includes('"uuid"'))).filter(
     (entry) =>
       (entry['type'] === 'user' || entry['type'] === 'assistant') &&

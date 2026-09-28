@@ -1583,6 +1583,19 @@ html.framed .topbar {
 }
 
 /* A conversation's title is long, so it gives way and the project and time stay whole. */
+/* Where the projects under it are, Local or a host, once any project is on a host. */
+.projects-listed-head {
+  grid-column: 1 / -1;
+  padding: 7px 8px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.projects-listed-head:first-child {
+  padding-top: 3px;
+}
+
 .projects-listed.cut-off {
   grid-template-columns: auto minmax(0, 1fr) max-content;
 }
@@ -2300,6 +2313,18 @@ button.tag:hover {
   height: var(--topbar);
   padding: 0 10px;
   border-bottom: 1px solid var(--border);
+}
+
+/* Everything in the head stays on its one line; the title gives way first, then the project, never a second line. */
+.talk-head > * {
+  white-space: nowrap;
+}
+
+.talk-head > .tinted {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .talk-head .title {
@@ -4129,8 +4154,17 @@ button.tag:hover {
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
+  /* Held to the window: its buttons give way rather than widening the whole grid, which cut the bar along the bottom off at its right. Nothing is clipped, so the search's rows still drop out of it. */
+  min-width: 0;
   padding: 8px 12px 8px 82px;
   border-bottom: 1px solid var(--border);
+}
+
+/* Where the window is too narrow for everything in the head, the keys go first: each is in its button's tooltip too. */
+@media (max-width: 1240px) {
+  .board-head .keys {
+    display: none;
+  }
 }
 
 html.framed .board-head {
@@ -5695,6 +5729,19 @@ html.keyboard .sheet {
   color: var(--text-faint);
 }
 
+/* A project on a host has a longer name: it is cut on one line rather than wrapped under the label. */
+.phone-task-cell span {
+  min-width: 0;
+  margin-inline-start: 16px;
+}
+
+.phone-task-cell .phone-task-cell-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .phone-task-text,
 .phone-task-goal {
   width: 100%;
@@ -5925,9 +5972,13 @@ html.phone .talk.over {
   white-space: nowrap;
 }
 
-.phone-nav-title span {
+.phone-nav-title > span {
+  display: block;
+  overflow: hidden;
   font-size: 12px;
   color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .phone-nav .phone-icon {
@@ -6418,6 +6469,25 @@ html.phone .notice.banner .body {
 body:has(.talk.over:not([hidden])) .phone-offline {
   top: calc(var(--top) + 60px);
   bottom: auto;
+}
+
+/* Something the phone could not do, with nowhere else to say it: the same pill as the offline one, gone by itself. */
+.phone-notice {
+  position: fixed;
+  bottom: calc(var(--bottom) + 16px);
+  left: 50%;
+  z-index: 55;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-dim);
+  text-align: center;
+  background: var(--bg-raised);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  animation: fade var(--settle) var(--ease) both;
 }
 
 .phone-spin {
@@ -7353,4 +7423,765 @@ html.phone .preview-bar .icon-button {
   .welcome-art * {
     animation: none !important;
   }
+}
+
+/*
+ * Hosts: other computers conversations run on.
+ *
+ * The dot says how a host stands, in the same colours as everything else that
+ * stands: the accent when it is there, hollow when it is not connected, blue
+ * while it connects, amber out of reach, red when it needs the person.
+ */
+.host-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.host-dot.idle {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-faint);
+}
+
+.host-dot.connecting {
+  background: var(--project-1);
+  animation: fade 900ms var(--ease) infinite alternate;
+}
+
+.host-dot.lost {
+  background: var(--review-solid);
+}
+
+.host-dot.needs,
+.host-dot.missing,
+.host-dot.signin {
+  background: var(--danger);
+}
+
+/* The host after a project's name: in the faint words, so the name still leads. */
+.host-tag {
+  color: var(--text-faint);
+}
+
+.picker.host-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.state-said.said-away {
+  color: var(--warning-text);
+}
+
+.state-said.said-away .state-dot {
+  background: var(--review-solid);
+}
+
+.row .stands .away {
+  color: var(--warning-text);
+}
+
+/* In place of the send button while the host cannot take a message: what is typed stays. */
+.host-waiting {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.host-waiting.lost {
+  color: var(--warning-text);
+}
+
+.host-waiting.needs,
+.host-waiting.missing,
+.host-waiting.signin {
+  color: var(--danger);
+}
+
+/* What a host asks, over the window, where it is seen whatever is open. */
+.host-prompts {
+  position: fixed;
+  inset-block-start: 56px;
+  inset-inline: 0;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(460px, 92vw);
+  margin-inline: auto;
+}
+
+.host-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--bg-raised);
+  /* A question, not an alarm: red is kept for what destroys something, and this asks for a password or a key. */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  animation: lift var(--settle) var(--ease) both;
+}
+
+.host-prompt-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.host-prompt-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.host-prompt-note {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.host-prompt-note.trouble {
+  color: var(--danger);
+}
+
+/* A fingerprint is read character by character against another screen: set apart, in the code face, broken anywhere. */
+.host-print {
+  padding: 8px 10px;
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+}
+
+.host-prompt .check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.host-said {
+  max-height: 160px;
+  margin: 0;
+  overflow: auto;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+
+/* Settings, Hosts. */
+.hosts-lead,
+.hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.hosts-list {
+  display: flex;
+  flex-direction: column;
+  margin: 6px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.host-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+}
+
+.host-row + .host-row {
+  border-top: 1px solid var(--border);
+}
+
+.host-lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* One line each, cut at the end rather than run under the buttons: the name, then how it stands and who it is. */
+.host-lines .name {
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-lines .says {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-lines .host-state {
+  color: var(--text-dim);
+}
+
+.host-lines .host-state.trouble {
+  color: var(--danger);
+}
+
+/* A changed key's fingerprint, on the row that asks about it: cut at its end like the lines above it, not the card's own set-apart block. */
+.host-lines .print {
+  overflow: hidden;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-row .quiet {
+  flex: none;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+/* What Install it said when it failed, beside the row's own button rather than its own card. */
+.host-row .row-said {
+  overflow: hidden;
+  max-width: 160px;
+  font-size: 11px;
+  color: var(--danger);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Add a host: Address wide, User and Port beside it. */
+.dialog.add-host {
+  width: min(520px, 94vw);
+}
+
+.add-host-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px 72px;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.add-host input[type='text'],
+.add-host input[type='password'],
+.add-host select {
+  width: 100%;
+}
+
+.host-auth {
+  width: max-content;
+  margin-bottom: 4px;
+}
+
+.host-offers {
+  display: flex;
+  flex-direction: column;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.host-offers button {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 4px 8px;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.host-offers button:hover {
+  background: var(--bg-hover);
+}
+
+.host-offers .name {
+  font-family: var(--font-code);
+  color: var(--text);
+}
+
+.host-offers .says {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+}
+
+.host-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  margin: 4px 0 0;
+  list-style: none;
+}
+
+.host-checks li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-dim);
+}
+
+.host-checks li.ok {
+  color: var(--success-text);
+}
+
+.host-checks li.failed {
+  color: var(--danger);
+}
+
+/*
+ * Choose a folder on a host, shaped like the system's Open panel: a bar with
+ * the way up, the folder's parts and a filter; Places down the left; one level
+ * of folders; and the chosen path beside Add. The chosen row takes the accent
+ * while the list has the keyboard and a quiet tint when it does not, as
+ * Finder's does.
+ */
+.dialog.folder-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 94vw);
+  height: min(460px, 80vh);
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+}
+
+.folder-bar {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.path-bar {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.path-bar .path-part {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.path-bar button {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  padding: 2px 5px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  border-radius: 4px;
+}
+
+.path-bar button:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.path-bar button.here {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.folder-filter {
+  display: flex;
+  flex-shrink: 0;
+  gap: 5px;
+  align-items: center;
+  width: 150px;
+  padding: 0 8px;
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.folder-filter:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* The field's ring is its frame's, above, as the system's search field draws it. */
+.folder-filter input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  font-size: 12px;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.folder-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 168px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.folder-places {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px;
+  overflow-y: auto;
+  background: var(--bg-sunken);
+  border-inline-end: 1px solid var(--border);
+}
+
+.places-head {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.folder-places button {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 4px 8px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: start;
+  white-space: nowrap;
+  border-radius: 5px;
+}
+
+.folder-places button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-places button:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.folder-places button.on {
+  color: var(--text);
+  background: var(--bg-active);
+}
+
+.folder-list {
+  padding: 6px;
+  overflow-y: auto;
+  outline: none;
+}
+
+.folder-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  color: var(--text-dim);
+  border-radius: 5px;
+  cursor: default;
+}
+
+.folder-row .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-row.on {
+  background: var(--bg-active);
+}
+
+.folder-list:focus .folder-row.on {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.folder-list:focus .folder-row.on .name,
+.folder-list:focus .folder-row.on .folder-git {
+  color: var(--accent-text);
+}
+
+.folder-git {
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.folder-note {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.folder-note.trouble,
+.folder-where .trouble {
+  color: var(--danger);
+}
+
+.folder-goto {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  animation: fade var(--quick) var(--ease) both;
+}
+
+.folder-goto input[type='text'] {
+  flex: 1;
+  font-family: var(--font-code);
+  font-size: 12px;
+}
+
+.folder-foot {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.folder-foot .check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.folder-where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The project picker's groups: Local, and each host. The head is a row like
+ * the others, in the small capitals a sidebar section uses, reached with the
+ * arrows; a hairline above it parts it from the group before.
+ */
+.menu-item.projects-group {
+  gap: 8px;
+  padding-top: 7px;
+  padding-bottom: 5px;
+  margin-top: 5px;
+  cursor: default;
+}
+
+.menu-item.projects-group:not(.first) {
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 5px 5px;
+}
+
+.menu-item.projects-group.at {
+  background: var(--bg-hover);
+}
+
+.projects-group .group-dot {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 11px;
+  color: var(--text-faint);
+}
+
+/* A group's head is a name, Local or a host's, and a host's is its own spelling: set as it is written, not in capitals. */
+.projects-group .group-name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+}
+
+.projects-group.on .group-name {
+  color: var(--accent);
+}
+
+.projects-group .group-says {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: end;
+  text-overflow: ellipsis;
+}
+
+/* Adding a folder, last in its group: the plus under the colour dots, the words under the names. */
+.menu-item.project-add {
+  gap: 8px;
+  padding-inline-start: 31px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.menu-item.project-add.at,
+.menu-item.project-add:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+/*
+ * Hosts on the phone. A host is shown as everywhere else, by its dot and its
+ * name after the project; out of reach it takes the amber of anything that
+ * waits. See docs/ux/remote-hosts-phone.md.
+ */
+.phone-dot.away {
+  background: var(--review-solid);
+}
+
+.phone-row-said.away,
+.phone-hint.away {
+  color: var(--warning-text);
+}
+
+.phone-nav-title span .host-dot {
+  margin-inline-end: 5px;
+  vertical-align: 1px;
+}
+
+.phone-offline.phone-host-away {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.phone-host-name {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.phone-host-name .host-dot {
+  width: 9px;
+  height: 9px;
+}
+
+.phone-host-path {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.phone-host-path b {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+/* A host's question, over whatever is open: what it asks, the field, and the one thing to do. */
+.host-sheet .sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 4px;
+}
+
+.host-sheet-ask {
+  padding: 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.host-sheet-print {
+  padding: 12px 16px;
+  font-family: var(--font-code);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+  overflow-wrap: anywhere;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.host-sheet .sheet-field input {
+  font-size: 17px;
+}
+
+.host-sheet-remember .sheet-option {
+  font-size: 16px;
+}
+
+.host-sheet-go {
+  height: 50px;
+  margin-top: 4px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  border-radius: 12px;
+}
+
+.host-sheet-go.even {
+  color: var(--accent);
+  background: var(--bg-raised);
+}
+
+.host-sheet-not {
+  height: 44px;
+  font-size: 17px;
+  color: var(--accent);
+}
+
+.add-host .host-forget {
+  align-self: flex-start;
+}
+
+/* Remove, in the Edit sheet, stands apart on the left, away from Save. */
+.add-host .host-remove {
+  margin-inline-end: auto;
+  color: var(--danger);
+}
+
+/* An account's windows on a bar that shows several; a host out of reach keeps its last numbers, faint, rather than a gap that moves what follows. */
+.status-bar .plan-item.faint {
+  opacity: 0.55;
 }

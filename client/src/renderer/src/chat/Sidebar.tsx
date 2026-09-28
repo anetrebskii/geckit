@@ -7,7 +7,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD } from '../ui/Shortcuts'
 import { projectColor } from '../../../shared/project-color'
-import { projectName, tint } from './project'
+import { awayLine, projectLabel, tint } from './project'
 import { DeleteChats } from './DeleteChats'
 import { NameField } from './NameField'
 import { Dot } from './Tasks'
@@ -52,7 +52,7 @@ function gather(
 ): [string, ChatSession[]][] {
   const groups = new Map<string, ChatSession[]>()
   for (const session of sessions) {
-    const where = by === 'project' ? projectName(homeOf(session)) : when(session.at, now)
+    const where = by === 'project' ? projectLabel(homeOf(session)) : when(session.at, now)
     groups.set(where, [...(groups.get(where) ?? []), session])
   }
   return [...groups.entries()]
@@ -304,7 +304,7 @@ const Row = memo(function Row({
                 {where}
               </span>
             )}
-            {session.stands === '' ? null : <span>{session.stands}</span>}
+            {awayLine(session) === undefined ? (session.stands === '' ? null : <span>{session.stands}</span>) : <span className="away">{awayLine(session)}</span>}
           </span>
           {place === undefined ? null : <kbd className="place">{`${MOD}+${String(place)}`}</kbd>}
         </span>
@@ -434,7 +434,7 @@ const Rows = memo(function Rows({
                 place={places.get(session.id)}
                 where={
                   where === DONE || (scope === ALL && (by === 'time' || where === FAVORITES))
-                    ? projectName(homeOf(session))
+                    ? projectLabel(homeOf(session))
                     : undefined
                 }
                 color={projectColor(homeOf(session), colors)}
@@ -761,7 +761,7 @@ export function Sidebar({
               const one = chat.everyone.find((session) => session.id === menu.id)
               if (one !== undefined) onShortcutFrom(one)
             }
-            if (value === 'copy') chat.copyTerminal(menu.id)
+            if (value === 'copy') void chat.copyTerminal(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)
             if (value === 'hide') chat.hide(menu.id)
             if (value === 'select') {

@@ -488,7 +488,7 @@ export function Record({ fill = false }: { readonly fill?: boolean }): React.JSX
           </>
         ) : shown === 'denied' ? (
           <>
-            <span className="capsule-note danger">The Mac has not allowed GeckIt to record the screen.</span>
+            <span className="capsule-note danger">macOS has not allowed GeckIt to record the screen.</span>
             <button type="button" className="quiet" onClick={() => window.geckit.voice.allow()}>
               Open Settings
             </button>

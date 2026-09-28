@@ -29,13 +29,18 @@ export function thinFrames<T extends Pick<RecordedFrame, 'at'>>(frames: readonly
   return kept
 }
 
-/** What goes under the words, so Claude knows what the pictures are and where the rest of them is. */
-export function recordedNote(seconds: number, frames: readonly Pick<RecordedFrame, 'at'>[], video?: string): string {
+/**
+ * What goes under the words, so Claude knows what the pictures are and where
+ * the rest of them is. `remote` is a task on a host: the video is a path on
+ * this computer, which the host cannot open, so it is left out and only the
+ * frames, attached with the message, are said.
+ */
+export function recordedNote(seconds: number, frames: readonly Pick<RecordedFrame, 'at'>[], video?: string, remote = false): string {
   const times = frames.map((one) => clock(one.at)).join(', ')
   const said = [
     `Recorded on the screen, ${clock(seconds)}.`,
     frames.length === 0 ? '' : `The frames are attached in order, taken at ${times}.`,
-    video === undefined ? '' : `The whole recording is at ${video} if you need more of it.`,
+    video === undefined || remote ? '' : `The whole recording is at ${video} if you need more of it.`,
   ]
   return said.filter((one) => one !== '').join(' ')
 }

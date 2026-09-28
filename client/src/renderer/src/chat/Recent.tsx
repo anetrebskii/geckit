@@ -1,7 +1,7 @@
 import type { ChatSession, Settings } from '../../../shared/api'
 import { homeOf } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
-import { projectName, tint } from './project'
+import { projectLabel, tint } from './project'
 import { Dot } from './Tasks'
 
 /**
@@ -42,7 +42,7 @@ export function Recent({
               </span>
               <span className="stands">
                 <span className="where tinted" style={tint(projectColor(homeOf(session), colors))}>
-                  {projectName(homeOf(session))}
+                  {projectLabel(homeOf(session))}
                 </span>
                 {session.stands === '' ? null : <span>{session.stands}</span>}
               </span>

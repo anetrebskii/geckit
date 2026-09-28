@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import type { CutOff } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
-import { projectName } from './project'
+import { projectLabel } from './project'
 import { stamp } from './time'
 
 /** On a start, the conversations closing GeckIt cut off, each ticked, to be sent "continue" together. */
@@ -45,7 +45,7 @@ export function CutOffDialog({ list, onClose }: { readonly list: readonly CutOff
                 <span className="tick">{on ? <Icon name="check" size={13} /> : null}</span>
                 <span className="name">{one.title === '' ? 'A conversation' : one.title}</span>
                 <span className="says">
-                  {projectName(one.root)}, working since {stamp(one.at, now)}
+                  {projectLabel(one.root)}, working since {stamp(one.at, now)}
                 </span>
               </button>
             )

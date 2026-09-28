@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ANYWHERE, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { ANYWHERE, homeOf, profileOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, RecordedFrame, SessionImage, SessionStatus } from '../../../shared/api'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
 import { dictate, languageCode, useDictationLanguage } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
+import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
+import type { HostView } from '../../../shared/hosts'
+import { HostFolders } from './HostFolders'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
@@ -18,7 +21,8 @@ import { PhoneRecord } from './PhoneRecord'
 import { Preview } from './Preview'
 import { Projects } from './Projects'
 import { QuestionsMenu } from './Questions'
-import { emptyProfile, projectName, tint } from './project'
+import { HostTag } from './HostTag'
+import { emptyProfile, hostName, projectLabel, projectName, tint } from './project'
 import { STATUS_ICONS, Tags, Views } from './Sidebar'
 import { BoardSearch } from './Switcher'
 import type { Seek } from './Switcher'
@@ -94,7 +98,7 @@ export function TopBar({
         type="button"
         className="icon-button no-drag"
         aria-label="Hidden conversations"
-        title="Hidden conversations: kept by Claude Code on this Mac and not on the board"
+        title="Hidden conversations: kept by Claude Code and not on the board"
         onClick={() => setHidden(true)}
       >
         <Icon name="hidden" />
@@ -409,7 +413,7 @@ export function Board({
               const one = chat.everyone.find((session) => session.id === menu.id)
               if (one !== undefined) onShortcutFrom(one)
             }
-            if (value === 'copy') chat.copyTerminal(menu.id)
+            if (value === 'copy') void chat.copyTerminal(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)
             if (value === 'hide') hide(targets(menu.id))
             if (value === 'delete') {
@@ -487,7 +491,10 @@ function Card({
       gone = true
     }
   }, [session.id, session.at])
-  const stands = standing(session)
+  // Out of reach, what was working or asking there still is, and the card says so in place of what it last said.
+  const host = chat.hosts.find((one) => one.id === hostOf(session.root))
+  const away = host !== undefined && outOfReach(host.state) && (session.state === 'working' || session.state === 'asks')
+  const stands = away ? { words: outOfReachLine(host.name), tone: 'said-away' } : standing(session)
   const background = session.tasks?.filter(running).length ?? 0
   const queued = session.queued?.length ?? 0
   // The line above already says it is working, so what it says it is doing does not say it again.
@@ -535,6 +542,7 @@ function Card({
           <span className="tinted" style={tint(projectColor(homeOf(session), chat.settings))}>
             {projectName(homeOf(session))}
           </span>
+          <HostTag root={homeOf(session)} />
           {session.project === undefined ? null : (
             <span className="subfolder"> / {session.root.slice(session.project.length + 1)}</span>
           )}
@@ -614,6 +622,8 @@ function Card({
  */
 /** The row that opens the folder picker rather than choosing a project already there. */
 const PICK = '\u0000pick'
+/** Choose a folder on a host, by its id after this. */
+const PICK_ON = '\u0000on:'
 
 interface KeptTask {
   readonly root: string
@@ -655,6 +665,8 @@ export function NewTask({
 }): React.JSX.Element {
   const [kept] = useState(() => keptTask(question))
   const [root, setRoot] = useState(() => kept?.root ?? chat.root ?? shownProjects(chat.settings)[0] ?? '')
+  // A host whose folders are being chosen from, for a project there.
+  const [folderOn, setFolderOn] = useState<HostView | undefined>()
   const [text, setText] = useState(kept?.text ?? '')
   const [goal, setGoal] = useState(kept?.goal ?? '')
   useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal })), [question, root, text, goal])
@@ -664,6 +676,8 @@ export function NewTask({
   const [over, setOver] = useState(false)
   const [recorded, setRecorded] = useState<Recorded | undefined>(undefined)
   const [looking, setLooking] = useState<string | undefined>()
+  // A file dropped for a project on a host cannot be read there, so it is copied over first; this says so while it goes.
+  const [copying, setCopying] = useState<{ readonly text: string; readonly failed: boolean } | undefined>()
   const field = useRef<HTMLTextAreaElement>(null)
   useEffect(() => field.current?.focus(), [])
 
@@ -695,16 +709,39 @@ export function NewTask({
   )
   const room = Math.max(0, MOST_FRAMES - pictures.length)
   const frames = recorded === undefined || room === 0 ? [] : thinFrames(recorded.frames, room)
-  const ready = text.trim() !== '' || pictures.length > 0 || frames.length > 0
+  // A file still on its way to a host holds the task back until its path is in the words.
+  const [uploading, setUploading] = useState(0)
+  const ready = uploading === 0 && (text.trim() !== '' || pictures.length > 0 || frames.length > 0)
 
   // Pictures are carried with the first message; anything else goes into the field as its path, as the composer does.
+  const addPath = (path: string): void =>
+    setText((now) => `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${path.includes(' ') ? `"${path}"` : path} `)
   const take = (files: readonly File[]): void => {
-    const paths = files
-      .filter((one) => !canShow(one))
-      .map((one) => window.geckit.pathFor(one))
-      .filter((path) => path !== '')
-      .map((path) => (path.includes(' ') ? `"${path}"` : path))
-    if (paths.length > 0) setText((now) => `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${paths.join(' ')} `)
+    // A general question runs on this computer whatever project the board is on, so nothing of it goes to a host.
+    const target = question ? '' : root
+    for (const one of files.filter((one) => !canShow(one))) {
+      const local = window.geckit.pathFor(one)
+      if (local === '') continue
+      if (target === '' || !isRemote(target)) {
+        addPath(local)
+        continue
+      }
+      const busy = `Copying ${one.name} to ${hostName(target) ?? target}...`
+      setCopying({ text: busy, failed: false })
+      setUploading((now) => now + 1)
+      void window.geckit.chat
+        .upload(target, local)
+        .catch(() => ({ problem: `Could not copy ${one.name}.` }))
+        .then((landed) => {
+          setUploading((now) => Math.max(0, now - 1))
+          if ('problem' in landed) {
+            setCopying({ text: landed.problem, failed: true })
+            return
+          }
+          setCopying((now) => (now?.text === busy ? undefined : now))
+          addPath(landed.path)
+        })
+    }
     const wanted = files.filter(canShow)
     if (wanted.length === 0) return
     void Promise.all(wanted.map((file) => asImage(file).catch(() => undefined))).then((read) => {
@@ -715,8 +752,8 @@ export function NewTask({
 
   const start = (): void => {
     if ((root === '' && !question) || !ready) return
-    // What the frames are and where the video is goes under the words, for Claude rather than for the form.
-    const note = recorded === undefined ? '' : recordedNote(recorded.seconds, frames, recorded.videos.join(' and ') || undefined)
+    // What the frames are and where the video is goes under the words, for Claude rather than for the form; on a host the video is not there, so only the frames are said.
+    const note = recorded === undefined ? '' : recordedNote(recorded.seconds, frames, recorded.videos.join(' and ') || undefined, !question && isRemote(root))
     const said = note === '' ? text.trim() : `${text.trim()}\n\n${note}`.trim()
     const sent = [...pictures, ...frames.map((one) => one.image)]
     if (question) chat.ask(said, sent)
@@ -744,9 +781,13 @@ export function NewTask({
         frames={frames.map((one) => one.image)}
         recorded={recorded === undefined ? undefined : { seconds: recorded.seconds, video: recorded.videos.length > 0 }}
         onUnrecord={() => setRecorded(undefined)}
+        copying={copying}
       />
     )
   }
+
+  const profiled = profileOf(chat.settings) !== undefined
+  const localProjects = shownProjects(chat.settings).filter((one) => hostOf(one) === undefined)
 
   return (
     <div
@@ -765,8 +806,13 @@ export function NewTask({
             className="new-task-where"
             value={root}
             onChange={(event) => {
-              if (event.target.value !== PICK) {
-                setRoot(event.target.value)
+              const value = event.target.value
+              if (value.startsWith(PICK_ON)) {
+                setFolderOn(chat.hosts.find((one) => one.id === value.slice(PICK_ON.length)))
+                return
+              }
+              if (value !== PICK) {
+                setRoot(value)
                 return
               }
               void window.geckit.chat.addProject().then((picked) => {
@@ -774,12 +820,49 @@ export function NewTask({
               })
             }}
           >
-            {shownProjects(chat.settings).map((one) => (
-              <option key={one} value={one}>
-                {projectName(one)}
-              </option>
-            ))}
-            <option value={PICK}>Choose a folder...</option>
+            {chat.hosts.length === 0 ? (
+              shownProjects(chat.settings).map((one) => (
+                <option key={one} value={one}>
+                  {projectName(one)}
+                </option>
+              ))
+            ) : (
+              <>
+                {/* Groups follow projects: in a profile, a group it has no projects in is not its business, and is reached from Settings, Hosts. */}
+                {profiled && localProjects.length === 0 ? null : (
+                  <optgroup label="Local">
+                    {localProjects.map((one) => (
+                      <option key={one} value={one}>
+                        {projectName(one)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {chat.hosts.map((host) => {
+                  const onHost = shownProjects(chat.settings).filter((one) => hostOf(one) === host.id)
+                  // Unlike Local, a host group is never its own destination here: with nothing to pick under it, it stays out of the list, in or out of a profile.
+                  if (onHost.length === 0) return null
+                  return (
+                    <optgroup key={host.id} label={host.name}>
+                      {onHost.map((one) => (
+                        <option key={one} value={one}>
+                          {projectLabel(one)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )
+                })}
+              </>
+            )}
+            <option value={PICK}>{chat.hosts.length === 0 ? 'Choose a folder...' : 'Choose a folder on this computer...'}</option>
+            {/* A folder is only ever added on a host reached now: one not connected has nothing to read it with. */}
+            {chat.hosts
+              .filter((host) => host.state === 'up')
+              .map((host) => (
+                <option key={host.id} value={`${PICK_ON}${host.id}`}>
+                  Choose a folder on {host.name}...
+                </option>
+              ))}
           </select>
         </label>
       )}
@@ -833,6 +916,7 @@ export function NewTask({
           Dictate
         </button>
       </div>
+      {copying === undefined ? null : <p className={copying.failed ? 'error' : 'new-task-why'}>{copying.text}</p>}
       {pictures.length === 0 && frames.length === 0 ? null : (
         <div className="pending">
           {frames.map((one) => (
@@ -909,6 +993,13 @@ export function NewTask({
           {question ? 'Ask' : 'Start'}
         </button>
       </div>
+      {folderOn === undefined ? null : (
+        <HostFolders
+          host={folderOn}
+          onClose={() => setFolderOn(undefined)}
+          onAdded={(added) => setRoot(added)}
+        />
+      )}
     </div>
   )
 }
@@ -932,6 +1023,7 @@ function PhoneNewTask({
   frames,
   recorded,
   onUnrecord,
+  copying,
 }: {
   readonly chat: Chat
   readonly question: boolean
@@ -944,6 +1036,8 @@ function PhoneNewTask({
   readonly frames: readonly SessionImage[]
   readonly recorded: { readonly seconds: number; readonly video: boolean } | undefined
   readonly onUnrecord: () => void
+  /** A file being copied to a host for this task, or what went wrong copying it. */
+  readonly copying: { readonly text: string; readonly failed: boolean } | undefined
   readonly onRoot: (root: string) => void
   readonly onText: (text: string) => void
   readonly onGoal: (goal: string) => void
@@ -1034,7 +1128,7 @@ function PhoneNewTask({
                 <button type="button" className="phone-task-cell" onClick={() => setChoosing(true)}>
                   Project
                   <span>
-                    {root === '' ? 'None' : projectName(root)}
+                    <span className="phone-task-cell-text">{root === '' ? 'None' : projectLabel(root)}</span>
                     <Icon name="right" size={14} />
                   </span>
                 </button>
@@ -1056,6 +1150,9 @@ function PhoneNewTask({
             placeholder={listening ? 'Listening' : question ? 'Ask anything; it is not a task' : 'What to do'}
             onChange={(event) => onText(event.target.value)}
           />
+          {copying === undefined ? null : (
+            <div className={copying.failed ? 'phone-task-note error' : 'phone-task-note'}>{copying.text}</div>
+          )}
           {recorded === undefined ? null : (
             <div className="phone-task-recorded">
               <Icon name="display" size={16} />

@@ -31,6 +31,7 @@ import type {
   WorkItem,
 } from '../../shared/api'
 import { sessionMode } from '../../shared/api'
+import { hostOf, isRemote, pathOf, remoteRoot } from '../../shared/hosts'
 import type { Link } from '../../shared/links'
 import { linksIn, workItem } from '../../shared/links'
 import { claudeAccount, claudeProgram } from './account'
@@ -185,18 +186,22 @@ export interface SessionsDeps {
     delete?(root: string, id: string): Promise<boolean>
     goal?(root: string, id: string): Promise<GoalRead>
     forkPoint?(root: string, id: string, at: number): Promise<string | undefined>
+    links?(root: string, id: string): Promise<Link[]>
     every?: typeof everyClaude
   }
   readonly there?: (path: string) => Promise<boolean>
   readonly claudeAccount?: () => Promise<ClaudeAccount>
-  readonly claudeModels?: () => Promise<ClaudeModel[] | undefined>
+  /** The models the tool has, for a project's own root where one is given: a host's may not be this computer's. */
+  readonly claudeModels?: (root?: string) => Promise<ClaudeModel[] | undefined>
   readonly claudeProgram?: () => Promise<ClaudeProgram | undefined>
   readonly usage?: (models: readonly string[]) => Promise<Usage>
   readonly mcp?: (root: string, change?: McpChange) => Promise<McpServer[] | undefined>
   readonly browsers?: (root: string, pick?: string) => Promise<Browser[] | undefined>
   readonly shell?: typeof runShell
-  /** Opens a terminal in the folder with the command typed in, for one that wants a keyboard. Without it, it is run here anyway. */
-  readonly terminal?: (root: string, command: string) => void
+  /** What a task in the background printed, where it is not on this computer to read. */
+  readonly taskOutput?: (root: string, session: string, task: BackgroundTask) => Promise<TaskOutput | undefined>
+  /** Opens a terminal in the folder with the command typed in, for one that wants a keyboard. Without it, it is run here anyway. `status` is where it is to write the exit code once the command is done, for one that wants a keyboard. */
+  readonly terminal?: (root: string, command: string, status?: string) => void
   readonly now?: () => number
 }
 
@@ -310,6 +315,16 @@ const there = (path: string): Promise<boolean> =>
     (found) => found.isDirectory(),
     () => false,
   )
+
+/**
+ * `below` as a host's own listing gives it back: a raw path on the host's
+ * computer, since that is all a script run over ssh knows to say. Read here as
+ * a project root is everywhere else, `ssh://<host><path>`, unless it is one already.
+ */
+export const belowRoot = (root: string, below: string): string => {
+  const host = hostOf(root)
+  return host === undefined || isRemote(below) ? below : remoteRoot(host, below)
+}
 
 
 /** What "for this session" is remembered under, or nothing where it cannot be. */
@@ -451,7 +466,9 @@ export class Sessions {
    * asks here, and is answered from what was kept until another version of
    * Claude Code answers.
    */
-  async models(): Promise<ClaudeModel[] | undefined> {
+  async models(root?: string): Promise<ClaudeModel[] | undefined> {
+    // A host's own claude may name other models than this computer's, and is not kept the same way: it is asked fresh each time, and nothing is said where it cannot be asked cheaply.
+    if (root !== undefined && isRemote(root)) return (this.#deps.claudeModels ?? claudeModels)(root)
     await this.#look()
     if (this.#models === undefined) {
       this.#models = (this.#deps.claudeModels ?? claudeModels)()
@@ -472,12 +489,18 @@ export class Sessions {
         // A folder below two projects is the nearer one's.
         const held = this.#rows.get(row.id)
         if (below !== undefined && held !== undefined && (held.project ?? held.root).length > root.length) continue
-        this.#rows.set(row.id, below === undefined ? { ...row, root } : { ...row, root: below, project: root })
+        this.#rows.set(row.id, below === undefined ? { ...row, root } : { ...row, root: belowRoot(root, below), project: root })
       }
     }
     // A model not seen before is measured, so its rows can say how much context it holds.
     if ([...this.#rows.values()].some((row) => row.model !== undefined && !this.#windows.has(row.model))) void this.measure()
     return this.#listed(roots)
+  }
+
+  /** Reads a host's projects again once it comes up, and tells the windows: its conversations were not read while it was not connected. */
+  async refresh(roots: readonly string[]): Promise<void> {
+    await this.list(roots)
+    this.#changed()
   }
 
   #listed(roots?: readonly string[]): ChatSession[] {
@@ -579,7 +602,7 @@ export class Sessions {
     const live = this.#live.get(id)
     if (live?.driver !== undefined) return linksIn([...live.items.values()])
     const root = live?.root ?? this.#rows.get(id)?.root
-    return root === undefined ? [] : readLinks(root, id)
+    return root === undefined ? [] : (this.#deps.disk?.links ?? readLinks)(root, id)
   }
 
   /** Start holding in memory a session the tool listed. */
@@ -753,8 +776,10 @@ export class Sessions {
 
     // A session runs on a plan or not at all. Asked of the tool again here,
     // where something is about to be started, because what the window was told
-    // is as old as its last look.
-    if (live.driver === undefined && (await this.account()).key === true) {
+    // is as old as its last look. A host's own claude is checked by starting
+    // it, not by this computer's account: this computer may be signed in with
+    // a key while the host it reaches is on a plan, or the other way round.
+    if (live.driver === undefined && !isRemote(live.root) && (await this.account()).key === true) {
       this.#deps.items({ id: live.id, items: [mine], gone })
       this.#ended(live, { kind: 'ended', how: 'offPlan' })
       return live.id
@@ -899,6 +924,13 @@ export class Sessions {
     const live = this.#live.get(id)
     const one = live?.tasks.find((each) => each.id === task)
     if (live === undefined || one === undefined) return undefined
+    const elsewhere = this.#deps.taskOutput
+    if (elsewhere !== undefined) {
+      const read = await elsewhere(live.root, live.id, one)
+      if (read !== undefined) return read
+      // A host not reached for it is not a reason to read this computer's own files instead: there is nothing of this task's here.
+      if (isRemote(live.root)) return undefined
+    }
     return taskOutput(live.root, one.output ?? (await taskFile(live.root, live.id, one.id)), one.kind)
   }
 
@@ -959,7 +991,10 @@ export class Sessions {
       this.#remoteOff(live)
       return {}
     }
-    if ((await this.account()).key === true) return { error: 'That claude is signed in with an API key, and GeckIt only runs sessions on a plan.' }
+    // This computer's own account is what a local session runs on; a host's is its own, and is not asked here.
+    if (!isRemote(live.root) && (await this.account()).key === true) {
+      return { error: 'That claude is signed in with an API key, and GeckIt only runs sessions on a plan.' }
+    }
     try {
       await this.#hold(live)
       return { url: await this.#remoteOn(live) }
@@ -1039,10 +1074,12 @@ export class Sessions {
     }
 
     const before = [...live.items.keys()]
+    // The tool names paths on its own computer, so a card about a host is read against that, not the `ssh://` root that names it.
+    const folder = pathOf(live.root)
     const folded: SessionItem = {
       kind: 'card',
       id: cardId(ask),
-      card: { ...cardFor(wanted, live.root), answered: answeredLine(wanted, answer, live.root) },
+      card: { ...cardFor(wanted, folder), answered: answeredLine(wanted, answer, folder) },
     }
     live.items.set(folded.id, folded)
     live.kept.push({ after: before[before.indexOf(folded.id) - 1], item: folded })
@@ -1192,6 +1229,28 @@ export class Sessions {
   }
 
   /** The conversations whose turn was running when GeckIt last closed, newest first. */
+  /**
+   * Conversations still running on their hosts from before GeckIt last closed,
+   * held again as working: their runs are picked up where they were read to.
+   */
+  async reattach(runs: readonly { readonly id: string; readonly root: string }[]): Promise<void> {
+    for (const run of runs) {
+      if (this.#live.has(run.id)) continue
+      const note = this.#deps.notes.all()[run.id]
+      const live = this.#fresh(run.id, run.root, note?.title ?? '', sessionMode(note?.mode))
+      live.begun = true
+      live.chosen = note?.model
+      // Working only where a turn was running when GeckIt closed; the rest of what it says comes on the stream.
+      live.state = note?.cut === undefined ? 'idle' : 'working'
+      live.queued = [...(note?.queued ?? [])]
+      this.#uncut(run.id)
+      // What was said before is read from the file first; the stream then carries on from where it was read to.
+      await this.#reread(live).catch(() => undefined)
+      await this.#hold(live)
+      this.#changed()
+    }
+  }
+
   cutOff(): CutOff[] {
     return Object.entries(this.#deps.notes.all())
       .flatMap(([id, note]) =>
@@ -1272,22 +1331,31 @@ export class Sessions {
       return note?.here === true || note?.shown === true || (row !== undefined && !row.driven)
     }
     const found = await (this.#deps.disk?.every ?? everyClaude)(older ? 0 : edge, older ? edge : Infinity, (id) => !listed(id))
+    // Which reason, if any, keeps each row worth showing, before a folder is even asked for: figured once per row so a folder shared by several rows is asked about only once below.
+    const candidates = found
+      .map((row) => {
+        const where = row.cwd ?? ''
+        const project = projectOf(where, projects)
+        const note = notes[row.id]
+        // A program's conversation in the home folder is a general question asked here, which is never listed.
+        if (row.driven && where === homedir() && note?.hidden !== true) return undefined
+        const reason: HiddenReason | undefined =
+          note?.hidden === true
+            ? 'hidden'
+            : row.driven && note?.here !== true && note?.shown !== true
+              ? 'driven'
+              : project === undefined && note?.here !== true
+                ? 'terminal'
+                : undefined
+        return reason === undefined ? undefined : { row, where, note, reason }
+      })
+      .filter((one): one is NonNullable<typeof one> => one !== undefined)
+    const ask = this.#deps.there ?? there
+    const folderNames = [...new Set(candidates.map((one) => one.where))]
+    const standing = new Map(await Promise.all(folderNames.map(async (where): Promise<[string, boolean]> => [where, await ask(where)])))
     const folders = new Map<string, HiddenChat[]>()
-    for (const row of found) {
-      const where = row.cwd ?? ''
-      const project = projectOf(where, projects)
-      const note = notes[row.id]
-      // A program's conversation in the home folder is a general question asked here, which is never listed.
-      if (row.driven && where === homedir() && note?.hidden !== true) continue
-      const reason: HiddenReason | undefined =
-        note?.hidden === true
-          ? 'hidden'
-          : row.driven && note?.here !== true && note?.shown !== true
-            ? 'driven'
-            : project === undefined && note?.here !== true
-              ? 'terminal'
-              : undefined
-      if (reason === undefined || !(await (this.#deps.there ?? there)(where))) continue
+    for (const { row, where, note, reason } of candidates) {
+      if (standing.get(where) !== true) continue
       const chats = folders.get(where) ?? []
       chats.push({ id: row.id, title: note?.title ?? row.title, stands: row.stands, at: row.at, reason })
       folders.set(where, chats)
@@ -1328,6 +1396,19 @@ export class Sessions {
     this.#note(id, { hidden: true })
     void this.#letGo(id)
     this.#changed()
+  }
+
+  /**
+   * Every conversation's id held here, live or only listed, whose root a test
+   * says yes to - a host going for good, say, asking what else that keeps
+   * track of one by id (favorites) should let go of too. Only what has already
+   * been read into memory this run: one never listed here is not among these.
+   */
+  ids(matches: (root: string) => boolean): string[] {
+    const ids = new Set<string>()
+    for (const [id, row] of this.#rows) if (matches(row.root)) ids.add(id)
+    for (const [id, live] of this.#live) if (matches(live.root)) ids.add(id)
+    return [...ids]
   }
 
   /**
@@ -1378,6 +1459,14 @@ export class Sessions {
   }
 
   /** The session the chat window is showing while it is in front, or none. */
+  /** The folder of the conversation in front, and which one it is: links said in it are about that folder's computer. */
+  watched(): { readonly id: string; readonly root: string } | undefined {
+    const id = this.#watching
+    if (id === undefined) return undefined
+    const root = this.#live.get(id)?.root ?? this.#rows.get(id)?.root
+    return root === undefined ? undefined : { id, root }
+  }
+
   watching(id: string | undefined): void {
     this.#watching = id
     if (id === undefined) return
@@ -1442,10 +1531,10 @@ export class Sessions {
     return state === 'working' || state === 'asks'
   }
 
-  /** What quitting would stop. */
+  /** What quitting would stop. A conversation on a host keeps running there, and does not hold a restart back. */
   working(): string[] {
     return [...this.#live.values()]
-      .filter((live) => live.state === 'working' || live.state === 'asks')
+      .filter((live) => (live.state === 'working' || live.state === 'asks') && !isRemote(live.root))
       .map((live) => this.#deps.notes.all()[live.id]?.title ?? live.title)
   }
 
@@ -1456,7 +1545,9 @@ export class Sessions {
       clearTimeout(live.back)
       clearTimeout(live.stopping)
       for (const running of live.commands.values()) running.stop()
-      live.driver?.end()
+      // A run on a host is left going there, and picked up on the next start.
+      if (live.driver?.leave === undefined) void live.driver?.end()
+      else live.driver.leave()
     }
     this.#live.clear()
     this.#watching = undefined
@@ -1633,12 +1724,13 @@ export class Sessions {
     }
 
     // A session that only reads and wants to write is proposing to start.
+    const folder = pathOf(live.root)
     const put: Wanted =
       live.mode === 'plan' && wanted.kind === 'write'
-        ? { kind: 'start', plan: `Change ${wanted.paths.map((path) => shown(live.root, path)).join(', ')}` }
+        ? { kind: 'start', plan: `Change ${wanted.paths.map((path) => shown(folder, path)).join(', ')}` }
         : wanted
     live.asks.set(ask, put)
-    const card: SessionItem = { kind: 'card', id: cardId(ask), card: cardFor(put, live.root) }
+    const card: SessionItem = { kind: 'card', id: cardId(ask), card: cardFor(put, folder) }
     // The tool says "running" before it asks whether it may. Nothing is running
     // while the card is up, and left where it was the line would end up above
     // the answer that let it run.
@@ -1735,10 +1827,14 @@ export class Sessions {
         live.state = 'idle'
         live.stands = 'Not sent'
         // Said with the answer that refused it: where only the tool's first
-        // line knew about the key, asking `auth status` again would not.
-        void this.account().then((account) =>
-          this.#deps.account(signal.how === 'offPlan' ? { ...account, key: true } : account),
-        )
+        // line knew about the key, asking `auth status` again would not. A
+        // host's own claude is not this computer's account, so nothing here
+        // is told to every window over it: the row above already says Not sent.
+        if (!isRemote(live.root)) {
+          void this.account().then((account) =>
+            this.#deps.account(signal.how === 'offPlan' ? { ...account, key: true } : account),
+          )
+        }
         break
       }
     }

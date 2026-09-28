@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 
 import { SESSION_MODES, shownProjects } from '../../../shared/api'
 import type { Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, ShortcutDraft, Theme } from '../../../shared/api'
+import { hostOf } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
 import { macs } from '../macs'
 import { phoneCalls } from '../phone-calls'
@@ -13,9 +14,12 @@ import { Limits } from './PhoneInfo'
 import { Cell, Page, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
-import { homePath, projectName } from './project'
+import { computerName, PhoneHostFolders, PhoneWhere } from './PhoneHosts'
+import { accountsOf, placesOf, usageOf } from './plans'
+import { homePath, projectLabel } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
+import { useHostBounce } from './useHosts'
 
 /**
  * The Settings tab: what of the Mac's Settings is done from a hand, and the
@@ -28,7 +32,8 @@ type Where =
   | { readonly page: 'profiles' }
   | { readonly page: 'profile'; readonly id: string }
   | { readonly page: 'projects' }
-  | { readonly page: 'add'; readonly path?: string }
+  | { readonly page: 'where' }
+  | { readonly page: 'add'; readonly host?: string }
   | { readonly page: 'hidden' }
   | { readonly page: 'phrases' }
   | { readonly page: 'shortcuts' }
@@ -52,19 +57,35 @@ export function PhoneSettings({
   const back = (): void => setTrail(trail.slice(0, -1))
   const before = (): string => {
     const one = trail[trail.length - 2]
-    return one === undefined ? 'Settings' : one.page === 'root' ? 'Settings' : one.page === 'profiles' ? 'Profiles' : one.page === 'projects' ? 'Projects' : 'Back'
+    return one === undefined || one.page === 'root'
+      ? 'Settings'
+      : one.page === 'profiles'
+        ? 'Profiles'
+        : one.page === 'projects'
+          ? 'Projects'
+          : one.page === 'where'
+              ? 'Where'
+              : 'Back'
   }
 
   if (where.page === 'profiles') return <Profiles chat={chat} back={before()} onBack={back} onOpen={(id) => go({ page: 'profile', id })} />
   if (where.page === 'profile') return <Profile chat={chat} id={where.id} back={before()} onBack={back} />
-  if (where.page === 'projects') return <Projects chat={chat} back={before()} onBack={back} onAdd={() => go({ page: 'add' })} />
+  // With a host added, a new project is first asked where it is; without one, it is the computer's folders as before.
+  if (where.page === 'projects') return <Projects chat={chat} back={before()} onBack={back} onAdd={() => go(chat.hosts.length === 0 ? { page: 'add' } : { page: 'where' })} />
+  if (where.page === 'where')
+    return (
+      <Page title="Where" back={before()} onBack={back}>
+        <PhoneWhere chat={chat} onComputer={() => go({ page: 'add' })} onHost={(id) => go({ page: 'add', host: id })} />
+      </Page>
+    )
   if (where.page === 'add')
     return (
       <AddProject
         chat={chat}
+        {...(where.host === undefined ? {} : { host: where.host })}
         back={before()}
         onBack={back}
-        onAdded={() => setTrail(trail.filter((one) => one.page !== 'add'))}
+        onAdded={() => setTrail(trail.filter((one) => one.page !== 'add' && one.page !== 'where'))}
       />
     )
   if (where.page === 'hidden') return <Hidden chat={chat} back={before()} onBack={back} />
@@ -87,6 +108,8 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
   const settings = chat.settings
   const profile = settings.profiles.find((one) => one.id === settings.profile)
   const thisMac = paired?.find((one) => one.current)
+  const placeName = (place: string): string => (place === '' ? (thisMac?.name ?? 'Host') : (chat.hosts.find((one) => one.id === place)?.name ?? place))
+  const accounts = accountsOf(placesOf(['', ...settings.projects], hostOf), chat.plans, placeName)
 
   return (
     <Page title="Settings">
@@ -98,17 +121,31 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
 
       {paired === undefined ? null : (
         <>
-          <div className="phone-head">Mac</div>
+          {/* The host this phone works through, and the others it is paired with; the projects that host has on other hosts come with it. */}
+          <div className="phone-head">Host</div>
           <div className="phone-group">
-            <Cell label={thisMac?.name ?? 'Mac'} says={paired.length > 1 ? `${String(paired.length)} Macs paired` : 'Paired'} onPress={() => setSwitching(true)} />
+            <Cell label={thisMac?.name ?? 'Host'} says={paired.length > 1 ? `${String(paired.length)} hosts paired` : 'Paired'} onPress={() => setSwitching(true)} />
           </div>
-          {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
-            <>
-              <div className="phone-head">Plan usage</div>
-              <Limits chat={chat} />
-              <div className="phone-note">Of the plan the Mac's Claude Code runs on{chat.account?.plan === undefined ? '' : `, ${chat.account.plan}`}, shared by every conversation on it.</div>
-            </>
-          )}
+          {/* A plan is an account's: one group per account the projects run on, headed by where it was measured once there is more than one. */}
+          {accounts.map((item, at) => {
+            const usage = usageOf(item, chat.plan)
+            if (usage?.fiveHour === undefined && usage?.sevenDay === undefined) return null
+            const place = item.places[0] ?? ''
+            const plan = item.entry?.plan ?? (place === '' ? chat.account?.plan : undefined)
+            return (
+              <Fragment key={place}>
+                <div className="phone-head">{accounts.length === 1 ? 'Plan usage' : `${placeName(place)}${plan === undefined ? '' : ` · ${plan}`}`}</div>
+                <Limits chat={chat} usage={usage} />
+                {at === accounts.length - 1 ? (
+                  <div className="phone-note">
+                    {accounts.length === 1
+                      ? `Of the plan the host's Claude Code runs on${plan === undefined ? '' : `, ${plan}`}, shared by every conversation on it.`
+                      : 'Each account has its own windows, shared by every conversation that runs on it.'}
+                  </div>
+                ) : null}
+              </Fragment>
+            )
+          })}
         </>
       )}
 
@@ -123,7 +160,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       <div className="phone-group">
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === settings.chatMode)?.label} onPress={() => setPicking('mode')} />
       </div>
-      <div className="phone-note">What a task started from the phone or the Mac runs in, until changed in it.</div>
+      <div className="phone-note">What a task started from the phone or the host runs in, until changed in it.</div>
 
       <div className="phone-head">Shortcuts</div>
       <div className="phone-group">
@@ -143,7 +180,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
 
       <div className="phone-head">About</div>
       <div className="phone-group">
-        <Cell label="GeckIt on the Mac" value={version ?? '-'} />
+        <Cell label={`GeckIt on ${thisMac?.name ?? 'the host'}`} value={version ?? '-'} />
         <Cell label="Claude Code" value={chat.account?.program?.version ?? '-'} />
         {chat.account?.plan === undefined ? null : <Cell label="Plan" value={chat.account.plan} />}
       </div>
@@ -212,7 +249,7 @@ function Profiles({
           </div>
         ))}
       </div>
-      <div className="phone-note">The one ticked is what this phone shows; the Mac chooses its own. The profiles themselves are the Mac's.</div>
+      <div className="phone-note">The one ticked is what this phone shows; the host chooses its own. The profiles themselves are the host's.</div>
       <div className="phone-group phone-form-group">
         <Cell
           label="New profile"
@@ -255,7 +292,7 @@ function Profile({ chat, id, back, onBack }: { readonly chat: Chat; readonly id:
           return (
             <Cell
               key={root}
-              label={<span style={{ color: `var(--project-${String(projectColor(root, settings))})` }}>{projectName(root)}</span>}
+              label={<span style={{ color: `var(--project-${String(projectColor(root, settings))})` }}>{projectLabel(root)}</span>}
               says={homePath(root)}
               chosen={on}
               onPress={() => {
@@ -297,12 +334,12 @@ function Projects({ chat, back, onBack, onAdd }: { readonly chat: Chat; readonly
               label={
                 <>
                   <span className="phone-project-dot" style={{ background: `var(--project-${String(projectColor(root, settings))})` }} />
-                  {projectName(root)}
+                  {projectLabel(root)}
                 </>
               }
               says={homePath(root)}
             />
-            <button type="button" className="phone-icon" aria-label={`Forget ${projectName(root)}`} onClick={() => setForgetting(root)}>
+            <button type="button" className="phone-icon" aria-label={`Forget ${projectLabel(root)}`} onClick={() => setForgetting(root)}>
               <Icon name="more" size={20} />
             </button>
           </div>
@@ -314,8 +351,8 @@ function Projects({ chat, back, onBack, onAdd }: { readonly chat: Chat; readonly
       {forgetting === undefined ? null : (
         <Menu
           anchor={new DOMRect()}
-          title={projectName(forgetting)}
-          choices={[{ value: 'forget', label: 'Forget', says: 'Its conversations stay on the Mac', danger: true }]}
+          title={projectLabel(forgetting)}
+          choices={[{ value: 'forget', label: 'Forget', says: 'Its conversations stay on the host', danger: true }]}
           onPick={() => chat.forgetProject(forgetting)}
           onClose={() => setForgetting(undefined)}
         />
@@ -326,18 +363,23 @@ function Projects({ chat, back, onBack, onAdd }: { readonly chat: Chat; readonly
 
 function AddProject({
   chat,
+  host,
   back,
   onBack,
   onAdded,
 }: {
   readonly chat: Chat
+  readonly host?: string
   readonly back: string
   readonly onBack: () => void
   readonly onAdded: () => void
 }): React.JSX.Element {
+  const on = host === undefined ? undefined : chat.hosts.find((one) => one.id === host)
+  // The host removed while its folders are open, or a card there answered Not now, which always leaves it Not connected: back rather than the computer's folders in its place.
+  useHostBounce(chat.hosts, host, onBack)
   return (
     <Page title="Choose a folder" back={back} onBack={onBack}>
-      <Folders chat={chat} onAdded={onAdded} />
+      {host !== undefined && on === undefined ? null : on === undefined ? <Folders chat={chat} onAdded={onAdded} /> : <PhoneHostFolders chat={chat} host={on} onAdded={onAdded} />}
     </Page>
   )
 }
@@ -379,7 +421,7 @@ export function Folders({
   const had = shown !== undefined && chat.settings.projects.includes(shown.path)
 
   return shown === undefined ? (
-    <div className="phone-empty">{trouble ?? "Reading the Mac's folders"}</div>
+    <div className="phone-empty">{trouble ?? `Reading ${computerName()}...`}</div>
   ) : (
     <>
       <div className="phone-head phone-path">{homePath(shown.path)}</div>
@@ -388,7 +430,9 @@ export function Folders({
         {shown.folders.map((one) => (
           <Cell key={one.path} label={one.name} icon="folder" {...(one.git ? { says: 'Git repository' } : {})} onPress={() => setAt(one.path)} />
         ))}
-        {shown.folders.length === 0 ? <Cell label="No folders in it" /> : null}
+        {shown.folders.length === 0 ? (
+          <Cell label={`No folders inside ${shown.path.split('/').filter((part) => part !== '').pop() ?? computerName()}`} />
+        ) : null}
       </div>
       {onShown !== undefined ? null : (
         <div className="phone-group phone-form-group">
@@ -420,7 +464,7 @@ function Hidden({ chat, back, onBack }: { readonly chat: Chat; readonly back: st
   }, [])
   return (
     <Page title="Hidden" back={back} onBack={onBack}>
-      <div className="phone-note phone-lead">Kept by Claude Code on the Mac and not on the board.</div>
+      <div className="phone-note phone-lead">Kept by Claude Code on the host and not on the board.</div>
       {folders === undefined ? (
         <div className="phone-empty">Reading conversations</div>
       ) : folders.length === 0 ? (
@@ -428,7 +472,7 @@ function Hidden({ chat, back, onBack }: { readonly chat: Chat; readonly back: st
       ) : (
         folders.map((folder) => (
           <div key={folder.path}>
-            <div className="phone-head phone-path">{folder.project === undefined ? homePath(folder.path) : projectName(folder.project)}</div>
+            <div className="phone-head phone-path">{folder.project === undefined ? homePath(folder.path) : projectLabel(folder.project)}</div>
             <div className="phone-group">
               {folder.chats.map((one) => (
                 <Cell key={one.id} label={one.title === '' ? 'Untitled' : one.title} says={one.stands}>

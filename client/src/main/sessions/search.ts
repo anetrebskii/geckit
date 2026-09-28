@@ -125,13 +125,17 @@ let queue: Promise<unknown> = Promise.resolve()
  * asked brings the index up to date and finds nothing, which is what opening
  * the search does, so the first word typed does not wait for the disk.
  */
-export function searchClaude(roots: readonly string[], asked: string): Promise<ChatFound[]> {
+export function searchClaude(
+  roots: readonly string[],
+  asked: string,
+  foldersOf: (root: string) => Promise<string[]> = folders,
+): Promise<ChatFound[]> {
   const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
   // One at a time: two searches reading on from the same place would read the same lines twice.
   const run = async (): Promise<ChatFound[]> => {
     const found: (ChatFound & { readonly at: number })[] = []
     for (const root of roots) {
-      for (const folder of await folders(root)) {
+      for (const folder of await foldersOf(root)) {
         for (const name of await readdir(folder).catch(() => [])) {
           if (!name.endsWith('.jsonl')) continue
           const path = join(folder, name)

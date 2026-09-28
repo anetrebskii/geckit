@@ -17,7 +17,11 @@ import { FileView } from './FileView'
 import { Composer } from './Composer'
 import { NameField } from './NameField'
 import { projectColor } from '../../../shared/project-color'
-import { homePath, projectName, tint } from './project'
+import { hostOf, isRemote } from '../../../shared/hosts'
+import { HostChip, HostPromptCard, HostTroubleCard } from './HostParts'
+import { PhoneHostSheet } from './PhoneHostSheet'
+import { computerName, needsComputer } from './PhoneHosts'
+import { homePath, projectLabel, projectName, tint } from './project'
 import { Sidebar, Tags } from './Sidebar'
 import { Status, TalkStatus } from './Status'
 import { Notices } from './Notices'
@@ -95,6 +99,8 @@ export function Chat(): React.JSX.Element {
   const [screening, setScreening] = useState(false)
   const grab = useRef(0)
   const { addFiles, send, root } = chat
+  // The host the open conversation, or the one about to start, runs on.
+  const host = root === undefined ? undefined : chat.hosts.find((one) => one.id === hostOf(root))
 
   // The transcript is drawn again whenever one of these is, so they are made
   // once rather than on every keystroke in the field below it.
@@ -134,7 +140,8 @@ export function Chat(): React.JSX.Element {
   const file = useCallback(
     (path: string, how: FileHow) => {
       if (root === undefined) return
-      if (ON_PHONE) setViewing({ root, path })
+      // A file on a host is not on this computer to open in an application, so it is shown here.
+      if (ON_PHONE || isRemote(root)) setViewing({ root, path })
       else if (how === 'reveal') window.geckit.chat.reveal(root, path)
       else if (how === 'menu') window.geckit.chat.fileMenu(root, path)
       else window.geckit.chat.openFile(root, path)
@@ -163,6 +170,26 @@ export function Chat(): React.JSX.Element {
     [root, file, named],
   )
   const links = useMemo(() => linksIn(chat.items), [chat.items])
+
+  // What Copy the terminal command puts on the clipboard: a local `cd` and resume, known at once; a host's own terminal line, asked for.
+  const sessionRoot = chat.session?.root
+  const sessionId = chat.session?.id
+  const localLine =
+    sessionRoot === undefined || sessionId === undefined || isRemote(sessionRoot)
+      ? undefined
+      : `cd ${JSON.stringify(sessionRoot)} && ${resumeCommand(sessionId)}`
+  const [hostLine, setHostLine] = useState<{ readonly id: string; readonly line: string | undefined } | undefined>()
+  useEffect(() => {
+    if (sessionRoot === undefined || sessionId === undefined || !isRemote(sessionRoot)) return
+    let here = true
+    void window.geckit.hosts.resumeLine(sessionRoot, sessionId).then((said) => {
+      if (here) setHostLine({ id: sessionId, line: said })
+    })
+    return () => {
+      here = false
+    }
+  }, [sessionRoot, sessionId, host?.state])
+  const terminalLine = localLine ?? (sessionId !== undefined && hostLine?.id === sessionId ? hostLine.line : undefined)
 
   useEffect(() => {
     const modifier = MOD === 'Cmd' ? 'Meta' : 'Control'
@@ -469,6 +496,12 @@ export function Chat(): React.JSX.Element {
       <div className={`talk${board ? ' over' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}`} hidden={board && !overBoard}>
         {ON_PHONE && overBoard ? <EdgeBack onBack={() => chat.open({ kind: 'new' })} /> : null}
         {ON_PHONE && overBoard && chat.session !== undefined ? <EdgeInfo onPull={setPulled} onOpen={() => setInfoing(true)} /> : null}
+        {ON_PHONE && overBoard && host?.state === 'lost' ? (
+          <div className="phone-offline phone-host-away" role="status">
+            <span className="phone-spin" />
+            Reconnecting to {host.name}
+          </div>
+        ) : null}
         {ON_PHONE ? (
           <PhoneNav
             chat={chat}
@@ -512,12 +545,13 @@ export function Chat(): React.JSX.Element {
                 <span className="tinted" style={{ fontSize: 12, ...tint(projectColor(homeOf(chat.session), chat.settings)) }}>
                   {projectName(homeOf(chat.session))}
                 </span>
+                {host === undefined ? null : <HostChip host={host} onTerminal={() => window.geckit.hosts.terminal(host.id)} />}
                 <Tags session={chat.session} marked={false} />
               </>
             ) : chat.root === undefined ? null : (
               <Picker
-                label={`in ${projectName(chat.root)}`}
-                choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectName(one), says: homePath(one) }))}
+                label={`in ${projectLabel(chat.root)}`}
+                choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectLabel(one), says: homePath(one) }))}
                 chosen={chat.root}
                 title="Start it in"
                 tip={homePath(chat.root)}
@@ -581,15 +615,19 @@ export function Chat(): React.JSX.Element {
                   title={
                     copied === chat.session.id
                       ? 'Copied'
-                      : `Copy the command that continues it in a terminal: ${resumeCommand(chat.session.id)}`
+                      : terminalLine === undefined
+                        ? 'Copy the command that continues it in a terminal'
+                        : `Copy the command that continues it in a terminal: ${terminalLine}`
                   }
                   aria-label="Copy the terminal command"
                   onClick={() => {
                     if (chat.session === undefined) return
                     const id = chat.session.id
-                    chat.copyTerminal(id)
-                    setCopied(id)
-                    setTimeout(() => setCopied((now) => (now === id ? undefined : now)), 1500)
+                    void chat.copyTerminal(id).then((done) => {
+                      if (!done) return
+                      setCopied(id)
+                      setTimeout(() => setCopied((now) => (now === id ? undefined : now)), 1500)
+                    })
                   }}
                 >
                   <Icon name={copied === chat.session.id ? 'check' : 'terminal'} />
@@ -624,13 +662,25 @@ export function Chat(): React.JSX.Element {
             <div className="turn" style={{ paddingTop: 40, color: 'var(--text-dim)' }}>
               {chat.root === undefined
                 ? 'Choose a project folder on the left. Everything asked here runs in that folder.'
-                : chat.account?.here !== true
-                  ? 'Claude Code is not on this machine. Install it, then reopen this window.'
-                  : chat.account.signedIn === false
-                    ? 'Nobody is signed in. Run claude auth login in a terminal, then reopen this window.'
-                    : chat.account.key === true
-                      ? 'That claude is signed in with an API key. GeckIt only runs sessions on a plan, so nothing would be started here.'
-                      : `Ask anything about ${projectName(chat.root)}. What it may do without asking is under the field.`}
+                : host !== undefined
+                  ? host.state === 'lost'
+                    ? `Reconnecting to ${host.name}`
+                    : host.state === 'connecting'
+                      ? `Connecting to ${host.name}`
+                      : host.state === 'needs' || host.state === 'missing' || host.state === 'signin'
+                        ? ON_PHONE
+                          ? needsComputer(host, chat.prompts)
+                            ? `${host.name} needs you on ${computerName()}${host.problem === undefined ? '.' : `: ${host.problem}`}`
+                            : `${host.name} needs you`
+                          : `${host.name} needs you, above`
+                        : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`
+                  : chat.account?.here !== true
+                    ? 'Claude Code is not on this computer. Install it, then reopen this window.'
+                    : chat.account.signedIn === false
+                      ? 'Nobody is signed in. Run claude auth login in a terminal, then reopen this window.'
+                      : chat.account.key === true
+                        ? 'That claude is signed in with an API key. GeckIt only runs sessions on a plan, so nothing would be started here.'
+                        : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`}
             </div>
           </div>
         ) : chat.shown.kind === 'session' && chat.itemsFor !== chat.shown.id && chat.items.length === 0 ? (
@@ -674,6 +724,24 @@ export function Chat(): React.JSX.Element {
       <Status chat={chat} />
 
       <Notices chat={chat} />
+      {/* On the phone a host's question is a sheet over whatever is open, one at a time, the oldest first; what stands in the way of a host is on its page in Settings, since only the computer can fix it. */}
+      {ON_PHONE ? (
+        chat.prompts[0] === undefined ? null : (
+          <PhoneHostSheet key={chat.prompts[0].id} prompt={chat.prompts[0]} host={chat.hosts.find((one) => one.id === chat.prompts[0]?.host)} />
+        )
+      ) : chat.prompts.length === 0 && (host === undefined || !['missing', 'signin', 'needs'].includes(host.state)) ? null : (
+        <div className="host-prompts">
+          {chat.prompts.map((prompt) => (
+            <HostPromptCard
+              key={prompt.id}
+              prompt={prompt}
+              hostName={chat.hosts.find((one) => one.id === prompt.host)?.name ?? prompt.host}
+              canRemember={chat.hosts.find((one) => one.id === prompt.host)?.canRemember ?? false}
+            />
+          ))}
+          {host === undefined || chat.prompts.some((one) => one.host === host.id) ? null : <HostTroubleCard host={host} />}
+        </div>
+      )}
       {screening ? <Screen onClose={() => setScreening(false)} /> : null}
       {viewing === undefined ? null : <FileView root={viewing.root} path={viewing.path} onClose={() => setViewing(undefined)} />}
       <UpdateNotice />
@@ -777,7 +845,7 @@ export function Chat(): React.JSX.Element {
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
             <h2>Clear the conversation?</h2>
             <p>
-              The next message starts a new conversation in {projectName(homeOf(chat.session))}, with nothing of this one
+              The next message starts a new conversation in {projectLabel(homeOf(chat.session))}, with nothing of this one
               in mind. This one stays in the list.
             </p>
             <div className="dialog-actions">

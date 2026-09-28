@@ -10,12 +10,15 @@ import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { MOD } from '../ui/Shortcuts'
+import { hostOf, isRemote } from '../../../shared/hosts'
 import { Chrome } from './Chrome'
+import { HostDot } from './HostParts'
 import { Mcp } from './Mcp'
+import { computerName, needsComputer } from './PhoneHosts'
 import { Preview } from './Preview'
 import { Tasks } from './Tasks'
 import type { Choice } from '../ui/Menu'
-import { projectName } from './project'
+import { projectLabel } from './project'
 import type { Chat } from './useChat'
 
 /** A path offered after @, as its name and the folder it is in. */
@@ -229,6 +232,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
       ? 'Default'
       : chat.model
 
+  // On a host it is that host's Claude Code that answers, not this computer's, so only its connection decides.
+  const host = chat.root === undefined ? undefined : chat.hosts.find((one) => one.id === hostOf(chat.root ?? ''))
+
   // Another model has no cache of this conversation, so it reads all of it again.
   const again = 'Another model reads the whole conversation again at your next message'
   const used = chat.session?.spend?.used
@@ -238,11 +244,28 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
       : used === undefined
         ? `${again}.`
         : `${again}: about ${(Math.round(used / 1000) * 1000).toLocaleString('en-US')} tokens from your plan.`
-  // Which Claude Code named these, since an older one names fewer.
-  const program = programLine(chat.account)
+  // Which Claude Code named these: this computer's for a local project, that host's for one on a host, since an older one names fewer.
+  const program = host === undefined ? programLine(chat.account) : host.version === undefined ? undefined : `Claude Code ${host.version}`
   const note = [program === undefined ? undefined : `${program}.`, cost].filter((line) => line !== undefined).join('\n')
-
-  const cannot = chat.root === undefined || chat.account?.signedIn !== true || chat.account.key === true
+  const away =
+    host === undefined
+      ? undefined
+      : host.state === 'lost'
+        ? `Reconnecting to ${host.name}`
+        : host.state === 'needs' || host.state === 'missing' || host.state === 'signin'
+          ? `${host.name} needs you, above`
+          : host.state === 'connecting'
+            ? `Connecting to ${host.name}`
+            : undefined
+  // The phone has no room in the field for the words, so there the buttons stay, held, and the words go on a line over it.
+  const held = ON_PHONE && away !== undefined
+  const shownAway = held ? undefined : away
+  const cannot =
+    held ||
+    chat.uploading ||
+    chat.root === undefined ||
+    (host === undefined && isRemote(chat.root)) ||
+    (host === undefined && (chat.account?.signedIn !== true || chat.account.key === true))
 
   const { addFiles } = chat
 
@@ -557,7 +580,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         {found === undefined ? null : (
           <div className="mentions" role="listbox" ref={offered}>
             {found.length === 0 ? (
-              <div className="empty">Nothing in {projectName(root ?? '')} by that name</div>
+              <div className="empty">Nothing in {projectLabel(root ?? '')} by that name</div>
             ) : (
               found.map((path, index) => (
                 <div
@@ -691,7 +714,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             chosen={chat.model}
             title="Model"
             {...(note === '' ? {} : { note })}
-            onOpen={chat.askModels}
+            onOpen={() => chat.askModels()}
             onPick={(value) => {
               if (value !== '__asking') chat.setModel(value)
             }}
@@ -699,7 +722,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {ON_PHONE ? null : (
             <>
               {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
-              {chat.root === undefined ? null : <Chrome root={chat.root} id={chat.session?.id} />}
+              {chat.root === undefined ? null : host === undefined ? (
+                <Chrome root={chat.root} id={chat.session?.id} />
+              ) : (
+                <button type="button" className="picker" disabled title={`Chrome is on this computer, and this conversation runs on ${host.name}`}>
+                  Chrome
+                </button>
+              )}
             </>
           )}
           <Tasks
@@ -752,11 +781,17 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           ) : null}
           {command ? (
             <span className="composer-hint command">
-              Runs in {projectName(chat.root)}. Claude sees what it prints with your next message
+              Runs in {projectLabel(chat.root)}. Claude sees what it prints with your next message
             </span>
           ) : null}
           <div className="spacer" />
-          {chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
+          {shownAway === undefined ? null : (
+            <span className={`host-waiting ${host?.state ?? ''}`}>
+              {host === undefined ? null : <HostDot state={host.state} />}
+              {away}
+            </span>
+          )}
+          {shownAway !== undefined ? null : chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
             <button
               type="button"
               className="send"
@@ -772,17 +807,17 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {/* Otherwise an empty field offers dictation in the send button's place, as Messages does. */}
           {/* Beside the mic, the language it listens in: a press switches to the other of the two in Settings, and it stays so. */}
           {/* With a picture attached, or Stop in the round button, the mic and language sit to its left, so words can still be said. */}
-          {ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' ? (
+          {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' ? (
             <button type="button" className={chat.pictures.length > 0 || chat.working ? 'spoken beside' : 'spoken'} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
               {languageCode(spoken)}
             </button>
           ) : null}
-          {ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
+          {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
             <button type="button" className="send mic beside" disabled={cannot} onClick={listen} aria-label={`Dictate in ${spoken}`}>
               <Icon name="mic" size={16} />
             </button>
           ) : null}
-          {ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
+          {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
             <button
               type="button"
               className={listening !== undefined ? 'send listening' : 'send'}
@@ -810,8 +845,18 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           )}
         </div>
         {/* The chip row has no room for the hint, so on the phone it has a line of its own over the field. */}
-        {ON_PHONE && command ? (
-          <div className="phone-hint command">Runs in {projectName(chat.root)} now. Claude sees what it prints with your next message</div>
+        {held && host !== undefined ? (
+          <div className="phone-hint away">
+            {host.state === 'lost'
+              ? `${host.name} is out of reach. What is typed stays until it is back`
+              : host.state === 'connecting'
+                ? away
+                : needsComputer(host, chat.prompts)
+                  ? `${host.name} needs you on ${computerName()}${host.problem === undefined ? '.' : `: ${host.problem}`}`
+                  : `${host.name} needs you`}
+          </div>
+        ) : ON_PHONE && command ? (
+          <div className="phone-hint command">Runs in {projectLabel(chat.root)} now. Claude sees what it prints with your next message</div>
         ) : ON_PHONE && chat.working && (draft !== '' || chat.pictures.length > 0) ? (
           <div className="phone-hint">Waits its turn: it goes once Claude has answered</div>
         ) : null}

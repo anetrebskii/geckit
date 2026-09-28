@@ -1,11 +1,13 @@
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
 import type { SessionStatus } from '../shared/api'
-import { claudeFile, listClaude, readClaudeSession } from '../main/sessions/disk'
+import { claudeFile, listClaude, readClaudeSession, readSessionAt, slug } from '../main/sessions/disk'
 import type { Found } from '../main/sessions/disk'
+import { belowRoot } from '../main/sessions'
 import type { Move } from '../main/sessions'
+import { hostOf, isRemote, pathOf } from '../shared/hosts'
 
 /**
  * GeckIt from a command line, for a session that is asked about the work
@@ -32,7 +34,12 @@ interface Row extends Found {
   readonly created?: number
   readonly moves: readonly Move[]
   readonly favorite: boolean
+  /** Where it actually ran, for one started in a folder below the project's own: `sessions/index.ts`'s `belowRoot` turns this into a root. */
+  readonly below?: string
 }
+
+/** The root a row's own file is under: the project's, unless it ran in a folder below it. */
+const effectiveRoot = (row: Row): string => (row.below === undefined ? row.root : belowRoot(row.root, row.below))
 
 const data = (): string => {
   const said = process.env['GECKIT_DATA']
@@ -50,6 +57,31 @@ function kept<T>(name: string, fallback: T): T {
   }
 }
 
+/** A host's own mirror of Claude Code's conversation files, kept beside GeckIt's own settings. */
+const hostFolder = (host: string): string => join(data(), 'hosts', host)
+
+/** Where a conversation started on a host is mirrored here, as `HostDisk` lays it out. */
+function hostFile(root: string, id: string): string | undefined {
+  const host = hostOf(root)
+  return host === undefined ? undefined : join(hostFolder(host), 'projects', slug(pathOf(root)), `${id}.jsonl`)
+}
+
+/**
+ * A project's conversations, read the way the window would: this computer's
+ * own folder for a local one, or the last listing fetched from a host's,
+ * kept here in the same shape whether or not the host can be reached now.
+ */
+async function projectRows(root: string): Promise<(Found & { readonly below?: string })[]> {
+  const host = hostOf(root)
+  if (host === undefined) return listClaude(root).catch(() => [])
+  const path = join(hostFolder(host), 'listed', `${slug(pathOf(root))}.json`)
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as (Found & { readonly below?: string })[]
+  } catch {
+    return []
+  }
+}
+
 async function rows(): Promise<Row[]> {
   const settings = kept<{ projects?: string[]; favorites?: string[] }>('settings.json', {})
   const projects = settings.projects ?? []
@@ -57,7 +89,7 @@ async function rows(): Promise<Row[]> {
   const notes = kept<Record<string, Note>>('sessions.json', {})
   const all: Row[] = []
   for (const root of projects) {
-    for (const found of await listClaude(root).catch(() => [])) {
+    for (const found of await projectRows(root)) {
       const note = notes[found.id]
       if (note?.hidden === true) continue
       all.push({
@@ -91,10 +123,18 @@ export function since(said: string): number | undefined {
 
 const when = (at: number): string => new Date(at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
 
-/** When it was started: GeckIt's own record, or for one it never saw begin, when the tool made its file. */
+/**
+ * When it was started: GeckIt's own record, or for one it never saw begin,
+ * when the tool made its file. For a host row that is the mirror kept here,
+ * whose own birth is when it was last fetched and not when the conversation
+ * was - so that falls back to the row's own time instead of saying something
+ * false.
+ */
 async function started(row: Row): Promise<number | undefined> {
   if (row.created !== undefined) return row.created
-  const path = await claudeFile(row.root, row.id)
+  const root = effectiveRoot(row)
+  if (isRemote(root)) return row.at
+  const path = await claudeFile(root, row.id)
   if (path === undefined) return undefined
   try {
     return statSync(path).birthtimeMs
@@ -178,8 +218,13 @@ async function show(args: readonly string[]): Promise<string> {
   const row = found[0]
   if (row === undefined) return `No conversation starts with ${asked}.`
   if (found.length > 1) return `${asked} could be any of ${found.length} conversations. Give more of the id.`
-  if ((await claudeFile(row.root, row.id)) === undefined) return 'Claude Code has no file for it any more.'
-  const items = (await readClaudeSession(row.root, row.id))?.items ?? []
+  const root = effectiveRoot(row)
+  const remote = isRemote(root)
+  const path = remote ? hostFile(root, row.id) : await claudeFile(root, row.id)
+  if (path === undefined) return 'Claude Code has no file for it any more.'
+  if (remote && !existsSync(path)) return 'Its conversation has not been opened in GeckIt yet.'
+  const conversation = await (remote ? readSessionAt(path, pathOf(root)) : readClaudeSession(root, row.id)).catch(() => undefined)
+  const items = conversation?.items ?? []
   const said = items.flatMap((item) =>
     item.kind === 'mine' || item.kind === 'theirs' ? [{ who: item.kind === 'mine' ? 'Alex' : 'Claude', text: item.text }] : [],
   )

@@ -5,6 +5,7 @@ import type {
   ChatSession,
   ClaudeAccount,
   ModelsSaid,
+  PlaceUsage,
   PlanUsage,
   SessionImage,
   SessionItem,
@@ -13,9 +14,13 @@ import type {
   SessionStatus,
 } from '../../../shared/api'
 import { homeOf, resumeCommand, shownProjects } from '../../../shared/api'
+import { hostOf, isRemote } from '../../../shared/hosts'
+import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { asImage, canShow } from '../pictures'
 import { useSettings } from '../settings'
 import type { Settings } from '../../../shared/api'
+import { hostName } from './project'
+import { useHosts } from './useHosts'
 
 /** What the window is showing: a conversation, or one that has not been sent yet. */
 export type Shown = { readonly kind: 'new' } | { readonly kind: 'session'; readonly id: string }
@@ -49,6 +54,10 @@ const keyOf = (shown: Shown): string => (shown.kind === 'new' ? NEW : shown.id)
 
 export interface Chat {
   readonly settings: Settings
+  /** Other computers conversations run on, and how each stands. */
+  readonly hosts: readonly HostView[]
+  /** What hosts are asking now. */
+  readonly prompts: readonly HostPrompt[]
   readonly change: (change: Partial<Settings>) => void
   readonly root: string | undefined
   /** Whose conversations are listed: one project's, or `ALL`. */
@@ -79,9 +88,15 @@ export interface Chat {
   readonly pictures: readonly SessionImage[]
   /** Said when something was pasted that cannot be sent. */
   readonly trouble: string
+  /** A file dropped on a conversation on a host is still being copied there: the message waits for its path. */
+  readonly uploading: boolean
   readonly account: ClaudeAccount | undefined
   /** How much of the plan is spent, once a turn has said. */
   readonly plan: PlanUsage | undefined
+  /** Every place's plan, by the account it runs on: this computer's and each host's with projects here. */
+  readonly plans: readonly PlaceUsage[]
+  /** When each place's usage was last measured, by the place: what a faint plan item's tooltip says it is as of. */
+  readonly plansAt: Readonly<Record<string, number>>
   readonly models: ModelsSaid
   /** The mode and model the next message goes with, on a new session or an old one. */
   readonly mode: SessionMode
@@ -94,6 +109,8 @@ export interface Chat {
   setScope: (scope: string) => void
   /** That project in the list beside the others already there, or out of it. */
   alsoScope: (root: string) => void
+  /** Exactly these projects in the list: every one of a host's, for All on it. */
+  choose: (roots: readonly string[]) => void
   /** Where a new conversation starts: listing every project, only that changes; listing one, the list moves to it. */
   setRoot: (root: string) => void
   addProject: () => void
@@ -111,7 +128,8 @@ export interface Chat {
   dropPicture: (at: number) => void
   setMode: (mode: SessionMode) => void
   setModel: (model: string) => void
-  askModels: () => void
+  /** Asks which models the Claude Code that runs a project has: the chat's own project where none is given. */
+  askModels: (root?: string) => void
   send: (again?: string, said?: string) => void
   /** A general question, in no project, which the board and the list never show. */
   ask: (text: string, images?: readonly SessionImage[]) => void
@@ -152,7 +170,8 @@ export interface Chat {
   remove: (ids: readonly string[]) => void
   terminal: (id: string) => void
   /** Puts the command that continues it in a terminal on the clipboard, and lets go of it here. */
-  copyTerminal: (id: string) => void
+  /** Copies the line that continues a conversation in a terminal, and lets go of it here; answers whether a line was copied. */
+  copyTerminal: (id: string) => Promise<boolean>
   refresh: () => void
 }
 
@@ -161,6 +180,7 @@ const SHOWN_FOR = 1500
 
 export function useChat(): Chat {
   const [settings, change] = useSettings()
+  const { hosts, prompts } = useHosts()
   const [picked, setPicked] = useState<readonly string[] | undefined>()
   const [started, setStarted] = useState<string | undefined>()
   const [sessions, setSessions] = useState<readonly ChatSession[]>([])
@@ -178,9 +198,28 @@ export function useChat(): Chat {
   }, [drafts])
   const [pictures, setPictures] = useState<Record<string, readonly SessionImage[]>>({})
   const [trouble, setTrouble] = useState('')
+  // Files still being copied to a host, by the conversation they were dropped on.
+  const [uploads, setUploads] = useState<Readonly<Record<string, number>>>({})
+  const uploadsRef = useRef(uploads)
+  useEffect(() => {
+    uploadsRef.current = uploads
+  }, [uploads])
   const [account, setAccount] = useState<ClaudeAccount | undefined>()
   const [plan, setPlan] = useState<PlanUsage | undefined>()
-  const [models, setModels] = useState<ModelsSaid>('unasked')
+  const [plans, setPlansState] = useState<readonly PlaceUsage[]>([])
+  // When a place's usage was last measured, so a faint plan item's tooltip can say as of when it was last asked. Every answer or tell counts, whether or not its numbers moved: it says when it was last known fresh, not when it last changed.
+  const [plansAt, setPlansAt] = useState<Readonly<Record<string, number>>>({})
+  const setPlans = useCallback((all: readonly PlaceUsage[]): void => {
+    const at = Date.now()
+    setPlansState(all)
+    setPlansAt((held) => {
+      const next = { ...held }
+      for (const one of all) next[one.place] = at
+      return next
+    })
+  }, [])
+  // Which Claude Code the list is of, this computer's ('') or a host's by id: each has its own models, and a list is never shown for the other.
+  const [models, setModels] = useState<{ readonly on: string; readonly said: ModelsSaid }>({ on: '', said: 'unasked' })
   const [focusSeed, setFocusSeed] = useState(0)
   // The projects the list shows, kept from last time. None of them is every one of the profile's.
   const chosen = useMemo<readonly string[]>(() => {
@@ -234,18 +273,23 @@ export function useChat(): Chat {
   // coming to the front, and every few minutes while the window is seen.
   useEffect(() => {
     const ask = (): void => {
-      if (document.visibilityState === 'visible') void window.geckit.chat.plan().then(setPlan)
+      if (document.visibilityState !== 'visible') return
+      void window.geckit.chat.plan().then(setPlan)
+      // A computer from before plans were measured per account says nothing here, and its one plan is still shown.
+      void window.geckit.chat.plans().then(setPlans, () => undefined)
     }
     ask()
     const every = setInterval(ask, PLAN_EVERY)
     window.addEventListener('focus', ask)
     const off = window.geckit.chat.onPlan(setPlan)
+    const offPlans = window.geckit.chat.onPlans(setPlans)
     return () => {
       clearInterval(every)
       window.removeEventListener('focus', ask)
       off()
+      offPlans()
     }
-  }, [])
+  }, [setPlans])
 
   useEffect(() => {
     void window.geckit.chat.list(undefined).then((all) => setEveryone(all.filter((one) => one.question !== true)))
@@ -409,23 +453,53 @@ export function useChat(): Chat {
     })
   }, [session, working])
 
+  // A path typed into the field, once known: quoted if it has a space in it, added after what is already there.
+  const addPath = (key: string, path: string): void => {
+    const quoted = path.includes(' ') ? `"${path}"` : path
+    setDrafts((held) => {
+      const now = held[key] ?? ''
+      return { ...held, [key]: `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${quoted} ` }
+    })
+  }
+
   const addFiles = useCallback((files: readonly File[]) => {
-    const paths = files
-      .filter((one) => !canShow(one))
-      .map((one) => window.geckit.pathFor(one))
-      .filter((path) => path !== '')
-      .map((path) => (path.includes(' ') ? `"${path}"` : path))
-    if (paths.length > 0) {
-      setDrafts((held) => {
-        const key = keyOf(shownRef.current)
-        const now = held[key] ?? ''
-        return { ...held, [key]: `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${paths.join(' ')} ` }
-      })
+    const dropped = files.filter((one) => !canShow(one))
+    let copying = false
+    if (dropped.length > 0) {
+      const where = rootRef.current
+      const key = keyOf(shownRef.current)
+      for (const one of dropped) {
+        const local = window.geckit.pathFor(one)
+        if (local === '') continue
+        // What was dropped is a path on this computer; a host cannot read it, so it is copied there first.
+        if (where === undefined || !isRemote(where)) {
+          addPath(key, local)
+          continue
+        }
+        const busy = `Copying ${one.name} to ${hostName(where) ?? where}...`
+        const count = (by: number): void => setUploads((held) => ({ ...held, [key]: Math.max(0, (held[key] ?? 0) + by) }))
+        copying = true
+        count(1)
+        setTrouble(busy)
+        void window.geckit.chat
+          .upload(where, local)
+          .catch(() => ({ problem: `Could not copy ${one.name}.` }))
+          .then((landed) => {
+            count(-1)
+            if ('problem' in landed) {
+              setTrouble(landed.problem)
+              return
+            }
+            setTrouble((now) => (now === busy ? '' : now))
+            addPath(key, landed.path)
+          })
+      }
     }
 
     const wanted = files.filter(canShow)
     if (wanted.length === 0) return
-    setTrouble('')
+    // A copy under way keeps its line; only a drop of pictures alone starts from a clean one.
+    if (!copying) setTrouble('')
     void Promise.all(wanted.map((file) => asImage(file).catch(() => undefined))).then((read) => {
       const kept = read.filter((one): one is SessionImage => one !== undefined)
       if (kept.length < wanted.length) setTrouble('A picture was too big to send')
@@ -469,6 +543,8 @@ export function useChat(): Chat {
       // Words given here, as Continue gives them, go without touching what is typed in the field.
       const text = said ?? now.drafts[key] ?? ''
       const carried = said === undefined ? (now.pictures[key] ?? []) : []
+      // The path of a file still on its way to the host is not in the words yet; it goes once it is.
+      if (said === undefined && (uploadsRef.current[key] ?? 0) > 0) return
       if (where === undefined || (again === undefined && text.trim() === '' && carried.length === 0)) return
       // A message that starts with ! is a command for the project folder, as in the terminal.
       const command = again === undefined && said === undefined && text.trim().startsWith('!') ? text.trim().slice(1).trim() : undefined
@@ -519,7 +595,7 @@ export function useChat(): Chat {
               setDrafts((all) => ({ ...all, [key]: text }))
               setPictures((all) => ({ ...all, [key]: carried }))
             }
-            setTrouble('Not sent: the Mac could not be reached')
+            setTrouble('Not sent: the host could not be reached')
           },
         )
     },
@@ -682,15 +758,32 @@ export function useChat(): Chat {
 
   const copyTerminal = useCallback((id: string) => {
     const where = sessionsRef.current.find((one) => one.id === id)?.root ?? rootRef.current
-    if (where === undefined) return
-    void navigator.clipboard.writeText(`cd ${JSON.stringify(where)} && ${resumeCommand(id)}`)
-    window.geckit.chat.handOver(id)
+    if (where === undefined) return Promise.resolve(false)
+    // On a host, the line a local terminal would type is that host's own; nothing here says `cd` into an address ssh does not read.
+    const line =
+      hostOf(where) === undefined
+        ? Promise.resolve<string | undefined>(`cd ${JSON.stringify(where)} && ${resumeCommand(id)}`)
+        : window.geckit.hosts.resumeLine(where, id)
+    // Handed over only once the line is on the clipboard: a host out of reach gives none, and the conversation stays here.
+    return line
+      .then(async (said) => {
+        if (said === undefined) {
+          setTrouble(`Could not reach ${hostName(where) ?? where} for the line that continues it`)
+          return false
+        }
+        await navigator.clipboard.writeText(said)
+        window.geckit.chat.handOver(id)
+        return true
+      })
+      .catch(() => false)
   }, [])
 
   const startNew = useCallback(() => open({ kind: 'new' }), [open])
 
   return {
     settings,
+    hosts,
+    prompts,
     change,
     root,
     scope,
@@ -710,9 +803,12 @@ export function useChat(): Chat {
     draft,
     pictures: pictures[keyOf(shown)] ?? NONE,
     trouble,
+    uploading: (uploads[keyOf(shown)] ?? 0) > 0,
     account,
     plan,
-    models,
+    plans,
+    plansAt,
+    models: models.said,
     mode,
     model,
     working,
@@ -720,6 +816,7 @@ export function useChat(): Chat {
     chosen,
     setScope,
     alsoScope,
+    choose: listing,
     setRoot: (next) => {
       if (scopeRef.current === ALL) setStarted(next)
       else setScope(next)
@@ -758,10 +855,15 @@ export function useChat(): Chat {
         )
       }
     },
-    // Asked at every opening: main keeps the answer, and asks Claude Code again once another version of it answers.
-    askModels: () => {
-      if (!Array.isArray(models)) setModels('asking')
-      void window.geckit.chat.models().then((said) => setModels((held) => said ?? (Array.isArray(held) ? held : 'unsaid')))
+    // Asked at every opening: main keeps the answer, and asks Claude Code again once another version of it answers. On a host it is that host's models, not this computer's.
+    askModels: (root) => {
+      const where = root ?? rootRef.current
+      const on = where === undefined ? '' : (hostOf(where) ?? '')
+      setModels((held) => (held.on === on && Array.isArray(held.said) ? held : { on, said: 'asking' }))
+      // An answer for a Claude Code asked about before another was is not this one's, and is let go.
+      void window.geckit.chat
+        .models(where)
+        .then((said) => setModels((held) => (held.on !== on ? held : { on, said: said ?? (Array.isArray(held.said) ? held.said : 'unsaid') })))
     },
     send,
     ask,

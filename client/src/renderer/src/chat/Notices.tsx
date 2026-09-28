@@ -5,7 +5,7 @@ import { projectColor } from '../../../shared/project-color'
 import { ON_PHONE } from '../on-phone'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
-import { projectName } from './project'
+import { projectLabel } from './project'
 import type { Chat } from './useChat'
 
 /** What another conversation said while this window was in front, each one a way into it. */
@@ -69,7 +69,7 @@ function Banner({ chat, notice }: { readonly chat: Chat; readonly notice: Sessio
   const session = chat.everyone.find((one) => one.id === notice.session) ?? chat.questions.find((one) => one.id === notice.session)
   const cut = notice.title.lastIndexOf(' - ')
   const what = cut < 0 ? notice.title : notice.title.slice(0, cut)
-  const project = session === undefined ? (cut < 0 ? '' : notice.title.slice(cut + 3)) : projectName(homeOf(session))
+  const project = session === undefined ? (cut < 0 ? '' : notice.title.slice(cut + 3)) : projectLabel(homeOf(session))
   const color = session === undefined ? undefined : `var(--project-${String(projectColor(homeOf(session), chat.settings))})`
   const tone = notice.asks ? 'asks' : what === 'Finished' ? 'done' : 'plain'
 

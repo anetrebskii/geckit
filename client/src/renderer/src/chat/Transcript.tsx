@@ -1,11 +1,11 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { isStep, runKey } from '../../../shared/steps'
 import type { BackgroundTask, CardAnswer, SessionImage, SessionItem } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Code, CopyButton } from './Code'
 import { Preview } from './Preview'
-import { OPENS, Prose } from './Prose'
+import { Files, opensTitle, Prose } from './Prose'
 import type { FileHow } from './Prose'
 import { richOf, richSelection } from './rich'
 import type { Seek } from './Switcher'
@@ -45,6 +45,7 @@ function Did({
   readonly onPicture: (src: string) => void
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const files = useContext(Files)
   const live = item.live === true || going
   const has = item.detail !== undefined || item.path !== undefined
   const line = (
@@ -52,7 +53,7 @@ function Did({
       type="button"
       className="did"
       disabled={!has}
-      {...(item.detail === undefined && item.path !== undefined ? { title: OPENS } : {})}
+      {...(item.detail === undefined && item.path !== undefined ? { title: opensTitle(files?.root) } : {})}
       onClick={(event) => {
         if (item.detail !== undefined) setOpen(!open)
         else if (item.path !== undefined) onFile(item.path, event.metaKey ? 'reveal' : 'open')
@@ -303,6 +304,7 @@ const Turn = memo(function Turn({
   readonly onTypeShell: (item: string, text: string) => void
   readonly onBackground: (item: string) => void
 }): React.JSX.Element {
+  const files = useContext(Files)
   const at = item.kind === 'mine' || item.kind === 'theirs' ? item.at : undefined
   // A line of what was done sits close to the next one, so a run of them reads as one list.
   const step =
@@ -350,7 +352,7 @@ const Turn = memo(function Turn({
               key={path}
               type="button"
               className="chip"
-              title={OPENS}
+              title={opensTitle(files?.root)}
               onClick={(event) => onFile(path, event.metaKey ? 'reveal' : 'open')}
               onContextMenu={(event) => {
                 event.preventDefault()

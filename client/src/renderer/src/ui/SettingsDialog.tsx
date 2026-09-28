@@ -2,14 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 
 import { UPDATE_CHANNELS, appName, channelLabel, profileOf } from '../../../shared/api'
 import type { AIProvider, OpenRule, PhoneView, ProjectProfile, Settings, Theme, UpdateChannel } from '../../../shared/api'
-import { homePath, projectName } from '../chat/project'
+import { HostsSection } from '../chat/Hosts'
+import { hostOf } from '../../../shared/hosts'
+import { homePath, projectLabel, projectName } from '../chat/project'
 import { Icon } from './Icon'
 import { Picker } from './Menu'
 import { MOD } from './Shortcuts'
 import { Version } from './UpdateNotice'
 
 /**
- * Settings, a section at a time: General, Profiles, Phrases, Correct and dictation, Phone, Version.
+ * Settings, a section at a time: General, Profiles, Hosts, Phrases, Correct and dictation, Phone, Version.
  *
  * Chat needs no key: it runs on the Claude plan through the person's own
  * `claude`, which is signed in from a terminal and never from here.
@@ -22,7 +24,7 @@ const PROVIDERS: readonly { value: AIProvider; label: string }[] = [
 ]
 
 const THEMES: readonly { value: Theme; label: string; says: string }[] = [
-  { value: 'system', label: 'System', says: 'as the machine is set' },
+  { value: 'system', label: 'System', says: 'as the system is set' },
   { value: 'light', label: 'Light', says: '' },
   { value: 'dark', label: 'Dark', says: '' },
 ]
@@ -42,11 +44,12 @@ export const LANGUAGES = [
   'Japanese',
 ]
 
-type Section = 'general' | 'profiles' | 'phrases' | 'correct' | 'phone' | 'version'
+export type Section = 'general' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
   { value: 'profiles', label: 'Profiles' },
+  { value: 'hosts', label: 'Hosts' },
   { value: 'phrases', label: 'Phrases' },
   { value: 'correct', label: 'Correct and dictation' },
   { value: 'phone', label: 'Phone' },
@@ -60,13 +63,16 @@ export function SettingsDialog({
   change,
   onClose,
   onShortcuts,
+  first,
 }: {
   readonly settings: Settings
   readonly change: (change: Partial<Settings>) => void
   readonly onClose: () => void
   readonly onShortcuts: () => void
+  /** The section it opens on. */
+  readonly first?: Section
 }): React.JSX.Element {
-  const [section, setSection] = useState<Section>('general')
+  const [section, setSection] = useState<Section>(first ?? 'general')
   const onPhone = document.documentElement.classList.contains('phone')
 
   useEffect(() => {
@@ -107,6 +113,7 @@ export function SettingsDialog({
               />
             ) : null}
             {section === 'profiles' ? <Profiles settings={settings} change={change} /> : null}
+            {section === 'hosts' ? <HostsSection /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
             {section === 'phone' ? <PhoneAccess on={settings.phone} change={(phone) => change({ phone })} /> : null}
@@ -265,6 +272,17 @@ function Updates({ settings, change }: Part): React.JSX.Element {
 const counted = (count: number): string => `${String(count)} ${count === 1 ? 'project' : 'projects'}`
 
 /**
+ * The projects under where they are, Local first and then each host, as the
+ * project picker groups them; with no project on a host, one list with no heads.
+ */
+function byWhere(settings: Settings): readonly { readonly name?: string; readonly roots: readonly string[] }[] {
+  if (!settings.projects.some((root) => hostOf(root) !== undefined)) return [{ roots: settings.projects }]
+  const local = settings.projects.filter((root) => hostOf(root) === undefined)
+  const hosts = settings.hosts.map((host) => ({ name: host.name, roots: settings.projects.filter((root) => hostOf(root) === host.id) }))
+  return [{ name: 'Local', roots: local }, ...hosts].filter((group) => group.roots.length > 0)
+}
+
+/**
  * The profile in use, and the projects in it.
  *
  * Ticking a profile uses it at once, and it is the one edited under the list:
@@ -346,7 +364,13 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
               <span style={NOTE}>Add a project first, from the project picker.</span>
             ) : (
               <div className="projects-listed">
-                {settings.projects.map((root) => {
+                {byWhere(settings).map((group) => [
+                  group.name === undefined ? null : (
+                    <div key={`head-${group.name}`} className="projects-listed-head">
+                      {group.name}
+                    </div>
+                  ),
+                  ...group.roots.map((root) => {
                   const on = inUse.projects.includes(root)
                   return (
                     <button
@@ -354,7 +378,7 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
                       type="button"
                       role="switch"
                       aria-checked={on}
-                      aria-label={projectName(root)}
+                      aria-label={projectLabel(root)}
                       className={`project-listed${on ? '' : ' off'}`}
                       onClick={() =>
                         edit({ ...inUse, projects: on ? inUse.projects.filter((one) => one !== root) : [...inUse.projects, root] })
@@ -365,7 +389,8 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
                       <span className="says">{homePath(root)}</span>
                     </button>
                   )
-                })}
+                  }),
+                ])}
               </div>
             )}
             <span style={NOTE}>
@@ -533,7 +558,7 @@ export function PhoneAccess({ on, change }: { readonly on: boolean; readonly cha
         Open the conversations on your phone
       </label>
       <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
-        Scan the code with the GeckIt app on your iPhone. The phone talks to this Mac directly, and only with the key in this code.
+        Scan the code with the GeckIt app on your iPhone. The phone talks to this computer directly, and only with the key in this code.
       </span>
       {on && view.qr !== undefined ? (
         <div className="phone-link">

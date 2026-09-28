@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<title>GeckIt - Conversations on other hosts</title>
+<style>
+/* Tokens as in client/src/renderer/src/styles.css; only what this prototype draws. */
+:root,
+:root[data-theme='light'] {
+  --bg: #ffffff;
+  --bg-sunken: #f4f4f6;
+  --bg-raised: #ffffff;
+  --bubble: #f4f4f6;
+  --field: #ffffff;
+  --bg-hover: rgb(0 0 0 / 5%);
+  --bg-active: rgb(51 183 70 / 12%);
+  --border: #e3e3e6;
+  --border-strong: #cdcdd2;
+  --text: #1d1d1f;
+  --text-dim: #5c5c61;
+  --text-faint: #737378;
+  --accent: #1f8031;
+  --accent-text: #ffffff;
+  --accent-soft: #e6f4e8;
+  --danger: #c0392b;
+  --warning-bg: #fdf3e0;
+  --warning-text: #8a6116;
+  --success-text: #2a7d3a;
+  --code-bg: #f6f6f8;
+  --scrim: rgb(0 0 0 / 28%);
+  --menu: rgb(246 246 248 / 96%);
+  --lift: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 18px 50px rgb(0 0 0 / 22%);
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
+  --project-0: hsl(196 80% 32%);
+  --project-1: hsl(220 70% 45%);
+  --project-2: hsl(258 55% 52%);
+  --project-4: hsl(338 65% 44%);
+  --project-5: hsl(176 70% 26%);
+  --page: #e9e9ec;
+}
+:root[data-theme='dark'] {
+  --bg: #1e1e20;
+  --bg-sunken: #191919;
+  --bg-raised: #262629;
+  --bubble: #2a2a2d;
+  --field: #2a2a2d;
+  --bg-hover: rgb(255 255 255 / 7%);
+  --bg-active: rgb(74 200 92 / 18%);
+  --border: #35353a;
+  --border-strong: #4a4a50;
+  --text: #f2f2f4;
+  --text-dim: #a2a2a8;
+  --text-faint: #8e8e95;
+  --accent: #4ac85c;
+  --accent-text: #10210f;
+  --accent-soft: rgb(74 200 92 / 16%);
+  --danger: #e0796b;
+  --warning-bg: #3a2f18;
+  --warning-text: #e0bb72;
+  --success-text: #7fc98d;
+  --code-bg: #1a1a1c;
+  --scrim: rgb(0 0 0 / 50%);
+  --menu: rgb(44 44 46 / 96%);
+  --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
+  --project-0: hsl(196 70% 64%);
+  --project-1: hsl(220 85% 72%);
+  --project-2: hsl(258 75% 78%);
+  --project-4: hsl(338 75% 75%);
+  --project-5: hsl(172 50% 58%);
+  --page: #111113;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 13px/1.4 Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--text);
+  background: var(--page);
+}
+button { font: inherit; color: inherit; }
+code, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 12px; }
+
+/* The strip above the window: scenes of the prototype, not part of the app. */
+.scenes {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  max-width: 1280px; margin: 18px auto 10px; padding: 0 12px;
+}
+.scenes .label { color: var(--text-faint); margin-right: 6px; }
+.scenes button {
+  border: 1px solid var(--border-strong); background: var(--bg); border-radius: 999px;
+  padding: 4px 11px; cursor: pointer;
+}
+.scenes button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.scenes .spacer { flex: 1; }
+.shot .scenes, .shot .note { display: none; }
+.shot .window { margin-top: 24px; }
+.note {
+  max-width: 1280px; margin: 0 auto 10px; padding: 0 12px; color: var(--text-dim); min-height: 20px;
+}
+
+/* The window. */
+.window {
+  position: relative; max-width: 1280px; height: 780px; margin: 0 auto 40px;
+  background: var(--bg); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.bar {
+  display: flex; align-items: center; gap: 8px; height: 50px; padding: 0 12px;
+  border-bottom: 1px solid var(--border); flex: none;
+}
+.lights { display: flex; gap: 8px; margin-right: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.seg { display: flex; border: 1px solid var(--border); border-radius: 8px; padding: 2px; background: var(--bg-sunken); }
+.seg button { border: 0; background: none; padding: 3px 10px; border-radius: 6px; cursor: pointer; color: var(--text-dim); }
+.seg button.on { background: var(--bg); color: var(--text); box-shadow: 0 0 0 0.5px var(--border-strong), 0 1px 2px rgb(0 0 0 / 8%); }
+.scope {
+  display: flex; align-items: center; gap: 8px; min-width: 230px; height: 30px; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); cursor: pointer;
+}
+.scope .k, .kbd { color: var(--text-faint); margin-left: auto; font-size: 12px; }
+.search {
+  display: flex; align-items: center; gap: 8px; width: 260px; height: 30px; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: 8px; color: var(--text-faint); background: var(--bg-sunken);
+}
+.bar .grow { flex: 1; }
+.ghost { border: 0; background: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; color: var(--text-dim); }
+.ghost:hover { background: var(--bg-hover); }
+.new {
+  border: 1px solid var(--accent); color: var(--accent); background: var(--accent-soft);
+  border-radius: 8px; height: 30px; padding: 0 12px; cursor: pointer;
+}
+.body { flex: 1; display: flex; min-height: 0; }
+.status {
+  flex: none; height: 30px; border-top: 1px solid var(--border); display: flex; align-items: center;
+  justify-content: flex-end; gap: 14px; padding: 0 14px; color: var(--text-dim); font-size: 12px; background: var(--bg-sunken);
+}
+.meter { display: inline-block; width: 44px; height: 4px; background: var(--border); border-radius: 2px; vertical-align: middle; margin: 0 6px; }
+.meter b { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+
+/* A host's dot: how it stands. */
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; background: var(--accent); }
+.dot.idle { background: none; box-shadow: inset 0 0 0 1.5px var(--text-faint); }
+.dot.connecting { background: var(--project-1); animation: pulse 1s infinite; }
+.dot.lost { background: #d9a13a; }
+.dot.needs { background: var(--danger); }
+@keyframes pulse { 50% { opacity: .3; } }
+
+/* Board. */
+.board { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 14px; background: var(--bg); overflow: hidden; }
+.col { background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 12px; padding: 10px; overflow: auto; }
+.col h3 { margin: 4px 6px 10px; font-size: 12px; letter-spacing: .06em; color: var(--text-dim); font-weight: 600; display: flex; }
+.col h3 span { margin-left: auto; }
+.card {
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
+}
+.card:hover { border-color: var(--border-strong); }
+.card.asks { background: var(--warning-bg); box-shadow: inset 3px 0 0 #c08a1e; }
+.card.review { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent-soft) 45%, var(--bg-raised)); }
+.card .t { display: flex; font-weight: 600; font-size: 14px; }
+.card .t span { margin-left: auto; font-weight: 400; color: var(--text-dim); font-size: 13px; }
+.where { margin-top: 4px; font-size: 13px; }
+.where .m { color: var(--text-faint); }
+.card .s { color: var(--text-dim); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .s.away { color: var(--warning-text); }
+.line { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--success-text); }
+.line.ask { color: var(--warning-text); }
+.chips { display: flex; gap: 6px; margin: 0 14px; align-items: center; }
+.chipx {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--bg-sunken);
+  border: 1px solid var(--border); font-size: 12px;
+}
+.chipx button { border: 0; background: none; padding: 0; cursor: pointer; color: var(--text-faint); }
+
+/* List + conversation. */
+.side { width: 300px; flex: none; background: var(--bg-sunken); border-right: 1px solid var(--border); overflow: auto; padding: 8px; }
+.group { font-size: 12px; letter-spacing: .06em; font-weight: 600; margin: 12px 8px 6px; display: flex; gap: 6px; align-items: baseline; }
+.group .m { color: var(--text-faint); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.row { padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+.row:hover { background: var(--bg-hover); }
+.row.on { background: var(--bg-active); }
+.row .t { display: flex; }
+.row .t span { margin-left: auto; color: var(--text-faint); font-size: 12px; }
+.row .s { color: var(--text-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .s.away { color: var(--warning-text); }
+.conv { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.chead { height: 46px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--border); }
+.chead .title { font-weight: 600; font-size: 14px; }
+.chead .proj { font-size: 13px; }
+.chead .model { color: var(--text-faint); }
+.host {
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-sunken); cursor: pointer; font-size: 12px;
+}
+.host:hover { border-color: var(--border-strong); }
+.transcript { flex: 1; overflow: auto; padding: 18px 22px; }
+.you { background: var(--bubble); border-radius: 12px; padding: 12px 14px; margin-bottom: 18px; }
+.said p { margin: 0 0 10px; font-size: 14px; }
+.steps { color: var(--text-dim); margin: 0 0 12px; }
+.qcard {
+  border: 1px solid var(--border-strong); border-radius: 12px; padding: 12px 14px; margin: 14px 0; background: var(--bg-raised); box-shadow: var(--shadow);
+}
+.qcard.hands { border-color: color-mix(in srgb, var(--danger) 50%, var(--border)); }
+.qcard h4 { margin: 0 0 6px; font-size: 13px; }
+.qcard .acts { display: flex; gap: 8px; margin-top: 10px; }
+.btn { border: 1px solid var(--border-strong); background: var(--bg); border-radius: 7px; padding: 4px 12px; cursor: pointer; }
+.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.field { border: 1px solid var(--border-strong); border-radius: 7px; background: var(--field); padding: 5px 9px; width: 100%; color: var(--text); font: inherit; }
+.composer { margin: 0 18px 8px; border: 1px solid var(--accent); border-radius: 12px; padding: 10px 12px; background: var(--field); }
+.composer.away { border-color: var(--border-strong); }
+.composer textarea { width: 100%; border: 0; outline: 0; resize: none; background: none; font: 14px/1.4 inherit; font-family: inherit; color: var(--text); }
+.composer .tools { display: flex; gap: 14px; align-items: center; color: var(--text-dim); }
+.composer .tools .off { color: var(--text-faint); opacity: .55; cursor: help; }
+.composer .send { margin-left: auto; width: 26px; height: 26px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-text); cursor: pointer; }
+.composer .waiting { margin-left: auto; color: var(--warning-text); display: flex; align-items: center; gap: 6px; }
+.under { margin: 0 18px 8px; color: var(--text-dim); font-size: 12px; display: flex; gap: 14px; }
+
+/* Floating menus and sheets. */
+.scrim { position: absolute; inset: 0; background: transparent; z-index: 5; }
+.scrim.dim { background: var(--scrim); }
+.menu {
+  position: absolute; z-index: 6; background: var(--menu); backdrop-filter: blur(20px); border-radius: 10px;
+  box-shadow: var(--lift); padding: 6px; min-width: 260px;
+}
+.menu .item { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 6px; cursor: pointer; }
+.menu .item:hover, .menu .item.at { background: var(--bg-hover); }
+.menu .item.scope-row { font-weight: 600; }
+.menu .item .sub { color: var(--text-faint); font-size: 12px; margin-left: auto; }
+.menu .item .lines { display: flex; flex-direction: column; }
+.menu .item .lines small { color: var(--text-faint); font-size: 11px; }
+.menu .head { font-size: 11px; letter-spacing: .06em; font-weight: 600; color: var(--text-dim); padding: 8px 9px 4px; display: flex; align-items: center; gap: 6px; }
+.menu .head .st { margin-left: auto; font-weight: 500; letter-spacing: 0; color: var(--text-faint); }
+.menu .sep { height: 1px; background: var(--border); margin: 5px 4px; }
+.menu .info { padding: 6px 9px 8px; color: var(--text-dim); font-size: 12px; }
+.menu .add { color: var(--text-dim); }
+.pdot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.picker { width: 400px; max-height: 600px; overflow: auto; }
+.picker input { margin: 2px 2px 6px; width: calc(100% - 4px); }
+.sheet {
+  position: absolute; z-index: 6; left: 50%; top: 70px; transform: translateX(-50%); width: 560px;
+  background: var(--bg-raised); border-radius: 14px; box-shadow: var(--lift); padding: 20px;
+}
+.sheet h2 { margin: 0 0 14px; font-size: 16px; }
+.sheet label { display: block; margin-bottom: 12px; color: var(--text-dim); }
+.sheet label .field { margin-top: 4px; }
+.sheet .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.suggest { border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; overflow: hidden; }
+.suggest div { padding: 5px 10px; cursor: pointer; display: flex; }
+.suggest div:hover { background: var(--bg-hover); }
+.suggest div span { margin-left: auto; color: var(--text-faint); }
+.grid { display: grid; grid-template-columns: 1fr 140px 80px; gap: 10px; }
+.grid label { margin-bottom: 12px; }
+.authseg { margin-top: 4px; width: max-content; }
+.authbox { margin: -4px 0 12px; }
+.authbox .field + .tick, .authbox .field + .hint { margin-top: 6px; }
+.tick { display: flex !important; align-items: center; gap: 6px; margin: 6px 0 0 !important; color: var(--text) !important; }
+.hint { color: var(--text-faint); font-size: 12px; margin-top: 6px; }
+.checks { margin: 6px 0 0; padding: 0; list-style: none; }
+.checks li { display: flex; gap: 8px; align-items: center; padding: 3px 0; color: var(--text-dim); }
+.checks li.ok { color: var(--success-text); }
+.checks li.wait { color: var(--text-faint); }
+.tree { border: 1px solid var(--border); border-radius: 8px; max-height: 220px; overflow: auto; margin-top: 6px; }
+.tree div { padding: 5px 10px; display: flex; gap: 8px; cursor: pointer; }
+.tree div:hover { background: var(--bg-hover); }
+.tree div.on { background: var(--bg-active); }
+.tree .git { margin-left: auto; color: var(--text-faint); font-size: 11px; }
+select.field { appearance: auto; }
+
+/* Settings. */
+.settings { display: flex; height: 100%; width: 100%; }
+.settings nav { width: 200px; background: var(--bg-sunken); border-right: 1px solid var(--border); padding: 14px 8px; }
+.settings nav div { padding: 6px 10px; border-radius: 6px; color: var(--text-dim); }
+.settings nav div.on { background: var(--bg-active); color: var(--text); }
+.settings main { flex: 1; padding: 20px 28px; overflow: auto; }
+.settings h2 { margin: 0 0 4px; font-size: 18px; }
+.settings .lead { color: var(--text-dim); margin: 0 0 16px; max-width: 620px; }
+.mlist { border: 1px solid var(--border); border-radius: 10px; max-width: 720px; }
+.mrow { display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--border); }
+.mrow:first-child { border-top: 0; }
+.mrow .n { font-weight: 600; }
+.mrow .d { color: var(--text-dim); font-size: 12px; }
+.mrow .r { display: flex; gap: 6px; align-items: center; color: var(--text-dim); font-size: 12px; }
+
+/* Ctrl+Tab. */
+.switcher { left: 50%; top: 120px; transform: translateX(-50%); width: 520px; }
+.switcher .item { padding: 8px 10px; }
+</style>
+</head>
+<body>
+
+<div class="scenes" id="scenes"></div>
+<div class="note" id="note"></div>
+<div class="window" id="window"></div>
+
+<script>
+/* All of this is invented data, to show the shapes; nothing here is read from a host. */
+const HOSTS = [
+  { id: 'local', name: 'Local', host: '', state: 'up' },
+  { id: 'devbox', name: 'devbox', host: 'leo@devbox.local', state: 'up', since: '2 h', cc: '2.1.270', plan: 'Claude Max' },
+  { id: 'staging', name: 'staging', host: 'deploy@staging.example.com', state: 'idle', cc: '2.1.244', plan: 'Claude Pro' },
+]
+const PROJECTS = [
+  { id: 'local:trailmap', name: 'trailmap', host: 'local', color: 0, path: '~/code/trailmap' },
+  { id: 'local:pinch', name: 'pinch', host: 'local', color: 1, path: '~/code/pinch' },
+  { id: 'devbox:trailmap', name: 'trailmap', host: 'devbox', color: 5, path: '~/trailmap' },
+  { id: 'devbox:llm-eval', name: 'llm-eval', host: 'devbox', color: 2, path: '~/work/llm-eval' },
+  { id: 'staging:api', name: 'api', host: 'staging', color: 4, path: '/srv/api' },
+]
+const CHATS = [
+  { id: 1, title: 'Trail difficulty ratings', project: 'local:trailmap', col: 0, at: 'now', asks: true, line: 'Asking you', s: 'Wants to change a file' },
+  { id: 2, title: 'Fine-tune on trail photos', project: 'devbox:llm-eval', col: 0, at: 'now', line: 'Claude is working', working: true, bg: '2 in the background', s: 'epoch 3 of 8, loss 0.412, about 40 min left' },
+  { id: 3, title: 'Faster tile cache build', project: 'devbox:trailmap', col: 0, at: '12m', line: 'Claude is working', working: true, s: 'Timing a full build to compare with the 50 minutes' },
+  { id: 4, title: 'Add --max-width flag', project: 'local:pinch', col: 0, at: '25m', line: 'Waiting for you', s: 'Added --max-width. Images wider than it are resized.' },
+  { id: 5, title: 'Rate-limit /api/search', project: 'staging:api', col: 1, at: '48m', s: 'Search is now limited to 60 requests a minute per IP.' },
+  { id: 6, title: 'Release notes for 0.9', project: 'local:pinch', col: 1, at: '5:24 AM', s: 'Drafted in CHANGELOG.md and as a draft release.' },
+  { id: 7, title: 'Eval on the new split', project: 'devbox:llm-eval', col: 2, at: '4:24 AM', s: 'Accuracy 91.2%, up from 88.7% on the old split.' },
+  { id: 8, title: 'Debounce the map', project: 'local:trailmap', col: 2, at: 'Yesterday', s: 'Panning now waits for moveend plus 250 ms before it searches.' },
+]
+
+const S = {
+  scene: 'board', view: 'board', scope: 'all', open: 3, menu: null, theme: 'light',
+  add: { step: 0, host: '', name: '' }, folder: '~/work', timers: [],
+}
+const $ = (sel) => document.querySelector(sel)
+const host = (id) => HOSTS.find((m) => m.id === id)
+const project = (id) => PROJECTS.find((p) => p.id === id)
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const away = (m) => m.state === 'lost' || m.state === 'needs'
+const clear = () => { S.timers.forEach(clearTimeout); S.timers = [] }
+const later = (ms, fn) => S.timers.push(setTimeout(fn, ms))
+
+/* A project's label: its name, and the host after it only when that is not this computer. */
+function where(p) {
+  const m = host(p.host)
+  return `<span style="color:var(--project-${p.color})">${esc(p.name)}</span>` +
+    (p.host === 'local' ? '' : `<span class="m"> · ${esc(m.name)}</span>`)
+}
+function shown() {
+  return CHATS.filter((c) => {
+    const p = project(c.project)
+    if (S.scope === 'all') return true
+    if (S.scope.startsWith('host:')) return p.host === S.scope.slice(8)
+    return c.project === S.scope
+  })
+}
+function scopeName() {
+  if (S.scope === 'all') return 'All projects'
+  if (S.scope.startsWith('host:')) return `All on ${host(S.scope.slice(8)).name}`
+  const p = project(S.scope)
+  return p.host === 'local' ? p.name : `${p.name} · ${host(p.host).name}`
+}
+function second(c) {
+  const m = host(project(c.project).host)
+  // Only what was working or asking goes on there unseen; the rest has nothing new to say.
+  if (away(m) && (c.working || c.asks)) return `<div class="s away">${esc(m.name)} is out of reach. Still working there</div>`
+  return `<div class="s">${esc(c.s)}</div>`
+}
+
+function bar() {
+  return `<div class="bar">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="seg"><button class="${S.view === 'board' ? 'on' : ''}" onclick="go('board')">Board</button><button class="${S.view === 'list' ? 'on' : ''}" onclick="go('conversation')">List</button></div>
+    <div class="scope" onclick="openMenu('picker')">▢ <span>${esc(scopeName())}</span><span class="k">Cmd+K ⌄</span></div>
+    <div class="search">⌕ Search conversations <span class="kbd">Cmd+P</span></div>
+    <div class="grow"></div>
+    <button class="ghost" onclick="go('settings')" title="Settings">⚙</button>
+    <button class="ghost">Ask <span class="kbd">Cmd+Shift+N</span></button>
+    <button class="new" onclick="openMenu('newtask')">+ New task <span class="kbd">Cmd+N</span></button>
+  </div>`
+}
+function status() {
+  const c = CHATS.find((x) => x.id === S.open)
+  const m = S.view === 'list' && S.scene !== 'settings' && c ? host(project(c.project).host) : host('local')
+  const who = m.id === 'local' ? 'Your Claude Max plan · Claude Code 2.1.278' : `${esc(m.name)} · Your ${m.plan} plan · Claude Code ${m.cc}`
+  return `<div class="status"><span>${who}</span><span>5h<span class="meter"><b style="width:23%"></b></span>23%, resets in 2h 14m</span><span>Week<span class="meter"><b style="width:41%"></b></span>41%, resets in 3d 5h</span></div>`
+}
+
+function card(c) {
+  const p = project(c.project)
+  const cls = c.asks ? 'card asks' : c.col === 1 ? 'card review' : 'card'
+  const line = c.line && !(away(host(p.host)) && (c.working || c.asks))
+    ? `<div class="line ${c.asks ? 'ask' : ''}"><span class="dot" style="background:currentColor"></span>${esc(c.line)}${c.bg ? ` &nbsp;○ ${esc(c.bg)}` : ''}</div>` : ''
+  return `<div class="${cls}" onclick="openChat(${c.id})"><div class="t">${esc(c.title)}<span>${esc(c.at)}</span></div>
+    <div class="where">${where(p)}</div>${line}${second(c)}</div>`
+}
+function board() {
+  const list = shown()
+  const cols = ['In progress', 'In review', 'Done'].map((name, i) => {
+    const cs = list.filter((c) => c.col === i)
+    return `<div class="col"><h3>${name.toUpperCase()}<span>${cs.length}</span></h3>${cs.map(card).join('')}</div>`
+  })
+  return `<div class="board">${cols.join('')}</div>`
+}
+
+function sidebar() {
+  const list = shown()
+  const groups = [...new Set(list.map((c) => c.project))]
+  return `<div class="side">${groups.map((pid) => {
+    const p = project(pid)
+    const m = host(p.host)
+    return `<div class="group"><span style="color:var(--project-${p.color})">${esc(p.name.toUpperCase())}</span>${p.host === 'local' ? '' : `<span class="m">· ${esc(m.name)}</span>`}</div>` +
+      list.filter((c) => c.project === pid).map((c) => `<div class="row ${c.id === S.open ? 'on' : ''}" onclick="openChat(${c.id})">
+        <div class="t">${esc(c.title)}<span>${esc(c.at)}</span></div>${second(c).replace('class="s', 'class="s')}</div>`).join('')
+  }).join('')}</div>`
+}
+
+function chip(m) {
+  if (m.id === 'local') return ''
+  const title = m.state === 'up' ? `On ${m.name} (${m.host}), connected for ${m.since}` : `${m.name}: ${stateWord(m)}`
+  return `<span class="host" title="${esc(title)}" onclick="openMenu('chip', event)"><span class="dot ${m.state}"></span>${esc(m.name)} ⌄</span>`
+}
+function stateWord(m) {
+  return { up: `Connected for ${m.since ?? 'a moment'}`, idle: 'Not connected', connecting: 'Connecting', lost: 'Out of reach, reconnecting', needs: 'Needs you' }[m.state]
+}
+
+function conversation() {
+  const c = CHATS.find((x) => x.id === S.open)
+  const p = project(c.project)
+  const m = host(p.host)
+  const remote = m.id !== 'local'
+  const body = c.id === 3 ? `
+      <div class="you">The tile cache takes 50 minutes to build on this host. Rebuild only the tiles whose data changed since the last run.</div>
+      <div class="steps">› 6 steps</div>
+      <div class="said"><p>The build now keeps a hash of each tile's source data and skips the tiles whose hash has not changed.</p>
+      <p><code>src/tiles/build.py</code> reads and writes the hashes; the tests cover a first build and a rebuild. Now timing a full build on <b>devbox</b> to compare with the 50 minutes.</p></div>
+      ${S.asked ? `<div class="qcard"><h4>Wants to run a command</h4><div class="mono">python -m tiles.build --all</div><div class="acts"><button class="btn primary" onclick="answer()">Allow</button><button class="btn">Deny</button><button class="btn">Always allow</button></div><div style="color:var(--text-faint);font-size:12px;margin-top:6px">Asked while devbox was out of reach; it waited there.</div></div>` : ''}
+      ${S.needs ? passphrase() : ''}`
+    : `<div class="you">${esc(c.title)}.</div><div class="steps">› 3 steps</div><div class="said"><p>${esc(c.s)}</p></div>`
+  const composer = away(m) ? `
+      <div class="composer away"><textarea rows="2" placeholder="Ask Claude Code. @ picks a file, ! runs a command">And make the build resumable</textarea>
+      <div class="tools"><span>Auto ⌄</span><span>Default ⌄</span><span>MCP ⌄</span><span class="off" title="Chrome is on this computer, and this conversation runs on ${esc(m.name)}">Chrome ⌄</span><span>Goal</span>
+      <span class="waiting"><span class="dot ${m.state}"></span>${m.state === 'needs' ? `${esc(m.name)} needs you, above` : `Reconnecting to ${esc(m.name)}`}</span></div></div>`
+    : m.state === 'connecting' ? `
+      <div class="composer away"><textarea rows="2" placeholder="Ask Claude Code. @ picks a file, ! runs a command"></textarea>
+      <div class="tools"><span>Auto ⌄</span><span>Default ⌄</span><span>MCP ⌄</span><span class="off">Chrome ⌄</span><span>Goal</span><span class="waiting" style="color:var(--text-dim)"><span class="dot connecting"></span>Connecting to ${esc(m.name)}</span></div></div>`
+    : `
+      <div class="composer"><textarea rows="2" placeholder="Ask Claude Code. @ picks a file, ! runs a command"></textarea>
+      <div class="tools"><span>Auto ⌄</span><span>Default ⌄</span><span>MCP ⌄</span>${remote ? `<span class="off" title="Chrome is on this computer, and this conversation runs on ${esc(m.name)}">Chrome ⌄</span>` : '<span>Chrome ⌄</span>'}<span>Goal</span><button class="send">↑</button></div></div>`
+  return `<div class="conv">
+    <div class="chead"><span class="title">${esc(c.title)}</span><span class="proj" style="color:var(--project-${p.color})">${esc(p.name)}</span>${chip(m)}<span class="model">claude-opus-5</span>
+      <span class="grow" style="flex:1"></span><span style="color:var(--text-dim)">${c.col === 1 ? 'In review ⌄' : 'In progress ⌄'}</span><button class="ghost" title="${remote ? `Open a terminal on ${esc(m.name)}` : 'Open a terminal'}">&gt;_</button></div>
+    <div class="transcript">${body}</div>
+    ${composer}
+    <div class="under"><span>⑂ feat/tile-hashes 3 changed ↓0 ↑1</span><span>Context 44k of 200k</span><span>Cost $1.84</span></div>
+  </div>`
+}
+
+function passphrase() {
+  return `<div class="qcard hands"><h4>devbox asks for the passphrase of ~/.ssh/id_ed25519.</h4>
+    <input class="field" type="password" value="••••••••••" />
+    <div class="acts"><button class="btn primary" onclick="unlock()">Unlock</button><button class="btn" onclick="notNow()">Not now</button></div></div>`
+}
+
+/* Cmd+K: projects under their hosts, each host's header row a scope of its own. */
+function picker() {
+  const rows = HOSTS.map((m) => {
+    const ps = PROJECTS.filter((p) => p.host === m.id)
+    const head = `<div class="head">${m.id === 'local' ? '' : `<span class="dot ${m.state}"></span>`}${esc(m.name.toUpperCase())}<span class="st">${m.id === 'local' ? '' : esc(m.state === 'up' ? m.host : stateWord(m))}</span></div>`
+    const all = m.id === 'local' ? '' : `<div class="item scope-row ${S.scope === 'host:' + m.id ? 'at' : ''}" onclick="setScope('host:${m.id}')"><span class="pdot"></span>All on ${esc(m.name)}<span class="sub">${CHATS.filter((c) => project(c.project).host === m.id && c.col < 2).length} open</span></div>`
+    const items = ps.map((p) => `<div class="item ${S.scope === p.id ? 'at' : ''}" onclick="setScope('${p.id}')"><span class="pdot" style="background:var(--project-${p.color})"></span><span class="lines">${esc(p.name)}<small>${esc(p.path)}</small></span><span class="sub">${CHATS.filter((c) => c.project === p.id && c.col < 2).length || ''}</span></div>`).join('')
+    const add = `<div class="item add" onclick="${m.id === 'local' ? '' : `pickFolder('${m.id}')`}">＋ Add a folder${m.id === 'local' ? '' : ` on ${esc(m.name)}`}...</div>`
+    return head + all + items + add
+  }).join('<div class="sep"></div>')
+  return `<div class="scrim" onclick="closeMenu()"></div>
+    <div class="menu picker" style="left:268px;top:44px">
+      <input class="field" placeholder="Switch to a project" autofocus />
+      <div class="item scope-row ${S.scope === 'all' ? 'at' : ''}" onclick="setScope('all')"><span class="pdot"></span>All projects<span class="sub">${CHATS.filter((c) => c.col < 2).length} open</span></div>
+      <div class="sep"></div>${rows}<div class="sep"></div>
+      <div class="item add" onclick="openAdd()">⇄ Add a host...</div>
+    </div>`
+}
+
+function chipMenu() {
+  const c = CHATS.find((x) => x.id === S.open)
+  const m = host(project(c.project).host)
+  const toggle = m.state === 'idle'
+    ? `<div class="item" onclick="connect('${m.id}')">Connect</div>`
+    : `<div class="item" onclick="reconnect('${m.id}')">Reconnect</div><div class="item" onclick="disconnect('${m.id}')">Disconnect</div>`
+  return `<div class="scrim" onclick="closeMenu()"></div>
+    <div class="menu" style="left:${S.menuX}px;top:${S.menuY}px">
+      <div class="info"><b style="color:var(--text)">${esc(m.name)}</b> · ${esc(m.host)}<br>${esc(stateWord(m))} · Claude Code ${esc(m.cc)} · ${esc(m.plan)}</div>
+      <div class="sep"></div>
+      <div class="item">Open a terminal there</div>
+      <div class="sep"></div>${toggle}
+      <div class="sep"></div>
+      <div class="item" onclick="dropLine()" style="color:var(--text-faint)">Prototype: drop the connection</div>
+      <div class="item" onclick="askPass()" style="color:var(--text-faint)">Prototype: ssh asks for a passphrase</div>
+    </div>`
+}
+
+function switcher() {
+  const order = [3, 2, 1, 5, 4]
+  return `<div class="scrim dim" onclick="closeMenu()"></div>
+    <div class="menu switcher">${order.map((id, i) => {
+      const c = CHATS.find((x) => x.id === id)
+      const p = project(c.project)
+      return `<div class="item ${i === S.tab ? 'at' : ''}" onclick="openChat(${id})"><span class="pdot" style="background:var(--project-${p.color})"></span><span class="lines">${esc(c.title)}<small>${where(p).replace(/style="color:var\(--project-\d\)"/, '')}</small></span><span class="sub">${esc(c.at)}</span></div>`
+    }).join('')}
+    <div class="info" style="text-align:center">Hold Ctrl, press Tab to go down. Every host's conversations are in it.</div></div>`
+}
+
+function newTask() {
+  const opts = HOSTS.map((m) => `<optgroup label="${esc(m.name)}${m.id === 'local' ? '' : ` (${esc(stateWord(m).toLowerCase())})`}">${PROJECTS.filter((p) => p.host === m.id).map((p) => `<option ${p.id === S.taskProject ? 'selected' : ''} value="${p.id}">${esc(p.name)}${m.id === 'local' ? '' : ' · ' + esc(m.name)}</option>`).join('')}</optgroup>`).join('')
+  const picks = HOSTS.map((m) => `<option value="pick:${m.id}">Choose a folder on ${esc(m.name === 'Local' ? 'this computer' : m.name)}...</option>`).join('')
+  return `<div class="scrim dim" onclick="closeMenu()"></div>
+    <div class="sheet"><h2>New task</h2>
+      <label>Project<select class="field" onchange="taskProject(this.value)">${opts}<optgroup label="──────────">${picks}</optgroup></select></label>
+      <label>What to do<textarea class="field" rows="4" placeholder="Ask Claude Code. Paste a picture, drop a file, or record the screen"></textarea></label>
+      <div style="color:var(--text-faint);font-size:12px">${S.taskProject && project(S.taskProject).host !== 'local' ? `Runs on ${esc(host(project(S.taskProject).host).name)}, on its own plan. Pictures are copied there before it starts.` : '&nbsp;'}</div>
+      <div class="foot"><button class="btn" onclick="closeMenu()">Cancel</button><button class="btn primary" onclick="closeMenu()">Start</button></div></div>`
+}
+
+function folderSheet() {
+  const m = host(S.folderOn)
+  const dirs = [['~/work', ''], ['~/work/llm-eval', 'git'], ['~/work/tiles-bench', 'git'], ['~/work/notebooks', ''], ['~/datasets', ''], ['~/trailmap', 'git']]
+  return `<div class="scrim dim" onclick="closeMenu()"></div>
+    <div class="sheet"><h2>Choose a folder on ${esc(m.name)}</h2>
+      <label>Folder<input class="field mono" value="${esc(S.folder)}" oninput="S.folder=this.value" /></label>
+      <div class="tree">${dirs.map(([d, g]) => `<div class="${d === S.folder ? 'on' : ''}" onclick="S.folder='${d}';render()">▸ <span class="mono">${d}</span>${g ? '<span class="git">git</span>' : ''}</div>`).join('')}</div>
+      <div style="color:var(--text-faint);font-size:12px;margin-top:8px">Read from ${esc(m.name)} as you type. Folders with git are marked.</div>
+      <div class="foot"><button class="btn" onclick="closeMenu()">Cancel</button><button class="btn primary" onclick="closeMenu()">Add ${esc(S.folder.split('/').pop())}</button></div></div>`
+}
+
+function addSheet() {
+  const a = S.add
+  // Hosts read from the SSH config, offered as the address is typed.
+  const known = [['devbox', 'leo', 'devbox.local'], ['staging', 'deploy', 'staging.example.com'], ['build', 'ci', 'build.internal'], ['home', 'leo', '192.168.1.20']]
+  const offer = known.filter(([h]) => !HOSTS.some((m) => m.id === h) && (!a.address || h.startsWith(a.address)) && h !== a.address)
+  const shown = a.name || a.address || 'the host'
+  const checks = [['Reached ' + shown, 1], ['Claude Code 2.1.278', 2], ['Signed in: Claude Pro', 3]]
+  const seg = (v, label) => `<button class="${a.auth === v ? 'on' : ''}" onclick="S.add.auth='${v}';render()">${label}</button>`
+  const auth = a.auth === 'key'
+    ? `<select class="field" onchange="S.add.key=this.value"><option ${a.key === 'default' ? 'selected' : ''} value="default">Default keys (SSH config and agent)</option><option value="file">~/.ssh/id_ed25519</option><option value="choose">Choose a key file...</option></select>
+       <div class="hint">A passphrase, if the key has one, is asked for when connecting. It is not kept.</div>`
+    : `<input class="field" type="password" value="${esc(a.password)}" placeholder="Password" oninput="S.add.password=this.value" />
+       <label class="tick"><input type="checkbox" ${a.remember ? 'checked' : ''} onchange="S.add.remember=this.checked" /> Remember on this computer</label>
+       <div class="hint">Kept in the system's credential store, not in GeckIt's settings. Not remembered, it is asked for each time.</div>`
+  return `<div class="scrim dim" onclick="closeMenu()"></div>
+    <div class="sheet"><h2>Add a host</h2>
+      <div class="grid">
+        <label class="wide">Address<input class="field mono" value="${esc(a.address)}" placeholder="Name, IP, or a Host from SSH config" oninput="typed(this.value)" onblur="render()" />
+          ${a.step === 0 && offer.length ? `<div class="suggest">${offer.map(([h, u, addr]) => `<div onclick="chooseHost('${h}')"><span class="mono" style="margin:0;color:var(--text)">${h}</span><span>${u}@${addr}</span></div>`).join('')}</div>` : ''}</label>
+        <label>User<input class="field mono" value="${esc(a.user)}" oninput="S.add.user=this.value" /></label>
+        <label>Port<input class="field mono" value="${esc(a.port)}" oninput="S.add.port=this.value" /></label>
+      </div>
+      <label>Sign in with<div class="seg authseg">${seg('key', 'Key')}${seg('password', 'Password')}</div></label>
+      <div class="authbox">${auth}</div>
+      <label>Name<input class="field" value="${esc(a.name)}" placeholder="What the board calls it" oninput="S.add.name=this.value" /></label>
+      ${a.step > 0 ? `<ul class="checks">${checks.map(([t, n]) => `<li class="${a.step > n ? 'ok' : 'wait'}">${a.step > n ? '✓' : '<span class="dot connecting"></span>'} ${esc(t)}</li>`).join('')}</ul>` : '<div class="hint">Uses the SSH settings already on this computer. Nothing is installed on the host.</div>'}
+      <div class="foot"><button class="btn" onclick="closeMenu()">Cancel</button><button class="btn primary" onclick="${a.step >= 4 ? 'finishAdd()' : 'runAdd()'}">${a.step >= 4 ? 'Done' : 'Connect'}</button></div></div>`
+}
+
+function settings() {
+  const rows = HOSTS.map((m) => `<div class="mrow"><span class="dot ${m.id === 'local' ? '' : m.state}"></span>
+    <div><div class="n">${esc(m.name)}</div><div class="d">${m.id === 'local' ? 'Claude Code 2.1.278 · Claude Max' : `${esc(m.host)} · Claude Code ${esc(m.cc)} · ${esc(m.plan)}`}</div></div>
+    <div class="r">${m.id === 'local' ? '' : `${esc(stateWord(m))} <button class="btn" onclick="${m.state === 'idle' ? `connect('${m.id}')` : `disconnect('${m.id}')`}">${m.state === 'idle' ? 'Connect' : 'Disconnect'}</button><button class="btn">Remove</button>`}</div></div>`).join('')
+  return `<div class="settings"><nav><div>General</div><div>Profiles</div><div class="on">Hosts</div><div>Correct and dictation</div><div>Phone</div></nav>
+    <main><h2>Hosts</h2><p class="lead">Conversations on another host run there, on the Claude Code and the plan signed in there, and keep working when this computer sleeps or the connection drops. Their projects are listed with the host's name after them.</p>
+    <div class="mlist">${rows}</div>
+    <div style="margin-top:12px"><button class="btn" onclick="openAdd()">＋ Add a host</button></div></main></div>`
+}
+
+/* Scenes: each is a starting point; everything in it can be pressed. */
+const SCENES = {
+  board: ['Board, every host', 'One board. A project on another host has its name after it: "trailmap · devbox". Local\'s projects are unmarked. Press the project picker to narrow by host.'],
+  picker: ['Cmd+K by host', 'Projects under their host. The host\'s own row, "All on devbox", narrows the board to it. staging is Not connected: hollow dot, still listed.'],
+  conversation: ['Conversation on devbox', 'The host chip in the header says where it runs. Press it for its menu, and use the two Prototype rows to drop the connection or have ssh ask for a passphrase.'],
+  lost: ['Out of reach', 'The connection dropped more than 10 s ago. The card keeps its column, the typed text is kept, and it reconnects by itself; here in 4 s, then a question asked meanwhile arrives.'],
+  switcher: ['Ctrl+Tab across hosts', 'Moving between conversations is not a switch of host: Ctrl+Tab and Cmd+P hold every host\'s at once.'],
+  newtask: ['New task on a host', 'The Project select groups projects by host and ends with "Choose a folder on ..." for each. Pick one on devbox to see the line under the field.'],
+  folder: ['Folder on devbox', 'A folder chosen on the host itself, read from there as it is typed.'],
+  needs: ['ssh asks for a passphrase', 'ssh asked for something it needs from you. The card is in the conversation; GeckIt passes on what is typed and keeps none of it.'],
+  settings: ['Settings, Hosts', 'Local first, then each host with how it stands, its Claude Code and whose plan. Add a host opens the sheet.'],
+  add: ['Add a host', 'Hosts from the SSH config are offered as the address is typed, and user@address:port fills User and Port by itself. Press Connect: the checks tick one after another.'],
+  password: ['Add a host, password', 'Signing in with a password: it is kept in the system\'s credential store when "Remember on this computer" is ticked, otherwise asked for each time.'],
+}
+
+function go(scene) {
+  clear()
+  S.scene = scene
+  S.menu = null
+  S.asked = false
+  S.needs = false
+  host('devbox').state = 'up'
+  host('staging').state = 'idle'
+  S.view = ['board', 'picker', 'newtask', 'folder', 'add'].includes(scene) ? 'board' : 'list'
+  if (scene === 'picker') S.menu = 'picker'
+  if (scene === 'newtask') { S.menu = 'newtask'; S.taskProject = 'local:trailmap' }
+  if (scene === 'folder') { S.menu = 'folder'; S.folderOn = 'devbox' }
+  if (scene === 'add') { S.menu = 'add'; S.add = blank() }
+  if (scene === 'password') { S.view = 'board'; S.menu = 'add'; S.add = { ...blank(), address: 'home', user: 'leo', name: 'home', auth: 'password', password: 'secret-pass' } }
+  if (scene === 'switcher') { S.view = 'board'; S.menu = 'switcher'; S.tab = 1 }
+  if (scene === 'conversation' || scene === 'lost' || scene === 'needs') S.open = 3
+  if (scene === 'needs') { host('devbox').state = 'needs'; S.needs = true }
+  if (scene === 'lost') {
+    host('devbox').state = 'lost'
+    later(4000, () => { host('devbox').state = 'up'; S.asked = true; render() })
+  }
+  render()
+}
+function render() {
+  $('#scenes').innerHTML = '<span class="label">Scenes</span>' +
+    Object.entries(SCENES).map(([k, [t]]) => `<button class="${k === S.scene ? 'on' : ''}" onclick="go('${k}')">${t}</button>`).join('') +
+    `<span class="spacer"></span><button onclick="theme()">${S.theme === 'light' ? 'Dark' : 'Light'}</button>`
+  $('#note').textContent = SCENES[S.scene][1]
+  let main
+  if (S.scene === 'settings') main = settings()
+  else if (S.view === 'board') main = (S.scope === 'all' ? '' : '') + board()
+  else main = sidebar() + conversation()
+  const chips = S.scope === 'all' || S.view !== 'board' ? '' : `<div class="chips" style="margin-top:10px"><span class="chipx">${esc(scopeName())} <button onclick="setScope('all')">✕</button></span></div>`
+  const menus = { picker, chip: chipMenu, switcher, newtask: newTask, folder: folderSheet, add: addSheet }
+  $('#window').innerHTML = bar() + chips + `<div class="body">${main}</div>` + status() + (S.menu ? menus[S.menu]() : '')
+}
+
+function openMenu(which, event) {
+  if (which === 'chip') {
+    const r = event.currentTarget.getBoundingClientRect()
+    const w = $('#window').getBoundingClientRect()
+    S.menuX = r.left - w.left
+    S.menuY = r.bottom - w.top + 4
+  }
+  if (which === 'newtask') S.taskProject = S.taskProject ?? 'local:trailmap'
+  S.menu = which
+  render()
+}
+function closeMenu() { S.menu = null; render() }
+function setScope(v) { S.scope = v; S.menu = null; if (S.scene === 'picker') S.scene = 'board'; render() }
+function openChat(id) {
+  S.open = id
+  S.menu = null
+  S.view = 'list'
+  if (!['conversation', 'lost'].includes(S.scene)) S.scene = 'conversation'
+  const m = host(project(CHATS.find((c) => c.id === id).project).host)
+  if (m.state === 'idle') connect(m.id, true)
+  render()
+}
+function taskProject(v) {
+  if (v.startsWith('pick:')) {
+    const on = v.slice(5)
+    if (on === 'local') return
+    S.folderOn = on
+    S.menu = 'folder'
+  } else S.taskProject = v
+  render()
+}
+function pickFolder(on) { S.folderOn = on; S.menu = 'folder'; render() }
+const blank = () => ({ step: 0, address: '', user: 'leo', port: '22', auth: 'key', key: 'default', password: '', remember: true, name: '' })
+function openAdd() { S.add = blank(); S.menu = 'add'; render() }
+function chooseHost(h) {
+  const [, u] = { build: ['build', 'ci'], home: ['home', 'leo'], staging: ['staging', 'deploy'], devbox: ['devbox', 'leo'] }[h]
+  Object.assign(S.add, { address: h, user: u, port: '22', name: h })
+  render()
+}
+/* user@address:port typed into Address fills the three fields. */
+function typed(v) {
+  const m = v.match(/^(?:([^@\s]+)@)?([^:\s]*)(?::(\d+))?$/)
+  if (m && (m[1] || m[3])) {
+    Object.assign(S.add, { address: m[2], user: m[1] ?? S.add.user, port: m[3] ?? S.add.port })
+    render()
+  } else S.add.address = v
+}
+function runAdd() {
+  if (!S.add.address) chooseHost('build')
+  S.add.step = 1
+  render()
+  ;[2, 3, 4].forEach((n, i) => later(700 * (i + 1), () => { S.add.step = n; render() }))
+}
+function finishAdd() {
+  if (!HOSTS.some((m) => m.id === S.add.address)) {
+    HOSTS.push({ id: S.add.address, name: S.add.name || S.add.address, host: `${S.add.user}@${S.add.address}`, state: 'up', since: 'a moment', cc: '2.1.278', plan: 'Claude Pro' })
+  }
+  closeMenu()
+}
+function connect(id, quiet) {
+  const m = host(id)
+  m.state = 'connecting'
+  S.menu = null
+  if (!quiet) render()
+  later(1500, () => { m.state = 'up'; m.since = 'a moment'; render() })
+}
+function reconnect(id) { connect(id) }
+function disconnect(id) { host(id).state = 'idle'; S.menu = null; render() }
+function dropLine() {
+  S.menu = null
+  S.scene = 'lost'
+  host('devbox').state = 'lost'
+  render()
+  later(4000, () => { host('devbox').state = 'up'; S.asked = true; render() })
+}
+function askPass() { S.menu = null; host('devbox').state = 'needs'; S.needs = true; render() }
+function unlock() { S.needs = false; connect('devbox') }
+function notNow() { S.needs = false; host('devbox').state = 'idle'; render() }
+function answer() { S.asked = false; render() }
+function theme() { S.theme = S.theme === 'light' ? 'dark' : 'light'; document.documentElement.dataset.theme = S.theme; render() }
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeMenu()
+  if (S.menu === 'switcher' && e.key === 'Tab') { e.preventDefault(); S.tab = (S.tab + 1) % 5; render() }
+})
+// A scene can be linked to: remote-hosts.html#lost; ?shot leaves the scene strip out, for screenshots.
+if (location.search.includes('shot')) document.body.classList.add('shot')
+go(SCENES[location.hash.slice(1)] ? location.hash.slice(1) : 'board')
+</script>
+</body>
+</html>

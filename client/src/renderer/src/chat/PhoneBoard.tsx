@@ -1,19 +1,22 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { homeOf, SESSION_STATUSES } from '../../../shared/api'
+import { homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { CardAnswer, ChatSession, SessionCard, SessionStatus } from '../../../shared/api'
+import { hostOf } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
+import { computerName } from './PhoneHosts'
 import { resetsAt } from './PhoneInfo'
+import { accountsOf, placesOf, usageOf } from './plans'
 import { PhoneScope, ScopeButton } from './PhoneScope'
 import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
 import type { Macs } from '../macs'
-import { emptyProfile, projectName } from './project'
+import { awayLine, emptyProfile, projectLabel } from './project'
 import { running } from './Tasks'
 import { ago, byDay, questionLeft } from './time'
 import type { Chat } from './useChat'
@@ -157,8 +160,20 @@ export function PhoneBoard({
     window.geckit.chat.answer(session.id, card.item, answer)
   }
 
-  const high = [chat.plan?.fiveHour, chat.plan?.sevenDay].find((one) => one !== undefined && one.part >= 0.9)
-  const highName = high === chat.plan?.fiveHour ? '5-hour window' : 'Week'
+  // The plans of the projects shown, each account once: a host on another account has windows of its own.
+  const placeName = (place: string): string => (place === '' ? computerName() : (chat.hosts.find((one) => one.id === place)?.name ?? place))
+  const inView = chat.chosen.length > 0 ? chat.chosen : shownProjects(chat.settings)
+  const accounts = accountsOf(placesOf(inView.length === 0 ? [''] : inView, hostOf), chat.plans, placeName).map((item) => ({
+    name: placeName(item.places[0] ?? ''),
+    usage: usageOf(item, chat.plan),
+  }))
+  const named = accounts.length > 1
+  const high = accounts
+    .flatMap((one) => [
+      { of: one.name, name: '5-hour window', window: one.usage?.fiveHour },
+      { of: one.name, name: 'Week', window: one.usage?.sevenDay },
+    ])
+    .find((one) => one.window !== undefined && one.window.part >= 0.9)
 
   return (
     <div
@@ -179,7 +194,7 @@ export function PhoneBoard({
           <button type="button" className="phone-icon" aria-label="Say it" onClick={onSay}>
             <Icon name="mic" size={24} />
           </button>
-          <button type="button" className="phone-icon" aria-label="The Mac's screen" onClick={onScreen}>
+          <button type="button" className="phone-icon" aria-label="The host's screen" onClick={onScreen}>
             <Icon name="display" size={24} />
           </button>
           {/* A long press offers the other ways to start one, as the arrow beside New task does on the Mac. */}
@@ -238,10 +253,11 @@ export function PhoneBoard({
           setScrolled((was) => top > 40 || (was && top > 0))
         }}
       >
-        {high === undefined ? null : (
+        {high?.window === undefined ? null : (
           <div className="phone-alert">
-            {highName} at {Math.round(high.part * 100)}%. Resets at{' '}
-            {new Date(high.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+            {named ? `${high.of}: ` : ''}
+            {high.name} at {Math.round(high.window.part * 100)}%. Resets at{' '}
+            {new Date(high.window.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
           </div>
         )}
         {!chat.listed ? (
@@ -330,13 +346,19 @@ export function PhoneBoard({
                 </div>}
               </Fragment>
             ))}
-        {chat.plan?.fiveHour === undefined && chat.plan?.sevenDay === undefined ? null : (
+        {accounts.every((one) => one.usage?.fiveHour === undefined && one.usage?.sevenDay === undefined) ? null : (
           <div className="phone-foot">
-            {[
-              chat.plan.fiveHour === undefined ? '' : `5-hour window ${String(Math.round(chat.plan.fiveHour.part * 100))}%, resets ${resetsAt(chat.plan.fiveHour.resetsAt, now)}`,
-              chat.plan.sevenDay === undefined ? '' : `week ${String(Math.round(chat.plan.sevenDay.part * 100))}%, resets ${resetsAt(chat.plan.sevenDay.resetsAt, now)}`,
-            ]
-              .filter((one) => one !== '')
+            {accounts
+              .map((one) =>
+                [
+                  one.usage?.fiveHour === undefined ? '' : `5-hour window ${String(Math.round(one.usage.fiveHour.part * 100))}%${named ? '' : `, resets ${resetsAt(one.usage.fiveHour.resetsAt, now)}`}`,
+                  one.usage?.sevenDay === undefined ? '' : `week ${String(Math.round(one.usage.sevenDay.part * 100))}%${named ? '' : `, resets ${resetsAt(one.usage.sevenDay.resetsAt, now)}`}`,
+                ]
+                  .filter((part) => part !== '')
+                  .join(', '),
+              )
+              .map((line, at) => (named && line !== '' ? `${accounts[at]?.name ?? ''}: ${line}` : line))
+              .filter((line) => line !== '')
               .join(' · ')}
           </div>
         )}
@@ -435,9 +457,11 @@ export function RowBody({
   const queued = session.queued?.length ?? 0
   const said = stands.tone === 'working' ? session.stands.replace(/^Working - /, '') : session.stands
   const card = session.state === 'asks' ? waiting?.card : undefined
+  // A conversation on a host out of reach is still working there; its row says so in place of what it last said, which may be old.
+  const away = session.state === 'working' ? awayLine(session) : undefined
   return (
     <>
-      <span className={`phone-dot ${stands.tone}`} />
+      <span className={`phone-dot ${away === undefined ? stands.tone : 'away'}`} />
       <div className="phone-row-text">
         <div className="phone-row-line">
           <span className="phone-row-title">{session.title}</span>
@@ -448,12 +472,14 @@ export function RowBody({
             <div className="phone-row-asks">{card?.title ?? 'Needs an answer'}</div>
             {card?.detail === undefined ? null : <div className="phone-row-cmd">{card.detail}</div>}
           </>
+        ) : away !== undefined ? (
+          <div className="phone-row-said away">{away}</div>
         ) : said === '' ? null : (
           <div className={`phone-row-said${stands.tone === 'working' ? ' doing' : ''}`}>{said}</div>
         )}
         <div className="phone-row-meta">
           <span style={{ color: `var(--project-${String(projectColor(homeOf(session), chat.settings))})`, fontWeight: 600 }}>
-            {projectName(homeOf(session))}
+            {projectLabel(homeOf(session))}
           </span>
           {chat.settings.favorites.includes(session.id) ? <Icon name="star" size={13} className="phone-row-star" /> : null}
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
@@ -795,7 +821,7 @@ export function HideSheet({ session, chat, onClose }: { readonly session: ChatSe
     <Menu
       anchor={new DOMRect()}
       title={`Hide "${session.title === '' ? 'Untitled' : session.title}"?`}
-      choices={[{ value: 'hide', label: 'Hide', says: 'Kept on the Mac; Settings, Hidden conversations brings it back' }]}
+      choices={[{ value: 'hide', label: 'Hide', says: 'Kept on the host; Settings, Hidden conversations brings it back' }]}
       onPick={() => chat.hide(session.id)}
       onClose={onClose}
     />
@@ -911,7 +937,7 @@ export function MacList({
 
   return (
     <>
-      <Sheet title="Macs this phone is paired with" onClose={onClose}>
+      <Sheet title="Hosts this phone is paired with" onClose={onClose}>
         <div className="sheet-list">
           {rows.map((mac) => (
             <div key={mac.at} className={`sheet-option phone-mac${mac.favorite ? ' favorite' : ''}`}>
@@ -951,7 +977,7 @@ export function MacList({
             }}
           >
             <span className="sheet-words">
-              <span className="label">Add a Mac</span>
+              <span className="label">Add a host</span>
               <span className="says">Scan the code in its GeckIt Settings</span>
             </span>
           </button>
@@ -1003,8 +1029,8 @@ function RenameMac({
   return (
     <RenameAlert
       name={name}
-      placeholder="The name the Mac gives itself"
-      note="Left empty, it goes back to the name the Mac gives itself."
+      placeholder="The name the host gives itself"
+      note="Left empty, it goes back to the name the host gives itself."
       canSave={(given) => given !== name}
       onSave={onSave}
       onClose={onClose}

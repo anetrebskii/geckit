@@ -1,3 +1,5 @@
+import type { HostConfig } from './hosts'
+
 /**
  * The contract between the main process and the windows.
  *
@@ -162,6 +164,22 @@ export interface PlanUsage {
   readonly sevenDay?: PlanWindow
 }
 
+/**
+ * One account's plan as a place that runs on it measured it: this computer, or
+ * a host. A plan is an account's, not a computer's, so two places signed in to
+ * the same account say the same `account`, and are one line wherever plans are
+ * shown; a host on another account is a line of its own.
+ */
+export interface PlaceUsage {
+  /** '' for this computer, a host's id otherwise. */
+  readonly place: string
+  /** Who is signed in there, as an opaque key the same for the same account anywhere; absent where it could not be read. */
+  readonly account?: string
+  /** "Team", "Max": the tool's own word for the plan. */
+  readonly plan?: string
+  readonly usage?: PlanUsage
+}
+
 /** The shortcuts that work in any application, as Electron registers them. */
 export const ANYWHERE = {
   correct: 'CommandOrControl+C+D',
@@ -318,6 +336,9 @@ export type FileShown =
   | { readonly kind: 'none'; readonly why: string }
 
 /** What the tool said it has, or that it is being asked, or that it did not say. */
+/** A file handed to a conversation on a host: where it landed there, or why it did not. */
+export type Uploaded = { readonly path: string } | { readonly problem: string }
+
 export type ModelsSaid = 'unasked' | 'asking' | 'unsaid' | readonly ClaudeModel[]
 
 /** A conversation whose turn was running when GeckIt last closed, offered on the next start to be continued. */
@@ -390,6 +411,8 @@ export interface ClaudeAccount {
   readonly plan?: string
   /** Signed in, and not with a plan: a key, a token, a Console account, a cloud provider. */
   readonly key?: boolean
+  /** Who is signed in, as an opaque key: the same account on another computer says the same. */
+  readonly who?: string
   /** The Claude Code that answers, which is also what the models and their windows were asked of. */
   readonly program?: ClaudeProgram
 }
@@ -453,8 +476,8 @@ export function modelName(id: string): string {
 
 /** Whose plan a question is about to be spent from, for the line over the composer. */
 export function planLine(account: ClaudeAccount | undefined): string {
-  if (account === undefined || !account.here) return 'claude is not on this machine'
-  if (account.signedIn === undefined) return 'On this machine'
+  if (account === undefined || !account.here) return 'claude is not on this computer'
+  if (account.signedIn === undefined) return 'On this computer'
   if (!account.signedIn) return 'Nobody is signed in. Run claude auth login in a terminal.'
   if (account.key === true) return 'Signed in with an API key, not a plan'
   return account.plan === undefined ? 'Your Claude plan' : `Your Claude ${account.plan} plan`
@@ -585,6 +608,10 @@ export interface Folders {
   readonly up?: string
   readonly git: boolean
   readonly folders: readonly { readonly name: string; readonly path: string; readonly git: boolean }[]
+  /** On a host, what `uname -s` says: `Darwin`, `Linux`. */
+  readonly system?: string
+  /** On a host, its home folder. */
+  readonly home?: string
 }
 
 /* ------------------------------------------------------------------ */
@@ -775,6 +802,8 @@ export interface Settings {
   readonly shortcuts: readonly Shortcut[]
   /** What is written often, offered after ; in the message field. */
   readonly phrases: readonly string[]
+  /** Other computers conversations run on, reached over SSH. Never a password: those are in the system's credential store. */
+  readonly hosts: readonly HostConfig[]
 }
 
 /** A saved prompt, run by hand or on a timetable, each time as a new conversation in its project. */
@@ -879,4 +908,5 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarWidth: 264,
   shortcuts: [],
   phrases: [],
+  hosts: [],
 }
