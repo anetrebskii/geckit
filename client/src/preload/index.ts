@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 import type {
   Answered,
+  Lineup,
   Browser,
   CardAnswer,
   FileShown,
@@ -17,6 +18,7 @@ import type {
   GitState,
   PhoneView,
   PlanUsage,
+  RequestChoice,
   Shortcut,
   ShortcutDraft,
   SessionImage,
@@ -154,6 +156,9 @@ const geckit = {
     taskOutput: (id: string, task: string): Promise<TaskOutput | undefined> => ipcRenderer.invoke('chat:taskOutput', id, task),
     answer: (id: string, card: string, answer: CardAnswer | string): void =>
       ipcRenderer.send('chat:answer', id, card, answer),
+    /** Answers a request from `geckit start`: the ticked tasks start, the rest are refused. */
+    answerRequest: (request: string, choice: RequestChoice): Promise<void> => ipcRenderer.invoke('chat:answerRequest', request, choice),
+    startAll: (request: string, where: 'mac' | 'phone'): Promise<void> => ipcRenderer.invoke('chat:startAll', request, where),
     stop: (id: string): void => ipcRenderer.send('chat:stop', id),
     /** Takes a message out of the queue before it goes, and gives it back. */
     unqueue: (id: string, queued: string): Promise<SessionMessage | undefined> => ipcRenderer.invoke('chat:unqueue', id, queued),
@@ -228,6 +233,12 @@ const geckit = {
     onSpotlight: (said: (again: boolean) => void): (() => void) => listen('chat:spotlight', said),
     /** Everything above is listened for: what main held while the window loaded can come now. */
     listening: (): void => ipcRenderer.send('chat:listening'),
+  },
+
+  /** The tasks waiting for fewer conversations to be working, and how full the conversations working are. */
+  lineup: {
+    state: (): Promise<Lineup | undefined> => ipcRenderer.invoke('lineup:state'),
+    onChanged: (said: (lineup: Lineup) => void): (() => void) => listen('lineup:changed', said),
   },
 
   /** Other computers conversations run on, reached over SSH. */

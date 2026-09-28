@@ -5,6 +5,7 @@ import type { BackgroundTask, CardAnswer, SessionImage, SessionItem } from '../.
 import { Icon } from '../ui/Icon'
 import { Code, CopyButton } from './Code'
 import { Preview } from './Preview'
+import { Request } from './Request'
 import { Files, opensTitle, Prose } from './Prose'
 import type { FileHow } from './Prose'
 import { richOf, richSelection } from './rich'
@@ -342,6 +343,8 @@ const Turn = memo(function Turn({
         <div className="thought">{item.text === '' ? 'Thought about it' : item.text}</div>
       ) : item.kind === 'card' ? (
         <Card item={item} onAnswer={onAnswer} />
+      ) : item.kind === 'request' ? (
+        <Request item={item} />
       ) : item.kind === 'shell' ? (
         <Shell item={item} onStop={onStopShell} onType={onTypeShell} />
       ) : item.kind === 'wrote' ? (
@@ -600,7 +603,10 @@ export const Transcript = memo(function Transcript({
   }, [page, at])
 
   const reach = sought < 0 ? page : Math.max(page, items.length - sought + 20)
-  const shown = items.length > reach ? items.slice(items.length - reach) : items
+  // A request still waiting is kept at the end, where it is seen, while Claude goes on working above it; answered, it goes back to where it was asked.
+  const waiting = items.filter((item) => item.kind === 'request' && item.answer === undefined)
+  const inOrder = waiting.length === 0 ? items : items.filter((item) => !waiting.includes(item))
+  const shown = inOrder.length > reach ? inOrder.slice(inOrder.length - reach) : inOrder
 
   const went = useRef<Seek | undefined>(undefined)
   // The conversation arrives a moment after it is chosen, so this waits for the message to be in it.
@@ -688,14 +694,14 @@ export const Transcript = memo(function Transcript({
       }}
     >
       <div>
-        {items.length > shown.length || earlier > 0 ? (
+        {inOrder.length > shown.length || earlier > 0 ? (
           <div className="turn">
             <button
               type="button"
               className="quiet"
-              onClick={() => (items.length > shown.length ? setDrawn({ at, count: reach + PAGE }) : onEarlier?.())}
+              onClick={() => (inOrder.length > shown.length ? setDrawn({ at, count: reach + PAGE }) : onEarlier?.())}
             >
-              Show earlier ({items.length - shown.length + earlier} more)
+              Show earlier ({inOrder.length - shown.length + earlier} more)
             </button>
           </div>
         ) : null}
@@ -791,6 +797,23 @@ export const Transcript = memo(function Transcript({
             </button>
           </div>
         )}
+
+        {waiting.map((item) => (
+          <Turn
+            key={item.id}
+            item={item}
+            going={false}
+            when={undefined}
+            onAnswer={onAnswer}
+            onAgain={onAgain}
+            onFile={onFile}
+            onPicture={picture}
+            onCopyAnswer={copyAnswer}
+            onStopShell={onStopShell}
+            onTypeShell={onTypeShell}
+            onBackground={onBackground}
+          />
+        ))}
       </div>
 
       {preview === undefined ? null : <Preview src={preview} onClose={() => setPreview(undefined)} />}

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   CardAnswer,
   ChatSession,
+  Lineup,
   ClaudeAccount,
   ModelsSaid,
   PlaceUsage,
@@ -58,6 +59,10 @@ export interface Chat {
   readonly hosts: readonly HostView[]
   /** What hosts are asking now. */
   readonly prompts: readonly HostPrompt[]
+  /** The tasks waiting for fewer conversations to be working, top first. */
+  readonly lineup: Lineup
+  /** As many are working as the limit allows, so a new one would wait. */
+  readonly full: boolean
   readonly change: (change: Partial<Settings>) => void
   readonly root: string | undefined
   /** Whose conversations are listed: one project's, or `ALL`. */
@@ -181,6 +186,18 @@ const SHOWN_FOR = 1500
 export function useChat(): Chat {
   const [settings, change] = useSettings()
   const { hosts, prompts } = useHosts()
+  const [lineup, setLineup] = useState<Lineup>({ working: 0, limit: 0 })
+  useEffect(() => {
+    let gone = false
+    void window.geckit.lineup.state().then((now) => {
+      if (!gone && now !== undefined) setLineup(now)
+    })
+    const off = window.geckit.lineup.onChanged(setLineup)
+    return () => {
+      gone = true
+      off()
+    }
+  }, [])
   const [picked, setPicked] = useState<readonly string[] | undefined>()
   const [started, setStarted] = useState<string | undefined>()
   const [sessions, setSessions] = useState<readonly ChatSession[]>([])
@@ -264,9 +281,29 @@ export function useChat(): Chat {
   // Another profile changes what the list may hold, with the scope itself unmoved.
   useEffect(refresh, [refresh, scope, chosen.join('\n'), shownProjects(settings).join('\n')])
 
+  // Asked until it is answered: a phone that opened while the host was starting, or while the link was down, would otherwise never know who is signed in.
   useEffect(() => {
-    void window.geckit.chat.account().then(setAccount)
-    return window.geckit.chat.onAccount(setAccount)
+    let gone = false
+    let again: number | undefined
+    const ask = (): void => {
+      window.geckit.chat.account().then(
+        (said: ClaudeAccount | undefined) => {
+          if (gone) return
+          if (said === undefined) again = window.setTimeout(ask, 5_000)
+          else setAccount(said)
+        },
+        () => {
+          if (!gone) again = window.setTimeout(ask, 5_000)
+        },
+      )
+    }
+    ask()
+    const off = window.geckit.chat.onAccount(setAccount)
+    return () => {
+      gone = true
+      window.clearTimeout(again)
+      off()
+    }
   }, [])
 
   // Asking has the plan measured again, so it is asked for on opening, on
@@ -619,17 +656,16 @@ export function useChat(): Chat {
     [open],
   )
 
-  // The goal goes first and the work after it, so it holds from the first turn rather than from the second.
   const startTask = useCallback(
     (root: string, text: string, goal: string, images: readonly SessionImage[] = []) => {
       const now = held.current
       const model = now.model === '' ? {} : { model: now.model }
-      // The task goes first: a goal on its own tells Claude to start working toward it, and it would start without knowing what the task is.
+      // The task goes first: a goal on its own tells Claude to start working toward it, and it would start without knowing what the task is. Where the task waits for a slot, its goal waits behind it.
       const carried = images.length === 0 ? {} : { images }
       void window.geckit.chat.send({ root, mode: now.mode, text, ...carried, ...model }).then((id) => {
         open({ kind: 'session', id })
-        if (goal === '') return
-        void window.geckit.chat.send({ session: id, root, mode: now.mode, text: `/goal ${goal}`, ...model })
+        if (goal.trim() === '') return
+        void window.geckit.chat.send({ session: id, root, mode: now.mode, text: `/goal ${goal.trim()}`, ...model })
       })
     },
     [open],
@@ -784,6 +820,8 @@ export function useChat(): Chat {
     settings,
     hosts,
     prompts,
+    lineup,
+    full: lineup.limit !== 0 && lineup.working >= lineup.limit,
     change,
     root,
     scope,

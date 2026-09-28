@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ANYWHERE, homeOf, profileOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, RecordedFrame, SessionImage, SessionStatus } from '../../../shared/api'
+import { ordered } from '../../../shared/order'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
 import { dictate, languageCode, useDictationLanguage } from '../dictate'
@@ -19,7 +20,9 @@ import { NameField } from './NameField'
 import { PhoneProject } from './PhoneProject'
 import { PhoneRecord } from './PhoneRecord'
 import { Preview } from './Preview'
+import { From, startedLine } from './Request'
 import { Projects } from './Projects'
+import { queueWhy } from './Queued'
 import { QuestionsMenu } from './Questions'
 import { HostTag } from './HostTag'
 import { emptyProfile, hostName, projectLabel, projectName, tint } from './project'
@@ -48,6 +51,16 @@ const COLUMNS: readonly { readonly status: SessionStatus | undefined; readonly t
   { status: 'review', title: 'In review' },
   { status: 'done', title: 'Done' },
 ]
+
+/** Before which card of In progress the pointer is, counting the cards above it. */
+function landingAt(column: HTMLElement, y: number): number {
+  const cards = [...column.querySelectorAll<HTMLElement>('[data-card]')]
+  const at = cards.findIndex((card) => {
+    const box = card.getBoundingClientRect()
+    return y < box.top + box.height / 2
+  })
+  return at === -1 ? cards.length : at
+}
 
 /** The bar across the top in both views, so switching between them changes only what is below it. */
 export function TopBar({
@@ -216,12 +229,18 @@ export function Board({
         ...column,
         // Blocked stands in the first column: it is work that is not over, and its
         // tag on the card says what it is waiting on.
-        rows: chat.sessions
-          .filter((one) => (column.status === undefined ? one.status !== 'review' && one.status !== 'done' : one.status === column.status))
-          .sort((one, other) => other.at - one.at),
+        rows: ordered(
+          chat.sessions
+            .filter((one) => (column.status === undefined ? one.status !== 'review' && one.status !== 'done' : one.status === column.status))
+            .sort((one, other) => other.at - one.at),
+          column.status === undefined ? chat.settings.progressOrder : [],
+        ),
       })),
-    [chat.sessions],
+    [chat.sessions, chat.settings.progressOrder],
   )
+  const progress = columns[0]?.rows ?? []
+  // Where in In progress a dragged card would land. The order is who a free slot goes to first, and moving a card changes nothing else.
+  const [landing, setLanding] = useState<number | undefined>()
 
   // The cards picked with Cmd or Shift, to be moved, hidden or deleted together. One gone from the board is not picked any more.
   const [picks, setPicks] = useState<ReadonlySet<string>>(new Set())
@@ -276,12 +295,22 @@ export function Board({
 
   const drop = (status: SessionStatus | undefined): void => {
     const ids = held.current
+    const where = landing
     held.current = []
     setOver(undefined)
+    setLanding(undefined)
     for (const id of ids) {
       const was = chat.sessions.find((one) => one.id === id)?.status
       if (was !== status) chat.mark(id, status)
     }
+    if (status === undefined && where !== undefined) dropSessions(ids, where)
+  }
+
+  // Conversations dropped in In progress take that place among the others.
+  const dropSessions = (ids: readonly string[], where: number): void => {
+    const rest = progress.map((session) => session.id).filter((id) => !ids.includes(id))
+    const at = progress.slice(0, where).filter((session) => !ids.includes(session.id)).length
+    chat.change({ progressOrder: [...rest.slice(0, at), ...ids, ...rest.slice(at)] })
   }
 
   const hide = (ids: readonly string[]): void => {
@@ -298,15 +327,21 @@ export function Board({
         {columns.map((column) => (
             <div
               key={column.title}
-              className={`board-column${over === column.title ? ' taking' : ''}`}
+              className={`board-column${over === column.title && column.status !== undefined ? ' taking' : ''}`}
               onDragOver={(event) => {
                 event.preventDefault()
                 event.dataTransfer.dropEffect = 'move'
                 setOver(column.title)
+                if (column.status !== undefined) {
+                  setLanding(undefined)
+                  return
+                }
+                setLanding(landingAt(event.currentTarget, event.clientY))
               }}
               onDragLeave={(event) => {
                 if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
                 setOver((one) => (one === column.title ? undefined : one))
+                if (column.status === undefined) setLanding(undefined)
               }}
               onDrop={(event) => {
                 event.preventDefault()
@@ -316,6 +351,12 @@ export function Board({
               <div className="board-column-head">
                 {column.title}
                 <span className="spacer" />
+                {column.status === undefined && chat.lineup.limit !== 0 ? (
+                  <span className={`state-said working-count${chat.lineup.working > 0 ? ' said-working' : ''}`} title="Conversations working, against the limit set in Settings">
+                    <span className="state-dot" />
+                    {`${String(chat.lineup.working)} of ${String(chat.lineup.limit)} working`}
+                  </span>
+                ) : null}
                 <span className="count">{column.rows.length}</span>
               </div>
               <div className="board-cards">
@@ -330,8 +371,9 @@ export function Board({
                       </button>
                     )}
                     {(folded.has(day.heading) ? [] : day.rows).map((session) => (
+                      <Fragment key={session.id}>
+                      {column.status === undefined && landing === progress.indexOf(session) ? <div className="board-drop" /> : null}
                       <Card
-                        key={session.id}
                         chat={chat}
                         session={session}
                         now={now}
@@ -346,9 +388,11 @@ export function Board({
                         }}
                         onStopRenaming={() => setRenaming(undefined)}
                       />
+                      </Fragment>
                     ))}
                   </div>
                 ))}
+                {column.status === undefined && landing === progress.length ? <div className="board-drop" /> : null}
               </div>
             </div>
           ))}
@@ -445,6 +489,7 @@ export function Board({
 function standing(session: ChatSession): { readonly words: string; readonly tone: string } | undefined {
   if (session.state === 'working') return { words: 'Claude is working', tone: 'said-working' }
   if (session.state === 'asks') return { words: 'Asking you', tone: 'said-asks' }
+  if (session.waits === true) return { words: 'Waiting for a slot', tone: '' }
   if (session.state === 'unread') return { words: 'Waiting for you', tone: 'said-unread' }
   if (session.state === 'failed') return { words: 'Stopped by an error', tone: 'said-failed' }
   if (session.state === 'limit') return { words: 'Out of the plan for now', tone: 'said-failed' }
@@ -499,12 +544,14 @@ function Card({
   const queued = session.queued?.length ?? 0
   // The line above already says it is working, so what it says it is doing does not say it again.
   const detail = stands?.tone === 'said-working' ? session.stands.replace(/^Working - /, '') : session.stands
+  const started = startedLine(chat.sessions, session.id)
   return (
     <div
       className={`board-card${starred ? ' starred' : ''}${open ? ' on' : ''}${picked ? ' picked' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
       draggable={!renaming}
       role="button"
       tabIndex={0}
+      data-card={session.id}
       onContextMenu={(event) => {
         event.preventDefault()
         onMenu(session.id, new DOMRect(event.clientX, event.clientY, 0, 0))
@@ -565,6 +612,7 @@ function Card({
           </button>
         )}
       </div>
+      <From chat={chat} session={session} className="board-card-from" />
       {stands === undefined && background === 0 && queued === 0 ? null : (
         <div className="board-card-state">
           {stands === undefined ? null : (
@@ -609,6 +657,7 @@ function Card({
           <span>{detail}</span>
         </div>
       )}
+      {started === undefined ? null : <div className="board-card-kids">{started}</div>}
     </div>
   )
 }
@@ -979,7 +1028,7 @@ export function NewTask({
         </label>
       )}
       <div className="new-task-foot">
-        <span className="new-task-why">{question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when Claude is done. ${MOD}+Enter starts it` : 'Claude keeps working until this holds, then the card goes to In review'}</span>
+        <span className="new-task-why">{chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when Claude is done. ${MOD}+Enter starts it` : 'Claude keeps working until this holds, then the card goes to In review'}</span>
         <span className="spacer" />
         <button type="button" className="quiet" onClick={onClose}>
           Cancel
@@ -990,7 +1039,7 @@ export function NewTask({
           disabled={(root === '' && !question) || !ready}
           onClick={start}
         >
-          {question ? 'Ask' : 'Start'}
+          {chat.full && !question ? 'Queue' : question ? 'Ask' : 'Start'}
         </button>
       </div>
       {folderOn === undefined ? null : (

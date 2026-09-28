@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { CardAnswer, ChatSession, SessionCard, SessionStatus } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
+import { ordered } from '../../../shared/order'
 import { projectColor } from '../../../shared/project-color'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
@@ -48,6 +49,8 @@ const FLICK = 0.35
 const PROJECT = 180
 // Three asks fit above the fold with the rest of the column still in sight.
 const FOLD = 3
+// How near the list's edge a dragged row has to be to scroll it.
+const EDGE = 70
 
 /** The card a session waits on, read from its transcript, for answering it from the board. */
 interface Waiting {
@@ -108,10 +111,10 @@ export function PhoneBoard({
     return () => clearInterval(tick)
   }, [])
 
-  const rows = useMemo(
-    () => chat.sessions.filter((one) => columnOf(one) === shown).sort((one, other) => other.at - one.at),
-    [chat.sessions, shown],
-  )
+  const rows = useMemo(() => {
+    const all = chat.sessions.filter((one) => columnOf(one) === shown).sort((one, other) => other.at - one.at)
+    return shown === 'progress' ? ordered(all, chat.settings.progressOrder) : all
+  }, [chat.sessions, shown, chat.settings.progressOrder])
   const counts = useMemo(() => {
     const count = { progress: 0, review: 0, done: 0 }
     for (const one of chat.sessions) count[columnOf(one)] += 1
@@ -121,9 +124,68 @@ export function PhoneBoard({
   const rest = rows.filter((one) => !asking.includes(one))
   const [ways, setWays] = useState(false)
   const [scoping, setScoping] = useState(false)
+  const [limiting, setLimiting] = useState(false)
   const newPress = useRef<number | undefined>(undefined)
   const newHeld = useRef(false)
   const folded = unfolded || asking.length <= FOLD ? 0 : asking.length - FOLD
+
+  // A row held and then moved up or down takes a new place in In progress, as a card dragged on the Mac does.
+  const [drag, setDrag] = useState<
+    { readonly id: string; readonly moved: number; readonly scrolled: number; readonly scroll: number; readonly middles: readonly number[]; readonly height: number } | undefined
+  >()
+  const restGroup = useRef<HTMLDivElement>(null)
+  const list = useRef<HTMLDivElement>(null)
+  const finger = useRef<number | undefined>(undefined)
+  const from = drag === undefined ? -1 : rest.findIndex((one) => one.id === drag.id)
+  const dy = drag === undefined ? 0 : drag.moved + drag.scrolled
+  const landing = drag === undefined ? -1 : drag.middles.filter((middle, at) => at !== from && middle < (drag.middles[from] ?? 0) + dy).length
+  const shift = (at: number): number => {
+    if (drag === undefined) return 0
+    if (at === from) return dy
+    const among = at < from ? at : at - 1
+    if (at < from && among >= landing) return drag.height
+    if (at > from && among < landing) return -drag.height
+    return 0
+  }
+  const lift = (session: ChatSession): void => {
+    const boxes = Array.from(restGroup.current?.querySelectorAll(':scope > [data-row]') ?? []).map((one) => one.getBoundingClientRect())
+    setPressed(undefined)
+    tap('light')
+    setDrag({ id: session.id, moved: 0, scrolled: 0, scroll: list.current?.scrollTop ?? 0, middles: boxes.map((box) => box.top + box.height / 2), height: boxes[rest.indexOf(session)]?.height ?? 0 })
+  }
+  // A row held near the top or the bottom of the list scrolls it, faster the nearer the edge, so it can be carried past what is on the screen.
+  const dragging = drag !== undefined
+  useEffect(() => {
+    if (!dragging) return
+    let frame = 0
+    const step = (): void => {
+      const element = list.current
+      const y = finger.current
+      if (element !== null && y !== undefined) {
+        const box = element.getBoundingClientRect()
+        const top = element.querySelector('.phone-seg-bar')?.getBoundingClientRect().bottom ?? box.top
+        const speed = y < top + EDGE ? (y - top - EDGE) / 5 : y > box.bottom - EDGE * 1.6 ? (y - box.bottom + EDGE * 1.6) / 5 : 0
+        if (speed !== 0) {
+          element.scrollTop += speed
+          setDrag((was) => (was === undefined ? was : { ...was, scrolled: element.scrollTop - was.scroll }))
+        }
+      }
+      frame = requestAnimationFrame(step)
+    }
+    frame = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(frame)
+  }, [dragging])
+  const drop = (): void => {
+    finger.current = undefined
+    setDrag(undefined)
+    const moved = rest[from]
+    if (moved === undefined || landing === from) return
+    const others = rest.filter((one) => one !== moved)
+    const placed = [...others.slice(0, landing), moved, ...others.slice(landing)]
+    let next = 0
+    tap('firm')
+    chat.change({ progressOrder: rows.map((one) => (asking.includes(one) ? one.id : (placed[next++]?.id ?? one.id))) })
+  }
 
   // Which card each asking session waits on, asked for again whenever one of them moves.
   const asks = chat.sessions.filter((one) => one.state === 'asks')
@@ -188,6 +250,21 @@ export function PhoneBoard({
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-bar-row">
           <span className="phone-bar-small">Tasks</span>
+          {/* How many work against the limit, as the Mac's In progress head says it; full, a new message waits. */}
+          {chat.lineup.limit === 0 ? null : (
+            <button
+              type="button"
+              className={`phone-lineup${chat.lineup.working > 0 ? ' said-working' : ''}${chat.full ? ' full' : ''}`}
+              aria-label={`${String(chat.lineup.working)} of ${String(chat.lineup.limit)} conversations working`}
+              onClick={() => {
+                tap('light')
+                setLimiting(true)
+              }}
+            >
+              <span className="state-dot" />
+              {`${String(chat.lineup.working)}/${String(chat.lineup.limit)}`}
+            </button>
+          )}
           <button type="button" className="phone-icon" aria-label="Shortcuts" onClick={onShortcuts}>
             <Icon name="bolt" size={24} />
           </button>
@@ -222,8 +299,20 @@ export function PhoneBoard({
         </div>
       </header>
 
-      <h1 className={`phone-large${scrolled ? ' folded' : ''}`}>Tasks</h1>
-      <div className={`phone-seg-bar${scrolled ? ' scrolled' : ''}`}>
+      <div
+        ref={list}
+        className="phone-list"
+        onScroll={(event) => {
+          const top = event.currentTarget.scrollTop
+          setScrolled(top > 30)
+        }}
+      >
+        {/* The title scrolls away with the list, as in Mail, so nothing above the list changes height and the rows never jump; the columns stay pinned. */}
+        <div className="phone-title-row">
+          <h1 className="phone-large">Tasks</h1>
+          <ScopeButton chat={chat} onPress={() => setScoping(true)} />
+        </div>
+        <div className={`phone-seg-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-seg" role="tablist" style={{ '--at': COLUMNS.findIndex((one) => one.column === shown) } as React.CSSProperties}>
           <span className="phone-seg-thumb" />
           {COLUMNS.map((one) => (
@@ -243,16 +332,7 @@ export function PhoneBoard({
             </button>
           ))}
         </div>
-        <ScopeButton chat={chat} onPress={() => setScoping(true)} />
-      </div>
-
-      <div
-        className="phone-list"
-        onScroll={(event) => {
-          const top = event.currentTarget.scrollTop
-          setScrolled((was) => top > 40 || (was && top > 0))
-        }}
-      >
+        </div>
         {high?.window === undefined ? null : (
           <div className="phone-alert">
             {named ? `${high.of}: ` : ''}
@@ -326,8 +406,8 @@ export function PhoneBoard({
                 ) : asking.length === 0 ? null : (
                   <div className="phone-head">Sessions</div>
                 )}
-                {foldedDays.has(day.heading) ? null : <div className="phone-group">
-                  {day.rows.map((session) => (
+                {foldedDays.has(day.heading) ? null : <div ref={shown === 'progress' ? restGroup : undefined} className={`phone-group${drag === undefined ? '' : ' dragging'}`}>
+                  {day.rows.map((session, at) => (
                     <Row
                       key={session.id}
                       chat={chat}
@@ -341,6 +421,14 @@ export function PhoneBoard({
                       onMore={() => setMore(session)}
                       onPress={(at) => setPressed({ session, at })}
                       onAnswer={() => undefined}
+                      onLift={shown === 'progress' ? () => lift(session) : undefined}
+                      onDrag={(moved, y) => {
+                        finger.current = y
+                        setDrag((was) => (was === undefined ? was : { ...was, moved }))
+                      }}
+                      onDrop={drop}
+                      shift={shown === 'progress' ? shift(at) : 0}
+                      lifted={drag?.id === session.id}
                     />
                   ))}
                 </div>}
@@ -415,6 +503,16 @@ export function PhoneBoard({
           onClose={() => setWays(false)}
         />
       ) : null}
+      {limiting ? (
+        <Menu
+          anchor={new DOMRect()}
+          title="Conversations working at once"
+          chosen={String(chat.settings.workingAtOnce)}
+          choices={[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => ({ value: String(count), label: count === 0 ? 'No limit' : String(count) }))}
+          onPick={(value) => chat.change({ workingAtOnce: Number(value) })}
+          onClose={() => setLimiting(false)}
+        />
+      ) : null}
       {scoping ? <PhoneScope chat={chat} onClose={() => setScoping(false)} /> : null}
     </div>
   )
@@ -424,6 +522,7 @@ export function PhoneBoard({
 function standing(session: ChatSession): { readonly tone: string; readonly words?: string } {
   if (session.state === 'working' || session.runs !== undefined) return { tone: 'working', words: 'Working' }
   if (session.state === 'asks') return { tone: 'asks', words: 'Needs an answer' }
+  if (session.waits === true) return { tone: 'read', words: 'Waiting for a slot' }
   if (session.state === 'failed') return { tone: 'failed', words: 'Stopped by an error' }
   if (session.state === 'limit') return { tone: 'failed', words: 'Out of the plan for now' }
   if (session.state === 'unread') return { tone: 'unread' }
@@ -514,6 +613,11 @@ function Row({
   onMore,
   onPress,
   onAnswer,
+  onLift,
+  onDrag,
+  onDrop,
+  shift = 0,
+  lifted = false,
 }: {
   readonly chat: Chat
   readonly session: ChatSession
@@ -526,17 +630,22 @@ function Row({
   readonly onMore: () => void
   readonly onPress: (at: DOMRect) => void
   readonly onAnswer: (how: CardAnswer) => void
+  readonly onLift?: (() => void) | undefined
+  readonly onDrag?: (moved: number, y: number) => void
+  readonly onDrop?: () => void
+  readonly shift?: number
+  readonly lifted?: boolean
 }): React.JSX.Element {
   const [x, setX] = useState(0)
   const [moving, setMoving] = useState(false)
-  const touch = useRef<{ x: number; y: number; from: number; way?: 'side' | 'down'; timer: number; pressed: boolean; at: number; t: number; v: number } | undefined>(undefined)
+  const touch = useRef<{ x: number; y: number; from: number; way?: 'side' | 'down'; timer: number; pressed: boolean; lifting?: boolean; at: number; t: number; v: number } | undefined>(undefined)
   const row = useRef<HTMLDivElement>(null)
   // React's touch listeners are passive, and only a non-passive one can keep the list still under a sideways swipe.
   useEffect(() => {
     const element = row.current
     if (element === null) return
     const hold = (event: TouchEvent): void => {
-      if (touch.current?.way === 'side') event.preventDefault()
+      if (touch.current?.way === 'side' || touch.current?.pressed === true) event.preventDefault()
     }
     element.addEventListener('touchmove', hold, { passive: false })
     return () => element.removeEventListener('touchmove', hold)
@@ -582,7 +691,7 @@ function Row({
   const leadFull = offset > width * FULL
 
   return (
-    <div className="phone-swipe" data-row={session.id}>
+    <div className={`phone-swipe${lifted ? ' lifted' : ''}`} data-row={session.id} style={shift === 0 ? undefined : { transform: `translateY(${String(shift)}px)` }}>
       <div className="phone-actions lead" style={{ width: Math.max(0, offset) }}>
         <button type="button" className={`phone-action ${lead.tone}`} style={{ width: leadFull ? '100%' : ACTION + 12 }} onClick={() => onMark(lead.status)}>
           {lead.label}
@@ -639,7 +748,18 @@ function Row({
         }}
         onPointerMove={(event) => {
           const held = touch.current
-          if (held === undefined || held.pressed) return
+          if (held === undefined) return
+          if (held.pressed) {
+            if (onLift === undefined) return
+            const dy = event.clientY - held.y
+            if (held.lifting !== true && Math.abs(dy) > 8) {
+              held.lifting = true
+              event.currentTarget.setPointerCapture(event.pointerId)
+              onLift()
+            }
+            if (held.lifting === true) onDrag?.(dy, event.clientY)
+            return
+          }
           const dx = event.clientX - held.x
           const dy = event.clientY - held.y
           if (held.way === undefined && Math.hypot(dx, dy) > 8) {
@@ -663,7 +783,10 @@ function Row({
           touch.current = undefined
           if (held === undefined) return
           window.clearTimeout(held.timer)
-          if (held.pressed) return
+          if (held.pressed) {
+            if (held.lifting === true) onDrop?.()
+            return
+          }
           if (held.way === 'side') settle(held.at, event.timeStamp - held.t > 80 ? 0 : held.v)
           else if (held.way === undefined) {
             if (open) settle(0, 0)
@@ -675,6 +798,7 @@ function Row({
           touch.current = undefined
           if (held === undefined) return
           window.clearTimeout(held.timer)
+          if (held.lifting === true) onDrop?.()
           if (held.way === 'side') settle(held.at, 0)
         }}
       >

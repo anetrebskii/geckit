@@ -19,6 +19,7 @@ import { Preview } from './Preview'
 import { Tasks } from './Tasks'
 import type { Choice } from '../ui/Menu'
 import { projectLabel } from './project'
+import { queueWhy } from './Queued'
 import type { Chat } from './useChat'
 
 /** A path offered after @, as its name and the folder it is in. */
@@ -265,7 +266,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
     chat.uploading ||
     chat.root === undefined ||
     (host === undefined && isRemote(chat.root)) ||
-    (host === undefined && (chat.account?.signedIn !== true || chat.account.key === true))
+    (host === undefined && (chat.account?.here === false || chat.account?.signedIn === false || chat.account?.key === true))
 
   const { addFiles } = chat
 
@@ -292,6 +293,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   useEffect(() => () => dictate()?.stop(), [chat.session?.id])
   const goal = chat.session?.goal
   const command = chat.root !== undefined && chat.draft.trim().startsWith('!')
+  // A first message, or one to a conversation not working, waits in the queue where as many are working as the limit allows.
+  const idle = chat.shown.kind !== 'session' || (chat.session !== undefined && chat.session.state !== 'working' && chat.session.state !== 'asks')
+  const queues = !command && idle && ((chat.full && chat.session?.question !== true) || (chat.session?.queued?.length ?? 0) > 0)
   const checked =
     goal === undefined
       ? ''
@@ -437,7 +441,10 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
       {queued.length === 0 ? null : (
         <div className="queued">
           <div className="queued-head">
-            {queued.length === 1 ? '1 queued' : `${String(queued.length)} queued`}, each sent once Claude answers the one before
+            {queued.length === 1 ? '1 queued' : `${String(queued.length)} queued`}
+            {chat.session?.waits === true
+              ? `, waiting for a slot: ${String(chat.lineup.working)} of ${String(chat.lineup.limit)} conversations working, the limit in Settings. The first goes when one of them stops`
+              : ', each sent once Claude answers the one before'}
           </div>
           <div className="queued-list">
           {queued.map((one) => (
@@ -779,6 +786,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {chat.root !== undefined && goal === undefined && GOAL.test(chat.draft) ? (
             <span className="composer-hint">Claude keeps working until this holds. A check after each reply decides whether it does</span>
           ) : null}
+          {queues ? <span className="composer-hint">{queueWhy(chat.lineup)}</span> : null}
           {command ? (
             <span className="composer-hint command">
               Runs in {projectLabel(chat.root)}. Claude sees what it prints with your next message
@@ -837,8 +845,8 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               className="send"
               disabled={cannot || (chat.draft.trim() === '' && chat.pictures.length === 0)}
               onClick={submit}
-              title="Send (Enter)"
-              aria-label="Send"
+              title={queues ? 'Queue (Enter)' : 'Send (Enter)'}
+              aria-label={queues ? 'Queue' : 'Send'}
             >
               <Icon name="send" size={14} />
             </button>
@@ -857,6 +865,8 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           </div>
         ) : ON_PHONE && command ? (
           <div className="phone-hint command">Runs in {projectLabel(chat.root)} now. Claude sees what it prints with your next message</div>
+        ) : ON_PHONE && queues ? (
+          <div className="phone-hint">{queueWhy(chat.lineup)}</div>
         ) : ON_PHONE && chat.working && (draft !== '' || chat.pictures.length > 0) ? (
           <div className="phone-hint">Waits its turn: it goes once Claude has answered</div>
         ) : null}

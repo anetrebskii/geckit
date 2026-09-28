@@ -20,6 +20,7 @@ import { projectColor } from '../../../shared/project-color'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import { HostChip, HostPromptCard, HostTroubleCard } from './HostParts'
 import { PhoneHostSheet } from './PhoneHostSheet'
+import { From, RequestChat } from './Request'
 import { computerName, needsComputer } from './PhoneHosts'
 import { homePath, projectLabel, projectName, tint } from './project'
 import { Sidebar, Tags } from './Sidebar'
@@ -547,6 +548,7 @@ export function Chat(): React.JSX.Element {
                 </span>
                 {host === undefined ? null : <HostChip host={host} onTerminal={() => window.geckit.hosts.terminal(host.id)} />}
                 <Tags session={chat.session} marked={false} />
+                <From chat={chat} session={chat.session} className="head-from no-drag" />
               </>
             ) : chat.root === undefined ? null : (
               <Picker
@@ -696,6 +698,7 @@ export function Chat(): React.JSX.Element {
           </div>
         ) : (
           <Files value={files}>
+            <RequestChat value={chat}>
             <Transcript
               at={chat.itemsFor}
               items={chat.items}
@@ -714,6 +717,7 @@ export function Chat(): React.JSX.Element {
               onEarlier={chat.showEarlier}
               onSteps={chat.loadSteps}
             />
+            </RequestChat>
           </Files>
         )}
 

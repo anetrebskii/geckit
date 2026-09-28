@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type { Geckit } from '../../preload'
 
 declare global {

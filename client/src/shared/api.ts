@@ -108,6 +108,13 @@ export type SessionItem =
       /** The tool's own last words, under "What it said". */
       readonly detail?: string
     }
+  /** Conversations Claude asked GeckIt to start with `geckit start`, answered here as one. */
+  | {
+      readonly kind: 'request'
+      readonly id: string
+      readonly tasks: readonly RequestTask[]
+      readonly answer?: RequestAnswer
+    }
   /** A run of steps as one line, sent to the phone in place of the steps, which it asks for when the line is opened. */
   | {
       readonly kind: 'steps'
@@ -119,6 +126,42 @@ export type SessionItem =
       /** The pictures its steps handed back, shown under the line while it is shut. */
       readonly images?: readonly SessionImage[]
     }
+
+export interface RequestTask {
+  /** The project as `geckit sessions` names it. */
+  readonly project: string
+  readonly title: string
+  readonly text: string
+  readonly goal?: string
+  /** The conversation it was started as, once it was. */
+  readonly started?: string
+  readonly note?: string
+}
+
+export interface RequestAnswer {
+  readonly how: 'answered' | 'withdrawn'
+  /** Where it was answered, for the other device to say. */
+  readonly where?: 'mac' | 'phone'
+  readonly reply?: string
+}
+
+/** What the person decided about a request, task by task in the order asked. */
+export interface RequestChoice {
+  readonly start: readonly boolean[]
+  readonly notes: readonly string[]
+  readonly reply?: string
+  readonly where: 'mac' | 'phone'
+}
+
+/** How full the conversations working are. */
+export interface Lineup {
+  /** Working, and those just given a slot. */
+  readonly working: number
+  /** Nought is no limit. */
+  readonly limit: number
+}
+
+export const GRACE = 10_000
 
 /** Where a session stands, which is also which group its row is under. */
 export type SessionState = 'working' | 'asks' | 'unread' | 'idle' | 'limit' | 'failed'
@@ -189,6 +232,8 @@ export const ANYWHERE = {
   record: 'CommandOrControl+Alt+R',
 } as const
 
+export type Anywhere = keyof typeof ANYWHERE
+
 /** Something a conversation wants the person to know, and where the window is not showing it. */
 export interface SessionNotice {
   readonly session: string
@@ -199,6 +244,8 @@ export interface SessionNotice {
   readonly body: string
   /** It cannot go on until it is answered. */
   readonly asks: boolean
+  /** A request to start conversations, which the notice can answer with Start all. */
+  readonly request?: string
 }
 
 /** One row in the sidebar. */
@@ -238,12 +285,16 @@ export interface ChatSession {
   readonly status?: SessionStatus
   /** Messages sent while it worked, oldest first, each going once the turn before it is answered. */
   readonly queued?: readonly QueuedMessage[]
+  /** Its queued messages wait for a slot, as many working as the limit. */
+  readonly waits?: true
   /** A general question: shown while it is open, and never as a card or a row. */
   readonly question?: boolean
   /** When a general question that has gone quiet is deleted. */
   readonly goes?: number
   /** A general question kept for good. */
   readonly stays?: boolean
+  /** The conversation that asked for this one with `geckit start`. */
+  readonly parent?: string
 }
 
 export interface QueuedMessage {
@@ -792,6 +843,12 @@ export interface Settings {
   readonly updateChannel: UpdateChannel
   /** False takes GECKIT.md and the line that reads it out of the tool's own folder again. */
   readonly guideClaude: boolean
+  /** Shortcuts in any application turned off here, as a copy run beside another GeckIt wants. */
+  readonly anywhereOff: readonly Anywhere[]
+  /** How many conversations may work at once before a new one waits in the queue. Nought is no limit. */
+  readonly workingAtOnce: number
+  /** The conversations in In progress in the order they were dragged to; one not in it stands above them, the newest first. */
+  readonly progressOrder: readonly string[]
   /** The first-start sheet was finished or skipped. False shows it again. */
   readonly welcomed: boolean
   /** Phones with GeckIt's app can reach the conversations. */
@@ -901,6 +958,9 @@ export const DEFAULT_SETTINGS: Settings = {
   autoUpdate: true,
   updateChannel: 'stable',
   guideClaude: true,
+  anywhereOff: [],
+  workingAtOnce: 6,
+  progressOrder: [],
   // True until the main process says otherwise, so a window never flashes the sheet before its settings arrive.
   welcomed: true,
   phone: false,

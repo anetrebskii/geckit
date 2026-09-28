@@ -37,6 +37,21 @@ export function Notices({ chat }: { readonly chat: Chat }): React.JSX.Element | 
             <span className="title">{notice.title}</span>
             {notice.subtitle === '' ? null : <span className="subtitle">{notice.subtitle}</span>}
             <span className="body">{notice.body}</span>
+            {notice.request === undefined ? null : (
+              <span className="notice-actions">
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    if (notice.request !== undefined) void window.geckit.chat.startAll(notice.request, 'mac')
+                    chat.dismiss(notice.session)
+                  }}
+                >
+                  Start all
+                </button>
+              </span>
+            )}
           </span>
           <button
             type="button"
@@ -138,7 +153,7 @@ function Banner({ chat, notice }: { readonly chat: Chat; readonly notice: Sessio
       }}
     >
       <span className="banner-icon" style={color === undefined ? undefined : { background: color }}>
-        <Icon name={GLYPH[what] ?? 'chat'} size={18} />
+        <Icon name={notice.request === undefined ? (GLYPH[what] ?? 'chat') : 'plus'} size={18} />
       </span>
       <span className="lines">
         <span className="banner-head">

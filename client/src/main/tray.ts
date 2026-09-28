@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 
-import { Menu, nativeImage, Tray } from 'electron'
+import { app, Menu, nativeImage, Tray } from 'electron'
 import type { MenuItemConstructorOptions, NativeImage } from 'electron'
 
 import appIcon from '../../assets/icons/32x32.png?asset'
@@ -25,9 +25,30 @@ let tray: Tray | undefined
 let deps: TrayDeps | undefined
 let drawn = ''
 
-/** On a Mac, black on clear, which the menu bar colours for itself; elsewhere the app's own icon. */
+/** The Local orange of the dev Dock icon. */
+const LOCAL = { r: 0xf2, g: 0x8c, b: 0x28 }
+
+/** The template painted orange, keeping its shape in the alpha; a bitmap is premultiplied BGRA on a Mac. */
+function orange(buffer: Buffer): NativeImage {
+  const read = nativeImage.createFromBuffer(buffer)
+  const pixels = Buffer.from(read.toBitmap())
+  for (let at = 0; at < pixels.length; at += 4) {
+    const alpha = (pixels[at + 3] ?? 0) / 255
+    pixels[at] = Math.round(LOCAL.b * alpha)
+    pixels[at + 1] = Math.round(LOCAL.g * alpha)
+    pixels[at + 2] = Math.round(LOCAL.r * alpha)
+  }
+  return nativeImage.createFromBitmap(pixels, read.getSize())
+}
+
+/** On a Mac, black on clear, which the menu bar colours for itself; run from the source, the same in orange; elsewhere the app's own icon. */
 function image(): NativeImage {
   if (process.platform !== 'darwin') return nativeImage.createFromBuffer(readFileSync(appIcon))
+  if (!app.isPackaged) {
+    const made = orange(readFileSync(template))
+    made.addRepresentation({ scaleFactor: 2, buffer: orange(readFileSync(template2x)).toPNG() })
+    return made
+  }
   const made = nativeImage.createFromBuffer(readFileSync(template), { scaleFactor: 1 })
   made.addRepresentation({ scaleFactor: 2, buffer: readFileSync(template2x) })
   made.setTemplateImage(true)
@@ -37,7 +58,8 @@ function image(): NativeImage {
 export function startTray(given: TrayDeps): void {
   deps = given
   tray = new Tray(image())
-  tray.setToolTip('GeckIt')
+  // Run from the source, it is told apart from the installed GeckIt's beside it by its orange icon, no wider than the other.
+  tray.setToolTip(app.isPackaged ? 'GeckIt' : 'GeckIt Local')
   drawTray()
   // "Tomorrow" turns into "Today" with nothing else changing.
   setInterval(drawTray, 60_000)

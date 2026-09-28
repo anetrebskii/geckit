@@ -95,7 +95,7 @@ export function PhoneSettings({
 }
 
 function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) => void }): React.JSX.Element {
-  const [picking, setPicking] = useState<'theme' | 'mode' | 'language' | undefined>()
+  const [picking, setPicking] = useState<'theme' | 'mode' | 'limit' | 'language' | undefined>()
   const [switching, setSwitching] = useState(false)
   const [paired, setPaired] = useState(() => macs()?.list())
   const [version, setVersion] = useState<string | undefined>()
@@ -159,8 +159,11 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       <div className="phone-head">New tasks</div>
       <div className="phone-group">
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === settings.chatMode)?.label} onPress={() => setPicking('mode')} />
+        <Cell label="Working at once" value={settings.workingAtOnce === 0 ? 'No limit' : String(settings.workingAtOnce)} onPress={() => setPicking('limit')} />
       </div>
-      <div className="phone-note">What a task started from the phone or the host runs in, until changed in it.</div>
+      <div className="phone-note">
+        What a task started from the phone or the host runs in, until changed in it. Past the limit, a message waits in its conversation, and the highest card in In progress goes first when one working stops.
+      </div>
 
       <div className="phone-head">Shortcuts</div>
       <div className="phone-group">
@@ -202,6 +205,15 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
           chosen={settings.chatMode}
           choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: one.why }))}
           onPick={(value) => chat.change({ chatMode: value as SessionMode })}
+          onClose={() => setPicking(undefined)}
+        />
+      ) : picking === 'limit' ? (
+        <Menu
+          anchor={new DOMRect()}
+          title="Conversations working at once"
+          chosen={String(settings.workingAtOnce)}
+          choices={[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => ({ value: String(count), label: count === 0 ? 'No limit' : String(count) }))}
+          onPick={(value) => chat.change({ workingAtOnce: Number(value) })}
           onClose={() => setPicking(undefined)}
         />
       ) : picking === 'language' ? (

@@ -516,6 +516,7 @@ export function Record({ fill = false }: { readonly fill?: boolean }): React.JSX
               <span className="rec-dot" aria-hidden="true" />
               <Icon name="display" size={15} />
               <span>Recording the screen</span>
+              {import.meta.env.DEV ? <span className="dev-tag">Local</span> : null}
             </span>
             <span className="time">{clock(elapsed)}</span>
             <span className="rule" aria-hidden="true" />

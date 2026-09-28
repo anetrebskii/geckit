@@ -209,6 +209,7 @@ export function Voice(): React.JSX.Element {
             </span>
 
             <span className="time">{time(recorder.elapsed)}</span>
+            {import.meta.env.DEV ? <span className="dev-tag">Local</span> : null}
 
             <button
               type="button"

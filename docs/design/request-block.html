@@ -1,5 +1,10 @@
-@import '@fontsource-variable/inter';
-@import '@fontsource-variable/jetbrains-mono';
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GeckIt - the request block</title>
+<!-- The app's own styles.css, the request rules included, inlined as it stood when this was made. -->
+<style>
 
 /*
  * One stylesheet for three windows.
@@ -4704,15 +4709,6 @@ html.framed .board-head {
   letter-spacing: 0.04em;
 }
 
-/* How many work against the limit, said as a card says it is working, so it does not read as a second count. */
-.board-column-head .working-count {
-  margin-inline-end: 10px;
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
 .board-cards {
   display: flex;
   flex: 1;
@@ -4905,20 +4901,6 @@ html.framed .board-head {
   margin-top: 1px;
   font-size: 11px;
   color: var(--text-dim);
-}
-
-/* Where a dragged card would land. It takes no room, so nothing moves under the pointer. */
-.board-drop {
-  flex-shrink: 0;
-  height: 2px;
-  margin: -5px 2px;
-  background: var(--accent);
-  border-radius: 1px;
-}
-
-/* Above the first card it would sit outside the scrolled list and be cut off, so it takes the list's padding instead. */
-.board-day:first-child > .board-drop:first-child {
-  margin: -2px 2px -8px;
 }
 
 .state-said {
@@ -5210,34 +5192,25 @@ html.phone button:active:not(:disabled) {
   letter-spacing: 0.01em;
 }
 
-/* The board's title is the first thing in the list, with the projects shown beside it, and scrolls away under the bar. */
-.phone-title-row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 16px;
-}
-
-.phone-title-row .phone-large {
-  min-width: 0;
-  margin: 0;
-}
-
-.phone-title-row .phone-scope {
-  min-width: 0;
-  max-width: 55%;
-  margin-top: 0;
+/* The board's title stands above the list rather than in it, so the list's scroll indicator starts under the header, and folds into the bar once the list is scrolled. */
+.phone-board .phone-large {
+  flex: none;
+  height: 41px;
   overflow: hidden;
-  white-space: nowrap;
+  transition:
+    height var(--settle) var(--ease),
+    opacity var(--settle) var(--ease);
 }
 
-/* The columns stay pinned under the bar, with a hairline once the title has gone. */
+.phone-board .phone-large.folded {
+  height: 0;
+  opacity: 0;
+}
+
+/* The line under it shows once the title has gone. */
 .phone-seg-bar {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  padding: 8px 16px 10px;
+  flex: none;
+  padding: 10px 16px 12px;
   background: var(--ground);
   transition: box-shadow var(--settle) var(--ease);
 }
@@ -5365,69 +5338,10 @@ html.phone button:active:not(:disabled) {
   border-radius: 12px;
 }
 
-/* Held and moved, a row lifts over the others, which step aside as it passes. */
-.phone-group.dragging {
-  overflow: visible;
-}
-
-.phone-group.dragging > .phone-swipe {
-  transition: transform 200ms var(--ease);
-}
-
-.phone-group.dragging > .phone-swipe.lifted {
-  z-index: 2;
-  border-radius: 12px;
-  box-shadow: var(--lift);
-  transition: none;
-}
-
 .phone-note {
   margin: 7px 32px 0;
   font-size: 13px;
   color: var(--text-faint);
-}
-
-/* How many work against the limit, in the bar beside the icons, as the Mac says it in the column's head. Full, it turns the warning colour: a new message would wait. */
-.phone-lineup {
-  display: flex;
-  flex: none;
-  gap: 6px;
-  align-items: center;
-  height: 26px;
-  padding: 0 10px;
-  margin-inline-end: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-faint);
-  background: var(--fill);
-  border: 0;
-  border-radius: 13px;
-}
-
-.phone-lineup .state-dot {
-  width: 6px;
-  height: 6px;
-  background: var(--text-faint);
-  border-radius: 50%;
-}
-
-.phone-lineup.said-working {
-  color: var(--accent);
-}
-
-.phone-lineup.said-working .state-dot {
-  background: var(--accent);
-  animation: breathe 1.6s ease-in-out infinite;
-}
-
-.phone-lineup.full {
-  color: var(--warning-text);
-  background: var(--warning-bg);
-}
-
-.phone-lineup.full .state-dot {
-  background: var(--warning-text);
 }
 
 .phone-foot {
@@ -8095,111 +8009,53 @@ html.phone .preview-bar .icon-button {
   white-space: nowrap;
 }
 
-/* Add a host: Address wide, User and Port beside it; what the SSH config knows drops over the sheet under them. */
+/* Add a host: Address wide, User and Port beside it. */
 .dialog.add-host {
-  width: min(540px, 94vw);
-  padding: 22px 24px 18px;
-}
-
-.add-host .add-host-lead {
-  margin: 0 0 16px;
-  font-size: 12px;
-  color: var(--text-faint);
+  width: min(520px, 94vw);
 }
 
 .add-host-grid {
-  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 128px 72px;
   gap: 10px;
+  margin-top: 12px;
 }
 
 .add-host input[type='text'],
 .add-host input[type='password'],
 .add-host select {
   width: 100%;
-  min-width: 0;
-  height: 30px;
-  padding: 0 9px;
-  background: var(--field);
-  border-radius: var(--radius);
-}
-
-.add-host input:focus,
-.add-host select:focus {
-  border-color: var(--accent);
-  outline: none;
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.host-auth-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
 }
 
 .host-auth {
-  height: 30px;
-  align-items: stretch;
-}
-
-.host-auth button {
-  height: auto;
-  padding: 0 11px;
-}
-
-.host-auth-row select,
-.host-auth-row input {
-  flex: 1;
+  width: max-content;
+  margin-bottom: 4px;
 }
 
 .host-offers {
-  position: absolute;
-  top: calc(100% - 8px);
-  right: 0;
-  left: 0;
-  z-index: 5;
   display: flex;
   flex-direction: column;
-  max-height: 260px;
-  padding: 4px;
-  overflow-y: auto;
-  background: var(--menu);
+  padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--lift);
-  backdrop-filter: saturate(180%) blur(30px);
-  animation: pop var(--settle) var(--ease) both;
-}
-
-.host-offers-title {
-  padding: 5px 9px 3px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-faint);
+  border-radius: var(--radius);
 }
 
 .host-offers button {
   display: flex;
-  flex-shrink: 0;
-  gap: 16px;
-  align-items: baseline;
+  gap: 8px;
   justify-content: space-between;
-  min-width: 0;
-  padding: 6px 9px;
+  padding: 4px 8px;
   text-align: left;
-  white-space: nowrap;
-  border-radius: 5px;
+  border-radius: 4px;
 }
 
-.host-offers button.lit {
+.host-offers button:hover {
   background: var(--bg-hover);
 }
 
 .host-offers .name {
-  overflow: hidden;
+  font-family: var(--font-code);
   color: var(--text);
-  text-overflow: ellipsis;
 }
 
 .host-offers .says {
@@ -8674,188 +8530,262 @@ html.phone .preview-bar .icon-button {
   opacity: 0.55;
 }
 
-/*
- * What a host is, in motion, 5 s a round: the middle card here is sent, a dot
- * crosses to the host, Claude Code writes there, and a dot brings the answer
- * back to the card. Still, it stands at the answer.
- */
-.hosts-motion {
-  display: grid;
-  grid-template-columns: 1fr minmax(64px, 1.2fr) 1fr;
-  gap: 10px;
-  align-items: start;
-  padding: 14px 16px 10px;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+</style>
+<style>
+/* The page around the block, not part of the design. */
+[data-theme-frame='light'] {
+  --bg: #ffffff;
+  --bg-sunken: #f4f4f6;
+  --bg-raised: #ffffff;
+  /* The person's own message, and the field it was written in. */
+  --bubble: #f4f4f6;
+  --field: #ffffff;
+  --bg-hover: rgb(0 0 0 / 5%);
+  --bg-active: rgb(51 183 70 / 12%);
+  --border: #e3e3e6;
+  --border-strong: #cdcdd2;
+  --text: #1d1d1f;
+  --text-dim: #5c5c61;
+  --text-faint: #737378;
+  --accent: #1f8031;
+  --accent-text: #ffffff;
+  --accent-soft: #e6f4e8;
+  --danger: #c0392b;
+  --danger-solid: #c0392b;
+  --danger-text: #ffffff;
+  --warning-bg: #fdf3e0;
+  --warning-text: #8a6116;
+  --success-text: #2a7d3a;
+  --highlight: #fbeeb6;
+  --tooltip-bg: #2b2b2e;
+  --tooltip-text: #f2f2f4;
+  --code-bg: #f6f6f8;
+  /* The phone's own: iOS grouped lists, their hairlines, and the coloured backs of a swiped row. */
+  --ground: #f2f2f5;
+  --fill: rgb(118 118 128 / 12%);
+  --fill-strong: rgb(118 118 128 / 20%);
+  --separator: rgb(60 60 67 / 18%);
+  --scrim: rgb(0 0 0 / 28%);
+  --glass: rgb(249 249 251 / 82%);
+  --menu: rgb(246 246 248 / 96%);
+  --lift: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 18px 50px rgb(0 0 0 / 22%);
+  --review-solid: #c08a1e;
+  --done-solid: #2e9a42;
+  --more-solid: #8e8e93;
+  --favorite: #ffcc00;
+  --sheet: #f2f2f5;
+  --on-solid: #ffffff;
+  /* The Mac's screen is shown on black in either theme, as a photo or a video is. */
+  --screen: #000000;
+  --screen-bar: rgb(0 0 0 / 55%);
+  --screen-text: #f2f2f4;
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
+  /* A project's name, in the colour it was given: sky, blue, indigo, violet, purple, magenta, pink, slate. */
+  --project-0: hsl(196 80% 32%);
+  --project-1: hsl(220 70% 45%);
+  --project-2: hsl(258 55% 52%);
+  --project-3: hsl(300 45% 40%);
+  --project-4: hsl(338 65% 44%);
+  --project-5: hsl(176 70% 26%);
+  --project-6: hsl(30 40% 38%);
+  --project-7: hsl(215 16% 42%);
+}
+[data-theme-frame='dark'] {
+  --bg: #1e1e20;
+  --bg-sunken: #191919;
+  --bg-raised: #262629;
+  --bubble: #2a2a2d;
+  --field: #2a2a2d;
+  --bg-hover: rgb(255 255 255 / 7%);
+  --bg-active: rgb(74 200 92 / 18%);
+  --border: #35353a;
+  --border-strong: #4a4a50;
+  --text: #f2f2f4;
+  --text-dim: #a2a2a8;
+  --text-faint: #8e8e95;
+  --accent: #4ac85c;
+  --accent-text: #10210f;
+  --accent-soft: rgb(74 200 92 / 16%);
+  --danger: #e0796b;
+  --danger-solid: #e5484d;
+  --danger-text: #ffffff;
+  --warning-bg: #3a2f18;
+  --warning-text: #e0bb72;
+  --success-text: #7fc98d;
+  --highlight: #57481f;
+  --tooltip-bg: #3a3a3f;
+  --tooltip-text: #f2f2f4;
+  --code-bg: #1a1a1c;
+  --ground: #000000;
+  --fill: rgb(118 118 128 / 24%);
+  --fill-strong: rgb(118 118 128 / 36%);
+  --separator: rgb(84 84 88 / 55%);
+  --scrim: rgb(0 0 0 / 50%);
+  --glass: rgb(30 30 32 / 82%);
+  --menu: rgb(44 44 46 / 96%);
+  --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+  --review-solid: #a8781a;
+  --done-solid: #2b8a3c;
+  --more-solid: #636366;
+  --favorite: #ffd60a;
+  --sheet: #1c1c1e;
+  --on-solid: #ffffff;
+  --screen: #000000;
+  --screen-bar: rgb(0 0 0 / 55%);
+  --screen-text: #f2f2f4;
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
+  --project-0: hsl(196 70% 64%);
+  --project-1: hsl(220 85% 72%);
+  --project-2: hsl(258 75% 78%);
+  --project-3: hsl(300 50% 72%);
+  --project-4: hsl(338 75% 75%);
+  --project-5: hsl(172 50% 58%);
+  --project-6: hsl(32 40% 66%);
+  --project-7: hsl(215 18% 68%);
 }
 
-.hm-side {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
+html, body { overflow: auto; height: auto; }
+.proto { display: grid; grid-template-columns: 1fr 1fr; min-height: 100vh; }
+.proto-frame { min-width: 0; padding: 24px 0 40px; color: var(--text); background: var(--bg); }
+.proto-frame h2 { margin: 0 24px 4px; font-size: 13px; font-weight: 600; color: var(--text-faint); }
+.caption { margin: 22px 24px 8px; font-size: 11px; color: var(--text-faint); }
+</style>
+</head>
+<body>
+<main class="proto">
+  <section class="proto-frame" data-theme-frame="light">
+    <h2>Light</h2>
+    <div class="col" data-mount></div>
+  </section>
+  <section class="proto-frame" data-theme-frame="dark">
+    <h2>Dark</h2>
+    <div class="col" data-mount></div>
+  </section>
+</main>
+<script>
+const ICON = {
+  plus: 'M8 3.5v9M3.5 8h9',
+  right: 'M6.5 4 10.5 8 6.5 12',
+  check: 'M3 8.5 6.5 12 13 4.5',
+  close: 'M4 4l8 8M12 4l-8 8',
+  goal: 'M8 13.8a5.8 5.8 0 1 0 0-11.6 5.8 5.8 0 0 0 0 11.6ZM8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
+  pencil: 'M10.4 3.3a1.5 1.5 0 0 1 2.2 2.1l-7 7-2.9.8.8-2.9ZM9.2 4.5l2.2 2.2',
+  chat: 'M13.5 9a2 2 0 0 1-2 2H6.2L3 13.5V4.5a2 2 0 0 1 2-2h6.5a2 2 0 0 1 2 2Z',
+}
+const icon = (name, size = 12, cls = '') =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${cls ? ` class="${cls}"` : ''}><path d="${ICON[name]}"/></svg>`
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const TINT = { geckit: 3, pinch: 6, trailmap: 1 }
+const tint = (p) => `style="--tint: var(--project-${TINT[p] ?? 2})"`
+const many = (n) => (n === 1 ? 'a conversation' : `${n} conversations`)
+
+function fresh() {
+  return [
+    { id: 'one', tasks: [{ project: 'geckit', title: 'Test session', text: 'This is a test conversation started for testing. Reply with one line saying you are here, then stop.' }] },
+    {
+      id: 'batch',
+      tasks: [
+        { project: 'geckit', title: 'Fix the flaky upload test', text: 'The upload test in client/test/upload.test.ts fails about one run in five on CI. Find why - it looks like a timer that is not awaited - fix it, and run the suite ten times to show it holds.', goal: 'npm test passes ten times in a row' },
+        { project: 'pinch', title: 'Honour Retry-After on 429', text: 'When the API answers 429, pinch retries at once and is rate limited again. Read Retry-After and wait that long before the next try; cap it at 60 seconds.', goal: 'a test that fakes a 429 with Retry-After: 3 waits three seconds', open: true, noting: true, note: 'The header can be a date too' },
+        { project: 'trailmap', title: 'Cache elevation charts offline', text: 'Charts are fetched every time a trail opens. Keep the last 50 on disk so they draw offline.', off: true },
+      ],
+    },
+    { id: 'answered', answered: 'Started 2 of 3', rows: [['geckit', 'Fix the flaky upload test', 'working', 'said-working'], ['pinch', 'Honour Retry-After on 429', 'in review', 'said-review'], ['trailmap', 'Cache elevation charts offline', 'refused']], reply: 'The charts can wait until the offline mode lands.' },
+    { id: 'gone', gone: true, rows: [['geckit', 'Test session', 'not started']] },
+  ]
 }
 
-.hm-box {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  width: 100%;
-  max-width: 132px;
-  height: 64px;
-  padding: 8px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
+function waiting(b) {
+  const one = b.tasks.length === 1
+  const ticked = b.tasks.filter((t) => !t.off).length
+  const primary = one ? 'Start' : ticked === b.tasks.length ? 'Start all' : `Start ${ticked} of ${b.tasks.length}`
+  const rows = b.tasks.map((t, i) => {
+    const open = one || t.open
+    const body = open
+      ? `<div class="request-body">
+          <div class="request-message">${esc(t.text)}</div>
+          <div class="request-goal${t.goal ? '' : ' none'}">${icon('goal', 11)}<span>${t.goal ? esc(t.goal) : 'No goal. It stops after its first answer.'}</span></div>
+          ${t.noting ? `<label class="request-note">${icon('pencil', 11)}<input type="text" placeholder="Note for this conversation, added under the message" value="${esc(t.note ?? '')}" data-note="${i}"></label>` : `<button type="button" class="request-note-add" data-noting="${i}">${icon('pencil', 11)}Add a note</button>`}
+        </div>`
+      : ''
+    const line = `<span class="request-title">${esc(t.title)}</span><span class="request-project tinted" ${tint(t.project)}>${t.project}</span>`
+    return `<div class="request-row${open ? ' open' : ''}${t.off ? ' off' : ''}${one ? ' alone' : ''}">
+      <div class="request-line">
+        ${one ? `<span class="request-open">${line}</span>` : `<input type="checkbox" ${t.off ? '' : 'checked'} data-tick="${i}" aria-label="Start ${esc(t.title)}"><button type="button" class="request-open" data-open="${i}" aria-expanded="${!!open}">${line}${icon('right', 12, 'chevron')}</button>`}
+      </div>${body}
+    </div>`
+  })
+  return `<div class="card request" data-block="${b.id}">
+    <div class="request-head">
+      <span class="request-glyph">${icon('plus', 12)}</span>
+      <div class="request-heading">
+        <div class="card-title">Claude wants to start ${many(b.tasks.length)}</div>
+        <div class="request-sub">${one ? 'Nothing starts until you press Start.' : 'Untick any you do not want. Nothing starts until you press Start.'}</div>
+      </div>
+    </div>
+    <div class="request-rows">${rows.join('')}</div>
+    <div class="request-foot">
+      ${b.replying ? `<input type="text" class="request-reply" placeholder="Reply to Claude (optional)" data-reply>` : `<button type="button" class="request-reply-add" data-replying>${icon('chat', 11)}Reply to Claude</button><span class="spacer"></span>`}
+      <button type="button" class="quiet" data-refuse>${one ? 'Refuse' : 'Refuse all'}</button>
+      <button type="button" class="primary" data-start ${ticked === 0 ? 'disabled' : ''}>${primary}</button>
+    </div>
+  </div>`
 }
 
-.hm-label {
-  font-size: 11px;
-  color: var(--text-faint);
+function done(b) {
+  return `<div class="card request">
+    <div class="request-head">
+      <span class="request-glyph ${b.gone ? 'gone' : 'done'}">${icon(b.gone ? 'close' : 'check', 12)}</span>
+      <div class="request-heading"><div class="card-title">${b.gone ? 'Claude stopped waiting for these' : b.answered}</div>
+      ${b.gone ? '<div class="request-sub">Nothing was started.</div>' : ''}</div>
+    </div>
+    <div class="request-rows">${b.rows
+      .map(([p, title, said, tone]) => `<div class="request-row"><div class="request-line">
+        <${tone ? 'button type="button"' : 'span'} class="request-open"><span class="request-title">${esc(title)}</span><span class="request-project tinted" ${tint(p)}>${p}</span></${tone ? 'button' : 'span'}>
+        ${tone ? `<span class="request-said state-said ${tone}"><span class="state-dot"></span>${said}</span>` : `<span class="request-said refused">${said}</span>`}
+      </div></div>`)
+      .join('')}</div>
+    ${b.reply ? `<div class="request-replied">You replied: ${esc(b.reply)}</div>` : ''}
+  </div>`
 }
 
-.hm-card {
-  height: 12px;
-  background: var(--fill);
-  border-radius: 3px;
-}
-
-.hm-card.hm-sent {
-  animation: hm-sent 5s var(--ease) infinite;
-}
-
-.hm-there {
-  gap: 6px;
-  font-family: var(--font-code);
-}
-
-.hm-prompt {
-  font-size: 10px;
-  line-height: 1;
-  color: var(--text-dim);
-}
-
-.hm-spark {
-  color: #d97757;
-}
-
-.hm-line {
-  height: 5px;
-  background: var(--text-faint);
-  border-radius: 3px;
-  opacity: 0.5;
-  transform-origin: left;
-  animation: hm-line 5s linear infinite;
-}
-
-.hm-line:nth-of-type(3) {
-  width: 80%;
-  animation-name: hm-line-2;
-}
-
-.hm-line:nth-of-type(4) {
-  width: 55%;
-  animation-name: hm-line-3;
-}
-
-.hm-wire {
-  position: relative;
-  height: 64px;
-}
-
-.hm-wire::before {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  left: 0;
-  border-top: 1.5px dashed var(--border-strong);
-  content: '';
-}
-
-.hm-ssh {
-  position: absolute;
-  top: calc(50% + 8px);
-  left: 50%;
-  font-family: var(--font-code);
-  font-size: 10px;
-  color: var(--text-faint);
-  transform: translateX(-50%);
-}
-
-.hm-dot {
-  position: absolute;
-  top: calc(50% - 3.25px);
-  width: 8px;
-  height: 8px;
-  background: var(--accent);
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  opacity: 0;
-}
-
-.hm-out {
-  animation: hm-out 5s var(--ease) infinite;
-}
-
-.hm-back {
-  animation: hm-back 5s var(--ease) infinite;
-}
-
-@keyframes hm-sent {
-  0%, 4% { background: var(--fill); box-shadow: none; }
-  8%, 30% { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
-  76% { background: var(--fill); box-shadow: none; }
-  82%, 92% { background: var(--accent); box-shadow: none; }
-  100% { background: var(--fill); }
-}
-
-@keyframes hm-out {
-  0%, 10% { left: 0; opacity: 0; }
-  13% { opacity: 1; }
-  30% { left: calc(100% - 8px); opacity: 1; }
-  33%, 100% { left: calc(100% - 8px); opacity: 0; }
-}
-
-@keyframes hm-back {
-  0%, 62% { left: calc(100% - 8px); opacity: 0; }
-  65% { opacity: 1; }
-  80% { left: 0; opacity: 1; }
-  83%, 100% { left: 0; opacity: 0; }
-}
-
-@keyframes hm-line {
-  0%, 33% { transform: scaleX(0); }
-  43%, 92% { transform: scaleX(1); }
-  100% { transform: scaleX(0); }
-}
-
-@keyframes hm-line-2 {
-  0%, 43% { transform: scaleX(0); }
-  51%, 92% { transform: scaleX(1); }
-  100% { transform: scaleX(0); }
-}
-
-@keyframes hm-line-3 {
-  0%, 51% { transform: scaleX(0); }
-  59%, 92% { transform: scaleX(1); }
-  100% { transform: scaleX(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hosts-motion * {
-    animation: none !important;
+const states = { light: fresh(), dark: fresh() }
+function draw() {
+  for (const frame of document.querySelectorAll('[data-theme-frame]')) {
+    const list = states[frame.dataset.themeFrame]
+    frame.querySelector('[data-mount]').innerHTML = list
+      .map((b) => `<div class="caption">${{ one: 'One task, waiting', batch: 'A batch, one row opened with a note, one unticked', answered: 'Answered', gone: 'Withdrawn' }[b.id] ?? ''}</div><div class="turn">${b.tasks ? waiting(b) : done(b)}</div>`)
+      .join('')
   }
-
-  .hm-card.hm-sent {
-    background: var(--accent);
+}
+document.addEventListener('click', (e) => {
+  const frame = e.target.closest('[data-theme-frame]')
+  const card = e.target.closest('[data-block]')
+  if (!frame || !card) return
+  const b = states[frame.dataset.themeFrame].find((x) => x.id === card.dataset.block)
+  const t = (el) => b.tasks[Number(el.dataset.open ?? el.dataset.noting ?? el.dataset.tick)]
+  const el = e.target.closest('[data-open],[data-noting],[data-tick],[data-replying],[data-start],[data-refuse]')
+  if (!el) return
+  if ('open' in el.dataset) t(el).open = !t(el).open
+  else if ('noting' in el.dataset) t(el).noting = true
+  else if ('tick' in el.dataset) t(el).off = !el.checked
+  else if ('replying' in el.dataset) b.replying = true
+  else if ('start' in el.dataset || 'refuse' in el.dataset) {
+    const start = 'start' in el.dataset
+    const n = start ? b.tasks.filter((x) => !x.off).length : 0
+    Object.assign(b, { answered: n === 0 ? (b.tasks.length === 1 ? 'Refused' : `Refused all ${b.tasks.length}`) : n === b.tasks.length ? `Started ${n}` : `Started ${n} of ${b.tasks.length}`, rows: b.tasks.map((x) => (start && !x.off ? [x.project, x.title, 'working', 'said-working'] : [x.project, x.title, 'refused'])), tasks: undefined })
   }
-}
+  draw()
+  const focus = frame.querySelector('[data-block="' + b.id + '"] input[data-note]:last-of-type, [data-block="' + b.id + '"] input[data-reply]')
+  focus?.focus()
+})
+document.addEventListener('input', (e) => {
+  const frame = e.target.closest('[data-theme-frame]')
+  const card = e.target.closest('[data-block]')
+  if (frame && card && 'note' in e.target.dataset) states[frame.dataset.themeFrame].find((x) => x.id === card.dataset.block).tasks[Number(e.target.dataset.note)].note = e.target.value
+})
+draw()
+</script>
 
-.hosts-section-motion {
-  margin: 6px 0 4px;
-}
-
-.add-host .hosts-motion {
-  margin: 0 0 16px;
-}
+</body>
+</html>

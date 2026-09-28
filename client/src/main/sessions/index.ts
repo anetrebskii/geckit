@@ -3,11 +3,16 @@ import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename } from 'node:path'
 
+import { letGo, taken } from '../lineup'
+import type { Standing } from '../lineup'
+
 import type {
   BackgroundTask,
   Browser,
   CardAnswer,
+  ChatFound,
   ChatSession,
+  Lineup,
   HiddenChat,
   HiddenFolder,
   HiddenReason,
@@ -17,6 +22,8 @@ import type {
   CutOff,
   McpServer,
   PlanUsage,
+  RequestChoice,
+  RequestTask,
   SessionGoal,
   SessionImage,
   SessionItem,
@@ -93,6 +100,8 @@ export interface SessionNote {
   readonly cut?: { readonly root: string; readonly at: number }
   /** Messages waiting for the turn before them, kept so a restart does not lose them. */
   readonly queued?: readonly Queued[]
+  /** Begun with a message that waits for a slot, and so nothing on disk yet: the project it is in. */
+  readonly unborn?: string
   /** When GeckIt first wrote anything about it. */
   readonly created?: number
   /** Every move between columns, oldest first, so what was done can be told with when. */
@@ -103,6 +112,10 @@ export interface SessionNote {
   readonly goes?: number
   /** A general question kept for good rather than deleted a day after its last answer. */
   readonly stays?: boolean
+  /** The conversation that asked for this one with `geckit start`. */
+  readonly parent?: string
+  /** What it asked for with `geckit start` and how each was answered, which the tool's own file has no place for. */
+  readonly requests?: readonly Kept[]
 }
 
 export interface Move {
@@ -177,6 +190,13 @@ export interface SessionsDeps {
   readonly notify: (notice: SessionNotice) => void
   /** Points the window at a conversation it is not showing, without bringing it forward. */
   readonly show?: (id: string) => void
+  /** How many conversations may work at once; nought, or none given, is no limit. */
+  readonly limit?: () => number
+  /** In progress as it was dragged into order on the board, which is who a free slot goes to first. */
+  readonly order?: () => readonly string[]
+  /** How full the conversations working are, each time it may have changed. */
+  readonly lineup?: (lineup: Lineup) => void
+  readonly later?: (run: () => void, ms: number) => () => void
   // What follows is the outside world, replaceable so the rules can be tested without it.
   readonly claude?: typeof holdClaude
   readonly disk?: {
@@ -206,7 +226,7 @@ export interface SessionsDeps {
 }
 
 /** Something said about a session that the tool's own file will not say back. */
-interface Kept {
+export interface Kept {
   /** The item it was under, so it goes back where it was. */
   readonly after: string | undefined
   readonly item: SessionItem
@@ -263,6 +283,8 @@ interface Live {
   clearing: boolean
   /** Messages sent while it worked, oldest first. */
   queued: Queued[]
+  /** Its turn ended in a failure, so its queued messages are left for the person rather than sent. */
+  parked: boolean
   /** Started as a copy of another conversation, which its first run is told. */
   fork: { readonly from: string; readonly at?: string } | undefined
   /** A general question, which is never listed and is thrown away a day after it has gone quiet. */
@@ -288,6 +310,13 @@ const QUIET = 10 * 60_000
 
 /** How long a general question is kept once it has gone quiet. */
 const QUESTION_KEPT = 24 * 60 * 60_000
+/** A job done, the queue is looked at after a pause somewhere in here, so a conversation answered straight away keeps going. */
+const PAUSE = { least: 3_000, most: 10_000 }
+
+function after(run: () => void, ms: number): () => void {
+  const timer = setTimeout(run, ms)
+  return () => clearTimeout(timer)
+}
 
 const running = (task: BackgroundTask): boolean => task.status === 'running'
 
@@ -350,9 +379,46 @@ function grantKeys(wanted: Wanted): string[] {
   }
 }
 
+/** A task in a request, with the folder it starts in. */
+export interface Asking extends RequestTask {
+  readonly root: string
+}
+
+/** How each task in a request was answered, in the order asked, and what the person said back. */
+export interface RequestAnswered {
+  readonly tasks: readonly { readonly answer: 'started' | 'queued' | 'refused'; readonly id?: string; readonly note?: string }[]
+  readonly reply?: string
+}
+
+interface Pending {
+  readonly session: string
+  readonly roots: readonly string[]
+  readonly mode: SessionMode
+  readonly answered: (answered: RequestAnswered | undefined) => void
+}
+
+/**
+ * GeckIt's own `geckit start`, run as itself: the request it makes is the
+ * question, so Claude Code's own permission for it would ask the same thing
+ * twice. A heredoc feeding it tasks is let through too, but nothing chained.
+ */
+const GECKIT_START = /^(?:~|\$HOME|\/[^\s;&|<>`$]*)\/\.geckit\/bin\/geckit(?:-local)? start(?: [^;&|<>`$\n]*?)?(?: <<-?'([A-Z_]+)')?$/
+
+export function startsConversations(command: string): boolean {
+  const [first = '', ...rest] = command.trim().split('\n')
+  const matched = GECKIT_START.exec(first)
+  if (matched === null) return false
+  const tag = matched[1]
+  return tag === undefined ? rest.length === 0 : rest.indexOf(tag) === rest.length - 1
+}
+
+const conversations = (count: number): string => (count === 1 ? 'a conversation' : `${String(count)} conversations`)
+
 export class Sessions {
   readonly #deps: SessionsDeps
   readonly #live = new Map<string, Live>()
+  /** Requests from `geckit start` waiting for an answer, by the item showing them. */
+  readonly #requests = new Map<string, Pending>()
   readonly #rows = new Map<string, Row>()
   #watching: string | undefined
   #plan: PlanUsage | undefined
@@ -368,9 +434,19 @@ export class Sessions {
   #looking: Promise<void> | undefined
   /** Counts the versions seen, so a window the one before measured is not kept once it lands. */
   #generation = 0
+  /** Given a slot and not seen working yet, and since when. */
+  /** The look at the queue waiting out its pause. */
+  #glancing: (() => void) | undefined
 
   constructor(deps: SessionsDeps) {
     this.#deps = deps
+    // Conversations begun with a message that was still waiting for a slot when GeckIt closed.
+    for (const [id, note] of Object.entries(deps.notes.all())) {
+      if (note.unborn === undefined || (note.queued ?? []).length === 0) continue
+      const live = this.#fresh(id, note.unborn, note.title ?? '', sessionMode(note.mode))
+      live.queued = [...(note.queued ?? [])]
+      live.chosen = note.model
+    }
     // The general questions held when GeckIt last closed, each deleted when its day runs out.
     for (const [id, note] of Object.entries(deps.notes.all())) {
       if ((note.question !== true && note.stays !== true) || note.hidden === true) continue
@@ -516,7 +592,7 @@ export class Sessions {
       if (note?.hidden === true) continue
       if (live === undefined && row?.driven === true && note?.here !== true && note?.shown !== true) continue
       // Held only because it was looked at, and the tool has nothing under that id any more.
-      if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0) {
+      if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0 && live.queued.length === 0) {
         continue
       }
       const quiet = live === undefined || live.state === 'idle'
@@ -530,20 +606,23 @@ export class Sessions {
       const first = row === undefined ? [...(live?.items.values() ?? [])].find((item) => item.kind === 'mine') : undefined
       const work = row?.work ?? (first?.kind === 'mine' ? workItem(first.text) : undefined)
       const queued = live?.queued ?? note?.queued ?? []
+      const asking = this.#asking(id)
       sessions.push({
         id,
         root: where,
         ...(project === undefined ? {} : { project }),
         title: note?.title ?? live?.title ?? row?.title ?? '',
         stands:
-          (quiet
+          (asking !== undefined
+            ? `Wants to start ${conversations(asking)}`
+            : quiet
             ? runs !== undefined
               ? `Running !${runs.command}`
               : note?.cut !== undefined
                 ? 'Stopped when GeckIt closed'
                 : live?.stands || row?.stands
             : live.stands) ?? '',
-        state: quiet && note?.unread === true ? 'unread' : (live?.state ?? 'idle'),
+        state: asking !== undefined ? 'asks' : quiet && note?.unread === true ? 'unread' : (live?.state ?? 'idle'),
         at: Math.max(live?.at ?? 0, row?.at ?? 0),
         here: note?.here === true,
         mode: live?.mode ?? sessionMode(note?.mode),
@@ -559,9 +638,11 @@ export class Sessions {
         ...(queued.length === 0
           ? {}
           : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0 })) }),
+        ...(live !== undefined && this.#waiting(live) ? { waits: true } : {}),
         ...(live?.question === true ? { question: true } : {}),
         ...(live?.goes === undefined ? {} : { goes: live.goes }),
         ...(live?.stays === true ? { stays: true } : {}),
+        ...(note?.parent === undefined ? {} : { parent: note.parent }),
         ...(used === undefined && cost === undefined
           ? {}
           : {
@@ -577,7 +658,187 @@ export class Sessions {
   }
 
   #changed(): void {
-    this.#deps.changed(this.#listed())
+    const all = this.#listed()
+    this.#deps.changed(all)
+    this.#deps.lineup?.({ working: taken(this.#standing(all)), limit: this.#deps.limit?.() ?? 0 })
+  }
+
+  /** Has queued messages of its own to send and no turn running, so it waits for a slot. One cut off by GeckIt closing waits for its continue instead. */
+  #waiting(live: Live): boolean {
+    return (
+      live.queued.length > 0 &&
+      live.state !== 'working' &&
+      live.state !== 'asks' &&
+      !live.parked &&
+      !live.clearing &&
+      this.#deps.notes.all()[live.id]?.cut === undefined
+    )
+  }
+
+  #standing(all: readonly ChatSession[]): Standing[] {
+    return all.map((one) => {
+      const live = this.#live.get(one.id)
+      return {
+        id: one.id,
+        state: one.state,
+        at: one.at,
+        ...(one.status === undefined ? {} : { status: one.status }),
+        waiting: live !== undefined && this.#waiting(live),
+      }
+    })
+  }
+
+  /** A message to this conversation may go now: there is no limit, or fewer are working than the limit. */
+  #may(): boolean {
+    const limit = this.#deps.limit?.() ?? 0
+    return limit === 0 || taken(this.#standing(this.#listed())) < limit
+  }
+
+  /** A job is done: after the pause, the cards are looked at from the top and those with queued messages start, as many as there is room for. */
+  #glance(): void {
+    if (this.#glancing !== undefined) return
+    const limit = this.#deps.limit?.() ?? 0
+    const pause = limit === 0 ? 0 : PAUSE.least + Math.random() * (PAUSE.most - PAUSE.least)
+    this.#glancing = (this.#deps.later ?? after)(() => {
+      this.#glancing = undefined
+      for (const id of letGo(this.#standing(this.#listed()), this.#deps.limit?.() ?? 0, this.#deps.order?.() ?? [])) this.carryOn(id)
+    }, pause)
+  }
+
+  /** Queued messages holding every word asked, in these projects: all there is to find in a conversation not begun yet, which has no file. */
+  queuedHolding(roots: readonly string[], asked: string): ChatFound[] {
+    const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
+    if (words.length === 0) return []
+    return this.#listed(roots).flatMap((one) => {
+      const hits = (this.#live.get(one.id)?.queued ?? []).filter((queued) => words.every((word) => queued.message.text.toLowerCase().includes(word)))
+      const last = hits.at(-1)
+      return last === undefined ? [] : [{ id: one.id, root: one.root, count: hits.length, said: last.message.text.replace(/\s+/g, ' ').trim().slice(0, 160) }]
+    })
+  }
+
+  /** The limit changed: whatever it makes room for goes now. */
+  again(): void {
+    this.#changed()
+    this.#glance()
+  }
+
+  /** How many conversations a session is waiting to be let start, where it is. */
+  #asking(id: string): number | undefined {
+    const live = this.#live.get(id)
+    const waiting = [...this.#requests].filter(([, pending]) => pending.session === id)
+    if (live === undefined || waiting.length === 0) return undefined
+    return waiting.reduce((count, [key]) => {
+      const item = live.items.get(key)
+      return count + (item?.kind === 'request' ? item.tasks.length : 0)
+    }, 0)
+  }
+
+  /**
+   * Claude asks, with `geckit start`, for conversations to be started. The
+   * request is shown in the conversation that asked and nothing starts until
+   * the person answers; the answer comes back as one, for every task at once.
+   * Nothing comes back where the command stopped waiting first.
+   */
+  request(session: string, tasks: readonly Asking[], mode: SessionMode, gone: AbortSignal): Promise<RequestAnswered | undefined> {
+    const live = this.#live.get(session) ?? this.#adopt(session)
+    if (live === undefined) return Promise.resolve(undefined)
+    const item: SessionItem = { kind: 'request', id: `request:${randomUUID()}`, tasks: tasks.map(({ root: _root, ...task }) => task) }
+    live.kept.push({ after: [...live.items.keys()].at(-1), item })
+    live.items.set(item.id, item)
+    live.at = this.#now()
+    return new Promise((answered) => {
+      this.#requests.set(item.id, { session, roots: tasks.map((task) => task.root), mode, answered })
+      gone.addEventListener('abort', () => this.#withdrawn(item.id))
+      this.#deps.items({ id: live.id, items: [item] })
+      this.#changed()
+      if (this.#watching === live.id) return
+      const projects = [...new Set(tasks.map((task) => task.project))].join(', ')
+      this.#deps.notify({
+        session: live.id,
+        title: `Wants to start ${conversations(tasks.length)} - ${projects}`,
+        subtitle: this.#deps.notes.all()[live.id]?.title ?? live.title,
+        body: tasks.map((task) => task.title).join('\n'),
+        asks: true,
+        request: item.id,
+      })
+    })
+  }
+
+  /** The person's answer to a request: the ticked tasks start, each with its note, and the rest are refused. */
+  async answerRequest(request: string, choice: RequestChoice): Promise<void> {
+    const pending = this.#requests.get(request)
+    const live = pending === undefined ? undefined : this.#live.get(pending.session)
+    const item = live?.items.get(request)
+    if (pending === undefined || live === undefined || item?.kind !== 'request') return
+    this.#requests.delete(request)
+    const reply = choice.reply?.trim() || undefined
+    const tasks: RequestTask[] = []
+    const waits = new Set<string>()
+    for (const [index, task] of item.tasks.entries()) {
+      const root = pending.roots[index]
+      if (choice.start[index] !== true || root === undefined) {
+        tasks.push(task)
+        continue
+      }
+      const note = choice.notes[index]?.trim() || undefined
+      const text = note === undefined ? task.text : `${task.text}\n\nNote: ${note}`
+      const noted = note === undefined ? {} : { note }
+      const id = await this.send({ root, mode: pending.mode, text })
+      this.#note(id, { parent: live.id })
+      if (task.goal !== undefined) await this.send({ session: id, root, mode: pending.mode, text: `/goal ${task.goal}` })
+      const child = this.#live.get(id)
+      if (child !== undefined && this.#waiting(child)) waits.add(id)
+      tasks.push({ ...task, started: id, ...noted })
+    }
+    this.#settle(live, { ...item, tasks, answer: { how: 'answered', where: choice.where, ...(reply === undefined ? {} : { reply }) } })
+    pending.answered({
+      tasks: tasks.map((task) =>
+        task.started !== undefined
+          ? { answer: waits.has(task.started) ? 'queued' : 'started', id: task.started, ...(task.note === undefined ? {} : { note: task.note }) }
+          : { answer: 'refused' },
+      ),
+      ...(reply === undefined ? {} : { reply }),
+    })
+  }
+
+  /** A conversation given a slot: the first of its queued messages goes. */
+  carryOn(id: string): void {
+    const live = this.#live.get(id) ?? this.#adopt(id)
+    const next = live?.queued[0]
+    if (live === undefined || next === undefined) return
+    this.#queue(live, live.queued.slice(1))
+    void this.send({ ...next.message, mode: live.mode }, true)
+  }
+
+  /** Start all, from a notice: every task starts, with no notes. */
+  startAll(request: string, where: 'mac' | 'phone'): Promise<void> {
+    const item = [...this.#live.values()].map((live) => live.items.get(request)).find((one) => one !== undefined)
+    const count = item?.kind === 'request' ? item.tasks.length : 0
+    return this.answerRequest(request, { start: Array<boolean>(count).fill(true), notes: [], where })
+  }
+
+  /** The command that asked stopped waiting, so nothing it asked for will start. */
+  #withdrawn(request: string): void {
+    const pending = this.#requests.get(request)
+    if (pending === undefined) return
+    this.#requests.delete(request)
+    const live = this.#live.get(pending.session)
+    const item = live?.items.get(request)
+    if (live !== undefined && item?.kind === 'request') this.#settle(live, { ...item, answer: { how: 'withdrawn' } })
+    else this.#changed()
+    pending.answered(undefined)
+  }
+
+  /** A request as it was answered, shown and written down, so it is still there after a restart and `geckit linked` can read it. */
+  #settle(live: Live, item: Extract<SessionItem, { kind: 'request' }>): void {
+    live.items.set(item.id, item)
+    const kept = live.kept.find((one) => one.item.id === item.id)
+    const put: Kept = { after: kept?.after, item }
+    live.kept = live.kept.map((one) => (one.item.id === item.id ? put : one))
+    const written = (this.#deps.notes.all()[live.id]?.requests ?? []).filter((one) => one.item.id !== item.id)
+    this.#note(live.id, { requests: [...written, put] })
+    this.#deps.items({ id: live.id, items: [item] })
+    this.#changed()
   }
 
   /**
@@ -618,6 +879,7 @@ export class Sessions {
     live.used = row.used
     live.chosen = note?.model
     live.queued = [...(note?.queued ?? [])]
+    live.kept = [...(note?.requests ?? [])]
     return live
   }
 
@@ -657,6 +919,7 @@ export class Sessions {
       goal: undefined,
       clearing: false,
       queued: [],
+      parked: false,
       fork: undefined,
       question,
       goes: undefined,
@@ -704,7 +967,8 @@ export class Sessions {
     live.items = items
   }
 
-  async send(message: SessionMessage): Promise<string> {
+  /** `go` is a message that is part of a turn already given its slot, so the limit never holds it. */
+  async send(message: SessionMessage, go = false): Promise<string> {
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
       live =
@@ -715,9 +979,13 @@ export class Sessions {
     } else if (live.driver === undefined) {
       await this.#reread(live)
     }
-    if (live.state === 'working' || live.state === 'asks') {
+    const busy = live.state === 'working' || live.state === 'asks'
+    // Written by the person, it is theirs again to be sent; a message waits behind the ones already queued, and for a slot.
+    if (!go) live.parked = false
+    const held = !busy && !go && !live.question && (live.queued.length > 0 || !this.#may())
+    if (busy || held) {
       // A goal keeps the turn going until it holds, so it is cleared by stopping the turn and clearing it once it has.
-      if (live.goal !== undefined && goalSent(message.text) === '') {
+      if (busy && live.goal !== undefined && goalSent(message.text) === '') {
         live.goal = undefined
         live.clearing = true
         this.stop(live.id)
@@ -728,8 +996,13 @@ export class Sessions {
       const waiting = goalSent(message.text)
       if (waiting !== undefined && waiting !== '') live.goal = { condition: waiting, checks: 0 }
       this.#queue(live, [...live.queued, { id: `queued:${randomUUID()}`, message: { ...message, session: live.id }, at: this.#now() }])
+      if (!live.begun && !this.#rows.has(live.id) && !live.question) this.#note(live.id, { title: live.title, mode: live.mode, unborn: live.root })
       this.#changed()
       return live.id
+    }
+    if (this.#deps.notes.all()[live.id]?.unborn !== undefined) {
+      const { unborn: _unborn, ...note } = this.#deps.notes.all()[live.id] ?? {}
+      this.#deps.notes.set(live.id, note)
     }
 
     live.mode = message.mode
@@ -1207,17 +1480,18 @@ export class Sessions {
     return this.send({ ...message, mode, session: live.id })
   }
 
-  /** On a start, the queues a closed GeckIt left waiting go on: the first message of each is sent, and the rest follow it. */
+  /** On a start, the conversations a closed GeckIt left with queued messages wait for a slot again, top of the board first. */
   async resumeQueues(): Promise<void> {
     for (const [id, note] of Object.entries(this.#deps.notes.all())) {
       const first = note.queued?.[0]
-      if (first === undefined || this.#live.get(id)?.state === 'working') continue
-      if (!this.#rows.has(id) && !this.#live.has(id)) await this.list([first.message.root])
-      const live = this.#live.get(id) ?? this.#adopt(id)
-      if (live === undefined || live.state === 'working' || live.state === 'asks') continue
-      this.#queue(live, live.queued.slice(1))
-      await this.send({ ...first.message, session: id, mode: live.mode })
+      if (first === undefined || this.#live.has(id)) continue
+      if (!this.#rows.has(id)) await this.list([first.message.root])
+      // Its turn is not continued: what was queued behind it goes instead, when a slot is free.
+      this.#uncut(id)
+      this.#adopt(id)
     }
+    this.#changed()
+    this.#glance()
   }
 
   /** Marked in review, blocked or done; nothing takes the mark off. */
@@ -1272,13 +1546,17 @@ export class Sessions {
       this.#uncut(id)
       return
     }
-    await this.send({
-      session: id,
-      root: cut.root,
-      mode: sessionMode(note.mode),
-      text: 'continue',
-      ...(note.model === undefined ? {} : { model: note.model }),
-    })
+    // It carries on a turn that had its slot when GeckIt closed, so it goes ahead of what was queued behind that turn.
+    await this.send(
+      {
+        session: id,
+        root: cut.root,
+        mode: sessionMode(note.mode),
+        text: 'continue',
+        ...(note.model === undefined ? {} : { model: note.model }),
+      },
+      true,
+    )
   }
 
   #uncut(id: string): void {
@@ -1718,7 +1996,7 @@ export class Sessions {
   #asked(live: Live, ask: string, wanted: Wanted, line?: string): void {
     const keys = grantKeys(wanted)
     const granted = keys.length > 0 && keys.every((key) => live.grants.has(key))
-    if (granted) {
+    if (granted || (wanted.kind === 'command' && startsConversations(wanted.command))) {
       live.driver?.answer(ask, 'once')
       return
     }
@@ -1843,15 +2121,14 @@ export class Sessions {
     if (items.length > 0 || gone.length > 0) {
       this.#deps.items({ id: live.id, items, ...(gone.length > 0 ? { gone } : {}) })
     }
-    // The next message waiting goes once this one is over, in the mode chosen by then. Stopping a turn is moving on to the next thing, so the queue carries on; an ending nobody asked for leaves them for the window to put back in the field.
-    const next = (signal.how === 'done' || signal.how === 'stopped') && !live.clearing ? live.queued[0] : undefined
-    if (next !== undefined) this.#queue(live, live.queued.slice(1))
-    if (next !== undefined) void this.send({ ...next.message, mode: live.mode })
+    // Its own queued messages wait for the look at the queue like any other's, so a card higher up goes first; an ending nobody asked for leaves them for the window to put back in the field.
+    live.parked = signal.how !== 'done' && signal.how !== 'stopped'
     this.#changed()
+    this.#glance()
     void this.#goal(live)
     if (live.clearing) {
       live.clearing = false
-      void this.send({ session: live.id, root: live.root, mode: live.mode, text: '/goal clear', ...(live.chosen === undefined ? {} : { model: live.chosen }) })
+      void this.send({ session: live.id, root: live.root, mode: live.mode, text: '/goal clear', ...(live.chosen === undefined ? {} : { model: live.chosen }) }, true)
     }
 
     this.#rest(live)

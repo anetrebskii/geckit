@@ -18,8 +18,11 @@ const IMPORT = '@GECKIT.md'
 
 const where = (): string => process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude')
 
-/** Where the command is written, and what it is called from a shell. */
-export const cliPath = (): string => join(homedir(), '.geckit', 'bin', 'geckit')
+/** Run from the source rather than installed; outside Electron, as in the tests, it is taken as installed. */
+const fromSource = (): boolean => (app as typeof app | undefined)?.isPackaged === false
+
+/** Where the command is written, and what it is called from a shell. Run from the source it is `geckit-local`, which reaches that copy. */
+export const cliPath = (): string => join(homedir(), '.geckit', 'bin', fromSource() ? 'geckit-local' : 'geckit')
 
 /**
  * The command, as a line that runs the application's own Node on the script
@@ -39,7 +42,7 @@ function launcher(): string {
 const COMMAND = (path: string): string => `
 ## Asking GeckIt about the work itself
 
-\`${path}\` answers about the conversations, and is the way to find out what was done today rather than reading Claude Code's own files. It only reads.
+\`${path}\` answers about the conversations, and is the way to find out what was done today rather than reading Claude Code's own files. Everything but \`start\` only reads.
 
 \`\`\`
 ${path} sessions --today
@@ -47,9 +50,36 @@ ${path} sessions --since 2d --project formula-business --status review
 ${path} sessions --today --json
 ${path} sessions --favorites
 ${path} show <id>
+${path} show <id> --last 10
 \`\`\`
 
 \`sessions\` prints one line each, newest first: a \\* for a favorite, the id, when it last changed, the project, how it stands - in progress, review, blocked or done - and the title. \`--today\` and \`--since\` also count one moved between columns in that time, and \`--favorites\` keeps only the favorites. \`show\` prints when it was created and each time it moved to another column, then what was said in it, the person and Claude, without what the tools printed. \`--json\` gives the same for reading with a program, with that history in \`history\` and \`favorite\` true or false.
+
+## Other conversations
+
+### Asking for new ones
+
+When work belongs in a conversation of its own - another project, or something that should not hold this one open - ask GeckIt to start it rather than doing it here or only mentioning it:
+
+\`\`\`
+${path} start --project <name> [--title <title>] [--goal <condition>] <text>
+${path} start --tasks tasks.json
+\`\`\`
+
+\`tasks.json\` is an array of \`{ "project": ..., "title": ..., "text": ..., "goal": ... }\`, at most 20. The project is its folder's name as \`sessions\` prints it. The title is what the person reads to decide, so make it say the work in a few words. Write each text so that a session knowing nothing of this one can act on it: what to do, where, and how to tell it is done.
+
+Send everything you have in one batch rather than one call each, and run the command in the background: it waits for the person's answer, which can take hours, and prints one line per task in the order sent - started or queued with its id, or refused - with the person's note on a task if there is one, and their reply to you last. A note on a started task was also given to that conversation. A queued task is a conversation already, whose first message waits until fewer of the person's conversations are working. A refusal is an answer: do not ask again for the same thing, and follow the reply.
+
+### Reading linked ones
+
+A conversation started this way remembers the one that asked for it.
+
+\`\`\`
+${path} linked
+${path} show <id> --last 10
+\`\`\`
+
+\`linked\` lists, for this conversation, the one it was started from, the ones it started and how each stands, and what it asked for and was refused. \`show --last\` reads the end of any of them. Look there before starting on anything a linked conversation may already have done or decided, and before telling the person how the work you asked for stands.
 `
 
 export const GUIDE = `# Working in GeckIt
@@ -89,6 +119,18 @@ export async function keepGuide(wanted: boolean): Promise<void> {
   const claude = join(folder, 'CLAUDE.md')
   const was = await readFile(claude, 'utf8').catch(() => '')
   const linked = was.split('\n').some((line) => line.trim() === IMPORT)
+  // Run from the source, it has its own command and leaves what Claude Code is told to the installed GeckIt.
+  if (fromSource()) {
+    if (!wanted || process.platform === 'win32') {
+      await rm(command, { force: true }).catch(() => undefined)
+      return
+    }
+    await mkdir(join(command, '..'), { recursive: true })
+      .then(() => writeFile(command, launcher()))
+      .then(() => chmod(command, 0o755))
+      .catch(() => undefined)
+    return
+  }
   if (!wanted) {
     await rm(guide, { force: true }).catch(() => undefined)
     await rm(command, { force: true }).catch(() => undefined)

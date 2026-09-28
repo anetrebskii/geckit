@@ -1,0 +1,8491 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<title>GeckIt - Claude asks GeckIt to start conversations</title>
+<style id="app-css">
+/* client/src/renderer/src/styles.css, inlined as it is, without the font imports. */
+
+/*
+ * One stylesheet for three windows.
+ *
+ * Everything is a token. A literal colour in a rule below is a mistake: a
+ * colour that exists in one theme only is a colour that is invisible in the
+ * other, and there is no way to notice that while writing the rule.
+ */
+
+:root,
+:root[data-theme='light'] {
+  --bg: #ffffff;
+  --bg-sunken: #f4f4f6;
+  --bg-raised: #ffffff;
+  /* The person's own message, and the field it was written in. */
+  --bubble: #f4f4f6;
+  --field: #ffffff;
+  --bg-hover: rgb(0 0 0 / 5%);
+  --bg-active: rgb(51 183 70 / 12%);
+  --border: #e3e3e6;
+  --border-strong: #cdcdd2;
+  --text: #1d1d1f;
+  --text-dim: #5c5c61;
+  --text-faint: #737378;
+  --accent: #1f8031;
+  --accent-text: #ffffff;
+  --accent-soft: #e6f4e8;
+  --danger: #c0392b;
+  --danger-solid: #c0392b;
+  --danger-text: #ffffff;
+  --warning-bg: #fdf3e0;
+  --warning-text: #8a6116;
+  --success-text: #2a7d3a;
+  --highlight: #fbeeb6;
+  --tooltip-bg: #2b2b2e;
+  --tooltip-text: #f2f2f4;
+  --code-bg: #f6f6f8;
+  /* The phone's own: iOS grouped lists, their hairlines, and the coloured backs of a swiped row. */
+  --ground: #f2f2f5;
+  --fill: rgb(118 118 128 / 12%);
+  --fill-strong: rgb(118 118 128 / 20%);
+  --separator: rgb(60 60 67 / 18%);
+  --scrim: rgb(0 0 0 / 28%);
+  --glass: rgb(249 249 251 / 82%);
+  --menu: rgb(246 246 248 / 96%);
+  --lift: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 18px 50px rgb(0 0 0 / 22%);
+  --review-solid: #c08a1e;
+  --done-solid: #2e9a42;
+  --more-solid: #8e8e93;
+  --favorite: #ffcc00;
+  --sheet: #f2f2f5;
+  --on-solid: #ffffff;
+  /* The Mac's screen is shown on black in either theme, as a photo or a video is. */
+  --screen: #000000;
+  --screen-bar: rgb(0 0 0 / 55%);
+  --screen-text: #f2f2f4;
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
+  /* A project's name, in the colour it was given: sky, blue, indigo, violet, purple, magenta, pink, slate. */
+  --project-0: hsl(196 80% 32%);
+  --project-1: hsl(220 70% 45%);
+  --project-2: hsl(258 55% 52%);
+  --project-3: hsl(300 45% 40%);
+  --project-4: hsl(338 65% 44%);
+  --project-5: hsl(176 70% 26%);
+  --project-6: hsl(30 40% 38%);
+  --project-7: hsl(215 16% 42%);
+}
+
+:root[data-theme='dark'] {
+  --bg: #1e1e20;
+  --bg-sunken: #191919;
+  --bg-raised: #262629;
+  --bubble: #2a2a2d;
+  --field: #2a2a2d;
+  --bg-hover: rgb(255 255 255 / 7%);
+  --bg-active: rgb(74 200 92 / 18%);
+  --border: #35353a;
+  --border-strong: #4a4a50;
+  --text: #f2f2f4;
+  --text-dim: #a2a2a8;
+  --text-faint: #8e8e95;
+  --accent: #4ac85c;
+  --accent-text: #10210f;
+  --accent-soft: rgb(74 200 92 / 16%);
+  --danger: #e0796b;
+  --danger-solid: #e5484d;
+  --danger-text: #ffffff;
+  --warning-bg: #3a2f18;
+  --warning-text: #e0bb72;
+  --success-text: #7fc98d;
+  --highlight: #57481f;
+  --tooltip-bg: #3a3a3f;
+  --tooltip-text: #f2f2f4;
+  --code-bg: #1a1a1c;
+  --ground: #000000;
+  --fill: rgb(118 118 128 / 24%);
+  --fill-strong: rgb(118 118 128 / 36%);
+  --separator: rgb(84 84 88 / 55%);
+  --scrim: rgb(0 0 0 / 50%);
+  --glass: rgb(30 30 32 / 82%);
+  --menu: rgb(44 44 46 / 96%);
+  --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+  --review-solid: #a8781a;
+  --done-solid: #2b8a3c;
+  --more-solid: #636366;
+  --favorite: #ffd60a;
+  --sheet: #1c1c1e;
+  --on-solid: #ffffff;
+  --screen: #000000;
+  --screen-bar: rgb(0 0 0 / 55%);
+  --screen-text: #f2f2f4;
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
+  --project-0: hsl(196 70% 64%);
+  --project-1: hsl(220 85% 72%);
+  --project-2: hsl(258 75% 78%);
+  --project-3: hsl(300 50% 72%);
+  --project-4: hsl(338 75% 75%);
+  --project-5: hsl(172 50% 58%);
+  --project-6: hsl(32 40% 66%);
+  --project-7: hsl(215 18% 68%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #1e1e20;
+    --bg-sunken: #191919;
+    --bg-raised: #262629;
+  --bubble: #2a2a2d;
+  --field: #2a2a2d;
+    --bg-hover: rgb(255 255 255 / 7%);
+    --bg-active: rgb(74 200 92 / 18%);
+    --border: #35353a;
+    --border-strong: #4a4a50;
+    --text: #f2f2f4;
+    --text-dim: #a2a2a8;
+    --text-faint: #8e8e95;
+    --accent: #4ac85c;
+    --accent-text: #10210f;
+    --accent-soft: rgb(74 200 92 / 16%);
+    --danger: #e0796b;
+    --danger-solid: #e5484d;
+    --danger-text: #ffffff;
+    --warning-bg: #3a2f18;
+    --warning-text: #e0bb72;
+    --success-text: #7fc98d;
+    --highlight: #57481f;
+    --tooltip-bg: #3a3a3f;
+    --tooltip-text: #f2f2f4;
+    --code-bg: #1a1a1c;
+    --ground: #000000;
+    --fill: rgb(118 118 128 / 24%);
+    --fill-strong: rgb(118 118 128 / 36%);
+    --separator: rgb(84 84 88 / 55%);
+    --scrim: rgb(0 0 0 / 50%);
+    --glass: rgb(30 30 32 / 82%);
+    --menu: rgb(44 44 46 / 96%);
+    --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+    --review-solid: #a8781a;
+    --done-solid: #2b8a3c;
+    --more-solid: #636366;
+    --favorite: #ffd60a;
+    --sheet: #1c1c1e;
+    --on-solid: #ffffff;
+    --screen: #000000;
+    --screen-bar: rgb(0 0 0 / 55%);
+    --screen-text: #f2f2f4;
+    --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
+    --project-0: hsl(196 70% 64%);
+    --project-1: hsl(220 85% 72%);
+    --project-2: hsl(258 75% 78%);
+    --project-3: hsl(300 50% 72%);
+    --project-4: hsl(338 75% 75%);
+    --project-5: hsl(172 50% 58%);
+    --project-6: hsl(32 40% 66%);
+    --project-7: hsl(215 18% 68%);
+  }
+}
+
+:root {
+  --font-ui: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-code: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --topbar: 38px;
+  --ease: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --quick: 90ms;
+  --settle: 180ms;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  cursor: default;
+  user-select: none;
+}
+
+/* The dictation capsule floats: its window is transparent, and so is its page. */
+body.clear {
+  background: transparent;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+/* A row as wide as its column would move by tens of pixels if scaled, so it sinks by a pixel instead. */
+button:active:not(:disabled, .did, .menu-item, .group, .project, .new-session) {
+  transform: scale(0.97);
+}
+
+:is(.did, .menu-item, .group, .project, .new-session):active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button,
+.row,
+.tab,
+.item,
+.chip,
+.menu-item {
+  transition:
+    background-color var(--quick) var(--ease),
+    color var(--quick) var(--ease),
+    border-color var(--quick) var(--ease),
+    opacity var(--quick) var(--ease);
+}
+
+:is(.did, .menu-item, .group, .project, .new-session) {
+  transition:
+    background-color var(--quick) var(--ease),
+    color var(--quick) var(--ease),
+    border-color var(--quick) var(--ease),
+    opacity var(--quick) var(--ease),
+    transform var(--quick) var(--ease);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-clip: padding-box;
+  background-color: var(--border-strong);
+  border: 3px solid transparent;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-faint);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared pieces                                                       */
+/* ------------------------------------------------------------------ */
+
+.drag {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.floating {
+  position: fixed;
+  z-index: 50;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.primary {
+  padding: 6px 14px;
+  color: var(--accent-text);
+  background: var(--accent);
+  border-radius: var(--radius);
+}
+
+.quiet {
+  padding: 6px 12px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.quiet:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--text-faint);
+  border-radius: 5px;
+}
+
+.icon-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+/* Board or list: both shown side by side, the one in use raised, so it reads as a choice of two. */
+.views {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.views button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px 0 7px;
+  color: var(--text-faint);
+  font-size: 12px;
+  border-radius: 5px;
+}
+
+.views button:hover:not(.on) {
+  color: var(--text);
+}
+
+.views button.on {
+  color: var(--text);
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.empty {
+  padding: 12px 16px;
+  color: var(--text-dim);
+}
+
+.error {
+  padding: 6px 2px;
+  color: var(--danger);
+}
+
+input[type='text'],
+input[type='password'],
+input[type='time'],
+input[type='number'],
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+
+textarea {
+  resize: none;
+}
+
+::placeholder {
+  color: var(--text-faint);
+}
+
+/* Menus */
+
+/* Over a dialog it is opened from. Both classes, because `.scrim` is written further down and would otherwise put this back under the dialog. */
+.scrim.menu-scrim {
+  z-index: 79;
+}
+
+.menu {
+  z-index: 80;
+  min-width: 170px;
+  max-width: min(460px, calc(100vw - 16px));
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  animation: pop var(--settle) var(--ease) both;
+}
+
+.menu-title {
+  padding: 6px 9px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  text-align: left;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.menu-item:hover {
+  background: var(--bg-hover);
+}
+
+/* Named and not choosable, such as a model this Claude Code is too old to run. */
+.menu-item:disabled,
+.sheet-option:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.menu-item:disabled:hover {
+  background: none;
+}
+
+.menu-item.on {
+  color: var(--accent);
+}
+
+.menu-item .label {
+  flex-shrink: 0;
+  max-width: calc(100% - 22px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-item .says {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+}
+
+/* Under the choices and in line with their names. As wide as the menu the choices make, never wider. A line of its own for each thing it says. */
+.menu-note {
+  width: 0;
+  min-width: 100%;
+  padding: 6px 9px 5px 31px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-faint);
+  white-space: pre-line;
+}
+
+.menu.explained {
+  width: min(320px, calc(100vw - 16px));
+}
+
+.menu.explained .menu-item {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  row-gap: 2px;
+  column-gap: 8px;
+  align-items: center;
+  padding: 7px 9px;
+  white-space: normal;
+}
+
+.menu.explained .menu-item .label {
+  max-width: none;
+}
+
+.menu.explained .menu-item .says {
+  grid-column: 2;
+  line-height: 1.4;
+}
+
+.menu-item.danger:hover {
+  color: var(--danger);
+}
+
+/* The open questions: a title with the time left at its right, one line of the answer under it. */
+.questions-menu {
+  width: min(340px, calc(100vw - 16px));
+}
+
+.question-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 52px;
+  border-radius: 5px;
+}
+
+.question-item:hover,
+.question-item.confirming {
+  background: var(--bg-hover);
+}
+
+.question-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: 52px;
+  justify-content: center;
+  padding: 7px 72px 7px 31px;
+  text-align: left;
+}
+
+.question-title,
+.question-says {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.question-says {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* Where the board cards put their time. It makes way for the bin under the pointer. */
+.question-left {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.question-pin,
+.question-bin {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: var(--text-faint);
+  opacity: 0;
+}
+
+.question-item:hover .question-left {
+  visibility: hidden;
+}
+
+.question-pin {
+  right: 31px;
+}
+
+.question-item:hover .question-pin,
+.question-item:hover .question-bin,
+.question-pin:focus-visible,
+.question-bin:focus-visible {
+  opacity: 1;
+}
+
+.question-pin:hover {
+  color: var(--text);
+  background: var(--border);
+}
+
+.question-pin.on {
+  color: var(--accent);
+}
+
+.question-bin:hover {
+  color: var(--danger);
+  background: var(--border);
+}
+
+/* The row asks in place, on one line and at the same height, so nothing under it moves. */
+.question-item.confirming {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 0 31px;
+}
+
+.question-item.confirming .question-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.question-confirm {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.question-cancel,
+.question-delete {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 11px;
+  font-size: 12px;
+  border-radius: 5px;
+}
+
+.question-cancel {
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+}
+
+.question-cancel:hover {
+  color: var(--text);
+}
+
+.question-delete {
+  color: var(--danger-text);
+  background: var(--danger-solid);
+  border: 1px solid transparent;
+}
+
+/* The project picker */
+
+/* A project's colour, and the colours to choose from under it. */
+.project-dot,
+/* The check that says a project is listed, pressed on its own to add or drop it. */
+.project-pick {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-left: -2px;
+  color: var(--accent);
+  border-radius: 5px;
+}
+
+.project-pick:hover {
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.projects-hint {
+  padding: 6px 12px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.project-dot-space {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  margin-right: 2px;
+  border-radius: 50%;
+}
+
+.project-dot:hover {
+  box-shadow: 0 0 0 3px var(--bg-hover);
+}
+
+.project-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 9px 8px 31px;
+}
+
+.project-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+.project-swatch.on {
+  box-shadow: 0 0 0 2px var(--bg-raised), 0 0 0 3.5px currentColor;
+}
+
+.menu.projects {
+  width: min(340px, calc(100vw - 16px));
+}
+
+.projects-field {
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.project-row {
+  cursor: default;
+}
+
+.project-row.at {
+  background: var(--bg-hover);
+}
+
+.project-row .lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.project-row .name,
+.project-row .says {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-row .forget {
+  opacity: 0;
+}
+
+/* Keeps the count on the All projects row in line with the rows that can be taken off. */
+.project-row .forget-space {
+  flex-shrink: 0;
+  width: 26px;
+}
+
+.project-row:hover .forget,
+.project-row.at .forget,
+.project-row .forget:focus-visible {
+  opacity: 1;
+}
+
+.waits-count {
+  flex-shrink: 0;
+  min-width: 18px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* What stands in a project, beside what waits in it: the board's In progress and In review. */
+.project-count {
+  display: flex;
+  flex-shrink: 0;
+  gap: 3px;
+  align-items: center;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border-radius: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.project-count.review {
+  color: var(--text);
+}
+
+.waits-count.asks {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+}
+
+.waits-count.unread {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+}
+
+/* Dialogs */
+
+.dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 22%);
+  animation: fade var(--quick) var(--ease) both;
+}
+
+.dialog {
+  width: min(460px, 92vw);
+  max-height: 76vh;
+  overflow-y: auto;
+  padding: 20px 22px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  animation: lift var(--settle) var(--ease) both;
+}
+
+/* Settings, a section at a time: the sections down the left, and only the section scrolls. */
+.dialog.settings-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 94vw);
+  height: min(560px, 84vh);
+  max-height: none;
+  overflow: hidden;
+}
+
+.settings-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 18px;
+  min-height: 0;
+  margin-top: 12px;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-nav button {
+  padding: 5px 10px;
+  color: var(--text-dim);
+  text-align: left;
+  border-radius: var(--radius);
+}
+
+.settings-nav button:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.settings-nav button.on {
+  color: var(--text);
+  background: var(--bg-active);
+}
+
+.settings-page {
+  min-height: 0;
+  padding-right: 4px;
+  overflow-y: auto;
+}
+
+.settings-dialog .dialog-actions {
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.dialog h2 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dialog p {
+  margin: 0 0 14px;
+  color: var(--text-dim);
+}
+
+.primary.danger {
+  color: var(--danger-text);
+  background: var(--danger-solid);
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 18px;
+  white-space: nowrap;
+}
+
+.dialog-actions .together {
+  display: flex;
+  gap: 8px;
+}
+
+/* Hidden conversations: the folders scroll between the title and Close. */
+.dialog.hidden-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, 94vw);
+  height: min(600px, 84vh);
+  max-height: none;
+  overflow: hidden;
+}
+
+.hidden-dialog p {
+  margin: 0;
+}
+
+.hidden-body {
+  flex: 1;
+  min-height: 0;
+  margin: 8px -12px 0;
+  padding: 0 6px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.hidden-dialog .dialog-actions {
+  padding-top: 12px;
+  margin-top: 0;
+  border-top: 1px solid var(--border);
+}
+
+.hidden-dialog .empty {
+  padding: 40px 16px;
+  text-align: center;
+}
+
+.hidden-folder {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 14px 8px 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.hidden-folder .path {
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hidden-folder .done {
+  color: var(--success-text);
+}
+
+.hidden-row {
+  align-items: center;
+}
+
+.hidden-row .reason {
+  color: var(--text-dim);
+}
+
+.hidden-row .reason::after {
+  content: ' \00b7\00a0';
+  color: var(--text-faint);
+}
+
+.hidden-folder .quiet,
+.hidden-row .quiet,
+.hidden-older .quiet {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.hidden-row .on-board {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--success-text);
+}
+
+.hidden-more {
+  margin: 2px 8px 0;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+  border-radius: var(--radius);
+}
+
+.hidden-more:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.hidden-older {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 12px;
+}
+
+.hidden-older .empty {
+  padding: 4px;
+}
+
+.open-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.phrase-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+
+/* Animation */
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes lift {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The icon turns, not the line it sits in, which is taller than the icon. */
+svg.spinning,
+.spinning > svg {
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes travel {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* The panel window                                                    */
+/* ------------------------------------------------------------------ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+}
+
+.topbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  height: var(--topbar);
+  padding-right: 8px;
+  padding-left: 82px;
+  border-bottom: 1px solid var(--border);
+}
+
+html.framed .topbar {
+  padding-left: 8px;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  color: var(--text-dim);
+  border-radius: 5px;
+}
+
+.tab:hover {
+  background: var(--bg-hover);
+}
+
+.tab.on {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.panel-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Correct */
+
+.correct {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px;
+}
+
+.correct-field {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.correct-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.correct-field textarea {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+}
+
+.correct-field textarea:focus-visible {
+  outline: none;
+}
+
+.correct-revert {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+}
+
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.action {
+  padding: 5px 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.action:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.working {
+  position: relative;
+  flex-shrink: 0;
+  height: 2px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  border-radius: 1px;
+}
+
+.working::after {
+  position: absolute;
+  inset: 0;
+  width: 25%;
+  content: '';
+  background: var(--accent);
+  border-radius: 1px;
+  animation: travel 1.1s var(--ease) infinite;
+}
+
+.footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px 7px;
+  overflow: hidden;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-radius: 5px;
+}
+
+.picker:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.notices {
+  position: fixed;
+  top: 44px;
+  right: 16px;
+  z-index: 48;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, calc(100vw - 32px));
+}
+
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 8px 10px 12px;
+  cursor: pointer;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  animation: pop var(--settle) var(--ease) both;
+}
+
+.notice:hover {
+  border-color: var(--border-strong);
+}
+
+.notice .state {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.notice.asks .state {
+  background: var(--warning-text);
+}
+
+.notice .lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.notice .title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.notice .subtitle,
+.notice .body {
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.notice .body {
+  color: var(--text-dim);
+}
+
+/* A new version: bottom left over the sidebar in Chat, along the bottom of the panel. */
+.update-notice {
+  position: fixed;
+  bottom: 32px;
+  left: 8px;
+  z-index: 47;
+  width: calc(var(--sidebar, 264px) - 16px);
+}
+
+.panel .update-notice {
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  width: auto;
+}
+
+.notice.update {
+  cursor: default;
+}
+
+.notice.update .body {
+  white-space: normal;
+}
+
+.version .progress,
+.notice.update .progress {
+  height: 4px;
+  margin: 4px 0 2px;
+  overflow: hidden;
+  background: var(--bg-hover);
+  border-radius: 2px;
+}
+
+.version .progress > span,
+.notice.update .progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--settle) var(--ease);
+}
+
+.notice.update .actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.version {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.version .lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.version .why {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.field > label.check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.check input {
+  accent-color: var(--accent);
+}
+
+.toast {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  z-index: 70;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--tooltip-text);
+  background: var(--tooltip-bg);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  animation: rise var(--settle) var(--ease) both;
+}
+
+.tip {
+  position: fixed;
+  z-index: 100;
+  max-width: 320px;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--tooltip-text);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  background: var(--tooltip-bg);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+
+.tip kbd {
+  margin-left: 8px;
+  font: inherit;
+  opacity: 0.65;
+}
+
+/* A key named on the control it presses, not only in its tooltip. */
+.keys {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Transcribe */
+
+.transcribe {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.transcribe-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.record {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  color: var(--accent-text);
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.record.on {
+  color: var(--danger-text);
+  background: var(--danger-solid);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  background: currentcolor;
+  border-radius: 50%;
+}
+
+.bars {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  height: 18px;
+}
+
+.bars span {
+  width: 3px;
+  background: currentcolor;
+  border-radius: 2px;
+  transition: height 80ms linear;
+}
+
+.drop {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.drop.over {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.said {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.said:hover {
+  background: var(--bg-hover);
+}
+
+.said-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.said-text {
+  margin-top: 3px;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/* Settings */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.field > label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/*
+ * A list of ticks in Settings: the profile in use, and the projects in it.
+ *
+ * The list holds the columns and a row takes them with `subgrid`, so the names
+ * and the paths stand in columns however long a name is while each row is still
+ * a box of its own to highlight.
+ */
+.projects-listed {
+  display: grid;
+  grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr);
+  max-height: 264px;
+  margin-top: 2px;
+  padding: 3px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* A conversation's title is long, so it gives way and the project and time stay whole. */
+.projects-listed.cut-off {
+  grid-template-columns: auto minmax(0, 1fr) max-content;
+}
+
+.project-listed {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 4px 0;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.project-listed > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-listed:hover {
+  background: var(--bg-hover);
+}
+
+/* The tick, in the accent, and nothing at all where a project is not listed: an empty box would be one more thing to read. */
+.project-listed .tick {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  color: var(--accent);
+}
+
+.project-listed .name {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.project-listed.off .name {
+  color: var(--text-faint);
+}
+
+.project-listed .says {
+  padding-right: 10px;
+  padding-left: 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.phone-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.phone-link img {
+  flex: none;
+  border-radius: var(--radius);
+}
+
+.phone-link span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.phone-error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* A choice in a form, drawn like the fields around it, with its arrow at the end. */
+.select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 8px;
+  text-align: left;
+  white-space: nowrap;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.select:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.select svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.select > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* ------------------------------------------------------------------ */
+/* The chat window                                                     */
+/* ------------------------------------------------------------------ */
+
+.chat {
+  --sidebar: clamp(220px, var(--side, 264px), calc(100vw - 420px));
+
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--sidebar) 1fr;
+  /* The row is held to the window, so a long conversation scrolls inside the
+     transcript instead of pushing the composer off the bottom. */
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+}
+
+/* The bar across the top, the same in both views. */
+.chat.topped {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.chat.topped > .board-head {
+  grid-column: 1 / -1;
+}
+
+.chat.topped .side-grip {
+  top: 45px;
+}
+
+/* The sidebar's edge, dragged to make it wider or narrower. */
+.side-grip[hidden] {
+  display: none;
+}
+
+.side-grip {
+  position: absolute;
+  top: 0;
+  bottom: 24px;
+  left: calc(var(--sidebar) - 3px);
+  z-index: 3;
+  width: 6px;
+  cursor: col-resize;
+  -webkit-app-region: no-drag;
+}
+
+.side-grip::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  content: '';
+  transition: background-color var(--quick) var(--ease);
+}
+
+.side-grip:hover::after {
+  background: var(--accent);
+  transition-delay: 200ms;
+}
+
+.chat.sizing .side-grip::after {
+  background: var(--accent);
+}
+
+.chat.sizing,
+.chat.sizing * {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-sunken);
+  border-right: 1px solid var(--border);
+}
+
+/* Collapse all and Group by: the list's own, under the bar both views share. */
+.sidebar-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: var(--topbar);
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.project {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  margin: 6px 8px 4px;
+  width: calc(100% - 16px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.project:hover {
+  background: var(--bg-hover);
+}
+
+.project .name {
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.new-session {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: calc(100% - 16px);
+  padding: 6px 10px;
+  margin: 0 8px 6px;
+  color: var(--text-dim);
+  border-radius: var(--radius);
+}
+
+.new-session:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.sessions {
+  flex: 1;
+  min-height: 0;
+  padding: 0 8px 10px;
+  overflow-y: auto;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 6px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.group:hover {
+  color: var(--text-dim);
+}
+
+.group .count {
+  letter-spacing: 0;
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+}
+
+.group-head .group {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Where a row dragged into the favorites would land: a line between rows, drawn over them so nothing moves. */
+.row.lands-before::before,
+.row.lands-after::after,
+.group-head.lands-after::after {
+  position: absolute;
+  inset-inline: 8px;
+  height: 2px;
+  content: '';
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.row.lands-before::before {
+  top: -1px;
+}
+
+.row.lands-after::after,
+.group-head.lands-after::after {
+  bottom: -1px;
+}
+
+.group-head {
+  position: relative;
+}
+
+/* Only there while rows are picked, so the list is quiet the rest of the time. */
+.group-pick {
+  flex-shrink: 0;
+  padding: 10px 6px 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.group-pick:hover {
+  color: var(--text);
+}
+
+.row {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  text-align: left;
+  border-radius: var(--radius);
+}
+
+.row:hover {
+  background: var(--bg-hover);
+}
+
+/* The row that is open: a fill of its own, quiet enough to read past, as a Mac list marks a selection. */
+.row.on,
+.row.on:hover {
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
+}
+
+.row.on .title {
+  color: var(--text);
+}
+
+.row .state {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* The mark on an answer not read yet is a button, with more to press than the dot it holds. */
+.row .read {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin: 2px -4px 0;
+  border-radius: 50%;
+}
+
+.row .read:hover {
+  background: var(--bg-hover);
+}
+
+.row .read .state {
+  margin-top: 0;
+}
+
+/* Wider than the dot it stands in for, and the text stays where it was. */
+.row .pick {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin: 2px -4px 0;
+  color: var(--accent-text);
+  border: 1px solid var(--text-faint);
+  border-radius: 50%;
+}
+
+.row.picked {
+  background: var(--bg-active);
+}
+
+.row.picked .pick {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.sessions.picking .row .more {
+  display: none;
+}
+
+.sessions.picking .row:hover .changed {
+  visibility: visible;
+}
+
+.picked-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  border-top: 1px solid var(--border);
+}
+
+.picked-bar button {
+  padding: 4px 10px;
+}
+
+.row .state.working {
+  background: var(--accent);
+  animation: fade 900ms var(--ease) infinite alternate;
+}
+
+.row .state.asks {
+  background: var(--warning-text);
+}
+
+.row .state.background {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  animation: fade 900ms var(--ease) infinite alternate;
+}
+
+.row .state.unread {
+  background: var(--accent);
+}
+
+.row .state.failed,
+.row .state.limit {
+  background: var(--danger);
+}
+
+/* A bar rather than a fill for an answer not read yet: a green fill is what the chosen row looks like. */
+.row.waits.asks {
+  box-shadow: inset 3px 0 0 var(--warning-text);
+}
+
+.row.waits.asks:not(.on) {
+  background: var(--warning-bg);
+}
+
+/* An answer not read yet is the dot alone, as a mail list marks one: a filled row is the open one. */
+
+.row .foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 1px;
+}
+
+.row .foot .stands {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+
+/* The key that opens it, as a key; holding Cmd lights them all up. */
+.row .place {
+  flex-shrink: 0;
+  padding: 0 3px;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 13px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.row.on .place {
+  border-color: var(--border-strong);
+}
+
+.chat.holding .row .place {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.row.waits .title {
+  font-weight: 600;
+}
+
+.row .lines {
+  min-width: 0;
+  flex: 1;
+}
+
+.row .title,
+.row .stands {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.row .head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.row .head .title {
+  flex: 1;
+  min-width: 0;
+}
+
+.row .changed {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.row .stands {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.row .stands .where {
+  color: var(--text-dim);
+}
+
+/* A project's name in the colour that project was given. */
+.tinted {
+  color: var(--tint);
+}
+
+.row .stands .where.tinted {
+  color: var(--tint);
+}
+
+/* The tracker item and the mark, ahead of where it stands. */
+.tag {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 3px;
+  align-items: center;
+  padding: 0 5px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 15px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+button.tag:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.tag.review {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-color: transparent;
+}
+
+.tag.blocked {
+  color: var(--danger);
+  border-color: currentColor;
+}
+
+.tag.done {
+  color: var(--text-faint);
+}
+
+.row .foot .tag + .tag {
+  margin-left: -4px;
+}
+
+.picker.marked.review {
+  color: var(--warning-text);
+}
+
+.picker.marked.blocked {
+  color: var(--danger);
+}
+
+.row .stands .where:not(:empty):not(:last-child)::after {
+  content: ' \00b7\00a0';
+  color: var(--text-faint);
+}
+
+.row .more {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  opacity: 0;
+}
+
+/* Cmd+P: every conversation, in every project */
+
+.switcher {
+  top: 12vh;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 80px));
+  max-height: 60vh;
+  overflow: hidden;
+  transform: translateX(-50%);
+}
+
+.switcher-field {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
+
+.switcher-field input {
+  flex: 1;
+  padding: 0;
+  font-size: 14px;
+  background: none;
+  border: none;
+}
+
+.switcher-field input:focus-visible {
+  outline: none;
+}
+
+/* Ctrl+Tab has no field: nothing is typed, only Tab pressed while Ctrl is held. */
+.switcher.recent {
+  width: min(460px, calc(100vw - 80px));
+}
+
+.switcher-rows {
+  min-height: 0;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.switcher .row {
+  cursor: default;
+}
+
+.switcher-head {
+  padding: 8px 10px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+/* Bold rather than a colour, which the chosen row's own colour would swallow. */
+.switcher mark {
+  font-weight: 600;
+  color: var(--text);
+  background: none;
+}
+
+.switcher .where mark {
+  color: inherit;
+}
+
+.switcher .more-found {
+  color: var(--text-faint);
+}
+
+/* A message a search went to, marked for a moment so the eye finds it. */
+
+.turn.found .mine,
+.turn.found .theirs {
+  animation: found 2.4s var(--ease) both;
+}
+
+@keyframes found {
+  0%,
+  40% {
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 6px var(--accent-soft);
+  }
+
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+.row:hover .more,
+.row .more:focus-visible {
+  opacity: 1;
+}
+
+.row:hover .changed {
+  visibility: hidden;
+}
+
+/* The conversation */
+
+.talk {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+}
+
+.talk[hidden] {
+  display: none;
+}
+
+.talk-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  height: var(--topbar);
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.talk-head .title {
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The name is pressed to rename it, so it shows it can be where the pointer is. */
+.talk-head button.title {
+  min-width: 0;
+  padding: 3px 6px;
+  margin-left: -6px;
+  border-radius: 5px;
+}
+
+.talk-head button.title:hover {
+  background: var(--bg-hover);
+}
+
+.talk-head .head-project {
+  flex-shrink: 1;
+  min-width: 0;
+  margin-left: -4px;
+  font-size: 12px;
+}
+
+.talk-head .remote-on {
+  color: var(--text);
+}
+
+.remote-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+.talk-head .title-field {
+  width: min(420px, 60%);
+  padding: 2px 6px;
+  margin-left: -7px;
+  font-weight: 500;
+  border-color: var(--accent);
+}
+
+.row .row-name {
+  width: 100%;
+  padding: 1px 5px;
+  margin-left: -6px;
+}
+
+.transcript {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 0 8px;
+  overflow-y: auto;
+}
+
+.turn {
+  padding: 0 24px;
+  margin: 0 0 14px;
+}
+
+.turn.step {
+  margin-bottom: 1px;
+}
+
+.turn.step + .turn:not(.step) {
+  margin-top: 12px;
+}
+
+.mine {
+  padding: 9px 12px;
+  white-space: pre-wrap;
+  user-select: text;
+  background: var(--bubble);
+  border-radius: var(--radius-lg);
+}
+
+.mine.unsent {
+  border: 1px dashed var(--border-strong);
+}
+
+.theirs {
+  user-select: text;
+}
+
+.skeleton-line,
+.skeleton-bubble,
+.skeleton-dot {
+  background: var(--bg-hover);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: 12px;
+  margin: 6px 0 10px;
+  border-radius: 6px;
+}
+
+.skeleton-line.short {
+  width: 55%;
+}
+
+.skeleton-bubble {
+  width: 60%;
+  height: 38px;
+  margin-left: auto;
+  border-radius: var(--radius-lg);
+}
+
+.when {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.mine + .when {
+  text-align: right;
+}
+
+.when .copy-answer {
+  width: 18px;
+  height: 18px;
+  margin: -3px 0 -3px 4px;
+  vertical-align: middle;
+  opacity: 0;
+  transition: opacity var(--quick) var(--ease);
+}
+
+.turn:hover .copy-answer,
+.when .copy-answer:focus-visible {
+  opacity: 1;
+}
+
+.did {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 3px 6px;
+  color: var(--text-dim);
+  text-align: left;
+  border-radius: 5px;
+}
+
+.did:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.did:disabled {
+  opacity: 1;
+}
+
+.did .what {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A command that can go on in the background, with the button that sends it there beside it. */
+.did-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.did-row .did {
+  flex: 1;
+  min-width: 0;
+}
+
+.did-row .quiet {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  font-size: 12px;
+}
+
+.did .glyph,
+.card.answered .glyph {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.detail {
+  max-height: 340px;
+  padding: 8px 10px;
+  margin: 4px 0 2px;
+  overflow: auto;
+  font-family: var(--font-code);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  user-select: text;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.thought {
+  padding: 3px 6px 3px 26px;
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+.wrote {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 6px;
+  color: var(--text-dim);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.chip:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.note {
+  padding: 8px 10px;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+}
+
+.note-summary {
+  margin-top: 8px;
+  color: var(--text);
+}
+
+.note.failed,
+.note.limit {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+}
+
+/* What a message starting with ! will do, said while it is typed. */
+
+.composer-hint {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A draft starting with ! is a command, so the field looks like a terminal while it is typed. */
+
+.composer-inner.command,
+.composer-inner.command:focus-within {
+  border-color: var(--warning-text);
+  box-shadow: 0 0 0 3px var(--warning-bg);
+}
+
+.composer-inner.command textarea {
+  font-family: var(--font-code);
+  font-size: 13px;
+}
+
+.composer-hint.command {
+  color: var(--warning-text);
+}
+
+/* A command typed after ! is the person's, so it sits in their bubble, with what it printed under it. */
+
+.shell {
+  padding: 9px 12px;
+  background: var(--bubble);
+  border-radius: var(--radius-lg);
+}
+
+.shell-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 22px;
+}
+
+.shell-command {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-code);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.shell-head .glyph {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.shell-head .quiet {
+  padding: 1px 8px;
+  font-size: 12px;
+}
+
+.shell-ended {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.shell-ended.failed {
+  color: var(--warning-text);
+}
+
+.shell .detail-block {
+  margin: 8px 0 0;
+}
+
+.shell-typed {
+  width: 100%;
+  margin-top: 8px;
+  font-family: var(--font-code);
+  font-size: 12px;
+}
+
+/* Cards */
+
+.card {
+  padding: 12px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  animation: rise var(--settle) var(--ease) both;
+}
+
+.card.answered {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 6px;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  box-shadow: none;
+  animation: none;
+}
+
+.card .card-title {
+  font-weight: 500;
+}
+
+.card .where {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.card .card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+/* The composer */
+
+.composer {
+  flex-shrink: 0;
+  padding: 10px 24px 14px;
+}
+
+/* Messages sent while Claude works, waiting their turn above the field. */
+.phrases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.phrase {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  max-width: 100%;
+  padding: 3px 10px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.phrase:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.phrase.keep {
+  padding: 3px 6px;
+  border-style: dashed;
+}
+
+.queued {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.queued-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 104px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.queued-head {
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.queued-one {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 6px 5px 11px;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.queued-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  cursor: text;
+}
+
+.queued-edit {
+  flex: 1;
+  min-width: 0;
+  max-height: 160px;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  resize: none;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+/* The message the dialog is asking about, as it was typed. */
+/* The queued message a new conversation is started with, as it will be sent. */
+.branch-quote {
+  display: -webkit-box;
+  margin: 0;
+  padding: 10px 14px;
+  overflow: hidden;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  background: var(--bg-raised);
+  border-radius: 10px;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.sheet-keep {
+  margin-top: 10px;
+}
+
+.sheet .branch-quote {
+  margin-bottom: 10px;
+  padding: 11px 16px;
+  font-size: 15px;
+  border-radius: 12px;
+}
+
+.queued-picture {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg-raised);
+  border: 0;
+  border-radius: 5px;
+  cursor: zoom-in;
+}
+
+.queued-picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.queued-bare {
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+.queued-more {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.queued-one .icon-button {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.composer-inner {
+  position: relative;
+  background: var(--field);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.chat.dropping .composer-inner,
+.composer-inner:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.pending {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 11px 11px 1px;
+}
+
+.pending-one {
+  position: relative;
+  display: block;
+  line-height: 0;
+}
+
+.pending-one img {
+  cursor: zoom-in;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.pending-one .icon-button {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 16px;
+  height: 16px;
+  color: var(--tooltip-text);
+  background: var(--tooltip-bg);
+  border-radius: 50%;
+}
+
+.pictures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pictures img {
+  max-width: 220px;
+  max-height: 220px;
+  cursor: zoom-in;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--quick) var(--ease);
+}
+
+.pictures img:hover {
+  border-color: var(--border-strong);
+}
+
+/* A picture on the phone before it has come over. */
+.picture-waiting {
+  width: 160px;
+  height: 120px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* A picture a tool handed back, under the line saying what was done. */
+.did-pictures {
+  margin: 4px 0 8px 20px;
+}
+
+/* The pictures of a shut run of steps, in one row that scrolls sideways. */
+.fold-pictures {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.fold-pictures img,
+.fold-pictures .picture-waiting {
+  flex: none;
+  max-width: 160px;
+  max-height: 160px;
+}
+
+/* One picture, filling the window */
+
+.preview {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+  background: rgb(0 0 0 / calc(72% * (1 - var(--leaving, 0))));
+  animation: fade var(--quick) var(--ease) both;
+}
+
+.preview img {
+  max-width: 92%;
+  max-height: 86%;
+  user-select: none;
+  -webkit-touch-callout: none;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transform-origin: center;
+}
+
+.preview.easing img {
+  transition: transform 0.25s var(--ease);
+}
+
+.preview-bar {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  padding: 3px 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+
+.preview-bar .quiet {
+  min-width: 52px;
+  font-variant-numeric: tabular-nums;
+}
+
+.composer textarea {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  padding: 10px 12px 4px;
+  font-size: 14px;
+  line-height: 1.5;
+  background: none;
+  border: none;
+}
+
+.composer textarea:focus-visible {
+  outline: none;
+}
+
+/* @: a file or a folder of the project */
+
+.mentions {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  max-height: 280px;
+  padding: 4px;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  animation: pop var(--settle) var(--ease) both;
+}
+
+.mention {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  white-space: nowrap;
+  cursor: default;
+  border-radius: 5px;
+}
+
+.mention.on {
+  background: var(--bg-active);
+}
+
+.mention svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.mention .name {
+  flex-shrink: 0;
+}
+
+.mention .in {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+}
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 6px 8px;
+}
+
+.composer-bar .goal-picker {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 260px;
+  color: var(--text);
+}
+
+.goal-picker .remote-dot {
+  flex-shrink: 0;
+}
+
+.goal-picker .goal-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Under the conversation, what belongs to it: its checkout, context and cost. */
+
+.talk-status {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 0 24px 10px;
+  margin-top: -6px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.talk-status:empty {
+  display: none;
+}
+
+/* The bar along the bottom: the account's plan and windows. */
+
+.status-bar {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 14px;
+  height: 24px;
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  background: var(--bg-sunken);
+  border-top: 1px solid var(--border);
+}
+
+.status-bar .stat,
+.talk-status .stat {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-bar .question {
+  display: inline-flex;
+  flex-shrink: 1;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 200px;
+  height: 18px;
+  padding: 0 6px;
+  color: var(--text-dim);
+  border-radius: var(--radius);
+}
+
+.status-bar .question > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-bar .question:hover,
+.status-bar .question.shown {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.status-bar .stat:has(.branch),
+.talk-status .stat:has(.branch) {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.talk-status .act {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.talk-status .act:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.talk-status .act:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.status-bar .value,
+.talk-status .value {
+  color: var(--text-dim);
+}
+
+.status-bar .branch,
+.talk-status .branch {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-bar .count,
+.talk-status .count {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.status-bar .count.some,
+.talk-status .count.some {
+  color: var(--text-dim);
+}
+
+.status-bar .lead {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-bar .lead.trouble {
+  color: var(--warning-text);
+}
+
+/* A narrow window keeps when each window starts again in its tooltip. */
+@media (max-width: 1080px) {
+  .status-bar {
+    gap: 10px;
+  }
+
+  .status-bar .resets,
+  .status-bar .lead:not(.trouble) {
+    display: none;
+  }
+}
+
+.status-bar .lead.trouble ~ .stat {
+  display: none;
+}
+
+.meter {
+  position: relative;
+  width: 32px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.meter > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.meter.mid > span {
+  background: var(--warning-text);
+}
+
+.meter.high > span {
+  background: var(--danger);
+}
+
+.send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--accent-text);
+  background: var(--accent);
+  border-radius: 7px;
+}
+
+.send.stop {
+  color: var(--danger-text);
+  background: var(--danger-solid);
+}
+
+.send:disabled {
+  color: var(--text-faint);
+  background: var(--bg-hover);
+}
+
+/* Prose the assistant wrote */
+
+.prose {
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+.prose p,
+.prose ul,
+.prose ol,
+.prose pre,
+.prose blockquote,
+.prose-table {
+  margin: 0 0 10px;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 20px;
+}
+
+.prose li {
+  margin-bottom: 3px;
+}
+
+.prose li::marker {
+  color: var(--text-faint);
+}
+
+.prose li > p {
+  margin: 0 0 4px;
+}
+
+.prose li > ul,
+.prose li > ol {
+  margin: 3px 0 0;
+}
+
+.prose .contains-task-list {
+  padding-left: 2px;
+  list-style: none;
+}
+
+.prose .task-list-item input {
+  margin: 0 6px 0 0;
+  vertical-align: -1px;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6 {
+  margin: 18px 0 6px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.prose h1 {
+  font-size: 18px;
+}
+
+.prose h2 {
+  font-size: 16px;
+}
+
+.prose h3 {
+  font-size: 15px;
+}
+
+.prose h4,
+.prose h5,
+.prose h6 {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.prose strong {
+  font-weight: 600;
+}
+
+.prose del {
+  color: var(--text-dim);
+}
+
+.prose code {
+  padding: 0.1em 0.35em;
+  font-family: var(--font-code);
+  font-size: 0.85em;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.prose pre {
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.55;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.prose pre code {
+  padding: 0;
+  font-size: inherit;
+  white-space: pre;
+  background: none;
+  border: none;
+}
+
+/* The block carries the margin, so the copy button sits on the code and not above it. */
+
+.code-block {
+  position: relative;
+}
+
+.code-block > pre {
+  margin: 0;
+}
+
+.prose .code-block {
+  margin: 0 0 10px;
+}
+
+.prose > .code-block:last-child {
+  margin-bottom: 0;
+}
+
+.detail-block {
+  margin: 4px 0 2px;
+}
+
+.code-block .copy-code {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 24px;
+  height: 24px;
+  background: var(--code-bg);
+  opacity: 0;
+  transition: opacity var(--quick) var(--ease);
+}
+
+.code-block:hover .copy-code,
+.code-block .copy-code:focus-visible {
+  opacity: 1;
+}
+
+.prose a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.prose a:hover {
+  text-decoration: underline;
+}
+
+/* A path the assistant wrote without a link, found on disk. */
+.prose .file-link {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.prose .file-link:hover {
+  text-decoration: underline;
+}
+
+.prose blockquote {
+  padding-left: 12px;
+  margin-left: 0;
+  margin-right: 0;
+  color: var(--text-dim);
+  border-left: 2px solid var(--border-strong);
+}
+
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.prose hr {
+  margin: 16px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.prose-table {
+  overflow-x: auto;
+}
+
+.prose table {
+  font-size: 13.5px;
+  line-height: 1.45;
+  border-collapse: collapse;
+}
+
+.prose th,
+.prose td {
+  padding: 5px 10px;
+  text-align: left;
+  vertical-align: top;
+  border: 1px solid var(--border);
+}
+
+.prose th {
+  font-weight: 600;
+  background: var(--code-bg);
+}
+
+.prose td code {
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* The dictation capsule                                               */
+/* ------------------------------------------------------------------ */
+
+.capsule-window {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: transparent;
+  /* Only what can be seen moves the capsule; the clear margin around it does nothing. */
+  -webkit-app-region: no-drag;
+}
+
+/* The capsule is moved by any part of itself that is not a control, as a window is by its title bar. */
+.capsule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  -webkit-app-region: drag;
+}
+
+.capsule :is(button, select, textarea, input, .mic, .frames, .asking-plan, .asking-heard span) {
+  -webkit-app-region: no-drag;
+}
+
+/* Asking before anything is done: the capsule becomes a card with the list in it. */
+.capsule:has(.asking) {
+  align-items: stretch;
+  width: 320px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+}
+
+.asking {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The words themselves, so a mishearing is caught before anything is done. */
+.asking-heard {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+}
+
+.asking-heard span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.asking-heard svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.asking-plan {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.asking-one {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+}
+
+.asking-one + .asking-one {
+  border-top: 1px solid var(--border);
+}
+
+.asking-one > svg {
+  flex-shrink: 0;
+  box-sizing: content-box;
+  padding: 5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+
+.asking-said {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.asking-head {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.asking-text {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+/* When it counts as finished: read as a condition, not shouted as a result. */
+.asking-goal {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  margin-top: 6px;
+  padding: 7px 9px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  background: var(--fill);
+  border-radius: 7px;
+}
+
+.asking-goal svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.asking-goal b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.asking-foot {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 2px 14px 14px;
+}
+
+.asking-foot button {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.asking-foot .keys {
+  padding: 1px 5px;
+  font-size: 10.5px;
+  color: inherit;
+  background: rgb(0 0 0 / 14%);
+  border-radius: 4px;
+}
+
+.capsule .time {
+  min-width: 34px;
+  font-family: var(--font-code);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.capsule .bars {
+  color: var(--danger);
+}
+
+.capsule .said {
+  max-width: 170px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: none;
+}
+
+/* Recording the screen: the dot says the screen is being taken, the bars that the microphone is. */
+.capsule .rec-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--danger-solid);
+  border-radius: 50%;
+}
+
+/* What is being recorded leads, so the pill cannot be taken for dictation; the microphone follows it, quieter. */
+.recording-what {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.capsule .rule {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 0;
+  background: var(--border);
+}
+
+.capsule:has(.recording-what) :is(.mic, .bars) {
+  color: var(--text-faint);
+}
+
+.capsule-note {
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.capsule-note.danger {
+  color: var(--danger);
+}
+
+.capsule > .quiet {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+/* A recording's card is wider than an order's, to hold its frames in one row. */
+.capsule:has(.recorded) {
+  width: 400px;
+}
+
+.recorded .asking-heard textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  line-height: 1.45;
+  color: var(--text);
+  resize: none;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.recorded .asking-heard textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.frames {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  overflow-x: auto;
+}
+
+.frame {
+  position: relative;
+  flex: none;
+  width: 64px;
+}
+
+.frame img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.frame .at {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.frame .leave {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--tooltip-text);
+  background: var(--tooltip-bg);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity var(--quick) var(--ease);
+}
+
+.frame:hover .leave,
+.frame .leave:focus-visible {
+  opacity: 1;
+}
+
+.mic {
+  position: relative;
+  display: inline-flex;
+}
+
+.mic select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Keyboard shortcuts */
+
+.dialog.shortcuts {
+  width: min(560px, 92vw);
+}
+
+.shortcuts h3 {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.shortcuts dl {
+  margin: 0;
+}
+
+.shortcuts dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 13em) minmax(0, 1fr);
+  gap: 12px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.shortcuts dt,
+.shortcuts dd {
+  margin: 0;
+}
+
+.shortcuts dd {
+  color: var(--text-dim);
+}
+
+.shortcuts kbd {
+  font-family: var(--font-code);
+  font-size: 11px;
+}
+
+/* Saved prompts, run by hand or on a timetable. */
+
+.dialog.shortcut-list {
+  width: min(580px, 92vw);
+}
+
+.shortcut-empty {
+  padding: 14px 0;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+}
+
+.shortcut-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.shortcut-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 3px 6px;
+  text-align: left;
+  border-radius: 5px;
+}
+
+.shortcut-text:hover {
+  background: var(--bg-hover);
+}
+
+.shortcut-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-when {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-prompt {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-when > span + span::before {
+  content: ' \00b7\00a0';
+}
+
+.shortcut-row .quiet,
+.shortcut-row .primary {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.shortcut-repeat {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.shortcut-repeat > .select {
+  min-width: 140px;
+}
+
+.shortcut-minute {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--text-dim);
+}
+
+.shortcut-minute input {
+  width: 60px;
+}
+
+.shortcut-cron {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-code);
+  font-size: 12px;
+}
+
+.shortcut-next {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.shortcut-next.wrong {
+  color: var(--danger);
+}
+
+.field > label.check.shortcut-on {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* What runs in the background, as the terminal's /tasks has it. */
+
+.dialog.tasks {
+  width: min(600px, 92vw);
+}
+
+.dialog.tasks:focus {
+  outline: none;
+}
+
+/* One task opened: what it printed gives up room first, so the buttons under it stay in sight. */
+.dialog.tasks.one {
+  display: flex;
+  flex-direction: column;
+}
+
+.task-printed,
+.task-printed .code-block {
+  display: flex;
+  flex-direction: column;
+  min-height: 96px;
+}
+
+.task-printed .detail {
+  min-height: 0;
+}
+
+.tasks h3 {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.task-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  cursor: default;
+  border-radius: var(--radius);
+}
+
+.task-row.on {
+  background: var(--bg-active);
+}
+
+.task-row .what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row .lasted {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.task-row .how {
+  flex-shrink: 0;
+  min-width: 5.5em;
+  color: var(--text-dim);
+  text-align: end;
+}
+
+.tasks .glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.tasks .glyph.completed {
+  color: var(--success-text);
+}
+
+.tasks .failed,
+.tasks .task-row .how.failed {
+  color: var(--warning-text);
+}
+
+.task-keys {
+  flex: 1;
+  align-self: center;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: normal;
+}
+
+.task-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 10px 0 0;
+}
+
+.task-facts > div {
+  display: contents;
+}
+
+.task-facts dt,
+.task-facts dd {
+  margin: 0;
+}
+
+.task-facts dt {
+  color: var(--text-faint);
+}
+
+.dialog .task-asked {
+  margin: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.task-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.task-did {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.task-said .prose {
+  font-size: inherit;
+  line-height: 1.5;
+}
+
+.dialog .task-said p {
+  color: var(--text);
+}
+
+.dialog .task-more {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- */
+/* The board                                                         */
+/* ---------------------------------------------------------------- */
+
+/* One column of window instead of two: the board takes the width, and a conversation opened from it comes up over it. */
+.chat.boarded {
+  grid-template-columns: 1fr;
+}
+
+.board {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  background: var(--bg);
+}
+
+.board-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 8px 82px;
+  border-bottom: 1px solid var(--border);
+}
+
+html.framed .board-head {
+  padding-left: 12px;
+}
+
+/* One row, one height: the picker and the two buttons carry the sidebar's own margins, which stand them off centre here. */
+.board-head .project,
+.board-head .board-new {
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+}
+
+.board-head .project {
+  flex: 0 1 240px;
+}
+
+/* The search says it is there rather than waiting behind a key: the Cmd+P field itself, in the head, its rows under it. */
+.board-search {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 520px;
+  height: 28px;
+  padding: 0 10px;
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.board-search:hover {
+  border-color: var(--border-strong);
+}
+
+/* Over the layer that takes a click away, so the field itself stays a field while the rows are up. */
+.board-search.open {
+  z-index: 45;
+  background: var(--field);
+  border-color: var(--accent);
+}
+
+/* By the element, as the Cmd+P field is: a class alone loses to input[type='text']. */
+.board-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+.board-search input:focus-visible {
+  outline: none;
+}
+
+/* Away from the field, which puts the rows away without taking the click to a card. */
+.board-search-away {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+}
+
+/* Wider than the field: a row carries a title, a project and the line it was found in. */
+.board-search-found {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(560px, calc(100vw - 120px));
+  max-height: 60vh;
+  padding: 6px;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.board-search-found .row {
+  cursor: default;
+}
+
+.board-search-found mark {
+  font-weight: 600;
+  color: var(--text);
+  background: none;
+}
+
+.board-search-found .where mark {
+  color: inherit;
+}
+
+.board-search-found .more-found {
+  color: var(--text-faint);
+}
+
+.board-new {
+  flex-shrink: 0;
+  width: auto;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+/* New task and the arrow beside it: one control, the arrow set off by a hairline. */
+.board-split {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.board-head .board-split .board-new {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.board-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  color: var(--text-dim);
+  border-left: 1px solid var(--border);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.board-more:hover,
+.board-more.on {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+/* Starting a task is what the board is for: tinted rather than filled, so it leads the head without shouting over the cards. */
+.board-split :is(.board-new, .board-more) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.board-split :is(.board-new, .board-more):hover,
+.board-split .board-more.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
+}
+
+.board-split .board-more {
+  border-left-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.board-split .keys {
+  color: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+.board-empty {
+  padding: 12px 12px 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.board-columns {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 8px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* A card is over this column and would land here. */
+.board-column.taking {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-sunken));
+}
+
+.board-column-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 2px 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.board-cards {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.board-day {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.board-day-head {
+  position: sticky;
+  top: -2px;
+  z-index: 1;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  width: 100%;
+  padding: 5px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--bg-sunken);
+  border-radius: 6px;
+}
+
+.board-day-head:hover {
+  color: var(--text-dim);
+  background: var(--bg-raised);
+}
+
+/* The folder below its project a conversation was started in: geckit / client. */
+.board-card .subfolder {
+  color: var(--text-faint);
+}
+
+.board-card {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* A favorite, the same ones the sidebar groups at its top. */
+.board-card.starred {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.board-card.starred:hover {
+  border-color: var(--accent);
+}
+
+.board-card-star {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--accent);
+}
+
+.board-card:hover {
+  border-color: var(--text-faint);
+}
+
+/* The one open behind the conversation showing over the board. */
+.board-card.on {
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
+}
+
+.board-card.picked {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.board-picked {
+  padding: 8px 14px;
+}
+
+.board-picked-how {
+  color: var(--text-faint);
+}
+
+.board-card.waits.asks {
+  box-shadow: inset 3px 0 0 var(--warning-text);
+  background: var(--warning-bg);
+}
+
+.board-card.waits .board-card-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.board-card-title {
+  font-weight: 600;
+}
+
+.board-card-head {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+}
+
+.board-card-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.board-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+/* Only there to be found when it is wanted, so it keeps quiet until then. */
+.board-card-links {
+  display: flex;
+  flex-shrink: 0;
+  gap: 3px;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  border-radius: 5px;
+  opacity: 0.7;
+}
+
+.board-card:hover .board-card-links,
+.board-card-links:hover {
+  opacity: 1;
+}
+
+.board-card-links:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.board-card-goal,
+.board-card-stands {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.board-card-goal span,
+.board-card-stands span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-card-goal {
+  color: var(--accent);
+}
+
+/* What is happening in it: Claude working, waiting for you, what runs in the background. */
+.board-card-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.state-said {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.state-said .state-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.state-said.said-working {
+  color: var(--accent);
+}
+
+.state-said.said-working .state-dot {
+  background: var(--accent);
+  animation: fade 900ms var(--ease) infinite alternate;
+}
+
+.state-said.said-asks {
+  color: var(--warning-text);
+}
+
+.state-said.said-asks .state-dot {
+  background: var(--warning-text);
+}
+
+.state-said.said-unread .state-dot {
+  background: var(--accent);
+}
+
+/* Still running, with the turn over: the ring the list uses for the same thing. */
+.state-said.said-background {
+  color: var(--accent);
+}
+
+.state-said.said-background .state-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  animation: fade 900ms var(--ease) infinite alternate;
+}
+
+.state-said.said-failed {
+  color: var(--danger);
+}
+
+.state-said.said-failed .state-dot {
+  background: var(--danger);
+}
+
+/* The New task form the board opens, over the same dimming as a conversation. */
+.new-task {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(520px, calc(100% - 80px));
+  padding: 16px 18px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 35%);
+  transform: translateX(-50%);
+}
+
+.new-task-head {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.new-task-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.new-task-where,
+.new-task-text,
+.new-task-goal {
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.new-task-text {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+/* A file is over the field and would be taken. */
+.new-task-text.taking {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.new-task .pending {
+  margin-top: -4px;
+}
+
+.new-task-where:focus,
+.new-task-text:focus,
+.new-task-goal:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* Other ways to fill the field than typing in it. */
+.new-task-ways {
+  display: flex;
+  gap: 6px;
+  margin-top: -4px;
+}
+
+.new-task-ways .quiet {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+.new-task-recorded {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: -6px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.new-task-recorded .icon-button {
+  width: 18px;
+  height: 18px;
+}
+
+.new-task-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.new-task-why {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* The conversation over the board, and the board dimmed behind it. */
+.talk-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgb(0 0 0 / 35%);
+}
+
+.talk.over {
+  position: absolute;
+  /* Clear of the board's own head, so the window keeps its drag strip and the
+     traffic lights are not covered, and standing off every edge: the board it
+     is over stays visible around it. */
+  inset: 62px 40px 38px;
+  z-index: 6;
+  overflow: hidden;
+  width: min(1200px, calc(100% - 80px));
+  height: auto;
+  margin: 0 auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 35%);
+}
+
+@media (width <= 900px) {
+  .talk.over {
+    inset: 52px 14px 22px;
+    width: calc(100% - 28px);
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* The phone                                                         */
+/* ---------------------------------------------------------------- */
+
+/* The same window served to the phone, drawn as an iPhone app: the system font at iOS sizes, grouped lists, and 44pt targets. */
+html.phone {
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --top: env(safe-area-inset-top);
+  --bottom: env(safe-area-inset-bottom);
+
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.phone body {
+  font-size: 17px;
+  line-height: 1.3;
+  background: var(--ground);
+  overscroll-behavior: none;
+}
+
+/* Shrunk with the keyboard as it rises, in its time, so the field comes up on top of the keys rather than after them. */
+html.phone #root {
+  height: calc(100dvh - var(--keyboard, 0px));
+  transition: height 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* The board's usage line says what the status bar says, and the conversation covers the rest. */
+html.phone .status-bar,
+html.phone .talk-scrim {
+  display: none;
+}
+
+html.phone .chat {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* Safari zooms into any field whose text is smaller than this. */
+html.phone input,
+html.phone textarea,
+html.phone [contenteditable] {
+  font-size: 17px;
+}
+
+html.phone button:active:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+/* The board */
+
+.phone-board {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  background: var(--ground);
+}
+
+.phone-bar {
+  flex: none;
+  padding: calc(var(--top) + 4px) 16px 0;
+  background: var(--ground);
+}
+
+.phone-bar-row {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  margin-inline-end: -10px;
+}
+
+.phone-bar-small {
+  flex: 1;
+  min-width: 0;
+  font-size: 17px;
+  font-weight: 600;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity var(--settle) var(--ease),
+    transform var(--settle) var(--ease);
+}
+
+.phone-bar.scrolled .phone-bar-small {
+  opacity: 1;
+  transform: none;
+}
+
+.phone-large {
+  margin: 0 16px;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 41px;
+  letter-spacing: 0.01em;
+}
+
+/* The board's title stands above the list rather than in it, so the list's scroll indicator starts under the header, and folds into the bar once the list is scrolled. */
+.phone-board .phone-large {
+  flex: none;
+  height: 41px;
+  overflow: hidden;
+  transition:
+    height var(--settle) var(--ease),
+    opacity var(--settle) var(--ease);
+}
+
+.phone-board .phone-large.folded {
+  height: 0;
+  opacity: 0;
+}
+
+/* The line under it shows once the title has gone. */
+.phone-seg-bar {
+  flex: none;
+  padding: 10px 16px 12px;
+  background: var(--ground);
+  transition: box-shadow var(--settle) var(--ease);
+}
+
+.phone-seg-bar.scrolled {
+  box-shadow: 0 0.5px 0 var(--separator);
+}
+
+.phone-seg-bar .phone-seg {
+  margin: 0;
+}
+
+.phone-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+  border-radius: 22px;
+}
+
+/* The segmented control: the thumb slides under the chosen third. */
+.phone-seg {
+  position: relative;
+  display: flex;
+  margin: 10px 0 12px;
+  padding: 2px;
+  background: var(--fill);
+  border-radius: 9px;
+}
+
+.phone-seg button {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  height: 30px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: 7px;
+}
+
+.phone-seg button.on {
+  font-weight: 600;
+}
+
+.phone-seg .n {
+  margin-inline-start: 4px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.phone-seg-thumb {
+  position: absolute;
+  inset-block: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 3);
+  background: var(--bg-raised);
+  border-radius: 7px;
+  box-shadow: 0 0 0 0.5px var(--separator), 0 3px 8px var(--fill-strong);
+  transform: translateX(calc(var(--at, 0) * 100%));
+  transition: transform 280ms var(--ease);
+}
+
+.phone-list {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: calc(var(--bottom) + 18px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.phone-alert {
+  margin: 0 16px 14px;
+  padding: 12px 14px;
+  font-size: 15px;
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-radius: 12px;
+}
+
+.phone-empty {
+  margin: 90px 32px;
+  font-size: 17px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.phone-head {
+  margin: 18px 32px 7px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.phone-day-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: calc(100% - 64px);
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: left;
+  background: none;
+  border: none;
+}
+
+.phone-day-head .n {
+  text-transform: none;
+}
+
+.phone-head:first-child {
+  margin-top: 4px;
+}
+
+.phone-group {
+  margin: 0 16px;
+  overflow: hidden;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.phone-note {
+  margin: 7px 32px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.phone-foot {
+  margin: 18px 32px 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+/* The asks past the third, folded into one line at the foot of the group. */
+.phone-fold {
+  position: relative;
+  width: 100%;
+  height: 44px;
+  font-size: 17px;
+  color: var(--accent);
+  box-shadow: inset 0 0.5px 0 var(--separator);
+}
+
+/* A row, and what its swipe uncovers on either side. */
+.phone-swipe {
+  position: relative;
+  overflow: hidden;
+}
+
+.phone-swipe + .phone-swipe .phone-row::before {
+  position: absolute;
+  top: 0;
+  inset-inline: 36px 0;
+  height: 0.5px;
+  content: '';
+  background: var(--separator);
+}
+
+.phone-actions {
+  position: absolute;
+  inset-block: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.phone-actions.lead {
+  left: 0;
+}
+
+.phone-actions.trail {
+  right: 0;
+  justify-content: flex-end;
+}
+
+.phone-action {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-solid);
+  transition: width var(--settle) var(--ease);
+}
+
+.phone-action.review {
+  background: var(--review-solid);
+}
+
+.phone-action.done {
+  background: var(--done-solid);
+}
+
+.phone-action.more,
+.phone-action.back {
+  background: var(--more-solid);
+}
+
+.phone-action.keep {
+  background: var(--review-solid);
+}
+
+.phone-action.delete {
+  background: var(--danger-solid);
+}
+
+.phone-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  column-gap: 10px;
+  padding: 11px 16px;
+  cursor: default;
+  background: var(--bg-raised);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform 260ms var(--ease);
+}
+
+.phone-row.moving {
+  transition: none;
+}
+
+/* A favorite, tinted where it stands as the Mac's board tints it. */
+.phone-row.starred {
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-raised));
+}
+
+.phone-row-star {
+  color: var(--accent);
+}
+
+.phone-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+
+.phone-dot.working {
+  background: var(--accent);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.phone-dot.asks {
+  background: var(--review-solid);
+}
+
+.phone-dot.failed {
+  background: var(--danger);
+}
+
+.phone-dot.unread {
+  background: var(--accent);
+}
+
+.phone-dot.read {
+  box-shadow: inset 0 0 0 1.5px var(--text-faint);
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.phone-row-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.phone-row-title {
+  display: -webkit-box;
+  flex: 1;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 22px;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.phone-row-time {
+  flex: none;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.phone-row-said {
+  display: -webkit-box;
+  margin-top: 3px;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 20px;
+  color: var(--text-dim);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.phone-row-said.doing {
+  color: var(--accent);
+}
+
+.phone-row-asks {
+  margin-top: 3px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--warning-text);
+}
+
+.phone-row-cmd {
+  margin-top: 6px;
+  padding: 7px 10px;
+  overflow: hidden;
+  font-family: var(--font-code);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--bg-sunken);
+  border-radius: 8px;
+}
+
+.phone-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  margin-top: 5px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.phone-row-tag {
+  padding: 1px 6px;
+  font-size: 12px;
+  background: var(--fill);
+  border-radius: 4px;
+}
+
+.phone-row-tag.blocked {
+  color: var(--danger);
+  background: none;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.phone-row-answer {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.phone-button {
+  flex: 1;
+  height: 44px;
+  padding: 0 16px;
+  font-size: 17px;
+  font-weight: 600;
+  border-radius: 10px;
+}
+
+.phone-button.fill {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.phone-button.grey {
+  color: var(--text);
+  background: var(--fill);
+}
+
+/* A long press lifts the row over a blurred board and opens its menu beside it. */
+.phone-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  animation: fade 200ms var(--ease) both;
+}
+
+.phone-lifted {
+  position: fixed;
+  z-index: 61;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: 12px;
+  box-shadow: var(--lift);
+  animation: press 260ms var(--ease) both;
+}
+
+@keyframes press {
+  from {
+    transform: scale(0.96);
+  }
+  60% {
+    transform: scale(1.03);
+  }
+}
+
+.phone-menu {
+  position: fixed;
+  z-index: 61;
+  width: 250px;
+  overflow: hidden;
+  transform-origin: top left;
+  background: var(--menu);
+  backdrop-filter: saturate(180%) blur(30px);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  border-radius: 14px;
+  box-shadow: var(--lift);
+  animation: grow 260ms var(--ease) both;
+}
+
+@keyframes grow {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.phone-menu button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 44px;
+  padding: 0 16px;
+  font-size: 17px;
+  text-align: start;
+}
+
+.phone-menu button + button::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.5px;
+  content: '';
+  background: var(--separator);
+}
+
+.phone-menu button.accent {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.phone-menu button.danger {
+  color: var(--danger-solid);
+}
+
+.phone-menu .gap {
+  height: 8px;
+  background: var(--fill);
+}
+
+/* Sheets: every menu on the phone, rising from the bottom under the thumb. They share one layer, so one opened from another lands on top of it. */
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--scrim);
+  animation: fade 240ms var(--ease) both;
+}
+
+.sheet {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - var(--top) - 10px);
+  padding: 0 16px calc(var(--bottom) + 12px);
+  background: var(--sheet);
+  border-radius: 14px 14px 0 0;
+  transition:
+    transform 280ms var(--ease),
+    bottom 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+  animation: sheet 360ms var(--ease) both;
+}
+
+.sheet.dragging {
+  transition: none;
+}
+
+/* The web view does not shrink for the keyboard, so a sheet with a field in it stands on the keys rather than under them. */
+html.keyboard .sheet {
+  bottom: var(--keyboard);
+  max-height: calc(100% - var(--top) - 10px - var(--keyboard));
+  padding-bottom: 12px;
+}
+
+@keyframes sheet {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+.sheet-grab {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 6px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sheet-handle {
+  width: 36px;
+  height: 5px;
+  margin-bottom: 10px;
+  background: var(--fill-strong);
+  border-radius: 3px;
+}
+
+.sheet-title {
+  padding: 0 16px 12px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sheet-list {
+  overflow: hidden;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.sheet-body + .sheet-list,
+.sheet-field + .sheet-list {
+  margin-top: 10px;
+}
+
+.sheet-option {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 50px;
+  padding: 9px 16px;
+  font-size: 17px;
+  text-align: start;
+}
+
+.sheet-option + .sheet-option::before {
+  position: absolute;
+  top: 0;
+  inset-inline: 16px 0;
+  height: 0.5px;
+  content: '';
+  background: var(--separator);
+}
+
+.sheet-option > svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.sheet-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sheet-words .says {
+  margin-top: 1px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.sheet-option.danger {
+  color: var(--danger);
+}
+
+.sheet-option.sheet-cancel {
+  justify-content: center;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* The menu's note on the phone, split into lines as `.menu-note` is. */
+.sheet-note {
+  margin: 7px 16px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+  white-space: pre-line;
+}
+
+.sheet-field {
+  display: flex;
+  align-items: center;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.sheet-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 16px;
+  color: var(--text);
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.sheet-field-clear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: 0 12px 0 -4px;
+  padding: 0;
+  color: var(--bg-raised);
+  background: var(--text-faint);
+  border: 0;
+  border-radius: 50%;
+}
+
+/* Centred in what the keyboard leaves of the screen, as the system's alerts are. */
+.rename-alert-scrim {
+  position: fixed;
+  inset: 0 0 var(--keyboard, 0px);
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+  animation: fade 200ms var(--ease) both;
+}
+
+.rename-alert {
+  width: 290px;
+  overflow: hidden;
+  text-align: center;
+  background: var(--sheet);
+  border-radius: 14px;
+  animation: rename-alert 200ms var(--ease) both;
+}
+
+@keyframes rename-alert {
+  from {
+    transform: scale(1.1);
+    opacity: 0;
+  }
+}
+
+.rename-alert-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 19px 16px 16px;
+}
+
+.rename-alert-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.rename-alert-note {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.rename-alert .sheet-field {
+  margin-top: 8px;
+  border-radius: 8px;
+}
+
+.rename-alert .sheet-field input {
+  padding: 8px 10px;
+  font-size: 16px;
+}
+
+.rename-alert-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 0.5px solid var(--separator);
+}
+
+.rename-alert-actions button {
+  height: 44px;
+  padding: 0;
+  font-size: 17px;
+  color: var(--accent);
+  background: none;
+  border: 0;
+}
+
+.rename-alert-actions button + button {
+  border-left: 0.5px solid var(--separator);
+}
+
+.rename-alert-actions button.default {
+  font-weight: 600;
+}
+
+.rename-alert-actions button:disabled {
+  color: var(--text-faint);
+}
+
+/* New task: a sheet almost the height of the screen, the way Mail's new message is. */
+.phone-task {
+  position: fixed;
+  inset: calc(var(--top) + 10px) 0 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--sheet);
+  border-radius: 14px 14px 0 0;
+  transition: transform 280ms var(--ease);
+  animation: sheet 360ms var(--ease) both;
+}
+
+.phone-task.dragging {
+  transition: none;
+}
+
+.phone-task-bar {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 52px;
+  padding: 0 8px;
+  touch-action: none;
+}
+
+.phone-task-bar b {
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-task-bar button {
+  height: 44px;
+  padding: 0 8px;
+  font-size: 17px;
+  color: var(--accent);
+  justify-self: start;
+}
+
+.phone-task-bar button.strong {
+  font-weight: 600;
+  justify-self: end;
+}
+
+.phone-task-bar button:disabled {
+  color: var(--text-faint);
+}
+
+.phone-task-form {
+  flex: 1;
+  min-height: 0;
+  padding: 8px 16px calc(var(--bottom) + 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.phone-task-form:has(> .file-view-page) {
+  padding: 0;
+  overflow: hidden;
+}
+
+.file-view-page {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.file-view-said {
+  margin: 24px 0;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.file-view-prose {
+  padding-bottom: 16px;
+}
+
+/* A file is read, not glanced at: the text fills the sheet edge to edge, with no box around it. */
+
+.phone-task-form:has(> .file-view-text) {
+  padding: 0 0 var(--bottom);
+}
+
+.file-view-text {
+  padding: 4px 16px 24px;
+  margin: 0;
+  font-family: var(--font-code);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.phone-task-bar .file-view-copy {
+  width: 44px;
+  justify-self: end;
+  justify-content: center;
+}
+
+.phone-task-bar .file-view-copy svg {
+  width: 19px;
+  height: 19px;
+}
+
+.phone-task-label {
+  margin: 16px 16px 6px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.phone-task-label:first-child {
+  margin-top: 4px;
+}
+
+.phone-task-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 17px;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.phone-task-cell span {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+.phone-task-text,
+.phone-task-goal {
+  width: 100%;
+  padding: 11px 16px;
+  line-height: 22px;
+  color: var(--text);
+  resize: none;
+  background: var(--bg-raised);
+  border: 0;
+  border-radius: 12px;
+  outline: none;
+}
+
+.phone-task-text {
+  min-height: 132px;
+}
+
+.phone-task-note {
+  margin: 7px 16px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+/* New task and Question on the phone: the text fills the sheet as a note does, and what adds to it rides on the keyboard, as in Notes and Mail. */
+.phone-compose .phone-task-form {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 16px 12px;
+}
+
+.phone-compose .phone-task-group {
+  flex: none;
+  overflow: hidden;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.phone-compose .phone-task-cell {
+  position: relative;
+  background: none;
+  border-radius: 0;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 17px;
+  color: var(--text);
+}
+
+.phone-compose .phone-task-cell + .phone-task-cell::before {
+  position: absolute;
+  top: 0;
+  inset-inline: 16px 0;
+  height: 0.5px;
+  content: '';
+  background: var(--separator);
+}
+
+.phone-compose .phone-task-goal {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  height: 44px;
+  font-size: 17px;
+  color: var(--text);
+  text-align: end;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.phone-compose .phone-task-goal::placeholder {
+  color: var(--text-faint);
+}
+
+.phone-compose .phone-task-text {
+  flex: 1;
+  width: 100%;
+  min-height: 120px;
+  margin-top: 14px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 22px;
+  color: var(--text);
+  resize: none;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.phone-compose .phone-task-form > .phone-task-text:first-child {
+  margin-top: 4px;
+}
+
+.phone-compose .phone-task-text::placeholder {
+  color: var(--text-faint);
+}
+
+/* Rides on the keyboard while it is up, and on the home indicator when it is not. */
+.phone-task-tools {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 8px var(--bottom);
+  background: var(--sheet);
+  box-shadow: 0 -0.5px 0 var(--separator);
+}
+
+html.keyboard .phone-task-tools {
+  padding-bottom: 4px;
+  margin-bottom: var(--keyboard, 0px);
+}
+
+.phone-task-tools button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+  border-radius: 22px;
+}
+
+.phone-task-tools button.on {
+  color: var(--danger);
+}
+
+html.phone .phone-task-tools button.spoken {
+  position: static;
+  width: auto;
+  min-width: 44px;
+  height: 44px;
+  font-size: 13px;
+}
+
+html.phone .phone-task-tools button.spoken:disabled {
+  color: var(--text-faint);
+}
+
+.phone-task-tools-note {
+  flex: 1;
+  min-width: 0;
+  padding-inline-end: 8px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: end;
+}
+
+.phone-task .pending {
+  padding: 10px 0 0;
+}
+
+/* The conversation, pushed in from the right over the board. */
+html.phone .talk.over {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  border: 0;
+  border-radius: 0;
+  box-shadow: -8px 0 30px var(--fill-strong);
+  transition: transform 280ms var(--ease);
+  animation: push 320ms var(--ease) both;
+}
+
+@keyframes push {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+.phone-edge {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  z-index: 4;
+  width: 20px;
+  touch-action: none;
+}
+
+.phone-nav {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: calc(var(--top) + 52px);
+  padding: var(--top) 4px 0;
+  background: var(--glass);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 0.5px 0 var(--separator);
+}
+
+.phone-back {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  height: 44px;
+  padding: 0 10px 0 4px;
+  font-size: 17px;
+  color: var(--accent);
+  justify-self: start;
+}
+
+.phone-nav-end {
+  display: flex;
+  justify-self: end;
+}
+
+.phone-nav-title {
+  min-width: 0;
+  max-width: 220px;
+  text-align: center;
+}
+
+.phone-nav-title b {
+  display: block;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-nav-title span {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.phone-nav .phone-icon {
+  justify-self: end;
+}
+
+html.phone .transcript {
+  padding: 16px 0 24px;
+  overscroll-behavior: contain;
+}
+
+html.phone .turn {
+  padding: 0 16px;
+}
+
+html.phone .mine {
+  width: fit-content;
+  max-width: 82%;
+  margin-inline-start: auto;
+  padding: 9px 14px;
+  border-radius: 20px;
+}
+
+html.phone .prose {
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+/* A question waiting for an answer stays in reach at the foot of the conversation while the rest scrolls under it. */
+html.phone .talk.asks .turn:has(> .card:not(.answered)) {
+  position: sticky;
+  bottom: 8px;
+  z-index: 2;
+}
+
+/* The composer under a docked card waits: the card is what needs answering first. */
+html.phone .talk.asks .composer {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+html.phone .card:not(.answered) {
+  padding: 16px;
+  border: 0;
+  border-radius: 18px;
+  box-shadow: var(--lift);
+}
+
+html.phone .card .card-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+html.phone .card .where {
+  font-size: 13px;
+}
+
+html.phone .card .card-actions {
+  display: grid;
+  gap: 8px;
+}
+
+html.phone .card .card-actions button {
+  height: 50px;
+  font-size: 17px;
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+html.phone .card .card-actions input {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+}
+
+html.phone .composer {
+  padding: 8px 10px calc(var(--bottom) + 8px);
+  background: var(--glass);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 -0.5px 0 var(--separator);
+}
+
+/* With the keyboard up the home indicator is under it, so its inset would only be a gap above the keys. */
+html.phone.keyboard .composer {
+  padding-bottom: 8px;
+}
+
+/* As in Messages: a round photo button beside one round field with Send inside it, and above them the phrases and then mode, tasks and goal, each one row of filled capsules that runs to the screen's edges and scrolls sideways. */
+html.phone .composer-inner {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  column-gap: 8px;
+  align-items: end;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+html.phone .composer-inner > * {
+  grid-column: 1 / -1;
+}
+
+html.phone .composer-inner > .photo-pick {
+  grid-column: 1;
+}
+
+html.phone .composer-inner > textarea {
+  grid-column: 2;
+}
+
+/* The field has no frame on the phone, so the pictures line up with the photo button rather than sit inside a box that is not drawn. */
+html.phone .composer-inner > .pending {
+  padding: 6px 0 8px;
+}
+
+html.phone .composer-inner:focus-within {
+  box-shadow: none;
+}
+
+html.phone .composer-inner textarea {
+  min-height: 40px;
+  padding: 8px 48px 8px 16px;
+  line-height: 22px;
+  background: var(--field);
+  border: 1px solid var(--separator);
+  border-radius: 20px;
+  scrollbar-width: none;
+  transition: border-color 0.2s;
+}
+
+/* Beside the photo button a long placeholder would take two lines, so it ends in an ellipsis instead. */
+html.phone .composer-inner textarea::placeholder {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+html.phone .composer-inner textarea:focus {
+  border-color: var(--fill-strong);
+}
+
+html.phone .photo-pick {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 2px;
+  padding: 0;
+  color: var(--text-dim);
+  background: var(--fill);
+  border: 0;
+  border-radius: 18px;
+}
+
+html.phone .photo-pick:active {
+  background: var(--fill-strong);
+}
+
+html.phone .phrases,
+html.phone .composer-bar {
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin: 0 -10px;
+  padding: 0 10px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+html.phone .phrases::-webkit-scrollbar,
+html.phone .composer-bar::-webkit-scrollbar {
+  display: none;
+}
+
+html.phone .composer-bar {
+  order: -1;
+}
+
+html.phone .phrase,
+html.phone .composer-bar .picker {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--fill);
+  border: 0;
+  border-radius: 15px;
+}
+
+html.phone .phrase {
+  max-width: 240px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+html.phone .phrase.keep {
+  width: 30px;
+  padding: 0;
+  justify-content: center;
+  color: var(--text-dim);
+  background: none;
+  border: 1px dashed var(--border-strong);
+}
+
+html.phone .phrase:active,
+html.phone .composer-bar .picker:active {
+  background: var(--fill-strong);
+}
+
+html.phone .composer-bar .goal-picker {
+  max-width: 220px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+html.phone .composer-bar .spacer,
+html.phone .composer-hint {
+  display: none;
+}
+
+/* On the phone the whole block has no border, so a command marks the field itself. */
+html.phone .composer-inner.command,
+html.phone .composer-inner.command:focus-within {
+  border: 0;
+  box-shadow: none;
+}
+
+html.phone .composer-inner.command textarea {
+  font-size: 16px;
+  border-color: var(--warning-text);
+  box-shadow: 0 0 0 3px var(--warning-bg);
+}
+
+.phone-hint {
+  order: -1;
+  padding: 0 16px 6px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.phone-hint.command {
+  color: var(--warning-text);
+}
+
+/* A thumb edits, starts elsewhere or cancels a queued message, and Safari zooms into an edit field under 16px. */
+html.phone .queued-head {
+  font-size: 13px;
+}
+
+/* Two rows and part of a third, so a longer queue shows it scrolls and the transcript keeps the screen. */
+html.phone .queued-list {
+  max-height: 112px;
+}
+
+html.phone .queued-one {
+  gap: 4px;
+  padding: 4px 4px 4px 14px;
+  font-size: 15px;
+  border-radius: 12px;
+}
+
+html.phone .queued-picture {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+html.phone .queued-edit {
+  font-size: 17px;
+}
+
+html.phone .queued-one .icon-button {
+  width: 36px;
+  height: 36px;
+}
+
+/* Held to the field's last line, and not clipped by the chip row it sits in, which is not what it is placed against. */
+html.phone .send {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+}
+
+html.phone .send.stop {
+  color: var(--text);
+  background: var(--fill-strong);
+}
+
+html.phone .send:disabled {
+  color: var(--bg-raised);
+  background: var(--fill-strong);
+}
+
+html.phone .send.listening {
+  color: var(--danger-text);
+  background: var(--danger-solid);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+/* The language dictation listens in, beside the mic, so a task in the other language is one press away. */
+html.phone .spoken {
+  position: absolute;
+  right: 40px;
+  bottom: 4px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  border-radius: 16px;
+}
+
+html.phone .composer-inner:has(.spoken) textarea {
+  padding-right: 80px;
+}
+
+html.phone .send.mic.beside {
+  right: 40px;
+  color: var(--accent);
+  background: none;
+}
+
+html.phone .spoken.beside {
+  right: 76px;
+}
+
+html.phone .composer-inner:has(.spoken.beside) textarea {
+  padding-right: 116px;
+}
+
+/* Notices come down from the top as the system's banners do, newest first, and are pushed back up to put them away. */
+html.phone .notices {
+  top: calc(var(--top) + 6px);
+  right: 8px;
+  left: 8px;
+  width: auto;
+  gap: 6px;
+}
+
+html.phone .notice.banner {
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px 12px 12px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  background: var(--glass);
+  backdrop-filter: saturate(180%) blur(30px);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  border: 0;
+  border-radius: 24px;
+  box-shadow: var(--lift);
+  transition:
+    transform 320ms var(--ease),
+    opacity 320ms var(--ease);
+  animation: banner 420ms var(--ease) backwards;
+}
+
+html.phone .notice.banner:active:not(.leaving) {
+  background: var(--bg-raised);
+}
+
+html.phone .notice.banner.leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+html.phone .banner-icon {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: #fff;
+  background: var(--fill-strong);
+  border-radius: 10px;
+}
+
+html.phone .banner-icon::after {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 12px;
+  height: 12px;
+  content: '';
+  background: var(--accent);
+  border: 2.5px solid var(--bg-raised);
+  border-radius: 50%;
+}
+
+html.phone .notice.banner.asks .banner-icon::after {
+  background: var(--warning-text);
+}
+
+html.phone .notice.banner.plain .banner-icon::after {
+  display: none;
+}
+
+html.phone .notice.banner .lines {
+  gap: 1px;
+}
+
+html.phone .banner-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+html.phone .banner-what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+html.phone .notice.banner.done .banner-what {
+  color: var(--accent);
+}
+
+html.phone .notice.banner.asks .banner-what {
+  color: var(--warning-text);
+}
+
+html.phone .banner-project {
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+html.phone .banner-when {
+  flex: none;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+html.phone .notice.banner .title {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+html.phone .notice.banner .body {
+  display: -webkit-box;
+  font-size: 15px;
+  line-height: 1.3;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@keyframes banner {
+  from {
+    transform: translateY(-140%);
+  }
+}
+
+/* The link to the Mac is down; a pill says so, and goes once the page is back on a new link. On the board it sits at the foot, clear of the large title; in a conversation, under the bar, clear of the field. */
+.phone-offline {
+  position: fixed;
+  bottom: calc(var(--bottom) + 16px);
+  left: 50%;
+  z-index: 55;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  line-height: 32px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  background: var(--bg-raised);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  animation: fade var(--settle) var(--ease) both;
+}
+
+body:has(.talk.over:not([hidden])) .phone-offline {
+  top: calc(var(--top) + 60px);
+  bottom: auto;
+}
+
+.phone-spin {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--fill-strong);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+/* The Mac's screen: black edge to edge, with the bars above and below the picture rather than over it, so nothing of it is covered. */
+.phone-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  color: var(--screen-text);
+  background: var(--screen);
+  animation: fade var(--settle) var(--ease) both;
+}
+
+.phone-screen-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.phone-screen-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform-origin: 0 0;
+}
+
+.phone-screen-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 32px;
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.phone-screen-note .phone-button {
+  flex: none;
+}
+
+.phone-screen-note .phone-spin {
+  width: 22px;
+  height: 22px;
+  border-width: 2.5px;
+}
+
+.phone-screen-bar {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  padding: calc(var(--top) + 2px) max(8px, env(safe-area-inset-right)) 2px max(16px, env(safe-area-inset-left));
+}
+
+.phone-screen-bar.hidden {
+  display: none;
+}
+
+.phone-screen-title {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.phone-screen-live {
+  padding: 1px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-solid);
+  background: var(--danger-solid);
+  border-radius: 4px;
+}
+
+/* Look or Control, drawn light on the black whatever the theme. */
+.phone-screen-seg {
+  flex: 0 1 180px;
+  margin: 0 0 0 8px;
+  background: rgb(255 255 255 / 12%);
+}
+
+.phone-screen-seg .phone-seg-thumb {
+  width: calc((100% - 4px) / 2);
+  background: rgb(255 255 255 / 24%);
+  box-shadow: none;
+}
+
+.phone-screen-done {
+  flex: none;
+  height: 44px;
+  padding: 0 10px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--screen-text);
+}
+
+.phone-screen-done.icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  padding: 0;
+}
+
+.phone-screen-peek {
+  position: absolute;
+  top: calc(var(--top) + 6px);
+  right: max(12px, env(safe-area-inset-right));
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--screen-text);
+  background: var(--screen-bar);
+  border-radius: 16px;
+}
+
+/* How the trackpad is worked, until the first touch. */
+.phone-screen-hint {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+  background: var(--screen-bar);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 12px;
+}
+
+/* Why the Mac would not be worked from here, over the top of the picture until pressed away. */
+.phone-screen-refused {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  left: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--screen-text);
+  text-align: left;
+  background: var(--screen-bar);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 12px;
+}
+
+/* Only there to bring up the phone's keyboard; 16px so the phone does not zoom in on it. */
+.phone-screen-typing {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  font-size: 16px;
+  opacity: 0;
+  resize: none;
+}
+
+/* The keys the phone's keyboard has not got, along the bottom and over the keyboard once it is up; a modifier stays down for the next key. */
+.phone-screen-keys {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  padding: 6px max(8px, env(safe-area-inset-right)) max(6px, var(--bottom)) max(8px, env(safe-area-inset-left));
+  margin-bottom: var(--keyboard, 0px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.phone-screen-keys.hidden {
+  display: none;
+}
+
+.phone-screen-key {
+  display: grid;
+  flex: 1 0 36px;
+  place-items: center;
+  height: 40px;
+  font-size: 16px;
+  color: var(--screen-text);
+  background: rgb(255 255 255 / 14%);
+  border-radius: 8px;
+}
+
+.phone-screen-key.on {
+  color: #000000;
+  background: var(--screen-text);
+}
+
+/* The Background sheet on a phone: the name has the width to itself, and what it cost and how it stands stand under it. */
+html.phone .task-row {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+html.phone .task-row .what {
+  flex: 1 0 calc(100% - 26px);
+  white-space: normal;
+}
+
+html.phone .task-row .lasted {
+  margin-inline-start: 26px;
+}
+
+html.phone .task-row .how {
+  min-width: 0;
+  text-align: start;
+}
+
+/* The Background window as a sheet on the phone: the list sits in the sheet's own grouped box rather than a dialog of its own. */
+.tasks-sheet .dialog.tasks {
+  width: auto;
+  max-height: none;
+  padding: 12px 16px;
+  overflow: visible;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+  animation: none;
+}
+
+.tasks-sheet .dialog.tasks + .sheet-list {
+  margin-top: 10px;
+}
+
+/* The large title names the Mac the board is from, and opens the list of Macs this phone is paired with. */
+.phone-macs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  max-width: calc(100% - 32px);
+  text-align: start;
+}
+
+.phone-macs > svg {
+  flex: none;
+  margin-top: 4px;
+  color: var(--accent);
+}
+
+.phone-bar-small,
+.phone-macs {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A Mac in the list: its star, its name that switches to it, and its menu, each a target of its own. */
+.phone-mac {
+  gap: 0;
+  padding: 0;
+}
+
+.phone-mac + .phone-mac::before {
+  inset-inline-start: 48px;
+}
+
+.phone-mac-star,
+.phone-mac-more {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 48px;
+  min-height: 50px;
+  color: var(--text-faint);
+}
+
+.phone-mac.favorite .phone-mac-star {
+  color: var(--favorite);
+}
+
+.phone-mac.favorite .phone-mac-star svg {
+  fill: currentColor;
+}
+
+.phone-mac-name {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 50px;
+  font-size: 17px;
+  text-align: start;
+}
+
+.phone-mac-name .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-mac.favorite .phone-mac-name .label {
+  font-weight: 600;
+}
+
+.phone-mac-name > svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.phone-mac-add,
+.sheet-note + .sheet-list {
+  margin-top: 10px;
+}
+
+/* On the phone a picture takes the whole screen on black, is pinched rather than stepped, and only the close button stays, clear of the notch. */
+html.phone .preview {
+  background: rgb(0 0 0 / calc(1 - var(--leaving, 0)));
+}
+
+html.phone .preview img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html.phone .preview-bar {
+  top: calc(var(--top) + 8px);
+  right: 12px;
+  padding: 0;
+  opacity: calc(1 - var(--leaving, 0) * 2);
+  background: rgb(255 255 255 / 16%);
+  border: none;
+  box-shadow: none;
+}
+
+html.phone .preview-bar .zooming {
+  display: none;
+}
+
+html.phone .preview-bar .icon-button {
+  width: 36px;
+  height: 36px;
+  color: #fff;
+  border-radius: 999px;
+}
+
+/* ------------------------------------------------------------------ */
+/* The welcome a first start opens over the board (docs/ux/welcome.md). */
+
+.welcome {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px 24px;
+  background: var(--bg);
+  animation: fade var(--settle) var(--ease) both;
+}
+
+.welcome-drag {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--topbar);
+  -webkit-app-region: drag;
+}
+
+.welcome-skip {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  padding: 4px 10px;
+  color: var(--text-faint);
+  border-radius: var(--radius);
+}
+
+.welcome-skip:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(520px, 100%);
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  animation: lift var(--settle) var(--ease) both;
+}
+
+.welcome-card h1 {
+  margin: 8px 0 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.welcome-card p {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.welcome-card .field {
+  margin: 0;
+}
+
+.welcome-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.welcome-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.welcome-list svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.welcome-list b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.welcome-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+}
+
+.welcome-status.ready {
+  color: var(--success-text);
+  background: var(--accent-soft);
+}
+
+.welcome-status.missing,
+.welcome-status.out,
+.welcome-status.key {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+}
+
+.welcome-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.welcome-command code {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  overflow-x: auto;
+  font-family: var(--font-code);
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: all;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.welcome-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(520px, 100%);
+  margin-top: 24px;
+}
+
+.welcome-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.welcome-dots button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  background: var(--fill-strong);
+  border-radius: 50%;
+  transition: width var(--settle) var(--ease), background var(--settle) var(--ease);
+}
+
+.welcome-dots button.on {
+  width: 20px;
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+/* The pictures. Each one's own rules are its last frame, which is what stays with Reduce motion. */
+
+.welcome-art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 150px;
+  overflow: hidden;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.welcome-art i {
+  display: block;
+}
+
+.board-art {
+  gap: 12px;
+  align-items: stretch;
+  padding: 18px 22px;
+}
+
+.art-column {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  width: 128px;
+}
+
+.art-column span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.art-column i {
+  height: 30px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  opacity: 0.6;
+}
+
+.art-card {
+  position: absolute;
+  top: 40px;
+  left: calc(50% - 206px + 280px);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 128px;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  animation: art-card 4.2s var(--ease) infinite;
+}
+
+.art-card b {
+  width: 8px;
+  height: 8px;
+  background: var(--done-solid);
+  border-radius: 50%;
+  animation: art-status 4.2s var(--ease) infinite;
+}
+
+.art-card i {
+  width: 90%;
+  height: 5px;
+  background: var(--fill-strong);
+  border-radius: 3px;
+}
+
+.art-card i + i {
+  width: 55%;
+}
+
+@keyframes art-card {
+  0%,
+  22% {
+    left: calc(50% - 206px);
+    transform: none;
+  }
+  30% {
+    transform: translateY(-4px) rotate(-2deg);
+  }
+  38%,
+  56% {
+    left: calc(50% - 206px + 140px);
+    transform: none;
+  }
+  64% {
+    transform: translateY(-4px) rotate(2deg);
+  }
+  72%,
+  100% {
+    left: calc(50% - 206px + 280px);
+    transform: none;
+  }
+}
+
+@keyframes art-status {
+  0%,
+  33% {
+    background: var(--accent);
+  }
+  38%,
+  67% {
+    background: var(--review-solid);
+  }
+  72%,
+  100% {
+    background: var(--done-solid);
+  }
+}
+
+.terminal-art {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: #e8e8ea;
+  background: #1c1c1e;
+  border-color: #1c1c1e;
+}
+
+.art-lights {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.art-lights i {
+  width: 10px;
+  height: 10px;
+  background: #ff5f57;
+  border-radius: 50%;
+}
+
+.art-lights i:nth-child(2) {
+  background: #febc2e;
+}
+
+.art-lights i:nth-child(3) {
+  background: #28c840;
+}
+
+.art-line {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.art-prompt {
+  color: #5fd068;
+}
+
+.art-typed {
+  width: calc(var(--chars) * 1ch);
+  overflow: hidden;
+  border-right: 2px solid transparent;
+  animation:
+    art-type 1.8s steps(var(--chars)) both,
+    art-caret 0.8s step-end 6;
+}
+
+.art-answer {
+  color: #5fd068;
+  animation: fade var(--settle) var(--ease) 1.9s both;
+}
+
+@keyframes art-type {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes art-caret {
+  50% {
+    border-color: #e8e8ea;
+  }
+}
+
+.folder-art {
+  gap: 36px;
+}
+
+.art-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 170px;
+  padding: 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.art-list i,
+.art-slot {
+  height: 18px;
+  background: var(--fill);
+  border-radius: 4px;
+}
+
+.art-slot {
+  background: var(--accent-soft);
+  animation: art-slot 3.6s var(--ease) infinite;
+}
+
+.art-folder {
+  position: absolute;
+  top: 84px;
+  left: calc(50% - 104px);
+  display: flex;
+  color: var(--accent);
+  animation: art-folder 3.6s var(--ease) infinite;
+}
+
+@keyframes art-folder {
+  0% {
+    top: 40px;
+    left: calc(50% + 70px);
+    opacity: 0;
+    transform: scale(1.3);
+  }
+  15% {
+    top: 40px;
+    left: calc(50% + 70px);
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  50%,
+  100% {
+    top: 84px;
+    left: calc(50% - 104px);
+    opacity: 1;
+    transform: scale(0.7);
+  }
+}
+
+@keyframes art-slot {
+  0%,
+  45% {
+    background: var(--fill);
+  }
+  55%,
+  100% {
+    background: var(--accent-soft);
+  }
+}
+
+.keys-art {
+  flex-direction: column;
+  gap: 14px;
+}
+
+.art-keys {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.art-keys kbd {
+  min-width: 34px;
+  padding: 6px 8px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  text-align: center;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 3px;
+  border-radius: var(--radius);
+  animation: art-press 4s var(--ease) infinite;
+}
+
+.art-keys span {
+  width: 64px;
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.art-keys.art-correct kbd:nth-child(2) {
+  animation-delay: 0.25s;
+}
+
+.art-keys.art-correct kbd:nth-child(3) {
+  animation-delay: 0.5s;
+}
+
+.art-keys.art-dictate kbd {
+  animation-delay: 2s;
+}
+
+.art-keys.art-dictate kbd:nth-child(2) {
+  animation-delay: 2.25s;
+}
+
+.art-keys.art-dictate kbd:nth-child(3) {
+  animation-delay: 2.5s;
+}
+
+@keyframes art-press {
+  0%,
+  100% {
+    transform: none;
+  }
+  4%,
+  28% {
+    color: var(--accent-text);
+    background: var(--accent);
+    border-color: var(--accent);
+    border-bottom-width: 1px;
+    transform: translateY(2px);
+  }
+  34% {
+    transform: none;
+  }
+}
+
+.phone-art {
+  gap: 48px;
+}
+
+.art-code {
+  display: grid;
+  grid-template-columns: repeat(5, 12px);
+  gap: 2px;
+  padding: 8px;
+  background: #ffffff;
+  border-radius: 4px;
+}
+
+.art-code i {
+  height: 12px;
+}
+
+.art-code i.on {
+  background: #1d1d1f;
+}
+
+.art-phone {
+  position: relative;
+  width: 64px;
+  height: 118px;
+  overflow: hidden;
+  background: var(--bg-raised);
+  border: 3px solid var(--text);
+  border-radius: 14px;
+  animation: art-tilt 3.6s var(--ease) infinite;
+}
+
+.art-scan {
+  position: absolute;
+  inset: 30% 10% auto;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  opacity: 0;
+  animation: art-scan 3.6s linear infinite;
+}
+
+@keyframes art-tilt {
+  0%,
+  100% {
+    transform: translateX(30px) rotate(8deg);
+  }
+  30%,
+  75% {
+    transform: none;
+  }
+}
+
+@keyframes art-scan {
+  0%,
+  30% {
+    top: 30%;
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  55% {
+    top: 70%;
+  }
+  70% {
+    top: 30%;
+    opacity: 1;
+  }
+  75%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-art,
+  .welcome-art * {
+    animation: none !important;
+  }
+}
+
+</style>
+<style id="request-css">
+/*
+ * The request block: a card in the transcript, as a permission card is, but
+ * GeckIt's own question. Rows fold to a title so a batch is approved at a
+ * glance; everything else is one press away.
+ */
+
+.card.request {
+  padding: 12px 6px 10px;
+}
+
+.card.request .card-title {
+  padding: 0 8px 8px;
+}
+
+.request-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.request-row + .request-row {
+  border-top: 1px solid var(--border);
+}
+
+.request-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 4px 0 8px;
+  border-radius: var(--radius);
+}
+
+.request-line:hover {
+  background: var(--bg-hover);
+}
+
+.request-line input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.request-open {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 6px 0;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.request-open .tinted {
+  flex: none;
+  font-size: 12px;
+}
+
+.request-open .title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.request-open .chevron {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-faint);
+  transition: transform var(--quick) var(--ease);
+}
+
+.request-row.open .chevron {
+  transform: rotate(90deg);
+}
+
+.request-row.off .request-open .title,
+.request-row.off .request-open .tinted {
+  color: var(--text-faint);
+}
+
+.request-more {
+  padding: 2px 12px 12px 34px;
+}
+
+.request-more .prompt {
+  white-space: pre-wrap;
+}
+
+.request-more .goal {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.request-more input {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.request-reply {
+  padding: 8px 8px 0;
+}
+
+.request-reply input {
+  width: 100%;
+}
+
+.card.request .card-actions {
+  align-items: center;
+  padding: 0 8px;
+}
+
+.card.request .card-actions .spacer {
+  flex: 1;
+}
+
+.request-row .request-status {
+  flex: none;
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.request-row .request-status.refused {
+  color: var(--text-faint);
+}
+
+.state-said.said-review {
+  color: var(--review-solid);
+}
+
+.state-said.said-review .state-dot {
+  background: var(--review-solid);
+}
+
+.state-said.said-done {
+  color: var(--done-solid);
+}
+
+.state-said.said-done .state-dot {
+  background: var(--done-solid);
+}
+
+.card.request.answered-block .card-title {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.card.request.answered-block .card-title .glyph {
+  color: var(--success-text);
+}
+
+.request-replied {
+  padding: 6px 8px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* The parent's children, counted on its board card. */
+.board-card-kids,
+.board-card-from {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.board-card-from button,
+.board-card-kids button {
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* A notice that can be answered where it stands: the one button approvals need, under the words as an update's are. */
+.notice .notice-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.notice .notice-actions button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+html.phone .card.request {
+  padding: 14px 8px 10px;
+}
+
+html.phone .request-line {
+  min-height: 48px;
+}
+
+html.phone .request-line input {
+  width: 20px;
+  height: 20px;
+}
+
+html.phone .request-open .tinted {
+  font-size: 14px;
+}
+
+html.phone .request-more {
+  padding-left: 38px;
+  font-size: 16px;
+}
+
+html.phone .request-more .goal {
+  font-size: 14px;
+}
+
+html.phone .request-more input,
+html.phone .request-reply input {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 16px;
+  border-radius: 12px;
+}
+
+html.phone .card.request .card-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+html.phone .card.request .card-actions .spacer {
+  display: none;
+}
+
+html.phone .card.request .card-actions .reply-toggle {
+  grid-column: 1 / -1;
+  height: 36px;
+  font-size: 15px;
+  font-weight: 400;
+}
+
+html.phone .request-row .request-status {
+  font-size: 14px;
+}
+</style>
+<style>
+/* The stage the two devices stand on, and mocks of what macOS and iOS draw themselves. */
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-sunken);
+}
+
+.stage {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px 24px 110px;
+}
+
+.device-label {
+  margin: 0 0 8px 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.mac {
+  position: relative;
+  width: 1060px;
+  height: 700px;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.mac .chat {
+  position: absolute;
+  inset: 0;
+}
+
+.mac .notices {
+  position: absolute;
+  top: 52px;
+}
+
+.mac .talk-scrim {
+  position: absolute;
+}
+
+.mac .talk.over {
+  inset: 56px 40px 28px;
+  width: calc(100% - 80px);
+  max-width: 820px;
+}
+
+.elsewhere {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--bg-sunken) 92%, transparent);
+}
+
+.os-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  color: var(--text);
+  text-align: left;
+  background: var(--glass);
+  backdrop-filter: saturate(180%) blur(30px);
+  border: 0;
+  border-radius: 16px;
+  box-shadow: var(--lift);
+  animation: pop var(--settle) var(--ease) both;
+}
+
+.mac-notes {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 350px;
+}
+
+.os-note .app-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  background: var(--accent);
+  border-radius: 8px;
+}
+
+.os-note .lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.os-note .app {
+  display: flex;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.os-note .app span:last-child {
+  margin-left: auto;
+}
+
+.os-note b {
+  font-weight: 600;
+}
+
+.os-note .sub,
+.os-note .text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.os-note .text {
+  color: var(--text-dim);
+}
+
+.os-note .os-action {
+  align-self: center;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.returned {
+  width: 1060px;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.returned .dim {
+  color: var(--text-faint);
+}
+
+.iphone {
+  position: relative;
+  width: 390px;
+  height: 780px;
+  overflow: hidden;
+  background: var(--screen);
+  border: 10px solid var(--screen);
+  border-radius: 48px;
+  box-shadow: var(--shadow);
+}
+
+.iphone iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 38px;
+}
+
+.locked {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 70px 12px 0;
+  color: var(--screen-text);
+  background: var(--screen);
+  border-radius: 38px;
+}
+
+.locked .clock {
+  font-size: 76px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.locked .date {
+  margin-bottom: 40px;
+  font-size: 18px;
+}
+
+.locked .os-note {
+  width: 100%;
+  font-size: 15px;
+}
+
+.locked .hint {
+  margin-top: auto;
+  margin-bottom: 30px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.proto {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 100;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  border-top: 1px solid var(--border);
+}
+
+.proto .on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.proto .said {
+  flex-basis: 100%;
+  color: var(--text-faint);
+}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div>
+    <div class="device-label" id="mac-label"></div>
+    <div class="mac" id="mac"></div>
+    <div class="returned" id="returned"></div>
+  </div>
+  <div>
+    <div class="device-label" id="phone-label"></div>
+    <div class="iphone" id="iphone"><iframe id="phone" title="GeckIt on the iPhone"></iframe></div>
+  </div>
+</div>
+
+<div class="proto">
+  <b>Prototype</b>
+  <button type="button" class="quiet" id="p-ask">Claude asks for 3</button>
+  <button type="button" class="quiet" id="p-other">Another conversation asks for 1</button>
+  <button type="button" class="quiet" id="p-gone">A command gives up</button>
+  <button type="button" class="quiet" id="p-move">The started ones move on</button>
+  <button type="button" class="quiet" id="p-linked">Claude runs geckit linked</button>
+  <button type="button" class="quiet" id="p-front">Chat window in front</button>
+  <button type="button" class="quiet" id="p-phone">Phone open</button>
+  <button type="button" class="quiet" id="p-wait">2 minutes pass</button>
+  <button type="button" class="quiet" id="p-reset">Start again</button>
+  <button type="button" class="quiet" id="p-theme">Dark</button>
+  <span class="said" id="p-said"></span>
+</div>
+
+<script>
+const PATHS = {
+  folder: 'M2.5 4.5a1 1 0 0 1 1-1h2.8l1.5 1.7h4.7a1 1 0 0 1 1 1v6.3a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1Z',
+  down: 'M4 6.5 8 10.5 12 6.5',
+  plus: 'M8 3.5v9M3.5 8h9',
+  close: 'M4 4l8 8M12 4l-8 8',
+  check: 'M3.5 8.5 6.5 11.5 12.5 4.5',
+  spinner: 'M8 2.5a5.5 5.5 0 1 0 5.5 5.5',
+  left: 'M10 3.5 5.5 8 10 12.5',
+  right: 'M6 3.5 10.5 8 6 12.5',
+  more: 'M4 8h.01M8 8h.01M12 8h.01',
+  up: 'M8 12.5v-9M4 7.5l4-4 4 4',
+}
+const icon = (name, size = 14, cls = '') =>
+  `<svg ${cls ? `class="${cls}" ` : ''}width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="${name === 'more' ? 2.6 : 1.45}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PATHS[name]}"/></svg>`
+const esc = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const COLORS = { geckit: 0, pinch: 1, trailmap: 5, docs: 3 }
+const CLI = '~/.geckit/bin/geckit'
+
+const CONVERSATIONS = {
+  trail: {
+    title: 'Offline trail pages',
+    project: 'trailmap',
+    said: 'Make the trail pages work offline: the page, its map tiles and the elevation chart.',
+    answer: 'The service worker caches each trail page with its tiles. Three things I found belong in conversations of their own, so I have asked GeckIt for them in one batch and am going on with the chart meanwhile.',
+    tasks: [
+      {
+        project: 'geckit',
+        title: 'Fix the flaky upload test',
+        text: 'The upload test in client/test/upload.test.ts fails about one run in five on CI: the fake server answers before the listener is attached. Make it wait for the listener, and run the file 50 times to show it holds. The failing runs are in the last three CI builds of main; the log line to look for is "ECONNRESET before listen".',
+        goal: 'upload.test.ts passes 50 runs in a row',
+      },
+      { project: 'pinch', title: 'Honour Retry-After in the client', text: 'trailmap now sends a Retry-After header on 429. Make the pinch client wait for it instead of retrying at once.' },
+      { project: 'trailmap', title: 'Cache the elevation charts', text: 'The elevation chart is drawn from /api/elevation on every visit. Cache the response in the service worker next to the tiles, so an offline trail page has its chart too.' },
+    ],
+  },
+  notes: {
+    title: 'Release notes 1.18',
+    project: 'geckit',
+    said: 'Write the release notes for 1.18.',
+    answer: 'The changelog is drafted. The README screenshots are out of date, so I have asked for a conversation to take them again.',
+    tasks: [{ project: 'geckit', title: 'Take the README screenshots again', text: 'Take the README screenshots again from the demo copy of the app: the board head changed in 1.18.' }],
+  },
+}
+const OTHERS = [
+  { id: 'o1', title: 'Tray icon blurry on Retina', project: 'geckit', at: '25m', column: 1, stands: 'The template image is drawn at 16 and 32 px now.' },
+  { id: 'o2', title: 'Upgrade to Next.js 16', project: 'pinch', at: 'Sun', column: 2, stands: 'Builds and the e2e suite passes on 16.0.2.' },
+]
+const STATUS = { working: ['said-working', 'working'], review: ['said-review', 'in review'], blocked: ['said-asks', 'blocked'], done: ['said-done', 'done'] }
+
+let batches, children, macOpen, phoneOpenOn, macFront, phoneOpen, pushed, notified, dismissed, returned, sent, focusAfter
+function reset() {
+  batches = []
+  children = []
+  macOpen = undefined
+  phoneOpenOn = 'o1'
+  macFront = true
+  phoneOpen = true
+  pushed = false
+  notified = []
+  dismissed = new Set()
+  returned = []
+  sent = 0
+  say('Press "Claude asks for 3". Approving is one press: "Start all" on the notice. Press the notice itself to open the conversation at its request.')
+  syncToggles()
+  draw()
+}
+
+function send(from) {
+  const id = `b${sent++}`
+  const tasks = CONVERSATIONS[from].tasks.map((t, i) => ({ ...t, id: `${id}t${i}`, n: i + 1, ticked: true, open: false, note: '' }))
+  batches.push({ id, from, tasks, reply: '', replying: false, state: 'waiting' })
+  if (!macFront) notified.push(id)
+  pushed = false
+}
+
+const waiting = () => batches.filter((b) => b.state === 'waiting')
+const batchOf = (id) => batches.find((b) => b.id === id)
+const taskOf = (id) => batches.flatMap((b) => b.tasks).find((t) => t.id === id)
+const ticked = (b) => b.tasks.filter((t) => t.ticked)
+const conv = (b) => CONVERSATIONS[b.from]
+const projects = (b) => [...new Set(b.tasks.map((t) => t.project))].join(', ')
+const many = (n) => (n === 1 ? 'a conversation' : `${n} conversations`)
+const primaryLabel = (b) => (b.tasks.length === 1 ? 'Start' : ticked(b).length === b.tasks.length ? 'Start all' : `Start ${ticked(b).length} of ${b.tasks.length}`)
+
+function answer(id, how, where) {
+  const b = batchOf(id)
+  if (b === undefined || b.state !== 'waiting') return
+  b.state = 'answered'
+  b.where = where
+  for (const t of b.tasks) {
+    t.started = how === 'start' && t.ticked
+    if (t.started) {
+      const child = { id: `c${children.length}`, title: t.title, project: t.project, parent: b.from, status: 'working' }
+      children.push(child)
+      t.child = child.id
+    }
+  }
+  notified = notified.filter((one) => one !== id)
+  const lines = b.tasks.map((t) => (t.started ? `${t.n} Started ${t.child}-4f1d8e2a...${t.note.trim() ? `: ${t.note.trim()}` : ''}` : `${t.n} Refused`))
+  if (b.reply.trim()) lines.push(`Reply: ${b.reply.trim()}`)
+  returned.unshift({ head: `printed to ${conv(b).title}`, lines })
+  const n = b.tasks.filter((t) => t.started).length
+  say(n === 0 ? `Refused on the ${where}. The command prints it, with the reply if one was typed.` : `Answered on the ${where}: ${n} started, In progress and "From ${conv(b).title}". Nothing opened. The command prints every answer at once.`)
+  draw()
+}
+
+function say(text) {
+  document.getElementById('p-said').textContent = text
+}
+
+// The block, the same on both devices; the phone's rules make it bigger.
+
+function blockHtml(b, here) {
+  if (b.state !== 'waiting') {
+    const n = b.tasks.filter((t) => t.started).length
+    const head =
+      b.state === 'withdrawn'
+        ? 'Claude stopped waiting for these.'
+        : n === 0
+          ? b.tasks.length === 1 ? 'Refused' : `Refused all ${b.tasks.length}`
+          : n === b.tasks.length ? `Started ${n}` : `Started ${n} of ${b.tasks.length}`
+    const elsewhere = b.state === 'answered' && b.where !== here ? ` on the ${b.where}` : ''
+    return `<div class="card request answered-block">
+      <div class="card-title"><span class="glyph">${icon(b.state === 'withdrawn' ? 'close' : 'check', 12)}</span>${head}${elsewhere}</div>
+      <div class="request-rows">${b.tasks
+        .map((t) => {
+          const child = children.find((c) => c.id === t.child)
+          const said = child === undefined ? `<span class="request-status refused">${b.state === 'withdrawn' ? 'not started' : 'refused'}</span>` : `<span class="request-status state-said ${STATUS[child.status][0]}"><span class="state-dot"></span>${STATUS[child.status][1]}</span>`
+          return `<div class="request-row"><div class="request-line"><button type="button" class="request-open"${child === undefined ? ' disabled' : ` data-go="${child.id}"`}><span class="tinted" style="--tint: var(--project-${COLORS[t.project]})">${t.project}</span><span class="title">${esc(t.title)}</span></button>${said}</div></div>`
+        })
+        .join('')}</div>
+      ${b.reply.trim() && b.state === 'answered' ? `<div class="request-replied">You replied: ${esc(b.reply.trim())}</div>` : ''}
+    </div>`
+  }
+  const one = b.tasks.length === 1
+  return `<div class="card request" data-block="${b.id}" role="group" aria-label="Claude wants to start ${many(b.tasks.length)}">
+    <div class="card-title">Claude wants to start ${many(b.tasks.length)}</div>
+    <div class="request-rows">${b.tasks
+      .map(
+        (t) => `<div class="request-row${t.open ? ' open' : ''}${t.ticked ? '' : ' off'}">
+        <div class="request-line">
+          ${one ? '' : `<input type="checkbox" ${t.ticked ? 'checked' : ''} data-tick="${t.id}" aria-label="Start ${esc(t.title)}" />`}
+          <button type="button" class="request-open" data-open="${t.id}" aria-expanded="${t.open}">
+            <span class="tinted" style="--tint: var(--project-${COLORS[t.project]})">${t.project}</span>
+            <span class="title">${esc(t.title)}</span>
+            ${icon('right', 12, 'chevron')}
+          </button>
+        </div>
+        ${
+          t.open
+            ? `<div class="request-more"${one ? ' style="padding-left: 12px"' : ''}>
+          <div class="prompt">${esc(t.text)}</div>
+          ${t.goal === undefined ? '' : `<div class="goal">Goal: ${esc(t.goal)}</div>`}
+          <input type="text" placeholder="Note for this conversation" data-note="${t.id}" value="${esc(t.note)}" />
+        </div>`
+            : ''
+        }
+      </div>`,
+      )
+      .join('')}</div>
+    ${b.replying ? `<div class="request-reply"><input type="text" placeholder="Reply to Claude (optional)" data-reply="${b.id}" value="${esc(b.reply)}" /></div>` : ''}
+    <div class="card-actions">
+      ${b.replying ? '' : `<button type="button" class="quiet reply-toggle" data-replying="${b.id}">Reply to Claude</button>`}
+      <span class="spacer"></span>
+      <button type="button" class="quiet" data-refuse="${b.id}" data-where="${here}">${one ? 'Refuse' : 'Refuse all'}</button>
+      <button type="button" class="primary" data-start="${b.id}" data-where="${here}" ${ticked(b).length === 0 ? 'disabled' : ''}>${primaryLabel(b)}</button>
+    </div>
+  </div>`
+}
+
+function transcriptOf(from, here) {
+  const c = CONVERSATIONS[from]
+  const mine = batches.filter((b) => b.from === from)
+  return `<div class="turn"><div class="mine">${esc(c.said)}</div></div>
+    ${mine.length === 0 ? '' : `<div class="turn"><div class="theirs"><p>${esc(c.answer)}</p></div></div>`}
+    ${mine
+      .map(
+        (b) => `<div class="turn step"><button type="button" class="did" disabled><span class="glyph${b.state === 'waiting' ? ' spinning' : ''}">${icon(b.state === 'waiting' ? 'spinner' : 'check', 12)}</span><span class="what">${CLI} start --tasks tasks.json</span></button></div>
+      <div class="turn">${blockHtml(b, here)}</div>`,
+      )
+      .join('')}`
+}
+
+function childTranscript(child) {
+  const t = batches.flatMap((b) => b.tasks).find((one) => one.child === child.id)
+  return `<div class="turn"><div class="mine">${esc(t.text)}${t.note.trim() ? `\n\nAlex: ${esc(t.note.trim())}` : ''}</div></div>
+    <div class="turn"><div class="theirs"><p>Looking at it now.</p></div></div>`
+}
+
+// The board: the asker's state and its children's counts; a child's parent.
+
+function boardCards() {
+  const cards = []
+  for (const c of [...children].reverse()) {
+    const column = c.status === 'review' || c.status === 'blocked' ? 1 : c.status === 'done' ? 2 : 0
+    cards.push({ id: c.id, title: c.title, project: c.project, at: 'now', column, parent: c.parent, state: c.status === 'working' ? ['said-working', 'Claude is working'] : undefined, stands: c.status === 'working' ? 'Working' : 'Finished.' })
+  }
+  for (const [key, c] of Object.entries(CONVERSATIONS)) {
+    const asks = waiting().filter((b) => b.from === key)
+    const kids = children.filter((one) => one.parent === key)
+    const counts = Object.entries(STATUS)
+      .map(([status, [, words]]) => [kids.filter((k) => k.status === status).length, words])
+      .filter(([n]) => n > 0)
+      .map(([n, words]) => `${n} ${words}`)
+      .join(', ')
+    cards.push({
+      id: key,
+      title: c.title,
+      project: c.project,
+      at: key === 'trail' ? '2m' : '9m',
+      column: 0,
+      state: asks.length > 0 ? ['said-asks', 'Asking you'] : batches.some((b) => b.from === key) ? ['said-working', 'Claude is working'] : undefined,
+      stands: asks.length > 0 ? `Wants to start ${many(asks.reduce((n, b) => n + b.tasks.length, 0))}` : key === 'trail' ? 'Working - drawing the chart offline' : 'The changelog is drafted.',
+      kids: kids.length === 0 ? undefined : `Started ${kids.length} - ${counts}`,
+    })
+  }
+  return [...cards, ...OTHERS]
+}
+
+function drawBoard() {
+  const cards = boardCards()
+  return ['In progress', 'In review', 'Done']
+    .map((title, i) => {
+      const rows = cards.filter((c) => c.column === i)
+      return `<div class="board-column">
+      <div class="board-column-head">${title}<span class="spacer"></span><span class="count">${rows.length}</span></div>
+      <div class="board-cards"><div class="board-day">${rows
+        .map(
+          (c) => `<div class="board-card" role="button" tabindex="0" data-go="${c.id}">
+          <div class="board-card-head"><span class="board-card-title">${esc(c.title)}</span><span class="changed">${c.at}</span></div>
+          <div class="board-card-foot"><span class="tinted" style="--tint: var(--project-${COLORS[c.project]})">${c.project}</span><span class="spacer"></span></div>
+          ${c.parent === undefined ? '' : `<div class="board-card-from">From <button type="button" data-go="${c.parent}">${esc(CONVERSATIONS[c.parent].title)}</button></div>`}
+          ${c.state ? `<div class="board-card-state"><span class="state-said ${c.state[0]}"><span class="state-dot"></span>${c.state[1]}</span></div>` : ''}
+          ${c.stands ? `<div class="board-card-stands"><span>${esc(c.stands)}</span></div>` : ''}
+          ${c.kids ? `<div class="board-card-kids"><button type="button" data-go="${c.id}">${esc(c.kids)}</button></div>` : ''}
+        </div>`,
+        )
+        .join('')}</div></div></div>`
+    })
+    .join('')
+}
+
+function noticeTitle(b) {
+  return b.tasks.length === 1 ? `Wants to start a conversation - ${b.tasks[0].project}` : `Wants to start ${b.tasks.length} conversations - ${projects(b)}`
+}
+
+function macNotices() {
+  const list = waiting().filter((b) => !dismissed.has(b.id) && b.from !== macOpen)
+  if (!macFront || list.length === 0) return ''
+  return `<div class="notices no-drag" aria-live="polite">${list
+    .map(
+      (b) => `<div class="notice asks" role="button" tabindex="0" data-review="${b.id}" data-where="Mac">
+      <span class="state"></span>
+      <span class="lines">
+        <span class="title">${esc(noticeTitle(b))}</span>
+        <span class="subtitle">${esc(conv(b).title)}</span>
+        <span class="body">${esc(b.tasks.map((t) => t.title).join(', '))}</span>
+        <span class="notice-actions"><button type="button" class="primary" data-start="${b.id}" data-where="Mac">${b.tasks.length === 1 ? 'Start' : 'Start all'}</button></span>
+      </span>
+      <button type="button" class="icon-button" aria-label="Dismiss" data-dismiss="${b.id}">${icon('close', 12)}</button>
+    </div>`,
+    )
+    .join('')}</div>`
+}
+
+function macNotifications() {
+  if (macFront) return ''
+  const list = waiting().filter((b) => notified.includes(b.id))
+  if (list.length === 0) return ''
+  return `<div class="mac-notes">${list
+    .map(
+      (b) => `<div class="os-note">
+    <span class="app-icon"></span>
+    <span class="lines" data-review="${b.id}" data-where="Mac" data-front>
+      <span class="app"><span>GECKIT</span><span>now</span></span>
+      <b>${esc(noticeTitle(b))}</b>
+      <span class="sub">${esc(conv(b).title)}</span>
+      <span class="text">${esc(b.tasks.map((t) => t.title).join(', '))}</span>
+    </span>
+    <button type="button" class="quiet os-action" data-start="${b.id}" data-where="Mac">Start all</button>
+  </div>`,
+    )
+    .join('')}</div>`
+}
+
+function talkHtml(open, here) {
+  const child = children.find((c) => c.id === open)
+  const c = CONVERSATIONS[open]
+  const other = OTHERS.find((o) => o.id === open)
+  const title = child?.title ?? c?.title ?? other?.title
+  const project = child?.project ?? c?.project ?? other?.project
+  const from = child === undefined ? '' : `<span style="font-size: 12px; color: var(--text-faint)">From <button type="button" class="link-from" data-go="${child.parent}" style="padding: 0; font: inherit; color: var(--accent); background: none; border: 0; cursor: pointer">${esc(CONVERSATIONS[child.parent].title)}</button></span>`
+  const transcript = child !== undefined ? childTranscript(child) : c !== undefined ? transcriptOf(open, here) : `<div class="turn"><div class="theirs"><p>${esc(other.stands)}</p></div></div>`
+  return { title, project, from, transcript, child }
+}
+
+function drawMac() {
+  const count = waiting().length
+  let talk = ''
+  if (macOpen !== undefined) {
+    const t = talkHtml(macOpen, 'Mac')
+    talk = `<div class="talk-scrim" data-close></div>
+    <div class="talk over">
+      <div class="talk-head drag">
+        <span class="title">${esc(t.title)}</span>
+        <span class="tinted" style="font-size: 12px; --tint: var(--project-${COLORS[t.project]})">${t.project}</span>
+        ${t.from}
+        <div class="spacer"></div>
+        <button type="button" class="icon-button no-drag" aria-label="Close" data-close>${icon('close')}</button>
+      </div>
+      <div class="transcript">${t.transcript}</div>
+      <div class="composer"><div class="composer-inner"><textarea rows="1" placeholder="Ask for changes, or type / for commands"></textarea><div class="composer-bar"><span class="spacer"></span><button type="button" class="send" aria-label="Send">${icon('up')}</button></div></div></div>
+    </div>`
+  }
+  document.getElementById('mac').innerHTML = `<div class="chat boarded topped">
+    <div class="board">
+      <div class="board-head drag">
+        <button type="button" class="project no-drag"><span>${icon('folder')}</span><span class="name">All projects</span><span class="spacer"></span><span class="keys">Cmd+K</span>${icon('down', 11)}</button>
+        <span class="spacer"></span>
+        <span style="font-size: 12px; color: var(--text-faint)">Dock badge: ${count === 0 ? 'none' : count}</span>
+        <button type="button" class="new-session no-drag board-new">${icon('plus')}New task<span class="keys">Cmd+N</span></button>
+      </div>
+      <div class="board-columns">${drawBoard()}</div>
+    </div>
+    ${talk}
+  </div>
+  ${macNotices()}
+  ${macFront ? '' : '<div class="elsewhere">Another app is in front. GeckIt is behind it.</div>'}
+  ${macNotifications()}`
+  document.getElementById('mac-label').textContent = macFront ? "The Mac: GeckIt's Chat window, in front" : 'The Mac: GeckIt behind another app'
+  document.getElementById('returned').innerHTML =
+    returned.length === 0 ? '<span class="dim">What each asker\'s command prints appears here.</span>' : returned.map((r) => `<span class="dim"># ${esc(r.head)}</span>\n${esc(r.lines.join('\n'))}`).join('\n\n')
+}
+
+// The phone.
+
+const phone = document.getElementById('phone')
+function phoneDoc() {
+  const doc = phone.contentDocument
+  if (doc.getElementById('root') === null) {
+    doc.open()
+    doc.write(`<!doctype html><html class="phone" data-theme="light"><head><style>${document.getElementById('app-css').textContent}</style><style>${document.getElementById('request-css').textContent}</style></head><body><div id="root"></div></body></html>`)
+    doc.close()
+    wire(doc)
+  }
+  doc.documentElement.dataset.theme = document.documentElement.dataset.theme
+  doc.documentElement.style.setProperty('--top', '44px')
+  doc.documentElement.style.setProperty('--bottom', '20px')
+  return doc
+}
+
+function phoneBanners() {
+  const list = waiting().filter((b) => b.from !== phoneOpenOn)
+  if (list.length === 0) return ''
+  return `<div class="notices" aria-live="polite">${[...list]
+    .reverse()
+    .map(
+      (b) => `<div class="notice banner asks" role="button" tabindex="0" data-review="${b.id}" data-where="phone">
+      <span class="banner-icon" style="background: var(--project-${COLORS[conv(b).project]})">${icon('more', 18)}</span>
+      <span class="lines">
+        <span class="banner-head"><span class="banner-what">${b.tasks.length === 1 ? 'Wants to start a conversation' : `Wants to start ${b.tasks.length} conversations`}</span><span class="banner-when">now</span></span>
+        <span class="title">${esc(conv(b).title)}</span>
+        <span class="body">${esc(b.tasks.map((t) => t.title).join(', '))}</span>
+      </span>
+    </div>`,
+    )
+    .join('')}</div>`
+}
+
+function drawPhone() {
+  const shell = document.getElementById('iphone')
+  shell.querySelector('.locked')?.remove()
+  document.getElementById('phone-label').textContent = phoneOpen ? 'The iPhone: GeckIt open and linked' : 'The iPhone: locked, GeckIt closed'
+  if (!phoneOpen) {
+    const n = waiting().reduce((sum, b) => sum + b.tasks.length, 0)
+    const lock = document.createElement('div')
+    lock.className = 'locked'
+    lock.innerHTML = `<div class="clock">9:41</div><div class="date">Monday 28 September</div>
+      ${
+        pushed
+          ? `<div class="os-note" data-push role="button" tabindex="0"><span class="app-icon"></span><span class="lines"><span class="app"><span>GECKIT</span><span>now</span></span><b>${n > 1 ? `Claude wants to start ${n} conversations` : 'Claude wants to start a conversation'}</b><span class="text">${n > 1 ? 'Open GeckIt to review them.' : 'Open GeckIt to review it.'}</span></span></div>`
+          : ''
+      }
+      <div class="hint">${pushed ? 'No task text in the push: it goes through Apple.' : n > 0 ? 'Nothing yet: the Mac is being used.<br>Press "2 minutes pass".' : ''}</div>`
+    lock.addEventListener('click', clicked)
+    shell.append(lock)
+    return
+  }
+  const doc = phoneDoc()
+  const keep = doc.activeElement?.dataset?.note ?? doc.activeElement?.dataset?.reply
+  const t = talkHtml(phoneOpenOn, 'phone')
+  doc.getElementById('root').innerHTML = `<div class="chat boarded"><div class="talk over">
+    <div class="phone-nav">
+      <button type="button" class="phone-back">${icon('left', 22)}Board</button>
+      <div class="phone-nav-title"><b>${esc(t.title)}</b><span>${t.child === undefined ? t.project : `${t.project} - from ${esc(CONVERSATIONS[t.child.parent].title)}`}</span></div>
+      <span class="phone-nav-end"><button type="button" class="phone-icon" aria-label="More">${icon('more', 24)}</button></span>
+    </div>
+    <div class="transcript">${t.transcript}</div>
+    <div class="composer"><div class="composer-inner"><textarea rows="1" placeholder="Message"></textarea><div class="composer-bar"><span class="spacer"></span><button type="button" class="send" aria-label="Send">${icon('up')}</button></div></div></div>
+  </div></div>
+  ${phoneBanners()}`
+  const scroller = doc.querySelector('.transcript')
+  scroller.scrollTop = scroller.scrollHeight
+  if (keep !== undefined) doc.querySelector(`[data-note="${keep}"],[data-reply="${keep}"]`)?.focus()
+}
+
+function draw() {
+  const keep = document.activeElement?.dataset?.note ?? document.activeElement?.dataset?.reply
+  drawMac()
+  drawPhone()
+  const scroller = document.querySelector('#mac .transcript')
+  if (scroller !== null) scroller.scrollTop = scroller.scrollHeight
+  if (keep !== undefined) {
+    const field = document.querySelector(`#mac [data-note="${keep}"],#mac [data-reply="${keep}"]`)
+    field?.focus()
+    field?.setSelectionRange(field.value.length, field.value.length)
+  }
+  if (focusAfter !== undefined) {
+    document.querySelector(focusAfter)?.focus()
+    focusAfter = undefined
+  }
+}
+
+function clicked(event) {
+  const at = event.target.closest('[data-start],[data-refuse],[data-open],[data-replying],[data-dismiss],[data-review],[data-go],[data-close],[data-push]')
+  if (at === null) return
+  const onPhone = at.ownerDocument !== document
+  if (at.dataset.start !== undefined) {
+    event.stopPropagation()
+    return answer(at.dataset.start, 'start', at.dataset.where)
+  }
+  if (at.dataset.refuse !== undefined) return answer(at.dataset.refuse, 'refuse', at.dataset.where)
+  if (at.dataset.open !== undefined) {
+    const t = taskOf(at.dataset.open)
+    t.open = !t.open
+    return draw()
+  }
+  if (at.dataset.replying !== undefined) {
+    batchOf(at.dataset.replying).replying = true
+    draw()
+    ;(onPhone ? phone.contentDocument : document).querySelector(`${onPhone ? '' : '#mac '}[data-reply="${at.dataset.replying}"]`)?.focus()
+    return
+  }
+  if (at.dataset.dismiss !== undefined) {
+    event.stopPropagation()
+    dismissed.add(at.dataset.dismiss)
+    say('Dismissed. The request still waits in its conversation, and the card still says "Asking you".')
+    return draw()
+  }
+  if (at.dataset.review !== undefined) {
+    const b = batchOf(at.dataset.review)
+    if (at.dataset.where === 'Mac') {
+      macOpen = b.from
+      if (at.dataset.front !== undefined) {
+        macFront = true
+        notified = []
+        syncToggles()
+      }
+      focusAfter = `#mac [data-block="${b.id}"] .primary`
+      say('The asking conversation opens at its request, focus on the primary button: Enter starts. Open a row to read its prompt and goal, untick what should not start.')
+    } else phoneOpenOn = b.from
+    return draw()
+  }
+  if (at.dataset.go !== undefined) {
+    event.stopPropagation()
+    if (onPhone) phoneOpenOn = at.dataset.go
+    else macOpen = at.dataset.go
+    return draw()
+  }
+  if (at.dataset.close !== undefined) {
+    macOpen = undefined
+    return draw()
+  }
+  if (at.dataset.push !== undefined) {
+    phoneOpen = true
+    pushed = false
+    syncToggles()
+    phoneOpenOn = waiting()[0]?.from ?? phoneOpenOn
+    say('The push opened GeckIt, which linked to the Mac and opened the asking conversation at its request.')
+    return draw()
+  }
+}
+
+function changed(event) {
+  const tick = event.target.dataset?.tick
+  if (tick !== undefined) {
+    taskOf(tick).ticked = event.target.checked
+    return draw()
+  }
+  const note = event.target.dataset?.note
+  if (note !== undefined) taskOf(note).note = event.target.value
+  const reply = event.target.dataset?.reply
+  if (reply !== undefined) batchOf(reply).reply = event.target.value
+}
+
+// Enter on the block's button starts, Cmd+Enter from a field does too; Right and Left open and fold a row.
+function keyed(event) {
+  const block = event.target.closest?.('[data-block]')
+  if (block === null || block === undefined) return
+  const where = event.target.ownerDocument === document ? 'Mac' : 'phone'
+  const b = batchOf(block.dataset.block)
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && event.target.matches('input[type=text]')) {
+    event.preventDefault()
+    if (ticked(b).length > 0) answer(b.id, 'start', where)
+    return
+  }
+  const open = event.target.dataset?.open
+  if (open !== undefined && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+    event.preventDefault()
+    taskOf(open).open = event.key === 'ArrowRight'
+    draw()
+    ;(where === 'Mac' ? document.querySelector(`#mac [data-open="${open}"]`) : phone.contentDocument.querySelector(`[data-open="${open}"]`))?.focus()
+  }
+}
+
+function wire(root) {
+  root.addEventListener('click', clicked)
+  root.addEventListener('input', changed)
+  root.addEventListener('change', changed)
+  root.addEventListener('keydown', keyed)
+}
+wire(document.getElementById('mac'))
+
+function syncToggles() {
+  const front = document.getElementById('p-front')
+  front.classList.toggle('on', macFront)
+  front.textContent = macFront ? 'Chat window in front' : 'Chat window behind'
+  const open = document.getElementById('p-phone')
+  open.classList.toggle('on', phoneOpen)
+  open.textContent = phoneOpen ? 'Phone open' : 'Phone locked'
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && macOpen !== undefined && !event.target.matches?.('input')) {
+    macOpen = undefined
+    draw()
+  }
+})
+document.getElementById('p-ask').addEventListener('click', () => {
+  send('trail')
+  say(macFront ? '"Offline trail pages" asks for 3. A notice with "Start all"; its card says "Asking you". The phone shows a banner.' : 'GeckIt is behind another app: a macOS notification with the action "Start all".')
+  draw()
+})
+document.getElementById('p-other').addEventListener('click', () => {
+  send('notes')
+  say('"Release notes 1.18" asks for 1 while the other may still wait: its own block, notice and "Asking you". One task: "Start", no boxes.')
+  draw()
+})
+document.getElementById('p-gone').addEventListener('click', () => {
+  const b = waiting()[0]
+  if (b === undefined) return say('Nothing is waiting.')
+  b.state = 'withdrawn'
+  notified = notified.filter((one) => one !== b.id)
+  returned.unshift({ head: `printed to ${conv(b).title}`, lines: ['GeckIt closed before answering.'] })
+  say('The command ended before the answer: the block folds to "Claude stopped waiting for these." and nothing started.')
+  draw()
+})
+document.getElementById('p-move').addEventListener('click', () => {
+  if (children.length === 0) return say('Start some first.')
+  const order = ['working', 'review', 'done']
+  children.forEach((c, i) => {
+    if (i % 2 === 0 || c.status !== 'working') c.status = order[Math.min(order.indexOf(c.status) + 1, 2)]
+  })
+  say('The started conversations moved: the rows in the folded block and the counts on the asker\'s card follow them.')
+  draw()
+})
+document.getElementById('p-linked').addEventListener('click', () => {
+  const kids = children.filter((c) => c.parent === 'trail')
+  const refused = batches.filter((b) => b.from === 'trail' && b.state === 'answered').flatMap((b) => b.tasks.filter((t) => !t.started))
+  const lines = [
+    ...kids.map((k) => `started  ${`${k.id}-4f1d...`.padEnd(13)}${k.project.padEnd(10)}${STATUS[k.status][1].padEnd(11)}${k.title}`),
+    ...refused.map((t) => `refused  ${'-'.padEnd(13)}${t.project.padEnd(10)}${t.title}`),
+  ]
+  returned.unshift({ head: 'geckit linked, from Offline trail pages', lines: lines.length === 0 ? ['Nothing is linked to this conversation.'] : lines })
+  say('For Claude: its children with their status, and what was refused. It reads any of them further with geckit show <id> --last 10.')
+  draw()
+})
+document.getElementById('p-front').addEventListener('click', () => {
+  macFront = !macFront
+  if (macFront) notified = []
+  syncToggles()
+  draw()
+})
+document.getElementById('p-phone').addEventListener('click', () => {
+  phoneOpen = !phoneOpen
+  if (phoneOpen) pushed = false
+  syncToggles()
+  draw()
+})
+document.getElementById('p-wait').addEventListener('click', () => {
+  if (waiting().length === 0) return say('Nothing is waiting, so nothing is pushed.')
+  if (phoneOpen) return say('The phone is open and already shows its banners, so no push. Lock it first.')
+  pushed = true
+  say('Two minutes unanswered (or the Mac idle for two): one push, with no task text.')
+  draw()
+})
+document.getElementById('p-reset').addEventListener('click', reset)
+document.getElementById('p-theme').addEventListener('click', (event) => {
+  const dark = document.documentElement.dataset.theme === 'light'
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+  event.target.textContent = dark ? 'Light' : 'Dark'
+  draw()
+})
+
+reset()
+</script>
+</body>
+</html>

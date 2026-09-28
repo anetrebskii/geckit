@@ -1,5 +1,10 @@
-@import '@fontsource-variable/inter';
-@import '@fontsource-variable/jetbrains-mono';
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GeckIt - a limit on conversations working at once, and the queue</title>
+<!-- The app's own styles.css, the queue rules included, inlined as it stood when this was made. The UX is docs/ux/conversation-queue.md. -->
+<style>
 
 /*
  * One stylesheet for three windows.
@@ -4704,15 +4709,6 @@ html.framed .board-head {
   letter-spacing: 0.04em;
 }
 
-/* How many work against the limit, said as a card says it is working, so it does not read as a second count. */
-.board-column-head .working-count {
-  margin-inline-end: 10px;
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
 .board-cards {
   display: flex;
   flex: 1;
@@ -4907,6 +4903,57 @@ html.framed .board-head {
   color: var(--text-dim);
 }
 
+/* Where the conversations running stop and the tasks waiting for a slot begin. */
+.board-queue-line {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 4px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.board-queue-line .rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.board-queue-line .count {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* A task that is not a conversation yet: drawn in outline, filled in when it starts. */
+.board-card.queued {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+
+.board-card.queued:hover {
+  border-color: var(--text-faint);
+}
+
+.board-card.queued .board-card-title {
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.board-card.queued .board-card-stands {
+  color: var(--text-faint);
+}
+
+.tag.next {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
 /* Where a dragged card would land. It takes no room, so nothing moves under the pointer. */
 .board-drop {
   flex-shrink: 0;
@@ -4916,9 +4963,18 @@ html.framed .board-head {
   border-radius: 1px;
 }
 
-/* Above the first card it would sit outside the scrolled list and be cut off, so it takes the list's padding instead. */
-.board-day:first-child > .board-drop:first-child {
-  margin: -2px 2px -8px;
+.board-card.lifted {
+  opacity: 0.4;
+}
+
+/* A queued task cannot be In review or Done: the column says no rather than lighting up. */
+.board-column.refusing {
+  cursor: not-allowed;
+}
+
+/* A task that just started, settling into its place above the line. */
+.board-card.arrived {
+  animation: pop var(--settle) var(--ease) both;
 }
 
 .state-said {
@@ -5210,34 +5266,25 @@ html.phone button:active:not(:disabled) {
   letter-spacing: 0.01em;
 }
 
-/* The board's title is the first thing in the list, with the projects shown beside it, and scrolls away under the bar. */
-.phone-title-row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 16px;
-}
-
-.phone-title-row .phone-large {
-  min-width: 0;
-  margin: 0;
-}
-
-.phone-title-row .phone-scope {
-  min-width: 0;
-  max-width: 55%;
-  margin-top: 0;
+/* The board's title stands above the list rather than in it, so the list's scroll indicator starts under the header, and folds into the bar once the list is scrolled. */
+.phone-board .phone-large {
+  flex: none;
+  height: 41px;
   overflow: hidden;
-  white-space: nowrap;
+  transition:
+    height var(--settle) var(--ease),
+    opacity var(--settle) var(--ease);
 }
 
-/* The columns stay pinned under the bar, with a hairline once the title has gone. */
+.phone-board .phone-large.folded {
+  height: 0;
+  opacity: 0;
+}
+
+/* The line under it shows once the title has gone. */
 .phone-seg-bar {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  padding: 8px 16px 10px;
+  flex: none;
+  padding: 10px 16px 12px;
   background: var(--ground);
   transition: box-shadow var(--settle) var(--ease);
 }
@@ -5365,69 +5412,10 @@ html.phone button:active:not(:disabled) {
   border-radius: 12px;
 }
 
-/* Held and moved, a row lifts over the others, which step aside as it passes. */
-.phone-group.dragging {
-  overflow: visible;
-}
-
-.phone-group.dragging > .phone-swipe {
-  transition: transform 200ms var(--ease);
-}
-
-.phone-group.dragging > .phone-swipe.lifted {
-  z-index: 2;
-  border-radius: 12px;
-  box-shadow: var(--lift);
-  transition: none;
-}
-
 .phone-note {
   margin: 7px 32px 0;
   font-size: 13px;
   color: var(--text-faint);
-}
-
-/* How many work against the limit, in the bar beside the icons, as the Mac says it in the column's head. Full, it turns the warning colour: a new message would wait. */
-.phone-lineup {
-  display: flex;
-  flex: none;
-  gap: 6px;
-  align-items: center;
-  height: 26px;
-  padding: 0 10px;
-  margin-inline-end: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-faint);
-  background: var(--fill);
-  border: 0;
-  border-radius: 13px;
-}
-
-.phone-lineup .state-dot {
-  width: 6px;
-  height: 6px;
-  background: var(--text-faint);
-  border-radius: 50%;
-}
-
-.phone-lineup.said-working {
-  color: var(--accent);
-}
-
-.phone-lineup.said-working .state-dot {
-  background: var(--accent);
-  animation: breathe 1.6s ease-in-out infinite;
-}
-
-.phone-lineup.full {
-  color: var(--warning-text);
-  background: var(--warning-bg);
-}
-
-.phone-lineup.full .state-dot {
-  background: var(--warning-text);
 }
 
 .phone-foot {
@@ -8095,111 +8083,53 @@ html.phone .preview-bar .icon-button {
   white-space: nowrap;
 }
 
-/* Add a host: Address wide, User and Port beside it; what the SSH config knows drops over the sheet under them. */
+/* Add a host: Address wide, User and Port beside it. */
 .dialog.add-host {
-  width: min(540px, 94vw);
-  padding: 22px 24px 18px;
-}
-
-.add-host .add-host-lead {
-  margin: 0 0 16px;
-  font-size: 12px;
-  color: var(--text-faint);
+  width: min(520px, 94vw);
 }
 
 .add-host-grid {
-  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 128px 72px;
   gap: 10px;
+  margin-top: 12px;
 }
 
 .add-host input[type='text'],
 .add-host input[type='password'],
 .add-host select {
   width: 100%;
-  min-width: 0;
-  height: 30px;
-  padding: 0 9px;
-  background: var(--field);
-  border-radius: var(--radius);
-}
-
-.add-host input:focus,
-.add-host select:focus {
-  border-color: var(--accent);
-  outline: none;
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.host-auth-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
 }
 
 .host-auth {
-  height: 30px;
-  align-items: stretch;
-}
-
-.host-auth button {
-  height: auto;
-  padding: 0 11px;
-}
-
-.host-auth-row select,
-.host-auth-row input {
-  flex: 1;
+  width: max-content;
+  margin-bottom: 4px;
 }
 
 .host-offers {
-  position: absolute;
-  top: calc(100% - 8px);
-  right: 0;
-  left: 0;
-  z-index: 5;
   display: flex;
   flex-direction: column;
-  max-height: 260px;
-  padding: 4px;
-  overflow-y: auto;
-  background: var(--menu);
+  padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--lift);
-  backdrop-filter: saturate(180%) blur(30px);
-  animation: pop var(--settle) var(--ease) both;
-}
-
-.host-offers-title {
-  padding: 5px 9px 3px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-faint);
+  border-radius: var(--radius);
 }
 
 .host-offers button {
   display: flex;
-  flex-shrink: 0;
-  gap: 16px;
-  align-items: baseline;
+  gap: 8px;
   justify-content: space-between;
-  min-width: 0;
-  padding: 6px 9px;
+  padding: 4px 8px;
   text-align: left;
-  white-space: nowrap;
-  border-radius: 5px;
+  border-radius: 4px;
 }
 
-.host-offers button.lit {
+.host-offers button:hover {
   background: var(--bg-hover);
 }
 
 .host-offers .name {
-  overflow: hidden;
+  font-family: var(--font-code);
   color: var(--text);
-  text-overflow: ellipsis;
 }
 
 .host-offers .says {
@@ -8674,188 +8604,566 @@ html.phone .preview-bar .icon-button {
   opacity: 0.55;
 }
 
-/*
- * What a host is, in motion, 5 s a round: the middle card here is sent, a dot
- * crosses to the host, Claude Code writes there, and a dot brings the answer
- * back to the card. Still, it stands at the answer.
- */
-.hosts-motion {
-  display: grid;
-  grid-template-columns: 1fr minmax(64px, 1.2fr) 1fr;
-  gap: 10px;
-  align-items: start;
-  padding: 14px 16px 10px;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+</style>
+<style>
+
+/* The page around the block, not part of the design. */
+[data-theme-frame='light'] {
+  --bg: #ffffff;
+  --bg-sunken: #f4f4f6;
+  --bg-raised: #ffffff;
+  /* The person's own message, and the field it was written in. */
+  --bubble: #f4f4f6;
+  --field: #ffffff;
+  --bg-hover: rgb(0 0 0 / 5%);
+  --bg-active: rgb(51 183 70 / 12%);
+  --border: #e3e3e6;
+  --border-strong: #cdcdd2;
+  --text: #1d1d1f;
+  --text-dim: #5c5c61;
+  --text-faint: #737378;
+  --accent: #1f8031;
+  --accent-text: #ffffff;
+  --accent-soft: #e6f4e8;
+  --danger: #c0392b;
+  --danger-solid: #c0392b;
+  --danger-text: #ffffff;
+  --warning-bg: #fdf3e0;
+  --warning-text: #8a6116;
+  --success-text: #2a7d3a;
+  --highlight: #fbeeb6;
+  --tooltip-bg: #2b2b2e;
+  --tooltip-text: #f2f2f4;
+  --code-bg: #f6f6f8;
+  /* The phone's own: iOS grouped lists, their hairlines, and the coloured backs of a swiped row. */
+  --ground: #f2f2f5;
+  --fill: rgb(118 118 128 / 12%);
+  --fill-strong: rgb(118 118 128 / 20%);
+  --separator: rgb(60 60 67 / 18%);
+  --scrim: rgb(0 0 0 / 28%);
+  --glass: rgb(249 249 251 / 82%);
+  --menu: rgb(246 246 248 / 96%);
+  --lift: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 18px 50px rgb(0 0 0 / 22%);
+  --review-solid: #c08a1e;
+  --done-solid: #2e9a42;
+  --more-solid: #8e8e93;
+  --favorite: #ffcc00;
+  --sheet: #f2f2f5;
+  --on-solid: #ffffff;
+  /* The Mac's screen is shown on black in either theme, as a photo or a video is. */
+  --screen: #000000;
+  --screen-bar: rgb(0 0 0 / 55%);
+  --screen-text: #f2f2f4;
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
+  /* A project's name, in the colour it was given: sky, blue, indigo, violet, purple, magenta, pink, slate. */
+  --project-0: hsl(196 80% 32%);
+  --project-1: hsl(220 70% 45%);
+  --project-2: hsl(258 55% 52%);
+  --project-3: hsl(300 45% 40%);
+  --project-4: hsl(338 65% 44%);
+  --project-5: hsl(176 70% 26%);
+  --project-6: hsl(30 40% 38%);
+  --project-7: hsl(215 16% 42%);
+}
+[data-theme-frame='dark'] {
+  --bg: #1e1e20;
+  --bg-sunken: #191919;
+  --bg-raised: #262629;
+  --bubble: #2a2a2d;
+  --field: #2a2a2d;
+  --bg-hover: rgb(255 255 255 / 7%);
+  --bg-active: rgb(74 200 92 / 18%);
+  --border: #35353a;
+  --border-strong: #4a4a50;
+  --text: #f2f2f4;
+  --text-dim: #a2a2a8;
+  --text-faint: #8e8e95;
+  --accent: #4ac85c;
+  --accent-text: #10210f;
+  --accent-soft: rgb(74 200 92 / 16%);
+  --danger: #e0796b;
+  --danger-solid: #e5484d;
+  --danger-text: #ffffff;
+  --warning-bg: #3a2f18;
+  --warning-text: #e0bb72;
+  --success-text: #7fc98d;
+  --highlight: #57481f;
+  --tooltip-bg: #3a3a3f;
+  --tooltip-text: #f2f2f4;
+  --code-bg: #1a1a1c;
+  --ground: #000000;
+  --fill: rgb(118 118 128 / 24%);
+  --fill-strong: rgb(118 118 128 / 36%);
+  --separator: rgb(84 84 88 / 55%);
+  --scrim: rgb(0 0 0 / 50%);
+  --glass: rgb(30 30 32 / 82%);
+  --menu: rgb(44 44 46 / 96%);
+  --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+  --review-solid: #a8781a;
+  --done-solid: #2b8a3c;
+  --more-solid: #636366;
+  --favorite: #ffd60a;
+  --sheet: #1c1c1e;
+  --on-solid: #ffffff;
+  --screen: #000000;
+  --screen-bar: rgb(0 0 0 / 55%);
+  --screen-text: #f2f2f4;
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
+  --project-0: hsl(196 70% 64%);
+  --project-1: hsl(220 85% 72%);
+  --project-2: hsl(258 75% 78%);
+  --project-3: hsl(300 50% 72%);
+  --project-4: hsl(338 75% 75%);
+  --project-5: hsl(172 50% 58%);
+  --project-6: hsl(32 40% 66%);
+  --project-7: hsl(215 18% 68%);
 }
 
-.hm-side {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
+html, body { overflow: auto; height: auto; }
+.proto { display: flex; flex-direction: column; }
+.proto-frame { min-width: 0; padding: 24px 24px 40px; color: var(--text); background: var(--bg); }
+.proto-frame h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--text-faint); }
+.proto-tools { display: flex; gap: 8px; align-items: center; }
+.proto-tools .quiet { padding: 2px 8px; font-size: 11px; }
+.caption { margin: 18px 0 8px; font-size: 11px; color: var(--text-faint); }
+.proto-board { position: relative; display: flex; height: 700px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg); }
+.proto-board .board-columns { padding: 12px; }
+.proto-row { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 20px; align-items: start; }
+.proto-static { position: static; transform: none; width: auto; box-shadow: var(--shadow); animation: none; }
+.proto-settings { max-height: none; overflow: visible; }
+.proto-picker-wrap { position: relative; }
+.proto-limits { position: absolute; top: 26px; left: 0; min-width: 120px; }
+.proto-menu { position: fixed; }
+.proto-scrim { position: absolute; }
+.proto-notices { position: absolute; top: 12px; right: 12px; width: 320px; z-index: 48; }
+</style>
+</head>
+<body>
+<main class="proto">
+  <section class="proto-frame" data-theme-frame="light">
+    <h2>Light</h2>
+    <div data-mount></div>
+  </section>
+  <section class="proto-frame" data-theme-frame="dark">
+    <h2>Dark</h2>
+    <div data-mount></div>
+  </section>
+</main>
+<script>
+const ICON = {
+  plus: 'M8 3.5v9M3.5 8h9',
+  down: 'M4 6.5 8 10.5 12 6.5',
+  check: 'M3 8.5 6.5 12 13 4.5',
+  close: 'M4 4l8 8M12 4l-8 8',
+  goal: 'M8 13.8a5.8 5.8 0 1 0 0-11.6 5.8 5.8 0 0 0 0 11.6ZM8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
+  chat: 'M13.5 9a2 2 0 0 1-2 2H6.2L3 13.5V4.5a2 2 0 0 1 2-2h6.5a2 2 0 0 1 2 2Z',
+  right: 'M6.5 4 10.5 8 6.5 12',
 }
+const icon = (name, size = 12, cls = '') =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${cls ? ` class="${cls}"` : ''}><path d="${ICON[name]}"/></svg>`
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const TINT = { geckit: 3, pinch: 6, trailmap: 1, 'formula-business': 0 }
+const tint = (p) => `style="--tint: var(--project-${TINT[p] ?? 2})"`
+const LIMITS = ['No limit', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+let seq = 100
 
-.hm-box {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  width: 100%;
-  max-width: 132px;
-  height: 64px;
-  padding: 8px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-}
-
-.hm-label {
-  font-size: 11px;
-  color: var(--text-faint);
-}
-
-.hm-card {
-  height: 12px;
-  background: var(--fill);
-  border-radius: 3px;
-}
-
-.hm-card.hm-sent {
-  animation: hm-sent 5s var(--ease) infinite;
-}
-
-.hm-there {
-  gap: 6px;
-  font-family: var(--font-code);
-}
-
-.hm-prompt {
-  font-size: 10px;
-  line-height: 1;
-  color: var(--text-dim);
-}
-
-.hm-spark {
-  color: #d97757;
-}
-
-.hm-line {
-  height: 5px;
-  background: var(--text-faint);
-  border-radius: 3px;
-  opacity: 0.5;
-  transform-origin: left;
-  animation: hm-line 5s linear infinite;
-}
-
-.hm-line:nth-of-type(3) {
-  width: 80%;
-  animation-name: hm-line-2;
-}
-
-.hm-line:nth-of-type(4) {
-  width: 55%;
-  animation-name: hm-line-3;
-}
-
-.hm-wire {
-  position: relative;
-  height: 64px;
-}
-
-.hm-wire::before {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  left: 0;
-  border-top: 1.5px dashed var(--border-strong);
-  content: '';
-}
-
-.hm-ssh {
-  position: absolute;
-  top: calc(50% + 8px);
-  left: 50%;
-  font-family: var(--font-code);
-  font-size: 10px;
-  color: var(--text-faint);
-  transform: translateX(-50%);
-}
-
-.hm-dot {
-  position: absolute;
-  top: calc(50% - 3.25px);
-  width: 8px;
-  height: 8px;
-  background: var(--accent);
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  opacity: 0;
-}
-
-.hm-out {
-  animation: hm-out 5s var(--ease) infinite;
-}
-
-.hm-back {
-  animation: hm-back 5s var(--ease) infinite;
-}
-
-@keyframes hm-sent {
-  0%, 4% { background: var(--fill); box-shadow: none; }
-  8%, 30% { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
-  76% { background: var(--fill); box-shadow: none; }
-  82%, 92% { background: var(--accent); box-shadow: none; }
-  100% { background: var(--fill); }
-}
-
-@keyframes hm-out {
-  0%, 10% { left: 0; opacity: 0; }
-  13% { opacity: 1; }
-  30% { left: calc(100% - 8px); opacity: 1; }
-  33%, 100% { left: calc(100% - 8px); opacity: 0; }
-}
-
-@keyframes hm-back {
-  0%, 62% { left: calc(100% - 8px); opacity: 0; }
-  65% { opacity: 1; }
-  80% { left: 0; opacity: 1; }
-  83%, 100% { left: 0; opacity: 0; }
-}
-
-@keyframes hm-line {
-  0%, 33% { transform: scaleX(0); }
-  43%, 92% { transform: scaleX(1); }
-  100% { transform: scaleX(0); }
-}
-
-@keyframes hm-line-2 {
-  0%, 43% { transform: scaleX(0); }
-  51%, 92% { transform: scaleX(1); }
-  100% { transform: scaleX(0); }
-}
-
-@keyframes hm-line-3 {
-  0%, 51% { transform: scaleX(0); }
-  59%, 92% { transform: scaleX(1); }
-  100% { transform: scaleX(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hosts-motion * {
-    animation: none !important;
+function fresh() {
+  return {
+    limit: 2,
+    running: [
+      { id: 'a', title: 'Honour Retry-After on 429s from the provider', project: 'pinch', state: 'working', stands: 'Editing src/retry.ts', goal: 'The retry test passes' },
+      { id: 'b', title: 'Board: drag several cards at once', project: 'geckit', state: 'asks', stands: 'Wants to run npm run test' },
+      { id: 'e', title: 'Phone: pair a second Mac', project: 'geckit', state: 'working', stands: 'Reading src/main/peer.ts' },
+      { id: 'c', title: 'Workflow templates from the formula registry', project: 'formula-business', state: 'blocked', stands: 'Needs the registry token' },
+    ],
+    queue: [
+      { id: 'q1', title: 'Trail map: show the elevation profile under the route', project: 'trailmap', text: 'Under the route, draw the elevation profile from the GPX points.', goal: 'The profile follows the pointer' },
+      { id: 'q2', title: 'Retry the phone link after the Mac wakes', project: 'geckit', text: 'When the Mac wakes from sleep the phone stays on Reconnecting.' },
+      { id: 'q3', title: 'README: say what Queue does', project: 'geckit', text: 'One paragraph in Chat about the queue and the limit.' },
+    ],
+    review: [{ id: 'r1', title: 'The request block, redesigned', project: 'geckit' }],
+    done: [{ id: 'd1', title: 'Dev and installed app side by side', project: 'geckit' }],
+    drag: undefined,
+    drop: undefined,
+    over: undefined,
+    ask: undefined,
+    menu: undefined,
+    removed: undefined,
+    arrived: undefined,
   }
+}
 
-  .hm-card.hm-sent {
-    background: var(--accent);
+const working = (s) => s.running.filter((c) => c.state === 'working').length
+const full = (s) => s.limit !== 0 && working(s) >= s.limit
+
+function said(card) {
+  if (card.state === 'working') return `<span class="state-said said-working"><span class="state-dot"></span>Working</span>`
+  if (card.state === 'asks') return `<span class="state-said said-asks"><span class="state-dot"></span>Asking you</span>`
+  return ''
+}
+
+function runCard(s, card) {
+  return `<div class="board-card${card.state === 'asks' ? ' waits asks' : ''}${s.drag?.id === card.id ? ' lifted' : ''}${s.arrived === card.id ? ' arrived' : ''}" draggable="true" data-card="${card.id}" tabindex="0">
+    <div class="board-card-head"><span class="board-card-title">${esc(card.title)}</span><span class="changed">${card.state === 'working' ? 'now' : '4m'}</span></div>
+    <div class="board-card-foot"><span><span class="tinted" ${tint(card.project)}>${card.project}</span></span>${card.state === 'blocked' ? '<span class="tag blocked">Blocked</span>' : ''}</div>
+    ${said(card) ? `<div class="board-card-state">${said(card)}</div>` : ''}
+    ${card.goal ? `<div class="board-card-goal">${icon('goal', 10)}<span>${esc(card.goal)}</span></div>` : ''}
+    ${card.stands ? `<div class="board-card-stands"><span>${esc(card.stands)}</span></div>` : ''}
+  </div>`
+}
+
+function queuedCard(s, card, index) {
+  const line = card.stopped ? 'Stopped. It carries on when its turn comes' : card.text
+  return `<div class="board-card queued${s.drag?.id === card.id ? ' lifted' : ''}" draggable="true" data-card="${card.id}" tabindex="0" title="Waits for a slot. Right click to start it now or remove it">
+    <div class="board-card-head"><span class="board-card-title">${esc(card.title)}</span></div>
+    <div class="board-card-foot"><span><span class="tinted" ${tint(card.project)}>${card.project}</span></span>${index === 0 ? `<span class="tag next">${s.starting ? `Starts in ${Math.max(1, Math.ceil((s.starting.at - Date.now()) / 1000))}s` : 'Next'}</span>` : '<span class="tag">Queued</span>'}</div>
+    ${card.goal ? `<div class="board-card-goal">${icon('goal', 10)}<span>${esc(card.goal)}</span></div>` : ''}
+    <div class="board-card-stands"><span>${esc(line)}</span></div>
+  </div>`
+}
+
+function plainCard(card, status) {
+  return `<div class="board-card" data-card="${card.id}" draggable="true">
+    <div class="board-card-head"><span class="board-card-title">${esc(card.title)}</span><span class="changed">1h</span></div>
+    <div class="board-card-foot"><span><span class="tinted" ${tint(card.project)}>${card.project}</span></span></div>
+    <div class="board-card-state"><span class="state-said ${status === 'review' ? 'said-review' : 'said-done'}"><span class="state-dot"></span>${status === 'review' ? 'in review' : 'done'}</span></div>
+  </div>`
+}
+
+// The cards of In progress in the order drawn, with the drop line where it would land.
+function progress(s) {
+  const drop = (list, at) => (s.drop && s.drop.list === list && s.drop.at === at ? '<div class="board-drop"></div>' : '')
+  let out = ''
+  s.running.forEach((card, i) => (out += drop('running', i) + runCard(s, card)))
+  out += drop('running', s.running.length)
+  if (s.queue.length > 0 && s.limit !== 0) {
+    out += `<div class="board-queue-line" title="Each starts, top first, when a working conversation stops">Queued<span class="rule"></span><span class="count">${s.queue.length}</span></div>`
+    s.queue.forEach((card, i) => (out += (i === 0 && !s.drag?.queued ? '' : drop('queue', i)) + queuedCard(s, card, i)))
+    out += drop('queue', s.queue.length)
   }
+  return out
 }
 
-.hosts-section-motion {
-  margin: 6px 0 4px;
+function board(s) {
+  const count = s.limit === 0 ? `${s.running.length}` : `${working(s)} of ${s.limit} working`
+  const col = (key, title, body, n) =>
+    `<div class="board-column${s.over === key && key !== 'progress' ? (s.drag?.queued ? ' refusing' : ' taking') : ''}" data-column="${key}">
+      <div class="board-column-head">${title}<span class="spacer"></span><span class="count">${n}</span></div>
+      <div class="board-cards">${body}</div>
+    </div>`
+  return `<div class="proto-board"><div class="board-columns">
+    ${col('progress', 'In progress', progress(s), count)}
+    ${col('review', 'In review', s.review.map((c) => plainCard(c, 'review')).join(''), s.review.length)}
+    ${col('done', 'Done', s.done.map((c) => plainCard(c, 'done')).join(''), s.done.length)}
+  </div>
+  ${s.removed ? `<div class="proto-notices"><div class="notice"><span class="state"></span><span class="lines"><span class="title">Removed "${esc(s.removed.card.title)}" from the queue</span><span class="notice-actions"><button type="button" class="quiet" data-undo>Undo</button></span></span><button type="button" class="icon-button" aria-label="Dismiss" data-unremove>${icon('close', 12)}</button></div></div>` : ''}
+  ${s.ask ? dialog(s) : ''}
+  ${s.menu ? `<div class="floating menu proto-menu" role="menu" style="left:${s.menu.x}px;top:${s.menu.y}px;min-width:170px">
+      <button type="button" role="menuitem" class="menu-item" data-now><span style="width:14px"></span><span class="label">Start now</span></button>
+      <button type="button" role="menuitem" class="menu-item" data-remove><span style="width:14px"></span><span class="label">Remove from queue</span></button>
+    </div>` : ''}
+  </div>`
 }
 
-.add-host .hosts-motion {
-  margin: 0 0 16px;
+function dialog(s) {
+  const { stop, start } = s.ask
+  const body = `${esc(stop.title)} stops where it is and waits in the queue where you dropped it. When its turn comes it carries on.`
+  return `<div class="dialog-scrim proto-scrim" data-keep><div class="dialog" role="dialog" aria-modal="true" data-inside>
+    <h2>Stop "${esc(stop.title)}" and start "${esc(start.title)}"?</h2>
+    <p>${body}</p>
+    <div class="dialog-actions"><button type="button" class="quiet" data-keep>Keep running</button><button type="button" class="primary" data-swap>Stop and start</button></div>
+  </div></div>`
 }
+
+function form(s) {
+  const n = working(s)
+  const isFull = full(s)
+  return `<div class="new-task proto-static">
+    <div class="new-task-head">New task</div>
+    <label class="new-task-label">Project<select class="new-task-where"><option>geckit</option></select></label>
+    <label class="new-task-label">What to do<textarea class="new-task-text" rows="3">When the Mac wakes from sleep the phone stays on Reconnecting. Make it dial again.</textarea></label>
+    <label class="new-task-label">Goal<input class="new-task-goal" placeholder="When it is done, as a condition. Leave empty for none"></label>
+    <div class="new-task-foot">
+      <span class="new-task-why">${isFull ? `${n} of ${s.limit} working. This starts when one of them stops.` : 'No goal: it stops when Claude is done. Cmd+Enter starts it'}</span>
+      <span class="spacer"></span>
+      <button type="button" class="quiet">Cancel</button>
+      <button type="button" class="primary" data-queue-task>${isFull ? 'Queue' : 'Start'}</button>
+    </div>
+  </div>`
+}
+
+function request(s) {
+  const n = working(s)
+  const isFull = full(s)
+  const rows = [
+    { title: 'Charts: axis labels overlap on narrow screens', project: 'trailmap' },
+    { title: 'Retry-After for the phone relay', project: 'pinch' },
+  ]
+  return `<div class="card request">
+    <div class="request-head"><span class="request-glyph">${icon('plus', 12)}</span>
+      <div class="request-heading"><div class="card-title">Claude wants to start 2 conversations</div>
+      <div class="request-sub">${isFull ? `${n} of ${s.limit} working, so these wait in the queue.` : 'Untick any you do not want. Nothing starts until you press Start.'}</div></div></div>
+    <div class="request-rows">${rows
+      .map(
+        (r) => `<div class="request-row"><div class="request-line"><input type="checkbox" checked aria-label="Start ${esc(r.title)}"><button type="button" class="request-open"><span class="request-title">${esc(r.title)}</span><span class="request-project tinted" ${tint(r.project)}>${r.project}</span>${icon('right', 12, 'chevron')}</button></div></div>`,
+      )
+      .join('')}</div>
+    <div class="request-foot"><button type="button" class="request-reply-add">${icon('chat', 11)}Reply to Claude</button><span class="spacer"></span>
+      <button type="button" class="quiet">Refuse all</button><button type="button" class="primary" data-queue-request>${isFull ? 'Queue all' : 'Start all'}</button></div>
+  </div>`
+}
+
+function settings(s) {
+  return `<div class="dialog proto-static proto-settings">
+    <div class="field">
+      <label>Conversations working at once</label>
+      <div class="proto-picker-wrap"><button type="button" class="picker select" data-limit-open>${LIMITS[s.limit]}${icon('down', 11)}</button>
+      ${s.picking ? `<div class="floating menu proto-limits" role="menu">${LIMITS.map((l, i) => `<button type="button" role="menuitem" class="menu-item${i === s.limit ? ' on' : ''}" data-limit="${i}"><span style="width:14px">${i === s.limit ? icon('check', 13) : ''}</span><span class="label">${l}</span></button>`).join('')}</div>` : ''}</div>
+      <span style="font-size:12px;color:var(--text-faint)">A task started when this many are working waits in In progress, in the order you drag the queue to, and starts when one of them stops: its turn is over, it waits for you, or it went to In review or Done.</span>
+    </div>
+  </div>`
+}
+
+function render(frame) {
+  const s = frame.s
+  frame.mount.innerHTML = `
+    <div class="caption proto-tools">The board, limit ${LIMITS[s.limit]}. Drag within In progress or to In review, right click a queued card. Pretend:
+      <button type="button" class="quiet" data-ends>A working one ends its turn</button>
+      <button type="button" class="quiet" data-answer>Answer one waiting for you</button></div>
+    ${board(s)}
+    <div class="proto-row">
+      <div><div class="caption">New task, ${full(s) ? 'the limit full' : 'room'}</div>${form(s)}</div>
+      <div><div class="caption">Claude's request, ${full(s) ? 'the limit full' : 'room'}</div>${request(s)}</div>
+      <div><div class="caption">Settings, Chat</div>${settings(s)}</div>
+    </div>`
+}
+
+// Where in In progress the pointer is: which list, and before which card.
+function spot(s, column, y) {
+  const cards = [...column.querySelectorAll('[data-card]')]
+  let list = 'running'
+  let at = 0
+  let seen = { running: 0, queue: 0 }
+  for (const el of cards) {
+    const id = el.dataset.card
+    const inQueue = s.queue.some((c) => c.id === id)
+    const box = el.getBoundingClientRect()
+    const key = inQueue ? 'queue' : 'running'
+    if (y < box.top + box.height / 2) return { list: key, at: seen[key] }
+    seen[key]++
+    list = key
+    at = seen[key]
+  }
+  return { list, at }
+}
+
+// A slot has to stay free this long before the next task takes it, so a turn that ends and carries straight on keeps its place.
+const GRACE = 10_000
+
+function startNext(s) {
+  const next = s.queue.shift()
+  s.running.push({ ...next, state: 'working', stands: next.stopped ? 'Continue.' : 'Reading the project' })
+  s.arrived = next.id
+}
+
+function take(s) {
+  const room = () => s.limit === 0 || working(s) < s.limit
+  if (s.queue.length === 0 || !room()) {
+    clearInterval(s.starting?.tick)
+    s.starting = undefined
+    return
+  }
+  if (s.limit === 0) {
+    while (s.queue.length > 0) startNext(s)
+    return
+  }
+  if (s.starting) return
+  s.starting = { at: Date.now() + GRACE }
+  s.starting.tick = setInterval(() => {
+    if (Date.now() >= s.starting.at) {
+      clearInterval(s.starting.tick)
+      s.starting = undefined
+      while (s.queue.length > 0 && room()) startNext(s)
+    }
+    s.redraw()
+  }, 250)
+}
+
+function landed(s, target) {
+  const drag = s.drag
+  s.drag = undefined
+  s.drop = undefined
+  s.over = undefined
+  if (!drag) return
+  const from = drag.queued ? s.queue : s.running
+  const index = from.findIndex((c) => c.id === drag.id)
+  const card = from[index]
+  if (target.column === 'review' || target.column === 'done') {
+    if (drag.queued) return
+    s.running.splice(index, 1)
+    s[target.column].unshift({ id: card.id, title: card.title, project: card.project })
+    take(s)
+    return
+  }
+  const { list, at } = target
+  if (!drag.queued && list === 'running') {
+    s.running.splice(index, 1)
+    s.running.splice(at > index ? at - 1 : at, 0, card)
+    return
+  }
+  if (drag.queued && list === 'queue') {
+    s.queue.splice(index, 1)
+    s.queue.splice(at > index ? at - 1 : at, 0, card)
+    return
+  }
+  // A card that holds no slot, or one dropped just under the line, stays with the conversations, at their end.
+  if (!drag.queued && (at === 0 || card.state !== 'working')) {
+    s.running.splice(index, 1)
+    s.running.push(card)
+    return
+  }
+  if (!drag.queued) s.ask = { stop: card, start: s.queue[0], at, how: 'down' }
+  else if (!full(s)) {
+    s.queue.splice(index, 1)
+    s.running.splice(at, 0, { ...card, state: 'working', stands: 'Reading the project' })
+    s.arrived = card.id
+  } else s.ask = { stop: s.running.filter((c) => c.state === 'working').at(-1), start: card, at, how: 'up' }
+}
+
+function swap(s) {
+  const { stop, start, at, how } = s.ask
+  s.ask = undefined
+  const stopped = { ...stop, stopped: true, state: undefined, stands: undefined, text: stop.stands ?? '' }
+  if (how === 'down') {
+    const where = s.running.findIndex((c) => c.id === stop.id)
+    s.running.splice(where, 1, { ...start, state: 'working', stands: 'Reading the project' })
+    s.queue.shift()
+    s.queue.splice(Math.max(0, at - 1), 0, stopped)
+  } else {
+    const where = s.queue.findIndex((c) => c.id === start.id)
+    const gone = s.running.findIndex((c) => c.id === stop.id)
+    s.running.splice(gone, 1)
+    s.running.splice(Math.min(gone < at ? at - 1 : at, s.running.length), 0, { ...start, state: 'working', stands: 'Reading the project' })
+    s.queue.splice(where, 1, stopped)
+  }
+  s.arrived = start.id
+}
+
+for (const section of document.querySelectorAll('[data-theme-frame]')) {
+  const frame = { s: fresh(), mount: section.querySelector('[data-mount]') }
+  // Whatever just changed, the queue looks again at whether there is room.
+  const again = () => {
+    take(frame.s)
+    render(frame)
+  }
+  frame.s.redraw = again
+  const s = () => frame.s
+  section.addEventListener('dragstart', (e) => {
+    const el = e.target.closest('[data-card]')
+    if (!el) return
+    const id = el.dataset.card
+    const queued = s().queue.some((c) => c.id === id)
+    if (!queued && !s().running.some((c) => c.id === id)) return e.preventDefault()
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+    s().drag = { id, queued }
+    s().arrived = undefined
+    requestAnimationFrame(again)
+  })
+  section.addEventListener('dragover', (e) => {
+    const column = e.target.closest('[data-column]')
+    if (!column || !s().drag) return
+    const key = column.dataset.column
+    const refused = s().drag.queued && key !== 'progress'
+    e.preventDefault()
+    e.dataTransfer.dropEffect = refused ? 'none' : 'move'
+    const drop = key === 'progress' ? spot(s(), column, e.clientY) : undefined
+    const same = JSON.stringify(drop) === JSON.stringify(s().drop) && s().over === key
+    s().drop = drop
+    s().over = key
+    if (!same) again()
+  })
+  section.addEventListener('drop', (e) => {
+    const column = e.target.closest('[data-column]')
+    e.preventDefault()
+    if (!column) return
+    const key = column.dataset.column
+    landed(s(), key === 'progress' ? { column: key, ...(s().drop ?? { list: 'running', at: s().running.length }) } : { column: key })
+    again()
+    section.querySelector('[data-swap]')?.focus()
+  })
+  section.addEventListener('dragend', () => {
+    if (!s().drag) return
+    s().drag = undefined
+    s().drop = undefined
+    s().over = undefined
+    again()
+  })
+  section.addEventListener('contextmenu', (e) => {
+    const el = e.target.closest('.board-card.queued')
+    if (!el) return
+    e.preventDefault()
+    s().menu = { id: el.dataset.card, x: e.clientX, y: e.clientY }
+    again()
+  })
+  section.addEventListener('click', (e) => {
+    const t = e.target
+    const st = s()
+    if (t.closest('[data-swap]')) { swap(st); return again() }
+    if (t.closest('[data-inside]')) return
+    if (t.closest('[data-keep]')) { st.ask = undefined; return again() }
+    if (t.closest('[data-now]')) {
+      const i = st.queue.findIndex((c) => c.id === st.menu.id)
+      const [card] = st.queue.splice(i, 1)
+      st.running.push({ ...card, state: 'working', stands: 'Reading the project' })
+      st.arrived = card.id
+      st.menu = undefined
+      return again()
+    }
+    if (t.closest('[data-remove]')) {
+      const i = st.queue.findIndex((c) => c.id === st.menu.id)
+      const [card] = st.queue.splice(i, 1)
+      clearTimeout(st.removed?.timer)
+      st.removed = { card, at: i, timer: setTimeout(() => { st.removed = undefined; again() }, 8000) }
+      st.menu = undefined
+      return again()
+    }
+    if (t.closest('[data-undo]')) {
+      clearTimeout(st.removed.timer)
+      st.queue.splice(st.removed.at, 0, st.removed.card)
+      st.removed = undefined
+      return again()
+    }
+    if (t.closest('[data-unremove]')) { clearTimeout(st.removed.timer); st.removed = undefined; return again() }
+    if (t.closest('[data-ends]')) {
+      const card = st.running.find((c) => c.state === 'working')
+      if (card) Object.assign(card, { state: 'idle', stands: 'Finished its turn. Waiting for you' })
+      take(st)
+      return again()
+    }
+    if (t.closest('[data-answer]')) {
+      const card = st.running.find((c) => c.state === 'asks' || c.state === 'idle')
+      if (card) Object.assign(card, { state: 'working', stands: 'Carrying on with your answer' })
+      st.arrived = undefined
+      take(st)
+      return again()
+    }
+    if (t.closest('[data-limit-open]')) { st.picking = !st.picking; return again() }
+    const limit = t.closest('[data-limit]')
+    if (limit) { st.limit = Number(limit.dataset.limit); st.picking = false; take(st); return again() }
+    if (t.closest('[data-queue-task]') && full(st)) {
+      st.queue.push({ id: `n${seq++}`, title: 'Retry the phone link after the Mac wakes', project: 'geckit', text: 'When the Mac wakes from sleep the phone stays on Reconnecting. Make it dial again.' })
+      return again()
+    }
+    if (st.menu || st.picking) { st.menu = undefined; st.picking = false; again() }
+  })
+  section.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return
+    const st = s()
+    if (st.ask || st.menu || st.picking) { st.ask = undefined; st.menu = undefined; st.picking = false; again() }
+  })
+  again()
+}
+</script>
+</body>
+</html>

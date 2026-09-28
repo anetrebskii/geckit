@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { UPDATE_CHANNELS, appName, channelLabel, profileOf } from '../../../shared/api'
-import type { AIProvider, OpenRule, PhoneView, ProjectProfile, Settings, Theme, UpdateChannel } from '../../../shared/api'
+import { ANYWHERE, UPDATE_CHANNELS, appName, channelLabel, profileOf } from '../../../shared/api'
+import type { AIProvider, Anywhere, OpenRule, PhoneView, ProjectProfile, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
 import { hostOf } from '../../../shared/hosts'
 import { homePath, projectLabel, projectName } from '../chat/project'
 import { Icon } from './Icon'
 import { Picker } from './Menu'
-import { MOD } from './Shortcuts'
+import { MOD, said } from './Shortcuts'
 import { Version } from './UpdateNotice'
 
 /**
@@ -57,6 +57,14 @@ const SECTIONS: readonly { readonly value: Section; readonly label: string }[] =
 ]
 
 const NOTE = { fontSize: 12, color: 'var(--text-faint)' } as const
+
+const ANYWHERE_SAID: readonly (readonly [Anywhere, string])[] = [
+  ['correct', 'Correct the selected text'],
+  ['dictate', 'Dictate'],
+  ['record', 'Record the screen'],
+  ['orders', 'Say what to do'],
+  ['search', 'Search conversations'],
+]
 
 export function SettingsDialog({
   settings,
@@ -209,6 +217,20 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
       </div>
 
       <div className="field">
+        <label>Conversations working at once</label>
+        <Picker
+          label={settings.workingAtOnce === 0 ? 'No limit' : String(settings.workingAtOnce)}
+          choices={[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => ({ value: String(count), label: count === 0 ? 'No limit' : String(count) }))}
+          chosen={String(settings.workingAtOnce)}
+          onPick={(value) => change({ workingAtOnce: Number(value) })}
+          className="select"
+        />
+        <span style={NOTE}>
+          A message sent while this many are working waits in its conversation. When one of them stops, the highest card in In progress with a message waiting goes first. A question asked with Ask never waits.
+        </span>
+      </div>
+
+      <div className="field">
         <label>Claude Code</label>
         <label className="check">
           <input type="checkbox" checked={settings.guideClaude} onChange={(event) => change({ guideClaude: event.target.checked })} />
@@ -217,6 +239,29 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
         <span style={NOTE}>
           Writes GECKIT.md in ~/.claude and one line in ~/.claude/CLAUDE.md that reads it, so a session knows about the
           board, goals and the links on a card. Turning this off takes both away again.
+        </span>
+      </div>
+
+      <div className="field">
+        <label>Shortcuts in any application</label>
+        {ANYWHERE_SAID.map(([key, what]) => (
+          <label key={key} className="check">
+            <input
+              type="checkbox"
+              checked={!settings.anywhereOff.includes(key)}
+              onChange={(event) =>
+                change({
+                  anywhereOff: event.target.checked
+                    ? settings.anywhereOff.filter((one) => one !== key)
+                    : [...settings.anywhereOff, key],
+                })
+              }
+            />
+            {what} <span style={NOTE}>{said(ANYWHERE[key])}</span>
+          </label>
+        ))}
+        <span style={NOTE}>
+          A shortcut turned off here is left to whatever else uses it, such as another copy of GeckIt running beside this one.
         </span>
       </div>
 

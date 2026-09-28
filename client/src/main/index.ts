@@ -1,5 +1,8 @@
+import './local-data'
+
 import { exec, execFile } from 'node:child_process'
 import { stat, writeFile } from 'node:fs/promises'
+import type { Server } from 'node:net'
 import { homedir, hostname } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -25,8 +28,11 @@ import QRCode from 'qrcode'
 import { ANYWHERE, homeOf, resumeCommand, shownProjects } from '../shared/api'
 import { newKey, pairingLink, SIGNAL } from '../shared/pairing'
 import type {
+  Anywhere,
   Answered,
   CardAnswer,
+  RequestChoice,
+  Lineup,
   ChatFound,
   CutOff,
   ChatSession,
@@ -53,17 +59,21 @@ import type {
 import track from './analytics'
 import { control } from './control'
 import { correct } from './correct'
-import { askOrders, carryOut, saying } from './orders'
+import { askOrders, carryOut, projectSaid, saying } from './orders'
 import type { Order, Told } from './orders'
 import { projectFiles } from './files'
 import { foldersIn } from './folders'
 import { fetchGit, gitRepo, gitState } from './git'
 import { keepGuide } from './guide'
+import { closeAsked, listenAsked } from './asked'
+import type { StartAnswered, StartAsked } from './asked'
 import { fileShown } from './file-shown'
 import { localFetch } from './local-page'
 import type { LocalAsk } from '../shared/local'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
+import type { Asking } from './sessions'
+import { firstLine } from './sessions/wording'
 import type { McpChange } from './sessions/mcp'
 import { readMcp } from './sessions/mcp'
 import { readBrowsers } from './sessions/chrome'
@@ -131,6 +141,7 @@ const ORDER = ANYWHERE.orders
 const RECORD = ANYWHERE.record
 
 let sessions: Sessions | undefined
+let lineup: Lineup = { working: 0, limit: 0 }
 let routes: Routes | undefined
 /** Every place's plan: this computer's, and each host that has a project on it. Built once, over `sessions` and `routes` however they stand when it is asked. */
 let plans: Plans | undefined
@@ -139,6 +150,7 @@ const hostWasUp = new Map<string, boolean>()
 let cutOffered = false
 /** What GECKIT.md was last kept at, so it is only written when the switch moves. */
 let guided: boolean | undefined
+let asked: Server | undefined
 
 // GeckIt's own window the dictation was started in, which it goes back into.
 let dictatedInto: BrowserWindow | undefined
@@ -305,6 +317,13 @@ function build(held: Routes): Sessions {
     mcp: (root, change) => (isRemote(root) ? hostMcp(held, root, change) : readMcp(root, change)),
     browsers: (root, pick) => (isRemote(root) ? Promise.resolve(undefined) : readBrowsers(root, pick)),
     claudeModels: (root) => (root !== undefined && isRemote(root) ? hostModels(held, root) : claudeModels()),
+    limit: () => getSettings().workingAtOnce,
+    order: () => getSettings().progressOrder,
+    lineup: (now) => {
+      if (now.working === lineup.working && now.limit === lineup.limit) return
+      lineup = now
+      tellChats('lineup:changed', now)
+    },
     changed: (all: readonly ChatSession[]) => {
       // Every conversation it holds, which is more than the window lists: another profile's rows stay held after a switch until they are read again. A general question belongs to no project and is always told.
       const settings = getSettings()
@@ -328,8 +347,15 @@ function build(held: Routes): Sessions {
         return
       }
       if (Notification.isSupported()) {
-        const note = new Notification({ title: notice.title, subtitle: notice.subtitle, body: notice.body })
+        const request = notice.request
+        const note = new Notification({
+          title: notice.title,
+          subtitle: notice.subtitle,
+          body: notice.body,
+          actions: request === undefined ? [] : [{ type: 'button', text: 'Start all' }],
+        })
         notices.add(note)
+        if (request !== undefined) note.on('action', () => void sessions?.startAll(request, 'mac'))
         note.on('click', () => {
           notices.delete(note)
           openChat(notice.session)
@@ -492,6 +518,30 @@ function registerSpotlight(): void {
   if (!took) log.warn(`${SPOTLIGHT} is taken by something else, the search has no shortcut`)
 }
 
+const REGISTER: Readonly<Record<Anywhere, () => void>> = {
+  correct: registerCorrect,
+  dictate: registerDictate,
+  search: registerSpotlight,
+  orders: registerOrder,
+  record: registerRecord,
+}
+
+/** The shortcuts in any application that are on, as Settings has them: each taken or given back as it changes. */
+const taken = new Set<Anywhere>()
+function keepShortcuts(off: readonly Anywhere[]): void {
+  for (const key of Object.keys(ANYWHERE) as Anywhere[]) {
+    const wanted = !off.includes(key)
+    if (wanted === taken.has(key)) continue
+    if (wanted) {
+      REGISTER[key]()
+      taken.add(key)
+    } else {
+      globalShortcut.unregister(ANYWHERE[key])
+      taken.delete(key)
+    }
+  }
+}
+
 /**
  * The dictation, put where the person was typing.
  *
@@ -517,7 +567,9 @@ function pasteBack(text: string): void {
     if (process.platform === 'darwin') {
       exec(`osascript -e 'tell application "System Events" to keystroke "v" using command down'`)
     }
-    setTimeout(registerDictate, 500)
+    setTimeout(() => {
+      if (!getSettings().anywhereOff.includes('dictate')) registerDictate()
+    }, 500)
   }, 300)
 }
 
@@ -559,6 +611,35 @@ async function readSaid(said: string): Promise<Answered> {
   if (orders.length === 0) return { ok: false, error: `Nothing to do in "${said}"` }
   planned = { orders, told }
   return { ok: true, plan: lines, heard: said }
+}
+
+/** Conversations Claude asked for with `geckit start`, begun only as the person answers in the conversation that asked. */
+async function startAsked(ask: StartAsked, gone: AbortSignal): Promise<StartAnswered> {
+  const held = sessions
+  if (held === undefined) return { ok: false, error: 'GeckIt is not ready yet.' }
+  if (typeof ask.from !== 'string' || ask.from === '') return { ok: false, error: 'Run this from a Claude Code session.' }
+  const tasks = Array.isArray(ask.tasks) ? ask.tasks : []
+  if (tasks.length === 0) return { ok: false, error: 'Task 1 has no text.' }
+  if (tasks.length > 20) return { ok: false, error: 'At most 20 tasks at once.' }
+  const projects = getSettings().projects
+  const asking: Asking[] = []
+  for (const [index, task] of tasks.entries()) {
+    const root = projects.find((one) => projectSaid(one, hostNamed) === task.project)
+    if (root === undefined) {
+      const names = projects.map((one) => projectSaid(one, hostNamed)).join(', ')
+      return { ok: false, error: `Task ${String(index + 1)}: no project called ${String(task.project)}. There are: ${names}` }
+    }
+    const text = typeof task.text === 'string' ? task.text.trim() : ''
+    if (text === '') return { ok: false, error: `Task ${String(index + 1)} has no text.` }
+    const title = typeof task.title === 'string' && task.title.trim() !== '' ? task.title.trim() : text.split(/(?<=[.!?])\s/)[0] ?? text
+    const goal = typeof task.goal === 'string' && task.goal.trim() !== '' ? task.goal.trim() : undefined
+    asking.push({ project: task.project, root, title: firstLine(title, 100), text, ...(goal === undefined ? {} : { goal }) })
+  }
+  if (!(await held.list(projects)).some((one) => one.id === ask.from)) {
+    return { ok: false, error: "This conversation's folder is not one of your projects in GeckIt." }
+  }
+  const answered = await held.request(ask.from, asking, getSettings().chatMode, gone)
+  return answered === undefined ? { ok: false, error: 'Claude stopped waiting.' } : { ok: true, ...answered }
 }
 
 /** The yes: what was read out loud a moment ago is carried out now. */
@@ -651,8 +732,12 @@ function openTerminal(root: string, run: string): void {
 /* ------------------------------------------------------------------ */
 
 /** Search, routed the same way the conversation files themselves are: this computer's own, or a host's mirror. */
-const searchChats = (roots: readonly string[], asked: string): Promise<ChatFound[]> =>
-  searchClaude(roots, asked, (root) => foldersFor(routes, root))
+const searchChats = async (roots: readonly string[], asked: string): Promise<ChatFound[]> => {
+  const said = await searchClaude(roots, asked, (root) => foldersFor(routes, root))
+  // A conversation not begun yet has no file, and what is queued in it is all there is to find.
+  const queued = (sessions?.queuedHolding(roots, asked) ?? []).filter((hit) => !said.some((one) => one.id === hit.id))
+  return [...queued, ...said]
+}
 
 function listChats(root: string | undefined, every: readonly string[]): Promise<ChatSession[]> {
   // Nothing for the project comes over as null, which is not a folder name.
@@ -924,7 +1009,10 @@ function wire(): void {
   ipcMain.on('chat:answer', (_event, id: string, card: string, answer: CardAnswer | string) =>
     sessions?.answer(id, card, answer),
   )
+  ipcMain.handle('chat:answerRequest', (_event, request: string, choice: RequestChoice) => sessions?.answerRequest(request, choice))
+  ipcMain.handle('chat:startAll', (_event, request: string, where: 'mac' | 'phone') => sessions?.startAll(request, where))
   ipcMain.on('chat:stop', (_event, id: string) => sessions?.stop(id))
+  ipcMain.handle('lineup:state', () => lineup)
   ipcMain.handle('chat:unqueue', (_event, id: string, queued: string) => sessions?.unqueue(id, queued))
   ipcMain.handle('chat:queuedPicture', (_event, id: string, queued: string, index: number) => sessions?.queuedPicture(id, queued, index))
   ipcMain.on('chat:requeue', (_event, id: string, queued: string, text: string) => sessions?.requeue(id, queued, text))
@@ -1043,6 +1131,8 @@ function wire(): void {
       void keepGuide(settings.guideClaude)
     }
     keepPhone(settings.phone, settings.phoneKey)
+    keepShortcuts(settings.anywhereOff)
+    sessions?.again()
     follow(settings.updateChannel)
     for (const window of everyWindow()) window.webContents.send('settings:changed', settings)
     shownPeer()?.webContents.send('peer:tell', 'settings:changed', phoneSettings(settings))
@@ -1117,7 +1207,10 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.clearTask': (id: string, task: string) => held()?.clearTask(id, task),
     'chat.taskOutput': (id: string, task: string) => held()?.taskOutput(id, task),
     'chat.answer': (id: string, card: string, answer: CardAnswer | string) => held()?.answer(id, card, answer),
+    'chat.answerRequest': (request: string, choice: RequestChoice) => held()?.answerRequest(request, choice),
+    'chat.startAll': (request: string, where: 'mac' | 'phone') => held()?.startAll(request, where),
     'chat.stop': (id: string) => held()?.stop(id),
+    'lineup.state': () => lineup,
     'chat.unqueue': (id: string, queued: string) => held()?.unqueue(id, queued),
     'chat.queuedPicture': (id: string, queued: string, index: number) => held()?.queuedPicture(id, queued, index),
     'chat.requeue': (id: string, queued: string, text: string) => held()?.requeue(id, queued, text),
@@ -1248,6 +1341,7 @@ if (!app.requestSingleInstanceLock()) {
     guided = getSettings().guideClaude
     void keepGuide(guided)
     keepPhone(getSettings().phone, getSettings().phoneKey)
+    asked = listenAsked(startAsked)
     wire()
     // The conversations are what this is opened for; correcting and dictating are a shortcut away.
     openChat()
@@ -1275,11 +1369,7 @@ if (!app.requestSingleInstanceLock()) {
       busy: (id) => started.busy(id),
       record: recordScreen,
     })
-    registerCorrect()
-    registerDictate()
-    registerSpotlight()
-    registerOrder()
-    registerRecord()
+    keepShortcuts(getSettings().anywhereOff)
     sweepRecordings()
     startUpdates({
       changed: (view) => tell('update:view', view),
@@ -1306,4 +1396,5 @@ app.on('will-quit', () => {
   routes?.forwards.dispose()
   routes?.hosts.dispose()
   closePeer()
+  closeAsked(asked)
 })

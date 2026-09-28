@@ -533,6 +533,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       clearTask: (id, task) => send('chat.clearTask', id, task),
       taskOutput: (id, task) => call('chat.taskOutput', id, task),
       answer: (id, card, answer) => send('chat.answer', id, card, answer),
+      answerRequest: (request, choice) => call('chat.answerRequest', request, choice),
+      startAll: (request, where) => call('chat.startAll', request, where),
       stop: (id) => send('chat.stop', id),
       unqueue: (id, queued) => call('chat.unqueue', id, queued),
       queuedPicture: (id, queued, index, width) =>
@@ -603,6 +605,10 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
         }),
       onSpotlight: never,
       listening: nothing,
+    },
+    lineup: {
+      state: () => call('lineup.state'),
+      onChanged: (said) => listen('lineup:changed', said),
     },
     // Hosts are reached through the Mac; adding, editing and removing one, and a terminal, are for the Mac itself.
     hosts: {

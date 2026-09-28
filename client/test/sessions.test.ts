@@ -1722,7 +1722,7 @@ describe('turns cut off by GeckIt closing', () => {
     })
     expect(after.sessions.cutOff()).toEqual([])
     await after.sessions.resumeQueues()
-    expect(after.fake.made[0]).toMatchObject({ id, resume: true })
+    await vi.waitFor(() => expect(after.fake.made[0]).toMatchObject({ id, resume: true }))
     expect(after.fake.sent).toEqual([{ text: 'and the tests' }])
     expect(notes.all()[id]?.queued?.map((one) => one.message.text)).toEqual(['then commit'])
   })
