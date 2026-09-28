@@ -3607,30 +3607,6 @@ html.phone .request-foot .request-reply {
   font-variant-numeric: tabular-nums;
 }
 
-.status-bar .question {
-  display: inline-flex;
-  flex-shrink: 1;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  max-width: 200px;
-  height: 18px;
-  padding: 0 6px;
-  color: var(--text-dim);
-  border-radius: var(--radius);
-}
-
-.status-bar .question > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.status-bar .question:hover,
-.status-bar .question.shown {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
 .status-bar .stat:has(.branch),
 .talk-status .stat:has(.branch) {
   flex-shrink: 1;

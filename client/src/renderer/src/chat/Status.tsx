@@ -5,7 +5,7 @@ import type { GitState, PlanUsage, PlanWindow } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
-import { ago, clockTime, deletedIn } from './time'
+import { ago, clockTime } from './time'
 import { accountsOf, placesOf } from './plans'
 import type { Chat } from './useChat'
 
@@ -253,23 +253,6 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
 
   return (
     <div className="status-bar">
-      {chat.questions.map((one) => {
-        const working = one.state === 'working' || one.state === 'asks'
-        // A kept question stays in the Questions menu; here it shows only while open or answering.
-        if (one.stays === true && !working && chat.session?.id !== one.id) return null
-        return (
-          <button
-            key={one.id}
-            type="button"
-            className={`question${chat.session?.id === one.id ? ' shown' : ''}`}
-            title={`${one.title}\n${working ? 'Working' : one.stands}\n\nA general question. ${deletedIn(one, now)}`}
-            onClick={() => chat.open({ kind: 'session', id: one.id })}
-          >
-            <Icon name={working ? 'spinner' : 'chat'} size={12} className={working ? 'spinning' : ''} />
-            <span>{one.title}</span>
-          </button>
-        )
-      })}
       <span className="spacer" />
       {ON_PHONE || only !== undefined || chat.trouble !== ''
         ? null
