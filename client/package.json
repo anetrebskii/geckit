@@ -10,7 +10,7 @@
     "type": "git",
     "url": "git+https://github.com/anetrebskii/geckit.git"
   },
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "author": {
     "name": "Alex Netrebskii",
     "email": "aleks.netrebskii@gmail.com",

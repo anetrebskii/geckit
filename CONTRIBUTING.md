@@ -28,3 +28,7 @@ Do not run prettier over the code: it rewrites whole files.
 Lint, typecheck and tests, then unsigned builds for macOS, Windows and Linux, and an unsigned iPhone build. The builds are attached to the run for a week. The macOS build is signed ad hoc, so macOS may ask you to allow it in System Settings, Privacy & Security.
 
 Releases are made only from `main`, after a pull request is merged.
+
+## License
+
+By opening a pull request you agree that your contribution is licensed under the project's [LICENSE](LICENSE), FSL-1.1-MIT.

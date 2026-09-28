@@ -15,7 +15,7 @@ GeckIt makes your Claude Code chats into a Kanban board with tasks and projects.
   <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt.AppImage"><img src="docs/download-linux.svg" height="48" alt="Download for Linux, AppImage"></a>
 </p>
 
-<p align="center">Free and open source. The board runs your own Claude Code on your Claude subscription, with no API key.</p>
+<p align="center">Free, with the source public. The board runs your own Claude Code on your Claude subscription, with no API key.</p>
 
 <p align="center">GeckIt is not made by Anthropic and is not affiliated with it. Claude and Claude Code are trademarks of Anthropic.</p>
 
@@ -203,4 +203,4 @@ npm run dev
 
 ## License
 
-MIT, with one more condition: an app, service or site built from this code shows "Based on GeckIt by Alex Netrebskii" with a link to this repository, in its About screen or README. The GeckIt name and the gecko icon are not part of the license. See [LICENSE](LICENSE).
+[Functional Source License 1.1](LICENSE), MIT Future License (FSL-1.1-MIT). Use it, change it and share it for anything, work included, except a commercial product or service that competes with GeckIt. Each version becomes MIT two years after its release. The GeckIt name and the gecko icon are not part of the license. Versions up to 1.21 were released under MIT with an attribution condition and stay under it.
