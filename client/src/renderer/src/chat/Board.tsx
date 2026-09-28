@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ANYWHERE, homeOf, profileOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, RecordedFrame, SessionImage, SessionStatus } from '../../../shared/api'
@@ -270,6 +270,11 @@ export function Board({
   }
   // What the menu of a picked card does, it does to every picked one.
   const targets = (id: string): readonly string[] => (picked.has(id) ? [...picked] : [id])
+  // A card is drawn again only when what it shows changes, so what it calls is read from here at the time.
+  const latest = useRef({ press, targets })
+  useEffect(() => {
+    latest.current = { press, targets }
+  })
 
   // Esc lets go of what is picked, and Delete asks about deleting it.
   useEffect(() => {
@@ -373,14 +378,14 @@ export function Board({
                     {(folded.has(day.heading) ? [] : day.rows).map((session) => (
                       <Fragment key={session.id}>
                       {column.status === undefined && landing === progress.indexOf(session) ? <div className="board-drop" /> : null}
-                      <Card
+                      <BoardCard
                         chat={chat}
                         session={session}
                         now={now}
                         renaming={renaming === session.id}
                         picked={picked.has(session.id)}
-                        onPress={press}
-                        onDrag={(id) => (held.current = id === undefined ? [] : targets(id))}
+                        onPress={(one, how) => latest.current.press(one, how)}
+                        onDrag={(id) => (held.current = id === undefined ? [] : latest.current.targets(id))}
                         onMenu={(id, at) => setMenu({ id, at })}
                         onRenamed={(id, name) => {
                           setRenaming(undefined)
@@ -681,6 +686,20 @@ function Card({
     </div>
   )
 }
+
+// Typing, and every line streaming into an open conversation, change `chat` without changing anything a card shows.
+const BoardCard = memo(
+  Card,
+  (was, now) =>
+    was.session === now.session &&
+    was.now === now.now &&
+    was.renaming === now.renaming &&
+    was.picked === now.picked &&
+    was.chat.shown === now.chat.shown &&
+    was.chat.settings === now.chat.settings &&
+    was.chat.hosts === now.chat.hosts &&
+    was.chat.sessions === now.chat.sessions,
+)
 
 /**
  * The form the New task button opens: which project, what to do, and the goal

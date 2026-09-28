@@ -372,7 +372,8 @@ export async function linksAt(path: string): Promise<Link[]> {
   return links
 }
 
-const LINKED = 200
+// More than a board holds: each card asks on opening, and a board past this read every file again each time.
+const LINKED = 2000
 
 /** Where a conversation's goal stands, from its lines about goals alone. */
 export async function readGoal(root: string, id: string): Promise<GoalRead> {
