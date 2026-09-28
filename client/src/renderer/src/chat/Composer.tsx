@@ -407,32 +407,40 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
             <h2>Start a new conversation with it?</h2>
             <p className="branch-quote">{branched.text}</p>
-            <div className="dialog-actions">
-              <button type="button" className="quiet" onClick={() => setBranching(undefined)}>
-                Cancel
-              </button>
+            <div className="branch-choices">
               <button
                 type="button"
-                className="quiet"
-                title="Only this message, in the same project"
-                onClick={() => {
-                  chat.delegate(branched.id, false)
-                  setBranching(undefined)
-                }}
-              >
-                Start empty
-              </button>
-              <button
-                type="button"
-                className="primary"
+                className="branch-choice"
                 autoFocus
-                title="Everything up to when it was queued, then this message"
                 onClick={() => {
                   chat.delegate(branched.id, true)
                   setBranching(undefined)
                 }}
               >
-                Copy this conversation
+                <Icon name="copy" size={16} />
+                <span className="sheet-words">
+                  <span className="label">Copy this conversation</span>
+                  <span className="says">Everything up to when you queued it, then this message</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="branch-choice"
+                onClick={() => {
+                  chat.delegate(branched.id, false)
+                  setBranching(undefined)
+                }}
+              >
+                <Icon name="plus" size={16} />
+                <span className="sheet-words">
+                  <span className="label">Start empty</span>
+                  <span className="says">Only this message, in the same project</span>
+                </span>
+              </button>
+            </div>
+            <div className="dialog-actions">
+              <button type="button" className="quiet" onClick={() => setBranching(undefined)}>
+                Cancel
               </button>
             </div>
           </div>
