@@ -59,7 +59,7 @@ ${path} show <id> --last 10
 
 ### Asking for new ones
 
-When work belongs in a conversation of its own - another project, or something that should not hold this one open - ask GeckIt to start it rather than doing it here or only mentioning it:
+A conversation does the work it was asked for. When other work comes up - a job in another project, a job in this project that is not part of what was asked here, or anything that should not hold this conversation open - do not do it here and do not only mention it: it belongs in a conversation of its own. Ask GeckIt to start one for it. You need no leave for that, since every task you send is put in front of the person first, and they start it or refuse it there. Where you cannot tell whether they want the work at all, ask them in your answer instead, and send it once they say yes.
 
 \`\`\`
 ${path} start --project <name> [--title <title>] [--goal <condition>] <text>
