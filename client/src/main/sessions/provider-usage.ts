@@ -53,10 +53,10 @@ export class ProviderMeasurements {
     this.#entry(provider).windows.set(model, size)
   }
 
-  setUsage(provider: SessionProvider, usage: ProviderUsage): void {
+  setUsage(provider: SessionProvider, usage: ProviderUsage, fresh = true): void {
     const entry = this.#entry(provider)
     entry.revision += 1
-    entry.measured = this.#now()
+    if (fresh) entry.measured = this.#now()
     entry.usage = { ...usage, measuredAt: usage.measuredAt ?? this.#now() }
   }
 
@@ -71,7 +71,7 @@ export class ProviderMeasurements {
       return this.measure(provider, models)
     }
     const missing = models.filter((model) => !entry.windows.has(model))
-    if (missing.length === 0 && this.#now() - entry.measured < 60_000) return
+    if (missing.length === 0 && this.#now() - entry.measured < (provider.family === 'claude' ? 10 * 60_000 : 60_000)) return
     entry.measured = this.#now()
     const revision = entry.revision
     entry.pending = provider.limits(missing).then((limits) => {

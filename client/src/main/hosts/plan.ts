@@ -4,7 +4,7 @@ import type { PlanUsage } from '../../shared/api'
 import { hostOf, pathOf } from '../../shared/hosts'
 import type { HostConfig } from '../../shared/hosts'
 import { planOf } from '../sessions/claude-read'
-import { controlResponse } from '../sessions/usage'
+import { ASK_ONLY, controlResponse } from '../sessions/usage'
 import { claudeHereScript } from './run-script'
 import { spawnOn } from './ssh'
 import type { Routes } from './route'
@@ -23,22 +23,26 @@ import type { Routes } from './route'
 /** How long a host's own claude is waited on for its plan's usage. */
 const USAGE_PATIENCE = 20_000
 
-/** How long a host's plan usage is kept before it is asked for again. */
-const USAGE_FRESH = 5 * 60_000
+/** How long a host's plan usage is kept before it is asked for again, as long as this computer's own is (`MEASURED_FOR` in `sessions/index.ts`). */
+const USAGE_FRESH = 10 * 60_000
+
+/** How long a host that did not say is left before it is asked again, so a host whose claude cannot answer is not started again at every glance. */
+const UNSAID_FRESH = 60_000
 
 /** What was last asked of a host's own claude for its plan: when, and its answer, so two callers at once share the one call in flight. */
-const usageAsked = new Map<string, { readonly at: number; readonly usage: Promise<PlanUsage | undefined> }>()
+const usageAsked = new Map<string, { readonly at: number; readonly fresh: number; readonly usage: Promise<PlanUsage | undefined> }>()
 
 export function hostPlan(routes: Routes, root: string): Promise<PlanUsage | undefined> {
   const id = hostOf(root)
   const host = id === undefined ? undefined : routes.hosts.config(id)
   if (host === undefined || routes.hosts.state(host.id) !== 'up') return Promise.resolve(undefined)
   const kept = usageAsked.get(host.id)
-  if (kept !== undefined && Date.now() - kept.at < USAGE_FRESH) return kept.usage
+  if (kept !== undefined && Date.now() - kept.at < kept.fresh) return kept.usage
   const usage = askHostPlan(routes, host, root)
-  usageAsked.set(host.id, { at: Date.now(), usage })
+  usageAsked.set(host.id, { at: Date.now(), fresh: USAGE_FRESH, usage })
   void usage.then((said) => {
-    if (said === undefined && usageAsked.get(host.id)?.usage === usage) usageAsked.delete(host.id)
+    const now = usageAsked.get(host.id)
+    if (said === undefined && now?.usage === usage) usageAsked.set(host.id, { ...now, fresh: UNSAID_FRESH })
   })
   return usage
 }
@@ -47,7 +51,7 @@ function askHostPlan(routes: Routes, host: HostConfig, root: string): Promise<Pl
   const child = spawnOn(
     host,
     routes.hosts.setup(),
-    claudeHereScript(pathOf(root), ['claude', '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose']),
+    claudeHereScript(pathOf(root), ['claude', ...ASK_ONLY]),
   )
   child.stderr.resume()
   return new Promise((done) => {
