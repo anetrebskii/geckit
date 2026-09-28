@@ -1,6 +1,8 @@
 <p align="center"><img src="docs/icon-walk.svg" width="112" alt=""></p>
 
-<h1 align="center">GeckIt</h1>
+<h1 align="center">GeckIt, an alternative Claude Code desktop client</h1>
+
+<p align="center">Built by an engineer obsessed with personal productivity.</p>
 
 Working with several Claude Code chats at once? See which one is working, which one waits for you and which one is done.
 
