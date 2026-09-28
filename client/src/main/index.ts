@@ -1300,7 +1300,6 @@ app.on('window-all-closed', () => undefined)
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   sessions?.dispose()
-  plans?.dispose()
   // A debounced write still owed to a run's offset is not lost to the second it was waiting out.
   void routes?.runs.flush()
   routes?.forwards.dispose()
