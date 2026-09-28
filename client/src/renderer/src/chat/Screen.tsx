@@ -323,7 +323,7 @@ export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX
     <div className={`phone-screen${chrome ? '' : ' bare'}`}>
       <div className={`phone-screen-bar${chrome ? '' : ' hidden'}`}>
         <span className="phone-screen-title">
-          {pairedName() ?? 'Host'}
+          <span className="phone-screen-name">{pairedName() ?? 'Host'}</span>
           {live ? <span className="phone-screen-live">Live</span> : null}
         </span>
         <div className="phone-seg phone-screen-seg" role="tablist" style={{ '--at': mode === 'look' ? 0 : 1 } as React.CSSProperties}>

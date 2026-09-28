@@ -7214,14 +7214,22 @@ body:has(.talk.over:not([hidden])) .phone-offline {
 
 .phone-screen-title {
   display: flex;
-  flex: none;
+  flex: 0 1 auto;
   gap: 8px;
+  min-width: 0;
   align-items: center;
   font-size: 17px;
   font-weight: 600;
 }
 
+.phone-screen-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .phone-screen-live {
+  flex: none;
   padding: 1px 6px;
   font-size: 12px;
   font-weight: 600;
@@ -7232,9 +7240,13 @@ body:has(.talk.over:not([hidden])) .phone-offline {
 
 /* Look or Control, drawn light on the black whatever the theme. */
 .phone-screen-seg {
-  flex: 0 1 180px;
-  margin: 0 0 0 8px;
+  flex: none;
+  margin: 0 0 0 4px;
   background: rgb(255 255 255 / 12%);
+}
+
+.phone-screen-seg button {
+  padding: 0 12px;
 }
 
 .phone-screen-seg .phone-seg-thumb {
