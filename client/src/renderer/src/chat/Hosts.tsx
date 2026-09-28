@@ -307,6 +307,8 @@ export function AddHost({
   const [running, setRunning] = useState(false)
   const [added, setAdded] = useState<HostView | undefined>()
   const [problem, setProblem] = useState<string | undefined>()
+  const [listing, setListing] = useState(false)
+  const [lit, setLit] = useState(-1)
   const { hosts } = useHosts()
   const canRemember = hosts[0]?.canRemember ?? true
 
@@ -314,12 +316,15 @@ export function AddHost({
     void window.geckit.hosts.known().then(setKnown)
     return window.geckit.hosts.onChecks(setChecks)
   }, [])
-  useEscape(onClose)
+  useEscape(listing ? () => setListing(false) : onClose)
 
-  const offered = useMemo(
-    () => known.filter((one) => !hosts.some((host) => host.address === one.host) && one.host !== address && (address === '' || one.host.startsWith(address))).slice(0, 5),
-    [known, hosts, address],
-  )
+  const offered = useMemo(() => {
+    const typedLower = address.trim().toLowerCase()
+    return known
+      .filter((one) => !hosts.some((host) => host.address === one.host) && one.host !== address && one.host.toLowerCase().includes(typedLower))
+      .slice(0, 8)
+  }, [known, hosts, address])
+  const showOffers = listing && offered.length > 0 && added === undefined
 
   const typed = (value: string): void => {
     const read = parseTarget(value)
@@ -336,6 +341,28 @@ export function AddHost({
     if (one.user !== undefined) setUser(one.user)
     setPort(String(one.port ?? 22))
     if (!named) setName(one.host)
+    setListing(false)
+  }
+
+  const keyed = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (!showOffers) {
+      if (event.key === 'ArrowDown' && offered.length > 0) {
+        event.preventDefault()
+        setListing(true)
+        setLit(0)
+      }
+      return
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const step = event.key === 'ArrowDown' ? 1 : -1
+      setLit((at) => (at < 0 && step < 0 ? offered.length - 1 : (at + step + offered.length) % offered.length))
+    } else if (event.key === 'Enter' || event.key === 'Tab') {
+      const one = offered[Math.min(lit, offered.length - 1)]
+      if (one === undefined) return
+      event.preventDefault()
+      choose(one)
+    }
   }
 
   const draft = {
@@ -368,6 +395,7 @@ export function AddHost({
     <div className="dialog-scrim">
       <div className="dialog add-host" onMouseDown={(event) => event.stopPropagation()}>
         <h2>{editing === undefined ? 'Add a host' : `Edit ${editing.name}`}</h2>
+        <p className="add-host-lead">Uses the SSH settings already on this computer. Nothing is installed on the host.</p>
         <div className="add-host-grid">
           <div className="field">
             <label htmlFor="host-address">Address</label>
@@ -375,21 +403,22 @@ export function AddHost({
               id="host-address"
               type="text"
               autoFocus
+              autoComplete="off"
               spellCheck={false}
               value={address}
               placeholder="Name, IP, or a Host from SSH config"
-              onChange={(event) => typed(event.target.value)}
+              role="combobox"
+              aria-expanded={showOffers}
+              aria-controls="host-offers"
+              onClick={() => setListing(true)}
+              onBlur={() => setListing(false)}
+              onKeyDown={keyed}
+              onChange={(event) => {
+                typed(event.target.value)
+                setListing(true)
+                setLit(event.target.value.trim() === '' ? -1 : 0)
+              }}
             />
-            {offered.length === 0 || added !== undefined ? null : (
-              <div className="host-offers">
-                {offered.map((one) => (
-                  <button key={one.host} type="button" onClick={() => choose(one)}>
-                    <span className="name">{one.host}</span>
-                    <span className="says">{[one.user, one.address].filter((part) => part !== undefined).join('@')}</span>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
           <div className="field">
             <label htmlFor="host-user">User</label>
@@ -399,30 +428,46 @@ export function AddHost({
             <label htmlFor="host-port">Port</label>
             <input id="host-port" type="text" inputMode="numeric" value={port} onChange={(event) => setPort(event.target.value.replace(/\D/g, ''))} />
           </div>
+          {showOffers ? (
+            <div id="host-offers" className="host-offers" role="listbox" onMouseDown={(event) => event.preventDefault()}>
+              <div className="host-offers-title">From SSH config</div>
+              {offered.map((one, at) => (
+                <button
+                  key={one.host}
+                  type="button"
+                  role="option"
+                  aria-selected={at === lit}
+                  className={at === lit ? 'lit' : ''}
+                  onMouseEnter={() => setLit(at)}
+                  onClick={() => choose(one)}
+                >
+                  <span className="name">{one.host}</span>
+                  <span className="says">
+                    {[one.user, one.address].filter((part) => part !== undefined).join('@')}
+                    {one.port === undefined || one.port === 22 ? '' : `:${String(one.port)}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="field">
           <label>Sign in with</label>
-          <div className="views host-auth" role="radiogroup" aria-label="Sign in with">
-            <button type="button" role="radio" aria-checked={auth === 'key'} className={auth === 'key' ? 'on' : ''} onClick={() => setAuth('key')}>
-              Key
-            </button>
-            <button type="button" role="radio" aria-checked={auth === 'password'} className={auth === 'password' ? 'on' : ''} onClick={() => setAuth('password')}>
-              Password
-            </button>
-          </div>
-          {auth === 'key' ? (
-            <>
+          <div className="host-auth-row">
+            <div className="views host-auth" role="radiogroup" aria-label="Sign in with">
+              <button type="button" role="radio" aria-checked={auth === 'key'} className={auth === 'key' ? 'on' : ''} onClick={() => setAuth('key')}>
+                Key
+              </button>
+              <button type="button" role="radio" aria-checked={auth === 'password'} className={auth === 'password' ? 'on' : ''} onClick={() => setAuth('password')}>
+                Password
+              </button>
+            </div>
+            {auth === 'key' ? (
               <select value={ownKey ? 'file' : 'default'} aria-label="Key" onChange={(event) => setOwnKey(event.target.value === 'file')}>
                 <option value="default">Default keys (SSH config and agent)</option>
                 <option value="file">A key file</option>
               </select>
-              {ownKey ? (
-                <input type="text" spellCheck={false} value={keyFile} placeholder="~/.ssh/id_ed25519" aria-label="Key file" onChange={(event) => setKeyFile(event.target.value)} />
-              ) : null}
-              <span className="hint">A passphrase, if the key has one, is asked for when connecting. It is not kept.</span>
-            </>
-          ) : (
-            <>
+            ) : (
               <input
                 type="password"
                 value={password}
@@ -430,6 +475,17 @@ export function AddHost({
                 aria-label="Password"
                 onChange={(event) => setPassword(event.target.value)}
               />
+            )}
+          </div>
+          {auth === 'key' ? (
+            <>
+              {ownKey ? (
+                <input type="text" spellCheck={false} value={keyFile} placeholder="~/.ssh/id_ed25519" aria-label="Key file" onChange={(event) => setKeyFile(event.target.value)} />
+              ) : null}
+              <span className="hint">A passphrase, if the key has one, is asked for when connecting. It is not kept.</span>
+            </>
+          ) : (
+            <>
               {remembered ? (
                 <button
                   type="button"
@@ -468,9 +524,7 @@ export function AddHost({
             }}
           />
         </div>
-        {checks.length === 0 ? (
-          <span className="hint">Uses the SSH settings already on this computer. Nothing is installed on the host.</span>
-        ) : (
+        {checks.length === 0 ? null : (
           <ul className="host-checks">
             {checks.map((one) => (
               <li key={one.text} className={one.failed === true ? 'failed' : one.done ? 'ok' : 'wait'}>
