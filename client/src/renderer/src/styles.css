@@ -454,7 +454,8 @@ textarea {
   white-space: nowrap;
 }
 
-.menu-item:hover {
+.menu-item:hover,
+.menu-item.open {
   background: var(--bg-hover);
 }
 
@@ -523,6 +524,19 @@ textarea {
 
 .menu-item.danger:hover {
   color: var(--danger);
+}
+
+/* The arrow of a choice with its own list, which opens beside the menu. */
+.menu-more {
+  display: flex;
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--text-faint);
+}
+
+.menu-side {
+  z-index: 81;
+  min-width: 170px;
 }
 
 /* The open questions: a title with the time left at its right, one line of the answer under it. */

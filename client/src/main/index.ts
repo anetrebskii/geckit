@@ -104,6 +104,7 @@ import { runsAt } from './hosts/runs'
 import { secretsAt } from './hosts/secrets'
 import { Forwards, localPort, withPort } from './hosts/forward'
 import { hostOf, isRemote, machineName } from '../shared/hosts'
+import { keptOrder } from '../shared/order'
 import type { HostAnswer, HostDraft } from '../shared/hosts'
 import { searchClaude } from './sessions/search'
 import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
@@ -326,6 +327,8 @@ function build(held: Routes): Sessions {
     },
     changed: (all: readonly ChatSession[]) => {
       // Every conversation it holds, which is more than the window lists: another profile's rows stay held after a switch until they are read again. A general question belongs to no project and is always told.
+      const order = keptOrder(getSettings().progressOrder, all)
+      if (order !== undefined) setSettings({ progressOrder: order })
       const settings = getSettings()
       const within = (where: readonly string[]): readonly ChatSession[] =>
         all.filter((one) => one.question === true || where.includes(homeOf(one)))

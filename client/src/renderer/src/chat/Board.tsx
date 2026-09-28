@@ -2,7 +2,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ANYWHERE, homeOf, profileOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, RecordedFrame, SessionImage, SessionStatus } from '../../../shared/api'
-import { ordered } from '../../../shared/order'
+import { movedOrder, ordered } from '../../../shared/order'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
 import { dictate, languageCode, useDictationLanguage } from '../dictate'
@@ -315,7 +315,8 @@ export function Board({
   const dropSessions = (ids: readonly string[], where: number): void => {
     const rest = progress.map((session) => session.id).filter((id) => !ids.includes(id))
     const at = progress.slice(0, where).filter((session) => !ids.includes(session.id)).length
-    chat.change({ progressOrder: [...rest.slice(0, at), ...ids, ...rest.slice(at)] })
+    const placed = [...rest.slice(0, at), ...ids, ...rest.slice(at)]
+    chat.change({ progressOrder: [...placed, ...chat.settings.progressOrder.filter((id) => !placed.includes(id))] })
   }
 
   const hide = (ids: readonly string[]): void => {
@@ -427,12 +428,30 @@ export function Board({
             ...(chat.settings.favorites.includes(menu.id)
               ? [{ value: 'unfavorite', label: 'Remove from favorites', icon: 'star' }]
               : [{ value: 'favorite', label: 'Add to favorites', icon: 'star' }]),
-            ...SESSION_STATUSES.map((one) => ({
-              value: `status:${one.status}`,
-              label: `Mark as ${one.label.toLowerCase()}`,
-              icon: STATUS_ICONS[one.status],
-              on: targets(menu.id).every((id) => chat.everyone.some((session) => session.id === id && session.status === one.status)),
-            })),
+            {
+              value: 'status',
+              label: 'Mark as',
+              icon: 'board',
+              choices: SESSION_STATUSES.map((one) => ({
+                value: `status:${one.status}`,
+                label: one.label,
+                icon: STATUS_ICONS[one.status],
+                on: targets(menu.id).every((id) => chat.everyone.some((session) => session.id === id && session.status === one.status)),
+              })),
+            },
+            ...(targets(menu.id).every((id) => progress.some((session) => session.id === id))
+              ? [
+                  {
+                    value: 'move',
+                    label: 'Move',
+                    icon: 'sort',
+                    choices: [
+                      { value: 'top', label: 'To the top', icon: 'ahead' },
+                      { value: 'bottom', label: 'To the bottom', icon: 'behind' },
+                    ],
+                  },
+                ]
+              : []),
             ...(picked.has(menu.id) && picked.size > 1
               ? [
                   { value: 'hide', label: `Hide ${String(picked.size)} from this list`, icon: 'hidden' },
@@ -441,8 +460,15 @@ export function Board({
               : [
                   { value: 'rename', label: 'Rename', icon: 'pencil' },
                   { value: 'shortcut', label: 'Save as a shortcut...', icon: 'bolt' },
-                  { value: 'copy', label: 'Copy the terminal command', icon: 'copy' },
-                  { value: 'terminal', label: 'Open in a terminal', icon: 'terminal' },
+                  {
+                    value: 'terminals',
+                    label: 'Terminal',
+                    icon: 'terminal',
+                    choices: [
+                      { value: 'terminal', label: 'Open in a terminal', icon: 'terminal' },
+                      { value: 'copy', label: 'Copy the command', icon: 'copy' },
+                    ],
+                  },
                   { value: 'hide', label: 'Hide from this list', icon: 'hidden' },
                   { value: 'delete', label: 'Delete', danger: true, icon: 'trash' },
                 ]),
@@ -456,6 +482,10 @@ export function Board({
               const ids = targets(menu.id)
               const all = ids.every((id) => chat.everyone.find((session) => session.id === id)?.status === status)
               for (const id of ids) chat.mark(id, all ? undefined : status)
+            }
+            if (value === 'top' || value === 'bottom') {
+              const ids = progress.filter((session) => targets(menu.id).includes(session.id)).map((session) => session.id)
+              chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, ids, value) })
             }
             if (value === 'rename') setRenaming(menu.id)
             if (value === 'shortcut') {

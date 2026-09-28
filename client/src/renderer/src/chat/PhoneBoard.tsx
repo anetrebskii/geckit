@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { CardAnswer, ChatSession, SessionCard, SessionStatus } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
-import { ordered } from '../../../shared/order'
+import { movedOrder, ordered } from '../../../shared/order'
 import { projectColor } from '../../../shared/project-color'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
@@ -185,7 +185,8 @@ export function PhoneBoard({
     const placed = [...others.slice(0, landing), moved, ...others.slice(landing)]
     let next = 0
     tap('firm')
-    chat.change({ progressOrder: rows.map((one) => (asking.includes(one) ? one.id : (placed[next++]?.id ?? one.id))) })
+    const order = rows.map((one) => (asking.includes(one) ? one.id : (placed[next++]?.id ?? one.id)))
+    chat.change({ progressOrder: [...order, ...chat.settings.progressOrder.filter((id) => !order.includes(id))] })
   }
 
   // Which card each asking session waits on, asked for again whenever one of them moves.
@@ -906,6 +907,19 @@ function Pressed({
           No status
           {session.status === undefined ? <Icon name="check" size={16} /> : null}
         </button>
+        {columnOf(session) === 'progress' ? (
+          <>
+            <div className="gap" />
+            <button type="button" role="menuitem" onClick={() => pick(() => chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, [session.id], 'top') }))}>
+              Move to top
+              <Icon name="ahead" size={16} />
+            </button>
+            <button type="button" role="menuitem" onClick={() => pick(() => chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, [session.id], 'bottom') }))}>
+              Move to bottom
+              <Icon name="behind" size={16} />
+            </button>
+          </>
+        ) : null}
         <div className="gap" />
         <button type="button" role="menuitem" onClick={() => pick(onRename)}>
           Rename

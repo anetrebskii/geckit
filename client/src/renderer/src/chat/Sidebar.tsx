@@ -716,9 +716,20 @@ export function Sidebar({
             ...(favorites.includes(menu.id)
               ? [
                   { value: 'unfavorite', label: 'Remove from favorites', icon: 'star' },
-                  ...(shownFavorites.indexOf(menu.id) > 0 ? [{ value: 'up', label: 'Move up', icon: 'ahead' }] : []),
-                  ...(shownFavorites.indexOf(menu.id) < shownFavorites.length - 1
-                    ? [{ value: 'down', label: 'Move down', icon: 'behind' }]
+                  ...(shownFavorites.length > 1
+                    ? [
+                        {
+                          value: 'move',
+                          label: 'Move',
+                          icon: 'sort',
+                          choices: [
+                            ...(shownFavorites.indexOf(menu.id) > 0 ? [{ value: 'up', label: 'Up', icon: 'ahead' }] : []),
+                            ...(shownFavorites.indexOf(menu.id) < shownFavorites.length - 1
+                              ? [{ value: 'down', label: 'Down', icon: 'behind' }]
+                              : []),
+                          ],
+                        },
+                      ]
                     : []),
                 ]
               : [
@@ -729,16 +740,28 @@ export function Sidebar({
                     ...(shownFavorites.length < 9 ? { says: `${MOD}+${String(shownFavorites.length + 1)}` } : {}),
                   },
                 ]),
-            ...SESSION_STATUSES.map((one) => ({
-              value: `status:${one.status}`,
-              label: `Mark as ${one.label.toLowerCase()}`,
-              icon: STATUS_ICONS[one.status],
-              on: chat.everyone.some((session) => session.id === menu.id && session.status === one.status),
-            })),
+            {
+              value: 'status',
+              label: 'Mark as',
+              icon: 'board',
+              choices: SESSION_STATUSES.map((one) => ({
+                value: `status:${one.status}`,
+                label: one.label,
+                icon: STATUS_ICONS[one.status],
+                on: chat.everyone.some((session) => session.id === menu.id && session.status === one.status),
+              })),
+            },
             { value: 'rename', label: 'Rename', icon: 'pencil' },
             { value: 'shortcut', label: 'Save as a shortcut...', icon: 'bolt' },
-            { value: 'copy', label: 'Copy the terminal command', icon: 'copy' },
-            { value: 'terminal', label: 'Open in a terminal', icon: 'terminal' },
+            {
+              value: 'terminals',
+              label: 'Terminal',
+              icon: 'terminal',
+              choices: [
+                { value: 'terminal', label: 'Open in a terminal', icon: 'terminal' },
+                { value: 'copy', label: 'Copy the command', icon: 'copy' },
+              ],
+            },
             { value: 'select', label: 'Select', says: `${MOD}+click`, icon: 'select' },
             { value: 'hide', label: 'Hide from this list', icon: 'hidden' },
             { value: 'delete', label: 'Delete', danger: true, icon: 'trash' },

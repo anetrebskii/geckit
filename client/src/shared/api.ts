@@ -849,7 +849,7 @@ export interface Settings {
   readonly anywhereOff: readonly Anywhere[]
   /** How many conversations may work at once before a new one waits in the queue. Nought is no limit. */
   readonly workingAtOnce: number
-  /** The conversations in In progress in the order they were dragged to; one not in it stands above them, the newest first. */
+  /** The conversations in In progress, top first. One coming into the column is put on top, and after that only dragging or Move to top and Move to bottom move it. */
   readonly progressOrder: readonly string[]
   /** The first-start sheet was finished or skipped. False shows it again. */
   readonly welcomed: boolean

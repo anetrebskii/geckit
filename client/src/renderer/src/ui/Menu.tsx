@@ -25,6 +25,8 @@ export interface Choice {
   readonly icon?: string
   /** Shown and not choosable: what it says is why. */
   readonly disabled?: boolean
+  /** Opened beside it on hover rather than chosen itself. On the phone they are listed in its place. */
+  readonly choices?: readonly Choice[]
 }
 
 export function Menu({
@@ -53,6 +55,15 @@ export function Menu({
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState<{ left: number; top: number; height: number } | undefined>()
+  // The choice whose own list is open beside it, and where that list stands.
+  const [open, setOpen] = useState<{ readonly value: string; readonly left: number; readonly top: number } | undefined>()
+  const side = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const node = side.current
+    if (node === null || open === undefined) return
+    const top = Math.max(8, Math.min(open.top, window.innerHeight - node.offsetHeight - 8))
+    if (top !== open.top) setOpen({ ...open, top })
+  }, [open])
 
   useLayoutEffect(() => {
     const node = menu.current
@@ -86,7 +97,7 @@ export function Menu({
     return (
       <Sheet {...(title === undefined ? {} : { title })} onClose={onClose}>
         <div className="sheet-list" role="menu">
-          {choices.map((choice) => (
+          {choices.flatMap((choice) => choice.choices ?? [choice]).map((choice) => (
             <button
               key={choice.value}
               type="button"
@@ -133,29 +144,73 @@ export function Menu({
             key={choice.value}
             type="button"
             role="menuitem"
-            className={`menu-item${choice.value === chosen ? ' on' : ''}${choice.danger === true ? ' danger' : ''}`}
+            aria-haspopup={choice.choices === undefined ? undefined : 'menu'}
+            className={`menu-item${choice.value === chosen ? ' on' : ''}${open?.value === choice.value ? ' open' : ''}${choice.danger === true ? ' danger' : ''}`}
             disabled={choice.disabled === true}
+            onMouseEnter={(event) => {
+              if (choice.choices === undefined) {
+                setOpen(undefined)
+                return
+              }
+              const box = event.currentTarget.getBoundingClientRect()
+              const outer = menu.current?.getBoundingClientRect() ?? box
+              const left = outer.right + 200 < window.innerWidth ? outer.right - 2 : outer.left - 200 + 2
+              setOpen({ value: choice.value, left, top: box.top - 4 })
+            }}
             onClick={() => {
+              if (choice.choices !== undefined) return
               onPick(choice.value)
               onClose()
             }}
           >
-            <span style={{ width: 14, flexShrink: 0 }}>
-              {choice.value === chosen || choice.on === true ? (
-                <Icon name="check" size={13} />
-              ) : choice.icon === undefined ? null : (
-                <Icon name={choice.icon} size={13} />
-              )}
-            </span>
-            <span className="label">{choice.label}</span>
-            {choice.says === undefined ? null : <span className="says">{choice.says}</span>}
+            {row(choice, chosen)}
           </button>
         ))}
         {children}
         {note === undefined ? null : <div className="menu-note">{note}</div>}
       </div>
+      {open === undefined ? null : (
+        <div ref={side} className="floating menu menu-side" role="menu" style={{ left: open.left, top: open.top }}>
+          {(choices.find((choice) => choice.value === open.value)?.choices ?? []).map((choice) => (
+            <button
+              key={choice.value}
+              type="button"
+              role="menuitem"
+              className={`menu-item${choice.value === chosen ? ' on' : ''}${choice.danger === true ? ' danger' : ''}`}
+              disabled={choice.disabled === true}
+              onClick={() => {
+                onPick(choice.value)
+                onClose()
+              }}
+            >
+              {row(choice, chosen)}
+            </button>
+          ))}
+        </div>
+      )}
     </>,
     document.body,
+  )
+}
+
+function row(choice: Choice, chosen: string | undefined): React.JSX.Element {
+  return (
+    <>
+      <span style={{ width: 14, flexShrink: 0 }}>
+        {choice.value === chosen || choice.on === true ? (
+          <Icon name="check" size={13} />
+        ) : choice.icon === undefined ? null : (
+          <Icon name={choice.icon} size={13} />
+        )}
+      </span>
+      <span className="label">{choice.label}</span>
+      {choice.says === undefined ? null : <span className="says">{choice.says}</span>}
+      {choice.choices === undefined ? null : (
+        <span className="menu-more">
+          <Icon name="right" size={12} />
+        </span>
+      )}
+    </>
   )
 }
 
