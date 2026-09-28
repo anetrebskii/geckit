@@ -87,7 +87,6 @@ export function QuestionsMenu({
         </div>
       )
     }
-    const working = one.state === 'working' || one.state === 'asks'
     const left = questionLeft(one, now)
     return (
       <div key={one.id} className="question-item">
@@ -101,7 +100,7 @@ export function QuestionsMenu({
           }}
         >
           <span className="question-title">{title}</span>
-          <span className="question-says">{working ? 'Working' : one.stands}</span>
+          {one.stands === '' ? null : <span className="question-says">{one.stands}</span>}
         </button>
         {one.stays === true ? (
           <span className="question-left" title="Kept">

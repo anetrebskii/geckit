@@ -112,6 +112,8 @@ export interface SessionNote {
   readonly goes?: number
   /** A general question kept for good rather than deleted a day after its last answer. */
   readonly stays?: boolean
+  /** What a general question last said, its second line in the menu after a restart. */
+  readonly stands?: string
   /** The conversation that asked for this one with `geckit start`. */
   readonly parent?: string
   /** What it asked for with `geckit start` and how each was answered, which the tool's own file has no place for. */
@@ -456,6 +458,7 @@ export class Sessions {
       live.begun = true
       live.stays = note.stays === true
       live.at = note.seen ?? live.at
+      live.stands = note.stands ?? ''
       if (live.stays) continue
       live.goes = note.goes ?? live.at + QUESTION_KEPT
       live.quiet = setTimeout(() => void this.remove([id]), Math.max(0, live.goes - this.#now()))
@@ -470,6 +473,7 @@ export class Sessions {
       question: true,
       title: live.title,
       seen: live.at,
+      ...(live.stands === '' || live.state !== 'idle' ? {} : { stands: live.stands }),
       ...(live.stays ? { stays: true } : {}),
       ...(live.goes === undefined ? {} : { goes: live.goes }),
     })
@@ -2165,8 +2169,8 @@ export class Sessions {
   /** An idle process is let go of after a while, unless Remote Control or something in the background is keeping it. */
   #rest(live: Live): void {
     clearTimeout(live.quiet)
-    if (live.question && !live.stays) {
-      live.goes = this.#now() + QUESTION_KEPT
+    if (live.question) {
+      if (!live.stays) live.goes = this.#now() + QUESTION_KEPT
       this.#keepNote(live)
       this.#changed()
     }
