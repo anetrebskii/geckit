@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline'
 
 import type { ClaudeModel } from '../../shared/api'
 import { claudeCommand, planOnly } from './account'
+import { ASK_ONLY } from './usage'
 
 /**
  * Which models the tool has, as the tool itself says.
@@ -65,15 +66,16 @@ export function claudeModelsFrom(answer: Json): ClaudeModel[] | undefined {
  * Claude Code, started once, greeted, and let go.
  *
  * Nothing is sent to any model and nothing is spent: the process is given no
- * message, and it is ended at its answer. It leaves no session behind. It is
- * started in the home folder so that a project's own start-up hooks are not
- * run for a question that is not about the project.
+ * message, and it is ended at its answer. It leaves no session behind, and
+ * starts neither the person's MCP servers nor their hooks. It is started in
+ * the home folder so that nothing of a project's is read for a question that
+ * is not about the project.
  */
 export function claudeModels(): Promise<ClaudeModel[] | undefined> {
   return new Promise((done) => {
     const child = spawn(
       claudeCommand(),
-      ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'],
+      [...ASK_ONLY],
       { cwd: homedir(), stdio: ['pipe', 'pipe', 'ignore'], env: planOnly(), windowsHide: true },
     )
     let over = false

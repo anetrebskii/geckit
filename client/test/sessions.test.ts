@@ -982,7 +982,7 @@ describe('what the status bar is drawn from', () => {
   const OPUS = 'claude-opus-5'
   const plan = { fiveHour: { part: 0.13, resetsAt: 5_000 }, sevenDay: { part: 0.19, resetsAt: 9_000 } }
 
-  it('measures the plan and a model\'s window without a turn, and the plan at most once a minute', async () => {
+  it('measures the plan and a model\'s window without a turn, and the plan at most once in ten minutes', async () => {
     let clock = 1_000
     const asked: (readonly string[])[] = []
     const said: unknown[] = []
@@ -1008,7 +1008,31 @@ describe('what the status bar is drawn from', () => {
     expect(asked).toHaveLength(1)
     clock += 60_001
     await built.sessions.measure()
+    expect(asked).toHaveLength(1)
+    clock += 10 * 60_000
+    await built.sessions.measure()
     expect(asked).toEqual([[OPUS], []])
+  })
+
+  it('does not start a claude to measure the plan a turn has just said', async () => {
+    let clock = 1_000
+    const asked: (readonly string[])[] = []
+    const built = build({
+      now: () => clock,
+      usage: async (models) => {
+        asked.push(models)
+        return { windows: new Map(models.map((model) => [model, 400_000])) }
+      },
+    })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'hello' })
+    built.fake.hear({ signals: [{ kind: 'started', session: id, key: false, model: OPUS }] })
+    await built.sessions.measure()
+    clock += 10 * 60_000
+    built.fake.hear({ signals: [{ kind: 'plan', plan }] })
+    await built.sessions.measure()
+
+    expect(asked).toEqual([[OPUS]])
+    expect(built.sessions.plan()).toEqual(plan)
   })
 
   it('measures a model first seen in a project\'s list', async () => {
@@ -1135,7 +1159,8 @@ describe('another Claude Code', () => {
     clock += 60_001
     await built.sessions.measure()
     await vi.waitFor(() => expect(of(built.rows, 'old')?.spend?.window).toBe(1_000_000))
-    expect(asked).toEqual([[OPUS], [], [OPUS]])
+    // The plan itself is not asked again within its ten minutes: only the windows the new version measures its own way.
+    expect(asked).toEqual([[OPUS], [OPUS]])
   })
 
   it('does not keep a window the version before measured', async () => {

@@ -18,6 +18,7 @@ import type { McpChange } from '../sessions/mcp'
 import { claudeModelsFrom } from '../sessions/models'
 import { plain, runShell } from '../sessions/shell'
 import { taskOutput } from '../sessions/tasks'
+import { ASK_ONLY } from '../sessions/usage'
 import type { Ran, Running } from '../sessions/shell'
 import type { HostDisk } from './disk'
 import type { Forwards } from './forward'
@@ -286,7 +287,7 @@ function askHostModels(routes: Routes, host: HostConfig, root: string): Promise<
   const child = spawnOn(
     host,
     routes.hosts.setup(),
-    claudeHereScript(pathOf(root), ['claude', '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose']),
+    claudeHereScript(pathOf(root), ['claude', ...ASK_ONLY]),
   )
   child.stderr.resume()
   return new Promise((done) => {
