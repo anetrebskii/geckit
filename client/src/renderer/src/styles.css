@@ -4154,16 +4154,14 @@ button.tag:hover {
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
-  /* Held to the window: its buttons give way rather than widening the whole grid, which cut the bar along the bottom off at its right. */
+  /* Held to the window: its buttons give way rather than widening the whole grid, which cut the bar along the bottom off at its right. Nothing is clipped, so the search's rows still drop out of it. */
   min-width: 0;
   padding: 8px 12px 8px 82px;
-  overflow: hidden;
   border-bottom: 1px solid var(--border);
-  container-type: inline-size;
 }
 
-/* Where the head is too narrow for everything, the keys go first: each is in its button's tooltip too. */
-@container (max-width: 1180px) {
+/* Where the window is too narrow for everything in the head, the keys go first: each is in its button's tooltip too. */
+@media (max-width: 1240px) {
   .board-head .keys {
     display: none;
   }
