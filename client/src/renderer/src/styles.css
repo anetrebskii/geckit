@@ -5309,6 +5309,8 @@ html.phone button:active:not(:disabled) {
 }
 
 .phone-bar {
+  position: relative;
+  z-index: 4;
   flex: none;
   padding: calc(var(--top) + 4px) 16px 0;
   background: var(--ground);
@@ -5347,9 +5349,10 @@ html.phone button:active:not(:disabled) {
   letter-spacing: 0.01em;
 }
 
-/* The board's title is the first thing in the list, with the projects shown beside it, and scrolls away under the bar. */
+/* The board's title, with the projects shown beside it, stands above the list. */
 .phone-title-row {
   display: flex;
+  flex: none;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
@@ -5369,11 +5372,43 @@ html.phone button:active:not(:disabled) {
   white-space: nowrap;
 }
 
-/* The columns stay pinned under the bar, with a hairline once the title has gone. */
-.phone-seg-bar {
-  position: sticky;
-  top: 0;
+/* The title and the columns lie over the list's first 41px and slide up with it by the title's height, which leaves the columns under the bar. */
+.phone-board {
+  timeline-scope: --tasks;
+}
+
+.phone-top {
+  position: relative;
   z-index: 3;
+  flex: none;
+  margin-bottom: -41px;
+  background: var(--ground);
+  animation: phone-top-fold linear both;
+  animation-range: 0 41px;
+  animation-timeline: --tasks;
+}
+
+.phone-top .phone-large {
+  animation: phone-title-fade linear both;
+  animation-range: 0 30px;
+  animation-timeline: --tasks;
+}
+
+@keyframes phone-top-fold {
+  to {
+    transform: translateY(-41px);
+  }
+}
+
+@keyframes phone-title-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+/* The columns stand under the title, with a hairline once the title has gone. */
+.phone-seg-bar {
+  flex: none;
   padding: 8px 16px 10px;
   background: var(--ground);
   transition: box-shadow var(--settle) var(--ease);
@@ -5444,10 +5479,11 @@ html.phone button:active:not(:disabled) {
 .phone-list {
   flex: 1;
   min-height: 0;
+  padding-top: 41px;
   padding-bottom: calc(var(--bottom) + 18px);
   overflow-y: auto;
-  /* No bounce: pulled past the top, iOS drew the scroll indicator beside the title, which scrolls in the list. */
-  overscroll-behavior: none;
+  overscroll-behavior: contain;
+  scroll-timeline: --tasks y;
 }
 
 .phone-alert {

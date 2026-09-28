@@ -164,7 +164,7 @@ export function PhoneBoard({
       const y = finger.current
       if (element !== null && y !== undefined) {
         const box = element.getBoundingClientRect()
-        const top = element.querySelector('.phone-seg-bar')?.getBoundingClientRect().bottom ?? box.top
+        const top = element.parentElement?.querySelector('.phone-seg-bar')?.getBoundingClientRect().bottom ?? box.top
         const speed = y < top + EDGE ? (y - top - EDGE) / 5 : y > box.bottom - EDGE * 1.6 ? (y - box.bottom + EDGE * 1.6) / 5 : 0
         if (speed !== 0) {
           element.scrollTop += speed
@@ -301,40 +301,39 @@ export function PhoneBoard({
         </div>
       </header>
 
-      <div
-        ref={list}
-        className="phone-list"
-        onScroll={(event) => {
-          const top = event.currentTarget.scrollTop
-          setScrolled(top > 30)
-        }}
-      >
-        {/* The title scrolls away with the list, as in Mail, so nothing above the list changes height and the rows never jump; the columns stay pinned. */}
+      {/* The title and the columns lie over the top of the list rather than in it, so its scroll indicator starts beside the columns, not the title; the title slides away as the list scrolls. */}
+      <div className="phone-top">
         <div className="phone-title-row">
           <h1 className="phone-large">Tasks</h1>
           <ScopeButton chat={chat} onPress={() => setScoping(true)} />
         </div>
         <div className={`phone-seg-bar${scrolled ? ' scrolled' : ''}`}>
-        <div className="phone-seg" role="tablist" style={{ '--at': COLUMNS.findIndex((one) => one.column === shown) } as React.CSSProperties}>
-          <span className="phone-seg-thumb" />
-          {COLUMNS.map((one) => (
-            <button
-              key={one.column}
-              type="button"
-              role="tab"
-              aria-selected={one.column === shown}
-              className={one.column === shown ? 'on' : ''}
-              onClick={() => {
-                show(one.column)
-                tap('light')
-              }}
-            >
-              {one.title}
-              {chat.listed ? <span className="n">{counts[one.column]}</span> : null}
-            </button>
-          ))}
+          <div className="phone-seg" role="tablist" style={{ '--at': COLUMNS.findIndex((one) => one.column === shown) } as React.CSSProperties}>
+            <span className="phone-seg-thumb" />
+            {COLUMNS.map((one) => (
+              <button
+                key={one.column}
+                type="button"
+                role="tab"
+                aria-selected={one.column === shown}
+                className={one.column === shown ? 'on' : ''}
+                onClick={() => {
+                  show(one.column)
+                  tap('light')
+                }}
+              >
+                {one.title}
+                {chat.listed ? <span className="n">{counts[one.column]}</span> : null}
+              </button>
+            ))}
+          </div>
         </div>
-        </div>
+      </div>
+      <div
+        ref={list}
+        className="phone-list"
+        onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 30)}
+      >
         {high?.window === undefined ? null : (
           <div className="phone-alert">
             {named ? `${high.of}: ` : ''}
