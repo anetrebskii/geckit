@@ -204,7 +204,6 @@ stateDiagram-v2
 | Not done | Why |
 |---|---|
 | Tailscale or another VPN | A VPN app on the phone, and on iOS it takes the one VPN slot |
-| Push notifications | Need Apple's push service and a sender; the first version is for looking and answering while the app is open |
 | Settings on the phone | They are the Mac's: keys, apps to open files with, shortcuts |
 | Model, MCP and Chrome pickers on the phone | A model change rereads the whole conversation; MCP and Chrome are configuration for the desk |
 | Terminal, Finder, open file | They act on the Mac's screen, which nobody is looking at |
@@ -252,4 +251,4 @@ stateDiagram-v2
 | Manage sessions | Asks, Send, Stop, mode, Where it stands |
 | Peer-to-peer to the Mac | WebRTC; Firestore only introduces the two ends |
 
-**Missing from the request:** whether a notification is wanted when a card arrives while the app is closed; left out of this version (section 9).
+**Missing from the request:** whether a notification is wanted when a card arrives while the app is closed; added later, in `phone-push.md`.

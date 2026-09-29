@@ -151,6 +151,8 @@ function orAsBefore<T>(asked: Promise<T>, before: () => Promise<T>): Promise<T> 
 export interface Installed {
   readonly swap: (next: Link) => void
   readonly ping: () => Promise<unknown>
+  /** A conversation opened from a notification, held until the Chat window is there to open it. */
+  readonly show: (id: string) => void
 }
 
 /**
@@ -426,6 +428,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
   // The conversation last opened, which is the one whose lines the Mac sends.
   let opened: string | undefined
   const never = (): (() => void) => nothing
+  let toShow: string | undefined
 
   const phone: Geckit = {
     platform: boot.platform,
@@ -628,7 +631,11 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onSessions: (said) => listen('chat:sessions', said),
       onItems: (said) => listen('chat:items', said),
       onAccount: (said) => listen('chat:accountChanged', said),
-      onShow: never,
+      onShow: (said) => {
+        if (toShow !== undefined) said(toShow)
+        toShow = undefined
+        return listen('chat:show', said)
+      },
       onRecorded: (said) => listen('chat:recorded', said),
       onNotice: (said) =>
         listen<SessionNotice>('chat:notice', (notice) => {
@@ -740,6 +747,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     recorded: (recording) => told('chat:recorded', recording),
     localFetch: (asked) => call('local.fetch', asked),
     forwardLink: (root, href) => call('hosts.forwardLink', root, href),
+    pushToken: (token) => send('push.token', token),
+    away: (on) => send('push.away', on),
   }
   Object.defineProperty(window, 'geckitPhone', { value: calls })
 
@@ -765,5 +774,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     if (shown !== undefined) bringUp(shown.id)
   }
   counting('phoneOpened')
-  return { swap, ping: () => call('settings.get') }
+  const show = (id: string): void => {
+    if ((heard.get('chat:show')?.size ?? 0) > 0) told('chat:show', id)
+    else toShow = id
+  }
+  return { swap, ping: () => call('settings.get'), show }
 }

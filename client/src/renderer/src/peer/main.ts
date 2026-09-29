@@ -56,6 +56,10 @@ function unwatch(link: Link): void {
 
 const said = (): void => window.geckit.peer.state(links.size, trouble)
 
+// A phone sent to the background says so, and a notice goes to it as a push from then on.
+const away = new Set<Link>()
+const here = (): void => void window.geckit.peer.call('push.here', [[...links].filter((one) => !away.has(one)).length]).catch(() => undefined)
+
 // The conversation each phone has open; a phone from before it said so is sent every one.
 const shows = new Map<Link, string>()
 
@@ -215,8 +219,11 @@ window.geckit.peer.onTell((channel, value) => {
 const joined = (link: Link): void => {
   links.add(link)
   said()
+  here()
   link.onClose(() => {
     links.delete(link)
+    away.delete(link)
+    here()
     shows.delete(link)
     views.delete(link)
     byName.delete(link)
@@ -250,6 +257,13 @@ const joined = (link: Link): void => {
     if (message.name === 'chat.watching') {
       const id = message.args[0]
       if (typeof id === 'string') shows.set(link, id)
+      link.send({ t: 'reply', id: message.id, value: null })
+      return
+    }
+    if (message.name === 'push.away') {
+      if (message.args[0] === true) away.add(link)
+      else away.delete(link)
+      here()
       link.send({ t: 'reply', id: message.id, value: null })
       return
     }

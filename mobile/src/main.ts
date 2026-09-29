@@ -2,6 +2,7 @@ import { App } from '@capacitor/app'
 import { CapacitorBarcodeScanner, CapacitorBarcodeScannerTypeHint } from '@capacitor/barcode-scanner'
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
 import { Keyboard } from '@capacitor/keyboard'
+import { PushNotifications } from '@capacitor/push-notifications'
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import type { PluginListenerHandle } from '@capacitor/core'
 
@@ -16,7 +17,7 @@ import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
 import type { Dictate } from '../../client/src/renderer/src/dictate'
 import type { PickedVideo, Picking } from '../../client/src/renderer/src/picked'
-import { readPairing } from '../../client/src/shared/pairing'
+import { readPairing, roomOf } from '../../client/src/shared/pairing'
 import type { Pairing } from '../../client/src/shared/pairing'
 import icon from './icon.png'
 
@@ -71,6 +72,7 @@ function useMac(link: string | undefined): void {
     if (gone === undefined) return
     const left = list.filter((one) => one !== gone)
     localStorage.setItem(MACS, JSON.stringify(left))
+    void keepKeys()
     if (isCurrent(gone)) useMac(left[0]?.link)
   },
   rename: (index, name) =>
@@ -154,6 +156,55 @@ const urls = new Map<string, string>()
     void recording.drop({ path: video.path }).catch(() => undefined)
   },
 }
+
+interface PushKeys {
+  keep(options: { keys: string[] }): Promise<void>
+}
+const pushKeys = registerPlugin<PushKeys>('PushKeys')
+
+// A push is sealed on the Mac with the key in its QR code; the extension that opens it before iOS shows it reads the keys from where the app leaves them.
+const keepKeys = (): Promise<void> =>
+  pushKeys.keep({ keys: keptMacs().flatMap((mac) => readPairing(mac.link)?.key ?? []) }).catch(() => undefined)
+
+async function startPush(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return
+  await keepKeys()
+  let asked = (await PushNotifications.checkPermissions()).receive
+  if (asked === 'prompt' || asked === 'prompt-with-rationale') asked = (await PushNotifications.requestPermissions()).receive
+  if (asked === 'granted') await PushNotifications.register()
+}
+
+// Each Mac is told where Apple reaches this phone as it is joined; iOS says it again on every register.
+void PushNotifications.addListener('registration', ({ value }) => phoneCalls()?.pushToken(value)).catch(() => undefined)
+
+// A conversation to open once the Chat window is up, or after switching to the Mac it is on.
+const SHOW = 'show'
+let toShow: string | undefined
+
+function showHeld(): void {
+  const id = toShow ?? localStorage.getItem(SHOW) ?? undefined
+  toShow = undefined
+  localStorage.removeItem(SHOW)
+  if (id !== undefined) installed?.show(id)
+}
+
+// Pressed: the conversation it is about, on the Mac it came from.
+void PushNotifications.addListener('pushNotificationActionPerformed', ({ notification }) => {
+  const { room, session } = notification.data as { room?: unknown; session?: unknown }
+  if (typeof session !== 'string') return
+  void (async () => {
+    const macs = keptMacs()
+    const rooms = await Promise.all(macs.map((mac) => roomOf(readPairing(mac.link)?.key ?? '')))
+    const from = macs[rooms.indexOf(typeof room === 'string' ? room : '')]
+    if (from !== undefined && !isCurrent(from)) {
+      localStorage.setItem(SHOW, session)
+      useMac(from.link)
+      return
+    }
+    toShow = session
+    if (installed !== undefined) showHeld()
+  })()
+}).catch(() => undefined)
 
 interface LocalPage {
   open(options: { url: string; note?: string }): Promise<void>
@@ -393,6 +444,8 @@ async function connect(): Promise<void> {
     const name = macs[here] === undefined ? (before.name ?? 'the host') : nameOf(macs[here], here)
     started = true
     installed = installGeckit(undefined, before, macOf(pairing))
+    showHeld()
+    void startPush()
     const opened = import('../../client/src/renderer/src/chat/main')
     void mend(pairing, installed.swap, name, true)
     await opened
@@ -445,6 +498,8 @@ async function connect(): Promise<void> {
   started = true
   current = link
   installed = installGeckit(link, boot, macOf(pairing))
+  showHeld()
+  void startPush()
   const { swap } = installed
   const name = boot.name ?? macs[here]?.name ?? 'the host'
   link.onClose(() => void mend(pairing, swap, name))
@@ -517,9 +572,12 @@ async function refreshBoot(pairing: Pairing, link: Link): Promise<void> {
 
 // Back from the background, a link iOS froze may look open and carry nothing; one that does not answer in a few seconds is closed, which starts the mending.
 const SILENT = 3000
+void App.addListener('pause', () => phoneCalls()?.away(true))
+
 void App.addListener('resume', () => {
   const link = current
   if (link === undefined || !started) return
+  phoneCalls()?.away(false)
   const quiet = setTimeout(() => link.close(), SILENT)
   void installed
     ?.ping()

@@ -85,7 +85,7 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
   useEffect(() => {
     let open = true
     void window.geckit.chat.list(undefined).then((read) => {
-      if (open) setEvery(read)
+      if (open) setEvery(read.filter((one) => one.question !== true))
     })
     void window.geckit.chat.search('', within)
     return () => {

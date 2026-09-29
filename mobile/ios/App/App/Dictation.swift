@@ -8,6 +8,7 @@ class BridgeController: CAPBridgeViewController {
         bridge?.registerPluginInstance(DictationPlugin())
         bridge?.registerPluginInstance(RecordingPlugin())
         bridge?.registerPluginInstance(LocalPagePlugin())
+        bridge?.registerPluginInstance(PushKeysPlugin())
     }
 }
 

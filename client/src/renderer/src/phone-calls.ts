@@ -22,6 +22,10 @@ export interface PhoneCalls {
   readonly localFetch: (asked: LocalAsk) => Promise<LocalAnswer>
   /** A `localhost` link opened on the phone, in a conversation on a host: carried to this computer, and opened at the port it landed on; or why it could not be. */
   readonly forwardLink: (root: string, href: string) => Promise<{ readonly href: string; readonly moved?: string; readonly problem?: string }>
+  /** Where Apple reaches this phone, kept on the Mac to push to while the app is not open. */
+  readonly pushToken: (token: string) => void
+  /** Sent to the background, or back: while away, what happens comes as a push. */
+  readonly away: (on: boolean) => void
 }
 
 export const phoneCalls = (): PhoneCalls | undefined => (window as { geckitPhone?: PhoneCalls }).geckitPhone

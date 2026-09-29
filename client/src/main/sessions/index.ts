@@ -605,7 +605,8 @@ export class Sessions {
       const note = this.#deps.notes.all()[id]
       const where = live?.root ?? row?.root
       const project = row?.project
-      if (where === undefined || (roots !== undefined && !roots.includes(project ?? where))) continue
+      // A general question is in no project, and every list carries it, so a phone reading the list again keeps its questions.
+      if (where === undefined || (roots !== undefined && !roots.includes(project ?? where) && live?.question !== true)) continue
       if (note?.hidden === true) continue
       if (live === undefined && row?.driven === true && note?.here !== true && note?.shown !== true) continue
       // Held only because it was looked at, and the tool has nothing under that id any more.

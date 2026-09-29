@@ -1583,6 +1583,7 @@ describe('general questions', () => {
     await vi.advanceTimersByTimeAsync(10 * 60_000)
     expect(built.fake.ended).toBe(1)
     expect(of(built.rows, id)?.question).toBe(true)
+    expect((await built.sessions.list([ROOT])).find((one) => one.id === id)?.question).toBe(true)
     await vi.advanceTimersByTimeAsync(24 * 60 * 60_000)
     expect(of(built.rows, id)).toBeUndefined()
     expect(deleted).toEqual([id])

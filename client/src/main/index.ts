@@ -17,6 +17,7 @@ import {
   Menu,
   nativeTheme,
   Notification,
+  powerMonitor,
   powerSaveBlocker,
   screen,
   shell,
@@ -70,6 +71,7 @@ import { keepGuide } from './guide'
 import { closeAsked, listenAsked } from './asked'
 import type { StartAnswered, StartAsked } from './asked'
 import { fileShown } from './file-shown'
+import { keepToken, pushTo } from './push'
 import { localFetch } from './local-page'
 import type { LocalAsk } from '../shared/local'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
@@ -352,6 +354,8 @@ function build(held: Routes): Sessions {
     plan: (plan: PlanUsage) => tellChats('chat:plan', plan),
     notify: (notice) => {
       shownPeer()?.webContents.send('peer:tell', 'chat:notice', notice)
+      // With no phone open and nobody at this Mac for a minute, it goes to the phones in the pocket.
+      if (phoneOn && phonesHere === 0 && powerMonitor.getSystemIdleState(AWAY_AFTER) !== 'active') void pushTo(phoneKey, notice)
       // In front, the window says it itself; a banner is for when it is not being looked at.
       if (watchingChat()) {
         shownChat()?.webContents.send('chat:notice', notice)
@@ -1175,6 +1179,9 @@ const waitingCard = async (id: string): Promise<SessionItem | undefined> =>
 let phoneOn = false
 let phoneKey = ''
 let phoneState: { readonly count: number; readonly trouble?: string } = { count: 0 }
+// The phones joined and in front, as the phone's window counts them: one sent to the background says so before iOS stops it.
+let phonesHere = 0
+const AWAY_AFTER = 60
 let phoneCode: { readonly key: string; readonly qr: string } | undefined
 // The display the phone is shown, which its touches land on.
 let shownDisplay: string | undefined
@@ -1294,6 +1301,10 @@ function phoneCalls(): Record<string, PhoneCall> {
     'recording.part': (part: string) => addToRecording(Buffer.from(part, 'base64')),
     'recording.keep': () => keepRecording(),
     'recording.drop': () => dropRecording(),
+    'push.token': (token: string) => keepToken(phoneKey, token),
+    'push.here': (count: number) => {
+      phonesHere = count
+    },
   }
 }
 
@@ -1306,6 +1317,7 @@ function keepPhone(on: boolean, key: string): void {
   phoneKey = key
   closePeer()
   phoneState = { count: 0 }
+  phonesHere = 0
   if (on) peerWindow()
   if (on && awake === undefined) awake = powerSaveBlocker.start('prevent-app-suspension')
   if (!on && awake !== undefined) {

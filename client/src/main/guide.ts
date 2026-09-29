@@ -59,16 +59,39 @@ ${path} show <id> --last 10
 
 ### Asking for new ones
 
-A conversation does the work it was asked for. When other work comes up - a job in another project, a job in this project that is not part of what was asked here, or anything that should not hold this conversation open - do not do it here and do not only mention it: it belongs in a conversation of its own. Ask GeckIt to start one for it. You need no leave for that, since every task you send is put in front of the person first, and they start it or refuse it there. Where you cannot tell whether they want the work at all, ask them in your answer instead, and send it once they say yes.
+A conversation does the one job it was asked for. Other work that turns up goes to a conversation of its own, started through GeckIt, so this one can finish and the person sees each job as its own card.
+
+Start one when:
+
+- the person asks for work in another project, or asks to split a job into parts;
+- you find something worth doing that is not part of what was asked here: a bug beside the one being fixed, a test failing in code nobody touched, a follow-up the change will need later;
+- a part of the job can go on without this conversation, and doing it here would hold this one open.
+
+Do not do that work here, and do not only mention it at the end of an answer: a mention is lost once the card moves to Done. You need no leave to send it, since every task is put in front of the person first and they start it or refuse it there. Where you cannot tell whether they want the work at all, ask in your answer and send it once they say yes. Do not send the job you are doing, or a step of it you are about to take yourself.
+
+Send everything in one command, run in the background, since it waits for the person and that can take hours:
 
 \`\`\`
-${path} start --project <name> [--title <title>] [--goal <condition>] <text>
-${path} start --tasks tasks.json
+${path} start --tasks - <<'EOF'
+[
+  {
+    "project": "web",
+    "title": "Checkout button stays disabled after a failed payment",
+    "text": "In src/checkout/PayButton.tsx the button is disabled while a payment runs and never enabled again when the payment fails, so the buyer has to reload the page. Found while fixing the coupon field in another conversation; the failure can be forced with the card 4000 0000 0000 0002 on the test server. Enable the button again on failure and add a test beside PayButton.test.tsx. Done when that test passes and npm test is green.",
+    "goal": "a failed payment leaves the pay button enabled, and npm test passes"
+  }
+]
+EOF
 \`\`\`
 
-\`tasks.json\` is an array of \`{ "project": ..., "title": ..., "text": ..., "goal": ... }\`, at most 20. The project is its folder's name as \`sessions\` prints it. The title is what the person reads to decide, so make it say the work in a few words. Write each text so that a session knowing nothing of this one can act on it: what to do, where, and how to tell it is done.
+Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. For one short task, \`${path} start --project <name> [--title <title>] [--goal <condition>] <text>\` does the same, as long as the text has no quotes, \`$\`, \`;\` or \`&\` in it.
 
-Send everything you have in one batch rather than one call each, and run the command in the background: it waits for the person's answer, which can take hours, and prints one line per task in the order sent - started or queued with its id, or refused - with the person's note on a task if there is one, and their reply to you last. A note on a started task was also given to that conversation. A queued task is a conversation already, whose first message waits until fewer of the person's conversations are working. A refusal is an answer: do not ask again for the same thing, and follow the reply.
+- \`project\` is the folder's name as \`sessions\` prints it. At most 20 tasks at once.
+- \`title\` is what the person reads on the card to decide, so say the work in a few words.
+- \`text\` is all the new conversation is given, and it knows nothing of this one. Write what to do, where - files, commands, links -, what you already found, and how to tell it is done.
+- \`goal\` is optional. Give it when being done can be checked, such as tests passing or a page loading.
+
+The command prints one line per task in the order sent - started or queued with its id, or refused - with the person's note on a task if there is one, and their reply to you last. A note on a started task was also given to that conversation. A queued task is a conversation already, whose first message waits until fewer of the person's conversations are working. A refusal is an answer: do not send the same thing again, and follow the reply. Then say in your answer what you sent and how it stands.
 
 ### Reading linked ones
 
