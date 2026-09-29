@@ -6613,8 +6613,10 @@ html.phone .talk.over {
   font-size: 15px;
 }
 
+/* The conversation only scrolls up and down; code and tables scroll sideways in themselves. */
 html.phone .transcript {
   padding: 16px 0 24px;
+  overflow-x: hidden;
   overscroll-behavior: contain;
 }
 
