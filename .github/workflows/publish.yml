@@ -74,8 +74,6 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       # Read by the build: only a signed Mac copy can install an update over itself.
       GECKIT_SIGNED: ${{ matrix.platform == 'mac' && secrets.MAC_CSC_LINK != '' }}
-      # Where errors go once somebody says they may; with no secret nothing is sent.
-      GECKIT_SENTRY_DSN: ${{ secrets.GECKIT_SENTRY_DSN }}
 
     steps:
       - name: Checkout git repo

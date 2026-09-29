@@ -4,8 +4,8 @@ import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
 const here = import.meta.dirname
-// Where errors go once somebody says they may; empty, nothing is sent.
-const sentry = JSON.stringify(process.env['GECKIT_SENTRY_DSN'] ?? '')
+// Where errors go once somebody says they may: the geckit project in Sentry, public as a DSN is meant to be.
+const sentry = JSON.stringify(process.env['GECKIT_SENTRY_DSN'] ?? 'https://a78cad3df91c69a20c2472e731eb8300@o4511866894942208.ingest.us.sentry.io/4512169996124160')
 
 export default defineConfig({
   main: {
