@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -33,6 +33,20 @@ describe('a file read for the phone', () => {
     expect(await fileShown(root, 'notes.md')).toEqual({ kind: 'markdown', text: '# Notes' })
     expect((await fileShown(root, 'blob.bin')).kind).toBe('none')
     expect((await fileShown(root, 'nothing.txt')).kind).toBe('none')
-    expect((await fileShown(root, '.')).kind).toBe('none')
+  })
+
+  it('lists a folder, folders first', async () => {
+    mkdirSync(join(root, 'sub'))
+    writeFileSync(join(root, 'sub', 'b.txt'), '')
+    writeFileSync(join(root, 'sub', 'a.txt'), '')
+    mkdirSync(join(root, 'sub', 'z'))
+    expect(await fileShown(root, 'sub')).toEqual({
+      kind: 'folder',
+      inside: [
+        { name: 'z', folder: true },
+        { name: 'a.txt', folder: false },
+        { name: 'b.txt', folder: false },
+      ],
+    })
   })
 })

@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname, extname, resolve } from 'node:path'
 
 import type { FileShown } from '../shared/api'
@@ -28,7 +28,10 @@ export async function fileShown(root: string, path: string): Promise<FileShown> 
   const file = fileAt(root, path)
   const found = await stat(file).catch(() => undefined)
   if (found === undefined) return { kind: 'none', why: `${basename(file)} is not on the Mac any more.` }
-  if (found.isDirectory()) return { kind: 'none', why: `${basename(file)} is a folder.` }
+  if (found.isDirectory()) {
+    const inside = (await readdir(file, { withFileTypes: true })).map((one) => ({ name: one.name, folder: one.isDirectory() }))
+    return { kind: 'folder', inside: inside.sort((a, b) => Number(b.folder) - Number(a.folder) || a.name.localeCompare(b.name)) }
+  }
   if (found.size > MOST) return { kind: 'none', why: `${basename(file)} is too big to send to the phone.` }
   const kind = extname(file).toLowerCase()
   const media = MEDIA[kind]

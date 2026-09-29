@@ -386,6 +386,7 @@ export type FileShown =
   | { readonly kind: 'picture'; readonly image: SessionImage }
   | { readonly kind: 'page'; readonly html: string }
   | { readonly kind: 'markdown' | 'text'; readonly text: string }
+  | { readonly kind: 'folder'; readonly inside: readonly { readonly name: string; readonly folder: boolean }[] }
   | { readonly kind: 'none'; readonly why: string }
 
 /** What the tool said it has, or that it is being asked, or that it did not say. */

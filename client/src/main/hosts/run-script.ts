@@ -321,9 +321,9 @@ export function filesScript(cwd: string): string {
   ].join('\n')
 }
 
-/** A file's contents, at most a few megabytes of it, or `@@none` where it cannot be read. */
+/** A file's contents, at most a few megabytes of it, `@@folder` and its names for a folder, folders ending in `/`, or `@@none` where it cannot be read. */
 export function readFileScript(cwd: string, path: string): string {
-  return [`cd ${quote(cwd)} 2>/dev/null || cd "$HOME"`, `f=${quote(path)}`, 'case "$f" in "~/"*) f="$HOME/${f#\\~/}";; esac', `if [ -f "$f" ]; then head -c 8388608 "$f"; else echo '@@none'; fi`].join('\n')
+  return [`cd ${quote(cwd)} 2>/dev/null || cd "$HOME"`, `f=${quote(path)}`, 'case "$f" in "~/"*) f="$HOME/${f#\\~/}";; esac', `if [ -d "$f" ]; then echo '@@folder'; ls -1Ap "$f"; elif [ -f "$f" ]; then head -c 8388608 "$f"; else echo '@@none'; fi`].join('\n')
 }
 
 /** Prints `yes` or `no` for whether a path said in a conversation is there. */

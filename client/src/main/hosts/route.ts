@@ -185,6 +185,11 @@ export async function hostFile(routes: Routes, root: string, path: string): Prom
   if (host === undefined) return { kind: 'none', why: `${name} is on a host GeckIt does not know.` }
   const ran = await ranOn(routes, host, readFileScript(pathOf(root), path), { timeout: 30_000 })
   if (ran.code !== 0 || ran.out.toString('utf8', 0, 7) === '@@none\n') return { kind: 'none', why: `${name} is not on ${host.name} any more.` }
+  if (ran.out.toString('utf8', 0, 9) === '@@folder\n') {
+    const names = ran.out.toString('utf8').split('\n').slice(1).filter((line) => line !== '')
+    const inside = names.map((one) => ({ name: one.replace(/\/$/, ''), folder: one.endsWith('/') }))
+    return { kind: 'folder', inside: inside.sort((a, b) => Number(b.folder) - Number(a.folder) || a.name.localeCompare(b.name)) }
+  }
   const kind = extname(path).toLowerCase()
   const media = PICTURES[kind]
   if (media !== undefined) return { kind: 'picture', image: { media, data: ran.out.toString('base64') } }
