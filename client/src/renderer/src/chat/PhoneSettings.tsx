@@ -11,7 +11,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { LANGUAGES } from '../ui/SettingsDialog'
 import { Limits } from './PhoneInfo'
-import { Cell, Page, tooOld } from './PhoneKit'
+import { Cell, Page, Switch, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
 import { computerName } from './PhoneHosts'
@@ -97,6 +97,23 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
         <Cell label="Appearance" value={THEMES.find((one) => one.value === settings.theme)?.label} onPress={() => setPicking('theme')} />
       </div>
       <div className="phone-note">On this phone only.</div>
+
+      <div className="phone-head">Privacy</div>
+      <div className="phone-group">
+        <Cell label="Count what gets used">
+          <Switch
+            on={settings.analytics && settings.analyticsAsked}
+            label="Count what gets used"
+            onChange={(on) => chat.change({ analytics: on, analyticsAsked: true })}
+          />
+        </Cell>
+        <Cell label="Send error reports">
+          <Switch on={settings.sendErrors} label="Send error reports" onChange={(on) => chat.change({ sendErrors: on })} />
+        </Cell>
+      </div>
+      <div className="phone-note">
+        Counting sends Google Analytics the name of what was used, the version and a random id for this phone. Error reports go to Sentry with paths, addresses and links taken out. Never your conversations, files or keys. On this phone only.
+      </div>
 
       {paired === undefined ? null : (
         <>

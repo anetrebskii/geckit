@@ -35,6 +35,7 @@ import type {
   Lineup,
   ChatFound,
   CutOff,
+  ErrorAnswer,
   ChatSession,
   ClaudeAccount,
   CorrectRequest,
@@ -59,6 +60,7 @@ import type {
 import track from './analytics'
 import { control } from './control'
 import { correct } from './correct'
+import { answerErrors, errorQuestion, followErrors, startErrors, watchErrors, windowError } from './errors'
 import { askOrders, carryOut, projectSaid, saying } from './orders'
 import type { Order, Told } from './orders'
 import { projectFiles } from './files'
@@ -134,6 +136,12 @@ import {
 } from './windows'
 
 log.transports.file.level = 'info'
+
+// Before `ready`, which is the only time the SDK can start; nothing leaves until the switch says so.
+startErrors()
+watchErrors(() => {
+  for (const window of everyWindow()) window.webContents.send('errors:question', errorQuestion())
+})
 
 const DICTATE = ANYWHERE.dictate
 const CORRECT = ANYWHERE.correct
@@ -895,9 +903,20 @@ function wire(): void {
   ipcMain.handle('update:check', () => checkForUpdates())
   ipcMain.on('update:restart', () => restartToUpdate())
   ipcMain.handle('settings:set', (_event, change: Partial<Settings>) => {
-    const settings = setSettings(change)
+    const was = getSettings().sendErrors
+    const settings = setSettings(change.analytics === false ? { ...change, client: '' } : change)
+    if (settings.sendErrors !== was) void followErrors(settings.sendErrors)
     return settings
   })
+  ipcMain.handle('errors:question', () => errorQuestion())
+  ipcMain.on('errors:answer', (_event, answer: ErrorAnswer) => {
+    const was = getSettings().sendErrors
+    void answerErrors(answer).then(async () => {
+      if (getSettings().sendErrors !== was) await followErrors(true)
+      for (const window of everyWindow()) window.webContents.send('errors:question', errorQuestion())
+    })
+  })
+  ipcMain.on('errors:hold', (_event, name: string, message: string, stack: string) => windowError(name, message, stack))
 
   ipcMain.handle('correct', async (_event, request: CorrectRequest) => {
     track('correct')

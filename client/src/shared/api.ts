@@ -761,6 +761,9 @@ export interface UpdateView {
 }
 
 /** The line Settings shows under the version, for each state. */
+/** The error card's three answers; closing it is Later, never Send. */
+export type ErrorAnswer = 'send' | 'later' | 'never'
+
 export function updateText(update: UpdateView): string {
   switch (update.state) {
     case 'off':
@@ -839,8 +842,12 @@ export interface Settings {
   readonly sidebarWidth: number
   /** This installation, for counting how often each thing is used. Nothing else is sent. */
   readonly client: string
-  /** False sends nothing to Google Analytics. */
+  /** False sends nothing to Google Analytics. Off until the question on start is answered. */
   readonly analytics: boolean
+  /** The question about counting was answered, either way. */
+  readonly analyticsAsked: boolean
+  /** Errors go to Sentry, redacted. Off until the error card is answered Send, or it is turned on in Settings. */
+  readonly sendErrors: boolean
   /** False stops the checks on launch and every hour; Check for Updates in Settings still works. */
   readonly autoUpdate: boolean
   readonly updateChannel: UpdateChannel
@@ -957,7 +964,9 @@ export const DEFAULT_SETTINGS: Settings = {
   openWith: [],
   transcriptions: [],
   client: '',
-  analytics: true,
+  analytics: false,
+  analyticsAsked: false,
+  sendErrors: false,
   autoUpdate: true,
   updateChannel: 'stable',
   guideClaude: true,

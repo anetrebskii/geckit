@@ -207,12 +207,26 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
       <div className="field">
         <label>Usage</label>
         <label className="check">
-          <input type="checkbox" checked={settings.analytics} onChange={(event) => change({ analytics: event.target.checked })} />
+          <input
+            type="checkbox"
+            checked={settings.analytics && settings.analyticsAsked}
+            onChange={(event) => change({ analytics: event.target.checked, analyticsAsked: true })}
+          />
           Count which features are used
         </label>
         <span style={NOTE}>
-          Sends Google Analytics the name of what was used, such as correct or chatSent, the version and a random id for
-          this installation. Never text, paths or keys.
+          Sends Google Analytics the name of what was used, such as correct or chatSent, the version and a random id for this installation. Never text, paths or keys.
+        </span>
+      </div>
+
+      <div className="field">
+        <label>Errors</label>
+        <label className="check">
+          <input type="checkbox" checked={settings.sendErrors} onChange={(event) => change({ sendErrors: event.target.checked })} />
+          Send error reports
+        </label>
+        <span style={NOTE}>
+          Sends Sentry the error and where in GeckIt it happened, with paths, addresses and links taken out. Never your conversations, files or keys. Off, errors are kept here and GeckIt asks before sending them.
         </span>
       </div>
 

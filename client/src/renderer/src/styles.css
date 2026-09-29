@@ -1402,6 +1402,71 @@ html.framed .topbar {
   margin-top: 8px;
 }
 
+/* The questions about counting and errors: above the update notice on the computer, over the tab bar on the phone. */
+.update-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.consent-cards {
+  position: fixed;
+  right: 8px;
+  bottom: calc(var(--bottom) + 64px);
+  left: 8px;
+  z-index: 47;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notice.consent {
+  cursor: default;
+}
+
+.notice.consent .body {
+  white-space: normal;
+}
+
+.notice.consent .actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.notice.consent .actions button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+/* Declining weighs the same as agreeing: framed, and not dimmed. */
+.notice.consent .quiet {
+  color: var(--text);
+}
+
+.notice.consent .reveal {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.notice.consent .reveal summary {
+  cursor: pointer;
+}
+
+.notice.consent .reveal pre {
+  max-height: 120px;
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  overflow: auto;
+  font-family: var(--font-code);
+  font-size: 11px;
+  white-space: pre;
+  background: var(--bg-hover);
+  border-radius: var(--radius);
+}
+
 .version {
   display: flex;
   gap: 12px;

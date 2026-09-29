@@ -74,6 +74,10 @@ With Phone on in Settings, main opens a hidden `peer` window, since WebRTC lives
 
 A JSON file in `app.getPath('userData')`, owned by the main process (`main/store.ts`), read and written over IPC and broadcast to every window. Not `localStorage`: three windows and main need the same values.
 
+### Counting and errors
+
+Both off until asked, as in Notula. On the first start a card asks whether GeckIt may count what gets used (`analytics`, `analyticsAsked`); `main/analytics.ts` and the phone send through `shared/counting.ts` only after a Yes. Errors are caught in main (`main/errors.ts`) and in each window (`renderer/src/errors.ts`), redacted and held in `errors.json` by `shared/reporting.ts` (Notula's `@notula/reporting`), and a card shows what would be sent with Never, Later and Send; Sentry receives them only while `sendErrors` is on. The DSN is `GECKIT_SENTRY_DSN` at build time (the `GECKIT_SENTRY_DSN` secret in CI, `mobile/.env` for the phone); without it nothing is sent. The phone asks both questions for itself and keeps the answers and its held errors on the phone (`renderer/src/phone-errors.ts`, `OWN` in `phone-calls.ts`). The cards are `ui/Consent.tsx`.
+
 ## Key Files
 
 - `client/src/shared/api.ts`: the whole main/renderer contract

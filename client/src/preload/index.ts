@@ -13,6 +13,7 @@ import type {
   ClaudeModel,
   HiddenFolder,
   CutOff,
+  ErrorAnswer,
   McpServer,
   CorrectRequest,
   GitState,
@@ -81,6 +82,13 @@ const geckit = {
     openAccessibility: (): void => ipcRenderer.send('settings:openAccessibility'),
   },
 
+  errors: {
+    /** What would be sent, while the question about errors is due. */
+    question: (): Promise<string | undefined> => ipcRenderer.invoke('errors:question'),
+    onQuestion: (said: (report: string | undefined) => void): (() => void) => listen('errors:question', said),
+    answer: (answer: ErrorAnswer): void => ipcRenderer.send('errors:answer', answer),
+    hold: (name: string, message: string, stack: string): void => ipcRenderer.send('errors:hold', name, message, stack),
+  },
   update: {
     view: (): Promise<UpdateView> => ipcRenderer.invoke('update:view'),
     check: (): Promise<UpdateView> => ipcRenderer.invoke('update:check'),

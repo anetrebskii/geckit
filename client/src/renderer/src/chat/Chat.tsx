@@ -36,7 +36,7 @@ import type { FileHow } from './Prose'
 import { Transcript } from './Transcript'
 import { Welcome } from './Welcome'
 import { ON_PHONE } from '../on-phone'
-import { UpdateNotice } from '../ui/UpdateNotice'
+import { Consent } from '../ui/Consent'
 import { useChat } from './useChat'
 
 interface Recently {
@@ -764,7 +764,7 @@ export function Chat(): React.JSX.Element {
       )}
       {screening ? <Screen onClose={() => setScreening(false)} /> : null}
       {viewing === undefined ? null : <FileView root={viewing.root} path={viewing.path} onClose={() => setViewing(undefined)} />}
-      <UpdateNotice />
+      <Consent settings={chat.settings} change={chat.change} />
       {recent === undefined ? null : (
         <Recent
           list={recent.list}

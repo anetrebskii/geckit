@@ -6,6 +6,8 @@ import { app } from 'electron'
 import { DEFAULT_SETTINGS, sessionMode } from '../shared/api'
 import { newKey } from '../shared/pairing'
 import type { Settings } from '../shared/api'
+import { NO_CRASHES } from '../shared/reporting'
+import type { CrashRecord } from '../shared/reporting'
 import { withColors } from '../shared/project-color'
 import { carriedOver } from './carry-over'
 import { withMoves } from './sessions'
@@ -46,6 +48,7 @@ function write(name: string, value: unknown): void {
 
 const SETTINGS = 'settings.json'
 const NOTES = 'sessions.json'
+const ERRORS = 'errors.json'
 
 let settings: Settings | undefined
 const watchers = new Set<(settings: Settings) => void>()
@@ -138,3 +141,7 @@ export function notesStore(): NotesStore {
     },
   }
 }
+
+/** The errors held until somebody says they may be sent, redacted already. */
+export const readErrors = (): CrashRecord => read(ERRORS, NO_CRASHES) ?? NO_CRASHES
+export const writeErrors = (record: CrashRecord): void => write(ERRORS, record)

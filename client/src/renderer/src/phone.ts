@@ -5,7 +5,10 @@ import { pieceOf } from '../../shared/pairing'
 import { collapse, runKey } from '../../shared/steps'
 import { isLocal, toPhone } from '../../shared/local'
 import type { Piece } from '../../shared/pairing'
+import { countEvent } from '../../shared/counting'
+import type { EventName } from '../../shared/counting'
 import { OWN } from './phone-calls'
+import { phoneErrors } from './phone-errors'
 import type { PhoneCalls } from './phone-calls'
 import { keep, readKept } from './kept'
 import { showLocal } from './local-page'
@@ -176,11 +179,28 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
   }
   let mine = readOwn()
   let last: Settings | undefined
+  // Whether this phone counts and sends its errors is asked on the phone, whatever the Mac answered.
   const own = (settings: Settings): Settings => {
     last = settings
-    const kept = { ...settings, ...mine }
+    const kept = { ...settings, analytics: false, analyticsAsked: false, sendErrors: false, client: '', ...mine }
     const gone = mine.profile !== undefined && mine.profile !== '' && !settings.profiles.some((one) => one.id === mine.profile)
     return gone ? { ...kept, profile: '', chatProjects: [], chatAll: true } : kept
+  }
+
+  const errors = phoneErrors(
+    () => mine.sendErrors === true,
+    () => void phone.settings.set({ sendErrors: true }),
+  )
+  let version: Promise<string> | undefined
+  const counting = (name: EventName): void => {
+    if (mine.analytics !== true || mine.analyticsAsked !== true) return
+    if ((mine.client ?? '') === '') {
+      mine = { ...mine, client: crypto.randomUUID() }
+      localStorage.setItem(ownKey, JSON.stringify(mine))
+    }
+    const client = mine.client ?? ''
+    version ??= call<string>('mac.version')
+    void version.then((said) => countEvent(client, name, `phone ${said}`)).catch(() => undefined)
   }
 
   const told = (channel: string, value: unknown): void => {
@@ -418,8 +438,10 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
         const here = Object.fromEntries(Object.entries(change).filter(([key]) => (OWN as readonly string[]).includes(key)))
         const there = Object.fromEntries(Object.entries(change).filter(([key]) => !(OWN as readonly string[]).includes(key)))
         if (Object.keys(here).length > 0) {
-          mine = { ...mine, ...here }
+          mine = { ...mine, ...here, ...(change.analytics === false ? { client: '' } : {}) }
           localStorage.setItem(ownKey, JSON.stringify(mine))
+          if (change.sendErrors !== undefined) errors.follow(change.sendErrors)
+          if (change.analytics === true) counting('phoneOpened')
         }
         if (Object.keys(there).length > 0) return own(await call<Settings>('settings.set', there))
         const now = last ?? (await call<Settings>('settings.get'))
@@ -430,6 +452,12 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       pickApp: () => Promise.resolve(undefined),
       accessibility: () => Promise.resolve(true),
       openAccessibility: nothing,
+    },
+    errors: {
+      question: errors.question,
+      onQuestion: errors.onQuestion,
+      answer: errors.answer,
+      hold: errors.hold,
     },
     update: {
       view: () => call('update.view'),
@@ -524,7 +552,10 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       cutOff: () => Promise.resolve([]),
       proceed: nothing,
       search: (asked, root) => call('chat.search', asked, root),
-      send: (message) => call('chat.send', message),
+      send: (message) => {
+        counting('chatSent')
+        return call('chat.send', message)
+      },
       shell: (command) => call('chat.shell', command),
       stopShell: (id, item) => send('chat.stopShell', id, item),
       typeShell: (id, item, text) => send('chat.typeShell', id, item, text),
@@ -733,5 +764,6 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     })
     if (shown !== undefined) bringUp(shown.id)
   }
+  counting('phoneOpened')
   return { swap, ping: () => call('settings.get') }
 }

@@ -20,38 +20,42 @@ function useUpdate(): UpdateView | undefined {
  * download's bar as Notula shows it. It installs on the next quit anyway, so
  * Later is a fine answer.
  */
-export function UpdateNotice(): React.JSX.Element | null {
+export function UpdateNotice({ children }: { readonly children?: React.ReactNode }): React.JSX.Element | null {
   const view = useUpdate()
   const [later, setLater] = useState<string>()
-  if (view === undefined || !['downloading', 'ready', 'waiting'].includes(view.state) || view.offered === later) return null
+  const shown = view !== undefined && ['downloading', 'ready', 'waiting'].includes(view.state) && view.offered !== later
+  if (!shown && children === undefined) return null
 
   return (
     <div className="update-notice no-drag" aria-live="polite">
-      <div className="notice update">
-        <span className="state" />
-        <span className="lines">
-          <span className="title">
-            {view.state === 'downloading' ? `Downloading GeckIt ${view.offered}` : `GeckIt ${view.offered} is ready`}
+      {children}
+      {!shown ? null : (
+        <div className="notice update">
+          <span className="state" />
+          <span className="lines">
+            <span className="title">
+              {view.state === 'downloading' ? `Downloading GeckIt ${view.offered}` : `GeckIt ${view.offered} is ready`}
+            </span>
+            {view.state === 'downloading' ? (
+              <span className="progress" role="progressbar" aria-valuenow={view.percent}>
+                <span style={{ width: `${String(view.percent)}%` }} />
+              </span>
+            ) : (
+              <span className="body">{view.state === 'waiting' ? updateText(view) : 'It installs when the app restarts.'}</span>
+            )}
+            {view.state === 'ready' ? (
+              <span className="actions">
+                <button type="button" className="primary" onClick={() => window.geckit.update.restart()}>
+                  Restart to Update
+                </button>
+              </span>
+            ) : null}
           </span>
-          {view.state === 'downloading' ? (
-            <span className="progress" role="progressbar" aria-valuenow={view.percent}>
-              <span style={{ width: `${String(view.percent)}%` }} />
-            </span>
-          ) : (
-            <span className="body">{view.state === 'waiting' ? updateText(view) : 'It installs when the app restarts.'}</span>
-          )}
-          {view.state === 'ready' ? (
-            <span className="actions">
-              <button type="button" className="primary" onClick={() => window.geckit.update.restart()}>
-                Restart to Update
-              </button>
-            </span>
-          ) : null}
-        </span>
-        <button type="button" className="icon-button" aria-label="Later" title="Later" onClick={() => setLater(view.offered)}>
-          <Icon name="close" size={12} />
-        </button>
-      </div>
+          <button type="button" className="icon-button" aria-label="Later" title="Later" onClick={() => setLater(view.offered)}>
+            <Icon name="close" size={12} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
