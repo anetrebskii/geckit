@@ -138,6 +138,7 @@ export function PhoneNav({
       {(info || pulled !== undefined) && session !== undefined ? (
         <PhoneInfo
           chat={chat}
+          links={links}
           {...(pulled === undefined ? {} : { pulled })}
           atStarted={atStarted}
           onClear={onClear}

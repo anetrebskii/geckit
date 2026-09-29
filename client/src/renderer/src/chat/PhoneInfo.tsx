@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import { homeOf, SESSION_MODES } from '../../../shared/api'
 import type { PlanUsage, PlanWindow } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
+import { shortUrl } from '../../../shared/links'
+import type { Link } from '../../../shared/links'
 import { Menu } from '../ui/Menu'
 import { Cell, Drawer } from './PhoneKit'
 import { projectLabel } from './project'
@@ -56,6 +58,16 @@ export function Limits({ chat, usage }: { readonly chat: Chat; readonly usage?: 
   )
 }
 
+/** What a link row says first: what the link was called, or the site a bare address is on. */
+const linkLabel = (link: Link): string => link.text ?? shortUrl(link.url).split('/')[0] ?? link.url
+
+/** Under it: the whole address of a named link, the rest of a bare one's. */
+const linkSays = (link: Link): string | undefined => {
+  if (link.text !== undefined) return shortUrl(link.url)
+  const rest = shortUrl(link.url).split('/').slice(1).join('/')
+  return rest === '' ? undefined : rest
+}
+
 /** A conversation's context, as the phone's bar says it under the title. */
 export const contextLine = (chat: Chat): string | undefined => {
   const spend = chat.session?.spend
@@ -70,12 +82,14 @@ export const contextLine = (chat: Chat): string | undefined => {
  */
 export function PhoneInfo({
   chat,
+  links,
   pulled,
   atStarted = false,
   onClear,
   onClose,
 }: {
   readonly chat: Chat
+  readonly links: readonly Link[]
   readonly pulled?: number
   /** Opened from "Started 3" under the title, so it opens scrolled to them. */
   readonly atStarted?: boolean
@@ -166,6 +180,24 @@ export function PhoneInfo({
               )
             })}
           </div>
+        </>
+      )}
+
+      {links.length === 0 ? null : (
+        <>
+          <div className="phone-head">Links</div>
+          <div className="phone-group">
+            {links.map((link) => (
+              <Cell
+                key={link.url}
+                icon="link"
+                label={<span className="phone-cell-clip">{linkLabel(link)}</span>}
+                says={linkSays(link)}
+                onPress={() => window.geckit.chat.openLink(link.url)}
+              />
+            ))}
+          </div>
+          <div className="phone-note">Written in this conversation, the newest first.</div>
         </>
       )}
 

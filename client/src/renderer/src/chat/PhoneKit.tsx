@@ -265,6 +265,16 @@ export function Drawer({
   useLayoutEffect(() => {
     setWidth(panel.current?.offsetWidth ?? 0)
   }, [])
+  // Without a non-passive listener the list inside scrolls under a sideways swipe, and iOS cancels it.
+  useEffect(() => {
+    const element = panel.current
+    if (element === null) return
+    const hold = (event: TouchEvent): void => {
+      if (from.current?.way === 'side') event.preventDefault()
+    }
+    element.addEventListener('touchmove', hold, { passive: false })
+    return () => element.removeEventListener('touchmove', hold)
+  }, [])
   useEffect(() => {
     if (phase !== 'in') return
     const frame = requestAnimationFrame(() => setPhase('open'))
@@ -298,7 +308,10 @@ export function Drawer({
           if (held === undefined) return
           const dx = event.clientX - held.x
           const dy = event.clientY - held.y
-          if (held.way === undefined && Math.abs(dx) + Math.abs(dy) > 6) held.way = dx > Math.abs(dy) ? 'side' : 'down'
+          if (held.way === undefined && Math.abs(dx) + Math.abs(dy) > 6) {
+            held.way = dx > Math.abs(dy) ? 'side' : 'down'
+            if (held.way === 'side') event.currentTarget.setPointerCapture(event.pointerId)
+          }
           if (held.way !== 'side') return
           const at = Math.max(0, dx)
           const dt = event.timeStamp - held.t
@@ -317,8 +330,10 @@ export function Drawer({
           else setDragged(undefined)
         }}
         onPointerCancel={() => {
+          const held = from.current
           from.current = undefined
-          setDragged(undefined)
+          if (held?.way === 'side' && held.at > width / 3) close()
+          else setDragged(undefined)
         }}
       >
         <div className="phone-task-bar">

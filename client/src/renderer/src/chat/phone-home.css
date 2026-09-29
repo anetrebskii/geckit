@@ -120,6 +120,12 @@ html.keyboard .phone-tabs {
   white-space: nowrap;
 }
 
+.phone-cell-clip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .phone-cell-says {
   overflow: hidden;
   font-size: 13px;
