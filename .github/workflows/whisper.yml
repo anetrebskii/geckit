@@ -32,8 +32,6 @@ jobs:
           - runner: ubuntu-latest
             os: linux
             arch: x64
-    env:
-      WHISPER_WORK: ${{ runner.temp }}/whisper
     steps:
       - uses: actions/checkout@v5
 
@@ -46,6 +44,8 @@ jobs:
           key: whisper-cli-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.pinned.outputs.version }}-${{ hashFiles('client/scripts/whisper.sh') }}
 
       - name: Build
+        env:
+          WHISPER_WORK: ${{ runner.temp }}/whisper
         run: |
           if ls whisper/bin/${{ matrix.os }}-${{ matrix.arch }}/whisper-cli* > /dev/null 2>&1; then echo "From the cache"; else scripts/whisper.sh ${{ matrix.os }} ${{ matrix.arch }}; fi
 
