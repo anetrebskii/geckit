@@ -2464,6 +2464,64 @@ button.tag:hover {
   overflow-y: auto;
 }
 
+/* Finding in the conversation: a strip over it, and the words marked where they are, as a browser's own find marks them. */
+.find-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 24px;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
+
+.find-bar input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+.find-bar input[type='text']:focus-visible {
+  outline: none;
+}
+
+.find-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+::highlight(find) {
+  background-color: rgb(255 200 0 / 35%);
+}
+
+::highlight(find-now) {
+  color: #1a1a1a;
+  background-color: rgb(255 176 0);
+}
+
+html.phone .find-bar {
+  gap: 4px;
+  padding: 4px 4px 4px 16px;
+  background: var(--glass);
+  border-bottom: 0;
+  box-shadow: 0 0.5px 0 var(--separator);
+}
+
+html.phone .find-bar input[type='text'] {
+  font-size: 16px;
+}
+
+html.phone .find-bar .icon-button {
+  width: 40px;
+  height: 40px;
+}
+
 .turn {
   padding: 0 24px;
   margin: 0 0 14px;

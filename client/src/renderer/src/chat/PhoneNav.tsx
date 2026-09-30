@@ -24,6 +24,7 @@ export function PhoneNav({
   info,
   pulled,
   onInfo,
+  onFind,
 }: {
   readonly chat: Chat
   readonly links: readonly Link[]
@@ -32,6 +33,7 @@ export function PhoneNav({
   readonly info: boolean
   readonly pulled: number | undefined
   readonly onInfo: (open: boolean) => void
+  readonly onFind: () => void
 }): React.JSX.Element {
   const [more, setMore] = useState(false)
   const [listing, setListing] = useState(false)
@@ -104,6 +106,7 @@ export function PhoneNav({
             ...(links.length === 0
               ? []
               : [{ value: 'links', label: 'Links', says: `${String(links.length)} in this conversation`, icon: 'link' }]),
+            { value: 'find', label: 'Find in conversation', icon: 'search' },
             { value: 'info', label: 'Conversation', says: 'Context, cost, the plan, Compact and Clear' },
             { value: 'rename', label: 'Rename', icon: 'pencil' },
             ...(chat.working ? [{ value: 'stop', label: 'Stop', says: 'Interrupts Claude; the conversation stays', icon: 'stop' }] : []),
@@ -112,6 +115,7 @@ export function PhoneNav({
           ]}
           onPick={(value) => {
             if (value === 'links') setListing(true)
+            else if (value === 'find') onFind()
             else if (value === 'info') onInfo(true)
             else if (value === 'rename') setRenaming(true)
             else if (value === 'stop') chat.stop()

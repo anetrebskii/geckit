@@ -67,6 +67,11 @@ export function Chat(): React.JSX.Element {
   // The conversations in the order the sidebar draws them, which is what Cmd+1 and Ctrl+Tab go by.
   const order = useRef<readonly ChatSession[]>([])
   const [seek, setSeek] = useState<Seek | undefined>()
+  // Finding in the conversation shown, asked for at a moment; another conversation opened puts the field away.
+  const [finding, setFinding] = useState<{ readonly id: string; readonly at: number } | undefined>()
+  const find = (): void => {
+    if (chat.shown.kind === 'session') setFinding({ id: chat.shown.id, at: Date.now() })
+  }
   // Ctrl+Tab while Ctrl is held: the conversations opened last, and the one it is on.
   const [recent, setRecent] = useState<Recently | undefined>()
   // Read on the key going up, which can come before the list is drawn when Ctrl+Tab is tapped quickly.
@@ -304,6 +309,11 @@ export function Chat(): React.JSX.Element {
         setKeys(true)
         return
       }
+      if (meta && !event.shiftKey && event.key === 'f' && chat.shown.kind === 'session') {
+        event.preventDefault()
+        setFinding({ id: chat.shown.id, at: Date.now() })
+        return
+      }
       if (meta && event.key === 'j') {
         event.preventDefault()
         setManaging({ edit: 'list', at: Date.now() })
@@ -513,6 +523,7 @@ export function Chat(): React.JSX.Element {
             info={infoing}
             pulled={pulled}
             onInfo={setInfoing}
+            onFind={find}
             onClear={() => {
               if (chat.session !== undefined) chat.setRoot(homeOf(chat.session))
               chat.startNew()
@@ -653,6 +664,15 @@ export function Chat(): React.JSX.Element {
                 <button
                   type="button"
                   className="icon-button no-drag"
+                  title={`Find in this conversation (${MOD}+F)`}
+                  aria-label="Find in this conversation"
+                  onClick={find}
+                >
+                  <Icon name="search" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button no-drag"
                   title={`Refresh (${MOD}+R)`}
                   aria-label="Refresh"
                   onClick={chat.refresh}
@@ -732,6 +752,8 @@ export function Chat(): React.JSX.Element {
               earlier={chat.earlier}
               onEarlier={chat.showEarlier}
               onSteps={chat.loadSteps}
+              find={finding?.id === chat.itemsFor ? finding.at : undefined}
+              onFindClose={() => setFinding(undefined)}
             />
             </RequestChat>
           </Files>

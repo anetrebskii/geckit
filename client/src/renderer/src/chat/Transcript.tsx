@@ -488,6 +488,8 @@ export const Transcript = memo(function Transcript({
   earlier = 0,
   onEarlier,
   onSteps,
+  find,
+  onFindClose,
 }: {
   /** Which conversation this is, so another one opens at its end rather than where this one was left. */
   readonly at: string
@@ -512,6 +514,9 @@ export const Transcript = memo(function Transcript({
   readonly onEarlier?: () => void
   /** A run of steps opened that is only a line so far: its steps are to be asked for. */
   readonly onSteps?: (run: Extract<SessionItem, { kind: 'steps' }>) => void
+  /** When finding in it was last asked for, which puts the field there and in focus; none, and there is no field. */
+  readonly find?: number | undefined
+  readonly onFindClose?: () => void
 }): React.JSX.Element {
   const box = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
@@ -521,6 +526,10 @@ export const Transcript = memo(function Transcript({
   const [drawn, setDrawn] = useState({ at, count: FIRST })
   const [opened, setOpened] = useState<{ readonly at: string; readonly keys: ReadonlySet<string> }>({ at, keys: new Set() })
   const [now, setNow] = useState(() => Date.now())
+  const [query, setQuery] = useState('')
+  // Which of the messages found is gone to, counted back from the newest.
+  const [picked, setPicked] = useState(0)
+  const field = useRef<HTMLInputElement>(null)
 
   const picture = useCallback((src: string) => setPreview(src), [])
 
@@ -595,6 +604,28 @@ export const Transcript = memo(function Transcript({
           ),
     [seek, at, items],
   )
+  // What is found in this conversation: the messages holding the words, oldest first.
+  const word = find === undefined ? '' : query.trim().toLowerCase()
+  const hits = useMemo(
+    () =>
+      word === ''
+        ? []
+        : items.flatMap((item, index) => ((item.kind === 'mine' || item.kind === 'theirs') && item.text.toLowerCase().includes(word) ? [index] : [])),
+    [word, items],
+  )
+  const back = hits.length === 0 ? 0 : picked % hits.length
+  const hit = hits[hits.length - 1 - back]
+  const hitId = hit === undefined ? undefined : items[hit]?.id
+  const go = (by: number): void => {
+    if (hits.length > 0) setPicked((back + by + hits.length) % hits.length)
+  }
+
+  useEffect(() => {
+    if (find === undefined) return
+    field.current?.focus()
+    field.current?.select()
+  }, [find])
+
   const page = drawn.at === at ? drawn.count : FIRST
   useEffect(() => {
     if (page >= PAGE) return
@@ -602,7 +633,7 @@ export const Transcript = memo(function Transcript({
     return () => clearTimeout(more)
   }, [page, at])
 
-  const reach = sought < 0 ? page : Math.max(page, items.length - sought + 20)
+  const reach = Math.max(page, sought < 0 ? 0 : items.length - sought + 20, hit === undefined ? 0 : items.length - hit + 20)
   // A request still waiting is kept at the end, where it is seen, while Claude goes on working above it; answered, it goes back to where it was asked.
   const waiting = items.filter((item) => item.kind === 'request' && item.answer === undefined)
   const inOrder = waiting.length === 0 ? items : items.filter((item) => !waiting.includes(item))
@@ -630,6 +661,42 @@ export const Transcript = memo(function Transcript({
     }, 5000)
     return () => clearTimeout(give)
   }, [seek])
+
+  useEffect(() => {
+    if (hitId === undefined) return
+    const element = box.current?.querySelector(`[data-item="${CSS.escape(hitId)}"]`)
+    if (element === null || element === undefined) return
+    stuck.current = false
+    element.scrollIntoView({ block: 'center' })
+  }, [hitId, back])
+
+  // Each place the words are in what is drawn is marked, the one gone to more than the rest.
+  useEffect(() => {
+    if (typeof CSS.highlights === 'undefined') return
+    const rest: Range[] = []
+    const current: Range[] = []
+    for (const index of hits) {
+      const id = items[index]?.id
+      const said = id === undefined ? null : box.current?.querySelector(`[data-item="${CSS.escape(id)}"] > :is(.mine, .theirs)`)
+      if (said === null || said === undefined) continue
+      const walk = document.createTreeWalker(said, NodeFilter.SHOW_TEXT)
+      for (let node = walk.nextNode(); node !== null; node = walk.nextNode()) {
+        const text = (node.textContent ?? '').toLowerCase()
+        for (let from = text.indexOf(word); from >= 0; from = text.indexOf(word, from + word.length)) {
+          const range = new Range()
+          range.setStart(node, from)
+          range.setEnd(node, from + word.length)
+          ;(index === hit ? current : rest).push(range)
+        }
+      }
+    }
+    CSS.highlights.set('find', new Highlight(...rest))
+    CSS.highlights.set('find-now', new Highlight(...current))
+    return () => {
+      CSS.highlights.delete('find')
+      CSS.highlights.delete('find-now')
+    }
+  })
 
   // An answer comes in pieces between the lines of what was done; it is dated where it ends.
   const ends = new Set<string>()
@@ -682,6 +749,50 @@ export const Transcript = memo(function Transcript({
   const counted = (n: number): string => (n === 1 ? '1 step' : `${String(n)} steps`)
 
   return (
+    <>
+    {find === undefined ? null : (
+      <div className="find-bar" role="search">
+        <Icon name="search" size={13} />
+        <input
+          ref={field}
+          type="text"
+          value={query}
+          placeholder="Find in this conversation"
+          aria-label="Find in this conversation"
+          enterKeyHint="search"
+          spellCheck={false}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setPicked(0)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              event.stopPropagation()
+              onFindClose?.()
+            } else if (event.key === 'Enter') {
+              event.preventDefault()
+              go(event.shiftKey ? -1 : 1)
+            }
+          }}
+        />
+        <span className="find-count">{word === '' ? '' : hits.length === 0 ? 'Not found' : `${String(hits.length - back)} of ${String(hits.length)}`}</span>
+        {word === '' || earlier === 0 ? null : (
+          <button type="button" className="quiet small" title="Only what is loaded is searched" onClick={onEarlier}>
+            Load earlier
+          </button>
+        )}
+        <button type="button" className="icon-button" title="Earlier (Enter)" aria-label="Earlier" disabled={hits.length < 2} onClick={() => go(1)}>
+          <Icon name="up" size={13} />
+        </button>
+        <button type="button" className="icon-button" title="Later (Shift+Enter)" aria-label="Later" disabled={hits.length < 2} onClick={() => go(-1)}>
+          <Icon name="down" size={13} />
+        </button>
+        <button type="button" className="icon-button" title="Close (Esc)" aria-label="Close" onClick={onFindClose}>
+          <Icon name="close" size={13} />
+        </button>
+      </div>
+    )}
     <div
       className="transcript"
       ref={box}
@@ -818,5 +929,6 @@ export const Transcript = memo(function Transcript({
 
       {preview === undefined ? null : <Preview src={preview} onClose={() => setPreview(undefined)} />}
     </div>
+    </>
   )
 })

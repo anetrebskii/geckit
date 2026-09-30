@@ -28,6 +28,7 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
       [`${MOD}+N`, 'New task: the project, what to do and a goal'],
       [`${MOD}+Shift+N`, 'Ask a general question, kept off the board'],
       [`${MOD}+P`, 'Search conversations, projects, folders and what was said'],
+      [`${MOD}+F`, 'Find in this conversation; Enter goes to an earlier match, Shift+Enter a later one'],
       [`${MOD}+K`, 'Switch project: type a few letters of it, then Enter'],
       [`${MOD}+1 to ${MOD}+9`, `Open the conversation at that place in the list, favorites first; hold ${MOD} to see the numbers`],
       ['Ctrl+Tab, Ctrl+Shift+Tab', 'Switch to a conversation opened lately: hold Ctrl, press Tab to move, let go to open'],
