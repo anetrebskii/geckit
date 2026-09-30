@@ -797,6 +797,34 @@ textarea {
   opacity: 1;
 }
 
+/* A Chrome in the Chrome menu: the check, its name with the extension's own under it, and the pencil that names it. */
+.menu.explained .menu-item.browser-row {
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  padding-block: 4px;
+}
+
+.browser-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.browser-row .browser-name-field {
+  width: 100%;
+  padding: 1px 5px;
+  margin-left: -6px;
+}
+
+.browser-row .rename {
+  opacity: 0;
+}
+
+.browser-row:hover .rename,
+.browser-row .rename:focus-visible {
+  opacity: 1;
+}
+
 .waits-count {
   flex-shrink: 0;
   min-width: 18px;

@@ -51,4 +51,14 @@ describe('what Claude Code is told about GeckIt', () => {
     expect(await read('GECKIT.md')).toBe('gone')
     expect(await read('CLAUDE.md')).toBe('# Mine\n\nAnswer in English.\n')
   })
+
+  it('names the browsers the person named, and says nothing of them while none is', async () => {
+    await keepGuide(true)
+    expect(await read('GECKIT.md')).not.toContain('## Chrome browsers')
+    await keepGuide(true, { 'deed75a2-8ca2': 'Work\nChrome', 'e085681a-0f23': ' ' })
+    const guide = await read('GECKIT.md')
+    expect(guide).toContain('## Chrome browsers')
+    expect(guide).toContain('- `deed75a2-8ca2`: Work Chrome\n')
+    expect(guide).not.toContain('e085681a-0f23')
+  })
 })

@@ -738,7 +738,15 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             <>
               {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
               {chat.root === undefined ? null : host === undefined ? (
-                <Chrome root={chat.root} id={chat.session?.id} />
+                <Chrome
+                  root={chat.root}
+                  id={chat.session?.id}
+                  names={chat.settings.browserNames}
+                  onName={(browser, name) => {
+                    const others = Object.entries(chat.settings.browserNames).filter(([one]) => one !== browser)
+                    chat.change({ browserNames: Object.fromEntries(name === undefined ? others : [...others, [browser, name]]) })
+                  }}
+                />
               ) : (
                 <button type="button" className="picker" disabled title={`Chrome is on this computer, and this conversation runs on ${host.name}`}>
                   Chrome

@@ -822,6 +822,8 @@ export interface Settings {
   readonly profile: string
   /** Each project folder's colour, as its place in the palette: given when it joins the list, changed only by hand. */
   readonly projectColors: Readonly<Record<string, number>>
+  /** GeckIt's own names for the Chromes Claude in Chrome calls Browser 1, Browser 2, by device id. */
+  readonly browserNames: Readonly<Record<string, string>>
   /** The model the next new session is handed. Empty is Default. */
   readonly chatModel: string
   readonly chatMode: SessionMode
@@ -954,6 +956,7 @@ export const DEFAULT_SETTINGS: Settings = {
   profiles: [],
   profile: '',
   projectColors: {},
+  browserNames: {},
   chatModel: '',
   chatMode: 'auto',
   chatGrouping: 'time',

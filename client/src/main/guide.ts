@@ -130,12 +130,25 @@ Every web address written in a conversation is collected on its card, newest fir
 Commands, watches and helpers you leave running are listed on the card while they run, and stay there once they end until the person clears them. Nothing is hidden, so say what you have started and what it is waiting for.
 `
 
+/** The names given in GeckIt to the Chromes the extension calls Browser 1, Browser 2, or nothing while none is named. */
+export const BROWSERS = (names: Readonly<Record<string, string>>): string => {
+  const named = Object.entries(names).filter(([, name]) => name.trim() !== '')
+  if (named.length === 0) return ''
+  return `
+## Chrome browsers
+
+The person has named the Chrome browsers Claude in Chrome connects to. The extension calls them Browser 1, Browser 2 and so on; call each by the name below, by its deviceId, in replies and on the options when asking which browser to use.
+
+${named.map(([id, name]) => `- \`${id}\`: ${name.replace(/\s+/g, ' ').trim()}`).join('\n')}
+`
+}
+
 /**
  * Writes the file and the one line in `CLAUDE.md` that reads it, or takes both
  * away again. Anything that cannot be written is left: this is worth doing when
  * it works and worth nothing at all when it does not.
  */
-export async function keepGuide(wanted: boolean): Promise<void> {
+export async function keepGuide(wanted: boolean, browsers: Readonly<Record<string, string>> = {}): Promise<void> {
   const folder = where()
   const guide = join(folder, 'GECKIT.md')
   const command = cliPath()
@@ -176,7 +189,7 @@ export async function keepGuide(wanted: boolean): Promise<void> {
         .then(() => chmod(command, 0o755))
         .then(() => true)
         .catch(() => false))
-  await writeFile(guide, told ? `${GUIDE}${COMMAND(command)}` : GUIDE).catch(() => undefined)
+  await writeFile(guide, `${GUIDE}${BROWSERS(browsers)}${told ? COMMAND(command) : ''}`).catch(() => undefined)
   if (linked) return
   const next = was.trim() === '' ? `${IMPORT}\n` : `${was.replace(/\s*$/, '')}\n\n${IMPORT}\n`
   await writeFile(claude, next).catch(() => undefined)

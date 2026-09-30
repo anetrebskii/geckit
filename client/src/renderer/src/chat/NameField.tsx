@@ -5,10 +5,13 @@ export function NameField({
   name,
   className,
   onDone,
+  onEmpty,
 }: {
   readonly name: string
   readonly className?: string
   readonly onDone: (name: string | undefined) => void
+  /** The field kept empty rather than left, for a name that can be taken away. Without it an empty field leaves the old name. */
+  readonly onEmpty?: () => void
 }): React.JSX.Element {
   const field = useRef<HTMLInputElement>(null)
   const done = useRef(false)
@@ -22,6 +25,10 @@ export function NameField({
     if (done.current) return
     done.current = true
     const kept = typed?.trim()
+    if (kept === '' && onEmpty !== undefined) {
+      onEmpty()
+      return
+    }
     onDone(kept === undefined || kept === '' || kept === name ? undefined : kept)
   }
 

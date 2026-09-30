@@ -159,8 +159,8 @@ let plans: Plans | undefined
 /** How each host last stood, so a move into Connected is told apart from every other change. */
 const hostWasUp = new Map<string, boolean>()
 let cutOffered = false
-/** What GECKIT.md was last kept at, so it is only written when the switch moves. */
-let guided: boolean | undefined
+/** What GECKIT.md was last kept at, the switch and the browser names, so it is only written when either moves. */
+let guided: string | undefined
 let asked: Server | undefined
 
 // GeckIt's own window the dictation was started in, which it goes back into.
@@ -1152,9 +1152,10 @@ function wire(): void {
     // The frames, the vibrancy behind the panel and the folder picker are the
     // system's, not the stylesheet's, and they follow this.
     nativeTheme.themeSource = settings.theme
-    if (settings.guideClaude !== guided) {
-      guided = settings.guideClaude
-      void keepGuide(settings.guideClaude)
+    const guide = JSON.stringify([settings.guideClaude, settings.browserNames])
+    if (guide !== guided) {
+      guided = guide
+      void keepGuide(settings.guideClaude, settings.browserNames)
     }
     keepPhone(settings.phone, settings.phoneKey)
     keepShortcuts(settings.anywhereOff)
@@ -1372,8 +1373,8 @@ if (!app.requestSingleInstanceLock()) {
     const reached = [...new Set(running.map((run) => hostOf(run.root)).filter((id) => id !== undefined))].map((id) => held.hosts.ensure(id))
     void Promise.allSettled(reached).then(() => started.reattach(running))
     nativeTheme.themeSource = getSettings().theme
-    guided = getSettings().guideClaude
-    void keepGuide(guided)
+    guided = JSON.stringify([getSettings().guideClaude, getSettings().browserNames])
+    void keepGuide(getSettings().guideClaude, getSettings().browserNames)
     keepPhone(getSettings().phone, getSettings().phoneKey)
     asked = listenAsked(startAsked)
     wire()
