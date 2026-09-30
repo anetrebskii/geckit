@@ -8,6 +8,7 @@ import { Menu, Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Board, keptTask, NewTask, TopBar } from './Board'
+import { movedOrder, ordered } from '../../../shared/order'
 import { CutOffDialog } from './CutOff'
 import { PhoneHome } from './PhoneHome'
 import { EdgeBack } from './PhoneKit'
@@ -437,6 +438,21 @@ export function Chat(): React.JSX.Element {
   const board = chat.settings.chatView === 'board' || ON_PHONE
   const overBoard = board && chat.shown.kind === 'session'
 
+  // The open card goes to the top or the bottom of In progress; the button for where it already stands is off.
+  const openId = overBoard ? chat.session?.id : undefined
+  const [topOrder, bottomOrder] = useMemo(() => {
+    if (openId === undefined) return [undefined, undefined]
+    const all = ordered(
+      chat.sessions.filter((one) => one.status !== 'review' && one.status !== 'done'),
+      chat.settings.progressOrder,
+    ).map((one) => one.id)
+    if (!all.includes(openId)) return [undefined, undefined]
+    return [
+      all[0] === openId ? undefined : movedOrder(chat.settings.progressOrder, [openId], 'top'),
+      all.at(-1) === openId ? undefined : movedOrder(chat.settings.progressOrder, [openId], 'bottom'),
+    ]
+  }, [openId, chat.sessions, chat.settings.progressOrder])
+
   return (
     <div
       className={`chat${board ? ' boarded' : ''}${ON_PHONE ? '' : ' topped'}${over ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
@@ -702,6 +718,34 @@ export function Chat(): React.JSX.Element {
                 </button>
               </>
             )}
+            {overBoard && chat.session !== undefined && chat.session.status !== 'review' && chat.session.status !== 'done' ? (
+              <>
+                <button
+                  type="button"
+                  className="icon-button no-drag"
+                  title="Move to the top of In progress"
+                  aria-label="Move to the top"
+                  disabled={topOrder === undefined}
+                  onClick={() => {
+                    if (topOrder !== undefined) chat.change({ progressOrder: topOrder })
+                  }}
+                >
+                  <Icon name="ahead" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button no-drag"
+                  title="Move to the bottom of In progress"
+                  aria-label="Move to the bottom"
+                  disabled={bottomOrder === undefined}
+                  onClick={() => {
+                    if (bottomOrder !== undefined) chat.change({ progressOrder: bottomOrder })
+                  }}
+                >
+                  <Icon name="behind" />
+                </button>
+              </>
+            ) : null}
             {overBoard ? (
               <button
                 type="button"
