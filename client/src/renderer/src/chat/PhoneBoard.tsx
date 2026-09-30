@@ -19,7 +19,7 @@ import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
 import type { Macs } from '../macs'
 import { awayLine, emptyProfile, projectLabel } from './project'
-import { running, useNeedsYou, working } from './Tasks'
+import { helping, scripts, useNeedsYou, waitsOnHelpers, working } from './Tasks'
 import { ago, byDay, questionLeft } from './time'
 import type { Chat } from './useChat'
 
@@ -549,6 +549,7 @@ function standing(session: ChatSession): { readonly tone: string; readonly words
   if (session.state === 'working' || session.runs !== undefined) return { tone: 'working', words: 'Working' }
   if (session.state === 'asks') return { tone: 'asks', words: 'Needs an answer' }
   if (session.waits === true) return { tone: 'read', words: 'Waiting for a slot' }
+  if (waitsOnHelpers(session)) return { tone: 'working', words: 'Working' }
   if (session.state === 'failed') return { tone: 'failed', words: 'Stopped by an error' }
   if (session.state === 'limit') return { tone: 'failed', words: 'Out of the plan for now' }
   if (session.state === 'unread') return { tone: 'unread' }
@@ -578,7 +579,8 @@ export function RowBody({
   readonly dayHeaded?: boolean
 }): React.JSX.Element {
   const stands = standing(session)
-  const background = session.tasks?.filter(running).length ?? 0
+  const helpers = session.tasks?.filter(helping).length ?? 0
+  const script = scripts(session)
   const queued = session.queued?.length ?? 0
   const said = stands.tone === 'working' ? session.stands.replace(/^Working - /, '') : session.stands
   const card = session.state === 'asks' ? waiting?.card : undefined
@@ -611,7 +613,8 @@ export function RowBody({
           {chat.settings.favorites.includes(session.id) ? <Icon name="star" size={13} className="phone-row-star" /> : null}
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
           {session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
-          {background === 0 ? null : <span className="phone-row-tag">{background} in the background</span>}
+          {helpers === 0 ? null : <span className="phone-row-tag">{helpers === 1 ? 'a helper running' : `${helpers} helpers running`}</span>}
+          {script === undefined ? null : <span className="phone-row-tag">{script}</span>}
           {queued === 0 ? null : <span className="phone-row-tag">{queued} queued</span>}
         </div>
         {parent === undefined ? null : (

@@ -21,6 +21,20 @@ const RECENT = 12
 
 export const running = (task: BackgroundTask): boolean => task.status === 'running'
 
+const scripted = (task: BackgroundTask): boolean => task.kind === 'local_bash' || task.kind === 'monitor'
+export const helping = (task: BackgroundTask): boolean => running(task) && !scripted(task)
+
+/** How many commands and watches it has running, said as the card says it, or undefined when none. */
+export function scripts(session: ChatSession): string | undefined {
+  const count = session.tasks?.filter((task) => running(task) && scripted(task)).length ?? 0
+  return count === 0 ? undefined : count === 1 ? 'a command running' : `${count} commands running`
+}
+
+/** Whether its turn is over but a helper or a workflow it started still runs, which wakes it again when it ends; a command or a watch may run for hours and does not count. */
+export function waitsOnHelpers(session: ChatSession): boolean {
+  return (session.state === 'idle' || session.state === 'unread') && (session.tasks?.some(helping) ?? false)
+}
+
 /** A conversation's dot in a list: working while Claude or a command typed after ! is, then a breathing ring while something it started in the background still runs. */
 export function Dot({ session }: { readonly session: ChatSession }): React.JSX.Element {
   const shell = session.state === 'idle' && session.runs !== undefined
@@ -38,22 +52,28 @@ export function cardSays(session: ChatSession): { readonly words: string; readon
   if (session.state === 'working') return { words: 'Claude is working', tone: 'said-working' }
   if (session.state === 'asks') return { words: 'Asking you', tone: 'said-asks' }
   if (session.waits === true) return { words: 'Waiting for a slot', tone: '' }
-  if (session.state === 'unread') return { words: 'Waiting for you', tone: 'said-unread' }
+  if (waitsOnHelpers(session)) {
+    const count = session.tasks?.filter(helping).length ?? 0
+    return { words: `Claude is waiting on ${count === 1 ? 'a helper' : `${count} helpers`}`, tone: 'said-working' }
+  }
+  if (session.state === 'unread') return { words: scripts(session) === undefined ? 'Waiting for you' : `Waiting for you, ${scripts(session)}`, tone: 'said-unread' }
   if (session.state === 'failed') return { words: 'Stopped by an error', tone: 'said-failed' }
   if (session.state === 'limit') return { words: 'Out of the plan for now', tone: 'said-failed' }
   if (session.runs !== undefined) return { words: `Running !${session.runs}`, tone: 'said-working' }
+  const script = scripts(session)
+  if (session.state === 'idle' && script !== undefined) return { words: script.charAt(0).toUpperCase() + script.slice(1), tone: '' }
   return undefined
 }
 
 /** Whether a conversation in In progress waits on the person: asking, finished and unread, stopped, or marked Blocked. */
 export function needsYou(session: ChatSession): boolean {
-  if (session.state === 'working' || session.waits === true || session.runs !== undefined) return false
+  if (session.state === 'working' || session.waits === true || session.runs !== undefined || waitsOnHelpers(session)) return false
   return session.state === 'asks' || session.state === 'unread' || session.state === 'failed' || session.state === 'limit' || session.status === 'blocked'
 }
 
-/** Whether a conversation in In progress is working now, Claude or a command typed after !. */
+/** Whether a conversation in In progress is working now: Claude, a command typed after !, or a helper it is waiting on. */
 export function working(session: ChatSession): boolean {
-  return session.state === 'working' || session.runs !== undefined
+  return session.state === 'working' || session.runs !== undefined || waitsOnHelpers(session)
 }
 
 /**
