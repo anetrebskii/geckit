@@ -504,6 +504,36 @@ html.keyboard .phone-tabs {
   margin: 18px 0 4px;
 }
 
+.phone-say-actions.stacked {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phone-say-actions.stacked .phone-button {
+  flex: none;
+}
+
+.phone-button.plain {
+  color: var(--danger);
+  background: none;
+}
+
+/* A recording kept from a sheet closed or failed earlier: how long it is, and why it was not written down. */
+.phone-say-kept {
+  margin: 0 20px;
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.phone-say-why {
+  margin: 6px 20px 0;
+  font-size: 15px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
 .phone-say-wait {
   display: flex;
   gap: 10px;

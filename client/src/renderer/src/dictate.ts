@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
 
+import { join } from '../../shared/wav'
+import { keep, readKept } from './kept'
+
 /** Dictation on the phone, heard by iOS or by the host; nothing anywhere else. */
 export interface Dictate {
   /** Resolves once it listens, and rejects with what stands in the way. */
-  readonly start: (language: string, heard: (text: string) => void, ended: () => void) => Promise<void>
+  /** With goOn, what is said is added to the recording kept for place, and both are written down together. */
+  readonly start: (language: string, heard: (text: string) => void, ended: () => void, place?: string, goOn?: boolean) => Promise<void>
   /** Resolves once the last of what was said has been handed to heard. */
   readonly stop: () => Promise<void>
-  /** Stops and drops what was not heard yet. */
+  /** Stops without writing down; what the host was to hear is kept to be tried again. */
   readonly cancel: () => void
   /** Whether words arrive while they are said, or only after stop. */
   readonly live: boolean
@@ -48,34 +52,78 @@ export const setEar = (chosen: Ear): void => localStorage.setItem(EAR, chosen)
 const iphone = (): Dictate | undefined => (window as { geckitDictate?: Dictate }).geckitDictate
 export const voice = (): Voice | undefined => (window as { geckitVoice?: Voice }).geckitVoice
 
-let waiting: { readonly heard: (text: string) => void; readonly ended: () => void } | undefined
+/** The last recording the host did not write down, kept on the phone until it does, so it can be tried again after the app was closed. */
+export interface Unheard {
+  /** The conversation it was said in, or the project of a new one. */
+  readonly place: string
+  readonly audio: string
+  readonly why: string
+}
 
-const onHost = (mic: Voice): Dictate => ({
+const UNHEARD = 'dictation-unheard'
+// About a second of the WAV as base64; anything shorter held nothing worth keeping.
+const SECOND = 43_000
+
+export const readUnheard = (): Promise<Unheard | undefined> => readKept<Unheard>(UNHEARD)
+export const dropUnheard = (): Promise<void> => keep(UNHEARD, undefined)
+
+// No language given: whisper hears which one was spoken, so Russian and English both come out as said.
+async function writeDown(kept: Omit<Unheard, 'why'>): Promise<string> {
+  await keep(UNHEARD, { ...kept, why: 'It was not written down.' })
+  try {
+    const answer = await window.geckit.transcribe({ audio: kept.audio })
+    if (!answer.ok) throw new Error(answer.error ?? 'The host heard nothing.')
+    await dropUnheard()
+    return answer.text ?? ''
+  } catch (error) {
+    await keep(UNHEARD, { ...kept, why: error instanceof Error ? error.message : String(error) })
+    throw error
+  }
+}
+
+/** Has the host write down the kept recording once more; it is dropped once it does. */
+export async function hearAgain(): Promise<string> {
+  const kept = await readUnheard()
+  if (kept === undefined) throw new Error('Nothing is kept to try again.')
+  return writeDown(kept)
+}
+
+let waiting: { readonly heard: (text: string) => void; readonly ended: () => void; readonly place: string; readonly before?: string } | undefined
+
+const onHost = (mic: Voice): Dictate => {
+  const recorded = async (before: string | undefined): Promise<string> => {
+    const audio = await mic.stop()
+    return before === undefined ? audio : join(before, audio)
+  }
+  return {
   live: false,
-  start: async (_language, heard, ended) => {
+  start: async (_language, heard, ended, place = '', goOn = false) => {
+    const kept = goOn ? await readUnheard() : undefined
     await mic.start()
-    waiting = { heard, ended }
+    waiting = { heard, ended, place, ...(kept?.place === place ? { before: kept.audio } : {}) }
   },
   stop: async () => {
     const said = waiting
     if (said === undefined) return
     waiting = undefined
     try {
-      const audio = await mic.stop()
-      // No language given: whisper hears which one was spoken, so Russian and English both come out as said.
-      const answer = await window.geckit.transcribe({ audio })
-      if (!answer.ok) throw new Error(answer.error ?? 'The host heard nothing.')
-      if ((answer.text ?? '') !== '') said.heard(answer.text ?? '')
+      const text = await writeDown({ place: said.place, audio: await recorded(said.before) })
+      if (text !== '') said.heard(text)
     } finally {
       said.ended()
     }
   },
+  // Closed while recording, what was said is kept rather than thrown away.
   cancel: () => {
-    if (waiting === undefined) return
+    const said = waiting
+    if (said === undefined) return
     waiting = undefined
-    mic.drop()
+    void recorded(said.before)
+      .then((audio) => (audio.length > SECOND ? keep(UNHEARD, { place: said.place, audio, why: 'Closed before it was written down.' }) : undefined))
+      .catch(() => undefined)
   },
-})
+  }
+}
 
 export const dictate = (): Dictate | undefined => {
   const mic = voice()

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type { Planned } from '../../../shared/api'
-import { dictate, useLevel } from '../dictate'
+import { dictate, dropUnheard, hearAgain, readUnheard, useLevel } from '../dictate'
 import { phoneCalls } from '../phone-calls'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
@@ -18,11 +18,20 @@ import type { Chat } from './useChat'
 type Step =
   | { readonly kind: 'listening' }
   | { readonly kind: 'refused'; readonly why: string }
+  | { readonly kind: 'kept'; readonly why: string; readonly length: string }
   | { readonly kind: 'reading' }
   | { readonly kind: 'plan'; readonly lines: readonly Planned[] }
   | { readonly kind: 'nothing'; readonly why: string }
   | { readonly kind: 'doing' }
   | { readonly kind: 'done'; readonly lines: readonly string[]; readonly open?: string }
+
+const SAY = 'say'
+
+// How long a kept WAV is, as m:ss: 16 kHz, 16-bit mono is 32000 bytes a second, and base64 takes four characters for three.
+const length = (audio: string): string => {
+  const seconds = Math.max(1, Math.round(((audio.length * 3) / 4 - 44) / 32000))
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
 
 export function PhoneSay({ chat, onClose }: { readonly chat: Chat; readonly onClose: () => void }): React.JSX.Element {
   const [step, setStep] = useState<Step>({ kind: 'listening' })
@@ -32,7 +41,7 @@ export function PhoneSay({ chat, onClose }: { readonly chat: Chat; readonly onCl
   const said = useRef('')
   const level = useLevel(hearing)
 
-  const listen = (): void => {
+  const listen = (goOn = false): void => {
     const ear = dictate()
     setStep({ kind: 'listening' })
     setEmpty(false)
@@ -49,14 +58,17 @@ export function PhoneSay({ chat, onClose }: { readonly chat: Chat; readonly onCl
           setWords(text)
         },
         () => setHearing(false),
+        SAY,
+        goOn,
       )
       .catch((error: unknown) => {
         setHearing(false)
         setStep({ kind: 'refused', why: error instanceof Error ? error.message : String(error) })
       })
   }
+  // What was said last time and never written down is offered first, so a sheet closed by mistake loses nothing.
   useEffect(() => {
-    void Promise.resolve().then(listen)
+    void readUnheard().then((kept) => (kept?.place === SAY ? setStep({ kind: 'kept', why: kept.why, length: length(kept.audio) }) : listen()))
     return () => dictate()?.cancel()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -71,7 +83,14 @@ export function PhoneSay({ chat, onClose }: { readonly chat: Chat; readonly onCl
     const calls = phoneCalls()
     if (calls === undefined) return
     setStep({ kind: 'reading' })
-    ;(ear?.stop() ?? Promise.resolve())
+    order(ear?.stop() ?? Promise.resolve())
+  }
+
+  // What was said, once written down, is read into what to do.
+  const order = (heard: Promise<void>): void => {
+    const calls = phoneCalls()
+    if (calls === undefined) return
+    heard
       .then(() => {
         const text = said.current.trim()
         if (text === '') throw new Error('Nothing heard.')
@@ -108,10 +127,23 @@ export function PhoneSay({ chat, onClose }: { readonly chat: Chat; readonly onCl
     if (step.kind === 'done' && step.open !== undefined) chat.goTo(step.open)
   }
 
+  // A recording the host failed to write down is tried again as it is, rather than said once more.
   const again = (): void => {
     said.current = ''
     setWords('')
-    listen()
+    void readUnheard().then((kept) => {
+      if (kept?.place !== SAY) {
+        listen()
+        return
+      }
+      setStep({ kind: 'reading' })
+      order(
+        hearAgain().then((text) => {
+          said.current = text
+          setWords(text)
+        }),
+      )
+    })
   }
 
   const title = step.kind === 'plan' ? 'This will be done' : step.kind === 'done' ? 'Done' : 'Say it'
@@ -138,6 +170,34 @@ export function PhoneSay({ chat, onClose }: { readonly chat: Chat; readonly onCl
                 Done
               </button>
             )}
+          </div>
+        </>
+      ) : step.kind === 'kept' ? (
+        <>
+          <div className="phone-say-mic">
+            <Icon name="mic" size={34} />
+          </div>
+          <div className="phone-say-kept">{step.length} kept from last time</div>
+          <div className="phone-say-why">{step.why}</div>
+          <div className="phone-say-actions stacked">
+            <button type="button" className="phone-button fill" onClick={again}>
+              Write it down
+            </button>
+            {dictate()?.live === false ? (
+              <button type="button" className="phone-button grey" onClick={() => listen(true)}>
+                Go on recording
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="phone-button plain"
+              onClick={() => {
+                void dropUnheard()
+                listen()
+              }}
+            >
+              Drop it and start over
+            </button>
           </div>
         </>
       ) : step.kind === 'reading' || step.kind === 'doing' ? (

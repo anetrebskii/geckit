@@ -3,7 +3,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { modelName, programLine, SESSION_MODES } from '../../../shared/api'
 import type { SessionImage, SessionMode } from '../../../shared/api'
 import { mentionAt, pathsFor } from '../../../shared/paths'
-import { dictate, languageCode, useDictationLanguage, useLevel } from '../dictate'
+import { dictate, dropUnheard, hearAgain, languageCode, readUnheard, useDictationLanguage, useLevel } from '../dictate'
+import type { Unheard } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
@@ -127,6 +128,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   // The host writes down what was said once the mic stops, which takes a few seconds.
   const [writing, setWriting] = useState(false)
   const level = useLevel(listening !== undefined)
+  // A recording said here that the host failed to write down, kept on the phone to try again.
+  const [kept, setKept] = useState<Unheard | undefined>()
+  const place = chat.session?.id ?? chat.root ?? ''
   const [looking, setLooking] = useState<string | undefined>()
   const submit = (): void => {
     if (COMPACT.test(chat.draft)) {
@@ -274,7 +278,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const { addFiles } = chat
 
   // What is said goes after what was typed, and replaces itself as iOS hears it better.
-  const listen = (): void => {
+  const lookKept = (): void => void readUnheard().then((one) => setKept(one?.place === place ? one : undefined))
+  useEffect(lookKept, [place])
+  const failed = (error: unknown): void => {
+    setUnheard(error instanceof Error ? error.message : String(error))
+    lookKept()
+  }
+  const listen = (goOn = false): void => {
     const ears = dictate()
     if (ears === undefined) return
     if (listening !== undefined) {
@@ -282,22 +292,35 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
       setWriting(!ears.live)
       ears
         .stop()
-        .catch((error: unknown) => setUnheard(error instanceof Error ? error.message : String(error)))
+        .then(() => setKept(undefined))
+        .catch(failed)
         .finally(() => setWriting(false))
       return
     }
-    const kept = chat.draft.trimEnd()
+    const typed = chat.draft.trimEnd()
     setUnheard(undefined)
     setListening(spoken)
     tap('light')
     ears
-      .start(spoken, (text) => chat.setDraft(kept === '' ? text : `${kept} ${text}`), () => setListening(undefined))
+      .start(spoken, (text) => chat.setDraft(typed === '' ? text : `${typed} ${text}`), () => setListening(undefined), place, goOn)
       .catch((error: unknown) => {
         setListening(undefined)
         setUnheard(error instanceof Error ? error.message : String(error))
       })
   }
   useEffect(() => () => dictate()?.cancel(), [chat.session?.id])
+  const tryAgain = (): void => {
+    const typed = chat.draft.trimEnd()
+    setUnheard(undefined)
+    setWriting(true)
+    hearAgain()
+      .then((text) => {
+        setKept(undefined)
+        if (text !== '') chat.setDraft(typed === '' ? text : `${typed} ${text}`)
+      })
+      .catch(failed)
+      .finally(() => setWriting(false))
+  }
   const goal = chat.session?.goal
   const command = chat.root !== undefined && chat.draft.trim().startsWith('!')
   // A first message, or one to a conversation not working, waits in the queue where as many are working as the limit allows.
@@ -817,6 +840,28 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               Runs in {projectLabel(chat.root)}. Claude sees what it prints with your next message
             </span>
           ) : null}
+          {ON_PHONE && kept !== undefined && listening === undefined && !writing ? (
+            <Picker
+              label="Not written down"
+              title="What you said"
+              explained
+              note={kept.why}
+              choices={[
+                { value: 'again', label: 'Try again', says: 'The host writes down the same recording once more' },
+                ...(dictate()?.live === false ? [{ value: 'on', label: 'Go on recording', says: 'What you say next is added to it, and both are written down together' }] : []),
+                { value: 'drop', label: 'Drop the recording', says: 'What was said is lost', danger: true },
+              ]}
+              onPick={(value) => {
+                if (value === 'again') tryAgain()
+                else if (value === 'on') listen(true)
+                else {
+                  setKept(undefined)
+                  setUnheard(undefined)
+                  void dropUnheard()
+                }
+              }}
+            />
+          ) : null}
           <div className="spacer" />
           {shownAway === undefined ? null : (
             <span className={`host-waiting ${host?.state ?? ''}`}>
@@ -846,7 +891,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             </button>
           ) : null}
           {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
-            <button type="button" className="send mic beside" disabled={cannot || writing} onClick={listen} aria-label={`Dictate in ${spoken}`}>
+            <button type="button" className="send mic beside" disabled={cannot || writing} onClick={() => listen()} aria-label={`Dictate in ${spoken}`}>
               <Icon name="mic" size={16} />
             </button>
           ) : null}
@@ -856,7 +901,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               className={listening !== undefined ? 'send listening' : 'send'}
               style={{ '--level': level } as React.CSSProperties}
               disabled={cannot || writing}
-              onClick={listen}
+              onClick={() => listen()}
               aria-label={listening !== undefined ? 'Stop dictating' : `Dictate in ${spoken}`}
             >
               <Icon name={writing ? 'spinner' : listening !== undefined ? 'stop' : 'mic'} size={listening !== undefined ? 12 : 16} />
