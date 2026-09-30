@@ -1,3 +1,5 @@
+import { flushSync } from 'react-dom'
+
 import type { ChatSession, Settings } from '../../../shared/api'
 import { homeOf } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
@@ -32,7 +34,10 @@ export function Recent({
             role="option"
             aria-selected={index === at}
             className={`row${index === at ? ' on' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
-            onMouseMove={() => onAt(index)}
+            // Drawn at once, rather than left to React for later, so the choice keeps up with the pointer.
+            onMouseMove={() => {
+              if (index !== at) flushSync(() => onAt(index))
+            }}
             onMouseDown={() => onPick(index)}
           >
             <Dot session={session} />

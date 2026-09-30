@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { flushSync } from 'react-dom'
 
 import { Icon } from '../ui/Icon'
 import { MOD } from '../ui/Shortcuts'
@@ -201,6 +202,10 @@ function Menu({
       ? [all, ...projects.map((root) => projectRow(root))].filter(matches)
       : [all, ...group(undefined, 'Local'), ...chat.hosts.flatMap((host) => group(host.id, host.name))]
   const here = Math.min(at, Math.max(0, rows.length - 1))
+  // Drawn at once, rather than left to React for later, so the choice keeps up with the pointer.
+  const pointAt = (index: number): void => {
+    if (index !== here) flushSync(() => setAt(index))
+  }
 
   const pick = (value: string): void => {
     if (value === ADD) chat.addProject()
@@ -285,7 +290,7 @@ function Menu({
                 on={on(row.value)}
                 at={index === here}
                 first={index === 1}
-                onAt={() => setAt(index)}
+                onAt={() => pointAt(index)}
                 onPick={() => (selecting ? also(row.value) : pick(row.value))}
                 onAlso={() => also(row.value)}
               />
@@ -293,7 +298,7 @@ function Menu({
               <div
                 role="menuitem"
                 className={`menu-item project-add${index === here ? ' at' : ''}`}
-                onMouseMove={() => setAt(index)}
+                onMouseMove={() => pointAt(index)}
                 onClick={() => pick(row.value)}
               >
                 <Icon name="plus" size={12} />
@@ -303,7 +308,7 @@ function Menu({
             <div
               role="menuitem"
               className={`menu-item project-row${on(row.value) ? ' on' : ''}${index === here ? ' at' : ''}`}
-              onMouseMove={() => setAt(index)}
+              onMouseMove={() => pointAt(index)}
               onClick={(event) => {
                 // Held down, or with several listed, the row does what its check does: adds this project to the list beside the others.
                 if (selecting || event.metaKey || event.ctrlKey) also(row.value)

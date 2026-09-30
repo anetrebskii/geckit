@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 
 import { modelName, programLine, SESSION_MODES } from '../../../shared/api'
 import type { SessionImage, SessionMode } from '../../../shared/api'
@@ -675,7 +676,10 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                   role="option"
                   aria-selected={index === here}
                   className={`mention${index === here ? ' on' : ''}`}
-                  onMouseMove={() => setAt(index)}
+                  // Drawn at once, rather than left to React for later, so the choice keeps up with the pointer.
+                  onMouseMove={() => {
+                    if (index !== here) flushSync(() => setAt(index))
+                  }}
                   onMouseDown={(event) => {
                     event.preventDefault()
                     put(path)

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 
 import { ON_PHONE } from '../on-phone'
 import { Icon } from './Icon'
@@ -147,15 +147,16 @@ export function Menu({
             aria-haspopup={choice.choices === undefined ? undefined : 'menu'}
             className={`menu-item${choice.value === chosen ? ' on' : ''}${open?.value === choice.value ? ' open' : ''}${choice.danger === true ? ' danger' : ''}`}
             disabled={choice.disabled === true}
+            // A submenu opens and closes at once, rather than left to React for later, so it keeps up with the pointer.
             onMouseEnter={(event) => {
               if (choice.choices === undefined) {
-                setOpen(undefined)
+                if (open !== undefined) flushSync(() => setOpen(undefined))
                 return
               }
               const box = event.currentTarget.getBoundingClientRect()
               const outer = menu.current?.getBoundingClientRect() ?? box
               const left = outer.right + 200 < window.innerWidth ? outer.right - 2 : outer.left - 200 + 2
-              setOpen({ value: choice.value, left, top: box.top - 4 })
+              flushSync(() => setOpen({ value: choice.value, left, top: box.top - 4 }))
             }}
             onClick={() => {
               if (choice.choices !== undefined) return

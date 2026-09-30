@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { flushSync } from 'react-dom'
 
 import type { ClaudeAccount } from '../../../shared/api'
 import { besideName, parseTarget, stateLine } from '../../../shared/hosts'
@@ -445,7 +446,8 @@ export function AddHost({
                   role="option"
                   aria-selected={at === lit}
                   className={at === lit ? 'lit' : ''}
-                  onMouseEnter={() => setLit(at)}
+                  // Drawn at once, rather than left to React for later, so the choice keeps up with the pointer.
+                  onMouseEnter={() => flushSync(() => setLit(at))}
                   onClick={() => choose(one)}
                 >
                   <span className="name">{one.host}</span>

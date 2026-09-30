@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 
 import type { BackgroundTask, ChatSession, TaskOutput } from '../../../shared/api'
 import { ON_PHONE } from '../on-phone'
@@ -267,7 +268,10 @@ function Background({
                 className={`task-row${index === here ? ' on' : ''}`}
                 role="button"
                 tabIndex={-1}
-                onMouseMove={() => setAt(index)}
+                // Drawn at once, rather than left to React for later, so the choice keeps up with the pointer.
+                onMouseMove={() => {
+                  if (index !== here) flushSync(() => setAt(index))
+                }}
                 onClick={() => setOpened(task.id)}
               >
                 <Glyph task={task} />

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 
 import type { ChatFound, ChatSession } from '../../../shared/api'
 import { SESSION_STATUSES, homeOf } from '../../../shared/api'
@@ -125,39 +126,42 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
 
   // Every project's, kept current as conversations start, are renamed and move, rather than read once.
   const every = chat.everyone.length > 0 ? chat.everyone : chat.sessions
-  const all = within === undefined ? every : every.filter((one) => homeOf(one) === within)
-
-  const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
   const front = chat.shown.kind === 'session' ? chat.shown.id : undefined
-  const byId = new Map(all.map((one) => [one.id, one]))
-  const said = new Map((hits.asked === asked ? hits.found : []).map((hit) => [hit.id, hit]))
+  // Worked out again only when the list or what is asked changes, not each time a row is pointed at.
+  return useMemo(() => {
+    const all = within === undefined ? every : every.filter((one) => homeOf(one) === within)
 
-  if (words.length === 0) {
-    const recent = [...all]
-      .filter((one) => one.id !== front)
-      .sort((one, other) => used(other) - used(one))
-      .slice(0, MOST)
-      .map((session) => ({ session }))
-    return { found: recent, words }
-  }
-  const byName = [...all]
-    .filter((one) => named(one, words))
-    .map((session) => ({ session, close: closeness(session, words) }))
-    .sort((one, other) => one.close - other.close || used(other.session) - used(one.session))
-    .map(({ session }) => session)
-  const shown = new Set(byName.map((one) => one.id))
-  const bySaid = [...said.values()].flatMap((hit) => {
-    const session = byId.get(hit.id)
-    return session === undefined || shown.has(hit.id) ? [] : [{ session, hit }]
-  })
-  const found = [
-    ...byName.map((session) => {
-      const hit = said.get(session.id)
-      return hit === undefined ? { session } : { session, hit }
-    }),
-    ...bySaid.map((row, index) => (index === 0 && byName.length > 0 ? { ...row, heads: true } : row)),
-  ].slice(0, MOST)
-  return { found, words }
+    const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
+    const byId = new Map(all.map((one) => [one.id, one]))
+    const said = new Map((hits.asked === asked ? hits.found : []).map((hit) => [hit.id, hit]))
+
+    if (words.length === 0) {
+      const recent = [...all]
+        .filter((one) => one.id !== front)
+        .sort((one, other) => used(other) - used(one))
+        .slice(0, MOST)
+        .map((session) => ({ session }))
+      return { found: recent, words }
+    }
+    const byName = [...all]
+      .filter((one) => named(one, words))
+      .map((session) => ({ session, close: closeness(session, words) }))
+      .sort((one, other) => one.close - other.close || used(other.session) - used(one.session))
+      .map(({ session }) => session)
+    const shown = new Set(byName.map((one) => one.id))
+    const bySaid = [...said.values()].flatMap((hit) => {
+      const session = byId.get(hit.id)
+      return session === undefined || shown.has(hit.id) ? [] : [{ session, hit }]
+    })
+    const found = [
+      ...byName.map((session) => {
+        const hit = said.get(session.id)
+        return hit === undefined ? { session } : { session, hit }
+      }),
+      ...bySaid.map((row, index) => (index === 0 && byName.length > 0 ? { ...row, heads: true } : row)),
+    ].slice(0, MOST)
+    return { found, words }
+  }, [every, within, asked, hits, front])
 }
 
 /** The rows themselves, the same under the field in the board as inside the Cmd+P panel. */
@@ -178,6 +182,13 @@ function Rows({
   readonly onAt: (at: number) => void
   readonly onTake: (row: Row) => void
 }): React.JSX.Element {
+  // A row is drawn again only when what it shows changes, so what it calls is read from here at the time.
+  const latest = useRef({ onAt, onTake })
+  useEffect(() => {
+    latest.current = { onAt, onTake }
+  })
+  const at = useCallback((index: number) => latest.current.onAt(index), [])
+  const take = useCallback((row: Row) => latest.current.onTake(row), [])
   return (
     <>
       {words.length === 0 && found.length > 0 ? <div className="switcher-head">Used last</div> : null}
@@ -185,46 +196,84 @@ function Rows({
         <div className="empty">{words.length === 0 ? 'No other conversations yet.' : 'Nothing found.'}</div>
       ) : (
         found.map((row, index) => (
-          <div key={row.session.id}>
-            {row.heads === true ? <div className="switcher-head">In what was said</div> : null}
-            <div
-              className={`row${index === here ? ' on' : ''}${row.session.state === 'asks' || row.session.state === 'unread' ? ` waits ${row.session.state}` : ''}`}
-              role="button"
-              tabIndex={-1}
-              title={rootLabel(row.session.root)}
-              onMouseMove={() => onAt(index)}
-              onMouseDown={() => onTake(row)}
-            >
-              <Dot session={row.session} />
-              <span className="lines">
-                <span className="head">
-                  <span className="title">
-                    <Marked text={row.session.title === '' ? 'Untitled' : row.session.title} words={words} />
-                  </span>
-                  <span className="changed">{ago(used(row.session), now)}</span>
-                </span>
-                <span className="stands">
-                  <Status session={row.session} />
-                  <span className="where tinted" style={tint(projectColor(homeOf(row.session), chat.settings))}>
-                    <Marked text={place(row.session.root, words)} words={words} />
-                  </span>
-                  {row.hit === undefined ? (
-                    row.session.stands === '' ? null : <span>{row.session.stands}</span>
-                  ) : (
-                    <>
-                      <Marked text={row.hit.said} words={words} />
-                      {row.hit.count > 1 ? <span className="more-found"> and {row.hit.count - 1} more</span> : null}
-                    </>
-                  )}
-                </span>
-              </span>
-            </div>
-          </div>
+          <FoundRow
+            key={row.session.id}
+            row={row}
+            index={index}
+            on={index === here}
+            words={words}
+            now={now}
+            color={projectColor(homeOf(row.session), chat.settings)}
+            onAt={at}
+            onTake={take}
+          />
         ))
       )}
     </>
   )
 }
+
+// Pointing at another row draws that one and the one it left, not all fifty.
+const FoundRow = memo(function FoundRow({
+  row,
+  index,
+  on,
+  words,
+  now,
+  color,
+  onAt,
+  onTake,
+}: {
+  readonly row: Row
+  readonly index: number
+  readonly on: boolean
+  readonly words: readonly string[]
+  readonly now: number
+  readonly color: number
+  readonly onAt: (at: number) => void
+  readonly onTake: (row: Row) => void
+}): React.JSX.Element {
+  return (
+    <div>
+      {row.heads === true ? <div className="switcher-head">In what was said</div> : null}
+      <div
+        className={`row${on ? ' on' : ''}${row.session.state === 'asks' || row.session.state === 'unread' ? ` waits ${row.session.state}` : ''}`}
+        role="button"
+        tabIndex={-1}
+        title={rootLabel(row.session.root)}
+        // Drawn at once, rather than left to React for later, so the choice keeps up with the pointer.
+        onMouseMove={() => {
+          if (!on) flushSync(() => onAt(index))
+        }}
+        onMouseDown={() => onTake(row)}
+      >
+        <Dot session={row.session} />
+        <span className="lines">
+          <span className="head">
+            <span className="title">
+              <Marked text={row.session.title === '' ? 'Untitled' : row.session.title} words={words} />
+            </span>
+            <span className="changed">{ago(used(row.session), now)}</span>
+          </span>
+          <span className="stands">
+            <Status session={row.session} />
+            <span className="where tinted" style={tint(color)}>
+              <Marked text={place(row.session.root, words)} words={words} />
+            </span>
+            {row.hit === undefined ? (
+              row.session.stands === '' ? null : <span>{row.session.stands}</span>
+            ) : (
+              <>
+                <Marked text={row.hit.said} words={words} />
+                {row.hit.count > 1 ? <span className="more-found"> and {row.hit.count - 1} more</span> : null}
+              </>
+            )}
+          </span>
+        </span>
+      </div>
+    </div>
+  )
+})
 
 /**
  * What the field asks for, which says whether every project is being searched or only one.
