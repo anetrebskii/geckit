@@ -171,6 +171,7 @@ describe('which commands are GeckIt asking', () => {
   it.each([
     '~/.geckit/bin/geckit start --project app "Fix it"',
     '/Users/alex/.geckit/bin/geckit start --tasks tasks.json',
+    '/Users/alex/.geckit/bin/geckit start --conversations list.json',
     '~/.geckit/bin/geckit-local start --project app "Fix it"',
     "~/.geckit/bin/geckit start --tasks - <<'EOF'\n[{\"project\": \"app\", \"text\": \"a; b\"}]\nEOF",
   ])('lets through %s', (command) => expect(startsConversations(command)).toBe(true))
@@ -192,9 +193,9 @@ describe('geckit start', () => {
   })
 
   it('reads a batch from a file and says what is wrong with one', () => {
-    expect(tasksFrom(['--tasks', 'x.json'], () => '[{"project":"app","text":"a"},{"project":"app","text":" "}]')).toBe('Task 2 has no text.')
-    expect(tasksFrom(['--tasks', 'x.json'], () => JSON.stringify(Array(21).fill({ project: 'a', text: 'b' })))).toBe('At most 20 tasks at once.')
-    expect(tasksFrom(['--tasks', '-'], () => '{')).toBe('stdin is not a JSON array of tasks.')
+    expect(tasksFrom(['--conversations', 'x.json'], () => '[{"project":"app","text":"a"},{"project":"app","text":" "}]')).toBe('Conversation 2 has no text.')
+    expect(tasksFrom(['--tasks', 'x.json'], () => JSON.stringify(Array(21).fill({ project: 'a', text: 'b' })))).toBe('At most 20 conversations at once.')
+    expect(tasksFrom(['--tasks', '-'], () => '{')).toBe('stdin is not a JSON array of conversations.')
   })
 
   it('prints a line per task in the order sent, then the reply', () => {

@@ -67,12 +67,12 @@ Start one when:
 - you find something worth doing that is not part of what was asked here: a bug beside the one being fixed, a test failing in code nobody touched, a follow-up the change will need later;
 - a part of the job can go on without this conversation, and doing it here would hold this one open.
 
-Do not do that work here, and do not only mention it at the end of an answer: a mention is lost once the card moves to Done. You need no leave to send it, since every task is put in front of the person first and they start it or refuse it there. Where you cannot tell whether they want the work at all, ask in your answer and send it once they say yes. Do not send the job you are doing, or a step of it you are about to take yourself.
+Do not do that work here, and do not only mention it at the end of an answer: a mention is lost once the card moves to Done. You need no leave to send it, since every one asked for is put in front of the person first and they start it or refuse it there. Where you cannot tell whether they want the work at all, ask in your answer and send it once they say yes. Do not send the job you are doing, or a step of it you are about to take yourself. A task, a to-do or a reminder the person asks you to write down is not a conversation either: it goes where their own instructions say such things are kept, and never through this command.
 
 Send everything in one command, run in the background, since it waits for the person and that can take hours:
 
 \`\`\`
-${path} start --tasks - <<'EOF'
+${path} start --conversations - <<'EOF'
 [
   {
     "project": "web",
@@ -84,14 +84,14 @@ ${path} start --tasks - <<'EOF'
 EOF
 \`\`\`
 
-Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. For one short task, \`${path} start --project <name> [--title <title>] [--goal <condition>] <text>\` does the same, as long as the text has no quotes, \`$\`, \`;\` or \`&\` in it.
+Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. For one short conversation, \`${path} start --project <name> [--title <title>] [--goal <condition>] <text>\` does the same, as long as the text has no quotes, \`$\`, \`;\` or \`&\` in it.
 
-- \`project\` is the folder's name as \`sessions\` prints it. At most 20 tasks at once.
+- \`project\` is the folder's name as \`sessions\` prints it. At most 20 at once.
 - \`title\` is what the person reads on the card to decide, so say the work in a few words.
 - \`text\` is all the new conversation is given, and it knows nothing of this one. Write what to do, where - files, commands, links -, what you already found, and how to tell it is done.
 - \`goal\` is optional. Give it when being done can be checked, such as tests passing or a page loading.
 
-The command prints one line per task in the order sent - started or queued with its id, or refused - with the person's note on a task if there is one, and their reply to you last. A note on a started task was also given to that conversation. A queued task is a conversation already, whose first message waits until fewer of the person's conversations are working. A refusal is an answer: do not send the same thing again, and follow the reply. Then say in your answer what you sent and how it stands.
+The command prints one line per conversation in the order sent - started or queued with its id, or refused - with the person's note on one if there is one, and their reply to you last. A note on a started one was also given to that conversation. A queued one is a conversation already, whose first message waits until fewer of the person's conversations are working. A refusal is an answer: do not send the same thing again, and follow the reply. Then say in your answer what you sent and how it stands.
 
 ### Reading linked ones
 

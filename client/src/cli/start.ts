@@ -20,34 +20,34 @@ export function tasksFrom(args: readonly string[], read: (file: string) => strin
   const words: string[] = []
   for (let at = 0; at < args.length; at++) {
     const one = args[at] ?? ''
-    if (['--project', '--goal', '--title', '--tasks'].includes(one)) {
+    if (['--project', '--goal', '--title', '--conversations', '--tasks'].includes(one)) {
       flags.set(one, args[at + 1] ?? '')
       at++
     } else if (one !== '--json') words.push(one)
   }
-  const file = flags.get('--tasks')
+  const file = flags.get('--conversations') ?? flags.get('--tasks')
   let tasks: unknown
   if (file !== undefined) {
     const named = file === '-' ? 'stdin' : file
     try {
       tasks = JSON.parse(read(file))
     } catch {
-      return `${named} is not a JSON array of tasks.`
+      return `${named} is not a JSON array of conversations.`
     }
-    if (!Array.isArray(tasks)) return `${named} is not a JSON array of tasks.`
+    if (!Array.isArray(tasks)) return `${named} is not a JSON array of conversations.`
   } else {
     const project = flags.get('--project')
     if (project === undefined || project === '') return 'geckit start --project <name> [--title <title>] [--goal <condition>] <text>'
     tasks = [{ project, text: words.join(' '), title: flags.get('--title'), goal: flags.get('--goal') }]
   }
   const list = tasks as readonly Partial<Record<keyof Task, unknown>>[]
-  if (list.length === 0) return 'Task 1 has no text.'
-  if (list.length > 20) return 'At most 20 tasks at once.'
+  if (list.length === 0) return 'Conversation 1 has no text.'
+  if (list.length > 20) return 'At most 20 conversations at once.'
   const said = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined)
   const out: Task[] = []
   for (const [index, task] of list.entries()) {
     const text = said(task.text)
-    if (text === undefined) return `Task ${String(index + 1)} has no text.`
+    if (text === undefined) return `Conversation ${String(index + 1)} has no text.`
     const title = said(task.title)
     const goal = said(task.goal)
     out.push({ project: said(task.project) ?? '', text, ...(title === undefined ? {} : { title }), ...(goal === undefined ? {} : { goal }) })

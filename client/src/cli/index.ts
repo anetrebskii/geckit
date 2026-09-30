@@ -181,11 +181,11 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
       The id is the one sessions prints; the first few characters are enough. --last keeps only the last n things said.
 
   geckit start --project <name> [--title <title>] [--goal <condition>] <text>
-  geckit start --tasks <file> [--json]
+  geckit start --conversations <file> [--json]
       Asks GeckIt to start conversations, one or a batch of up to 20, and waits for the answer.
       The file, or - for stdin, is an array of { "project", "title", "text", "goal" }.
       GeckIt shows the request in this conversation; nothing starts until the person answers there.
-      Prints a line per task in the order sent, started or queued with its id, or refused, with the person's note, then their reply.
+      Prints a line per conversation in the order sent, started or queued with its id, or refused, with the person's note, then their reply.
 
   geckit linked [<id>] [--json]
       The conversation this one was started from, the ones it started and how each stands, and what it asked for and was refused.
