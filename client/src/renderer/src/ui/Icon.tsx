@@ -73,7 +73,7 @@ export function Icon({
   const filled = FILLED.has(name)
   // A spinner always turns, whatever it sits in.
   const classes = name === 'spinner' ? ['spinning', className].filter(Boolean).join(' ') : className
-  return (
+  const svg = (
     <svg
       width={size}
       height={size}
@@ -89,4 +89,6 @@ export function Icon({
       <path d={path} />
     </svg>
   )
+  // Chromium turns an svg on the main thread, drawing the whole page again each frame, and a span on the compositor.
+  return name === 'spinner' ? <span className="spinner-turn">{svg}</span> : svg
 }

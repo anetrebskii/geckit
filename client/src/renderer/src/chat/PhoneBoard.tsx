@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
@@ -225,6 +225,11 @@ export function PhoneBoard({
     tap('light')
     window.geckit.chat.answer(session.id, card.item, answer)
   }
+  // A row is drawn again only when what it shows changes, so what it calls is read from here at the time.
+  const latest = useRef({ mark, answer, lift, drop })
+  useEffect(() => {
+    latest.current = { mark, answer, lift, drop }
+  })
 
   // The plans of the projects shown, each account once: a host on another account has windows of its own.
   const placeName = (place: string): string => (place === '' ? computerName() : (chat.hosts.find((one) => one.id === place)?.name ?? place))
@@ -367,7 +372,7 @@ export function PhoneBoard({
             <div className="phone-head">Needs you</div>
             <div className="phone-group">
               {asking.slice(0, asking.length - folded).map((session) => (
-                <Row
+                <PhoneRow
                   key={session.id}
                   chat={chat}
                   session={session}
@@ -376,10 +381,10 @@ export function PhoneBoard({
                   open={open === session.id}
                   waiting={waiting.get(session.id)}
                   onOpen={(on) => setOpen(on ? session.id : undefined)}
-                  onMark={(status) => mark(session, status)}
+                  onMark={(status) => latest.current.mark(session, status)}
                   onMore={() => setMore(session)}
                   onPress={(at) => setPressed({ session, at })}
-                  onAnswer={(how) => answer(session, how)}
+                  onAnswer={(how) => latest.current.answer(session, how)}
                 />
               ))}
               {folded === 0 ? null : (
@@ -395,7 +400,7 @@ export function PhoneBoard({
             <div className="phone-head">Working</div>
             <div className="phone-group">
               {busy.map((session) => (
-                <Row
+                <PhoneRow
                   key={session.id}
                   chat={chat}
                   session={session}
@@ -404,7 +409,7 @@ export function PhoneBoard({
                   open={open === session.id}
                   waiting={undefined}
                   onOpen={(on) => setOpen(on ? session.id : undefined)}
-                  onMark={(status) => mark(session, status)}
+                  onMark={(status) => latest.current.mark(session, status)}
                   onMore={() => setMore(session)}
                   onPress={(at) => setPressed({ session, at })}
                   onAnswer={() => undefined}
@@ -434,7 +439,7 @@ export function PhoneBoard({
                 )}
                 {foldedDays.has(day.heading) ? null : <div ref={shown === 'progress' ? restGroup : undefined} className={`phone-group${drag === undefined ? '' : ' dragging'}`}>
                   {day.rows.map((session, at) => (
-                    <Row
+                    <PhoneRow
                       key={session.id}
                       chat={chat}
                       session={session}
@@ -443,16 +448,16 @@ export function PhoneBoard({
                       open={open === session.id}
                       waiting={undefined}
                       onOpen={(on) => setOpen(on ? session.id : undefined)}
-                      onMark={(status) => mark(session, status)}
+                      onMark={(status) => latest.current.mark(session, status)}
                       onMore={() => setMore(session)}
                       onPress={(at) => setPressed({ session, at })}
                       onAnswer={() => undefined}
-                      onLift={shown === 'progress' ? () => lift(session) : undefined}
+                      onLift={shown === 'progress' ? () => latest.current.lift(session) : undefined}
                       onDrag={(moved, y) => {
                         finger.current = y
                         setDrag((was) => (was === undefined ? was : { ...was, moved }))
                       }}
-                      onDrop={drop}
+                      onDrop={() => latest.current.drop()}
                       shift={shown === 'progress' ? shift(at) : 0}
                       lifted={drag?.id === session.id}
                     />
@@ -637,6 +642,29 @@ export function RowBody({
     </>
   )
 }
+
+const parentTitle = (chat: Chat, session: ChatSession): string | undefined =>
+  session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)?.title
+
+// Typing, and every line streaming into an open conversation, change `chat` without changing anything a row shows.
+const PhoneRow = memo(
+  Row,
+  (was, now) =>
+    was.session === now.session &&
+    was.now === now.now &&
+    was.column === now.column &&
+    was.open === now.open &&
+    was.waiting === now.waiting &&
+    was.shift === now.shift &&
+    was.lifted === now.lifted &&
+    (was.onLift === undefined) === (now.onLift === undefined) &&
+    (was.chat.settings === now.chat.settings ||
+      (was.chat.settings.favorites.includes(was.session.id) === now.chat.settings.favorites.includes(now.session.id) &&
+        projectColor(homeOf(was.session), was.chat.settings) === projectColor(homeOf(now.session), now.chat.settings))) &&
+    (was.chat.sessions === now.chat.sessions ||
+      (parentTitle(was.chat, was.session) === parentTitle(now.chat, now.session) &&
+        startedLine(was.chat.sessions, was.session.id) === startedLine(now.chat.sessions, now.session.id))),
+)
 
 function Row({
   chat,

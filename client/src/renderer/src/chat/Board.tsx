@@ -238,6 +238,14 @@ export function Board({
       })),
     [chat.sessions, chat.settings.progressOrder],
   )
+  const startedLines = useMemo(() => {
+    const lines = new Map<string, string>()
+    for (const parent of new Set(chat.sessions.flatMap((one) => (one.parent === undefined ? [] : [one.parent])))) {
+      const line = startedLine(chat.sessions, parent)
+      if (line !== undefined) lines.set(parent, line)
+    }
+    return lines
+  }, [chat.sessions])
   const progress = columns[0]?.rows ?? []
   // What needs the person is drawn on top of In progress; the rest keeps the order, which still holds every card and decides who takes a free slot.
   const needs = useNeedsYou(progress, chat.shown.kind === 'session' ? chat.shown.id : undefined)
@@ -400,6 +408,7 @@ export function Board({
                         now={now}
                         renaming={renaming === session.id}
                         picked={picked.has(session.id)}
+                        started={startedLines.get(session.id)}
                         onPress={(one, how) => latest.current.press(one, how)}
                         onDrag={(id) => (held.current = id === undefined ? [] : latest.current.targets(id))}
                         onMenu={(id, at) => setMenu({ id, at })}
@@ -541,6 +550,7 @@ function Card({
   now,
   renaming,
   picked,
+  started,
   onPress,
   onDrag,
   onMenu,
@@ -552,6 +562,8 @@ function Card({
   readonly now: number
   readonly renaming: boolean
   readonly picked: boolean
+  /** "Started 2 - 1 working", worked out once for the board rather than by each card. */
+  readonly started: string | undefined
   /** Cmd+click picks one card, Shift+click the run up to it, and a plain click opens it unless some are picked. */
   readonly onPress: (session: ChatSession, how: 'open' | 'one' | 'run') => void
   /** The card being dragged, which the board holds on to until it lands. */
@@ -560,7 +572,7 @@ function Card({
   readonly onRenamed: (id: string, name: string) => void
   readonly onStopRenaming: () => void
 }): React.JSX.Element {
-  const open = chat.shown.kind === 'session' && chat.shown.id === session.id
+  const open = opened(chat, session)
   const starred = chat.settings.favorites.includes(session.id)
   // The links written in it, counted on the card and listed where the button opens.
   const [links, setLinks] = useState<readonly Link[]>([])
@@ -583,7 +595,6 @@ function Card({
   const queued = session.queued?.length ?? 0
   // The line above already says it is working, so what it says it is doing does not say it again.
   const detail = stands?.tone === 'said-working' ? session.stands.replace(/^Working - /, '') : session.stands
-  const started = startedLine(chat.sessions, session.id)
   return (
     <div
       className={`board-card${starred ? ' starred' : ''}${open ? ' on' : ''}${picked ? ' picked' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
@@ -720,6 +731,8 @@ function Card({
   )
 }
 
+const opened = (chat: Chat, session: ChatSession): boolean => chat.shown.kind === 'session' && chat.shown.id === session.id
+
 // Typing, and every line streaming into an open conversation, change `chat` without changing anything a card shows.
 const BoardCard = memo(
   Card,
@@ -728,10 +741,12 @@ const BoardCard = memo(
     was.now === now.now &&
     was.renaming === now.renaming &&
     was.picked === now.picked &&
-    was.chat.shown === now.chat.shown &&
-    was.chat.settings === now.chat.settings &&
+    (was.chat.shown === now.chat.shown || opened(was.chat, was.session) === opened(now.chat, now.session)) &&
+    (was.chat.settings === now.chat.settings ||
+      (was.chat.settings.favorites.includes(was.session.id) === now.chat.settings.favorites.includes(now.session.id) &&
+        projectColor(homeOf(was.session), was.chat.settings) === projectColor(homeOf(now.session), now.chat.settings))) &&
     was.chat.hosts === now.chat.hosts &&
-    was.chat.sessions === now.chat.sessions,
+    was.started === now.started,
 )
 
 /**

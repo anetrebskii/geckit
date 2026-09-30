@@ -183,6 +183,22 @@ export interface Chat {
 // How long a message sent stays up on its own once the Mac has taken it.
 const SHOWN_FOR = 1500
 
+let before = new Map<string, { readonly said: string; readonly one: ChatSession }>()
+
+/** The list as main sends it, each conversation that did not change kept as the object it was, so the cards drawing it are not drawn again. */
+function sameAsBefore(all: readonly ChatSession[]): ChatSession[] {
+  const now = new Map<string, { readonly said: string; readonly one: ChatSession }>()
+  const kept = all.map((one) => {
+    const said = JSON.stringify(one)
+    const was = before.get(one.id)
+    const same = was?.said === said ? was.one : one
+    now.set(one.id, { said, one: same })
+    return same
+  })
+  before = now
+  return kept
+}
+
 export function useChat(): Chat {
   const [settings, change] = useSettings()
   const { hosts, prompts } = useHosts()
@@ -270,7 +286,8 @@ export function useChat(): Chat {
 
   const refresh = useCallback(() => {
     const one = chosenRef.current.length === 1 ? chosenRef.current[0] : undefined
-    void window.geckit.chat.list(one).then((all) => {
+    void window.geckit.chat.list(one).then((listed) => {
+      const all = sameAsBefore(listed)
       setSessions(all.filter(within))
       setListed(true)
       // Asked for every project, this is every project: the counts are made from the same answer.
@@ -329,9 +346,10 @@ export function useChat(): Chat {
   }, [setPlans])
 
   useEffect(() => {
-    void window.geckit.chat.list(undefined).then((all) => setEveryone(all.filter((one) => one.question !== true)))
+    void window.geckit.chat.list(undefined).then((all) => setEveryone(sameAsBefore(all).filter((one) => one.question !== true)))
     let asked = new Set<string>()
-    return window.geckit.chat.onSessions((all) => {
+    return window.geckit.chat.onSessions((sent) => {
+      const all = sameAsBefore(sent)
       setSessions(all.filter(within))
       setListed(true)
       setEveryone(all.filter((one) => one.question !== true))
