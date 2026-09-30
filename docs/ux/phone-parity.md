@@ -285,7 +285,7 @@ stateDiagram-v2
 
 | Option | Verdict |
 |---|---|
-| Send the video to the Mac to be transcribed | No: needs an OpenRouter key and the whole video before a word comes back |
+| Send the video to the Mac to be transcribed | No: needs the whole video on the Mac before a word comes back |
 | iOS speech recognition on the file, on the phone | Yes |
 
 **Why:** it needs no key, it is what dictation on the phone already uses, and it runs while the video is still being sent.

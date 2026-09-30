@@ -1,0 +1,68 @@
+name: whisper-cli
+
+# Builds the whisper-cli each installer carries, one per platform and processor, and hands them to Publish as artifacts. Pushed to any branch but main, a change to the build runs it alone, so it can be tried without making a release.
+on:
+  workflow_call:
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - 'client/scripts/whisper.sh'
+      - '.github/workflows/whisper.yml'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: client
+        shell: bash
+    strategy:
+      matrix:
+        include:
+          - runner: macos-26
+            os: mac
+            arch: arm64
+          - runner: macos-26
+            os: mac
+            arch: x64
+          - runner: windows-latest
+            os: win
+            arch: x64
+          - runner: ubuntu-latest
+            os: linux
+            arch: x64
+    env:
+      WHISPER_WORK: ${{ runner.temp }}/whisper
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: pinned
+        run: echo "version=$(sed -n 's/^VERSION=//p' scripts/whisper.sh)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: client/whisper/bin/${{ matrix.os }}-${{ matrix.arch }}
+          key: whisper-cli-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.pinned.outputs.version }}-${{ hashFiles('client/scripts/whisper.sh') }}
+
+      - name: Build
+        run: |
+          if ls whisper/bin/${{ matrix.os }}-${{ matrix.arch }}/whisper-cli* > /dev/null 2>&1; then echo "From the cache"; else scripts/whisper.sh ${{ matrix.os }} ${{ matrix.arch }}; fi
+
+      # The copy for this runner is run, so one that cannot start fails here; the Intel Mac copy is built on an arm64 runner without Rosetta, so only its architecture is checked.
+      - name: Check
+        run: |
+          bin=whisper/bin/${{ matrix.os }}-${{ matrix.arch }}
+          ls -l "$bin"
+          case "${{ matrix.os }}-${{ matrix.arch }}" in
+            mac-x64) test "$(lipo -archs "$bin/whisper-cli")" = x86_64 ;;
+            mac-arm64) otool -L "$bin/whisper-cli"; "$bin/whisper-cli" --help > /dev/null ;;
+            linux-x64) ldd "$bin/whisper-cli"; "$bin/whisper-cli" --help > /dev/null ;;
+            win-x64) "$bin/whisper-cli.exe" --help > /dev/null ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: whisper-cli-${{ matrix.os }}-${{ matrix.arch }}
+          path: client/whisper/bin/${{ matrix.os }}-${{ matrix.arch }}
+          if-no-files-found: error

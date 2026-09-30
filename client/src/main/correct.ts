@@ -2,17 +2,15 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 
 import type { Answered, CorrectAction, CorrectRequest } from '../shared/api'
-import { defaultModelFor } from '../shared/models'
-import { askProvider } from './providers'
+import { correctKeeper } from './correct-session'
 import { claudeCommand, planOnly } from './sessions/account'
 import { getSettings } from './store'
 
 /**
  * One piece of text in, the same text put right and out.
  *
- * Two engines answer it: the person's Claude plan, through their own `claude`,
- * and a pasted API key. The instruction is the same either way, so what comes
- * back does not depend on which one answered.
+ * The person's Claude plan answers it, through their own `claude`: no key,
+ * and nothing sent anywhere else.
  */
 
 const RULES =
@@ -92,7 +90,7 @@ export function askPlan(text: string, said: string, model: string): Promise<Answ
         ok: false,
         error:
           (error as NodeJS.ErrnoException).code === 'ENOENT'
-            ? 'claude is not on this machine. Install Claude Code, or switch Correct to an API key.'
+            ? 'claude is not on this machine. Install Claude Code to correct text.'
             : error.message,
       }),
     )
@@ -114,9 +112,17 @@ export function askPlan(text: string, said: string, model: string): Promise<Answ
   })
 }
 
+/**
+ * Corrections on the plan go to the one session kept for the day
+ * (`correct-session.ts`), in a scratch folder like `askPlan`.
+ */
+const keeper = correctKeeper((args) =>
+  spawn(claudeCommand(), args, { cwd: tmpdir(), stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true }),
+)
+
+export const stopCorrecting = (): void => keeper.stop()
+
 export async function correct(request: CorrectRequest): Promise<Answered> {
   const said = instruction(request.action, request.custom)
-  if (request.engine === 'plan') return askPlan(request.text, said, request.model)
-  const model = request.model === '' ? defaultModelFor(request.provider) : request.model
-  return askProvider(request.provider, model, `${request.text}\n\n[${said}]`)
+  return keeper.ask(request.text, said, request.model)
 }

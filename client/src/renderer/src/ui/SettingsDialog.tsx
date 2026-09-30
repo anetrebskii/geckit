@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { ANYWHERE, UPDATE_CHANNELS, appName, channelLabel, profileOf } from '../../../shared/api'
-import type { AIProvider, Anywhere, OpenRule, PhoneView, ProjectProfile, Settings, Theme, UpdateChannel } from '../../../shared/api'
+import type { Anywhere, OpenRule, PhoneView, ProjectProfile, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
 import { hostOf } from '../../../shared/hosts'
 import { homePath, projectLabel, projectName } from '../chat/project'
@@ -16,12 +16,6 @@ import { Version } from './UpdateNotice'
  * Chat needs no key: it runs on the Claude plan through the person's own
  * `claude`, which is signed in from a terminal and never from here.
  */
-
-const PROVIDERS: readonly { value: AIProvider; label: string }[] = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'openrouter', label: 'OpenRouter' },
-]
 
 const THEMES: readonly { value: Theme; label: string; says: string }[] = [
   { value: 'system', label: 'System', says: 'as the system is set' },
@@ -518,11 +512,9 @@ function Phrases({ settings, change }: Part): React.JSX.Element {
 }
 
 function Correct({ settings, change }: Part): React.JSX.Element {
-  const [shown, setShown] = useState(false)
-  const secret = shown ? 'text' : 'password'
   return (
     <>
-      <p>Chat runs on your Claude plan through your own claude command, so it needs no key here.</p>
+      <p>Correct and Chat run on your Claude plan through your own claude command, so they need no key.</p>
 
       <div className="two">
         <div className="field">
@@ -545,57 +537,6 @@ function Correct({ settings, change }: Part): React.JSX.Element {
             className="select"
           />
         </div>
-      </div>
-
-      <div className="field">
-        <label htmlFor="provider">Which vendor Correct uses when it runs on a key</label>
-        <Picker
-          label={PROVIDERS.find((one) => one.value === settings.provider)?.label ?? 'OpenAI'}
-          choices={PROVIDERS.map((one) => ({ value: one.value, label: one.label }))}
-          chosen={settings.provider}
-          onPick={(value) => change({ provider: value as AIProvider })}
-          className="select"
-        />
-      </div>
-
-      <div className="field">
-        <label htmlFor="openrouter">OpenRouter key</label>
-        <input
-          id="openrouter"
-          type={secret}
-          value={settings.openRouterKey}
-          placeholder="sk-or-..."
-          onChange={(event) => change({ openRouterKey: event.target.value })}
-        />
-        <span style={NOTE}>Transcription needs this one.</span>
-      </div>
-
-      <div className="field">
-        <label htmlFor="openai">OpenAI key</label>
-        <input
-          id="openai"
-          type={secret}
-          value={settings.openAiKey}
-          placeholder="sk-..."
-          onChange={(event) => change({ openAiKey: event.target.value })}
-        />
-      </div>
-
-      <div className="field">
-        <label htmlFor="anthropic">Anthropic key</label>
-        <input
-          id="anthropic"
-          type={secret}
-          value={settings.anthropicKey}
-          placeholder="sk-ant-..."
-          onChange={(event) => change({ anthropicKey: event.target.value })}
-        />
-      </div>
-
-      <div>
-        <button type="button" className="quiet" onClick={() => setShown(!shown)}>
-          {shown ? 'Hide keys' : 'Show keys'}
-        </button>
       </div>
     </>
   )

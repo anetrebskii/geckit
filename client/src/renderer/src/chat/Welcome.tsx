@@ -59,8 +59,7 @@ export function Welcome({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const project = chat.settings.projects[0]
   const unfinished =
     (page === 1 && state !== 'ready' && state !== 'unknown') ||
-    (page === 2 && project === undefined) ||
-    (page === 3 && chat.settings.openRouterKey === '')
+    (page === 2 && project === undefined)
   const last = page === PAGES - 1
 
   return (
@@ -82,7 +81,7 @@ export function Welcome({ chat }: { readonly chat: Chat }): React.JSX.Element {
           />
         ) : null}
         {page === 2 ? <Project project={project} onChoose={chat.addProject} /> : null}
-        {page === 3 ? <Keys chat={chat} /> : null}
+        {page === 3 ? <Keys /> : null}
         {page === 4 ? <Phone chat={chat} /> : null}
       </div>
       <div className="welcome-foot">
@@ -260,7 +259,7 @@ function Project({ project, onChoose }: { readonly project: string | undefined; 
   )
 }
 
-function Keys({ chat }: { readonly chat: Chat }): React.JSX.Element {
+function Keys(): React.JSX.Element {
   const [trusted, setTrusted] = useState(true)
 
   useEffect(() => {
@@ -288,18 +287,10 @@ function Keys({ chat }: { readonly chat: Chat }): React.JSX.Element {
       </div>
       <h1>Correct and dictate</h1>
       <p>Both work in any app, from anywhere.</p>
-      <p>Dictation turns speech into text with Whisper through OpenRouter, so it needs an OpenRouter key. Correct needs nothing.</p>
-      <div className="field">
-        <label htmlFor="welcome-key">OpenRouter key</label>
-        <input
-          id="welcome-key"
-          type="password"
-          value={chat.settings.openRouterKey}
-          placeholder="sk-or-..."
-          spellCheck={false}
-          onChange={(event) => chat.change({ openRouterKey: event.target.value.trim() })}
-        />
-      </div>
+      <p>
+        Dictation runs on this computer with Whisper: nothing you say leaves it, and it needs no key. The first time you dictate, it
+        downloads its model, about 570 MB, once. Correct needs nothing.
+      </p>
       {MAC ? (
         trusted ? (
           <div className="welcome-status ready">

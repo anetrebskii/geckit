@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import type { TranscribeRequest } from '../../shared/api'
+
 /**
  * The microphone, for the two places that listen to it.
  *
@@ -149,6 +151,51 @@ export function base64(audio: Blob): Promise<string> {
     reader.onerror = () => fail(reader.error ?? new Error('The recording could not be read'))
     reader.readAsDataURL(audio)
   })
+}
+
+const RATE = 16_000
+
+/** Any recording or audio file the page can play, as a WAV at 16 kHz mono in 16 bits, which is what whisper-cli reads. */
+async function wav(audio: Blob): Promise<Blob> {
+  const context = new AudioContext()
+  let decoded: AudioBuffer
+  try {
+    decoded = await context.decodeAudioData(await audio.arrayBuffer())
+  } finally {
+    void context.close()
+  }
+  // Rendered again at 16 kHz into one channel, which mixes the others down.
+  const offline = new OfflineAudioContext(1, Math.max(1, Math.ceil(decoded.duration * RATE)), RATE)
+  const source = offline.createBufferSource()
+  source.buffer = decoded
+  source.connect(offline.destination)
+  source.start()
+  const samples = (await offline.startRendering()).getChannelData(0)
+
+  const out = new DataView(new ArrayBuffer(44 + samples.length * 2))
+  const text = (at: number, said: string): void => {
+    for (let one = 0; one < said.length; one += 1) out.setUint8(at + one, said.charCodeAt(one))
+  }
+  text(0, 'RIFF')
+  out.setUint32(4, 36 + samples.length * 2, true)
+  text(8, 'WAVE')
+  text(12, 'fmt ')
+  out.setUint32(16, 16, true)
+  out.setUint16(20, 1, true)
+  out.setUint16(22, 1, true)
+  out.setUint32(24, RATE, true)
+  out.setUint32(28, RATE * 2, true)
+  out.setUint16(32, 2, true)
+  out.setUint16(34, 16, true)
+  text(36, 'data')
+  out.setUint32(40, samples.length * 2, true)
+  samples.forEach((sample, at) => out.setInt16(44 + at * 2, Math.max(-1, Math.min(1, sample)) * 0x7fff, true))
+  return new Blob([out.buffer], { type: 'audio/wav' })
+}
+
+/** What goes to main to be written down, decoded here because whisper-cli reads only WAV. */
+export async function toHear(audio: Blob): Promise<TranscribeRequest> {
+  return { audio: await base64(await wav(audio)) }
 }
 
 export function time(seconds: number): string {

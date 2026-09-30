@@ -32,6 +32,7 @@ import type {
   SessionStatus,
   Settings,
   TaskOutput,
+  SpeechModel,
   TranscribeRequest,
   UpdateView,
   Recording,
@@ -109,6 +110,13 @@ const geckit = {
   },
 
   transcribe: (request: TranscribeRequest): Promise<Answered> => ipcRenderer.invoke('transcribe', request),
+
+  /** The model dictation hears with on this computer: where its download stands, starting it, and each step of it. */
+  speech: {
+    model: (): Promise<SpeechModel> => ipcRenderer.invoke('speech:model'),
+    fetch: (): void => ipcRenderer.send('speech:fetch'),
+    onModel: (said: (model: SpeechModel) => void): (() => void) => listen('speech:model', said),
+  },
 
   chat: {
     open: (): void => ipcRenderer.send('chat:open'),

@@ -551,21 +551,14 @@ export const resumeCommand = (id: string): string => `claude --resume ${id}`
 /* Correct                                                             */
 /* ------------------------------------------------------------------ */
 
-export type AIProvider = 'openai' | 'anthropic' | 'openrouter'
-
-/** Which engine Correct runs on: the Claude subscription, or a pasted API key. */
-export type CorrectEngine = 'plan' | 'key'
-
 export type CorrectAction = 'grammar' | 'improve' | 'translate' | 'explain' | 'custom'
 
 export interface CorrectRequest {
-  readonly engine: CorrectEngine
   readonly action: CorrectAction
   readonly text: string
   readonly custom?: string
-  /** On the plan, a Claude alias or id. On a key, the provider's model id. */
+  /** A Claude alias or id; empty is Default, which is Haiku. */
   readonly model: string
-  readonly provider: AIProvider
 }
 
 export interface Answered {
@@ -609,9 +602,17 @@ export interface AudioDevice {
 }
 
 export interface TranscribeRequest {
-  /** base64 */
+  /** base64 of a WAV at 16 kHz mono, which the window decoded the recording into */
   readonly audio: string
-  readonly fileName: string
+}
+
+/** The model dictation hears with on this computer, and how far its one download has come. */
+export interface SpeechModel {
+  readonly state: 'absent' | 'downloading' | 'ready' | 'failed'
+  /** bytes */
+  readonly received: number
+  readonly total: number
+  readonly error?: string
 }
 
 /** What the capsule was opened for: typing with the words, telling the application what to do, showing the screen, or showing it for the New task form that is open. */
@@ -802,18 +803,11 @@ export interface Settings {
   readonly theme: Theme
   readonly nativeLanguage: string
   readonly secondLanguage: string
-  readonly openAiKey: string
-  readonly anthropicKey: string
-  readonly openRouterKey: string
-  readonly provider: AIProvider
   readonly microphoneDeviceId: string
   /** Kept so the dictation popup can name the microphones before it opens one. */
   readonly audioDevices: readonly AudioDevice[]
-  readonly correctEngine: CorrectEngine
-  /** On the plan: a Claude alias. Empty is Default. */
+  /** A Claude alias. Empty is Default. */
   readonly correctPlanModel: string
-  /** On a key: the provider's own model id. */
-  readonly correctKeyModel: string
   /** Project folders the chat window offers, newest first. */
   readonly projects: readonly string[]
   /** Named sets of projects, TwinsAI or Formula, each one what the whole application shows while it is in use. */
@@ -943,15 +937,9 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   nativeLanguage: 'English',
   secondLanguage: 'Russian',
-  openAiKey: '',
-  anthropicKey: '',
-  openRouterKey: '',
-  provider: 'openai',
   microphoneDeviceId: '',
   audioDevices: [],
-  correctEngine: 'plan',
   correctPlanModel: '',
-  correctKeyModel: '',
   projects: [],
   profiles: [],
   profile: '',

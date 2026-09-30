@@ -476,6 +476,11 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onManage: never,
     },
     transcribe: (request) => call('transcribe', request),
+    speech: {
+      model: () => call('speech.model'),
+      fetch: () => send('speech.fetch'),
+      onModel: (said) => listen('speech:model', said),
+    },
     chat: {
       open: nothing,
       account: () => call('chat.account'),

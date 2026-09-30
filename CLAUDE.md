@@ -64,7 +64,11 @@ A conversation can run on another computer reached over SSH, a host; this comput
 
 ### Correct
 
-Two engines, switched in the footer. `plan` runs `claude -p --restricted --no-session-persistence --output-format json --append-system-prompt <instruction>` with the text on stdin (`main/correct.ts`). `key` goes through `main/providers.ts` to OpenAI, Anthropic or OpenRouter, for when the process start time matters.
+Correct runs only on the plan, with no key: it sends every correction of a day to one `claude -p --input-format stream-json --output-format stream-json --verbose --restricted --no-session-persistence --model haiku`, run in the temp folder, so nothing reaches the board (`main/correct-session.ts`, started from `main/correct.ts`). Each correction is one user message, the action's instruction and then the text, and the `result` line is the answer; a short system prompt says each message stands alone. Corrections wait their turn, one at a time. The process is started at the first correction, and replaced by a fresh one at the first correction of a new local date, when another model is picked in the footer (Default is Haiku), or after it exited, failed or gave no answer in 90 s, which is reported as the error of the correction that failed. Quit stops it.
+
+### Dictation
+
+The capsule, Transcribe and screen recording all go through `main/transcribe.ts`, which hears on this computer with no key: whisper.cpp's `whisper-cli`, built from a pinned version by `client/scripts/whisper.sh` into `client/whisper/bin/<os>-<arch>/` (not committed) and packed by electron-builder into `resources/whisper/`; from the source, `main/whisper.ts` runs that build, or the one on the PATH where there is none, so run the script once before dictating under `npm run dev` (it needs cmake). There is no ffmpeg: the window decodes the recording or dropped file with `decodeAudioData` and sends a 16 kHz mono WAV (`toHear` in `renderer/src/recorder.ts`). Nothing runs on an API key any more: `main/store.ts` drops the OpenRouter, OpenAI and Anthropic keys, the vendor and the key engine's choices left in settings.json. The model, `ggml-large-v3-turbo-q5_0.bin`, is downloaded on first use into `userData/whisper/` as a `.part` file, resumed with a Range request after a failure, checked against its size and sha256, then renamed; its progress is `speech:model`, drawn in the capsule and the Transcribe tab, and a dictation made while it downloads waits for it.
 
 ### The phone
 

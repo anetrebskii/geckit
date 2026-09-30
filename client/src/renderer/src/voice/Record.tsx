@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Planned, RecordedFrame, Recording } from '../../../shared/api'
 import { clock, HELD_FRAMES, MOST_FRAMES, thinFrames } from '../../../shared/recording'
-import { base64, BARS, useRecorder } from '../recorder'
+import { BARS, toHear, useRecorder } from '../recorder'
 import { useSettings } from '../settings'
+import { downloading, useSpeechModel } from '../speech'
 import { Icon } from '../ui/Icon'
 
 /**
@@ -168,6 +169,7 @@ export function Record({ fill = false }: { readonly fill?: boolean }): React.JSX
   const [frames, setFrames] = useState<readonly RecordedFrame[]>([])
   const [plan, setPlan] = useState<readonly Planned[]>([])
   const [did, setDid] = useState('')
+  const model = useSpeechModel()
 
   const capture = useRef<Capture | undefined>(undefined)
   const screenDone = useRef<Promise<{ frames: RecordedFrame[]; video?: string }> | undefined>(undefined)
@@ -188,17 +190,13 @@ export function Record({ fill = false }: { readonly fill?: boolean }): React.JSX
       heard.current = audio
       setState('writing')
       const [said, screen] = await Promise.all([
-        window.geckit.transcribe({ audio: await base64(audio), fileName: 'recording.webm' }),
+        window.geckit.transcribe(await toHear(audio)),
         screenDone.current ?? Promise.resolve<{ frames: RecordedFrame[]; video?: string }>({ frames: [] }),
       ])
       setFrames(screen.frames)
       video.current = screen.video
       if (!said.ok) {
-        const missing = said.error?.startsWith('Transcription needs') === true
-        fail(
-          missing ? 'Recording needs an OpenRouter key in Settings, to write down what was said.' : (said.error ?? 'Nothing was heard'),
-          missing ? 'none' : 'write',
-        )
+        fail(said.error ?? 'Nothing was heard', 'write')
         return
       }
       if (fill) {
@@ -396,7 +394,7 @@ export function Record({ fill = false }: { readonly fill?: boolean }): React.JSX
         {shown === 'writing' || shown === 'planning' || shown === 'doing' ? (
           <>
             <Icon name="spinner" className="glyph spinning" />
-            <span>{shown === 'writing' ? 'Writing it down' : shown === 'planning' ? 'Finding the project' : 'Doing it'}</span>
+            <span>{shown === 'writing' ? (model?.state === 'downloading' ? `${downloading(model)}. It is written down once that is done` : 'Writing it down') : shown === 'planning' ? 'Finding the project' : 'Doing it'}</span>
           </>
         ) : shown === 'choosing' ? (
           <div className="asking recorded">

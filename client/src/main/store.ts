@@ -56,12 +56,23 @@ const watchers = new Set<(settings: Settings) => void>()
 export function getSettings(): Settings {
   // No file yet means a first run, and the old build's keys are worth keeping.
   if (settings === undefined) {
-    const found = read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }
+    // Correct and dictation no longer run on a key: the keys and the choices that went with them are dropped.
+    const {
+      openRouterKey: _openRouter,
+      openAiKey: _openAi,
+      anthropicKey: _anthropic,
+      provider: _provider,
+      correctEngine: _engine,
+      correctKeyModel: _keyModel,
+      dictation: _dictation,
+      whisperModel: _whisper,
+      ...found
+    } = (read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }) as Settings & Readonly<Record<string, unknown>>
     // A build from before the welcome kept no answer, and anyone with a project has already set up.
-    const kept = read<Partial<Settings>>(SETTINGS, {})?.welcomed
+    const welcomed = read<Partial<Settings>>(SETTINGS, {})?.welcomed
     settings = {
       ...found,
-      welcomed: kept ?? found.projects.length > 0,
+      welcomed: welcomed ?? found.projects.length > 0,
       chatMode: sessionMode(found.chatMode),
       projectColors: withColors(found),
       phoneKey: found.phoneKey === '' ? newKey() : found.phoneKey,
@@ -70,7 +81,7 @@ export function getSettings(): Settings {
     if (
       Object.keys(settings.projectColors).length !== Object.keys(found.projectColors).length ||
       settings.phoneKey !== found.phoneKey ||
-      settings.welcomed !== kept
+      settings.welcomed !== welcomed
     ) {
       write(SETTINGS, settings)
     }

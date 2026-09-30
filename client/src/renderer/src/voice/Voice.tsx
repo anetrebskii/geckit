@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import type { Planned } from '../../../shared/api'
-import { base64, BARS, time, useRecorder } from '../recorder'
+import { BARS, time, toHear, useRecorder } from '../recorder'
 import { useSettings } from '../settings'
+import { downloading, percent, useSpeechModel } from '../speech'
 import { Icon } from '../ui/Icon'
 
 /**
@@ -27,11 +28,13 @@ export function Voice(): React.JSX.Element {
   const [plan, setPlan] = useState<readonly Planned[]>([])
   const [heard, setHeard] = useState('')
   const [last, setLast] = useState<Blob | undefined>()
+  const model = useSpeechModel()
+  const fetching = model?.state === 'downloading' ? model : undefined
 
   const send = useCallback(async (audio: Blob) => {
     setLast(audio)
     setState('transcribing')
-    const answer = await window.geckit.voice.done({ audio: await base64(audio), fileName: 'dictation.webm' })
+    const answer = await window.geckit.voice.done(await toHear(audio))
     // Said to the application: nothing has happened yet, this is what it would do.
     if (answer.ok && answer.plan !== undefined && answer.plan.length > 0) {
       setPlan(answer.plan)
@@ -106,7 +109,7 @@ export function Voice(): React.JSX.Element {
         {state === 'transcribing' ? (
           <>
             <Icon name="spinner" className="glyph spinning" />
-            <span>Writing it down</span>
+            <span className="said">{fetching === undefined ? 'Writing it down' : `${downloading(fetching)}. It is written down once that is done`}</span>
           </>
         ) : state === 'asking' ? (
           <div className="asking">
@@ -209,6 +212,11 @@ export function Voice(): React.JSX.Element {
             </span>
 
             <span className="time">{time(recorder.elapsed)}</span>
+            {fetching === undefined ? null : (
+              <span className="time" title={downloading(fetching)}>
+                Model {percent(fetching)}%
+              </span>
+            )}
             {import.meta.env.DEV ? <span className="dev-tag">Local</span> : null}
 
             <button

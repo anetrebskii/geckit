@@ -1,33 +1,40 @@
-import { createReadStream, unlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { execFile } from 'node:child_process'
+import { unlinkSync, writeFileSync } from 'node:fs'
+import { availableParallelism, tmpdir } from 'node:os'
 import { join } from 'node:path'
-
-import OpenAI from 'openai'
+import { promisify } from 'node:util'
 
 import type { Answered, TranscribeRequest } from '../shared/api'
-import { getSettings } from './store'
+import { fetchSpeechModel, whisperCli } from './whisper'
+
+const run = promisify(execFile)
+
+/** What whisper-cli prints, one line a segment, as one run of text, less its mark for silence. */
+const heard = (printed: string): string =>
+  printed
+    .split('\n')
+    .map((line) => line.replace(/\[BLANK_AUDIO\]/g, '').trim())
+    .filter((line) => line !== '')
+    .join(' ')
 
 /**
- * Speech to text, through OpenRouter's Whisper.
+ * Speech to text, on this computer with whisper.cpp.
  *
- * Claude Code cannot hear, so this one thing still needs a key. The recording
- * arrives from a window as base64, goes to disk because the API wants a file,
- * and the file goes as soon as it has been read.
+ * The recording arrives from a window as base64, already decoded into a WAV
+ * at 16 kHz mono. It goes to disk because whisper-cli wants a file, and the
+ * file goes as soon as it has been read.
  */
 export async function transcribe(request: TranscribeRequest): Promise<Answered> {
-  const key = getSettings().openRouterKey
-  if (key === '') return { ok: false, error: 'Transcription needs an OpenRouter key in Settings' }
-
-  const path = join(tmpdir(), `geckit-${String(Date.now())}-${request.fileName}`)
+  const path = join(tmpdir(), `geckit-${String(Date.now())}.wav`)
   try {
     writeFileSync(path, request.audio, 'base64')
-    const openrouter = new OpenAI({ apiKey: key, baseURL: 'https://openrouter.ai/api/v1' })
-    const said = await openrouter.audio.transcriptions.create({
-      model: 'openai/whisper-1',
-      file: createReadStream(path),
-    })
-    return { ok: true, text: said.text }
+    const model = await fetchSpeechModel()
+    const threads = String(Math.min(8, availableParallelism()))
+    const { stdout } = await run(whisperCli(), ['-m', model, '-f', path, '-l', 'auto', '-t', threads, '-nt', '-np'], { maxBuffer: 16 * 1024 * 1024 })
+    return { ok: true, text: heard(stdout) }
   } catch (error) {
+    const failed = error as { code?: string }
+    if (failed.code === 'ENOENT') return { ok: false, error: 'whisper-cli is missing: run scripts/whisper.sh in client/' }
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   } finally {
     try {

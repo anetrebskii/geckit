@@ -46,8 +46,12 @@ jobs:
           token: ${{ secrets.VERSION_TOKEN }}
           majorVersion: 1
 
+  whisper:
+    needs: test
+    uses: ./.github/workflows/whisper.yml
+
   publish:
-    needs: version
+    needs: [version, whisper]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -86,8 +90,18 @@ jobs:
           cache: npm
           cache-dependency-path: '**/package-lock.json'
 
+      # electron-builder packs whisper/bin/<os>-<arch> into the app's resources; the artifacts lose the executable bit on the way.
+      - name: Take whisper-cli
+        uses: actions/download-artifact@v4
+        with:
+          pattern: whisper-cli-${{ matrix.platform }}-*
+          path: client/whisper/bin
+
       - name: Install and build
         run: |
+          for bin in whisper/bin/*; do mv "$bin" "whisper/bin/${bin#whisper/bin/whisper-cli-}"; done
+          chmod +x whisper/bin/*/whisper-cli*
+          ls -lR whisper/bin
           npm ci
           npm run typecheck
           npm version "${{ needs.version.outputs.version }}" --no-git-tag-version --allow-same-version

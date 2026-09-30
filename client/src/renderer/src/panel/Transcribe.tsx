@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from 'react'
 
 import type { Settings, Transcription } from '../../../shared/api'
-import { base64, BARS, time, useRecorder } from '../recorder'
+import { BARS, time, toHear, useRecorder } from '../recorder'
+import { downloading, fetchSpeechModel, percent, useSpeechModel } from '../speech'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 
@@ -33,6 +34,12 @@ export function Transcribe({
   const [copied, setCopied] = useState<string | undefined>()
   const file = useRef<HTMLInputElement>(null)
   const depth = useRef(0)
+  const model = useSpeechModel()
+
+  // Heard here for the first time, the model is fetched then, and a failed download is picked up again.
+  const fetchModel = useCallback(() => {
+    if (model?.state !== 'ready') fetchSpeechModel()
+  }, [model?.state])
 
   const keep = useCallback(
     (text: string, source: string, seconds?: number) => {
@@ -49,10 +56,18 @@ export function Transcribe({
   )
 
   const send = useCallback(
-    async (audio: Blob, fileName: string, source: string, seconds?: number) => {
+    async (audio: Blob, source: string, seconds?: number) => {
       setWorking(true)
       setError('')
-      const answer = await window.geckit.transcribe({ audio: await base64(audio), fileName })
+      let request
+      try {
+        request = await toHear(audio)
+      } catch {
+        setWorking(false)
+        setError(`${source} could not be read as audio`)
+        return
+      }
+      const answer = await window.geckit.transcribe(request)
       setWorking(false)
       if (!answer.ok || answer.text === undefined || answer.text.trim() === '') {
         setError(answer.error ?? 'Nothing was heard')
@@ -64,21 +79,22 @@ export function Transcribe({
   )
 
   const recorder = useRecorder(settings.microphoneDeviceId, (audio, seconds) => {
-    void send(audio, 'recording.webm', 'Mic recording', seconds)
+    void send(audio, 'Mic recording', seconds)
   })
 
   const take = useCallback(
     (files: readonly File[]) => {
+      fetchModel()
       for (const one of files) {
         const extension = `.${one.name.split('.').pop()?.toLowerCase() ?? ''}`
         if (!AUDIO.includes(extension)) {
           setError(`${one.name} is not an audio file`)
           continue
         }
-        void send(one, one.name, one.name)
+        void send(one, one.name)
       }
     },
-    [send],
+    [send, fetchModel],
   )
 
   const mics = [
@@ -105,7 +121,15 @@ export function Transcribe({
             <span className="time">{time(recorder.elapsed)}</span>
           </button>
         ) : (
-          <button type="button" className="record" onClick={recorder.start} disabled={working}>
+          <button
+            type="button"
+            className="record"
+            onClick={() => {
+              fetchModel()
+              recorder.start()
+            }}
+            disabled={working}
+          >
             <span className="dot" />
             Record
           </button>
@@ -134,6 +158,24 @@ export function Transcribe({
         />
       </div>
 
+      {model?.state === 'downloading' ? (
+        <div className="speech-model">
+          <span>
+            {downloading(model)}. It is done once, and then everything is heard on this computer.
+            {working ? ' What was sent is written down after that.' : ''}
+          </span>
+          <div className="progress">
+            <span style={{ width: `${String(percent(model))}%` }} />
+          </div>
+        </div>
+      ) : model?.state === 'failed' ? (
+        <div className="speech-model">
+          <span className="error">The speech model could not be downloaded: {model.error}</span>
+          <button type="button" className="quiet" onClick={fetchSpeechModel}>
+            Try again
+          </button>
+        </div>
+      ) : null}
       {working ? <div className="working" /> : null}
       {error === '' ? null : <div className="error" style={{ padding: '4px 12px' }}>{error}</div>}
       {recorder.error === '' ? null : (

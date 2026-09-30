@@ -60,7 +60,7 @@ import type {
 } from '../shared/api'
 import track from './analytics'
 import { control } from './control'
-import { correct } from './correct'
+import { correct, stopCorrecting } from './correct'
 import { answerErrors, errorQuestion, followErrors, startErrors, watchErrors, windowError } from './errors'
 import { askOrders, carryOut, projectSaid, saying } from './orders'
 import type { Order, Told } from './orders'
@@ -114,6 +114,7 @@ import { searchClaude } from './sessions/search'
 import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
 import { forgetProject, forgetRoots, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
+import { fetchSpeechModel, onSpeechModel, speechModel } from './whisper'
 import { addToRecording, dropRecording, keepRecording, startRecording, sweepRecordings } from './recordings'
 import { recordedNote } from '../shared/recording'
 import { drawTray, startTray } from './tray'
@@ -389,6 +390,11 @@ function build(held: Routes): Sessions {
 /* The shortcuts                                                       */
 /* ------------------------------------------------------------------ */
 
+/** The capsule opens: the speech model, where it is not here yet, downloads while the person talks. */
+function readyToHear(): void {
+  void fetchSpeechModel().catch(() => undefined)
+}
+
 function registerDictate(): void {
   const took = globalShortcut.register(DICTATE, () => {
     const open = listeningVoice()
@@ -400,6 +406,7 @@ function registerDictate(): void {
     track('dictate')
     heardFor = 'paste'
     dictatedInto = BrowserWindow.getFocusedWindow() ?? undefined
+    readyToHear()
     voiceWindow()
   })
   if (!took) log.warn(`${DICTATE} is taken by something else, dictation has no shortcut`)
@@ -415,6 +422,7 @@ function askOutLoud(): void {
   track('orders')
   heardFor = 'orders'
   dictatedInto = undefined
+  readyToHear()
   voiceWindow()
 }
 
@@ -442,6 +450,7 @@ function recordScreen(): void {
   heardFor = formOpen && chat?.isVisible() === true ? 'fill' : 'record'
   dictatedInto = undefined
   if (heardFor === 'fill') chat?.hide()
+  readyToHear()
   // Left out of what is recorded, so it is never in its own frames.
   voiceWindow().setContentProtection(true)
 }
@@ -932,6 +941,10 @@ function wire(): void {
     return transcribe(request)
   })
 
+  ipcMain.handle('speech:model', () => speechModel())
+  ipcMain.on('speech:fetch', () => void fetchSpeechModel().catch(() => undefined))
+  onSpeechModel((model) => tell('speech:model', model))
+
   ipcMain.handle('voice:done', async (_event, request: TranscribeRequest) => {
     const said = await transcribe(request)
     if (!said.ok || said.text === undefined || said.text.trim() === '') return said
@@ -963,6 +976,7 @@ function wire(): void {
     track('dictate')
     heardFor = 'paste'
     dictatedInto = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    readyToHear()
     voiceWindow()
   })
   // What a form's recording heard and saw, handed to the form.
@@ -1207,6 +1221,8 @@ function phoneCalls(): Record<string, PhoneCall> {
     'update.view': () => updateView(),
     correct: (request: CorrectRequest) => correct(request),
     transcribe: (request: TranscribeRequest) => transcribe(request),
+    'speech.model': () => speechModel(),
+    'speech.fetch': () => void fetchSpeechModel().catch(() => undefined),
     'shortcuts.save': (draft: ShortcutDraft) => saveShortcut(draft),
     'shortcuts.remove': (id: string) => removeShortcut(id),
     'shortcuts.run': (id: string) => runShortcut(id, 'hand'),
@@ -1426,6 +1442,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   sessions?.dispose()
   plans?.dispose()
+  stopCorrecting()
   // A debounced write still owed to a run's offset is not lost to the second it was waiting out.
   void routes?.runs.flush()
   routes?.forwards.dispose()

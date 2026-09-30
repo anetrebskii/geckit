@@ -164,7 +164,7 @@ GeckIt adds a short guide to `~/.claude`, so Claude Code knows about the board, 
 
 Download it from [Releases](https://github.com/anetrebskii/geckit/releases/latest): a dmg for Apple Silicon or Intel Macs, an installer for Windows, an AppImage for Linux. It updates itself from the Stable channel, the release marked Latest. Settings, Version switches it to Development, which gets every build from main.
 
-The board and Correct need [Claude Code](https://code.claude.com/docs/en/overview) installed and signed in with a Claude subscription. Correct can run on an OpenAI, Anthropic or OpenRouter key instead. Transcribe, screen recording and Say it need an OpenRouter key, set in Settings.
+The board and Correct need [Claude Code](https://code.claude.com/docs/en/overview) installed and signed in with a Claude subscription. Transcribe, screen recording and Say it hear speech on the computer with Whisper, and need no key: the model, about 570 MB, downloads the first time you dictate.
 
 The Windows installer is not signed, so SmartScreen warns about it: More info, then Run anyway. It installs for your user only, into `%LOCALAPPDATA%\Programs\geckit`, without administrator rights.
 

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { app } from 'electron'
 
-import type { AIProvider, Settings } from '../shared/api'
+import type { Settings } from '../shared/api'
 
 /**
  * The keys and languages the old build left behind.
@@ -15,12 +15,7 @@ import type { AIProvider, Settings } from '../shared/api'
  * first run, and then never again.
  */
 
-const PROVIDERS: readonly AIProvider[] = ['openai', 'anthropic', 'openrouter']
-
 const MOVED: Readonly<Record<string, string>> = {
-  openAiKey: 'openAiKey',
-  anthropicKey: 'anthropicKey',
-  openRouterKey: 'openRouterKey',
   // The old build spelled this one wrong.
   nativateLanguage: 'nativeLanguage',
   secondLanguage: 'secondLanguage',
@@ -89,7 +84,5 @@ export function carriedOver(): Partial<Settings> {
     const value = said(held, was)
     if (value !== undefined) change[now] = value
   }
-  const provider = said(held, 'aiProvider')
-  if (provider !== undefined && PROVIDERS.includes(provider as AIProvider)) change['provider'] = provider
   return change as Partial<Settings>
 }

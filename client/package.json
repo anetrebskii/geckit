@@ -29,13 +29,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.68.0",
     "@sentry/browser": "^10.75.0",
     "@sentry/electron": "^7.20.0",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "firebase": "^12.19.0",
-    "openai": "^6.10.0",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
@@ -122,7 +120,11 @@
       "output": "release/build"
     },
     "extraResources": [
-      "./assets/**"
+      "./assets/**",
+      {
+        "from": "whisper/bin/${os}-${arch}",
+        "to": "whisper"
+      }
     ],
     "publish": {
       "provider": "github",

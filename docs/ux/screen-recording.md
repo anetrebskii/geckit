@@ -177,7 +177,6 @@ The recording shortcut pressed while the capsule is past Recording does nothing,
 | No permission | "The Mac has not allowed GeckIt to record the screen." |
 | No permission, action | "Open Settings" |
 | No project fits | "No project fits what was said. Name the project and try again." |
-| No OpenRouter key | "Recording needs an OpenRouter key in Settings, to write down what was said." |
 | Message sent to Claude, after the words | "Recorded on the screen, 0:42. The frames are attached in order. The whole recording is at <path> if you need more of it." |
 
 ## 8. Edge cases

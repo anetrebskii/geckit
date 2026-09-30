@@ -9,7 +9,7 @@ created: 2026-09-27
 
 ## 1. Why
 
-A person who installs GeckIt and opens it for the first time lands on an empty board with one grey sentence under it: "Choose a project folder on the left", or "Claude Code is not on this machine. Install it, then reopen this window." Nothing says what the app is for, that it runs on their own Claude plan through the `claude` program, how to install and sign that in, that dictation needs an OpenRouter key, or that there is a phone app. Each of these is found by accident or not at all, and the first one blocks everything: without a signed-in `claude` nothing in the Chat window works.
+A person who installs GeckIt and opens it for the first time lands on an empty board with one grey sentence under it: "Choose a project folder on the left", or "Claude Code is not on this machine. Install it, then reopen this window." Nothing says what the app is for, that it runs on their own Claude plan through the `claude` program, how to install and sign that in, that dictation downloads a model the first time, or that there is a phone app. Each of these is found by accident or not at all, and the first one blocks everything: without a signed-in `claude` nothing in the Chat window works.
 
 ## 2. What is added
 
@@ -19,7 +19,7 @@ A person who installs GeckIt and opens it for the first time lands on an empty b
 | Page 1, "What GeckIt is" | Three things it does, each one line: the board of Claude Code conversations, Correct, Dictate. Picture: a card moving from In progress to In review to Done | Always first |
 | Page 2, "Claude Code" | What is needed (the `claude` program and a Pro or Max plan), a line saying where this machine stands, the one command for the next step in a terminal that types itself, Copy and Check again | Always |
 | Page 3, "A project" | What a project is (a folder Claude works in) and Choose a folder. Picture: a folder dropping into the list | Always |
-| Page 4, "Correct and dictate" | The two shortcuts as keys that press themselves; a field for the OpenRouter key dictation needs; on macOS, a line and a button for the Accessibility permission pasting needs | Always |
+| Page 4, "Correct and dictate" | The two shortcuts as keys that press themselves; a line saying dictation runs on the computer, needs no key, and downloads its model of about 570 MB the first time; on macOS, a line and a button for the Accessibility permission pasting needs | Always |
 | Page 5, "Your phone" | One line, then the Phone switch and QR code from Settings, Phone, with the same note. Picture: a phone scanning the code | Always, as Settings offers Phone everywhere |
 | Settings, General, existing | A row "Welcome" with a button "Show again" | Always |
 
@@ -48,7 +48,7 @@ Page 2 is the only page whose content depends on the machine. It reads the same 
 | Unknown | An older `claude` that does not say | The status line, no command | Continue |
 | Ready | Signed in on a plan | The status line with the plan and version, a tick, no command | Continue |
 
-Page 3: before a folder is chosen, Choose a folder; after, the folder's name with a tick and "Choose another". Page 4: the key field is empty or filled; the Accessibility line says granted or not granted. Page 5: the phone states are those of Settings, Phone.
+Page 3: before a folder is chosen, Choose a folder; after, the folder's name with a tick and "Choose another". Page 4: the Accessibility line says granted or not granted. Page 5: the phone states are those of Settings, Phone.
 
 ## 4. Transitions
 
@@ -143,8 +143,7 @@ Continue is never held back: a page that is not done says so in its button, "Con
 | Page 3 body | "A project is a folder. Everything asked in it runs there, with Claude Code's access to its files." |
 | Page 3 button | "Choose a folder", after one: "Choose another" |
 | Page 4 title | "Correct and dictate" |
-| Page 4 body | "Both work in any app, from anywhere." / "Dictation turns speech into text with Whisper through OpenRouter, so it needs an OpenRouter key. Correct needs nothing." |
-| Page 4 key field | label "OpenRouter key", placeholder "sk-or-..." |
+| Page 4 body | "Both work in any app, from anywhere." / "Dictation runs on this computer with Whisper: nothing you say leaves it, and it needs no key. The first time you dictate, it downloads its model, about 570 MB, once. Correct needs nothing." |
 | Page 4 Accessibility | not granted: "To paste what you said, GeckIt needs Accessibility." + "Open Accessibility settings"; granted: "Accessibility is on." |
 | Page 5 title | "Your phone" |
 | Page 5 body | "Follow your conversations from an iPhone.", then Settings' own "Open the conversations on your phone" and its note on scanning the code |

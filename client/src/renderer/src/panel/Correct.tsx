@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { CorrectAction, CorrectEngine, ModelsSaid, Settings } from '../../../shared/api'
+import type { CorrectAction, ModelsSaid, Settings } from '../../../shared/api'
 import { modelName } from '../../../shared/api'
-import { defaultModelFor, modelsFor } from '../../../shared/models'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 import type { Choice } from '../ui/Menu'
@@ -25,11 +24,6 @@ const ACTIONS: readonly { action: CorrectAction; label: string; key: string }[] 
   { action: 'custom', label: 'Custom', key: '0' },
 ]
 
-const ENGINES: readonly Choice[] = [
-  { value: 'plan', label: 'Claude plan', says: 'no key' },
-  { value: 'key', label: 'API key', says: 'faster' },
-]
-
 export function Correct({
   settings,
   change,
@@ -49,8 +43,7 @@ export function Correct({
   const field = useRef<HTMLTextAreaElement>(null)
   const instruction = useRef<HTMLInputElement>(null)
 
-  const engine = settings.correctEngine
-  const model = engine === 'plan' ? settings.correctPlanModel : settings.correctKeyModel
+  const model = settings.correctPlanModel
 
   useEffect(() => field.current?.focus(), [])
 
@@ -79,12 +72,10 @@ export function Correct({
       setWorking(true)
       setError('')
       const answer = await window.geckit.correct({
-        engine,
         action,
         text,
         ...(said === undefined ? {} : { custom: said }),
         model,
-        provider: settings.provider,
       })
       setWorking(false)
       if (!answer.ok || answer.text === undefined) {
@@ -98,7 +89,7 @@ export function Correct({
         .then(() => setCopied(true))
         .catch(() => undefined)
     },
-    [text, working, engine, model, settings.provider],
+    [text, working, model],
   )
 
   const revert = useCallback(() => {
@@ -126,7 +117,7 @@ export function Correct({
   }, [run, revert, before, text, working, asking])
 
   const planChoices: readonly Choice[] = [
-    { value: '', label: 'Default', says: 'as claude is set up' },
+    { value: '', label: 'Default', says: 'Haiku' },
     ...(Array.isArray(models)
       ? models.map((one) =>
           one.disabled === true
@@ -146,13 +137,7 @@ export function Correct({
     if (!Array.isArray(models)) setModels('asking')
     void window.geckit.chat.models().then((said) => setModels((held) => said ?? (Array.isArray(held) ? held : 'unsaid')))
   }
-  const keyChoices: readonly Choice[] = modelsFor(settings.provider).map((one) => ({ value: one, label: one }))
-
-  const named =
-    engine === 'plan'
-      ? ((Array.isArray(models) ? models.find((one) => one.value === model)?.name : undefined) ??
-        (model === '' ? 'Default' : model))
-      : model || defaultModelFor(settings.provider)
+  const named = (Array.isArray(models) ? models.find((one) => one.value === model)?.name : undefined) ?? (model === '' ? 'Default' : model)
 
   return (
     <div className="correct">
@@ -200,21 +185,14 @@ export function Correct({
 
       <div className="footer">
         <Picker
-          label={engine === 'plan' ? 'Claude plan' : 'API key'}
-          choices={ENGINES}
-          chosen={engine}
-          title="Answered by"
-          onPick={(value) => change({ correctEngine: value as CorrectEngine })}
-        />
-        <Picker
           label={<span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{named}</span>}
-          choices={engine === 'plan' ? planChoices : keyChoices}
+          choices={planChoices}
           chosen={model}
           title="Model"
-          {...(engine === 'plan' ? { onOpen: askModels } : {})}
+          onOpen={askModels}
           onPick={(value) => {
             if (value === '__asking') return
-            change(engine === 'plan' ? { correctPlanModel: value } : { correctKeyModel: value })
+            change({ correctPlanModel: value })
           }}
         />
       </div>
