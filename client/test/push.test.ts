@@ -32,7 +32,7 @@ describe('a push to the phone', () => {
   it('goes to each token of this pairing, and drops one Apple says is gone', async () => {
     const key = newKey()
     keepToken(key, token)
-    keepToken(key, token)
+    keepToken(key, token.toUpperCase())
     keepToken(key, 'not a token')
     const sent = vi.fn(() => Promise.resolve(new Response('{}', { status: 410 })))
     vi.stubGlobal('fetch', sent)

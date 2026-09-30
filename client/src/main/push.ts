@@ -59,7 +59,9 @@ function keep(key: string, tokens: readonly string[]): void {
   }
 }
 
-export function keepToken(key: string, token: string): void {
+export function keepToken(key: string, said: string): void {
+  // iOS hands the token over in capitals, and the signal function takes it in lower case.
+  const token = said.toLowerCase()
   if (!/^[0-9a-f]{64,200}$/.test(token)) return
   const tokens = kept(key)
   if (!tokens.includes(token)) keep(key, [...tokens, token])
