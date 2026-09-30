@@ -3923,6 +3923,49 @@ html.phone .request-foot .request-reply {
   background: var(--bg-hover);
 }
 
+/* Dictating on the computer: a line in the field while it records, not a capsule over the screen. */
+.dictating {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 2px 6px 2px 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.dictating.failed {
+  color: var(--danger);
+}
+
+.dictating .bars {
+  height: 18px;
+  color: var(--danger);
+}
+
+.dictating-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--danger-solid);
+  border-radius: 50%;
+  animation: dictating 1.2s ease-in-out infinite;
+}
+
+@keyframes dictating {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.dictating-time {
+  font-family: var(--font-code);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dictate-mic.on {
+  color: var(--danger);
+}
+
 /* Prose the assistant wrote */
 
 .prose {

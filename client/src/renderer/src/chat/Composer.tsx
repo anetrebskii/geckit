@@ -6,6 +6,8 @@ import { mentionAt, pathsFor } from '../../../shared/paths'
 import { dictate, dropUnheard, hearAgain, languageCode, readUnheard, useDictationLanguage, useLevel } from '../dictate'
 import type { Unheard } from '../dictate'
 import { ON_PHONE } from '../on-phone'
+import { BARS, time, toHear, useRecorder } from '../recorder'
+import { downloading, useSpeechModel } from '../speech'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
@@ -132,6 +134,46 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [kept, setKept] = useState<Unheard | undefined>()
   const place = chat.session?.id ?? chat.root ?? ''
   const [looking, setLooking] = useState<string | undefined>()
+  // Dictation on the computer: heard by whisper here, and put after what was typed.
+  const [hearing, setHearing] = useState(false)
+  const [micError, setMicError] = useState('')
+  const model = useSpeechModel()
+  const hear = async (audio: Blob): Promise<void> => {
+    setHearing(true)
+    try {
+      const answer = await window.geckit.transcribe(await toHear(audio))
+      const text = answer.text?.trim() ?? ''
+      if (!answer.ok || text === '') {
+        setMicError(answer.error ?? 'Nothing was heard')
+        return
+      }
+      const typed = chat.draft.trimEnd()
+      const next = typed === '' ? text : `${typed} ${text}`
+      chat.setDraft(next)
+      putCaret.current = next.length
+      setCaret(next.length)
+    } catch (error) {
+      setMicError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setHearing(false)
+      field.current?.focus()
+    }
+  }
+  const recorder = useRecorder(chat.settings.microphoneDeviceId, (audio) => void hear(audio))
+  const { cancel: dropRecording } = recorder
+  // The microphone's own error, until it is closed.
+  const [closedError, setClosedError] = useState('')
+  const problem = micError !== '' ? micError : recorder.error !== closedError ? recorder.error : ''
+  useEffect(() => () => dropRecording(), [dropRecording, chat.session?.id])
+  const record = (): void => {
+    if (recorder.recording) {
+      recorder.stop()
+      return
+    }
+    setMicError('')
+    recorder.start()
+    field.current?.focus()
+  }
   const submit = (): void => {
     if (COMPACT.test(chat.draft)) {
       chat.setCompacting('typed')
@@ -682,12 +724,16 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                   : writing
                     ? 'Writing down what you said'
                     : (unheard ?? (chat.working ? 'Queue a message, or ! and a command' : 'Message, or ! and a command'))
-                : chat.working
+                : recorder.recording
+                  ? 'Listening'
+                  : hearing
+                    ? 'Writing down what you said'
+                    : chat.working
                   ? 'Send more: it waits until Claude finishes. ! runs a command now'
                   : 'Ask Claude Code. @ picks a file, ! runs a command'
           }
           disabled={chat.root === undefined}
-          readOnly={listening !== undefined || writing}
+          readOnly={listening !== undefined || writing || recorder.recording || hearing}
           onChange={(event) => {
             recall.current = undefined
             chat.setDraft(event.target.value)
@@ -702,6 +748,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             addFiles(files)
           }}
           onKeyDown={(event) => {
+            if (recorder.recording && (event.key === 'Enter' || event.key === 'Escape')) {
+              event.preventDefault()
+              event.stopPropagation()
+              if (event.key === 'Enter') recorder.stop()
+              else recorder.cancel()
+              return
+            }
             if (found !== undefined && mention !== undefined) {
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault()
@@ -746,6 +799,46 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             submit()
           }}
         />
+        {ON_PHONE || (!recorder.recording && !hearing && problem === '') ? null : (
+          <div className={problem !== '' && !recorder.recording && !hearing ? 'dictating failed' : 'dictating'}>
+            {recorder.recording ? (
+              <>
+                <span className="dictating-dot" />
+                <span className="bars">
+                  {Array.from({ length: BARS }, (_one, index) => (
+                    <span key={index} style={{ height: 4 + (recorder.levels[index] ?? 0) * 14 }} />
+                  ))}
+                </span>
+                <span className="dictating-time">{time(recorder.elapsed)}</span>
+                <span>Recording. Enter puts it in the field, Esc drops it</span>
+              </>
+            ) : hearing ? (
+              <>
+                <Icon name="spinner" size={12} className="spinning" />
+                <span>{model?.state === 'downloading' ? `${downloading(model)}. It is written down once that is done` : 'Writing down what you said'}</span>
+              </>
+            ) : (
+              <span>{problem}</span>
+            )}
+            <div className="spacer" />
+            {hearing ? null : (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={recorder.recording ? 'Drop the recording' : 'Close'}
+                title={recorder.recording ? 'Drop the recording (Esc)' : 'Close'}
+                onClick={() => {
+                  if (recorder.recording) recorder.cancel()
+                  setMicError('')
+                  setClosedError(recorder.error)
+                  field.current?.focus()
+                }}
+              >
+                <Icon name="close" size={12} />
+              </button>
+            )}
+          </div>
+        )}
         <div className="composer-bar">
           <Picker
             label={SESSION_MODES.find((one) => one.mode === chat.mode)?.label ?? 'Ask'}
@@ -868,6 +961,18 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               {host === undefined ? null : <HostDot state={host.state} />}
               {away}
             </span>
+          )}
+          {ON_PHONE || shownAway !== undefined ? null : (
+            <button
+              type="button"
+              className={recorder.recording ? 'icon-button dictate-mic on' : 'icon-button dictate-mic'}
+              disabled={chat.root === undefined || hearing}
+              onClick={record}
+              title={recorder.recording ? 'Put it in the field (Enter)' : 'Dictate'}
+              aria-label={recorder.recording ? 'Stop dictating' : 'Dictate'}
+            >
+              <Icon name={recorder.recording ? 'check' : 'mic'} size={15} />
+            </button>
           )}
           {shownAway !== undefined ? null : chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
             <button
