@@ -19,7 +19,7 @@ import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
 import type { Macs } from '../macs'
 import { awayLine, emptyProfile, projectLabel } from './project'
-import { running } from './Tasks'
+import { running, useNeedsYou } from './Tasks'
 import { ago, byDay, questionLeft } from './time'
 import type { Chat } from './useChat'
 
@@ -121,7 +121,8 @@ export function PhoneBoard({
     for (const one of chat.sessions) count[columnOf(one)] += 1
     return count
   }, [chat.sessions])
-  const asking = shown === 'progress' ? rows.filter((one) => one.state === 'asks') : []
+  const needs = useNeedsYou(shown === 'progress' ? rows : [], chat.shown.kind === 'session' ? chat.shown.id : undefined)
+  const asking = shown === 'progress' ? needs : []
   const rest = rows.filter((one) => !asking.includes(one))
   const [ways, setWays] = useState(false)
   const [scoping, setScoping] = useState(false)
@@ -405,7 +406,7 @@ export function PhoneBoard({
                     <Icon name={foldedDays.has(day.heading) ? 'right' : 'down'} size={13} />
                   </button>
                 ) : asking.length === 0 ? null : (
-                  <div className="phone-head">Sessions</div>
+                  <div className="phone-head">In your order</div>
                 )}
                 {foldedDays.has(day.heading) ? null : <div ref={shown === 'progress' ? restGroup : undefined} className={`phone-group${drag === undefined ? '' : ' dragging'}`}>
                   {day.rows.map((session, at) => (

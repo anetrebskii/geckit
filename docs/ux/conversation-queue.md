@@ -39,6 +39,8 @@ The limit is for tasks. A general question asked with Ask is never counted and n
 
 Moving cards changes nothing by itself. The order only decides who takes the next free slot.
 
+What needs Alex is drawn on top of In progress under "Needs you", the one waiting longest first: asking him, finished and unread, stopped by an error or the plan, or marked Blocked. The rest follows under "In your order". A lifted card keeps its place in the order, which still holds every card, so lifting it changes nothing about who takes a slot. It goes back to its place once it no longer needs him, and one that is open stays on top until it is closed, so it does not move while he reads it. A card dragged lands among the ordered ones; there is no order inside "Needs you". The phone draws the same two groups.
+
 A turn that ended in an error leaves its queued messages for Alex; writing to it again makes them its own to send again. A conversation cut off by GeckIt closing keeps its queued messages until Continue, or until the next start sends them.
 
 ## 4. States

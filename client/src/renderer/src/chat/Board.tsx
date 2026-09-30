@@ -29,7 +29,7 @@ import { emptyProfile, hostName, projectLabel, projectName, tint } from './proje
 import { STATUS_ICONS, Tags, Views } from './Sidebar'
 import { BoardSearch } from './Switcher'
 import type { Seek } from './Switcher'
-import { cardSays, running } from './Tasks'
+import { cardSays, running, useNeedsYou } from './Tasks'
 import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
 import { ago, byDay } from './time'
@@ -52,9 +52,9 @@ const COLUMNS: readonly { readonly status: SessionStatus | undefined; readonly t
   { status: 'done', title: 'Done' },
 ]
 
-/** Before which card of In progress the pointer is, counting the cards above it. */
+/** Before which card of In progress the pointer is, counting the cards above it in the part kept in the person's order. */
 function landingAt(column: HTMLElement, y: number): number {
-  const cards = [...column.querySelectorAll<HTMLElement>('[data-card]')]
+  const cards = [...column.querySelectorAll<HTMLElement>('[data-kept] [data-card]')]
   const at = cards.findIndex((card) => {
     const box = card.getBoundingClientRect()
     return y < box.top + box.height / 2
@@ -239,6 +239,17 @@ export function Board({
     [chat.sessions, chat.settings.progressOrder],
   )
   const progress = columns[0]?.rows ?? []
+  // What needs the person is drawn on top of In progress; the rest keeps the order, which still holds every card and decides who takes a free slot.
+  const needs = useNeedsYou(progress, chat.shown.kind === 'session' ? chat.shown.id : undefined)
+  const kept = progress.filter((one) => !needs.includes(one))
+  const groups = (column: (typeof columns)[number]): { readonly heading: string; readonly rows: readonly ChatSession[] }[] => {
+    if (column.status !== undefined) return byDay(column.rows, now, column.status === 'done')
+    if (needs.length === 0) return [{ heading: '', rows: kept }]
+    return [
+      { heading: 'Needs you', rows: needs },
+      { heading: 'In your order', rows: kept },
+    ]
+  }
   // Where in In progress a dragged card would land. The order is who a free slot goes to first, and moving a card changes nothing else.
   const [landing, setLanding] = useState<number | undefined>()
 
@@ -252,7 +263,7 @@ export function Board({
   // Where Shift+click counts from: the card pressed last.
   const from = useRef<string | undefined>(undefined)
   const order = columns.flatMap((column) =>
-    byDay(column.rows, now, column.status === 'done').flatMap((day) => (folded.has(day.heading) ? [] : day.rows.map((one) => one.id))),
+    groups(column).flatMap((day) => (folded.has(day.heading) ? [] : day.rows.map((one) => one.id))),
   )
   const press = (session: ChatSession, how: 'open' | 'one' | 'run'): void => {
     const start = from.current === undefined ? -1 : order.indexOf(from.current)
@@ -311,10 +322,11 @@ export function Board({
     if (status === undefined && where !== undefined) dropSessions(ids, where)
   }
 
-  // Conversations dropped in In progress take that place among the others.
+  // Conversations dropped in In progress take that place among the others, before the card they were dropped above.
   const dropSessions = (ids: readonly string[], where: number): void => {
     const rest = progress.map((session) => session.id).filter((id) => !ids.includes(id))
-    const at = progress.slice(0, where).filter((session) => !ids.includes(session.id)).length
+    const before = kept.slice(where).find((session) => !ids.includes(session.id))
+    const at = before === undefined ? rest.length : rest.indexOf(before.id)
     const placed = [...rest.slice(0, at), ...ids, ...rest.slice(at)]
     chat.change({ progressOrder: [...placed, ...chat.settings.progressOrder.filter((id) => !placed.includes(id))] })
   }
@@ -366,8 +378,8 @@ export function Board({
                 <span className="count">{column.rows.length}</span>
               </div>
               <div className="board-cards">
-                {byDay(column.rows, now, column.status === 'done').map((day) => (
-                  <div key={day.heading} className="board-day">
+                {groups(column).map((day) => (
+                  <div key={day.heading} className="board-day" {...(column.status === undefined && day.rows === kept ? { 'data-kept': '' } : {})}>
                     {day.heading === '' ? null : (
                       <button type="button" className="board-day-head" onClick={() => fold(day.heading)}>
                         <Icon name={folded.has(day.heading) ? 'right' : 'down'} size={10} />
@@ -378,7 +390,7 @@ export function Board({
                     )}
                     {(folded.has(day.heading) ? [] : day.rows).map((session) => (
                       <Fragment key={session.id}>
-                      {column.status === undefined && landing === progress.indexOf(session) ? <div className="board-drop" /> : null}
+                      {column.status === undefined && landing !== undefined && landing === kept.indexOf(session) ? <div className="board-drop" /> : null}
                       <BoardCard
                         chat={chat}
                         session={session}
@@ -398,7 +410,7 @@ export function Board({
                     ))}
                   </div>
                 ))}
-                {column.status === undefined && landing === progress.length ? <div className="board-drop" /> : null}
+                {column.status === undefined && landing === kept.length ? <div className="board-drop" /> : null}
               </div>
             </div>
           ))}

@@ -45,6 +45,24 @@ export function cardSays(session: ChatSession): { readonly words: string; readon
   return undefined
 }
 
+/** Whether a conversation in In progress waits on the person: asking, finished and unread, stopped, or marked Blocked. */
+export function needsYou(session: ChatSession): boolean {
+  if (session.state === 'working' || session.waits === true || session.runs !== undefined) return false
+  return session.state === 'asks' || session.state === 'unread' || session.state === 'failed' || session.state === 'limit' || session.status === 'blocked'
+}
+
+/**
+ * The conversations of In progress drawn over the others because they need the person, the one waiting longest first.
+ * One that stops needing them while it is open stays until it is closed, so it does not jump away while being read.
+ */
+export function useNeedsYou(rows: readonly ChatSession[], open: string | undefined): readonly ChatSession[] {
+  const [held, setHeld] = useState<string | undefined>()
+  const lifted = open !== undefined && rows.some((one) => one.id === open && needsYou(one))
+  if (lifted && held !== open) setHeld(open)
+  if (!lifted && held !== undefined && held !== open) setHeld(undefined)
+  return rows.filter((one) => needsYou(one) || (one.id === open && one.id === held)).sort((one, other) => one.at - other.at)
+}
+
 /** How long something ran, as short as a row allows: 12s, 3m 4s, 1h 2m. */
 function lasted(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000))
