@@ -47,6 +47,7 @@
   --menu: rgb(246 246 248 / 96%);
   --lift: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 18px 50px rgb(0 0 0 / 22%);
   --review-solid: #c08a1e;
+  --unread: #007aff;
   --done-solid: #2e9a42;
   --more-solid: #8e8e93;
   --favorite: #ffcc00;
@@ -103,6 +104,7 @@
   --menu: rgb(44 44 46 / 96%);
   --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
   --review-solid: #a8781a;
+  --unread: #0a84ff;
   --done-solid: #2b8a3c;
   --more-solid: #636366;
   --favorite: #ffd60a;
@@ -158,6 +160,7 @@
     --menu: rgb(44 44 46 / 96%);
     --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
     --review-solid: #a8781a;
+    --unread: #0a84ff;
     --done-solid: #2b8a3c;
     --more-solid: #636366;
     --favorite: #ffd60a;
@@ -2144,7 +2147,7 @@ html.framed .topbar {
 }
 
 .row .state.unread {
-  background: var(--accent);
+  background: var(--unread);
 }
 
 .row .state.failed,
@@ -5256,7 +5259,7 @@ html.framed .board-head {
 }
 
 .state-said.said-unread .state-dot {
-  background: var(--accent);
+  background: var(--unread);
 }
 
 /* Still running, with the turn over: the ring the list uses for the same thing. */
@@ -5904,7 +5907,7 @@ html.phone button:active:not(:disabled) {
 }
 
 .phone-dot.unread {
-  background: var(--accent);
+  background: var(--unread);
 }
 
 .phone-dot.read {

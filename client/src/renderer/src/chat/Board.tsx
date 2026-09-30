@@ -29,7 +29,7 @@ import { emptyProfile, hostName, projectLabel, projectName, tint } from './proje
 import { STATUS_ICONS, Tags, Views } from './Sidebar'
 import { BoardSearch } from './Switcher'
 import type { Seek } from './Switcher'
-import { cardSays, running, useNeedsYou } from './Tasks'
+import { cardSays, running, useNeedsYou, working } from './Tasks'
 import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
 import { ago, byDay } from './time'
@@ -241,12 +241,15 @@ export function Board({
   const progress = columns[0]?.rows ?? []
   // What needs the person is drawn on top of In progress; the rest keeps the order, which still holds every card and decides who takes a free slot.
   const needs = useNeedsYou(progress, chat.shown.kind === 'session' ? chat.shown.id : undefined)
-  const kept = progress.filter((one) => !needs.includes(one))
+  // What works now comes under it, out of the order while it works and back in its place once it stops.
+  const busy = progress.filter((one) => !needs.includes(one) && working(one))
+  const kept = progress.filter((one) => !needs.includes(one) && !busy.includes(one))
   const groups = (column: (typeof columns)[number]): { readonly heading: string; readonly rows: readonly ChatSession[] }[] => {
     if (column.status !== undefined) return byDay(column.rows, now, column.status === 'done')
-    if (needs.length === 0) return [{ heading: '', rows: kept }]
+    if (needs.length === 0 && busy.length === 0) return [{ heading: '', rows: kept }]
     return [
-      { heading: 'Needs you', rows: needs },
+      ...(needs.length === 0 ? [] : [{ heading: 'Needs you', rows: needs }]),
+      ...(busy.length === 0 ? [] : [{ heading: 'Working', rows: busy }]),
       { heading: 'In your order', rows: kept },
     ]
   }

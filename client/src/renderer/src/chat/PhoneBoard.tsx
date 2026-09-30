@@ -19,7 +19,7 @@ import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
 import type { Macs } from '../macs'
 import { awayLine, emptyProfile, projectLabel } from './project'
-import { running, useNeedsYou } from './Tasks'
+import { running, useNeedsYou, working } from './Tasks'
 import { ago, byDay, questionLeft } from './time'
 import type { Chat } from './useChat'
 
@@ -123,7 +123,8 @@ export function PhoneBoard({
   }, [chat.sessions])
   const needs = useNeedsYou(shown === 'progress' ? rows : [], chat.shown.kind === 'session' ? chat.shown.id : undefined)
   const asking = shown === 'progress' ? needs : []
-  const rest = rows.filter((one) => !asking.includes(one))
+  const busy = shown === 'progress' ? rows.filter((one) => !asking.includes(one) && working(one)) : []
+  const rest = rows.filter((one) => !asking.includes(one) && !busy.includes(one))
   const [ways, setWays] = useState(false)
   const [scoping, setScoping] = useState(false)
   const [limiting, setLimiting] = useState(false)
@@ -186,7 +187,7 @@ export function PhoneBoard({
     const placed = [...others.slice(0, landing), moved, ...others.slice(landing)]
     let next = 0
     tap('firm')
-    const order = rows.map((one) => (asking.includes(one) ? one.id : (placed[next++]?.id ?? one.id)))
+    const order = rows.map((one) => (asking.includes(one) || busy.includes(one) ? one.id : (placed[next++]?.id ?? one.id)))
     chat.change({ progressOrder: [...order, ...chat.settings.progressOrder.filter((id) => !order.includes(id))] })
   }
 
@@ -389,6 +390,29 @@ export function PhoneBoard({
             </div>
           </>
         )}
+        {busy.length === 0 ? null : (
+          <>
+            <div className="phone-head">Working</div>
+            <div className="phone-group">
+              {busy.map((session) => (
+                <Row
+                  key={session.id}
+                  chat={chat}
+                  session={session}
+                  now={now}
+                  column={shown}
+                  open={open === session.id}
+                  waiting={undefined}
+                  onOpen={(on) => setOpen(on ? session.id : undefined)}
+                  onMark={(status) => mark(session, status)}
+                  onMore={() => setMore(session)}
+                  onPress={(at) => setPressed({ session, at })}
+                  onAnswer={() => undefined}
+                />
+              ))}
+            </div>
+          </>
+        )}
         {rest.length === 0
           ? null
           : byDay(rest, now, shown === 'done').map((day) => (
@@ -405,7 +429,7 @@ export function PhoneBoard({
                     <span className="n">{day.rows.length}</span>
                     <Icon name={foldedDays.has(day.heading) ? 'right' : 'down'} size={13} />
                   </button>
-                ) : asking.length === 0 ? null : (
+                ) : asking.length === 0 && busy.length === 0 ? null : (
                   <div className="phone-head">In your order</div>
                 )}
                 {foldedDays.has(day.heading) ? null : <div ref={shown === 'progress' ? restGroup : undefined} className={`phone-group${drag === undefined ? '' : ' dragging'}`}>

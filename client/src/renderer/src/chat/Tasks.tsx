@@ -51,6 +51,11 @@ export function needsYou(session: ChatSession): boolean {
   return session.state === 'asks' || session.state === 'unread' || session.state === 'failed' || session.state === 'limit' || session.status === 'blocked'
 }
 
+/** Whether a conversation in In progress is working now, Claude or a command typed after !. */
+export function working(session: ChatSession): boolean {
+  return session.state === 'working' || session.runs !== undefined
+}
+
 /**
  * The conversations of In progress drawn over the others because they need the person, the one waiting longest first.
  * One that stops needing them while it is open stays until it is closed, so it does not jump away while being read.
