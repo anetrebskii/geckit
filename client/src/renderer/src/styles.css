@@ -738,7 +738,7 @@ textarea {
 }
 
 .menu.projects {
-  width: min(340px, calc(100vw - 16px));
+  width: min(420px, calc(100vw - 16px));
 }
 
 .projects-field {
@@ -754,15 +754,29 @@ textarea {
   background: var(--bg-hover);
 }
 
+.menu-item.project-row {
+  padding-block: 4px;
+}
+
+/* One line per project: the name whole, the path after it cut first. */
 .project-row .lines {
   display: flex;
   flex: 1;
-  flex-direction: column;
+  gap: 8px;
+  align-items: baseline;
   min-width: 0;
 }
 
-.project-row .name,
+.project-row .name {
+  flex-shrink: 0;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .project-row .says {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }

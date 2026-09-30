@@ -123,6 +123,8 @@ function Menu({
   readonly onAddHost: () => void
 }): React.JSX.Element {
   const [asked, setAsked] = useState('')
+  // A check pressed in this menu starts a selection, which a row click then adds to rather than replaces.
+  const [started, setStarted] = useState(false)
   // The project whose colours are laid out under it.
   const [painting, setPainting] = useState<string | undefined>()
   const colors = chat.settings.projectColors
@@ -226,7 +228,9 @@ function Menu({
     }
     return chat.chosen.includes(value)
   }
+  const selecting = started || chat.chosen.length > 1
   const also = (value: string): void => {
+    setStarted(value !== ALL)
     if (value === ALL) chat.setScope(ALL)
     else if (value.startsWith(ON_HOST)) {
       const roots = onGroup(value)
@@ -260,7 +264,9 @@ function Menu({
             if (event.key === 'Enter') {
               event.preventDefault()
               const row = rows[here]
-              if (row !== undefined) pick(row.value)
+              if (row === undefined) return
+              if (selecting && row.kind !== 'add') also(row.value)
+              else pick(row.value)
             }
             if (event.key === 'Escape') {
               event.preventDefault()
@@ -280,7 +286,7 @@ function Menu({
                 at={index === here}
                 first={index === 1}
                 onAt={() => setAt(index)}
-                onPick={() => pick(row.value)}
+                onPick={() => (selecting ? also(row.value) : pick(row.value))}
                 onAlso={() => also(row.value)}
               />
             ) : row.kind === 'add' ? (
@@ -299,8 +305,8 @@ function Menu({
               className={`menu-item project-row${on(row.value) ? ' on' : ''}${index === here ? ' at' : ''}`}
               onMouseMove={() => setAt(index)}
               onClick={(event) => {
-                // Held down, the row does what its check does: adds this project to the list beside the others.
-                if (event.metaKey || event.ctrlKey) also(row.value)
+                // Held down, or with several listed, the row does what its check does: adds this project to the list beside the others.
+                if (selecting || event.metaKey || event.ctrlKey) also(row.value)
                 else pick(row.value)
               }}
             >
@@ -375,7 +381,7 @@ function Menu({
           </div>
         ))}
         <div className="menu-divider" />
-        <div className="projects-hint">A check lists a project beside the others. Pressing a row shows only that one.</div>
+        <div className="projects-hint">{selecting ? 'Pressing a row adds it to the list or takes it off. All projects starts again.' : 'A check lists a project beside the others. Pressing a row shows only that one.'}</div>
         {chat.hosts.length > 0 ? null : (
           <button type="button" role="menuitem" className="menu-item" onClick={() => pick(ADD)}>
             <span style={{ width: 14, flexShrink: 0 }}>
