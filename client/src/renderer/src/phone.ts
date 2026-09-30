@@ -33,6 +33,8 @@ export interface Boot {
 const QUIET = 5000
 // What was done while the link was down goes over the next one, unless the Mac stays away this long.
 const HOLD = 60_000
+// A call lost to a dropped link, which the pill already says: not a fault to report.
+const LINK_DOWN = 'The link to the host is down'
 let dropping: number | undefined
 // What the pill says: what is going on, and the step it is at, kept for the pill made once QUIET has passed.
 let saying = { head: 'Not connected to the host', step: 'Trying again' }
@@ -228,7 +230,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     one.onClose(() => {
       if (one !== link) return
       down = true
-      for (const waiting of pending.values()) waiting.failed(new Error('The link to the host is down'))
+      for (const waiting of pending.values()) waiting.failed(new Error(LINK_DOWN))
       pending.clear()
     })
   }
@@ -253,7 +255,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       }
       const expired = window.setTimeout(() => {
         held.splice(held.indexOf(later), 1)
-        failed(new Error('The link to the host is down'))
+        failed(new Error(LINK_DOWN))
       }, HOLD)
       const later = (): void => {
         window.clearTimeout(expired)
@@ -460,7 +462,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       question: errors.question,
       onQuestion: errors.onQuestion,
       answer: errors.answer,
-      hold: errors.hold,
+      hold: (name, message, stack) => {
+        if (message !== LINK_DOWN) errors.hold(name, message, stack)
+      },
     },
     update: {
       view: () => call('update.view'),
