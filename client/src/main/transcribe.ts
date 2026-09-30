@@ -30,7 +30,8 @@ export async function transcribe(request: TranscribeRequest): Promise<Answered> 
     writeFileSync(path, request.audio, 'base64')
     const model = await fetchSpeechModel()
     const threads = String(Math.min(8, availableParallelism()))
-    const { stdout } = await run(whisperCli(), ['-m', model, '-f', path, '-l', 'auto', '-t', threads, '-nt', '-np'], { maxBuffer: 16 * 1024 * 1024 })
+    const language = /^[a-z]{2}$/.test(request.language ?? '') ? (request.language ?? 'auto') : 'auto'
+    const { stdout } = await run(whisperCli(), ['-m', model, '-f', path, '-l', language,'-t', threads, '-nt', '-np'], { maxBuffer: 16 * 1024 * 1024 })
     return { ok: true, text: heard(stdout) }
   } catch (error) {
     const failed = error as { code?: string }

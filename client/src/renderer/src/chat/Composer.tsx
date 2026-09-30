@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { modelName, programLine, SESSION_MODES } from '../../../shared/api'
 import type { SessionImage, SessionMode } from '../../../shared/api'
 import { mentionAt, pathsFor } from '../../../shared/paths'
-import { dictate, languageCode, useDictationLanguage } from '../dictate'
+import { dictate, languageCode, useDictationLanguage, useLevel } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
@@ -124,6 +124,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [listening, setListening] = useState<string | undefined>()
   const [spoken, flipSpoken] = useDictationLanguage(chat.settings.nativeLanguage, chat.settings.secondLanguage)
   const [unheard, setUnheard] = useState<string | undefined>()
+  // The host writes down what was said once the mic stops, which takes a few seconds.
+  const [writing, setWriting] = useState(false)
+  const level = useLevel(listening !== undefined)
   const [looking, setLooking] = useState<string | undefined>()
   const submit = (): void => {
     if (COMPACT.test(chat.draft)) {
@@ -275,8 +278,12 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
     const ears = dictate()
     if (ears === undefined) return
     if (listening !== undefined) {
-      ears.stop()
       setListening(undefined)
+      setWriting(!ears.live)
+      ears
+        .stop()
+        .catch((error: unknown) => setUnheard(error instanceof Error ? error.message : String(error)))
+        .finally(() => setWriting(false))
       return
     }
     const kept = chat.draft.trimEnd()
@@ -290,7 +297,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         setUnheard(error instanceof Error ? error.message : String(error))
       })
   }
-  useEffect(() => () => dictate()?.stop(), [chat.session?.id])
+  useEffect(() => () => dictate()?.cancel(), [chat.session?.id])
   const goal = chat.session?.goal
   const command = chat.root !== undefined && chat.draft.trim().startsWith('!')
   // A first message, or one to a conversation not working, waits in the queue where as many are working as the limit allows.
@@ -649,13 +656,15 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               : ON_PHONE
                 ? listening !== undefined
                   ? `Listening in ${listening}`
-                  : (unheard ?? (chat.working ? 'Queue a message, or ! and a command' : 'Message, or ! and a command'))
+                  : writing
+                    ? 'Writing down what you said'
+                    : (unheard ?? (chat.working ? 'Queue a message, or ! and a command' : 'Message, or ! and a command'))
                 : chat.working
                   ? 'Send more: it waits until Claude finishes. ! runs a command now'
                   : 'Ask Claude Code. @ picks a file, ! runs a command'
           }
           disabled={chat.root === undefined}
-          readOnly={listening !== undefined}
+          readOnly={listening !== undefined || writing}
           onChange={(event) => {
             recall.current = undefined
             chat.setDraft(event.target.value)
@@ -831,13 +840,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {/* Otherwise an empty field offers dictation in the send button's place, as Messages does. */}
           {/* Beside the mic, the language it listens in: a press switches to the other of the two in Settings, and it stays so. */}
           {/* With a picture attached, or Stop in the round button, the mic and language sit to its left, so words can still be said. */}
-          {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' ? (
+          {shownAway !== undefined ? null : ON_PHONE && dictate()?.live === true && listening === undefined && chat.draft.trim() === '' ? (
             <button type="button" className={chat.pictures.length > 0 || chat.working ? 'spoken beside' : 'spoken'} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
               {languageCode(spoken)}
             </button>
           ) : null}
           {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
-            <button type="button" className="send mic beside" disabled={cannot} onClick={listen} aria-label={`Dictate in ${spoken}`}>
+            <button type="button" className="send mic beside" disabled={cannot || writing} onClick={listen} aria-label={`Dictate in ${spoken}`}>
               <Icon name="mic" size={16} />
             </button>
           ) : null}
@@ -845,11 +854,12 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             <button
               type="button"
               className={listening !== undefined ? 'send listening' : 'send'}
-              disabled={cannot}
+              style={{ '--level': level } as React.CSSProperties}
+              disabled={cannot || writing}
               onClick={listen}
               aria-label={listening !== undefined ? 'Stop dictating' : `Dictate in ${spoken}`}
             >
-              <Icon name={listening !== undefined ? 'stop' : 'mic'} size={listening !== undefined ? 12 : 16} />
+              <Icon name={writing ? 'spinner' : listening !== undefined ? 'stop' : 'mic'} size={listening !== undefined ? 12 : 16} />
             </button>
           ) : chat.working && ON_PHONE && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? null : chat.working ? (
             <button type="button" className="send stop" onClick={chat.stop} title={chat.settings.chatView === 'board' ? `Stop (${MOD}+.)` : `Stop (Esc, ${MOD}+.)`} aria-label="Stop">

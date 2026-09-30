@@ -71,6 +71,8 @@ export function Icon({
   const path = PATHS[name]
   if (path === undefined) return null
   const filled = FILLED.has(name)
+  // A spinner always turns, whatever it sits in.
+  const classes = name === 'spinner' ? ['spinning', className].filter(Boolean).join(' ') : className
   return (
     <svg
       width={size}
@@ -82,7 +84,7 @@ export function Icon({
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
-      {...(className === undefined ? {} : { className })}
+      {...(classes === undefined ? {} : { className: classes })}
     >
       <path d={path} />
     </svg>

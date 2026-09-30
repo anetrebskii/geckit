@@ -458,7 +458,8 @@ html.keyboard .phone-tabs {
   place-items: center;
   width: 84px;
   height: 84px;
-  margin: 12px auto 16px;
+  /* Room for the ring it grows with the voice, which the sheet would clip. */
+  margin: 26px auto 28px;
   color: var(--on-solid);
   background: var(--text-faint);
   border-radius: 50%;
@@ -466,14 +467,11 @@ html.keyboard .phone-tabs {
 
 .phone-say-mic.on {
   background: var(--danger);
-  animation: phone-breathe 1.4s ease-in-out infinite;
-}
-
-@keyframes phone-breathe {
-  50% {
-    transform: scale(1.08);
-    box-shadow: 0 0 0 12px color-mix(in srgb, var(--danger) 18%, transparent);
-  }
+  box-shadow: 0 0 0 calc(var(--level, 0) * 20px) color-mix(in srgb, var(--danger) 18%, transparent);
+  transform: scale(calc(1 + var(--level, 0) * 0.06));
+  transition:
+    box-shadow 80ms linear,
+    transform 80ms linear;
 }
 
 .phone-say-words {

@@ -6676,6 +6676,8 @@ html.keyboard .phone-task-tools {
 
 .phone-task-tools button.on {
   color: var(--danger);
+  box-shadow: 0 0 0 calc(var(--level, 0) * 9px) color-mix(in srgb, var(--danger) 22%, transparent);
+  transition: box-shadow 80ms linear;
 }
 
 html.phone .phone-task-tools button.spoken {
@@ -7115,10 +7117,15 @@ html.phone .send:disabled {
   background: var(--fill-strong);
 }
 
+/* It swells with the voice, so a silent mic is seen at once. */
 html.phone .send.listening {
   color: var(--danger-text);
   background: var(--danger-solid);
-  animation: breathe 1.6s ease-in-out infinite;
+  box-shadow: 0 0 0 calc(var(--level, 0) * 9px) color-mix(in srgb, var(--danger-solid) 30%, transparent);
+  transform: scale(calc(1 + var(--level, 0) * 0.12));
+  transition:
+    box-shadow 80ms linear,
+    transform 80ms linear;
 }
 
 /* The language dictation listens in, beside the mic, so a task in the other language is one press away. */

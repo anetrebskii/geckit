@@ -604,6 +604,8 @@ export interface AudioDevice {
 export interface TranscribeRequest {
   /** base64 of a WAV at 16 kHz mono, which the window decoded the recording into */
   readonly audio: string
+  /** whisper's two-letter code of the language spoken; found by listening when absent */
+  readonly language?: string
 }
 
 /** The model dictation hears with on this computer, and how far its one download has come. */

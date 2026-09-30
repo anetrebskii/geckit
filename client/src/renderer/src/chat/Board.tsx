@@ -5,7 +5,7 @@ import type { ChatSession, RecordedFrame, SessionImage, SessionStatus } from '..
 import { movedOrder, ordered } from '../../../shared/order'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
-import { dictate, languageCode, useDictationLanguage } from '../dictate'
+import { dictate, languageCode, useDictationLanguage, useLevel } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
@@ -1171,6 +1171,8 @@ function PhoneNewTask({
   const [choosing, setChoosing] = useState(false)
   const [recording, setRecording] = useState(record)
   const [listening, setListening] = useState(false)
+  const [writing, setWriting] = useState(false)
+  const level = useLevel(listening)
   // Dictation goes after what was already typed, as the composer's does.
   const typed = useRef('')
   const [spoken, flipSpoken] = useDictationLanguage(chat.settings.nativeLanguage, chat.settings.secondLanguage)
@@ -1178,8 +1180,9 @@ function PhoneNewTask({
     const ear = dictate()
     if (ear === undefined) return
     if (listening) {
-      ear.stop()
       setListening(false)
+      setWriting(!ear.live)
+      void ear.stop().catch(() => undefined).finally(() => setWriting(false))
       return
     }
     typed.current = text.trim() === '' ? '' : `${text.trimEnd()} `
@@ -1192,7 +1195,7 @@ function PhoneNewTask({
       )
       .catch(() => setListening(false))
   }
-  useEffect(() => () => dictate()?.stop(), [])
+  useEffect(() => () => dictate()?.cancel(), [])
   const [dragged, setDragged] = useState<number | undefined>()
   const [looking, setLooking] = useState<string | undefined>()
   const from = useRef<number | undefined>(undefined)
@@ -1268,7 +1271,7 @@ function PhoneNewTask({
             className="phone-task-text"
             value={text}
             aria-label={question ? 'Question' : 'What to do'}
-            placeholder={listening ? 'Listening' : question ? 'Ask anything; it is not a task' : 'What to do'}
+            placeholder={listening ? 'Listening' : writing ? 'Writing down what you said' : question ? 'Ask anything; it is not a task' : 'What to do'}
             onChange={(event) => onText(event.target.value)}
           />
           {copying === undefined ? null : (
@@ -1312,12 +1315,14 @@ function PhoneNewTask({
         </div>
         {/* What adds to the text sits on the keyboard, as in Notes and Mail, so it is in reach while typing. */}
         <div className="phone-task-tools">
-          <button type="button" className={listening ? 'on' : ''} aria-label={listening ? 'Stop dictating' : `Dictate in ${spoken}`} onClick={dictating}>
-            <Icon name={listening ? 'stop' : 'mic'} size={22} />
+          <button type="button" className={listening ? 'on' : ''} style={{ '--level': level } as React.CSSProperties} disabled={writing} aria-label={listening ? 'Stop dictating' : `Dictate in ${spoken}`} onClick={dictating}>
+            <Icon name={writing ? 'spinner' : listening ? 'stop' : 'mic'} size={22} />
           </button>
-          <button type="button" className="spoken" disabled={listening} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
-            {languageCode(spoken)}
-          </button>
+          {dictate()?.live === false ? null : (
+            <button type="button" className="spoken" disabled={listening} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
+              {languageCode(spoken)}
+            </button>
+          )}
           <button type="button" aria-label="From a recording" onClick={() => setRecording(true)}>
             <Icon name="display" size={22} />
           </button>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type { Planned } from '../../../shared/api'
-import { dictate } from '../dictate'
+import { dictate, useLevel } from '../dictate'
 import { phoneCalls } from '../phone-calls'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
@@ -30,6 +30,7 @@ export function PhoneSay({ chat, onClose }: { readonly chat: Chat; readonly onCl
   const [hearing, setHearing] = useState(false)
   const [empty, setEmpty] = useState(false)
   const said = useRef('')
+  const level = useLevel(hearing)
 
   const listen = (): void => {
     const ear = dictate()
@@ -56,23 +57,26 @@ export function PhoneSay({ chat, onClose }: { readonly chat: Chat; readonly onCl
   }
   useEffect(() => {
     void Promise.resolve().then(listen)
-    return () => dictate()?.stop()
+    return () => dictate()?.cancel()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const read = (): void => {
-    const text = said.current.trim()
-    if (text === '') {
+    const ear = dictate()
+    if (said.current.trim() === '' && ear?.live !== false) {
       setEmpty(true)
       return
     }
-    dictate()?.stop()
     setHearing(false)
     const calls = phoneCalls()
     if (calls === undefined) return
     setStep({ kind: 'reading' })
-    calls
-      .readOrders(text)
+    ;(ear?.stop() ?? Promise.resolve())
+      .then(() => {
+        const text = said.current.trim()
+        if (text === '') throw new Error('Nothing heard.')
+        return calls.readOrders(text)
+      })
       .then((answer) => {
         if (answer.ok && answer.plan !== undefined) {
           tap('light')
@@ -116,7 +120,7 @@ export function PhoneSay({ chat, onClose }: { readonly chat: Chat; readonly onCl
     <Sheet title={title} onClose={close} cancel={false} className="phone-say">
       {step.kind === 'listening' || step.kind === 'refused' ? (
         <>
-          <div className={`phone-say-mic${hearing ? ' on' : ''}`}>
+          <div className={`phone-say-mic${hearing ? ' on' : ''}`} style={{ '--level': level } as React.CSSProperties}>
             <Icon name="mic" size={34} />
           </div>
           <div className="phone-say-words">{words === '' ? (step.kind === 'refused' ? step.why : 'Listening') : words}</div>

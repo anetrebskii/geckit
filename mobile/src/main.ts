@@ -15,7 +15,7 @@ import { phoneCalls } from '../../client/src/renderer/src/phone-calls'
 import type { Boot, Installed } from '../../client/src/renderer/src/phone'
 import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
-import type { Dictate } from '../../client/src/renderer/src/dictate'
+import type { Dictate, Level, Voice } from '../../client/src/renderer/src/dictate'
 import type { PickedVideo, Picking } from '../../client/src/renderer/src/picked'
 import { readPairing, roomOf } from '../../client/src/shared/pairing'
 import type { Pairing } from '../../client/src/shared/pairing'
@@ -94,8 +94,11 @@ function useMac(link: string | undefined): void {
 interface Dictation {
   start(options: { language: string }): Promise<void>
   stop(): Promise<void>
+  record(): Promise<void>
+  recorded(options: { keep: boolean }): Promise<{ audio?: string }>
   addListener(event: 'heard', said: (heard: { text: string }) => void): Promise<PluginListenerHandle>
   addListener(event: 'ended', said: () => void): Promise<PluginListenerHandle>
+  addListener(event: 'level', said: (heard: { level: number }) => void): Promise<PluginListenerHandle>
 }
 const dictation = registerPlugin<Dictation>('Dictation')
 let hearing: PluginListenerHandle[] = []
@@ -116,7 +119,22 @@ let hearing: PluginListenerHandle[] = []
       throw error
     })
   },
-  stop: () => void dictation.stop().catch(() => undefined),
+  stop: () => dictation.stop().catch(() => undefined),
+  cancel: () => void dictation.stop().catch(() => undefined),
+  live: true,
+}
+
+// How loud the microphone is while either of the two listens.
+;(window as { geckitLevel?: Level }).geckitLevel = (said) => {
+  const handle = dictation.addListener('level', (heard) => said(heard.level))
+  return () => void handle.then((one) => one.remove())
+}
+
+// The microphone alone, for the host to hear what was said with its own model.
+;(window as { geckitVoice?: Voice }).geckitVoice = {
+  start: () => dictation.record(),
+  stop: async () => (await dictation.recorded({ keep: true })).audio ?? '',
+  drop: () => void dictation.recorded({ keep: false }).catch(() => undefined),
 }
 
 interface Recording {

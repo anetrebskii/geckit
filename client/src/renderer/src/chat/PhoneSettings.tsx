@@ -4,6 +4,8 @@ import { SESSION_MODES, shownProjects } from '../../../shared/api'
 import type { Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, ShortcutDraft, Theme } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
+import { ear, setEar, voice } from '../dictate'
+import type { Ear } from '../dictate'
 import { macs } from '../macs'
 import { phoneCalls } from '../phone-calls'
 import { tap } from '../tap'
@@ -74,7 +76,8 @@ export function PhoneSettings({
 }
 
 function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) => void }): React.JSX.Element {
-  const [picking, setPicking] = useState<'theme' | 'mode' | 'limit' | 'language' | undefined>()
+  const [picking, setPicking] = useState<'theme' | 'mode' | 'limit' | 'language' | 'ear' | undefined>()
+  const [heardBy, setHeardBy] = useState<Ear>(ear)
   const [switching, setSwitching] = useState(false)
   const [paired, setPaired] = useState(() => macs()?.list())
   const [version, setVersion] = useState<string | undefined>()
@@ -174,8 +177,13 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       <div className="phone-head">Dictation</div>
       <div className="phone-group">
         <Cell label="Your language" value={settings.nativeLanguage} onPress={() => setPicking('language')} />
+        {voice() === undefined ? null : <Cell label="Heard by" value={heardBy === 'host' ? (thisMac?.name ?? 'Host') : 'iPhone'} onPress={() => setPicking('ear')} />}
       </div>
-      <div className="phone-note">What iOS listens for in the composer, in Say it, and in recordings.</div>
+      <div className="phone-note">
+        {voice() === undefined || heardBy === 'phone'
+          ? 'What iOS listens for in the composer, in Say it, and in recordings.'
+          : 'The host writes down what you say in the composer and in Say it with its own speech model, in whichever language you speak, once you stop. Recordings are heard by iOS.'}
+      </div>
 
       <div className="phone-head">About</div>
       <div className="phone-group">
@@ -219,6 +227,22 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
           chosen={settings.nativeLanguage}
           choices={[...new Set([settings.nativeLanguage, ...LANGUAGES])].map((one) => ({ value: one, label: one }))}
           onPick={(value) => chat.change({ nativeLanguage: value })}
+          onClose={() => setPicking(undefined)}
+        />
+      ) : picking === 'ear' ? (
+        <Menu
+          anchor={new DOMRect()}
+          title="Dictation heard by"
+          explained
+          chosen={heardBy}
+          choices={[
+            { value: 'host', label: thisMac?.name ?? 'Host', says: 'Its own speech model, which hears which language you speak. The words come once you stop.' },
+            { value: 'phone', label: 'iPhone', says: 'iOS speech recognition. The words come while you speak.' },
+          ]}
+          onPick={(value) => {
+            setEar(value as Ear)
+            setHeardBy(value as Ear)
+          }}
           onClose={() => setPicking(undefined)}
         />
       ) : null}
