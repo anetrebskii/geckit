@@ -7,5 +7,5 @@
     "noEmit": true,
     "composite": true
   },
-  "include": ["src/renderer/src", "src/shared", "src/preload", "test/peer.test.ts", "test/phone.test.ts", "test/plans.test.ts", "test/started.test.ts", "test/transcript.test.ts"]
+  "include": ["src/renderer/src", "src/shared", "src/preload", "test/peer.test.ts", "test/phone.test.ts", "test/plans.test.ts", "test/started.test.ts", "test/transcript.test.ts", "test/switcher.test.ts"]
 }

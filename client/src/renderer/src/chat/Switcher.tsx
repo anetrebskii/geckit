@@ -41,6 +41,9 @@ const named = (session: ChatSession, words: readonly string[]): boolean => {
   return words.every((word) => against.includes(word))
 }
 
+/** Whether opening the row goes to what was found in what was said: only when its name did not answer. */
+export const seeks = (row: Row, words: readonly string[]): boolean => row.hit !== undefined && !named(row.session, words)
+
 /** How closely the title answers: 0 starts with what was typed, 1 has a word starting with it, 2 holds it, 3 only the project or the last line does. */
 function closeness(session: ChatSession, words: readonly string[]): number {
   const title = session.title.toLowerCase()
@@ -283,7 +286,7 @@ export function Switcher({
   const take = (row: Row | undefined): void => {
     if (row !== undefined) {
       chat.show(row.session)
-      if (row.hit !== undefined) onSeek({ id: row.session.id, words })
+      if (seeks(row, words)) onSeek({ id: row.session.id, words })
     }
     onClose()
   }
@@ -353,7 +356,7 @@ export function BoardSearch({ chat, onSeek }: { readonly chat: Chat; readonly on
   const take = (row: Row | undefined): void => {
     if (row !== undefined) {
       chat.show(row.session)
-      if (row.hit !== undefined) onSeek({ id: row.session.id, words })
+      if (seeks(row, words)) onSeek({ id: row.session.id, words })
     }
     shut()
   }

@@ -5,7 +5,7 @@ import { projectColor } from '../../../shared/project-color'
 import { Icon } from '../ui/Icon'
 import { Page } from './PhoneKit'
 import { projectLabel } from './project'
-import { Marked, useFound } from './Switcher'
+import { Marked, seeks, useFound } from './Switcher'
 import type { Seek } from './Switcher'
 import { ago } from './time'
 import type { Chat } from './useChat'
@@ -64,7 +64,7 @@ export function PhoneSearch({ chat, shown, onSeek }: { readonly chat: Chat; read
                   type="button"
                   className="phone-found"
                   onClick={() => {
-                    if (words.length > 0) onSeek({ id: row.session.id, words })
+                    if (seeks(row, words)) onSeek({ id: row.session.id, words })
                     field.current?.blur()
                     chat.show(row.session)
                   }}
