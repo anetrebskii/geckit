@@ -100,4 +100,5 @@ Both off until asked, as in Notula. On the first start a card asks whether GeckI
 - Node 22+ (electron-vite 5).
 - The package is ESM: `"type": "module"` in `client/package.json`.
 - Tests run against recorded `claude` output in `client/test/fixtures/`, so they cost nothing.
+- Before calling a UI change done, review it against `docs/performance.md` with the `performance-review` skill (`.claude/skills/performance-review/`): the checklist of what made the board, lists and hover slow, and how to measure the running app without restarting it.
 - macOS users may need `xattr -d com.apple.quarantine /Applications/GeckIt.app` after installing.
