@@ -56,6 +56,13 @@ export interface Held {
   leave?(): void
 }
 
+/** GECKIT.md is the installed GeckIt's and names its command, so a conversation in a copy run from the source is told which command reaches that copy. */
+function sourceArgs(): string[] {
+  const command = process.env['GECKIT_SOURCE_CLI']
+  if (command === undefined) return []
+  return ['--append-system-prompt', `This conversation runs in GeckIt started from its source, not the installed app. Wherever GECKIT.md names ${command.replace(/-local$/, '')}, use ${command} instead: the other one reaches only the installed GeckIt.`]
+}
+
 /** What `claude` is started with for a conversation, the same wherever it runs. */
 export function claudeArgs(options: Pick<ClaudeOptions, 'id' | 'resume' | 'mode' | 'model' | 'fork'>): string[] {
   return [
@@ -74,6 +81,7 @@ export function claudeArgs(options: Pick<ClaudeOptions, 'id' | 'resume' | 'mode'
     // here would have none of the tools a terminal one has. Without the
     // extension the server simply does not connect.
     '--chrome',
+    ...sourceArgs(),
     ...(options.model === undefined ? [] : ['--model', options.model]),
     ...(options.resume ? ['--resume', options.id] : ['--session-id', options.id]),
     ...(options.resume || options.fork === undefined

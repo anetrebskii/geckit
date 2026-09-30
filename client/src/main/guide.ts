@@ -164,6 +164,9 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
     await mkdir(join(command, '..'), { recursive: true })
       .then(() => writeFile(command, launcher()))
       .then(() => chmod(command, 0o755))
+      .then(() => {
+        process.env['GECKIT_SOURCE_CLI'] = command
+      })
       .catch(() => undefined)
     return
   }
