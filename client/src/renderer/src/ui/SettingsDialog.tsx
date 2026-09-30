@@ -56,6 +56,7 @@ const ANYWHERE_SAID: readonly (readonly [Anywhere, string])[] = [
   ['correct', 'Correct the selected text'],
   ['dictate', 'Dictate'],
   ['record', 'Record the screen'],
+  ['screenshot', 'Screenshot into a task or question'],
   ['orders', 'Say what to do'],
   ['search', 'Search conversations'],
 ]

@@ -17,6 +17,7 @@ export type EventName =
   | 'shortcutPressed'
   | 'orders'
   | 'record'
+  | 'screenshot'
   | 'phoneOpened'
 
 export function countEvent(client: string, name: EventName, version: string): void {

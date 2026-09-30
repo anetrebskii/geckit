@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DEFAULT_SETTINGS, homeOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
-import type { ChatSession, CutOff, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
+import type { ChatSession, CutOff, SessionImage, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
 import { linksIn, shortUrl } from '../../../shared/links'
 import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
@@ -96,6 +96,18 @@ export function Chat(): React.JSX.Element {
   // On the phone, New task opened to be filled from a recording.
   const [recordFirst, setRecordFirst] = useState(false)
   const [asking, setAsking] = useState(() => keptTask(true) !== undefined)
+  // The pictures a form opens with: the screenshot that opened it, or what the other form held.
+  const [seed, setSeed] = useState<readonly SessionImage[]>([])
+  const switchForm = (pictures: readonly SessionImage[]): void => {
+    setSeed(pictures)
+    setMaking((was) => !was)
+    setAsking((was) => !was)
+  }
+  const closeForm = (): void => {
+    setMaking(false)
+    setAsking(false)
+    setSeed([])
+  }
   const [cut, setCut] = useState<readonly CutOff[] | undefined>()
   useEffect(() => {
     if (ON_PHONE) return
@@ -222,6 +234,16 @@ export function Chat(): React.JSX.Element {
   }, [])
 
   useEffect(() => window.geckit.chat.onSpotlight((again) => setSwitching((up) => !(again && up))), [])
+  // A screenshot with no form open opens New task with it; an open form takes it itself.
+  useEffect(
+    () =>
+      window.geckit.chat.onScreenshot((image) => {
+        if (making || asking) return
+        setSeed([image])
+        setMaking(true)
+      }),
+    [making, asking],
+  )
   useEffect(() => window.geckit.shortcuts.onManage((edit) => setManaging({ edit, at: Date.now() })), [])
   // After every listener here and in useChat, which effects are set up in the order they are written.
   useEffect(() => window.geckit.chat.listening(), [])
@@ -265,8 +287,7 @@ export function Chat(): React.JSX.Element {
       if (making || asking) {
         if (event.key === 'Escape') {
           event.preventDefault()
-          setMaking(false)
-          setAsking(false)
+          closeForm()
         }
         return
       }
@@ -473,15 +494,15 @@ export function Chat(): React.JSX.Element {
       {overBoard && !making && !asking ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
       {making ? (
         <>
-          <div className="talk-scrim" onMouseDown={() => setMaking(false)} />
-          <NewTask chat={chat} record={recordFirst} onClose={() => setMaking(false)} />
+          <div className="talk-scrim form-scrim" onMouseDown={closeForm} />
+          <NewTask chat={chat} record={recordFirst} seed={seed} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} />
         </>
       ) : null}
       {cut === undefined ? null : <CutOffDialog list={cut} onClose={() => setCut(undefined)} />}
       {asking ? (
         <>
-          <div className="talk-scrim" onMouseDown={() => setAsking(false)} />
-          <NewTask question chat={chat} onClose={() => setAsking(false)} />
+          <div className="talk-scrim form-scrim" onMouseDown={closeForm} />
+          <NewTask question chat={chat} seed={seed} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} />
         </>
       ) : null}
       {/* There is no sidebar to make wider on the board. */}

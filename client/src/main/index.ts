@@ -151,6 +151,7 @@ const CORRECT = ANYWHERE.correct
 const SPOTLIGHT = ANYWHERE.search
 const ORDER = ANYWHERE.orders
 const RECORD = ANYWHERE.record
+const SCREENSHOT = ANYWHERE.screenshot
 
 let sessions: Sessions | undefined
 let lineup: Lineup = { working: 0, limit: 0 }
@@ -518,6 +519,31 @@ async function readRecorded(recording: Recording): Promise<Answered> {
   return { ok: true, plan: [line], heard: recording.text }
 }
 
+/** The screen under the pointer, as a picture for the New task form, or for the form already open. */
+async function screenshot(): Promise<void> {
+  track('screenshot')
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  const width = display.size.width * display.scaleFactor
+  const height = display.size.height * display.scaleFactor
+  // The size Claude reads a picture at, as the form makes a pasted one.
+  const scale = Math.min(1, 1568 / Math.max(width, height))
+  const screens = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(width * scale), height: Math.round(height * scale) } })
+  if (process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+    void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
+    return
+  }
+  const source = screens.find((one) => one.display_id === String(display.id)) ?? screens[0]
+  if (source === undefined || source.thumbnail.isEmpty()) return
+  const image: SessionImage = { media: 'image/png', data: source.thumbnail.toPNG().toString('base64') }
+  openChat()
+  tellChat('chat:screenshot', image)
+}
+
+function registerScreenshot(): void {
+  const took = globalShortcut.register(SCREENSHOT, () => void screenshot())
+  if (!took) log.warn(`${SCREENSHOT} is taken by something else, the screenshot has no shortcut`)
+}
+
 function registerCorrect(): void {
   const took = globalShortcut.register(CORRECT, () => {
     track('shortcutPressed')
@@ -548,6 +574,7 @@ const REGISTER: Readonly<Record<Anywhere, () => void>> = {
   search: registerSpotlight,
   orders: registerOrder,
   record: registerRecord,
+  screenshot: registerScreenshot,
 }
 
 /** The shortcuts in any application that are on, as Settings has them: each taken or given back as it changes. */

@@ -651,6 +651,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
           if (notice.session !== watched) said(notice)
         }),
       onSpotlight: never,
+      onScreenshot: never,
       listening: nothing,
     },
     lineup: {

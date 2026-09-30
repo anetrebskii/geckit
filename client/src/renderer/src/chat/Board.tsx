@@ -776,6 +776,8 @@ export function NewTask({
   onClose,
   question = false,
   record = false,
+  seed = [],
+  onSwitch,
 }: {
   readonly chat: Chat
   readonly onClose: () => void
@@ -783,6 +785,10 @@ export function NewTask({
   readonly question?: boolean
   /** On the phone: opened to be filled from a recording, whose picker comes up at once. */
   readonly record?: boolean
+  /** The pictures it opens with: a screenshot that opened it, or what the other form held. */
+  readonly seed?: readonly SessionImage[]
+  /** Turned from a task into a question or back, with the pictures carried over; what is written goes over through what the other form keeps. */
+  readonly onSwitch?: ((pictures: readonly SessionImage[]) => void) | undefined
 }): React.JSX.Element {
   const [kept] = useState(() => keptTask(question))
   const [root, setRoot] = useState(() => kept?.root ?? chat.root ?? shownProjects(chat.settings)[0] ?? '')
@@ -793,7 +799,7 @@ export function NewTask({
   useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal })), [question, root, text, goal])
   // Closed on purpose, it is let go of; a restart does not unmount it, so what was written stays for the next start.
   useEffect(() => () => localStorage.removeItem(keptKey(question)), [question])
-  const [pictures, setPictures] = useState<readonly SessionImage[]>([])
+  const [pictures, setPictures] = useState<readonly SessionImage[]>(seed)
   const [over, setOver] = useState(false)
   const [recorded, setRecorded] = useState<Recorded | undefined>(undefined)
   const [looking, setLooking] = useState<string | undefined>()
@@ -801,6 +807,8 @@ export function NewTask({
   const [copying, setCopying] = useState<{ readonly text: string; readonly failed: boolean } | undefined>()
   const field = useRef<HTMLTextAreaElement>(null)
   useEffect(() => field.current?.focus(), [])
+  // A screenshot taken while the form is open goes among its pictures.
+  useEffect(() => window.geckit.chat.onScreenshot((image) => setPictures((held) => [...held, image].slice(0, 8))), [])
 
   // While the form is open, a recording is made for it: from its own button, the menu, or Cmd+Alt+R.
   useEffect(() => {
@@ -919,7 +927,26 @@ export function NewTask({
         start()
       }}
     >
-      <div className="new-task-head">{question ? 'Ask a question' : 'New task'}</div>
+      {onSwitch === undefined ? (
+        <div className="new-task-head">{question ? 'Ask a question' : 'New task'}</div>
+      ) : (
+        <div className="new-task-head new-task-kinds">
+          {[false, true].map((kind) => (
+            <button
+              key={String(kind)}
+              type="button"
+              className={`tab${kind === question ? ' on' : ''}`}
+              onClick={() => {
+                if (kind === question) return
+                localStorage.setItem(keptKey(kind), JSON.stringify({ root, text, goal }))
+                onSwitch(pictures)
+              }}
+            >
+              {kind ? 'Ask a question' : 'New task'}
+            </button>
+          ))}
+        </div>
+      )}
       {question ? null : (
         <label className="new-task-label">
           Project

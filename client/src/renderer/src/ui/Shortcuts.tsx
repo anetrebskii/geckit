@@ -20,6 +20,7 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
       [said(ANYWHERE.search), 'Search conversations; again to put the search away'],
       [said(ANYWHERE.orders), 'Say what to do: start a conversation, answer one, mark one; again to stop talking'],
       [said(ANYWHERE.record), 'Record the screen while you talk, then ask about it or make it a task; again to stop'],
+      [said(ANYWHERE.screenshot), 'Take a screenshot of the screen under the pointer into a new task or question'],
     ],
   },
   {

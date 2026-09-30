@@ -230,6 +230,7 @@ export const ANYWHERE = {
   search: 'CommandOrControl+Alt+P',
   orders: 'CommandOrControl+Alt+G',
   record: 'CommandOrControl+Alt+R',
+  screenshot: 'CommandOrControl+Alt+S',
 } as const
 
 export type Anywhere = keyof typeof ANYWHERE

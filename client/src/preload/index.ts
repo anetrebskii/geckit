@@ -243,6 +243,8 @@ const geckit = {
     onShow: (said: (id: string) => void): (() => void) => listen('chat:show', said),
     /** A recording made for the open form, to go into it. */
     onRecorded: (said: (recording: Recording) => void): (() => void) => listen('chat:recorded', said),
+    /** The screenshot shortcut was pressed, and this is what it took. */
+    onScreenshot: (said: (image: SessionImage) => void): (() => void) => listen('chat:screenshot', said),
     /** Something happened in another conversation while this window is in front. */
     onNotice: (said: (notice: SessionNotice) => void): (() => void) => listen('chat:notice', said),
     /** The search shortcut was pressed in another application, or again over the search. */
