@@ -7,6 +7,8 @@ const TIME = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-di
 const DATE = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
 const DATE_YEAR = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 const WEEKDAY = new Intl.DateTimeFormat(undefined, { weekday: 'short' })
+const DAY_HEAD = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+const DAY_HEAD_YEAR = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
 
 const sameDay = (one: number, other: number): boolean => new Date(one).toDateString() === new Date(other).toDateString()
 
@@ -58,12 +60,12 @@ export function ago(at: number, now: number, dayHeaded = false): string {
 }
 
 /** The day a conversation last changed, as a heading: Today, Yesterday, then the date itself. */
-function dayOf(at: number, now: number): string {
+function dayOf(at: number, today: string, yesterday: string, year: number): string {
   const said = new Date(at)
-  if (said.toDateString() === new Date(now).toDateString()) return 'Today'
-  if (said.toDateString() === new Date(now - DAY).toDateString()) return 'Yesterday'
-  const year = said.getFullYear() === new Date(now).getFullYear() ? {} : { year: 'numeric' as const }
-  return said.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...year })
+  const day = said.toDateString()
+  if (day === today) return 'Today'
+  if (day === yesterday) return 'Yesterday'
+  return (said.getFullYear() === year ? DAY_HEAD : DAY_HEAD_YEAR).format(said)
 }
 
 /** The cards under the day they were last touched, the newest day first, or all of them under nothing. */
@@ -73,9 +75,12 @@ export function byDay(
   wanted: boolean,
 ): { readonly heading: string; readonly rows: readonly ChatSession[] }[] {
   if (!wanted) return [{ heading: '', rows }]
+  const today = new Date(now).toDateString()
+  const yesterday = new Date(now - DAY).toDateString()
+  const year = new Date(now).getFullYear()
   const days: { heading: string; rows: ChatSession[] }[] = []
   for (const session of rows) {
-    const heading = dayOf(session.at, now)
+    const heading = dayOf(session.at, today, yesterday, year)
     const last = days.at(-1)
     if (last?.heading === heading) last.rows.push(session)
     else days.push({ heading, rows: [session] })
