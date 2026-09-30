@@ -29,7 +29,7 @@ import { emptyProfile, hostName, projectLabel, projectName, tint } from './proje
 import { STATUS_ICONS, Tags, Views } from './Sidebar'
 import { BoardSearch } from './Switcher'
 import type { Seek } from './Switcher'
-import { running } from './Tasks'
+import { cardSays, running } from './Tasks'
 import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
 import { ago, byDay } from './time'
@@ -520,18 +520,6 @@ export function Board({
   )
 }
 
-/** What the card says is happening in it, in the words the rest of the window uses. */
-function standing(session: ChatSession): { readonly words: string; readonly tone: string } | undefined {
-  if (session.state === 'working') return { words: 'Claude is working', tone: 'said-working' }
-  if (session.state === 'asks') return { words: 'Asking you', tone: 'said-asks' }
-  if (session.waits === true) return { words: 'Waiting for a slot', tone: '' }
-  if (session.state === 'unread') return { words: 'Waiting for you', tone: 'said-unread' }
-  if (session.state === 'failed') return { words: 'Stopped by an error', tone: 'said-failed' }
-  if (session.state === 'limit') return { words: 'Out of the plan for now', tone: 'said-failed' }
-  if (session.runs !== undefined) return { words: `Running !${session.runs}`, tone: 'said-working' }
-  return undefined
-}
-
 function Card({
   chat,
   session,
@@ -575,7 +563,7 @@ function Card({
   // Out of reach, what was working or asking there still is, and the card says so in place of what it last said.
   const host = chat.hosts.find((one) => one.id === hostOf(session.root))
   const away = host !== undefined && outOfReach(host.state) && (session.state === 'working' || session.state === 'asks')
-  const stands = away ? { words: outOfReachLine(host.name), tone: 'said-away' } : standing(session)
+  const stands = away ? { words: outOfReachLine(host.name), tone: 'said-away' } : cardSays(session)
   const background = session.tasks?.filter(running).length ?? 0
   const queued = session.queued?.length ?? 0
   // The line above already says it is working, so what it says it is doing does not say it again.

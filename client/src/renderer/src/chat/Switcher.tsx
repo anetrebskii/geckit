@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type { ChatFound, ChatSession } from '../../../shared/api'
-import { homeOf } from '../../../shared/api'
+import { SESSION_STATUSES, homeOf } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { projectColor } from '../../../shared/project-color'
 import { homePath, projectLabel, rootLabel, tint } from './project'
 import { MOD } from '../ui/Shortcuts'
-import { Dot } from './Tasks'
+import { cardSays, Dot } from './Tasks'
 import { ago } from './time'
 import type { Chat } from './useChat'
 import { ALL } from './useChat'
@@ -39,6 +39,27 @@ const used = (session: ChatSession): number => Math.max(session.seen ?? 0, sessi
 const named = (session: ChatSession, words: readonly string[]): boolean => {
   const against = `${session.title} ${projectLabel(session.root)} ${session.root} ${session.stands}`.toLowerCase()
   return words.every((word) => against.includes(word))
+}
+
+/** How closely the title answers: 0 starts with what was typed, 1 has a word starting with it, 2 holds it, 3 only the project or the last line does. */
+function closeness(session: ChatSession, words: readonly string[]): number {
+  const title = session.title.toLowerCase()
+  if (!words.every((word) => title.includes(word))) return 3
+  if (title.startsWith(words[0] ?? '')) return 0
+  const starts = title.split(/[^\p{L}\p{N}]+/u)
+  return words.every((word) => starts.some((one) => one.startsWith(word))) ? 1 : 2
+}
+
+/** The column the card stands in, and what is happening in it. */
+function Status({ session }: { readonly session: ChatSession }): React.JSX.Element {
+  const marked = SESSION_STATUSES.find((one) => one.status === session.status)
+  const now = cardSays(session)
+  return (
+    <>
+      <span className={`tag ${session.status ?? 'progress'}`}>{marked?.label ?? 'In progress'}</span>{' '}
+      {now === undefined ? null : <span className="now">{now.words} </span>}
+    </>
+  )
 }
 
 /** The folder, where it is the folder that was typed rather than the project's name. */
@@ -77,20 +98,12 @@ interface Row {
 
 /** What is typed, against the conversations here and what the main process finds in what was said. */
 export function useFound(chat: Chat, asked: string): { readonly found: readonly Row[]; readonly words: readonly string[] } {
-  const [every, setEvery] = useState<readonly ChatSession[]>(chat.sessions)
   const [hits, setHits] = useState<{ readonly asked: string; readonly found: readonly ChatFound[] }>({ asked: '', found: [] })
 
   const within = chat.scope === ALL ? undefined : chat.scope
 
   useEffect(() => {
-    let open = true
-    void window.geckit.chat.list(undefined).then((read) => {
-      if (open) setEvery(read.filter((one) => one.question !== true))
-    })
     void window.geckit.chat.search('', within)
-    return () => {
-      open = false
-    }
   }, [within])
 
   useEffect(() => {
@@ -107,6 +120,8 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
     }
   }, [asked, within])
 
+  // Every project's, kept current as conversations start, are renamed and move, rather than read once.
+  const every = chat.everyone.length > 0 ? chat.everyone : chat.sessions
   const all = within === undefined ? every : every.filter((one) => homeOf(one) === within)
 
   const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
@@ -122,7 +137,11 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
       .map((session) => ({ session }))
     return { found: recent, words }
   }
-  const byName = [...all].filter((one) => named(one, words)).sort((one, other) => used(other) - used(one))
+  const byName = [...all]
+    .filter((one) => named(one, words))
+    .map((session) => ({ session, close: closeness(session, words) }))
+    .sort((one, other) => one.close - other.close || used(other.session) - used(one.session))
+    .map(({ session }) => session)
   const shown = new Set(byName.map((one) => one.id))
   const bySaid = [...said.values()].flatMap((hit) => {
     const session = byId.get(hit.id)
@@ -182,6 +201,7 @@ function Rows({
                   <span className="changed">{ago(used(row.session), now)}</span>
                 </span>
                 <span className="stands">
+                  <Status session={row.session} />
                   <span className="where tinted" style={tint(projectColor(homeOf(row.session), chat.settings))}>
                     <Marked text={place(row.session.root, words)} words={words} />
                   </span>

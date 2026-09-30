@@ -33,6 +33,18 @@ export function Dot({ session }: { readonly session: ChatSession }): React.JSX.E
   )
 }
 
+/** What the card says is happening in it, in the words the rest of the window uses. */
+export function cardSays(session: ChatSession): { readonly words: string; readonly tone: string } | undefined {
+  if (session.state === 'working') return { words: 'Claude is working', tone: 'said-working' }
+  if (session.state === 'asks') return { words: 'Asking you', tone: 'said-asks' }
+  if (session.waits === true) return { words: 'Waiting for a slot', tone: '' }
+  if (session.state === 'unread') return { words: 'Waiting for you', tone: 'said-unread' }
+  if (session.state === 'failed') return { words: 'Stopped by an error', tone: 'said-failed' }
+  if (session.state === 'limit') return { words: 'Out of the plan for now', tone: 'said-failed' }
+  if (session.runs !== undefined) return { words: `Running !${session.runs}`, tone: 'said-working' }
+  return undefined
+}
+
 /** How long something ran, as short as a row allows: 12s, 3m 4s, 1h 2m. */
 function lasted(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000))

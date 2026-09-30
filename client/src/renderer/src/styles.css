@@ -4784,6 +4784,18 @@ html.framed .board-head {
   color: var(--text-faint);
 }
 
+/* The column a found conversation stands in, and what is happening in it, ahead of its project. */
+.switcher .stands .tag,
+.board-search-found .stands .tag {
+  display: inline-flex;
+  vertical-align: 1px;
+}
+
+.switcher .stands .now,
+.board-search-found .stands .now {
+  color: var(--text-dim);
+}
+
 .board-new {
   flex-shrink: 0;
   width: auto;
