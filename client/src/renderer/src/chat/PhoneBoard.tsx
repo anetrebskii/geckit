@@ -551,6 +551,7 @@ export function PhoneBoard({
 
 /** The dot, the words and the colour a row's state is said in. */
 function standing(session: ChatSession): { readonly tone: string; readonly words?: string } {
+  if (session.state === 'idle' && session.runs !== undefined && session.typing === true) return { tone: 'asks', words: 'Waiting for you to type' }
   if (session.state === 'working' || session.runs !== undefined) return { tone: 'working', words: 'Working' }
   if (session.state === 'asks') return { tone: 'asks', words: 'Needs an answer' }
   if (session.waits === true) return { tone: 'read', words: 'Waiting for a slot' }

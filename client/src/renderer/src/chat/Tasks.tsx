@@ -42,7 +42,7 @@ export function Dot({ session }: { readonly session: ChatSession }): React.JSX.E
   const background = session.state === 'idle' && !shell && (session.tasks?.some(running) ?? false)
   return (
     <span
-      className={`state ${shell ? 'working' : session.state}${background ? ' background' : ''}`}
+      className={`state ${shell ? (session.typing === true ? 'asks' : 'working') : session.state}${background ? ' background' : ''}`}
       {...(shell ? { title: `Running !${session.runs ?? ''}` } : background ? { title: 'Running in the background' } : {})}
     />
   )
@@ -60,6 +60,7 @@ export function cardSays(session: ChatSession): { readonly words: string; readon
   if (session.state === 'unread') return { words: scripts(session) === undefined ? 'Waiting for you' : `Waiting for you, ${scripts(session)}`, tone: 'said-unread' }
   if (session.state === 'failed') return { words: 'Stopped by an error', tone: 'said-failed' }
   if (session.state === 'limit') return { words: 'Out of the plan for now', tone: 'said-failed' }
+  if (session.runs !== undefined && session.typing === true) return { words: `!${session.runs} waits for you to type`, tone: 'said-asks' }
   if (session.runs !== undefined) return { words: `Running !${session.runs}`, tone: 'said-working' }
   const script = scripts(session)
   if (session.state === 'idle' && script !== undefined) return { words: script.charAt(0).toUpperCase() + script.slice(1), tone: '' }
@@ -68,13 +69,14 @@ export function cardSays(session: ChatSession): { readonly words: string; readon
 
 /** Whether a conversation in In progress waits on the person: asking, finished and unread, stopped, or marked Blocked. */
 export function needsYou(session: ChatSession): boolean {
-  if (session.state === 'working' || session.waits === true || session.runs !== undefined || waitsOnHelpers(session)) return false
+  if (session.state === 'working' || session.waits === true || waitsOnHelpers(session)) return false
+  if (session.runs !== undefined) return session.typing === true
   return session.state === 'asks' || session.state === 'unread' || session.state === 'failed' || session.state === 'limit' || session.status === 'blocked'
 }
 
 /** Whether a conversation in In progress is working now: Claude, a command typed after !, or a helper it is waiting on. */
 export function working(session: ChatSession): boolean {
-  return session.state === 'working' || session.runs !== undefined || waitsOnHelpers(session)
+  return session.state === 'working' || (session.runs !== undefined && session.typing !== true) || waitsOnHelpers(session)
 }
 
 /**

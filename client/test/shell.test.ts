@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { plain, runShell, toldClaude, wantsKeyboard } from '../src/main/sessions/shell'
+import { asksToType, plain, runShell, toldClaude, wantsKeyboard } from '../src/main/sessions/shell'
 
 describe('which commands want a keyboard', () => {
   it('sends editors, pagers, passwords and logins to a terminal', () => {
@@ -11,6 +11,18 @@ describe('which commands want a keyboard', () => {
   it('runs everything else here, a sign-in done in the browser too', () => {
     for (const command of ['git status', 'npm run watch', 'python3 script.py', 'git commit -m "x"', 'git commit -am x', 'git commit --amend --no-edit', 'ls -la | grep more', 'node -e 1', 'gcloud auth login', 'gcloud auth application-default login', 'az login', 'aws sso login --profile dev'])
       expect(wantsKeyboard(command), command).toBe(false)
+  })
+})
+
+describe('a command waiting for an answer', () => {
+  it('stops on a question left open', () => {
+    for (const output of ['Select a subscription and tenant (Type a number or Enter for no changes): ', 'Continue (Y/n)?', 'Overwrite? [y/N]', 'Password:'])
+      expect(asksToType(`[Tenant and subscription selection]\n${output}`), output).toBe(true)
+  })
+
+  it('goes on after a line that is ended, or one that is not a question', () => {
+    for (const output of ['Password:\n', 'Downloading 40%', 'Opening a browser.\n', ''])
+      expect(asksToType(output), output).toBe(false)
   })
 })
 

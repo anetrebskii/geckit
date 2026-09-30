@@ -1422,6 +1422,30 @@ describe('commands typed after !', () => {
     expect(of(built.rows, id)?.stands).not.toBe('Running !npm test')
   })
 
+  it('says one that has stopped on a question waits for you to type, until it prints again or is typed to', async () => {
+    vi.useFakeTimers()
+    try {
+      const shell = fakeShell()
+      const built = build({ shell: shell.shell })
+      const id = await built.sessions.shell({ root: ROOT, command: 'az login' })
+      shell.print('Opening a browser.\n')
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(of(built.rows, id)).not.toHaveProperty('typing')
+
+      shell.print('Opening a browser.\nSelect a subscription and tenant (Type a number or Enter for no changes): ')
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(of(built.rows, id)).not.toHaveProperty('typing')
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(of(built.rows, id)).toMatchObject({ runs: 'az login', typing: true, stands: '!az login waits for you to type' })
+
+      built.sessions.typeShell(id, built.fanned[0]?.items[0]?.id ?? '', '1\n')
+      expect(of(built.rows, id)).not.toHaveProperty('typing')
+      expect(of(built.rows, id)?.stands).toBe('Running !az login')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('stops one that is still running', async () => {
     const shell = fakeShell()
     const built = build({ shell: shell.shell })

@@ -228,6 +228,15 @@ export function wantsKeyboard(command: string): boolean {
   return GIT.test(command) || (/\b(login|signin)\b/.test(command) && !IN_BROWSER.test(command)) || /\baws\s+configure\b/.test(command)
 }
 
+/** A last line left open on a question, as "Continue (Y/n)?" or "Type a number or Enter for no changes):" is. */
+const ASKS = /([:?]|[[(][yn]\/[yn][\])])\s*$/i
+
+/** Whether what a command printed stops on a question, the line not ended, so it waits for something typed. */
+export function asksToType(output: string): boolean {
+  const last = output.slice(output.lastIndexOf('\n') + 1)
+  return last.trim() !== '' && ASKS.test(last)
+}
+
 /** What Claude is handed with the next message, in the shape the terminal's `!` writes it. */
 export function toldClaude(command: string, ran: Ran): readonly [string, string] {
   const said = ran.stdout === '' && ran.stderr === '' ? '(Bash completed with no output)' : ran.stdout

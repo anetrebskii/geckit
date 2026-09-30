@@ -280,6 +280,8 @@ export interface ChatSession {
   readonly goal?: SessionGoal
   /** A command typed after ! that is still running in it, the first where there are more. */
   readonly runs?: string
+  /** That command has stopped on a question and waits for something typed. */
+  readonly typing?: true
   /** The tracker item it is about, from its first message. */
   readonly work?: WorkItem
   /** Where it stands, as the person marked it; saying anything more in it clears it. */

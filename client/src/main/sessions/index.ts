@@ -53,7 +53,7 @@ import { readMcp, serversOf } from './mcp'
 import type { McpChange } from './mcp'
 import { claudeModels } from './models'
 import type { Wanted } from './rule'
-import { runInTerminal, runShell, toldClaude, wantsKeyboard } from './shell'
+import { asksToType, runInTerminal, runShell, toldClaude, wantsKeyboard } from './shell'
 import type { Running } from './shell'
 import { taskFile, taskOutput } from './tasks'
 import { readUsage } from './usage'
@@ -273,6 +273,8 @@ interface Live {
   told: { readonly id: string; readonly blocks: readonly string[] }[]
   /** Commands still running, by the item showing them. */
   commands: Map<string, Running>
+  /** The item of a command that has stopped on a question, until it prints again or is typed to. */
+  typing: string | undefined
   /** What the tool has had in the background, running or ended, until the person clears what ended. */
   tasks: readonly BackgroundTask[]
   /** The name Claude Code was last told, so it is told again after a start or a change. */
@@ -330,6 +332,9 @@ const ended = (tasks: readonly BackgroundTask[]): readonly BackgroundTask[] =>
 
 /** How long Stop waits to be heard before the process is ended instead. */
 const STOP_HEARD = 5_000
+
+/** How long a command typed after ! has to say nothing, after a question, to be taken as waiting for an answer. */
+const ASKS_AFTER = 1_500
 
 /** How long the plan's windows, once asked, are taken to stand. */
 const MEASURED_FOR = 60_000
@@ -635,7 +640,9 @@ export class Sessions {
             ? `Wants to start ${conversations(asking)}`
             : quiet
             ? runs !== undefined
-              ? `Running !${runs.command}`
+              ? live?.typing === runs.id
+                ? `!${runs.command} waits for you to type`
+                : `Running !${runs.command}`
               : note?.cut !== undefined
                 ? 'Stopped when GeckIt closed'
                 : live?.stands || row?.stands
@@ -651,6 +658,7 @@ export class Sessions {
         ...(live === undefined || live.tasks.length === 0 ? {} : { tasks: live.tasks }),
         ...(live?.goal === undefined ? {} : { goal: live.goal }),
         ...(runs === undefined ? {} : { runs: runs.command }),
+        ...(runs !== undefined && live?.typing === runs.id ? { typing: true } : {}),
         ...(work === undefined ? {} : { work }),
         ...(note?.status === undefined ? {} : { status: note.status }),
         ...(queued.length === 0
@@ -935,6 +943,7 @@ export class Sessions {
       remote: undefined,
       told: [],
       commands: new Map(),
+    typing: undefined,
       tasks: [],
       named: undefined,
       back: undefined,
@@ -1155,6 +1164,12 @@ export class Sessions {
     // What it prints is drawn a few times a second, not once a line.
     let printed = ''
     let drawing: NodeJS.Timeout | undefined
+    let quiet: NodeJS.Timeout | undefined
+    const typed = (asks: boolean): void => {
+      if ((held.typing === item.id) === asks) return
+      held.typing = asks ? item.id : held.typing === item.id ? undefined : held.typing
+      this.#changed()
+    }
     const running =
       terminal === undefined
         ? (this.#deps.shell ?? runShell)(held.root, command, (output) => {
@@ -1163,12 +1178,19 @@ export class Sessions {
               drawing = undefined
               if (held.commands.has(item.id)) show({ ...item, output: printed })
             }, 100)
+            typed(false)
+            clearTimeout(quiet)
+            quiet = setTimeout(() => {
+              if (held.commands.has(item.id)) typed(asksToType(printed))
+            }, ASKS_AFTER)
           })
         : runInTerminal(held.root, command, terminal)
     held.commands.set(item.id, running)
     this.#changed()
     void running.done.then((ran) => {
       clearTimeout(drawing)
+      clearTimeout(quiet)
+      if (held.typing === item.id) held.typing = undefined
       held.commands.delete(item.id)
       const { running: _running, ...rest } = item
       show({
@@ -1195,7 +1217,11 @@ export class Sessions {
   }
 
   typeShell(id: string, item: string, text: string): void {
-    this.#live.get(id)?.commands.get(item)?.write?.(text)
+    const live = this.#live.get(id)
+    live?.commands.get(item)?.write?.(text)
+    if (live?.typing !== item) return
+    live.typing = undefined
+    this.#changed()
   }
 
   /** A command the tool is waiting on, sent on in the background: the turn goes on, and so does the command. */
