@@ -1,4 +1,3 @@
-import { ProviderIcon } from './ProviderIcon'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DEFAULT_SETTINGS, homeOf, providerOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
@@ -555,7 +554,6 @@ export function Chat(): React.JSX.Element {
           />
         ) : (
           <div className="talk-head drag">
-            {chat.showProviders && chat.session !== undefined ? <ProviderIcon id={chat.session.id} /> : null}
             {chat.session === undefined ? (
               <span className="title">{title}</span>
             ) : naming === chat.session.id ? (

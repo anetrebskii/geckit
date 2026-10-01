@@ -11,7 +11,6 @@ import { Menu } from '../ui/Menu'
 import { DeleteSheet, HideSheet, Rename } from './PhoneBoard'
 import { contextLine, PhoneInfo } from './PhoneInfo'
 import { HostDot } from './HostParts'
-import { ProviderIcon } from './ProviderIcon'
 import { projectLabel } from './project'
 import { startedCount } from './started'
 import type { Chat } from './useChat'
@@ -54,7 +53,7 @@ export function PhoneNav({
         Board
       </button>
       <div className="phone-nav-title">
-        <b>{chat.showProviders && session !== undefined ? <ProviderIcon id={session.id} /> : null}{session?.title ?? 'New conversation'}</b>
+        <b>{session?.title ?? 'New conversation'}</b>
         {session === undefined ? null : (
           <span>
             {host === undefined ? null : <HostDot state={host.state} />}
