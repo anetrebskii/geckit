@@ -68,7 +68,7 @@ import type { Order, Told } from './orders'
 import { projectFiles } from './files'
 import { foldersIn } from './folders'
 import { fetchGit, gitRepo, gitState } from './git'
-import { keepGuide } from './guide'
+import { keepCodexGuide, keepGuide } from './guide'
 import { closeAsked, listenAsked } from './asked'
 import type { CliAnswered, CliAsked, StartAnswered, StartAsked } from './asked'
 import { migrateCodexMetadata } from './session-migration'
@@ -165,7 +165,7 @@ let plans: Plans | undefined
 /** How each host last stood, so a move into Connected is told apart from every other change. */
 const hostWasUp = new Map<string, boolean>()
 let cutOffered = false
-/** What GECKIT.md was last kept at, the switch and the browser names, so it is only written when either moves. */
+/** The guide switches and browser names last kept, so their files are only written when either changes. */
 let guided: string | undefined
 let asked: Server | undefined
 
@@ -1207,10 +1207,11 @@ function wire(): void {
     // The frames, the vibrancy behind the panel and the folder picker are the
     // system's, not the stylesheet's, and they follow this.
     nativeTheme.themeSource = settings.theme
-    const guide = JSON.stringify([settings.guideClaude, settings.browserNames])
+    const guide = JSON.stringify([settings.guideClaude, settings.guideCodex, settings.browserNames])
     if (guide !== guided) {
       guided = guide
       void keepGuide(settings.guideClaude, settings.browserNames)
+      void keepCodexGuide(settings.guideCodex)
     }
     keepPhone(settings.phone, settings.phoneKey)
     keepShortcuts(settings.anywhereOff)
@@ -1430,8 +1431,9 @@ if (!app.requestSingleInstanceLock()) {
     const reached = [...new Set(running.map((run) => hostOf(run.root)).filter((id) => id !== undefined))].map((id) => held.hosts.ensure(id))
     void Promise.allSettled(reached).then(() => started.reattach(running))
     nativeTheme.themeSource = getSettings().theme
-    guided = JSON.stringify([getSettings().guideClaude, getSettings().browserNames])
+    guided = JSON.stringify([getSettings().guideClaude, getSettings().guideCodex, getSettings().browserNames])
     void keepGuide(getSettings().guideClaude, getSettings().browserNames)
+    void keepCodexGuide(getSettings().guideCodex)
     keepPhone(getSettings().phone, getSettings().phoneKey)
     asked = listenAsked(cliAsked)
     wire()

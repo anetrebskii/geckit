@@ -980,8 +980,26 @@ textarea {
   cursor: pointer;
 }
 
-.assistant-option + .assistant-option {
+.assistant-option:not(:first-child) {
   border-top: 1px solid var(--border);
+}
+
+.assistant-guide {
+  padding: 0 14px 14px;
+}
+
+.assistant-guide .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.assistant-guide > span {
+  display: block;
+  line-height: 1.5;
 }
 
 .assistant-option:hover {

@@ -17,6 +17,7 @@ import { app } from 'electron'
 const IMPORT = '@GECKIT.md'
 
 const where = (): string => process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude')
+const codexWhere = (): string => process.env['CODEX_HOME'] ?? join(homedir(), '.codex')
 
 /** Run from the source rather than installed; outside Electron, as in the tests, it is taken as installed. */
 const fromSource = (): boolean => (app as typeof app | undefined)?.isPackaged === false
@@ -196,4 +197,32 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
   if (linked) return
   const next = was.trim() === '' ? `${IMPORT}\n` : `${was.replace(/\s*$/, '')}\n\n${IMPORT}\n`
   await writeFile(claude, next).catch(() => undefined)
+}
+
+/** Keep Codex's global instructions linked to GeckIt's guide without changing the person's other instructions. */
+export async function keepCodexGuide(wanted: boolean): Promise<void> {
+  if (fromSource()) return
+  const folder = codexWhere()
+  const guide = join(folder, 'GECKIT.md')
+  const agents = join(folder, 'AGENTS.md')
+  const importLine = `Read ${guide} for how GeckIt works when this conversation runs in GeckIt.`
+  const was = await readFile(agents, 'utf8').catch(() => '')
+  const linked = was.split('\n').some((line) => line.trim() === importLine)
+  if (!wanted) {
+    await rm(guide, { force: true }).catch(() => undefined)
+    if (!linked) return
+    const without = was.split('\n').filter((line) => line.trim() !== importLine).join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s*$/, '\n')
+    await writeFile(agents, without).catch(() => undefined)
+    return
+  }
+  await mkdir(folder, { recursive: true }).catch(() => undefined)
+  const command = COMMAND(cliPath())
+    .replaceAll('Claude Code', 'Codex')
+    .replaceAll('Claude', 'Codex')
+    .replace('Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. ', '')
+  const content = GUIDE.replace('CLAUDE.md beside it.', 'AGENTS.md beside it.') + command
+  await writeFile(guide, content).catch(() => undefined)
+  if (linked) return
+  const next = was.trim() === '' ? `${importLine}\n` : `${was.replace(/\s*$/, '')}\n\n${importLine}\n`
+  await writeFile(agents, next).catch(() => undefined)
 }

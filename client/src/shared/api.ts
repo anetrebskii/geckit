@@ -907,6 +907,8 @@ export interface Settings {
   readonly updateChannel: UpdateChannel
   /** False takes GECKIT.md and the line that reads it out of the tool's own folder again. */
   readonly guideClaude: boolean
+  /** False takes Codex's GECKIT.md and its instruction from the global AGENTS.md away. */
+  readonly guideCodex: boolean
   /** Shortcuts in any application turned off here, as a copy run beside another GeckIt wants. */
   readonly anywhereOff: readonly Anywhere[]
   /** How many conversations may work at once before a new one waits in the queue. Nought is no limit. */
@@ -1025,6 +1027,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoUpdate: true,
   updateChannel: 'stable',
   guideClaude: true,
+  guideCodex: true,
   anywhereOff: [],
   workingAtOnce: 6,
   progressOrder: [],

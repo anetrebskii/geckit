@@ -164,6 +164,13 @@ function Assistants({ settings, change }: Part): React.JSX.Element {
           </span>
           <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Use Claude Code" aria-describedby="assistant-settings-note" checked={enabled.includes('claude')} disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(event) => toggle('claude', event.target.checked)} />
         </label>
+        <div className="assistant-guide">
+          <label className="check">
+            <input type="checkbox" checked={settings.guideClaude} onChange={(event) => change({ guideClaude: event.target.checked })} />
+            Tell Claude Code how GeckIt works
+          </label>
+          <span style={NOTE}>Writes GECKIT.md in ~/.claude and links it from ~/.claude/CLAUDE.md. Turning this off removes both.</span>
+        </div>
         <label className="assistant-option">
           <span className="assistant-option-copy">
             <span className="assistant-option-name">Codex</span>
@@ -171,6 +178,13 @@ function Assistants({ settings, change }: Part): React.JSX.Element {
           </span>
           <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Use Codex" aria-describedby="assistant-settings-note" checked={enabled.includes('codex')} disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(event) => toggle('codex', event.target.checked)} />
         </label>
+        <div className="assistant-guide">
+          <label className="check">
+            <input type="checkbox" checked={settings.guideCodex} onChange={(event) => change({ guideCodex: event.target.checked })} />
+            Tell Codex how GeckIt works
+          </label>
+          <span style={NOTE}>Writes GECKIT.md in ~/.codex and links it from ~/.codex/AGENTS.md. Turning this off removes both.</span>
+        </div>
       </div>
       <p className="assistant-settings-note" id="assistant-settings-note">Turning an assistant off hides its conversations and pauses its shortcuts. Keep at least one on.</p>
     </section>
@@ -270,18 +284,6 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
         />
         <span style={NOTE}>
           A message sent while this many are working waits in its conversation. When one of them stops, the highest card in In progress with a message waiting goes first. A question asked with Ask never waits.
-        </span>
-      </div>
-
-      <div className="field">
-        <label>Claude Code</label>
-        <label className="check">
-          <input type="checkbox" checked={settings.guideClaude} onChange={(event) => change({ guideClaude: event.target.checked })} />
-          Tell Claude Code how GeckIt works
-        </label>
-        <span style={NOTE}>
-          Writes GECKIT.md in ~/.claude and one line in ~/.claude/CLAUDE.md that reads it, so a session knows about the
-          board, goals and the links on a card. Turning this off takes both away again.
         </span>
       </div>
 
