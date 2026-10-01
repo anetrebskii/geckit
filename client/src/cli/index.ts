@@ -1,37 +1,20 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import type { SessionItem, SessionStatus } from '../shared/api'
+import { providerOf } from '../shared/api'
+import type { Settings, SessionStatus } from '../shared/api'
 import { claudeFile, listClaude, readClaudeSession, readSessionAt, slug } from '../main/sessions/disk'
-import type { Found } from '../main/sessions/disk'
+import type { Conversation, Found } from '../main/sessions/disk'
 import { belowRoot } from '../main/sessions'
-import type { Move } from '../main/sessions'
+import type { Move, SessionNote } from '../main/sessions'
+import { CodexSessions } from '../main/sessions/codex'
 import { hostOf, isRemote, pathOf } from '../shared/hosts'
 import { answerLines, tasksFrom } from './start'
 import type { Answer } from './start'
-
-/**
- * GeckIt from a command line, for a session that is asked about the work
- * itself: what was done today, what is still in review, what was said in one
- * of them.
- *
- * It reads the same two files the application does: the conversations are
- * Claude Code's own, and GeckIt's marks are in its settings folder. The one
- * thing that changes anything is `start`, which asks the running application
- * and waits for the person to answer there.
- */
-
-interface Note {
-  readonly title?: string
-  readonly hidden?: boolean
-  readonly status?: SessionStatus
-  readonly created?: number
-  readonly moves?: readonly Move[]
-  readonly parent?: string
-  readonly requests?: readonly { readonly item: SessionItem }[]
-}
+import { migrate } from './migrate'
 
 interface Row extends Found {
   readonly root: string
@@ -45,6 +28,9 @@ interface Row extends Found {
 
 /** The root a row's own file is under: the project's, unless it ran in a folder below it. */
 const effectiveRoot = (row: Row): string => (row.below === undefined ? row.root : belowRoot(row.root, row.below))
+
+let codex: CodexSessions | undefined
+const codexClient = (): CodexSessions => codex ??= new CodexSessions()
 
 const data = (): string => {
   const said = process.env['GECKIT_DATA']
@@ -88,25 +74,25 @@ async function projectRows(root: string): Promise<(Found & { readonly below?: st
 }
 
 async function rows(): Promise<Row[]> {
-  const settings = kept<{ projects?: string[]; favorites?: string[] }>('settings.json', {})
+  const settings = kept<Partial<Pick<Settings, 'projects' | 'favorites'>>>('settings.json', {})
   const projects = settings.projects ?? []
   const favorites = new Set(settings.favorites ?? [])
-  const notes = kept<Record<string, Note>>('sessions.json', {})
+  const notes = kept<Record<string, SessionNote>>('sessions.json', {})
+  const found: (Found & { root: string; created?: number; below?: string })[] = []
+  for (const root of projects) found.push(...(await projectRows(root)).map((one) => ({ ...one, root })))
+  found.push(...await codexClient().list(projects.filter((root) => !isRemote(root))))
   const all: Row[] = []
-  for (const root of projects) {
-    for (const found of await projectRows(root)) {
-      const note = notes[found.id]
-      if (note?.hidden === true) continue
-      all.push({
-        ...found,
-        root,
-        title: note?.title ?? found.title,
-        ...(note?.status === undefined ? {} : { status: note.status }),
-        ...(note?.created === undefined ? {} : { created: note.created }),
-        moves: note?.moves ?? [],
-        favorite: favorites.has(found.id),
-      })
-    }
+  for (const one of found) {
+    const note = notes[one.id]
+    if (note?.hidden === true) continue
+    all.push({
+      ...one,
+      title: note?.title ?? one.title,
+      ...(note?.status === undefined ? {} : { status: note.status }),
+      ...(note?.created === undefined ? {} : { created: note.created }),
+      moves: note?.moves ?? [],
+      favorite: favorites.has(one.id),
+    })
   }
   return all.sort((one, other) => other.at - one.at)
 }
@@ -137,6 +123,7 @@ const when = (at: number): string => new Date(at).toLocaleString(undefined, { da
  */
 async function started(row: Row): Promise<number | undefined> {
   if (row.created !== undefined) return row.created
+  if (providerOf(row.id) === 'codex') return undefined
   const root = effectiveRoot(row)
   if (isRemote(root)) return row.at
   const path = await claudeFile(root, row.id)
@@ -161,7 +148,7 @@ const standing = (row: Row): string => row.status ?? 'in progress'
 
 function table(found: readonly Row[]): string {
   if (found.length === 0) return 'Nothing.'
-  const said = found.map((row) => [row.favorite ? '*' : ' ', row.id.slice(0, 8), when(row.at), basename(row.root), standing(row), row.title])
+  const said = found.map((row) => [row.favorite ? '*' : ' ', providerOf(row.id) === 'codex' ? row.id : row.id.slice(0, 8), when(row.at), basename(row.root), standing(row), row.title])
   const wide = [0, 1, 2, 3, 4].map((at) => Math.max(...said.map((one) => (one[at] ?? '').length)))
   return said
     .map((one) => one.map((cell, at) => (at === 5 ? cell : cell.padEnd(wide[at] ?? 0))).join('  '))
@@ -170,14 +157,14 @@ function table(found: readonly Row[]): string {
 
 const HELP = `geckit - what GeckIt holds, read from a command line.
 
-  geckit sessions [--today] [--since 2d] [--project <name>] [--status review|blocked|done] [--favorites] [--json]
+  geckit sessions [--today] [--since 2d] [--project <name>] [--provider claude|codex] [--status review|blocked|done] [--favorites] [--json]
       The conversations, the newest first: a * for a favorite, id, when it last changed, project, how it stands, title.
       --favorites keeps only the favorites.
       --today is since midnight. --since takes 2d, 36h or 90m; one moved between columns in that time counts too.
       --json adds history: when it was created and every move between columns, with the time of each.
 
   geckit show <id> [--last <n>] [--json]
-      When it was created and moved between columns, then what was said in it, the person and Claude, without what the tools printed.
+      When it was created and moved between columns, then what the person and assistant said, without what the tools printed.
       The id is the one sessions prints; the first few characters are enough. --last keeps only the last n things said.
 
   geckit start --project <name> [--title <title>] [--goal <condition>] <text>
@@ -190,7 +177,12 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
   geckit linked [<id>] [--json]
       The conversation this one was started from, the ones it started and how each stands, and what it asked for and was refused.
 
-Nothing but start writes anything.`
+  geckit migrate-codex [--imports <file>] [--dry-run] [--json]
+      Copies Claude conversation metadata to imported Codex conversations using Codex's import manifest.
+      Preserves status, creation and move dates, titles, visibility and links. Moves favorites and board order to Codex.
+      Existing Codex metadata is kept. --dry-run previews changes; applying saves a backup before writing.
+
+Only start and migrate-codex write anything.`
 
 async function sessions(args: readonly string[]): Promise<string> {
   const has = (flag: string): boolean => args.includes(flag)
@@ -201,18 +193,21 @@ async function sessions(args: readonly string[]): Promise<string> {
   const from = has('--today') ? midnight() : since(value('--since') ?? '')
   const project = value('--project')
   const status = value('--status')
+  const provider = value('--provider')
   const favorites = has('--favorites')
   const found = (await rows()).filter(
     (row) =>
       (from === undefined || row.at >= from || row.moves.some((move) => move.at >= from)) &&
       (project === undefined || basename(row.root).toLowerCase().includes(project.toLowerCase())) &&
       (status === undefined || row.status === status) &&
+      (provider === undefined || providerOf(row.id) === provider) &&
       (!favorites || row.favorite),
   )
   if (!has('--json')) return table(found)
   const said = await Promise.all(
     found.map(async (row) => ({
       id: row.id,
+      provider: providerOf(row.id),
       at: new Date(row.at).toISOString(),
       project: basename(row.root),
       root: row.root,
@@ -229,25 +224,30 @@ async function sessions(args: readonly string[]): Promise<string> {
 async function show(args: readonly string[]): Promise<string> {
   const asked = args.find((one, at) => !one.startsWith('--') && args[at - 1] !== '--last')
   if (asked === undefined) return 'Which conversation? Give the id that sessions prints.'
-  const found = (await rows()).filter((row) => row.id.startsWith(asked))
+  const found = (await rows()).filter((row) => row.id.startsWith(asked) || row.id.startsWith(`codex:${asked}`))
   const row = found[0]
   if (row === undefined) return `No conversation starts with ${asked}.`
   if (found.length > 1) return `${asked} could be any of ${found.length} conversations. Give more of the id.`
   const root = effectiveRoot(row)
   const remote = isRemote(root)
-  const path = remote ? hostFile(root, row.id) : await claudeFile(root, row.id)
-  if (path === undefined) return 'Claude Code has no file for it any more.'
-  if (remote && !existsSync(path)) return 'Its conversation has not been opened in GeckIt yet.'
-  const conversation = await (remote ? readSessionAt(path, pathOf(root)) : readClaudeSession(root, row.id)).catch(() => undefined)
+  const provider = providerOf(row.id)
+  let conversation: Conversation | undefined
+  if (provider === 'codex') conversation = await codexClient().read(root, row.id)
+  else {
+    const path = remote ? hostFile(root, row.id) : await claudeFile(root, row.id)
+    if (path === undefined) return 'Claude Code has no file for it any more.'
+    if (remote && !existsSync(path)) return 'Its conversation has not been opened in GeckIt yet.'
+    conversation = await (remote ? readSessionAt(path, pathOf(root)) : readClaudeSession(root, row.id)).catch(() => undefined)
+  }
   const items = conversation?.items ?? []
   const every = items.flatMap((item) =>
-    item.kind === 'mine' || item.kind === 'theirs' ? [{ who: item.kind === 'mine' ? 'Alex' : 'Claude', text: item.text }] : [],
+    item.kind === 'mine' || item.kind === 'theirs' ? [{ who: item.kind === 'mine' ? 'Alex' : provider === 'codex' ? 'Codex' : 'Claude', text: item.text }] : [],
   )
   const last = Number(args[args.indexOf('--last') + 1])
   const said = args.includes('--last') && Number.isInteger(last) && last > 0 ? every.slice(-last) : every
   const moved = await history(row)
   if (args.includes('--json')) {
-    return JSON.stringify({ id: row.id, project: basename(row.root), status: standing(row), title: row.title, favorite: row.favorite, history: moved, said }, undefined, 2)
+    return JSON.stringify({ id: row.id, provider, project: basename(row.root), status: standing(row), title: row.title, favorite: row.favorite, history: moved, said }, undefined, 2)
   }
   return [
     `${row.title}  (${basename(row.root)}, ${standing(row)}, ${row.favorite ? 'favorite, ' : ''}${when(row.at)})`,
@@ -285,11 +285,12 @@ function start(args: readonly string[]): Promise<{ readonly said: string; readon
 
 /** What a conversation is linked to: the one that asked for it, the ones it asked for, and what it was refused. */
 async function linked(args: readonly string[]): Promise<string> {
-  const asked = args.find((one) => !one.startsWith('--')) ?? process.env['CLAUDE_CODE_SESSION_ID']
-  if (asked === undefined || asked === '') return 'Run this from a Claude Code session, or give an id.'
-  const notes = kept<Record<string, Note>>('sessions.json', {})
+  const thread = process.env['CODEX_THREAD_ID']
+  const asked = args.find((one) => !one.startsWith('--')) ?? process.env['CLAUDE_CODE_SESSION_ID'] ?? (thread === undefined ? undefined : `codex:${thread}`)
+  if (asked === undefined || asked === '') return 'Run this from a Claude Code or Codex session, or give an id.'
+  const notes = kept<Record<string, SessionNote>>('sessions.json', {})
   const all = await rows()
-  const me = all.find((row) => row.id.startsWith(asked))?.id ?? asked
+  const me = all.find((row) => row.id.startsWith(asked) || row.id.startsWith(`codex:${asked}`))?.id ?? asked
   const said = (row: Row): { id: string; project: string; status: string; title: string } => ({
     id: row.id,
     project: basename(row.root),
@@ -316,19 +317,31 @@ async function linked(args: readonly string[]): Promise<string> {
 }
 
 export async function run(args: readonly string[]): Promise<string> {
-  const [what, ...rest] = args
-  if (what === 'sessions') return sessions(rest)
-  if (what === 'show') return show(rest)
-  if (what === 'linked') return linked(rest)
-  return HELP
+  try {
+    const [what, ...rest] = args
+    if (what === 'sessions') return await sessions(rest)
+    if (what === 'show') return await show(rest)
+    if (what === 'linked') return await linked(rest)
+    if (what === 'migrate-codex') return (await migrate(rest, data())).said
+    return HELP
+  } finally {
+    codex?.dispose()
+    codex = undefined
+  }
 }
 
-const [what, ...rest] = process.argv.slice(2)
-if (what === 'start') {
-  const answer = await start(rest)
-  process.stdout.write(`${answer.said}\n`)
-  process.exitCode = answer.ok ? 0 : 1
-} else {
-  const answer = await run(process.argv.slice(2))
-  process.stdout.write(`${answer}\n`)
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const [what, ...rest] = process.argv.slice(2)
+  if (what === 'start') {
+    const answer = await start(rest)
+    process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.ok ? 0 : 1
+  } else if (what === 'migrate-codex') {
+    const answer = await migrate(rest, data())
+    process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.ok ? 0 : 1
+  } else {
+    const answer = await run(process.argv.slice(2))
+    process.stdout.write(`${answer}\n`)
+  }
 }

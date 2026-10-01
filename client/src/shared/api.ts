@@ -1,3 +1,4 @@
+import { isRemote } from './hosts'
 import type { HostConfig } from './hosts'
 
 /**
@@ -10,6 +11,34 @@ import type { HostConfig } from './hosts'
 
 /** What a session may do without asking: Claude Code's own permission modes, in its own words. */
 export type SessionMode = 'manual' | 'auto' | 'plan'
+
+export type SessionProvider = 'claude' | 'codex'
+
+export const providerOf = (id: string): SessionProvider => id.startsWith('codex:') ? 'codex' : 'claude'
+
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
+
+export const assistantsIn = (settings: Pick<Settings, 'chatProviders'>): readonly SessionProvider[] => settings.chatProviders.length === 0 ? ['claude'] : settings.chatProviders
+
+export function assistantFor(settings: Pick<Settings, 'chatProviders' | 'chatProvider'>, root = ''): SessionProvider {
+  const enabled = assistantsIn(settings)
+  if (isRemote(root) && enabled.includes('claude')) return 'claude'
+  return enabled.includes(settings.chatProvider) ? settings.chatProvider : enabled[0] ?? 'claude'
+}
+
+export interface CodexLimitWindow {
+  readonly usedPercent: number
+  readonly windowDurationMins: number | null
+  readonly resetsAt: number | null
+}
+
+export interface CodexRateLimit {
+  readonly limitId: string | null
+  readonly limitName: string | null
+  readonly normalModelSlug?: string | null
+  readonly primary: CodexLimitWindow | null
+  readonly secondary: CodexLimitWindow | null
+}
 
 export const SESSION_MODES: readonly { mode: SessionMode; label: string; why: string }[] = [
   { mode: 'manual', label: 'Manual', why: 'Asks before it runs or changes anything.' },
@@ -251,6 +280,9 @@ export interface SessionNotice {
 
 /** One row in the sidebar. */
 export interface ChatSession {
+  readonly provider?: SessionProvider
+  readonly reasoning?: ReasoningEffort | ''
+  readonly actualReasoning?: ReasoningEffort
   /** Claude Code's own id for it, which is what `claude --resume` takes. */
   readonly id: string
   /** The folder it runs in: the project's own, or one below it. */
@@ -419,6 +451,8 @@ export interface ChatFound {
 
 /** What is sent when Send is pressed. */
 export interface SessionMessage {
+  readonly provider?: SessionProvider
+  readonly reasoning?: ReasoningEffort | ''
   /** Absent for the first message of a new session. */
   readonly session?: string
   readonly root: string
@@ -435,6 +469,7 @@ export interface SessionMessage {
 
 /** A command typed after `!` in the composer. */
 export interface ShellCommand {
+  readonly provider?: SessionProvider
   /** Absent in a new conversation, which it starts. */
   readonly session?: string
   readonly root: string
@@ -460,6 +495,8 @@ export interface SessionItems {
  * plan and never the secret, which is the one thing GeckIt must not hold.
  */
 export interface ClaudeAccount {
+  readonly provider?: SessionProvider
+  readonly limits?: readonly CodexRateLimit[]
   /** The command answered on this machine. */
   readonly here: boolean
   /** Undefined where the tool could not be asked. */
@@ -491,6 +528,9 @@ export interface ClaudeProgram {
 
 /** One model the tool says it has, in the tool's own words. */
 export interface ClaudeModel {
+  readonly reasoning?: readonly { readonly value: ReasoningEffort; readonly says: string }[]
+  readonly defaultReasoning?: ReasoningEffort
+  readonly isDefault?: boolean
   /** What the tool is handed to choose it: `sonnet`. */
   readonly value: string
   /** "Sonnet" */
@@ -533,6 +573,12 @@ export function modelName(id: string): string {
 
 /** Whose plan a question is about to be spent from, for the line over the composer. */
 export function planLine(account: ClaudeAccount | undefined): string {
+  if (account?.provider === 'codex') {
+    if (!account.here) return 'codex is not on this computer'
+    if (account.signedIn === false) return 'Nobody is signed in. Run codex login in a terminal.'
+    if (account.key === true) return 'Signed in with an API key, not a plan'
+    return account.plan === undefined ? 'Your ChatGPT plan' : `Your ChatGPT ${account.plan} plan`
+  }
   if (account === undefined || !account.here) return 'claude is not on this computer'
   if (account.signedIn === undefined) return 'On this computer'
   if (!account.signedIn) return 'Nobody is signed in. Run claude auth login in a terminal.'
@@ -544,11 +590,11 @@ export function planLine(account: ClaudeAccount | undefined): string {
 export function programLine(account: ClaudeAccount | undefined): string | undefined {
   const program = account?.program
   if (program === undefined) return undefined
-  return `Claude Code ${program.version}${program.from === undefined ? '' : ` from ${program.from}`}`
+  return `${account?.provider === 'codex' ? 'Codex' : 'Claude Code'} ${program.version}${program.from === undefined ? '' : ` from ${program.from}`}`
 }
 
 /** What continues a session in a terminal opened in its folder. */
-export const resumeCommand = (id: string): string => `claude --resume ${id}`
+export const resumeCommand = (id: string): string => providerOf(id) === 'codex' ? `codex resume ${id.slice(6)}` : `claude --resume ${id}`
 
 /* ------------------------------------------------------------------ */
 /* Correct                                                             */
@@ -825,6 +871,10 @@ export interface Settings {
   readonly browserNames: Readonly<Record<string, string>>
   /** The model the next new session is handed. Empty is Default. */
   readonly chatModel: string
+  readonly chatProvider: SessionProvider
+  readonly chatProviders: readonly SessionProvider[]
+  readonly codexModel: string
+  readonly codexReasoning: ReasoningEffort | ''
   readonly chatMode: SessionMode
   readonly chatGrouping: ChatGrouping
   /** The conversations as a list, or as a board of cards by what stands where. */
@@ -951,6 +1001,10 @@ export const DEFAULT_SETTINGS: Settings = {
   projectColors: {},
   browserNames: {},
   chatModel: '',
+  chatProvider: 'claude',
+  chatProviders: ['claude', 'codex'],
+  codexModel: '',
+  codexReasoning: '',
   chatMode: 'auto',
   chatGrouping: 'time',
   chatView: 'board',

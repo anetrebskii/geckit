@@ -11,6 +11,7 @@ import { Menu } from '../ui/Menu'
 import { DeleteSheet, HideSheet, Rename } from './PhoneBoard'
 import { contextLine, PhoneInfo } from './PhoneInfo'
 import { HostDot } from './HostParts'
+import { ProviderIcon } from './ProviderIcon'
 import { projectLabel } from './project'
 import { startedCount } from './started'
 import type { Chat } from './useChat'
@@ -53,7 +54,7 @@ export function PhoneNav({
         Board
       </button>
       <div className="phone-nav-title">
-        <b>{session?.title ?? 'New conversation'}</b>
+        <b>{chat.showProviders && session !== undefined ? <ProviderIcon id={session.id} /> : null}{session?.title ?? 'New conversation'}</b>
         {session === undefined ? null : (
           <span>
             {host === undefined ? null : <HostDot state={host.state} />}
@@ -107,9 +108,9 @@ export function PhoneNav({
               ? []
               : [{ value: 'links', label: 'Links', says: `${String(links.length)} in this conversation`, icon: 'link' }]),
             { value: 'find', label: 'Find in conversation', icon: 'search' },
-            { value: 'info', label: 'Conversation', says: 'Context, cost, the plan, Compact and Clear' },
+            { value: 'info', label: 'Conversation', says: chat.provider === 'codex' ? 'Context, the plan and Clear' : 'Context, cost, the plan, Compact and Clear' },
             { value: 'rename', label: 'Rename', icon: 'pencil' },
-            ...(chat.working ? [{ value: 'stop', label: 'Stop', says: 'Interrupts Claude; the conversation stays', icon: 'stop' }] : []),
+            ...(chat.working ? [{ value: 'stop', label: 'Stop', says: `Interrupts ${chat.provider === 'codex' ? 'Codex' : 'Claude'}; the conversation stays`, icon: 'stop' }] : []),
             { value: 'hide', label: 'Hide from this list', says: 'Asked about first', icon: 'hidden' },
             { value: 'delete', label: 'Delete', says: 'Asked about first', danger: true, icon: 'trash' },
           ]}

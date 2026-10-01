@@ -1,10 +1,11 @@
+import { ProviderIcon } from './ProviderIcon'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DEFAULT_SETTINGS, homeOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, CutOff, SessionImage, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
 import { linksIn, shortUrl } from '../../../shared/links'
 import { Icon } from '../ui/Icon'
-import { Menu, Picker } from '../ui/Menu'
+import { Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Board, keptTask, NewTask, TopBar } from './Board'
@@ -57,6 +58,7 @@ const sidebarAt = (x: number): number => Math.round(Math.min(Math.max(x, 220), w
  */
 export function Chat(): React.JSX.Element {
   const chat = useChat()
+  const assistant = chat.provider === 'codex' ? 'Codex' : 'Claude Code'
   const [over, setOver] = useState(false)
   const [switching, setSwitching] = useState(false)
   const [setting, setSetting] = useState(false)
@@ -83,10 +85,6 @@ export function Chat(): React.JSX.Element {
   const [naming, setNaming] = useState<string | undefined>()
   // Asking whether to leave this conversation for a new one about something else.
   const [clearing, setClearing] = useState(false)
-  // The Remote Control menu, the conversation it is being switched for, and why the tool would not.
-  const [remoting, setRemoting] = useState<DOMRect | undefined>()
-  const [remoteBusy, setRemoteBusy] = useState<string | undefined>()
-  const [remoteTrouble, setRemoteTrouble] = useState<string | undefined>()
   // The conversation whose terminal command was just copied, for the check that says so.
   const [copied, setCopied] = useState<string | undefined>()
   // The board's New task form is open.
@@ -276,12 +274,11 @@ export function Chat(): React.JSX.Element {
     }
 
     const key = (event: KeyboardEvent): void => {
-      if (clearing || remoteTrouble !== undefined || chat.compacting !== undefined) {
+      if (clearing || chat.compacting !== undefined) {
         if (event.key === 'Escape') {
           event.preventDefault()
           setClearing(false)
           chat.setCompacting(undefined)
-          setRemoteTrouble(undefined)
         }
         return
       }
@@ -415,22 +412,9 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys, managing, clearing, remoteTrouble, making, asking, cut])
+  }, [chat, switching, setting, keys, managing, clearing, making, asking, cut])
 
   const title = chat.session?.title ?? 'New conversation'
-
-  const remote = (value: string): void => {
-    const session = chat.session
-    if (session === undefined) return
-    if (value === 'open' && session.remote !== undefined) window.geckit.chat.openLink(session.remote)
-    if (value === 'copy' && session.remote !== undefined) void navigator.clipboard.writeText(session.remote)
-    if (value !== 'on' && value !== 'off') return
-    setRemoteBusy(session.id)
-    void window.geckit.chat.remote(session.id, value === 'on').then((said) => {
-      setRemoteBusy(undefined)
-      if (said.error !== undefined) setRemoteTrouble(said.error)
-    })
-  }
 
   // The board stands where the list does, and a conversation opened from it
   // comes up over it rather than beside it.
@@ -569,6 +553,7 @@ export function Chat(): React.JSX.Element {
           />
         ) : (
           <div className="talk-head drag">
+            {chat.showProviders && chat.session !== undefined ? <ProviderIcon id={chat.session.id} /> : null}
             {chat.session === undefined ? (
               <span className="title">{title}</span>
             ) : naming === chat.session.id ? (
@@ -661,20 +646,6 @@ export function Chat(): React.JSX.Element {
                     if (chat.session !== undefined) chat.mark(chat.session.id, value === '' ? undefined : (value as SessionStatus))
                   }}
                 />
-                <button
-                  type="button"
-                  className={`picker no-drag${chat.session.remote === undefined ? '' : ' remote-on'}`}
-                  disabled={remoteBusy === chat.session.id}
-                  title={
-                    chat.session.remote === undefined
-                      ? 'Remote Control: continue this conversation from claude.ai or the Claude app'
-                      : 'Remote Control is on'
-                  }
-                  onClick={(event) => setRemoting(event.currentTarget.getBoundingClientRect())}
-                >
-                  {chat.session.remote === undefined ? null : <span className="remote-dot" />}
-                  {remoteBusy === chat.session.id ? 'Remote...' : 'Remote'}
-                </button>
                 <button
                   type="button"
                   className="icon-button no-drag"
@@ -777,12 +748,14 @@ export function Chat(): React.JSX.Element {
                             : `${host.name} needs you`
                           : `${host.name} needs you, above`
                         : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`
-                  : chat.account?.here !== true
-                    ? 'Claude Code is not on this computer. Install it, then reopen this window.'
+                  : chat.account === undefined
+                    ? `Looking for ${assistant}...`
+                    : chat.account.here !== true
+                    ? `${assistant} is not on this computer. Install it, then reopen this window.`
                     : chat.account.signedIn === false
-                      ? 'Nobody is signed in. Run claude auth login in a terminal, then reopen this window.'
+                      ? `Nobody is signed in. Run ${chat.provider === 'codex' ? 'codex login' : 'claude auth login'} in a terminal, then return here.`
                       : chat.account.key === true
-                        ? 'That claude is signed in with an API key. GeckIt only runs sessions on a plan, so nothing would be started here.'
+                        ? `${assistant} is signed in with an API key. Sign in with your ${chat.provider === 'codex' ? 'ChatGPT' : 'Claude'} plan.`
                         : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`}
             </div>
           </div>
@@ -854,6 +827,7 @@ export function Chat(): React.JSX.Element {
       <Consent settings={chat.settings} change={chat.change} />
       {recent === undefined ? null : (
         <Recent
+          showProviders={chat.showProviders}
           list={recent.list}
           at={recent.at}
           colors={chat.settings}
@@ -879,53 +853,12 @@ export function Chat(): React.JSX.Element {
       {managing === undefined ? null : (
         <ShortcutList key={managing.at} chat={chat} start={managing.edit} onClose={closeShortcuts} />
       )}
-      {remoting === undefined || chat.session === undefined ? null : (
-        <Menu
-          anchor={remoting}
-          title="Remote Control"
-          explained
-          choices={
-            chat.session.remote === undefined
-              ? [
-                  {
-                    value: 'on',
-                    label: 'Turn on',
-                    says: 'Continue this conversation from claude.ai or the Claude app. It is kept running here until it is turned off.',
-                  },
-                ]
-              : [
-                  ...(chat.session.remote === ''
-                    ? []
-                    : [
-                        { value: 'open', label: 'Open on claude.ai' },
-                        { value: 'copy', label: 'Copy the link' },
-                      ]),
-                  { value: 'off', label: 'Turn off' },
-                ]
-          }
-          onPick={remote}
-          onClose={() => setRemoting(undefined)}
-        />
-      )}
-      {remoteTrouble === undefined ? null : (
-        <div className="dialog-scrim" onMouseDown={() => setRemoteTrouble(undefined)}>
-          <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
-            <h2>Remote Control did not start</h2>
-            <p>{remoteTrouble}</p>
-            <div className="dialog-actions">
-              <button type="button" className="primary" autoFocus onClick={() => setRemoteTrouble(undefined)}>
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {chat.compacting !== undefined && chat.session !== undefined ? (
         <div className="dialog-scrim" onMouseDown={() => chat.setCompacting(undefined)}>
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
             <h2>Compact the conversation?</h2>
             <p>
-              Claude writes a summary of it so far and goes on from the summary, to free up its context. Everything stays here to read, but what the summary leaves out Claude no longer has in mind.
+              {assistant} writes a summary of it so far and goes on from the summary, to free up its context. Everything stays here to read, but what the summary leaves out {assistant} no longer has in mind.
             </p>
             <div className="dialog-actions">
               <button type="button" className="quiet" onClick={() => chat.setCompacting(undefined)}>

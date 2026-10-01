@@ -150,6 +150,11 @@ export function notesStore(): NotesStore {
       clearTimeout(soon)
       soon = setTimeout(() => write(NOTES, notes), 250)
     },
+    replace: (next) => {
+      clearTimeout(soon)
+      notes = { ...next }
+      write(NOTES, notes)
+    },
   }
 }
 

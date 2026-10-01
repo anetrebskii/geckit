@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 
-import { SESSION_MODES, shownProjects } from '../../../shared/api'
-import type { Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, ShortcutDraft, Theme } from '../../../shared/api'
+import { assistantsIn, planLine, providerOf, SESSION_MODES, shownProjects } from '../../../shared/api'
+import type { ClaudeAccount, Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, SessionProvider, ShortcutDraft, Theme } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
 import { ear, setEar, voice } from '../dictate'
@@ -12,7 +12,7 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { LANGUAGES } from '../ui/SettingsDialog'
-import { Limits } from './PhoneInfo'
+import { CodexLimits, Limits } from './PhoneInfo'
 import { Cell, Page, Switch, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
@@ -88,6 +88,27 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       .catch(() => undefined)
   }, [])
   const settings = chat.settings
+  const enabled = assistantsIn(settings)
+  const [assistantAccounts, setAssistantAccounts] = useState<readonly ClaudeAccount[]>([])
+  useEffect(() => {
+    let alive = true
+    const keep = (account: ClaudeAccount): void => {
+      if (alive) setAssistantAccounts((before) => [...before.filter((one) => (one.provider ?? 'claude') !== (account.provider ?? 'claude')), account])
+    }
+    for (const provider of enabled) void window.geckit.chat.account(provider).then(keep).catch(() => undefined)
+    const off = window.geckit.chat.onAccount(keep)
+    return () => {
+      alive = false
+      off()
+    }
+  }, [enabled])
+  const claudeAccount = assistantAccounts.find((one) => (one.provider ?? 'claude') === 'claude')
+  const codexAccount = assistantAccounts.find((one) => one.provider === 'codex')
+  const toggle = (provider: SessionProvider, on: boolean): void => {
+    const chatProviders = on ? [...enabled, provider] : enabled.filter((one) => one !== provider)
+    if (chatProviders.length === 0) return
+    chat.change({ chatProviders, chatProvider: chatProviders.includes(settings.chatProvider) ? settings.chatProvider : chatProviders[0] ?? 'claude' })
+  }
   const profile = settings.profiles.find((one) => one.id === settings.profile)
   const thisMac = paired?.find((one) => one.current)
   const placeName = (place: string): string => (place === '' ? (thisMac?.name ?? 'Host') : (chat.hosts.find((one) => one.id === place)?.name ?? place))
@@ -126,11 +147,11 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
             <Cell label={thisMac?.name ?? 'Host'} says={paired.length > 1 ? `${String(paired.length)} hosts paired` : 'Paired'} onPress={() => setSwitching(true)} />
           </div>
           {/* A plan is an account's: one group per account the projects run on, headed by where it was measured once there is more than one. */}
-          {accounts.map((item, at) => {
+          {(enabled.includes('claude') ? accounts : []).map((item, at) => {
             const usage = usageOf(item, chat.plan)
             if (usage?.fiveHour === undefined && usage?.sevenDay === undefined) return null
             const place = item.places[0] ?? ''
-            const plan = item.entry?.plan ?? (place === '' ? chat.account?.plan : undefined)
+            const plan = item.entry?.plan ?? (place === '' ? claudeAccount?.plan : undefined)
             return (
               <Fragment key={place}>
                 <div className="phone-head">{accounts.length === 1 ? 'Plan usage' : `${placeName(place)}${plan === undefined ? '' : ` · ${plan}`}`}</div>
@@ -147,6 +168,18 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
           })}
         </>
       )}
+
+      <div className="phone-head">Assistants</div>
+      <div className="phone-group">
+        <Cell label="Claude Code" says="Uses the host's Claude plan">
+          <Switch on={enabled.includes('claude')} label="Claude Code" disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(on) => toggle('claude', on)} />
+        </Cell>
+        <Cell label="Codex" says="Uses the host's ChatGPT plan for its local projects">
+          <Switch on={enabled.includes('codex')} label="Codex" disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(on) => toggle('codex', on)} />
+        </Cell>
+      </div>
+      <div className="phone-note">Choose at least one. Turning an assistant off hides its conversations until you turn it on again. Applies on the host and this phone.</div>
+      {enabled.includes('codex') ? <><div className="phone-head">ChatGPT plan usage</div><CodexLimits limits={codexAccount?.limits} /></> : null}
 
       <div className="phone-head">Board</div>
       <div className="phone-group">
@@ -188,8 +221,8 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       <div className="phone-head">About</div>
       <div className="phone-group">
         <Cell label={`GeckIt on ${thisMac?.name ?? 'the host'}`} value={version ?? '-'} />
-        <Cell label="Claude Code" value={chat.account?.program?.version ?? '-'} />
-        {chat.account?.plan === undefined ? null : <Cell label="Plan" value={chat.account.plan} />}
+        {enabled.includes('claude') ? <Cell label="Claude Code" value={claudeAccount?.program?.version ?? '-'} says={claudeAccount === undefined ? undefined : planLine(claudeAccount)} /> : null}
+        {enabled.includes('codex') ? <Cell label="Codex" value={codexAccount?.program?.version ?? '-'} says={codexAccount === undefined ? undefined : planLine(codexAccount)} /> : null}
       </div>
 
       {picking === 'theme' ? (
@@ -444,14 +477,16 @@ export function Folders({
 }
 
 function Hidden({ chat, back, onBack }: { readonly chat: Chat; readonly back: string; readonly onBack: () => void }): React.JSX.Element {
-  const [folders, setFolders] = useState<HiddenFolder[] | undefined>()
+  const [storedFolders, setFolders] = useState<HiddenFolder[] | undefined>()
+  const enabled = assistantsIn(chat.settings)
+  const folders = useMemo(() => storedFolders?.map((folder) => ({ ...folder, chats: folder.chats.filter((one) => enabled.includes(providerOf(one.id))) })).filter((folder) => folder.chats.length > 0), [storedFolders, enabled])
   const [brought, setBrought] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => {
     void window.geckit.chat.hidden(false).then(setFolders)
   }, [])
   return (
     <Page title="Hidden" back={back} onBack={onBack}>
-      <div className="phone-note phone-lead">Kept by Claude Code on the host and not on the board.</div>
+      <div className="phone-note phone-lead">Kept by your assistants on the host and not on the board.</div>
       {folders === undefined ? (
         <div className="phone-empty">Reading conversations</div>
       ) : folders.length === 0 ? (

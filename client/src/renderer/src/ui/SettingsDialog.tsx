@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { ANYWHERE, UPDATE_CHANNELS, appName, channelLabel, profileOf } from '../../../shared/api'
-import type { Anywhere, OpenRule, PhoneView, ProjectProfile, Settings, Theme, UpdateChannel } from '../../../shared/api'
+import { ANYWHERE, UPDATE_CHANNELS, appName, assistantsIn, channelLabel, profileOf } from '../../../shared/api'
+import type { Anywhere, OpenRule, PhoneView, ProjectProfile, SessionProvider, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
 import { hostOf } from '../../../shared/hosts'
 import { homePath, projectLabel, projectName } from '../chat/project'
@@ -38,10 +38,11 @@ export const LANGUAGES = [
   'Japanese',
 ]
 
-export type Section = 'general' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
+export type Section = 'general' | 'assistants' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
+  { value: 'assistants', label: 'Assistants' },
   { value: 'profiles', label: 'Profiles' },
   { value: 'hosts', label: 'Hosts' },
   { value: 'phrases', label: 'Phrases' },
@@ -116,6 +117,7 @@ export function SettingsDialog({
               />
             ) : null}
             {section === 'profiles' ? <Profiles settings={settings} change={change} /> : null}
+            {section === 'assistants' ? <Assistants settings={settings} change={change} /> : null}
             {section === 'hosts' ? <HostsSection /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
@@ -141,6 +143,31 @@ export function SettingsDialog({
 interface Part {
   readonly settings: Settings
   readonly change: (change: Partial<Settings>) => void
+}
+
+function Assistants({ settings, change }: Part): React.JSX.Element {
+  const enabled = assistantsIn(settings)
+  const toggle = (provider: SessionProvider, on: boolean): void => {
+    const chatProviders = on ? [...enabled, provider] : enabled.filter((one) => one !== provider)
+    if (chatProviders.length === 0) return
+    change({ chatProviders, chatProvider: chatProviders.includes(settings.chatProvider) ? settings.chatProvider : chatProviders[0] ?? 'claude' })
+  }
+  return (
+    <div className="field">
+      <label>Use in Chat</label>
+      <label className="check">
+        <input type="checkbox" checked={enabled.includes('claude')} disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(event) => toggle('claude', event.target.checked)} />
+        Claude Code
+      </label>
+      <span style={NOTE}>Uses your Claude plan through the claude command.</span>
+      <label className="check">
+        <input type="checkbox" checked={enabled.includes('codex')} disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(event) => toggle('codex', event.target.checked)} />
+        Codex
+      </label>
+      <span style={NOTE}>Uses your ChatGPT plan through the codex command. Available for local projects.</span>
+      <span style={NOTE}>Choose at least one. Conversations from an assistant turned off here are hidden. Turn it on again to see them. With both on, icons identify each conversation's assistant.</span>
+    </div>
+  )
 }
 
 function General({ settings, change, onWelcome }: Part & { readonly onWelcome: () => void }): React.JSX.Element {
@@ -515,7 +542,7 @@ function Phrases({ settings, change }: Part): React.JSX.Element {
 function Correct({ settings, change }: Part): React.JSX.Element {
   return (
     <>
-      <p>Correct and Chat run on your Claude plan through your own claude command, so they need no key.</p>
+      <p>Correct uses an assistant enabled in Settings through your own Claude Code or Codex command and subscription.</p>
 
       <div className="two">
         <div className="field">

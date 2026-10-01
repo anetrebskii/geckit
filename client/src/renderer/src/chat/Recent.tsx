@@ -1,3 +1,4 @@
+import { ProviderIcon } from './ProviderIcon'
 import { flushSync } from 'react-dom'
 
 import type { ChatSession, Settings } from '../../../shared/api'
@@ -13,11 +14,13 @@ import { Dot } from './Tasks'
  */
 export function Recent({
   list,
+  showProviders,
   at,
   colors,
   onAt,
   onPick,
 }: {
+  readonly showProviders: boolean
   readonly list: readonly ChatSession[]
   readonly at: number
   readonly colors: Pick<Settings, 'projectColors'>
@@ -43,6 +46,7 @@ export function Recent({
             <Dot session={session} />
             <span className="lines">
               <span className="head">
+                {showProviders ? <ProviderIcon id={session.id} /> : null}
                 <span className="title">{session.title === '' ? 'Untitled' : session.title}</span>
               </span>
               <span className="stands">

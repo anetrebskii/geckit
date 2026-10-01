@@ -58,7 +58,7 @@ export function saidIn(entry: Json): string {
   return content.map((block) => (string(object(block)['type']) === 'text' ? string(object(block)['text']) : '')).join('\n')
 }
 
-async function readOn(path: string, from: number, to: number, said: Said[]): Promise<number> {
+async function readOn(path: string, from: number, to: number, said: Said[], codex: boolean): Promise<number> {
   const file = await open(path, 'r')
   try {
     let at = from
@@ -76,14 +76,14 @@ async function readOn(path: string, from: number, to: number, said: Said[]): Pro
       }
       for (const line of joined.subarray(0, end).toString('utf8').split('\n')) {
         // What a tool printed is most of a file and none of what was said, so it is not even parsed.
-        if (line.includes('"tool_use_id"') || !(line.includes('"type":"user"') || line.includes('"type":"assistant"'))) continue
+        if (codex ? !line.includes('"response_item"') : line.includes('"tool_use_id"') || !(line.includes('"type":"user"') || line.includes('"type":"assistant"'))) continue
         let entry: Json
         try {
           entry = JSON.parse(line) as Json
         } catch {
           continue
         }
-        const text = saidIn(entry).trim()
+        const text = (codex ? codexSaidIn(line) : saidIn(entry)).trim()
         if (text !== '') said.push({ text, lower: text.toLowerCase() })
       }
       carry = joined.subarray(end + 1)
@@ -95,13 +95,20 @@ async function readOn(path: string, from: number, to: number, said: Said[]): Pro
   }
 }
 
-async function brought(path: string, size: number): Promise<Read> {
+function codexSaidIn(line: string): string {
+  const entry = JSON.parse(line) as { type: string; payload?: { type: string; role: string; content?: { type: string; text?: string }[] } }
+  const payload = entry.payload
+  if (entry.type !== 'response_item' || payload?.type !== 'message' || !['user', 'assistant'].includes(payload.role)) return ''
+  return payload.content?.filter((one) => one.type === 'input_text' || one.type === 'output_text').map((one) => one.text ?? '').join('\n') ?? ''
+}
+
+async function brought(path: string, size: number, codex = false): Promise<Read> {
   const was = read.get(path)
   // Smaller than when it was read means it was written again from the start.
   const from = was === undefined || size < was.size ? { size: 0, said: [] } : was
   if (from.size === size) return from
   const said = [...from.said]
-  const now = { size: await readOn(path, from.size, size, said), said }
+  const now = { size: await readOn(path, from.size, size, said, codex), said }
   read.set(path, now)
   return now
 }
@@ -159,6 +166,26 @@ export function searchClaude(
       .sort((one, other) => other.at - one.at)
       .slice(0, MOST)
       .map(({ at: _at, ...hit }) => hit)
+  }
+  const searched = queue.then(run, run)
+  queue = searched.catch(() => undefined)
+  return searched
+}
+
+export function searchCodex(files: readonly { id: string; root: string; path: string }[], asked: string): Promise<ChatFound[]> {
+  const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
+  const run = async (): Promise<ChatFound[]> => {
+    const found: (ChatFound & { at: number })[] = []
+    for (const { id, root, path } of files) {
+      const file = await stat(path).catch(() => undefined)
+      if (file?.isFile() !== true) continue
+      const { said } = await brought(path, file.size, true).catch(() => ({ said: [] as Said[] }))
+      if (words.length === 0) continue
+      const matches = said.filter((one) => words.every((word) => one.lower.includes(word)))
+      const last = matches.at(-1)
+      if (last !== undefined) found.push({ id, root, said: snippet(last, words), count: matches.length, at: file.mtimeMs })
+    }
+    return found.sort((one, other) => other.at - one.at).slice(0, MOST).map(({ at: _at, ...hit }) => hit)
   }
   const searched = queue.then(run, run)
   queue = searched.catch(() => undefined)

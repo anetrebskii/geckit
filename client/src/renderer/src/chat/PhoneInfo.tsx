@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { homeOf, SESSION_MODES } from '../../../shared/api'
-import type { PlanUsage, PlanWindow } from '../../../shared/api'
+import type { ClaudeAccount, CodexLimitWindow, CodexRateLimit, PlanUsage, PlanWindow } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
@@ -16,12 +16,16 @@ import { accountsOf, usageOf } from './plans'
 import type { Chat } from './useChat'
 
 /** When a window starts again: the time today, the weekday and time within a week, the date beyond. */
+const resetClock = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+const resetWeekday = new Intl.DateTimeFormat(undefined, { weekday: 'short' })
+const resetDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
+
 export function resetsAt(at: number, now: number): string {
   const when = new Date(at)
-  const time = when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const time = resetClock.format(when)
   if (when.toDateString() === new Date(now).toDateString()) return `at ${time}`
-  if (at - now < 6 * 86_400_000) return `${when.toLocaleDateString([], { weekday: 'short' })} ${time}`
-  return `${when.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`
+  if (at - now < 6 * 86_400_000) return `${resetWeekday.format(when)} ${time}`
+  return `${resetDate.format(when)} ${time}`
 }
 
 /** How much of the plan's window is spent and when it starts again, as a row of a grouped list. */
@@ -54,6 +58,27 @@ export function Limits({ chat, usage }: { readonly chat: Chat; readonly usage?: 
     <div className="phone-group">
       {plan.fiveHour === undefined ? null : <Limit name="5-hour window" window={plan.fiveHour} now={now} />}
       {plan.sevenDay === undefined ? null : <Limit name="Week" window={plan.sevenDay} now={now} />}
+    </div>
+  )
+}
+
+export function codexWindowName(window: CodexLimitWindow, limit: CodexRateLimit, count: number): string {
+  const minutes = window.windowDurationMins
+  const duration = minutes === null ? 'Limit' : minutes === 10080 ? 'Week' : minutes % 1440 === 0 ? `${String(minutes / 1440)}-day window` : minutes % 60 === 0 ? `${String(minutes / 60)}-hour window` : `${String(minutes)}-minute window`
+  return count === 1 || limit.limitId === 'codex' ? duration : `${limit.limitName ?? limit.limitId ?? 'Codex'} ${duration}`
+}
+
+export function CodexLimits({ limits }: { readonly limits: ClaudeAccount['limits'] }): React.JSX.Element {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(tick)
+  }, [])
+  return (
+    <div className="phone-group">
+      {limits === undefined ? <Cell label="Limits" value="Unavailable" /> : limits.flatMap((limit, index) => [limit.primary, limit.secondary].flatMap((window, at) => window === null ? [] : [
+        <Cell key={`${limit.limitId ?? String(index)}:${String(at)}`} label={codexWindowName(window, limit, limits.length)} says={window.resetsAt === null ? undefined : `Resets ${resetsAt(window.resetsAt * 1000, now)}, in ${until(window.resetsAt * 1000, now)}`} value={<span className="phone-meter"><Meter part={window.usedPercent / 100} />{Math.round(window.usedPercent)}%</span>} />,
+      ]))}
     </div>
   )
 }
@@ -137,6 +162,7 @@ export function PhoneInfo({
         )}
         {spend?.cost === undefined ? null : <Cell label="Cost" says="At API prices; the plan covers it" value={dollars(spend.cost)} />}
         {session.model === undefined ? null : <Cell label="Model" value={session.model} />}
+        {chat.provider !== 'codex' || session.actualReasoning === undefined ? null : <Cell label="Reasoning" value={session.actualReasoning === 'xhigh' ? 'Extra high' : session.actualReasoning.charAt(0).toUpperCase() + session.actualReasoning.slice(1)} />}
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === session.mode)?.label ?? '-'} />
         <Cell label="Project" value={projectLabel(homeOf(session))} />
         {parent === undefined ? null : (
@@ -150,7 +176,7 @@ export function PhoneInfo({
           />
         )}
       </div>
-      {spend?.used === undefined ? null : <div className="phone-note">Claude Code summarises the conversation when its context fills.</div>}
+      {spend?.used === undefined ? null : <div className="phone-note">{chat.provider === 'codex' ? 'Codex' : 'Claude Code'} summarises the conversation when its context fills.</div>}
 
       {started.length === 0 ? null : (
         <>
@@ -226,7 +252,7 @@ export function PhoneInfo({
       )}
 
       <div className="phone-group phone-form-group">
-        {chat.working ? (
+        {chat.provider === 'codex' ? null : chat.working ? (
           <Cell label="Compact" says="Once Claude has finished" />
         ) : (
           <Cell label="Compact" says="Summarise it so far to free up its context" accent onPress={() => setAsking('compact')} />
@@ -234,7 +260,7 @@ export function PhoneInfo({
         <Cell label="Clear" says="Start a new task in this project" danger onPress={() => setAsking('clear')} />
       </div>
 
-      {mine?.fiveHour === undefined && mine?.sevenDay === undefined ? null : (
+      {chat.provider === 'codex' ? <><div className="phone-head">ChatGPT plan</div><CodexLimits limits={chat.account?.limits} /></> : mine?.fiveHour === undefined && mine?.sevenDay === undefined ? null : (
         <>
           <div className="phone-head">{mineName === undefined ? 'Plan' : `Plan on ${mineName}`}</div>
           <Limits chat={chat} usage={mine} />

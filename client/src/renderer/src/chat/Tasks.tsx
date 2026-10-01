@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 
 import type { BackgroundTask, ChatSession, TaskOutput } from '../../../shared/api'
+import { providerOf } from '../../../shared/api'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
 import { Sheet } from '../ui/Sheet'
@@ -50,12 +51,12 @@ export function Dot({ session }: { readonly session: ChatSession }): React.JSX.E
 
 /** What the card says is happening in it, in the words the rest of the window uses. */
 export function cardSays(session: ChatSession): { readonly words: string; readonly tone: string } | undefined {
-  if (session.state === 'working') return { words: 'Claude is working', tone: 'said-working' }
+  if (session.state === 'working') return { words: `${providerOf(session.id) === 'codex' ? 'Codex' : 'Claude'} is working`, tone: 'said-working' }
   if (session.state === 'asks') return { words: 'Asking you', tone: 'said-asks' }
   if (session.waits === true) return { words: 'Waiting for a slot', tone: '' }
   if (waitsOnHelpers(session)) {
     const count = session.tasks?.filter(helping).length ?? 0
-    return { words: `Claude is waiting on ${count === 1 ? 'a helper' : `${count} helpers`}`, tone: 'said-working' }
+    return { words: `${providerOf(session.id) === 'codex' ? 'Codex' : 'Claude'} is waiting on ${count === 1 ? 'a helper' : `${count} helpers`}`, tone: 'said-working' }
   }
   if (session.state === 'unread') return { words: scripts(session) === undefined ? 'Waiting for you' : `Waiting for you, ${scripts(session)}`, tone: 'said-unread' }
   if (session.state === 'failed') return { words: 'Stopped by an error', tone: 'said-failed' }

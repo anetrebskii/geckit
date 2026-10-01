@@ -1,3 +1,4 @@
+import { ProviderIcon } from './ProviderIcon'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 
@@ -198,6 +199,7 @@ function Rows({
         found.map((row, index) => (
           <FoundRow
             key={row.session.id}
+            showProviders={chat.showProviders}
             row={row}
             index={index}
             on={index === here}
@@ -215,6 +217,7 @@ function Rows({
 
 // Pointing at another row draws that one and the one it left, not all fifty.
 const FoundRow = memo(function FoundRow({
+  showProviders,
   row,
   index,
   on,
@@ -224,6 +227,7 @@ const FoundRow = memo(function FoundRow({
   onAt,
   onTake,
 }: {
+  readonly showProviders: boolean
   readonly row: Row
   readonly index: number
   readonly on: boolean
@@ -250,6 +254,7 @@ const FoundRow = memo(function FoundRow({
         <Dot session={row.session} />
         <span className="lines">
           <span className="head">
+            {showProviders ? <ProviderIcon id={row.session.id} /> : null}
             <span className="title">
               <Marked text={row.session.title === '' ? 'Untitled' : row.session.title} words={words} />
             </span>

@@ -1,7 +1,8 @@
+import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { assistantsIn, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { CardAnswer, ChatSession, SessionCard, SessionStatus } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { movedOrder, ordered } from '../../../shared/order'
@@ -11,7 +12,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { computerName } from './PhoneHosts'
-import { resetsAt } from './PhoneInfo'
+import { codexWindowName, resetsAt } from './PhoneInfo'
 import { accountsOf, placesOf, usageOf } from './plans'
 import { PhoneScope, ScopeButton } from './PhoneScope'
 import { startedLine } from './Request'
@@ -234,10 +235,12 @@ export function PhoneBoard({
   // The plans of the projects shown, each account once: a host on another account has windows of its own.
   const placeName = (place: string): string => (place === '' ? computerName() : (chat.hosts.find((one) => one.id === place)?.name ?? place))
   const inView = chat.chosen.length > 0 ? chat.chosen : shownProjects(chat.settings)
-  const accounts = accountsOf(placesOf(inView.length === 0 ? [''] : inView, hostOf), chat.plans, placeName).map((item) => ({
+  const accounts = (assistantsIn(chat.settings).includes('claude') ? accountsOf(placesOf(inView.length === 0 ? [''] : inView, hostOf), chat.plans, placeName) : []).map((item) => ({
     name: placeName(item.places[0] ?? ''),
     usage: usageOf(item, chat.plan),
   }))
+  const codexWindows = chat.provider === 'codex' ? chat.account?.limits?.flatMap((limit) => [limit.primary, limit.secondary].flatMap((window) => window === null ? [] : [{ name: codexWindowName(window, limit, chat.account?.limits?.length ?? 0), window }])) ?? [] : []
+  const codexHigh = codexWindows.find((one) => one.window.usedPercent >= 90)
   const named = accounts.length > 1
   const high = accounts
     .flatMap((one) => [
@@ -341,6 +344,7 @@ export function PhoneBoard({
         className="phone-list"
         onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 30)}
       >
+        {codexHigh === undefined ? null : <div className="phone-alert">Codex {codexHigh.name} at {Math.round(codexHigh.window.usedPercent)}%.{codexHigh.window.resetsAt === null ? null : ` Resets ${resetsAt(codexHigh.window.resetsAt * 1000, now)}.`}</div>}
         {high?.window === undefined ? null : (
           <div className="phone-alert">
             {named ? `${high.of}: ` : ''}
@@ -465,6 +469,7 @@ export function PhoneBoard({
                 </div>}
               </Fragment>
             ))}
+        {codexWindows.length === 0 ? null : <div className="phone-foot">Codex: {codexWindows.map(({ name, window }) => `${name} ${String(Math.round(window.usedPercent))}%${window.resetsAt === null ? '' : `, resets ${resetsAt(window.resetsAt * 1000, now)}`}`).join(' · ')}</div>}
         {accounts.every((one) => one.usage?.fiveHour === undefined && one.usage?.sevenDay === undefined) ? null : (
           <div className="phone-foot">
             {accounts
@@ -622,6 +627,7 @@ export function RowBody({
           {helpers === 0 ? null : <span className="phone-row-tag">{helpers === 1 ? 'a helper running' : `${helpers} helpers running`}</span>}
           {script === undefined ? null : <span className="phone-row-tag">{script}</span>}
           {queued === 0 ? null : <span className="phone-row-tag">{queued} queued</span>}
+          {chat.showProviders ? <ProviderIcon id={session.id} /> : null}
         </div>
         {parent === undefined ? null : (
           <div className="phone-row-from">
@@ -651,6 +657,7 @@ const parentTitle = (chat: Chat, session: ChatSession): string | undefined =>
 const PhoneRow = memo(
   Row,
   (was, now) =>
+    was.chat.showProviders === now.chat.showProviders &&
     was.session === now.session &&
     was.now === now.now &&
     was.column === now.column &&

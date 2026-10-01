@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { ProviderIcon } from './ProviderIcon'
+import { useEffect, useMemo, useState } from 'react'
 
-import { shownProjects } from '../../../shared/api'
+import { assistantsIn, providerOf, shownProjects } from '../../../shared/api'
 import type { HiddenFolder, HiddenReason } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { Icon } from '../ui/Icon'
@@ -23,7 +24,9 @@ const MOST = 5
  * folder added as a project where it is in none.
  */
 export function HiddenChats({ chat, onClose }: { readonly chat: Chat; readonly onClose: () => void }): React.JSX.Element {
-  const [folders, setFolders] = useState<HiddenFolder[] | undefined>()
+  const [storedFolders, setFolders] = useState<HiddenFolder[] | undefined>()
+  const enabled = assistantsIn(chat.settings)
+  const folders = useMemo(() => storedFolders?.map((folder) => ({ ...folder, chats: folder.chats.filter((one) => enabled.includes(providerOf(one.id))) })).filter((folder) => folder.chats.length > 0), [storedFolders, enabled])
   const [older, setOlder] = useState<'not' | 'reading' | 'read'>('not')
   // Brought onto the board here, by the profile whose board it is on: empty is the one in use.
   const [brought, setBrought] = useState<ReadonlyMap<string, string>>(new Map())
@@ -92,7 +95,7 @@ export function HiddenChats({ chat, onClose }: { readonly chat: Chat; readonly o
         onMouseDown={(event) => event.stopPropagation()}
       >
         <h2 id="hidden-title">Hidden conversations</h2>
-        <p>Kept by Claude Code and not on the board.</p>
+        <p>Kept by your assistants and not on the board.</p>
         <div className="hidden-body">
           {folders === undefined ? (
             <div className="empty">Reading conversations...</div>
@@ -129,6 +132,7 @@ export function HiddenChats({ chat, onClose }: { readonly chat: Chat; readonly o
                       <div key={one.id} className="row hidden-row">
                         <span className="lines">
                           <span className="head">
+                            {chat.showProviders ? <ProviderIcon id={one.id} /> : null}
                             <span className="title">{one.title}</span>
                             <span className="changed">{ago(one.at, now, true)}</span>
                           </span>

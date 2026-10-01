@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { ClaudeAccount } from '../../../shared/api'
+import type { ClaudeAccount, SessionProvider } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { PhoneAccess } from '../ui/SettingsDialog'
 import { MOD } from '../ui/Shortcuts'
@@ -32,11 +32,13 @@ export function Welcome({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [page, setPage] = useState(0)
   const [account, setAccount] = useState<ClaudeAccount | undefined>()
   const done = useCallback(() => chat.change({ welcomed: true }), [chat])
-  const state = found(account)
+  const provider = chat.settings.chatProvider
+  const chosenAccount = (account?.provider ?? 'claude') === provider ? account : undefined
+  const state = found(chosenAccount)
 
   const check = useCallback(() => {
-    void window.geckit.chat.account().then(setAccount)
-  }, [])
+    void window.geckit.chat.account(provider).then(setAccount)
+  }, [provider])
 
   useEffect(check, [check])
 
@@ -71,14 +73,18 @@ export function Welcome({ chat }: { readonly chat: Chat }): React.JSX.Element {
       <div className="welcome-card" key={page}>
         {page === 0 ? <About /> : null}
         {page === 1 ? (
-          <Claude
-            account={account}
-            state={state}
-            onCheck={() => {
-              setAccount(undefined)
-              check()
-            }}
-          />
+          <>
+            <label className="new-task-label">Assistant<select className="new-task-where" value={provider} onChange={(event) => chat.change({ chatProvider: event.target.value as SessionProvider })}><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
+            <Claude
+              provider={provider}
+              account={chosenAccount}
+              state={state}
+              onCheck={() => {
+                setAccount(undefined)
+                check()
+              }}
+            />
+          </>
         ) : null}
         {page === 2 ? <Project project={project} onChoose={chat.addProject} /> : null}
         {page === 3 ? <Keys /> : null}
@@ -131,8 +137,7 @@ function About(): React.JSX.Element {
       </div>
       <h1>Welcome to GeckIt</h1>
       <p>
-        Claude Code, on a board. Each conversation is a card that moves from In progress to In review to Done, and runs on
-        your own Claude plan.
+        Claude Code or Codex, on a board. Each conversation is a card that moves from In progress to In review to Done, and runs on your own plan.
       </p>
       <ul className="welcome-list">
         <li>
@@ -156,26 +161,30 @@ function Claude({
   account,
   state,
   onCheck,
+  provider,
 }: {
   readonly account: ClaudeAccount | undefined
   readonly state: Found
   readonly onCheck: () => void
+  readonly provider: SessionProvider
 }): React.JSX.Element {
   const [copied, setCopied] = useState(false)
   const version = account?.program?.version
-  const command = state === 'missing' ? INSTALL : state === 'out' || state === 'key' ? 'claude auth login' : 'claude auth status'
+  const name = provider === 'codex' ? 'Codex' : 'Claude Code'
+  const plan = provider === 'codex' ? 'ChatGPT' : 'Claude'
+  const command = state === 'missing' ? provider === 'codex' ? 'npm install -g @openai/codex' : INSTALL : provider === 'codex' ? 'codex login' : state === 'out' || state === 'key' ? 'claude auth login' : 'claude auth status'
   const says =
     state === 'checking'
-      ? 'Looking for Claude Code...'
+      ? `Looking for ${name}...`
       : state === 'missing'
-        ? 'Claude Code is not on this computer. Run this in a terminal:'
+        ? `${name} is not on this computer. Run this in a terminal:`
         : state === 'out'
-          ? `Claude Code${version === undefined ? '' : ` ${version}`} is here, and nobody is signed in. Run this in a terminal:`
+          ? `${name}${version === undefined ? '' : ` ${version}`} is here, and nobody is signed in. Run this in a terminal:`
           : state === 'key'
-            ? 'Claude Code is signed in with an API key. Sign in with your plan instead:'
+            ? `${name} is signed in with an API key. Sign in with your plan instead:`
             : state === 'unknown'
-              ? 'Claude Code is here. This version does not say who is signed in.'
-              : `Ready: your Claude ${account?.plan === undefined ? '' : `${account.plan} `}plan${version === undefined ? '' : `, Claude Code ${version}`}.`
+              ? `${name} is here. This version does not say who is signed in.`
+              : `Ready: your ${plan} ${account?.plan === undefined ? '' : `${account.plan} `}plan${version === undefined ? '' : `, ${name} ${version}`}.`
   const needed = state === 'missing' || state === 'out' || state === 'key'
 
   return (
@@ -192,13 +201,10 @@ function Claude({
             {command}
           </span>
         </div>
-        {state === 'ready' ? <div className="art-answer">Signed in, {account?.plan ?? 'Claude'} plan</div> : null}
+        {state === 'ready' ? <div className="art-answer">Signed in, {account?.plan ?? plan} plan</div> : null}
       </div>
-      <h1>Claude Code</h1>
-      <p>
-        GeckIt drives the claude program on this computer and signs in with your Claude Pro or Max plan. It never uses an
-        API key, so nothing is billed beyond the plan.
-      </p>
+      <h1>{name}</h1>
+      <p>GeckIt uses {provider} on this computer with your {plan} plan.</p>
       <div className={`welcome-status ${state}${state === 'checking' ? ' spinning' : ''}`} aria-live="polite">
         {state === 'checking' ? <Icon name="spinner" /> : state === 'ready' ? <Icon name="check" /> : null}
         <span>{says}</span>
@@ -243,7 +249,7 @@ function Project({ project, onChoose }: { readonly project: string | undefined; 
         </div>
       </div>
       <h1>A project</h1>
-      <p>A project is a folder. Everything asked in it runs there, with Claude Code's access to its files.</p>
+      <p>A project is a folder. Everything asked in it runs there, with access to its files.</p>
       {project === undefined ? null : (
         <div className="welcome-status ready">
           <Icon name="check" />

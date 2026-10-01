@@ -13,9 +13,10 @@ const theirs = (id: string): SessionItem => ({ kind: 'theirs', id, text: id })
 function macWith(
   all: SessionItem[],
   old = false,
-): { readonly link: Link; readonly asked: string[]; readonly tell: (value: SessionItems) => void } {
+): { readonly link: Link; readonly asked: string[]; readonly calls: Extract<LinkMessage, { t: 'call' }>[]; readonly tell: (value: SessionItems) => void } {
   const hearers: ((message: LinkMessage) => void)[] = []
   const asked: string[] = []
+  const calls: Extract<LinkMessage, { t: 'call' }>[] = []
   let mac: Settings = { ...DEFAULT_SETTINGS, theme: 'light', profiles: [{ id: 'f', name: 'Formula', projects: ['/f'] }] }
   const answer = (id: number, value: unknown, error?: string): void =>
     void Promise.resolve().then(() => hearers.forEach((hear) => hear({ t: 'reply', id, ...(error === undefined ? { value } : { error }) })))
@@ -23,6 +24,7 @@ function macWith(
     send: (message) => {
       if (message.t !== 'call') return
       asked.push(message.name)
+      calls.push(message)
       const [, second, third] = message.args as [string, unknown, unknown]
       if (old && (message.name === 'chat.turns' || message.name === 'chat.turnsBefore' || message.name === 'chat.steps')) return answer(message.id, undefined, `No such call: ${message.name}`)
       if (message.name === 'settings.get') return answer(message.id, mac)
@@ -51,7 +53,7 @@ function macWith(
     compress: () => undefined,
   }
   const tell = (value: SessionItems): void => hearers.forEach((hear) => hear({ t: 'tell', channel: 'chat:items', value }))
-  return { link, asked, tell }
+  return { link, asked, calls, tell }
 }
 
 describe('the phone over the link', () => {
@@ -84,6 +86,31 @@ describe('the phone over the link', () => {
     const both = await window.geckit.settings.set({ chatMode: 'plan', theme: 'system' })
     expect(both).toMatchObject({ chatMode: 'plan', theme: 'system', profile: 'f' })
     expect(asked.filter((one) => one === 'settings.set')).toEqual(['settings.set'])
+  })
+
+  it('carries Codex account, model, reasoning and resumed conversation requests to the host', async () => {
+    const mac = macWith([])
+    install(mac.link)
+    mac.calls.length = 0
+    await window.geckit.chat.account('codex')
+    await window.geckit.chat.models('/f', 'codex')
+    const message = { provider: 'codex', root: '/f', mode: 'auto', model: 'gpt-5.4', reasoning: 'high', text: 'Fix it' } as const
+    await window.geckit.chat.send(message)
+    await window.geckit.chat.send({ ...message, session: 'codex:s1', reasoning: 'xhigh', text: 'Continue' })
+    window.geckit.chat.stop('codex:s1')
+    window.geckit.chat.answer('codex:s1', 'approval', 'once')
+    await window.geckit.chat.bring('codex:s1')
+    await window.geckit.settings.set({ chatProviders: ['codex'], chatProvider: 'codex', codexModel: 'gpt-5.4', codexReasoning: 'high' })
+    expect(mac.calls.map(({ name, args }) => ({ name, args }))).toEqual([
+      { name: 'chat.account', args: ['codex'] },
+      { name: 'chat.models', args: ['/f', 'codex'] },
+      { name: 'chat.send', args: [message] },
+      { name: 'chat.send', args: [{ ...message, session: 'codex:s1', reasoning: 'xhigh', text: 'Continue' }] },
+      { name: 'chat.stop', args: ['codex:s1'] },
+      { name: 'chat.answer', args: ['codex:s1', 'approval', 'once'] },
+      { name: 'chat.bring', args: ['codex:s1'] },
+      { name: 'settings.set', args: [{ chatProviders: ['codex'], chatProvider: 'codex', codexModel: 'gpt-5.4', codexReasoning: 'high' }] },
+    ])
   })
 
   it('goes back to All projects when the Mac deletes the profile it shows', async () => {

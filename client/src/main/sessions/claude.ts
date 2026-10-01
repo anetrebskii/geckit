@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
 
-import type { CardAnswer, SessionMode } from '../../shared/api'
+import type { CardAnswer, SessionMessage, SessionMode } from '../../shared/api'
 import { pathOf } from '../../shared/hosts'
 import { claudeCommand, planOnly } from './account'
 import { AGAIN, claudeState, readClaude, REFUSED } from './claude-read'
@@ -27,6 +27,7 @@ import { questionsFromClaude } from './wording'
  */
 
 export interface ClaudeOptions {
+  readonly reasoning?: SessionMessage['reasoning']
   readonly root: string
   /** The conversation's id: ours to choose for a new one, the tool's own for one picked up again. */
   readonly id: string

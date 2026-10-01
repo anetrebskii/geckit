@@ -96,11 +96,12 @@ export function Cell({
   )
 }
 
-export function Switch({ on, label, onChange }: { readonly on: boolean; readonly label: string; readonly onChange: (on: boolean) => void }): React.JSX.Element {
+export function Switch({ on, label, disabled = false, onChange }: { readonly on: boolean; readonly label: string; readonly disabled?: boolean; readonly onChange: (on: boolean) => void }): React.JSX.Element {
   return (
     <button
       type="button"
       role="switch"
+      disabled={disabled}
       aria-checked={on}
       aria-label={label}
       className={`phone-switch${on ? ' on' : ''}`}

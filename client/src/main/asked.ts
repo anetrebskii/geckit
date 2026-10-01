@@ -7,6 +7,7 @@ import { app } from 'electron'
 import log from 'electron-log'
 
 import type { RequestAnswered } from './sessions'
+import type { MigrationAnswered, MigrationAsked } from './session-migration'
 
 /**
  * Where `geckit start` reaches the running application. One line of JSON in,
@@ -23,9 +24,12 @@ export interface StartAsked {
 
 export type StartAnswered = { readonly ok: false; readonly error: string } | ({ readonly ok: true } & RequestAnswered)
 
+export type CliAsked = StartAsked | MigrationAsked
+export type CliAnswered = StartAnswered | MigrationAnswered
+
 export const askedPath = (): string => join(app.getPath('userData'), 'geckit.sock')
 
-export function listenAsked(answer: (asked: StartAsked, gone: AbortSignal) => Promise<StartAnswered>): Server {
+export function listenAsked(answer: (asked: CliAsked, gone: AbortSignal) => Promise<CliAnswered>): Server {
   const path = askedPath()
   rmSync(path, { force: true })
   const server = createServer((socket) => {
@@ -39,15 +43,15 @@ export function listenAsked(answer: (asked: StartAsked, gone: AbortSignal) => Pr
       if (end < 0) return
       const line = rest.slice(0, end)
       rest = ''
-      let asked: StartAsked
+      let asked: CliAsked
       try {
-        asked = JSON.parse(line) as StartAsked
+        asked = JSON.parse(line) as CliAsked
       } catch {
         socket.end(`${JSON.stringify({ ok: false, error: 'That was not a request GeckIt reads.' })}\n`)
         return
       }
       void answer(asked, gone.signal)
-        .catch((error: unknown): StartAnswered => ({ ok: false, error: String(error) }))
+        .catch((error: unknown): CliAnswered => ({ ok: false, error: String(error) }))
         .then((said) => socket.end(`${JSON.stringify(said)}\n`))
     })
     socket.on('error', () => undefined)

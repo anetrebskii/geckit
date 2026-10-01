@@ -1,4 +1,4 @@
-import type { BackgroundTask, CardAnswer, PlanUsage, SessionImage, SessionItem } from '../../shared/api'
+import type { BackgroundTask, CardAnswer, PlanUsage, ReasoningEffort, SessionImage, SessionItem } from '../../shared/api'
 import type { Wanted } from './rule'
 
 /** What a session hears from the process holding it. */
@@ -7,6 +7,7 @@ export type Signal =
       readonly kind: 'started'
       readonly session: string
       readonly model?: string
+      readonly reasoning?: ReasoningEffort
       readonly key: boolean
       /** The permission mode it actually runs in, which is not always the one it was asked for. */
       readonly mode?: string
@@ -21,10 +22,13 @@ export type Signal =
    * under, and `line` is the line already drawn for the thing being asked about.
    */
   | { readonly kind: 'asks'; readonly ask: string; readonly wanted: Wanted; readonly line?: string }
+  | { readonly kind: 'resolved'; readonly ask: string }
   /** The tool's own word for how it is running, which changes when a plan is let through. */
   | { readonly kind: 'mode'; readonly mode: string }
+  | { readonly kind: 'model'; readonly model: string }
+  | { readonly kind: 'reasoning'; readonly effort: ReasoningEffort }
   /** How full the context is after the last answer, and what this run of the tool has cost so far. */
-  | { readonly kind: 'spend'; readonly used?: number; readonly cost?: number }
+  | { readonly kind: 'spend'; readonly used?: number; readonly cost?: number; readonly window?: number }
   /** How much of the plan is spent. Said by the tool after every turn, for the whole account. */
   | { readonly kind: 'plan'; readonly plan: PlanUsage }
   /** A task in the background, as it now stands, said each time that changes. */

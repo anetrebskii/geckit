@@ -1,3 +1,4 @@
+import { ProviderIcon } from './ProviderIcon'
 import { useEffect, useRef, useState } from 'react'
 
 import { homeOf } from '../../../shared/api'
@@ -70,6 +71,7 @@ export function PhoneSearch({ chat, shown, onSeek }: { readonly chat: Chat; read
                   }}
                 >
                   <span className="phone-row-line">
+                    {chat.showProviders ? <ProviderIcon id={row.session.id} /> : null}
                     <span className="phone-row-title">
                       <Marked text={row.session.title} words={words} />
                     </span>

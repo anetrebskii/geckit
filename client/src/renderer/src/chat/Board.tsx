@@ -1,7 +1,8 @@
+import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
-import { ANYWHERE, homeOf, profileOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
-import type { ChatSession, RecordedFrame, SessionImage, SessionStatus } from '../../../shared/api'
+import { assistantFor, assistantsIn, ANYWHERE, homeOf, profileOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import type { ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
 import { movedOrder, ordered } from '../../../shared/order'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
@@ -404,6 +405,7 @@ export function Board({
                       {column.status === undefined && landing !== undefined && landing === kept.indexOf(session) ? <div className="board-drop" /> : null}
                       <BoardCard
                         chat={chat}
+                        showProviders={chat.showProviders}
                         session={session}
                         now={now}
                         renaming={renaming === session.id}
@@ -545,6 +547,7 @@ export function Board({
 }
 
 function Card({
+  showProviders,
   chat,
   session,
   now,
@@ -557,6 +560,7 @@ function Card({
   onRenamed,
   onStopRenaming,
 }: {
+  readonly showProviders: boolean
   readonly chat: Chat
   readonly session: ChatSession
   readonly now: number
@@ -629,6 +633,7 @@ function Card({
         ) : (
           <>
             {starred ? <Icon name="star" size={11} className="board-card-star" /> : null}
+            {showProviders ? <ProviderIcon id={session.id} /> : null}
             <span className="board-card-title">{session.title}</span>
             <span className="changed">{ago(session.at, now, true)}</span>
           </>
@@ -737,6 +742,7 @@ const opened = (chat: Chat, session: ChatSession): boolean => chat.shown.kind ==
 const BoardCard = memo(
   Card,
   (was, now) =>
+    was.showProviders === now.showProviders &&
     was.session === now.session &&
     was.now === now.now &&
     was.renaming === now.renaming &&
@@ -807,6 +813,53 @@ export function NewTask({
 }): React.JSX.Element {
   const [kept] = useState(() => keptTask(question))
   const [root, setRoot] = useState(() => kept?.root ?? chat.root ?? shownProjects(chat.settings)[0] ?? '')
+  const provider = assistantFor(chat.settings, question ? '' : root)
+  const modelRoot = question ? undefined : root || undefined
+  const [models, setModels] = useState<{ readonly provider: SessionProvider; readonly root: string | undefined; readonly said: ModelsSaid }>()
+  useEffect(() => {
+    let current = true
+    void window.geckit.chat.models(modelRoot, provider).then((said) => {
+      if (current) setModels({ provider, root: modelRoot, said: said ?? 'unsaid' })
+    }).catch(() => {
+      if (current) setModels({ provider, root: modelRoot, said: 'unsaid' })
+    })
+    return () => { current = false }
+  }, [modelRoot, provider])
+  const model = provider === 'codex' ? chat.settings.codexModel : chat.settings.chatModel
+  const catalog: readonly ClaudeModel[] | undefined = models?.provider === provider && models.root === modelRoot && Array.isArray(models.said) ? models.said : undefined
+  const selectedModel = model === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === model)
+  const reasoning = chat.settings.codexReasoning
+  const modelChoices = (
+    <div className={ON_PHONE ? 'phone-task-group' : 'new-task-models'}>
+      <label className={ON_PHONE ? 'phone-task-cell' : 'new-task-label'}>
+        Model
+        <select
+          className="new-task-where task-model-select"
+          value={model}
+          onChange={(event) => {
+            const value = event.target.value
+            if (provider === 'claude') chat.change({ chatModel: value })
+            else {
+              const next = value === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === value)
+              chat.change({ codexModel: value, codexReasoning: next?.reasoning?.some((one) => one.value === reasoning) === true ? reasoning : '' })
+            }
+          }}
+        >
+          <option value="">Default</option>
+          {model === '' || catalog?.some((one) => one.value === model) ? null : <option value={model}>{model}</option>}
+          {catalog === undefined ? <option disabled>{models?.provider === provider && models.root === modelRoot && models.said === 'unsaid' ? 'Models unavailable' : `Asking ${provider === 'codex' ? 'Codex' : 'Claude Code'}...`}</option> : catalog.map((one) => <option key={one.value} value={one.value} disabled={one.disabled} title={one.says}>{one.name}</option>)}
+        </select>
+      </label>
+      {provider !== 'codex' ? null : <label className={ON_PHONE ? 'phone-task-cell' : 'new-task-label'}>
+        Reasoning
+        <select className="new-task-where task-model-select" value={reasoning} onChange={(event) => chat.change({ codexReasoning: event.target.value as ReasoningEffort | '' })}>
+          <option value="">{selectedModel?.defaultReasoning === undefined ? 'Default' : `Default (${selectedModel.defaultReasoning === 'xhigh' ? 'Extra high' : selectedModel.defaultReasoning.charAt(0).toUpperCase() + selectedModel.defaultReasoning.slice(1)})`}</option>
+          {reasoning === '' || selectedModel?.reasoning?.some((one) => one.value === reasoning) ? null : <option value={reasoning} disabled>{reasoning === 'xhigh' ? 'Extra high' : reasoning.charAt(0).toUpperCase() + reasoning.slice(1)}</option>}
+          {selectedModel?.reasoning?.map((one) => <option key={one.value} value={one.value} title={one.says}>{one.value === 'xhigh' ? 'Extra high' : one.value.charAt(0).toUpperCase() + one.value.slice(1)}</option>)}
+        </select>
+      </label>}
+    </div>
+  )
   // A host whose folders are being chosen from, for a project there.
   const [folderOn, setFolderOn] = useState<HostView | undefined>()
   const [text, setText] = useState(kept?.text ?? '')
@@ -926,6 +979,7 @@ export function NewTask({
         recorded={recorded === undefined ? undefined : { seconds: recorded.seconds, video: recorded.videos.length > 0 }}
         onUnrecord={() => setRecorded(undefined)}
         copying={copying}
+        modelChoices={modelChoices}
       />
     )
   }
@@ -1029,6 +1083,14 @@ export function NewTask({
           </select>
         </label>
       )}
+      {!chat.showProviders ? null : <label className="new-task-label">
+        Assistant
+        <select className="new-task-where" value={provider} onChange={(event) => chat.change({ chatProvider: event.target.value as SessionProvider })}>
+          {assistantsIn(chat.settings).includes('claude') ? <option value="claude">Claude Code</option> : null}
+          {assistantsIn(chat.settings).includes('codex') ? <option value="codex" disabled={!question && isRemote(root)}>Codex</option> : null}
+        </select>
+      </label>}
+      {modelChoices}
       <label className="new-task-label">
         {question ? 'Question' : 'What to do'}
         <textarea
@@ -1037,7 +1099,7 @@ export function NewTask({
           rows={5}
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder={question ? 'Anything, not about a project. Paste a picture, drop a file, or record the screen' : 'Ask Claude Code. Paste a picture, drop a file, or record the screen'}
+          placeholder={question ? 'Anything, not about a project. Paste a picture, drop a file, or record the screen' : `Ask ${provider === 'codex' ? 'Codex' : 'Claude Code'}. Paste a picture, drop a file, or record the screen`}
           onPaste={(event) => {
             const files = [...event.clipboardData.files]
             if (files.length === 0) return
@@ -1130,7 +1192,7 @@ export function NewTask({
           </button>
         </div>
       )}
-      {question ? null : (
+      {question || provider === 'codex' ? null : (
         <label className="new-task-label">
           Goal
           <input
@@ -1142,7 +1204,7 @@ export function NewTask({
         </label>
       )}
       <div className="new-task-foot">
-        <span className="new-task-why">{chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when Claude is done. ${MOD}+Enter starts it` : 'Claude keeps working until this holds, then the card goes to In review'}</span>
+        <span className="new-task-why">{provider === 'codex' && !question && isRemote(root) ? 'Enable Claude Code in Settings to use this host' : chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : provider === 'codex' ? `Stops when Codex is done. ${MOD}+Enter starts it` : goal.trim() === '' ? `No goal: it stops when Claude is done. ${MOD}+Enter starts it` : 'Claude keeps working until this holds, then the card goes to In review'}</span>
         <span className="spacer" />
         <button type="button" className="quiet" onClick={onClose}>
           Cancel
@@ -1150,7 +1212,7 @@ export function NewTask({
         <button
           type="button"
           className="primary"
-          disabled={(root === '' && !question) || !ready}
+          disabled={(root === '' && !question) || !ready || (provider === 'codex' && !question && isRemote(root))}
           onClick={start}
         >
           {chat.full && !question ? 'Queue' : question ? 'Ask' : 'Start'}
@@ -1187,6 +1249,7 @@ function PhoneNewTask({
   recorded,
   onUnrecord,
   copying,
+  modelChoices,
 }: {
   readonly chat: Chat
   readonly question: boolean
@@ -1208,8 +1271,11 @@ function PhoneNewTask({
   readonly onDrop: (at: number) => void
   readonly onStart: () => void
   readonly onClose: () => void
+  readonly modelChoices: React.JSX.Element
 }): React.JSX.Element {
   const [asking, setAsking] = useState(false)
+  const [pickingAssistant, setPickingAssistant] = useState(false)
+  const provider = assistantFor(chat.settings, question ? '' : root)
   const [choosing, setChoosing] = useState(false)
   const [recording, setRecording] = useState(record)
   const [listening, setListening] = useState(false)
@@ -1251,7 +1317,7 @@ function PhoneNewTask({
     if (text.trim() === '' && pictures.length === 0 && frames.length === 0) onClose()
     else setAsking(true)
   }
-  const ready = (root !== '' || question) && (text.trim() !== '' || pictures.length > 0 || frames.length > 0)
+  const ready = (root !== '' || question) && (question || provider !== 'codex' || !isRemote(root)) && (text.trim() !== '' || pictures.length > 0 || frames.length > 0)
   return (
     <>
       <div className="sheet-scrim" onClick={leave} />
@@ -1288,6 +1354,9 @@ function PhoneNewTask({
           </button>
         </div>
         <div className="phone-task-form">
+          {chat.showProviders ? <div className="phone-task-group"><button type="button" className="phone-task-cell" onClick={() => setPickingAssistant(true)}>Assistant<span>{provider === 'codex' ? 'Codex' : 'Claude Code'}<Icon name="right" size={14} /></span></button></div> : null}
+          {pickingAssistant ? <Menu anchor={new DOMRect()} title="Assistant" chosen={provider} choices={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex', disabled: !question && isRemote(root), says: 'Your ChatGPT plan, on the paired host' }]} onPick={(value) => chat.change({ chatProvider: value as SessionProvider })} onClose={() => setPickingAssistant(false)} /> : null}
+          {modelChoices}
           {question ? null : (
             <>
               <div className="phone-task-group">
@@ -1298,14 +1367,14 @@ function PhoneNewTask({
                     <Icon name="right" size={14} />
                   </span>
                 </button>
-                <label className="phone-task-cell">
+                {provider === 'codex' ? null : <label className="phone-task-cell">
                   Goal
                   <input className="phone-task-goal" value={goal} placeholder="None" onChange={(event) => onGoal(event.target.value)} />
-                </label>
+                </label>}
               </div>
-              <div className="phone-task-note">
+              {provider === 'codex' ? null : <div className="phone-task-note">
                 {goal.trim() === '' ? 'Without a goal, it stops when Claude is done.' : 'Claude keeps working until this holds, then the card goes to In review.'}
-              </div>
+              </div>}
             </>
           )}
           <textarea
@@ -1323,7 +1392,7 @@ function PhoneNewTask({
             <div className="phone-task-recorded">
               <Icon name="display" size={16} />
               <span>
-                From a {clock(recorded.seconds)} recording. {recorded.video ? 'Claude gets the video too.' : 'Claude gets the frames, not the video.'}
+                From a {clock(recorded.seconds)} recording. {provider === 'codex' ? 'Codex gets the frames.' : recorded.video ? 'Claude gets the video too.' : 'Claude gets the frames, not the video.'}
                 {text.trim() === '' ? ' Nothing was said in it. Write what to do.' : ''}
               </span>
               <button type="button" aria-label="Take the recording off" onClick={onUnrecord}>

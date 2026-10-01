@@ -5,20 +5,24 @@ import type {
   ChatSession,
   Lineup,
   ClaudeAccount,
+  ClaudeModel,
   ModelsSaid,
   PlaceUsage,
   PlanUsage,
+  ReasoningEffort,
   SessionImage,
   SessionItem,
   SessionMode,
+  SessionProvider,
   SessionNotice,
   SessionStatus,
 } from '../../../shared/api'
-import { homeOf, resumeCommand, shownProjects } from '../../../shared/api'
+import { assistantFor, assistantsIn, homeOf, providerOf, resumeCommand, shownProjects } from '../../../shared/api'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { asImage, canShow } from '../pictures'
 import { useSettings } from '../settings'
+import { ON_PHONE } from '../on-phone'
 import type { Settings } from '../../../shared/api'
 import { hostName } from './project'
 import { useHosts } from './useHosts'
@@ -105,6 +109,10 @@ export interface Chat {
   readonly models: ModelsSaid
   /** The mode and model the next message goes with, on a new session or an old one. */
   readonly mode: SessionMode
+  readonly provider: SessionProvider
+  readonly showProviders: boolean
+  readonly reasoning: ReasoningEffort | ''
+  setReasoning: (reasoning: ReasoningEffort | '') => void
   readonly model: string
   readonly working: boolean
   /** Bumped when the composer should take the caret. */
@@ -133,6 +141,7 @@ export interface Chat {
   dropPicture: (at: number) => void
   setMode: (mode: SessionMode) => void
   setModel: (model: string) => void
+  setProvider: (provider: SessionProvider) => void
   /** Asks which models the Claude Code that runs a project has: the chat's own project where none is given. */
   askModels: (root?: string) => void
   send: (again?: string, said?: string) => void
@@ -216,10 +225,10 @@ export function useChat(): Chat {
   }, [])
   const [picked, setPicked] = useState<readonly string[] | undefined>()
   const [started, setStarted] = useState<string | undefined>()
-  const [sessions, setSessions] = useState<readonly ChatSession[]>([])
+  const [storedSessions, setSessions] = useState<readonly ChatSession[]>([])
   const [listed, setListed] = useState(false)
-  const [everyone, setEveryone] = useState<readonly ChatSession[]>([])
-  const [questions, setQuestions] = useState<readonly ChatSession[]>([])
+  const [storedEveryone, setEveryone] = useState<readonly ChatSession[]>([])
+  const [storedQuestions, setQuestions] = useState<readonly ChatSession[]>([])
   const [notices, setNotices] = useState<readonly SessionNotice[]>([])
   const [shown, setShown] = useState<Shown>({ kind: 'new' })
   const [items, setItems] = useState<readonly SessionItem[]>([])
@@ -262,6 +271,12 @@ export function useChat(): Chat {
   }, [picked, settings])
   // One project is a scope the rest of the window understands; several are every project, narrowed.
   const scope = chosen.length === 1 ? (chosen[0] ?? ALL) : ALL
+  const enabled = assistantsIn(settings)
+  const sessions = useMemo(() => storedSessions.filter((one) => enabled.includes(providerOf(one.id))), [storedSessions, enabled])
+  const everyone = useMemo(() => storedEveryone.filter((one) => enabled.includes(providerOf(one.id))), [storedEveryone, enabled])
+  const questions = useMemo(() => storedQuestions.filter((one) => enabled.includes(providerOf(one.id))), [storedQuestions, enabled])
+  const visibleNotices = useMemo(() => notices.filter((one) => enabled.includes(providerOf(one.session))), [notices, enabled])
+  const provider = shown.kind === 'session' ? providerOf(shown.id) : assistantFor(settings, scope === ALL ? started ?? shownProjects(settings)[0] ?? '' : scope)
 
   const shownRef = useRef(shown)
   const itemsRef = useRef(items)
@@ -303,7 +318,7 @@ export function useChat(): Chat {
     let gone = false
     let again: number | undefined
     const ask = (): void => {
-      window.geckit.chat.account().then(
+      window.geckit.chat.account(provider).then(
         (said: ClaudeAccount | undefined) => {
           if (gone) return
           if (said === undefined) again = window.setTimeout(ask, 5_000)
@@ -315,13 +330,19 @@ export function useChat(): Chat {
       )
     }
     ask()
-    const off = window.geckit.chat.onAccount(setAccount)
+    const every = provider === 'codex' ? window.setInterval(ask, PLAN_EVERY) : undefined
+    window.addEventListener('focus', ask)
+    const off = window.geckit.chat.onAccount((said) => {
+      if ((said.provider ?? 'claude') === provider) setAccount(said)
+    })
     return () => {
       gone = true
       window.clearTimeout(again)
+      window.clearInterval(every)
       off()
+      window.removeEventListener('focus', ask)
     }
-  }, [])
+  }, [provider])
 
   // Asking has the plan measured again, so it is asked for on opening, on
   // coming to the front, and every few minutes while the window is seen.
@@ -434,6 +455,19 @@ export function useChat(): Chat {
     })
   }, [])
 
+  if (shown.kind === 'session' && !enabled.includes(providerOf(shown.id))) {
+    setShown({ kind: 'new' })
+    setItems([])
+    setItemsFor('new')
+  }
+  useEffect(() => {
+    const current = shownRef.current
+    if (current.kind === 'session' && !enabled.includes(providerOf(current.id))) {
+      shownRef.current = { kind: 'new' }
+      window.geckit.chat.watching(undefined)
+    }
+  }, [enabled])
+
   // Nothing is watched while the window is behind something else.
   useEffect(() => {
     const said = (): void =>
@@ -468,17 +502,31 @@ export function useChat(): Chat {
   }, [root])
 
   const mode = session?.mode ?? settings.chatMode
-  const model = session?.chosen ?? settings.chatModel
+  const model = session?.chosen ?? (provider === 'codex' ? session?.model ?? settings.codexModel : settings.chatModel)
+  const wantedReasoning = session?.reasoning ?? settings.codexReasoning
+  const catalog: readonly ClaudeModel[] | undefined = Array.isArray(models.said) && models.on.startsWith(`${provider}:`) ? models.said : undefined
+  const reasoningModel = catalog?.find((one) => one.value === (model || session?.model)) ?? catalog?.find((one) => one.isDefault)
+  const reasoning = wantedReasoning !== '' && reasoningModel?.reasoning !== undefined && !reasoningModel.reasoning.some((one) => one.value === wantedReasoning) ? '' : wantedReasoning
   const working = session?.state === 'working' || session?.state === 'asks'
+
+  useEffect(() => {
+    if (provider !== 'codex' || (root !== undefined && isRemote(root))) return
+    let current = true
+    const on = `${provider}:`
+    void window.geckit.chat.models(root, provider).then((said) => {
+      if (current) setModels({ on, said: said ?? 'unsaid' })
+    })
+    return () => { current = false }
+  }, [provider, root])
   const draft = drafts[keyOf(shown)] ?? ''
 
   // What Send needs, kept where a callback can read it without being made
   // again: a callback made again on every keystroke draws the whole
   // conversation again with it.
-  const held = useRef({ drafts, pictures, mode, model })
+  const held = useRef({ drafts, pictures, mode, model, provider, reasoning, settings })
   useEffect(() => {
-    held.current = { drafts, pictures, mode, model }
-  }, [drafts, pictures, mode, model])
+    held.current = { drafts, pictures, mode, model, provider, reasoning, settings }
+  }, [drafts, pictures, mode, model, provider, reasoning, settings])
 
   const setDraft = useCallback(
     (text: string) => setDrafts((held) => ({ ...held, [keyOf(shownRef.current)]: text })),
@@ -608,10 +656,14 @@ export function useChat(): Chat {
         setDraft('')
         setTrouble('')
         void window.geckit.chat
-          .shell({ ...(shownRef.current.kind === 'session' ? { session: shownRef.current.id } : {}), root: where, command })
+          .shell({ ...(shownRef.current.kind === 'session' ? { session: shownRef.current.id } : {}), provider: now.provider, root: where, command })
           .then((id) => {
             if (shownRef.current.kind === 'session' && shownRef.current.id === id) return
             open({ kind: 'session', id })
+          })
+          .catch((error: Error) => {
+            setDrafts((all) => ({ ...all, [key]: text }))
+            setTrouble(error.message)
           })
         return
       }
@@ -630,6 +682,8 @@ export function useChat(): Chat {
         .send({
           ...(into.kind === 'session' ? { session: into.id } : {}),
           root: where,
+          provider: now.provider,
+          ...(now.provider !== 'codex' ? {} : { reasoning: now.reasoning }),
           mode: now.mode,
           text,
           ...(carried.length === 0 ? {} : { images: carried }),
@@ -643,14 +697,13 @@ export function useChat(): Chat {
             if (shownRef.current.kind === 'session' && shownRef.current.id === id) return
             open({ kind: 'session', id })
           },
-          // Only the phone's link can fail on the way: what was written goes back where it was written.
-          () => {
+          (error: Error) => {
             unshow()
             if (said === undefined) {
               setDrafts((all) => ({ ...all, [key]: text }))
               setPictures((all) => ({ ...all, [key]: carried }))
             }
-            setTrouble('Not sent: the host could not be reached')
+            setTrouble(ON_PHONE ? 'Not sent: the host could not be reached' : error.message)
           },
         )
     },
@@ -660,16 +713,20 @@ export function useChat(): Chat {
   const ask = useCallback(
     (text: string, images: readonly SessionImage[] = []) => {
       const now = held.current
+      const provider = assistantFor(now.settings)
       void window.geckit.chat
         .send({
           root: '',
+          provider,
+          ...(provider !== 'codex' ? {} : { reasoning: now.settings.codexReasoning }),
           mode: now.mode,
           text,
           question: true,
           ...(images.length === 0 ? {} : { images }),
-          ...(now.model === '' ? {} : { model: now.model }),
+          ...((provider === 'codex' ? now.settings.codexModel : now.settings.chatModel) === '' ? {} : { model: provider === 'codex' ? now.settings.codexModel : now.settings.chatModel }),
         })
         .then((id) => open({ kind: 'session', id }))
+        .catch((error: Error) => setTrouble(error.message))
     },
     [open],
   )
@@ -677,14 +734,16 @@ export function useChat(): Chat {
   const startTask = useCallback(
     (root: string, text: string, goal: string, images: readonly SessionImage[] = []) => {
       const now = held.current
-      const model = now.model === '' ? {} : { model: now.model }
+      const provider = assistantFor(now.settings, root)
+      const chosen = provider === 'codex' ? now.settings.codexModel : now.settings.chatModel
+      const model = chosen === '' ? {} : { model: chosen }
       // The task goes first: a goal on its own tells Claude to start working toward it, and it would start without knowing what the task is. Where the task waits for a slot, its goal waits behind it.
       const carried = images.length === 0 ? {} : { images }
-      void window.geckit.chat.send({ root, mode: now.mode, text, ...carried, ...model }).then((id) => {
+      void window.geckit.chat.send({ root, provider, ...(provider !== 'codex' ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model }).then((id) => {
         open({ kind: 'session', id })
-        if (goal.trim() === '') return
+        if (provider === 'codex' || goal.trim() === '') return
         void window.geckit.chat.send({ session: id, root, mode: now.mode, text: `/goal ${goal.trim()}`, ...model })
-      })
+      }).catch((error: Error) => setTrouble(error.message))
     },
     [open],
   )
@@ -851,7 +910,7 @@ export function useChat(): Chat {
     everyone,
     questions,
     waiting,
-    notices,
+    notices: visibleNotices,
     shown,
     session,
     items,
@@ -860,12 +919,19 @@ export function useChat(): Chat {
     pictures: pictures[keyOf(shown)] ?? NONE,
     trouble,
     uploading: (uploads[keyOf(shown)] ?? 0) > 0,
-    account,
+    account: (account?.provider ?? 'claude') === provider ? account : undefined,
     plan,
     plans,
     plansAt,
-    models: models.said,
+    models: models.on === `${provider}:${root === undefined ? '' : hostOf(root) ?? ''}` ? models.said : 'unasked',
     mode,
+    provider,
+    showProviders: enabled.length > 1,
+    reasoning,
+    setReasoning: (next) => {
+      change({ codexReasoning: next })
+      if (shownRef.current.kind === 'session') setSessions((all) => all.map((one) => one.id === keyOf(shownRef.current) ? { ...one, reasoning: next } : one))
+    },
     model,
     working,
     focusSeed,
@@ -904,22 +970,26 @@ export function useChat(): Chat {
       }
     },
     setModel: (next) => {
-      change({ chatModel: next })
+      change(provider === 'codex' ? { codexModel: next, codexReasoning: '' } : { chatModel: next })
       if (shownRef.current.kind === 'session') {
         setSessions((all) =>
-          all.map((one) => (one.id === keyOf(shownRef.current) ? { ...one, chosen: next } : one)),
+          all.map((one) => (one.id === keyOf(shownRef.current) ? { ...one, chosen: next, ...(provider === 'codex' ? { reasoning: '' } : {}) } : one)),
         )
       }
+    },
+    setProvider: (next) => {
+      if (shownRef.current.kind === 'new' && enabled.includes(next)) change({ chatProvider: next })
     },
     // Asked at every opening: main keeps the answer, and asks Claude Code again once another version of it answers. On a host it is that host's models, not this computer's.
     askModels: (root) => {
       const where = root ?? rootRef.current
-      const on = where === undefined ? '' : (hostOf(where) ?? '')
+      const on = `${provider}:${where === undefined ? '' : hostOf(where) ?? ''}`
       setModels((held) => (held.on === on && Array.isArray(held.said) ? held : { on, said: 'asking' }))
       // An answer for a Claude Code asked about before another was is not this one's, and is let go.
       void window.geckit.chat
-        .models(where)
+        .models(where, provider)
         .then((said) => setModels((held) => (held.on !== on ? held : { on, said: said ?? (Array.isArray(held.said) ? held.said : 'unsaid') })))
+      void window.geckit.chat.account(provider).then(setAccount)
     },
     send,
     ask,
@@ -932,6 +1002,7 @@ export function useChat(): Chat {
         session: shownRef.current.id,
         root: where,
         mode: now.mode,
+        ...(now.provider !== 'codex' ? {} : { reasoning: now.reasoning }),
         text,
         ...(now.model === '' ? {} : { model: now.model }),
       })

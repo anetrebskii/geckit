@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { basename } from 'node:path'
 
 import { letGo, taken } from '../lineup'
+import { importedNote } from '../session-migration'
 import type { Standing } from '../lineup'
 
 import type {
@@ -22,6 +23,7 @@ import type {
   CutOff,
   McpServer,
   PlanUsage,
+  ReasoningEffort,
   RequestChoice,
   RequestTask,
   SessionGoal,
@@ -30,6 +32,7 @@ import type {
   SessionItems,
   SessionMessage,
   SessionMode,
+  SessionProvider,
   SessionNotice,
   SessionState,
   SessionStatus,
@@ -37,12 +40,13 @@ import type {
   TaskOutput,
   WorkItem,
 } from '../../shared/api'
-import { sessionMode } from '../../shared/api'
+import { providerOf, sessionMode } from '../../shared/api'
 import { hostOf, isRemote, pathOf, remoteRoot } from '../../shared/hosts'
 import type { Link } from '../../shared/links'
 import { linksIn, workItem } from '../../shared/links'
 import { claudeAccount, claudeProgram } from './account'
 import { holdClaude } from './claude'
+import type { CodexSessions } from './codex'
 import { browsersOf, readBrowsers } from './chrome'
 import { claudeFile, deleteClaude, everyClaude, forkPoint, listClaude, readClaudeSession, readGoal, readLinks, standsIn } from './disk'
 import type { GoalRead } from './claude-read'
@@ -82,11 +86,14 @@ import {
  */
 
 export interface SessionNote {
+  readonly importedFrom?: string
+  readonly importedMetadata?: number
   readonly title?: string
   /** The person named it themselves, so Claude Code is told the name and a terminal and the phone show it too. */
   readonly renamed?: boolean
   readonly mode?: SessionMode
   readonly model?: string
+  readonly reasoning?: SessionMessage['reasoning']
   /** Started in this application rather than in a terminal. */
   readonly here?: boolean
   readonly unread?: boolean
@@ -152,15 +159,17 @@ interface Queued {
 export interface NotesStore {
   all(): Readonly<Record<string, SessionNote>>
   set(id: string, note: SessionNote): void
+  replace(notes: Readonly<Record<string, SessionNote>>): void
 }
 
 export function memoryNotes(): NotesStore {
-  const kept: Record<string, SessionNote> = {}
+  let kept: Record<string, SessionNote> = {}
   return {
     all: () => kept,
     set: (id, note) => {
       kept[id] = note
     },
+    replace: (notes) => { kept = { ...notes } },
   }
 }
 
@@ -174,6 +183,7 @@ interface Row {
   readonly at: number
   readonly driven: boolean
   readonly model?: string
+  readonly actualReasoning?: ReasoningEffort
   /** Tokens in the context after the last answer. */
   readonly used?: number
   readonly work?: WorkItem
@@ -182,6 +192,7 @@ interface Row {
 export type { SessionNotice } from '../../shared/api'
 
 export interface SessionsDeps {
+  readonly codex?: Pick<CodexSessions, 'account' | 'models' | 'create' | 'list' | 'read' | 'turns' | 'search' | 'delete' | 'rename' | 'hold' | 'dispose'>
   readonly notes: NotesStore
   readonly changed: (sessions: readonly ChatSession[]) => void
   readonly items: (items: SessionItems) => void
@@ -244,6 +255,9 @@ interface Live {
   runs: SessionMode
   /** The model chosen under the field, as the tool is handed it. Nothing is Default. */
   chosen: string | undefined
+  reasoning: SessionMessage['reasoning']
+  ranReasoning: SessionMessage['reasoning']
+  actualReasoning: ReasoningEffort | undefined
   /** The model the process was started with, which cannot change without starting it again either. */
   ran: string | undefined
   /** The tool has a conversation under this id, so it is picked up rather than begun. */
@@ -455,6 +469,7 @@ export class Sessions {
       const live = this.#fresh(id, note.unborn, note.title ?? '', sessionMode(note.mode))
       live.queued = [...(note.queued ?? [])]
       live.chosen = note.model
+      live.reasoning = note.reasoning
     }
     // The general questions held when GeckIt last closed, each deleted when its day runs out.
     for (const [id, note] of Object.entries(deps.notes.all())) {
@@ -513,7 +528,8 @@ export class Sessions {
 
   // --- what the window asks ---------------------------------------------------
 
-  async account(): Promise<ClaudeAccount> {
+  async account(provider: SessionProvider = 'claude'): Promise<ClaudeAccount> {
+    if (provider === 'codex') return this.#deps.codex?.account() ?? { provider, here: false, signedIn: undefined }
     const [account, program] = await Promise.all([(this.#deps.claudeAccount ?? claudeAccount)(), this.#look()])
     return program === undefined ? account : { ...account, program }
   }
@@ -564,7 +580,8 @@ export class Sessions {
    * asks here, and is answered from what was kept until another version of
    * Claude Code answers.
    */
-  async models(root?: string): Promise<ClaudeModel[] | undefined> {
+  async models(root?: string, provider: SessionProvider = 'claude'): Promise<ClaudeModel[] | undefined> {
+    if (provider === 'codex') return root !== undefined && isRemote(root) ? undefined : this.#deps.codex?.models()
     // A host's own claude may name other models than this computer's, and is not kept the same way: it is asked fresh each time, and nothing is said where it cannot be asked cheaply.
     if (root !== undefined && isRemote(root)) return (this.#deps.claudeModels ?? claudeModels)(root)
     await this.#look()
@@ -590,8 +607,25 @@ export class Sessions {
         this.#rows.set(row.id, below === undefined ? { ...row, root } : { ...row, root: belowRoot(root, below), project: root })
       }
     }
+    const codexRows = await this.#deps.codex?.list(roots.filter((root) => !isRemote(root))) ?? []
+    const importedIds = new Map(codexRows.flatMap((row) => row.importedFrom === undefined ? [] : [[row.importedFrom, row.id] as const]))
+    let imported = false
+    const notes = { ...this.#deps.notes.all() }
+    for (const row of codexRows) {
+      const note = this.#deps.notes.all()[row.id]
+      if (row.importedFrom !== undefined && note?.importedFrom === undefined) {
+        const original = this.#deps.notes.all()[row.importedFrom]
+        const source = this.#rows.get(row.importedFrom)
+        const visible = original?.hidden !== true && (original?.here === true || original?.shown === true || (source !== undefined && !source.driven))
+        const migrated = importedNote(original ?? {}, note, row.importedFrom, importedIds)
+        notes[row.id] = { ...migrated, importedMetadata: 0, here: migrated.here ?? false, shown: migrated.shown ?? visible, hidden: migrated.hidden ?? !visible }
+        imported = true
+      }
+      this.#rows.set(row.id, row)
+    }
+    if (imported) this.#deps.notes.replace(notes)
     // A model not seen before is measured, so its rows can say how much context it holds.
-    if ([...this.#rows.values()].some((row) => row.model !== undefined && !this.#windows.has(row.model))) void this.measure()
+    if ([...this.#rows.values()].some((row) => providerOf(row.id) === 'claude' && row.model !== undefined && !this.#windows.has(row.model))) void this.measure()
     return this.#listed(roots)
   }
 
@@ -613,17 +647,19 @@ export class Sessions {
       // A general question is in no project, and every list carries it, so a phone reading the list again keeps its questions.
       if (where === undefined || (roots !== undefined && !roots.includes(project ?? where) && live?.question !== true)) continue
       if (note?.hidden === true) continue
-      if (live === undefined && row?.driven === true && note?.here !== true && note?.shown !== true) continue
+      if ((live === undefined || (providerOf(id) === 'codex' && !live.question)) && row?.driven === true && note?.here !== true && note?.shown !== true) continue
       // Held only because it was looked at, and the tool has nothing under that id any more.
       if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0 && live.queued.length === 0) {
         continue
       }
       const quiet = live === undefined || live.state === 'idle'
-      const model = live === undefined ? row?.model : live.model
+      const model = live?.model ?? row?.model
       const used = live?.used ?? row?.used
       const window = model === undefined ? undefined : this.#windows.get(model)
       const cost = live?.spent === undefined && live?.running === undefined ? undefined : (live.spent ?? 0) + (live.running ?? 0)
       const chosen = live === undefined ? note?.model : live.chosen
+      const reasoning = live === undefined ? note?.reasoning : live.reasoning
+      const actualReasoning = live?.actualReasoning ?? row?.actualReasoning
       const runs = [...(live?.commands.keys() ?? [])].map((key) => live?.items.get(key)).find((item) => item?.kind === 'shell')
       // One begun here is not on disk yet the first time it is listed.
       const first = row === undefined ? [...(live?.items.values() ?? [])].find((item) => item.kind === 'mine') : undefined
@@ -632,6 +668,7 @@ export class Sessions {
       const asking = this.#asking(id)
       sessions.push({
         id,
+        ...(providerOf(id) === 'codex' ? { provider: 'codex' } : {}),
         root: where,
         ...(project === undefined ? {} : { project }),
         title: note?.title ?? live?.title ?? row?.title ?? '',
@@ -653,6 +690,8 @@ export class Sessions {
         mode: live?.mode ?? sessionMode(note?.mode),
         ...(model === undefined ? {} : { model }),
         ...(chosen === undefined ? {} : { chosen }),
+        ...(providerOf(id) === 'codex' ? { reasoning: reasoning ?? actualReasoning ?? '' } : {}),
+        ...(actualReasoning === undefined ? {} : { actualReasoning }),
         ...(note?.seen === undefined ? {} : { seen: note.seen }),
         ...(live?.remote === undefined ? {} : { remote: live.remote }),
         ...(live === undefined || live.tasks.length === 0 ? {} : { tasks: live.tasks }),
@@ -744,6 +783,10 @@ export class Sessions {
       const last = hits.at(-1)
       return last === undefined ? [] : [{ id: one.id, root: one.root, count: hits.length, said: last.message.text.replace(/\s+/g, ' ').trim().slice(0, 160) }]
     })
+  }
+
+  searchCodex(roots: readonly string[], asked: string): Promise<ChatFound[]> {
+    return this.#deps.codex?.search(roots.filter((root) => !isRemote(root)), asked) ?? Promise.resolve([])
   }
 
   /** The limit changed: whatever it makes room for goes now. */
@@ -894,6 +937,7 @@ export class Sessions {
     const live = this.#live.get(id)
     if (live?.driver !== undefined) return linksIn([...live.items.values()])
     const root = live?.root ?? this.#rows.get(id)?.root
+    if (root !== undefined && providerOf(id) === 'codex') return linksIn((await this.#deps.codex?.read(root, id))?.items ?? [])
     return root === undefined ? [] : (this.#deps.disk?.links ?? readLinks)(root, id)
   }
 
@@ -909,6 +953,7 @@ export class Sessions {
     live.model = row.model
     live.used = row.used
     live.chosen = note?.model
+    live.reasoning = note?.reasoning
     live.queued = [...(note?.queued ?? [])]
     live.kept = [...(note?.requests ?? [])]
     return live
@@ -923,6 +968,9 @@ export class Sessions {
       driver: undefined,
       runs: mode,
       chosen: undefined,
+      reasoning: undefined,
+      ranReasoning: undefined,
+      actualReasoning: undefined,
       ran: undefined,
       begun: false,
       items: new Map(),
@@ -962,7 +1010,7 @@ export class Sessions {
   }
 
   async #reread(live: Live): Promise<void> {
-    const conversation = await (this.#deps.disk?.read ?? readClaudeSession)(live.root, live.id).catch(() => undefined)
+    const conversation = await (providerOf(live.id) === 'codex' ? this.#deps.codex?.read(live.root, live.id) : (this.#deps.disk?.read ?? readClaudeSession)(live.root, live.id))?.catch(() => undefined)
     if (conversation === undefined) return
     const read = conversation.items
     // Nothing holds it, so every run of the tool it had has written what it cost.
@@ -1003,10 +1051,20 @@ export class Sessions {
   async send(message: SessionMessage, go = false): Promise<string> {
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
+      const root = message.question === true ? homedir() : message.root
+      const provider = message.session === undefined ? message.provider ?? 'claude' : providerOf(message.session)
+      if (provider === 'codex' && isRemote(root)) throw new Error('Codex is available for local projects. Choose Claude Code for this host.')
+      if (provider === 'codex' && this.#deps.codex === undefined) throw new Error('Codex is not available. Install Codex and run codex login in a terminal.')
+      const id = provider === 'codex' ? message.session ?? await this.#deps.codex?.create(root, message.mode, message.model) : randomUUID()
+      if (id === undefined) throw new Error('Codex is not available. Install Codex and run codex login in a terminal.')
       live =
         message.question === true
-          ? this.#fresh(randomUUID(), homedir(), firstLine(message.text, 80), message.mode, true)
-          : this.#fresh(randomUUID(), message.root, firstLine(message.text, 80), message.mode)
+          ? this.#fresh(id, root, firstLine(message.text, 80), message.mode, true)
+          : this.#fresh(id, root, firstLine(message.text, 80), message.mode)
+      if (provider === 'codex' && message.session !== undefined) {
+        live.begun = true
+        await this.#reread(live)
+      }
       if (live.question) this.#keepNote(live)
     } else if (live.driver === undefined) {
       await this.#reread(live)
@@ -1025,7 +1083,7 @@ export class Sessions {
         return live.id
       }
       // A goal waiting its turn stands on the row already, as one sent straight away does.
-      const waiting = goalSent(message.text)
+      const waiting = providerOf(live.id) === 'codex' ? undefined : goalSent(message.text)
       if (waiting !== undefined && waiting !== '') live.goal = { condition: waiting, checks: 0 }
       this.#queue(live, [...live.queued, { id: `queued:${randomUUID()}`, message: { ...message, session: live.id }, at: this.#now() }])
       if (!live.begun && !this.#rows.has(live.id) && !live.question) this.#note(live.id, { title: live.title, mode: live.mode, unborn: live.root })
@@ -1037,6 +1095,7 @@ export class Sessions {
       this.#deps.notes.set(live.id, note)
     }
 
+    live.reasoning = message.reasoning
     live.mode = message.mode
     // A conversation begun with a command is named after what is first said in it, and so is the one carried on in after `/clear`, which has no name yet either.
     if ((!live.begun || live.title === '') && ![...live.items.values()].some((item) => item.kind === 'mine')) {
@@ -1049,7 +1108,7 @@ export class Sessions {
     }
     clearTimeout(live.back)
     // The goal holds from the moment it is sent; the file says the rest once the turn is over.
-    const goal = goalSent(message.text)
+    const goal = providerOf(live.id) === 'codex' ? undefined : goalSent(message.text)
     if (goal !== undefined) live.goal = goal === '' ? undefined : { condition: goal, checks: 0 }
 
     // The message is in the transcript before anything can go wrong with it.
@@ -1084,7 +1143,7 @@ export class Sessions {
     // is as old as its last look. A host's own claude is checked by starting
     // it, not by this computer's account: this computer may be signed in with
     // a key while the host it reaches is on a plan, or the other way round.
-    if (live.driver === undefined && !isRemote(live.root) && (await this.account()).key === true) {
+    if (live.driver === undefined && !isRemote(live.root) && (await this.account(providerOf(live.id))).key === true) {
       this.#deps.items({ id: live.id, items: [mine], gone })
       this.#ended(live, { kind: 'ended', how: 'offPlan' })
       return live.id
@@ -1105,6 +1164,7 @@ export class Sessions {
     this.#note(live.id, {
       mode: live.mode,
       ...(live.chosen === undefined ? {} : { model: live.chosen }),
+      reasoning: live.reasoning,
       here: this.#deps.notes.all()[live.id]?.here ?? !live.begun,
       title: this.#deps.notes.all()[live.id]?.title ?? live.title,
       // Written as the turn starts, since a crash leaves no chance to write anything as it ends.
@@ -1133,7 +1193,10 @@ export class Sessions {
     let live = asked.session === undefined ? undefined : (this.#live.get(asked.session) ?? this.#adopt(asked.session))
     const command = asked.command.trim()
     if (live === undefined) {
-      live = this.#fresh(randomUUID(), asked.root, firstLine(`!${command}`, 80), sessionMode(undefined))
+      if (asked.provider === 'codex' && isRemote(asked.root)) throw new Error('Codex is available for local projects.')
+      const id = asked.provider === 'codex' ? await this.#deps.codex?.create(asked.root, 'auto') : randomUUID()
+      if (id === undefined) throw new Error('Codex is not available.')
+      live = this.#fresh(id, asked.root, firstLine(`!${command}`, 80), sessionMode(undefined))
     } else if (live.driver === undefined) {
       await this.#reread(live)
     }
@@ -1207,6 +1270,7 @@ export class Sessions {
         mode: held.mode,
         text: 'I ran it.',
         ...(held.chosen === undefined ? {} : { model: held.chosen }),
+        ...(held.reasoning === undefined ? {} : { reasoning: held.reasoning }),
       })
     })
     return held.id
@@ -1262,11 +1326,12 @@ export class Sessions {
 
     // The tool takes its model when a conversation is taken up, and is told how it may act when it starts, so
     // another model or a change of mind is a new start. Let go of before it is ended, so Remote Control carries over.
-    if (live.driver !== undefined && (live.ran !== live.chosen || live.runs !== live.mode)) {
+    if (live.driver !== undefined && (live.ran !== live.chosen || live.runs !== live.mode || live.ranReasoning !== live.reasoning)) {
       const old = live.driver
       live.driver = undefined
       live.tasks = ended(live.tasks)
-      void old.end()
+      if (providerOf(live.id) === 'codex') await old.end()
+      else void old.end()
     }
     if (live.driver !== undefined) return
 
@@ -1276,13 +1341,17 @@ export class Sessions {
     live.running = undefined
     live.runs = live.mode
     live.ran = live.chosen
-    const driver = (this.#deps.claude ?? holdClaude)(
+    live.ranReasoning = live.reasoning
+    const hold = providerOf(live.id) === 'codex' ? this.#deps.codex?.hold.bind(this.#deps.codex) : (this.#deps.claude ?? holdClaude)
+    if (hold === undefined) throw new Error('Codex is not available.')
+    const driver = hold(
       {
         root: live.root,
         id: live.id,
         resume,
         mode: live.mode,
         ...(live.chosen === undefined ? {} : { model: live.chosen }),
+        ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }),
         ...(resume || live.fork === undefined ? {} : { fork: live.fork }),
       },
       (heard) => this.#hear(live, heard),
@@ -1518,7 +1587,17 @@ export class Sessions {
     if (taken === undefined || from === undefined) return undefined
     const { session: _from, again: _again, ...message } = taken
     const mode = from.mode
-    if (!history) return this.send({ ...message, mode })
+    if (!history) return this.send({ ...message, mode, provider: providerOf(id) })
+    if (providerOf(id) === 'codex') {
+      const turns = await this.#deps.codex?.turns(id) ?? []
+      const point = turns.findLast((turn) => turn.status !== 'inProgress' && turn.startedAt !== null && turn.startedAt * 1000 <= at)?.id
+      const next = await this.#deps.codex?.create(from.root, mode, from.chosen, { from: id, ...(point === undefined ? {} : { at: point }) })
+      if (next === undefined) return undefined
+      const live = this.#fresh(next, from.root, firstLine(message.text, 80), mode)
+      live.begun = true
+      this.#note(next, { here: true })
+      return this.send({ ...message, mode, session: next })
+    }
     const point = await (this.#deps.disk?.forkPoint ?? forkPoint)(from.root, id, at).catch(() => undefined)
     const live = this.#fresh(randomUUID(), from.root, firstLine(message.text, 80), mode)
     live.fork = { from: id, ...(point === undefined ? {} : { at: point }) }
@@ -1563,6 +1642,7 @@ export class Sessions {
       const live = this.#fresh(run.id, run.root, note?.title ?? '', sessionMode(note?.mode))
       live.begun = true
       live.chosen = note?.model
+      live.reasoning = note?.reasoning
       // Working only where a turn was running when GeckIt closed; the rest of what it says comes on the stream.
       live.state = note?.cut === undefined ? 'idle' : 'working'
       live.queued = [...(note?.queued ?? [])]
@@ -1603,6 +1683,7 @@ export class Sessions {
         mode: sessionMode(note.mode),
         text: 'continue',
         ...(note.model === undefined ? {} : { model: note.model }),
+        ...(note.reasoning === undefined ? {} : { reasoning: note.reasoning }),
       },
       true,
     )
@@ -1618,6 +1699,7 @@ export class Sessions {
     if (name === '') return
     this.#note(id, { title: name, renamed: true })
     const live = this.#live.get(id)
+    if (providerOf(id) === 'codex') this.#deps.codex?.rename(id, name)
     if (live !== undefined) {
       live.title = name
       this.#name(live)
@@ -1658,6 +1740,10 @@ export class Sessions {
       return note?.here === true || note?.shown === true || (row !== undefined && !row.driven)
     }
     const found = await (this.#deps.disk?.every ?? everyClaude)(older ? 0 : edge, older ? edge : Infinity, (id) => !listed(id))
+    for (const row of this.#rows.values()) {
+      if (providerOf(row.id) !== 'codex' || listed(row.id) || row.at < (older ? 0 : edge) || row.at >= (older ? edge : Infinity)) continue
+      found.push({ ...row, cwd: row.root })
+    }
     // Which reason, if any, keeps each row worth showing, before a folder is even asked for: figured once per row so a folder shared by several rows is asked about only once below.
     const candidates = found
       .map((row) => {
@@ -1750,7 +1836,8 @@ export class Sessions {
       if (root === undefined) continue
       // The tool writes to the file as it exits, so it goes first.
       await this.#letGo(id)
-      if (await (this.#deps.disk?.delete ?? deleteClaude)(root, id).catch(() => false)) gone.push(id)
+      const removed = providerOf(id) === 'codex' ? this.#deps.codex?.delete(id) : (this.#deps.disk?.delete ?? deleteClaude)(root, id)
+      if (await removed?.catch(() => false)) gone.push(id)
       this.#rows.delete(id)
       this.#note(id, { hidden: true })
     }
@@ -1823,8 +1910,8 @@ export class Sessions {
   measure(): Promise<void> {
     if (this.#measuring !== undefined) return this.#measuring.then(() => this.measure())
     const models = new Set<string>()
-    for (const row of this.#rows.values()) if (row.model !== undefined) models.add(row.model)
-    for (const live of this.#live.values()) if (live.model !== undefined) models.add(live.model)
+    for (const row of this.#rows.values()) if (providerOf(row.id) === 'claude' && row.model !== undefined) models.add(row.model)
+    for (const live of this.#live.values()) if (providerOf(live.id) === 'claude' && live.model !== undefined) models.add(live.model)
     const unknown = [...models].filter((model) => !this.#windows.has(model))
     if (unknown.length === 0 && this.#now() - this.#measured < MEASURED_FOR) return Promise.resolve()
     this.#measured = this.#now()
@@ -1878,6 +1965,7 @@ export class Sessions {
     }
     this.#live.clear()
     this.#watching = undefined
+    this.#deps.codex?.dispose()
   }
 
   // --- what the tool says -----------------------------------------------------
@@ -1964,13 +2052,29 @@ export class Sessions {
           return
         }
         // `/clear` leaves the conversation where it is and carries on in another, which the tool says by naming a different one here.
-        if (signal.session !== '' && signal.session !== live.id) this.#cleared(live, signal.session)
+        if (signal.session !== '' && signal.session !== live.id) {
+          if (providerOf(live.id) === 'codex') {
+            const was = live.id
+            const note = this.#deps.notes.all()[was]
+            this.#live.delete(was)
+            this.#rows.delete(was)
+            this.#deps.notes.set(was, { hidden: true })
+            live.id = signal.session
+            live.queued = live.queued.map((one) => ({ ...one, message: { ...one.message, session: live.id } }))
+            this.#live.set(live.id, live)
+            this.#note(live.id, { ...note, here: true, queued: live.queued })
+            if (this.#watching === was) this.#watching = live.id
+            this.#changed()
+            this.#deps.show?.(live.id)
+          } else this.#cleared(live, signal.session)
+        }
         if (this.#deps.notes.all()[live.id]?.title !== live.named) this.#name(live)
         if (live.mode === 'auto' && signal.mode !== undefined && signal.mode !== 'auto') this.#noAuto(live, signal.model)
-        if (live.model !== signal.model) {
+        if (live.model !== signal.model || (signal.reasoning !== undefined && live.actualReasoning !== signal.reasoning)) {
           live.model = signal.model
+          live.actualReasoning = signal.reasoning ?? live.actualReasoning
           this.#changed()
-          if (signal.model !== undefined && !this.#windows.has(signal.model)) void this.measure()
+          if (providerOf(live.id) === 'claude' && signal.model !== undefined && !this.#windows.has(signal.model)) void this.measure()
         }
         return
       case 'doing':
@@ -1987,7 +2091,20 @@ export class Sessions {
         // It can start in auto and give it up a moment later, once it has checked.
         if (live.mode === 'auto' && signal.mode !== 'auto') this.#noAuto(live, live.model)
         return
+      case 'model':
+        if (live.model !== signal.model) {
+          live.model = signal.model
+          this.#changed()
+        }
+        return
+      case 'reasoning':
+        if (live.actualReasoning !== signal.effort) {
+          live.actualReasoning = signal.effort
+          this.#changed()
+        }
+        return
       case 'spend':
+        if (signal.window !== undefined && live.model !== undefined) this.#windows.set(live.model, signal.window)
         if (signal.used !== undefined) live.used = signal.used
         if (signal.cost !== undefined) live.running = signal.cost
         // Said while it works; the row is drawn again when the turn ends, which is soon enough.
@@ -2024,6 +2141,15 @@ export class Sessions {
         return
       case 'asks':
         this.#asked(live, signal.ask, signal.wanted, signal.line)
+        return
+      case 'resolved':
+        live.asks.delete(signal.ask)
+        live.held.delete(signal.ask)
+        if (live.asks.size === 0 && live.state === 'asks') {
+          live.state = 'working'
+          live.stands = 'Working'
+          this.#changed()
+        }
         return
       case 'ended':
         this.#ended(live, signal)

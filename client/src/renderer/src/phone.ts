@@ -487,8 +487,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     },
     chat: {
       open: nothing,
-      account: () => call('chat.account'),
-      models: (root) => call('chat.models', root),
+      account: (provider) => call('chat.account', provider),
+      models: (root, provider) => call('chat.models', root, provider),
       plan: () => call('chat.plan'),
       onPlan: (said) => listen('chat:plan', said),
       plans: () => call('chat.plans'),

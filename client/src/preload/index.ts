@@ -28,6 +28,7 @@ import type {
   SessionMessage,
   ShellCommand,
   SessionMode,
+  SessionProvider,
   SessionNotice,
   SessionStatus,
   Settings,
@@ -120,9 +121,9 @@ const geckit = {
 
   chat: {
     open: (): void => ipcRenderer.send('chat:open'),
-    account: (): Promise<ClaudeAccount> => ipcRenderer.invoke('chat:account'),
+    account: (provider?: SessionProvider): Promise<ClaudeAccount> => ipcRenderer.invoke('chat:account', provider),
     /** A project's own root asks a host's own claude, where one is given; without it, this computer's. */
-    models: (root?: string): Promise<ClaudeModel[] | undefined> => ipcRenderer.invoke('chat:models', root),
+    models: (root?: string, provider?: SessionProvider): Promise<ClaudeModel[] | undefined> => ipcRenderer.invoke('chat:models', root, provider),
     /** The plan's windows as last measured. Asking has them measured again; the fresh ones arrive through onPlan. */
     plan: (): Promise<PlanUsage | undefined> => ipcRenderer.invoke('chat:plan'),
     onPlan: (said: (plan: PlanUsage) => void): (() => void) => listen('chat:plan', said),

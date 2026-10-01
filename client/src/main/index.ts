@@ -26,7 +26,7 @@ import {
 import log from 'electron-log'
 import QRCode from 'qrcode'
 
-import { ANYWHERE, homeOf, resumeCommand, shownProjects } from '../shared/api'
+import { ANYWHERE, assistantsIn, homeOf, providerOf, resumeCommand, shownProjects } from '../shared/api'
 import { newKey, pairingLink, SIGNAL } from '../shared/pairing'
 import type {
   Anywhere,
@@ -49,6 +49,7 @@ import type {
   SessionItems,
   SessionMessage,
   SessionMode,
+  SessionProvider,
   SessionStatus,
   Settings,
   ShellCommand,
@@ -69,13 +70,15 @@ import { foldersIn } from './folders'
 import { fetchGit, gitRepo, gitState } from './git'
 import { keepGuide } from './guide'
 import { closeAsked, listenAsked } from './asked'
-import type { StartAnswered, StartAsked } from './asked'
+import type { CliAnswered, CliAsked, StartAnswered, StartAsked } from './asked'
+import { migrateCodexMetadata } from './session-migration'
 import { fileShown } from './file-shown'
 import { keepToken, pushTo } from './push'
 import { localFetch } from './local-page'
 import type { LocalAsk } from '../shared/local'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
+import { CodexSessions } from './sessions/codex'
 import type { Asking } from './sessions'
 import { firstLine } from './sessions/wording'
 import type { McpChange } from './sessions/mcp'
@@ -154,6 +157,7 @@ const RECORD = ANYWHERE.record
 const SCREENSHOT = ANYWHERE.screenshot
 
 let sessions: Sessions | undefined
+const conversationNotes = notesStore()
 let lineup: Lineup = { working: 0, limit: 0 }
 let routes: Routes | undefined
 /** Every place's plan: this computer's, and each host that has a project on it. Built once, over `sessions` and `routes` however they stand when it is asked. */
@@ -320,7 +324,8 @@ async function thereFor(path: string): Promise<boolean> {
 
 function build(held: Routes): Sessions {
   return new Sessions({
-    notes: notesStore(),
+    codex: new CodexSessions(undefined, (account) => tellChats('chat:accountChanged', account)),
+    notes: conversationNotes,
     ...(process.platform === 'darwin' ? { terminal: terminalFor } : {}),
     claude: routedClaude(held),
     disk: routedDisk(held),
@@ -664,6 +669,14 @@ async function readSaid(said: string): Promise<Answered> {
   return { ok: true, plan: lines, heard: said }
 }
 
+async function cliAsked(ask: CliAsked, gone: AbortSignal): Promise<CliAnswered> {
+  if (!('action' in ask)) return startAsked(ask, gone)
+  if (ask.action !== 'migrate-codex' || typeof ask.imports !== 'string' || typeof ask.dryRun !== 'boolean') return { ok: false, error: 'That was not a migration request GeckIt reads.' }
+  const report = migrateCodexMetadata(app.getPath('userData'), ask.imports, ask.dryRun, { notes: conversationNotes, settings: getSettings(), saveSettings: setSettings })
+  if (!ask.dryRun) await sessions?.refresh(getSettings().projects)
+  return { ok: true, report }
+}
+
 /** Conversations Claude asked for with `geckit start`, begun only as the person answers in the conversation that asked. */
 async function startAsked(ask: StartAsked, gone: AbortSignal): Promise<StartAnswered> {
   const held = sessions
@@ -784,10 +797,11 @@ function openTerminal(root: string, run: string): void {
 
 /** Search, routed the same way the conversation files themselves are: this computer's own, or a host's mirror. */
 const searchChats = async (roots: readonly string[], asked: string): Promise<ChatFound[]> => {
-  const said = await searchClaude(roots, asked, (root) => foldersFor(routes, root))
+  const results = await Promise.all([searchClaude(roots, asked, (root) => foldersFor(routes, root)), sessions?.searchCodex(roots, asked) ?? []])
+  const said = results.flat()
   // A conversation not begun yet has no file, and what is queued in it is all there is to find.
   const queued = (sessions?.queuedHolding(roots, asked) ?? []).filter((hit) => !said.some((one) => one.id === hit.id))
-  return [...queued, ...said]
+  return [...queued, ...said].filter((one) => assistantsIn(getSettings()).includes(providerOf(one.id)))
 }
 
 function listChats(root: string | undefined, every: readonly string[]): Promise<ChatSession[]> {
@@ -1019,8 +1033,8 @@ function wire(): void {
 
   ipcMain.on('chat:open', () => openChat())
   ipcMain.on('chat:listening', () => chatListening())
-  ipcMain.handle('chat:account', () => sessions?.account())
-  ipcMain.handle('chat:models', (_event, root: string | undefined) => sessions?.models(root ?? undefined))
+  ipcMain.handle('chat:account', (_event, provider: SessionProvider | undefined) => sessions?.account(provider))
+  ipcMain.handle('chat:models', (_event, root: string | undefined, provider: SessionProvider | undefined) => sessions?.models(root ?? undefined, provider))
   ipcMain.handle('chat:plan', () => {
     void sessions?.measure()
     return sessions?.plan()
@@ -1253,8 +1267,8 @@ function phoneCalls(): Record<string, PhoneCall> {
     'shortcuts.save': (draft: ShortcutDraft) => saveShortcut(draft),
     'shortcuts.remove': (id: string) => removeShortcut(id),
     'shortcuts.run': (id: string) => runShortcut(id, 'hand'),
-    'chat.account': () => held()?.account(),
-    'chat.models': (root: string | undefined) => held()?.models(root),
+    'chat.account': (provider: SessionProvider | undefined) => held()?.account(provider),
+    'chat.models': (root: string | undefined, provider: SessionProvider | undefined) => held()?.models(root, provider),
     'chat.plan': () => {
       void held()?.measure()
       return held()?.plan()
@@ -1419,7 +1433,7 @@ if (!app.requestSingleInstanceLock()) {
     guided = JSON.stringify([getSettings().guideClaude, getSettings().browserNames])
     void keepGuide(getSettings().guideClaude, getSettings().browserNames)
     keepPhone(getSettings().phone, getSettings().phoneKey)
-    asked = listenAsked(startAsked)
+    asked = listenAsked(cliAsked)
     wire()
     // The conversations are what this is opened for; correcting and dictating are a shortcut away.
     openChat()

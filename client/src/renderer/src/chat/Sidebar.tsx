@@ -1,3 +1,4 @@
+import { ProviderIcon } from './ProviderIcon'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
@@ -178,6 +179,7 @@ export const STATUS_ICONS: Record<SessionStatus, string> = { review: 'eye', bloc
  * typed while it is renamed is its own, for the same reason.
  */
 const Row = memo(function Row({
+  showProviders,
   session,
   on,
   picking,
@@ -197,6 +199,7 @@ const Row = memo(function Row({
   onOver,
   onLand,
 }: {
+  readonly showProviders: boolean
   readonly session: ChatSession
   readonly on: boolean
   /** Rows are being picked to be deleted together, and a press picks rather than opens. */
@@ -290,6 +293,7 @@ const Row = memo(function Row({
           />
         ) : (
           <span className="head">
+            {showProviders ? <ProviderIcon id={session.id} /> : null}
             <span className="title">{session.title === '' ? 'Untitled' : session.title}</span>
             <span className="changed" title={new Date(session.at).toLocaleString()}>
               {changed}
@@ -326,6 +330,7 @@ const Row = memo(function Row({
 
 /** The whole list, drawn again only when the list itself changes. */
 const Rows = memo(function Rows({
+  showProviders,
   groups,
   places,
   by,
@@ -348,6 +353,7 @@ const Rows = memo(function Rows({
   onOver,
   onLand,
 }: {
+  readonly showProviders: boolean
   readonly groups: readonly Group[]
   readonly places: ReadonlyMap<string, number>
   readonly by: ChatGrouping
@@ -427,6 +433,7 @@ const Rows = memo(function Rows({
             {(folded.has(where) ? [] : rows).map((session) => (
               <Row
                 key={session.id}
+                showProviders={showProviders}
                 session={session}
                 on={!picking && session.id === shownId}
                 picking={picking}
@@ -686,6 +693,7 @@ export function Sidebar({
       )}
 
       <Rows
+        showProviders={chat.showProviders}
         groups={groups}
         places={places}
         by={by}

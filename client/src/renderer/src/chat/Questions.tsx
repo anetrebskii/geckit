@@ -1,3 +1,4 @@
+import { ProviderIcon } from './ProviderIcon'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -99,7 +100,7 @@ export function QuestionsMenu({
             onClose()
           }}
         >
-          <span className="question-title">{title}</span>
+          <span className="question-title">{chat.showProviders ? <ProviderIcon id={one.id} /> : null}{title}</span>
           {one.stands === '' ? null : <span className="question-says">{one.stands}</span>}
         </button>
         {one.stays === true ? (

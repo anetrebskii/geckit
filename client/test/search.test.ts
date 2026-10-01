@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { searchClaude } from '../src/main/sessions/search'
+import { searchClaude, searchCodex } from '../src/main/sessions/search'
 
 /** Finding a conversation by what was said in it, against files laid out the way the tool writes them. */
 
@@ -61,5 +61,15 @@ describe('searching what was said', () => {
       { id: 'aaa', root: ROOT, said: 'a giraffe walked in', count: 1 },
     ])
     expect(await searchClaude([ROOT], 'first')).toHaveLength(1)
+  })
+
+  it('indexes Codex messages once and reads newly appended responses without tool output or duplicate events', async () => {
+    const files = [{ id: 'codex:aaa', root: ROOT, path: file }]
+    await writeFile(file, line({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Deploy billing' }] } }) + line({ type: 'event_msg', payload: { type: 'user_message', message: 'Deploy billing' } }) + line({ type: 'response_item', payload: { type: 'function_call_output', output: 'zebra' } }))
+    expect(await searchCodex(files, '')).toEqual([])
+    expect(await searchCodex(files, 'deploy billing')).toEqual([{ id: 'codex:aaa', root: ROOT, said: 'Deploy billing', count: 1 }])
+    await appendFile(file, line({ type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Billing deploy finished.' }] } }))
+    expect(await searchCodex(files, 'billing deploy')).toEqual([{ id: 'codex:aaa', root: ROOT, said: 'Billing deploy finished.', count: 2 }])
+    expect(await searchCodex(files, 'zebra')).toEqual([])
   })
 })
