@@ -94,6 +94,7 @@ export function Chat(): React.JSX.Element {
   // On the phone, New task opened to be filled from a recording.
   const [recordFirst, setRecordFirst] = useState(false)
   const [asking, setAsking] = useState(() => keptTask(true) !== undefined)
+  const [formStarting, setFormStarting] = useState(false)
   // The pictures a form opens with: the screenshot that opened it, or what the other form held.
   const [seed, setSeed] = useState<readonly SessionImage[]>([])
   const switchForm = (pictures: readonly SessionImage[]): void => {
@@ -104,6 +105,7 @@ export function Chat(): React.JSX.Element {
   const closeForm = (): void => {
     setMaking(false)
     setAsking(false)
+    setFormStarting(false)
     setSeed([])
   }
   const [cut, setCut] = useState<readonly CutOff[] | undefined>()
@@ -286,7 +288,7 @@ export function Chat(): React.JSX.Element {
       if (making || asking) {
         if (event.key === 'Escape') {
           event.preventDefault()
-          closeForm()
+          if (!formStarting) closeForm()
         }
         return
       }
@@ -413,7 +415,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys, managing, clearing, making, asking, cut])
+  }, [chat, switching, setting, keys, managing, clearing, making, asking, formStarting, cut])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -495,15 +497,15 @@ export function Chat(): React.JSX.Element {
       {overBoard && !making && !asking ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
       {making ? (
         <>
-          <div className="talk-scrim form-scrim" onMouseDown={closeForm} />
-          <NewTask chat={chat} record={recordFirst} seed={seed} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} />
+          <div className="talk-scrim form-scrim" onMouseDown={formStarting ? undefined : closeForm} />
+          <NewTask chat={chat} record={recordFirst} seed={seed} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
         </>
       ) : null}
       {cut === undefined ? null : <CutOffDialog list={cut} onClose={() => setCut(undefined)} />}
       {asking ? (
         <>
-          <div className="talk-scrim form-scrim" onMouseDown={closeForm} />
-          <NewTask question chat={chat} seed={seed} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} />
+          <div className="talk-scrim form-scrim" onMouseDown={formStarting ? undefined : closeForm} />
+          <NewTask question chat={chat} seed={seed} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
         </>
       ) : null}
       {/* There is no sidebar to make wider on the board. */}

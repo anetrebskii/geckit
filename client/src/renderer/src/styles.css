@@ -5633,6 +5633,11 @@ html.framed .board-head {
   color: var(--text-faint);
 }
 
+.new-task-why.trouble,
+.phone-task-note.trouble {
+  color: var(--danger);
+}
+
 /* The conversation over the board, and the board dimmed behind it. */
 .talk-scrim {
   position: absolute;

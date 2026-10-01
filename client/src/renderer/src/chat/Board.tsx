@@ -799,6 +799,7 @@ export function NewTask({
   record = false,
   seed = [],
   onSwitch,
+  onStarting,
 }: {
   readonly chat: Chat
   readonly onClose: () => void
@@ -810,6 +811,7 @@ export function NewTask({
   readonly seed?: readonly SessionImage[]
   /** Turned from a task into a question or back, with the pictures carried over; what is written goes over through what the other form keeps. */
   readonly onSwitch?: ((pictures: readonly SessionImage[]) => void) | undefined
+  readonly onStarting: (starting: boolean) => void
 }): React.JSX.Element {
   const [kept] = useState(() => keptTask(question))
   const [root, setRoot] = useState(() => kept?.root ?? chat.root ?? shownProjects(chat.settings)[0] ?? '')
@@ -868,6 +870,9 @@ export function NewTask({
   // Closed on purpose, it is let go of; a restart does not unmount it, so what was written stays for the next start.
   useEffect(() => () => localStorage.removeItem(keptKey(question)), [question])
   const [pictures, setPictures] = useState<readonly SessionImage[]>(seed)
+  const [starting, setStarting] = useState(false)
+  const startingRef = useRef(false)
+  const [startError, setStartError] = useState<string | undefined>()
   const [over, setOver] = useState(false)
   const [recorded, setRecorded] = useState<Recorded | undefined>(undefined)
   const [looking, setLooking] = useState<string | undefined>()
@@ -948,15 +953,23 @@ export function NewTask({
   }
 
   const start = (): void => {
-    if ((root === '' && !question) || !ready) return
+    if ((root === '' && !question) || !ready || startingRef.current) return
     // What the frames are and where the video is goes under the words, for Claude rather than for the form; on a host the video is not there, so only the frames are said.
     const note = recorded === undefined ? '' : recordedNote(recorded.seconds, frames, recorded.videos.join(' and ') || undefined, !question && isRemote(root))
     const said = note === '' ? text.trim() : `${text.trim()}\n\n${note}`.trim()
     const sent = [...pictures, ...frames.map((one) => one.image)]
-    if (question) chat.ask(said, sent)
-    else chat.startTask(root, said, goal.trim(), sent)
-    onClose()
+    startingRef.current = true
+    setStarting(true)
+    onStarting(true)
+    setStartError(undefined)
+    void (question ? chat.ask(said, sent) : chat.startTask(root, said, goal.trim(), sent)).then(onClose, (error: Error) => {
+      startingRef.current = false
+      setStarting(false)
+      onStarting(false)
+      setStartError(error.message)
+    })
   }
+  const startHint = provider === 'codex' && !question && isRemote(root) ? 'Enable Claude Code in Settings to use this host' : chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when ${provider === 'codex' ? 'Codex' : 'Claude'} is done. ${MOD}+Enter starts it` : `${provider === 'codex' ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review`
 
   if (ON_PHONE) {
     return (
@@ -974,6 +987,8 @@ export function NewTask({
         onDrop={(at) => setPictures((held) => held.filter((_one, index) => index !== at))}
         onStart={start}
         onClose={onClose}
+        starting={starting}
+        startError={startError}
         record={record}
         frames={frames.map((one) => one.image)}
         recorded={recorded === undefined ? undefined : { seconds: recorded.seconds, video: recorded.videos.length > 0 }}
@@ -1005,6 +1020,7 @@ export function NewTask({
               key={String(kind)}
               type="button"
               className={`tab${kind === question ? ' on' : ''}`}
+              disabled={starting}
               onClick={() => {
                 if (kind === question) return
                 localStorage.setItem(keptKey(kind), JSON.stringify({ root, text, goal }))
@@ -1204,18 +1220,18 @@ export function NewTask({
         </label>
       )}
       <div className="new-task-foot">
-        <span className="new-task-why">{provider === 'codex' && !question && isRemote(root) ? 'Enable Claude Code in Settings to use this host' : chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when ${provider === 'codex' ? 'Codex' : 'Claude'} is done. ${MOD}+Enter starts it` : `${provider === 'codex' ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review`}</span>
+        <span className={`new-task-why${startError === undefined ? '' : ' trouble'}`} role={startError === undefined ? 'status' : 'alert'}>{startError ?? (starting ? `Starting ${provider === 'codex' ? 'Codex' : 'Claude Code'}...` : startHint)}</span>
         <span className="spacer" />
-        <button type="button" className="quiet" onClick={onClose}>
+        <button type="button" className="quiet" disabled={starting} onClick={onClose}>
           Cancel
         </button>
         <button
           type="button"
           className="primary"
-          disabled={(root === '' && !question) || !ready || (provider === 'codex' && !question && isRemote(root))}
+          disabled={starting || (root === '' && !question) || !ready || (provider === 'codex' && !question && isRemote(root))}
           onClick={start}
         >
-          {chat.full && !question ? 'Queue' : question ? 'Ask' : 'Start'}
+          {starting ? 'Starting...' : chat.full && !question ? 'Queue' : question ? 'Ask' : 'Start'}
         </button>
       </div>
       {folderOn === undefined ? null : (
@@ -1244,6 +1260,8 @@ function PhoneNewTask({
   onDrop,
   onStart,
   onClose,
+  starting,
+  startError,
   record,
   frames,
   recorded,
@@ -1271,6 +1289,8 @@ function PhoneNewTask({
   readonly onDrop: (at: number) => void
   readonly onStart: () => void
   readonly onClose: () => void
+  readonly starting: boolean
+  readonly startError: string | undefined
   readonly modelChoices: React.JSX.Element
 }): React.JSX.Element {
   const [asking, setAsking] = useState(false)
@@ -1314,6 +1334,7 @@ function PhoneNewTask({
   }, [record])
   // Nothing typed goes without asking; something typed asks before it is thrown away.
   const leave = (): void => {
+    if (starting) return
     if (text.trim() === '' && pictures.length === 0 && frames.length === 0) onClose()
     else setAsking(true)
   }
@@ -1345,15 +1366,16 @@ function PhoneNewTask({
             if (far) leave()
           }}
         >
-          <button type="button" onClick={leave}>
+          <button type="button" disabled={starting} onClick={leave}>
             Cancel
           </button>
           <b>{question ? 'Question' : 'New task'}</b>
-          <button type="button" className="strong" disabled={!ready} onClick={onStart}>
-            {question ? 'Ask' : 'Start'}
+          <button type="button" className="strong" disabled={!ready || starting} onClick={onStart}>
+            {starting ? 'Starting...' : question ? 'Ask' : 'Start'}
           </button>
         </div>
         <div className="phone-task-form">
+          {starting || startError !== undefined ? <div className={`phone-task-note${startError === undefined ? '' : ' trouble'}`} role={startError === undefined ? 'status' : 'alert'}>{startError ?? `Starting ${provider === 'codex' ? 'Codex' : 'Claude Code'}...`}</div> : null}
           {chat.showProviders ? <div className="phone-task-group"><button type="button" className="phone-task-cell" onClick={() => setPickingAssistant(true)}>Assistant<span>{provider === 'codex' ? 'Codex' : 'Claude Code'}<Icon name="right" size={14} /></span></button></div> : null}
           {pickingAssistant ? <Menu anchor={new DOMRect()} title="Assistant" chosen={provider} choices={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex', disabled: !question && isRemote(root), says: 'Your ChatGPT plan, on the paired host' }]} onPick={(value) => chat.change({ chatProvider: value as SessionProvider })} onClose={() => setPickingAssistant(false)} /> : null}
           {modelChoices}

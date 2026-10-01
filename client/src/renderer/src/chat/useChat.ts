@@ -147,9 +147,9 @@ export interface Chat {
   askModels: (root?: string) => void
   send: (again?: string, said?: string) => void
   /** A general question, in no project, which the board and the list never show. */
-  ask: (text: string, images?: readonly SessionImage[]) => void
+  ask: (text: string, images?: readonly SessionImage[]) => Promise<void>
   /** A new conversation from the board's form: the work goes first, then the goal. */
-  startTask: (root: string, text: string, goal: string, images?: readonly SessionImage[]) => void
+  startTask: (root: string, text: string, goal: string, images?: readonly SessionImage[]) => Promise<void>
   /** Words sent to the open conversation as they are, the field left alone: `/compact`, `/goal clear`. */
   say: (text: string) => void
   answer: (card: string, answer: CardAnswer | string) => void
@@ -717,7 +717,7 @@ export function useChat(): Chat {
     (text: string, images: readonly SessionImage[] = []) => {
       const now = held.current
       const provider = assistantFor(now.settings)
-      void window.geckit.chat
+      return window.geckit.chat
         .send({
           root: '',
           provider,
@@ -729,7 +729,6 @@ export function useChat(): Chat {
           ...((provider === 'codex' ? now.settings.codexModel : now.settings.chatModel) === '' ? {} : { model: provider === 'codex' ? now.settings.codexModel : now.settings.chatModel }),
         })
         .then((id) => open({ kind: 'session', id }))
-        .catch((error: Error) => setTrouble(error.message))
     },
     [open],
   )
@@ -741,11 +740,11 @@ export function useChat(): Chat {
       const chosen = provider === 'codex' ? now.settings.codexModel : now.settings.chatModel
       const model = chosen === '' ? {} : { model: chosen }
       const carried = images.length === 0 ? {} : { images }
-      void window.geckit.chat.send({ root, provider, ...(provider !== 'codex' ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(provider === 'codex' && goal.trim() !== '' ? { goal: goal.trim() } : {}) }).then((id) => {
+      return window.geckit.chat.send({ root, provider, ...(provider !== 'codex' ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(provider === 'codex' && goal.trim() !== '' ? { goal: goal.trim() } : {}) }).then((id) => {
         open({ kind: 'session', id })
         if (provider === 'codex' || goal.trim() === '') return
         void window.geckit.chat.send({ session: id, root, mode: now.mode, text: `/goal ${goal.trim()}`, ...model })
-      }).catch((error: Error) => setTrouble(error.message))
+      })
     },
     [open],
   )
