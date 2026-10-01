@@ -831,10 +831,13 @@ export function NewTask({
   const catalog: readonly ClaudeModel[] | undefined = models?.provider === provider && models.root === modelRoot && Array.isArray(models.said) ? models.said : undefined
   const selectedModel = model === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === model)
   const reasoning = chat.settings.codexReasoning
+  const defaultReasoning = selectedModel?.defaultReasoning === undefined ? 'Default' : `Default (${selectedModel.defaultReasoning === 'xhigh' ? 'Extra high' : selectedModel.defaultReasoning.charAt(0).toUpperCase() + selectedModel.defaultReasoning.slice(1)})`
+  const reasoningLabel = reasoning === '' ? defaultReasoning : reasoning === 'xhigh' ? 'Extra high' : reasoning.charAt(0).toUpperCase() + reasoning.slice(1)
   const modelChoices = (
     <div className={ON_PHONE ? 'phone-task-group' : 'new-task-models'}>
       <label className={ON_PHONE ? 'phone-task-cell' : 'new-task-label'}>
         Model
+        {ON_PHONE ? <span className="phone-task-selected" aria-hidden="true"><b>{model === '' ? 'Default' : selectedModel?.name ?? model}</b><Icon name="right" size={14} /></span> : null}
         <select
           className="new-task-where task-model-select"
           value={model}
@@ -854,8 +857,9 @@ export function NewTask({
       </label>
       {provider !== 'codex' ? null : <label className={ON_PHONE ? 'phone-task-cell' : 'new-task-label'}>
         Reasoning
+        {ON_PHONE ? <span className="phone-task-selected" aria-hidden="true"><b>{reasoningLabel}</b><Icon name="right" size={14} /></span> : null}
         <select className="new-task-where task-model-select" value={reasoning} onChange={(event) => chat.change({ codexReasoning: event.target.value as ReasoningEffort | '' })}>
-          <option value="">{selectedModel?.defaultReasoning === undefined ? 'Default' : `Default (${selectedModel.defaultReasoning === 'xhigh' ? 'Extra high' : selectedModel.defaultReasoning.charAt(0).toUpperCase() + selectedModel.defaultReasoning.slice(1)})`}</option>
+          <option value="">{defaultReasoning}</option>
           {reasoning === '' || selectedModel?.reasoning?.some((one) => one.value === reasoning) ? null : <option value={reasoning} disabled>{reasoning === 'xhigh' ? 'Extra high' : reasoning.charAt(0).toUpperCase() + reasoning.slice(1)}</option>}
           {selectedModel?.reasoning?.map((one) => <option key={one.value} value={one.value} title={one.says}>{one.value === 'xhigh' ? 'Extra high' : one.value.charAt(0).toUpperCase() + one.value.slice(1)}</option>)}
         </select>
@@ -1379,6 +1383,7 @@ function PhoneNewTask({
           {chat.showProviders ? <div className="phone-task-group"><button type="button" className="phone-task-cell" onClick={() => setPickingAssistant(true)}>Assistant<span>{provider === 'codex' ? 'Codex' : 'Claude Code'}<Icon name="right" size={14} /></span></button></div> : null}
           {pickingAssistant ? <Menu anchor={new DOMRect()} title="Assistant" chosen={provider} choices={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex', disabled: !question && isRemote(root), says: 'Your ChatGPT plan, on the paired host' }]} onPick={(value) => chat.change({ chatProvider: value as SessionProvider })} onClose={() => setPickingAssistant(false)} /> : null}
           {modelChoices}
+          {question ? <div className="phone-task-note">Deleted a day after its last answer.</div> : null}
           {question ? null : (
             <>
               <div className="phone-task-group">
@@ -1473,7 +1478,6 @@ function PhoneNewTask({
               event.target.value = ''
             }}
           />
-          {question ? <span className="phone-task-tools-note">Deleted a day after its last answer.</span> : null}
         </div>
       </div>
       {choosing ? <PhoneProject chat={chat} root={root} onPick={onRoot} onClose={() => setChoosing(false)} /> : null}

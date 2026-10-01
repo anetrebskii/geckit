@@ -956,7 +956,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {chat.root === undefined ? null : goal === undefined ? (
             <button
               type="button"
-              className="picker"
+              className="picker goal-control"
               disabled={cannot || chat.session === undefined}
               title="Set a goal"
               onClick={() => setEditingGoal(chat.session?.id)}
@@ -964,7 +964,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               Goal
             </button>
           ) : (
-            <button type="button" className="picker goal-picker" title={`Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`} onClick={() => setEditingGoal(chat.session?.id)}>
+            <button type="button" className="picker goal-picker goal-control" title={`Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`} onClick={() => setEditingGoal(chat.session?.id)}>
               <span className="remote-dot" />
               <span className="goal-text">{`Goal: ${goal.condition}`}</span>
               <Icon name="down" size={11} />

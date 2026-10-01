@@ -6832,6 +6832,10 @@ html.keyboard .sheet {
   border-radius: 12px;
 }
 
+.phone-compose .phone-task-group + .phone-task-group {
+  margin-block-start: 12px;
+}
+
 .phone-compose .phone-task-cell {
   position: relative;
   background: none;
@@ -6875,13 +6879,30 @@ html.keyboard .sheet {
 }
 
 .phone-compose .task-model-select {
-  max-width: 70%;
-  min-width: 0;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   padding: 0;
-  font-size: 17px;
-  text-align: end;
-  background: none;
-  border: 0;
+  opacity: 0;
+}
+
+.phone-compose .phone-task-cell .phone-task-selected {
+  max-width: 70%;
+  margin-inline-start: auto;
+  color: var(--text);
+}
+
+.phone-task-selected b {
+  overflow: hidden;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-task-selected svg {
+  flex: none;
+  color: var(--text-faint);
 }
 
 .phone-compose .phone-task-text {
@@ -6948,15 +6969,6 @@ html.phone .phone-task-tools button.spoken {
 
 html.phone .phone-task-tools button.spoken:disabled {
   color: var(--text-faint);
-}
-
-.phone-task-tools-note {
-  flex: 1;
-  min-width: 0;
-  padding-inline-end: 8px;
-  font-size: 13px;
-  color: var(--text-faint);
-  text-align: end;
 }
 
 .phone-task .pending {
@@ -7286,6 +7298,10 @@ html.phone .phrase.keep {
 html.phone .phrase:active,
 html.phone .composer-bar .picker:active {
   background: var(--fill-strong);
+}
+
+html.phone .composer-bar .goal-control {
+  order: -1;
 }
 
 html.phone .composer-bar .goal-picker {
