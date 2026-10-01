@@ -61,12 +61,12 @@ export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise
       mode: one.mode,
       text: one.prompt,
       provider,
+      ...(provider === 'codex' && one.goal ? { goal: one.goal } : {}),
       ...(one.model === undefined ? {} : { model: one.model }),
       ...(provider !== 'codex' || one.reasoning === undefined ? {} : { reasoning: one.reasoning }),
     })
     deps.rename(session, one.name)
     put(id, { lastSession: session })
-    // The goal goes after the work, so it holds from the first turn without the run beginning with a condition and no task.
     if (provider === 'claude' && one.goal !== undefined && one.goal !== '') {
       await deps.start({ session, root: one.root, mode: one.mode, text: `/goal ${one.goal}` })
     }
@@ -90,7 +90,7 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
     prompt: draft.prompt,
     provider: draft.provider ?? 'claude',
     ...(draft.provider !== 'codex' || draft.reasoning === undefined ? {} : { reasoning: draft.reasoning }),
-    ...(draft.provider === 'codex' || draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
+    ...(draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
     mode: draft.mode,
     ...(draft.model === undefined || draft.model === '' ? {} : { model: draft.model }),
     ...(draft.cron === undefined || draft.cron.trim() === '' ? {} : { cron: draft.cron.trim() }),

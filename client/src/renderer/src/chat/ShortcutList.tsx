@@ -303,7 +303,7 @@ function Editor({
         />
       </div>
 
-      {provider !== 'claude' ? null : <div className="field">
+      <div className="field">
         <label htmlFor="shortcut-goal">Goal</label>
         <input
           id="shortcut-goal"
@@ -314,10 +314,10 @@ function Editor({
         />
         <span className="shortcut-next">
           {(draft.goal ?? '').trim() === ''
-            ? 'No goal: the run stops when Claude is done, and the card stays In progress.'
-            : 'Claude keeps working until this holds, then the card goes to In review.'}
+            ? `No goal: the run stops when ${provider === 'codex' ? 'Codex' : 'Claude'} is done, and the card stays In progress.`
+            : `${provider === 'codex' ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review.`}
         </span>
-      </div>}
+      </div>
 
       <div className="two">
         <div className="field">

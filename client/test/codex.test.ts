@@ -12,7 +12,7 @@ import { memoryNotes, Sessions } from '../src/main/sessions'
 import type { Held } from '../src/main/sessions/claude'
 import { CodexSessions } from '../src/main/sessions/codex'
 import { codexOptions } from '../src/main/sessions/codex-protocol'
-import type { CodexEvent, CodexInput, CodexTurn, Json, RpcId, ThreadOptions } from '../src/main/sessions/codex-protocol'
+import type { CodexEvent, CodexGoal, CodexInput, CodexTurn, Json, RpcId, ThreadOptions } from '../src/main/sessions/codex-protocol'
 import { codexEnvironment } from '../src/main/sessions/codex-rpc'
 import type { Heard } from '../src/main/sessions/heard'
 import { assistantFor, DEFAULT_SETTINGS, planLine, programLine, providerOf, resumeCommand } from '../src/shared/api'
@@ -21,7 +21,7 @@ import type { ChatSession, ReasoningEffort, SessionItems } from '../src/shared/a
 interface Request {
   id?: RpcId
   method?: string
-  params?: Partial<ThreadOptions> & { threadId?: string; turnId?: string; input?: CodexInput[]; cursor?: string | null; cwd?: string | string[]; effort?: ReasoningEffort | null }
+  params?: Partial<ThreadOptions> & { threadId?: string; turnId?: string; input?: CodexInput[]; cursor?: string | null; cwd?: string | string[]; effort?: ReasoningEffort | null; objective?: string; status?: CodexGoal['status'] }
   result?: Json
   error?: { code: number; message: string }
 }
@@ -41,6 +41,7 @@ class Server extends EventEmitter implements Held {
   } })
   account: 'chatgpt' | 'apiKey' | null = 'chatgpt'
   history: CodexTurn[] = []
+  readonly goals = new Map<string, CodexGoal>()
   pauseResume = false
   effort: ReasoningEffort = 'high'
   model = 'first'
@@ -68,6 +69,23 @@ class Server extends EventEmitter implements Held {
       case 'thread/resume': if (!this.pauseResume) { this.model = this.resolvedModel ?? request.params?.model ?? this.model; this.reply(id, { thread: { id: request.params?.threadId }, model: this.model, reasoningEffort: this.effort }) } return
       case 'thread/list': this.reply(id, { data: [{ id: 'terminal', cwd: ROOT, preview: 'From the terminal', name: null, model: 'first', reasoningEffort: this.effort, updatedAt: 100 }], nextCursor: null }); return
       case 'thread/read': this.reply(id, { thread: { id: request.params?.threadId, model: this.model, reasoningEffort: this.effort } }); return
+      case 'thread/goal/get': this.reply(id, { goal: this.goals.get(request.params?.threadId ?? '') ?? null }); return
+      case 'thread/goal/set': {
+        const threadId = request.params?.threadId ?? ''
+        const before = this.goals.get(threadId)
+        const goal: CodexGoal = { threadId, objective: request.params?.objective ?? before?.objective ?? '', status: request.params?.status ?? 'active', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 100, updatedAt: 100 }
+        this.goals.set(threadId, goal)
+        this.reply(id, { goal })
+        this.event({ method: 'thread/goal/updated', params: { threadId, turnId: null, goal } })
+        return
+      }
+      case 'thread/goal/clear': {
+        const threadId = request.params?.threadId ?? ''
+        this.goals.delete(threadId)
+        this.reply(id, { cleared: true })
+        this.event({ method: 'thread/goal/cleared', params: { threadId } })
+        return
+      }
       case 'thread/turns/list': this.reply(id, { data: this.history, nextCursor: null }); return
       case 'turn/start': {
         if (request.params?.effort !== undefined) this.effort = request.params.effort ?? 'low'
@@ -338,6 +356,27 @@ describe('Codex app-server', () => {
     await driver.end()
   })
 
+  it('uses native goal commands without starting a model turn', async () => {
+    const { server, codex, heard } = setup()
+    const id = await codex.create(ROOT, 'manual')
+    const driver = codex.hold({ id, root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('/goal Tests pass')
+    await tick()
+    expect(server.goals.get(id.slice(6))).toMatchObject({ objective: 'Tests pass', status: 'active' })
+    expect(server.requests.some((one) => one.method === 'turn/start')).toBe(false)
+    driver.send('/goal pause')
+    await tick()
+    expect(server.goals.get(id.slice(6))?.status).toBe('paused')
+    driver.send('/goal resume')
+    await tick()
+    expect(server.goals.get(id.slice(6))?.status).toBe('active')
+    driver.send('/goal clear')
+    await tick()
+    expect(server.goals.has(id.slice(6))).toBe(false)
+    expect(heard.flatMap((one) => one.signals)).toContainEqual({ kind: 'goal', goal: undefined })
+    await driver.end()
+  })
+
   it('returns each approval decision to the matching server request', async () => {
     const { server, codex, heard } = setup()
     const id = await codex.create(ROOT, 'manual')
@@ -532,6 +571,109 @@ describe('provider routing', () => {
     server.history = [{ id: 'old', startedAt: 100, status: 'completed', error: null, items: [{ type: 'agentMessage', id: 'native-answer', text: 'Native history' }] }]
     expect(await sessions.items('codex:terminal')).toContainEqual({ kind: 'theirs', id: 'codex:native-answer', text: 'Native history' })
     sessions.dispose()
+  })
+
+  it('attaches a native goal before the first turn and moves a completed goal to review', async () => {
+    const { server, codex } = setup()
+    const notes = memoryNotes()
+    const rows: ChatSession[][] = []
+    const sessions = new Sessions({ codex, notes, changed: (all) => rows.push([...all]), items: () => undefined, account: () => undefined, notify: () => undefined, there: async () => true, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    const id = await sessions.send({ root: ROOT, provider: 'codex', mode: 'auto', text: 'Fix the bug', goal: 'The bug is fixed and tests pass' })
+    await tick()
+    const set = server.requests.findIndex((one) => one.method === 'thread/goal/set')
+    const turn = server.requests.findIndex((one) => one.method === 'turn/start')
+    expect(set).toBeGreaterThan(-1)
+    expect(turn).toBeGreaterThan(set)
+    expect(rows.at(-1)?.find((one) => one.id === id)?.goal?.condition).toBe('The bug is fixed and tests pass')
+    await sessions.send({ session: id, root: ROOT, mode: 'auto', text: '/goal The regression test passes' })
+    expect(server.goals.get(id.slice(6))?.objective).toBe('The regression test passes')
+    expect(rows.at(-1)?.find((one) => one.id === id)).toMatchObject({ state: 'working', goal: { condition: 'The regression test passes' } })
+    await sessions.send({ session: id, root: ROOT, mode: 'auto', text: '/goal clear' })
+    expect(server.goals.has(id.slice(6))).toBe(false)
+    expect(rows.at(-1)?.find((one) => one.id === id)).toMatchObject({ state: 'working' })
+    expect(rows.at(-1)?.find((one) => one.id === id)?.goal).toBeUndefined()
+    await sessions.send({ session: id, root: ROOT, mode: 'auto', text: '/goal The regression test passes' })
+    expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(1)
+    server.complete(id.slice(6))
+    await tick()
+    const current = server.goals.get(id.slice(6))
+    expect(current).toBeDefined()
+    if (current === undefined) return
+    const goal = { ...current, status: 'complete' as const }
+    server.goals.set(id.slice(6), goal)
+    server.event({ method: 'thread/goal/updated', params: { threadId: id.slice(6), turnId: null, goal } })
+    await tick()
+    expect(rows.at(-1)?.find((one) => one.id === id)).toMatchObject({ status: 'review' })
+    expect(rows.at(-1)?.find((one) => one.id === id)?.goal).toBeUndefined()
+    await sessions.send({ session: id, root: ROOT, mode: 'auto', text: '/goal A new outcome is verified' })
+    expect(rows.at(-1)?.find((one) => one.id === id)?.status).toBeUndefined()
+    expect(rows.at(-1)?.find((one) => one.id === id)?.goal?.condition).toBe('A new outcome is verified')
+    sessions.dispose()
+  })
+
+  it('reconciles a goal completed while GeckIt was closed', async () => {
+    const { server, codex } = setup()
+    const notes = memoryNotes()
+    notes.set('codex:terminal', { shown: true, goal: { condition: 'Tests pass', checks: 0 } })
+    server.goals.set('terminal', { threadId: 'terminal', objective: 'Tests pass', status: 'complete', tokenBudget: null, tokensUsed: 1, timeUsedSeconds: 1, createdAt: 100, updatedAt: 200 })
+    const sessions = new Sessions({ codex, notes, changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    expect((await sessions.list([ROOT])).find((one) => one.id === 'codex:terminal')).toMatchObject({ status: 'review' })
+    expect(notes.all()['codex:terminal']?.goal).toBeUndefined()
+    sessions.dispose()
+  })
+
+  it('shows goals created outside GeckIt and refreshes an open conversation', async () => {
+    const { server, codex } = setup()
+    const notes = memoryNotes()
+    notes.set('codex:terminal', { shown: true })
+    server.goals.set('terminal', { threadId: 'terminal', objective: 'test', status: 'active', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 100, updatedAt: 100 })
+    const rows: ChatSession[][] = []
+    const sessions = new Sessions({ codex, notes, changed: (all) => rows.push([...all]), items: () => undefined, account: () => undefined, notify: () => undefined, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    sessions.watching('codex:terminal')
+    expect((await sessions.list([ROOT])).find((one) => one.id === 'codex:terminal')?.goal?.condition).toBe('test')
+    server.goals.set('terminal', { ...server.goals.get('terminal')!, objective: 'idle edit' })
+    await sessions.items('codex:terminal')
+    expect(rows.at(-1)?.find((one) => one.id === 'codex:terminal')?.goal?.condition).toBe('idle edit')
+    await sessions.send({ session: 'codex:terminal', root: ROOT, mode: 'auto', text: 'Continue' })
+    await tick()
+    server.goals.set('terminal', { ...server.goals.get('terminal')!, objective: 'edited' })
+    await sessions.items('codex:terminal')
+    expect(rows.at(-1)?.find((one) => one.id === 'codex:terminal')?.goal?.condition).toBe('edited')
+    server.goals.delete('terminal')
+    await sessions.items('codex:terminal')
+    expect(rows.at(-1)?.find((one) => one.id === 'codex:terminal')?.goal).toBeUndefined()
+    sessions.dispose()
+  })
+
+  it('updates the open conversation when a goal changes during a Codex turn', async () => {
+    const { server, codex } = setup()
+    const notes = memoryNotes()
+    notes.set('codex:terminal', { shown: true })
+    const rows: ChatSession[][] = []
+    const sessions = new Sessions({ codex, notes, changed: (all) => rows.push([...all]), items: () => undefined, account: () => undefined, notify: () => undefined, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    await sessions.list([ROOT])
+    await sessions.send({ session: 'codex:terminal', root: ROOT, mode: 'auto', text: 'Continue' })
+    await tick()
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      sessions.watching('codex:terminal')
+      await tick()
+      server.goals.set('terminal', { threadId: 'terminal', objective: 'this is a test goal', status: 'active', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 100, updatedAt: 100 })
+      await vi.advanceTimersByTimeAsync(2_000)
+      await tick()
+      expect(rows.at(-1)?.find((one) => one.id === 'codex:terminal')?.goal?.condition).toBe('this is a test goal')
+      const refreshed = rows.length
+      await vi.advanceTimersByTimeAsync(2_000)
+      await tick()
+      expect(rows).toHaveLength(refreshed)
+      server.goals.delete('terminal')
+      await vi.advanceTimersByTimeAsync(2_000)
+      await tick()
+      expect(rows.at(-1)?.find((one) => one.id === 'codex:terminal')?.goal).toBeUndefined()
+    } finally {
+      sessions.dispose()
+      vi.useRealTimers()
+    }
   })
 
   it('starts a restored conversation whose first message was queued before quitting', async () => {

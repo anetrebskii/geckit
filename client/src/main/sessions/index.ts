@@ -103,6 +103,7 @@ export interface SessionNote {
   /** When it was last in front in the window, for the search to offer what was used last. */
   readonly seen?: number
   readonly status?: SessionStatus
+  readonly goal?: SessionGoal | undefined
   /** A turn is running, where and since when; still here on a start, it was cut off by GeckIt closing. */
   readonly cut?: { readonly root: string; readonly at: number }
   /** Messages waiting for the turn before them, kept so a restart does not lose them. */
@@ -192,7 +193,7 @@ interface Row {
 export type { SessionNotice } from '../../shared/api'
 
 export interface SessionsDeps {
-  readonly codex?: Pick<CodexSessions, 'account' | 'models' | 'create' | 'list' | 'read' | 'turns' | 'search' | 'delete' | 'rename' | 'hold' | 'dispose'>
+  readonly codex?: Pick<CodexSessions, 'account' | 'models' | 'create' | 'list' | 'read' | 'turns' | 'search' | 'delete' | 'rename' | 'hold' | 'dispose' | 'goal' | 'setGoal' | 'clearGoal'>
   readonly notes: NotesStore
   readonly changed: (sessions: readonly ChatSession[]) => void
   readonly items: (items: SessionItems) => void
@@ -444,6 +445,7 @@ export class Sessions {
   readonly #requests = new Map<string, Pending>()
   readonly #rows = new Map<string, Row>()
   #watching: string | undefined
+  #goalWatch: ReturnType<typeof setInterval> | undefined
   #plan: PlanUsage | undefined
   /** How much context each model may hold, as the tool measures it; nothing for one it would not say. */
   readonly #windows = new Map<string, number | undefined>()
@@ -623,6 +625,21 @@ export class Sessions {
       }
       this.#rows.set(row.id, row)
     }
+    const goalRows = codexRows.filter((row) => this.#live.get(row.id)?.driver === undefined && (notes[row.id]?.goal !== undefined || row.id === this.#watching))
+    const goals = await Promise.all(goalRows.map((row) => this.#deps.codex?.goal(row.id).catch(() => undefined)))
+    for (const [index, row] of goalRows.entries()) {
+      const goal = goals[index]
+      const note = notes[row.id]
+      if (goal === undefined || note === undefined) continue
+      const shown = goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
+      const live = this.#live.get(row.id)
+      if (live !== undefined) live.goal = shown
+      const status = goal !== null && (goal.status === 'complete' || goal.status === 'blocked' || goal.status === 'budgetLimited' || goal.status === 'usageLimited') && note.status === undefined
+        ? goal.status === 'complete' ? 'review' : 'blocked'
+        : note.status
+      notes[row.id] = { ...note, goal: shown, ...(status === undefined ? {} : { status }) }
+      imported = true
+    }
     if (imported) this.#deps.notes.replace(notes)
     // A model not seen before is measured, so its rows can say how much context it holds.
     if ([...this.#rows.values()].some((row) => providerOf(row.id) === 'claude' && row.model !== undefined && !this.#windows.has(row.model))) void this.measure()
@@ -666,6 +683,7 @@ export class Sessions {
       const work = row?.work ?? (first?.kind === 'mine' ? workItem(first.text) : undefined)
       const queued = live?.queued ?? note?.queued ?? []
       const asking = this.#asking(id)
+      const goal = live?.goal ?? note?.goal
       sessions.push({
         id,
         ...(providerOf(id) === 'codex' ? { provider: 'codex' } : {}),
@@ -695,7 +713,7 @@ export class Sessions {
         ...(note?.seen === undefined ? {} : { seen: note.seen }),
         ...(live?.remote === undefined ? {} : { remote: live.remote }),
         ...(live === undefined || live.tasks.length === 0 ? {} : { tasks: live.tasks }),
-        ...(live?.goal === undefined ? {} : { goal: live.goal }),
+        ...(goal === undefined ? {} : { goal }),
         ...(runs === undefined ? {} : { runs: runs.command }),
         ...(runs !== undefined && live?.typing === runs.id ? { typing: true } : {}),
         ...(work === undefined ? {} : { work }),
@@ -925,10 +943,11 @@ export class Sessions {
     if (live === undefined) return []
     if (live.driver === undefined) {
       const spent = live.spent
+      const goal = live.goal
       await this.#reread(live)
       // What it cost is only in the file, so the row learns it here.
-      if (live.spent !== spent) this.#changed()
-    }
+      if (live.spent !== spent || live.goal?.condition !== goal?.condition) this.#changed()
+    } else if (providerOf(id) === 'codex') await this.#goal(live)
     return [...live.items.values()]
   }
 
@@ -954,6 +973,7 @@ export class Sessions {
     live.used = row.used
     live.chosen = note?.model
     live.reasoning = note?.reasoning
+    live.goal = note?.goal
     live.queued = [...(note?.queued ?? [])]
     live.kept = [...(note?.requests ?? [])]
     return live
@@ -1017,6 +1037,7 @@ export class Sessions {
     live.spent = conversation.cost
     live.running = undefined
     live.goal = conversation.goal
+    if (providerOf(live.id) === 'codex') this.#note(live.id, { goal: live.goal })
     // What it put in the background the last time it ran, on the first read of it alone: they are
     // ended, and once the list is here it is the process and the person who say what is in it.
     if (live.items.size === 0) live.tasks = [...conversation.tasks, ...live.tasks]
@@ -1069,6 +1090,19 @@ export class Sessions {
     } else if (live.driver === undefined) {
       await this.#reread(live)
     }
+    const nativeGoal = providerOf(live.id) === 'codex' ? goalSent(message.text) : undefined
+    if (nativeGoal !== undefined && nativeGoal.toLowerCase() !== 'pause' && nativeGoal.toLowerCase() !== 'resume') {
+      if (this.#deps.codex === undefined || (await this.#deps.codex.account()).key === true) throw new Error('Sign in with your ChatGPT plan to change a Codex goal.')
+      if (nativeGoal === '') {
+        await this.#deps.codex.clearGoal(live.id)
+        this.#signal(live, { kind: 'goal', goal: undefined })
+      } else {
+        const goal = await this.#deps.codex.setGoal(live.id, nativeGoal)
+        this.#signal(live, { kind: 'goal', goal: { condition: goal.objective, checks: 0 }, status: goal.status })
+        if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
+      }
+      return live.id
+    }
     const busy = live.state === 'working' || live.state === 'asks'
     // Written by the person, it is theirs again to be sent; a message waits behind the ones already queued, and for a slot.
     if (!go) live.parked = false
@@ -1083,8 +1117,9 @@ export class Sessions {
         return live.id
       }
       // A goal waiting its turn stands on the row already, as one sent straight away does.
-      const waiting = providerOf(live.id) === 'codex' ? undefined : goalSent(message.text)
+      const waiting = message.goal?.trim() || (providerOf(live.id) === 'codex' ? undefined : goalSent(message.text))
       if (waiting !== undefined && waiting !== '') live.goal = { condition: waiting, checks: 0 }
+      if (message.goal?.trim()) this.#note(live.id, { goal: live.goal })
       this.#queue(live, [...live.queued, { id: `queued:${randomUUID()}`, message: { ...message, session: live.id }, at: this.#now() }])
       if (!live.begun && !this.#rows.has(live.id) && !live.question) this.#note(live.id, { title: live.title, mode: live.mode, unborn: live.root })
       this.#changed()
@@ -1108,7 +1143,7 @@ export class Sessions {
     }
     clearTimeout(live.back)
     // The goal holds from the moment it is sent; the file says the rest once the turn is over.
-    const goal = providerOf(live.id) === 'codex' ? undefined : goalSent(message.text)
+    const goal = message.goal?.trim() || (providerOf(live.id) === 'codex' ? undefined : goalSent(message.text))
     if (goal !== undefined) live.goal = goal === '' ? undefined : { condition: goal, checks: 0 }
 
     // The message is in the transcript before anything can go wrong with it.
@@ -1155,6 +1190,8 @@ export class Sessions {
 
     try {
       await this.#hold(live)
+      if (providerOf(live.id) === 'codex' && message.goal?.trim()) await this.#deps.codex?.setGoal(live.id, message.goal.trim())
+      if (providerOf(live.id) === 'codex' && message.goal?.trim()) this.#note(live.id, { goal: live.goal })
     } catch (error) {
       this.#deps.items({ id: live.id, items: [mine], gone })
       this.#ended(live, { kind: 'ended', how: 'failed', text: error instanceof Error ? error.message : String(error) })
@@ -1882,11 +1919,21 @@ export class Sessions {
   }
 
   watching(id: string | undefined): void {
+    clearInterval(this.#goalWatch)
+    this.#goalWatch = undefined
     this.#watching = id
     if (id === undefined) return
     const unread = this.#deps.notes.all()[id]?.unread === true
     this.#note(id, { seen: this.#now(), ...(unread ? { unread: false } : {}) })
     if (unread) this.#changed()
+    if (providerOf(id) === 'codex') {
+      const refresh = (): void => {
+        const live = this.#live.get(id) ?? this.#adopt(id)
+        if (live !== undefined) void this.#goal(live)
+      }
+      refresh()
+      this.#goalWatch = setInterval(refresh, 2_000)
+    }
   }
 
   /** Taken as read without being opened: the mark on the row is pressed. */
@@ -1954,6 +2001,7 @@ export class Sessions {
 
   /** Everything is going. Every process goes with it, and the conversations stay where the tool keeps them. */
   dispose(): void {
+    clearInterval(this.#goalWatch)
     for (const live of this.#live.values()) {
       clearTimeout(live.quiet)
       clearTimeout(live.back)
@@ -2139,6 +2187,21 @@ export class Sessions {
         live.goal = { condition: live.goal.condition, checks: live.goal.checks + 1, reason: signal.reason }
         this.#changed()
         return
+      case 'goal': {
+        const previous = live.goal
+        live.goal = signal.goal
+        this.#note(live.id, { goal: signal.goal })
+        if (signal.status === 'complete' || signal.status === 'blocked' || signal.status === 'budgetLimited' || signal.status === 'usageLimited') {
+          if (previous !== undefined) {
+            const item: SessionItem = { kind: 'note', id: `goal:${String(this.#now())}`, note: 'goal', text: signal.status === 'complete' ? `Goal met: ${previous.condition}` : `Goal stopped: ${previous.condition}` }
+            live.items.set(item.id, item)
+            this.#deps.items({ id: live.id, items: [item] })
+          }
+          if (this.#deps.notes.all()[live.id]?.status === undefined) this.#note(live.id, { status: signal.status === 'complete' ? 'review' : 'blocked' })
+        }
+        this.#changed()
+        return
+      }
       case 'asks':
         this.#asked(live, signal.ask, signal.wanted, signal.line)
         return
@@ -2311,6 +2374,16 @@ export class Sessions {
 
   /** Where the goal stands once a turn is over, which only the tool's file says, and a line where it ended by itself. */
   async #goal(live: Live): Promise<void> {
+    if (providerOf(live.id) === 'codex') {
+      const had = live.goal
+      const goal = await this.#deps.codex?.goal(live.id).catch(() => undefined)
+      if (goal === undefined || this.#live.get(live.id) !== live || live.goal !== had) return
+      const shown = goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
+      const terminal = goal !== null && (goal.status === 'complete' || goal.status === 'blocked' || goal.status === 'budgetLimited' || goal.status === 'usageLimited')
+      if (had?.condition === shown?.condition && (!terminal || this.#deps.notes.all()[live.id]?.status !== undefined)) return
+      this.#signal(live, { kind: 'goal', goal: shown, ...(goal === null ? {} : { status: goal.status }) })
+      return
+    }
     // One set anywhere else counts, so the file is read whether or not this knew of a goal: from a terminal, from another window, or from the tool's own queue.
     const had = live.goal
     const read = await (this.#deps.disk?.goal ?? readGoal)(live.root, live.id).catch(() => undefined)

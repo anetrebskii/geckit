@@ -1,4 +1,4 @@
-import type { BackgroundTask, CardAnswer, PlanUsage, ReasoningEffort, SessionImage, SessionItem } from '../../shared/api'
+import type { BackgroundTask, CardAnswer, PlanUsage, ReasoningEffort, SessionGoal, SessionImage, SessionItem } from '../../shared/api'
 import type { Wanted } from './rule'
 
 /** What a session hears from the process holding it. */
@@ -37,6 +37,7 @@ export type Signal =
   | { readonly kind: 'begun' }
   /** A Stop hook sent it back to work instead of letting the turn end: the hook as the tool names it, and why. A goal is one. */
   | { readonly kind: 'held'; readonly hook: string; readonly reason: string }
+  | { readonly kind: 'goal'; readonly goal: SessionGoal | undefined; readonly status?: 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete' }
   | {
       readonly kind: 'ended'
       /** `offPlan` is never the tool's: it is what Sessions says when it would not start one on a key. */

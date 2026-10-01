@@ -102,6 +102,52 @@ const TASKS = /^\s*\/(tasks|bashes)\s*$/
 const GOAL = /^\s*\/goal(\s|$)/
 const COMPACT = /^\s*\/compact(\s|$)/
 
+function GoalEditor({ condition, onSave, onClear, onClose }: {
+  readonly condition: string | undefined
+  readonly onSave: (value: string) => void
+  readonly onClear: () => void
+  readonly onClose: () => void
+}): React.JSX.Element {
+  const [value, setValue] = useState(condition ?? '')
+  useEffect(() => {
+    if (ON_PHONE) return
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', escape)
+    return () => window.removeEventListener('keydown', escape)
+  }, [onClose])
+  const save = (): void => {
+    const text = value.trim()
+    if (text !== '') onSave(text)
+  }
+  const field = <textarea autoFocus className="goal-edit-field" value={value} placeholder="What should be true when this is done?" aria-label="Goal condition" onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (!ON_PHONE && event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); save() } }} />
+  if (ON_PHONE) return (
+    <Sheet title="Goal" onClose={onClose} cancel={false}>
+      <div className="goal-edit-phone">
+        {field}
+        <button type="button" className="primary" disabled={value.trim() === ''} onClick={save}>Save goal</button>
+        {condition === undefined ? null : <button type="button" className="quiet danger" onClick={onClear}>Clear goal</button>}
+        <button type="button" className="quiet" onClick={onClose}>Cancel</button>
+      </div>
+    </Sheet>
+  )
+  return (
+    <div className="dialog-scrim" onMouseDown={onClose}>
+      <div className="dialog goal-editor" role="dialog" aria-label="Goal" onMouseDown={(event) => event.stopPropagation()}>
+        <h2>Goal</h2>
+        {field}
+        <div className="dialog-actions">
+          {condition === undefined ? null : <button type="button" className="quiet danger" onClick={onClear}>Clear goal</button>}
+          <span className="spacer" />
+          <button type="button" className="quiet" onClick={onClose}>Cancel</button>
+          <button type="button" className="primary" disabled={value.trim() === ''} onClick={save}>Save goal</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /**
  * The field a message is written in, with what it will be sent to under it.
  *
@@ -123,6 +169,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [editing, setEditing] = useState<{ readonly id: string; readonly text: string } | undefined>()
   const [dropping, setDropping] = useState<string | undefined>()
   const [branching, setBranching] = useState<string | undefined>()
+  const [editingGoal, setEditingGoal] = useState<string | undefined>()
   // The phrase a long press or a right click is on, asked about before it goes.
   const [unphrasing, setUnphrasing] = useState<{ readonly phrase: string; readonly at: DOMRect } | undefined>()
   const phraseHeld = useRef<{ timer: number; held: boolean }>({ timer: 0, held: false })
@@ -379,8 +426,10 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const checked =
     goal === undefined
       ? ''
-      : goal.checks === 0
-        ? 'Not checked yet. Each time Claude would stop, a check reads the conversation and sends it back to work until this holds.'
+      : chat.provider === 'codex'
+        ? 'Codex keeps working until this holds.'
+        : goal.checks === 0
+          ? 'Not checked yet. Each time Claude would stop, a check reads the conversation and sends it back to work until this holds.'
         : `Checked ${String(goal.checks)} ${goal.checks === 1 ? 'time' : 'times'}, and it does not hold yet${goal.reason === undefined ? '.' : `: ${goal.reason}`}`
 
   const queued = chat.session?.queued ?? []
@@ -401,6 +450,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
 
   return (
     <div className="composer">
+      {chat.session !== undefined && editingGoal === chat.session.id ? <GoalEditor condition={goal?.condition} onSave={(value) => { if (value !== goal?.condition) chat.say(`/goal ${value}`); setEditingGoal(undefined) }} onClear={() => { chat.say('/goal clear'); setEditingGoal(undefined) }} onClose={() => setEditingGoal(undefined)} /> : null}
       {dropped === undefined ? null : ON_PHONE ? (
         <Sheet title="Cancel this message?" onClose={() => setDropping(undefined)} cancel={false}>
           <p className="branch-quote">{dropped.text}</p>
@@ -903,44 +953,25 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             onStop={chat.stopTask}
             onClear={chat.clearTask}
           />
-          {chat.root === undefined || chat.provider === 'codex' ? null : goal === undefined ? (
+          {chat.root === undefined ? null : goal === undefined ? (
             <button
               type="button"
               className="picker"
-              disabled={cannot}
-              title="Set a goal: Claude keeps working until it holds, as /goal does"
-              onClick={() => {
-                const text = GOAL.test(chat.draft) ? chat.draft : `/goal ${chat.draft}`
-                chat.setDraft(text)
-                putCaret.current = text.length
-                field.current?.focus()
-              }}
+              disabled={cannot || chat.session === undefined}
+              title="Set a goal"
+              onClick={() => setEditingGoal(chat.session?.id)}
             >
               Goal
             </button>
           ) : (
-            <Picker
-              className="picker goal-picker"
-              label={
-                <>
-                  <span className="remote-dot" />
-                  <span className="goal-text">{`Goal: ${goal.condition}`}</span>
-                </>
-              }
-              tip={goal.condition}
-              title="Goal"
-              explained
-              choices={[
-                chat.working
-                  ? { value: 'clear', label: 'Stop and clear it', says: 'Claude stops now, and goes on without a goal at your next message' }
-                  : { value: 'clear', label: 'Clear it', says: 'Claude no longer works towards it' },
-              ]}
-              note={`Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`}
-              onPick={() => chat.say('/goal clear')}
-            />
+            <button type="button" className="picker goal-picker" title={`Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`} onClick={() => setEditingGoal(chat.session?.id)}>
+              <span className="remote-dot" />
+              <span className="goal-text">{`Goal: ${goal.condition}`}</span>
+              <Icon name="down" size={11} />
+            </button>
           )}
-          {chat.provider !== 'codex' && chat.root !== undefined && goal === undefined && GOAL.test(chat.draft) ? (
-            <span className="composer-hint">Claude keeps working until this holds. A check after each reply decides whether it does</span>
+          {chat.root !== undefined && goal === undefined && GOAL.test(chat.draft) ? (
+            <span className="composer-hint">{assistant} keeps working until this holds</span>
           ) : null}
           {queues ? <span className="composer-hint">{queueWhy(chat.lineup)}</span> : null}
           {command ? (

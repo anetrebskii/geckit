@@ -358,7 +358,7 @@ export const SESSION_STATUSES: readonly { readonly status: SessionStatus; readon
   { status: 'done', label: 'Done', why: 'Moved out of the list into Done at the bottom' },
 ]
 
-/** A goal set with `/goal`: Claude keeps working until a separate check after each turn finds that it holds. */
+/** A goal set with `/goal` or attached to a new task. */
 export interface SessionGoal {
   readonly condition: string
   /** How many checks have found it does not hold yet. */
@@ -458,6 +458,8 @@ export interface SessionMessage {
   readonly root: string
   readonly mode: SessionMode
   readonly text: string
+  /** A new Codex task's finish condition, attached before its first turn. */
+  readonly goal?: string
   readonly images?: readonly SessionImage[]
   /** The model the tool is handed. Nothing is Default: the tool is handed nothing. */
   readonly model?: string

@@ -25,6 +25,17 @@ export interface CodexTurn {
 
 export type CodexInput = { type: 'text'; text: string; text_elements: [] } | { type: 'image'; url: string }
 
+export interface CodexGoal {
+  threadId: string
+  objective: string
+  status: 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete'
+  tokenBudget: number | null
+  tokensUsed: number
+  timeUsedSeconds: number
+  createdAt: number
+  updatedAt: number
+}
+
 export type CodexItem =
   | { type: 'userMessage'; id: string; content: CodexInput[] }
   | { type: 'agentMessage'; id: string; text: string; phase?: 'commentary' | 'final_answer' | null }
@@ -68,6 +79,9 @@ export interface RpcParams {
   'thread/read': { threadId: string; includeTurns: boolean }
   'thread/turns/list': { threadId: string; cursor?: string | null; limit: number; sortDirection: 'asc'; itemsView: 'full' }
   'thread/name/set': { threadId: string; name: string }
+  'thread/goal/set': { threadId: string; objective?: string; status?: CodexGoal['status'] }
+  'thread/goal/get': { threadId: string }
+  'thread/goal/clear': { threadId: string }
   'thread/delete': { threadId: string }
   'thread/unsubscribe': { threadId: string }
   'thread/compact/start': { threadId: string }
@@ -87,6 +101,9 @@ export interface RpcResults {
   'thread/read': { thread: CodexThread }
   'thread/turns/list': { data: CodexTurn[]; nextCursor: string | null }
   'thread/name/set': object
+  'thread/goal/set': { goal: CodexGoal }
+  'thread/goal/get': { goal: CodexGoal | null }
+  'thread/goal/clear': { cleared: boolean }
   'thread/delete': object
   'thread/unsubscribe': object
   'thread/compact/start': object
@@ -102,6 +119,8 @@ export interface CodexQuestion {
 
 export type CodexEvent =
   | { method: 'account/rateLimits/updated'; params: { rateLimits: CodexRateLimit; threadId?: never } }
+  | { method: 'thread/goal/updated'; params: { threadId: string; turnId: string | null; goal: CodexGoal } }
+  | { method: 'thread/goal/cleared'; params: { threadId: string } }
   | { method: 'item/started' | 'item/completed'; params: { threadId: string; item: CodexItem } }
   | { method: 'item/agentMessage/delta' | 'item/reasoning/summaryTextDelta' | 'item/commandExecution/outputDelta'; params: { threadId: string; itemId: string; delta: string; summaryIndex?: number } }
   | { method: 'turn/started' | 'turn/completed'; params: { threadId: string; turn: CodexTurn } }

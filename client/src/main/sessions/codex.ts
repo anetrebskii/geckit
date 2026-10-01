@@ -1,4 +1,4 @@
-import type { Answered, ChatFound, ClaudeAccount, ClaudeModel, ReasoningEffort, SessionMode } from '../../shared/api'
+import type { Answered, ChatFound, ClaudeAccount, ClaudeModel, ReasoningEffort, SessionGoal, SessionMode } from '../../shared/api'
 import { readFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -8,12 +8,13 @@ import type { Driver, Heard, Signal } from './heard'
 import { askId } from './heard'
 import { codexHistory, codexItem } from './codex-read'
 import { codexOptions } from './codex-protocol'
-import type { ApprovalEvent, CodexEvent, CodexInput, CodexItem, CodexTurn, RpcId, RpcResults } from './codex-protocol'
+import type { ApprovalEvent, CodexEvent, CodexGoal, CodexInput, CodexItem, CodexTurn, RpcId, RpcResults } from './codex-protocol'
 import { CodexRpc, launchCodex } from './codex-rpc'
 import { firstLine } from './wording'
 import { searchCodex } from './search'
 
 const native = (id: string): string => id.slice('codex:'.length)
+const shownGoal = (goal: CodexGoal | null): SessionGoal | undefined => goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
 
 interface Listener {
   event: (event: CodexEvent) => void
@@ -217,6 +218,21 @@ export class CodexSessions {
     return turns
   }
 
+  async goal(id: string): Promise<CodexGoal | null> {
+    const rpc = await this.#connection()
+    return (await rpc.request('thread/goal/get', { threadId: native(id) })).goal ?? null
+  }
+
+  async setGoal(id: string, objective: string): Promise<CodexGoal> {
+    const rpc = await this.#connection()
+    return (await rpc.request('thread/goal/set', { threadId: native(id), objective })).goal
+  }
+
+  async clearGoal(id: string): Promise<void> {
+    const rpc = await this.#connection()
+    await rpc.request('thread/goal/clear', { threadId: native(id) })
+  }
+
   async search(roots: readonly string[], asked: string): Promise<ChatFound[]> {
     await this.list(roots)
     return searchCodex([...this.#files.values()].filter((one) => roots.includes(one.root)), asked)
@@ -224,7 +240,9 @@ export class CodexSessions {
 
   async read(root: string, id: string): Promise<Conversation | undefined> {
     try {
-      return { items: codexHistory(await this.turns(id), root), tasks: [] }
+      const [turns, goal] = await Promise.all([this.turns(id), this.goal(id)])
+      const visible = shownGoal(goal)
+      return { items: codexHistory(turns, root), tasks: [], ...(visible === undefined ? {} : { goal: visible }) }
     } catch {
       return undefined
     }
@@ -294,6 +312,12 @@ export class CodexSessions {
           case 'turn/started':
             turnId = event.params.turn.id
             if (stopped) void rpc?.request('turn/interrupt', { threadId, turnId }).catch(() => undefined)
+            return
+          case 'thread/goal/updated':
+            signals({ kind: 'goal', goal: shownGoal(event.params.goal), status: event.params.goal.status })
+            return
+          case 'thread/goal/cleared':
+            signals({ kind: 'goal', goal: undefined })
             return
           case 'turn/completed':
             ended(event.params.turn.status === 'completed' ? 'done' : event.params.turn.status === 'interrupted' ? 'stopped' : 'failed', event.params.turn.error?.message)
@@ -389,6 +413,22 @@ export class CodexSessions {
           if (over || stopped) { ended('stopped'); return }
           if (text.trim() === '/compact') {
             await rpc?.request('thread/compact/start', { threadId })
+            return
+          }
+          const goal = /^\/goal(?:\s+([\s\S]+))?$/.exec(text.trim())?.[1]?.trim()
+          if (text.trim() === '/goal' || goal !== undefined) {
+            if (goal === undefined) {
+              const current = await rpc?.request('thread/goal/get', { threadId })
+              signals({ kind: 'goal', goal: shownGoal(current?.goal ?? null), ...(current?.goal == null ? {} : { status: current.goal.status }) })
+            } else if (goal.toLowerCase() === 'clear') {
+              await rpc?.request('thread/goal/clear', { threadId })
+              signals({ kind: 'goal', goal: undefined })
+            } else {
+              const status = goal.toLowerCase() === 'pause' ? 'paused' : goal.toLowerCase() === 'resume' ? 'active' : undefined
+              const current = await rpc?.request('thread/goal/set', { threadId, ...(status === undefined ? { objective: goal } : { status }) })
+              if (current !== undefined) signals({ kind: 'goal', goal: shownGoal(current.goal), status: current.goal.status })
+            }
+            ended('done')
             return
           }
           const input: CodexInput[] = [

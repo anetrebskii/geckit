@@ -3810,6 +3810,36 @@ html.phone .request-foot .request-reply {
   outline: none;
 }
 
+.goal-editor .goal-edit-field,
+.goal-edit-phone .goal-edit-field {
+  width: 100%;
+  min-height: 90px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+
+.goal-editor .goal-edit-field:focus,
+.goal-edit-phone .goal-edit-field:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.goal-editor .danger,
+.goal-edit-phone .danger {
+  color: var(--danger);
+}
+
+.goal-edit-phone {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
 /* @: a file or a folder of the project */
 
 .mentions {

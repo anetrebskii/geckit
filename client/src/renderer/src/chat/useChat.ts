@@ -740,9 +740,8 @@ export function useChat(): Chat {
       const provider = assistantFor(now.settings, root)
       const chosen = provider === 'codex' ? now.settings.codexModel : now.settings.chatModel
       const model = chosen === '' ? {} : { model: chosen }
-      // The task goes first: a goal on its own tells Claude to start working toward it, and it would start without knowing what the task is. Where the task waits for a slot, its goal waits behind it.
       const carried = images.length === 0 ? {} : { images }
-      void window.geckit.chat.send({ root, provider, ...(provider !== 'codex' ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model }).then((id) => {
+      void window.geckit.chat.send({ root, provider, ...(provider !== 'codex' ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(provider === 'codex' && goal.trim() !== '' ? { goal: goal.trim() } : {}) }).then((id) => {
         open({ kind: 'session', id })
         if (provider === 'codex' || goal.trim() === '') return
         void window.geckit.chat.send({ session: id, root, mode: now.mode, text: `/goal ${goal.trim()}`, ...model })
@@ -1010,7 +1009,7 @@ export function useChat(): Chat {
         ...(now.provider !== 'codex' ? {} : { reasoning: now.reasoning }),
         text,
         ...(now.model === '' ? {} : { model: now.model }),
-      })
+      }).catch((error: Error) => setTrouble(error.message))
     },
     answer,
     stop: () => {

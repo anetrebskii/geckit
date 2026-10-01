@@ -81,15 +81,14 @@ describe('the shortcuts', () => {
   })
 
   it('saves and runs a Codex shortcut with its model and reasoning by hand and timetable', async () => {
-    saveShortcut({ ...morning, provider: 'codex', model: 'codex-model', reasoning: 'high', goal: 'Claude-only goal' })
-    expect(held.shortcuts[0]).toMatchObject({ provider: 'codex', model: 'codex-model', reasoning: 'high' })
-    expect(held.shortcuts[0]?.goal).toBeUndefined()
+    saveShortcut({ ...morning, provider: 'codex', model: 'codex-model', reasoning: 'high', goal: 'Tests pass' })
+    expect(held.shortcuts[0]).toMatchObject({ provider: 'codex', model: 'codex-model', reasoning: 'high', goal: 'Tests pass' })
     startShortcuts({ start, rename, busy: () => busy })
     await vi.waitFor(() => expect(start).toHaveBeenCalled())
-    expect(start).toHaveBeenCalledExactlyOnceWith({ root: '/p', mode: 'auto', text: morning.prompt, provider: 'codex', model: 'codex-model', reasoning: 'high' })
+    expect(start).toHaveBeenCalledExactlyOnceWith({ root: '/p', mode: 'auto', text: morning.prompt, provider: 'codex', model: 'codex-model', reasoning: 'high', goal: 'Tests pass' })
     start.mockClear()
     await runShortcut('m', 'hand')
-    expect(start).toHaveBeenCalledExactlyOnceWith({ root: '/p', mode: 'auto', text: morning.prompt, provider: 'codex', model: 'codex-model', reasoning: 'high' })
+    expect(start).toHaveBeenCalledExactlyOnceWith({ root: '/p', mode: 'auto', text: morning.prompt, provider: 'codex', model: 'codex-model', reasoning: 'high', goal: 'Tests pass' })
   })
 
   it('keeps explicit Default reasoning and clears Codex-only settings when changed to Claude', () => {
@@ -114,14 +113,14 @@ describe('the shortcuts', () => {
     expect(start).not.toHaveBeenCalled()
   })
 
-  it('skips Codex on a remote project and ignores legacy Claude goals on Codex runs', async () => {
+  it('skips Codex on a remote project and carries saved goals into Codex runs', async () => {
     held.shortcuts = [{ ...morning, provider: 'codex', root: 'ssh://box/work' }]
     startShortcuts({ start, rename, busy: () => busy })
     expect(await runShortcut('m', 'hand')).toBeUndefined()
     expect(start).not.toHaveBeenCalled()
     held.shortcuts = [{ ...morning, provider: 'codex', goal: 'An old Claude goal' }]
     await runShortcut('m', 'hand')
-    expect(start).toHaveBeenCalledExactlyOnceWith({ root: '/p', mode: 'auto', text: morning.prompt, provider: 'codex' })
+    expect(start).toHaveBeenCalledExactlyOnceWith({ root: '/p', mode: 'auto', text: morning.prompt, provider: 'codex', goal: 'An old Claude goal' })
   })
 
   it('lets a timed run go while the last one is still going, rather than piling it up', async () => {

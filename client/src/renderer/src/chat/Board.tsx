@@ -1192,7 +1192,7 @@ export function NewTask({
           </button>
         </div>
       )}
-      {question || provider === 'codex' ? null : (
+      {question ? null : (
         <label className="new-task-label">
           Goal
           <input
@@ -1204,7 +1204,7 @@ export function NewTask({
         </label>
       )}
       <div className="new-task-foot">
-        <span className="new-task-why">{provider === 'codex' && !question && isRemote(root) ? 'Enable Claude Code in Settings to use this host' : chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : provider === 'codex' ? `Stops when Codex is done. ${MOD}+Enter starts it` : goal.trim() === '' ? `No goal: it stops when Claude is done. ${MOD}+Enter starts it` : 'Claude keeps working until this holds, then the card goes to In review'}</span>
+        <span className="new-task-why">{provider === 'codex' && !question && isRemote(root) ? 'Enable Claude Code in Settings to use this host' : chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when ${provider === 'codex' ? 'Codex' : 'Claude'} is done. ${MOD}+Enter starts it` : `${provider === 'codex' ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review`}</span>
         <span className="spacer" />
         <button type="button" className="quiet" onClick={onClose}>
           Cancel
@@ -1367,14 +1367,14 @@ function PhoneNewTask({
                     <Icon name="right" size={14} />
                   </span>
                 </button>
-                {provider === 'codex' ? null : <label className="phone-task-cell">
+                <label className="phone-task-cell">
                   Goal
                   <input className="phone-task-goal" value={goal} placeholder="None" onChange={(event) => onGoal(event.target.value)} />
-                </label>}
+                </label>
               </div>
-              {provider === 'codex' ? null : <div className="phone-task-note">
-                {goal.trim() === '' ? 'Without a goal, it stops when Claude is done.' : 'Claude keeps working until this holds, then the card goes to In review.'}
-              </div>}
+              <div className="phone-task-note">
+                {goal.trim() === '' ? `Without a goal, it stops when ${provider === 'codex' ? 'Codex' : 'Claude'} is done.` : `${provider === 'codex' ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review.`}
+              </div>
             </>
           )}
           <textarea
