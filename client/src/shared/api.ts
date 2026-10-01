@@ -603,6 +603,7 @@ export const resumeCommand = (id: string): string => providerOf(id) === 'codex' 
 export type CorrectAction = 'grammar' | 'improve' | 'translate' | 'explain' | 'custom'
 
 export interface CorrectRequest {
+  readonly provider?: SessionProvider
   readonly action: CorrectAction
   readonly text: string
   readonly custom?: string
@@ -859,6 +860,8 @@ export interface Settings {
   readonly audioDevices: readonly AudioDevice[]
   /** A Claude alias. Empty is Default. */
   readonly correctPlanModel: string
+  readonly correctProvider: SessionProvider
+  readonly correctCodexModel: string
   /** Project folders the chat window offers, newest first. */
   readonly projects: readonly string[]
   /** Named sets of projects, TwinsAI or Formula, each one what the whole application shows while it is in use. */
@@ -925,7 +928,7 @@ export interface Settings {
 }
 
 /** A saved prompt, run by hand or on a timetable, each time as a new conversation in its project. */
-export interface Shortcut {
+export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'> {
   readonly id: string
   readonly name: string
   readonly root: string
@@ -995,6 +998,8 @@ export const DEFAULT_SETTINGS: Settings = {
   microphoneDeviceId: '',
   audioDevices: [],
   correctPlanModel: '',
+  correctProvider: 'claude',
+  correctCodexModel: '',
   projects: [],
   profiles: [],
   profile: '',

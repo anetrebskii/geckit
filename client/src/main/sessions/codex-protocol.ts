@@ -27,7 +27,7 @@ export type CodexInput = { type: 'text'; text: string; text_elements: [] } | { t
 
 export type CodexItem =
   | { type: 'userMessage'; id: string; content: CodexInput[] }
-  | { type: 'agentMessage'; id: string; text: string }
+  | { type: 'agentMessage'; id: string; text: string; phase?: 'commentary' | 'final_answer' | null }
   | { type: 'plan'; id: string; text: string }
   | { type: 'reasoning'; id: string; summary: string[]; content: string[] }
   | { type: 'commandExecution'; id: string; command: string; cwd: string; aggregatedOutput: string | null; status: string; exitCode: number | null }
@@ -61,7 +61,7 @@ export interface RpcParams {
   'account/read': { refreshToken: boolean }
   'account/rateLimits/read': Record<string, never>
   'model/list': { cursor?: string | null }
-  'thread/start': ThreadOptions
+  'thread/start': ThreadOptions & { ephemeral?: boolean; baseInstructions?: string; config?: { web_search: 'disabled'; features: { shell_tool: false; unified_exec: false } } }
   'thread/resume': ThreadOptions & { threadId: string; excludeTurns: boolean }
   'thread/fork': ThreadOptions & { threadId: string; lastTurnId?: string; excludeTurns: boolean }
   'thread/list': { cwd: string[]; cursor?: string | null; limit: number; sortKey: 'updated_at'; sourceKinds: string[] }

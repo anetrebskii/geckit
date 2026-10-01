@@ -153,20 +153,27 @@ function Assistants({ settings, change }: Part): React.JSX.Element {
     change({ chatProviders, chatProvider: chatProviders.includes(settings.chatProvider) ? settings.chatProvider : chatProviders[0] ?? 'claude' })
   }
   return (
-    <div className="field">
-      <label>Use in Chat</label>
-      <label className="check">
-        <input type="checkbox" checked={enabled.includes('claude')} disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(event) => toggle('claude', event.target.checked)} />
-        Claude Code
-      </label>
-      <span style={NOTE}>Uses your Claude plan through the claude command.</span>
-      <label className="check">
-        <input type="checkbox" checked={enabled.includes('codex')} disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(event) => toggle('codex', event.target.checked)} />
-        Codex
-      </label>
-      <span style={NOTE}>Uses your ChatGPT plan through the codex command. Available for local projects.</span>
-      <span style={NOTE}>Choose at least one. Conversations from an assistant turned off here are hidden. Turn it on again to see them. With both on, icons identify each conversation's assistant.</span>
-    </div>
+    <section className="assistant-settings" aria-labelledby="assistant-settings-title">
+      <h3 id="assistant-settings-title">Assistants</h3>
+      <p className="assistant-settings-intro">Use in Chat, Correct, and Shortcuts.</p>
+      <div className="assistant-options">
+        <label className="assistant-option">
+          <span className="assistant-option-copy">
+            <span className="assistant-option-name">Claude Code</span>
+            <span className="assistant-option-description">Your Claude plan</span>
+          </span>
+          <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Use Claude Code" aria-describedby="assistant-settings-note" checked={enabled.includes('claude')} disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(event) => toggle('claude', event.target.checked)} />
+        </label>
+        <label className="assistant-option">
+          <span className="assistant-option-copy">
+            <span className="assistant-option-name">Codex</span>
+            <span className="assistant-option-description">Your ChatGPT plan. Local projects only.</span>
+          </span>
+          <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Use Codex" aria-describedby="assistant-settings-note" checked={enabled.includes('codex')} disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(event) => toggle('codex', event.target.checked)} />
+        </label>
+      </div>
+      <p className="assistant-settings-note" id="assistant-settings-note">Turning an assistant off hides its conversations and pauses its shortcuts. Keep at least one on.</p>
+    </section>
   )
 }
 

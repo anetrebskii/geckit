@@ -45,6 +45,7 @@ class Server extends EventEmitter implements Held {
   effort: ReasoningEffort = 'high'
   model = 'first'
   resolvedModel: string | undefined
+  correctionEfforts: readonly ReasoningEffort[] = ['medium', 'low', 'high']
   next = 0
 
   reply(id: RpcId, result: object): void {
@@ -61,7 +62,7 @@ class Server extends EventEmitter implements Held {
       case 'initialize': this.reply(id, { userAgent: 'geckit/0.159.3' }); return
       case 'account/read': this.reply(id, { account: this.account === 'chatgpt' ? { type: 'chatgpt', planType: 'plus' } : this.account === null ? null : { type: this.account } }); return
       case 'account/rateLimits/read': this.reply(id, { rateLimits: { limitId: 'codex', limitName: null, primary: { usedPercent: 32, windowDurationMins: 10080, resetsAt: 2000000000 }, secondary: null } }); return
-      case 'model/list': this.reply(id, request.params?.cursor === 'next' ? { data: [{ model: 'second', displayName: 'Second', description: 'Another model', hidden: false }], nextCursor: null } : { data: [{ model: 'first', displayName: 'First', description: 'First model', hidden: false, defaultReasoningEffort: 'low' }, { model: 'hidden', hidden: true }], nextCursor: 'next' }); return
+      case 'model/list': this.reply(id, request.params?.cursor === 'next' ? { data: [{ model: 'second', displayName: 'Second', description: 'Another model', hidden: false, supportedReasoningEfforts: this.correctionEfforts.map((reasoningEffort) => ({ reasoningEffort, description: reasoningEffort })) }], nextCursor: null } : { data: [{ model: 'first', displayName: 'First', description: 'First model', hidden: false, defaultReasoningEffort: 'low' }, { model: 'hidden', hidden: true }], nextCursor: 'next' }); return
       case 'thread/start':
       case 'thread/fork': this.model = this.resolvedModel ?? request.params?.model ?? this.model; this.reply(id, { thread: { id: `thread-${String(++this.next)}` }, model: this.model, reasoningEffort: this.effort }); return
       case 'thread/resume': if (!this.pauseResume) { this.model = this.resolvedModel ?? request.params?.model ?? this.model; this.reply(id, { thread: { id: request.params?.threadId }, model: this.model, reasoningEffort: this.effort }) } return
@@ -106,6 +107,69 @@ afterEach(() => {
 })
 
 describe('Codex app-server', () => {
+  it('corrects text in an ephemeral thread and returns only the final answer', async () => {
+    const { server, codex } = setup()
+    const answer = codex.correct('teh cat', 'Fix grammar. Output only the text.', 'second')
+    await tick()
+    expect(server.requests.find((one) => one.method === 'thread/start')?.params).toMatchObject({ ephemeral: true, model: 'second', sandbox: 'read-only', config: { web_search: 'disabled', features: { shell_tool: false, unified_exec: false } } })
+    expect(server.requests.find((one) => one.method === 'turn/start')?.params?.input?.[0]).toMatchObject({ type: 'text', text: 'Fix grammar. Output only the text.\n\nteh cat' })
+    expect(server.requests.find((one) => one.method === 'turn/start')?.params?.effort).toBe('low')
+    server.event({ method: 'item/completed', params: { threadId: 'thread-1', item: { type: 'agentMessage', id: 'commentary', text: 'Correcting the spelling.', phase: 'commentary' } } })
+    server.event({ method: 'item/agentMessage/delta', params: { threadId: 'thread-1', itemId: 'answer', delta: 'the cat' } })
+    server.complete('thread-1')
+    expect(await answer).toEqual({ ok: true, text: 'the cat' })
+    expect(server.requests.find((one) => one.method === 'thread/unsubscribe')?.params?.threadId).toBe('thread-1')
+    expect(server.requests.some((one) => one.method === 'thread/delete')).toBe(false)
+  })
+
+  it.each([
+    { model: 'second', levels: ['high', 'minimal', 'medium'], expected: 'minimal' },
+    { model: '', levels: ['high', 'low', 'medium'], expected: 'low' },
+    { model: 'alias', levels: ['low', 'none', 'high'], expected: 'none' },
+  ] satisfies readonly { model: string; levels: readonly ReasoningEffort[]; expected: ReasoningEffort }[])('uses $expected reasoning for corrections with model "$model"', async ({ model, levels, expected }) => {
+    const { server, codex } = setup()
+    server.resolvedModel = 'second'
+    server.correctionEfforts = levels
+    const answer = codex.correct('teh cat', 'Fix it.', model)
+    await tick()
+    expect(server.requests.find((one) => one.method === 'turn/start')?.params?.effort).toBe(expected)
+    server.event({ method: 'item/completed', params: { threadId: 'thread-1', item: { type: 'agentMessage', id: 'answer', text: 'the cat' } } })
+    server.complete('thread-1')
+    expect(await answer).toEqual({ ok: true, text: 'the cat' })
+  })
+
+  it('queues corrections and gives each a fresh temporary conversation', async () => {
+    const { server, codex } = setup()
+    const first = codex.correct('one', 'Fix it.', '')
+    const second = codex.correct('two', 'Fix it.', '')
+    await tick()
+    expect(server.requests.filter((one) => one.method === 'thread/start')).toHaveLength(1)
+    server.event({ method: 'item/completed', params: { threadId: 'thread-1', item: { type: 'agentMessage', id: 'first', text: 'First' } } })
+    server.complete('thread-1')
+    expect(await first).toEqual({ ok: true, text: 'First' })
+    await tick()
+    expect(server.requests.filter((one) => one.method === 'thread/start')).toHaveLength(2)
+    server.event({ method: 'item/completed', params: { threadId: 'thread-2', item: { type: 'agentMessage', id: 'second', text: 'Second' } } })
+    server.complete('thread-2')
+    expect(await second).toEqual({ ok: true, text: 'Second' })
+  })
+
+  it('refuses API-key corrections and recovers after a timed-out correction', async () => {
+    const { server, codex } = setup()
+    server.account = 'apiKey'
+    expect(await codex.correct('text', 'Fix it.', '')).toMatchObject({ ok: false })
+    expect(server.requests.some((one) => one.method === 'thread/start')).toBe(false)
+    server.account = 'chatgpt'
+    const failed = codex.correct('one', 'Fix it.', '', 5)
+    expect(await failed).toEqual({ ok: false, error: 'Codex did not answer in time' })
+    expect(server.requests.some((one) => one.method === 'turn/interrupt')).toBe(true)
+    const recovered = codex.correct('two', 'Fix it.', '')
+    await tick()
+    server.event({ method: 'item/completed', params: { threadId: 'thread-2', item: { type: 'agentMessage', id: 'answer', text: 'Recovered' } } })
+    server.complete('thread-2')
+    expect(await recovered).toEqual({ ok: true, text: 'Recovered' })
+  })
+
   it('reports the resolved model instead of the requested alias', async () => {
     const { server, codex, heard } = setup()
     server.resolvedModel = 'second'
@@ -401,6 +465,7 @@ describe('provider routing', () => {
     expect((await sessions.list([ROOT])).map((one) => one.id)).toEqual(['codex:hidden'])
     sessions.dispose()
   })
+
   it('uses an enabled assistant and only selects Claude for hosts when Claude is enabled', () => {
     expect(assistantFor({ ...DEFAULT_SETTINGS, chatProvider: 'codex' })).toBe('codex')
     expect(assistantFor({ ...DEFAULT_SETTINGS, chatProvider: 'codex', chatProviders: ['claude'] })).toBe('claude')

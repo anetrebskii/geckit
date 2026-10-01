@@ -12,6 +12,7 @@ import type {
   ReasoningEffort,
   SessionImage,
   SessionItem,
+  SessionMessage,
   SessionMode,
   SessionProvider,
   SessionNotice,
@@ -231,6 +232,7 @@ export function useChat(): Chat {
   const [storedQuestions, setQuestions] = useState<readonly ChatSession[]>([])
   const [notices, setNotices] = useState<readonly SessionNotice[]>([])
   const [shown, setShown] = useState<Shown>({ kind: 'new' })
+  const [nextChoices, setNextChoices] = useState<ReadonlyMap<string, Pick<SessionMessage, 'model' | 'reasoning'>>>(() => new Map())
   const [items, setItems] = useState<readonly SessionItem[]>([])
   const [itemsFor, setItemsFor] = useState('new')
   const [earlier, setEarlier] = useState({ id: '', left: 0 })
@@ -502,8 +504,9 @@ export function useChat(): Chat {
   }, [root])
 
   const mode = session?.mode ?? settings.chatMode
-  const model = session?.chosen ?? (provider === 'codex' ? session?.model ?? settings.codexModel : settings.chatModel)
-  const wantedReasoning = session?.reasoning ?? settings.codexReasoning
+  const nextChoice = shown.kind === 'session' ? nextChoices.get(shown.id) : undefined
+  const model = nextChoice?.model ?? session?.chosen ?? (provider === 'codex' ? session?.model ?? settings.codexModel : settings.chatModel)
+  const wantedReasoning = nextChoice?.reasoning ?? session?.reasoning ?? settings.codexReasoning
   const catalog: readonly ClaudeModel[] | undefined = Array.isArray(models.said) && models.on.startsWith(`${provider}:`) ? models.said : undefined
   const reasoningModel = catalog?.find((one) => one.value === (model || session?.model)) ?? catalog?.find((one) => one.isDefault)
   const reasoning = wantedReasoning !== '' && reasoningModel?.reasoning !== undefined && !reasoningModel.reasoning.some((one) => one.value === wantedReasoning) ? '' : wantedReasoning
@@ -930,7 +933,10 @@ export function useChat(): Chat {
     reasoning,
     setReasoning: (next) => {
       change({ codexReasoning: next })
-      if (shownRef.current.kind === 'session') setSessions((all) => all.map((one) => one.id === keyOf(shownRef.current) ? { ...one, reasoning: next } : one))
+      if (shownRef.current.kind === 'session') {
+        const id = shownRef.current.id
+        setNextChoices((all) => new Map(all).set(id, { ...all.get(id), reasoning: next }))
+      }
     },
     model,
     working,
@@ -972,9 +978,8 @@ export function useChat(): Chat {
     setModel: (next) => {
       change(provider === 'codex' ? { codexModel: next, codexReasoning: '' } : { chatModel: next })
       if (shownRef.current.kind === 'session') {
-        setSessions((all) =>
-          all.map((one) => (one.id === keyOf(shownRef.current) ? { ...one, chosen: next, ...(provider === 'codex' ? { reasoning: '' } : {}) } : one)),
-        )
+        const id = shownRef.current.id
+        setNextChoices((all) => new Map(all).set(id, { ...all.get(id), model: next, ...(provider === 'codex' ? { reasoning: '' } : {}) }))
       }
     },
     setProvider: (next) => {

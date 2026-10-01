@@ -4,6 +4,8 @@ import { powerMonitor } from 'electron'
 import log from 'electron-log'
 
 import type { SessionMessage, Shortcut, ShortcutDraft } from '../shared/api'
+import { assistantsIn } from '../shared/api'
+import { isRemote } from '../shared/hosts'
 import { isDue } from '../shared/schedule'
 import { getSettings, setSettings } from './store'
 
@@ -45,8 +47,11 @@ export function startShortcuts(given: ShortcutDeps): void {
 
 /** The conversation it started, or nothing where it could not. */
 export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise<string | undefined> {
-  const one = getSettings().shortcuts.find((shortcut) => shortcut.id === id)
+  const settings = getSettings()
+  const one = settings.shortcuts.find((shortcut) => shortcut.id === id)
   if (one === undefined || deps === undefined) return undefined
+  const provider = one.provider ?? 'claude'
+  if (!assistantsIn(settings).includes(provider) || (provider === 'codex' && isRemote(one.root))) return undefined
   const now = Date.now()
   // Counted before the conversation starts, so the next look does not start it again; a run by hand leaves the timetable where it was.
   put(id, { lastRun: now, ...(by === 'timetable' ? { since: now } : {}) })
@@ -55,12 +60,14 @@ export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise
       root: one.root,
       mode: one.mode,
       text: one.prompt,
+      provider,
       ...(one.model === undefined ? {} : { model: one.model }),
+      ...(provider !== 'codex' || one.reasoning === undefined ? {} : { reasoning: one.reasoning }),
     })
     deps.rename(session, one.name)
     put(id, { lastSession: session })
     // The goal goes after the work, so it holds from the first turn without the run beginning with a condition and no task.
-    if (one.goal !== undefined && one.goal !== '') {
+    if (provider === 'claude' && one.goal !== undefined && one.goal !== '') {
       await deps.start({ session, root: one.root, mode: one.mode, text: `/goal ${one.goal}` })
     }
     return session
@@ -81,7 +88,9 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
     name: draft.name,
     root: draft.root,
     prompt: draft.prompt,
-    ...(draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
+    provider: draft.provider ?? 'claude',
+    ...(draft.provider !== 'codex' || draft.reasoning === undefined ? {} : { reasoning: draft.reasoning }),
+    ...(draft.provider === 'codex' || draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
     mode: draft.mode,
     ...(draft.model === undefined || draft.model === '' ? {} : { model: draft.model }),
     ...(draft.cron === undefined || draft.cron.trim() === '' ? {} : { cron: draft.cron.trim() }),

@@ -1,7 +1,7 @@
 import { ProviderIcon } from './ProviderIcon'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { DEFAULT_SETTINGS, homeOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { DEFAULT_SETTINGS, homeOf, providerOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, CutOff, SessionImage, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
 import { linksIn, shortUrl } from '../../../shared/links'
 import { Icon } from '../ui/Icon'
@@ -139,7 +139,9 @@ export function Chat(): React.JSX.Element {
             root: session.root,
             prompt: first?.kind === 'mine' ? first.text : '',
             mode: session.mode,
-            ...(session.chosen === undefined || session.chosen === '' ? {} : { model: session.chosen }),
+            provider: providerOf(session.id),
+            ...(session.chosen === undefined ? session.model === undefined ? {} : { model: session.model } : { model: session.chosen }),
+            ...(providerOf(session.id) !== 'codex' ? {} : { reasoning: session.reasoning ?? session.actualReasoning ?? '' }),
             on: true,
           },
           at: Date.now(),

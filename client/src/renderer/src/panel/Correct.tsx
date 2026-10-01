@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { CorrectAction, ModelsSaid, Settings } from '../../../shared/api'
-import { modelName } from '../../../shared/api'
+import type { CorrectAction, ModelsSaid, SessionProvider, Settings } from '../../../shared/api'
+import { assistantFor, assistantsIn, modelName } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 import type { Choice } from '../ui/Menu'
@@ -39,11 +39,15 @@ export function Correct({
   const [asking, setAsking] = useState(false)
   const [custom, setCustom] = useState('')
   // What claude says it has. Asked when the menu is opened, because asking it means starting it.
-  const [models, setModels] = useState<ModelsSaid>('unasked')
+  const [models, setModels] = useState<{ readonly provider: SessionProvider; readonly said: ModelsSaid }>()
   const field = useRef<HTMLTextAreaElement>(null)
   const instruction = useRef<HTMLInputElement>(null)
 
-  const model = settings.correctPlanModel
+  const enabled = assistantsIn(settings)
+  const provider = assistantFor({ ...settings, chatProvider: settings.correctProvider })
+  const model = provider === 'codex' ? settings.correctCodexModel : settings.correctPlanModel
+  const catalog = models?.provider === provider ? models.said : 'unasked'
+  const assistant = provider === 'codex' ? 'Codex' : 'Claude Code'
 
   useEffect(() => field.current?.focus(), [])
 
@@ -76,6 +80,7 @@ export function Correct({
         text,
         ...(said === undefined ? {} : { custom: said }),
         model,
+        provider,
       })
       setWorking(false)
       if (!answer.ok || answer.text === undefined) {
@@ -89,7 +94,7 @@ export function Correct({
         .then(() => setCopied(true))
         .catch(() => undefined)
     },
-    [text, working, model],
+    [text, working, model, provider],
   )
 
   const revert = useCallback(() => {
@@ -117,9 +122,9 @@ export function Correct({
   }, [run, revert, before, text, working, asking])
 
   const planChoices: readonly Choice[] = [
-    { value: '', label: 'Default', says: 'Haiku' },
-    ...(Array.isArray(models)
-      ? models.map((one) =>
+    { value: '', label: 'Default', says: provider === 'claude' ? 'Haiku' : 'As Codex is set up' },
+    ...(Array.isArray(catalog)
+      ? catalog.map((one) =>
           one.disabled === true
             ? { value: one.value, label: one.name, disabled: true, ...(one.says === undefined ? {} : { says: one.says }) }
             : { value: one.value, label: one.name, ...(one.id === undefined ? {} : { says: modelName(one.id) }) },
@@ -127,17 +132,18 @@ export function Correct({
       : [
           {
             value: '__asking',
-            label: models === 'asking' ? 'Asking claude...' : 'claude did not say which models it has',
+            label: catalog === 'asking' ? `Asking ${assistant}...` : `${assistant} did not say which models it has`,
+            disabled: true,
           },
         ]),
   ]
 
   // Asked at every opening: main keeps the answer, and asks Claude Code again once another version of it answers.
   const askModels = (): void => {
-    if (!Array.isArray(models)) setModels('asking')
-    void window.geckit.chat.models().then((said) => setModels((held) => said ?? (Array.isArray(held) ? held : 'unsaid')))
+    if (!Array.isArray(catalog)) setModels({ provider, said: 'asking' })
+    void window.geckit.chat.models(undefined, provider).then((said) => setModels({ provider, said: said ?? 'unsaid' })).catch(() => setModels({ provider, said: 'unsaid' }))
   }
-  const named = (Array.isArray(models) ? models.find((one) => one.value === model)?.name : undefined) ?? (model === '' ? 'Default' : model)
+  const named = (Array.isArray(catalog) ? catalog.find((one) => one.value === model)?.name : undefined) ?? (model === '' ? 'Default' : model)
 
   return (
     <div className="correct">
@@ -184,15 +190,17 @@ export function Correct({
       </div>
 
       <div className="footer">
+        {enabled.length < 2 ? <span>{assistant}</span> : <Picker label={assistant} choices={enabled.map((one) => ({ value: one, label: one === 'codex' ? 'Codex' : 'Claude Code' }))} chosen={provider} title="Assistant" disabled={working} onPick={(value) => change({ correctProvider: value as SessionProvider })} />}
         <Picker
           label={<span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{named}</span>}
           choices={planChoices}
           chosen={model}
           title="Model"
+          disabled={working}
           onOpen={askModels}
           onPick={(value) => {
             if (value === '__asking') return
-            change({ correctPlanModel: value })
+            change(provider === 'codex' ? { correctCodexModel: value } : { correctPlanModel: value })
           }}
         />
       </div>

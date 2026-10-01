@@ -953,6 +953,105 @@ textarea {
   overflow-y: auto;
 }
 
+.assistant-settings h3 {
+  margin: 2px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.assistant-settings .assistant-settings-intro {
+  margin-bottom: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.assistant-options {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.assistant-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  cursor: pointer;
+}
+
+.assistant-option + .assistant-option {
+  border-top: 1px solid var(--border);
+}
+
+.assistant-option:hover {
+  background: var(--bg-hover);
+}
+
+.assistant-option:has(input:disabled) {
+  cursor: default;
+}
+
+.assistant-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.assistant-option-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.assistant-option-description {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.assistant-toggle {
+  appearance: none;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  padding: 2px;
+  background: var(--fill-strong);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  cursor: inherit;
+}
+
+.assistant-toggle::before {
+  display: block;
+  width: 14px;
+  height: 14px;
+  background: var(--on-solid);
+  border-radius: 50%;
+  content: '';
+}
+
+.assistant-toggle:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.assistant-toggle:checked::before {
+  transform: translateX(14px);
+}
+
+.assistant-toggle:disabled {
+  opacity: 0.6;
+}
+
+.assistant-settings .assistant-settings-note {
+  margin: 12px 2px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
 .settings-dialog .dialog-actions {
   padding-top: 12px;
   margin-top: 12px;
@@ -5131,6 +5230,7 @@ html.framed .board-head {
 }
 
 .board-card {
+  position: relative;
   display: flex;
   flex-shrink: 0;
   flex-direction: column;
@@ -5144,6 +5244,16 @@ html.framed .board-head {
   /* A card out of view is not laid out or painted, and keeps the height it last had. */
   content-visibility: auto;
   contain-intrinsic-size: auto 86px;
+}
+
+.board-card > .provider-icon {
+  position: absolute;
+  right: 10px;
+  bottom: 9px;
+}
+
+.board-card:has(> .provider-icon) > :nth-last-child(2) {
+  padding-right: 20px;
 }
 
 /* A favorite, the same ones the sidebar groups at its top. */
@@ -9388,6 +9498,7 @@ html.phone .preview-bar .icon-button {
   align-items: center;
   color: var(--text-faint);
   vertical-align: middle;
+  opacity: 0.6;
 }
 
 .question-title .provider-icon {

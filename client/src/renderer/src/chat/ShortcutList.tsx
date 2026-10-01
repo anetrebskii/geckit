@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 
-import { modelName, SESSION_MODES, shownProjects } from '../../../shared/api'
-import type { SessionMode, Shortcut, ShortcutDraft } from '../../../shared/api'
+import { assistantFor, assistantsIn, modelName, SESSION_MODES, shownProjects } from '../../../shared/api'
+import type { ClaudeModel, ModelsSaid, SessionMode, SessionProvider, Shortcut, ShortcutDraft } from '../../../shared/api'
+import { isRemote } from '../../../shared/hosts'
 import { cronOf, describeCron, describeTime, nextRun, nextTimed, WEEKDAYS, whenOf } from '../../../shared/schedule'
 import type { When } from '../../../shared/schedule'
 import { Icon } from '../ui/Icon'
@@ -60,13 +61,20 @@ export function ShortcutList({
 }): React.JSX.Element {
   // Another profile's shortcuts are kept and run, and listed only where that profile is in use.
   const shortcuts = chat.settings.shortcuts.filter((one) => shownProjects(chat.settings).includes(one.root))
-  const blank = (): ShortcutDraft => ({
-    name: '',
-    root: chat.root ?? shownProjects(chat.settings)[0] ?? '',
-    prompt: '',
-    mode: 'auto',
-    on: true,
-  })
+  const blank = (): ShortcutDraft => {
+    const root = chat.root ?? shownProjects(chat.settings)[0] ?? ''
+    const provider = assistantFor(chat.settings, root)
+    return {
+      name: '',
+      root,
+      prompt: '',
+      mode: 'auto',
+      provider,
+      model: provider === 'codex' ? chat.settings.codexModel : chat.settings.chatModel,
+      ...(provider === 'codex' ? { reasoning: chat.settings.codexReasoning } : {}),
+      on: true,
+    }
+  }
   const [editing, setEditing] = useState<ShortcutDraft | undefined>(() =>
     typeof start !== 'string' ? start : start === 'new' ? blank() : shortcuts.find((one) => one.id === start),
   )
@@ -103,12 +111,16 @@ export function ShortcutList({
             {shortcuts.map((one) => {
               const next = nextTimed(one, now)
               const running = busy(chat, one.lastSession)
+              const provider = one.provider ?? 'claude'
+              const available = assistantsIn(chat.settings).includes(provider) && (provider !== 'codex' || !isRemote(one.root))
               return (
                 <div key={one.id} className="shortcut-row">
                   <button type="button" className="shortcut-text" title="Edit" onClick={() => setEditing(one)}>
                     <span className="shortcut-name">{one.name}</span>
                     <span className="shortcut-when">
                       <span className="tinted" style={tint(projectColor(one.root, chat.settings))}>{projectLabel(one.root)}</span>
+                      <span>{provider === 'codex' ? 'Codex' : 'Claude Code'}</span>
+                      {available ? null : <span>Assistant unavailable</span>}
                       {one.cron === undefined ? null : <span>{one.on ? describeCron(one.cron) : 'Timetable paused'}</span>}
                       {running ? (
                         <span>Running now</span>
@@ -133,7 +145,7 @@ export function ShortcutList({
                       Last run
                     </button>
                   )}
-                  <button type="button" className="primary" title="Start a new conversation with this prompt" onClick={() => run(one)}>
+                  <button type="button" className="primary" title="Start a new conversation with this prompt" disabled={!available} onClick={() => run(one)}>
                     Run
                   </button>
                 </div>
@@ -169,6 +181,23 @@ function Editor({
   readonly onDone: () => void
 }): React.JSX.Element {
   const [draft, setDraft] = useState<ShortcutDraft>(given)
+  const provider = draft.provider ?? 'claude'
+  const enabled = assistantsIn(chat.settings)
+  const available = enabled.includes(provider) && (provider !== 'codex' || !isRemote(draft.root))
+  const assistant = provider === 'codex' ? 'Codex' : 'Claude Code'
+  const [askedModels, setAskedModels] = useState<{ readonly provider: SessionProvider; readonly root: string; readonly said: ModelsSaid }>()
+  useEffect(() => {
+    if (!available) return
+    let current = true
+    void window.geckit.chat.models(draft.root || undefined, provider).then((said) => {
+      if (current) setAskedModels({ provider, root: draft.root, said: said ?? 'unsaid' })
+    }).catch(() => {
+      if (current) setAskedModels({ provider, root: draft.root, said: 'unsaid' })
+    })
+    return () => { current = false }
+  }, [draft.root, provider, available])
+  const modelsSaid = available && askedModels?.provider === provider && askedModels.root === draft.root ? askedModels.said : 'unasked'
+  const catalog: readonly ClaudeModel[] | undefined = Array.isArray(modelsSaid) ? modelsSaid : undefined
   // Kept apart from the line itself, so a cron being typed that happens to spell "every day" stays a cron line.
   const [repeats, setRepeats] = useState<Repeats>(() => (given.cron === undefined ? 'never' : whenOf(given.cron).kind))
   const [sure, setSure] = useState(false)
@@ -179,19 +208,26 @@ function Editor({
   const change = (change: Partial<ShortcutDraft>): void => setDraft({ ...draft, ...change })
 
   const models = [
-    { value: '', label: 'Default', says: 'as claude is set up' },
-    ...(Array.isArray(chat.models)
-      ? chat.models.map((one) => ({ value: one.value, label: one.name, ...(one.id === undefined ? {} : { says: modelName(one.id) }) }))
-      : [{ value: '__asking', label: chat.models === 'asking' ? 'Asking claude...' : 'claude did not say which models it has' }]),
+    { value: '', label: 'Default', says: `As ${assistant} is set up` },
+    ...(catalog !== undefined
+      ? catalog.map((one) => ({ value: one.value, label: one.name, ...(one.disabled === true ? { disabled: true } : {}), ...(one.id === undefined ? {} : { says: modelName(one.id) }) }))
+      : [{ value: '__asking', label: !available ? 'Assistant unavailable' : modelsSaid === 'unsaid' ? 'Models unavailable' : `Asking ${assistant}...`, disabled: true }]),
   ]
   const model = draft.model ?? ''
-  const modelLabel = Array.isArray(chat.models) ? (chat.models.find((one) => one.value === model)?.name ?? (model || 'Default')) : model || 'Default'
+  const selectedModel = model === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === model)
+  const modelLabel = model === '' ? 'Default' : selectedModel?.name ?? model
+  const reasoning = draft.reasoning ?? ''
+  const reasoningChoices = [
+    { value: '', label: selectedModel?.defaultReasoning === undefined ? 'Default' : `Default (${selectedModel.defaultReasoning === 'xhigh' ? 'Extra high' : selectedModel.defaultReasoning.charAt(0).toUpperCase() + selectedModel.defaultReasoning.slice(1)})` },
+    ...(selectedModel?.reasoning?.map((one) => ({ value: one.value, label: one.value === 'xhigh' ? 'Extra high' : one.value.charAt(0).toUpperCase() + one.value.slice(1), says: one.says })) ?? []),
+  ]
+  const reasoningLabel = reasoningChoices.find((one) => one.value === reasoning)?.label ?? reasoning
 
   const name = draft.name.trim() || (draft.prompt.trim().split('\n')[0] ?? '').slice(0, 60)
   const ready = name !== '' && draft.root !== '' && draft.prompt.trim() !== '' && (draft.cron === undefined || next !== undefined)
   const save = (): void => {
     if (!ready) return
-    void window.geckit.shortcuts.save({ ...draft, name, prompt: draft.prompt.trim() }).then(onDone)
+    void window.geckit.shortcuts.save({ ...draft, provider, ...(provider !== 'codex' ? {} : { reasoning }), name, prompt: draft.prompt.trim() }).then(onDone)
   }
 
   const time = (
@@ -236,6 +272,27 @@ function Editor({
       </div>
 
       <div className="field">
+        <label>Assistant</label>
+        <Picker
+          label={assistant}
+          chosen={provider}
+          choices={[
+            ...(enabled.includes(provider) ? [] : [{ value: provider, label: assistant, disabled: true, says: 'Disabled in Settings' }]),
+            ...enabled.map((one) => ({ value: one, label: one === 'codex' ? 'Codex' : 'Claude Code', ...(one === 'codex' && isRemote(draft.root) ? { disabled: true, says: 'Local projects only' } : {}) })),
+          ]}
+          className="select"
+          disabled={enabled.length === 1 && enabled.includes(provider)}
+          onPick={(value) => {
+            if (value === provider) return
+            const { model: _model, reasoning: _reasoning, goal: _goal, ...rest } = draft
+            const nextProvider = value as SessionProvider
+            setDraft({ ...rest, provider: nextProvider, model: nextProvider === 'codex' ? chat.settings.codexModel : chat.settings.chatModel, ...(nextProvider === 'codex' ? { reasoning: chat.settings.codexReasoning } : {}) })
+          }}
+        />
+        {available ? null : <span className="shortcut-next wrong">{enabled.includes(provider) ? 'Codex supports local projects only.' : `This shortcut will not run while ${assistant} is disabled in Settings.`}</span>}
+      </div>
+
+      <div className="field">
         <label htmlFor="shortcut-prompt">Prompt</label>
         <textarea
           id="shortcut-prompt"
@@ -246,7 +303,7 @@ function Editor({
         />
       </div>
 
-      <div className="field">
+      {provider !== 'claude' ? null : <div className="field">
         <label htmlFor="shortcut-goal">Goal</label>
         <input
           id="shortcut-goal"
@@ -260,14 +317,14 @@ function Editor({
             ? 'No goal: the run stops when Claude is done, and the card stays In progress.'
             : 'Claude keeps working until this holds, then the card goes to In review.'}
         </span>
-      </div>
+      </div>}
 
       <div className="two">
         <div className="field">
           <label>What it may do</label>
           <Picker
             label={SESSION_MODES.find((one) => one.mode === draft.mode)?.label ?? 'Auto'}
-            choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: one.why }))}
+            choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: provider === 'codex' ? one.mode === 'manual' ? 'Asks before running untrusted commands. Uses a sandbox.' : one.mode === 'auto' ? 'Works in a sandbox. Codex reviews requests for more access.' : 'Reads and proposes. Changes nothing.' : one.why }))}
             chosen={draft.mode}
             explained
             {...(draft.cron === undefined
@@ -284,15 +341,20 @@ function Editor({
             choices={models}
             chosen={model}
             className="select"
-            onOpen={() => chat.askModels(draft.root === '' ? undefined : draft.root)}
             onPick={(value) => {
               if (value === '__asking') return
               const { model: _model, ...rest } = draft
-              setDraft(value === '' ? rest : { ...rest, model: value })
+              const next = value === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === value)
+              setDraft({ ...rest, ...(value === '' ? {} : { model: value }), ...(provider !== 'codex' ? {} : { reasoning: next?.reasoning?.some((one) => one.value === reasoning) === true ? reasoning : '' }) })
             }}
           />
         </div>
       </div>
+
+      {provider !== 'codex' ? null : <div className="field">
+        <label>Reasoning</label>
+        <Picker label={reasoningLabel} choices={reasoningChoices} chosen={reasoning} className="select" onPick={(value) => change({ reasoning: value as NonNullable<Shortcut['reasoning']> })} />
+      </div>}
 
       <div className="field">
         <label>Runs by itself</label>

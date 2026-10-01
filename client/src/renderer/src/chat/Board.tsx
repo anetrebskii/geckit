@@ -633,7 +633,6 @@ function Card({
         ) : (
           <>
             {starred ? <Icon name="star" size={11} className="board-card-star" /> : null}
-            {showProviders ? <ProviderIcon id={session.id} /> : null}
             <span className="board-card-title">{session.title}</span>
             <span className="changed">{ago(session.at, now, true)}</span>
           </>
@@ -732,6 +731,7 @@ function Card({
           <StartedMenu chat={chat} id={session.id} anchor={kids} onClose={() => setKids(undefined)} />
         </span>
       )}
+      {showProviders ? <ProviderIcon id={session.id} /> : null}
     </div>
   )
 }
