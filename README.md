@@ -1,12 +1,12 @@
 <p align="center"><img src="docs/icon-walk.svg" width="112" alt=""></p>
 
-<h1 align="center">GeckIt, an alternative desktop client for Claude Code</h1>
+<h1 align="center">GeckIt, a Kanban board for Codex and Claude Code</h1>
 
 <p align="center">Built by an engineer obsessed with personal productivity.</p>
 
-Working with several Claude Code chats at once? See which one is working, which one waits for you and which one is done.
+Working with several Codex or Claude Code conversations at once? See which are working, which are waiting for you and which are done.
 
-GeckIt makes your Claude Code chats into a Kanban board with tasks and projects. It also corrects the text you select and transcribes what you say by a shortcut.
+GeckIt puts Codex and Claude Code conversations on one Kanban board across your projects. It also corrects selected text and transcribes speech with a shortcut.
 
 <p align="center">
   <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-arm64.dmg"><img src="docs/download-macos-arm.svg" height="48" alt="Download for macOS, Apple Silicon"></a>
@@ -15,9 +15,9 @@ GeckIt makes your Claude Code chats into a Kanban board with tasks and projects.
   <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt.AppImage"><img src="docs/download-linux.svg" height="48" alt="Download for Linux, AppImage"></a>
 </p>
 
-<p align="center">Free, with the source public. The board runs your own Claude Code on your Claude subscription, with no API key.</p>
+<p align="center">Free, with the source public. Run Codex with your ChatGPT account or Claude Code with your Claude account. No API key.</p>
 
-<p align="center">GeckIt is not made by Anthropic and is not affiliated with it. Claude and Claude Code are trademarks of Anthropic.</p>
+<p align="center">GeckIt is not made by or affiliated with Anthropic or OpenAI. Claude and Claude Code are trademarks of Anthropic.</p>
 
 <a href="https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec">
   <img src="docs/video/geckit-light.webp" alt="A new task with a goal is started, Claude works on it, a question from another task is answered, and the new card moves to In review by itself">
@@ -29,15 +29,15 @@ The iPhone app is on [TestFlight](https://testflight.apple.com/join/7B7vbk2e). I
 
 ## Board
 
-In terminal tabs it is easy to lose the session that asked you something and has waited since. You work with Claude Code sessions like with tasks on a Kanban board. You can keep track of them and see how the work goes on different projects.
+Working in terminal tabs, it is easy to miss a conversation that is waiting for you. GeckIt shows Codex and Claude Code conversations as cards on one board, across projects.
 
 <picture>
   <img src="docs/screenshots/board-light.png" alt="The board: Claude Code conversations from three projects as cards in In progress, In review and Done">
 </picture>
 
 - Three columns: In progress, In review, Done. A card is dragged from one to the next, and Done is grouped by the day.
-- A card shows its project, whether Claude is working, asks you something or waits for you, the goal, and the links written in the conversation.
-- New task starts a conversation in a project, with a goal if you give one. Claude keeps working until the goal holds, then the card moves to In review by itself.
+- A card shows its project, whether the assistant is working or waiting for you, its goal and links from the conversation.
+- New task starts a conversation in a project, with an optional goal. The assistant keeps working until the goal holds, then the card moves to In review by itself.
 - All projects on one board, or one project at a time with Cmd+K.
 - Cmd+click or Shift+click picks several cards, and they are moved, hidden or deleted together. Hidden conversations are behind their own button in the top bar.
 - Ask (Cmd+Shift+N) is a question outside any project. It is not put on the board.
@@ -60,7 +60,7 @@ Keep work and your own projects apart. A profile is a set of projects, for examp
 
 ## Conversations
 
-Press a card and the conversation opens over the board. You can use it instead of iTerm2 + Claude Code.
+Press a card and the conversation opens over the board. Work with Codex or Claude Code there instead of switching between terminal tabs.
 
 <picture>
   <img src="docs/screenshots/board-open-light.png" alt="A card opened over the board: the Claude Code conversation, marked In review">
@@ -68,10 +68,10 @@ Press a card and the conversation opens over the board. You can use it instead o
 
 - Ctrl+Tab switches between conversations as it works in VS Code between files.
 - A notification when AI has finished its job, so you never miss it waiting for you.
-- The status bar shows the 5-hour and weekly limits, the context size out of the maximum, the total price and git information.
+- The status bar shows usage limits, context size, cost and git information.
 - @ picks a file or folder from the project, a message starting with ! runs a command, Up brings back your past message, images can be pasted or dropped in.
-- The mode (Manual, Auto, Plan), the model, MCP servers and Claude in Chrome are chosen under the message field. Remote continues the conversation on claude.ai or in the Claude app.
-- Background jobs are managed as the Claude Code terminal does.
+- Choose a mode and model under the message field. Codex uses its own permission checks. Claude Code also supports MCP servers, Claude in Chrome and Remote Control, which continues the conversation on claude.ai or in the Claude app.
+- Background jobs run alongside the conversation.
 
 <picture>
   <img src="docs/screenshots/background-light.png" alt="The Background window: a dev server and a test watch running, a finished command, and a helper agent">
@@ -91,7 +91,7 @@ Show the bug instead of typing a description of it. Press Cmd+Alt+R, show the pr
   <img src="docs/screenshots/record-screen-light.png" alt="Recording the screen: the capsule over a web page with a broken filter bar">
 </picture>
 
-Then Ask sends it to Claude as a question, and Make a task finds the project it is about and starts a task there, with a goal.
+Then Ask sends it to your selected assistant as a question, or Make a task finds the project and starts a task there with a goal.
 
 <p>
   <picture>
@@ -164,13 +164,19 @@ GeckIt adds a short guide to `~/.claude`, so Claude Code knows about the board, 
 
 Download it from [Releases](https://github.com/anetrebskii/geckit/releases/latest): a dmg for Apple Silicon or Intel Macs, an installer for Windows, an AppImage for Linux. It updates itself from the Stable channel, the release marked Latest. Settings, Version switches it to Development, which gets every build from main.
 
-The board and Correct need [Claude Code](https://code.claude.com/docs/en/overview) installed and signed in with a Claude subscription. Transcribe, screen recording and Say it hear speech on the computer with Whisper, and need no key: the model, about 570 MB, downloads the first time you dictate.
+Chat and Correct need either Codex, signed in with your ChatGPT account, or [Claude Code](https://code.claude.com/docs/en/overview), signed in with your Claude account. Transcribe, screen recording and Say it hear speech on the computer with Whisper, and need no key: the model, about 570 MB, downloads the first time you dictate.
 
 The Windows installer is not signed, so SmartScreen warns about it: More info, then Run anyway. It installs for your user only, into `%LOCALAPPDATA%\Programs\geckit`, without administrator rights.
 
-Do not keep one conversation open in GeckIt and in a terminal at the same time: two `claude` processes would write to the same history file.
+For Claude Code, do not keep the same conversation open in GeckIt and a terminal at once: two `claude` processes would write to the same history file.
 
-## Anthropic's terms
+## Codex and Claude Code policies
+
+### Codex
+
+GeckIt runs the Codex CLI on your computer. Sign in with your ChatGPT account. Codex handles its own permission checks. GeckIt follows [OpenAI's Usage Policies](https://openai.com/policies/usage-policies/) when it runs Codex.
+
+### Claude Code
 
 Checked against Anthropic's terms on September 28, 2026.
 
