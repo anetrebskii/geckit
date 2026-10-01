@@ -22,7 +22,7 @@ run('iconutil', '-c', 'icns', set, '-o', join(bundle, 'Contents/Resources/electr
 rmSync(set, { recursive: true, force: true })
 
 const plist = join(bundle, 'Contents/Info.plist')
-run('plutil', '-replace', 'CFBundleIdentifier', '-string', 'com.geckit.local', plist)
+run('plutil', '-replace', 'CFBundleIdentifier', '-string', 'com.geckit.local.e38', plist)
 run('plutil', '-replace', 'CFBundleName', '-string', 'GeckIt Local', plist)
 run('plutil', '-replace', 'CFBundleDisplayName', '-string', 'GeckIt Local', plist)
 run('codesign', '--force', '--deep', '--sign', '-', bundle)
