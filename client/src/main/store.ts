@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, unwatchFile, watchFile, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 
 import { app } from 'electron'
 
@@ -96,10 +97,26 @@ export function setSettings(change: Partial<Settings>): Settings {
   return settings
 }
 
+const reloadSettings = (): void => {
+  const found = read(SETTINGS, DEFAULT_SETTINGS)
+  if (found === undefined || isDeepStrictEqual(found, getSettings())) return
+  settings = undefined
+  const changed = getSettings()
+  for (const watcher of watchers) watcher(changed)
+}
+
 /** Told whenever anything changes, so a second window is never out of date. */
 export function onSettings(watcher: (settings: Settings) => void): () => void {
+  getSettings()
   watchers.add(watcher)
-  return () => watchers.delete(watcher)
+  if (watchers.size === 1) {
+    watchFile(join(folder(), SETTINGS), { interval: 250, persistent: false }, reloadSettings)
+    reloadSettings()
+  }
+  return () => {
+    watchers.delete(watcher)
+    if (watchers.size === 0) unwatchFile(join(folder(), SETTINGS), reloadSettings)
+  }
 }
 
 /** The project folders the chat window offers, this one first. One added while a profile is in use joins that profile too. */
