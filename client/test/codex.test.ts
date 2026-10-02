@@ -15,6 +15,7 @@ import { codexOptions } from '../src/main/sessions/codex-protocol'
 import type { CodexEvent, CodexGoal, CodexInput, CodexTurn, Json, RpcId, ThreadOptions } from '../src/main/sessions/codex-protocol'
 import { codexEnvironment } from '../src/main/sessions/codex-rpc'
 import type { Heard } from '../src/main/sessions/heard'
+import type { runShell } from '../src/main/sessions/shell'
 import { assistantFor, DEFAULT_SETTINGS, planLine, programLine, providerOf, resumeCommand } from '../src/shared/api'
 import type { ChatSession, ReasoningEffort, SessionItems } from '../src/shared/api'
 
@@ -488,6 +489,50 @@ describe('Codex app-server', () => {
 })
 
 describe('provider routing', () => {
+  const shell: typeof runShell = (_root, _command, heard) => {
+    heard('On branch main\n')
+    return { done: Promise.resolve({ stdout: 'On branch main\n', stderr: '', output: 'On branch main\n', code: 0, stopped: false }), stop: () => undefined }
+  }
+
+  it('keeps a Codex conversation started with a shell command visible after refreshing and sends its output with the next message', async () => {
+    const { server, codex } = setup()
+    const sessions = new Sessions({ codex, shell, notes: memoryNotes(), changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined, claude: () => { throw new Error('Wrong provider') }, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    try {
+      const id = await sessions.shell({ provider: 'codex', root: ROOT, command: 'git status' })
+      expect(id).toBe('codex:thread-1')
+      await tick()
+      codex.list = async () => [{ id, root: ROOT, title: '', stands: '', at: 100_000, driven: true }]
+      expect(await sessions.items(id)).toEqual([expect.objectContaining({ kind: 'shell', command: 'git status', output: 'On branch main\n' })])
+      expect(await sessions.list([ROOT])).toEqual([expect.objectContaining({ id, provider: 'codex', title: '!git status', here: true })])
+
+      await sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'what changed?' })
+      await tick()
+      expect(server.requests.find((one) => one.method === 'turn/start')?.params).toMatchObject({ threadId: 'thread-1', input: [{ type: 'text', text: '<bash-input>git status</bash-input>\n\n<bash-stdout>On branch main\n</bash-stdout><bash-stderr></bash-stderr>\n\nwhat changed?', text_elements: [] }] })
+    } finally {
+      sessions.dispose()
+    }
+  })
+
+  it('runs a shell command in an uncached Codex conversation despite a stale Claude preference and resumes the same thread', async () => {
+    const { server, codex } = setup()
+    const sessions = new Sessions({ codex, shell, notes: memoryNotes(), changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined, claude: () => { throw new Error('Wrong provider') }, claudeAccount: async () => { throw new Error('Wrong account') }, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    try {
+      const id = await sessions.shell({ session: 'codex:migrated', provider: 'claude', root: ROOT, command: 'git status' })
+      expect(id).toBe('codex:migrated')
+      await tick()
+      expect(server.requests.find((one) => one.method === 'thread/turns/list')?.params?.threadId).toBe('migrated')
+      expect(await sessions.items(id)).toEqual([expect.objectContaining({ kind: 'shell', output: 'On branch main\n' })])
+
+      await sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'what changed?' })
+      await tick()
+      expect(server.requests.find((one) => one.method === 'thread/resume')?.params?.threadId).toBe('migrated')
+      expect(server.requests.some((one) => one.method === 'thread/start')).toBe(false)
+      expect(server.requests.find((one) => one.method === 'turn/start')?.params).toMatchObject({ threadId: 'migrated', input: [{ type: 'text', text: '<bash-input>git status</bash-input>\n\n<bash-stdout>On branch main\n</bash-stdout><bash-stderr></bash-stderr>\n\nwhat changed?', text_elements: [] }] })
+    } finally {
+      sessions.dispose()
+    }
+  })
+
   it('keeps migrated visibility and user changes while hiding external Codex conversations', async () => {
     const { codex } = setup()
     const notes = memoryNotes()

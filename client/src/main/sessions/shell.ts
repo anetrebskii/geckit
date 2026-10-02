@@ -73,6 +73,7 @@ export function runShell(root: string, command: string, heard: (output: string) 
       })
     : spawn(terminal ? '/bin/bash' : shell, terminal ? ['-c', ON_TERMINAL, 'bash', shell, '-ilc', marked] : ['-ilc', marked], {
         cwd: root,
+        env: { ...process.env, DISABLE_AUTO_UPDATE: 'true' },
         stdio: ['pipe', 'pipe', 'pipe'],
         // Its own group, so Stop reaches whatever it started.
         detached: true,
@@ -88,7 +89,10 @@ export function runShell(root: string, command: string, heard: (output: string) 
     if (!stream.seen) {
       stream.text += words
       const mark = MARKED.exec(stream.text)
-      if (mark === null) return
+      if (mark === null) {
+        heard(cut(plain(both + stream.text)))
+        return
+      }
       stream.seen = true
       words = stream.text.slice(mark.index + mark[0].length)
       stream.text = ''

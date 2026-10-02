@@ -1230,10 +1230,16 @@ export class Sessions {
     let live = asked.session === undefined ? undefined : (this.#live.get(asked.session) ?? this.#adopt(asked.session))
     const command = asked.command.trim()
     if (live === undefined) {
-      if (asked.provider === 'codex' && isRemote(asked.root)) throw new Error('Codex is available for local projects.')
-      const id = asked.provider === 'codex' ? await this.#deps.codex?.create(asked.root, 'auto') : randomUUID()
+      const provider = asked.session === undefined ? asked.provider ?? 'claude' : providerOf(asked.session)
+      if (provider === 'codex' && isRemote(asked.root)) throw new Error('Codex is available for local projects.')
+      if (provider === 'codex' && this.#deps.codex === undefined) throw new Error('Codex is not available.')
+      const id = provider === 'codex' ? asked.session ?? await this.#deps.codex?.create(asked.root, 'auto') : randomUUID()
       if (id === undefined) throw new Error('Codex is not available.')
       live = this.#fresh(id, asked.root, firstLine(`!${command}`, 80), sessionMode(undefined))
+      if (provider === 'codex' && asked.session !== undefined) {
+        live.begun = true
+        await this.#reread(live)
+      } else this.#note(id, { here: true })
     } else if (live.driver === undefined) {
       await this.#reread(live)
     }
