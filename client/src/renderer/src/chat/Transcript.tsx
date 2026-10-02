@@ -334,9 +334,12 @@ const Turn = memo(function Turn({
           ) : null}
         </div>
       ) : item.kind === 'theirs' ? (
-        <div className="theirs" data-said={item.id}>
-          <Prose text={item.text} />
-        </div>
+        <>
+          {item.phase === 'commentary' ? <div className="reply-phase">Progress update</div> : null}
+          <div className="theirs" data-said={item.id}>
+            <Prose text={item.text} />
+          </div>
+        </>
       ) : item.kind === 'did' ? (
         <Did item={item} going={going} onFile={onFile} onBackground={onBackground} onPicture={onPicture} />
       ) : item.kind === 'thought' ? (
@@ -703,7 +706,7 @@ export const Transcript = memo(function Transcript({
   let open = true
   for (const item of [...shown].reverse()) {
     if (item.kind === 'mine') open = true
-    else if (item.kind === 'theirs' && open) {
+    else if (item.kind === 'theirs' && item.phase !== 'commentary' && open) {
       ends.add(item.id)
       open = false
     }
@@ -886,11 +889,11 @@ export const Transcript = memo(function Transcript({
 
         {working && items.at(-1)?.kind !== 'card' ? (
           <div className="turn">
-            <div className="did" style={{ cursor: 'default' }}>
+            <div className="did" role="status" style={{ cursor: 'default' }}>
               <span className="glyph spinning">
                 <Icon name="spinner" size={12} />
               </span>
-              <span className="what">Working</span>
+              <span className="what">Still working</span>
             </div>
           </div>
         ) : null}

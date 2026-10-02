@@ -1,4 +1,4 @@
-import type { CodexRateLimit, ReasoningEffort, SessionMode } from '../../shared/api'
+import type { CodexRateLimit, ReasoningEffort, SessionItem, SessionMode } from '../../shared/api'
 
 export type RpcId = string | number
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
@@ -38,7 +38,7 @@ export interface CodexGoal {
 
 export type CodexItem =
   | { type: 'userMessage'; id: string; content: CodexInput[] }
-  | { type: 'agentMessage'; id: string; text: string; phase?: 'commentary' | 'final_answer' | null }
+  | { type: 'agentMessage'; id: string; text: string; phase?: Extract<SessionItem, { kind: 'theirs' }>['phase'] | null }
   | { type: 'plan'; id: string; text: string }
   | { type: 'reasoning'; id: string; summary: string[]; content: string[] }
   | { type: 'commandExecution'; id: string; command: string; cwd: string; aggregatedOutput: string | null; status: string; exitCode: number | null }

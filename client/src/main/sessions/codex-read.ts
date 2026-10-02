@@ -14,6 +14,7 @@ export function codexItem(item: CodexItem, root: string, live = false): SessionI
       return [{ kind: 'mine', id, text: item.content.flatMap((input) => input.type === 'text' ? [input.text] : []).join('\n\n'), ...(images.length === 0 ? {} : { images }) }]
     }
     case 'agentMessage':
+      return [{ kind: 'theirs', id, text: item.text, ...(item.phase == null ? {} : { phase: item.phase }) }]
     case 'plan':
       return [{ kind: 'theirs', id, text: item.text }]
     case 'reasoning':

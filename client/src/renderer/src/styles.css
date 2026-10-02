@@ -2736,6 +2736,12 @@ html.phone .find-bar .icon-button {
   user-select: text;
 }
 
+.reply-phase {
+  margin-bottom: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
 .skeleton-line,
 .skeleton-bubble,
 .skeleton-dot {

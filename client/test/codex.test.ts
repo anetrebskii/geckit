@@ -357,6 +357,38 @@ describe('Codex app-server', () => {
     await driver.end()
   })
 
+  it('keeps progress and final phases while streaming and only finishes on turn completion', async () => {
+    const { server, codex, heard } = setup()
+    const id = await codex.create(ROOT, 'manual')
+    const driver = codex.hold({ id, root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Fix it')
+    await tick()
+    const threadId = id.slice(6)
+    server.event({ method: 'item/started', params: { threadId, item: { type: 'agentMessage', id: 'progress', text: '', phase: 'commentary' } } })
+    server.event({ method: 'item/agentMessage/delta', params: { threadId, itemId: 'progress', delta: 'Checking the code.' } })
+    expect(heard.at(-1)?.items).toEqual([{ kind: 'theirs', id: 'codex:progress', text: 'Checking the code.', phase: 'commentary' }])
+    server.event({ method: 'item/completed', params: { threadId, item: { type: 'agentMessage', id: 'progress', text: 'Checking the code.', phase: 'commentary' } } })
+    expect(heard.flatMap((one) => one.signals).some((one) => one.kind === 'ended')).toBe(false)
+    server.event({ method: 'item/started', params: { threadId, item: { type: 'agentMessage', id: 'answer', text: '', phase: 'final_answer' } } })
+    server.event({ method: 'item/agentMessage/delta', params: { threadId, itemId: 'answer', delta: 'Fixed.' } })
+    expect(heard.at(-1)?.items).toEqual([{ kind: 'theirs', id: 'codex:answer', text: 'Fixed.', phase: 'final_answer' }])
+    server.complete(threadId)
+    expect(heard.flatMap((one) => one.signals)).toContainEqual({ kind: 'ended', how: 'done' })
+    await driver.end()
+  })
+
+  it('keeps progress and final phases when reopening native history', async () => {
+    const { server, codex } = setup()
+    server.history = [{ id: 'turn', startedAt: null, status: 'completed', error: null, items: [
+      { type: 'agentMessage', id: 'progress', text: 'Checking.', phase: 'commentary' },
+      { type: 'agentMessage', id: 'answer', text: 'Fixed.', phase: 'final_answer' },
+    ] }]
+    expect((await codex.read(ROOT, 'codex:existing'))?.items).toEqual([
+      { kind: 'theirs', id: 'codex:progress', text: 'Checking.', phase: 'commentary' },
+      { kind: 'theirs', id: 'codex:answer', text: 'Fixed.', phase: 'final_answer' },
+    ])
+  })
+
   it('uses native goal commands without starting a model turn', async () => {
     const { server, codex, heard } = setup()
     const id = await codex.create(ROOT, 'manual')

@@ -76,4 +76,25 @@ describe('a turn in short', () => {
     expect(html).toContain('1 step')
     expect(html).toContain('Run deploy.sh?')
   })
+
+  it('labels progress separately from the final reply and shows when work continues', () => {
+    const html = drawn([
+      { kind: 'theirs', id: 'progress', text: 'Checking the code.', phase: 'commentary', at: 1000 },
+      { kind: 'did', id: 'command', what: 'Running npm test', live: true },
+      { kind: 'theirs', id: 'answer', text: 'Fixed.', phase: 'final_answer' },
+    ], true)
+    expect(html.match(/Progress update/g)).toHaveLength(1)
+    expect(html).toContain('Checking the code.')
+    expect(html).toContain('Fixed.')
+    expect(html).toContain('Still working')
+    expect(html).toContain('role="status"')
+    expect(html).not.toContain('copy-answer')
+  })
+
+  it('keeps a progress-only reply from looking like a completed answer after stopping', () => {
+    const html = drawn([{ kind: 'theirs', id: 'progress', text: 'Checking the code.', phase: 'commentary', at: 1000 }])
+    expect(html).toContain('Progress update')
+    expect(html).not.toContain('Still working')
+    expect(html).not.toContain('copy-answer')
+  })
 })
