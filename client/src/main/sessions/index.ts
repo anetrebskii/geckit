@@ -625,11 +625,12 @@ export class Sessions {
       }
       this.#rows.set(row.id, row)
     }
-    const goalRows = codexRows.filter((row) => this.#live.get(row.id)?.driver === undefined && (notes[row.id]?.goal !== undefined || row.id === this.#watching))
+    if (imported) this.#deps.notes.replace(notes)
+    const goalRows = codexRows.filter((row) => this.#live.get(row.id)?.driver === undefined && (this.#deps.notes.all()[row.id]?.goal !== undefined || row.id === this.#watching))
     const goals = await Promise.all(goalRows.map((row) => this.#deps.codex?.goal(row.id).catch(() => undefined)))
     for (const [index, row] of goalRows.entries()) {
       const goal = goals[index]
-      const note = notes[row.id]
+      const note = this.#deps.notes.all()[row.id]
       if (goal === undefined || note === undefined) continue
       const shown = goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
       const live = this.#live.get(row.id)
@@ -637,10 +638,8 @@ export class Sessions {
       const status = goal !== null && (goal.status === 'complete' || goal.status === 'blocked' || goal.status === 'budgetLimited' || goal.status === 'usageLimited') && note.status === undefined
         ? goal.status === 'complete' ? 'review' : 'blocked'
         : note.status
-      notes[row.id] = { ...note, goal: shown, ...(status === undefined ? {} : { status }) }
-      imported = true
+      this.#note(row.id, { goal: shown, ...(status === undefined ? {} : { status }) })
     }
-    if (imported) this.#deps.notes.replace(notes)
     // A model not seen before is measured, so its rows can say how much context it holds.
     if ([...this.#rows.values()].some((row) => providerOf(row.id) === 'claude' && row.model !== undefined && !this.#windows.has(row.model))) void this.measure()
     return this.#listed(roots)

@@ -109,6 +109,26 @@ function build(over: Partial<SessionsDeps> = {}): Built {
   return { sessions, fake, rows, fanned, notes }
 }
 
+function fakeCodex(over: Partial<NonNullable<SessionsDeps['codex']>>): NonNullable<SessionsDeps['codex']> {
+  return {
+    account: async () => ({ provider: 'codex', here: true, signedIn: true }),
+    models: async () => undefined,
+    create: vi.fn<NonNullable<SessionsDeps['codex']>['create']>(),
+    list: async () => [],
+    read: async () => undefined,
+    turns: async () => [],
+    search: async () => [],
+    delete: async () => false,
+    rename: () => undefined,
+    hold: fakeClaude().claude,
+    dispose: () => undefined,
+    goal: async () => null,
+    setGoal: vi.fn<NonNullable<SessionsDeps['codex']>['setGoal']>(),
+    clearGoal: async () => undefined,
+    ...over,
+  }
+}
+
 const last = <T>(all: readonly T[]): T | undefined => all.at(-1)
 const of = (all: readonly (readonly ChatSession[])[], id: string): ChatSession | undefined =>
   last(all)?.find((one) => one.id === id)
@@ -720,6 +740,54 @@ describe('stopping', () => {
 })
 
 describe('the list', () => {
+  it('keeps a new conversation visible when it starts while another goal is being read', async () => {
+    const notes = memoryNotes()
+    const existing = 'codex:existing'
+    const created = 'codex:created-on-phone'
+    notes.set(existing, { here: true, goal: { condition: 'Finish it', checks: 0 } })
+    let finish: ((goal: Awaited<ReturnType<NonNullable<SessionsDeps['codex']>['goal']>>) => void) | undefined
+    const goal = vi.fn<NonNullable<SessionsDeps['codex']>['goal']>(() => new Promise((resolve) => { finish = resolve }))
+    const codex = fakeCodex({
+      create: async () => created,
+      list: async () => [existing, created].map((id) => ({ id, root: ROOT, title: '', stands: '', at: 1_000, driven: true })),
+      goal,
+    })
+    const built = build({ notes, codex })
+    const listing = built.sessions.list([ROOT])
+    await vi.waitFor(() => expect(goal).toHaveBeenCalledOnce())
+    expect(await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'Start from the phone' })).toBe(created)
+    finish?.(null)
+
+    expect((await listing).find((row) => row.id === created)).toMatchObject({ here: true, title: 'Start from the phone' })
+    expect(notes.all()[created]).toMatchObject({ here: true, title: 'Start from the phone' })
+    const reopened = build({ notes, codex })
+    expect((await reopened.sessions.list([ROOT])).find((row) => row.id === created)).toMatchObject({ here: true, title: 'Start from the phone' })
+  })
+
+  it.each(['hide', 'bring'] as const)('keeps %s and other note changes made while its goal is being read', async (action) => {
+    const notes = memoryNotes()
+    const id = 'codex:pending-goal'
+    notes.set(id, { here: true, hidden: action === 'bring', goal: { condition: 'Finish it', checks: 0 } })
+    let finish: ((goal: Awaited<ReturnType<NonNullable<SessionsDeps['codex']>['goal']>>) => void) | undefined
+    const goal = vi.fn<NonNullable<SessionsDeps['codex']>['goal']>(() => new Promise((resolve) => { finish = resolve }))
+    const codex = fakeCodex({
+      list: async () => [{ id, root: ROOT, title: '', stands: '', at: 1_000, driven: true }],
+      goal,
+    })
+    const built = build({ notes, codex })
+    const listing = built.sessions.list([ROOT])
+    await vi.waitFor(() => expect(goal).toHaveBeenCalledOnce())
+    built.sessions[action](id)
+    built.sessions.rename(id, 'Renamed while reading')
+    built.sessions.mark(id, 'blocked')
+    finish?.(null)
+
+    const rows = await listing
+    expect(notes.all()[id]).toMatchObject({ hidden: action === 'hide', title: 'Renamed while reading', status: 'blocked' })
+    expect(notes.all()[id]?.goal).toBeUndefined()
+    expect(rows.some((row) => row.id === id)).toBe(action === 'bring')
+  })
+
   it('renames without touching the conversation', async () => {
     const built = build()
     const id = await started(built)
