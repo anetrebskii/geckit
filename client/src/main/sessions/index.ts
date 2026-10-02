@@ -2321,21 +2321,23 @@ export class Sessions {
         }
         break
       }
-      case 'failed':
+      case 'failed': {
+        const failed = providerOf(live.id) === 'codex' ? 'Codex stopped before it finished.' : FAILED
         under(
           {
             kind: 'note',
             id: `failed:${String(now)}`,
             note: 'failed',
-            text: FAILED,
+            text: failed,
             ...(signal.text === undefined || signal.text.trim() === '' ? {} : { detail: signal.text.trim() }),
           },
           true,
         )
         live.state = 'failed'
         live.stands = 'Did not finish'
-        this.#tell(live, 'Stopped with an error', firstLine(signal.text ?? '') || FAILED, false)
+        this.#tell(live, 'Stopped with an error', firstLine(signal.text ?? '') || failed, false)
         break
+      }
       case 'signedOut':
       case 'offPlan': {
         const mine = live.last === undefined ? undefined : live.items.get(live.last)
