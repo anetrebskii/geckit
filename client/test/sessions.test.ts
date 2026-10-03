@@ -1638,6 +1638,78 @@ describe('what runs in the background', () => {
 })
 
 describe('marking a conversation', () => {
+  describe('live terminal goals', () => {
+    function nativeGoals() {
+      const held = heldCodex('codex:live-goal')
+      return { built: build({ codex: held.codex }), fake: held.fake }
+    }
+
+    it('ignores a replayed completed goal throughout a goal-less followup turn', async () => {
+      const { built, fake } = nativeGoals()
+      const id = await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'First task' })
+      fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      built.sessions.mark(id, 'review')
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
+      fake.hear({ signals: [{ kind: 'goal', goal: undefined, status: 'complete' }] })
+      expect(of(built.rows, id)?.state).toBe('working')
+      expect(of(built.rows, id)?.status).toBeUndefined()
+      fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      expect(of(built.rows, id)?.status).toBeUndefined()
+    })
+
+    it.each(['complete', 'blocked', 'budgetLimited', 'usageLimited'] as const)('defers a genuine %s goal mark until its turn ends', async (status) => {
+      const { built, fake } = nativeGoals()
+      const id = await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'Finish it' })
+      const goal = { condition: 'Finish it', checks: 0 }
+      fake.hear({ signals: [{ kind: 'goal', goal, status: 'active' }] })
+      fake.hear({ signals: [{ kind: 'goal', goal: status === 'complete' ? undefined : goal, status }] })
+      expect(of(built.rows, id)?.state).toBe('working')
+      expect(of(built.rows, id)?.status).toBeUndefined()
+      fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      expect(of(built.rows, id)?.status).toBe(status === 'complete' ? 'review' : 'blocked')
+    })
+
+    it('leaves an approval waiting in progress until genuine goal completion and turn end', async () => {
+      const { built, fake } = nativeGoals()
+      const id = await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'Finish it' })
+      fake.hear({ signals: [{ kind: 'goal', goal: { condition: 'Finish it', checks: 0 }, status: 'active' }, { kind: 'asks', ask: 'write', wanted: { kind: 'write', paths: ['app.ts'] } }] })
+      fake.hear({ signals: [{ kind: 'goal', goal: undefined, status: 'complete' }] })
+      expect(of(built.rows, id)?.state).toBe('asks')
+      expect(of(built.rows, id)?.status).toBeUndefined()
+      fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      expect(of(built.rows, id)?.status).toBe('review')
+    })
+
+    it('keeps a queued followup in progress when the preceding goal completes', async () => {
+      const { built, fake } = nativeGoals()
+      const id = await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'Finish it' })
+      fake.hear({ signals: [{ kind: 'goal', goal: { condition: 'Finish it', checks: 0 }, status: 'active' }] })
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Next thing' })
+      fake.hear({ signals: [{ kind: 'goal', goal: undefined, status: 'complete' }, { kind: 'ended', how: 'done' }] })
+      expect(of(built.rows, id)?.status).toBeUndefined()
+      expect(of(built.rows, id)?.queued?.[0]?.text).toBe('Next thing')
+      built.sessions.carryOn(id)
+      await vi.waitFor(() => expect(fake.sent.at(-1)?.text).toBe('Next thing'))
+      fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      expect(of(built.rows, id)?.status).toBeUndefined()
+    })
+
+    it('drops a deferred old completion when another message is sent, and keeps manual marks', async () => {
+      const { built, fake } = nativeGoals()
+      const id = await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'Finish it' })
+      fake.hear({ signals: [{ kind: 'goal', goal: { condition: 'Finish it', checks: 0 }, status: 'active' }, { kind: 'goal', goal: undefined, status: 'complete' }] })
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Next thing' })
+      fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      expect(of(built.rows, id)?.status).toBeUndefined()
+      built.sessions.carryOn(id)
+      await vi.waitFor(() => expect(fake.sent.at(-1)?.text).toBe('Next thing'))
+      fake.hear({ signals: [{ kind: 'goal', goal: { condition: 'Next thing', checks: 0 }, status: 'active' }, { kind: 'goal', goal: undefined, status: 'complete' }] })
+      built.sessions.mark(id, 'blocked')
+      fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      expect(of(built.rows, id)?.status).toBe('blocked')
+    })
+  })
+
   it('keeps a queued Claude followup in progress when its prior goal completes', async () => {
     const built = build({ disk: { list: async () => [], read: async () => undefined, has: async () => false, goal: async () => ({ met: true, ended: { kind: 'note', id: '', note: 'goal', text: 'Goal met: Finish it' } }) } })
     const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: '/goal Finish it' })

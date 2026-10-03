@@ -299,6 +299,7 @@ interface Live {
   stopping: NodeJS.Timeout | undefined
   /** Set with /goal, as the tool's file last said or as it was just sent. */
   goal: SessionGoal | undefined
+  goalStatus: Extract<SessionStatus, 'review' | 'blocked'> | undefined
   /** The goal was cleared while the turn ran, and the tool is told once it has stopped. */
   clearing: boolean
   /** Messages sent while it worked, oldest first. */
@@ -1021,6 +1022,7 @@ export class Sessions {
       back: undefined,
       stopping: undefined,
       goal: undefined,
+      goalStatus: undefined,
       clearing: false,
       queued: [],
       parked: false,
@@ -1108,6 +1110,7 @@ export class Sessions {
       return live.id
     }
     live.messages += 1
+    live.goalStatus = undefined
     if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
     const busy = live.state === 'working' || live.state === 'asks'
     // Written by the person, it is theirs again to be sent; a message waits behind the ones already queued, and for a slot.
@@ -2088,6 +2091,7 @@ export class Sessions {
     live.spent = undefined
     live.running = undefined
     live.goal = undefined
+    live.goalStatus = undefined
     live.named = undefined
     this.#live.set(id, live)
     // Started by this application: without that it is taken for another program's and left out of the list.
@@ -2199,16 +2203,23 @@ export class Sessions {
         return
       case 'goal': {
         const previous = live.goal
+        const terminal = signal.status === 'complete' || signal.status === 'blocked' || signal.status === 'budgetLimited' || signal.status === 'usageLimited'
+        if (terminal && previous === undefined && signal.goal === undefined && live.messages > 0) return
         live.goal = signal.goal
         this.#note(live.id, { goal: signal.goal })
-        if (signal.status === 'complete' || signal.status === 'blocked' || signal.status === 'budgetLimited' || signal.status === 'usageLimited') {
+        if (terminal) {
           if (previous !== undefined) {
             const item: SessionItem = { kind: 'note', id: `goal:${String(this.#now())}`, note: 'goal', text: signal.status === 'complete' ? `Goal met: ${previous.condition}` : `Goal stopped: ${previous.condition}` }
             live.items.set(item.id, item)
             this.#deps.items({ id: live.id, items: [item] })
           }
-          if (this.#deps.notes.all()[live.id]?.status === undefined) this.#note(live.id, { status: signal.status === 'complete' ? 'review' : 'blocked' })
-        }
+          const status = signal.status === 'complete' ? 'review' : 'blocked'
+          if (live.state === 'working' || live.state === 'asks') {
+            live.goalStatus = live.queued.length === 0 ? status : undefined
+          } else if (live.queued.length === 0 && this.#deps.notes.all()[live.id]?.status === undefined) {
+            this.#note(live.id, { status })
+          }
+        } else live.goalStatus = undefined
         this.#changed()
         return
       }
@@ -2367,6 +2378,10 @@ export class Sessions {
       }
     }
 
+    if (live.goalStatus !== undefined && live.queued.length === 0 && this.#deps.notes.all()[live.id]?.status === undefined) {
+      this.#note(live.id, { status: live.goalStatus })
+    }
+    live.goalStatus = undefined
     live.at = now
     if (items.length > 0 || gone.length > 0) {
       this.#deps.items({ id: live.id, items, ...(gone.length > 0 ? { gone } : {}) })

@@ -671,14 +671,16 @@ describe('provider routing', () => {
     expect(rows.at(-1)?.find((one) => one.id === id)?.goal).toBeUndefined()
     await sessions.send({ session: id, root: ROOT, mode: 'auto', text: '/goal The regression test passes' })
     expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(1)
-    server.complete(id.slice(6))
-    await tick()
     const current = server.goals.get(id.slice(6))
     expect(current).toBeDefined()
     if (current === undefined) return
     const goal = { ...current, status: 'complete' as const }
     server.goals.set(id.slice(6), goal)
     server.event({ method: 'thread/goal/updated', params: { threadId: id.slice(6), turnId: null, goal } })
+    await tick()
+    expect(rows.at(-1)?.find((one) => one.id === id)?.status).toBeUndefined()
+    expect(rows.at(-1)?.find((one) => one.id === id)?.state).toBe('working')
+    server.complete(id.slice(6))
     await tick()
     expect(rows.at(-1)?.find((one) => one.id === id)).toMatchObject({ status: 'review' })
     expect(rows.at(-1)?.find((one) => one.id === id)?.goal).toBeUndefined()
