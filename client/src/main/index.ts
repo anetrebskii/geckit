@@ -681,11 +681,16 @@ async function cliAsked(ask: CliAsked, gone: AbortSignal): Promise<CliAnswered> 
 async function startAsked(ask: StartAsked, gone: AbortSignal): Promise<StartAnswered> {
   const held = sessions
   if (held === undefined) return { ok: false, error: 'GeckIt is not ready yet.' }
-  if (typeof ask.from !== 'string' || ask.from === '') return { ok: false, error: 'Run this from a Claude Code session.' }
+  if (typeof ask.from !== 'string' || ask.from === '') return { ok: false, error: 'Run this from a Claude Code or Codex session.' }
   const tasks = Array.isArray(ask.tasks) ? ask.tasks : []
   if (tasks.length === 0) return { ok: false, error: 'Task 1 has no text.' }
   if (tasks.length > 20) return { ok: false, error: 'At most 20 tasks at once.' }
   const projects = getSettings().projects
+  const listed = await held.list(projects)
+  const from = held.requestOrigin(ask.from)
+  if (!listed.some((one) => one.id === from)) {
+    return { ok: false, error: "This conversation's folder is not one of your projects in GeckIt." }
+  }
   const asking: Asking[] = []
   for (const [index, task] of tasks.entries()) {
     const root = projects.find((one) => projectSaid(one, hostNamed) === task.project)
@@ -697,13 +702,13 @@ async function startAsked(ask: StartAsked, gone: AbortSignal): Promise<StartAnsw
     if (text === '') return { ok: false, error: `Task ${String(index + 1)} has no text.` }
     const title = typeof task.title === 'string' && task.title.trim() !== '' ? task.title.trim() : text.split(/(?<=[.!?])\s/)[0] ?? text
     const goal = typeof task.goal === 'string' && task.goal.trim() !== '' ? task.goal.trim() : undefined
-    asking.push({ project: task.project, root, title: firstLine(title, 100), text, ...(goal === undefined ? {} : { goal }) })
+    const provider = task.provider ?? providerOf(from)
+    if (provider !== 'claude' && provider !== 'codex') return { ok: false, error: `Task ${String(index + 1)}: provider ${provider} is not installed.` }
+    if (!assistantsIn(getSettings()).includes(provider)) return { ok: false, error: `Task ${String(index + 1)}: provider ${provider} is not enabled.` }
+    asking.push({ provider, project: task.project, root, title: firstLine(title, 100), text, ...(goal === undefined ? {} : { goal }) })
   }
-  if (!(await held.list(projects)).some((one) => one.id === ask.from)) {
-    return { ok: false, error: "This conversation's folder is not one of your projects in GeckIt." }
-  }
-  const answered = await held.request(ask.from, asking, getSettings().chatMode, gone)
-  return answered === undefined ? { ok: false, error: 'Claude stopped waiting.' } : { ok: true, ...answered }
+  const answered = await held.request(from, asking, getSettings().chatMode, gone)
+  return answered === undefined ? { ok: false, error: 'The requesting conversation stopped waiting.' } : { ok: true, ...answered }
 }
 
 /** The yes: what was read out loud a moment ago is carried out now. */

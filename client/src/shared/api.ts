@@ -12,9 +12,16 @@ import type { HostConfig } from './hosts'
 /** What a session may do without asking: Claude Code's own permission modes, in its own words. */
 export type SessionMode = 'manual' | 'auto' | 'plan'
 
-export type SessionProvider = 'claude' | 'codex'
+export type SessionProvider = 'claude' | 'codex' | `plugin:${string}`
 
-export const providerOf = (id: string): SessionProvider => id.startsWith('codex:') ? 'codex' : 'claude'
+export const providerOf = (id: string): SessionProvider => {
+  if (id.startsWith('codex:')) return 'codex'
+  if (id.startsWith('plugin:')) {
+    const end = id.indexOf(':', 'plugin:'.length)
+    if (end > 'plugin:'.length) return id.slice(0, end) as SessionProvider
+  }
+  return 'claude'
+}
 
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
@@ -157,6 +164,7 @@ export type SessionItem =
     }
 
 export interface RequestTask {
+  readonly provider?: SessionProvider
   /** The project as `geckit sessions` names it. */
   readonly project: string
   readonly title: string

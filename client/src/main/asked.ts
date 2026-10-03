@@ -7,6 +7,7 @@ import { app } from 'electron'
 import log from 'electron-log'
 
 import type { RequestAnswered } from './sessions'
+import type { Task } from '../cli/start'
 import type { MigrationAnswered, MigrationAsked } from './session-migration'
 
 /**
@@ -17,9 +18,9 @@ import type { MigrationAnswered, MigrationAsked } from './session-migration'
  */
 
 export interface StartAsked {
-  /** The Claude Code session that asked, from its own CLAUDE_CODE_SESSION_ID. */
+  /** The requesting conversation's provider-qualified ID. */
   readonly from?: string
-  readonly tasks: readonly { readonly project: string; readonly title?: string; readonly text: string; readonly goal?: string }[]
+  readonly tasks: readonly Task[]
 }
 
 export type StartAnswered = { readonly ok: false; readonly error: string } | ({ readonly ok: true } & RequestAnswered)

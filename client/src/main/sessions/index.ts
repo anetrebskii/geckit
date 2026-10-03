@@ -41,7 +41,7 @@ import type {
   WorkItem,
 } from '../../shared/api'
 import { providerOf, sessionMode } from '../../shared/api'
-import { hostOf, isRemote, pathOf, remoteRoot } from '../../shared/hosts'
+import { belowRoot, isRemote, pathOf } from '../../shared/hosts'
 import type { Link } from '../../shared/links'
 import { linksIn, workItem } from '../../shared/links'
 import { claudeAccount, claudeProgram } from './account'
@@ -376,10 +376,7 @@ const there = (path: string): Promise<boolean> =>
  * computer, since that is all a script run over ssh knows to say. Read here as
  * a project root is everywhere else, `ssh://<host><path>`, unless it is one already.
  */
-export const belowRoot = (root: string, below: string): string => {
-  const host = hostOf(root)
-  return host === undefined || isRemote(below) ? below : remoteRoot(host, below)
-}
+export { belowRoot } from '../../shared/hosts'
 
 
 /** What "for this session" is remembered under, or nothing where it cannot be. */
@@ -828,6 +825,17 @@ export class Sessions {
     }, 0)
   }
 
+  requestOrigin(session: string): string {
+    if (!session.startsWith('codex:')) return session
+    const thread = session.slice('codex:'.length)
+    const running = [...this.#live.values()].filter((live) =>
+      live.driver !== undefined && (live.state === 'working' || live.state === 'asks') &&
+      (live.id === session || live.id.startsWith('plugin:') && live.id.endsWith(`:${thread}`)),
+    )
+    if (running.length > 1) throw new Error('More than one active conversation uses this Codex thread. Give the provider-qualified parent ID.')
+    return running[0]?.id ?? session
+  }
+
   /**
    * Claude asks, with `geckit start`, for conversations to be started. The
    * request is shown in the conversation that asked and nothing starts until
@@ -835,6 +843,7 @@ export class Sessions {
    * Nothing comes back where the command stopped waiting first.
    */
   request(session: string, tasks: readonly Asking[], mode: SessionMode, gone: AbortSignal): Promise<RequestAnswered | undefined> {
+    session = this.requestOrigin(session)
     const live = this.#live.get(session) ?? this.#adopt(session)
     if (live === undefined) return Promise.resolve(undefined)
     const item: SessionItem = { kind: 'request', id: `request:${randomUUID()}`, tasks: tasks.map(({ root: _root, ...task }) => task) }
@@ -879,7 +888,8 @@ export class Sessions {
       const text = note === undefined ? task.text : `${task.text}\n\nNote: ${note}`
       const noted = note === undefined ? {} : { note }
       if (tasks.some((one) => one.started !== undefined)) await new Promise<void>((resolve) => (this.#deps.later ?? after)(resolve, pause()))
-      const id = await this.send({ root, mode: pending.mode, text })
+      const id = await this.send({ root, mode: pending.mode, text, provider: task.provider ?? providerOf(live.id) })
+      this.rename(id, task.title)
       this.#note(id, { parent: live.id })
       if (task.goal !== undefined) await this.send({ session: id, root, mode: pending.mode, text: `/goal ${task.goal}` })
       const child = this.#live.get(id)
@@ -1076,10 +1086,11 @@ export class Sessions {
 
   /** `go` is a message that is part of a turn already given its slot, so the limit never holds it. */
   async send(message: SessionMessage, go = false): Promise<string> {
+    const provider = message.session === undefined ? message.provider ?? 'claude' : providerOf(message.session)
+    if (provider !== 'claude' && provider !== 'codex') throw new Error(`Provider ${provider} is not installed.`)
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
       const root = message.question === true ? homedir() : message.root
-      const provider = message.session === undefined ? message.provider ?? 'claude' : providerOf(message.session)
       if (provider === 'codex' && isRemote(root)) throw new Error('Codex is available for local projects. Choose Claude Code for this host.')
       if (provider === 'codex' && this.#deps.codex === undefined) throw new Error('Codex is not available. Install Codex and run codex login in a terminal.')
       const id = provider === 'codex' ? message.session ?? await this.#deps.codex?.create(root, message.mode, message.model) : randomUUID()
