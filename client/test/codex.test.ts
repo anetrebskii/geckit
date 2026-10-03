@@ -336,6 +336,27 @@ describe('Codex app-server', () => {
     expect(server.requests.find((one) => one.method === 'thread/unsubscribe')?.params?.threadId).toBe(id.slice(6))
   })
 
+  it('ends an interrupted turn and starts Continue as a new active turn', async () => {
+    const { server, codex, heard } = setup()
+    const id = await codex.create(ROOT, 'manual')
+    const driver = codex.hold({ id, root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Check models')
+    await tick()
+    const threadId = id.slice(6)
+    server.event({ method: 'item/started', params: { threadId, item: { type: 'commandExecution', id: 'interrupted', command: 'check-models', cwd: ROOT, status: 'inProgress', aggregatedOutput: null, exitCode: null } } })
+    driver.stop()
+    await tick()
+    expect(heard.flatMap((one) => one.signals).filter((one) => one.kind === 'ended')).toEqual([{ kind: 'ended', how: 'stopped' }])
+    const before = heard.length
+    driver.send('Continue')
+    await tick()
+    expect(heard.slice(before).flatMap((one) => one.signals).some((one) => one.kind === 'ended')).toBe(false)
+    server.complete(threadId)
+    expect(heard.slice(before).flatMap((one) => one.signals)).toContainEqual({ kind: 'ended', how: 'done' })
+    expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(2)
+    await driver.end()
+  })
+
   it('streams answers and command output, sends pictures and finishes the turn', async () => {
     const { server, codex, heard } = setup()
     const id = await codex.create(ROOT, 'manual', 'first')

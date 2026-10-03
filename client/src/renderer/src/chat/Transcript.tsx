@@ -33,12 +33,14 @@ const FIRST = 40
 
 function Did({
   item,
+  active,
   going,
   onFile,
   onBackground,
   onPicture,
 }: {
   readonly item: Extract<SessionItem, { kind: 'did' }>
+  readonly active: boolean
   /** What it started still runs in the background. */
   readonly going: boolean
   readonly onFile: (path: string, how: FileHow) => void
@@ -47,7 +49,7 @@ function Did({
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const files = useContext(Files)
-  const live = item.live === true || going
+  const live = (active && item.live === true) || going
   const has = item.detail !== undefined || item.path !== undefined
   const line = (
     <button
@@ -73,7 +75,7 @@ function Did({
   )
   return (
     <>
-      {item.live === true && item.lasting === true ? (
+      {active && item.live === true && item.lasting === true ? (
         <div className="did-row">
           {line}
           <button type="button" className="quiet small" onClick={() => onBackground(item.id)} title="Ctrl+B">
@@ -280,6 +282,7 @@ function When({
 
 const Turn = memo(function Turn({
   item,
+  active,
   going,
   when,
   onAnswer,
@@ -292,6 +295,7 @@ const Turn = memo(function Turn({
   onBackground,
 }: {
   readonly item: SessionItem
+  readonly active: boolean
   readonly going: boolean
   /** When it was said, where it is one to date: a message, or the end of an answer. */
   readonly when: string | undefined
@@ -341,7 +345,7 @@ const Turn = memo(function Turn({
           </div>
         </>
       ) : item.kind === 'did' ? (
-        <Did item={item} going={going} onFile={onFile} onBackground={onBackground} onPicture={onPicture} />
+        <Did item={item} active={active} going={going} onFile={onFile} onBackground={onBackground} onPicture={onPicture} />
       ) : item.kind === 'thought' ? (
         <div className="thought">{item.text === '' ? 'Thought about it' : item.text}</div>
       ) : item.kind === 'card' ? (
@@ -641,6 +645,21 @@ export const Transcript = memo(function Transcript({
   const waiting = items.filter((item) => item.kind === 'request' && item.answer === undefined)
   const inOrder = waiting.length === 0 ? items : items.filter((item) => !waiting.includes(item))
   const shown = inOrder.length > reach ? inOrder.slice(inOrder.length - reach) : inOrder
+  const current = useMemo(() => {
+    const ids = new Set<string>()
+    if (!working) return ids
+    for (let index = items.length - 1; index >= 0; index--) {
+      const item = items[index]
+      if (item === undefined) continue
+      if (item.kind === 'mine' && item.unsent !== true) break
+      if (item.kind === 'note' && (item.note === 'stopped' || item.note === 'failed' || item.note === 'limit')) {
+        ids.clear()
+        break
+      }
+      ids.add(item.id)
+    }
+    return ids
+  }, [items, working])
 
   const went = useRef<Seek | undefined>(undefined)
   // The conversation arrives a moment after it is chosen, so this waits for the message to be in it.
@@ -748,7 +767,7 @@ export const Transcript = memo(function Transcript({
   const target = sought < 0 ? undefined : foldOf.get(items[sought]?.id ?? '')
   const openKeys = opened.at === at ? opened.keys : new Set<string>()
   const isOpen = (key: string): boolean => openKeys.has(key) || key === target
-  const workingFold = working ? foldOf.get([...shown].reverse().find((item) => foldOf.has(item.id))?.id ?? '') : undefined
+  const workingFold = foldOf.get([...shown].reverse().find((item) => current.has(item.id) && foldOf.has(item.id))?.id ?? '')
   const counted = (n: number): string => (n === 1 ? '1 step' : `${String(n)} steps`)
 
   return (
@@ -823,7 +842,7 @@ export const Transcript = memo(function Transcript({
         {shown.map((item) => {
           const key = foldOf.get(item.id)
           const held = key === undefined ? undefined : folds.get(key)
-          if (key === undefined || held === undefined) return <Turn key={item.id} item={item} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
+          if (key === undefined || held === undefined) return <Turn key={item.id} item={item} active={current.has(item.id)} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
           if (held.first !== item.id && !isOpen(key)) return null
           const open = (): void => {
             setOpened({ at, keys: new Set([...openKeys, key]) })
@@ -864,6 +883,7 @@ export const Transcript = memo(function Transcript({
               {held.first === item.id ? <Fold said={counted(held.ids.length)} icon="down" title="Hide what was done" onPress={close} /> : null}
               <Turn
                 item={item}
+                active={current.has(item.id)}
                 going={going.has(item.id)}
                 when={when(item)}
                 onAnswer={onAnswer}
@@ -916,6 +936,7 @@ export const Transcript = memo(function Transcript({
           <Turn
             key={item.id}
             item={item}
+            active={false}
             going={false}
             when={undefined}
             onAnswer={onAnswer}
