@@ -92,7 +92,7 @@ jobs:
 
       # electron-builder packs whisper/bin/<os>-<arch> into the app's resources; the artifacts lose the executable bit on the way.
       - name: Take whisper-cli
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: whisper-cli-${{ matrix.platform }}-*
           path: client/whisper/bin
