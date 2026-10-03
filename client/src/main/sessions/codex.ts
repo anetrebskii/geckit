@@ -8,7 +8,7 @@ import type { Driver, Heard, Signal } from './heard'
 import { askId } from './heard'
 import { codexHistory, codexItem } from './codex-read'
 import { codexOptions } from './codex-protocol'
-import type { ApprovalEvent, CodexEvent, CodexGoal, CodexInput, CodexItem, CodexTurn, RpcId, RpcResults } from './codex-protocol'
+import type { ApprovalEvent, CodexEvent, CodexGoal, CodexInput, CodexItem, CodexTurn, RpcId, RpcParams, RpcResults } from './codex-protocol'
 import { CodexRpc, launchCodex } from './codex-rpc'
 import { firstLine } from './wording'
 import { searchCodex } from './search'
@@ -437,14 +437,22 @@ export class CodexSessions {
           ]
           if (this.#models.length === 0) await this.models()
           const effort = options.reasoning === '' ? this.#models.find((one) => one.value === model)?.defaultReasoning ?? null : options.reasoning
-          const response = await rpc?.request('turn/start', {
+          const params: RpcParams['turn/start'] = {
             threadId, input, cwd: options.root,
             ...(effort === undefined ? {} : { effort }),
             ...(options.model === undefined ? {} : { model: options.model }),
             approvalPolicy: options.mode === 'manual' ? 'untrusted' : 'on-request',
             approvalsReviewer: options.mode === 'auto' ? 'auto_review' : 'user',
             sandboxPolicy: options.mode === 'plan' ? { type: 'readOnly', networkAccess: false } : { type: 'workspaceWrite', writableRoots: [options.root], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
+          }
+          const response = await rpc?.request('turn/start', params).catch(async (error: Error) => {
+            if (error.message !== `thread not found: ${threadId}`) throw error
+            if (over || stopped) { ended('stopped'); return }
+            await rpc?.request('thread/resume', { ...codexOptions(options.root, options.mode, options.model), threadId, excludeTurns: true })
+            if (over || stopped) { ended('stopped'); return }
+            return rpc?.request('turn/start', params)
           })
+          if (response === undefined) return
           this.#new.delete(threadId)
           if (active && response !== undefined) turnId = response.turn.id
           if (active && stopped && turnId !== undefined) await rpc?.request('turn/interrupt', { threadId, turnId })

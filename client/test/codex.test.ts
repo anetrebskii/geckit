@@ -44,6 +44,7 @@ class Server extends EventEmitter implements Held {
   history: CodexTurn[] = []
   readonly goals = new Map<string, CodexGoal>()
   pauseResume = false
+  turnErrors: string[] = []
   effort: ReasoningEffort = 'high'
   model = 'first'
   resolvedModel: string | undefined
@@ -89,6 +90,11 @@ class Server extends EventEmitter implements Held {
       }
       case 'thread/turns/list': this.reply(id, { data: this.history, nextCursor: null }); return
       case 'turn/start': {
+        const error = this.turnErrors.shift()
+        if (error !== undefined) {
+          this.stdout.write(`${JSON.stringify({ id, error: { code: -32600, message: error } })}\n`)
+          return
+        }
         if (request.params?.effort !== undefined) this.effort = request.params.effort ?? 'low'
         const threadId = request.params?.threadId ?? ''
         const turn: CodexTurn = { id: `turn-${threadId}`, status: 'inProgress', error: null, startedAt: 100, items: [] }
@@ -126,6 +132,68 @@ afterEach(() => {
 })
 
 describe('Codex app-server', () => {
+  it('resumes an unloaded thread and retries the same message once', async () => {
+    const { server, codex, heard } = setup()
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto', model: 'second', reasoning: 'high' }, (one) => heard.push(one), () => undefined)
+    driver.send('First')
+    await tick()
+    server.complete('terminal')
+    server.turnErrors.push('thread not found: terminal')
+    driver.send('Continue', [{ media: 'image/png', data: 'AAAA' }], ['Earlier shell output'])
+    await tick()
+    const turns = server.requests.filter((one) => one.method === 'turn/start')
+    expect(turns).toHaveLength(3)
+    expect(turns[2]?.params).toEqual(turns[1]?.params)
+    expect(turns[2]?.params).toMatchObject({ threadId: 'terminal', model: 'second', effort: 'high', approvalsReviewer: 'auto_review', input: [{ type: 'text', text: 'Earlier shell output\n\nContinue', text_elements: [] }, { type: 'image', url: 'data:image/png;base64,AAAA' }] })
+    expect(server.requests.filter((one) => one.method === 'thread/resume')).toHaveLength(2)
+    expect(server.requests.some((one) => one.method === 'thread/start')).toBe(false)
+    server.complete('terminal')
+    expect(heard.flatMap((one) => one.signals).filter((one) => one.kind === 'ended')).toEqual([{ kind: 'ended', how: 'done' }, { kind: 'ended', how: 'done' }])
+    await driver.end()
+  })
+
+  it.each(['thread not found: another-thread', 'Model failed'])('does not retry a turn rejected with "%s"', async (error) => {
+    const { server, codex, heard } = setup()
+    server.turnErrors.push(error)
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Continue')
+    await tick()
+    expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(1)
+    expect(server.requests.filter((one) => one.method === 'thread/resume')).toHaveLength(1)
+    expect(heard.flatMap((one) => one.signals)).toContainEqual({ kind: 'ended', how: 'failed', text: error })
+    await driver.end()
+  })
+
+  it('reports failure when the resumed thread still rejects the message', async () => {
+    const { server, codex, heard } = setup()
+    server.turnErrors.push('thread not found: terminal', 'thread not found: terminal')
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Continue')
+    await tick()
+    expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(2)
+    expect(server.requests.filter((one) => one.method === 'thread/resume')).toHaveLength(2)
+    expect(heard.flatMap((one) => one.signals)).toContainEqual({ kind: 'ended', how: 'failed', text: 'thread not found: terminal' })
+    await driver.end()
+  })
+
+  it('does not resend a stopped message after resuming an unloaded thread', async () => {
+    const { server, codex, heard } = setup()
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    await tick()
+    server.pauseResume = true
+    server.turnErrors.push('thread not found: terminal')
+    driver.send('Continue')
+    await tick()
+    driver.stop()
+    const resumed = server.requests.filter((one) => one.method === 'thread/resume').at(-1)
+    expect(resumed?.id).toBeDefined()
+    server.reply(resumed?.id ?? 0, { thread: { id: 'terminal' }, model: 'first' })
+    await tick()
+    expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(1)
+    expect(heard.flatMap((one) => one.signals)).toContainEqual({ kind: 'ended', how: 'stopped' })
+    await driver.end()
+  })
+
   it('corrects text in an ephemeral thread and returns only the final answer', async () => {
     const { server, codex } = setup()
     const answer = codex.correct('teh cat', 'Fix grammar. Output only the text.', 'second')
