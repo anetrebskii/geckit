@@ -263,6 +263,7 @@ interface Live {
   ran: string | undefined
   /** The tool has a conversation under this id, so it is picked up rather than begun. */
   begun: boolean
+  messages: number
   items: Map<string, SessionItem>
   kept: Kept[]
   /** The line of a thing being asked about, taken down while its card is up. */
@@ -627,6 +628,7 @@ export class Sessions {
     }
     if (imported) this.#deps.notes.replace(notes)
     const goalRows = codexRows.filter((row) => this.#live.get(row.id)?.driver === undefined && (this.#deps.notes.all()[row.id]?.goal !== undefined || row.id === this.#watching))
+    const messages = goalRows.map((row) => this.#live.get(row.id)?.messages)
     const goals = await Promise.all(goalRows.map((row) => this.#deps.codex?.goal(row.id).catch(() => undefined)))
     for (const [index, row] of goalRows.entries()) {
       const goal = goals[index]
@@ -634,6 +636,8 @@ export class Sessions {
       if (goal === undefined || note === undefined) continue
       const shown = goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
       const live = this.#live.get(row.id)
+      if (live?.messages !== messages[index] || live?.driver !== undefined || (live?.queued.length ?? 0) > 0) continue
+      if (goal !== null && goal.status === 'complete' && live !== undefined && live.messages > 0 && live.goal === undefined) continue
       if (live !== undefined) live.goal = shown
       const status = goal !== null && (goal.status === 'complete' || goal.status === 'blocked' || goal.status === 'budgetLimited' || goal.status === 'usageLimited') && note.status === undefined
         ? goal.status === 'complete' ? 'review' : 'blocked'
@@ -992,6 +996,7 @@ export class Sessions {
       actualReasoning: undefined,
       ran: undefined,
       begun: false,
+      messages: 0,
       items: new Map(),
       kept: [],
       held: new Map(),
@@ -1102,6 +1107,8 @@ export class Sessions {
       }
       return live.id
     }
+    live.messages += 1
+    if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
     const busy = live.state === 'working' || live.state === 'asks'
     // Written by the person, it is theirs again to be sent; a message waits behind the ones already queued, and for a slot.
     if (!go) live.parked = false
@@ -1206,8 +1213,6 @@ export class Sessions {
       // Written as the turn starts, since a crash leaves no chance to write anything as it ends.
       cut: { root: live.root, at: this.#now() },
     })
-    // Said to again, it is being worked on, whatever it was marked.
-    if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
     this.#deps.items({ id: live.id, items: [mine], gone })
     this.#changed()
     live.begun = true
@@ -2381,13 +2386,15 @@ export class Sessions {
 
   /** Where the goal stands once a turn is over, which only the tool's file says, and a line where it ended by itself. */
   async #goal(live: Live): Promise<void> {
+    const messages = live.messages
     if (providerOf(live.id) === 'codex') {
       const had = live.goal
       const goal = await this.#deps.codex?.goal(live.id).catch(() => undefined)
-      if (goal === undefined || this.#live.get(live.id) !== live || live.goal !== had) return
+      if (goal === undefined || this.#live.get(live.id) !== live || live.goal !== had || live.messages !== messages) return
       const shown = goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
       const terminal = goal !== null && (goal.status === 'complete' || goal.status === 'blocked' || goal.status === 'budgetLimited' || goal.status === 'usageLimited')
-      if (had?.condition === shown?.condition && (!terminal || this.#deps.notes.all()[live.id]?.status !== undefined)) return
+      if (terminal && (live.state === 'working' || live.state === 'asks' || live.queued.length > 0)) return
+      if (had?.condition === shown?.condition && (!terminal || had === undefined || this.#deps.notes.all()[live.id]?.status !== undefined)) return
       this.#signal(live, { kind: 'goal', goal: shown, ...(goal === null ? {} : { status: goal.status }) })
       return
     }
@@ -2395,7 +2402,7 @@ export class Sessions {
     const had = live.goal
     const read = await (this.#deps.disk?.goal ?? readGoal)(live.root, live.id).catch(() => undefined)
     // A goal sent while the file was being read is newer than anything it says.
-    if (read === undefined || this.#live.get(live.id) !== live || live.goal !== had) return
+    if (read === undefined || this.#live.get(live.id) !== live || live.goal !== had || live.messages !== messages) return
     live.goal = read.goal
     if (had !== undefined && read.goal === undefined && read.ended !== undefined) {
       const item: SessionItem = { ...read.ended, id: `goal:${String(this.#now())}` }
@@ -2404,7 +2411,7 @@ export class Sessions {
       // A goal is what finished means: it held, so this is for the person to look
       // at; it was given up on, so it is for the person to unblock. A mark made by
       // hand is left as it is - it says what they decided, which this does not know.
-      if (this.#deps.notes.all()[live.id]?.status === undefined) {
+      if (this.#deps.notes.all()[live.id]?.status === undefined && live.state !== 'working' && live.state !== 'asks' && live.queued.length === 0) {
         this.#note(live.id, { status: read.met === true ? 'review' : 'blocked' })
       }
     }

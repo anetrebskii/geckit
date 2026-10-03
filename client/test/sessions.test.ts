@@ -78,6 +78,20 @@ function fakeClaude(): { claude: typeof holdClaude; fake: Fake } {
   return { claude, fake }
 }
 
+function heldCodex(id: string, over: Partial<NonNullable<SessionsDeps['codex']>> = {}): { codex: NonNullable<SessionsDeps['codex']>; fake: Fake } {
+  const held = fakeClaude()
+  return {
+    fake: held.fake,
+    codex: fakeCodex({
+      create: async () => id,
+      list: async () => [{ id, root: ROOT, title: 'Reviewed task', stands: '', at: 1_000, driven: true }],
+      read: async () => ({ items: [], tasks: [] }),
+      hold: held.claude,
+      ...over,
+    }),
+  }
+}
+
 interface Built {
   readonly sessions: Sessions
   readonly fake: Fake
@@ -1624,6 +1638,107 @@ describe('what runs in the background', () => {
 })
 
 describe('marking a conversation', () => {
+  it('keeps a queued Claude followup in progress when its prior goal completes', async () => {
+    const built = build({ disk: { list: async () => [], read: async () => undefined, has: async () => false, goal: async () => ({ met: true, ended: { kind: 'note', id: '', note: 'goal', text: 'Goal met: Finish it' } }) } })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: '/goal Finish it' })
+    built.sessions.mark(id, 'review')
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(of(built.rows, id)?.status).toBeUndefined()
+    expect(of(built.rows, id)?.queued?.[0]?.text).toBe('One more thing')
+  })
+
+  it.each(['claude', 'codex'] as const)('moves a reviewed %s conversation into progress when its next turn starts', async (provider) => {
+    const codex = heldCodex('codex:reviewed')
+    const built = build({ codex: codex.codex })
+    const id = await built.sessions.send({ provider, root: ROOT, mode: 'manual', text: 'First task' })
+    const fake = provider === 'codex' ? codex.fake : built.fake
+    fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.mark(id, 'review')
+
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
+
+    expect(of(built.rows, id)?.status).toBeUndefined()
+    expect(of(built.rows, id)?.state).toBe('working')
+    expect(fake.sent.at(-1)?.text).toBe('One more thing')
+  })
+
+  it('does not restore an old completed Codex goal after the followup turn and idle process end', async () => {
+    vi.useFakeTimers()
+    try {
+      const id = 'codex:reviewed'
+      const complete: Awaited<ReturnType<NonNullable<SessionsDeps['codex']>['goal']>> = { threadId: id, objective: 'Finish it', status: 'complete', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 0, updatedAt: 0 }
+      const codex = heldCodex(id, { goal: async () => complete })
+      const built = build({ codex: codex.codex })
+      await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'First task' })
+      codex.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      built.sessions.mark(id, 'review')
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
+      codex.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await vi.advanceTimersByTimeAsync(11 * 60_000)
+      built.sessions.watching(id)
+
+      expect((await built.sessions.list([ROOT])).find((row) => row.id === id)?.status).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['claude', 'codex'] as const)('moves a reviewed %s conversation into progress while its message waits for a slot', async (provider) => {
+    let limit = 0
+    const codex = heldCodex('codex:reviewed')
+    const built = build({ codex: codex.codex, limit: () => limit })
+    const id = await built.sessions.send({ provider, root: ROOT, mode: 'manual', text: 'First task' })
+    const fake = provider === 'codex' ? codex.fake : built.fake
+    fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.mark(id, 'review')
+    limit = 1
+    await built.sessions.send({ root: ROOT, mode: 'manual', text: 'Occupy the slot' })
+
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
+
+    expect(of(built.rows, id)?.status).toBeUndefined()
+    expect(of(built.rows, id)?.waits).toBe(true)
+    expect(of(built.rows, id)?.queued?.[0]?.text).toBe('One more thing')
+    expect(fake.sent.some((sent) => sent.text === 'One more thing')).toBe(false)
+  })
+
+  it('keeps a resumed Codex conversation in progress when an older list goal read completes', async () => {
+    const id = 'codex:reviewed'
+    const notes = memoryNotes()
+    notes.set(id, { here: true, status: 'review', goal: { condition: 'Finish it', checks: 0 } })
+    let finish: ((goal: Awaited<ReturnType<NonNullable<SessionsDeps['codex']>['goal']>>) => void) | undefined
+    const goal = vi.fn<NonNullable<SessionsDeps['codex']>['goal']>(() => new Promise((resolve) => { finish = resolve }))
+    const codex = heldCodex(id, { goal })
+    const built = build({ notes, codex: codex.codex })
+    const listing = built.sessions.list([ROOT])
+    await vi.waitFor(() => expect(goal).toHaveBeenCalledOnce())
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
+    finish?.({ threadId: id, objective: 'Finish it', status: 'complete', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 0, updatedAt: 0 })
+
+    expect((await listing).find((row) => row.id === id)).toMatchObject({ state: 'working' })
+    expect(notes.all()[id]?.status).toBeUndefined()
+  })
+
+  it('keeps a resumed Claude conversation in progress when its previous turn goal read completes', async () => {
+    let finish: ((goal: GoalRead) => void) | undefined
+    const goal = vi.fn(() => new Promise<GoalRead>((resolve) => { finish = resolve }))
+    const built = build({ disk: { list: async () => [], read: async () => undefined, has: async () => false, goal } })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: '/goal Finish it' })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.mark(id, 'review')
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
+    finish?.({ met: true, ended: { kind: 'note', id: '', note: 'goal', text: 'Goal met: Finish it' } })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(of(built.rows, id)?.state).toBe('working')
+    expect(of(built.rows, id)?.status).toBeUndefined()
+  })
+
   it('shows the tracker item it began with and the mark, and saying more takes the mark off', async () => {
     const built = build()
     const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'Review https://github.com/twins-ai/Twins-AI/pull/3908' })
