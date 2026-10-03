@@ -625,11 +625,12 @@ export class Sessions {
       }
       this.#rows.set(row.id, row)
     }
-    const goalRows = codexRows.filter((row) => this.#live.get(row.id)?.driver === undefined && (notes[row.id]?.goal !== undefined || row.id === this.#watching))
+    if (imported) this.#deps.notes.replace(notes)
+    const goalRows = codexRows.filter((row) => this.#live.get(row.id)?.driver === undefined && (this.#deps.notes.all()[row.id]?.goal !== undefined || row.id === this.#watching))
     const goals = await Promise.all(goalRows.map((row) => this.#deps.codex?.goal(row.id).catch(() => undefined)))
     for (const [index, row] of goalRows.entries()) {
       const goal = goals[index]
-      const note = notes[row.id]
+      const note = this.#deps.notes.all()[row.id]
       if (goal === undefined || note === undefined) continue
       const shown = goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
       const live = this.#live.get(row.id)
@@ -637,10 +638,8 @@ export class Sessions {
       const status = goal !== null && (goal.status === 'complete' || goal.status === 'blocked' || goal.status === 'budgetLimited' || goal.status === 'usageLimited') && note.status === undefined
         ? goal.status === 'complete' ? 'review' : 'blocked'
         : note.status
-      notes[row.id] = { ...note, goal: shown, ...(status === undefined ? {} : { status }) }
-      imported = true
+      this.#note(row.id, { goal: shown, ...(status === undefined ? {} : { status }) })
     }
-    if (imported) this.#deps.notes.replace(notes)
     // A model not seen before is measured, so its rows can say how much context it holds.
     if ([...this.#rows.values()].some((row) => providerOf(row.id) === 'claude' && row.model !== undefined && !this.#windows.has(row.model))) void this.measure()
     return this.#listed(roots)
@@ -1230,10 +1229,16 @@ export class Sessions {
     let live = asked.session === undefined ? undefined : (this.#live.get(asked.session) ?? this.#adopt(asked.session))
     const command = asked.command.trim()
     if (live === undefined) {
-      if (asked.provider === 'codex' && isRemote(asked.root)) throw new Error('Codex is available for local projects.')
-      const id = asked.provider === 'codex' ? await this.#deps.codex?.create(asked.root, 'auto') : randomUUID()
+      const provider = asked.session === undefined ? asked.provider ?? 'claude' : providerOf(asked.session)
+      if (provider === 'codex' && isRemote(asked.root)) throw new Error('Codex is available for local projects.')
+      if (provider === 'codex' && this.#deps.codex === undefined) throw new Error('Codex is not available.')
+      const id = provider === 'codex' ? asked.session ?? await this.#deps.codex?.create(asked.root, 'auto') : randomUUID()
       if (id === undefined) throw new Error('Codex is not available.')
       live = this.#fresh(id, asked.root, firstLine(`!${command}`, 80), sessionMode(undefined))
+      if (provider === 'codex' && asked.session !== undefined) {
+        live.begun = true
+        await this.#reread(live)
+      } else this.#note(id, { here: true })
     } else if (live.driver === undefined) {
       await this.#reread(live)
     }
@@ -2321,21 +2326,23 @@ export class Sessions {
         }
         break
       }
-      case 'failed':
+      case 'failed': {
+        const failed = providerOf(live.id) === 'codex' ? 'Codex stopped before it finished.' : FAILED
         under(
           {
             kind: 'note',
             id: `failed:${String(now)}`,
             note: 'failed',
-            text: FAILED,
+            text: failed,
             ...(signal.text === undefined || signal.text.trim() === '' ? {} : { detail: signal.text.trim() }),
           },
           true,
         )
         live.state = 'failed'
         live.stands = 'Did not finish'
-        this.#tell(live, 'Stopped with an error', firstLine(signal.text ?? '') || FAILED, false)
+        this.#tell(live, 'Stopped with an error', firstLine(signal.text ?? '') || failed, false)
         break
+      }
       case 'signedOut':
       case 'offPlan': {
         const mine = live.last === undefined ? undefined : live.items.get(live.last)

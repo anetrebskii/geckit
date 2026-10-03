@@ -333,7 +333,7 @@ export class CodexSessions {
           }
           case 'item/agentMessage/delta': {
             const before = items.get(event.params.itemId)
-            const item: CodexItem = { type: 'agentMessage', id: event.params.itemId, text: `${before?.type === 'agentMessage' ? before.text : ''}${event.params.delta}` }
+            const item: CodexItem = { ...(before?.type === 'agentMessage' ? before : {}), type: 'agentMessage', id: event.params.itemId, text: `${before?.type === 'agentMessage' ? before.text : ''}${event.params.delta}` }
             items.set(item.id, item)
             hear({ items: codexItem(item, options.root), gone: [], signals: [] })
             return

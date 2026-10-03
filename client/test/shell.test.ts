@@ -1,6 +1,11 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { asksToType, plain, runShell, toldClaude, wantsKeyboard } from '../src/main/sessions/shell'
+import type { Ran } from '../src/main/sessions/shell'
 
 describe('which commands want a keyboard', () => {
   it('sends editors, pagers, passwords and logins to a terminal', () => {
@@ -80,6 +85,60 @@ describe('running a command', () => {
     const ran = await running.done
     expect(ran.output).toMatch(/got n\n$/)
     expect(ran.code).toBe(0)
+  })
+
+  it.skipIf(process.platform !== 'darwin')('shows a zsh startup prompt before the command starts and accepts its answer', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-shell-startup-'))
+    const seen: string[] = []
+    await writeFile(join(folder, '.zshrc'), 'printf "Startup update? [Y/n] "; read -r answer\n')
+    vi.stubEnv('SHELL', '/bin/zsh')
+    vi.stubEnv('ZDOTDIR', folder)
+    const running = runShell(folder, 'printf "%s\\n" command-finished', (output) => seen.push(output))
+    try {
+      await vi.waitFor(() => expect(seen.at(-1)).toBe('Startup update? [Y/n] '), { timeout: 1000 })
+      running.write?.('n\n')
+      const ran = await running.done
+      expect(ran.output).toBe('command-finished\n')
+      expect(ran.code).toBe(0)
+      expect(ran.stopped).toBe(false)
+    } finally {
+      running.stop()
+      await running.done
+      vi.unstubAllEnvs()
+      await rm(folder, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(process.platform !== 'darwin')('disables startup maintenance prompts while preserving the zsh environment and aliases', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-shell-maintenance-'))
+    await writeFile(join(folder, '.zshrc'), [
+      'if [[ "$DISABLE_AUTO_UPDATE" != true ]]; then',
+      '  printf "Startup update? [Y/n] "; read -r answer',
+      'fi',
+      'export GECKIT_SHELL_FIXTURE="${GECKIT_SHELL_FIXTURE}:loaded"',
+      'alias fixture_status=\'printf "%s\\n" "$GECKIT_SHELL_FIXTURE"\'',
+      '',
+    ].join('\n'))
+    vi.stubEnv('SHELL', '/bin/zsh')
+    vi.stubEnv('ZDOTDIR', folder)
+    vi.stubEnv('DISABLE_AUTO_UPDATE', 'false')
+    vi.stubEnv('GECKIT_SHELL_FIXTURE', 'inherited')
+    const running = runShell(folder, 'fixture_status', () => undefined)
+    let finished: Ran | undefined
+    void running.done.then((ran) => { finished = ran })
+    try {
+      await vi.waitFor(() => expect(finished).toBeDefined(), { timeout: 1000 })
+      const ran = await running.done
+      expect(ran.output).toBe('inherited:loaded\n')
+      expect(ran.code).toBe(0)
+      expect(ran.stopped).toBe(false)
+      expect(process.env['DISABLE_AUTO_UPDATE']).toBe('false')
+    } finally {
+      running.stop()
+      await running.done
+      vi.unstubAllEnvs()
+      await rm(folder, { recursive: true, force: true })
+    }
   })
 
   it('stops what it started', async () => {

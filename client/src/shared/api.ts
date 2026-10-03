@@ -95,7 +95,7 @@ export type SessionItem =
       /** When it was said, in ms, where known. */
       readonly at?: number
     }
-  | { readonly kind: 'theirs'; readonly id: string; readonly text: string; readonly at?: number }
+  | { readonly kind: 'theirs'; readonly id: string; readonly text: string; readonly at?: number; readonly phase?: 'commentary' | 'final_answer' }
   | {
       readonly kind: 'did'
       readonly id: string
