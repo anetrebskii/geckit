@@ -158,6 +158,7 @@ export interface Chat {
   unqueue: (queued: string) => void
   /** A message waiting in the queue, said again in other words. */
   requeue: (queued: string, text: string) => void
+  reorderQueued: (queued: string, target: string, after: boolean) => void
   /** Starts a message waiting in the queue as a new conversation of its own, empty or with this one's history as it was then, and opens it. */
   delegate: (queued: string, history: boolean) => void
   /** Stops a command typed after `!` that is still running. */
@@ -1020,6 +1021,9 @@ export function useChat(): Chat {
     },
     requeue: (queued, text) => {
       if (shownRef.current.kind === 'session') window.geckit.chat.requeue(shownRef.current.id, queued, text)
+    },
+    reorderQueued: (queued, target, after) => {
+      if (shownRef.current.kind === 'session') window.geckit.chat.reorderQueued(shownRef.current.id, queued, target, after)
     },
     delegate: (queued, history) => {
       if (shownRef.current.kind !== 'session') return

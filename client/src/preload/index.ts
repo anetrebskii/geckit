@@ -184,6 +184,7 @@ const geckit = {
       ipcRenderer.invoke('chat:queuedPicture', id, queued, index),
     /** A message waiting in the queue, said again in other words; it keeps its place and its pictures. */
     requeue: (id: string, queued: string, text: string): void => ipcRenderer.send('chat:requeue', id, queued, text),
+    reorderQueued: (id: string, queued: string, target: string, after: boolean): void => ipcRenderer.send('chat:reorderQueued', id, queued, target, after),
     /** Starts a message waiting in the queue as a new conversation, empty or with this one's history as it was then, and says which. */
     delegate: (id: string, queued: string, history: boolean): Promise<string | undefined> =>
       ipcRenderer.invoke('chat:delegate', id, queued, history),

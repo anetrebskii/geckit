@@ -3513,6 +3513,7 @@ html.phone .request-foot .request-reply {
 }
 
 .queued-one {
+  position: relative;
   display: flex;
   gap: 8px;
   align-items: center;
@@ -3523,6 +3524,41 @@ html.phone .request-foot .request-reply {
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
 }
+
+.queued-one.lifting {
+  opacity: 0.55;
+}
+
+.queued-one.land-before::before,
+.queued-one.land-after::after {
+  position: absolute;
+  right: 4px;
+  left: 4px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+  content: '';
+}
+
+.queued-one.land-before::before { top: 0; }
+.queued-one.land-after::after { bottom: 0; }
+
+.queued-grip {
+  flex: none;
+  width: 20px;
+  height: 24px;
+  padding: 0;
+  color: var(--text-faint);
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.queued-grip:active { cursor: grabbing; }
+.queued-grip:hover { color: var(--text); }
+.queued-grip:focus-visible { outline: 2px solid var(--accent); }
 
 .queued-text {
   flex: 1;
@@ -7360,6 +7396,12 @@ html.phone .queued-one {
   padding: 4px 4px 4px 14px;
   font-size: 15px;
   border-radius: 12px;
+}
+
+html.phone .queued-grip {
+  width: 32px;
+  height: 36px;
+  font-size: 20px;
 }
 
 html.phone .queued-picture {

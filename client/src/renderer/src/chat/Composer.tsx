@@ -167,6 +167,10 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   // Escape puts the list away for the @ it was up for.
   const [closed, setClosed] = useState<number | undefined>()
   const [editing, setEditing] = useState<{ readonly id: string; readonly text: string } | undefined>()
+  const [queueDrag, setQueueDrag] = useState<{ readonly id: string; readonly target: string; readonly after: boolean }>()
+  const queueDragRef = useRef<{ readonly id: string; readonly target: string; readonly after: boolean } | undefined>(undefined)
+  const queueStart = useRef<number | undefined>(undefined)
+  const queueList = useRef<HTMLDivElement>(null)
   const [dropping, setDropping] = useState<string | undefined>()
   const [branching, setBranching] = useState<string | undefined>()
   const [editingGoal, setEditingGoal] = useState<string | undefined>()
@@ -448,6 +452,30 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const dropped = queued.find((one) => one.id === dropping)
   const branched = queued.find((one) => one.id === branching)
 
+  const pointQueue = (id: string, y: number): void => {
+    const list = queueList.current
+    if (list === null) return
+    const box = list.getBoundingClientRect()
+    if (y < box.top + 24) list.scrollTop -= 12
+    if (y > box.bottom - 24) list.scrollTop += 12
+    const rows = Array.from(list.querySelectorAll<HTMLElement>('[data-queued-id]')).filter((row) => row.dataset.queuedId !== id)
+    const row = rows.reduce<HTMLElement | undefined>((nearest, candidate) => {
+      if (nearest === undefined) return candidate
+      const distance = (item: HTMLElement): number => {
+        const bounds = item.getBoundingClientRect()
+        return Math.abs(y - (bounds.top + bounds.bottom) / 2)
+      }
+      return distance(candidate) < distance(nearest) ? candidate : nearest
+    }, undefined)
+    const target = row?.dataset.queuedId
+    if (row === undefined || target === undefined) return
+    const bounds = row.getBoundingClientRect()
+    const next = { id, target, after: y >= (bounds.top + bounds.bottom) / 2 }
+    if (queueDragRef.current?.target === next.target && queueDragRef.current.after === next.after) return
+    queueDragRef.current = next
+    flushSync(() => setQueueDrag(next))
+  }
+
   return (
     <div className="composer">
       {chat.session !== undefined && editingGoal === chat.session.id ? <GoalEditor condition={goal?.condition} onSave={(value) => { if (value !== goal?.condition) chat.say(`/goal ${value}`); setEditingGoal(undefined) }} onClear={() => { chat.say('/goal clear'); setEditingGoal(undefined) }} onClose={() => setEditingGoal(undefined)} /> : null}
@@ -584,9 +612,48 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               ? `, waiting for a slot: ${String(chat.lineup.working)} of ${String(chat.lineup.limit)} conversations working, the limit in Settings. The first goes when one of them stops`
               : `, each sent once ${assistant} answers the one before`}
           </div>
-          <div className="queued-list">
+          <div className="queued-list" ref={queueList}>
           {queued.map((one) => (
-            <div key={one.id} className="queued-one">
+            <div key={one.id} data-queued-id={one.id} className={`queued-one${queueDrag?.id === one.id ? ' lifting' : ''}${queueDrag?.target === one.id ? queueDrag.after ? ' land-after' : ' land-before' : ''}`}>
+              {queued.length < 2 ? null : (
+                <button
+                  type="button"
+                  className="queued-grip"
+                  aria-label={`Reorder queued message ${String(queued.indexOf(one) + 1)} of ${String(queued.length)}`}
+                  title="Drag to reorder. Use Up and Down when focused"
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    queueStart.current = event.clientY
+                    queueDragRef.current = { id: one.id, target: one.id, after: false }
+                    setQueueDrag(queueDragRef.current)
+                  }}
+                  onPointerMove={(event) => {
+                    if (queueDragRef.current?.id === one.id && queueStart.current !== undefined && Math.abs(event.clientY - queueStart.current) > 6) pointQueue(one.id, event.clientY)
+                  }}
+                  onPointerUp={() => {
+                    const moved = queueDragRef.current
+                    queueDragRef.current = undefined
+                    queueStart.current = undefined
+                    setQueueDrag(undefined)
+                    if (moved !== undefined && moved.target !== moved.id) chat.reorderQueued(moved.id, moved.target, moved.after)
+                  }}
+                  onPointerCancel={() => {
+                    queueDragRef.current = undefined
+                    queueStart.current = undefined
+                    setQueueDrag(undefined)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+                    event.preventDefault()
+                    const index = queued.findIndex((item) => item.id === one.id)
+                    const target = queued[index + (event.key === 'ArrowUp' ? -1 : 1)]
+                    if (target !== undefined) chat.reorderQueued(one.id, target.id, event.key === 'ArrowDown')
+                  }}
+                >
+                  <span aria-hidden="true">⋮⋮</span>
+                </button>
+              )}
               {session === undefined
                 ? null
                 : Array.from({ length: Math.min(one.images, 3) }, (_none, index) => (

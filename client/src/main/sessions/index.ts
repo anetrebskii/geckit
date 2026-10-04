@@ -1637,6 +1637,19 @@ export class Sessions {
     this.#changed()
   }
 
+  reorderQueued(id: string, queued: string, target: string, after: boolean): void {
+    const live = this.#live.get(id) ?? this.#adopt(id)
+    if (live === undefined || queued === target) return
+    const moved = live.queued.find((one) => one.id === queued)
+    if (moved === undefined || !live.queued.some((one) => one.id === target)) return
+    const next = live.queued.filter((one) => one !== moved)
+    const at = next.findIndex((one) => one.id === target)
+    next.splice(at + (after ? 1 : 0), 0, moved)
+    if (next.every((one, index) => one === live.queued[index])) return
+    this.#queue(live, next)
+    this.#changed()
+  }
+
   /**
    * A message taken out of the queue and started as a conversation of its own, in the same project and mode:
    * empty, or with this one's history as it stood when the message was queued.

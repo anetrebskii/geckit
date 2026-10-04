@@ -668,6 +668,26 @@ describe('a message sent while it works', () => {
     await vi.waitFor(() => expect(built.fake.sent.at(-1)).toMatchObject({ text: 'look at this instead', images: [picture] }))
   })
 
+  it('sends queued messages in their reordered order and keeps pictures with their message', async () => {
+    const built = build()
+    const id = await started(built)
+    const picture = { media: 'image/png', data: 'AAAA' } as const
+    await built.sessions.send(more(id, 'first'))
+    await built.sessions.send({ ...more(id, 'second'), images: [picture] })
+    await built.sessions.send(more(id, 'third'))
+    const queued = of(built.rows, id)?.queued ?? []
+
+    built.sessions.reorderQueued(id, queued[1]?.id ?? '', queued[0]?.id ?? '', false)
+    expect(of(built.rows, id)?.queued?.map((one) => one.text)).toEqual(['second', 'first', 'third'])
+    built.sessions.reorderQueued(id, queued[0]?.id ?? '', queued[2]?.id ?? '', true)
+    expect(of(built.rows, id)?.queued?.map((one) => one.text)).toEqual(['second', 'third', 'first'])
+    built.sessions.reorderQueued(id, queued[1]?.id ?? '', 'missing', false)
+    expect(of(built.rows, id)?.queued?.map((one) => one.text)).toEqual(['second', 'third', 'first'])
+
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toMatchObject({ text: 'second', images: [picture] }))
+  })
+
   it('can be started as a conversation of its own instead, in the same project and mode', async () => {
     const built = build()
     const id = await started(built)
