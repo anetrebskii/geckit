@@ -58,6 +58,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 2. **Load design documents**: Read from FEATURE_DIR:
    - **Required**: plan.md (tech stack, libraries, structure), spec.md (user stories with priorities)
+   - **GeckIt design handoff**: Read design.md and its linked UX document and prototype, or existing design artifacts referenced by the spec. Map the agreed states and interactions to their user stories; include Chrome review in light/dark themes at the relevant viewports and the repository performance review for visible changes. If a visible change has no design artifacts, run `$speckit-design` before generating implementation tasks.
    - **Optional**: data-model.md (entities), contracts/ (interface contracts), research.md (decisions), quickstart.md (test scenarios)
    - **IF EXISTS**: Load `.specify/memory/constitution.md` for project principles and governance constraints
    - Note: Not all projects have all documents. Generate tasks based on what's available.
