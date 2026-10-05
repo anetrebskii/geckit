@@ -4,3 +4,6 @@ release
 *.tsbuildinfo
 .DS_Store
 whisper
+vpn/bin
+/vpn/qualification
+/native/macos-vpn/__pycache__/

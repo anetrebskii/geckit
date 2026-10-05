@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GeckIt Agent VPN - proposed settings</title>
+  <link rel="stylesheet" href="../../client/src/renderer/src/styles.css">
+  <style>
+    body { margin:0; overflow:auto; background:var(--bg-sunken); color:var(--text); font-family:system-ui,sans-serif; }
+    .vpn-preview { max-width:900px; margin:40px auto; padding:24px; }
+    .vpn-toolbar,.vpn-actions { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .vpn-toolbar { margin-bottom:20px; color:var(--text-dim); }
+    .vpn-shell { display:grid; grid-template-columns:160px minmax(0,1fr); border:1px solid var(--border); background:var(--bg); border-radius:16px; min-height:500px; }
+    .vpn-nav { padding:20px 12px; border-right:1px solid var(--border); }
+    .vpn-nav p { padding:8px; margin:4px; color:var(--text-dim); }
+    .vpn-nav .vpn-selected { color:var(--accent); background:var(--accent-soft); border-radius:8px; }
+    main { padding:28px; min-width:0; }
+    h1 { font-size:22px; margin:0 0 12px; } h2 { font-size:17px; margin:0; overflow-wrap:anywhere; }
+    p { line-height:1.5; } .vpn-dim { color:var(--text-dim); } .vpn-small { font-size:13px; }
+    .vpn-card { border:1px solid var(--border); border-radius:12px; padding:20px; margin:24px 0 16px; }
+    .vpn-state { display:block; margin:12px 0; font-weight:600; }
+    button,select { border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text); border-radius:8px; padding:9px 12px; font:inherit; cursor:pointer; }
+    button.vpn-primary { background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
+    button:focus-visible,select:focus-visible,summary:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+    button:disabled { opacity:.5; cursor:default; }
+    summary { cursor:pointer; color:var(--accent); } ol { padding-left:24px; line-height:1.7; }
+    @media(max-width:600px) { .vpn-preview { margin:12px auto; padding:12px; } .vpn-shell { grid-template-columns:1fr; } .vpn-nav { border-right:0; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; } .vpn-nav p:not(.vpn-selected) { display:none; } main { padding:20px; } }
+  </style>
+</head>
+<body>
+  <div class="vpn-preview">
+    <div class="vpn-toolbar"><span class="vpn-small">Design preview - simulated states</span><button id="theme">Dark theme</button><label for="scenario">State</label><select id="scenario"><option value="empty">Empty</option><option value="off">Off</option><option value="setup">Setup required</option><option value="approval">System approval</option><option value="connecting">Connecting</option><option value="connected">Connected</option><option value="failed">Connection unavailable</option><option value="enforcement">Protection unavailable</option><option value="unsupported">Unsupported</option><option value="invalid">Invalid import</option></select></div>
+    <div class="vpn-shell"><nav class="vpn-nav" aria-label="Settings sections"><p>General</p><p>Assistants</p><p class="vpn-selected" aria-current="page">Agent VPN</p><p>Libraries</p><p>Profiles</p><p>Hosts</p></nav>
+      <main><h1>Agent VPN</h1><p>Route agents and their tools through your AmneziaWG connection.</p><p class="vpn-dim vpn-small">Your computer's VPN can change independently. If this connection fails, agent network access stops.</p>
+        <label for="server">Server</label> <select id="server"><option>GeckIt - server 1</option><option>GeckIt - server 2</option></select><p class="vpn-dim vpn-small">Selected server is separate from an active connection.</p><section class="vpn-card" aria-labelledby="name"><h2 id="name">No connection</h2><span class="vpn-state" id="status" role="status" aria-live="polite">No connection</span><p class="vpn-dim vpn-small" id="message"></p><div class="vpn-actions" id="actions"></div></section>
+        <details id="help"><summary>How to export</summary><ol class="vpn-small"><li>In Amnezia, create a separate user named GeckIt.</li><li>Select your self-hosted server and AmneziaWG.</li><li>Choose AmneziaWG native format and save the .conf file.</li><li>Import that file here.</li></ol></details>
+        <p class="vpn-dim vpn-small">Agents use normal networking. GeckIt manages the connection and keeps its keys outside the agent's configuration.</p>
+      </main>
+    </div>
+  </div>
+  <script>
+    const states={
+      empty:['No connection','Import a dedicated AmneziaWG configuration.',['Import configuration','off']],
+      off:['Off','Configuration saved. Enable to protect agents and their tools.',['Enable','setup'],['Replace configuration','invalid'],['Remove','empty']],
+      setup:['Setup required','Install the network helper before enabling protection.',['Install network helper','approval'],['Cancel setup','off']],
+      approval:['Waiting for system approval','Approve GeckIt in system settings, then check again.',['Check again','connecting'],['Cancel setup','off']],
+      connecting:['Connecting','Agent network access is blocked until protection is ready.',['Simulate connection ready','connected'],['Simulate failure','failed']],
+      connected:['Connected','Agents and their tools',['Disable','off']],
+      failed:['Connection unavailable','Agent network access is blocked. Reconnect to continue.',['Retry','connecting'],['Replace configuration','invalid'],['Disable','off']],
+      enforcement:['Protection unavailable','Agent network access is blocked. Repair setup to continue.',['Repair setup','setup'],['Disable','off']],
+      unsupported:['Unavailable','All agent traffic cannot be protected on this configuration.'],
+      invalid:['Configuration not supported','Import an AmneziaWG native .conf file. Your previous connection is retained.',['Try another file','off']]
+    };
+    const scenario=document.getElementById('scenario');
+    function render(value) {
+      scenario.value=value;
+      const [label,message,...actions]=states[value];
+      document.getElementById('name').textContent=value==='empty'?'No connection':document.getElementById('server').value;
+      document.getElementById('status').textContent=label;
+      document.getElementById('message').textContent=message;
+      const target=document.getElementById('actions'); target.replaceChildren();
+      actions.forEach(([label,next],index)=>{ const button=document.createElement('button'); button.textContent=label; if(index===0)button.className='vpn-primary'; button.onclick=()=>{render(next);document.querySelector('#actions button')?.focus();};target.append(button); });
+    }
+    scenario.onchange=()=>render(scenario.value);
+    document.getElementById('server').onchange=()=>render(scenario.value);
+    document.getElementById('theme').onclick=(event)=>{const dark=document.documentElement.dataset.theme!=='dark';document.documentElement.dataset.theme=dark?'dark':'light';event.currentTarget.textContent=dark?'Light theme':'Dark theme';};
+    document.addEventListener('keydown',(event)=>{if(event.key==='Escape'&&document.getElementById('help').open){document.getElementById('help').open=false;document.querySelector('summary').focus();}});
+    render('empty');
+  </script>
+</body>
+</html>
