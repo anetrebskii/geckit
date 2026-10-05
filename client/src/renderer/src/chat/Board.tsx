@@ -130,7 +130,7 @@ export function TopBar({
       <button
         type="button"
         className="new-session no-drag board-new"
-        title="A question that is not about a project: it is not put on the board, and is deleted a day after the last answer"
+        title="A question that is not about a folder: it is not put on the board, and is deleted a day after the last answer"
         onClick={(event) => {
           if (chat.questions.length === 0) onAsk()
           else setAsked(event.currentTarget.getBoundingClientRect())
@@ -166,7 +166,7 @@ export function TopBar({
           anchor={ways}
           explained
           choices={[
-            { value: 'write', icon: 'pencil', label: 'Write it', says: `The form: project, what to do, a goal. ${MOD}+N` },
+            { value: 'write', icon: 'pencil', label: 'Write it', says: `The form: folder, what to do, a goal. ${MOD}+N` },
             {
               value: 'record',
               icon: 'display',
@@ -351,7 +351,7 @@ export function Board({
   return (
     <div className="board">
       {emptyProfile(chat.settings) === undefined ? null : (
-        <div className="board-empty">No projects in {emptyProfile(chat.settings)}. Tick some in Settings, Profiles.</div>
+        <div className="board-empty">No folders in {emptyProfile(chat.settings)}. Tick some in Settings, Profiles.</div>
       )}
       <div className="board-columns">
         {columns.map((column) => (
@@ -1038,7 +1038,7 @@ export function NewTask({
       )}
       {question ? null : (
         <label className="new-task-label">
-          Project
+          Folder
           <select
             className="new-task-where"
             value={root}
@@ -1119,7 +1119,7 @@ export function NewTask({
           rows={5}
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder={question ? 'Anything, not about a project. Paste a picture, drop a file, or record the screen' : `Ask ${provider === 'codex' ? 'Codex' : 'Claude Code'}. Paste a picture, drop a file, or record the screen`}
+          placeholder={question ? 'Anything, not about a folder. Paste a picture, drop a file, or record the screen' : `Ask ${provider === 'codex' ? 'Codex' : 'Claude Code'}. Paste a picture, drop a file, or record the screen`}
           onPaste={(event) => {
             const files = [...event.clipboardData.files]
             if (files.length === 0) return
@@ -1388,7 +1388,7 @@ function PhoneNewTask({
             <>
               <div className="phone-task-group">
                 <button type="button" className="phone-task-cell" onClick={() => setChoosing(true)}>
-                  Project
+                  Folder
                   <span>
                     <span className="phone-task-cell-text">{root === '' ? 'None' : projectLabel(root)}</span>
                     <Icon name="right" size={14} />

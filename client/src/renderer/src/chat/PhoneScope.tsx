@@ -16,8 +16,8 @@ import type { Chat } from './useChat'
 function scopeName(chat: Chat): string {
   const profile = profileOf(chat.settings)
   if (chat.chosen.length === 1) return projectLabel(chat.chosen[0] ?? '')
-  if (chat.chosen.length > 1) return `${String(chat.chosen.length)} projects`
-  return profile?.name ?? 'All projects'
+  if (chat.chosen.length > 1) return `${String(chat.chosen.length)} folders`
+  return profile?.name ?? 'All folders'
 }
 
 export function ScopeButton({ chat, onPress }: { readonly chat: Chat; readonly onPress: () => void }): React.JSX.Element {
@@ -45,14 +45,14 @@ export function PhoneScope({ chat, onClose }: { readonly chat: Chat; readonly on
           <>
             <div className="sheet-head">Profile</div>
             <div className="sheet-list">
-              <Cell label="All projects" chosen={settings.profile === ''} onPress={() => use('')} />
+              <Cell label="All folders" chosen={settings.profile === ''} onPress={() => use('')} />
               {settings.profiles.map((one) => (
-                <Cell key={one.id} label={one.name} says={`${String(one.projects.length)} ${one.projects.length === 1 ? 'project' : 'projects'}`} chosen={settings.profile === one.id} onPress={() => use(one.id)} />
+                <Cell key={one.id} label={one.name} says={`${String(one.projects.length)} ${one.projects.length === 1 ? 'folder' : 'folders'}`} chosen={settings.profile === one.id} onPress={() => use(one.id)} />
               ))}
             </div>
           </>
         )}
-        <div className="sheet-head">Projects</div>
+        <div className="sheet-head">Folders</div>
         <div className="sheet-list">
           {chat.chosen.length === 0 ? null : <Cell label="Every one of them" accent onPress={() => chat.setScope(ALL)} />}
           {shownProjects(settings).map((root) => (
@@ -71,9 +71,9 @@ export function PhoneScope({ chat, onClose }: { readonly chat: Chat; readonly on
               }}
             />
           ))}
-          <Cell label="Add a project" accent onPress={() => setAdding(true)} />
+          <Cell label="Add a folder" accent onPress={() => setAdding(true)} />
         </div>
-        <div className="sheet-note">Nothing ticked shows every project{profileOf(settings) === undefined ? '' : ` in ${profileOf(settings)?.name ?? ''}`}. On this phone only.</div>
+        <div className="sheet-note">Nothing ticked shows every folder{profileOf(settings) === undefined ? '' : ` in ${profileOf(settings)?.name ?? ''}`}. On this phone only.</div>
       </Sheet>
       {adding ? <PhoneProject chat={chat} add onClose={() => setAdding(false)} /> : null}
     </>

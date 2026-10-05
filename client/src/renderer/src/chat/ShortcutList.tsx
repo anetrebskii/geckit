@@ -106,7 +106,7 @@ export function ShortcutList({
         {editing === undefined ? (
           <>
             <h2>Shortcuts</h2>
-            <p>A shortcut starts a new conversation in its project with its prompt. Run one here or from the gecko in the menu bar, or give it a timetable to run by itself while GeckIt is open.</p>
+            <p>A shortcut starts a new conversation in its folder with its prompt. Run one here or from the gecko in the menu bar, or give it a timetable to run by itself while GeckIt is open.</p>
             {shortcuts.length === 0 ? <div className="shortcut-empty">No shortcuts yet.</div> : null}
             {shortcuts.map((one) => {
               const next = nextTimed(one, now)
@@ -245,7 +245,7 @@ function Editor({
   return (
     <>
       <h2>{given.id === undefined ? 'New shortcut' : 'Edit shortcut'}</h2>
-      <p>Each run starts a new conversation in the project, and the prompt is its first message.</p>
+      <p>Each run starts a new conversation in the folder, and the prompt is its first message.</p>
 
       <div className="two">
         <div className="field">
@@ -259,9 +259,9 @@ function Editor({
           />
         </div>
         <div className="field">
-          <label>Project</label>
+          <label>Folder</label>
           <Picker
-            label={draft.root === '' ? 'Choose a project' : projectLabel(draft.root)}
+            label={draft.root === '' ? 'Choose a folder' : projectLabel(draft.root)}
             choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectLabel(one), says: homePath(one) }))}
             chosen={draft.root}
             {...(draft.root === '' ? {} : { tip: homePath(draft.root) })}
@@ -278,7 +278,7 @@ function Editor({
           chosen={provider}
           choices={[
             ...(enabled.includes(provider) ? [] : [{ value: provider, label: assistant, disabled: true, says: 'Disabled in Settings' }]),
-            ...enabled.map((one) => ({ value: one, label: one === 'codex' ? 'Codex' : 'Claude Code', ...(one === 'codex' && isRemote(draft.root) ? { disabled: true, says: 'Local projects only' } : {}) })),
+            ...enabled.map((one) => ({ value: one, label: one === 'codex' ? 'Codex' : 'Claude Code', ...(one === 'codex' && isRemote(draft.root) ? { disabled: true, says: 'Local folders only' } : {}) })),
           ]}
           className="select"
           disabled={enabled.length === 1 && enabled.includes(provider)}
@@ -289,7 +289,7 @@ function Editor({
             setDraft({ ...rest, provider: nextProvider, model: nextProvider === 'codex' ? chat.settings.codexModel : chat.settings.chatModel, ...(nextProvider === 'codex' ? { reasoning: chat.settings.codexReasoning } : {}) })
           }}
         />
-        {available ? null : <span className="shortcut-next wrong">{enabled.includes(provider) ? 'Codex supports local projects only.' : `This shortcut will not run while ${assistant} is disabled in Settings.`}</span>}
+        {available ? null : <span className="shortcut-next wrong">{enabled.includes(provider) ? 'Codex supports local folders only.' : `This shortcut will not run while ${assistant} is disabled in Settings.`}</span>}
       </div>
 
       <div className="field">

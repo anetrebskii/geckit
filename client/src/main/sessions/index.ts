@@ -1091,7 +1091,7 @@ export class Sessions {
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
       const root = message.question === true ? homedir() : message.root
-      if (provider === 'codex' && isRemote(root)) throw new Error('Codex is available for local projects. Choose Claude Code for this host.')
+      if (provider === 'codex' && isRemote(root)) throw new Error('Codex is available for local folders. Choose Claude Code for this host.')
       if (provider === 'codex' && this.#deps.codex === undefined) throw new Error('Codex is not available. Install Codex and run codex login in a terminal.')
       const id = provider === 'codex' ? message.session ?? await this.#deps.codex?.create(root, message.mode, message.model) : randomUUID()
       if (id === undefined) throw new Error('Codex is not available. Install Codex and run codex login in a terminal.')
@@ -1249,7 +1249,7 @@ export class Sessions {
     const command = asked.command.trim()
     if (live === undefined) {
       const provider = asked.session === undefined ? asked.provider ?? 'claude' : providerOf(asked.session)
-      if (provider === 'codex' && isRemote(asked.root)) throw new Error('Codex is available for local projects.')
+      if (provider === 'codex' && isRemote(asked.root)) throw new Error('Codex is available for local folders.')
       if (provider === 'codex' && this.#deps.codex === undefined) throw new Error('Codex is not available.')
       const id = provider === 'codex' ? asked.session ?? await this.#deps.codex?.create(asked.root, 'auto') : randomUUID()
       if (id === undefined) throw new Error('Codex is not available.')

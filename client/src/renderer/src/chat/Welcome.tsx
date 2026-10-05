@@ -248,8 +248,8 @@ function Project({ project, onChoose }: { readonly project: string | undefined; 
           <Icon name="folder" size={28} />
         </div>
       </div>
-      <h1>A project</h1>
-      <p>A project is a folder. Everything asked in it runs there, with access to its files.</p>
+      <h1>A folder</h1>
+      <p>Everything asked in a folder runs there, with access to its files.</p>
       {project === undefined ? null : (
         <div className="welcome-status ready">
           <Icon name="check" />

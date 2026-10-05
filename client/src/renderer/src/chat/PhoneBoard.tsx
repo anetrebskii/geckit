@@ -368,7 +368,7 @@ export function PhoneBoard({
           <div className="phone-empty">
             {emptyProfile(chat.settings) === undefined
               ? COLUMNS.find((one) => one.column === shown)?.empty
-              : `No projects in ${emptyProfile(chat.settings) ?? ''}. Tick some in Settings, Profiles.`}
+              : `No folders in ${emptyProfile(chat.settings) ?? ''}. Tick some in Settings, Profiles.`}
           </div>
         ) : null}
         {asking.length === 0 ? null : (

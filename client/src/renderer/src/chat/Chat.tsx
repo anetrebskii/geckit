@@ -737,7 +737,7 @@ export function Chat(): React.JSX.Element {
           <div className="transcript">
             <div className="turn" style={{ paddingTop: 40, color: 'var(--text-dim)' }}>
               {chat.root === undefined
-                ? 'Choose a project folder on the left. Everything asked here runs in that folder.'
+                ? 'Choose a folder on the left. Everything asked here runs in that folder.'
                 : host !== undefined
                   ? host.state === 'lost'
                     ? `Reconnecting to ${host.name}`

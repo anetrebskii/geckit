@@ -555,7 +555,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             >
               <span className="sheet-words">
                 <span className="label">Start empty</span>
-                <span className="says">Only this message, in the same project</span>
+                <span className="says">Only this message, in the same folder</span>
               </span>
             </button>
           </div>
@@ -592,7 +592,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 <Icon name="plus" size={16} />
                 <span className="sheet-words">
                   <span className="label">Start empty</span>
-                  <span className="says">Only this message, in the same project</span>
+                  <span className="says">Only this message, in the same folder</span>
                 </span>
               </button>
             </div>
@@ -698,7 +698,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 type="button"
                 className="icon-button"
                 aria-label="Start a new conversation with it"
-                title="Start a new conversation with it, in this project, rather than wait here"
+                title="Start a new conversation with it, in this folder, rather than wait here"
                 onClick={() => setBranching(one.id)}
               >
                 <Icon name="branch" size={12} />
@@ -845,7 +845,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           value={chat.draft}
           placeholder={
             chat.root === undefined
-              ? 'Add a project folder first'
+              ? 'Add a folder first'
               : ON_PHONE
                 ? listening !== undefined
                   ? `Listening in ${listening}`

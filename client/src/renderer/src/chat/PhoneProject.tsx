@@ -76,7 +76,7 @@ export function PhoneProject({
     setAt(first)
   }
 
-  const title = at.step === 'list' ? 'Project' : at.step === 'where' ? 'Where' : (folder?.path.split('/').pop() ?? 'Choose a folder')
+  const title = at.step === 'list' ? 'Folder' : at.step === 'where' ? 'Where' : (folder?.path.split('/').pop() ?? 'Choose a folder')
   const action = { action: adding ? 'Adding...' : add ? (had ? 'Added' : 'Add') : 'Start here', ready: folder !== undefined && !adding && !(add && had), onAction: here }
   const bar =
     at.step === 'list'
@@ -84,11 +84,11 @@ export function PhoneProject({
       : at.step === 'where'
         ? add
           ? {}
-          : { back: 'Project', onBack: () => setAt({ step: 'list' }) }
+          : { back: 'Folder', onBack: () => setAt({ step: 'list' }) }
         : chat.hosts.length === 0
           ? add
             ? action
-            : { back: 'Project', onBack: () => setAt({ step: 'list' }), ...action }
+            : { back: 'Folder', onBack: () => setAt({ step: 'list' }), ...action }
           : { back: 'Where', onBack: () => setAt({ step: 'where' }), ...action }
 
   return (
@@ -134,7 +134,7 @@ export function PhoneProject({
           <div className={`phone-group${projects.length === 0 ? '' : ' phone-form-group'}`}>
             <Cell label="Choose a folder" icon="folder" onPress={choose} />
           </div>
-          <div className="phone-sheet-note">A folder started in is added to the projects.</div>
+          <div className="phone-sheet-note">Starting a task in a new folder adds it to your folders.</div>
         </>
       )}
     </FullSheet>

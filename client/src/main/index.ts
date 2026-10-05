@@ -518,7 +518,7 @@ async function readRecorded(recording: Recording): Promise<Answered> {
   const line = read.plan?.[at]
   if (planned === undefined || start === undefined || line === undefined) {
     planned = undefined
-    return { ok: false, error: 'No project fits what was said. Name the project and try again.' }
+    return { ok: false, error: 'No folder fits what was said. Name the folder and try again.' }
   }
   planned = { orders: [start], told: planned.told, images: pictures(recording), recording }
   return { ok: true, plan: [line], heard: recording.text }
@@ -689,14 +689,14 @@ async function startAsked(ask: StartAsked, gone: AbortSignal): Promise<StartAnsw
   const listed = await held.list(projects)
   const from = held.requestOrigin(ask.from)
   if (!listed.some((one) => one.id === from)) {
-    return { ok: false, error: "This conversation's folder is not one of your projects in GeckIt." }
+    return { ok: false, error: "This conversation's folder is not one of your folders in GeckIt." }
   }
   const asking: Asking[] = []
   for (const [index, task] of tasks.entries()) {
     const root = projects.find((one) => projectSaid(one, hostNamed) === task.project)
     if (root === undefined) {
       const names = projects.map((one) => projectSaid(one, hostNamed)).join(', ')
-      return { ok: false, error: `Task ${String(index + 1)}: no project called ${String(task.project)}. There are: ${names}` }
+      return { ok: false, error: `Task ${String(index + 1)}: no folder called ${String(task.project)}. There are: ${names}` }
     }
     const text = typeof task.text === 'string' ? task.text.trim() : ''
     if (text === '') return { ok: false, error: `Task ${String(index + 1)} has no text.` }
@@ -1054,7 +1054,7 @@ function wire(): void {
   ipcMain.handle('chat:addProject', async () => {
     const window = shownChat() ?? chatWindow()
     const picked = await dialog.showOpenDialog(window, {
-      title: 'Choose a project',
+      title: 'Choose a folder',
       properties: ['openDirectory', 'createDirectory'],
     })
     const root = picked.filePaths[0]

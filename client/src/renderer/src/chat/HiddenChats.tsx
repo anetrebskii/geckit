@@ -51,7 +51,7 @@ export function HiddenChats({ chat, onClose }: { readonly chat: Chat; readonly o
     if (shownProjects(chat.settings).includes(project)) return ''
     return chat.settings.profiles.find((one) => one.projects.includes(project))?.id ?? ''
   }
-  const profileName = (id: string): string => chat.settings.profiles.find((one) => one.id === id)?.name ?? 'All projects'
+  const profileName = (id: string): string => chat.settings.profiles.find((one) => one.id === id)?.name ?? 'All folders'
 
   const bring = async (id: string, project: string): Promise<void> => {
     await window.geckit.chat.bring(id)
@@ -119,10 +119,10 @@ export function HiddenChats({ chat, onClose }: { readonly chat: Chat; readonly o
                     )}
                     <span className="spacer" />
                     {added.has(folder.path) ? (
-                      <span className="done">Added as a project</span>
+                      <span className="done">Folder added</span>
                     ) : folder.project === undefined ? (
                       <button type="button" className="quiet" onClick={() => void add(folder)}>
-                        Add as project
+                        Add folder
                       </button>
                     ) : null}
                   </div>

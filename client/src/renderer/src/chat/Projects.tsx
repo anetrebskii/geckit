@@ -38,13 +38,13 @@ export function chosenName(chat: Chat): string {
     const on = shownProjects(chat.settings).filter((root) => hostOf(root) === one.id)
     return on.length === chat.chosen.length && on.every((root) => chat.chosen.includes(root))
   })
-  return host === undefined ? `${String(chat.chosen.length)} projects` : `All on ${host.name}`
+  return host === undefined ? `${String(chat.chosen.length)} folders` : `All on ${host.name}`
 }
 
 /** Every project listed at once: all of them, or all of the profile's in use. */
 function everyName(chat: Chat): string {
   const profile = profileOf(chat.settings)
-  return profile === undefined ? 'All projects' : `All in ${profile.name}`
+  return profile === undefined ? 'All folders' : `All in ${profile.name}`
 }
 
 interface Waits {
@@ -252,7 +252,7 @@ function Menu({
           className="projects-field"
           value={asked}
           autoFocus
-          placeholder="Switch to a project"
+          placeholder="Switch to a folder"
           onChange={(event) => {
             setAsked(event.target.value)
             setAt(0)
@@ -280,7 +280,7 @@ function Menu({
             }
           }}
         />
-        {rows.length === 0 ? <div className="empty">No project by that name.</div> : null}
+        {rows.length === 0 ? <div className="empty">No folder by that name.</div> : null}
         {rows.map((row, index) => (
           <div key={row.value}>
             {row.kind === 'group' ? (
@@ -319,7 +319,7 @@ function Menu({
                 type="button"
                 className={`project-pick${on(row.value) ? ' on' : ''}`}
                 aria-label={on(row.value) ? `Stop listing ${said(row)}` : `List ${said(row)} as well`}
-                title={row.value === ALL ? 'Every project' : 'List it as well as the others'}
+                title={row.value === ALL ? 'Every folder' : 'List it as well as the others'}
                 onClick={(event) => {
                   event.stopPropagation()
                   also(row.value)
@@ -386,13 +386,13 @@ function Menu({
           </div>
         ))}
         <div className="menu-divider" />
-        <div className="projects-hint">{selecting ? 'Pressing a row adds it to the list or takes it off. All projects starts again.' : 'A check lists a project beside the others. Pressing a row shows only that one.'}</div>
+        <div className="projects-hint">{selecting ? 'Pressing a row adds it to the list or takes it off. All folders starts again.' : 'A check lists a folder beside the others. Pressing a row shows only that one.'}</div>
         {chat.hosts.length > 0 ? null : (
           <button type="button" role="menuitem" className="menu-item" onClick={() => pick(ADD)}>
             <span style={{ width: 14, flexShrink: 0 }}>
               <Icon name="plus" size={13} />
             </span>
-            Add a project...
+            Add a folder...
           </button>
         )}
         <button
@@ -458,7 +458,7 @@ function GroupRow({
     <div
       role="menuitem"
       className={`menu-item projects-group${first ? ' first' : ''}${on ? ' on' : ''}${at ? ' at' : ''}`}
-      title={host === undefined ? 'List only the projects on this computer' : `List only the projects on ${host.name}`}
+      title={host === undefined ? 'List only the folders on this computer' : `List only the folders on ${host.name}`}
       onMouseMove={onAt}
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey) onAlso()
@@ -495,12 +495,12 @@ export function Projects({ chat }: { readonly chat: Chat }): React.JSX.Element {
       <button
         type="button"
         className="project no-drag"
-        title={`Switch project (${MOD}+K)`}
+        title={`Switch folder (${MOD}+K)`}
         onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}
       >
         <Icon name="folder" />
         <span className="name">
-          {chat.root === undefined ? 'Choose a project' : chosenName(chat)}
+          {chat.root === undefined ? 'Choose a folder' : chosenName(chat)}
         </span>
         <span className="spacer" />
         <span className="keys">{MOD}+K</span>
