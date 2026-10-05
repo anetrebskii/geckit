@@ -1,7 +1,7 @@
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
-import { assistantFor, assistantsIn, ANYWHERE, homeOf, profileOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { assistantFor, assistantsIn, ANYWHERE, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
 import { movedOrder, ordered } from '../../../shared/order'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
@@ -10,8 +10,6 @@ import { dictate, languageCode, useDictationLanguage, useLevel } from '../dictat
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
-import type { HostView } from '../../../shared/hosts'
-import { HostFolders } from './HostFolders'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
@@ -762,11 +760,6 @@ const BoardCard = memo(
  * The goal goes first and the work after it, so it holds from the first turn
  * rather than from the second, which is what a voice order does too.
  */
-/** The row that opens the folder picker rather than choosing a project already there. */
-const PICK = '\u0000pick'
-/** Choose a folder on a host, by its id after this. */
-const PICK_ON = '\u0000on:'
-
 interface KeptTask {
   readonly root: string
   readonly text: string
@@ -866,8 +859,6 @@ export function NewTask({
       </label>}
     </div>
   )
-  // A host whose folders are being chosen from, for a project there.
-  const [folderOn, setFolderOn] = useState<HostView | undefined>()
   const [text, setText] = useState(kept?.text ?? '')
   const [goal, setGoal] = useState(kept?.goal ?? '')
   useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal })), [question, root, text, goal])
@@ -1003,8 +994,6 @@ export function NewTask({
     )
   }
 
-  const profiled = profileOf(chat.settings) !== undefined
-  const localProjects = shownProjects(chat.settings).filter((one) => hostOf(one) === undefined)
 
   return (
     <div
@@ -1037,71 +1026,10 @@ export function NewTask({
         </div>
       )}
       {question ? null : (
-        <label className="new-task-label">
+        <div className="new-task-label">
           Folder
-          <select
-            className="new-task-where"
-            value={root}
-            onChange={(event) => {
-              const value = event.target.value
-              if (value.startsWith(PICK_ON)) {
-                setFolderOn(chat.hosts.find((one) => one.id === value.slice(PICK_ON.length)))
-                return
-              }
-              if (value !== PICK) {
-                setRoot(value)
-                return
-              }
-              void window.geckit.chat.addProject().then((picked) => {
-                if (picked !== undefined) setRoot(picked)
-              })
-            }}
-          >
-            {chat.hosts.length === 0 ? (
-              shownProjects(chat.settings).map((one) => (
-                <option key={one} value={one}>
-                  {projectName(one)}
-                </option>
-              ))
-            ) : (
-              <>
-                {/* Groups follow projects: in a profile, a group it has no projects in is not its business, and is reached from Settings, Hosts. */}
-                {profiled && localProjects.length === 0 ? null : (
-                  <optgroup label="Local">
-                    {localProjects.map((one) => (
-                      <option key={one} value={one}>
-                        {projectName(one)}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {chat.hosts.map((host) => {
-                  const onHost = shownProjects(chat.settings).filter((one) => hostOf(one) === host.id)
-                  // Unlike Local, a host group is never its own destination here: with nothing to pick under it, it stays out of the list, in or out of a profile.
-                  if (onHost.length === 0) return null
-                  return (
-                    <optgroup key={host.id} label={host.name}>
-                      {onHost.map((one) => (
-                        <option key={one} value={one}>
-                          {projectLabel(one)}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )
-                })}
-              </>
-            )}
-            <option value={PICK}>{chat.hosts.length === 0 ? 'Choose a folder...' : 'Choose a folder on this computer...'}</option>
-            {/* A folder is only ever added on a host reached now: one not connected has nothing to read it with. */}
-            {chat.hosts
-              .filter((host) => host.state === 'up')
-              .map((host) => (
-                <option key={host.id} value={`${PICK_ON}${host.id}`}>
-                  Choose a folder on {host.name}...
-                </option>
-              ))}
-          </select>
-        </label>
+          <Projects chat={chat} single={{ root, onPick: setRoot }} disabled={starting} />
+        </div>
       )}
       {!chat.showProviders ? null : <label className="new-task-label">
         Assistant
@@ -1238,13 +1166,7 @@ export function NewTask({
           {starting ? 'Starting...' : chat.full && !question ? 'Queue' : question ? 'Ask' : 'Start'}
         </button>
       </div>
-      {folderOn === undefined ? null : (
-        <HostFolders
-          host={folderOn}
-          onClose={() => setFolderOn(undefined)}
-          onAdded={(added) => setRoot(added)}
-        />
-      )}
+
     </div>
   )
 }

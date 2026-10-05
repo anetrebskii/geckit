@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { flushSync } from 'react-dom'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal, flushSync } from 'react-dom'
 
 import { Icon } from '../ui/Icon'
 import { MOD } from '../ui/Shortcuts'
@@ -108,8 +108,11 @@ const sumWaits = (all: readonly (Waits | undefined)[]): Waits | undefined =>
 const sumWork = (all: readonly (Work | undefined)[]): Work =>
   all.reduce<Work>((sum, one) => ({ progress: sum.progress + (one?.progress ?? 0), review: sum.review + (one?.review ?? 0) }), { progress: 0, review: 0 })
 
+type SingleFolder = Pick<Chat, 'root'> & { readonly onPick: Chat['setRoot'] }
+
 function Menu({
   chat,
+  single,
   anchor,
   onClose,
   onHidden,
@@ -117,6 +120,7 @@ function Menu({
   onAddHost,
 }: {
   readonly chat: Chat
+  readonly single?: SingleFolder
   readonly anchor: DOMRect
   readonly onClose: () => void
   readonly onHidden: () => void
@@ -124,6 +128,31 @@ function Menu({
   readonly onAddHost: () => void
 }): React.JSX.Element {
   const [asked, setAsked] = useState('')
+  const menu = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState<{ readonly left: number; readonly top: number; readonly height: number }>()
+  useLayoutEffect(() => {
+    const node = menu.current
+    if (node === null) return
+    const below = window.innerHeight - anchor.bottom - 12
+    const above = anchor.top - 12
+    const under = node.scrollHeight <= below || below >= above
+    const height = Math.max(0, Math.min(window.innerHeight * 0.6, under ? below : above))
+    setPosition({
+      left: Math.max(8, Math.min(anchor.left, window.innerWidth - node.offsetWidth - 8)),
+      top: under ? anchor.bottom + 4 : Math.max(8, anchor.top - Math.min(node.scrollHeight, height) - 4),
+      height,
+    })
+  }, [anchor, asked])
+  useEffect(() => {
+    const key = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      onClose()
+    }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+  }, [onClose])
   // A check pressed in this menu starts a selection, which a row click then adds to rather than replaces.
   const [started, setStarted] = useState(false)
   // The project whose colours are laid out under it.
@@ -137,10 +166,9 @@ function Menu({
   const sharing = (root: string, color: number): string[] =>
     projects.filter((one) => one !== root && projectColor(one, chat.settings) === color).map(projectName)
   // Opens on the project already chosen, so Enter with nothing typed keeps it.
-  const [at, setAt] = useState(() => (chat.scope === ALL ? 0 : projects.indexOf(chat.scope) + 1))
 
   const waits = new Map<string, Waits>()
-  for (const one of chat.waiting) {
+  for (const one of single === undefined ? chat.waiting : []) {
     const held = waits.get(homeOf(one)) ?? { asks: 0, unread: 0 }
     waits.set(homeOf(one), one.state === 'asks' ? { ...held, asks: held.asks + 1 } : { ...held, unread: held.unread + 1 })
   }
@@ -150,7 +178,7 @@ function Menu({
   )
 
   const work = new Map<string, Work>()
-  for (const one of chat.everyone) {
+  for (const one of single === undefined ? chat.everyone : []) {
     if (one.status === 'done') continue
     const held = work.get(homeOf(one)) ?? { progress: 0, review: 0 }
     work.set(homeOf(one), one.status === 'review' ? { ...held, review: held.review + 1 } : { ...held, progress: held.progress + 1 })
@@ -194,26 +222,52 @@ function Menu({
         group: key,
       },
       ...inside,
-      { value: id === undefined ? ADD : `${ADD_ON}${id}`, name: id === undefined ? 'Add a folder...' : `Add a folder on ${name}...`, path: '', waits: undefined, work: undefined, kind: 'add', group: key },
+      ...(single !== undefined && id !== undefined && chat.hosts.find((host) => host.id === id)?.state !== 'up' ? [] : [
+        { value: id === undefined ? ADD : `${ADD_ON}${id}`, name: id === undefined ? 'Add a folder...' : `Add a folder on ${name}...`, path: '', waits: undefined, work: undefined, kind: 'add' as const, group: key },
+      ]),
     ]
   }
   const rows: Row[] =
     chat.hosts.length === 0
-      ? [all, ...projects.map((root) => projectRow(root))].filter(matches)
-      : [all, ...group(undefined, 'Local'), ...chat.hosts.flatMap((host) => group(host.id, host.name))]
-  const here = Math.min(at, Math.max(0, rows.length - 1))
+      ? [...(single === undefined ? [all] : []), ...projects.map((root) => projectRow(root))].filter(matches)
+      : [...(single === undefined ? [all] : []), ...group(undefined, 'Local'), ...chat.hosts.flatMap((host) => group(host.id, host.name))]
+  const [at, setAt] = useState(() => Math.max(0, rows.findIndex((row) => row.value === (single?.root ?? chat.scope))))
+  const selectable = (row: Row): boolean => single === undefined || row.kind !== 'group'
+  const pointed = Math.min(at, Math.max(0, rows.length - 1))
+  const here = single !== undefined && rows[pointed]?.kind === 'group' ? Math.max(0, rows.findIndex(selectable)) : pointed
+  const menuHeight = position?.height
+  useLayoutEffect(() => {
+    const node = menu.current
+    const active = node?.querySelector('.menu-item.at')
+    if (single === undefined || node === null || active == null) return
+    const bounds = node.getBoundingClientRect()
+    const row = active.getBoundingClientRect()
+    const top = bounds.top + (node.querySelector('input')?.getBoundingClientRect().height ?? 0) + 8
+    if (row.top < top) node.scrollTop += row.top - top
+    else if (row.bottom > bounds.bottom - 4) node.scrollTop += row.bottom - bounds.bottom + 4
+  }, [here, single, menuHeight])
+  const move = (direction: number): void => {
+    for (let next = here + direction; next >= 0 && next < rows.length; next += direction) {
+      const row = rows[next]
+      if (row !== undefined && selectable(row)) { setAt(next); return }
+    }
+  }
   // Drawn at once, rather than left to React for later, so the choice keeps up with the pointer.
   const pointAt = (index: number): void => {
     if (index !== here) flushSync(() => setAt(index))
   }
 
   const pick = (value: string): void => {
-    if (value === ADD) chat.addProject()
+    if (value === ADD) {
+      if (single === undefined) chat.addProject()
+      else void window.geckit.chat.addProject().then((root) => { if (root !== undefined) single.onPick(root) })
+    }
     else if (value.startsWith(ON_HOST)) chat.choose(onGroup(value))
     else if (value.startsWith(ADD_ON)) {
       const host = chat.hosts.find((one) => one.id === value.slice(ADD_ON.length))
       if (host !== undefined) onFolderOn(host)
-    } else chat.setScope(value)
+    } else if (single !== undefined) single.onPick(value)
+    else chat.setScope(value)
     onClose()
   }
 
@@ -226,6 +280,7 @@ function Menu({
   // A project's row says its host too, in what an aria label or a tooltip reads; Every project and a group's own row keep their plain name.
   const said = (row: Row): string => (row.kind === 'project' ? projectLabel(row.value) : row.name)
   const on = (value: string): boolean => {
+    if (single !== undefined) return value === single.root
     if (value === ALL) return chat.chosen.length === 0
     if (value.startsWith(ON_HOST)) {
       const roots = onGroup(value)
@@ -233,7 +288,7 @@ function Menu({
     }
     return chat.chosen.includes(value)
   }
-  const selecting = started || chat.chosen.length > 1
+  const selecting = single === undefined && (started || chat.chosen.length > 1)
   const also = (value: string): void => {
     setStarted(value !== ALL)
     if (value === ALL) chat.setScope(ALL)
@@ -243,16 +298,16 @@ function Menu({
     } else chat.alsoScope(value)
   }
 
-  return (
+  return createPortal(
     <>
-      <div className="scrim" onMouseDown={onClose} />
-      <div className="floating menu projects" role="menu" style={{ left: Math.max(8, anchor.left), top: anchor.bottom + 4 }}>
+      <div className="scrim menu-scrim" onMouseDown={onClose} />
+      <div ref={menu} className={`floating menu projects${single === undefined ? '' : ' single'}`} role="menu" style={{ left: position?.left ?? anchor.left, top: position?.top ?? anchor.bottom + 4, maxHeight: position?.height, ...(single === undefined ? {} : { width: Math.min(anchor.width, window.innerWidth - 16) }) }}>
         <input
           type="text"
           className="projects-field"
           value={asked}
           autoFocus
-          placeholder="Switch to a folder"
+          placeholder={single === undefined ? 'Switch to a folder' : 'Choose a folder'}
           onChange={(event) => {
             setAsked(event.target.value)
             setAt(0)
@@ -260,23 +315,19 @@ function Menu({
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault()
-              setAt(Math.min(here + 1, rows.length - 1))
+              move(1)
             }
             if (event.key === 'ArrowUp') {
               event.preventDefault()
-              setAt(Math.max(here - 1, 0))
+              move(-1)
             }
             if (event.key === 'Enter') {
               event.preventDefault()
+              event.stopPropagation()
               const row = rows[here]
-              if (row === undefined) return
+              if (row === undefined || !selectable(row)) return
               if (selecting && row.kind !== 'add') also(row.value)
               else pick(row.value)
-            }
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              event.stopPropagation()
-              onClose()
             }
           }}
         />
@@ -286,6 +337,7 @@ function Menu({
             {row.kind === 'group' ? (
               <GroupRow
                 chat={chat}
+                single={single !== undefined}
                 row={row}
                 on={on(row.value)}
                 at={index === here}
@@ -311,11 +363,11 @@ function Menu({
               onMouseMove={() => pointAt(index)}
               onClick={(event) => {
                 // Held down, or with several listed, the row does what its check does: adds this project to the list beside the others.
-                if (selecting || event.metaKey || event.ctrlKey) also(row.value)
+                if (single === undefined && (selecting || event.metaKey || event.ctrlKey)) also(row.value)
                 else pick(row.value)
               }}
             >
-              <button
+              {single !== undefined ? <span className={`project-pick${on(row.value) ? ' on' : ''}`} aria-hidden="true">{on(row.value) ? <Icon name="check" size={13} /> : null}</span> : <button
                 type="button"
                 className={`project-pick${on(row.value) ? ' on' : ''}`}
                 aria-label={on(row.value) ? `Stop listing ${said(row)}` : `List ${said(row)} as well`}
@@ -326,11 +378,11 @@ function Menu({
                 }}
               >
                 {on(row.value) ? <Icon name="check" size={13} /> : null}
-              </button>
+              </button>}
               {row.kind === 'all' ? (
                 <span className="project-dot-space" />
               ) : (
-                <button
+                single !== undefined ? <span className="project-dot" style={{ background: `var(--project-${String(projectColor(row.value, chat.settings))})` }} aria-hidden="true" /> : <button
                   type="button"
                   className="project-dot"
                   style={{ background: `var(--project-${String(projectColor(row.value, chat.settings))})` }}
@@ -350,7 +402,7 @@ function Menu({
               </span>
               <Standing work={row.work} />
               <Waiting waits={row.waits} />
-              {row.kind === 'all' ? (
+              {single !== undefined ? null : row.kind === 'all' ? (
                 <span className="forget-space" />
               ) : (
                 <button
@@ -386,7 +438,7 @@ function Menu({
           </div>
         ))}
         <div className="menu-divider" />
-        <div className="projects-hint">{selecting ? 'Pressing a row adds it to the list or takes it off. All folders starts again.' : 'A check lists a folder beside the others. Pressing a row shows only that one.'}</div>
+        <div className="projects-hint">{single !== undefined ? 'Choose one folder for this task.' : selecting ? 'Pressing a row adds it to the list or takes it off. All folders starts again.' : 'A check lists a folder beside the others. Pressing a row shows only that one.'}</div>
         {chat.hosts.length > 0 ? null : (
           <button type="button" role="menuitem" className="menu-item" onClick={() => pick(ADD)}>
             <span style={{ width: 14, flexShrink: 0 }}>
@@ -395,7 +447,7 @@ function Menu({
             Add a folder...
           </button>
         )}
-        <button
+        {single !== undefined ? null : <><button
           type="button"
           role="menuitem"
           className="menu-item"
@@ -422,9 +474,9 @@ function Menu({
             <Icon name="hidden" size={13} />
           </span>
           Hidden conversations...
-        </button>
+        </button></>}
       </div>
-    </>
+    </>, document.body,
   )
 }
 
@@ -435,6 +487,7 @@ function Menu({
  */
 function GroupRow({
   chat,
+  single,
   row,
   on,
   at,
@@ -444,6 +497,7 @@ function GroupRow({
   onAlso,
 }: {
   readonly chat: Chat
+  readonly single: boolean
   readonly row: Row
   readonly on: boolean
   readonly at: boolean
@@ -456,16 +510,17 @@ function GroupRow({
   const now = useMinute()
   return (
     <div
-      role="menuitem"
+      role={single ? 'presentation' : 'menuitem'}
       className={`menu-item projects-group${first ? ' first' : ''}${on ? ' on' : ''}${at ? ' at' : ''}`}
-      title={host === undefined ? 'List only the folders on this computer' : `List only the folders on ${host.name}`}
-      onMouseMove={onAt}
+      title={single ? row.name : host === undefined ? 'List only the folders on this computer' : `List only the folders on ${host.name}`}
+      onMouseMove={single ? undefined : onAt}
       onClick={(event) => {
+        if (single) return
         if (event.metaKey || event.ctrlKey) onAlso()
         else onPick()
       }}
     >
-      <button
+      {single ? <span className="project-pick" /> : <button
         type="button"
         className={`project-pick${on ? ' on' : ''}`}
         aria-label={on ? `Stop listing ${row.name}` : `List ${row.name} as well`}
@@ -475,7 +530,7 @@ function GroupRow({
         }}
       >
         {on ? <Icon name="check" size={13} /> : null}
-      </button>
+      </button>}
       <span className="group-dot">{host === undefined ? <Icon name="display" size={12} /> : <HostDot state={host.state} />}</span>
       <span className="group-name">{row.name}</span>
       <span className="group-says">{host === undefined ? row.path : host.state === 'up' ? besideName(host) : stateLine(host, now)}</span>
@@ -485,7 +540,12 @@ function GroupRow({
   )
 }
 
-export function Projects({ chat }: { readonly chat: Chat }): React.JSX.Element {
+export function Projects({ chat, single, disabled = false }: { readonly chat: Chat; readonly single?: SingleFolder; readonly disabled?: boolean }): React.JSX.Element {
+  const button = useRef<HTMLButtonElement>(null)
+  const close = (): void => {
+    setAnchor(undefined)
+    requestAnimationFrame(() => { if (document.activeElement === document.body) button.current?.focus() })
+  }
   const [anchor, setAnchor] = useState<DOMRect | undefined>()
   const [hidden, setHidden] = useState(false)
   const [folderOn, setFolderOn] = useState<HostView | undefined>()
@@ -493,31 +553,35 @@ export function Projects({ chat }: { readonly chat: Chat }): React.JSX.Element {
   return (
     <>
       <button
+        ref={button}
         type="button"
-        className="project no-drag"
-        title={`Switch folder (${MOD}+K)`}
+        className={single === undefined ? 'project no-drag' : 'project no-drag new-task-folder'}
+        disabled={disabled}
+        aria-label={single === undefined ? undefined : 'Folder'}
+        title={single === undefined ? `Switch folder (${MOD}+K)` : single.root === undefined || single.root === '' ? 'Choose a folder' : rootLabel(single.root)}
         onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}
       >
         <Icon name="folder" />
         <span className="name">
-          {chat.root === undefined ? 'Choose a folder' : chosenName(chat)}
+          {single === undefined ? chat.root === undefined ? 'Choose a folder' : chosenName(chat) : <span className="lines"><span className="name">{single.root === undefined || single.root === '' ? 'Choose a folder' : projectLabel(single.root)}</span>{single.root === undefined || single.root === '' ? null : <span className="says">{rootLabel(single.root)}</span>}</span>}
         </span>
-        <span className="spacer" />
-        <span className="keys">{MOD}+K</span>
+        {single === undefined ? <span className="spacer" /> : null}
+        {single === undefined ? <span className="keys">{MOD}+K</span> : null}
         <Icon name="down" size={11} />
       </button>
       {anchor === undefined ? null : (
         <Menu
           chat={chat}
+          {...(single === undefined ? {} : { single })}
           anchor={anchor}
-          onClose={() => setAnchor(undefined)}
+          onClose={close}
           onHidden={() => setHidden(true)}
           onFolderOn={setFolderOn}
           onAddHost={() => setAddingHost(true)}
         />
       )}
       {hidden ? <HiddenChats chat={chat} onClose={() => setHidden(false)} /> : null}
-      {folderOn === undefined ? null : <HostFolders host={folderOn} onClose={() => setFolderOn(undefined)} onAdded={(root) => chat.setScope(root)} />}
+      {folderOn === undefined ? null : <HostFolders host={folderOn} onClose={() => setFolderOn(undefined)} onAdded={(root) => (single?.onPick ?? chat.setScope)(root)} />}
       {addingHost ? <AddHost onClose={() => setAddingHost(false)} /> : null}
     </>
   )

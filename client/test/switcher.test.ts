@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { projectLabel, projectName } from '../src/renderer/src/chat/project'
+
 import type { ChatSession } from '../src/shared/api'
 
 vi.stubGlobal('window', { geckit: {}, setTimeout, clearTimeout })
@@ -25,5 +27,27 @@ describe('seeks', () => {
 
   it('opens at the latest message when nothing was found inside', () => {
     expect(seeks({ session }, ['push'])).toBe(false)
+  })
+})
+
+describe('folder display names', () => {
+  it.each([
+    ['/Users/alex/Projects/geckit', 'geckit'],
+    ['/Users/alex/Projects/geckit/', 'geckit'],
+    ['C:\\Users\\niraj\\Downloads\\hypergen', 'hypergen'],
+    ['C:\\Users\\niraj\\Downloads\\hypergen\\', 'hypergen'],
+    ['C:/Users/niraj/Downloads\\hypergen', 'hypergen'],
+    ['\\\\server\\share\\hypergen', 'hypergen'],
+    ['C:\\Users\\niraj\\Downloads\\My folder', 'My folder'],
+    ['ssh://devbox/home/niraj/hypergen/', 'hypergen'],
+    ['ssh://devbox/home/niraj/a\\b', 'a\\b'],
+    ['/', '/'],
+  ])('shows the folder name for %s', (root, name) => {
+    expect(projectName(root)).toBe(name)
+  })
+
+  it('uses the Windows folder name in labels on desktop and phone', () => {
+    expect(projectLabel('C:\\Users\\niraj\\Downloads\\hypergen')).toBe('hypergen')
+    expect(projectLabel('ssh://devbox/home/niraj/hypergen')).toBe('hypergen · devbox')
   })
 })
