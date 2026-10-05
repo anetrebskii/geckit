@@ -56,6 +56,19 @@ describe('Claude conversation metadata imported into Codex', () => {
     expect(result.notes[TARGET]).toMatchObject({ ...target, created: 100, importedFrom: SOURCE, importedMetadata: 1 })
   })
 
+  it('keeps outside sessions off the board and preserves explicit visibility through repeated migration', () => {
+    const first = sessionMigration({ [SOURCE]: { seen: 100 } }, {}, IMPORTS)
+    expect(first.notes[TARGET]).toMatchObject({ seen: 100, shown: false })
+    const brought = sessionMigration({ ...first.notes, [TARGET]: { ...first.notes[TARGET], shown: true } }, {}, IMPORTS)
+    expect(brought.notes[TARGET]?.shown).toBe(true)
+    const hidden = sessionMigration({ ...brought.notes, [TARGET]: { ...brought.notes[TARGET], hidden: true, shown: false } }, {}, IMPORTS)
+    expect(hidden.notes[TARGET]).toMatchObject({ hidden: true, shown: false })
+    expect(sessionMigration(hidden.notes, {}, IMPORTS).report.migrated).toBe(0)
+    const unshown = sessionMigration({ ...hidden.notes, [TARGET]: { ...hidden.notes[TARGET], hidden: false } }, {}, IMPORTS)
+    expect(unshown.notes[TARGET]).toMatchObject({ hidden: false, shown: false })
+    expect(unshown.report.migrated).toBe(0)
+  })
+
   it('repairs the shallow importer history and removes its synthetic move at import time', () => {
     const target: SessionNote = { ...(NOTE.title === undefined ? {} : { title: NOTE.title }), importedFrom: SOURCE, created: 1000, status: 'review', moves: [{ status: 'done', at: 1000 }, { status: 'review', at: 1100 }] }
     const result = sessionMigration({ [SOURCE]: NOTE, [TARGET]: target }, {}, IMPORTS)

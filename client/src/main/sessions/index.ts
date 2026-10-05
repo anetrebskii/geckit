@@ -616,10 +616,8 @@ export class Sessions {
       const note = this.#deps.notes.all()[row.id]
       if (row.importedFrom !== undefined && note?.importedFrom === undefined) {
         const original = this.#deps.notes.all()[row.importedFrom]
-        const source = this.#rows.get(row.importedFrom)
-        const visible = original?.hidden !== true && (original?.here === true || original?.shown === true || (source !== undefined && !source.driven))
         const migrated = importedNote(original ?? {}, note, row.importedFrom, importedIds)
-        notes[row.id] = { ...migrated, importedMetadata: 0, here: migrated.here ?? false, shown: migrated.shown ?? visible, hidden: migrated.hidden ?? !visible }
+        notes[row.id] = { ...migrated, importedMetadata: 0, here: migrated.here ?? false, shown: migrated.shown ?? false, hidden: migrated.hidden ?? false }
         imported = true
       }
       this.#rows.set(row.id, row)
