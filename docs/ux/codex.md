@@ -94,6 +94,62 @@ stateDiagram-v2
 
 Соединение с app-server и восстановление метаданных не добавляют уведомлений. Отдельные процессы, JSON-RPC и идентификаторы провайдера не появляются в поле сообщения.
 
+## Imported transcript tool records
+
+### Purpose and surfaces
+
+Claude conversations imported by Codex encode historical tool calls and results inside assistant messages. The transcript currently displays their transport markers and question JSON as prose. Opening an imported conversation on desktop or phone must show the existing expandable steps instead. This repairs transcript presentation; it adds no new controls or actions.
+
+### States
+
+| State | When | What is shown | Action |
+|---|---|---|---|
+| Collapsed history | A complete imported call is read | Existing "1 step" / "N steps" fold | Open the fold |
+| Tool step | The fold is open | Existing tool summary, such as "Ran npm test" or "Read package.json" | Open the step to inspect input and output |
+| Historical question | An imported AskUserQuestion call is read | "Asked: <first question>"; all questions and choices in the expandable detail | Read it; send a new message to continue the conversation |
+| Result without a call | A page starts with an imported result, or the call is missing | "Imported tool result" with expandable output | Read the output |
+| Unrecognized record | A wrapper is incomplete or malformed | Original message text | Read or copy the original |
+
+### Transitions
+
+```mermaid
+stateDiagram-v2
+  [*] --> collapsed: Read history
+  collapsed --> steps: Open fold
+  steps --> collapsed: Close fold
+  steps --> detail: Open step
+  detail --> steps: Close step
+```
+
+| From | Event | To | What is shown |
+|---|---|---|---|
+| Saved conversation | History loads, automatically | Collapsed history | Existing step count; surrounding prose stays in order |
+| Collapsed history | Click or keyboard-activate the fold | Tool steps | Completed summaries, with no running indicator |
+| Tool steps | Click or keyboard-activate a step | Detail | Original input and paired result, or readable historical questions and choices |
+| Detail | Activate the step again | Tool steps | Summary only |
+| Tool steps | Activate the fold again | Collapsed history | Existing step count |
+
+### Silence, timing and wording
+
+Complete `[external_agent_tool_call: ...]` and `[external_agent_tool_result]` wrappers are presentation metadata and do not appear as prose. The standalone `<EXTERNAL SESSION IMPORTED>` boundary is silent. A result is attached only to the immediately preceding imported call; otherwise it remains a separate result step. No matching by guessed tool name or output content.
+
+No timers or numeric thresholds are added. Existing transcript paging and step folding apply. Tool wording reuses the Claude tool summaries. Fallback wording is "Used <tool>", "Asked you a question" for question input that cannot be decoded, and "Imported tool result" for an orphan result.
+
+### Edge cases and decisions
+
+- Multiple calls, results and prose inside one assistant message keep their order and deterministic IDs. A user message or native tool step prevents result pairing across it.
+- Calls without results remain historical steps. They never become pending approvals, unanswered question cards or live work.
+- Invalid question JSON remains available in the expandable detail. Unknown tools keep their name and input.
+- Empty results and multiline output are retained. An incomplete wrapper remains original prose.
+- Wrappers in fenced code examples and all user-authored message text remain literal. Only assistant history is decoded; live streaming is unchanged.
+- Reopening does not modify Codex's files, execute tools, or send answers. Phone history uses the same normalized items and existing step grouping.
+
+The chosen presentation uses existing step rows, rather than new historical approval cards: imported records have no live request to answer. This covers Alex's 2026-10-06 request to implement and push the raw imported-tool-text fix. It extends the existing Codex transcript behavior and requires no new feature-list entry.
+
+Verification, 2026-10-06: the actual screenshot conversation was normalized from its saved import and rendered with GeckIt's Transcript and stylesheet in an isolated browser preview. Full-screen light/dark review at 1352 x 618 and phone-sized light/dark review at 390 x 844 covered collapsed steps, expanded call/output, both questions and descriptions, Enter to expand/collapse, visible focus and long-detail scrolling. No page-level horizontal overflow. The installed app and phone app were not restarted or deployed for this check. Renderer and shared UI code are unchanged; the performance checklist has no touched component, formatter, animation or callback items. Native streaming remains unchanged, and normalization runs only when history is read.
+
+Validation: 626 tests pass with one worker, including import decoding and app-server history integration; typecheck, exact `npm run lint`, desktop build and Mermaid rendering pass. The existing settings file-watcher test timed out in one concurrent suite run and passed in the earlier run and the final serial run.
+
 ## Пороги и время
 
 Запросы к локальному CLI ждут 30 секунд, затем показывают ошибку и дают повторить. Это ограничение соединения и управляющих запросов; работающий ход не имеет такого срока. Очередь использует общий лимит разговоров GeckIt.

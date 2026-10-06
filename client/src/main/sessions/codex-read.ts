@@ -1,5 +1,6 @@
 import type { SessionItem } from '../../shared/api'
 import type { CodexItem, CodexTurn } from './codex-protocol'
+import { importedReply, pairImportedResults } from './imported-read'
 import { filesAmong } from './rule'
 
 export function codexItem(item: CodexItem, root: string, live = false): SessionItem[] {
@@ -37,5 +38,8 @@ export function codexItem(item: CodexItem, root: string, live = false): SessionI
 }
 
 export function codexHistory(turns: readonly CodexTurn[], root: string): SessionItem[] {
-  return turns.flatMap((turn) => turn.items.flatMap((item) => codexItem(item, root).map((one) => one.kind === 'mine' && turn.startedAt != null ? { ...one, at: turn.startedAt * 1000 } : one)))
+  return turns.flatMap((turn) => pairImportedResults(turn.items.flatMap((item) =>
+    (item.type === 'agentMessage' ? importedReply(item, root) : codexItem(item, root))
+      .map((one) => one.kind === 'mine' && turn.startedAt != null ? { ...one, at: turn.startedAt * 1000 } : one),
+  )))
 }

@@ -588,6 +588,21 @@ describe('Codex app-server', () => {
     await driver.end()
   })
 
+  it('opens imported history as completed tool steps and read-only questions', async () => {
+    const { server, codex } = setup()
+    server.history = [{ id: 'imported', startedAt: 100, status: 'completed', error: null, items: [
+      { type: 'agentMessage', id: 'call', text: '[external_agent_tool_call: Bash]\ncommand: npm test\n[/external_agent_tool_call]' },
+      { type: 'agentMessage', id: 'result', text: '[external_agent_tool_result]\nTests passed\n[/external_agent_tool_result]' },
+      { type: 'agentMessage', id: 'question', text: '[external_agent_tool_call: AskUserQuestion]\ninput: {"questions":[{"question":"Which file?","options":[]}]}\n[/external_agent_tool_call]' },
+    ] }]
+    const read = await codex.read(ROOT, 'codex:terminal')
+    expect(read?.items).toEqual([
+      { kind: 'did', id: 'codex:call:imported:0:call', what: 'Ran npm test', detail: 'command: npm test\n\nTests passed' },
+      { kind: 'did', id: 'codex:question:imported:0:call', what: 'Asked: Which file?', detail: 'Which file?' },
+    ])
+    expect(server.requests.some((request) => request.method === 'turn/start')).toBe(false)
+  })
+
   it('replays native history and preserves its item IDs and images', async () => {
     const { server, codex } = setup()
     server.history = [{ id: 'turn', startedAt: 100, status: 'completed', error: null, items: [{ type: 'userMessage', id: 'mine', content: [{ type: 'text', text: 'Question', text_elements: [] }, { type: 'image', url: 'data:image/png;base64,AAAA' }] }, { type: 'agentMessage', id: 'answer', text: 'Answer' }, { type: 'fileChange', id: 'edit', changes: [{ path: `${ROOT}/file.ts`, diff: '+hello' }], status: 'completed' }] }]
