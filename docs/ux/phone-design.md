@@ -44,7 +44,7 @@ The app answers to the same gestures the system apps do, and every gesture has a
 |---|---|---|---|
 | Board row | Swipe left | Shows Done (green) and More; a full swipe marks it Done | More in the conversation |
 | Board row | Swipe right | Shows In review (amber, the Mac's colour for review); a full swipe marks it | More in the conversation |
-| Board row | Long press | Preview of the last reply, and a menu: In review, Blocked, Done, No status, Rename, Stop | More in the conversation |
+| Board row | Long press | Preview of the last reply, and a menu: In review, Blocked, Done, No status, Add to / Remove from favorites, Rename, Stop | More in the conversation |
 | Board row that asks | Long press | The same menu, headed by Allow once and No | The buttons on the row |
 | Conversation | Swipe from the left edge | Back to the board | Board button |
 | Message, either side's | Long press | The system's own text menu: select, Copy, Look Up | none |
@@ -64,6 +64,7 @@ States are `phone.md`'s. New or changed:
 | State | When | What the person sees | What they do |
 |---|---|---|---|
 | Needs you | A session waits on a permission card or a question | The row in the Needs you group: amber dot, "Needs an answer", the command or question in one line, Allow once and No | Answers from the row, or opens it |
+| Favorite | A conversation is a favorite, here or on the Mac | A filled yellow star before its title, and its row at the top of its column | Takes the star off in the long press |
 | Docked card | An open conversation waits on a card | The card above the composer, the composer under it greyed | Allow once, Allow this session or No |
 | Column empty | No row in the chosen column | "Nothing in progress.", "Nothing in review." or "Nothing done yet." | Picks another column or starts a task |
 | Swiped | A row swiped part way | The actions behind it | Taps one, or swipes back |

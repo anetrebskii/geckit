@@ -115,8 +115,9 @@ export function PhoneBoard({
 
   const rows = useMemo(() => {
     const all = chat.sessions.filter((one) => columnOf(one) === shown).sort((one, other) => other.at - one.at)
-    return shown === 'progress' ? ordered(all, chat.settings.progressOrder) : all
-  }, [chat.sessions, shown, chat.settings.progressOrder])
+    const positioned = shown === 'progress' ? ordered(all, chat.settings.progressOrder) : all
+    return positioned.sort((one, other) => Number(chat.settings.favorites.includes(other.id)) - Number(chat.settings.favorites.includes(one.id)))
+  }, [chat.sessions, shown, chat.settings.progressOrder, chat.settings.favorites])
   const counts = useMemo(() => {
     const count = { progress: 0, review: 0, done: 0 }
     for (const one of chat.sessions) count[columnOf(one)] += 1
@@ -219,6 +220,12 @@ export function PhoneBoard({
 
   const mark = (session: ChatSession, status: SessionStatus | undefined): void => {
     if (session.status !== status) chat.mark(session.id, status)
+  }
+  const favorite = (session: ChatSession): void => {
+    tap('light')
+    chat.change({
+      favorites: favorites.includes(session.id) ? favorites.filter((id) => id !== session.id) : [...favorites, session.id],
+    })
   }
   const answer = (session: ChatSession, answer: CardAnswer): void => {
     const card = waiting.get(session.id)
@@ -497,6 +504,7 @@ export function PhoneBoard({
           waiting={waiting.get(pressed.session.id)}
           onAnswer={(how) => answer(pressed.session, how)}
           onMark={(status) => mark(pressed.session, status)}
+          onFavorite={() => favorite(pressed.session)}
           onRename={() => setRenaming(pressed.session)}
           onShortcut={() => onShortcut(pressed.session)}
           onHide={() => setHiding(pressed.session)}
@@ -604,6 +612,7 @@ export function RowBody({
       <span className={`phone-dot ${away === undefined ? stands.tone : 'away'}`} />
       <div className="phone-row-text">
         <div className="phone-row-line">
+          {chat.settings.favorites.includes(session.id) ? <Icon name="star" size={13} className="phone-row-star" /> : null}
           <span className="phone-row-title">{session.title}</span>
           <span className="phone-row-time">{session.question === true ? (questionLeft(session, now) ?? '') : ago(session.at, now, dayHeaded)}</span>
         </div>
@@ -621,7 +630,6 @@ export function RowBody({
           <span style={{ color: `var(--project-${String(projectColor(homeOf(session), chat.settings))})`, fontWeight: 600 }}>
             {projectLabel(homeOf(session))}
           </span>
-          {chat.settings.favorites.includes(session.id) ? <Icon name="star" size={13} className="phone-row-star" /> : null}
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
           {session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
           {helpers === 0 ? null : <span className="phone-row-tag">{helpers === 1 ? 'a helper running' : `${helpers} helpers running`}</span>}
@@ -890,6 +898,7 @@ function Pressed({
   waiting,
   onAnswer,
   onMark,
+  onFavorite,
   onRename,
   onShortcut,
   onHide,
@@ -903,6 +912,7 @@ function Pressed({
   readonly waiting: Waiting | undefined
   readonly onAnswer: (how: CardAnswer) => void
   readonly onMark: (status: SessionStatus | undefined) => void
+  readonly onFavorite: () => void
   readonly onRename: () => void
   readonly onShortcut: () => void
   readonly onHide: () => void
@@ -984,6 +994,10 @@ function Pressed({
           </>
         ) : null}
         <div className="gap" />
+        <button type="button" role="menuitem" onClick={() => pick(onFavorite)}>
+          {chat.settings.favorites.includes(session.id) ? 'Remove from favorites' : 'Add to favorites'}
+          <Icon name="star" size={16} />
+        </button>
         <button type="button" role="menuitem" onClick={() => pick(onRename)}>
           Rename
           <Icon name="pencil" size={16} />
@@ -1136,12 +1150,7 @@ export function MacList({
   const [acting, setActing] = useState<number | undefined>()
   const [renaming, setRenaming] = useState<number | undefined>()
   const list = macs()
-  const rows = paired.map((mac, at) => ({ ...mac, at })).sort((one, other) => Number(other.favorite) - Number(one.favorite))
-  const star = (at: number, on: boolean): void => {
-    tap('light')
-    list?.favorite(at, on)
-    onChange()
-  }
+  const rows = paired.map((mac, at) => ({ ...mac, at }))
   const chosen = acting === undefined ? undefined : paired[acting]
   const named = renaming === undefined ? undefined : paired[renaming]
 
@@ -1150,16 +1159,7 @@ export function MacList({
       <Sheet title="Hosts this phone is paired with" onClose={onClose}>
         <div className="sheet-list">
           {rows.map((mac) => (
-            <div key={mac.at} className={`sheet-option phone-mac${mac.favorite ? ' favorite' : ''}`}>
-              <button
-                type="button"
-                className="phone-mac-star"
-                aria-label={mac.favorite ? 'Remove from favorites' : 'Add to favorites'}
-                aria-pressed={mac.favorite}
-                onClick={() => star(mac.at, !mac.favorite)}
-              >
-                <Icon name="star" size={20} />
-              </button>
+            <div key={mac.at} className="sheet-option phone-mac">
               <button
                 type="button"
                 className="phone-mac-name"
@@ -1199,12 +1199,10 @@ export function MacList({
           title={chosen.name}
           choices={[
             { value: 'rename', label: 'Rename' },
-            { value: 'favorite', label: chosen.favorite ? 'Remove from favorites' : 'Add to favorites' },
             ...(paired.length > 1 ? [{ value: 'forget', label: 'Forget', says: 'Scanning its code again brings it back', danger: true }] : []),
           ]}
           onPick={(value) => {
             if (value === 'rename') setRenaming(acting)
-            else if (value === 'favorite') star(acting, !chosen.favorite)
             else if (value === 'forget') {
               list?.forget(acting)
               onChange()

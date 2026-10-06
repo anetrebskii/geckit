@@ -34,7 +34,6 @@ interface KeptMac {
   readonly name?: string
   /** The person's own name for it, which the Mac's does not overwrite. */
   readonly given?: string
-  readonly favorite?: boolean
 }
 const linkOf = (pairing: Pairing): string => `geckit://pair?k=${pairing.key}&s=${encodeURIComponent(pairing.signal)}`
 
@@ -63,7 +62,7 @@ function useMac(link: string | undefined): void {
 }
 
 ;(window as { geckitMacs?: Macs }).geckitMacs = {
-  list: () => keptMacs().map((mac, at) => ({ name: nameOf(mac, at), current: isCurrent(mac), favorite: mac.favorite === true })),
+  list: () => keptMacs().map((mac, at) => ({ name: nameOf(mac, at), current: isCurrent(mac) })),
   switchTo: (index) => useMac(keptMacs()[index]?.link),
   add: () => void scan(),
   forget: (index) => {
@@ -77,7 +76,6 @@ function useMac(link: string | undefined): void {
   },
   rename: (index, name) =>
     change(index, ({ given: _, ...mac }) => (name.trim() === '' ? mac : { ...mac, given: name.trim() })),
-  favorite: (index, on) => change(index, ({ favorite: _, ...mac }) => (on ? { ...mac, favorite: true } : mac)),
 }
 
 // The Taptic Engine for the Chat window, which only knows what kind of moment it is; a browser without one feels nothing.
@@ -469,10 +467,7 @@ async function connect(): Promise<void> {
     await opened
     return
   }
-  const others = macs
-    .map((mac, at) => ({ mac, at }))
-    .filter(({ at }) => at !== here)
-    .sort((one, other) => Number(other.mac.favorite === true) - Number(one.mac.favorite === true))
+  const others = macs.map((mac, at) => ({ mac, at })).filter(({ at }) => at !== here)
   const ours = macs[here]
   const label = ours === undefined ? undefined : nameOf(ours, here)
   const step = connecting(

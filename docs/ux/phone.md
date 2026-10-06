@@ -21,8 +21,8 @@ The phone runs its own GeckIt app, which shows the same Chat window the Mac show
 | Pairing screen in the app (new) | The app's name, one line of what to do, and Scan | The app has no pairing |
 | Scanner in the app (new) | The camera, full screen, with Cancel | Scan is pressed |
 | Connecting screen in the app (new) | "Connecting to the Mac" | Between a scan or a launch and the first answer from the Mac |
-| Cannot reach the Mac (new) | What stands in the way, Try again, Connect to each other Mac (favorites first), and Scan again | The Mac did not answer |
-| List of Macs in the app (new) | Every Mac the phone has scanned, favorites first with a filled star and a bold name, a check on the one in use. A row switches to its Mac, its star marks or unmarks it as a favorite, its More opens Rename, Add to / Remove from favorites and Forget. Add a Mac under the list | The large title on the board is pressed |
+| Cannot reach the Mac (new) | What stands in the way, Try again, Connect to each other Mac, and Scan again | The Mac did not answer |
+| List of Macs in the app (new) | Every Mac the phone has scanned, a check on the one in use. A row switches to its Mac, its More opens Rename and Forget. Add a Mac under the list | The large title on the board is pressed |
 | Rename a Mac (new) | A field with the name, a note that empty goes back to the Mac's own name, and Save | Rename is chosen for a Mac |
 | Board in the app (existing Board, phone layout) | One column at a time, chosen by a segmented control at the top: In progress, In review, Done, each with its count. Cards take the whole width | Connected |
 | Board header in the app | The segmented control, Ask a question and New task. The sidebar toggle, dictation, orders, keyboard shortcuts and Settings are not there | Always in the app |
