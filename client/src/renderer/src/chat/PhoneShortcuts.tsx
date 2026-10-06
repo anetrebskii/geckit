@@ -171,7 +171,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; r
           }}
         />
         <div className="phone-group phone-form-group">
-          <Cell label="Project" value={draft.root === '' ? 'None' : projectLabel(draft.root)} onPress={() => setPicking('project')} />
+          <Cell label="Folder" value={draft.root === '' ? 'None' : projectLabel(draft.root)} onPress={() => setPicking('project')} />
           <Cell label="Mode" value={MODE_LABEL(draft.mode)} onPress={() => setPicking('mode')} />
         </div>
         <div className="phone-group phone-form-group">
@@ -278,7 +278,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; r
 }
 
 const WAYS = [
-  { way: 'write', icon: 'pencil', label: 'Write it', says: 'Project, what to do, a goal' },
+  { way: 'write', icon: 'pencil', label: 'Write it', says: 'Folder, what to do, a goal' },
   { way: 'say', icon: 'mic', label: 'Say it', says: 'Tell GeckIt what to start, answer or mark' },
   { way: 'record', icon: 'display', label: 'From a recording', says: 'A screen recording or a video; its words and frames become the task' },
 ] as const

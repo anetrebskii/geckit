@@ -62,7 +62,7 @@ export function PhoneSettings({
       : one.page === 'profiles'
         ? 'Profiles'
         : one.page === 'projects'
-          ? 'Projects'
+          ? 'Folders'
           : 'Back'
   }
 
@@ -174,7 +174,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
         <Cell label="Claude Code" says="Uses the host's Claude plan">
           <Switch on={enabled.includes('claude')} label="Claude Code" disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(on) => toggle('claude', on)} />
         </Cell>
-        <Cell label="Codex" says="Uses the host's ChatGPT plan for its local projects">
+        <Cell label="Codex" says="Uses the host's ChatGPT plan for its local folders">
           <Switch on={enabled.includes('codex')} label="Codex" disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(on) => toggle('codex', on)} />
         </Cell>
       </div>
@@ -183,8 +183,8 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
 
       <div className="phone-head">Board</div>
       <div className="phone-group">
-        <Cell label="Profiles" value={profile?.name ?? 'All projects'} onPress={() => go({ page: 'profiles' })} />
-        <Cell label="Projects" value={String(settings.projects.length)} onPress={() => go({ page: 'projects' })} />
+        <Cell label="Profiles" value={profile?.name ?? 'All folders'} onPress={() => go({ page: 'profiles' })} />
+        <Cell label="Folders" value={String(settings.projects.length)} onPress={() => go({ page: 'projects' })} />
         <Cell label="Hidden conversations" onPress={() => go({ page: 'hidden' })} />
       </div>
 
@@ -304,10 +304,10 @@ function Profiles({
   return (
     <Page title="Profiles" back={back} onBack={onBack}>
       <div className="phone-group">
-        <Cell label="All projects" chosen={settings.profile === ''} onPress={() => use('')} />
+        <Cell label="All folders" chosen={settings.profile === ''} onPress={() => use('')} />
         {settings.profiles.map((one) => (
           <div key={one.id} className="phone-cell-pair">
-            <Cell label={one.name} says={`${String(one.projects.length)} ${one.projects.length === 1 ? 'project' : 'projects'}`} chosen={settings.profile === one.id} onPress={() => use(one.id)} />
+            <Cell label={one.name} says={`${String(one.projects.length)} ${one.projects.length === 1 ? 'folder' : 'folders'}`} chosen={settings.profile === one.id} onPress={() => use(one.id)} />
             <button type="button" className="phone-icon" aria-label={`Edit ${one.name}`} onClick={() => onOpen(one.id)}>
               <Icon name="pencil" size={18} />
             </button>
@@ -350,7 +350,7 @@ function Profile({ chat, id, back, onBack }: { readonly chat: Chat; readonly id:
           }}
         />
       </div>
-      <div className="phone-head">Projects</div>
+      <div className="phone-head">Folders</div>
       <div className="phone-group">
         {settings.projects.map((root) => {
           const on = profile.projects.includes(root)
@@ -375,7 +375,7 @@ function Profile({ chat, id, back, onBack }: { readonly chat: Chat; readonly id:
         <Menu
           anchor={new DOMRect()}
           title={`Delete "${profile.name}"?`}
-          choices={[{ value: 'delete', label: 'Delete', says: 'Its projects and conversations stay', danger: true }]}
+          choices={[{ value: 'delete', label: 'Delete', says: 'Its folders and conversations stay', danger: true }]}
           onPick={() => {
             chat.change({ profiles: settings.profiles.filter((one) => one.id !== id), ...(settings.profile === id ? { profile: '' } : {}) })
             onBack()
@@ -392,7 +392,7 @@ function Projects({ chat, back, onBack }: { readonly chat: Chat; readonly back: 
   const [adding, setAdding] = useState(false)
   const settings = chat.settings
   return (
-    <Page title="Projects" back={back} onBack={onBack}>
+    <Page title="Folders" back={back} onBack={onBack}>
       <div className="phone-group">
         {settings.projects.map((root) => (
           <div key={root} className="phone-cell-pair">
@@ -412,7 +412,7 @@ function Projects({ chat, back, onBack }: { readonly chat: Chat; readonly back: 
         ))}
       </div>
       <div className="phone-group phone-form-group">
-        <Cell label="Add a project" accent onPress={() => setAdding(true)} />
+        <Cell label="Add a folder" accent onPress={() => setAdding(true)} />
       </div>
       {adding ? <PhoneProject chat={chat} add onClose={() => setAdding(false)} /> : null}
       {forgetting === undefined ? null : (

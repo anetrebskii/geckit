@@ -19,6 +19,7 @@ Every task Alex starts runs at once. With ten started in a morning, ten conversa
 | Board, In progress column (`Board.tsx`), existing | The column keeps the order it is dragged into, with a line where a dragged card would land. The count in its head reads "2 of 3 working" when a limit is set. There is no separate queue: a conversation whose messages wait is a card like any other | Always |
 | Card, existing | "Waiting for a slot" where "Claude is working" would stand, and "N queued" beside it | While its messages wait for a slot |
 | Queued messages under the transcript, existing | "1 queued, waiting for a slot: 3 of 3 conversations working, the limit in Settings. The first goes when one of them stops." Each message can be changed or taken back as before | While they wait for a slot |
+| Queued messages under the transcript, desktop and phone | When two or more messages wait, each row has a reorder handle. Drag a handle to place the message before or after another row; a line shows the landing place. With the handle focused, Up and Down move the message one place. The order changes immediately and is saved with the queue | While at least two messages wait |
 | Composer, New task and Ask forms, existing | Send and Start read "Queue", with "3 of 3 working. This waits until one of them stops." | When the limit is full and the message would wait |
 | Request block (`Request.tsx`), existing | A task started while full says "queued" on its row, and the head "Started 1, queued 1" | When a started task waits for a slot |
 | Phone board, existing | "Waiting for a slot" on the row. In progress keeps the board's order, and a row held, then moved up or down, lifts and takes a new place there; held near the top or bottom it scrolls the list. In the bar beside the icons, a pill "2/6", green while one works and in the warning colour when full; pressing it picks the limit. Settings, New tasks, has "Working at once". A message queued for a slot says why on a line over the field, as the Mac's composer does | As on the card |
@@ -32,6 +33,8 @@ A conversation holds a slot only while Claude works in it. What the count says i
 When a job is done, GeckIt waits a random 3 to 10 seconds, then looks at the cards from the top of In progress and starts those with queued messages, as many as there is room for. Answering the conversation that just finished within that pause goes at once, since its slot is free.
 
 A conversation waits for a slot when it has queued messages and no turn running. A free slot goes to the waiting conversation highest in In progress, as the board is ordered. When one gets a slot, its first queued message is sent.
+
+Inside that conversation, queued messages go in the order shown. Moving a queued message only changes messages still waiting; it does not interrupt a running turn. A message already sent cannot be moved. If a queued message is sent or removed during a drag, dropping it makes no change.
 
 A turn that ends with messages of its own queued does not simply go on to its next message: after the pause the board is looked at from the top, and a conversation higher up with queued messages goes first. Pressing Stop is a job ending the same way.
 

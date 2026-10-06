@@ -518,7 +518,7 @@ async function readRecorded(recording: Recording): Promise<Answered> {
   const line = read.plan?.[at]
   if (planned === undefined || start === undefined || line === undefined) {
     planned = undefined
-    return { ok: false, error: 'No project fits what was said. Name the project and try again.' }
+    return { ok: false, error: 'No folder fits what was said. Name the folder and try again.' }
   }
   planned = { orders: [start], told: planned.told, images: pictures(recording), recording }
   return { ok: true, plan: [line], heard: recording.text }
@@ -681,29 +681,34 @@ async function cliAsked(ask: CliAsked, gone: AbortSignal): Promise<CliAnswered> 
 async function startAsked(ask: StartAsked, gone: AbortSignal): Promise<StartAnswered> {
   const held = sessions
   if (held === undefined) return { ok: false, error: 'GeckIt is not ready yet.' }
-  if (typeof ask.from !== 'string' || ask.from === '') return { ok: false, error: 'Run this from a Claude Code session.' }
+  if (typeof ask.from !== 'string' || ask.from === '') return { ok: false, error: 'Run this from a Claude Code or Codex session.' }
   const tasks = Array.isArray(ask.tasks) ? ask.tasks : []
   if (tasks.length === 0) return { ok: false, error: 'Task 1 has no text.' }
   if (tasks.length > 20) return { ok: false, error: 'At most 20 tasks at once.' }
   const projects = getSettings().projects
+  const listed = await held.list(projects)
+  const from = held.requestOrigin(ask.from)
+  if (!listed.some((one) => one.id === from)) {
+    return { ok: false, error: "This conversation's folder is not one of your folders in GeckIt." }
+  }
   const asking: Asking[] = []
   for (const [index, task] of tasks.entries()) {
     const root = projects.find((one) => projectSaid(one, hostNamed) === task.project)
     if (root === undefined) {
       const names = projects.map((one) => projectSaid(one, hostNamed)).join(', ')
-      return { ok: false, error: `Task ${String(index + 1)}: no project called ${String(task.project)}. There are: ${names}` }
+      return { ok: false, error: `Task ${String(index + 1)}: no folder called ${String(task.project)}. There are: ${names}` }
     }
     const text = typeof task.text === 'string' ? task.text.trim() : ''
     if (text === '') return { ok: false, error: `Task ${String(index + 1)} has no text.` }
     const title = typeof task.title === 'string' && task.title.trim() !== '' ? task.title.trim() : text.split(/(?<=[.!?])\s/)[0] ?? text
     const goal = typeof task.goal === 'string' && task.goal.trim() !== '' ? task.goal.trim() : undefined
-    asking.push({ project: task.project, root, title: firstLine(title, 100), text, ...(goal === undefined ? {} : { goal }) })
+    const provider = task.provider ?? providerOf(from)
+    if (provider !== 'claude' && provider !== 'codex') return { ok: false, error: `Task ${String(index + 1)}: provider ${provider} is not installed.` }
+    if (!assistantsIn(getSettings()).includes(provider)) return { ok: false, error: `Task ${String(index + 1)}: provider ${provider} is not enabled.` }
+    asking.push({ provider, project: task.project, root, title: firstLine(title, 100), text, ...(goal === undefined ? {} : { goal }) })
   }
-  if (!(await held.list(projects)).some((one) => one.id === ask.from)) {
-    return { ok: false, error: "This conversation's folder is not one of your projects in GeckIt." }
-  }
-  const answered = await held.request(ask.from, asking, getSettings().chatMode, gone)
-  return answered === undefined ? { ok: false, error: 'Claude stopped waiting.' } : { ok: true, ...answered }
+  const answered = await held.request(from, asking, getSettings().chatMode, gone)
+  return answered === undefined ? { ok: false, error: 'The requesting conversation stopped waiting.' } : { ok: true, ...answered }
 }
 
 /** The yes: what was read out loud a moment ago is carried out now. */
@@ -1049,7 +1054,7 @@ function wire(): void {
   ipcMain.handle('chat:addProject', async () => {
     const window = shownChat() ?? chatWindow()
     const picked = await dialog.showOpenDialog(window, {
-      title: 'Choose a project',
+      title: 'Choose a folder',
       properties: ['openDirectory', 'createDirectory'],
     })
     const root = picked.filePaths[0]
@@ -1097,6 +1102,7 @@ function wire(): void {
   ipcMain.handle('chat:unqueue', (_event, id: string, queued: string) => sessions?.unqueue(id, queued))
   ipcMain.handle('chat:queuedPicture', (_event, id: string, queued: string, index: number) => sessions?.queuedPicture(id, queued, index))
   ipcMain.on('chat:requeue', (_event, id: string, queued: string, text: string) => sessions?.requeue(id, queued, text))
+  ipcMain.on('chat:reorderQueued', (_event, id: string, queued: string, target: string, after: boolean) => sessions?.reorderQueued(id, queued, target, after))
   ipcMain.handle('chat:delegate', (_event, id: string, queued: string, history: boolean) =>
     sessions?.delegate(id, queued, history),
   )
@@ -1302,6 +1308,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.unqueue': (id: string, queued: string) => held()?.unqueue(id, queued),
     'chat.queuedPicture': (id: string, queued: string, index: number) => held()?.queuedPicture(id, queued, index),
     'chat.requeue': (id: string, queued: string, text: string) => held()?.requeue(id, queued, text),
+    'chat.reorderQueued': (id: string, queued: string, target: string, after: boolean) => held()?.reorderQueued(id, queued, target, after),
     'chat.delegate': (id: string, queued: string, history: boolean) => held()?.delegate(id, queued, history),
     'chat.mode': (id: string, mode: SessionMode) => held()?.mode(id, mode),
     'chat.rename': (id: string, title: string) => held()?.rename(id, title),

@@ -1,6 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createServer } from 'node:net'
+import type { StartAsked } from '../src/main/asked'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,7 +15,7 @@ const codex = vi.hoisted(() => ({ list: vi.fn<(roots: readonly string[]) => Prom
 vi.mock('../src/main/sessions/codex', () => ({ CodexSessions: class { list = codex.list; read = codex.read; dispose = codex.dispose } }))
 vi.mock('../src/main/sessions/disk', async (original) => ({ ...await original<typeof Disk>(), listClaude: async () => [] }))
 
-import { run } from '../src/cli'
+import { run, start } from '../src/cli'
 
 const ROOT = '/work/app'
 const ID = 'codex:019f0000-0000-7000-8000-000000000001'
@@ -36,6 +38,29 @@ afterEach(() => {
 })
 
 describe('Codex conversations in the GeckIt CLI', () => {
+  it('sends a Codex-qualified parent and requested title over the CLI socket', async () => {
+    vi.stubEnv('CODEX_THREAD_ID', ID.slice(6))
+    vi.stubEnv('CLAUDE_CODE_SESSION_ID', 'inherited-claude')
+    const received: StartAsked[] = []
+    const server = createServer((socket) => {
+      socket.setEncoding('utf8')
+      socket.on('data', (text: string) => {
+        received.push(JSON.parse(text) as StartAsked)
+        socket.end(JSON.stringify({ ok: true, tasks: [{ answer: 'queued', id: 'codex:child' }] }))
+      })
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(join(folder, 'geckit.sock'), resolve)
+    })
+    try {
+      expect(await start(['--project', 'app', '--title', 'Requested title', 'Fix it'])).toEqual({ ok: true, said: '1 Queued codex:child' })
+      expect(received).toEqual([{ from: ID, tasks: [{ project: 'app', title: 'Requested title', text: 'Fix it' }] }])
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)))
+    }
+  })
+
   it('lists migrated metadata, favorites and exact history', async () => {
     const result = await run(['sessions', '--provider', 'codex', '--status', 'done', '--favorites', '--json'])
     expect(JSON.parse(result)).toEqual([{ id: ID, provider: 'codex', at: new Date(2000).toISOString(), project: 'app', root: ROOT, status: 'done', title: 'GeckIt title', favorite: true, last: 'Finished', history: [{ status: 'created', at: new Date(500).toISOString() }, { status: 'review', at: new Date(1500).toISOString() }, { status: 'done', at: new Date(2000).toISOString() }] }])

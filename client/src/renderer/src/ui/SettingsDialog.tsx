@@ -174,7 +174,7 @@ function Assistants({ settings, change }: Part): React.JSX.Element {
         <label className="assistant-option">
           <span className="assistant-option-copy">
             <span className="assistant-option-name">Codex</span>
-            <span className="assistant-option-description">Your ChatGPT plan. Local projects only.</span>
+            <span className="assistant-option-description">Your ChatGPT plan. Local folders only.</span>
           </span>
           <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Use Codex" aria-describedby="assistant-settings-note" checked={enabled.includes('codex')} disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(event) => toggle('codex', event.target.checked)} />
         </label>
@@ -359,7 +359,7 @@ function Updates({ settings, change }: Part): React.JSX.Element {
   )
 }
 
-const counted = (count: number): string => `${String(count)} ${count === 1 ? 'project' : 'projects'}`
+const counted = (count: number): string => `${String(count)} ${count === 1 ? 'folder' : 'folders'}`
 
 /**
  * The projects under where they are, Local first and then each host, as the
@@ -398,7 +398,7 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
     made.current = id
   }
   const rows = [
-    { id: '', name: 'All projects', says: 'Every project, always' },
+    { id: '', name: 'All folders', says: 'Every folder, always' },
     ...profiles.map((one) => ({
       id: one.id,
       name: one.name.trim() === '' ? 'New profile' : one.name,
@@ -449,9 +449,9 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
             />
           </div>
           <div className="field">
-            <label>Projects in this profile</label>
+            <label>Folders in this profile</label>
             {settings.projects.length === 0 ? (
-              <span style={NOTE}>Add a project first, from the project picker.</span>
+              <span style={NOTE}>Add a folder first, from the folder picker.</span>
             ) : (
               <div className="projects-listed">
                 {byWhere(settings).map((group) => [
@@ -484,8 +484,8 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
               </div>
             )}
             <span style={NOTE}>
-              The board, the project picker, New task, search and shortcuts show only these projects. Conversations in
-              other projects keep running and still tell you when they need you.
+              The board, the folder picker, New task, search and shortcuts show only these folders. Conversations in
+              other folders keep running and still tell you when they need you.
             </span>
           </div>
           <div>

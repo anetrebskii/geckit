@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { answerLines, tasksFrom } from '../src/cli/start'
+import { answerLines, requestingSession, tasksFrom } from '../src/cli/start'
 import type { holdClaude } from '../src/main/sessions/claude'
 import type { Driver } from '../src/main/sessions/heard'
 import { memoryNotes, Sessions, startsConversations } from '../src/main/sessions'
-import type { Asking, SessionNotice } from '../src/main/sessions'
-import type { ChatSession, SessionItem, SessionItems } from '../src/shared/api'
+import type { Asking, SessionNotice, SessionsDeps } from '../src/main/sessions'
+import type { ChatSession, SessionItem, SessionItems, SessionProvider } from '../src/shared/api'
 
 /**
  * Conversations Claude asks GeckIt to start with `geckit start`: shown in the
@@ -16,7 +16,7 @@ import type { ChatSession, SessionItem, SessionItems } from '../src/shared/api'
 const ROOT = '/work/app'
 const OTHER = '/work/other'
 
-function build(limit = 0): {
+function build(limit = 0, providers: readonly SessionProvider[] = []): {
   readonly sessions: Sessions
   readonly sent: string[]
   readonly rows: (readonly ChatSession[])[]
@@ -45,7 +45,25 @@ function build(limit = 0): {
   const rows: (readonly ChatSession[])[] = []
   const fanned: SessionItems[] = []
   const notices: SessionNotice[] = []
+  let created = 0
+  const codex: SessionsDeps['codex'] = providers.includes('codex') ? {
+    account: async () => ({ provider: 'codex', here: true, signedIn: true }),
+    models: async () => [],
+    create: async () => `codex:child-${created++}`,
+    list: async () => [],
+    read: async () => ({ items: [], tasks: [] }),
+    turns: async () => [],
+    search: async () => [],
+    delete: async () => true,
+    rename: () => undefined,
+    hold: claude,
+    dispose: () => undefined,
+    goal: async () => null,
+    setGoal: async () => { throw new Error('No goal expected') },
+    clearGoal: async () => undefined,
+  } : undefined
   const sessions = new Sessions({
+    ...(codex === undefined ? {} : { codex }),
     notes: memoryNotes(),
     changed: (all) => rows.push(all),
     items: (said) => fanned.push(said),
@@ -112,7 +130,7 @@ describe('a request to start conversations', () => {
     expect(built.sent).toContain('Fix the flaky upload test.\n\nNote: use the fixture')
     const child = said?.tasks[0]?.id ?? ''
     expect(row(built.rows, child)?.goal?.condition).toBe('npm test passes')
-    expect(row(built.rows, child)?.parent).toBe(asker)
+    expect(row(built.rows, child)).toMatchObject({ parent: asker, title: 'Fix the flaky test', root: ROOT })
     expect(row(built.rows, asker)?.state).not.toBe('asks')
     expect(request(built.fanned)).toMatchObject({
       answer: { how: 'answered', where: 'mac', reply: 'later' },
@@ -144,6 +162,51 @@ describe('a request to start conversations', () => {
     expect(built.sent).toEqual(['look around'])
     expect(row(built.rows, child)).toMatchObject({ waits: true, parent: asker, queued: [{ text: 'Fix the flaky upload test.' }, { text: '/goal npm test passes' }] })
     expect(request(built.fanned)?.tasks[0]).toMatchObject({ started: child })
+  })
+
+  it.each(['codex', 'claude'] as const)('inherits %s for each child and preserves title, project and linkage', async (provider) => {
+    const built = build(0, ['codex'])
+    const asker = await built.sessions.send({ provider, root: ROOT, mode: 'manual', text: 'look around' })
+    const answer = built.sessions.request(asker, TASKS.map(({ goal: _goal, ...task }) => task), 'auto', new AbortController().signal)
+    await built.sessions.startAll(request(built.fanned)?.id ?? '', 'mac')
+    const said = await answer
+    for (const [index, task] of TASKS.entries()) {
+      const child = said?.tasks[index]?.id ?? ''
+      expect(provider === 'codex' ? child.startsWith('codex:') : !child.includes(':')).toBe(true)
+      expect(row(built.rows, child)).toMatchObject({ parent: asker, title: task.title, root: task.root })
+    }
+  })
+
+  it('preserves an explicit supported provider choice', async () => {
+    const built = build(0, ['codex'])
+    const asker = await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'look around' })
+    const answer = built.sessions.request(asker, TASKS.slice(1).map((task) => ({ ...task, provider: 'claude' })), 'auto', new AbortController().signal)
+    await built.sessions.startAll(request(built.fanned)?.id ?? '', 'mac')
+    const child = (await answer)?.tasks[0]?.id ?? ''
+    expect(child.includes(':')).toBe(false)
+    expect(row(built.rows, child)).toMatchObject({ title: 'Honour Retry-After', root: OTHER, parent: asker })
+  })
+
+  it('rejects unavailable providers instead of falling back to Claude', async () => {
+    const built = build()
+    await expect(built.sessions.send({ provider: 'plugin:missing', root: ROOT, mode: 'auto', text: 'Fix it' })).rejects.toThrow('Provider plugin:missing is not installed.')
+    expect(built.sent).toEqual([])
+  })
+
+  it('retains provider and title when the child waits for a slot and later starts', async () => {
+    const built = build(1, ['codex'])
+    const asker = await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'look around' })
+    const answer = built.sessions.request(asker, TASKS.slice(1), 'auto', new AbortController().signal)
+    await built.sessions.startAll(request(built.fanned)?.id ?? '', 'mac')
+    const said = await answer
+    const child = said?.tasks[0]?.id ?? ''
+    expect(said?.tasks[0]?.answer).toBe('queued')
+    expect(child.startsWith('codex:')).toBe(true)
+    expect(row(built.rows, child)).toMatchObject({ title: 'Honour Retry-After', root: OTHER, parent: asker, waits: true })
+    built.sessions.carryOn(child)
+    expect(row(built.rows, child)).toMatchObject({ title: 'Honour Retry-After', root: OTHER, parent: asker })
+    await vi.waitFor(() => expect(built.sent).toContain('Honour Retry-After on 429.'))
+    expect(row(built.rows, child)?.title).toBe('Honour Retry-After')
   })
 
   it('is withdrawn when the command stops waiting, and nothing starts', async () => {
@@ -196,6 +259,18 @@ describe('geckit start', () => {
     expect(tasksFrom(['--conversations', 'x.json'], () => '[{"project":"app","text":"a"},{"project":"app","text":" "}]')).toBe('Conversation 2 has no text.')
     expect(tasksFrom(['--tasks', 'x.json'], () => JSON.stringify(Array(21).fill({ project: 'a', text: 'b' })))).toBe('At most 20 conversations at once.')
     expect(tasksFrom(['--tasks', '-'], () => '{')).toBe('stdin is not a JSON array of conversations.')
+  })
+
+  it('detects Codex origin before an inherited Claude session variable', () => {
+    expect(requestingSession({ CODEX_THREAD_ID: 'thread', CLAUDE_CODE_SESSION_ID: 'claude-parent' })).toBe('codex:thread')
+    expect(requestingSession({ CLAUDE_CODE_SESSION_ID: 'claude-parent' })).toBe('claude-parent')
+    expect(requestingSession({})).toBeUndefined()
+  })
+
+  it('reads explicit providers from flags and batches', () => {
+    expect(tasksFrom(['--project', 'app', '--provider', 'codex', 'Fix it'], () => '')).toEqual([{ project: 'app', text: 'Fix it', provider: 'codex' }])
+    expect(tasksFrom(['--tasks', '-'], () => '[{"project":"app","provider":"plugin:codex-mirror","text":"Fix it"}]')).toEqual([{ project: 'app', text: 'Fix it', provider: 'plugin:codex-mirror' }])
+    expect(tasksFrom(['--project', 'app', '--provider', 'missing', 'Fix it'], () => '')).toBe('Conversation 1: unsupported provider missing.')
   })
 
   it('prints a line per task in the order sent, then the reply', () => {

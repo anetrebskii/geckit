@@ -164,7 +164,7 @@ export function PhoneInfo({
         {session.model === undefined ? null : <Cell label="Model" value={session.model} />}
         {chat.provider !== 'codex' || session.actualReasoning === undefined ? null : <Cell label="Reasoning" value={session.actualReasoning === 'xhigh' ? 'Extra high' : session.actualReasoning.charAt(0).toUpperCase() + session.actualReasoning.slice(1)} />}
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === session.mode)?.label ?? '-'} />
-        <Cell label="Project" value={projectLabel(homeOf(session))} />
+        <Cell label="Folder" value={projectLabel(homeOf(session))} />
         {parent === undefined ? null : (
           <Cell
             label="From"
@@ -257,7 +257,7 @@ export function PhoneInfo({
         ) : (
           <Cell label="Compact" says="Summarise it so far to free up its context" accent onPress={() => setAsking('compact')} />
         )}
-        <Cell label="Clear" says="Start a new task in this project" danger onPress={() => setAsking('clear')} />
+        <Cell label="Clear" says="Start a new task in this folder" danger onPress={() => setAsking('clear')} />
       </div>
 
       {chat.provider === 'codex' ? <><div className="phone-head">ChatGPT plan</div><CodexLimits limits={chat.account?.limits} /></> : mine?.fiveHour === undefined && mine?.sevenDay === undefined ? null : (

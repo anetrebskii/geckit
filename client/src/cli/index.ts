@@ -8,11 +8,10 @@ import { providerOf } from '../shared/api'
 import type { Settings, SessionStatus } from '../shared/api'
 import { claudeFile, listClaude, readClaudeSession, readSessionAt, slug } from '../main/sessions/disk'
 import type { Conversation, Found } from '../main/sessions/disk'
-import { belowRoot } from '../main/sessions'
 import type { Move, SessionNote } from '../main/sessions'
 import { CodexSessions } from '../main/sessions/codex'
-import { hostOf, isRemote, pathOf } from '../shared/hosts'
-import { answerLines, tasksFrom } from './start'
+import { belowRoot, hostOf, isRemote, pathOf } from '../shared/hosts'
+import { answerLines, requestingSession, tasksFrom } from './start'
 import type { Answer } from './start'
 import { migrate } from './migrate'
 
@@ -167,10 +166,10 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
       When it was created and moved between columns, then what the person and assistant said, without what the tools printed.
       The id is the one sessions prints; the first few characters are enough. --last keeps only the last n things said.
 
-  geckit start --project <name> [--title <title>] [--goal <condition>] <text>
+  geckit start --project <name> [--title <title>] [--goal <condition>] [--provider <provider>] <text>
   geckit start --conversations <file> [--json]
       Asks GeckIt to start conversations, one or a batch of up to 20, and waits for the answer.
-      The file, or - for stdin, is an array of { "project", "title", "text", "goal" }.
+      The file, or - for stdin, is an array of { "project", "title", "text", "goal", "provider" }.
       GeckIt shows the request in this conversation; nothing starts until the person answers there.
       Prints a line per conversation in the order sent, started or queued with its id, or refused, with the person's note, then their reply.
 
@@ -258,11 +257,11 @@ async function show(args: readonly string[]): Promise<string> {
 }
 
 /** One request to the running application, answered once the person has answered it there. */
-function start(args: readonly string[]): Promise<{ readonly said: string; readonly ok: boolean }> {
+export function start(args: readonly string[]): Promise<{ readonly said: string; readonly ok: boolean }> {
   const tasks = tasksFrom(args, (file) => readFileSync(file === '-' ? 0 : file, 'utf8'))
   if (typeof tasks === 'string') return Promise.resolve({ ok: false, said: tasks })
-  const from = process.env['CLAUDE_CODE_SESSION_ID']
-  if (from === undefined || from === '') return Promise.resolve({ ok: false, said: 'Run this from a Claude Code session.' })
+  const from = requestingSession()
+  if (from === undefined) return Promise.resolve({ ok: false, said: 'Run this from a Claude Code or Codex session.' })
   return new Promise((done) => {
     const socket = connect(join(data(), 'geckit.sock'))
     let rest = ''
@@ -285,8 +284,7 @@ function start(args: readonly string[]): Promise<{ readonly said: string; readon
 
 /** What a conversation is linked to: the one that asked for it, the ones it asked for, and what it was refused. */
 async function linked(args: readonly string[]): Promise<string> {
-  const thread = process.env['CODEX_THREAD_ID']
-  const asked = args.find((one) => !one.startsWith('--')) ?? process.env['CLAUDE_CODE_SESSION_ID'] ?? (thread === undefined ? undefined : `codex:${thread}`)
+  const asked = args.find((one) => !one.startsWith('--')) ?? requestingSession()
   if (asked === undefined || asked === '') return 'Run this from a Claude Code or Codex session, or give an id.'
   const notes = kept<Record<string, SessionNote>>('sessions.json', {})
   const all = await rows()

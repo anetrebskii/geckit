@@ -41,7 +41,7 @@ import type {
   WorkItem,
 } from '../../shared/api'
 import { providerOf, sessionMode } from '../../shared/api'
-import { hostOf, isRemote, pathOf, remoteRoot } from '../../shared/hosts'
+import { belowRoot, isRemote, pathOf } from '../../shared/hosts'
 import type { Link } from '../../shared/links'
 import { linksIn, workItem } from '../../shared/links'
 import { claudeAccount, claudeProgram } from './account'
@@ -263,6 +263,7 @@ interface Live {
   ran: string | undefined
   /** The tool has a conversation under this id, so it is picked up rather than begun. */
   begun: boolean
+  messages: number
   items: Map<string, SessionItem>
   kept: Kept[]
   /** The line of a thing being asked about, taken down while its card is up. */
@@ -298,6 +299,7 @@ interface Live {
   stopping: NodeJS.Timeout | undefined
   /** Set with /goal, as the tool's file last said or as it was just sent. */
   goal: SessionGoal | undefined
+  goalStatus: Extract<SessionStatus, 'review' | 'blocked'> | undefined
   /** The goal was cleared while the turn ran, and the tool is told once it has stopped. */
   clearing: boolean
   /** Messages sent while it worked, oldest first. */
@@ -374,10 +376,7 @@ const there = (path: string): Promise<boolean> =>
  * computer, since that is all a script run over ssh knows to say. Read here as
  * a project root is everywhere else, `ssh://<host><path>`, unless it is one already.
  */
-export const belowRoot = (root: string, below: string): string => {
-  const host = hostOf(root)
-  return host === undefined || isRemote(below) ? below : remoteRoot(host, below)
-}
+export { belowRoot } from '../../shared/hosts'
 
 
 /** What "for this session" is remembered under, or nothing where it cannot be. */
@@ -617,16 +616,15 @@ export class Sessions {
       const note = this.#deps.notes.all()[row.id]
       if (row.importedFrom !== undefined && note?.importedFrom === undefined) {
         const original = this.#deps.notes.all()[row.importedFrom]
-        const source = this.#rows.get(row.importedFrom)
-        const visible = original?.hidden !== true && (original?.here === true || original?.shown === true || (source !== undefined && !source.driven))
         const migrated = importedNote(original ?? {}, note, row.importedFrom, importedIds)
-        notes[row.id] = { ...migrated, importedMetadata: 0, here: migrated.here ?? false, shown: migrated.shown ?? visible, hidden: migrated.hidden ?? !visible }
+        notes[row.id] = { ...migrated, importedMetadata: 0, here: migrated.here ?? false, shown: migrated.shown ?? false, hidden: migrated.hidden ?? false }
         imported = true
       }
       this.#rows.set(row.id, row)
     }
     if (imported) this.#deps.notes.replace(notes)
     const goalRows = codexRows.filter((row) => this.#live.get(row.id)?.driver === undefined && (this.#deps.notes.all()[row.id]?.goal !== undefined || row.id === this.#watching))
+    const messages = goalRows.map((row) => this.#live.get(row.id)?.messages)
     const goals = await Promise.all(goalRows.map((row) => this.#deps.codex?.goal(row.id).catch(() => undefined)))
     for (const [index, row] of goalRows.entries()) {
       const goal = goals[index]
@@ -634,6 +632,8 @@ export class Sessions {
       if (goal === undefined || note === undefined) continue
       const shown = goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
       const live = this.#live.get(row.id)
+      if (live?.messages !== messages[index] || live?.driver !== undefined || (live?.queued.length ?? 0) > 0) continue
+      if (goal !== null && goal.status === 'complete' && live !== undefined && live.messages > 0 && live.goal === undefined) continue
       if (live !== undefined) live.goal = shown
       const status = goal !== null && (goal.status === 'complete' || goal.status === 'blocked' || goal.status === 'budgetLimited' || goal.status === 'usageLimited') && note.status === undefined
         ? goal.status === 'complete' ? 'review' : 'blocked'
@@ -823,6 +823,17 @@ export class Sessions {
     }, 0)
   }
 
+  requestOrigin(session: string): string {
+    if (!session.startsWith('codex:')) return session
+    const thread = session.slice('codex:'.length)
+    const running = [...this.#live.values()].filter((live) =>
+      live.driver !== undefined && (live.state === 'working' || live.state === 'asks') &&
+      (live.id === session || live.id.startsWith('plugin:') && live.id.endsWith(`:${thread}`)),
+    )
+    if (running.length > 1) throw new Error('More than one active conversation uses this Codex thread. Give the provider-qualified parent ID.')
+    return running[0]?.id ?? session
+  }
+
   /**
    * Claude asks, with `geckit start`, for conversations to be started. The
    * request is shown in the conversation that asked and nothing starts until
@@ -830,6 +841,7 @@ export class Sessions {
    * Nothing comes back where the command stopped waiting first.
    */
   request(session: string, tasks: readonly Asking[], mode: SessionMode, gone: AbortSignal): Promise<RequestAnswered | undefined> {
+    session = this.requestOrigin(session)
     const live = this.#live.get(session) ?? this.#adopt(session)
     if (live === undefined) return Promise.resolve(undefined)
     const item: SessionItem = { kind: 'request', id: `request:${randomUUID()}`, tasks: tasks.map(({ root: _root, ...task }) => task) }
@@ -874,7 +886,8 @@ export class Sessions {
       const text = note === undefined ? task.text : `${task.text}\n\nNote: ${note}`
       const noted = note === undefined ? {} : { note }
       if (tasks.some((one) => one.started !== undefined)) await new Promise<void>((resolve) => (this.#deps.later ?? after)(resolve, pause()))
-      const id = await this.send({ root, mode: pending.mode, text })
+      const id = await this.send({ root, mode: pending.mode, text, provider: task.provider ?? providerOf(live.id) })
+      this.rename(id, task.title)
       this.#note(id, { parent: live.id })
       if (task.goal !== undefined) await this.send({ session: id, root, mode: pending.mode, text: `/goal ${task.goal}` })
       const child = this.#live.get(id)
@@ -992,6 +1005,7 @@ export class Sessions {
       actualReasoning: undefined,
       ran: undefined,
       begun: false,
+      messages: 0,
       items: new Map(),
       kept: [],
       held: new Map(),
@@ -1016,6 +1030,7 @@ export class Sessions {
       back: undefined,
       stopping: undefined,
       goal: undefined,
+      goalStatus: undefined,
       clearing: false,
       queued: [],
       parked: false,
@@ -1069,11 +1084,12 @@ export class Sessions {
 
   /** `go` is a message that is part of a turn already given its slot, so the limit never holds it. */
   async send(message: SessionMessage, go = false): Promise<string> {
+    const provider = message.session === undefined ? message.provider ?? 'claude' : providerOf(message.session)
+    if (provider !== 'claude' && provider !== 'codex') throw new Error(`Provider ${provider} is not installed.`)
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
       const root = message.question === true ? homedir() : message.root
-      const provider = message.session === undefined ? message.provider ?? 'claude' : providerOf(message.session)
-      if (provider === 'codex' && isRemote(root)) throw new Error('Codex is available for local projects. Choose Claude Code for this host.')
+      if (provider === 'codex' && isRemote(root)) throw new Error('Codex is available for local folders. Choose Claude Code for this host.')
       if (provider === 'codex' && this.#deps.codex === undefined) throw new Error('Codex is not available. Install Codex and run codex login in a terminal.')
       const id = provider === 'codex' ? message.session ?? await this.#deps.codex?.create(root, message.mode, message.model) : randomUUID()
       if (id === undefined) throw new Error('Codex is not available. Install Codex and run codex login in a terminal.')
@@ -1102,6 +1118,9 @@ export class Sessions {
       }
       return live.id
     }
+    live.messages += 1
+    live.goalStatus = undefined
+    if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
     const busy = live.state === 'working' || live.state === 'asks'
     // Written by the person, it is theirs again to be sent; a message waits behind the ones already queued, and for a slot.
     if (!go) live.parked = false
@@ -1206,8 +1225,6 @@ export class Sessions {
       // Written as the turn starts, since a crash leaves no chance to write anything as it ends.
       cut: { root: live.root, at: this.#now() },
     })
-    // Said to again, it is being worked on, whatever it was marked.
-    if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
     this.#deps.items({ id: live.id, items: [mine], gone })
     this.#changed()
     live.begun = true
@@ -1230,7 +1247,7 @@ export class Sessions {
     const command = asked.command.trim()
     if (live === undefined) {
       const provider = asked.session === undefined ? asked.provider ?? 'claude' : providerOf(asked.session)
-      if (provider === 'codex' && isRemote(asked.root)) throw new Error('Codex is available for local projects.')
+      if (provider === 'codex' && isRemote(asked.root)) throw new Error('Codex is available for local folders.')
       if (provider === 'codex' && this.#deps.codex === undefined) throw new Error('Codex is not available.')
       const id = provider === 'codex' ? asked.session ?? await this.#deps.codex?.create(asked.root, 'auto') : randomUUID()
       if (id === undefined) throw new Error('Codex is not available.')
@@ -1615,6 +1632,19 @@ export class Sessions {
       live,
       live.queued.map((one, index) => (index === at ? { id: one.id, message: { ...was.message, text: said } } : one)),
     )
+    this.#changed()
+  }
+
+  reorderQueued(id: string, queued: string, target: string, after: boolean): void {
+    const live = this.#live.get(id) ?? this.#adopt(id)
+    if (live === undefined || queued === target) return
+    const moved = live.queued.find((one) => one.id === queued)
+    if (moved === undefined || !live.queued.some((one) => one.id === target)) return
+    const next = live.queued.filter((one) => one !== moved)
+    const at = next.findIndex((one) => one.id === target)
+    next.splice(at + (after ? 1 : 0), 0, moved)
+    if (next.every((one, index) => one === live.queued[index])) return
+    this.#queue(live, next)
     this.#changed()
   }
 
@@ -2083,6 +2113,7 @@ export class Sessions {
     live.spent = undefined
     live.running = undefined
     live.goal = undefined
+    live.goalStatus = undefined
     live.named = undefined
     this.#live.set(id, live)
     // Started by this application: without that it is taken for another program's and left out of the list.
@@ -2194,16 +2225,23 @@ export class Sessions {
         return
       case 'goal': {
         const previous = live.goal
+        const terminal = signal.status === 'complete' || signal.status === 'blocked' || signal.status === 'budgetLimited' || signal.status === 'usageLimited'
+        if (terminal && previous === undefined && signal.goal === undefined && live.messages > 0) return
         live.goal = signal.goal
         this.#note(live.id, { goal: signal.goal })
-        if (signal.status === 'complete' || signal.status === 'blocked' || signal.status === 'budgetLimited' || signal.status === 'usageLimited') {
+        if (terminal) {
           if (previous !== undefined) {
             const item: SessionItem = { kind: 'note', id: `goal:${String(this.#now())}`, note: 'goal', text: signal.status === 'complete' ? `Goal met: ${previous.condition}` : `Goal stopped: ${previous.condition}` }
             live.items.set(item.id, item)
             this.#deps.items({ id: live.id, items: [item] })
           }
-          if (this.#deps.notes.all()[live.id]?.status === undefined) this.#note(live.id, { status: signal.status === 'complete' ? 'review' : 'blocked' })
-        }
+          const status = signal.status === 'complete' ? 'review' : 'blocked'
+          if (live.state === 'working' || live.state === 'asks') {
+            live.goalStatus = live.queued.length === 0 ? status : undefined
+          } else if (live.queued.length === 0 && this.#deps.notes.all()[live.id]?.status === undefined) {
+            this.#note(live.id, { status })
+          }
+        } else live.goalStatus = undefined
         this.#changed()
         return
       }
@@ -2362,6 +2400,10 @@ export class Sessions {
       }
     }
 
+    if (live.goalStatus !== undefined && live.queued.length === 0 && this.#deps.notes.all()[live.id]?.status === undefined) {
+      this.#note(live.id, { status: live.goalStatus })
+    }
+    live.goalStatus = undefined
     live.at = now
     if (items.length > 0 || gone.length > 0) {
       this.#deps.items({ id: live.id, items, ...(gone.length > 0 ? { gone } : {}) })
@@ -2381,13 +2423,15 @@ export class Sessions {
 
   /** Where the goal stands once a turn is over, which only the tool's file says, and a line where it ended by itself. */
   async #goal(live: Live): Promise<void> {
+    const messages = live.messages
     if (providerOf(live.id) === 'codex') {
       const had = live.goal
       const goal = await this.#deps.codex?.goal(live.id).catch(() => undefined)
-      if (goal === undefined || this.#live.get(live.id) !== live || live.goal !== had) return
+      if (goal === undefined || this.#live.get(live.id) !== live || live.goal !== had || live.messages !== messages) return
       const shown = goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
       const terminal = goal !== null && (goal.status === 'complete' || goal.status === 'blocked' || goal.status === 'budgetLimited' || goal.status === 'usageLimited')
-      if (had?.condition === shown?.condition && (!terminal || this.#deps.notes.all()[live.id]?.status !== undefined)) return
+      if (terminal && (live.state === 'working' || live.state === 'asks' || live.queued.length > 0)) return
+      if (had?.condition === shown?.condition && (!terminal || had === undefined || this.#deps.notes.all()[live.id]?.status !== undefined)) return
       this.#signal(live, { kind: 'goal', goal: shown, ...(goal === null ? {} : { status: goal.status }) })
       return
     }
@@ -2395,7 +2439,7 @@ export class Sessions {
     const had = live.goal
     const read = await (this.#deps.disk?.goal ?? readGoal)(live.root, live.id).catch(() => undefined)
     // A goal sent while the file was being read is newer than anything it says.
-    if (read === undefined || this.#live.get(live.id) !== live || live.goal !== had) return
+    if (read === undefined || this.#live.get(live.id) !== live || live.goal !== had || live.messages !== messages) return
     live.goal = read.goal
     if (had !== undefined && read.goal === undefined && read.ended !== undefined) {
       const item: SessionItem = { ...read.ended, id: `goal:${String(this.#now())}` }
@@ -2404,7 +2448,7 @@ export class Sessions {
       // A goal is what finished means: it held, so this is for the person to look
       // at; it was given up on, so it is for the person to unblock. A mark made by
       // hand is left as it is - it says what they decided, which this does not know.
-      if (this.#deps.notes.all()[live.id]?.status === undefined) {
+      if (this.#deps.notes.all()[live.id]?.status === undefined && live.state !== 'working' && live.state !== 'asks' && live.queued.length === 0) {
         this.#note(live.id, { status: read.met === true ? 'review' : 'blocked' })
       }
     }

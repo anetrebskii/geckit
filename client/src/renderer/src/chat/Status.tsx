@@ -186,7 +186,7 @@ export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly on
           >
             Compact
           </button>
-          <button type="button" className="act" title="Start a new conversation in this project, for another task" onClick={onClear}>
+          <button type="button" className="act" title="Start a new conversation in this folder, for another task" onClick={onClear}>
             Clear
           </button>
         </>
@@ -221,7 +221,7 @@ function Compact({
 }): React.JSX.Element {
   const part = (window: PlanWindow | undefined): string => (window === undefined ? '—' : `${String(Math.round(window.part * 100))}%`)
   const tip = [
-    `${name}: the plan these projects run on${faint ? `, as of ${at === undefined ? 'last measured' : clockTime(at)}` : ''}`,
+    `${name}: the plan these folders run on${faint ? `, as of ${at === undefined ? 'last measured' : clockTime(at)}` : ''}`,
     usage?.fiveHour === undefined ? undefined : `5h ${part(usage.fiveHour)}, resets in ${until(usage.fiveHour.resetsAt, now)}`,
     usage?.sevenDay === undefined ? undefined : `Week ${part(usage.sevenDay)}, resets in ${until(usage.sevenDay.resetsAt, now)}`,
   ]

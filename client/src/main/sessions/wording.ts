@@ -143,7 +143,7 @@ export function claudeLine(
       return { done: 'Read what a background task printed', doing: 'reading what a background task printed' }
     case 'Grep': {
       const pattern = text(input['pattern'])
-      return { done: `Searched the project for ${pattern}`, doing: `searching for ${pattern}` }
+      return { done: `Searched the folder for ${pattern}`, doing: `searching for ${pattern}` }
     }
     case 'Glob': {
       const pattern = text(input['pattern'])
@@ -256,7 +256,7 @@ export function cardFor(wanted: Wanted, root: string): SessionCard {
         kind: 'permission',
         title: 'Wants to change a file',
         detail: wanted.paths.map((path) => shown(root, path)).join('\n'),
-        where: 'Outside this project',
+        where: 'Outside this folder',
       }
     }
     case 'read': {
@@ -266,7 +266,7 @@ export function cardFor(wanted: Wanted, root: string): SessionCard {
         kind: 'permission',
         title: 'Wants to read a file',
         detail: shown(root, wanted.path),
-        where: 'Outside this project',
+        where: 'Outside this folder',
       }
     }
     case 'web':
