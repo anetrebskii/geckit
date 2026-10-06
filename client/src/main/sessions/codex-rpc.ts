@@ -120,6 +120,11 @@ export class CodexRpc {
   }
 
   dispose(): void {
+    if (this.#closed) return
+    this.#closed = true
+    const error = new Error('Codex has disconnected.')
+    for (const waiting of this.#waiting.values()) waiting.fail(error)
+    this.#waiting.clear()
     this.#socket?.terminate()
     this.#child?.stdin.end()
     this.#child?.kill()

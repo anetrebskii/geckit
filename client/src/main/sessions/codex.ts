@@ -15,6 +15,7 @@ import { searchCodex } from './search'
 
 const native = (id: string): string => id.slice('codex:'.length)
 const shownGoal = (goal: CodexGoal | null): SessionGoal | undefined => goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
+const isDraining = (message?: string): boolean => message?.toLowerCase().includes('server is draining') ?? false
 
 interface Listener {
   event: (event: CodexEvent) => void
@@ -73,6 +74,12 @@ export class CodexSessions {
       rpc.dispose()
       throw error
     }
+  }
+
+  #discardConnection(rpc: CodexRpc | undefined): void {
+    if (rpc === undefined || this.#rpc !== rpc) return
+    this.#rpc = undefined
+    rpc.dispose()
   }
 
   async account(): Promise<ClaudeAccount> {
@@ -320,6 +327,7 @@ export class CodexSessions {
             signals({ kind: 'goal', goal: undefined })
             return
           case 'turn/completed':
+            if (event.params.turn.status === 'failed' && isDraining(event.params.turn.error?.message)) this.#discardConnection(rpc)
             ended(event.params.turn.status === 'completed' ? 'done' : event.params.turn.status === 'interrupted' ? 'stopped' : 'failed', event.params.turn.error?.message)
             return
           case 'item/started':
@@ -378,7 +386,10 @@ export class CodexSessions {
             return
           }
           case 'error':
-            if (!event.params.willRetry) ended('failed', event.params.error.message)
+            if (!event.params.willRetry) {
+              if (isDraining(event.params.error.message)) this.#discardConnection(rpc)
+              ended('failed', event.params.error.message)
+            }
             return
           default:
             if ('id' in event) rpc?.refuse((event as { id: RpcId }).id)
@@ -411,6 +422,12 @@ export class CodexSessions {
         stopped = false
         void ready.then(async () => {
           if (over || stopped) { ended('stopped'); return }
+          const previous = rpc
+          const connection = await this.#connection()
+          if (connection !== previous) {
+            rpc = connection
+            await connection.request('thread/resume', { ...codexOptions(options.root, options.mode, options.model), threadId, excludeTurns: true })
+          }
           if (text.trim() === '/compact') {
             await rpc?.request('thread/compact/start', { threadId })
             return
@@ -446,6 +463,7 @@ export class CodexSessions {
             sandboxPolicy: options.mode === 'plan' ? { type: 'readOnly', networkAccess: false } : { type: 'workspaceWrite', writableRoots: [options.root], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
           }
           const response = await rpc?.request('turn/start', params).catch(async (error: Error) => {
+            if (isDraining(error.message)) this.#discardConnection(rpc)
             if (error.message !== `thread not found: ${threadId}`) throw error
             if (over || stopped) { ended('stopped'); return }
             await rpc?.request('thread/resume', { ...codexOptions(options.root, options.mode, options.model), threadId, excludeTurns: true })
@@ -459,7 +477,10 @@ export class CodexSessions {
           const configured = await rpc?.request('thread/read', { threadId, includeTurns: false }).catch(() => undefined)
           if (!over && configured?.thread.model != null) signals({ kind: 'model', model: configured.thread.model })
           if (!over && configured?.thread.reasoningEffort != null) signals({ kind: 'reasoning', effort: configured.thread.reasoningEffort })
-        }).catch((error: Error) => ended('failed', error.message))
+        }).catch((error: Error) => {
+          if (isDraining(error.message)) this.#discardConnection(rpc)
+          ended('failed', error.message)
+        })
       },
       answer: (id, answer) => {
         const key = requests.has(id) ? id : id.slice(0, id.lastIndexOf('#'))
