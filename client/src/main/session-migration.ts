@@ -70,6 +70,7 @@ export function importedNote(source: SessionNote, target: SessionNote | undefine
   const parent = note.parent
   return {
     ...note,
+    ...(note.hidden === true ? {} : { shown: note.shown ?? note.here ?? false }),
     ...(parent === undefined ? {} : { parent: ids.get(parent) ?? parent }),
     ...(note.requests === undefined ? {} : { requests: note.requests.map((kept) => kept.item.kind !== 'request' ? kept : { ...kept, item: { ...kept.item, tasks: kept.item.tasks.map((task) => task.started === undefined ? task : { ...task, started: ids.get(task.started) ?? task.started }) } }) }),
   }

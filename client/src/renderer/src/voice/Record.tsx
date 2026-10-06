@@ -318,7 +318,7 @@ export function Record({ fill = false }: { readonly fill?: boolean }): React.JSX
       setState('planned')
       return
     }
-    fail(answer.error ?? 'No project fits what was said. Name the project and try again.', 'choose')
+    fail(answer.error ?? 'No folder fits what was said. Name the folder and try again.', 'choose')
   }, [text, recording, fail])
 
   const carryOut = useCallback(async () => {
@@ -394,7 +394,7 @@ export function Record({ fill = false }: { readonly fill?: boolean }): React.JSX
         {shown === 'writing' || shown === 'planning' || shown === 'doing' ? (
           <>
             <Icon name="spinner" className="glyph spinning" />
-            <span>{shown === 'writing' ? (model?.state === 'downloading' ? `${downloading(model)}. It is written down once that is done` : 'Writing it down') : shown === 'planning' ? 'Finding the project' : 'Doing it'}</span>
+            <span>{shown === 'writing' ? (model?.state === 'downloading' ? `${downloading(model)}. It is written down once that is done` : 'Writing it down') : shown === 'planning' ? 'Finding the folder' : 'Doing it'}</span>
           </>
         ) : shown === 'choosing' ? (
           <div className="asking recorded">

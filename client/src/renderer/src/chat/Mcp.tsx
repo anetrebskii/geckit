@@ -33,7 +33,7 @@ export function Mcp({ root, id }: { readonly root: string; readonly id: string |
   return (
     <Picker
       label="MCP"
-      tip="MCP servers for this project"
+      tip="MCP servers for this folder"
       title="MCP servers"
       explained
       choices={
@@ -41,7 +41,7 @@ export function Mcp({ root, id }: { readonly root: string; readonly id: string |
           ? [
               {
                 value: '__asking',
-                label: asking ? 'Asking Claude Code...' : servers === undefined ? 'Claude Code did not say' : 'None in this project',
+                label: asking ? 'Asking Claude Code...' : servers === undefined ? 'Claude Code did not say' : 'None in this folder',
               },
             ]
           : servers.map((one) => ({
@@ -51,7 +51,7 @@ export function Mcp({ root, id }: { readonly root: string; readonly id: string |
               on: one.status !== 'disabled',
             }))
       }
-      note="Switched for every conversation in this project, as /mcp does."
+      note="Switched for every conversation in this folder, as /mcp does."
       onOpen={() => ask()}
       onPick={(value) => {
         const server = servers?.find((one) => one.name === value)

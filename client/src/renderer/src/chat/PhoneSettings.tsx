@@ -4,6 +4,7 @@ import { assistantsIn, planLine, providerOf, SESSION_MODES, shownProjects } from
 import type { ClaudeAccount, Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, SessionProvider, ShortcutDraft, Theme } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
+import { isCodexProvider, llmProviderInfo } from '../../../shared/providers'
 import { ear, setEar, voice } from '../dictate'
 import type { Ear } from '../dictate'
 import { macs } from '../macs'
@@ -47,8 +48,10 @@ const THEMES: readonly { readonly value: Theme; readonly label: string }[] = [
 export function PhoneSettings({
   chat,
   onEdit,
+  onVpnSettings,
 }: {
   readonly chat: Chat
+  readonly onVpnSettings: () => void
   readonly onEdit: (draft: ShortcutDraft) => void
 }): React.JSX.Element {
   const [trail, setTrail] = useState<readonly Where[]>([{ page: 'root' }])
@@ -62,7 +65,7 @@ export function PhoneSettings({
       : one.page === 'profiles'
         ? 'Profiles'
         : one.page === 'projects'
-          ? 'Projects'
+          ? 'Folders'
           : 'Back'
   }
 
@@ -72,10 +75,10 @@ export function PhoneSettings({
   if (where.page === 'hidden') return <Hidden chat={chat} back={before()} onBack={back} />
   if (where.page === 'phrases') return <Phrases chat={chat} back={before()} onBack={back} />
   if (where.page === 'shortcuts') return <PhoneShortcuts chat={chat} back={before()} onBack={back} onEdit={onEdit} />
-  return <Root chat={chat} go={go} />
+  return <Root chat={chat} go={go} onVpnSettings={onVpnSettings} />
 }
 
-function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) => void }): React.JSX.Element {
+function Root({ chat, go, onVpnSettings }: Pick<Parameters<typeof PhoneSettings>[0], 'chat' | 'onVpnSettings'> & { readonly go: (where: Where) => void }): React.JSX.Element {
   const [picking, setPicking] = useState<'theme' | 'mode' | 'limit' | 'language' | 'ear' | undefined>()
   const [heardBy, setHeardBy] = useState<Ear>(ear)
   const [switching, setSwitching] = useState(false)
@@ -88,6 +91,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       .catch(() => undefined)
   }, [])
   const settings = chat.settings
+  const codexInfo = llmProviderInfo('codex', 'stream', settings.providerPlugins)
   const enabled = assistantsIn(settings)
   const [assistantAccounts, setAssistantAccounts] = useState<readonly ClaudeAccount[]>([])
   useEffect(() => {
@@ -103,7 +107,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
     }
   }, [enabled])
   const claudeAccount = assistantAccounts.find((one) => (one.provider ?? 'claude') === 'claude')
-  const codexAccount = assistantAccounts.find((one) => one.provider === 'codex')
+  const codexAccount = assistantAccounts.find((one) => isCodexProvider(one.provider ?? 'claude'))
   const toggle = (provider: SessionProvider, on: boolean): void => {
     const chatProviders = on ? [...enabled, provider] : enabled.filter((one) => one !== provider)
     if (chatProviders.length === 0) return
@@ -145,6 +149,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
           <div className="phone-head">Host</div>
           <div className="phone-group">
             <Cell label={thisMac?.name ?? 'Host'} says={paired.length > 1 ? `${String(paired.length)} hosts paired` : 'Paired'} onPress={() => setSwitching(true)} />
+            <Cell label="Agent VPN" icon="settings" onPress={onVpnSettings} />
           </div>
           {/* A plan is an account's: one group per account the projects run on, headed by where it was measured once there is more than one. */}
           {(enabled.includes('claude') ? accounts : []).map((item, at) => {
@@ -174,17 +179,22 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
         <Cell label="Claude Code" says="Uses the host's Claude plan">
           <Switch on={enabled.includes('claude')} label="Claude Code" disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(on) => toggle('claude', on)} />
         </Cell>
-        <Cell label="Codex" says="Uses the host's ChatGPT plan for its local projects">
-          <Switch on={enabled.includes('codex')} label="Codex" disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(on) => toggle('codex', on)} />
+        <Cell label={codexInfo.name} icon={codexInfo.icon} says="Uses the host's ChatGPT plan for its local folders">
+          <Switch on={enabled.includes('codex')} label={codexInfo.name} disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(on) => toggle('codex', on)} />
         </Cell>
+        {settings.providerPlugins.filter((one) => one.family !== 'claude' && one.replaces === undefined).map((one) => (
+          <Cell key={one.id} label={one.name} icon={one.icon} says="Installed on the host">
+            <Switch on={enabled.includes(one.family)} label={one.name} disabled={enabled.length === 1 && enabled.includes(one.family)} onChange={(on) => toggle(one.family, on)} />
+          </Cell>
+        ))}
       </div>
       <div className="phone-note">Choose at least one. Turning an assistant off hides its conversations until you turn it on again. Applies on the host and this phone.</div>
-      {enabled.includes('codex') ? <><div className="phone-head">ChatGPT plan usage</div><CodexLimits limits={codexAccount?.limits} /></> : null}
+      {enabled.some(isCodexProvider) ? <><div className="phone-head">ChatGPT plan usage</div><CodexLimits limits={codexAccount?.limits} /></> : null}
 
       <div className="phone-head">Board</div>
       <div className="phone-group">
-        <Cell label="Profiles" value={profile?.name ?? 'All projects'} onPress={() => go({ page: 'profiles' })} />
-        <Cell label="Projects" value={String(settings.projects.length)} onPress={() => go({ page: 'projects' })} />
+        <Cell label="Profiles" value={profile?.name ?? 'All folders'} onPress={() => go({ page: 'profiles' })} />
+        <Cell label="Folders" value={String(settings.projects.length)} onPress={() => go({ page: 'projects' })} />
         <Cell label="Hidden conversations" onPress={() => go({ page: 'hidden' })} />
       </div>
 
@@ -222,7 +232,11 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       <div className="phone-group">
         <Cell label={`GeckIt on ${thisMac?.name ?? 'the host'}`} value={version ?? '-'} />
         {enabled.includes('claude') ? <Cell label="Claude Code" value={claudeAccount?.program?.version ?? '-'} says={claudeAccount === undefined ? undefined : planLine(claudeAccount)} /> : null}
-        {enabled.includes('codex') ? <Cell label="Codex" value={codexAccount?.program?.version ?? '-'} says={codexAccount === undefined ? undefined : planLine(codexAccount)} /> : null}
+        {enabled.filter(isCodexProvider).map((provider) => {
+          const info = llmProviderInfo(provider, 'stream', settings.providerPlugins)
+          const account = assistantAccounts.find((one) => one.provider === provider)
+          return <Cell key={provider} label={info.name} icon={info.icon} value={account?.program?.version ?? '-'} says={account === undefined ? undefined : planLine(account)} />
+        })}
       </div>
 
       {picking === 'theme' ? (
@@ -304,10 +318,10 @@ function Profiles({
   return (
     <Page title="Profiles" back={back} onBack={onBack}>
       <div className="phone-group">
-        <Cell label="All projects" chosen={settings.profile === ''} onPress={() => use('')} />
+        <Cell label="All folders" chosen={settings.profile === ''} onPress={() => use('')} />
         {settings.profiles.map((one) => (
           <div key={one.id} className="phone-cell-pair">
-            <Cell label={one.name} says={`${String(one.projects.length)} ${one.projects.length === 1 ? 'project' : 'projects'}`} chosen={settings.profile === one.id} onPress={() => use(one.id)} />
+            <Cell label={one.name} says={`${String(one.projects.length)} ${one.projects.length === 1 ? 'folder' : 'folders'}`} chosen={settings.profile === one.id} onPress={() => use(one.id)} />
             <button type="button" className="phone-icon" aria-label={`Edit ${one.name}`} onClick={() => onOpen(one.id)}>
               <Icon name="pencil" size={18} />
             </button>
@@ -350,7 +364,7 @@ function Profile({ chat, id, back, onBack }: { readonly chat: Chat; readonly id:
           }}
         />
       </div>
-      <div className="phone-head">Projects</div>
+      <div className="phone-head">Folders</div>
       <div className="phone-group">
         {settings.projects.map((root) => {
           const on = profile.projects.includes(root)
@@ -375,7 +389,7 @@ function Profile({ chat, id, back, onBack }: { readonly chat: Chat; readonly id:
         <Menu
           anchor={new DOMRect()}
           title={`Delete "${profile.name}"?`}
-          choices={[{ value: 'delete', label: 'Delete', says: 'Its projects and conversations stay', danger: true }]}
+          choices={[{ value: 'delete', label: 'Delete', says: 'Its folders and conversations stay', danger: true }]}
           onPick={() => {
             chat.change({ profiles: settings.profiles.filter((one) => one.id !== id), ...(settings.profile === id ? { profile: '' } : {}) })
             onBack()
@@ -392,7 +406,7 @@ function Projects({ chat, back, onBack }: { readonly chat: Chat; readonly back: 
   const [adding, setAdding] = useState(false)
   const settings = chat.settings
   return (
-    <Page title="Projects" back={back} onBack={onBack}>
+    <Page title="Folders" back={back} onBack={onBack}>
       <div className="phone-group">
         {settings.projects.map((root) => (
           <div key={root} className="phone-cell-pair">
@@ -412,7 +426,7 @@ function Projects({ chat, back, onBack }: { readonly chat: Chat; readonly back: 
         ))}
       </div>
       <div className="phone-group phone-form-group">
-        <Cell label="Add a project" accent onPress={() => setAdding(true)} />
+        <Cell label="Add a folder" accent onPress={() => setAdding(true)} />
       </div>
       {adding ? <PhoneProject chat={chat} add onClose={() => setAdding(false)} /> : null}
       {forgetting === undefined ? null : (

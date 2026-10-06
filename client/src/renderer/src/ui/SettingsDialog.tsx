@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ANYWHERE, UPDATE_CHANNELS, appName, assistantsIn, channelLabel, profileOf } from '../../../shared/api'
+import { instructionsFor, llmProviderInfo } from '../../../shared/providers'
+import type { LlmProviderInfo } from '../../../shared/providers'
 import type { Anywhere, OpenRule, PhoneView, ProjectProfile, SessionProvider, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
 import { hostOf } from '../../../shared/hosts'
@@ -9,6 +11,7 @@ import { Icon } from './Icon'
 import { Picker } from './Menu'
 import { MOD, said } from './Shortcuts'
 import { Version } from './UpdateNotice'
+import { AgentVpn } from './AgentVpn'
 
 /**
  * Settings, a section at a time: General, Profiles, Hosts, Phrases, Correct and dictation, Phone, Version.
@@ -38,11 +41,13 @@ export const LANGUAGES = [
   'Japanese',
 ]
 
-export type Section = 'general' | 'assistants' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
+export type Section = 'general' | 'assistants' | 'agent-vpn' | 'libraries' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
   { value: 'assistants', label: 'Assistants' },
+  { value: 'agent-vpn', label: 'Agent VPN' },
+  { value: 'libraries', label: 'Libraries' },
   { value: 'profiles', label: 'Profiles' },
   { value: 'hosts', label: 'Hosts' },
   { value: 'phrases', label: 'Phrases' },
@@ -78,6 +83,11 @@ export function SettingsDialog({
 }): React.JSX.Element {
   const [section, setSection] = useState<Section>(first ?? 'general')
   const onPhone = document.documentElement.classList.contains('phone')
+  const navigation = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (first === 'agent-vpn' && !onPhone) navigation.current?.querySelector<HTMLButtonElement>('button[aria-current="page"]')?.focus()
+  }, [first, onPhone])
 
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
@@ -89,11 +99,11 @@ export function SettingsDialog({
 
   return (
     <div className="dialog-scrim" onMouseDown={onClose}>
-      <div className="dialog settings-dialog" onMouseDown={(event) => event.stopPropagation()}>
+      <div className={`dialog settings-dialog${section === 'assistants' || section === 'libraries' ? ' compact-settings' : ''}${section === 'agent-vpn' ? ' agent-vpn-settings' : ''}`} onMouseDown={(event) => event.stopPropagation()}>
         <h2>Settings</h2>
         <div className="settings-body">
-          <nav className="settings-nav" aria-label="Sections">
-            {SECTIONS.filter((one) => !onPhone || one.value !== 'phone').map((one) => (
+          <nav ref={navigation} className="settings-nav" aria-label="Sections">
+            {SECTIONS.filter((one) => !onPhone || (one.value !== 'phone' && one.value !== 'libraries' && one.value !== 'agent-vpn')).map((one) => (
               <button
                 key={one.value}
                 type="button"
@@ -105,7 +115,7 @@ export function SettingsDialog({
               </button>
             ))}
           </nav>
-          <div className="settings-page">
+          <div key={section} className="settings-page">
             {section === 'general' ? (
               <General
                 settings={settings}
@@ -118,6 +128,8 @@ export function SettingsDialog({
             ) : null}
             {section === 'profiles' ? <Profiles settings={settings} change={change} /> : null}
             {section === 'assistants' ? <Assistants settings={settings} change={change} /> : null}
+            {section === 'agent-vpn' && !onPhone ? <AgentVpn /> : null}
+            {section === 'libraries' ? <Libraries settings={settings} change={change} /> : null}
             {section === 'hosts' ? <HostsSection /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
@@ -145,8 +157,37 @@ interface Part {
   readonly change: (change: Partial<Settings>) => void
 }
 
+const ProviderLibraryRow = memo(function ProviderLibraryRow({ provider, ready, confirming, removing, onAsk, onCancel, onRemove }: {
+  readonly provider: LlmProviderInfo
+  readonly ready: boolean
+  readonly confirming: boolean
+  readonly removing: boolean
+  readonly onAsk: () => void
+  readonly onCancel: () => void
+  readonly onRemove: () => void
+}): React.JSX.Element {
+  const removeButton = useRef<HTMLButtonElement>(null)
+  const cancel = (): void => { onCancel(); removeButton.current?.focus() }
+  return (
+    <div className="provider-library-row">
+      <span className="provider-library-icon"><Icon name={provider.icon} size={16} /></span>
+      <span className="provider-library-copy"><strong>{provider.name}</strong><span title={provider.source}>{provider.source?.replace(/^https:\/\//, '') ?? 'Installed locally'}</span></span>
+      {ready ? <span className="provider-library-ready" title="Loads after restart">Update ready</span> : null}
+      <button ref={removeButton} type="button" className="quiet provider-library-remove" aria-label={`Remove ${provider.name}`} aria-expanded={confirming} disabled={removing} onClick={confirming ? cancel : onAsk}>Remove</button>
+      {confirming ? <div className="provider-library-confirm">
+        <span>Remove {provider.name}? Its installed copy moves to Trash. Restart GeckIt to unload its code.</span>
+        <div>
+          <button type="button" className="quiet" disabled={removing} onClick={cancel}>Cancel</button>
+          <button type="button" className="primary danger" disabled={removing} onClick={onRemove}>{removing ? 'Removing…' : 'Remove library'}</button>
+        </div>
+      </div> : null}
+    </div>
+  )
+})
+
 function Assistants({ settings, change }: Part): React.JSX.Element {
   const enabled = assistantsIn(settings)
+  const codexInfo = llmProviderInfo('codex', 'stream', settings.providerPlugins)
   const toggle = (provider: SessionProvider, on: boolean): void => {
     const chatProviders = on ? [...enabled, provider] : enabled.filter((one) => one !== provider)
     if (chatProviders.length === 0) return
@@ -155,38 +196,110 @@ function Assistants({ settings, change }: Part): React.JSX.Element {
   return (
     <section className="assistant-settings" aria-labelledby="assistant-settings-title">
       <h3 id="assistant-settings-title">Assistants</h3>
-      <p className="assistant-settings-intro">Use in Chat, Correct, and Shortcuts.</p>
       <div className="assistant-options">
         <label className="assistant-option">
           <span className="assistant-option-copy">
-            <span className="assistant-option-name">Claude Code</span>
+            <span className="assistant-option-name"><Icon name="claude" size={14} /> Claude Code</span>
             <span className="assistant-option-description">Your Claude plan</span>
           </span>
           <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Use Claude Code" aria-describedby="assistant-settings-note" checked={enabled.includes('claude')} disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(event) => toggle('claude', event.target.checked)} />
         </label>
-        <div className="assistant-guide">
-          <label className="check">
-            <input type="checkbox" checked={settings.guideClaude} onChange={(event) => change({ guideClaude: event.target.checked })} />
-            Tell Claude Code how GeckIt works
-          </label>
+        <details className="assistant-guide">
+          <summary>GeckIt instructions</summary>
+          <label className="check"><input type="checkbox" checked={settings.guideClaude} onChange={(event) => change({ guideClaude: event.target.checked })} />Tell Claude Code how GeckIt works</label>
           <span style={NOTE}>Writes GECKIT.md in ~/.claude and links it from ~/.claude/CLAUDE.md. Turning this off removes both.</span>
-        </div>
+        </details>
         <label className="assistant-option">
           <span className="assistant-option-copy">
-            <span className="assistant-option-name">Codex</span>
-            <span className="assistant-option-description">Your ChatGPT plan. Local projects only.</span>
+            <span className="assistant-option-name"><Icon name={codexInfo.icon} size={14} /> {codexInfo.name}</span>
+            <span className="assistant-option-description">Your ChatGPT plan. Local folders only.</span>
           </span>
-          <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Use Codex" aria-describedby="assistant-settings-note" checked={enabled.includes('codex')} disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(event) => toggle('codex', event.target.checked)} />
+          <input className="assistant-toggle" type="checkbox" role="switch" aria-label={`Use ${codexInfo.name}`} aria-describedby="assistant-settings-note" checked={enabled.includes('codex')} disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(event) => toggle('codex', event.target.checked)} />
         </label>
-        <div className="assistant-guide">
-          <label className="check">
-            <input type="checkbox" checked={settings.guideCodex} onChange={(event) => change({ guideCodex: event.target.checked })} />
-            Tell Codex how GeckIt works
-          </label>
+        <details className="assistant-guide">
+          <summary>GeckIt instructions</summary>
+          <label className="check"><input type="checkbox" checked={settings.guideCodex} onChange={(event) => change({ guideCodex: event.target.checked })} />Tell Codex how GeckIt works</label>
           <span style={NOTE}>Writes GECKIT.md in ~/.codex and links it from ~/.codex/AGENTS.md. Turning this off removes both.</span>
-        </div>
+        </details>
+        {settings.providerPlugins.filter((one) => one.family !== 'claude' && one.replaces === undefined).map((one) => {
+          const instructions = instructionsFor(one)
+          return (
+          <Fragment key={one.id}>
+            <label className="assistant-option">
+              <span className="assistant-option-copy">
+                <span className="assistant-option-name"><Icon name={one.icon} size={14} /> {one.name}</span>
+                <span className="assistant-option-description">{one.source ?? 'Installed provider plugin'}</span>
+              </span>
+              <input className="assistant-toggle" type="checkbox" role="switch" aria-label={`Use ${one.name}`} checked={enabled.includes(one.family)} disabled={enabled.length === 1 && enabled.includes(one.family)} onChange={(event) => toggle(one.family, event.target.checked)} />
+            </label>
+            <details className="assistant-guide">
+              <summary>GeckIt instructions</summary>
+              <label className="check"><input type="checkbox" checked={instructions === 'claude' ? settings.guideClaude : instructions === 'codex' ? settings.guideCodex : settings.guidePlugins[one.id] ?? true} onChange={(event) => instructions === 'claude' ? change({ guideClaude: event.target.checked }) : instructions === 'codex' ? change({ guideCodex: event.target.checked }) : change({ guidePlugins: { ...settings.guidePlugins, [one.id]: event.target.checked } })} />Tell {one.name} how GeckIt works</label>
+              <span style={NOTE}>{instructions === 'codex' ? 'Shares Codex instructions.' : instructions === 'claude' ? 'Shares Claude Code instructions.' : `${one.name} manages its own instructions.`}</span>
+            </details>
+          </Fragment>
+          )
+        })}
       </div>
-      <p className="assistant-settings-note" id="assistant-settings-note">Turning an assistant off hides its conversations and pauses its shortcuts. Keep at least one on.</p>
+      <p className="assistant-settings-note" id="assistant-settings-note">Turning off an assistant hides its conversations and pauses its shortcuts.</p>
+    </section>
+  )
+}
+
+function Libraries({ settings, change }: Part): React.JSX.Element {
+  const readyLibraries = useMemo(() => new Set(settings.providerUpdatesReady), [settings.providerUpdatesReady])
+  const addForm = useRef<HTMLFormElement>(null)
+  const restartNotice = useRef<HTMLParagraphElement>(null)
+  const [repository, setRepository] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [installing, setInstalling] = useState(false)
+  const [installError, setInstallError] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [checkMessage, setCheckMessage] = useState('')
+  const [confirming, setConfirming] = useState('')
+  const [removing, setRemoving] = useState('')
+  const [removeError, setRemoveError] = useState('')
+  useLayoutEffect(() => {
+    if (adding) addForm.current?.scrollIntoView({ block: 'center' })
+  }, [adding])
+  useLayoutEffect(() => {
+    if (settings.providerRemovalPending && removing !== '') restartNotice.current?.focus()
+  }, [settings.providerRemovalPending, removing])
+  return (
+    <section className="provider-libraries" aria-labelledby="provider-libraries-title">
+      <div className="provider-library-head">
+        <h3 id="provider-libraries-title">Libraries</h3>
+        <button type="button" className="provider-library-add-button" onClick={() => setAdding(true)} disabled={adding}><Icon name="plus" size={14} />Add library</button>
+      </div>
+      <p className="provider-library-intro">Providers from GitHub. Updates load after restart.</p>
+      {settings.providerPlugins.length === 0 ? adding ? null : <p className="provider-library-empty">No libraries installed.</p> : <div className="provider-library-list">{settings.providerPlugins.map((one) => <ProviderLibraryRow key={one.id} provider={one} ready={readyLibraries.has(one.id)} confirming={confirming === one.id} removing={removing === one.id} onAsk={() => { setConfirming(one.id); setRemoveError('') }} onCancel={() => setConfirming('')} onRemove={() => {
+        setRemoving(one.id)
+        setRemoveError('')
+        void window.geckit.chat.uninstallProvider(one.id).then(() => setConfirming('')).catch(() => setRemoveError(`Could not remove ${one.name}. Try again.`)).finally(() => setRemoving(''))
+      }} />)}</div>}
+      {settings.providerRemovalPending ? <p ref={restartNotice} className="provider-library-restart" role="status" tabIndex={-1}>Restart GeckIt to unload removed libraries.</p> : null}
+      {removeError === '' ? null : <span className="error" role="alert">{removeError}</span>}
+      {adding ? <form ref={addForm} className="provider-library-add" onSubmit={(event) => {
+          event.preventDefault()
+          setInstalling(true)
+          setInstallError('')
+          void window.geckit.chat.installProvider(repository.trim()).then(() => { setRepository(''); setAdding(false) }).catch((error: Error) => setInstallError(error.message.replace(/^Error invoking remote method '[^']+': Error: /, ''))).finally(() => setInstalling(false))
+        }}>
+        <input autoFocus id="provider-repository" type="url" required value={repository} placeholder="https://github.com/owner/repository" aria-label="GitHub repository URL" onChange={(event) => setRepository(event.target.value)} />
+        <button type="submit" className="primary" disabled={installing || repository.trim() === ''}>{installing ? 'Adding library…' : 'Add'}</button>
+        <button type="button" className="quiet" disabled={installing} onClick={() => { setAdding(false); setRepository(''); setInstallError('') }}>Cancel</button>
+      </form> : null}
+      {installError === '' ? null : <span className="error" role="alert">{installError}</span>}
+      {checkMessage === '' ? null : <span role="status">{checkMessage}</span>}
+      {adding ? <p className="provider-library-trust">Provider code runs on this computer. Add a repository you trust.</p> : null}
+      <div className="provider-library-updates">
+        <label className="check"><input type="checkbox" checked={settings.providerAutoUpdate} onChange={(event) => change({ providerAutoUpdate: event.target.checked })} />Update libraries automatically</label>
+        {settings.providerPlugins.length === 0 ? null : <button type="button" className="quiet" disabled={checking} onClick={() => {
+          setChecking(true)
+          setCheckMessage('')
+          void window.geckit.chat.checkProviderUpdates().then((result) => setCheckMessage(result.failed.length > 0 ? 'Could not check every library. Try again.' : result.ready.length === 0 ? 'Libraries are up to date.' : '')).catch(() => setCheckMessage('Could not check every library. Try again.')).finally(() => setChecking(false))
+        }}>{checking ? 'Checking…' : 'Check now'}</button>}
+      </div>
     </section>
   )
 }
@@ -359,7 +472,7 @@ function Updates({ settings, change }: Part): React.JSX.Element {
   )
 }
 
-const counted = (count: number): string => `${String(count)} ${count === 1 ? 'project' : 'projects'}`
+const counted = (count: number): string => `${String(count)} ${count === 1 ? 'folder' : 'folders'}`
 
 /**
  * The projects under where they are, Local first and then each host, as the
@@ -398,7 +511,7 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
     made.current = id
   }
   const rows = [
-    { id: '', name: 'All projects', says: 'Every project, always' },
+    { id: '', name: 'All folders', says: 'Every folder, always' },
     ...profiles.map((one) => ({
       id: one.id,
       name: one.name.trim() === '' ? 'New profile' : one.name,
@@ -449,9 +562,9 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
             />
           </div>
           <div className="field">
-            <label>Projects in this profile</label>
+            <label>Folders in this profile</label>
             {settings.projects.length === 0 ? (
-              <span style={NOTE}>Add a project first, from the project picker.</span>
+              <span style={NOTE}>Add a folder first, from the folder picker.</span>
             ) : (
               <div className="projects-listed">
                 {byWhere(settings).map((group) => [
@@ -484,8 +597,8 @@ function Profiles({ settings, change }: Part): React.JSX.Element {
               </div>
             )}
             <span style={NOTE}>
-              The board, the project picker, New task, search and shortcuts show only these projects. Conversations in
-              other projects keep running and still tell you when they need you.
+              The board, the folder picker, New task, search and shortcuts show only these folders. Conversations in
+              other folders keep running and still tell you when they need you.
             </span>
           </div>
           <div>

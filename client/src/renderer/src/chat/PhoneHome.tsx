@@ -35,11 +35,15 @@ export function PhoneHome({
   onAsk,
   onScreen,
   onSeek,
+  onVpnSettings,
+  vpn,
 }: {
   readonly chat: Chat
   readonly onNew: (how?: 'record') => void
   readonly onAsk: () => void
   readonly onScreen: () => void
+  readonly onVpnSettings: () => void
+  readonly vpn: React.ReactNode
   readonly onSeek: (seek: Seek) => void
 }): React.JSX.Element {
   const [tab, setTab] = useState<Tab>(() => {
@@ -99,8 +103,9 @@ export function PhoneHome({
         <PhoneSearch chat={chat} shown={tab === 'search' && chat.shown.kind !== 'session'} onSeek={onSeek} />
       </div>
       <div className="phone-tab" hidden={tab !== 'settings'}>
-        <PhoneSettings chat={chat} onEdit={edit} />
+        <PhoneSettings chat={chat} onEdit={edit} onVpnSettings={onVpnSettings} />
       </div>
+      {vpn}
       <nav className="phone-tabs" role="tablist">
         {TABS.map((one) => (
           <button

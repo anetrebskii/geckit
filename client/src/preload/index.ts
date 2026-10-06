@@ -1,14 +1,19 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 import type {
+  AgentVpnApi,
+  AgentVpnResult,
+  AgentVpnView,
   Answered,
   Lineup,
   Browser,
+  CodexBrowser,
   CardAnswer,
   FileShown,
   Folders,
   ChatFound,
   ChatSession,
+  ClaudeTransport,
   ClaudeAccount,
   ClaudeModel,
   HiddenFolder,
@@ -44,6 +49,7 @@ import type {
 } from '../shared/api'
 import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from '../shared/hosts'
 import type { Link } from '../shared/links'
+import type { LlmProviderInfo, PluginUpdateResult } from '../shared/providers'
 import { pieceOf } from '../shared/pairing'
 import type { Pairing, Piece } from '../shared/pairing'
 
@@ -84,6 +90,16 @@ const geckit = {
     openAccessibility: (): void => ipcRenderer.send('settings:openAccessibility'),
   },
 
+  agentVpn: {
+    view: (): Promise<AgentVpnView> => ipcRenderer.invoke('vpn:view'),
+    import: (): Promise<AgentVpnResult> => ipcRenderer.invoke('vpn:import'),
+    select: (id: string): Promise<AgentVpnResult> => ipcRenderer.invoke('vpn:select', id),
+    rename: (id: string, name: string): Promise<AgentVpnResult> => ipcRenderer.invoke('vpn:rename', id, name),
+    remove: (id: string): Promise<AgentVpnResult> => ipcRenderer.invoke('vpn:remove', id),
+    check: (id: string): Promise<AgentVpnResult> => ipcRenderer.invoke('vpn:check', id),
+    onView: (said: (view: AgentVpnView) => void): (() => void) => listen('vpn:changed', said),
+  } satisfies AgentVpnApi,
+
   errors: {
     /** What would be sent, while the question about errors is due. */
     question: (): Promise<string | undefined> => ipcRenderer.invoke('errors:question'),
@@ -121,6 +137,9 @@ const geckit = {
 
   chat: {
     open: (): void => ipcRenderer.send('chat:open'),
+    installProvider: (url: string): Promise<LlmProviderInfo> => ipcRenderer.invoke('chat:installProvider', url),
+    uninstallProvider: (id: string): Promise<void> => ipcRenderer.invoke('chat:uninstallProvider', id),
+    checkProviderUpdates: (): Promise<PluginUpdateResult> => ipcRenderer.invoke('chat:checkProviderUpdates'),
     account: (provider?: SessionProvider): Promise<ClaudeAccount> => ipcRenderer.invoke('chat:account', provider),
     /** A project's own root asks a host's own claude, where one is given; without it, this computer's. */
     models: (root?: string, provider?: SessionProvider): Promise<ClaudeModel[] | undefined> => ipcRenderer.invoke('chat:models', root, provider),
@@ -184,11 +203,13 @@ const geckit = {
       ipcRenderer.invoke('chat:queuedPicture', id, queued, index),
     /** A message waiting in the queue, said again in other words; it keeps its place and its pictures. */
     requeue: (id: string, queued: string, text: string): void => ipcRenderer.send('chat:requeue', id, queued, text),
+    reorderQueued: (id: string, queued: string, target: string, after: boolean): void => ipcRenderer.send('chat:reorderQueued', id, queued, target, after),
     /** Starts a message waiting in the queue as a new conversation, empty or with this one's history as it was then, and says which. */
     delegate: (id: string, queued: string, history: boolean): Promise<string | undefined> =>
       ipcRenderer.invoke('chat:delegate', id, queued, history),
     /** How a session may act, chosen under the field: it holds from now, not from the next message. */
     mode: (id: string, mode: SessionMode): void => ipcRenderer.send('chat:mode', id, mode),
+    transport: (id: string, transport: ClaudeTransport): void => ipcRenderer.send('chat:transport', id, transport),
     rename: (id: string, title: string): void => ipcRenderer.send('chat:rename', id, title),
     mark: (id: string, status: SessionStatus | undefined): void => ipcRenderer.send('chat:mark', id, status ?? null),
     hide: (id: string): void => ipcRenderer.send('chat:hide', id),
@@ -216,6 +237,7 @@ const geckit = {
     /** The Chromes Claude in Chrome is signed in to, with one picked first. Nothing where the tool would not say. */
     browsers: (root: string, id: string | undefined, pick?: string): Promise<Browser[] | undefined> =>
       ipcRenderer.invoke('chat:browsers', root, id, pick),
+    codexBrowsers: (): Promise<CodexBrowser[] | undefined> => ipcRenderer.invoke('chat:codexBrowsers'),
     /** Where the project's checkout stands. Asking also has the remote asked, now and then; what it says arrives through onGit. */
     git: (root: string): Promise<GitState | undefined> => ipcRenderer.invoke('chat:git', root),
     onGit: (said: (git: { readonly root: string; readonly state: GitState | undefined }) => void): (() => void) =>

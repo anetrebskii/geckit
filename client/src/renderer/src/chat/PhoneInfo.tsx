@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { homeOf, SESSION_MODES } from '../../../shared/api'
+import { isCodexProvider, llmProviderInfo } from '../../../shared/providers'
+import { accountUsage, money } from '../../../shared/provider-usage'
+import { ModelDetailsButton } from './ModelDetails'
+import { QuotaRows } from './ProviderUsage'
 import type { ClaudeAccount, CodexLimitWindow, CodexRateLimit, PlanUsage, PlanWindow } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { shortUrl } from '../../../shared/links'
@@ -11,7 +15,7 @@ import { projectLabel } from './project'
 import { childSaid } from './Request'
 import { startedFrom } from './started'
 import { ago } from './time'
-import { dollars, Meter, tokens, until, useGit } from './Status'
+import { Meter, tokens, until, useGit } from './Status'
 import { accountsOf, usageOf } from './plans'
 import type { Chat } from './useChat'
 
@@ -127,7 +131,8 @@ export function PhoneInfo({
   const mine = item === undefined ? chat.plan : usageOf(item, chat.plan)
   const mineName = at === '' ? undefined : (chat.hosts.find((one) => one.id === at)?.name ?? at)
   const [asking, setAsking] = useState<'compact' | 'clear'>()
-  const [now] = useState(() => Date.now())
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer) }, [])
   const session = chat.session
   const git = useGit(session?.root ?? chat.root, session?.state)
   const startedHead = useRef<HTMLDivElement>(null)
@@ -160,11 +165,12 @@ export function PhoneInfo({
             }
           />
         )}
-        {spend?.cost === undefined ? null : <Cell label="Cost" says="At API prices; the plan covers it" value={dollars(spend.cost)} />}
+        {spend?.cost === undefined ? null : <Cell label={spend.costKind === 'billed' ? 'Billed cost' : 'API equivalent'} says={spend.costKind === 'billed' ? 'Reported by the provider' : 'At API prices; not a subscription charge'} value={money(spend.cost, spend.currency)} />}
         {session.model === undefined ? null : <Cell label="Model" value={session.model} />}
-        {chat.provider !== 'codex' || session.actualReasoning === undefined ? null : <Cell label="Reasoning" value={session.actualReasoning === 'xhigh' ? 'Extra high' : session.actualReasoning.charAt(0).toUpperCase() + session.actualReasoning.slice(1)} />}
+        <ModelDetailsButton chat={chat} model={session.model} phone />
+        {!isCodexProvider(chat.provider) || session.actualReasoning === undefined ? null : <Cell label="Reasoning" value={session.actualReasoning === 'xhigh' ? 'Extra high' : session.actualReasoning.charAt(0).toUpperCase() + session.actualReasoning.slice(1)} />}
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === session.mode)?.label ?? '-'} />
-        <Cell label="Project" value={projectLabel(homeOf(session))} />
+        <Cell label="Folder" value={projectLabel(homeOf(session))} />
         {parent === undefined ? null : (
           <Cell
             label="From"
@@ -176,7 +182,7 @@ export function PhoneInfo({
           />
         )}
       </div>
-      {spend?.used === undefined ? null : <div className="phone-note">{chat.provider === 'codex' ? 'Codex' : 'Claude Code'} summarises the conversation when its context fills.</div>}
+      {spend?.used === undefined ? null : <div className="phone-note">{llmProviderInfo(chat.provider).name} summarises the conversation when its context fills.</div>}
 
       {started.length === 0 ? null : (
         <>
@@ -252,15 +258,15 @@ export function PhoneInfo({
       )}
 
       <div className="phone-group phone-form-group">
-        {chat.provider === 'codex' ? null : chat.working ? (
+        {isCodexProvider(chat.provider) ? null : chat.working ? (
           <Cell label="Compact" says="Once Claude has finished" />
         ) : (
           <Cell label="Compact" says="Summarise it so far to free up its context" accent onPress={() => setAsking('compact')} />
         )}
-        <Cell label="Clear" says="Start a new task in this project" danger onPress={() => setAsking('clear')} />
+        <Cell label="Clear" says="Start a new task in this folder" danger onPress={() => setAsking('clear')} />
       </div>
 
-      {chat.provider === 'codex' ? <><div className="phone-head">ChatGPT plan</div><CodexLimits limits={chat.account?.limits} /></> : mine?.fiveHour === undefined && mine?.sevenDay === undefined ? null : (
+      {chat.provider !== 'claude' ? <><div className="phone-head">{llmProviderInfo(chat.provider).planName || llmProviderInfo(chat.provider).shortName} limits</div><QuotaRows usage={accountUsage(chat.account)} now={now} /></> : mine?.fiveHour === undefined && mine?.sevenDay === undefined ? null : (
         <>
           <div className="phone-head">{mineName === undefined ? 'Plan' : `Plan on ${mineName}`}</div>
           <Limits chat={chat} usage={mine} />

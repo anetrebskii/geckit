@@ -3,6 +3,8 @@ import type { LocalAnswer, LocalAsk } from '../../shared/local'
 
 /** What only the phone asks the Mac for, beside `window.geckit`; nothing on the Mac itself. */
 export interface PhoneCalls {
+  readonly connected: () => boolean
+  readonly onConnection: (said: (connected: boolean) => void) => () => void
   /** The words said, read as orders on the Mac and waiting there for `doOrders`. */
   readonly readOrders: (said: string) => Promise<Answered>
   /** The yes; a conversation an order opens comes back to be opened on the phone. */

@@ -3,6 +3,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { assistantsIn, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { isCodexProvider } from '../../../shared/providers'
 import type { CardAnswer, ChatSession, SessionCard, SessionStatus } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { movedOrder, ordered } from '../../../shared/order'
@@ -114,7 +115,9 @@ export function PhoneBoard({
   }, [])
 
   const rows = useMemo(() => {
-    const all = chat.sessions.filter((one) => columnOf(one) === shown).sort((one, other) => other.at - one.at)
+    const all = chat.sessions
+      .filter((one) => columnOf(one) === shown)
+      .sort((one, other) => (shown === 'done' ? other.statusAt ?? other.at : other.at) - (shown === 'done' ? one.statusAt ?? one.at : one.at))
     return shown === 'progress' ? ordered(all, chat.settings.progressOrder) : all
   }, [chat.sessions, shown, chat.settings.progressOrder])
   const counts = useMemo(() => {
@@ -239,7 +242,7 @@ export function PhoneBoard({
     name: placeName(item.places[0] ?? ''),
     usage: usageOf(item, chat.plan),
   }))
-  const codexWindows = chat.provider === 'codex' ? chat.account?.limits?.flatMap((limit) => [limit.primary, limit.secondary].flatMap((window) => window === null ? [] : [{ name: codexWindowName(window, limit, chat.account?.limits?.length ?? 0), window }])) ?? [] : []
+  const codexWindows = isCodexProvider(chat.provider) ? chat.account?.limits?.flatMap((limit) => [limit.primary, limit.secondary].flatMap((window) => window === null ? [] : [{ name: codexWindowName(window, limit, chat.account?.limits?.length ?? 0), window }])) ?? [] : []
   const codexHigh = codexWindows.find((one) => one.window.usedPercent >= 90)
   const named = accounts.length > 1
   const high = accounts
@@ -368,7 +371,7 @@ export function PhoneBoard({
           <div className="phone-empty">
             {emptyProfile(chat.settings) === undefined
               ? COLUMNS.find((one) => one.column === shown)?.empty
-              : `No projects in ${emptyProfile(chat.settings) ?? ''}. Tick some in Settings, Profiles.`}
+              : `No folders in ${emptyProfile(chat.settings) ?? ''}. Tick some in Settings, Profiles.`}
           </div>
         ) : null}
         {asking.length === 0 ? null : (
@@ -627,7 +630,7 @@ export function RowBody({
           {helpers === 0 ? null : <span className="phone-row-tag">{helpers === 1 ? 'a helper running' : `${helpers} helpers running`}</span>}
           {script === undefined ? null : <span className="phone-row-tag">{script}</span>}
           {queued === 0 ? null : <span className="phone-row-tag">{queued} queued</span>}
-          {chat.showProviders ? <ProviderIcon id={session.id} /> : null}
+          {chat.showProviders ? <ProviderIcon id={session.id} transport={session.transport} /> : null}
         </div>
         {parent === undefined ? null : (
           <div className="phone-row-from">

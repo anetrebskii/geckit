@@ -23,7 +23,7 @@ export interface CodexTurn {
   items: CodexItem[]
 }
 
-export type CodexInput = { type: 'text'; text: string; text_elements: [] } | { type: 'image'; url: string }
+export type CodexInput = { type: 'text'; text: string; text_elements: [] } | { type: 'image'; url: string } | { type: 'mention'; name: string; path: string }
 
 export interface CodexGoal {
   threadId: string

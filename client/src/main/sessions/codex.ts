@@ -1,4 +1,6 @@
+import type { AgentAdmission } from '../vpn/admission'
 import type { Answered, ChatFound, ClaudeAccount, ClaudeModel, ReasoningEffort, SessionGoal, SessionMode } from '../../shared/api'
+import { modelVersion } from '../../shared/providers'
 import { readFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -30,6 +32,7 @@ interface Asked {
 export class CodexSessions {
   readonly #launch: () => Held
   readonly #changed: ((account: ClaudeAccount) => void) | undefined
+  readonly #browser: (() => string) | undefined
   #account: ClaudeAccount | undefined
   #models: readonly ClaudeModel[] = []
   #rpc: CodexRpc | undefined
@@ -38,12 +41,14 @@ export class CodexSessions {
   readonly #files = new Map<string, { id: string; root: string; path: string }>()
   #corrections: Promise<Answered | undefined> = Promise.resolve(undefined)
 
-  constructor(launch: () => Held = launchCodex, changed?: (account: ClaudeAccount) => void) {
+  constructor(launch: () => Held = launchCodex, changed?: (account: ClaudeAccount) => void, browser?: () => string, private readonly admit: AgentAdmission = () => undefined) {
     this.#launch = launch
     this.#changed = changed
+    this.#browser = browser
   }
 
   async #connection(): Promise<CodexRpc> {
+    this.admit()
     if (this.#rpc === undefined) {
       this.#rpc = new CodexRpc(this.#launch, (event) => {
         if (event.method === 'account/rateLimits/updated') {
@@ -63,11 +68,12 @@ export class CodexSessions {
         this.#new.clear()
         for (const listener of this.#listeners.values()) listener.closed(error)
         this.#listeners.clear()
-      })
+      }, this.admit)
     }
     const rpc = this.#rpc
     try {
       await rpc.ready
+      this.admit()
       return rpc
     } catch (error) {
       rpc.dispose()
@@ -95,7 +101,10 @@ export class CodexSessions {
       let cursor: string | null = null
       do {
         const page: RpcResults['model/list'] = await rpc.request('model/list', { cursor })
-        models.push(...page.data.filter((one) => !one.hidden).map((one) => ({ value: one.model, id: one.model, name: one.displayName, says: one.description, ...(one.supportedReasoningEfforts === undefined ? {} : { reasoning: one.supportedReasoningEfforts.map((effort) => ({ value: effort.reasoningEffort, says: effort.description })) }), ...(one.defaultReasoningEffort === undefined ? {} : { defaultReasoning: one.defaultReasoningEffort }), ...(one.isDefault === undefined ? {} : { isDefault: one.isDefault }) })))
+        models.push(...page.data.filter((one) => !one.hidden).map((one) => {
+          const version = modelVersion(one.model)
+          return { value: one.model, id: one.model, name: one.displayName, says: one.description, ...(version === undefined ? {} : { version }), ...(one.supportedReasoningEfforts === undefined ? {} : { reasoning: one.supportedReasoningEfforts.map((effort) => ({ value: effort.reasoningEffort, says: effort.description })) }), ...(one.defaultReasoningEffort === undefined ? {} : { defaultReasoning: one.defaultReasoningEffort }), ...(one.isDefault === undefined ? {} : { isDefault: one.isDefault }) }
+        }))
         cursor = page.nextCursor
       } while (cursor !== null)
       this.#models = models
@@ -192,7 +201,7 @@ export class CodexSessions {
       const imported = new Map((imports?.records ?? []).filter((one) => one.source_path.includes('/.claude/projects/')).map((one) => [one.imported_thread_id, basename(one.source_path, '.jsonl')]))
       let cursor: string | null = null
       do {
-        const page: RpcResults['thread/list'] = await rpc.request('thread/list', { cwd: [...roots], cursor, limit: 100, sortKey: 'updated_at', sourceKinds: ['cli', 'vscode', 'exec', 'appServer'] })
+        const page: RpcResults['thread/list'] = await rpc.request('thread/list', { cwd: [...roots], cursor, limit: 100, sortKey: 'updated_at', sourceKinds: ['cli', 'vscode', 'exec', 'appServer', 'unknown'] })
         for (const thread of page.data) if (typeof thread.path === 'string') this.#files.set(thread.id, { id: `codex:${thread.id}`, root: thread.cwd, path: thread.path })
         rows.push(...page.data.map((thread) => {
           const importedFrom = imported.get(thread.id)
@@ -311,6 +320,7 @@ export class CodexSessions {
         switch (event.method) {
           case 'turn/started':
             turnId = event.params.turn.id
+            if (!active) { active = true; signals({ kind: 'begun' }) }
             if (stopped) void rpc?.request('turn/interrupt', { threadId, turnId }).catch(() => undefined)
             return
           case 'thread/goal/updated':
@@ -431,9 +441,11 @@ export class CodexSessions {
             ended('done')
             return
           }
+          const browser = this.#browser?.()
           const input: CodexInput[] = [
-            { type: 'text', text: [...before, text].join('\n\n'), text_elements: [] },
+            { type: 'text', text: [...before, ...(browser ? [`When using Chrome for this turn, select the connected browser whose extensionInstanceId is ${browser}.`] : []), text].join('\n\n'), text_elements: [] },
             ...images.map((one): CodexInput => ({ type: 'image', url: `data:${one.media};base64,${one.data}` })),
+            ...(/(?:^|[\s([{'"])@Computer(?=$|[\s)\]}'"]|[.,!?;:](?=\s|$))/.test(text) ? [{ type: 'mention' as const, name: 'Computer', path: 'plugin://computer-use@openai-bundled' }] : []),
           ]
           if (this.#models.length === 0) await this.models()
           const effort = options.reasoning === '' ? this.#models.find((one) => one.value === model)?.defaultReasoning ?? null : options.reasoning

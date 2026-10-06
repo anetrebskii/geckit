@@ -4,6 +4,7 @@ import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CORRECT_MODEL, correctKeeper, resultOf } from '../src/main/correct-session'
+import { VPN_REQUIRED_MESSAGE } from '../src/shared/vpn'
 
 class Fake extends EventEmitter {
   readonly stdin = new PassThrough()
@@ -37,6 +38,36 @@ const at = (started: readonly Fake[], index: number): Fake => {
 }
 
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
+
+describe('correction VPN admission', () => {
+  it('denies before launching a correction provider', async () => {
+    const launch = vi.fn((args: readonly string[]) => new Fake(args))
+    const kept = correctKeeper(launch, undefined, undefined, () => { throw new Error(VPN_REQUIRED_MESSAGE) })
+    expect(await kept.ask('Text', 'Correct', '')).toEqual({ ok: false, error: VPN_REQUIRED_MESSAGE })
+    expect(launch).not.toHaveBeenCalled()
+  })
+
+  it('rechecks corrections waiting in the queue, cancels the current request and admits again after release', async () => {
+    let blocked = false
+    const launch = vi.fn((args: readonly string[]) => new Fake(args))
+    const kept = correctKeeper(launch, undefined, undefined, () => { if (blocked) throw new Error(VPN_REQUIRED_MESSAGE) })
+    const first = kept.ask('First', 'Correct', '')
+    const queued = kept.ask('Queued', 'Correct', '')
+    await tick()
+    blocked = true
+    kept.stop()
+    expect(await first).toEqual({ ok: false, error: 'Correction stopped.' })
+    expect(await queued).toEqual({ ok: false, error: VPN_REQUIRED_MESSAGE })
+    expect(launch).toHaveBeenCalledOnce()
+    expect(launch.mock.results[0]?.value.killed).toBe(true)
+    blocked = false
+    const ordinary = kept.ask('Again', 'Correct', '')
+    await tick()
+    launch.mock.results[1]?.value.answer('Corrected')
+    expect(await ordinary).toEqual({ ok: true, text: 'Corrected' })
+    kept.stop()
+  })
+})
 
 function keeper(now: () => Date = () => new Date(2026, 8, 30, 10), patience?: number) {
   const started: Fake[] = []

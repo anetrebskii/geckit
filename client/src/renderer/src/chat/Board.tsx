@@ -1,17 +1,16 @@
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
-import { assistantFor, assistantsIn, ANYWHERE, homeOf, profileOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { assistantFor, ANYWHERE, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
 import { movedOrder, ordered } from '../../../shared/order'
+import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
 import { dictate, languageCode, useDictationLanguage, useLevel } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
-import type { HostView } from '../../../shared/hosts'
-import { HostFolders } from './HostFolders'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
@@ -130,7 +129,7 @@ export function TopBar({
       <button
         type="button"
         className="new-session no-drag board-new"
-        title="A question that is not about a project: it is not put on the board, and is deleted a day after the last answer"
+        title="A question that is not about a folder: it is not put on the board, and is deleted a day after the last answer"
         onClick={(event) => {
           if (chat.questions.length === 0) onAsk()
           else setAsked(event.currentTarget.getBoundingClientRect())
@@ -166,7 +165,7 @@ export function TopBar({
           anchor={ways}
           explained
           choices={[
-            { value: 'write', icon: 'pencil', label: 'Write it', says: `The form: project, what to do, a goal. ${MOD}+N` },
+            { value: 'write', icon: 'pencil', label: 'Write it', says: `The form: folder, what to do, a goal. ${MOD}+N` },
             {
               value: 'record',
               icon: 'display',
@@ -233,7 +232,7 @@ export function Board({
         rows: ordered(
           chat.sessions
             .filter((one) => (column.status === undefined ? one.status !== 'review' && one.status !== 'done' : one.status === column.status))
-            .sort((one, other) => other.at - one.at),
+            .sort((one, other) => (column.status === 'done' ? other.statusAt ?? other.at : other.at) - (column.status === 'done' ? one.statusAt ?? one.at : one.at)),
           column.status === undefined ? chat.settings.progressOrder : [],
         ),
       })),
@@ -351,7 +350,7 @@ export function Board({
   return (
     <div className="board">
       {emptyProfile(chat.settings) === undefined ? null : (
-        <div className="board-empty">No projects in {emptyProfile(chat.settings)}. Tick some in Settings, Profiles.</div>
+        <div className="board-empty">No folders in {emptyProfile(chat.settings)}. Tick some in Settings, Profiles.</div>
       )}
       <div className="board-columns">
         {columns.map((column) => (
@@ -731,7 +730,7 @@ function Card({
           <StartedMenu chat={chat} id={session.id} anchor={kids} onClose={() => setKids(undefined)} />
         </span>
       )}
-      {showProviders ? <ProviderIcon id={session.id} /> : null}
+      {showProviders ? <ProviderIcon id={session.id} transport={session.transport} /> : null}
     </div>
   )
 }
@@ -762,10 +761,6 @@ const BoardCard = memo(
  * The goal goes first and the work after it, so it holds from the first turn
  * rather than from the second, which is what a voice order does too.
  */
-/** The row that opens the folder picker rather than choosing a project already there. */
-const PICK = '\u0000pick'
-/** Choose a folder on a host, by its id after this. */
-const PICK_ON = '\u0000on:'
 
 interface KeptTask {
   readonly root: string
@@ -774,6 +769,7 @@ interface KeptTask {
 }
 
 const keptKey = (question: boolean): string => (question ? 'newQuestion' : 'newTask')
+const LAST_TASK_PROJECT = 'lastTaskProject'
 
 /** What was being written in the form when the app went away, so a restart brings it back. */
 export function keptTask(question: boolean): KeptTask | undefined {
@@ -814,8 +810,24 @@ export function NewTask({
   readonly onStarting: (starting: boolean) => void
 }): React.JSX.Element {
   const [kept] = useState(() => keptTask(question))
-  const [root, setRoot] = useState(() => kept?.root ?? chat.root ?? shownProjects(chat.settings)[0] ?? '')
+  const [root, setRoot] = useState(() => {
+    if (kept !== undefined) return kept.root
+    const projects = shownProjects(chat.settings)
+    let remembered: string | undefined
+    try {
+      const saved = localStorage.getItem(LAST_TASK_PROJECT)
+      if (saved !== null && projects.includes(saved)) remembered = saved
+    } catch {
+      remembered = undefined
+    }
+    const current = chat.root
+    return (ON_PHONE ? remembered ?? current : current ?? remembered) ?? projects[0] ?? ''
+  })
+  useEffect(() => {
+    if (!question && root !== '') localStorage.setItem(LAST_TASK_PROJECT, root)
+  }, [question, root])
   const provider = assistantFor(chat.settings, question ? '' : root)
+  const providerInfo = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
   const modelRoot = question ? undefined : root || undefined
   const [models, setModels] = useState<{ readonly provider: SessionProvider; readonly root: string | undefined; readonly said: ModelsSaid }>()
   useEffect(() => {
@@ -827,7 +839,7 @@ export function NewTask({
     })
     return () => { current = false }
   }, [modelRoot, provider])
-  const model = provider === 'codex' ? chat.settings.codexModel : chat.settings.chatModel
+  const model = isCodexProvider(provider) ? chat.settings.codexModel : chat.settings.chatModel
   const catalog: readonly ClaudeModel[] | undefined = models?.provider === provider && models.root === modelRoot && Array.isArray(models.said) ? models.said : undefined
   const selectedModel = model === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === model)
   const reasoning = chat.settings.codexReasoning
@@ -843,7 +855,7 @@ export function NewTask({
           value={model}
           onChange={(event) => {
             const value = event.target.value
-            if (provider === 'claude') chat.change({ chatModel: value })
+            if (!isCodexProvider(provider)) chat.change({ chatModel: value })
             else {
               const next = value === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === value)
               chat.change({ codexModel: value, codexReasoning: next?.reasoning?.some((one) => one.value === reasoning) === true ? reasoning : '' })
@@ -852,10 +864,10 @@ export function NewTask({
         >
           <option value="">Default</option>
           {model === '' || catalog?.some((one) => one.value === model) ? null : <option value={model}>{model}</option>}
-          {catalog === undefined ? <option disabled>{models?.provider === provider && models.root === modelRoot && models.said === 'unsaid' ? 'Models unavailable' : `Asking ${provider === 'codex' ? 'Codex' : 'Claude Code'}...`}</option> : catalog.map((one) => <option key={one.value} value={one.value} disabled={one.disabled} title={one.says}>{one.name}</option>)}
+          {catalog === undefined ? <option disabled>{models?.provider === provider && models.root === modelRoot && models.said === 'unsaid' ? 'Models unavailable' : `Asking ${providerInfo.name}...`}</option> : catalog.map((one) => <option key={one.value} value={one.value} disabled={one.disabled} title={one.says}>{one.name}</option>)}
         </select>
       </label>
-      {provider !== 'codex' ? null : <label className={ON_PHONE ? 'phone-task-cell' : 'new-task-label'}>
+      {!isCodexProvider(provider) ? null : <label className={ON_PHONE ? 'phone-task-cell' : 'new-task-label'}>
         Reasoning
         {ON_PHONE ? <span className="phone-task-selected" aria-hidden="true"><b>{reasoningLabel}</b><Icon name="right" size={14} /></span> : null}
         <select className="new-task-where task-model-select" value={reasoning} onChange={(event) => chat.change({ codexReasoning: event.target.value as ReasoningEffort | '' })}>
@@ -866,8 +878,6 @@ export function NewTask({
       </label>}
     </div>
   )
-  // A host whose folders are being chosen from, for a project there.
-  const [folderOn, setFolderOn] = useState<HostView | undefined>()
   const [text, setText] = useState(kept?.text ?? '')
   const [goal, setGoal] = useState(kept?.goal ?? '')
   useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal })), [question, root, text, goal])
@@ -973,7 +983,7 @@ export function NewTask({
       setStartError(error.message)
     })
   }
-  const startHint = provider === 'codex' && !question && isRemote(root) ? 'Enable Claude Code in Settings to use this host' : chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when ${provider === 'codex' ? 'Codex' : 'Claude'} is done. ${MOD}+Enter starts it` : `${provider === 'codex' ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review`
+  const startHint = providerInfo.localOnly && !question && isRemote(root) ? `${providerInfo.name} supports local folders only` : chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when ${providerInfo.shortName} is done. ${MOD}+Enter starts it` : `${providerInfo.shortName} keeps working until this holds, then the card goes to In review`
 
   if (ON_PHONE) {
     return (
@@ -1002,9 +1012,6 @@ export function NewTask({
       />
     )
   }
-
-  const profiled = profileOf(chat.settings) !== undefined
-  const localProjects = shownProjects(chat.settings).filter((one) => hostOf(one) === undefined)
 
   return (
     <div
@@ -1037,77 +1044,15 @@ export function NewTask({
         </div>
       )}
       {question ? null : (
-        <label className="new-task-label">
-          Project
-          <select
-            className="new-task-where"
-            value={root}
-            onChange={(event) => {
-              const value = event.target.value
-              if (value.startsWith(PICK_ON)) {
-                setFolderOn(chat.hosts.find((one) => one.id === value.slice(PICK_ON.length)))
-                return
-              }
-              if (value !== PICK) {
-                setRoot(value)
-                return
-              }
-              void window.geckit.chat.addProject().then((picked) => {
-                if (picked !== undefined) setRoot(picked)
-              })
-            }}
-          >
-            {chat.hosts.length === 0 ? (
-              shownProjects(chat.settings).map((one) => (
-                <option key={one} value={one}>
-                  {projectName(one)}
-                </option>
-              ))
-            ) : (
-              <>
-                {/* Groups follow projects: in a profile, a group it has no projects in is not its business, and is reached from Settings, Hosts. */}
-                {profiled && localProjects.length === 0 ? null : (
-                  <optgroup label="Local">
-                    {localProjects.map((one) => (
-                      <option key={one} value={one}>
-                        {projectName(one)}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {chat.hosts.map((host) => {
-                  const onHost = shownProjects(chat.settings).filter((one) => hostOf(one) === host.id)
-                  // Unlike Local, a host group is never its own destination here: with nothing to pick under it, it stays out of the list, in or out of a profile.
-                  if (onHost.length === 0) return null
-                  return (
-                    <optgroup key={host.id} label={host.name}>
-                      {onHost.map((one) => (
-                        <option key={one} value={one}>
-                          {projectLabel(one)}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )
-                })}
-              </>
-            )}
-            <option value={PICK}>{chat.hosts.length === 0 ? 'Choose a folder...' : 'Choose a folder on this computer...'}</option>
-            {/* A folder is only ever added on a host reached now: one not connected has nothing to read it with. */}
-            {chat.hosts
-              .filter((host) => host.state === 'up')
-              .map((host) => (
-                <option key={host.id} value={`${PICK_ON}${host.id}`}>
-                  Choose a folder on {host.name}...
-                </option>
-              ))}
-          </select>
-        </label>
+        <div className="new-task-label">
+          Folder
+          <Projects chat={chat} single={{ root, onPick: setRoot }} disabled={starting} />
+        </div>
       )}
       {!chat.showProviders ? null : <label className="new-task-label">
         Assistant
         <select className="new-task-where" value={provider} onChange={(event) => chat.change({ chatProvider: event.target.value as SessionProvider })}>
-          {assistantsIn(chat.settings).includes('claude') ? <option value="claude">Claude Code</option> : null}
-          {assistantsIn(chat.settings).includes('codex') ? <option value="codex" disabled={!question && isRemote(root)}>Codex</option> : null}
+          {selectableProviders(chat.settings).map((one) => <option key={one.id} value={one.family} disabled={!question && isRemote(root) && one.localOnly === true}>{one.name}</option>)}
         </select>
       </label>}
       {modelChoices}
@@ -1119,7 +1064,7 @@ export function NewTask({
           rows={5}
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder={question ? 'Anything, not about a project. Paste a picture, drop a file, or record the screen' : `Ask ${provider === 'codex' ? 'Codex' : 'Claude Code'}. Paste a picture, drop a file, or record the screen`}
+          placeholder={question ? 'Anything, not about a folder. Paste a picture, drop a file, or record the screen' : `Ask ${providerInfo.name}. Paste a picture, drop a file, or record the screen`}
           onPaste={(event) => {
             const files = [...event.clipboardData.files]
             if (files.length === 0) return
@@ -1224,7 +1169,7 @@ export function NewTask({
         </label>
       )}
       <div className="new-task-foot">
-        <span className={`new-task-why${startError === undefined ? '' : ' trouble'}`} role={startError === undefined ? 'status' : 'alert'}>{startError ?? (starting ? `Starting ${provider === 'codex' ? 'Codex' : 'Claude Code'}...` : startHint)}</span>
+        <span className={`new-task-why${startError === undefined ? '' : ' trouble'}`} role={startError === undefined ? 'status' : 'alert'}>{startError ?? (starting ? `Starting ${providerInfo.name}...` : startHint)}</span>
         <span className="spacer" />
         <button type="button" className="quiet" disabled={starting} onClick={onClose}>
           Cancel
@@ -1232,19 +1177,12 @@ export function NewTask({
         <button
           type="button"
           className="primary"
-          disabled={starting || (root === '' && !question) || !ready || (provider === 'codex' && !question && isRemote(root))}
+          disabled={starting || (root === '' && !question) || !ready || (providerInfo.localOnly === true && !question && isRemote(root))}
           onClick={start}
         >
           {starting ? 'Starting...' : chat.full && !question ? 'Queue' : question ? 'Ask' : 'Start'}
         </button>
       </div>
-      {folderOn === undefined ? null : (
-        <HostFolders
-          host={folderOn}
-          onClose={() => setFolderOn(undefined)}
-          onAdded={(added) => setRoot(added)}
-        />
-      )}
     </div>
   )
 }
@@ -1300,6 +1238,7 @@ function PhoneNewTask({
   const [asking, setAsking] = useState(false)
   const [pickingAssistant, setPickingAssistant] = useState(false)
   const provider = assistantFor(chat.settings, question ? '' : root)
+  const providerInfo = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
   const [choosing, setChoosing] = useState(false)
   const [recording, setRecording] = useState(record)
   const [listening, setListening] = useState(false)
@@ -1342,7 +1281,7 @@ function PhoneNewTask({
     if (text.trim() === '' && pictures.length === 0 && frames.length === 0) onClose()
     else setAsking(true)
   }
-  const ready = (root !== '' || question) && (question || provider !== 'codex' || !isRemote(root)) && (text.trim() !== '' || pictures.length > 0 || frames.length > 0)
+  const ready = (root !== '' || question) && (question || providerInfo.localOnly !== true || !isRemote(root)) && (text.trim() !== '' || pictures.length > 0 || frames.length > 0)
   return (
     <>
       <div className="sheet-scrim" onClick={leave} />
@@ -1379,18 +1318,19 @@ function PhoneNewTask({
           </button>
         </div>
         <div className="phone-task-form">
-          {starting || startError !== undefined ? <div className={`phone-task-note${startError === undefined ? '' : ' trouble'}`} role={startError === undefined ? 'status' : 'alert'}>{startError ?? `Starting ${provider === 'codex' ? 'Codex' : 'Claude Code'}...`}</div> : null}
-          {chat.showProviders ? <div className="phone-task-group"><button type="button" className="phone-task-cell" onClick={() => setPickingAssistant(true)}>Assistant<span>{provider === 'codex' ? 'Codex' : 'Claude Code'}<Icon name="right" size={14} /></span></button></div> : null}
-          {pickingAssistant ? <Menu anchor={new DOMRect()} title="Assistant" chosen={provider} choices={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex', disabled: !question && isRemote(root), says: 'Your ChatGPT plan, on the paired host' }]} onPick={(value) => chat.change({ chatProvider: value as SessionProvider })} onClose={() => setPickingAssistant(false)} /> : null}
+          {starting || startError !== undefined ? <div className={`phone-task-note${startError === undefined ? '' : ' trouble'}`} role={startError === undefined ? 'status' : 'alert'}>{startError ?? `Starting ${providerInfo.name}...`}</div> : null}
+          {chat.showProviders ? <div className="phone-task-group"><button type="button" className="phone-task-cell" onClick={() => setPickingAssistant(true)}>Assistant<span className="phone-task-selected"><b>{providerInfo.name}</b><Icon name="right" size={14} /></span></button></div> : null}
+          {pickingAssistant ? <Menu anchor={new DOMRect()} title="Assistant" chosen={provider} choices={selectableProviders(chat.settings).map((one) => ({ value: one.family, label: one.name, icon: one.icon, disabled: !question && isRemote(root) && one.localOnly === true }))} onPick={(value) => chat.change({ chatProvider: value as SessionProvider })} onClose={() => setPickingAssistant(false)} /> : null}
           {modelChoices}
           {question ? <div className="phone-task-note">Deleted a day after its last answer.</div> : null}
           {question ? null : (
             <>
               <div className="phone-task-group">
                 <button type="button" className="phone-task-cell" onClick={() => setChoosing(true)}>
-                  Project
-                  <span>
-                    <span className="phone-task-cell-text">{root === '' ? 'None' : projectLabel(root)}</span>
+                  Folder
+                  <span className={root === '' ? undefined : 'phone-task-selected'}>
+                    {root === '' ? null : <span className="phone-project-dot" aria-hidden="true" style={{ background: `var(--project-${String(projectColor(root, chat.settings))})` }} />}
+                    {root === '' ? <span className="phone-task-cell-text">None</span> : <b>{projectLabel(root)}</b>}
                     <Icon name="right" size={14} />
                   </span>
                 </button>
@@ -1400,7 +1340,7 @@ function PhoneNewTask({
                 </label>
               </div>
               <div className="phone-task-note">
-                {goal.trim() === '' ? `Without a goal, it stops when ${provider === 'codex' ? 'Codex' : 'Claude'} is done.` : `${provider === 'codex' ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review.`}
+                {goal.trim() === '' ? `Without a goal, it stops when ${isCodexProvider(provider) ? 'Codex' : 'Claude'} is done.` : `${isCodexProvider(provider) ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review.`}
               </div>
             </>
           )}
@@ -1419,7 +1359,7 @@ function PhoneNewTask({
             <div className="phone-task-recorded">
               <Icon name="display" size={16} />
               <span>
-                From a {clock(recorded.seconds)} recording. {provider === 'codex' ? 'Codex gets the frames.' : recorded.video ? 'Claude gets the video too.' : 'Claude gets the frames, not the video.'}
+                From a {clock(recorded.seconds)} recording. {isCodexProvider(provider) ? 'Codex gets the frames.' : recorded.video ? 'Claude gets the video too.' : 'Claude gets the frames, not the video.'}
                 {text.trim() === '' ? ' Nothing was said in it. Write what to do.' : ''}
               </span>
               <button type="button" aria-label="Take the recording off" onClick={onUnrecord}>

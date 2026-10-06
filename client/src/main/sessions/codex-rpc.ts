@@ -1,3 +1,5 @@
+import type { AgentAdmission } from '../vpn/admission'
+import { trackAgentChild } from '../vpn/admission'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -22,10 +24,10 @@ export function launchCodex(): Held {
     const key = Object.keys(env).find((name) => name.toUpperCase() === 'PATH') ?? 'PATH'
     for (const folder of (env[key] ?? '').split(delimiter)) {
       const script = join(folder, 'node_modules', '@openai', 'codex', 'bin', 'codex.js')
-      if (existsSync(script)) return spawn('node', [script, ...args], { cwd: homedir(), env, windowsHide: true, stdio: 'pipe' })
+      if (existsSync(script)) return trackAgentChild(spawn('node', [script, ...args], { cwd: homedir(), env, windowsHide: true, stdio: 'pipe' }))
     }
   }
-  return spawn('codex', args, { cwd: homedir(), env, windowsHide: true, stdio: 'pipe' })
+  return trackAgentChild(spawn('codex', args, { cwd: homedir(), env, windowsHide: true, stdio: 'pipe' }))
 }
 
 export class CodexRpc {
@@ -37,7 +39,7 @@ export class CodexRpc {
   userAgent = ''
   readonly ready: Promise<void>
 
-  constructor(launch: () => Held, event: (event: CodexEvent) => void, closed: (error: Error) => void) {
+  constructor(launch: () => Held, event: (event: CodexEvent) => void, closed: (error: Error) => void, private readonly admit: AgentAdmission = () => undefined) {
     let last = ''
     const failed = (error: Error): void => {
       if (this.#closed) return
@@ -92,6 +94,9 @@ export class CodexRpc {
 
   request<M extends keyof RpcParams>(method: M, params: RpcParams[M]): Promise<RpcResults[M]> {
     if (this.#closed) return Promise.reject(new Error('Codex has stopped.'))
+    if (method !== 'turn/interrupt' && method !== 'thread/unsubscribe') {
+      try { this.admit() } catch (error) { return Promise.reject(error) }
+    }
     const id = ++this.#next
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

@@ -80,7 +80,7 @@ export function byDay(
   const year = new Date(now).getFullYear()
   const days: { heading: string; rows: ChatSession[] }[] = []
   for (const session of rows) {
-    const heading = dayOf(session.at, today, yesterday, year)
+    const heading = dayOf(session.statusAt ?? session.at, today, yesterday, year)
     const last = days.at(-1)
     if (last?.heading === heading) last.rows.push(session)
     else days.push({ heading, rows: [session] })

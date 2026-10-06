@@ -245,3 +245,8 @@ export const outOfReachLine = (name: string): string => `${name} is out of reach
 
 /** A computer's own name as people read it: its hostname without `.local`, dashes as spaces, as the phone is told it. */
 export const machineName = (hostname: string): string => hostname.trim().replace(/\.local\.?$/i, '').replaceAll('-', ' ')
+
+export const belowRoot = (root: string, below: string): string => {
+  const host = hostOf(root)
+  return host === undefined || isRemote(below) ? below : remoteRoot(host, below)
+}

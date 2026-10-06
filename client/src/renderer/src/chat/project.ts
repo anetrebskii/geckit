@@ -4,7 +4,7 @@ import { hostOf, outOfReach, outOfReachLine, pathOf } from '../../../shared/host
 import type { HostState } from '../../../shared/hosts'
 
 /** A project folder by its last part, which is what anybody calls it. On a host, the folder's own last part. */
-export const projectName = (root: string): string => pathOf(root).split('/').filter((part) => part !== '').pop() ?? root
+export const projectName = (root: string): string => pathOf(root).split(hostOf(root) === undefined ? /[\\/]/ : '/').filter((part) => part !== '').pop() ?? root
 
 /** The names hosts go by and how each stands, as the windows were last told them. */
 let hostNames = new Map<string, string>()

@@ -38,6 +38,7 @@ import type {
   CutOff,
   ErrorAnswer,
   ChatSession,
+  ClaudeTransport,
   ClaudeAccount,
   CorrectRequest,
   VoiceMode,
@@ -61,6 +62,9 @@ import type {
 } from '../shared/api'
 import track from './analytics'
 import { control } from './control'
+import { agentVpnView, wireAgentVpn } from './vpn'
+import { agentAdmission, cancelAgentChildren } from './vpn/admission'
+import { admittedProvider } from './sessions/admitted-provider'
 import { correct, stopCorrecting } from './correct'
 import { answerErrors, errorQuestion, followErrors, startErrors, watchErrors, windowError } from './errors'
 import { askOrders, carryOut, projectSaid, saying } from './orders'
@@ -68,7 +72,6 @@ import type { Order, Told } from './orders'
 import { projectFiles } from './files'
 import { foldersIn } from './folders'
 import { fetchGit, gitRepo, gitState } from './git'
-import { keepCodexGuide, keepGuide } from './guide'
 import { closeAsked, listenAsked } from './asked'
 import type { CliAnswered, CliAsked, StartAnswered, StartAsked } from './asked'
 import { migrateCodexMetadata } from './session-migration'
@@ -79,7 +82,13 @@ import type { LocalAsk } from '../shared/local'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import { CodexSessions } from './sessions/codex'
-import type { Asking } from './sessions'
+import { readCodexBrowsers } from './sessions/codex-browsers'
+import { llmProvider } from './sessions/provider'
+import { installPlugin, installedPlugins, pluginHost, uninstallPlugin, updateInstalledPlugins } from './sessions/plugins'
+import { instructionsFor, registerProviderInfo } from '../shared/providers'
+import type { PluginHost } from './sessions/plugins'
+import type { PluginUpdateResult } from '../shared/providers'
+import type { Asking, SessionsDeps } from './sessions'
 import { firstLine } from './sessions/wording'
 import type { McpChange } from './sessions/mcp'
 import { readMcp } from './sessions/mcp'
@@ -157,6 +166,9 @@ const RECORD = ANYWHERE.record
 const SCREENSHOT = ANYWHERE.screenshot
 
 let sessions: Sessions | undefined
+let pluginsHost: PluginHost | undefined
+let providerUpdateCheck: Promise<PluginUpdateResult> | undefined
+let providerUpdateTimer: NodeJS.Timeout | undefined
 const conversationNotes = notesStore()
 let lineup: Lineup = { working: 0, limit: 0 }
 let routes: Routes | undefined
@@ -167,6 +179,7 @@ const hostWasUp = new Map<string, boolean>()
 let cutOffered = false
 /** The guide switches and browser names last kept, so their files are only written when either changes. */
 let guided: string | undefined
+let guideWrites = Promise.resolve()
 let asked: Server | undefined
 
 // GeckIt's own window the dictation was started in, which it goes back into.
@@ -322,9 +335,12 @@ async function thereFor(path: string): Promise<boolean> {
   return routes === undefined ? false : hostIsDir(routes, path)
 }
 
-function build(held: Routes): Sessions {
-  return new Sessions({
-    codex: new CodexSessions(undefined, (account) => tellChats('chat:accountChanged', account)),
+async function build(held: Routes): Promise<Sessions> {
+  const deps: SessionsDeps = {
+    admit: agentAdmission.assert,
+    codex: new CodexSessions(undefined, (account) => tellChats('chat:accountChanged', account), () => getSettings().codexBrowser, agentAdmission.assert),
+    codexBrowsers: readCodexBrowsers,
+    transport: () => getSettings().chatTransport,
     notes: conversationNotes,
     ...(process.platform === 'darwin' ? { terminal: terminalFor } : {}),
     claude: routedClaude(held),
@@ -335,6 +351,7 @@ function build(held: Routes): Sessions {
     mcp: (root, change) => (isRemote(root) ? hostMcp(held, root, change) : readMcp(root, change)),
     browsers: (root, pick) => (isRemote(root) ? Promise.resolve(undefined) : readBrowsers(root, pick)),
     claudeModels: (root) => (root !== undefined && isRemote(root) ? hostModels(held, root) : claudeModels()),
+    search: (roots, asked) => searchClaude(roots, asked, (root) => foldersFor(held, root)),
     limit: () => getSettings().workingAtOnce,
     order: () => getSettings().progressOrder,
     lineup: (now) => {
@@ -389,7 +406,53 @@ function build(held: Routes): Sessions {
       // A banner goes by in a few seconds; a question keeps the Dock icon bouncing until it is looked at.
       app.dock?.bounce(notice.asks ? 'critical' : 'informational')
     },
+  }
+  pluginsHost = pluginHost(admittedProvider(llmProvider(deps, 'claude'), agentAdmission.assert), admittedProvider(llmProvider(deps, 'codex'), agentAdmission.assert), agentAdmission.assert)
+  if (agentVpnView().required) {
+    registerProviderInfo(getSettings().providerPlugins)
+    return new Sessions(deps)
+  }
+  const plugins = await installedPlugins(pluginsHost)
+  if (agentVpnView().required) {
+    for (const plugin of plugins) {
+      if (plugin.provider.id === 'claude-tmux') continue
+      try { plugin.provider.dispose() } catch { log.warn('Could not cancel an owned provider during VPN activation.') }
+    }
+    registerProviderInfo(getSettings().providerPlugins)
+    return new Sessions(deps)
+  }
+  registerProviderInfo(plugins.map((one) => one.info))
+  const previous = getSettings()
+  const migrated = plugins.find((one) => one.info.family === one.info.id && previous.providerPlugins.some((old) => old.id === one.info.id && old.family === 'codex' && old.replaces === 'codex'))
+  const available = new Set<SessionProvider>(['claude', 'codex', ...plugins.map((one) => one.info.family)])
+  const enabled = assistantsIn(previous).filter((one) => available.has(one))
+  if (enabled.length === 0) enabled.push('claude')
+  const extra = migrated !== undefined && enabled.includes('codex') ? [migrated.info.family] : []
+  const chatProviders = [...enabled, ...extra]
+  const chatProvider = previous.chatProvider === 'codex' && migrated !== undefined ? migrated.info.family : chatProviders.includes(previous.chatProvider) ? previous.chatProvider : chatProviders[0] ?? 'claude'
+  setSettings({
+    providerPlugins: plugins.map((one) => one.info),
+    providerUpdatesReady: [],
+    providerRemovalPending: false,
+    chatProviders,
+    chatProvider,
+    correctProvider: available.has(previous.correctProvider) ? previous.correctProvider : chatProvider,
+    chatTransport: plugins.some((one) => one.info.id === 'claude-tmux') ? previous.chatTransport : 'stream',
   })
+  return new Sessions({ ...deps, plugins: plugins.map((one) => one.provider) })
+}
+
+async function checkProviderUpdates(): Promise<PluginUpdateResult> {
+  if (pluginsHost === undefined) return { ready: [], failed: [] }
+  if (providerUpdateCheck !== undefined) return providerUpdateCheck
+  providerUpdateCheck = updateInstalledPlugins(pluginsHost).then((result) => {
+    const installed = new Set<string>(getSettings().providerPlugins.map((one) => one.id))
+    const ready = result.ready.filter((id) => installed.has(id))
+    if (ready.length > 0) setSettings({ providerUpdatesReady: [...new Set([...getSettings().providerUpdatesReady, ...ready])] })
+    return result
+  })
+  try { return await providerUpdateCheck }
+  finally { providerUpdateCheck = undefined }
 }
 
 /* ------------------------------------------------------------------ */
@@ -518,7 +581,7 @@ async function readRecorded(recording: Recording): Promise<Answered> {
   const line = read.plan?.[at]
   if (planned === undefined || start === undefined || line === undefined) {
     planned = undefined
-    return { ok: false, error: 'No project fits what was said. Name the project and try again.' }
+    return { ok: false, error: 'No folder fits what was said. Name the folder and try again.' }
   }
   planned = { orders: [start], told: planned.told, images: pictures(recording), recording }
   return { ok: true, plan: [line], heard: recording.text }
@@ -681,29 +744,33 @@ async function cliAsked(ask: CliAsked, gone: AbortSignal): Promise<CliAnswered> 
 async function startAsked(ask: StartAsked, gone: AbortSignal): Promise<StartAnswered> {
   const held = sessions
   if (held === undefined) return { ok: false, error: 'GeckIt is not ready yet.' }
-  if (typeof ask.from !== 'string' || ask.from === '') return { ok: false, error: 'Run this from a Claude Code session.' }
+  if (typeof ask.from !== 'string' || ask.from === '') return { ok: false, error: 'Run this from a Claude Code or Codex session.' }
   const tasks = Array.isArray(ask.tasks) ? ask.tasks : []
   if (tasks.length === 0) return { ok: false, error: 'Task 1 has no text.' }
   if (tasks.length > 20) return { ok: false, error: 'At most 20 tasks at once.' }
   const projects = getSettings().projects
+  const listed = await held.list(projects)
+  const from = held.requestOrigin(ask.from)
+  if (!listed.some((one) => one.id === from)) {
+    return { ok: false, error: "This conversation's folder is not one of your folders in GeckIt." }
+  }
   const asking: Asking[] = []
   for (const [index, task] of tasks.entries()) {
     const root = projects.find((one) => projectSaid(one, hostNamed) === task.project)
     if (root === undefined) {
       const names = projects.map((one) => projectSaid(one, hostNamed)).join(', ')
-      return { ok: false, error: `Task ${String(index + 1)}: no project called ${String(task.project)}. There are: ${names}` }
+      return { ok: false, error: `Task ${String(index + 1)}: no folder called ${String(task.project)}. There are: ${names}` }
     }
     const text = typeof task.text === 'string' ? task.text.trim() : ''
     if (text === '') return { ok: false, error: `Task ${String(index + 1)} has no text.` }
     const title = typeof task.title === 'string' && task.title.trim() !== '' ? task.title.trim() : text.split(/(?<=[.!?])\s/)[0] ?? text
     const goal = typeof task.goal === 'string' && task.goal.trim() !== '' ? task.goal.trim() : undefined
-    asking.push({ project: task.project, root, title: firstLine(title, 100), text, ...(goal === undefined ? {} : { goal }) })
+    const provider = task.provider ?? providerOf(from)
+    if (!assistantsIn(getSettings()).includes(provider)) return { ok: false, error: `Task ${String(index + 1)}: provider ${provider} is not enabled.` }
+    asking.push({ provider, project: task.project, root, title: firstLine(title, 100), text, ...(goal === undefined ? {} : { goal }) })
   }
-  if (!(await held.list(projects)).some((one) => one.id === ask.from)) {
-    return { ok: false, error: "This conversation's folder is not one of your projects in GeckIt." }
-  }
-  const answered = await held.request(ask.from, asking, getSettings().chatMode, gone)
-  return answered === undefined ? { ok: false, error: 'Claude stopped waiting.' } : { ok: true, ...answered }
+  const answered = await held.request(from, asking, getSettings().chatMode, gone)
+  return answered === undefined ? { ok: false, error: 'The requesting conversation stopped waiting.' } : { ok: true, ...answered }
 }
 
 /** The yes: what was read out loud a moment ago is carried out now. */
@@ -797,8 +864,7 @@ function openTerminal(root: string, run: string): void {
 
 /** Search, routed the same way the conversation files themselves are: this computer's own, or a host's mirror. */
 const searchChats = async (roots: readonly string[], asked: string): Promise<ChatFound[]> => {
-  const results = await Promise.all([searchClaude(roots, asked, (root) => foldersFor(routes, root)), sessions?.searchCodex(roots, asked) ?? []])
-  const said = results.flat()
+  const said = await sessions?.search(roots, asked) ?? []
   // A conversation not begun yet has no file, and what is queued in it is all there is to find.
   const queued = (sessions?.queuedHolding(roots, asked) ?? []).filter((hit) => !said.some((one) => one.id === hit.id))
   return [...queued, ...said].filter((one) => assistantsIn(getSettings()).includes(providerOf(one.id)))
@@ -951,6 +1017,24 @@ function wireHosts(): void {
   ipcMain.handle('hosts:resumeLine', (_event, root: string, id: string) => (routes === undefined ? undefined : hostResumeLine(routes, root, id)))
 }
 
+async function restoreAgentProviders(): Promise<void> {
+  const host = pluginsHost
+  const held = sessions
+  if (host === undefined || held === undefined) return
+  agentAdmission.assert()
+  const plugins = await installedPlugins(host)
+  try { agentAdmission.assert() } catch (error) {
+    for (const plugin of plugins) {
+      if (plugin.provider.id === 'claude-tmux') continue
+      try { plugin.provider.dispose() } catch { log.warn('Could not cancel an owned provider during VPN activation.') }
+    }
+    throw error
+  }
+  for (const plugin of plugins) held.replaceProvider(plugin.provider)
+  registerProviderInfo(plugins.map((one) => one.info))
+  await held.resumeQueues()
+}
+
 function wire(): void {
   ipcMain.handle('settings:get', () => getSettings())
   ipcMain.handle('update:view', () => updateView())
@@ -1034,6 +1118,47 @@ function wire(): void {
   ipcMain.on('chat:open', () => openChat())
   ipcMain.on('chat:listening', () => chatListening())
   ipcMain.handle('chat:account', (_event, provider: SessionProvider | undefined) => sessions?.account(provider))
+  ipcMain.handle('chat:installProvider', async (_event, url: string) => {
+    if (pluginsHost === undefined || sessions === undefined) throw new Error('Chat is not ready yet.')
+    const installed = await installPlugin(url, pluginsHost)
+    sessions.addProvider(installed.provider)
+    const enabled = assistantsIn(getSettings())
+    setSettings({ providerPlugins: [...getSettings().providerPlugins, installed.info], chatProviders: enabled.includes(installed.provider.family) ? enabled : [...enabled, installed.provider.family] })
+    registerProviderInfo(getSettings().providerPlugins)
+    void sessions.refresh(getSettings().projects)
+    return installed.info
+  })
+  ipcMain.handle('chat:uninstallProvider', async (_event, id: string) => {
+    if (sessions === undefined) throw new Error('Chat is not ready yet.')
+    const previous = getSettings()
+    const provider = previous.providerPlugins.find((one) => one.id === id)
+    if (provider === undefined) throw new Error('Library is not installed.')
+    const ownInstructions = instructionsFor(provider) === 'own' && previous.guidePlugins[id] !== false
+    if (ownInstructions) await sessions.setInstructions(provider.family, false, previous.browserNames)
+    try { await uninstallPlugin(id) }
+    catch (error) {
+      if (ownInstructions) void sessions.setInstructions(provider.family, true, previous.browserNames)
+      throw error
+    }
+    const providerPlugins = previous.providerPlugins.filter((one) => one.id !== id)
+    const independent = provider.family !== 'claude' && provider.replaces === undefined
+    const enabled = assistantsIn(previous).filter((one) => !independent || one !== provider.family)
+    const fallback: SessionProvider = provider.runtime === 'codex' ? 'codex' : 'claude'
+    const chatProviders: readonly SessionProvider[] = enabled.length > 0 ? enabled : [fallback]
+    const chatProvider: SessionProvider = chatProviders.includes(previous.chatProvider) ? previous.chatProvider : chatProviders[0] ?? fallback
+    setSettings({
+      providerPlugins,
+      providerUpdatesReady: previous.providerUpdatesReady.filter((one) => one !== id),
+      providerRemovalPending: true,
+      chatProviders,
+      chatProvider,
+      correctProvider: independent && previous.correctProvider === provider.family ? chatProvider : previous.correctProvider,
+      ...(id === 'claude-tmux' ? { chatTransport: 'stream' as const } : {}),
+    })
+    registerProviderInfo(providerPlugins)
+    void sessions.refresh(getSettings().projects)
+  })
+  ipcMain.handle('chat:checkProviderUpdates', () => checkProviderUpdates())
   ipcMain.handle('chat:models', (_event, root: string | undefined, provider: SessionProvider | undefined) => sessions?.models(root ?? undefined, provider))
   ipcMain.handle('chat:plan', () => {
     void sessions?.measure()
@@ -1049,7 +1174,7 @@ function wire(): void {
   ipcMain.handle('chat:addProject', async () => {
     const window = shownChat() ?? chatWindow()
     const picked = await dialog.showOpenDialog(window, {
-      title: 'Choose a project',
+      title: 'Choose a folder',
       properties: ['openDirectory', 'createDirectory'],
     })
     const root = picked.filePaths[0]
@@ -1097,10 +1222,12 @@ function wire(): void {
   ipcMain.handle('chat:unqueue', (_event, id: string, queued: string) => sessions?.unqueue(id, queued))
   ipcMain.handle('chat:queuedPicture', (_event, id: string, queued: string, index: number) => sessions?.queuedPicture(id, queued, index))
   ipcMain.on('chat:requeue', (_event, id: string, queued: string, text: string) => sessions?.requeue(id, queued, text))
+  ipcMain.on('chat:reorderQueued', (_event, id: string, queued: string, target: string, after: boolean) => sessions?.reorderQueued(id, queued, target, after))
   ipcMain.handle('chat:delegate', (_event, id: string, queued: string, history: boolean) =>
     sessions?.delegate(id, queued, history),
   )
   ipcMain.on('chat:mode', (_event, id: string, mode: SessionMode) => sessions?.mode(id, mode))
+  ipcMain.on('chat:transport', (_event, id: string, transport: ClaudeTransport) => sessions?.transport(id, transport))
   ipcMain.on('chat:rename', (_event, id: string, title: string) => sessions?.rename(id, title))
   ipcMain.on('chat:mark', (_event, id: string, status: SessionStatus | null) => sessions?.mark(id, status ?? undefined))
   ipcMain.on('chat:hide', (_event, id: string) => hideChat(id))
@@ -1116,12 +1243,15 @@ function wire(): void {
   ipcMain.handle('chat:browsers', (_event, root: string, id: string | undefined, pick: string | undefined) =>
     sessions?.browsers(root, id ?? undefined, pick ?? undefined),
   )
+  ipcMain.handle('chat:codexBrowsers', () => sessions?.codexBrowsers())
   ipcMain.on('chat:handOver', (_event, id: string) => sessions?.handOver(id))
   ipcMain.on('chat:terminal', (_event, id: string, root: string) => {
     // Off macOS there is no terminal to open one in; pretending to would only silently open the folder.
     if (process.platform !== 'darwin') return
+    const command = resumeCommand(id)
+    if (command === undefined) return
     sessions?.handOver(id)
-    terminalFor(root, resumeCommand(id))
+    terminalFor(root, command)
   })
   ipcMain.handle('chat:upload', (_event, root: string, path: string) =>
     isRemote(root) ? (routes === undefined ? { problem: 'Not ready yet.' } : hostUpload(routes, root, path)) : { path },
@@ -1207,11 +1337,10 @@ function wire(): void {
     // The frames, the vibrancy behind the panel and the folder picker are the
     // system's, not the stylesheet's, and they follow this.
     nativeTheme.themeSource = settings.theme
-    const guide = JSON.stringify([settings.guideClaude, settings.guideCodex, settings.browserNames])
+    const guide = JSON.stringify([settings.guideClaude, settings.guideCodex, settings.guidePlugins, settings.browserNames, settings.providerPlugins.map((one) => one.id)])
     if (guide !== guided) {
       guided = guide
-      void keepGuide(settings.guideClaude, settings.browserNames)
-      void keepCodexGuide(settings.guideCodex)
+      guideWrites = guideWrites.then(async () => { await sessions?.setAllInstructions(settings) }).catch((error) => { log.warn('Could not set provider instructions', error) })
     }
     keepPhone(settings.phone, settings.phoneKey)
     keepShortcuts(settings.anywhereOff)
@@ -1258,6 +1387,7 @@ function phoneCalls(): Record<string, PhoneCall> {
   return {
     // The name the phone lists this Mac under, as the network knows it: Alexs-MacBook-Pro.local reads Alexs MacBook Pro.
     boot: () => ({ home: homedir(), platform: process.platform, name: computerName() }),
+    'agentVpn.view': () => agentVpnView(),
     'settings.get': () => phoneSettings(getSettings()),
     'settings.set': (change: Partial<Settings>) => setSettings(change),
     'update.view': () => updateView(),
@@ -1302,8 +1432,10 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.unqueue': (id: string, queued: string) => held()?.unqueue(id, queued),
     'chat.queuedPicture': (id: string, queued: string, index: number) => held()?.queuedPicture(id, queued, index),
     'chat.requeue': (id: string, queued: string, text: string) => held()?.requeue(id, queued, text),
+    'chat.reorderQueued': (id: string, queued: string, target: string, after: boolean) => held()?.reorderQueued(id, queued, target, after),
     'chat.delegate': (id: string, queued: string, history: boolean) => held()?.delegate(id, queued, history),
     'chat.mode': (id: string, mode: SessionMode) => held()?.mode(id, mode),
+    'chat.transport': (id: string, transport: ClaudeTransport) => held()?.transport(id, transport),
     'chat.rename': (id: string, title: string) => held()?.rename(id, title),
     'chat.mark': (id: string, status: SessionStatus | undefined) => held()?.mark(id, status),
     'chat.hide': (id: string) => hideChat(id),
@@ -1413,27 +1545,27 @@ if (!app.requestSingleInstanceLock()) {
     window.focus()
   })
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     if (process.platform === 'darwin') void systemPreferences.askForMediaAccess('microphone')
     else Menu.setApplicationMenu(null)
     // A packaged app carries its icon in the bundle; run from the source, the Dock would show Electron's, so it shows one that says Local.
     if (!app.isPackaged) app.dock?.setIcon(resolve(import.meta.dirname, '../../assets/icon-dev.png'))
+    wireAgentVpn((view) => shownPeer()?.webContents.send('peer:tell', 'vpn:changed', view), () => { try { sessions?.blockForVpn() } finally { try { stopCorrecting() } finally { cancelAgentChildren() } } }, () => { void restoreAgentProviders().catch(() => undefined) })
     const held = buildHosts()
     routes = held
-    const started = build(held)
+    const started = await build(held)
     sessions = started
     plans = buildPlans()
-    void started.resumeQueues()
+    void started.resumeQueues().catch(() => undefined)
     // What was running on hosts when GeckIt closed is still running there, and is picked up. Their hosts are
     // reached first: one not connected is read from the copy kept here, and a conversation begun just before
     // quitting has none yet, so it would come back without what was said in it.
     const running = Object.entries(held.runs.all()).map(([id, run]) => ({ id, root: run.root }))
     const reached = [...new Set(running.map((run) => hostOf(run.root)).filter((id) => id !== undefined))].map((id) => held.hosts.ensure(id))
-    void Promise.allSettled(reached).then(() => started.reattach(running))
+    void Promise.allSettled(reached).then(() => started.reattach(running)).catch(() => undefined)
     nativeTheme.themeSource = getSettings().theme
-    guided = JSON.stringify([getSettings().guideClaude, getSettings().guideCodex, getSettings().browserNames])
-    void keepGuide(getSettings().guideClaude, getSettings().browserNames)
-    void keepCodexGuide(getSettings().guideCodex)
+    guided = JSON.stringify([getSettings().guideClaude, getSettings().guideCodex, getSettings().guidePlugins, getSettings().browserNames, getSettings().providerPlugins.map((one) => one.id)])
+    guideWrites = guideWrites.then(() => started.setAllInstructions(getSettings())).catch((error) => { log.warn('Could not set provider instructions', error) })
     keepPhone(getSettings().phone, getSettings().phoneKey)
     asked = listenAsked(cliAsked)
     wire()
@@ -1471,6 +1603,10 @@ if (!app.requestSingleInstanceLock()) {
       running: () => sessions?.working() ?? [],
       wanted: () => getSettings().autoUpdate,
     })
+    providerUpdateTimer = setInterval(() => {
+      if (getSettings().providerAutoUpdate) void checkProviderUpdates().catch(() => undefined)
+    }, 24 * 60 * 60_000)
+    if (getSettings().providerAutoUpdate) void checkProviderUpdates().catch(() => undefined)
 
     app.on('activate', () => {
       if (personWindows().length === 0) openChat()
@@ -1482,6 +1618,7 @@ if (!app.requestSingleInstanceLock()) {
 app.on('window-all-closed', () => undefined)
 
 app.on('will-quit', () => {
+  if (providerUpdateTimer !== undefined) clearInterval(providerUpdateTimer)
   globalShortcut.unregisterAll()
   sessions?.dispose()
   plans?.dispose()

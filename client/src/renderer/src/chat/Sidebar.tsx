@@ -159,7 +159,7 @@ export function Views({ chat }: { chat: Chat }): React.JSX.Element {
         role="radio"
         aria-checked={shown === 'list'}
         className={shown === 'list' ? 'on' : undefined}
-        title="List: the conversations one under another, by project"
+        title="List: the conversations one under another, by folder"
         onClick={() => chat.change({ chatView: 'list' })}
       >
         <Icon name="list" />
@@ -293,7 +293,7 @@ const Row = memo(function Row({
           />
         ) : (
           <span className="head">
-            {showProviders ? <ProviderIcon id={session.id} /> : null}
+            {showProviders ? <ProviderIcon id={session.id} transport={session.transport} /> : null}
             <span className="title">{session.title === '' ? 'Untitled' : session.title}</span>
             <span className="changed" title={new Date(session.at).toLocaleString()}>
               {changed}
@@ -393,7 +393,7 @@ const Rows = memo(function Rows({
         <div className="empty">{empty}</div>
       ) : groups.length === 0 ? (
         <div className="empty">
-          {scope === ALL ? 'No conversations in these projects yet.' : 'No conversations about this project yet.'}
+          {scope === ALL ? 'No conversations in these folders yet.' : 'No conversations about this folder yet.'}
         </div>
       ) : (
         groups.map(([where, rows]) => (
@@ -700,7 +700,7 @@ export function Sidebar({
         now={now}
         scope={chat.scope}
         colors={chat.settings}
-        empty={chat.root === undefined ? 'Add a project folder to start.' : undefined}
+        empty={chat.root === undefined ? 'Add a folder to start.' : undefined}
         shownId={shownId}
         folded={folded}
         renaming={renaming}
@@ -814,7 +814,7 @@ export function Sidebar({
           title="Group by"
           choices={[
             { value: 'time', label: 'Time' },
-            { value: 'project', label: 'Project' },
+            { value: 'project', label: 'Folder' },
           ]}
           chosen={chat.settings.chatGrouping}
           onPick={(value) => chat.change({ chatGrouping: value as ChatGrouping })}

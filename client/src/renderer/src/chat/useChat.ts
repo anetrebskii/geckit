@@ -1,3 +1,4 @@
+import { VPN_REQUIRED_MESSAGE } from '../../../shared/vpn'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
@@ -6,6 +7,7 @@ import type {
   Lineup,
   ClaudeAccount,
   ClaudeModel,
+  ClaudeTransport,
   ModelsSaid,
   PlaceUsage,
   PlanUsage,
@@ -19,6 +21,7 @@ import type {
   SessionStatus,
 } from '../../../shared/api'
 import { assistantFor, assistantsIn, homeOf, providerOf, resumeCommand, shownProjects } from '../../../shared/api'
+import { isCodexProvider } from '../../../shared/providers'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { asImage, canShow } from '../pictures'
@@ -110,6 +113,7 @@ export interface Chat {
   readonly models: ModelsSaid
   /** The mode and model the next message goes with, on a new session or an old one. */
   readonly mode: SessionMode
+  readonly transport: ClaudeTransport
   readonly provider: SessionProvider
   readonly showProviders: boolean
   readonly reasoning: ReasoningEffort | ''
@@ -141,6 +145,7 @@ export interface Chat {
   addFiles: (files: readonly File[]) => void
   dropPicture: (at: number) => void
   setMode: (mode: SessionMode) => void
+  setTransport: (transport: ClaudeTransport) => void
   setModel: (model: string) => void
   setProvider: (provider: SessionProvider) => void
   /** Asks which models the Claude Code that runs a project has: the chat's own project where none is given. */
@@ -158,6 +163,7 @@ export interface Chat {
   unqueue: (queued: string) => void
   /** A message waiting in the queue, said again in other words. */
   requeue: (queued: string, text: string) => void
+  reorderQueued: (queued: string, target: string, after: boolean) => void
   /** Starts a message waiting in the queue as a new conversation of its own, empty or with this one's history as it was then, and opens it. */
   delegate: (queued: string, history: boolean) => void
   /** Stops a command typed after `!` that is still running. */
@@ -332,7 +338,7 @@ export function useChat(): Chat {
       )
     }
     ask()
-    const every = provider === 'codex' ? window.setInterval(ask, PLAN_EVERY) : undefined
+    const every = window.setInterval(() => { if (document.visibilityState === 'visible') ask() }, PLAN_EVERY)
     window.addEventListener('focus', ask)
     const off = window.geckit.chat.onAccount((said) => {
       if ((said.provider ?? 'claude') === provider) setAccount(said)
@@ -504,8 +510,9 @@ export function useChat(): Chat {
   }, [root])
 
   const mode = session?.mode ?? settings.chatMode
+  const transport = session?.transport ?? (root !== undefined && isRemote(root) || !settings.providerPlugins.some((one) => one.id === 'claude-tmux') ? 'stream' : settings.chatTransport)
   const nextChoice = shown.kind === 'session' ? nextChoices.get(shown.id) : undefined
-  const model = nextChoice?.model ?? session?.chosen ?? (provider === 'codex' ? session?.model ?? settings.codexModel : settings.chatModel)
+  const model = nextChoice?.model ?? session?.chosen ?? (isCodexProvider(provider) ? session?.model ?? settings.codexModel : settings.chatModel)
   const wantedReasoning = nextChoice?.reasoning ?? session?.reasoning ?? settings.codexReasoning
   const catalog: readonly ClaudeModel[] | undefined = Array.isArray(models.said) && models.on.startsWith(`${provider}:`) ? models.said : undefined
   const reasoningModel = catalog?.find((one) => one.value === (model || session?.model)) ?? catalog?.find((one) => one.isDefault)
@@ -513,7 +520,7 @@ export function useChat(): Chat {
   const working = session?.state === 'working' || session?.state === 'asks'
 
   useEffect(() => {
-    if (provider !== 'codex' || (root !== undefined && isRemote(root))) return
+    if (!isCodexProvider(provider) || (root !== undefined && isRemote(root))) return
     let current = true
     const on = `${provider}:`
     void window.geckit.chat.models(root, provider).then((said) => {
@@ -686,7 +693,7 @@ export function useChat(): Chat {
           ...(into.kind === 'session' ? { session: into.id } : {}),
           root: where,
           provider: now.provider,
-          ...(now.provider !== 'codex' ? {} : { reasoning: now.reasoning }),
+          ...(!isCodexProvider(now.provider) ? {} : { reasoning: now.reasoning }),
           mode: now.mode,
           text,
           ...(carried.length === 0 ? {} : { images: carried }),
@@ -706,7 +713,7 @@ export function useChat(): Chat {
               setDrafts((all) => ({ ...all, [key]: text }))
               setPictures((all) => ({ ...all, [key]: carried }))
             }
-            setTrouble(ON_PHONE ? 'Not sent: the host could not be reached' : error.message)
+            setTrouble(ON_PHONE && error.message !== VPN_REQUIRED_MESSAGE ? 'Not sent: the host could not be reached' : error.message)
           },
         )
     },
@@ -721,12 +728,12 @@ export function useChat(): Chat {
         .send({
           root: '',
           provider,
-          ...(provider !== 'codex' ? {} : { reasoning: now.settings.codexReasoning }),
+          ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }),
           mode: now.mode,
           text,
           question: true,
           ...(images.length === 0 ? {} : { images }),
-          ...((provider === 'codex' ? now.settings.codexModel : now.settings.chatModel) === '' ? {} : { model: provider === 'codex' ? now.settings.codexModel : now.settings.chatModel }),
+          ...((isCodexProvider(provider) ? now.settings.codexModel : now.settings.chatModel) === '' ? {} : { model: isCodexProvider(provider) ? now.settings.codexModel : now.settings.chatModel }),
         })
         .then((id) => open({ kind: 'session', id }))
     },
@@ -737,12 +744,12 @@ export function useChat(): Chat {
     (root: string, text: string, goal: string, images: readonly SessionImage[] = []) => {
       const now = held.current
       const provider = assistantFor(now.settings, root)
-      const chosen = provider === 'codex' ? now.settings.codexModel : now.settings.chatModel
+      const chosen = isCodexProvider(provider) ? now.settings.codexModel : now.settings.chatModel
       const model = chosen === '' ? {} : { model: chosen }
       const carried = images.length === 0 ? {} : { images }
-      return window.geckit.chat.send({ root, provider, ...(provider !== 'codex' ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(provider === 'codex' && goal.trim() !== '' ? { goal: goal.trim() } : {}) }).then((id) => {
+      return window.geckit.chat.send({ root, provider, ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(isCodexProvider(provider) && goal.trim() !== '' ? { goal: goal.trim() } : {}) }).then((id) => {
         open({ kind: 'session', id })
-        if (provider === 'codex' || goal.trim() === '') return
+        if (isCodexProvider(provider) || goal.trim() === '') return
         void window.geckit.chat.send({ session: id, root, mode: now.mode, text: `/goal ${goal.trim()}`, ...model })
       })
     },
@@ -874,9 +881,10 @@ export function useChat(): Chat {
     const where = sessionsRef.current.find((one) => one.id === id)?.root ?? rootRef.current
     if (where === undefined) return Promise.resolve(false)
     // On a host, the line a local terminal would type is that host's own; nothing here says `cd` into an address ssh does not read.
+    const command = resumeCommand(id)
     const line =
       hostOf(where) === undefined
-        ? Promise.resolve<string | undefined>(`cd ${JSON.stringify(where)} && ${resumeCommand(id)}`)
+        ? Promise.resolve<string | undefined>(command === undefined ? undefined : `cd ${JSON.stringify(where)} && ${command}`)
         : window.geckit.hosts.resumeLine(where, id)
     // Handed over only once the line is on the clipboard: a host out of reach gives none, and the conversation stays here.
     return line
@@ -926,6 +934,7 @@ export function useChat(): Chat {
     plansAt,
     models: models.on === `${provider}:${root === undefined ? '' : hostOf(root) ?? ''}` ? models.said : 'unasked',
     mode,
+    transport,
     provider,
     showProviders: enabled.length > 1,
     reasoning,
@@ -973,11 +982,18 @@ export function useChat(): Chat {
         window.geckit.chat.mode(id, next)
       }
     },
-    setModel: (next) => {
-      change(provider === 'codex' ? { codexModel: next, codexReasoning: '' } : { chatModel: next })
+    setTransport: (next) => {
       if (shownRef.current.kind === 'session') {
         const id = shownRef.current.id
-        setNextChoices((all) => new Map(all).set(id, { ...all.get(id), model: next, ...(provider === 'codex' ? { reasoning: '' } : {}) }))
+        setSessions((all) => all.map((one) => one.id === id ? { ...one, transport: next } : one))
+        window.geckit.chat.transport(id, next)
+      } else change({ chatTransport: next })
+    },
+    setModel: (next) => {
+      change(isCodexProvider(provider) ? { codexModel: next, codexReasoning: '' } : { chatModel: next })
+      if (shownRef.current.kind === 'session') {
+        const id = shownRef.current.id
+        setNextChoices((all) => new Map(all).set(id, { ...all.get(id), model: next, ...(isCodexProvider(provider) ? { reasoning: '' } : {}) }))
       }
     },
     setProvider: (next) => {
@@ -992,7 +1008,8 @@ export function useChat(): Chat {
       void window.geckit.chat
         .models(where, provider)
         .then((said) => setModels((held) => (held.on !== on ? held : { on, said: said ?? (Array.isArray(held.said) ? held.said : 'unsaid') })))
-      void window.geckit.chat.account(provider).then(setAccount)
+        .catch(() => setModels((held) => held.on !== on ? held : { on, said: Array.isArray(held.said) ? held.said : 'unsaid' }))
+      void window.geckit.chat.account(provider).then(setAccount, () => undefined)
     },
     send,
     ask,
@@ -1005,7 +1022,7 @@ export function useChat(): Chat {
         session: shownRef.current.id,
         root: where,
         mode: now.mode,
-        ...(now.provider !== 'codex' ? {} : { reasoning: now.reasoning }),
+        ...(!isCodexProvider(now.provider) ? {} : { reasoning: now.reasoning }),
         text,
         ...(now.model === '' ? {} : { model: now.model }),
       }).catch((error: Error) => setTrouble(error.message))
@@ -1020,6 +1037,9 @@ export function useChat(): Chat {
     },
     requeue: (queued, text) => {
       if (shownRef.current.kind === 'session') window.geckit.chat.requeue(shownRef.current.id, queued, text)
+    },
+    reorderQueued: (queued, target, after) => {
+      if (shownRef.current.kind === 'session') window.geckit.chat.reorderQueued(shownRef.current.id, queued, target, after)
     },
     delegate: (queued, history) => {
       if (shownRef.current.kind !== 'session') return

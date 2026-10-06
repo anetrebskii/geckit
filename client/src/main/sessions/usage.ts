@@ -1,3 +1,4 @@
+import { trackAgentChild } from '../vpn/admission'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { createInterface } from 'node:readline'
@@ -51,7 +52,7 @@ export function controlResponse(line: string): { readonly id: string; readonly o
 
 export function readUsage(models: readonly string[]): Promise<Usage> {
   return new Promise((done) => {
-    const child = spawn(
+    const child = trackAgentChild(spawn(
       claudeCommand(),
       [
         '-p',
@@ -66,7 +67,7 @@ export function readUsage(models: readonly string[]): Promise<Usage> {
         JSON.stringify({ disableAllHooks: true }),
       ],
       { cwd: homedir(), stdio: ['pipe', 'pipe', 'ignore'], env: planOnly(), windowsHide: true },
-    )
+    ))
     let plan: PlanUsage | undefined
     const windows = new Map<string, number | undefined>(models.map((model) => [model, undefined]))
     // Asked one at a time: which model a window is for is the one switched to before it.

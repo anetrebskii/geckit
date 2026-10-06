@@ -1,4 +1,4 @@
-import type { BackgroundTask, CardAnswer, PlanUsage, ReasoningEffort, SessionGoal, SessionImage, SessionItem } from '../../shared/api'
+import type { BackgroundTask, CardAnswer, PlanUsage, ProviderUsage, ReasoningEffort, SessionGoal, SessionImage, SessionItem, SessionSpend } from '../../shared/api'
 import type { Wanted } from './rule'
 
 /** What a session hears from the process holding it. */
@@ -28,7 +28,8 @@ export type Signal =
   | { readonly kind: 'model'; readonly model: string }
   | { readonly kind: 'reasoning'; readonly effort: ReasoningEffort }
   /** How full the context is after the last answer, and what this run of the tool has cost so far. */
-  | { readonly kind: 'spend'; readonly used?: number; readonly cost?: number; readonly window?: number }
+  | ({ readonly kind: 'spend' } & SessionSpend)
+  | { readonly kind: 'usage'; readonly usage: ProviderUsage }
   /** How much of the plan is spent. Said by the tool after every turn, for the whole account. */
   | { readonly kind: 'plan'; readonly plan: PlanUsage }
   /** A task in the background, as it now stands, said each time that changes. */

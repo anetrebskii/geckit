@@ -1,12 +1,16 @@
+import { agentAdmission, trackAgentChild } from './vpn/admission'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 
 import type { Answered, CorrectAction, CorrectRequest } from '../shared/api'
 import { assistantFor } from '../shared/api'
+import { isCodexProvider } from '../shared/providers'
 import { correctKeeper } from './correct-session'
 import { claudeCommand, planOnly } from './sessions/account'
 import { getSettings } from './store'
 import { CodexSessions } from './sessions/codex'
+import { llmProvider } from './sessions/provider'
+import { pluginProvider } from './sessions/plugins'
 
 /**
  * One piece of text in, the same text put right and out.
@@ -51,8 +55,9 @@ const PATIENCE = 90_000
  * reach.
  */
 export function askPlan(text: string, said: string, model: string): Promise<Answered> {
+  try { agentAdmission.assert() } catch (error) { return Promise.resolve({ ok: false, error: error instanceof Error ? error.message : String(error) }) }
   return new Promise((done) => {
-    const child = spawn(
+    const child = trackAgentChild(spawn(
       claudeCommand(),
       [
         '-p',
@@ -65,7 +70,7 @@ export function askPlan(text: string, said: string, model: string): Promise<Answ
         ...(model === '' ? [] : ['--model', model]),
       ],
       { cwd: tmpdir(), stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true },
-    )
+    ))
 
     let out = ''
     let err = ''
@@ -119,20 +124,27 @@ export function askPlan(text: string, said: string, model: string): Promise<Answ
  * (`correct-session.ts`), in a scratch folder like `askPlan`.
  */
 const keeper = correctKeeper((args) =>
-  spawn(claudeCommand(), args, { cwd: tmpdir(), stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true }),
+  trackAgentChild(spawn(claudeCommand(), args, { cwd: tmpdir(), stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true })),
+  undefined, undefined, agentAdmission.assert,
 )
 
-const codex = new CodexSessions()
+const codex = new CodexSessions(undefined, undefined, undefined, agentAdmission.assert)
+const providers = {
+  claude: llmProvider({ correct: (text, said, model) => keeper.ask(text, said, model), stopCorrect: () => keeper.stop() }, 'claude'),
+  codex: llmProvider({ codex }, 'codex'),
+}
 
 export const stopCorrecting = (): void => {
-  keeper.stop()
-  codex.dispose()
+  providers.claude.dispose()
+  providers.codex.dispose()
 }
 
 export async function correct(request: CorrectRequest): Promise<Answered> {
+  try { agentAdmission.assert() } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
   const said = instruction(request.action, request.custom)
   const settings = getSettings()
   const provider = assistantFor({ ...settings, chatProvider: request.provider ?? settings.correctProvider })
-  const model = request.provider === provider || (request.provider === undefined && provider === 'claude') ? request.model : provider === 'codex' ? settings.correctCodexModel : settings.correctPlanModel
-  return provider === 'codex' ? codex.correct(request.text, said, model) : keeper.ask(request.text, said, model)
+  const model = request.provider === provider || (request.provider === undefined && provider === 'claude') ? request.model : isCodexProvider(provider) ? settings.correctCodexModel : settings.correctPlanModel
+  const backend = pluginProvider(provider) ?? (provider === 'claude' || provider === 'codex' ? providers[provider] : undefined)
+  return backend?.correct(request.text, said, model) ?? { ok: false, error: `Provider ${provider} is not installed.` }
 }

@@ -1,5 +1,5 @@
 import type { Geckit } from '../../preload'
-import type { ChatSession, SessionImage, SessionItem, SessionItems, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
+import type { AgentVpnView, ChatSession, SessionImage, SessionItem, SessionItems, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
 import { isRemote } from '../../shared/hosts'
 import { pieceOf } from '../../shared/pairing'
 import { collapse, runKey } from '../../shared/steps'
@@ -214,6 +214,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
 
   const bind = (one: Link): void => {
     one.onMessage((message) => {
+      if (message.t === 'tell' && message.channel === 'vpn:changed' && (one !== link || down)) return
+      if (message.t === 'reply' && pending.get(message.id)?.name === 'agentVpn.view' && (one !== link || down)) return
       if (message.t === 'reply') {
         const waiting = pending.get(message.id)
         pending.delete(message.id)
@@ -230,6 +232,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     one.onClose(() => {
       if (one !== link) return
       down = true
+      told('phone:connection', false)
       for (const waiting of pending.values()) waiting.failed(new Error(LINK_DOWN))
       pending.clear()
     })
@@ -251,7 +254,13 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
         } catch {
           // The channel closed before it said so.
           down = true
+          told('phone:connection', false)
         }
+      }
+      if (name === 'agentVpn.view') {
+        for (const [id, waiting] of pending) if (waiting.failed === failed) pending.delete(id)
+        failed(new Error(LINK_DOWN))
+        return
       }
       const expired = window.setTimeout(() => {
         held.splice(held.indexOf(later), 1)
@@ -437,6 +446,15 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     home: boot.home,
     copy: (text) => void navigator.clipboard.writeText(text),
     pathFor: () => '',
+    agentVpn: {
+      view: () => down ? Promise.reject(new Error(LINK_DOWN)) : call<AgentVpnView>('agentVpn.view'),
+      import: () => Promise.reject(new Error('Configure Agent VPN on the computer.')),
+      select: () => Promise.reject(new Error('Configure Agent VPN on the computer.')),
+      rename: () => Promise.reject(new Error('Configure Agent VPN on the computer.')),
+      remove: () => Promise.reject(new Error('Configure Agent VPN on the computer.')),
+      check: () => Promise.reject(new Error('Configure Agent VPN on the computer.')),
+      onView: (said) => listen<AgentVpnView>('vpn:changed', said),
+    },
     settings: {
       get: () => keptFirst<Settings>('settings', () => call('settings.get'), 'settings:changed').then(own),
       set: async (change) => {
@@ -487,6 +505,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     },
     chat: {
       open: nothing,
+      installProvider: () => Promise.reject(new Error('Install providers on the computer.')),
+      uninstallProvider: () => Promise.reject(new Error('Remove providers on the computer.')),
+      checkProviderUpdates: () => Promise.reject(new Error('Check provider updates on the computer.')),
       account: (provider) => call('chat.account', provider),
       models: (root, provider) => call('chat.models', root, provider),
       plan: () => call('chat.plan'),
@@ -583,8 +604,10 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       queuedPicture: (id, queued, index, width) =>
         call<SessionImage | null>('chat.queuedPicture', id, queued, index, width).then((one) => one ?? undefined),
       requeue: (id, queued, text) => send('chat.requeue', id, queued, text),
+      reorderQueued: (id, queued, target, after) => send('chat.reorderQueued', id, queued, target, after),
       delegate: (id, queued, history) => call('chat.delegate', id, queued, history),
       mode: (id, mode) => send('chat.mode', id, mode),
+      transport: (id, transport) => send('chat.transport', id, transport),
       rename: (id, title) => send('chat.rename', id, title),
       mark: (id, status) => send('chat.mark', id, status),
       hide: (id) => send('chat.hide', id),
@@ -605,6 +628,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       remote: (id, on) => call('chat.remote', id, on),
       mcp: (root, id, change) => call('chat.mcp', root, id, change),
       browsers: (root, id, pick) => call('chat.browsers', root, id, pick),
+      codexBrowsers: () => Promise.resolve(undefined),
       git: (root) => call('chat.git', root),
       onGit: (said) => listen('chat:git', said),
       reveal: nothing,
@@ -745,6 +769,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
   }
   Object.defineProperty(window, 'geckitScreen', { value: screen })
   const calls: PhoneCalls = {
+    connected: () => !down,
+    onConnection: (said) => listen<boolean>('phone:connection', said),
     readOrders: (said) => call('orders.read', said),
     doOrders: () => call('orders.do'),
     folders: (path) => call('chat.folders', path),
@@ -766,6 +792,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     link = next
     down = false
     bind(next)
+    told('phone:connection', true)
     hideDropped()
     can(next)
     if (opened !== undefined) send('chat.watching', opened)

@@ -1,3 +1,4 @@
+import { trackAgentChild } from '../vpn/admission'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
@@ -96,10 +97,10 @@ export function whoFrom(orgId: string | undefined, email: string | undefined): s
 const printed = (args: readonly string[]): Promise<string | undefined> =>
   new Promise((done) => {
     const env = planOnly()
-    execFile(claudeCommand(env), [...args], { cwd: homedir(), timeout: 15_000, env, windowsHide: true }, (error, stdout) => {
+    trackAgentChild(execFile(claudeCommand(env), [...args], { cwd: homedir(), timeout: 15_000, env, windowsHide: true }, (error, stdout) => {
       const code = (error as { code?: unknown } | null)?.code
       done(typeof code === 'string' ? undefined : stdout)
-    })
+    }))
   })
 
 export async function claudeAccount(): Promise<ClaudeAccount> {

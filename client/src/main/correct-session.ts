@@ -54,6 +54,7 @@ export function correctKeeper(
   launch: (args: readonly string[]) => Held & { kill(): unknown },
   now: () => Date = () => new Date(),
   patience: number = PATIENCE,
+  admit: () => void = () => undefined,
 ): CorrectKeeper {
   let running: Running | undefined
   let queue: Promise<unknown> = Promise.resolve()
@@ -107,6 +108,7 @@ export function correctKeeper(
   }
 
   const once = (text: string, said: string, model: string): Promise<Answered> => {
+    try { admit() } catch (error) { return Promise.resolve({ ok: false, error: error instanceof Error ? error.message : String(error) }) }
     const day = localDay(now())
     const chosen = model === '' ? CORRECT_MODEL : model
     if (running !== undefined && (running.dead || running.day !== day || running.model !== chosen)) {
@@ -135,11 +137,11 @@ export function correctKeeper(
   return {
     ask(text, said, model) {
       const asked = queue.then(() => once(text, said, model))
-      queue = asked
+      queue = asked.catch(() => undefined)
       return asked
     },
     stop() {
-      if (running !== undefined) end(running)
+      if (running !== undefined) { give(running, { ok: false, error: 'Correction stopped.' }); end(running) }
       running = undefined
     },
   }

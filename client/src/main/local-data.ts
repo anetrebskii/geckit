@@ -20,7 +20,7 @@ if (!app.isPackaged) {
     if (existsSync(join(installed, 'sessions.json'))) copyFileSync(join(installed, 'sessions.json'), join(local, 'sessions.json'))
     try {
       const settings = JSON.parse(readFileSync(join(installed, 'settings.json'), 'utf8')) as Record<string, unknown>
-      writeFileSync(join(local, 'settings.json'), JSON.stringify({ ...settings, phone: false }, undefined, 2))
+      writeFileSync(join(local, 'settings.json'), JSON.stringify({ ...settings, phone: false, phoneKey: '' }, undefined, 2))
     } catch {
       // Nothing installed to copy, so it starts empty.
     }

@@ -58,6 +58,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 2. **Load context**: Read FEATURE_SPEC and `.specify/memory/constitution.md`. Load IMPL_PLAN template (already copied).
 
+   **GeckIt design handoff**: Read `FEATURE_DIR/design.md` and its linked UX document and prototype before choosing the implementation approach. For existing features without a handoff, use the design artifacts referenced by the spec. If a visible change has no design artifacts, run `$speckit-design` first. Preserve the design's states, labels, layout, and validation scenarios; resolve consequential open decisions before planning around them. Include design artifact links and validation constraints in `plan.md`.
+
 3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
    - Fill Constitution Check section from constitution

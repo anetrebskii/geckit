@@ -3,14 +3,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_SETTINGS, homeOf, providerOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, CutOff, SessionImage, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
 import { linksIn, shortUrl } from '../../../shared/links'
+import { llmProviderInfo, registerProviderInfo } from '../../../shared/providers'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
+import type { Section } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Board, keptTask, NewTask, TopBar } from './Board'
 import { movedOrder, ordered } from '../../../shared/order'
 import { CutOffDialog } from './CutOff'
 import { PhoneHome } from './PhoneHome'
+import { PhoneAgentVpn } from './PhoneAgentVpn'
 import { EdgeBack } from './PhoneKit'
 import { EdgeInfo, PhoneNav } from './PhoneNav'
 import { Screen } from './Screen'
@@ -57,10 +60,25 @@ const sidebarAt = (x: number): number => Math.round(Math.min(Math.max(x, 220), w
  */
 export function Chat(): React.JSX.Element {
   const chat = useChat()
-  const assistant = chat.provider === 'codex' ? 'Codex' : 'Claude Code'
+  registerProviderInfo(chat.settings.providerPlugins)
+  const providerInfo = llmProviderInfo(chat.provider, chat.transport)
+  const assistant = providerInfo.name
   const [over, setOver] = useState(false)
   const [switching, setSwitching] = useState(false)
-  const [setting, setSetting] = useState(false)
+  const [setting, setSetting] = useState<Section>()
+  const vpnOpener = useRef<HTMLButtonElement | null>(null)
+  const [phoneVpnOpen, setPhoneVpnOpen] = useState(false)
+  const phoneVpnOpener = useRef<HTMLElement | null>(null)
+  const openPhoneVpn = useCallback(() => {
+    phoneVpnOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setPhoneVpnOpen(true)
+  }, [])
+  const closePhoneVpn = useCallback(() => {
+    setPhoneVpnOpen(false)
+    const opener = phoneVpnOpener.current
+    phoneVpnOpener.current = null
+    requestAnimationFrame(() => { if (opener?.isConnected) opener.focus() })
+  }, [])
   const [keys, setKeys] = useState(false)
   // The shortcuts dialog and what it opened on; `at` makes a second ask from the tray open it afresh.
   const [managing, setManaging] = useState<{ readonly edit: string | ShortcutDraft; readonly at: number } | undefined>()
@@ -127,7 +145,13 @@ export function Chat(): React.JSX.Element {
   const again = useCallback((id: string) => send(id), [send])
   const proceed = useCallback(() => send(undefined, 'continue'), [send])
   // The dialog listens for Escape with this, so it is made once.
-  const closeSettings = useCallback(() => setSetting(false), [])
+  const closeSettings = useCallback(() => {
+    setSetting(undefined)
+    const opener = vpnOpener.current
+    vpnOpener.current = null
+    requestAnimationFrame(() => { if (opener?.isConnected) opener.focus() })
+  }, [])
+  const openVpnSettings = useCallback((opener: HTMLButtonElement) => { vpnOpener.current = opener; setSetting('agent-vpn') }, [])
   const closeKeys = useCallback(() => setKeys(false), [])
   const closeShortcuts = useCallback(() => setManaging(undefined), [])
   const shortcutFrom = useCallback(
@@ -154,7 +178,8 @@ export function Chat(): React.JSX.Element {
     [chat.shown, chat.items],
   )
   const openKeys = useCallback(() => {
-    setSetting(false)
+    setSetting(undefined)
+    vpnOpener.current = null
     setKeys(true)
   }, [])
   // A file pressed on the phone, shown here since the phone has nothing to open it in.
@@ -199,7 +224,7 @@ export function Chat(): React.JSX.Element {
   const localLine =
     sessionRoot === undefined || sessionId === undefined || isRemote(sessionRoot)
       ? undefined
-      : `cd ${JSON.stringify(sessionRoot)} && ${resumeCommand(sessionId)}`
+      : resumeCommand(sessionId) === undefined ? undefined : `cd ${JSON.stringify(sessionRoot)} && ${resumeCommand(sessionId)}`
   const [hostLine, setHostLine] = useState<{ readonly id: string; readonly line: string | undefined } | undefined>()
   useEffect(() => {
     if (sessionRoot === undefined || sessionId === undefined || !isRemote(sessionRoot)) return
@@ -323,7 +348,7 @@ export function Chat(): React.JSX.Element {
       const meta = event.metaKey || event.ctrlKey
       if (meta && event.key === ',') {
         event.preventDefault()
-        setSetting(true)
+        setSetting('general')
         return
       }
       if (meta && event.key === '/') {
@@ -469,7 +494,7 @@ export function Chat(): React.JSX.Element {
           onNew={() => setMaking(true)}
           onAsk={() => setAsking(true)}
           onSeek={setSeek}
-          onSettings={() => setSetting(true)}
+          onSettings={() => setSetting('general')}
           onKeys={openKeys}
           onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
         />
@@ -484,6 +509,8 @@ export function Chat(): React.JSX.Element {
           onAsk={() => setAsking(true)}
           onScreen={() => setScreening(true)}
           onSeek={setSeek}
+          onVpnSettings={openPhoneVpn}
+          vpn={overBoard ? null : <PhoneAgentVpn open={phoneVpnOpen} onOpen={openPhoneVpn} onClose={closePhoneVpn} />}
         />
       ) : board ? (
         <Board chat={chat} onShortcutFrom={shortcutFrom} />
@@ -737,7 +764,7 @@ export function Chat(): React.JSX.Element {
           <div className="transcript">
             <div className="turn" style={{ paddingTop: 40, color: 'var(--text-dim)' }}>
               {chat.root === undefined
-                ? 'Choose a project folder on the left. Everything asked here runs in that folder.'
+                ? 'Choose a folder on the left. Everything asked here runs in that folder.'
                 : host !== undefined
                   ? host.state === 'lost'
                     ? `Reconnecting to ${host.name}`
@@ -755,9 +782,9 @@ export function Chat(): React.JSX.Element {
                     : chat.account.here !== true
                     ? `${assistant} is not on this computer. Install it, then reopen this window.`
                     : chat.account.signedIn === false
-                      ? `Nobody is signed in. Run ${chat.provider === 'codex' ? 'codex login' : 'claude auth login'} in a terminal, then return here.`
-                      : chat.account.key === true
-                        ? `${assistant} is signed in with an API key. Sign in with your ${chat.provider === 'codex' ? 'ChatGPT' : 'Claude'} plan.`
+                    ? providerInfo.loginCommand === '' ? `Nobody is signed in to ${assistant}.` : `Nobody is signed in. Run ${providerInfo.loginCommand} in a terminal, then return here.`
+                      : chat.account.key === true && providerInfo.planName !== ''
+                        ? `${assistant} is signed in with an API key. Sign in with your ${providerInfo.planName} plan.`
                         : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`}
             </div>
           </div>
@@ -800,10 +827,11 @@ export function Chat(): React.JSX.Element {
         )}
 
         <Composer chat={chat} />
+        {ON_PHONE && overBoard ? <PhoneAgentVpn conversation open={phoneVpnOpen} onOpen={openPhoneVpn} onClose={closePhoneVpn} /> : null}
         {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
       </div>
 
-      <Status chat={chat} />
+      <Status chat={chat} onVpnSettings={openVpnSettings} />
 
       <Notices chat={chat} />
       {/* On the phone a host's question is a sheet over whatever is open, one at a time, the oldest first; what stands in the way of a host is on its page in Settings, since only the computer can fix it. */}
@@ -848,7 +876,7 @@ export function Chat(): React.JSX.Element {
       )}
       {switching ? <Switcher chat={chat} onClose={() => setSwitching(false)} onSeek={setSeek} /> : null}
       {setting ? (
-        <SettingsDialog settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />
+        <SettingsDialog first={setting} settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />
       ) : null}
       {keys ? <ShortcutsDialog onClose={closeKeys} /> : null}
       {chat.settings.welcomed || ON_PHONE ? null : <Welcome chat={chat} />}

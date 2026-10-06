@@ -6,6 +6,7 @@ import log from 'electron-log'
 import type { SessionMessage, Shortcut, ShortcutDraft } from '../shared/api'
 import { assistantsIn } from '../shared/api'
 import { isRemote } from '../shared/hosts'
+import { isCodexProvider, llmProviderInfo } from '../shared/providers'
 import { isDue } from '../shared/schedule'
 import { getSettings, setSettings } from './store'
 
@@ -51,7 +52,7 @@ export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise
   const one = settings.shortcuts.find((shortcut) => shortcut.id === id)
   if (one === undefined || deps === undefined) return undefined
   const provider = one.provider ?? 'claude'
-  if (!assistantsIn(settings).includes(provider) || (provider === 'codex' && isRemote(one.root))) return undefined
+  if (!assistantsIn(settings).includes(provider) || (llmProviderInfo(provider, 'stream', settings.providerPlugins).localOnly === true && isRemote(one.root))) return undefined
   const now = Date.now()
   // Counted before the conversation starts, so the next look does not start it again; a run by hand leaves the timetable where it was.
   put(id, { lastRun: now, ...(by === 'timetable' ? { since: now } : {}) })
@@ -61,9 +62,9 @@ export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise
       mode: one.mode,
       text: one.prompt,
       provider,
-      ...(provider === 'codex' && one.goal ? { goal: one.goal } : {}),
+      ...(isCodexProvider(provider) && one.goal ? { goal: one.goal } : {}),
       ...(one.model === undefined ? {} : { model: one.model }),
-      ...(provider !== 'codex' || one.reasoning === undefined ? {} : { reasoning: one.reasoning }),
+      ...(!isCodexProvider(provider) || one.reasoning === undefined ? {} : { reasoning: one.reasoning }),
     })
     deps.rename(session, one.name)
     put(id, { lastSession: session })
@@ -89,7 +90,7 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
     root: draft.root,
     prompt: draft.prompt,
     provider: draft.provider ?? 'claude',
-    ...(draft.provider !== 'codex' || draft.reasoning === undefined ? {} : { reasoning: draft.reasoning }),
+    ...(!isCodexProvider(draft.provider ?? 'claude') || draft.reasoning === undefined ? {} : { reasoning: draft.reasoning }),
     ...(draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
     mode: draft.mode,
     ...(draft.model === undefined || draft.model === '' ? {} : { model: draft.model }),

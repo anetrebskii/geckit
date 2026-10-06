@@ -132,6 +132,80 @@ afterEach(() => {
 })
 
 describe('Codex app-server', () => {
+  it.each([
+    '@Computer Open Bitwarden.',
+    'Open Bitwarden with @Computer',
+    'Use (@Computer), then continue.',
+    '"@Computer" Open Bitwarden.',
+    'Open Bitwarden.\n@Computer.',
+    '@Computer: Open Bitwarden. @Computer!',
+  ])('activates Computer for standalone mentions in "%s"', async (text) => {
+    const { server, codex } = setup()
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, () => undefined, () => undefined)
+    driver.send(text)
+    await tick()
+    expect(server.requests.find((one) => one.method === 'turn/start')?.params?.input).toEqual([
+      { type: 'text', text, text_elements: [] },
+      { type: 'mention', name: 'Computer', path: 'plugin://computer-use@openai-bundled' },
+    ])
+    await driver.end()
+  })
+
+  it.each([
+    'Open Bitwarden.',
+    'person@Computer',
+    '@Computer@example.com',
+    '/apps/@Computer',
+    './@Computer',
+    '@Computer/settings',
+    'C:\\apps\\@Computer',
+    '@Computer.com',
+    '@Computer.json',
+    '@Computer-name',
+    '@Computer_name',
+    '@Computers',
+    '@computer',
+    '\\@Computer',
+    '`@Computer`',
+  ])('does not activate Computer for "%s"', async (text) => {
+    const { server, codex } = setup()
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, () => undefined, () => undefined)
+    driver.send(text, [], ['Earlier output mentioned @Computer'])
+    await tick()
+    expect(server.requests.find((one) => one.method === 'turn/start')?.params?.input).toEqual([
+      { type: 'text', text: `Earlier output mentioned @Computer\n\n${text}`, text_elements: [] },
+    ])
+    await driver.end()
+  })
+
+  it('keeps prefixes and images while selecting Computer from user text only', async () => {
+    const server = new Server()
+    const codex = new CodexSessions(() => server, undefined, () => '@Computer')
+    providers.push(codex)
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto' }, () => undefined, () => undefined)
+    driver.send('Open Bitwarden.', [{ media: 'image/png', data: 'AAAA' }], ['Earlier output mentioned @Computer'])
+    await tick()
+    const prefix = 'Earlier output mentioned @Computer\n\nWhen using Chrome for this turn, select the connected browser whose extensionInstanceId is @Computer.\n\n'
+    expect(server.requests.filter((one) => one.method === 'turn/start')[0]?.params?.input).toEqual([
+      { type: 'text', text: `${prefix}Open Bitwarden.`, text_elements: [] },
+      { type: 'image', url: 'data:image/png;base64,AAAA' },
+    ])
+    server.complete('terminal')
+    driver.send('@Computer Open Bitwarden. @Computer', [{ media: 'image/png', data: 'AAAA' }], ['Earlier output mentioned @Computer'])
+    await tick()
+    const input = server.requests.filter((one) => one.method === 'turn/start')[1]?.params?.input
+    expect(input).toEqual([
+      { type: 'text', text: `${prefix}@Computer Open Bitwarden. @Computer`, text_elements: [] },
+      { type: 'image', url: 'data:image/png;base64,AAAA' },
+      { type: 'mention', name: 'Computer', path: 'plugin://computer-use@openai-bundled' },
+    ])
+    server.history = [{ id: 'turn-terminal', status: 'completed', error: null, startedAt: 100, items: [{ type: 'userMessage', id: 'user', content: input ?? [] }] }]
+    expect((await codex.read(ROOT, 'codex:terminal'))?.items).toEqual([
+      { kind: 'mine', id: 'codex:user', text: `${prefix}@Computer Open Bitwarden. @Computer`, images: [{ media: 'image/png', data: 'AAAA' }], at: 100000 },
+    ])
+    await driver.end()
+  })
+
   it('resumes an unloaded thread and retries the same message once', async () => {
     const { server, codex, heard } = setup()
     const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto', model: 'second', reasoning: 'high' }, (one) => heard.push(one), () => undefined)
@@ -139,12 +213,12 @@ describe('Codex app-server', () => {
     await tick()
     server.complete('terminal')
     server.turnErrors.push('thread not found: terminal')
-    driver.send('Continue', [{ media: 'image/png', data: 'AAAA' }], ['Earlier shell output'])
+    driver.send('@Computer Open Bitwarden.', [{ media: 'image/png', data: 'AAAA' }], ['Earlier shell output'])
     await tick()
     const turns = server.requests.filter((one) => one.method === 'turn/start')
     expect(turns).toHaveLength(3)
     expect(turns[2]?.params).toEqual(turns[1]?.params)
-    expect(turns[2]?.params).toMatchObject({ threadId: 'terminal', model: 'second', effort: 'high', approvalsReviewer: 'auto_review', input: [{ type: 'text', text: 'Earlier shell output\n\nContinue', text_elements: [] }, { type: 'image', url: 'data:image/png;base64,AAAA' }] })
+    expect(turns[2]?.params).toMatchObject({ threadId: 'terminal', model: 'second', effort: 'high', approvalsReviewer: 'auto_review', input: [{ type: 'text', text: 'Earlier shell output\n\n@Computer Open Bitwarden.', text_elements: [] }, { type: 'image', url: 'data:image/png;base64,AAAA' }, { type: 'mention', name: 'Computer', path: 'plugin://computer-use@openai-bundled' }] })
     expect(server.requests.filter((one) => one.method === 'thread/resume')).toHaveLength(2)
     expect(server.requests.some((one) => one.method === 'thread/start')).toBe(false)
     server.complete('terminal')
@@ -404,6 +478,27 @@ describe('Codex app-server', () => {
     expect(server.requests.find((one) => one.method === 'thread/unsubscribe')?.params?.threadId).toBe(id.slice(6))
   })
 
+  it('ends an interrupted turn and starts Continue as a new active turn', async () => {
+    const { server, codex, heard } = setup()
+    const id = await codex.create(ROOT, 'manual')
+    const driver = codex.hold({ id, root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Check models')
+    await tick()
+    const threadId = id.slice(6)
+    server.event({ method: 'item/started', params: { threadId, item: { type: 'commandExecution', id: 'interrupted', command: 'check-models', cwd: ROOT, status: 'inProgress', aggregatedOutput: null, exitCode: null } } })
+    driver.stop()
+    await tick()
+    expect(heard.flatMap((one) => one.signals).filter((one) => one.kind === 'ended')).toEqual([{ kind: 'ended', how: 'stopped' }])
+    const before = heard.length
+    driver.send('Continue')
+    await tick()
+    expect(heard.slice(before).flatMap((one) => one.signals).some((one) => one.kind === 'ended')).toBe(false)
+    server.complete(threadId)
+    expect(heard.slice(before).flatMap((one) => one.signals)).toContainEqual({ kind: 'ended', how: 'done' })
+    expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(2)
+    await driver.end()
+  })
+
   it('streams answers and command output, sends pictures and finishes the turn', async () => {
     const { server, codex, heard } = setup()
     const id = await codex.create(ROOT, 'manual', 'first')
@@ -638,15 +733,19 @@ describe('provider routing', () => {
     const notes = memoryNotes()
     notes.set('visible', { here: true, title: 'My task', status: 'review', model: 'sonnet' })
     notes.set('hidden', { here: true, hidden: true })
-    codex.list = async () => ['visible', 'hidden', 'external'].map((id) => ({ id: `codex:${id}`, root: ROOT, title: id, stands: '', at: Date.now(), driven: true, ...(id === 'external' ? {} : { importedFrom: id }) }))
+    notes.set('viewed', { seen: 100 })
+    codex.list = async () => ['visible', 'hidden', 'external', 'imported', 'viewed'].map((id) => ({ id: `codex:${id}`, root: ROOT, title: id, stands: '', at: Date.now(), driven: true, ...(id === 'external' ? {} : { importedFrom: id }) }))
     const sessions = new Sessions({ codex, notes, changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined, there: async () => true, disk: { list: async () => [], read: async () => undefined, has: async () => false, every: async () => [] } })
     expect((await sessions.list([ROOT])).map((one) => one.id)).toEqual(['codex:visible'])
     expect(notes.all()['codex:visible']).toMatchObject({ shown: true, title: 'My task', status: 'review' })
     expect(notes.all()['codex:visible']).not.toHaveProperty('model')
-    expect((await sessions.hidden([ROOT], false)).flatMap((folder) => folder.chats.map((one) => one.id)).sort()).toEqual(['codex:external', 'codex:hidden'])
+    expect(notes.all()['codex:imported']).toMatchObject({ here: false, shown: false })
+    expect(notes.all()['codex:viewed']).toMatchObject({ seen: 100, here: false, shown: false })
+    expect((await sessions.hidden([ROOT], false)).flatMap((folder) => folder.chats.map((one) => one.id)).sort()).toEqual(['codex:external', 'codex:hidden', 'codex:imported', 'codex:viewed'])
     sessions.hide('codex:visible')
     sessions.bring('codex:hidden')
-    expect((await sessions.list([ROOT])).map((one) => one.id)).toEqual(['codex:hidden'])
+    sessions.bring('codex:imported')
+    expect((await sessions.list([ROOT])).map((one) => one.id).sort()).toEqual(['codex:hidden', 'codex:imported'])
     sessions.dispose()
   })
 
@@ -739,14 +838,16 @@ describe('provider routing', () => {
     expect(rows.at(-1)?.find((one) => one.id === id)?.goal).toBeUndefined()
     await sessions.send({ session: id, root: ROOT, mode: 'auto', text: '/goal The regression test passes' })
     expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(1)
-    server.complete(id.slice(6))
-    await tick()
     const current = server.goals.get(id.slice(6))
     expect(current).toBeDefined()
     if (current === undefined) return
     const goal = { ...current, status: 'complete' as const }
     server.goals.set(id.slice(6), goal)
     server.event({ method: 'thread/goal/updated', params: { threadId: id.slice(6), turnId: null, goal } })
+    await tick()
+    expect(rows.at(-1)?.find((one) => one.id === id)?.status).toBeUndefined()
+    expect(rows.at(-1)?.find((one) => one.id === id)?.state).toBe('working')
+    server.complete(id.slice(6))
     await tick()
     expect(rows.at(-1)?.find((one) => one.id === id)).toMatchObject({ status: 'review' })
     expect(rows.at(-1)?.find((one) => one.id === id)?.goal).toBeUndefined()

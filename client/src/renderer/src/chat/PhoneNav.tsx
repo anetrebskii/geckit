@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 
 import { homeOf, SESSION_STATUSES } from '../../../shared/api'
+import { isCodexProvider } from '../../../shared/providers'
 import type { SessionStatus } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { shortUrl } from '../../../shared/links'
@@ -107,9 +108,9 @@ export function PhoneNav({
               ? []
               : [{ value: 'links', label: 'Links', says: `${String(links.length)} in this conversation`, icon: 'link' }]),
             { value: 'find', label: 'Find in conversation', icon: 'search' },
-            { value: 'info', label: 'Conversation', says: chat.provider === 'codex' ? 'Context, the plan and Clear' : 'Context, cost, the plan, Compact and Clear' },
+            { value: 'info', label: 'Conversation', says: isCodexProvider(chat.provider) ? 'Context, the plan and Clear' : 'Context, cost, the plan, Compact and Clear' },
             { value: 'rename', label: 'Rename', icon: 'pencil' },
-            ...(chat.working ? [{ value: 'stop', label: 'Stop', says: `Interrupts ${chat.provider === 'codex' ? 'Codex' : 'Claude'}; the conversation stays`, icon: 'stop' }] : []),
+            ...(chat.working ? [{ value: 'stop', label: 'Stop', says: `Interrupts ${isCodexProvider(chat.provider) ? 'Codex' : 'Claude'}; the conversation stays`, icon: 'stop' }] : []),
             { value: 'hide', label: 'Hide from this list', says: 'Asked about first', icon: 'hidden' },
             { value: 'delete', label: 'Delete', says: 'Asked about first', danger: true, icon: 'trash' },
           ]}

@@ -89,6 +89,7 @@ export async function hearAgain(): Promise<string> {
 }
 
 let waiting: { readonly heard: (text: string) => void; readonly ended: () => void; readonly place: string; readonly before?: string } | undefined
+let starting: Promise<void> | undefined
 
 const onHost = (mic: Voice): Dictate => {
   const recorded = async (before: string | undefined): Promise<string> => {
@@ -97,12 +98,19 @@ const onHost = (mic: Voice): Dictate => {
   }
   return {
   live: false,
-  start: async (_language, heard, ended, place = '', goOn = false) => {
-    const kept = goOn ? await readUnheard() : undefined
-    await mic.start()
-    waiting = { heard, ended, place, ...(kept?.place === place ? { before: kept.audio } : {}) }
+  start: (_language, heard, ended, place = '', goOn = false) => {
+    const begun = (async (): Promise<void> => {
+      const kept = goOn ? await readUnheard() : undefined
+      await mic.start()
+      waiting = { heard, ended, place, ...(kept?.place === place ? { before: kept.audio } : {}) }
+    })()
+    starting = begun
+    return begun.finally(() => {
+      if (starting === begun) starting = undefined
+    })
   },
   stop: async () => {
+    await starting
     const said = waiting
     if (said === undefined) return
     waiting = undefined
@@ -115,12 +123,14 @@ const onHost = (mic: Voice): Dictate => {
   },
   // Closed while recording, what was said is kept rather than thrown away.
   cancel: () => {
-    const said = waiting
-    if (said === undefined) return
-    waiting = undefined
-    void recorded(said.before)
-      .then((audio) => (audio.length > SECOND ? keep(UNHEARD, { place: said.place, audio, why: 'Closed before it was written down.' }) : undefined))
-      .catch(() => undefined)
+    void (async (): Promise<void> => {
+      await starting
+      const said = waiting
+      if (said === undefined) return
+      waiting = undefined
+      const audio = await recorded(said.before)
+      if (audio.length > SECOND) await keep(UNHEARD, { place: said.place, audio, why: 'Closed before it was written down.' })
+    })().catch(() => undefined)
   },
   }
 }

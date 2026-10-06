@@ -1,3 +1,4 @@
+import { trackAgentChild } from '../vpn/admission'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
@@ -58,7 +59,7 @@ export interface Held {
 }
 
 /** GECKIT.md is the installed GeckIt's and names its command, so a conversation in a copy run from the source is told which command reaches that copy. */
-function sourceArgs(): string[] {
+export function sourceArgs(): string[] {
   const command = process.env['GECKIT_SOURCE_CLI']
   if (command === undefined) return []
   return ['--append-system-prompt', `This conversation runs in GeckIt started from its source, not the installed app. Wherever GECKIT.md names ${command.replace(/-local$/, '')}, use ${command} instead: the other one reaches only the installed GeckIt.`]
@@ -120,7 +121,7 @@ export function holdClaude(
 
   const args = claudeArgs(options)
   const child: Held =
-    options.launch?.(args) ?? spawn(claudeCommand(), args, { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true })
+    options.launch?.(args) ?? trackAgentChild(spawn(claudeCommand(), args, { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true }))
   const closed = new Promise<void>((resolve) => {
     child.once('close', () => resolve())
     child.once('error', () => resolve())

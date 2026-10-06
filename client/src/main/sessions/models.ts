@@ -1,8 +1,10 @@
+import { trackAgentChild } from '../vpn/admission'
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { createInterface } from 'node:readline'
 
 import type { ClaudeModel } from '../../shared/api'
+import { modelVersion } from '../../shared/providers'
 import { claudeCommand, planOnly } from './account'
 
 /**
@@ -50,11 +52,20 @@ export function claudeModelsFrom(answer: Json): ClaudeModel[] | undefined {
     const says = string(one['description'])
     const disabled = off || one['disabled'] === true
     const id = disabled ? '' : string(one['resolvedModel'])
+    const version = modelVersion(id)
+    const contextWindow = one['contextWindow']
+    const maxOutputTokens = one['maxOutputTokens']
     models.push({
       value,
       name: string(one['displayName']) || value,
       ...(says === '' ? {} : { says }),
       ...(id === '' ? {} : { id }),
+      ...(version === undefined ? {} : { version }),
+      ...(typeof contextWindow === 'number' && contextWindow > 0 ? { contextWindow } : {}),
+      ...(typeof maxOutputTokens === 'number' && maxOutputTokens > 0 ? { maxOutputTokens } : {}),
+      ...(!disabled && typeof one['supportsAdaptiveThinking'] === 'boolean' ? { supportsAdaptiveThinking: one['supportsAdaptiveThinking'] } : {}),
+      ...(!disabled && typeof one['supportsFastMode'] === 'boolean' ? { supportsFastMode: one['supportsFastMode'] } : {}),
+      ...(!disabled && typeof one['supportsAutoMode'] === 'boolean' ? { supportsAutoMode: one['supportsAutoMode'] } : {}),
       ...(disabled ? { disabled: true as const } : {}),
     })
   }
@@ -71,11 +82,11 @@ export function claudeModelsFrom(answer: Json): ClaudeModel[] | undefined {
  */
 export function claudeModels(): Promise<ClaudeModel[] | undefined> {
   return new Promise((done) => {
-    const child = spawn(
+    const child = trackAgentChild(spawn(
       claudeCommand(),
       ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'],
       { cwd: homedir(), stdio: ['pipe', 'pipe', 'ignore'], env: planOnly(), windowsHide: true },
-    )
+    ))
     let over = false
     const finish = (models: ClaudeModel[] | undefined): void => {
       if (over) return

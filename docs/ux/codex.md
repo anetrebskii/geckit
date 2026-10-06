@@ -6,6 +6,33 @@ created: 2026-10-01
 
 # Codex в приложении для компьютера
 
+## Computer mention
+
+`@Computer Open Bitwarden.` is typed into the existing Codex composer and sent with the usual Send action. GeckIt previously sent only text, losing the explicit Computer Use selection. It now preserves the original message and includes Codex's structured plugin mention for `computer-use@openai-bundled`.
+
+| Surface | Behavior |
+|---|---|
+| Codex composer, task prompts and queued messages | A standalone `@Computer` token selects Computer Use when dispatched. |
+| Conversation transcript | The person's original text remains visible. Internal mention metadata has no separate row. |
+| App access | Codex retains its existing app permissions and native runtime requirements. The token grants no app access. |
+
+| State | Event and transition | What the person sees and can do |
+|---|---|---|
+| Draft | Type `@Computer Open Bitwarden.`; Send dispatches the message. | Existing draft text and Send action; edit or discard as usual. |
+| Queued | A slot becomes available; GeckIt dispatches automatically. | Existing queued message; edit, reorder or cancel as usual. |
+| Working | Codex receives text and one Computer mention; completion returns to the composer. | Existing progress, response and Stop action. |
+| Access unavailable | Codex reports a disabled app or disconnected native runtime. | Codex's own explanation; enable the intended app or restore the runtime, then send again. |
+
+Metadata is silent because it only restores the user's explicit selection. There are no new labels, badges, delays or thresholds. Prefix instructions and selected-browser guidance cannot trigger Computer Use. Repeated tokens produce one mention; emails, longer names and paths containing `@Computer` do not select the plugin. Images remain attached. Resumed sessions and retries receive the same mention.
+
+This restores the requested Codex command through the existing entry points. An autocomplete picker, automatic app permission changes and support for additional mention aliases are outside this change. No new layout prototype is needed because renderer components and styles are unchanged. Native app execution depends on the installed Codex runtime; successful protocol dispatch alone does not prove that Bitwarden opened.
+
+### Live verification, 2026-10-05
+
+The actual updated `CodexSessions` chat driver sent `@Computer Open Bitwarden.` through the running Codex daemon. Codex called `cua_repl.js`, opened Bitwarden and reported that its window was present. It did not unlock, navigate, change or copy vault content. The successful baseline used the repository's driver without configuration overrides or additional runtime mentions: test thread `01a10bc3-c931-7e22-97f4-c378e9e238d3`.
+
+A Calculator command through the same driver reached Computer Use and returned an app-access denial. Initial native-runtime checks had failed or lacked tools; later checks confirmed the existing runtime was connected. Temporary session-override probes were discarded. No global configuration or app-access grants were changed. The development Electron process started on October 4 still needs a restart to load this main-process change; restarting it requires preserving unsent drafts first.
+
 ## Зачем
 
 Сейчас разговор в GeckIt может вести только Claude Code. Добавляем Codex из установленного CLI, с входом через ChatGPT и сохранением разговоров самим Codex.
@@ -14,7 +41,9 @@ created: 2026-10-01
 
 Настройки получают отдельную вкладку Assistants с двумя строками Claude Code и Codex в общей рамке. В каждой строке указана подписка, справа расположен переключатель; нажатие на всю строку меняет выбор. Заголовок поясняет, что выбор действует для Chat, Correct и Shortcuts. Под списком кратко сказано о скрытии разговоров, паузе shortcuts и необходимости оставить одного ассистента. По умолчанию включены оба. Последний включенный переключатель нельзя выключить. Выключение скрывает разговоры этого провайдера в списке, на доске, в вопросах, поиске и скрытых разговорах, но сохраняет историю, черновики и уже запущенную работу. Открытый разговор выключенного провайдера закрывается. Если выключен провайдер нового разговора, новый использует оставшийся.
 
-Разговоры Codex, начатые вне GeckIt, остаются в Hidden, пока человек не нажмет Show on the board. При первом чтении импортированного разговора GeckIt берет исходный Claude id из `external_agent_session_imports.json` и переносит видимость, заголовок и статус исходного разговора, не перенося модель Claude. Последующие Hide и Show не перезаписываются импортом.
+Разговоры Codex, начатые вне GeckIt, остаются в Hidden, пока человек не нажмет Show on the board. При первом чтении импортированного разговора GeckIt берет исходный Claude id из `external_agent_session_imports.json` и переносит видимость, заголовок и статус исходного разговора, не перенося модель Claude. Импорт сохраняет членство на доске только по исходным `here` или `shown`; отсутствие исходной заметки или заметка только о просмотре не добавляет разговор в задачи. Уже скрытые разговоры остаются скрытыми. Последующие Hide и Show не перезаписываются ни автоматическим импортом, ни повторной миграцией метаданных. Новых элементов и формулировок нет: внешний разговор доступен в Hidden как "Started by another app", действие "Show on the board" добавляет его на доску, Hide возвращает в Hidden. Проверка происходит при чтении списка, без нового таймера или уведомления.
+
+Проверка импорта, 2026-10-05: реальные Board и HiddenChats со стилями GeckIt проверены в Chrome на данных из `importedNote`, в светлой и темной темах, при 1568 x 906 и 900 x 600. Внешние и только просмотренные разговоры отсутствуют на доске; исходные задачи и явно добавленные разговоры остаются. Проверены Show через Enter, Hide из меню, закрытие через Escape, фокус, прокрутка и отсутствие горизонтального переполнения. Снимок: `/private/tmp/geckit-import-review/light-hidden.png`. Доступ Computer Use к GeckIt Local отклонен автоматической проверкой: "Computer Use was not approved to use GeckIt Local"; живую карточку и перезапуск приложения не меняли. Ранее ошибочно добавленную карточку можно убрать через Hide, ее текущий `shown` не сбрасывается автоматически, поскольку старые метаданные не отличают импорт от явного Show.
 
 Если локальный Codex daemon уже работает, GeckIt подключается по WebSocket к его Unix control socket. Это позволяет продолжать разговоры на том же backend без второго writer. Если daemon нет, GeckIt запускает свой stdio app-server. Остановка GeckIt закрывает соединение и не останавливает общий daemon. Принудительное отнятие lock у отдельного приложения не поддерживается. Создание и продолжение требуют входа через ChatGPT; daemon с API key не используется для отправки сообщений.
 

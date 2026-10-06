@@ -254,7 +254,7 @@ const FoundRow = memo(function FoundRow({
         <Dot session={row.session} />
         <span className="lines">
           <span className="head">
-            {showProviders ? <ProviderIcon id={row.session.id} /> : null}
+            {showProviders ? <ProviderIcon id={row.session.id} transport={row.session.transport} /> : null}
             <span className="title">
               <Marked text={row.session.title === '' ? 'Untitled' : row.session.title} words={words} />
             </span>
@@ -289,7 +289,7 @@ const FoundRow = memo(function FoundRow({
 function asks(within: string | undefined, short: boolean): string {
   if (short) return within === undefined ? 'Search conversations' : `Search ${projectLabel(within)}`
   if (within !== undefined) return `Search ${projectLabel(within)}: conversations and what was said`
-  return 'Search conversations, projects, folders and what was said'
+  return 'Search conversations, folders and what was said'
 }
 
 /** Walking the rows with the arrows, and opening one with Enter. */

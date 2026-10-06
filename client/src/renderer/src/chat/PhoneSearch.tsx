@@ -71,7 +71,7 @@ export function PhoneSearch({ chat, shown, onSeek }: { readonly chat: Chat; read
                   }}
                 >
                   <span className="phone-row-line">
-                    {chat.showProviders ? <ProviderIcon id={row.session.id} /> : null}
+                    {chat.showProviders ? <ProviderIcon id={row.session.id} transport={row.session.transport} /> : null}
                     <span className="phone-row-title">
                       <Marked text={row.session.title} words={words} />
                     </span>

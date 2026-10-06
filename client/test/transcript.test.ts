@@ -2,7 +2,8 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { SessionItem } from '../src/shared/api'
+import type { BackgroundTask, SessionItem } from '../src/shared/api'
+import { collapse } from '../src/shared/steps'
 
 vi.stubGlobal('window', { geckit: { copy: () => undefined }, setTimeout, clearTimeout })
 vi.stubGlobal('document', { documentElement: { classList: { contains: () => false } } })
@@ -11,7 +12,7 @@ const { Transcript } = await import('../src/renderer/src/chat/Transcript')
 
 const nothing = (): void => undefined
 
-function drawn(items: SessionItem[], working = false): string {
+function drawn(items: SessionItem[], working = false, tasks?: readonly BackgroundTask[]): string {
   return renderToStaticMarkup(
     createElement(Transcript, {
       at: 's1',
@@ -24,7 +25,7 @@ function drawn(items: SessionItem[], working = false): string {
       onTypeShell: nothing,
       onBackground: nothing,
       onContinue: nothing,
-      tasks: undefined,
+      tasks,
       onTasks: nothing,
     }),
   )
@@ -97,4 +98,76 @@ describe('a turn in short', () => {
     expect(html).not.toContain('Still working')
     expect(html).not.toContain('copy-answer')
   })
+})
+
+describe('progress belongs to the current turn', () => {
+  const interrupted: SessionItem[] = [
+    { kind: 'mine', id: 'm1', text: 'Check models' },
+    { kind: 'did', id: 'd1', what: 'Checking models', live: true, detail: 'Partial output' },
+    { kind: 'note', id: 'stop', note: 'stopped', text: 'Stopped' },
+  ]
+
+  for (const phone of [false, true]) {
+    const items = (turn: SessionItem[]): SessionItem[] => phone ? collapse(turn) : turn
+
+    it(`does not revive interrupted progress when Continue starts (${phone ? 'phone' : 'desktop'})`, () => {
+      const continued: SessionItem[] = [...interrupted, { kind: 'mine', id: 'm2', text: 'Continue' }]
+      const waiting = drawn(items(continued), true)
+      expect(waiting.match(/spinner-turn/g)).toHaveLength(1)
+      expect(waiting).toContain('Still working')
+      expect(waiting).not.toContain('1 step, Checking models')
+      const working = drawn(items([...continued, { kind: 'did', id: 'd2', what: 'Checking the fix', live: true }]), true)
+      expect(working.match(/spinner-turn/g)).toHaveLength(2)
+      expect(working).toContain('1 step, Checking the fix')
+      expect(working).not.toContain('1 step, Checking models')
+      const completed = drawn(items([...continued, { kind: 'theirs', id: 't2', text: 'Fixed' }]))
+      expect(completed).not.toContain('spinner-turn')
+      expect(completed).toContain('1 step')
+      expect(completed).toContain('Fixed')
+    })
+
+    it(`leaves completed histories still while a new turn waits (${phone ? 'phone' : 'desktop'})`, () => {
+      const html = drawn(items([
+        { kind: 'mine', id: 'm1', text: 'Fix it' },
+        { kind: 'did', id: 'd1', what: 'Ran tests' },
+        { kind: 'theirs', id: 't1', text: 'Fixed', phase: 'final_answer' },
+        { kind: 'mine', id: 'm2', text: 'Ignore the last message about models' },
+      ]), true)
+      expect(html.match(/spinner-turn/g)).toHaveLength(1)
+      expect(html).toContain('Fixed')
+      expect(html).not.toContain('1 step, Ran tests')
+    })
+  }
+})
+
+it('keeps legitimate background tasks running after the turn ends', () => {
+  const html = drawn([
+    { kind: 'mine', id: 'm1', text: 'Start a watch' },
+    { kind: 'did', id: 'd1', what: 'Started watch' },
+    { kind: 'theirs', id: 't1', text: 'Watch is running' },
+  ], false, [{ id: 'watch', kind: 'local_bash', what: 'Test watch', use: 'd1', status: 'running', started: 1000 }])
+  expect(html).toContain('Running in the background: Test watch')
+  expect(html.match(/spinner-turn/g)).toHaveLength(1)
+  expect(html).not.toContain('Still working')
+})
+
+it('does not reactivate a stopped group while session state catches up', () => {
+  const html = drawn([
+    { kind: 'mine', id: 'm1', text: 'Check models' },
+    { kind: 'did', id: 'd1', what: 'Checking models', live: true },
+    { kind: 'note', id: 'stop', note: 'stopped', text: 'Stopped' },
+  ], true)
+  expect(html.match(/spinner-turn/g)).toHaveLength(1)
+  expect(html).not.toContain('1 step, Checking models')
+})
+
+it('keeps current progress active when an unsent message is present', () => {
+  const html = drawn([
+    { kind: 'mine', id: 'm1', text: 'Check models' },
+    { kind: 'did', id: 'd1', what: 'Checking models', live: true },
+    { kind: 'mine', id: 'm2', text: 'Not delivered', unsent: true },
+  ], true)
+  expect(html).toContain('1 step, Checking models')
+  expect(html.match(/spinner-turn/g)).toHaveLength(2)
+  expect(html).toContain('Send again')
 })

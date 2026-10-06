@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { claudeModelsFrom } from '../src/main/sessions/models'
+import { modelVersion } from '../src/shared/providers'
 
 /**
  * Claude Code's answer to the greeting, as 2.1.274 gave it: every model it
@@ -20,7 +21,8 @@ describe('the models the tool says it has', () => {
       'sonnet',
       'haiku',
     ])
-    expect(models[0]).toMatchObject({ name: 'Opus (1M context)', id: 'claude-opus-5[1m]' })
+    expect(models[0]).toMatchObject({ name: 'Opus (1M context)', id: 'claude-opus-5[1m]', version: '5', supportsAdaptiveThinking: true, supportsFastMode: true, supportsAutoMode: true })
+    expect(models.find((one) => one.value === 'haiku')).toMatchObject({ id: 'claude-haiku-4-5-20251001', version: '4.5' })
   })
 
   it('lists what it cannot run yet, in its own words and with no id of a model', () => {
@@ -37,5 +39,11 @@ describe('the models the tool says it has', () => {
 
   it('says nothing where the answer names no models', () => {
     expect(claudeModelsFrom({})).toBeUndefined()
+  })
+
+  it('keeps reported token limits and leaves unknown versions unset', () => {
+    expect(modelVersion('custom-build')).toBeUndefined()
+    expect(claudeModelsFrom({ models: [{ value: 'custom', displayName: 'Custom', resolvedModel: 'custom-build', contextWindow: 128000, maxOutputTokens: 32000 }] })?.[0]).toMatchObject({ contextWindow: 128000, maxOutputTokens: 32000 })
+    expect(modelVersion('gpt-5.6-codex')).toBe('5.6')
   })
 })
