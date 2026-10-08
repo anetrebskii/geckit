@@ -161,7 +161,8 @@ it('updates Codex Mirror from a replacement to a separate assistant', async () =
   process.env['GIT_CONFIG_VALUE_0'] = 'https://github.com/anetrebskii/geckit-codex-mirror.git'
   const host = pluginHost(llmProvider({}, 'claude'), llmProvider({}, 'codex'))
   const loaded = await installPlugin('https://github.com/anetrebskii/geckit-codex-mirror', host)
-  expect(loaded.provider).toMatchObject({ name: 'Codex Mirror', icon: 'codex-mirror', replaces: 'codex' })
+  expect(loaded.provider).toMatchObject({ id: 'plugin:codex-mirror', family: 'plugin:codex-mirror', name: 'Codex Mirror', icon: 'codex-mirror' })
+  expect(loaded.provider.replaces).toBeUndefined()
   await writeFile(join(source, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { ...provider, family: 'plugin:codex-mirror', replaces: undefined, runtime: 'codex' } }))
   await writeFile(join(source, 'index.mjs'), "export const create = (host) => ({ ...host.codex, id: 'plugin:codex-mirror', family: 'plugin:codex-mirror', create: async (options) => `plugin:codex-mirror:${(await host.codex.create(options)).slice(6)}` })")
   execFileSync('git', ['-C', source, 'add', '.'])

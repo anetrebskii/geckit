@@ -493,6 +493,8 @@ export class Sessions {
     // Conversations begun with a message that was still waiting for a slot when GeckIt closed.
     for (const [id, note] of Object.entries(deps.notes.all())) {
       if (note.unborn === undefined || (note.queued ?? []).length === 0) continue
+      const provider = providerOf(id)
+      if (provider !== 'claude' && provider !== 'codex' && !this.#providers.plugins.has(provider)) continue
       const live = this.#fresh(id, note.unborn, note.title ?? '', sessionMode(note.mode))
       live.queued = [...(note.queued ?? [])]
       live.chosen = note.model

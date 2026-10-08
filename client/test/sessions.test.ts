@@ -179,26 +179,26 @@ describe('holding a conversation', () => {
     expect(built.fanned.flatMap((one) => one.items).find((item) => item.kind === 'note' && item.note === 'failed')).toMatchObject({ text: 'Other AI stopped before it finished.' })
   })
 
-  it('uses an installed Codex replacement for the same Codex session IDs', async () => {
+  it('uses an installed Codex library under its own assistant identity', async () => {
     const calls: string[] = []
     const original = llmProvider({}, 'codex')
     const plugin = {
       ...original,
       id: 'plugin:codex-mirror' as const,
-      replaces: 'codex' as const,
+      family: 'plugin:codex-mirror',
       name: 'Codex Mirror',
       available: true,
-      account: async () => ({ provider: 'codex' as const, here: true, signedIn: true }),
-      create: async () => { calls.push('create'); return 'codex:test-session' },
+      account: async () => ({ provider: 'plugin:codex-mirror' as const, here: true, signedIn: true }),
+      create: async () => { calls.push('create'); return 'plugin:codex-mirror:test-session' },
       hold: () => {
         calls.push('hold')
         return { send: () => { calls.push('send') }, answer: () => undefined, stop: () => undefined, end: async () => undefined }
       },
     }
     const built = build({ plugins: [plugin] })
-    expect(await built.sessions.account('codex')).toMatchObject({ here: true, signedIn: true })
-    const id = await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'test plugin' })
-    expect(id).toBe('codex:test-session')
+    expect(await built.sessions.account('plugin:codex-mirror')).toMatchObject({ provider: 'plugin:codex-mirror', here: true, signedIn: true })
+    const id = await built.sessions.send({ provider: 'plugin:codex-mirror', root: ROOT, mode: 'manual', text: 'test plugin' })
+    expect(id).toBe('plugin:codex-mirror:test-session')
     expect(calls).toEqual(['create', 'hold', 'send'])
   })
 
@@ -230,24 +230,18 @@ describe('holding a conversation', () => {
     expect(built.fake.made.at(-1)?.mode).toBe('auto')
   })
 
-  it('switches an idle Claude conversation to tmux and back under the same session id', async () => {
+  it('uses a Claude tmux library as its own assistant', async () => {
     const terminal = fakeClaude()
-    const built = build({ plugins: [{ ...llmProvider({ claude: terminal.claude }, 'claude'), id: 'claude-tmux', transport: 'tmux', hold: terminal.claude, localOnly: true, waitForExit: true }] })
-    const id = await started(built)
-    built.sessions.transport(id, 'tmux')
-    expect(of(built.rows, id)?.transport).toBe('stream')
-    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-    built.sessions.transport(id, 'tmux')
-    expect(of(built.rows, id)?.transport).toBe('tmux')
-
-    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'continue in tmux' })
-    expect(terminal.fake.made).toMatchObject([{ id, resume: true }])
-    expect(terminal.fake.sent).toEqual([{ text: 'continue in tmux' }])
-
-    terminal.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-    built.sessions.transport(id, 'stream')
-    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'continue in stream' })
-    expect(built.fake.made.at(-1)).toMatchObject({ id, resume: true })
+    const provider: LlmProvider = {
+      ...llmProvider({ claude: terminal.claude }, 'claude'),
+      id: 'plugin:claude-tmux', family: 'plugin:claude-tmux', name: 'Claude Code tmux',
+      create: async () => 'plugin:claude-tmux:session',
+    }
+    const built = build({ plugins: [provider] })
+    const id = await built.sessions.send({ provider: 'plugin:claude-tmux', root: ROOT, mode: 'manual', text: 'Use tmux' })
+    expect(id).toBe('plugin:claude-tmux:session')
+    expect(of(built.rows, id)).toMatchObject({ provider: 'plugin:claude-tmux', state: 'working' })
+    expect(terminal.fake.sent).toEqual([{ text: 'Use tmux' }])
   })
 
   it('moves a running Claude Code into auto without starting it again, and hands back what was waiting', async () => {
@@ -946,8 +940,8 @@ describe('the list', () => {
 
   it('keeps a new conversation visible when it starts while another goal is being read', async () => {
     const notes = memoryNotes()
-    const existing = 'codex:existing'
-    const created = 'codex:created-on-phone'
+    const existing = 'plugin:list-codex:existing'
+    const created = 'plugin:list-codex:created-on-phone'
     notes.set(existing, { here: true, goal: { condition: 'Finish it', checks: 0 } })
     let finish: ((goal: Awaited<ReturnType<LlmProvider['goal']>>) => void) | undefined
     const goal = vi.fn<LlmProvider['goal']>(() => new Promise((resolve) => { finish = resolve }))
@@ -955,9 +949,9 @@ describe('the list', () => {
     const provider: LlmProvider = {
       ...llmProvider({}, 'codex'),
       id: 'plugin:list-codex',
-      replaces: 'codex',
+      family: 'plugin:list-codex',
       available: true,
-      account: async () => ({ provider: 'codex', here: true, signedIn: true }),
+      account: async () => ({ provider: 'plugin:list-codex', here: true, signedIn: true }),
       create: async () => created,
       list: async () => [existing, created].map((id) => ({ id, root: ROOT, title: '', stands: '', at: 1_000, driven: true })),
       goal,
@@ -966,7 +960,7 @@ describe('the list', () => {
     const built = build({ notes, plugins: [provider] })
     const listing = built.sessions.list([ROOT])
     await vi.waitFor(() => expect(goal).toHaveBeenCalledOnce())
-    expect(await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'Start from the phone' })).toBe(created)
+    expect(await built.sessions.send({ provider: 'plugin:list-codex', root: ROOT, mode: 'manual', text: 'Start from the phone' })).toBe(created)
     finish?.({ status: 'complete' })
 
     expect((await listing).find((row) => row.id === created)).toMatchObject({ here: true, title: 'Start from the phone' })
@@ -977,14 +971,14 @@ describe('the list', () => {
 
   it.each(['hide', 'bring'] as const)('keeps %s and other note changes made while its goal is being read', async (action) => {
     const notes = memoryNotes()
-    const id = 'codex:pending-goal'
+    const id = 'plugin:list-codex:pending-goal'
     notes.set(id, { here: true, hidden: action === 'bring', goal: { condition: 'Finish it', checks: 0 } })
     let finish: ((goal: Awaited<ReturnType<LlmProvider['goal']>>) => void) | undefined
     const goal = vi.fn<LlmProvider['goal']>(() => new Promise((resolve) => { finish = resolve }))
     const provider: LlmProvider = {
       ...llmProvider({}, 'codex'),
       id: 'plugin:list-codex',
-      replaces: 'codex',
+      family: 'plugin:list-codex',
       list: async () => [{ id, root: ROOT, title: '', stands: '', at: 1_000, driven: true }],
       goal,
     }
@@ -1670,25 +1664,25 @@ describe('commands typed after !', () => {
   it('keeps a new Codex command visible after its thread is listed and passes its output to Codex', async () => {
     const shell = fakeShell()
     const codex = fakeClaude()
-    const id = 'codex:shell-new'
+    const id = 'plugin:shell-codex:shell-new'
     const provider: LlmProvider = {
       ...llmProvider({}, 'codex'),
       id: 'plugin:shell-codex',
-      replaces: 'codex',
+      family: 'plugin:shell-codex',
       available: true,
-      account: async () => ({ provider: 'codex', here: true, signedIn: true }),
+      account: async () => ({ provider: 'plugin:shell-codex', here: true, signedIn: true }),
       create: async () => id,
       read: async () => ({ items: [], tasks: [] }),
       list: async () => [{ id, root: ROOT, title: '', stands: '', at: 1_000, driven: true }],
       hold: codex.claude,
     }
     const built = build({ shell: shell.shell, plugins: [provider] })
-    expect(await built.sessions.shell({ provider: 'codex', root: ROOT, command: 'git status' })).toBe(id)
+    expect(await built.sessions.shell({ provider: 'plugin:shell-codex', root: ROOT, command: 'git status' })).toBe(id)
     shell.end({ stdout: 'On branch main\n', output: 'On branch main\n' })
     await settle()
 
     expect(await built.sessions.items(id)).toEqual([expect.objectContaining({ kind: 'shell', output: 'On branch main\n' })])
-    expect(await built.sessions.list([ROOT])).toEqual([expect.objectContaining({ id, provider: 'codex', title: '!git status', here: true })])
+    expect(await built.sessions.list([ROOT])).toEqual([expect.objectContaining({ id, provider: 'plugin:shell-codex', title: '!git status', here: true })])
 
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'what changed?' })
     expect(codex.fake.sent).toEqual([{
@@ -1701,15 +1695,15 @@ describe('commands typed after !', () => {
   it('runs in an existing Codex thread even before it is listed and preserves the thread for the next message', async () => {
     const shell = fakeShell()
     const codex = fakeClaude()
-    const id = 'codex:shell-existing'
-    const create = vi.fn(async () => 'codex:unexpected-new')
+    const id = 'plugin:shell-codex:shell-existing'
+    const create = vi.fn(async () => 'plugin:shell-codex:unexpected-new')
     const read = vi.fn<LlmProvider['read']>(async () => ({ items: [], tasks: [] }))
     const provider: LlmProvider = {
       ...llmProvider({}, 'codex'),
       id: 'plugin:shell-codex',
-      replaces: 'codex',
+      family: 'plugin:shell-codex',
       available: true,
-      account: async () => ({ provider: 'codex', here: true, signedIn: true }),
+      account: async () => ({ provider: 'plugin:shell-codex', here: true, signedIn: true }),
       create,
       read,
       hold: codex.claude,
@@ -1905,9 +1899,9 @@ describe('what runs in the background', () => {
 describe('marking a conversation', () => {
   describe.each(['built-in', 'library', 'mirror'] as const)('live terminal goals from %s', (source) => {
     function nativeGoals(): Pick<LlmProvider, 'family'> & { readonly built: Built; readonly fake: Fake } {
-      const family = source === 'mirror' ? 'plugin:codex-mirror' : 'codex'
-      const held = heldCodex(source === 'mirror' ? 'plugin:codex-mirror:live-goal' : 'codex:live-goal')
-      const provider: LlmProvider = { ...llmProvider({ codex: held.codex }, 'codex'), id: source === 'mirror' ? 'plugin:codex-mirror' : 'plugin:live-goal-test', family, ...(source === 'mirror' ? {} : { replaces: 'codex' as const }) }
+      const family = source === 'built-in' ? 'codex' : source === 'mirror' ? 'plugin:codex-mirror' : 'plugin:live-goal-test'
+      const held = heldCodex(source === 'built-in' ? 'codex:live-goal' : `${family}:live-goal`)
+      const provider: LlmProvider = { ...llmProvider({ codex: held.codex }, 'codex'), id: family, family }
       return { built: build(source === 'built-in' ? { codex: held.codex } : { plugins: [provider] }), fake: held.fake, family }
     }
 
@@ -1999,15 +1993,15 @@ describe('marking a conversation', () => {
     const provider: LlmProvider = {
       ...llmProvider({}, family),
       id: family === 'claude' ? 'claude-tmux' : 'plugin:codex-review-test',
-      ...(family === 'codex' ? { replaces: 'codex' as const } : {}),
+      ...(family === 'codex' ? { family: 'plugin:codex-review-test' } : {}),
       available: true,
-      account: async () => ({ provider: family, here: true, signedIn: true }),
-      create: async () => family === 'codex' ? `codex:library-${created++}` : `library-${created++}`,
+      account: async () => ({ provider: family === 'codex' ? 'plugin:codex-review-test' : family, here: true, signedIn: true }),
+      create: async () => family === 'codex' ? `plugin:codex-review-test:library-${created++}` : `library-${created++}`,
       hold: held.claude,
       goal: async () => undefined,
     }
     const built = build({ plugins: [provider], transport: () => 'tmux', limit: () => limit })
-    const id = await built.sessions.send({ provider: family, root: ROOT, mode: 'manual', text: 'First task' })
+    const id = await built.sessions.send({ provider: family === 'codex' ? 'plugin:codex-review-test' : family, root: ROOT, mode: 'manual', text: 'First task' })
     held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     built.sessions.mark(id, 'review')
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Immediate followup' })
@@ -2018,7 +2012,7 @@ describe('marking a conversation', () => {
     held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     built.sessions.mark(id, 'review')
     limit = 1
-    await built.sessions.send({ provider: family, root: ROOT, mode: 'manual', text: 'Occupy the slot' })
+    await built.sessions.send({ provider: family === 'codex' ? 'plugin:codex-review-test' : family, root: ROOT, mode: 'manual', text: 'Occupy the slot' })
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Queued followup' })
     expect(of(built.rows, id)?.status).toBeUndefined()
     expect(of(built.rows, id)?.waits).toBe(true)
