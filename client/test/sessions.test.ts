@@ -857,6 +857,82 @@ describe('stopping', () => {
 })
 
 describe('the list', () => {
+  it('excludes unrelated Claude history from tmux cards, search and Hidden after reopening', async () => {
+    const ids = ['external', 'native-owned', 'incidental', 'created', 'shown', 'hidden']
+    const notes = memoryNotes()
+    notes.set('native-owned', { here: true })
+    notes.set('plugin:claude-tmux:incidental', { title: 'Looked at before', seen: 500, hidden: true })
+    notes.set('plugin:claude-tmux:created', { here: true })
+    notes.set('plugin:claude-tmux:shown', { shown: true })
+    notes.set('plugin:claude-tmux:hidden', { here: true, hidden: true })
+    const rows: Awaited<ReturnType<LlmProvider['list']>> = ids.map((id) => ({ id, root: ROOT, cwd: ROOT, title: id, stands: '', at: 500, driven: false }))
+    const tmuxRows = rows.map((row) => ({ ...row, id: `plugin:claude-tmux:${row.id}` }))
+    const plugin: LlmProvider = {
+      ...llmProvider({}, 'claude'),
+      id: 'plugin:claude-tmux', family: 'plugin:claude-tmux', name: 'Claude Code tmux',
+      list: async () => tmuxRows,
+      search: async () => tmuxRows.map((row) => ({ id: row.id, root: row.root, said: row.title, count: 1 })),
+      hidden: async (_from, _to, include) => tmuxRows.filter((row) => include(row.id)),
+    }
+    const deps: Partial<SessionsDeps> = {
+      notes, plugins: [plugin], there: async () => true,
+      disk: { list: async () => rows, read: async () => undefined, has: async () => false, every: async () => [] },
+      search: async () => rows.map((row) => ({ id: row.id, root: row.root, said: row.title, count: 1 })),
+    }
+    for (const built of [build(deps), build(deps)]) {
+      expect((await built.sessions.list([ROOT])).map((row) => row.id).sort()).toEqual([
+        ...ids, 'plugin:claude-tmux:created', 'plugin:claude-tmux:shown',
+      ].sort())
+      expect((await built.sessions.search([ROOT], 'task')).map((row) => row.id).sort()).toEqual([
+        ...ids, 'plugin:claude-tmux:created', 'plugin:claude-tmux:shown', 'plugin:claude-tmux:hidden',
+      ].sort())
+      expect((await built.sessions.hidden([ROOT], false)).flatMap((folder) => folder.chats.map((row) => row.id))).toEqual(['plugin:claude-tmux:hidden'])
+      expect(await built.sessions.items('plugin:claude-tmux:external')).toEqual([])
+      built.sessions.again()
+      expect(of(built.rows, 'plugin:claude-tmux:external')).toBeUndefined()
+    }
+  })
+
+  it('keeps newly created and forked tmux conversations before disk catches up and after reopening', async () => {
+    const notes = memoryNotes()
+    const held = fakeClaude()
+    const created = 'plugin:claude-tmux:created'
+    const forked = 'plugin:claude-tmux:forked'
+    const plugin: LlmProvider = {
+      ...llmProvider({}, 'claude'),
+      id: 'plugin:claude-tmux', family: 'plugin:claude-tmux', name: 'Claude Code tmux',
+      create: async () => created,
+      fork: async () => ({ id: forked, begun: true, items: [] }),
+      hold: held.claude,
+      list: async () => [created, forked].map((id) => ({ id, root: ROOT, title: id, stands: '', at: 500, driven: true })),
+    }
+    const built = build({ notes, plugins: [plugin] })
+    await built.sessions.send({ provider: 'plugin:claude-tmux', root: ROOT, mode: 'manual', text: 'Start here' })
+    expect(of(built.rows, created)).toMatchObject({ here: true, state: 'working' })
+    await built.sessions.send({ session: created, root: ROOT, mode: 'manual', text: 'Fork this task' })
+    const queued = of(built.rows, created)?.queued?.[0]?.id ?? ''
+    expect(await built.sessions.delegate(created, queued, true)).toBe(forked)
+    expect(of(built.rows, forked)).toMatchObject({ here: true, state: 'working' })
+    expect((await build({ notes, plugins: [plugin] }).sessions.list([ROOT])).map((row) => row.id).sort()).toEqual([created, forked].sort())
+  })
+
+  it('keeps unborn tmux conversations waiting for a slot visible after reopening', async () => {
+    const notes = memoryNotes()
+    const created = 'plugin:claude-tmux:waiting'
+    const plugin: LlmProvider = {
+      ...llmProvider({}, 'claude'),
+      id: 'plugin:claude-tmux', family: 'plugin:claude-tmux', name: 'Claude Code tmux',
+      create: async () => created,
+      list: async () => [],
+    }
+    const built = build({ notes, plugins: [plugin], limit: () => 1 })
+    await started(built)
+    await built.sessions.send({ provider: 'plugin:claude-tmux', root: ROOT, mode: 'manual', text: 'Wait for a slot' })
+    expect(of(built.rows, created)).toMatchObject({ waits: true, queued: [{ text: 'Wait for a slot' }] })
+    expect(notes.all()[created]?.here).toBeUndefined()
+    expect((await build({ notes, plugins: [plugin] }).sessions.list([ROOT])).find((row) => row.id === created)).toMatchObject({ waits: true })
+  })
+
   it('keeps removed-library notes without crashing the list or watching', async () => {
     const notes = memoryNotes()
     const id = 'plugin:removed:session'

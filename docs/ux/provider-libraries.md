@@ -237,3 +237,19 @@ Alex installed `geckit-claude-tmux` and expected another assistant. Its manifest
 Settings > Assistants now shows **Default transport: Stream/tmux** under Claude when that library is installed. Changing it controls new local conversations; the composer continues to control an individual conversation, and existing sessions keep their saved transport. Installation itself keeps the person's current Stream/tmux choice.
 
 Browser fixture review covered the full Settings dialog in light and dark themes at the default size and at 900 x 600. The selector menu and keyboard selection of tmux worked, the long removal error wrapped without clipping, and the failure retained the library row and confirmation. The running GeckIt Local window was unavailable to visual review because computer-use access was not approved; its installed manifest and saved settings were read directly. Native runtime behavior after restart remains unverified.
+
+### Claude tmux conversation ownership
+
+Alex reported tmux cards for conversations that were not created in GeckIt. The library shares Claude's native transcript directory, but that directory does not establish tmux ownership. Only sessions created with the tmux assistant in GeckIt, or explicitly restored under that assistant, belong to its history. Persisted GeckIt notes establish ownership across restarts; an active GeckIt conversation remains visible before its transcript reaches disk.
+
+| From | Event | To | What the user sees |
+|---|---|---|---|
+| Unrelated Claude history | Board refresh, search or Hidden listing, automatically | Unrelated Claude history | No duplicate tmux card or result; builtin Claude retains its existing history behavior |
+| New tmux conversation | User starts a task with Claude Code (tmux) | Owned tmux conversation | One tmux card, including while its first message waits for a slot |
+| Owned tmux conversation | GeckIt restarts or refreshes, automatically | Owned tmux conversation | Existing tmux card and history |
+| Owned tmux conversation | User hides it | Hidden tmux conversation | Card leaves the board and is available in Hidden |
+| Hidden tmux conversation | User restores it | Owned tmux conversation | Same tmux card returns |
+
+Unrelated transcripts stay silent in tmux search and Hidden as well as on the board. No new copy, controls, timing thresholds, theme rules or layout are introduced. Existing hide, restore, fork and delete behavior applies to owned conversations. Filtering does not delete transcripts or notes. A shared native Claude ID alone must never create a second assistant identity.
+
+Verification of the isolated correction: all three ownership regressions pass, covering board/search/Hidden, persistence, new/forked conversations and queued conversations. Typecheck, targeted lint and desktop build pass. The full isolated suite was interrupted after more than two minutes without completing; a full-suite pass is not claimed. Native full-window light/dark, keyboard, scrolling and target viewport review was unavailable because Computer Use access to GeckIt was denied. Renderer components and styling were not changed.

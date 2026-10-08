@@ -589,6 +589,13 @@ export class Sessions {
     this.#deps.notes.set(live.id, queued.length === 0 ? note : { ...note, queued })
   }
 
+  #keptHistory(id: string): boolean {
+    if (providerOf(id) !== 'plugin:claude-tmux') return true
+    const note = this.#deps.notes.all()[id]
+    const live = this.#live.get(id)
+    return note?.here === true || note?.shown === true || (live !== undefined && (live.question || live.messages > 0 || live.queued.length > 0))
+  }
+
   // --- what the window asks ---------------------------------------------------
 
   async account(provider: SessionProvider = 'claude'): Promise<ClaudeAccount> {
@@ -701,7 +708,7 @@ export class Sessions {
     for (const provider of this.#providers.plugins.values()) {
       if (provider.family === 'claude' || provider.replaces === 'codex') continue
       for (const [id, row] of this.#rows) if (providerOf(id) === provider.family && roots.includes(row.project ?? row.root)) this.#rows.delete(id)
-      for (const row of await provider.list(roots)) if (providerOf(row.id) === provider.family) this.#rows.set(row.id, row)
+      for (const row of await provider.list(roots)) if (providerOf(row.id) === provider.family && this.#keptHistory(row.id)) this.#rows.set(row.id, row)
     }
     const goalRows = codexRows.filter((row) => this.#live.get(row.id)?.driver === undefined && (this.#deps.notes.all()[row.id]?.goal !== undefined || row.id === this.#watching))
     const messages = goalRows.map((row) => this.#live.get(row.id)?.messages)
@@ -735,6 +742,7 @@ export class Sessions {
     const ids = new Set([...this.#rows.keys(), ...this.#live.keys()])
     const sessions: ChatSession[] = []
     for (const id of ids) {
+      if (!this.#keptHistory(id)) continue
       const family = providerOf(id)
       if (family !== 'claude' && family !== 'codex' && !this.#providers.plugins.has(family)) continue
       const row = this.#rows.get(id)
@@ -892,7 +900,7 @@ export class Sessions {
   async search(roots: readonly string[], asked: string): Promise<ChatFound[]> {
     const providers = [this.#providers.stream, this.#providers.codex, ...[...this.#providers.plugins.values()].filter((provider) => provider.family !== 'claude' && provider.replaces !== 'codex')]
     const found = await Promise.all(providers.map((provider) => provider.search(roots, asked)))
-    return found.flat()
+    return found.flat().filter((row) => this.#keptHistory(row.id))
   }
 
   /** The limit changed: whatever it makes room for goes now. */
@@ -1942,7 +1950,7 @@ export class Sessions {
       if (note?.hidden === true) return false
       return note?.here === true || note?.shown === true || (row !== undefined && !row.driven)
     }
-    const found = (await Promise.all([this.#providers.stream, ...[...this.#providers.plugins.values()].filter((provider) => provider.family !== 'claude' && provider.replaces !== 'codex')].map((provider) => provider.hidden(older ? 0 : edge, older ? edge : Infinity, (id) => !listed(id))))).flat()
+    const found = (await Promise.all([this.#providers.stream, ...[...this.#providers.plugins.values()].filter((provider) => provider.family !== 'claude' && provider.replaces !== 'codex')].map((provider) => provider.hidden(older ? 0 : edge, older ? edge : Infinity, (id) => this.#keptHistory(id) && !listed(id))))).flat().filter((row) => this.#keptHistory(row.id))
     for (const row of this.#rows.values()) {
       if (providerOf(row.id) !== 'codex' || listed(row.id) || row.at < (older ? 0 : edge) || row.at >= (older ? edge : Infinity)) continue
       found.push({ ...row, cwd: row.root })

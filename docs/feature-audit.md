@@ -166,6 +166,8 @@ Sources: providers (`client/src/shared/providers.ts`), provider contract (`clien
 - Hand over a supported conversation to a terminal using the provider's resume command.
 - Stream transport for builtin Claude; optional Claude tmux transport via a provider library. Choose the default for new local conversations in Settings > Assistants and change transport on individual conversations in the composer.
 
+Claude tmux history correction (2026-10-08, current working tree): shared Claude transcripts do not establish ownership by the tmux assistant. Its board, search and Hidden results require a GeckIt-created or explicitly restored tmux conversation, using namespaced saved notes and active GeckIt session state. Builtin Claude retains its external-history behavior. Evidence: `Sessions.list`, `Sessions.search`, `Sessions.hidden` and tmux history regression cases in `client/test/sessions.test.ts`; [visibility rules](ux/provider-libraries.md#claude-tmux-conversation-ownership). Transcript and note deletion are not part of this correction. Native full-window light/dark, keyboard, scrolling and viewport verification was unavailable because Computer Use access to GeckIt was denied.
+
 Builtin Codex is local-only in the current provider definition. SSH support must not be advertised as builtin Codex support. MCP, browser integration, Remote Control, history branching and other optional operations depend on the selected provider's capabilities.
 
 ### Provider libraries
