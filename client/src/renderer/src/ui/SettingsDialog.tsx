@@ -97,7 +97,7 @@ export function SettingsDialog({
 
   return (
     <div className="dialog-scrim" onMouseDown={onClose}>
-      <div className={`dialog settings-dialog${section === 'assistants' || section === 'libraries' ? ' compact-settings' : ''}`} onMouseDown={(event) => event.stopPropagation()}>
+      <div className="dialog settings-dialog" onMouseDown={(event) => event.stopPropagation()}>
         <h2>Settings</h2>
         <div className="settings-body">
           <nav ref={navigation} className="settings-nav" aria-label="Sections">

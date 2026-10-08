@@ -923,11 +923,6 @@ textarea {
   overflow: hidden;
 }
 
-.dialog.settings-dialog.compact-settings {
-  height: auto;
-  max-height: 94vh;
-}
-
 .settings-body {
   display: grid;
   flex: 1;
