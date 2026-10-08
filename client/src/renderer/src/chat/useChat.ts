@@ -1,3 +1,4 @@
+import { readAccount } from './accounts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
@@ -325,7 +326,7 @@ export function useChat(): Chat {
     let gone = false
     let again: number | undefined
     const ask = (): void => {
-      window.geckit.chat.account(provider).then(
+      readAccount(provider).then(
         (said: ClaudeAccount | undefined) => {
           if (gone) return
           if (said === undefined) again = window.setTimeout(ask, 5_000)
@@ -1008,7 +1009,7 @@ export function useChat(): Chat {
         .models(where, provider)
         .then((said) => setModels((held) => (held.on !== on ? held : { on, said: said ?? (Array.isArray(held.said) ? held.said : 'unsaid') })))
         .catch(() => setModels((held) => held.on !== on ? held : { on, said: Array.isArray(held.said) ? held.said : 'unsaid' }))
-      void window.geckit.chat.account(provider).then(setAccount, () => undefined)
+      void readAccount(provider).then(setAccount, () => undefined)
     },
     send,
     ask,

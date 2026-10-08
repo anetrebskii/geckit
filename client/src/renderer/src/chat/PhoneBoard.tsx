@@ -1,4 +1,5 @@
 import { ProviderIcon } from './ProviderIcon'
+import { AssistantStatus } from './AssistantStatus'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -477,24 +478,8 @@ export function PhoneBoard({
                 </div>}
               </Fragment>
             ))}
-        {codexWindows.length === 0 ? null : <div className="phone-foot">Codex: {codexWindows.map(({ name, window }) => `${name} ${String(Math.round(window.usedPercent))}%${window.resetsAt === null ? '' : `, resets ${resetsAt(window.resetsAt * 1000, now)}`}`).join(' · ')}</div>}
-        {accounts.every((one) => one.usage?.fiveHour === undefined && one.usage?.sevenDay === undefined) ? null : (
-          <div className="phone-foot">
-            {accounts
-              .map((one) =>
-                [
-                  one.usage?.fiveHour === undefined ? '' : `5-hour window ${String(Math.round(one.usage.fiveHour.part * 100))}%${named ? '' : `, resets ${resetsAt(one.usage.fiveHour.resetsAt, now)}`}`,
-                  one.usage?.sevenDay === undefined ? '' : `week ${String(Math.round(one.usage.sevenDay.part * 100))}%${named ? '' : `, resets ${resetsAt(one.usage.sevenDay.resetsAt, now)}`}`,
-                ]
-                  .filter((part) => part !== '')
-                  .join(', '),
-              )
-              .map((line, at) => (named && line !== '' ? `${accounts[at]?.name ?? ''}: ${line}` : line))
-              .filter((line) => line !== '')
-              .join(' · ')}
-          </div>
-        )}
       </div>
+      <AssistantStatus chat={chat} phone />
 
       {pressed === undefined ? null : (
         <Pressed

@@ -349,3 +349,9 @@ The reachable local Git history begins at the 2026-09-30 root snapshot. It is no
 | 2026-10-03, other local refs | `eb46124`, `ce8c76e` | Provider/title inheritance for handoffs and turn-scoped progress |
 
 No application code was changed for this inventory. Runtime behavior, installed-app versions, hosted services and App Store/TestFlight availability were not reverified.
+
+## Assistant status overview - 2026-10-08
+
+Alex requested design and implementation for all enabled assistants on desktop and mobile. In the working tree, independent labeled desktop summaries and the phone Tasks Assistants disclosure open shared account details. The overview preserves each assistant identity, reports missing information explicitly, and keeps Claude host account grouping and disconnected measurements. Plan, CLI version/installation and every reported quota are available in details; opening status does not switch the conversation assistant.
+
+Evidence: `client/src/renderer/src/chat/AssistantStatus.tsx`, `Status.tsx`, `PhoneBoard.tsx`, `docs/ux/assistant-status.md`, `specs/004-assistant-status/`. Validation results are recorded in that feature's design handoff; this does not establish released installer availability.
