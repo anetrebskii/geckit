@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react'
 
-import { planLine, programLine, shownProjects } from '../../../shared/api'
 import { isCodexProvider, llmProviderInfo } from '../../../shared/providers'
-import { accountUsage, money } from '../../../shared/provider-usage'
-import { QuotaStats } from './ProviderUsage'
-import { Meter, until } from './UsageMeter'
+import { money } from '../../../shared/provider-usage'
+import { Meter } from './UsageMeter'
 export { Meter, until } from './UsageMeter'
-import type { GitState, PlanUsage, PlanWindow } from '../../../shared/api'
-import { hostOf } from '../../../shared/hosts'
+import type { GitState } from '../../../shared/api'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
-import { ago, clockTime } from './time'
-import { accountsOf, placesOf } from './plans'
+import { ago } from './time'
+import { AssistantStatus } from './AssistantStatus'
+import type { AssistantStatusChat } from './AssistantStatus'
 import type { Chat } from './useChat'
 
 /**
@@ -27,19 +25,6 @@ export const tokens = (count: number): string =>
   count >= 1_000_000 ? `${String(Math.round(count / 100_000) / 10)}M` : `${String(Math.round(count / 1000))}k`
 
 export const dollars = (cost: number): string => `$${cost < 10 ? cost.toFixed(2) : String(Math.round(cost))}`
-
-function Window({ name, window, now }: { readonly name: string; readonly window: PlanWindow; readonly now: number }): React.JSX.Element {
-  const at = new Date(window.resetsAt)
-  return (
-    <span className="stat" title={`${name} window: ${String(Math.round(window.part * 100))}% used, starts again ${at.toLocaleString()}`}>
-      <span>{name}</span>
-      <Meter part={window.part} />
-      <span className="value">
-        {Math.round(window.part * 100)}%<span className="resets">, resets in {until(window.resetsAt, now)}</span>
-      </span>
-    </span>
-  )
-}
 
 /** A count of commits, and the first lines of the ones named, for the tooltip. */
 function commits(count: number, named: readonly string[], where: string): string[] {
@@ -179,114 +164,6 @@ export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly on
   )
 }
 
-/** One account's two windows, small, for a bar that shows several: its place, then 5h and Week. */
-function Compact({
-  name,
-  usage,
-  faint,
-  at,
-  now,
-}: {
-  readonly name: string
-  readonly usage: PlanUsage | undefined
-  readonly faint: boolean
-  /** When this place's usage last changed, for a faint item's tooltip. */
-  readonly at: number | undefined
-  readonly now: number
-}): React.JSX.Element {
-  const part = (window: PlanWindow | undefined): string => (window === undefined ? '—' : `${String(Math.round(window.part * 100))}%`)
-  const tip = [
-    `${name}: the plan these folders run on${faint ? `, as of ${at === undefined ? 'last measured' : clockTime(at)}` : ''}`,
-    usage?.fiveHour === undefined ? undefined : `5h ${part(usage.fiveHour)}, resets in ${until(usage.fiveHour.resetsAt, now)}`,
-    usage?.sevenDay === undefined ? undefined : `Week ${part(usage.sevenDay)}, resets in ${until(usage.sevenDay.resetsAt, now)}`,
-  ]
-  return (
-    <span className={`stat plan-item${faint ? ' faint' : ''}`} title={tip.filter((line) => line !== undefined).join('\n')}>
-      <span>{name}</span>
-      {usage?.fiveHour === undefined ? null : <Meter part={usage.fiveHour.part} />}
-      <span className="value">
-        {part(usage?.fiveHour)} · {part(usage?.sevenDay)}
-      </span>
-    </span>
-  )
-}
-
-export function Status({ chat }: { readonly chat: Pick<Chat, 'provider' | 'account' | 'session' | 'chosen' | 'settings' | 'hosts' | 'plans' | 'plan' | 'plansAt' | 'trouble'> }): React.JSX.Element {
-  const [now, setNow] = useState(() => Date.now())
-  // Whose plan, and which Claude Code spends it: an older one runs fewer models.
-  const program = chat.account?.program
-  // The plan of what is in front: an open conversation's account, or every account the projects shown run on, each once.
-  const inFront = chat.session !== undefined ? [chat.session.root] : chat.chosen.length > 0 ? chat.chosen : shownProjects(chat.settings)
-  const hostNamed = (place: string): string => (place === '' ? 'Local' : (chat.hosts.find((one) => one.id === place)?.name ?? place))
-  const items = accountsOf(placesOf(inFront.length === 0 ? [''] : inFront, hostOf), chat.plans, hostNamed)
-  const only = items.length === 1 ? items[0] : undefined
-  const place = only?.places[0] ?? ''
-  const host = place === '' ? undefined : chat.hosts.find((one) => one.id === place)
-  // This computer's windows come fresh with every turn; a host's are its own, measured there.
-  const plan = only === undefined ? undefined : place === '' ? (chat.plan ?? only.entry?.usage) : only.entry?.usage
-  const lead =
-    only === undefined
-      ? ''
-      : host === undefined
-        ? [place === '' ? undefined : hostNamed(place), planLine(chat.account, chat.provider), programLine(chat.account, chat.provider)].filter((part) => part !== undefined).join(' · ')
-        : [host.name, host.plan === undefined ? undefined : `Your Claude ${host.plan} plan`, host.version === undefined ? undefined : `Claude Code ${host.version}`]
-            .filter((part) => part !== undefined)
-            .join(' · ')
-  const shown = items.slice(0, 2)
-  const rest = items.slice(2)
-
-  useEffect(() => {
-    const tick = setInterval(() => setNow(Date.now()), 60_000)
-    return () => clearInterval(tick)
-  }, [])
-
-  if (chat.provider !== 'claude') return <div className="status-bar"><div className="status-details" role="group" aria-label="Provider account and usage" tabIndex={0}><span className="spacer" /><span className={`lead${chat.trouble === '' ? '' : ' trouble'}`}>{chat.trouble || (chat.account === undefined ? `Looking for ${llmProviderInfo(chat.provider).name}...` : [planLine(chat.account, chat.provider), programLine(chat.account, chat.provider)].filter((one) => one !== undefined).join(' · '))}</span><QuotaStats usage={accountUsage(chat.account)} now={now} /></div></div>
-
-  return (
-    <div className="status-bar">
-
-      <div className="status-details" role="group" aria-label="Provider account and usage" tabIndex={0}>
-      <span className="spacer" />
-      {ON_PHONE || only !== undefined || chat.trouble !== ''
-        ? null
-        : shown.map((item) => {
-            const at = item.places[0] ?? ''
-            const faint = at !== '' && chat.hosts.find((one) => one.id === at)?.state !== 'up'
-            return (
-              <Compact
-                key={at}
-                name={hostNamed(at)}
-                usage={at === '' ? (chat.plan ?? item.entry?.usage) : item.entry?.usage}
-                faint={faint}
-                at={chat.plansAt[at]}
-                now={now}
-              />
-            )
-          })}
-      {ON_PHONE || only !== undefined || rest.length === 0 ? null : (
-        <span className="stat plan-item" title={rest.map((item) => hostNamed(item.places[0] ?? '')).join('\n')}>
-          +{rest.length}
-        </span>
-      )}
-      {(ON_PHONE && chat.trouble === '') || (only === undefined && chat.trouble === '') ? null : (
-        <span
-          className={`lead${chat.trouble === '' ? '' : ' trouble'}`}
-          {...(chat.trouble !== ''
-            ? {}
-            : host !== undefined
-              ? host.version === undefined
-                ? {}
-                : { title: `Runs on ${host.name}, Claude Code ${host.version}` }
-              : program?.path !== undefined
-                ? { title: `GeckIt starts ${program.path}` }
-                : {})}
-        >
-          {chat.trouble === '' ? lead : chat.trouble}
-        </span>
-      )}
-      {only === undefined ? null : plan?.fiveHour === undefined ? <span className="stat plan-item">5h —</span> : <Window name="5h" window={plan.fiveHour} now={now} />}
-      {only === undefined ? null : plan?.sevenDay === undefined ? <span className="stat plan-item">Week —</span> : <Window name="Week" window={plan.sevenDay} now={now} />}
-      </div>
-    </div>
-  )
+export function Status({ chat }: { readonly chat: AssistantStatusChat }): React.JSX.Element | null {
+  return ON_PHONE ? null : <AssistantStatus chat={chat} />
 }

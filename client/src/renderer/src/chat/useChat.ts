@@ -1,3 +1,4 @@
+import { readAccount } from './accounts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
@@ -144,7 +145,6 @@ export interface Chat {
   addFiles: (files: readonly File[]) => void
   dropPicture: (at: number) => void
   setMode: (mode: SessionMode) => void
-  setTransport: (transport: ClaudeTransport) => void
   setModel: (model: string) => void
   setProvider: (provider: SessionProvider) => void
   /** Asks which models the Claude Code that runs a project has: the chat's own project where none is given. */
@@ -325,7 +325,7 @@ export function useChat(): Chat {
     let gone = false
     let again: number | undefined
     const ask = (): void => {
-      window.geckit.chat.account(provider).then(
+      readAccount(provider).then(
         (said: ClaudeAccount | undefined) => {
           if (gone) return
           if (said === undefined) again = window.setTimeout(ask, 5_000)
@@ -509,7 +509,7 @@ export function useChat(): Chat {
   }, [root])
 
   const mode = session?.mode ?? settings.chatMode
-  const transport = session?.transport ?? (root !== undefined && isRemote(root) || !settings.providerPlugins.some((one) => one.id === 'claude-tmux') ? 'stream' : settings.chatTransport)
+  const transport: ClaudeTransport = 'stream'
   const nextChoice = shown.kind === 'session' ? nextChoices.get(shown.id) : undefined
   const model = nextChoice?.model ?? session?.chosen ?? (isCodexProvider(provider) ? session?.model ?? settings.codexModel : settings.chatModel)
   const wantedReasoning = nextChoice?.reasoning ?? session?.reasoning ?? settings.codexReasoning
@@ -981,13 +981,6 @@ export function useChat(): Chat {
         window.geckit.chat.mode(id, next)
       }
     },
-    setTransport: (next) => {
-      if (shownRef.current.kind === 'session') {
-        const id = shownRef.current.id
-        setSessions((all) => all.map((one) => one.id === id ? { ...one, transport: next } : one))
-        window.geckit.chat.transport(id, next)
-      } else change({ chatTransport: next })
-    },
     setModel: (next) => {
       change(isCodexProvider(provider) ? { codexModel: next, codexReasoning: '' } : { chatModel: next })
       if (shownRef.current.kind === 'session') {
@@ -1008,7 +1001,7 @@ export function useChat(): Chat {
         .models(where, provider)
         .then((said) => setModels((held) => (held.on !== on ? held : { on, said: said ?? (Array.isArray(held.said) ? held.said : 'unsaid') })))
         .catch(() => setModels((held) => held.on !== on ? held : { on, said: Array.isArray(held.said) ? held.said : 'unsaid' }))
-      void window.geckit.chat.account(provider).then(setAccount, () => undefined)
+      void readAccount(provider).then(setAccount, () => undefined)
     },
     send,
     ask,

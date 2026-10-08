@@ -126,6 +126,7 @@ const geckit = {
     open: (): void => ipcRenderer.send('chat:open'),
     installProvider: (url: string): Promise<LlmProviderInfo> => ipcRenderer.invoke('chat:installProvider', url),
     uninstallProvider: (id: string): Promise<void> => ipcRenderer.invoke('chat:uninstallProvider', id),
+    applyProviderUpdate: (id: string): Promise<LlmProviderInfo> => ipcRenderer.invoke('chat:applyProviderUpdate', id),
     checkProviderUpdates: (): Promise<PluginUpdateResult> => ipcRenderer.invoke('chat:checkProviderUpdates'),
     account: (provider?: SessionProvider): Promise<ClaudeAccount> => ipcRenderer.invoke('chat:account', provider),
     /** A project's own root asks a host's own claude, where one is given; without it, this computer's. */

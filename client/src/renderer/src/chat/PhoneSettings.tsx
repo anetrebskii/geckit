@@ -4,7 +4,7 @@ import { assistantsIn, planLine, providerOf, SESSION_MODES, shownProjects } from
 import type { ClaudeAccount, Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, SessionProvider, ShortcutDraft, Theme } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
-import { isCodexProvider, llmProviderInfo } from '../../../shared/providers'
+import { independentProviderInfo, isCodexProvider, llmProviderInfo } from '../../../shared/providers'
 import { ear, setEar, voice } from '../dictate'
 import type { Ear } from '../dictate'
 import { macs } from '../macs'
@@ -89,6 +89,7 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
       .catch(() => undefined)
   }, [])
   const settings = chat.settings
+  const providers = settings.providerPlugins.map(independentProviderInfo)
   const codexInfo = llmProviderInfo('codex', 'stream', settings.providerPlugins)
   const enabled = assistantsIn(settings)
   const [assistantAccounts, setAssistantAccounts] = useState<readonly ClaudeAccount[]>([])
@@ -179,7 +180,7 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
         <Cell label={codexInfo.name} icon={codexInfo.icon} says="Uses the host's ChatGPT plan for its local folders">
           <Switch on={enabled.includes('codex')} label={codexInfo.name} disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(on) => toggle('codex', on)} />
         </Cell>
-        {settings.providerPlugins.filter((one) => one.family !== 'claude' && one.replaces === undefined).map((one) => (
+        {providers.map((one) => (
           <Cell key={one.id} label={one.name} icon={one.icon} says="Installed on the host">
             <Switch on={enabled.includes(one.family)} label={one.name} disabled={enabled.length === 1 && enabled.includes(one.family)} onChange={(on) => toggle(one.family, on)} />
           </Cell>

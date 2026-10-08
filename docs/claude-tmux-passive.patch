@@ -1,0 +1,1121 @@
+diff --git a/README.md b/README.md
+index f5bb168..d48f21b 100644
+--- a/README.md
++++ b/README.md
+@@ -1,9 +1,23 @@
+ # Claude Code tmux plugin for GeckIt
+ 
+-This plugin starts or resumes a Claude Code chat in tmux. GeckIt sends prompts through tmux and reads structured output from Claude Code hooks and its session transcript. GeckIt closes an idle tmux session to free memory; Claude Code keeps the conversation so it can resume later.
++This plugin starts or resumes ordinary interactive Claude Code in tmux. Prompts go through terminal input. Replies and tool progress come from Claude's JSONL session transcript; terminal output is inspected only for working, idle and native approval/question states.
+ 
+-Install it in GeckIt under Settings > Assistants > Add provider from GitHub, using `https://github.com/anetrebskii/geckit-claude-tmux`. Then choose tmux under the message field. The plugin needs `claude` and `tmux` on the computer. It works with local projects on macOS and Linux.
++The plugin adds no HTTP hooks or GeckIt system instructions. It excludes the global `GECKIT.md` import for this process and does not install a GeckIt guide. User hooks, project instructions, authentication and native permission checks remain active. Existing instructions or resumed conversation history can still mention GeckIt; this is not a guarantee that Claude cannot infer automation.
+ 
+-`geckit-plugin.json` describes the provider. `index.mjs` exports `create(host)`, which returns the full GeckIt `LlmProvider` interface. This plugin uses GeckIt's Claude provider for account, models, limits, saved conversations, search, and browser access, and replaces the live conversation driver with tmux. The driver sends prompts to the existing Claude Code conversation and emits transcript items and events through the same callback as other providers.
++Install under Settings > Libraries using `https://github.com/anetrebskii/geckit-claude-tmux`, then enable its assistant entry. Requires `claude` and `tmux`, with a local macOS or Linux project.
+ 
+-Run the integration test with `node --test test/tmux.test.mjs`.
++## Sending and reading
++
++Claude Code starts in its interactive terminal. The plugin types each prompt through tmux at a measured pace, then presses Enter. GeckIt shows "Working - sending to Claude Code" while the text is typed, then "Working - waiting for Claude Code" after submission. Multiline prompts use Claude Code's backslash-plus-Enter line break. Images are saved as temporary private files and their paths are typed into the prompt.
++
++Every 500 ms, the driver reads only appended transcript bytes. Incomplete JSONL lines remain buffered, including partial UTF-8 characters. Reply text is never reconstructed from terminal output. Saved message blocks arrive after Claude writes them; token-level hook streaming is removed.
++
++Working indicators keep the turn open. A recognized idle input prompt must appear on two consecutive polls after observed activity before GeckIt marks the turn finished. File silence and `end_turn` alone do not mean completion. Unknown terminal layouts remain working. Completion means the turn ended, not that the requested task succeeded.
++
++Native numbered approvals and questions appear as existing GeckIt question cards with Claude's exact choices. Answering navigates the current menu and presses Enter; it rechecks the menu to reject stale answers. Unsupported dialogs must be handled in Claude's terminal. Stop sends Ctrl+C and waits for the idle prompt. The process remains open for follow-ups and shuts down after one hour idle following a finished turn. A new message resets the timer; working turns, pending approvals and tracked background tasks prevent shutdown.
++
++## Verification
++
++Run `node --test test/tmux.test.mjs`. The tests use a fake Claude program inside real tmux; no model account is needed. On a machine with active tmux sessions, set `TMUX_TMPDIR` to a private directory to isolate the test server.
++
++Behavior and verification details: [passive terminal UX](doc/ux/passive-terminal.md).
+diff --git a/doc/ux/passive-terminal.md b/doc/ux/passive-terminal.md
+new file mode 100644
+index 0000000..d1ff83d
+--- /dev/null
++++ b/doc/ux/passive-terminal.md
+@@ -0,0 +1,120 @@
++---
++type: spec
++status: implemented
++owner: Alex
++created: 2026-10-08
++---
++
++# UX: Read Claude through its ordinary terminal and transcript
++
++## 1. Why
++
++Alex wants the tmux plugin to submit messages and read replies without telling Claude that GeckIt is managing the conversation. Remove the plugin's HTTP hooks and appended system instructions. Preserve native permissions and subscription authentication. Existing conversation history and user-authored instructions can still reveal automation; the transport cannot promise undetectability.
++
++## 2. Affected surfaces
++
++| Surface | Behavior | When visible |
++| --- | --- | --- |
++| Existing transcript | Replies arrive when Claude appends its JSONL file | Claude produces a message |
++| Existing question card | Claude's native terminal question and choices | A native numbered selection needs input |
++| Existing board status | Working, waiting for an answer, finished or failed | The terminal changes state |
++| Existing Stop button | Sends Ctrl+C to the native terminal | User presses Stop |
++
++No new UI components or styling. Native choices use the existing question card rather than pretending that GeckIt's former permission grants still apply.
++
++## 3. States
++
++| State | Trigger | Visible result | User action |
++| --- | --- | --- | --- |
++| Working | Message submitted or terminal shows work | "Working" and appended reply/tool items | Wait or Stop |
++| Waiting | Terminal displays a selectable numbered question | Native question and exact choice labels | Choose an option |
++| Finished | Recognized idle input prompt after observed turn activity | Last answer; existing finished notification | Read or send a follow-up |
++| Stopped | Ctrl+C followed by native idle state | Existing "Stopped" state | Send another message |
++| Failed | Claude process exits during a turn or submission fails | Existing failure with concrete detail | Retry |
++
++## 4. Transitions
++
++```mermaid
++stateDiagram-v2
++    direction LR
++    [*] --> idle
++    idle --> working: Send
++    working --> waiting: Native question
++    waiting --> working: Choose
++    working --> idle: Prompt returns
++    waiting --> idle: Stop
++    working --> failed: Process exits
++    failed --> working: Retry
++```
++
++| From | Event | To | Visible result |
++| --- | --- | --- | --- |
++| Idle | User sends a message | Working | "Working" |
++| Working | Poll detects a native selection, automatically | Waiting | Native title and exact choices |
++| Waiting | User chooses a currently displayed option | Working | Card folds; native keyboard selection |
++| Waiting | Native selection changes outside GeckIt, automatically | Waiting/Working | Old card resolves; new card if needed |
++| Working | Idle input prompt returns after turn activity, automatically | Idle | Existing finished state |
++| Working/Waiting | User presses Stop and terminal returns to idle | Idle | "Stopped" |
++| Working | tmux pane/process disappears, automatically | Failed | "Claude Code exited." |
++
++## 5. Quiet states
++
++Polling, file offsets and terminal inspection produce no user messages. Unknown terminal layouts remain working: elapsed silence alone never means completion. No hook endpoint, bearer token or app-specific system prompt is given to Claude.
++
++## 6. Timing
++
++| Threshold | Value | Reason |
++| --- | --- | --- |
++| Poll interval | 500 ms | Preserve existing transcript cadence without per-token reads |
++| Idle confirmation | Two consecutive polls after observed activity | Avoid a transient prompt during redraw or submission |
++| Process check | Every four polls | Detect missing sessions and retained dead panes |
++| Idle shutdown | One hour after a finished turn | Keep the terminal available for follow-ups; new sends reset the timer, working/approval/background states prevent shutdown |
++
++## 7. Wording
++
++Question title and choices are Claude's native terminal text. Existing app labels remain "Working", "Stopped", and "Claude Code exited.". No new labels that imply guaranteed invisibility.
++
++## 8. Edge cases
++
++- Resume: begin at the old transcript's end; do not replay old answers.
++- Multiline text: bracketed paste followed by Enter, preserving the whole prompt.
++- Incomplete JSONL line: retain bytes until its newline arrives.
++- Long-running tool or hook: retain Working while native busy indicators remain.
++- Fast answer: new transcript data provides turn activity even if no busy screen was sampled.
++- Stale question: recapture before answering; never select an option from an obsolete screen.
++- Native workspace trust: recognize the exact trust prompt and select Yes explicitly; never press Enter on No, exit.
++- Images: preserve temporary image paths and remove files after completion/stop.
++- Existing GECKIT.md: exclude only that file per session if verified supported; do not edit shared global instructions.
++- Existing conversation: prior messages/system context may already mention GeckIt.
++- Synthetic records: No response requested and other non-error placeholders never cause Failed. Only explicitly flagged API errors cause failure; a subsequent real assistant response clears an error after recovery.
++
++## 9. Deliberate omissions
++
++No permission bypass, authentication changes, global setting edits, fabricated tool requests or guaranteed undetectability. No token-level streaming: Claude's saved message blocks are the reply source.
++
++## 10. Decisions
++
++Use tmux input, native terminal selection and passive JSONL reading. Remove HTTP hooks. Completion requires the actual input prompt and turn activity, not a silence timeout. User hooks remain active. Per-session GECKIT.md exclusion avoids changing builtin Claude sessions.
++
++## 11. Acceptance
++
++- Launch arguments contain no GeckIt hooks or appended system prompt.
++- First and subsequent multiline prompts reach ordinary Claude input.
++- Replies and tool entries reach GeckIt from JSONL.
++- Native choices, Stop, resume, trust and image cleanup have focused regression coverage.
++- Verification records any unavailable native app review.
++
++## 12. Verification
++
++- Node syntax checks and all three focused tests pass. Integration covers multiline first/follow-up input, no hooks or source prompt, environment filtering, resume offset, working silence, idle-before-activity, unknown layout, native denial and stale choices, custom answers, partial UTF-8 JSONL, local slash commands, image cleanup, explicit trust selection, Stop and process exit.
++- Native Claude Code 2.1.294 passed an end-to-end driver test: trust confirmation, PONG from JSONL, idle completion, follow-up Red/Blue question, selecting Blue and completion. Its idle prompt, working spinner without interrupt hints and numbered question match the parser. Native `/memory` comparison shows GECKIT.md in the baseline session and absent with per-process exclusion; other user/project instructions remain.
++- GeckIt Local computer access was denied by Computer Use. Full-window light/dark, keyboard/focus, scrolling and viewport review of its existing question cards is unavailable. No frontend components or styles changed.
++- Unknown layouts stay working rather than reporting completion; native dialogs outside numbered menus require terminal interaction.
++
++## 13. Local rollout
++
++The tested files are staged in GeckIt Local under provider-plugins/.ready-claude-tmux. The prior staged update is preserved at /private/tmp/geckit-claude-ready-before-passive. Apply through Settings > Libraries > Apply update. Existing running drivers keep their version until reopened. Running-app activation and native UI review are awaiting GeckIt Local computer access; no restart was performed.
++
++## 14. Synthetic-message regression
++
++The resumed native probe transcript wrote No response requested with isApiErrorMessage false immediately before Alex's Hi and a normal assistant reply. The first passive driver incorrectly classified every synthetic record as a failure. Failure detection now requires isApiErrorMessage true. A later real assistant response clears an error after recovery. All three tests pass, including benign synthetic, flagged API error and recovered error cases. The first passive version was confirmed installed with instructions own; this correction is staged for hot application.
+diff --git a/geckit-plugin.json b/geckit-plugin.json
+index 4cbb38e..0542658 100644
+--- a/geckit-plugin.json
++++ b/geckit-plugin.json
+@@ -12,6 +12,7 @@
+     "loginCommand": "claude auth login",
+     "planName": "Claude",
+     "localOnly": true,
+-    "source": "https://github.com/anetrebskii/geckit-claude-tmux"
++    "source": "https://github.com/anetrebskii/geckit-claude-tmux",
++    "instructions": "own"
+   }
+ }
+diff --git a/index.mjs b/index.mjs
+index dd1ce24..8d25952 100644
+--- a/index.mjs
++++ b/index.mjs
+@@ -1,61 +1,89 @@
+ import { execFile } from "node:child_process";
+ import { randomUUID } from "node:crypto";
+ import { mkdtemp, open, rm, stat, writeFile } from "node:fs/promises";
+-import { createServer } from "node:http";
+-import { tmpdir } from "node:os";
++import { homedir, tmpdir } from "node:os";
+ import { join } from "node:path";
++import { setTimeout as delay } from "node:timers/promises";
++const TYPING_DELAY_MS = 30;
+ const object = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+ const string = (value) => typeof value === "string" ? value : "";
+ const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+-const terminalArgs = (options, settings, sourceArgs) => [
+-  "--permission-mode",
+-  options.mode,
+-  "--settings",
+-  settings,
+-  ...sourceArgs(),
++const terminalArgs = (options, config) => [
++  "--permission-mode", options.mode,
++  "--settings", JSON.stringify({ claudeMdExcludes: [join(config, "GECKIT.md")] }),
+   ...options.model === void 0 ? [] : ["--model", options.model],
+   ...options.resume ? ["--resume", options.id] : ["--session-id", options.id],
+-  ...options.resume || options.fork === void 0 ? [] : [
+-    "--fork-session",
+-    "--resume",
+-    options.fork.from,
+-    ...options.fork.at === void 0 ? [] : ["--resume-session-at", options.fork.at]
+-  ]
++  ...options.resume || options.fork === void 0 ? [] : ["--fork-session", "--resume", options.fork.from, ...options.fork.at === void 0 ? [] : ["--resume-session-at", options.fork.at]]
+ ];
++
++const plain = (text) => text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replaceAll('\u00a0', ' ')
++
++function terminalScreen(text) {
++  const lines = plain(text).split('\n').map((line) => line.trimEnd())
++  const trust = /Quick safety check:\s*Is this a project you created or one you trust\?/i.test(lines.join('\n')) && /Enter to confirm/i.test(text)
++  const trustFocus = lines.some((line) => /^\s*❯\s*No, exit\s*$/.test(line)) ? 0 : lines.some((line) => /^\s*❯\s*Yes, I trust this folder\s*$/.test(line)) ? 1 : -1
++  const selected = lines.findLastIndex((line) => /^\s*❯\s*\d+[.)]\s+/.test(line))
++  if (selected !== -1 && /Enter to (?:select|confirm)|Esc to (?:cancel|go back)|↑.*↓|up.*down.*select/i.test(lines.slice(selected + 1).join('\n'))) {
++    const choice = /^\s*(?:❯\s*)?(\d+)[.)]\s+(.+)$/
++    const groups = []
++    for (const [at, line] of lines.entries()) {
++      const match = choice.exec(line)
++      if (match === null) continue
++      const option = { at, number: Number(match[1]), label: match[2].trim() }
++      if (option.number !== (groups.at(-1)?.at(-1)?.number ?? 0) + 1) groups.push([])
++      if (groups.length === 0) groups.push([])
++      groups.at(-1).push(option)
++    }
++    const group = groups.find((options) => options.some((option) => option.at === selected)) ?? []
++    const first = group[0]?.at ?? selected
++    const border = lines.slice(0, first).findLastIndex((line) => /^\s*[─━-]{3}/.test(line))
++    const above = lines.slice(border + 1, first).filter((line) => line.trim() !== '')
++    const title = above.slice(-6).map((line) => line.trim()).join('\n') || 'Choose an option'
++    const options = group.map(({ number, label }) => ({ number, label }))
++    const focus = group.findIndex((option) => option.at === selected)
++    const signature = JSON.stringify({ title, options })
++    return { kind: 'question', title, options, focus, signature, trust, trustFocus }
++  }
++  const busy = lines.some((line) => /^\s*[✻✽✶✳✢·*].*(?:…|\.\.\.|esc to interrupt|ctrl\+c to interrupt|escape to interrupt)/i.test(line))
++  const prompt = lines.findLastIndex((line) => /^\s*❯(?:\s|$)/.test(line) && !/^\s*❯\s*\d+[.)]/.test(line))
++  const bordered = prompt > 0 && /^\s*[─━-]{3}/.test(lines[prompt - 1]) && /^\s*[─━-]{3}/.test(lines[prompt + 1] ?? '')
++  return { kind: busy ? 'working' : bordered ? 'idle' : 'unknown', trust, trustFocus }
++}
++
+ function holdTmux(host, options, hear, left) {
+-  const { claudeCommand, offPlan: OFF_PLAN, planOnly, claudeState, readClaude, claudeFile, sourceArgs, askId, questionsFromClaude, wantedFromClaude } = host;
++  const { claudeCommand, offPlan: OFF_PLAN, planOnly, claudeState, readClaude, claudeFile } = host;
++  const environment = () => Object.fromEntries(Object.entries(planOnly()).filter(([key]) => !key.startsWith("GECKIT_")));
+   const tmux = (args, input) => new Promise((resolve, reject) => {
+-    const child = execFile("tmux", [...args], { env: planOnly(), windowsHide: true }, (error, stdout, stderr) => {
++    const child = execFile("tmux", [...args], { env: environment(), windowsHide: true }, (error, stdout, stderr) => {
+       if (error !== null) reject(new Error(stderr.trim() || error.message));
+       else resolve(stdout.trim());
+     });
+     if (input !== void 0) child.stdin?.end(input);
+   });
+   if (process.platform === "win32" || options.root.startsWith("ssh://")) throw new Error("tmux mode is available for local macOS and Linux projects.");
+-  const name = `geckit-${options.id.slice(0, 8)}-${randomUUID().slice(0, 8)}`;
+-  const token = randomUUID();
++  const name = `claude-${options.id.slice(0, 8)}-${randomUUID().slice(0, 8)}`;
++  const alive = () => tmux(["display-message", "-p", "-t", name, "#{pane_dead}"]).then((dead) => dead !== "1", () => false);
+   const state = claudeState(options.root);
+-  const asks = /* @__PURE__ */ new Map();
+   let offset = 0;
+   let remainder = Buffer.alloc(0);
+   let running = false;
+   let ended = false;
+   let turn = false;
+-  let lastText = "";
+-  let fallback;
+-  let fallbackText;
+-  const displayed = /* @__PURE__ */ new Map();
++  let stopping = false;
++  let activity = false;
++  let failure = "";
++  let idle = 0;
+   let counter = 0;
++  let pending;
++  let answering = false;
+   let reading = Promise.resolve();
+   let poll;
+   let polls = 0;
+   let starting;
+-  let checkingTrust = false;
+   let trustHandled = false;
+   let imagesDirectory;
+-  const emit = (items = [], gone = [], signals = []) => {
+-    if (!ended) hear({ items, gone, signals });
+-  };
++  let submitting = false;
++  const emit = (items = [], gone = [], signals = []) => { if (!ended) hear({ items, gone, signals }); };
+   const read = async () => {
+     const path = await claudeFile(options.root, options.id);
+     if (path === void 0) return;
+@@ -89,7 +117,9 @@ function holdTmux(host, options, hear, left) {
+       } catch {
+         continue;
+       }
+-      if (entry["isSidechain"] === true || entry["isMeta"] === true) continue;
++      if (entry["isSidechain"] === true) continue;
++      if (entry["type"] === "system" && entry["subtype"] === "local_command" && entry["commandRun"] !== void 0) activity = true;
++      if (entry["isMeta"] === true) continue;
+       const type = string(entry["type"]);
+       if (type === "cost-state") {
+         const cost = entry["totalCostUSD"];
+@@ -98,47 +128,29 @@ function holdTmux(host, options, hear, left) {
+       }
+       if (type !== "assistant" && type !== "user" && type !== "system" && type !== "rate_limit_event") continue;
+       const parsed = readClaude(state, type === "user" ? { ...entry, tool_use_result: entry["toolUseResult"] } : entry);
+-      const said = parsed.signals.find((signal) => signal.kind === "said");
+-      if (said?.kind === "said") lastText = said.text;
+       const model = type === "assistant" ? string(object(entry["message"])["model"]) : "";
+-      const shown = said?.kind === "said" ? [...displayed].find(([, parts]) => parts.join("") === said.text)?.[0] : void 0;
+-      if (shown !== void 0) displayed.delete(shown);
+-      const gone = [
+-        ...parsed.gone,
+-        ...shown === void 0 ? [] : [`tmux:message:${shown}`],
+-        ...fallback !== void 0 && said?.kind === "said" && said.text === fallbackText ? [fallback] : []
+-      ];
+-      if (fallback !== void 0 && gone.includes(fallback)) {
+-        fallback = void 0;
+-        fallbackText = void 0;
++      if (type === "assistant" && parsed.items.length > 0) activity = true;
++      if (!turn && parsed.items.some((item) => item.kind === "theirs")) {
++        turn = true;
++        emit([], [], [{ kind: "begun" }]);
+       }
+-      emit(parsed.items, gone, [...parsed.signals.filter((signal) => signal.kind !== "ended" && signal.kind !== "asks"), ...model === "" || model === "<synthetic>" ? [] : [{ kind: "model", model }]]);
++      if (type === "assistant" && entry["isApiErrorMessage"] === true) {
++        failure = string(object(entry["message"])["content"]?.find?.((part) => part.type === "text")?.text) || "Claude Code API request failed.";
++        activity = true;
++      } else if (model !== "" && model !== "<synthetic>") failure = "";
++      emit(parsed.items, parsed.gone, [...parsed.signals.filter((signal) => signal.kind !== "ended" && signal.kind !== "asks"), ...model === "" || model === "<synthetic>" ? [] : [{ kind: "model", model }]]);
+     }
+   };
+-  const catchUp = () => {
+-    reading = reading.then(read, read).catch(() => void 0);
+-    return reading;
+-  };
+-  const checkTrust = async () => {
+-    if (!running || ended || trustHandled || checkingTrust) return;
+-    checkingTrust = true;
+-    try {
+-      const screen = await tmux(["capture-pane", "-p", "-t", name]);
+-      if (/Quick safety check:\s*Is this a project you created or one you trust\?/i.test(screen) && /Enter to confirm/i.test(screen)) {
+-        trustHandled = true;
+-        await tmux(["send-keys", "-t", name, "Enter"]);
+-      }
+-    } catch (error) {
+-      if (!ended) {
+-        emit([], [], [{ kind: "ended", how: "failed", text: error.message }]);
+-        void close();
+-      }
+-    }
+-    finally { checkingTrust = false; }
++
++  const clearImages = async () => {
++    if (imagesDirectory === void 0) return;
++    const directory = imagesDirectory;
++    imagesDirectory = void 0;
++    await rm(directory, { recursive: true, force: true });
+   };
+   const imagesIn = async (images) => {
+     if (images.length === 0) return [];
+-    imagesDirectory ??= await mkdtemp(join(tmpdir(), "geckit-claude-images-"));
++    imagesDirectory ??= await mkdtemp(join(tmpdir(), "claude-images-"));
+     const extensions = { "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp" };
+     const paths = [];
+     for (const image of images) {
+@@ -148,152 +160,101 @@ function holdTmux(host, options, hear, left) {
+     }
+     return paths;
+   };
+-  const clearImages = async () => {
+-    if (imagesDirectory === void 0) return;
+-    const directory = imagesDirectory;
+-    imagesDirectory = void 0;
+-    await rm(directory, { recursive: true, force: true });
++  const resolveQuestion = () => {
++    if (pending === void 0) return;
++    emit([], [], [{ kind: "resolved", ask: pending.id }]);
++    pending = void 0;
+   };
+-  const reply = (response, body = {}) => {
+-    if (response.writableEnded) return;
+-    response.writeHead(200, { "content-type": "application/json" });
+-    response.end(JSON.stringify(body));
++  const ask = (screen) => {
++    if (pending?.signature === screen.signature) return;
++    resolveQuestion();
++    pending = { ...screen, id: `terminal:${String(++counter)}` };
++    emit([], [], [{ kind: "asks", ask: pending.id, wanted: { kind: "question", question: screen.title, choices: screen.options.map((option) => option.label) } }]);
+   };
+-  const decision = (pending, answer) => {
+-    if (pending.event === "PermissionRequest") return {
+-      hookSpecificOutput: {
+-        hookEventName: "PermissionRequest",
+-        decision: answer === "no" ? { behavior: "deny", message: "The user denied this action." } : { behavior: "allow", updatedInput: pending.input }
+-      }
+-    };
+-    if (pending.tool === "AskUserQuestion") return {
+-      hookSpecificOutput: {
+-        hookEventName: "PreToolUse",
+-        permissionDecision: "allow",
+-        updatedInput: { ...pending.input, answers: pending.answers }
+-      }
+-    };
+-    return {
+-      hookSpecificOutput: {
+-        hookEventName: "PreToolUse",
+-        permissionDecision: answer === "no" ? "deny" : "allow",
+-        updatedInput: pending.input
+-      }
+-    };
+-  };
+-  const deny = (pending) => pending.event === "PermissionRequest" ? { hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "deny", message: "GeckIt stopped this turn." } } } : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "GeckIt stopped this turn." } };
+-  const hook = async (body, response) => {
+-    const event = string(body["hook_event_name"]);
+-    if (string(body["session_id"]) !== options.id) {
+-      response.writeHead(403);
+-      response.end();
+-      return;
+-    }
+-    if (event === "PermissionRequest" || event === "PreToolUse") {
+-      await catchUp();
+-      const id = `tmux:${String(++counter)}`;
+-      const input = object(body["tool_input"]);
+-      const tool = string(body["tool_name"]);
+-      const questions = event === "PreToolUse" && tool === "AskUserQuestion" ? questionsFromClaude(input) : [];
+-      const wanted = questions[0] ?? wantedFromClaude(tool, input);
+-      asks.set(id, { response, input, event, tool, questions: questions.map((one) => one.kind === "question" ? one.question : ""), answers: {} });
+-      emit([], [], [{ kind: "asks", ask: id, wanted }]);
++  const inspect = async () => {
++    if (!running || ended || answering || submitting) return;
++    const text = await tmux(["capture-pane", "-p", "-t", name]);
++    if (ended) return;
++    const screen = terminalScreen(text);
++    if (screen.trust && !trustHandled) {
++      if (screen.trustFocus === -1) return;
++      trustHandled = true;
++      await tmux(["send-keys", "-t", name, ...screen.trustFocus === 0 ? ["Down"] : [], "Enter"]);
+       return;
+     }
+-    if (event === "UserPromptSubmit") {
+-      turn = true;
+-      lastText = "";
+-      emit([], [], [{ kind: "begun" }]);
+-    }
+-    if (event === "MessageDisplay") {
+-      const id = string(body["message_id"]);
+-      const index = body["index"];
+-      if (id !== "" && typeof index === "number" && index >= 0 && index < 1e5) {
+-        const parts = displayed.get(id) ?? [];
+-        parts[index] = string(body["delta"]);
+-        displayed.set(id, parts);
+-        const text = parts.join("");
+-        if (text !== "") {
+-          lastText = text;
+-          emit([{ kind: "theirs", id: `tmux:message:${id}`, text }], [], [{ kind: "said", text }]);
+-        }
++    if (screen.kind === "question") {
++      idle = 0;
++      activity = true;
++      ask(screen);
++    } else {
++      resolveQuestion();
++      if (screen.kind === "working") {
++        activity = true;
++        if (!turn) { turn = true; emit([], [], [{ kind: "begun" }]); }
+       }
+-    }
+-    if (event === "Stop" || event === "StopFailure") {
+-      await catchUp();
+-      if (event === "Stop") {
+-        const final = string(body["last_assistant_message"]);
+-        if (final !== "" && final !== lastText) {
+-          fallback = `tmux:final:${String(++counter)}`;
+-          fallbackText = final;
+-          emit([{ kind: "theirs", id: fallback, text: final }], [], [{ kind: "said", text: final }]);
+-        }
++      if (turn && screen.kind === "idle" && (activity || stopping) && remainder.length === 0) idle += 1;
++      else idle = 0;
++      if (idle >= 2) {
++        await read();
++        if (remainder.length !== 0) { idle = 0; return; }
++        if (!await alive()) throw new Error("Claude Code exited.");
++        turn = false;
++        await clearImages();
++        emit([], [], [{ kind: "ended", how: stopping ? "stopped" : failure === "" ? "done" : "failed", ...failure === "" ? {} : { text: failure } }]);
++        stopping = false;
++        activity = false;
++        idle = 0;
+       }
+-      turn = false;
+-      await clearImages();
+-      emit([], [], [{ kind: "ended", how: event === "Stop" ? "done" : "failed", ...event === "StopFailure" && string(body["error"]) !== "" ? { text: string(body["error"]) } : {} }]);
+     }
+-    reply(response);
+   };
+-  const server = createServer((request, response) => {
+-    if (request.method !== "POST" || request.headers.authorization !== `Bearer ${token}`) {
+-      response.writeHead(403);
+-      response.end();
+-      return;
+-    }
+-    const chunks = [];
+-    let size = 0;
+-    request.on("data", (chunk) => {
+-      size += chunk.length;
+-      if (size > 1e6) request.destroy();
+-      else chunks.push(chunk);
+-    });
+-    request.on("end", () => {
+-      try {
+-        void hook(JSON.parse(Buffer.concat(chunks).toString("utf8")), response);
+-      } catch {
+-        response.writeHead(400);
+-        response.end();
+-      }
++  const catchUp = () => {
++    reading = reading.then(async () => {
++      if (++polls % 4 === 0 && !await alive()) throw new Error("Claude Code exited.");
++      await read();
++      await inspect();
++    }).catch(async () => {
++      if (!running || ended) return;
++      if (await alive()) return;
++      if (turn) emit([], [], [{ kind: "ended", how: "failed", text: "Claude Code exited." }]);
++      void close();
+     });
+-  });
+-  server.requestTimeout = 0;
+-  server.timeout = 0;
+-  const ready = new Promise((resolve, reject) => {
+-    server.once("error", reject);
+-    server.listen(0, "127.0.0.1", resolve);
+-  });
+-  const start = async (prompt) => {
+-    await ready;
++    return reading;
++  };
++  const start = async () => {
+     if (ended) return;
+-    const address = server.address();
+-    if (address === null || typeof address === "string") throw new Error("Hook server did not start.");
+     const path = await claudeFile(options.root, options.id);
+     if (path !== void 0) offset = (await stat(path)).size;
+-    const handler = { type: "http", url: `http://127.0.0.1:${String(address.port)}/`, timeout: 3600, headers: { Authorization: `Bearer ${token}` } };
+-    const hooks = Object.fromEntries(["Stop", "StopFailure", "PermissionRequest", "UserPromptSubmit", "MessageDisplay"].map((event) => [event, [{ hooks: [handler] }]]));
+-    const settings = JSON.stringify({ hooks: { ...hooks, PreToolUse: [{ matcher: "AskUserQuestion|ExitPlanMode", hooks: [handler] }] } });
+-    const env = planOnly();
+-    const launch = ["exec", "env", ...OFF_PLAN.flatMap((key) => ["-u", key]), `PATH=${env.PATH ?? ""}`, ...env.CLAUDE_CONFIG_DIR === void 0 ? [] : [`CLAUDE_CONFIG_DIR=${env.CLAUDE_CONFIG_DIR}`], claudeCommand(env), ...terminalArgs(options, settings, sourceArgs), prompt].map(quote).join(" ");
+-    await tmux(["new-session", "-d", "-s", name, "-c", options.root, launch]);
++    const env = environment();
++    const omitted = [...OFF_PLAN, ...Object.keys(planOnly()).filter((key) => key.startsWith("GECKIT_"))];
++    const config = env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
++    const launch = ["exec", "env", ...omitted.flatMap((key) => ["-u", key]), `PATH=${env.PATH ?? ""}`, ...env.CLAUDE_CONFIG_DIR === void 0 ? [] : [`CLAUDE_CONFIG_DIR=${env.CLAUDE_CONFIG_DIR}`], claudeCommand(env), ...terminalArgs(options, config)].map(quote).join(" ");
++    await tmux(["new-session", "-d", "-s", name, "-x", "140", "-y", "50", "-c", options.root, launch]);
++    if (ended) { await tmux(["kill-session", "-t", name]).catch(() => void 0); return; }
+     running = true;
+-    poll = setInterval(() => {
+-      void catchUp();
+-      void checkTrust();
+-      if (++polls % 4 !== 0) return;
+-      void tmux(["has-session", "-t", name]).catch(() => {
+-        if (!running || ended) return;
+-        running = false;
+-        if (turn) emit([], [], [{ kind: "ended", how: "failed", text: "Claude Code exited." }]);
+-        void close();
+-      });
+-    }, 500);
++    poll = setInterval(() => { void catchUp(); }, 500);
++  };
++  const waitForPrompt = async () => {
++    for (let attempt = 0; attempt < 600; attempt += 1) {
++      if (ended) throw new Error("Claude Code session ended before input was ready.");
++      const screen = terminalScreen(await tmux(["capture-pane", "-p", "-t", name]));
++      if (screen.trust && !trustHandled && screen.trustFocus !== -1) {
++        trustHandled = true;
++        await tmux(["send-keys", "-t", name, ...(screen.trustFocus === 0 ? ["Down"] : []), "Enter"]);
++      } else if (screen.kind === "idle") return;
++      await delay(100);
++    }
++    throw new Error("Claude Code did not become ready for input.");
+   };
+   const keys = async (text) => {
+-    await ready;
+-    const buffer = `geckit-${randomUUID()}`;
+-    await tmux(["load-buffer", "-b", buffer, "-"], text);
+-    await tmux(["paste-buffer", "-p", "-d", "-b", buffer, "-t", name]);
++    for (const character of text) {
++      if (character === "\n") {
++        await tmux(["send-keys", "-l", "-t", name, "\\"]);
++        await tmux(["send-keys", "-t", name, "Enter"]);
++      } else {
++        await tmux(["send-keys", "-l", "-t", name, character]);
++      }
++      await delay(TYPING_DELAY_MS);
++    }
+     await tmux(["send-keys", "-t", name, "Enter"]);
+   };
+   const close = async () => {
+@@ -302,51 +263,70 @@ function holdTmux(host, options, hear, left) {
+     running = false;
+     clearInterval(poll);
+     await starting?.catch(() => void 0);
+-    await clearImages();
+-    for (const pending of asks.values()) reply(pending.response, deny(pending));
+-    asks.clear();
+-    server.close();
+     await tmux(["kill-session", "-t", name]).catch(() => void 0);
++    await reading;
++    await clearImages();
+     left();
+   };
+   return {
+     send(text, images = [], before = []) {
+       if (ended) return;
++      submitting = true;
+       turn = true;
+-      lastText = "";
+-      const sending = imagesIn(images).then((paths) => {
++      emit([], [], [{ kind: "begun" }]);
++      stopping = false;
++      activity = false;
++      failure = "";
++      idle = 0;
++      const sending = imagesIn(images).then(async (paths) => {
+         const prompt = [...before, text, ...paths.map((path) => `Image attachment: ${path}`)].join("\n\n");
+-        return running ? keys(prompt) : starting === void 0 ? starting = start(prompt) : starting.then(() => keys(prompt));
++        if (!running && starting === void 0) starting = start();
++        await starting;
++        await waitForPrompt();
++        emit([], [], [{ kind: "doing", what: "sending to Claude Code" }]);
++        await keys(prompt);
++        emit([], [], [{ kind: "doing", what: "waiting for Claude Code" }]);
+       });
+-      void sending.catch((error) => {
++      void sending.finally(() => { submitting = false; }).catch((error) => {
+         emit([], [], [{ kind: "ended", how: "failed", text: error.message }]);
+         void close();
+       });
+     },
+-    answer(ask, answer) {
+-      const [id = ask, position = "0"] = ask.split("#");
+-      const pending = asks.get(id);
+-      if (pending === void 0) return;
+-      if (pending.questions.length > 0) {
+-        const index = Number(position);
+-        pending.answers[pending.questions[index] ?? ""] = answer;
+-        const next = questionsFromClaude(pending.input)[index + 1];
+-        if (next !== void 0) {
+-          emit([], [], [{ kind: "asks", ask: askId(id, index + 1), wanted: next }]);
++    answer(id, answer) {
++      if (pending?.id !== id || answering || ended) return;
++      answering = true;
++      const current = pending;
++      void (async () => {
++        const screen = terminalScreen(await tmux(["capture-pane", "-p", "-t", name]));
++        if (screen.kind !== "question" || screen.signature !== current.signature) {
++          resolveQuestion();
++          if (screen.kind === "question") ask(screen);
+           return;
+         }
+-      }
+-      asks.delete(id);
+-      reply(pending.response, decision(pending, answer));
++        let index = screen.options.findIndex((option) => option.label === answer);
++        let typed;
++        if (index === -1) {
++          index = screen.options.findIndex((option) => /^(?:Type something|Other\b)/i.test(option.label));
++          typed = answer;
++        }
++        if (index === -1) {
++          pending = void 0;
++          ask(screen);
++          return;
++        }
++        const distance = index - screen.focus;
++        if (distance !== 0) await tmux(["send-keys", "-t", name, ...Array.from({ length: Math.abs(distance) }, () => distance < 0 ? "Up" : "Down")]);
++        await tmux(["send-keys", "-t", name, "Enter"]);
++        if (typed !== void 0) await keys(string(typed));
++        pending = void 0;
++        idle = 0;
++      })().catch((error) => { emit([], [], [{ kind: "ended", how: "failed", text: error.message }]); void close(); }).finally(() => { answering = false; });
+     },
+     stop() {
+-      for (const pending of asks.values()) reply(pending.response, deny(pending));
+-      asks.clear();
+-      void tmux(["send-keys", "-t", name, "C-c"]).then(() => setTimeout(() => {
+-        if (!turn || ended) return;
+-        turn = false;
+-        emit([], [], [{ kind: "ended", how: "stopped" }]);
+-      }, 1e3)).catch(() => void 0);
++      if (ended) return;
++      stopping = true;
++      resolveQuestion();
++      void tmux(["send-keys", "-t", name, "C-c"]).catch(() => void 0);
+     },
+     end: close
+   };
+@@ -354,25 +334,12 @@ function holdTmux(host, options, hear, left) {
+ function create(host) {
+   return {
+     ...host.claude,
+-    id: "claude-tmux",
+-    family: "claude",
+-    transport: "tmux",
+-    name: "Claude Code (tmux)",
+-    shortName: "Claude",
+-    icon: "claude",
+-    browser: "claude",
+-    loginCommand: "claude auth login",
+-    planName: "Claude",
+-    localOnly: true,
+-    subscriptionOnly: true,
+-    images: true,
+-    remoteControl: false,
+-    idleMs: 12e4,
+-    waitForExit: true,
++    id: "claude-tmux", family: "claude", transport: "tmux",
++    name: "Claude Code (tmux)", shortName: "Claude", icon: "claude", browser: "claude",
++    loginCommand: "claude auth login", planName: "Claude", localOnly: true,
++    subscriptionOnly: true, images: true, remoteControl: false, idleMs: 3600000, waitForExit: true,
++    instructions: "own", setInstructions: async () => {},
+     hold: (options, hear, left) => holdTmux(host, options, hear, left)
+   };
+ }
+-export {
+-  create,
+-  holdTmux
+-};
++export { create, holdTmux, terminalScreen };
+diff --git a/test/fake-claude.mjs b/test/fake-claude.mjs
+new file mode 100755
+index 0000000..f089165
+--- /dev/null
++++ b/test/fake-claude.mjs
+@@ -0,0 +1,101 @@
++#!/usr/bin/env node
++import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
++import { join } from 'node:path'
++
++const args = process.argv.slice(2)
++const id = args[args.indexOf(args.includes('--resume') ? '--resume' : '--session-id') + 1]
++const dir = join(process.env.CLAUDE_CONFIG_DIR, 'projects', process.cwd().replace(/[^A-Za-z0-9]/g, '-'))
++mkdirSync(dir, { recursive: true })
++const file = join(dir, id + '.jsonl')
++const log = join(process.env.CLAUDE_CONFIG_DIR, id + '.log')
++const record = (value) => appendFileSync(log, JSON.stringify(value) + '\n')
++record({ args, managed: Object.keys(process.env).filter((key) => key.startsWith('GECKIT_')) })
++const write = (entry) => appendFileSync(file, JSON.stringify(entry) + '\n')
++let count = 0
++let selection = 0
++let menu
++let timer
++let input = ''
++let pasting = false
++let typed = false
++let trusting = Boolean(process.env.CLAUDE_TEST_TRUST)
++let trustFocus = 0
++const paint = (text) => process.stdout.write('\x1b[2J\x1b[H' + text)
++const idle = () => paint('Claude Code\n────────────────────\n❯\u00a0Try "ask anything"\n────────────────────\n  auto mode on\n')
++const working = () => paint('Claude Code\n✶ Working…\n────────────────────\n❯\u00a0\n────────────────────\n')
++const choices = () => paint(`${menu.title}\n${menu.options.map((label, i) => `${i === selection ? '❯' : ' '} ${i + 1}. ${label}`).join('\n')}\n  Enter to select · Esc to cancel\n`)
++const reply = (text) => {
++  write({ type: 'assistant', uuid: 'reply-' + ++count, message: { model: 'claude-test', stop_reason: 'end_turn', content: [{ type: 'text', text }] } })
++  idle()
++}
++const say = (prompt) => {
++  record({ prompt })
++  if (prompt === 'crash') process.exit(1)
++  if (prompt === 'quiet') { idle(); return }
++  if (prompt === '/local') {
++    write({ type: 'system', subtype: 'local_command', isMeta: true, commandRun: '/local', content: 'Local result' })
++    idle(); return
++  }
++  working()
++  if (prompt === 'hold') return
++  if (['synthetic', 'api-error', 'recovered'].includes(prompt)) {
++    write({ type: 'assistant', uuid: 'synthetic-' + ++count, isApiErrorMessage: prompt !== 'synthetic', message: { model: '<synthetic>', stop_reason: 'stop_sequence', content: [{ type: 'text', text: prompt === 'synthetic' ? 'No response requested.' : 'API Error: rate limit reached' }] } })
++    if (prompt === 'api-error') { idle(); return }
++    timer = setTimeout(() => reply('answer: ' + prompt), 100)
++    return
++  }
++  if (prompt === 'unknown') { paint('Unrecognized terminal state\n'); return }
++  if (prompt.startsWith('permission') || prompt === 'question') {
++    menu = prompt === 'question' ? { title: 'Which option?', options: ['A', 'B', 'Type something.'] } : { title: 'Run command?\nnpm test', options: ['Yes', 'Yes, allow for this session', 'No'] }
++    selection = 0
++    choices(); return
++  }
++  if (prompt === 'partial') {
++    const bytes = Buffer.from(JSON.stringify({ type: 'assistant', uuid: 'partial', message: { model: 'claude-test', content: [{ type: 'text', text: 'héllo 世界' }] } }) + '\n')
++    const cut = bytes.indexOf(Buffer.from('世界')) + 1
++    appendFileSync(file, bytes.subarray(0, cut))
++    idle()
++    timer = setTimeout(() => appendFileSync(file, bytes.subarray(cut)), 1800)
++    return
++  }
++  timer = setTimeout(() => reply('answer: ' + prompt), 100)
++}
++process.stdin.setRawMode(true)
++process.stdout.write('\x1b[?2004h')
++process.stdin.setEncoding('utf8')
++process.stdin.on('data', (chunk) => {
++  for (let i = 0; i < chunk.length; i += 1) {
++    if (chunk.slice(i).startsWith('\x1b[200~')) { pasting = true; i += 5; continue }
++    if (chunk.slice(i).startsWith('\x1b[201~')) { pasting = false; i += 5; continue }
++    if (chunk.slice(i).startsWith('\x1b[A') || chunk.slice(i).startsWith('\x1b[B')) {
++      if (trusting) trustFocus = chunk[i + 2] === 'B' ? 1 : 0
++      if (menu) { selection = Math.max(0, Math.min(menu.options.length - 1, selection + (chunk[i + 2] === 'A' ? -1 : 1))); choices() }
++      i += 2; continue
++    }
++    const c = chunk[i]
++    if (c === '\x03') { clearTimeout(timer); menu = undefined; record({ stopped: true }); idle(); continue }
++    if ((c === '\r' || c === '\n') && !pasting) {
++      if (input.endsWith('\\')) { input = input.slice(0, -1) + '\n'; continue }
++      if (trusting) { if (trustFocus !== 1) process.exit(1); trusting = false; record({ trusted: true }); idle(); continue }
++      if (menu) {
++        const choice = menu.options[selection]
++        record({ choice })
++        menu = undefined
++        if (choice === 'Type something.') { typed = true; paint('Type your answer\n'); continue }
++        reply('choice: ' + choice)
++      } else if (typed) { typed = false; reply('typed: ' + input); input = '' }
++      else { const prompt = input; input = ''; say(prompt) }
++    } else input += pasting && c === '\r' ? '\n' : c
++  }
++})
++setInterval(() => {
++  const control = join(process.env.CLAUDE_CONFIG_DIR, id + '.control')
++  let command
++  try { command = readFileSync(control, 'utf8') } catch { return }
++  if (!command) return
++  writeFileSync(control, '')
++  if (command === 'change' && menu) { menu = { title: 'New question', options: ['Stay', 'Leave'] }; selection = 0; choices() }
++}, 40)
++if (process.env.CLAUDE_TEST_TRUST) {
++  paint('Quick safety check:\nIs this a project you created or one you trust?\n❯ No, exit\n  Yes, I trust this folder\nEnter to confirm')
++} else idle()
+diff --git a/test/tmux.test.mjs b/test/tmux.test.mjs
+index e2427db..b3fc711 100644
+--- a/test/tmux.test.mjs
++++ b/test/tmux.test.mjs
+@@ -1,126 +1,175 @@
+ import assert from 'node:assert/strict'
+ import { execFileSync } from 'node:child_process'
+ import { randomUUID } from 'node:crypto'
+-import { chmod, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
++import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+ import { tmpdir } from 'node:os'
+-import { join } from 'node:path'
++import { dirname, join } from 'node:path'
++import { fileURLToPath } from 'node:url'
+ import { setTimeout as delay } from 'node:timers/promises'
+ import test from 'node:test'
+-
+-import { holdTmux } from '../index.mjs'
++import { create, holdTmux, terminalScreen } from '../index.mjs'
+ 
+ const available = (() => {
+   try { execFileSync('tmux', ['-V']); return process.platform !== 'win32' }
+   catch { return false }
+ })()
+-
+ const until = async (condition) => {
+   for (let count = 0; count < 500; count += 1) {
+-    if (condition()) return
++    if (await condition()) return
+     await delay(20)
+   }
+   throw new Error('Timed out waiting for Claude Code.')
+ }
++const idle = '────────────────────\n❯\u00a0Try "ask anything"\n────────────────────\n  custom status line\n'
++test('recognizes native states without interpreting reply text as a selection', () => {
++  assert.equal(terminalScreen(idle).kind, 'idle')
++  assert.equal(terminalScreen('✶ Working…\n' + idle).kind, 'working')
++  assert.equal(terminalScreen('❯ 1. A\n  2. B\n' + idle).kind, 'idle')
++  assert.equal(terminalScreen('No recognized prompt').kind, 'unknown')
++  assert.equal(terminalScreen('⏺ The hint says esc to interrupt\n' + idle).kind, 'idle')
++  assert.equal(terminalScreen('✻ Sautéed for 3s · done\n' + idle).kind, 'idle')
++  const screen = terminalScreen('Run command?\nnpm test\n  1. Yes\n❯ 2. Yes, allow this session\n  3. No\nEnter to select · Esc to cancel')
++  assert.equal(screen.kind, 'question')
++  assert.equal(screen.focus, 1)
++  assert.deepEqual(screen.options.map((one) => one.label), ['Yes', 'Yes, allow this session', 'No'])
++  const native = terminalScreen('Previous reply\n────────────────────\n ☐ Color\n\nWhich option do you choose?\n\n❯ 1. Red\n     Choose Red.\n  2. Blue\n     Choose Blue.\n  3. Type something.\n────────────────────\n  4. Chat about this\nEnter to select · ↑/↓ to navigate · Esc to cancel')
++  assert.equal(native.kind, 'question')
++  assert.equal(native.title, '☐ Color\nWhich option do you choose?')
++  assert.deepEqual(native.options.map((one) => one.label), ['Red', 'Blue', 'Type something.', 'Chat about this'])
++  assert.equal(terminalScreen('Quick safety check:\nIs this a project you created or one you trust?\nEnter to confirm').trust, true)
++})
++test('does not install host instructions', async () => {
++  let wrote = false
++  const provider = create({ claude: { setInstructions: () => { wrote = true } } })
++  await provider.setInstructions('guide')
++  assert.equal(wrote, false)
++  assert.equal(provider.instructions, 'own')
++})
+ 
+-test('resumes a session, streams transcript and hook output, and answers permissions', { skip: !available }, async () => {
+-  const folder = await mkdtemp(join(tmpdir(), 'geckit-tmux-plugin-'))
+-  const previousPath = process.env.PATH
+-  const previousConfig = process.env.CLAUDE_CONFIG_DIR
+-  try {
+-    const binary = join(folder, 'claude')
+-    await writeFile(binary, `#!/usr/bin/env node
+-const fs = require('node:fs');
+-const path = require('node:path');
+-const args = process.argv.slice(2);
+-const id = args[args.indexOf('--resume') + 1];
+-const settings = JSON.parse(args[args.indexOf('--settings') + 1]);
+-const root = process.cwd();
+-const dir = path.join(process.env.CLAUDE_CONFIG_DIR, 'projects', root.replace(/[^A-Za-z0-9]/g, '-'));
+-fs.mkdirSync(dir, { recursive: true });
+-const file = path.join(dir, id + '.jsonl');
+-async function hook(event, extra) {
+-  const target = settings.hooks[event][0].hooks[0];
+-  const response = await fetch(target.url, { method: 'POST', headers: { ...target.headers, 'content-type': 'application/json' }, body: JSON.stringify({ session_id: id, hook_event_name: event, ...extra }) });
+-  return response.json();
+-}
+-let count = 0;
+-async function say(prompt) {
+-  count += 1;
+-  await hook('UserPromptSubmit', { prompt });
+-  if (count === 2) {
+-    const choice = await hook('PermissionRequest', { tool_name: 'Bash', tool_input: { command: 'npm test' } });
+-    if (choice.hookSpecificOutput.decision.behavior !== 'allow') throw new Error('permission denied');
++test('sends through tmux, tails JSONL, and confirms native lifecycle and approvals', { skip: !available, timeout: 50000 }, async () => {
++  const folder = await realpath(await mkdtemp(join(tmpdir(), 'claude-passive-test-')))
++  const id = randomUUID()
++  const binary = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs')
++  await chmod(binary, 0o755)
++  const file = join(folder, 'projects', folder.replace(/[^A-Za-z0-9]/g, '-'), id + '.jsonl')
++  const log = join(folder, id + '.log')
++  const exists = (path) => stat(path).then(() => true, () => false)
++  const host = {
++    claudeCommand: () => binary,
++    offPlan: [],
++    planOnly: () => ({ ...process.env, CLAUDE_CONFIG_DIR: folder, CLAUDE_TEST_TRUST: '1', GECKIT_SOURCE_CLI: 'secret-marker' }),
++    claudeState: () => ({}),
++    readClaude: (_state, entry) => {
++      if (entry.type !== 'assistant' || entry.message.model === '<synthetic>') return { items: [], gone: [], signals: [] }
++      const text = entry.message.content.filter((part) => part.type === 'text').map((part) => part.text).join('')
++      return { items: [{ kind: 'theirs', id: entry.uuid, text }], gone: [], signals: [{ kind: 'said', text }] }
++    },
++    claudeFile: async () => await exists(file) ? file : undefined,
++    sourceArgs: () => { throw new Error('Must not inject source instructions') },
+   }
+-  if (count === 3) {
+-    const choice = await hook('PreToolUse', { tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: 'Which option?', header: 'Option', options: [{ label: 'A' }, { label: 'B' }] }] } });
+-    if (choice.hookSpecificOutput.updatedInput.answers['Which option?'] !== 'B') throw new Error('question unanswered');
+-  }
+-  const answer = 'answer ' + count;
+-  await hook('MessageDisplay', { message_id: 'display-' + count, index: 0, delta: answer });
+-  fs.appendFileSync(file, JSON.stringify({ type: 'assistant', uuid: 'reply-' + count, timestamp: new Date().toISOString(), message: { model: 'claude-test', content: [{ type: 'text', text: answer }], stop_reason: 'end_turn' } }) + '\\n');
+-  await hook('Stop', { last_assistant_message: answer });
+-}
+-void say(args.at(-1));
+-process.stdin.setEncoding('utf8');
+-let pending = '';
+-process.stdin.on('data', (chunk) => {
+-  pending += chunk;
+-  const at = pending.indexOf('\\n');
+-  if (at < 0) return;
+-  const prompt = pending.slice(0, at).replace(/\\r$/, '');
+-  pending = pending.slice(at + 1);
+-  void say(prompt);
+-});
+-`)
+-    await chmod(binary, 0o755)
+-    process.env.PATH = `${folder}:${previousPath ?? ''}`
+-    process.env.CLAUDE_CONFIG_DIR = folder
+-    const id = randomUUID()
+-    const host = {
+-      claudeCommand: () => binary,
+-      offPlan: [],
+-      planOnly: () => ({ ...process.env }),
+-      claudeState: () => ({}),
+-      readClaude: (_state, entry) => {
+-        if (entry.type !== 'assistant') return { items: [], gone: [], signals: [] }
+-        const text = entry.message.content.filter((part) => part.type === 'text').map((part) => part.text).join('')
+-        return { items: [{ kind: 'theirs', id: entry.uuid, text }], gone: [], signals: [{ kind: 'said', text }] }
+-      },
+-      claudeFile: async (root, session) => {
+-        for (const pathRoot of [root, await realpath(root)]) {
+-          const path = join(folder, 'projects', pathRoot.replace(/[^A-Za-z0-9]/g, '-'), `${session}.jsonl`)
+-          if (await stat(path).then(() => true, () => false)) return path
+-        }
+-        return undefined
+-      },
+-      sourceArgs: () => [],
+-      askId: (ask, index) => index === 0 ? ask : `${ask}#${index}`,
+-      questionsFromClaude: (input) => (input.questions ?? []).map((one) => ({ kind: 'question', question: one.question })),
+-      wantedFromClaude: () => ({ kind: 'permission', title: 'Allow command' }),
+-    }
+-    const heard = []
+-    const driver = holdTmux(host, { id, root: folder, resume: true, mode: 'manual' }, (event) => heard.push(event), () => undefined)
+-    const signals = () => heard.flatMap((event) => event.signals)
+-    try {
+-      driver.send('first')
+-      await until(() => signals().filter((one) => one.kind === 'ended').length === 1)
+-      assert(heard.flatMap((one) => one.items).some((one) => one.kind === 'theirs' && one.text === 'answer 1'), JSON.stringify(heard))
+-      assert(heard.flatMap((one) => one.gone).includes('tmux:message:display-1'), JSON.stringify(heard))
+-      driver.send('second')
+-      await until(() => signals().some((one) => one.kind === 'asks'))
+-      driver.answer(signals().find((one) => one.kind === 'asks').ask, 'once')
+-      await until(() => signals().filter((one) => one.kind === 'ended').length === 2)
+-      driver.send('third')
+-      await until(() => signals().filter((one) => one.kind === 'asks').length === 2)
+-      driver.answer(signals().filter((one) => one.kind === 'asks')[1].ask, 'B')
+-      await until(() => signals().filter((one) => one.kind === 'ended').length === 3)
+-      assert(heard.flatMap((one) => one.items).some((one) => one.kind === 'theirs' && one.text === 'answer 3'))
+-    } finally { await driver.end() }
++  const heard = []
++  let closed = false
++  const driver = holdTmux(host, { id, root: folder, resume: true, mode: 'manual' }, (event) => heard.push(event), () => { closed = true })
++  const signals = () => heard.flatMap((event) => event.signals)
++  const ended = () => signals().filter((one) => one.kind === 'ended')
++  const asks = () => signals().filter((one) => one.kind === 'asks')
++  const texts = () => heard.flatMap((one) => one.items).filter((one) => one.kind === 'theirs').map((one) => one.text)
++  const logs = async () => (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
++  try {
++    await mkdir(dirname(file), { recursive: true })
++    await writeFile(file, JSON.stringify({ type: 'assistant', uuid: 'old', message: { content: [{ type: 'text', text: 'old reply' }] } }) + '\n')
++    const first = "first\nsecond 'quoted' $(literal) `literal`"
++    driver.send(first)
++    await until(() => ended().length === 1)
++    assert(texts().includes('answer: ' + first), JSON.stringify(texts()))
++    assert.equal(texts().includes('old reply'), false)
++    const launch = (await logs())[0]
++    assert(launch.args.includes('--resume'))
++    const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1])
++    assert.equal(settings.hooks, undefined)
++    assert.deepEqual(settings.claudeMdExcludes, [join(folder, 'GECKIT.md')])
++    assert.equal(launch.args.includes('--append-system-prompt'), false)
++    assert.deepEqual(launch.managed, [])
++
++    driver.send('quiet')
++    await delay(1700)
++    assert.equal(ended().length, 1, 'idle before observed activity must not finish')
++    driver.stop()
++    await until(() => ended().length === 2)
++    assert.equal(ended().at(-1).how, 'stopped')
++
++    driver.send('hold')
++    await delay(1700)
++    assert.equal(ended().length, 2, 'silence while working must not finish')
++    driver.stop()
++    await until(() => ended().length === 3)
++
++    driver.send('unknown')
++    await delay(1700)
++    assert.equal(ended().length, 3, 'unknown screens must not finish')
++    driver.stop()
++    await until(() => ended().length === 4)
++
++    driver.send('permission')
++    await until(() => asks().length === 1)
++    assert.deepEqual(asks()[0].wanted.choices, ['Yes', 'Yes, allow for this session', 'No'])
++    driver.answer(asks()[0].ask, 'No')
++    await until(() => ended().length === 5)
++    assert(texts().includes('choice: No'))
++
++    driver.send('permission stale')
++    await until(() => asks().length === 2)
++    await writeFile(join(folder, id + '.control'), 'change')
++    await until(() => asks().length === 3)
++    driver.answer(asks()[1].ask, 'Yes')
++    await delay(100)
++    assert.equal((await logs()).filter((one) => one.choice === 'Yes').length, 0)
++    driver.answer(asks()[2].ask, 'Leave')
++    await until(() => ended().length === 6)
++    assert(texts().includes('choice: Leave'))
++
++    driver.send('question')
++    await until(() => asks().length === 4)
++    driver.answer(asks()[3].ask, 'custom answer\nsecond line')
++    await until(() => ended().length === 7)
++    assert(texts().includes('typed: custom answer\nsecond line'), JSON.stringify(texts()))
++
++    driver.send('partial')
++    await delay(1300)
++    assert.equal(ended().length, 7, 'incomplete UTF-8 JSONL line must not finish')
++    await until(() => ended().length === 8)
++    assert(texts().includes('héllo 世界'))
++
++    driver.send('/local')
++    await until(() => ended().length === 9)
++
++    driver.send('with image', [{ media: 'image/png', data: Buffer.from('test image').toString('base64') }])
++    await until(async () => (await logs()).some((one) => one.prompt?.includes('Image attachment:')))
++    const imagePrompt = (await logs()).find((one) => one.prompt?.includes('Image attachment:')).prompt
++    const image = imagePrompt.split('Image attachment: ')[1]
++    await until(() => ended().length === 10)
++    assert.equal(await exists(image), false)
++
++    driver.send('synthetic')
++    await until(() => ended().length === 11)
++    assert.equal(ended().at(-1).how, 'done', 'benign synthetic placeholders must not fail the turn')
++    assert(texts().includes('answer: synthetic'))
++
++    driver.send('api-error')
++    await until(() => ended().length === 12)
++    assert.equal(ended().at(-1).how, 'failed')
++    assert.equal(ended().at(-1).text, 'API Error: rate limit reached')
++
++    driver.send('recovered')
++    await until(() => ended().length === 13)
++    assert.equal(ended().at(-1).how, 'done', 'a real response clears a recovered API error')
++
++    driver.send('crash')
++    await until(() => closed)
++    assert.equal(ended().at(-1).how, 'failed')
++    assert.equal(ended().at(-1).text, 'Claude Code exited.')
+   } finally {
+-    if (previousPath === undefined) delete process.env.PATH
+-    else process.env.PATH = previousPath
+-    if (previousConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR
+-    else process.env.CLAUDE_CONFIG_DIR = previousConfig
++    await driver.end()
+     await rm(folder, { recursive: true, force: true })
+   }
+ })

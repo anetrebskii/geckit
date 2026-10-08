@@ -12,7 +12,7 @@ The example includes a copy of the Codex implementation. It owns its own Codex a
 
 ## Identity
 
-Use apiVersion: 1, entry: index.mjs, and matching id/family plugin:<slug>, for example plugin:my-codex. Return sessions as plugin:<slug>:<native-id> from create, list and fork; translate back at your CLI boundary. Rewrite started signals into the same namespace. A distinct provider is an additional assistant with its own enable switch. Avoid replaces unless the person explicitly wants a replacement.
+Use apiVersion: 1, entry: index.mjs, and matching id/family plugin:<slug>, for example plugin:my-codex. Return sessions as plugin:<slug>:<native-id> from create, list and fork; translate back at your CLI boundary. Rewrite started signals into the same namespace. Every installed library adds an independent assistant with its own enable switch. The legacy replaces field is accepted for compatibility but does not replace built-in assistants.
 
 ## Complete contract
 
