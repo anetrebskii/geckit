@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, unwatchFile, watchFile, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, watch, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 
@@ -52,6 +52,7 @@ const NOTES = 'sessions.json'
 const ERRORS = 'errors.json'
 
 let settings: Settings | undefined
+let settingsWatcher: ReturnType<typeof watch> | undefined
 const watchers = new Set<(settings: Settings) => void>()
 
 export function getSettings(): Settings {
@@ -115,12 +116,17 @@ export function onSettings(watcher: (settings: Settings) => void): () => void {
   getSettings()
   watchers.add(watcher)
   if (watchers.size === 1) {
-    watchFile(join(folder(), SETTINGS), { interval: 250, persistent: false }, reloadSettings)
+    settingsWatcher = watch(folder(), { encoding: 'utf8', persistent: false }, (_event, name) => {
+      if (name === SETTINGS) reloadSettings()
+    })
     reloadSettings()
   }
   return () => {
     watchers.delete(watcher)
-    if (watchers.size === 0) unwatchFile(join(folder(), SETTINGS), reloadSettings)
+    if (watchers.size === 0) {
+      settingsWatcher?.close()
+      settingsWatcher = undefined
+    }
   }
 }
 
