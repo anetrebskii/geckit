@@ -258,6 +258,8 @@ interface Live {
   title: string
   mode: SessionMode
   transport: ClaudeTransport
+  backend: LlmProvider
+  pendingBackend: LlmProvider | undefined
   ranTransport: ClaudeTransport
   closing: Promise<void> | undefined
   driver: Driver | undefined
@@ -454,6 +456,7 @@ export class Sessions {
   readonly #providers: { codex: LlmProvider; readonly stream: LlmProvider; readonly plugins: Map<string, LlmProvider> }
   readonly #dispatching = new Set<string>()
   readonly #live = new Map<string, Live>()
+  readonly #retiredProviders = new Set<LlmProvider>()
   /** Requests from `geckit start` waiting for an answer, by the item showing them. */
   readonly #requests = new Map<string, Pending>()
   readonly #answering = new Set<string>()
@@ -483,7 +486,7 @@ export class Sessions {
       this.#changed()
     })
     this.#providers = {
-      codex: deps.plugins?.find((provider) => provider.replaces === 'codex') ?? llmProvider(deps, 'codex'),
+      codex: llmProvider(deps, 'codex'),
       stream: llmProvider(deps, 'claude'),
       plugins: new Map(deps.plugins?.map((provider) => [provider.id, provider]) ?? []),
     }
@@ -538,9 +541,9 @@ export class Sessions {
     return this.#deps.now?.() ?? Date.now()
   }
 
-  #provider(family: SessionProvider, transport: ClaudeTransport = 'stream'): LlmProvider {
+  #provider(family: SessionProvider, _transport: ClaudeTransport = 'stream'): LlmProvider {
     if (family === 'codex') return this.#providers.codex
-    if (family === 'claude') return transport === 'tmux' ? this.#providers.plugins.get('claude-tmux') ?? this.#providers.stream : this.#providers.stream
+    if (family === 'claude') return this.#providers.stream
     const provider = this.#providers.plugins.get(family)
     if (provider === undefined) throw new Error(`Provider ${family} is not installed.`)
     return provider
@@ -548,10 +551,45 @@ export class Sessions {
 
   addProvider(provider: LlmProvider): void {
     if (this.#providers.plugins.has(provider.id)) throw new Error(`${provider.name} is already installed.`)
-    if (provider.replaces === 'codex' && [...this.#providers.plugins.values()].some((one) => one.replaces === 'codex')) throw new Error('A Codex replacement plugin is already installed.')
     this.#providers.plugins.set(provider.id, provider)
-    if (provider.replaces === 'codex') this.#providers.codex = provider
     this.#changed()
+  }
+
+  replaceProvider(provider: LlmProvider): void {
+    const previous = this.#providers.plugins.get(provider.id)
+    if (previous === undefined) throw new Error(`${provider.name} is not installed.`)
+    if (previous === provider) return
+    this.#providers.plugins.set(provider.id, provider)
+    this.#retiredProviders.add(previous)
+    for (const live of this.#live.values()) {
+      if (providerOf(live.id) !== provider.family) continue
+      if (live.driver !== undefined || live.remote !== undefined || live.state === 'working' || live.state === 'asks') live.pendingBackend = provider
+      else live.backend = provider
+    }
+    this.#disposeRetiredProviders()
+    this.#changed()
+  }
+
+  #disposeRetiredProviders(): void {
+    for (const provider of this.#retiredProviders) {
+      if ([...this.#live.values()].some((live) => live.backend === provider || live.pendingBackend === provider)) continue
+      this.#retiredProviders.delete(provider)
+      provider.dispose()
+    }
+  }
+
+  async #applyPendingProvider(live: Live): Promise<void> {
+    const next = live.pendingBackend
+    if (next === undefined || live.state === 'working' || live.state === 'asks' || live.remote !== undefined) return
+    const driver = live.driver
+    live.pendingBackend = undefined
+    live.backend = next
+    if (driver !== undefined) {
+      live.driver = undefined
+      live.tasks = ended(live.tasks)
+      await driver.end()
+    }
+    this.#disposeRetiredProviders()
   }
 
   setInstructions(provider: SessionProvider, enabled: boolean, browserNames: Readonly<Record<string, string>>): Promise<void> {
@@ -562,7 +600,6 @@ export class Sessions {
     await this.#providers.stream.setInstructions(settings.guideClaude, settings.browserNames)
     await this.#providers.codex.setInstructions(settings.guideCodex, settings.browserNames)
     for (const info of settings.providerPlugins) {
-      if (info.replaces === 'codex') continue
       const provider = this.#providers.plugins.get(info.id)
       if (provider === undefined) continue
       const target = instructionsFor(info)
@@ -574,7 +611,7 @@ export class Sessions {
   }
 
   #for(live: Live): LlmProvider {
-    return this.#provider(providerOf(live.id), live.transport)
+    return live.backend
   }
 
   #note(id: string, change: SessionNote): void {
@@ -706,7 +743,6 @@ export class Sessions {
     }
     if (imported) this.#deps.notes.replace(notes)
     for (const provider of this.#providers.plugins.values()) {
-      if (provider.family === 'claude' || provider.replaces === 'codex') continue
       for (const [id, row] of this.#rows) if (providerOf(id) === provider.family && roots.includes(row.project ?? row.root)) this.#rows.delete(id)
       for (const row of await provider.list(roots)) if (providerOf(row.id) === provider.family && this.#keptHistory(row.id)) this.#rows.set(row.id, row)
     }
@@ -797,7 +833,7 @@ export class Sessions {
         at: Math.max(live?.at ?? 0, row?.at ?? 0),
         here: note?.here === true,
         mode: live?.mode ?? sessionMode(note?.mode),
-        ...(providerOf(id) === 'claude' ? { transport: this.#providers.plugins.has('claude-tmux') ? live?.transport ?? note?.transport ?? 'stream' : 'stream' } : {}),
+        ...(providerOf(id) === 'claude' ? { transport: 'stream' } : {}),
         ...(model === undefined ? {} : { model }),
         ...(chosen === undefined ? {} : { chosen }),
         ...(this.#provider(providerOf(id), live?.transport).nativeGoals ? { reasoning: reasoning ?? actualReasoning ?? '' } : {}),
@@ -898,7 +934,7 @@ export class Sessions {
   }
 
   async search(roots: readonly string[], asked: string): Promise<ChatFound[]> {
-    const providers = [this.#providers.stream, this.#providers.codex, ...[...this.#providers.plugins.values()].filter((provider) => provider.family !== 'claude' && provider.replaces !== 'codex')]
+    const providers = [this.#providers.stream, this.#providers.codex, ...this.#providers.plugins.values()]
     const found = await Promise.all(providers.map((provider) => provider.search(roots, asked)))
     return found.flat().filter((row) => this.#keptHistory(row.id))
   }
@@ -921,13 +957,14 @@ export class Sessions {
   }
 
   requestOrigin(session: string): string {
-    if (!session.startsWith('codex:')) return session
-    const thread = session.slice('codex:'.length)
+    if (session.startsWith('plugin:')) return session
+    const codex = session.startsWith('codex:')
+    const thread = codex ? session.slice('codex:'.length) : session
     const running = [...this.#live.values()].filter((live) =>
       live.driver !== undefined && (live.state === 'working' || live.state === 'asks') &&
-      (live.id === session || live.id.startsWith('plugin:') && live.id.endsWith(`:${thread}`)),
+      (live.id === session || live.id.startsWith('plugin:') && live.id.endsWith(`:${thread}`) && (codex ? this.#for(live).runtime === 'codex' : this.#for(live).instructions === 'claude')),
     )
-    if (running.length > 1) throw new Error('More than one active conversation uses this Codex thread. Give the provider-qualified parent ID.')
+    if (running.length > 1) throw new Error(`More than one active conversation uses this ${codex ? 'Codex thread' : 'Claude session'}. Give the provider-qualified parent ID.`)
     return running[0]?.id ?? session
   }
 
@@ -1093,7 +1130,7 @@ export class Sessions {
     live.model = row.model
     live.used = row.used
     live.chosen = note?.model
-    live.transport = providerOf(id) !== 'claude' || isRemote(row.root) || process.platform === 'win32' || !this.#providers.plugins.has('claude-tmux') ? 'stream' : note?.transport ?? 'stream'
+    live.transport = 'stream'
     live.reasoning = note?.reasoning
     live.goal = note?.goal
     live.queued = [...(note?.queued ?? [])]
@@ -1107,7 +1144,9 @@ export class Sessions {
       root,
       title,
       mode,
-      transport: providerOf(id) !== 'claude' || question || isRemote(root) || process.platform === 'win32' || !this.#providers.plugins.has('claude-tmux') ? 'stream' : this.#deps.transport?.() ?? 'stream',
+      transport: 'stream',
+      backend: this.#provider(providerOf(id)),
+      pendingBackend: undefined,
       ranTransport: 'stream',
       closing: undefined,
       driver: undefined,
@@ -1205,11 +1244,11 @@ export class Sessions {
     if (live === undefined) {
       const root = message.question === true ? homedir() : message.root
       const provider = message.session === undefined ? message.provider ?? 'claude' : providerOf(message.session)
-      const transport = message.question === true || isRemote(root) || process.platform === 'win32' ? 'stream' : this.#deps.transport?.() ?? 'stream'
+      const transport: ClaudeTransport = 'stream'
       const backend = this.#provider(provider, transport)
       if (!backend.available) throw new Error('Codex is not available. Install Codex and run codex login in a terminal.')
       if (!backend.images && (message.images?.length ?? 0) > 0) {
-        throw new Error('tmux mode accepts text only. Switch to Stream to send images.')
+        throw new Error(`${backend.name} accepts text only. Choose an assistant that supports images.`)
       }
       if (backend.localOnly && isRemote(root)) throw new Error(`${backend.name} is available for local folders. Choose Claude Code Stream for this host.`)
 
@@ -1224,13 +1263,14 @@ export class Sessions {
         await this.#reread(live)
       }
       if (live.question) this.#keepNote(live)
-    } else if (live.driver === undefined) {
-      await this.#reread(live)
+    } else {
+      await this.#applyPendingProvider(live)
+      if (live.driver === undefined) await this.#reread(live)
     }
 
     const backend = this.#for(live)
     if (!backend.images && (message.images?.length ?? 0) > 0) {
-      throw new Error('tmux mode accepts text only. Switch this conversation to Stream to send images.')
+      throw new Error(`${backend.name} accepts text only. Choose an assistant that supports images.`)
     }
     const nativeGoal = backend.nativeGoals ? goalSent(message.text) : undefined
     if (nativeGoal !== undefined && nativeGoal.toLowerCase() !== 'pause' && nativeGoal.toLowerCase() !== 'resume') {
@@ -1522,7 +1562,7 @@ export class Sessions {
       const old = live.driver
       live.driver = undefined
       live.tasks = ended(live.tasks)
-      if (this.#provider(providerOf(live.id), live.ranTransport).waitForExit) await old.end()
+      if (this.#for(live).waitForExit) await old.end()
       else void old.end()
     }
 
@@ -1712,7 +1752,7 @@ export class Sessions {
   /** Select how the same Claude conversation is held on its next turn. */
   transport(id: string, transport: ClaudeTransport): void {
     const live = this.#live.get(id) ?? this.#adopt(id)
-    if (live === undefined || providerOf(id) !== 'claude' || live.transport === transport || (transport === 'tmux' && !this.#providers.plugins.has('claude-tmux'))) return
+    if (live === undefined || providerOf(id) !== 'claude' || live.transport === transport || transport !== 'stream') return
     if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined) return
     if (this.#provider('claude', transport).localOnly && (isRemote(live.root) || process.platform === 'win32')) return
     live.transport = transport
@@ -1851,7 +1891,7 @@ export class Sessions {
       const live = this.#fresh(run.id, run.root, note?.title ?? '', sessionMode(note?.mode))
       live.begun = true
       live.chosen = note?.model
-      live.transport = providerOf(run.id) !== 'claude' || isRemote(run.root) || process.platform === 'win32' || !this.#providers.plugins.has('claude-tmux') ? 'stream' : note?.transport ?? 'stream'
+      live.transport = 'stream'
       live.reasoning = note?.reasoning
       // Working only where a turn was running when GeckIt closed; the rest of what it says comes on the stream.
       live.state = note?.cut === undefined ? 'idle' : 'working'
@@ -1950,7 +1990,7 @@ export class Sessions {
       if (note?.hidden === true) return false
       return note?.here === true || note?.shown === true || (row !== undefined && !row.driven)
     }
-    const found = (await Promise.all([this.#providers.stream, ...[...this.#providers.plugins.values()].filter((provider) => provider.family !== 'claude' && provider.replaces !== 'codex')].map((provider) => provider.hidden(older ? 0 : edge, older ? edge : Infinity, (id) => this.#keptHistory(id) && !listed(id))))).flat().filter((row) => this.#keptHistory(row.id))
+    const found = (await Promise.all([this.#providers.stream, ...this.#providers.plugins.values()].map((provider) => provider.hidden(older ? 0 : edge, older ? edge : Infinity, (id) => this.#keptHistory(id) && !listed(id))))).flat().filter((row) => this.#keptHistory(row.id))
     for (const row of this.#rows.values()) {
       if (providerOf(row.id) !== 'codex' || listed(row.id) || row.at < (older ? 0 : edge) || row.at >= (older ? edge : Infinity)) continue
       found.push({ ...row, cwd: row.root })
@@ -2065,6 +2105,7 @@ export class Sessions {
     const ended = live.driver?.end()
     this.#live.delete(id)
     await ended
+    this.#disposeRetiredProviders()
   }
 
   /**
@@ -2173,7 +2214,9 @@ export class Sessions {
     this.#live.clear()
     this.#watching = undefined
     this.#providers.codex.dispose()
-    for (const provider of this.#providers.plugins.values()) if (provider.replaces !== 'codex') provider.dispose()
+    for (const provider of this.#providers.plugins.values()) provider.dispose()
+    for (const provider of this.#retiredProviders) provider.dispose()
+    this.#retiredProviders.clear()
   }
 
   // --- what the tool says -----------------------------------------------------

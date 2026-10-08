@@ -8,7 +8,7 @@ A library is a public GitHub repository that implements GeckIt's provider contra
 2. Enable the new assistant in **Settings > Assistants**. Independent assistants have independent switches; installing a library does not replace Codex.
 3. Select it in the composer. **Model details** shows reported model identity, version, context capacity, maximum output, reasoning, supported modes, token rates, CLI version and account limits. The phone has the same control in Conversation info.
 
-Several libraries can be attached. Their code runs with GeckIt's local access; add repositories you trust. Automatic updates check on startup and every 24 hours, stage and validate a candidate, then load it after restart. **Check now** checks manually. Current conversations keep their loaded implementation until restart.
+Several libraries can be attached. Their code runs with GeckIt's local access; add repositories you trust. Automatic updates check on startup and every 24 hours, then stage and validate a candidate. **Check now** checks manually. **Apply update** swaps one ready library while GeckIt stays open. New conversations use it immediately; active turns finish on the previous version, and the next message resumes with the new version. Each running version stays in its own immutable module snapshot so cached helper modules and current conversations do not mix.
 
 **Remove** asks for confirmation, moves the installed repository to Trash and clears staged updates. The assistant disappears from new choices immediately. Restart to unload code already in memory. GeckIt retains conversation notes and native history. Reinstalling the same library in the current process requires a restart. Removal does not wait for update checks, and an in-flight update cannot restore the removed library.
 
@@ -28,7 +28,7 @@ Change the identity in **both** `geckit-plugin.json` and `src/provider.mjs`; cha
 
 The public [Codex Mirror repository](https://github.com/anetrebskii/geckit-codex-mirror) is the installation example. Both Codex and Mirror can list the same native conversations under distinct GeckIt IDs. Both share the native Codex history/account; deleting a native conversation affects both. The processes and provider implementations are independent.
 
-For a transport extension, see the separate [Claude tmux repository](https://github.com/anetrebskii/geckit-claude-tmux). It keeps Claude's conversation identity and disk history while changing the live transport.
+For a Claude-backed assistant that runs through tmux, see the separate [Claude tmux repository](https://github.com/anetrebskii/geckit-claude-tmux). GeckIt lists it as its own assistant and namespaces its GeckIt session IDs; the library delegates Claude account, model and native-history operations.
 
 ## AI-readable build guidance
 
@@ -88,7 +88,9 @@ LICENSE
 | `runtime` | Optional `codex` compatibility for existing reasoning/goal controls; not required for generic quotas or pricing |
 | `instructions` | `own` for an independent switch, `claude`/`codex` for shared global instructions |
 
-`claude-tmux` is a transport plugin with `family: claude`, `transport: tmux`. A deliberate Codex replacement can use `family: codex`, `replaces: codex`; only one replacement can be installed. Use independent identity for normal libraries.
+Every installed library is exposed as its own assistant identity and enabled independently alongside builtin assistants. The existing `claude-tmux` manifest keeps `family: claude` and `transport: tmux` for compatibility with its provider implementation; GeckIt exposes it as `plugin:claude-tmux`, with its own assistant and session IDs, while delegating Claude account, model and native-history operations. It does not replace builtin Claude.
+
+Legacy manifests with `family: codex` and `replaces: codex` are also normalized to their own `plugin:<slug>` assistant identity. The field no longer replaces builtin Codex. New libraries should use a matching `plugin:<slug>` id and family.
 
 ## Public contract
 

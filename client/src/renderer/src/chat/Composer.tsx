@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 
 import { modelName, programLine, SESSION_MODES } from '../../../shared/api'
-import type { ClaudeModel, ClaudeTransport, ReasoningEffort, SessionImage, SessionMode, SessionProvider } from '../../../shared/api'
+import type { ClaudeModel, ReasoningEffort, SessionImage, SessionMode, SessionProvider } from '../../../shared/api'
 import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
 import { mentionAt, pathsFor } from '../../../shared/paths'
 import { dictate, dropUnheard, hearAgain, languageCode, readUnheard, useDictationLanguage, useLevel } from '../dictate'
@@ -159,7 +159,6 @@ function GoalEditor({ condition, onSave, onClear, onClose }: {
 export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const providerInfo = llmProviderInfo(chat.provider, chat.transport, chat.settings.providerPlugins)
   const providers = selectableProviders(chat.settings)
-  const tmuxInstalled = chat.settings.providerPlugins.some((one) => one.id === 'claude-tmux')
   const assistant = providerInfo.shortName
   const field = useRef<HTMLTextAreaElement>(null)
   const photos = useRef<HTMLInputElement>(null)
@@ -984,19 +983,6 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             explained
             onPick={(value) => chat.setMode(value as SessionMode)}
           />
-          {ON_PHONE || chat.provider !== 'claude' || !tmuxInstalled ? null : (
-            <Picker
-              label={chat.transport === 'tmux' ? 'tmux' : 'Stream'}
-              title="Claude Code transport"
-              chosen={chat.transport}
-              disabled={chat.working || chat.session?.remote !== undefined}
-              choices={[
-                { value: 'stream', label: 'Stream', says: 'Claude Code structured input and output' },
-                { value: 'tmux', label: 'tmux', disabled: window.geckit.platform === 'win32' || chat.root !== undefined && isRemote(chat.root), says: 'Interactive Claude Code; messages read from its transcript and hooks' },
-              ]}
-              onPick={(value) => chat.setTransport(value as ClaudeTransport)}
-            />
-          )}
           <Picker
             label={named}
             choices={models}

@@ -145,7 +145,6 @@ export interface Chat {
   addFiles: (files: readonly File[]) => void
   dropPicture: (at: number) => void
   setMode: (mode: SessionMode) => void
-  setTransport: (transport: ClaudeTransport) => void
   setModel: (model: string) => void
   setProvider: (provider: SessionProvider) => void
   /** Asks which models the Claude Code that runs a project has: the chat's own project where none is given. */
@@ -510,7 +509,7 @@ export function useChat(): Chat {
   }, [root])
 
   const mode = session?.mode ?? settings.chatMode
-  const transport = session?.transport ?? (root !== undefined && isRemote(root) || !settings.providerPlugins.some((one) => one.id === 'claude-tmux') ? 'stream' : settings.chatTransport)
+  const transport: ClaudeTransport = 'stream'
   const nextChoice = shown.kind === 'session' ? nextChoices.get(shown.id) : undefined
   const model = nextChoice?.model ?? session?.chosen ?? (isCodexProvider(provider) ? session?.model ?? settings.codexModel : settings.chatModel)
   const wantedReasoning = nextChoice?.reasoning ?? session?.reasoning ?? settings.codexReasoning
@@ -981,13 +980,6 @@ export function useChat(): Chat {
         setSessions((all) => all.map((one) => (one.id === id ? { ...one, mode: next } : one)))
         window.geckit.chat.mode(id, next)
       }
-    },
-    setTransport: (next) => {
-      if (shownRef.current.kind === 'session') {
-        const id = shownRef.current.id
-        setSessions((all) => all.map((one) => one.id === id ? { ...one, transport: next } : one))
-        window.geckit.chat.transport(id, next)
-      } else change({ chatTransport: next })
     },
     setModel: (next) => {
       change(isCodexProvider(provider) ? { codexModel: next, codexReasoning: '' } : { chatModel: next })

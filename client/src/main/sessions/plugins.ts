@@ -1,12 +1,13 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
+import { cp, mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { app, shell } from 'electron'
 
 import type { LlmProviderInfo, PluginUpdateResult } from '../../shared/providers'
+import { independentProviderInfo } from '../../shared/providers'
 import type { SessionProvider } from '../../shared/api'
 import { claudeCommand, OFF_PLAN, planOnly } from './account'
 import { claudeState, readClaude } from './claude-read'
@@ -46,10 +47,7 @@ interface PluginModule {
 }
 
 const sameProvider = (current: LlmProviderInfo, next: LlmProviderInfo): boolean =>
-  current.id === next.id && (
-    (current.family === next.family && current.replaces === next.replaces) ||
-    (current.family === 'codex' && current.replaces === 'codex' && next.family === next.id && next.replaces === undefined)
-  )
+  independentProviderInfo(current).id === independentProviderInfo(next).id
 
 export interface LoadedPlugin {
   readonly provider: LlmProvider
@@ -64,9 +62,51 @@ export const pluginProvider = (family: SessionProvider): LlmProvider | undefined
 const git = (args: readonly string[], timeout = 120_000): Promise<string> => new Promise((done, fail) => {
   execFile('git', [...args], { timeout, maxBuffer: 1024 * 1024 }, (error, stdout) => error === null ? done(stdout.trim()) : fail(error))
 })
-const pluginId = (id: string): boolean => id === 'claude-tmux' || /^plugin:[a-z][a-z0-9-]*$/.test(id)
+const pluginId = (id: string): id is LlmProviderInfo['id'] => id === 'claude-tmux' || /^plugin:[a-z][a-z0-9-]*$/.test(id)
 const methods = ['account', 'program', 'models', 'limits', 'list', 'search', 'hidden', 'create', 'fork', 'has', 'read', 'links', 'goal', 'setGoal', 'clearGoal', 'hold', 'rename', 'remote', 'mcp', 'browsers', 'correct', 'setInstructions', 'delete', 'dispose'] as const
 const capabilities = ['available', 'localOnly', 'subscriptionOnly', 'images', 'remoteControl', 'nativeGoals', 'waitForExit'] as const
+
+const libraryPath = async (id: LlmProviderInfo['id']): Promise<string> => {
+  const normalized = id === 'claude-tmux' ? 'plugin:claude-tmux' : id
+  const current = join(folder(), normalized.replaceAll(':', '-'))
+  if (await stat(current).then(() => true, () => false)) return current
+  const legacy = join(folder(), 'claude-tmux')
+  if (normalized === 'plugin:claude-tmux' && await stat(legacy).then(() => true, () => false)) return legacy
+  return join(folder(), id.replaceAll(':', '-'))
+}
+
+const independentProvider = (provider: LlmProvider, info: LlmProviderInfo): LlmProvider => {
+  if (provider.family === info.family) return { ...provider, ...info }
+  const { replaces: _replaces, transport: _transport, ...driver } = provider
+  const external = (id: string): string => id.startsWith(`${info.family}:`) ? id : `${info.family}:${provider.family === 'codex' ? id.replace(/^codex:/, '') : id}`
+  const native = (id: string): string => {
+    if (!id.startsWith(`${info.family}:`)) return id
+    const thread = id.slice(info.family.length + 1)
+    return provider.family === 'codex' ? `codex:${thread}` : thread
+  }
+  return {
+    ...driver,
+    ...info,
+    account: async () => ({ ...await provider.account(), provider: info.family }),
+    list: async (roots) => (await provider.list(roots)).map((row) => ({ ...row, id: external(row.id), ...(row.importedFrom === undefined ? {} : { importedFrom: external(row.importedFrom) }) })),
+    search: async (roots, asked) => (await provider.search(roots, asked)).map((row) => ({ ...row, id: external(row.id) })),
+    hidden: async (from, to, include) => (await provider.hidden(from, to, (id) => include(external(id)))).map((row) => ({ ...row, id: external(row.id) })),
+    create: async (options) => external(await provider.create(options)),
+    fork: async (root, id, at, mode, model) => {
+      const forked = await provider.fork(root, native(id), at, mode, model)
+      return { ...forked, id: external(forked.id), ...(forked.fork === undefined ? {} : { fork: { ...forked.fork, from: external(forked.fork.from) } }) }
+    },
+    has: (root, id) => provider.has(root, native(id)),
+    read: (root, id) => provider.read(root, native(id)),
+    links: (root, id) => provider.links(root, native(id)),
+    goal: (root, id) => provider.goal(root, native(id)),
+    setGoal: (id, objective) => provider.setGoal(native(id), objective),
+    clearGoal: (id) => provider.clearGoal(native(id)),
+    hold: (options, hear, left) => provider.hold({ ...options, id: native(options.id), ...(options.fork === undefined ? {} : { fork: { ...options.fork, from: native(options.fork.from) } }) }, (heard) => hear({ ...heard, signals: heard.signals.map((signal) => signal.kind === 'started' ? { ...signal, session: external(signal.session) } : signal) }), left),
+    rename: (id, name, driver) => provider.rename(native(id), name, driver),
+    delete: (root, id) => provider.delete(root, native(id)),
+  }
+}
 
 const manifestAt = async (path: string): Promise<PluginManifest> => {
   const parsed: object = JSON.parse(await readFile(join(path, 'geckit-plugin.json'), 'utf8')) as object
@@ -84,12 +124,25 @@ const manifestAt = async (path: string): Promise<PluginManifest> => {
   return parsed as PluginManifest
 }
 
+async function loadPluginSnapshot(path: string, host: PluginHost): Promise<LoadedPlugin> {
+  const snapshot = join(folder(), `.active-${randomUUID()}`)
+  try {
+    await cp(path, snapshot, { recursive: true })
+    return await loadPlugin(snapshot, host)
+  } catch (error) {
+    await rm(snapshot, { recursive: true, force: true })
+    throw error
+  }
+}
+
 export const loadPlugin = async (path: string, host: PluginHost): Promise<LoadedPlugin> => {
   const manifest = await manifestAt(path)
   const entry = await realpath(join(path, manifest.entry))
   if (relative(await realpath(resolve(path)), entry).startsWith('..')) throw new Error('Plugin entry leaves its repository.')
 
-  const module = await import(pathToFileURL(entry).href) as Partial<PluginModule>
+  const moduleUrl = pathToFileURL(entry)
+  moduleUrl.searchParams.set('geckit', randomUUID())
+  const module = await import(moduleUrl.href) as Partial<PluginModule>
   if (typeof module.create !== 'function') throw new Error('Plugin must export create(host).')
 
   const provider = await module.create(host)
@@ -98,7 +151,8 @@ export const loadPlugin = async (path: string, host: PluginHost): Promise<Loaded
     : provider
   if (typeof compatible !== 'object' || compatible === null || methods.some((method) => typeof compatible[method] !== 'function') || capabilities.some((field) => typeof compatible[field] !== 'boolean') || typeof compatible.idleMs !== 'number') throw new Error('Plugin does not implement LlmProvider.')
   if (provider.id !== manifest.provider.id) throw new Error('Plugin ID differs from its manifest.')
-  return { path, info: manifest.provider, provider: { ...compatible, ...manifest.provider } }
+  const info = independentProviderInfo(manifest.provider)
+  return { path, info, provider: independentProvider({ ...compatible, ...manifest.provider }, info) }
 }
 
 export async function installedPlugins(host: PluginHost): Promise<LoadedPlugin[]> {
@@ -107,7 +161,7 @@ export async function installedPlugins(host: PluginHost): Promise<LoadedPlugin[]
   const entries = await readdir(folder(), { withFileTypes: true }).catch(() => [])
   const loaded = await Promise.all(entries.filter((one) => one.isDirectory() && !one.name.startsWith('.')).map(async (one) => {
     const path = join(folder(), one.name)
-    const plugin = await loadPlugin(path, host)
+    const plugin = await loadPluginSnapshot(path, host)
     const source = await sourceAt(path).catch(() => undefined)
     return source === undefined ? plugin : { ...plugin, info: { ...plugin.info, source }, provider: { ...plugin.provider, source } }
   }).map((one) => one.catch(() => undefined)))
@@ -133,11 +187,13 @@ async function recoverBackups(): Promise<void> {
       const backup = join(folder(), one.name)
       const manifest = await manifestAt(backup).catch(() => undefined)
       if (manifest === undefined) continue
-      const destination = join(folder(), manifest.provider.id.replaceAll(':', '-'))
+      const destination = await libraryPath(manifest.provider.id)
       if (await stat(destination).then(() => true, () => false)) await rm(backup, { recursive: true, force: true })
       else await rename(backup, destination)
     } catch { /* A broken library must not stop GeckIt from opening. */ }
   }
+  const copies = await readdir(folder(), { withFileTypes: true }).catch(() => [])
+  await Promise.all(copies.filter((one) => one.isDirectory() && one.name.startsWith('.active-')).map((one) => rm(join(folder(), one.name), { recursive: true, force: true }).catch(() => undefined)))
 }
 
 async function applyReadyUpdates(host: PluginHost): Promise<void> {
@@ -147,16 +203,62 @@ async function applyReadyUpdates(host: PluginHost): Promise<void> {
       const ready = join(folder(), one.name)
       const manifest = await manifestAt(ready).catch(() => undefined)
       if (manifest === undefined) continue
-      const destination = join(folder(), manifest.provider.id.replaceAll(':', '-'))
+      const destination = await libraryPath(manifest.provider.id)
       const current = await manifestAt(destination).catch(() => undefined)
       if (current === undefined || !sameProvider(current.provider, manifest.provider)) continue
-      if (await loadPlugin(ready, host).catch(() => undefined) === undefined) continue
+      const candidate = await loadPlugin(ready, host).catch(() => undefined)
+      if (candidate === undefined) continue
+      await candidate.provider.dispose()
       const backup = join(folder(), `.backup-${randomUUID()}`)
       await rename(destination, backup)
       try { await rename(ready, destination) }
       catch (error) { await rename(backup, destination); throw error }
       await rm(backup, { recursive: true, force: true })
     } catch { /* Keep the current provider if the staged version cannot be applied. */ }
+  }
+}
+
+
+export async function applyReadyPlugin(id: string, host: PluginHost): Promise<LoadedPlugin> {
+  if (!pluginId(id)) throw new Error('Invalid provider ID.')
+  const destination = await libraryPath(id)
+  const current = await manifestAt(destination)
+  if (independentProviderInfo(current.provider).id !== id && current.provider.id !== id) throw new Error('Installed provider ID does not match.')
+  const entries = await readdir(folder(), { withFileTypes: true }).catch(() => [])
+  let ready: string | undefined
+  for (const entry of entries.filter((one) => one.isDirectory() && one.name.startsWith('.ready-'))) {
+    const path = join(folder(), entry.name)
+    const manifest = await manifestAt(path).catch(() => undefined)
+    if (manifest !== undefined && independentProviderInfo(manifest.provider).id === id) {
+      ready = path
+      break
+    }
+  }
+  if (ready === undefined) throw new Error('No update is ready for this library. Check for updates and try again.')
+
+  const candidate = await loadPlugin(ready, host)
+  if (!sameProvider(current.provider, candidate.info) || candidate.info.id !== id) {
+    await candidate.provider.dispose()
+    throw new Error('Updated plugin changed its provider identity.')
+  }
+  await candidate.provider.dispose()
+
+  const backup = join(folder(), `.backup-${randomUUID()}`)
+  await rename(destination, backup)
+  try {
+    await rename(ready, destination)
+    const loaded = await loadPluginSnapshot(destination, host)
+    const source = await sourceAt(destination).catch(() => current.provider.source)
+    const updated = source === undefined
+      ? loaded
+      : { ...loaded, info: { ...loaded.info, source }, provider: { ...loaded.provider, source } }
+    active.set(updated.provider.family, updated.provider)
+    return updated
+  } catch (error) {
+    try { await rename(destination, ready) }
+    catch { await rm(destination, { recursive: true, force: true }).catch(() => undefined) }
+    await rename(backup, destination)
+    throw error
   }
 }
 
@@ -167,13 +269,12 @@ export async function installPlugin(given: string, host: PluginHost): Promise<Lo
   try {
     await git(['clone', '--depth', '1', url, staging])
     const manifest = await manifestAt(staging)
-    if (removedUntilRestart.has(join(folder(), manifest.provider.id.replaceAll(':', '-')))) throw new Error('Restart GeckIt before adding this library again.')
-    if (manifest.provider.replaces === 'codex' && active.has('codex')) throw new Error('A Codex replacement plugin is already installed.')
-    const destination = join(folder(), manifest.provider.id.replaceAll(':', '-'))
+    const destination = await libraryPath(manifest.provider.id)
+    if (removedUntilRestart.has(destination) || removedUntilRestart.has(join(folder(), independentProviderInfo(manifest.provider).id.replaceAll(':', '-'))) || removedUntilRestart.has(join(folder(), 'claude-tmux')) && independentProviderInfo(manifest.provider).id === 'plugin:claude-tmux') throw new Error('Restart GeckIt before adding this library again.')
     if (await stat(destination).then(() => true, () => false)) throw new Error(`${manifest.provider.name} is already installed.`)
     await rename(staging, destination)
     try {
-      const found = await loadPlugin(destination, host)
+      const found = await loadPluginSnapshot(destination, host)
       const source = url.replace(/\.git$/, '')
       const loaded = { ...found, info: { ...found.info, source }, provider: { ...found.provider, source } }
       active.set(loaded.provider.family, loaded.provider)
@@ -185,20 +286,22 @@ export async function installPlugin(given: string, host: PluginHost): Promise<Lo
 
 export async function uninstallPlugin(id: string): Promise<LlmProviderInfo> {
   if (!pluginId(id)) throw new Error('Invalid provider ID.')
-  const name = id.replaceAll(':', '-')
-  const destination = join(folder(), name)
+  const destination = await libraryPath(id)
+  const name = destination.slice(folder().length + 1)
   const manifest = await manifestAt(destination)
-  if (manifest.provider.id !== id) throw new Error('Installed provider ID does not match.')
+  if (independentProviderInfo(manifest.provider).id !== id && manifest.provider.id !== id) throw new Error('Installed provider ID does not match.')
   removedUntilRestart.add(destination)
   try { await shell.trashItem(destination) }
   catch (error) { removedUntilRestart.delete(destination); throw error }
   await rm(join(folder(), `.ready-${name}`), { recursive: true, force: true }).catch(() => undefined)
+  if (name !== id.replaceAll(':', '-')) await rm(join(folder(), `.ready-${id.replaceAll(':', '-')}`), { recursive: true, force: true }).catch(() => undefined)
   const entries = await readdir(folder(), { withFileTypes: true }).catch(() => [])
   for (const entry of entries.filter((one) => one.isDirectory() && one.name.startsWith('.backup-'))) {
     const backup = join(folder(), entry.name)
-    if ((await manifestAt(backup).catch(() => undefined))?.provider.id === id) await rm(backup, { recursive: true, force: true }).catch(() => undefined)
+    const stored = await manifestAt(backup).catch(() => undefined)
+    if (stored !== undefined && independentProviderInfo(stored.provider).id === id) await rm(backup, { recursive: true, force: true }).catch(() => undefined)
   }
-  return manifest.provider
+  return independentProviderInfo(manifest.provider)
 }
 
 export async function updateInstalledPlugins(host: PluginHost): Promise<PluginUpdateResult> {
@@ -218,8 +321,10 @@ export async function updateInstalledPlugins(host: PluginHost): Promise<PluginUp
       ])
       if (before === after) return undefined
       const next = await loadPlugin(staging, host)
-      if (removedUntilRestart.has(destination)) return undefined
-      if (!sameProvider(current.provider, next.info)) throw new Error('Updated plugin changed its provider identity.')
+      try {
+        if (removedUntilRestart.has(destination)) return undefined
+        if (!sameProvider(current.provider, next.info)) throw new Error('Updated plugin changed its provider identity.')
+      } finally { await next.provider.dispose() }
       const ready = join(folder(), `.ready-${current.provider.id.replaceAll(':', '-')}`)
       await rm(ready, { recursive: true, force: true })
       await rename(staging, ready)
@@ -227,7 +332,7 @@ export async function updateInstalledPlugins(host: PluginHost): Promise<PluginUp
         await rm(ready, { recursive: true, force: true })
         return undefined
       }
-      return current.provider.id
+      return independentProviderInfo(current.provider).id
     } finally { await rm(staging, { recursive: true, force: true }) }
   }))
   return {

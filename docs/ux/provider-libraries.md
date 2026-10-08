@@ -11,18 +11,21 @@ created: 2026-10-02
 
 Репозитории провайдеров должны иметь своё место в Settings: список подключённых источников, добавление следующего и управление обновлениями. Alex хочет подключить несколько библиотек и получать их новые версии автоматически.
 
+Дизайн и интерактивный preview: [Provider library update design](../design/provider-library-updates.md).
+
 ## 2. Что добавляется
 
 | Поверхность | Что появляется | Когда видно |
 |---|---|---|
 | Settings > Assistants | Компактные строки встроенных ассистентов; инструкции GeckIt раскрываются по запросу | Всегда |
 | Settings > Assistants | Codex Mirror как отдельная строка и переключатель рядом с Codex | Когда библиотека Codex Mirror подключена |
-| Settings > Assistants | Выбор Claude Stream или Claude tmux как транспорта по умолчанию для новых бесед | Когда подключена библиотека Claude tmux |
+| Settings > Assistants | Отдельная строка и переключатель Claude Code (tmux) | Когда подключена библиотека Claude tmux |
 | Settings > Libraries | Список репозиториев с именем провайдера, адресом и состоянием обновления | После первой установки |
 | Settings > Libraries | Компактный список, переключатель Automatic updates, Check now и Add library | На компьютере |
+| Settings > Libraries | Apply update у каждой библиотеки с готовым обновлением | После проверки новой версии |
 | Settings > Libraries | Remove у каждой библиотеки, с подтверждением в той же строке | Когда библиотека подключена |
 | Settings > Libraries | Пустое состояние | Пока библиотек нет |
-| Settings > Libraries | Ошибка установки или ручной проверки около действия | Когда действие не удалось |
+| Settings > Libraries | Ошибка установки, проверки или применения около действия | Когда действие не удалось |
 
 ```mermaid
 block-beta
@@ -43,9 +46,9 @@ block-beta
 | Ввод адреса | Нажат Add library | Поле URL, Add и Cancel вместо пустого состояния | Вставить адрес и нажать Add |
 | Установка | Нажат Add, `git clone` ещё работает | «Adding library…» у кнопки | Ничего, действие закончится само |
 | Подключено | Провайдер загружен | Строка с именем, иконкой и адресом | Включить или выключить ассистента выше, если нужно |
-| Транспорт Claude | Подключён `claude-tmux` с семейством `claude` | Claude остаётся одной идентичностью ассистента; Settings > Assistants показывает выбор Stream/tmux для новых бесед. В Composer остаётся выбор транспорта текущей беседы. | Выбрать tmux, чтобы новые локальные беседы Claude использовали подключённый транспорт |
+| Библиотека Claude tmux | Репозиторий установлен | Отдельная строка Claude Code (tmux) в Settings > Assistants и Composer; встроенный Claude Code остаётся отдельным ассистентом | Включить или выключить библиотеку отдельно и выбирать её для новых бесед |
 | Проверка | Нажат Check now | «Checking…» у кнопки | Ничего, действие закончится само |
-| Обновление готово | Новая версия проверена и записана | «Update ready» у строки | Перезапустить GeckIt, когда удобно |
+| Обновление готово | Новая версия проверена и записана | «Update ready» и кнопка «Apply update» | Нажать Apply update, чтобы обновить библиотеку без перезапуска |
 | Подтверждение удаления | Нажат Remove у библиотеки | «Remove <name>? Its installed copy moves to Trash. Restart GeckIt to unload its code.» и кнопки Remove library, Cancel | Подтвердить или отменить |
 | Удаление | Подтверждено удаление, файлы ещё удаляются | «Removing…» у кнопки | Дождаться результата |
 | Удалено | Установленная копия перемещена в Trash | Строка исчезает, «Restart GeckIt to unload removed libraries.» | Перезапустить, когда удобно |
@@ -68,6 +71,7 @@ stateDiagram-v2
   state "Подключено" as current
   state "Проверяется" as checking
   state "Обновление готово" as ready
+  state "Применяется" as applying
   state "Подтверждение удаления" as confirmRemove
   state "Удаляется" as removing
   state "Ошибка" as error
@@ -87,7 +91,10 @@ stateDiagram-v2
   confirmRemove --> removing: Remove library
   removing --> empty: последняя удалена
   removing --> current: другие остались
-  ready --> current: перезапуск
+  ready --> current: перезапуск загружает обновление
+  ready --> applying: Apply update
+  applying --> current: новая версия загружена
+  applying --> ready: ошибка, старый провайдер восстановлен
   class empty quiet
   class installing going
   class current done
@@ -95,6 +102,7 @@ stateDiagram-v2
   class confirmRemove hands
   class removing going
   class ready done
+  class applying going
   class error hands
 ```
 
@@ -108,9 +116,12 @@ stateDiagram-v2
 | Подключено | Само, без пользователя, при старте и раз в день, если Automatic updates включены | Проверка | Ничего |
 | Подключено | Нажал Check now | Проверка | «Checking…» |
 | Проверка | Версия та же | Подключено | Ничего при автоматической проверке; «Libraries are up to date.» при ручной |
-| Проверка | Новая версия прошла проверку | Обновление готово | «Update ready» |
+| Проверка | Новая версия прошла проверку | Обновление готово | «Update ready» и кнопка «Apply update» |
 | Проверка | Сеть или новая версия не прошла проверку | Подключено или ошибка | Ничего при автоматической проверке; ошибка при ручной |
-| Обновление готово | Закрыл и открыл GeckIt | Подключено | Загружается новая версия; отметка исчезает |
+| Обновление готово | Нажал Apply update | Применяется | «Applying…»; текущие ответы продолжаются |
+| Применяется | Провайдер загружен и заменён | Подключено | Готовая отметка исчезает; «<name> updated.» объявляется как статус |
+| Применяется | Проверка или замена не удалась | Обновление готово | Старая версия восстановлена; ошибка предлагает повторить |
+| Обновление готово | Перезапустил GeckIt до Apply update | Подключено | Загружается staged версия; отметка исчезает |
 | Подключено | Нажал Remove | Подтверждение удаления | У строки вопрос, Remove library и Cancel |
 | Подтверждение удаления | Нажал Cancel | Подключено | Строка снова обычная |
 | Подтверждение удаления | Нажал Remove library | Удаляется | «Removing…» |
@@ -129,10 +140,10 @@ stateDiagram-v2
 
 ```mermaid
 flowchart LR
-  A["Запуск GeckIt<br/>фоновая проверка"] --> B["Через 24 часа работы<br/>повторная проверка"] --> C["Следующий запуск<br/>новый код активен"]
+  A["Запуск GeckIt<br/>фоновая проверка"] --> B["Через 24 часа работы<br/>повторная проверка"] --> C["Update ready<br/>Apply update"] --> D["Новая версия активна<br/>без перезапуска"]
   style A fill:#dbeafe,stroke:#2563eb,color:#111827
   style B fill:#dbeafe,stroke:#2563eb,color:#111827
-  style C fill:#dcfce7,stroke:#16a34a,color:#111827
+  style D fill:#dcfce7,stroke:#16a34a,color:#111827
 ```
 
 | Число | Значение | Почему столько |
@@ -145,10 +156,12 @@ flowchart LR
 | Состояние | Текст |
 |---|---|
 | Пусто | «No libraries installed.» |
-| Подсказка | «Providers from GitHub. Updates load after restart.» |
+| Подсказка | «Providers from GitHub. Apply updates without restarting GeckIt.» |
 | Установка | «Adding library…» |
 | Проверка | «Checking…» |
-| Обновление готово | «Update ready» |
+| Обновление готово | «Update ready» и кнопка «Apply update» |
+| Применение | «Applying…» |
+| Успешное применение | «<name> updated.» |
 | Подтверждение удаления | «Remove <name>? Its installed copy moves to Trash. Restart GeckIt to unload its code.» |
 | Удаление | «Removing…» |
 | Удалено | «Restart GeckIt to unload removed libraries.» |
@@ -164,18 +177,18 @@ flowchart LR
 - **Небольшое окно:** навигация и содержимое прокручиваются внутри диалога, нижние действия остаются видимыми; после Add library форма прокручивается в видимую область.
 - **Обрыв:** старая версия остаётся рабочей; ручная проверка показывает ошибку, фоновая молчит.
 - **Повтор:** Add блокируется, пока идёт установка; существующий репозиторий не устанавливается второй раз.
-- **Устаревшая копия:** новая версия пишется отдельно и подменяет файлы только после проверки; действующие беседы продолжают работать на уже загруженном коде до перезапуска.
+- **Устаревшая копия:** новая версия пишется отдельно и подменяет файлы только после проверки. Apply update переключает новые беседы сразу; текущий ответ завершается на старом коде, а следующее сообщение продолжает беседу на новой версии.
 - **Два провайдера одного семейства:** ограничения интерфейса провайдеров сохраняются, в частности один заменитель Codex.
-- **Claude tmux:** это альтернативный транспорт существующего Claude Code, а не отдельный AI-ассистент. Не показывать его как независимую строку или дополнительное имя в выборе Assistant. При установленной библиотеке показать в Settings > Assistants выбор транспорта по умолчанию для новых бесед; в Composer оставить выбор транспорта текущей беседы. Установка сохраняет текущий выбор Stream/tmux, пока пользователь сам его не изменит.
+- **Каждая библиотека добавляет ассистента:** установленная библиотека получает собственную строку и переключатель в Settings > Assistants, собственный выбор в Composer и собственное состояние включения. Установка не выключает встроенного ассистента или другую библиотеку. Для Claude tmux сохранить account/model calls через Claude и отдельный GeckIt assistant identity; не представлять библиотеку только как настройку транспорта Claude.
 - **Codex Mirror:** после обновления прежней библиотеки-заменителя Codex остаётся включён, если он был включён; Mirror появляется отдельным включённым ассистентом. Выключение одного не выключает другой. Обе строки бесед могут вести к одной сессии Codex.
-- **Удаление библиотеки:** установленная копия отправляется в Trash, ожидающее обновление удаляется. GeckIt не удаляет свои заметки о беседах; файлы бесед провайдер держит сам. Ассистент исчезает из выбора сразу; работающий процесс может закончить текущий ответ, код выгружается после перезапуска. Повторная установка той же библиотеки требует перезапуска.
+- **Удаление библиотеки:** установленная копия отправляется в Trash, ожидающее обновление удаляется. GeckIt не удаляет свои заметки о беседах; файлы бесед провайдер держит сам. Ассистент исчезает из выбора сразу; работающий процесс может закончить текущий ответ, а уже загруженный код выгружается после перезапуска. Повторная установка той же библиотеки требует перезапуска.
 
 ## 9. Чего намеренно нет
 
 | Не делаем | Почему |
 |---|---|
 | Автоматический перезапуск | Он может оборвать работающие беседы |
-| Автоматическое переключение действующих сессий на скачанный код | Оно меняло бы поведение посреди ответа |
+| Переключение действующей сессии во время ответа | Оно меняло бы поведение посреди ответа |
 | Каталог или рейтинг публичных репозиториев | Пользователь приносит конкретные URL; каталог требует модерации и доверия |
 
 ## 10. Развилки
@@ -230,15 +243,11 @@ Alex reported a failed Codex Mirror removal in the actual Libraries screen. Keep
 
 The running app was verified on 2026-10-08: its library-removal handler was registered, a disposable-folder Trash probe passed, and retrying the reported Codex Mirror removal through that handler succeeded. The installed directory disappeared, `providerPlugins` became empty, `providerRemovalPending` became true and builtin Codex remained enabled. Conversation deletion was not invoked. The earlier screenshot failure could not be reproduced after the main process restarted; its underlying exception was hidden by the old generic error message.
 
-### Claude tmux discoverability - 2026-10-08
+### Claude tmux assistant identity - 2026-10-08
 
-Alex installed `geckit-claude-tmux` and expected another assistant. Its manifest declares `id: claude-tmux`, `family: claude`, `transport: tmux`; this extends Claude Code's existing identity. Settings saved the plugin and kept Claude enabled, but `chatTransport` remained `stream`. The independent assistant filters correctly omit another Claude row, leaving the composer transport choice as the only visible entry point.
+Alex clarified that every installed library must add its own assistant entry and remain enabled independently alongside builtins and other libraries. The first iteration treated `claude-tmux` as only a Claude transport selector; that does not meet the requirement and is superseded. Give this library an independent GeckIt provider/session identity while delegating its Claude account and model operations as needed. Show the library in Settings > Assistants and Composer. Never make installing it disable or replace builtin Claude.
 
-Settings > Assistants now shows **Default transport: Stream/tmux** under Claude when that library is installed. Changing it controls new local conversations; the composer continues to control an individual conversation, and existing sessions keep their saved transport. Installation itself keeps the person's current Stream/tmux choice.
-
-Browser fixture review covered the full Settings dialog in light and dark themes at the default size and at 900 x 600. The selector menu and keyboard selection of tmux worked, the long removal error wrapped without clipping, and the failure retained the library row and confirmation. The running GeckIt Local window was unavailable to visual review because computer-use access was not approved; its installed manifest and saved settings were read directly. Native runtime behavior after restart remains unverified.
-
-### Claude tmux conversation ownership
+#### Claude tmux conversation ownership
 
 Alex reported tmux cards for conversations that were not created in GeckIt. The library shares Claude's native transcript directory, but that directory does not establish tmux ownership. Only sessions created with the tmux assistant in GeckIt, or explicitly restored under that assistant, belong to its history. Persisted GeckIt notes establish ownership across restarts; an active GeckIt conversation remains visible before its transcript reaches disk.
 
@@ -252,4 +261,6 @@ Alex reported tmux cards for conversations that were not created in GeckIt. The 
 
 Unrelated transcripts stay silent in tmux search and Hidden as well as on the board. No new copy, controls, timing thresholds, theme rules or layout are introduced. Existing hide, restore, fork and delete behavior applies to owned conversations. Filtering does not delete transcripts or notes. A shared native Claude ID alone must never create a second assistant identity.
 
-Verification of the isolated correction: all three ownership regressions pass, covering board/search/Hidden, persistence, new/forked conversations and queued conversations. Typecheck, targeted lint and desktop build pass. The full isolated suite was interrupted after more than two minutes without completing; a full-suite pass is not claimed. Native full-window light/dark, keyboard, scrolling and target viewport review was unavailable because Computer Use access to GeckIt was denied. Renderer components and styling were not changed.
+Verification: all three ownership regressions pass, covering board/search/Hidden, persistence, new/forked conversations and queued conversations. Typecheck, targeted lint and desktop build pass. Full suite: 664 passed, 19 failed; an isolated baseline without this correction reproduces exactly the same 19 failed test names. Native full-window light/dark, keyboard, scrolling and target viewport review was unavailable because Computer Use access to GeckIt was denied. Renderer components and styling were not changed.
+
+The settings preview visibly shows Claude Code and Claude Code (tmux) as separate rows alongside Codex and other libraries. Claude Code (tmux) uses a split-pane icon. A legacy manifest fixture (`id: claude-tmux`, `family: claude`) verified that switching builtin Claude off leaves Claude Code (tmux) on, and switching the library off leaves builtin Claude unchanged. Full-window light and dark screenshots at the available desktop viewport showed the distinct icons and independent switches; keyboard focus remains visible. Composer selection is wired through the same normalized provider list and was checked in source; this preview does not render the Composer. A 900 x 600 browser viewport and the native GeckIt Local window were unavailable for this follow-up review. Native runtime behavior remains unverified.

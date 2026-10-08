@@ -149,6 +149,8 @@ Sources: [Switcher](../client/src/renderer/src/chat/Switcher.tsx), [search](../c
 
 Sources: providers (`client/src/shared/providers.ts`), provider contract (`client/src/main/sessions/provider.ts`), [Claude](../client/src/main/sessions/claude.ts), [Codex](../client/src/main/sessions/codex.ts), [Status](../client/src/renderer/src/chat/Status.tsx), ModelDetails (`client/src/renderer/src/chat/ModelDetails.tsx`), ProviderUsage (`client/src/renderer/src/chat/ProviderUsage.tsx`).
 
+Assistant status update (2026-10-08, current working tree): desktop compact summaries cover every enabled assistant independently; the phone Tasks footer opens all accounts in a sheet. Plan, program version/installation, every reported quota and reset time remain in details. Claude SSH usage retains account grouping and disconnected last-measured labels. Evidence: `chat/AssistantStatus.tsx`, `chat/accounts.ts`, `chat/Status.tsx`, `chat/PhoneBoard.tsx`, `test/accounts.test.ts`, [UX](ux/assistant-status.md), [design and visual review](../specs/004-assistant-status/design.md). No released installer or device deployment is claimed.
+
 - Builtin Claude Code and Codex on the person's own signed-in subscription; select which assistants are enabled.
 - Choose the assistant for a new conversation; existing conversations keep their provider identity.
 - Manual, Auto and Plan modes, mapped to the provider's own permissions.
@@ -164,7 +166,7 @@ Sources: providers (`client/src/shared/providers.ts`), provider contract (`clien
 - Codex Chrome connection picker and persistent local names are present in the uncommitted tree.
 - Claude Remote Control can continue a conversation through claude.ai or the Claude app.
 - Hand over a supported conversation to a terminal using the provider's resume command.
-- Stream transport for builtin Claude; optional Claude tmux transport via a provider library. Choose the default for new local conversations in Settings > Assistants and change transport on individual conversations in the composer.
+- Builtin Claude Code and Claude Code (tmux) from its provider library appear as separately enabled assistants. The library delegates Claude account, model and native-history operations; its GeckIt session IDs are distinct. Existing conversations remain associated with the assistant they use.
 
 Claude tmux history correction (2026-10-08, current working tree): shared Claude transcripts do not establish ownership by the tmux assistant. Its board, search and Hidden results require a GeckIt-created or explicitly restored tmux conversation, using namespaced saved notes and active GeckIt session state. Builtin Claude retains its external-history behavior. Evidence: `Sessions.list`, `Sessions.search`, `Sessions.hidden` and tmux history regression cases in `client/test/sessions.test.ts`; [visibility rules](ux/provider-libraries.md#claude-tmux-conversation-ownership). Transcript and note deletion are not part of this correction. Native full-window light/dark, keyboard, scrolling and viewport verification was unavailable because Computer Use access to GeckIt was denied.
 
@@ -177,11 +179,11 @@ Sources: [SettingsDialog](../client/src/renderer/src/ui/SettingsDialog.tsx), plu
 Provider libraries and the independent external-provider example were extracted into main on 2026-10-08. Source support does not establish availability in a released installer. The integration excludes Agent VPN settings, admission gates and native routing. Validation passed: 668 tests, typecheck, source/test lint, desktop/mobile builds and the independent provider example test. Light/dark fixture review and keyboard/scroll checks are recorded in [Libraries UX](ux/provider-libraries.md#integration-verification); native runtime profiling and released-installer availability remain unverified.
 
 - Install several independent assistant libraries from public GitHub repository URLs.
-- Enable/disable installed independent assistants and select them in new conversations. Claude tmux extends Claude's existing identity, with a default transport choice and a per-conversation transport choice.
+- Every installed library adds its own assistant entry and can be enabled or disabled without replacing a builtin or other library; select it for new conversations.
 - Validate manifests, provider contract and prebuilt entry points during installation.
 - Display library identity, repository and update state in Settings > Libraries.
 - Automatic update checks at startup and every 24 hours; manual Check now.
-- Stage and validate updates, then load them after application restart.
+- Stage and validate updates, then apply them in Settings without restarting. Active turns finish on the old code; the next message resumes with the new version.
 - Confirm removal, move the installed copy to Trash and remove it from new assistant choices; restart unloads existing code.
 - Retain conversation notes and native history after library removal.
 - Support provider-specific account quotas, cost, model information and pricing.
@@ -328,7 +330,7 @@ Sources: [CLI](../client/src/cli/index.ts), [start](../client/src/cli/start.ts),
 - API-key correction/transcription settings from older versions are explicitly removed by [store migration](../client/src/main/store.ts). Current builtin correction uses the signed-in assistant; desktop speech uses local Whisper.
 - Older architecture docs describe Claude alone, or incorrectly describe Codex as Claude's stream-json process. Current code has separate Claude and Codex drivers; use the current provider definitions for support claims.
 - Earlier phone designs used a Shortcuts tab; current code uses Questions and opens shortcuts from Tasks/Settings.
-- Optional Claude tmux transport and standalone Codex Mirror are library integrations, not additional builtin assistants shipped unconditionally.
+- Claude Code (tmux) and Codex Mirror are optional library assistants, not builtin assistants shipped unconditionally.
 
 ### History checked
 

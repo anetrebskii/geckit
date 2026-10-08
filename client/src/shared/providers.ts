@@ -27,7 +27,6 @@ export interface PluginUpdateResult {
 }
 
 const CLAUDE_STREAM: LlmProviderInfo = { id: 'claude-stream', family: 'claude', transport: 'stream', name: 'Claude Code', shortName: 'Claude', icon: 'claude', browser: 'claude', loginCommand: 'claude auth login', planName: 'Claude' }
-const CLAUDE_TMUX: LlmProviderInfo = { id: 'claude-tmux', family: 'claude', transport: 'tmux', name: 'Claude Code (tmux)', shortName: 'Claude', icon: 'claude', browser: 'claude', loginCommand: 'claude auth login', planName: 'Claude', localOnly: true }
 const CODEX: LlmProviderInfo = { id: 'codex', family: 'codex', transport: undefined, name: 'Codex', shortName: 'Codex', icon: 'codex', browser: 'codex', loginCommand: 'codex login', planName: 'ChatGPT', localOnly: true, runtime: 'codex' }
 
 export const LLM_PROVIDERS: readonly LlmProviderInfo[] = [CLAUDE_STREAM, CODEX]
@@ -35,8 +34,16 @@ export const LLM_PROVIDERS: readonly LlmProviderInfo[] = [CLAUDE_STREAM, CODEX]
 export const instructionsFor = (provider: LlmProviderInfo): 'claude' | 'codex' | 'own' =>
   provider.instructions ?? (provider.family === 'claude' ? 'claude' : provider.runtime === 'codex' ? 'codex' : 'own')
 
+export const independentProviderInfo = (provider: LlmProviderInfo): LlmProviderInfo => {
+  if (provider.family !== 'claude' && provider.family !== 'codex') return provider
+  const { replaces: _replaces, transport: _transport, ...info } = provider
+  const id = provider.id === 'claude-tmux' ? 'plugin:claude-tmux' : provider.id
+  if (id === 'codex' || id === 'claude-stream') throw new Error('Library providers need an independent ID.')
+  return { ...info, id, family: id, instructions: provider.instructions ?? provider.family, ...(provider.family === 'codex' ? { runtime: 'codex' } : { shortName: 'Claude tmux', icon: 'tmux', resumeCommand: 'claude --resume {id}' }) }
+}
+
 export const selectableProviders = (settings: Pick<Settings, 'chatProviders' | 'providerPlugins'>): readonly LlmProviderInfo[] =>
-  [...LLM_PROVIDERS.map((one) => llmProviderInfo(one.family, 'stream', settings.providerPlugins)), ...settings.providerPlugins.filter((one) => one.family !== 'claude' && one.replaces === undefined)].filter((one) => settings.chatProviders.includes(one.family))
+  [...LLM_PROVIDERS, ...settings.providerPlugins.map(independentProviderInfo)].filter((one) => settings.chatProviders.includes(one.family))
 
 let installed: readonly LlmProviderInfo[] = []
 let iconPaths = new Map<string, string>()
@@ -54,11 +61,11 @@ export const modelVersion = (id: string): string | undefined => {
   return match === null ? undefined : [match[1], match[2]].filter((part) => part !== undefined).join('.')
 }
 
-export const llmProviderId = (family: SessionProvider, transport: ClaudeTransport = 'stream'): LlmProviderId =>
-  family === 'codex' ? 'codex' : family === 'claude' ? transport === 'tmux' ? 'claude-tmux' : 'claude-stream' : family
+export const llmProviderId = (family: SessionProvider, _transport: ClaudeTransport = 'stream'): LlmProviderId =>
+  family === 'codex' ? 'codex' : family === 'claude' ? 'claude-stream' : family
 
-export const llmProviderInfo = (family: SessionProvider, transport: ClaudeTransport = 'stream', plugins: readonly LlmProviderInfo[] = installed): LlmProviderInfo =>
-  family === 'codex' ? plugins.find((one) => one.replaces === 'codex') ?? CODEX : family === 'claude' ? transport === 'tmux' ? plugins.find((one) => one.id === 'claude-tmux') ?? CLAUDE_TMUX : CLAUDE_STREAM : plugins.find((one) => one.family === family) ?? {
+export const llmProviderInfo = (family: SessionProvider, _transport: ClaudeTransport = 'stream', plugins: readonly LlmProviderInfo[] = installed): LlmProviderInfo =>
+  family === 'codex' ? CODEX : family === 'claude' ? CLAUDE_STREAM : plugins.map(independentProviderInfo).find((one) => one.family === family) ?? {
     id: family, family, transport: undefined, name: family.slice('plugin:'.length), shortName: family.slice('plugin:'.length), icon: 'terminal', browser: 'none', loginCommand: '', planName: '',
   }
 

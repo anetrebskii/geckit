@@ -80,8 +80,8 @@ import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import { CodexSessions } from './sessions/codex'
 import { llmProvider } from './sessions/provider'
-import { installPlugin, installedPlugins, pluginHost, uninstallPlugin, updateInstalledPlugins } from './sessions/plugins'
-import { instructionsFor, registerProviderInfo } from '../shared/providers'
+import { applyReadyPlugin, installPlugin, installedPlugins, pluginHost, uninstallPlugin, updateInstalledPlugins } from './sessions/plugins'
+import { independentProviderInfo, instructionsFor, registerProviderInfo } from '../shared/providers'
 import type { PluginHost } from './sessions/plugins'
 import type { PluginUpdateResult } from '../shared/providers'
 import type { Asking, SessionsDeps } from './sessions'
@@ -406,13 +406,18 @@ async function build(held: Routes): Promise<Sessions> {
   const plugins = await installedPlugins(pluginsHost)
   registerProviderInfo(plugins.map((one) => one.info))
   const previous = getSettings()
-  const migrated = plugins.find((one) => one.info.family === one.info.id && previous.providerPlugins.some((old) => old.id === one.info.id && old.family === 'codex' && old.replaces === 'codex'))
   const available = new Set<SessionProvider>(['claude', 'codex', ...plugins.map((one) => one.info.family)])
-  const enabled = assistantsIn(previous).filter((one) => available.has(one))
+  const enabled = [...new Set([
+    ...assistantsIn(previous).filter((one) => available.has(one)),
+    ...previous.providerPlugins
+      .filter((old) => independentProviderInfo(old).family !== old.family)
+      .map(independentProviderInfo)
+      .filter((one) => plugins.some((plugin) => plugin.info.id === one.id))
+      .map((one) => one.family),
+  ])]
   if (enabled.length === 0) enabled.push('claude')
-  const extra = migrated !== undefined && enabled.includes('codex') ? [migrated.info.family] : []
-  const chatProviders = [...enabled, ...extra]
-  const chatProvider = previous.chatProvider === 'codex' && migrated !== undefined ? migrated.info.family : chatProviders.includes(previous.chatProvider) ? previous.chatProvider : chatProviders[0] ?? 'claude'
+  const chatProviders = enabled
+  const chatProvider = chatProviders.includes(previous.chatProvider) ? previous.chatProvider : chatProviders[0] ?? 'claude'
   setSettings({
     providerPlugins: plugins.map((one) => one.info),
     providerUpdatesReady: [],
@@ -420,7 +425,7 @@ async function build(held: Routes): Promise<Sessions> {
     chatProviders,
     chatProvider,
     correctProvider: available.has(previous.correctProvider) ? previous.correctProvider : chatProvider,
-    chatTransport: plugins.some((one) => one.info.id === 'claude-tmux') ? previous.chatTransport : 'stream',
+    chatTransport: 'stream',
   })
   return new Sessions({ ...deps, plugins: plugins.map((one) => one.provider) })
 }
@@ -1106,8 +1111,7 @@ function wire(): void {
       throw error
     }
     const providerPlugins = previous.providerPlugins.filter((one) => one.id !== id)
-    const independent = provider.family !== 'claude' && provider.replaces === undefined
-    const enabled = assistantsIn(previous).filter((one) => !independent || one !== provider.family)
+    const enabled = assistantsIn(previous).filter((one) => one !== provider.family)
     const fallback: SessionProvider = provider.runtime === 'codex' ? 'codex' : 'claude'
     const chatProviders: readonly SessionProvider[] = enabled.length > 0 ? enabled : [fallback]
     const chatProvider: SessionProvider = chatProviders.includes(previous.chatProvider) ? previous.chatProvider : chatProviders[0] ?? fallback
@@ -1117,11 +1121,23 @@ function wire(): void {
       providerRemovalPending: true,
       chatProviders,
       chatProvider,
-      correctProvider: independent && previous.correctProvider === provider.family ? chatProvider : previous.correctProvider,
-      ...(id === 'claude-tmux' ? { chatTransport: 'stream' as const } : {}),
+      correctProvider: previous.correctProvider === provider.family ? chatProvider : previous.correctProvider,
     })
     registerProviderInfo(providerPlugins)
     void sessions.refresh(getSettings().projects)
+  })
+  ipcMain.handle('chat:applyProviderUpdate', async (_event, id: string) => {
+    if (pluginsHost === undefined || sessions === undefined) throw new Error('Chat is not ready yet.')
+    const previous = getSettings()
+    if (!previous.providerUpdatesReady.includes(id)) throw new Error('No update is ready for this library. Check for updates and try again.')
+    const updated = await applyReadyPlugin(id, pluginsHost)
+    sessions.replaceProvider(updated.provider)
+    const current = getSettings()
+    const providerPlugins = current.providerPlugins.map((one) => one.id === id ? updated.info : one)
+    setSettings({ providerPlugins, providerUpdatesReady: current.providerUpdatesReady.filter((one) => one !== id) })
+    registerProviderInfo(providerPlugins)
+    void sessions.refresh(getSettings().projects)
+    return updated.info
   })
   ipcMain.handle('chat:checkProviderUpdates', () => checkProviderUpdates())
   ipcMain.handle('chat:models', (_event, root: string | undefined, provider: SessionProvider | undefined) => sessions?.models(root ?? undefined, provider))

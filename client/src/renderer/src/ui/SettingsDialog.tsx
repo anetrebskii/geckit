@@ -1,7 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ANYWHERE, UPDATE_CHANNELS, appName, assistantsIn, channelLabel, profileOf } from '../../../shared/api'
-import { instructionsFor, llmProviderInfo } from '../../../shared/providers'
+import { independentProviderInfo, instructionsFor, llmProviderInfo } from '../../../shared/providers'
 import type { LlmProviderInfo } from '../../../shared/providers'
 import type { Anywhere, OpenRule, PhoneView, ProjectProfile, SessionProvider, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
@@ -154,23 +154,37 @@ interface Part {
   readonly change: (change: Partial<Settings>) => void
 }
 
-const ProviderLibraryRow = memo(function ProviderLibraryRow({ provider, ready, confirming, removing, onAsk, onCancel, onRemove }: {
+const ProviderLibraryRow = memo(function ProviderLibraryRow({ provider, ready, applying, confirming, removing, onApply, onAsk, onCancel, onRemove }: {
   readonly provider: LlmProviderInfo
   readonly ready: boolean
+  readonly applying: boolean
   readonly confirming: boolean
   readonly removing: boolean
+  readonly onApply: (provider: LlmProviderInfo) => Promise<boolean>
   readonly onAsk: (id: LlmProviderInfo['id']) => void
   readonly onCancel: () => void
   readonly onRemove: (provider: LlmProviderInfo) => void
 }): React.JSX.Element {
   const removeButton = useRef<HTMLButtonElement>(null)
+  const focusAfterApply = useRef(false)
+  useLayoutEffect(() => {
+    if (!ready && focusAfterApply.current) {
+      focusAfterApply.current = false
+      removeButton.current?.focus()
+    }
+  }, [ready])
   const cancel = (): void => { onCancel(); removeButton.current?.focus() }
+  const apply = (): void => {
+    focusAfterApply.current = true
+    void onApply(provider).then((applied) => { if (!applied) focusAfterApply.current = false })
+  }
   return (
     <div className="provider-library-row">
       <span className="provider-library-icon"><Icon name={provider.icon} size={16} /></span>
       <span className="provider-library-copy"><strong>{provider.name}</strong><span title={provider.source}>{provider.source?.replace(/^https:\/\//, '') ?? 'Installed locally'}</span></span>
-      {ready ? <span className="provider-library-ready" title="Loads after restart">Update ready</span> : null}
-      <button ref={removeButton} type="button" className="quiet provider-library-remove" aria-label={`Remove ${provider.name}`} aria-expanded={confirming} disabled={removing} onClick={confirming ? cancel : () => onAsk(provider.id)}>Remove</button>
+      {ready ? <span className="provider-library-ready">Update ready</span> : null}
+      {ready ? <button type="button" className="quiet provider-library-apply" disabled={applying} onClick={apply}>{applying ? 'Applying…' : 'Apply update'}</button> : null}
+      <button ref={removeButton} type="button" className="quiet provider-library-remove" aria-label={`Remove ${provider.name}`} aria-expanded={confirming} disabled={removing || applying} onClick={confirming ? cancel : () => onAsk(provider.id)}>Remove</button>
       {confirming ? <div className="provider-library-confirm">
         <span>Remove {provider.name}? Its installed copy moves to Trash. Restart GeckIt to unload its code.</span>
         <div>
@@ -184,8 +198,8 @@ const ProviderLibraryRow = memo(function ProviderLibraryRow({ provider, ready, c
 
 function Assistants({ settings, change }: Part): React.JSX.Element {
   const enabled = assistantsIn(settings)
+  const providers = settings.providerPlugins.map(independentProviderInfo)
   const codexInfo = llmProviderInfo('codex', 'stream', settings.providerPlugins)
-  const tmuxInfo = settings.providerPlugins.find((one) => one.id === 'claude-tmux')
   const toggle = (provider: SessionProvider, on: boolean): void => {
     const chatProviders = on ? [...enabled, provider] : enabled.filter((one) => one !== provider)
     if (chatProviders.length === 0) return
@@ -202,13 +216,6 @@ function Assistants({ settings, change }: Part): React.JSX.Element {
           </span>
           <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Use Claude Code" aria-describedby="assistant-settings-note" checked={enabled.includes('claude')} disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(event) => toggle('claude', event.target.checked)} />
         </label>
-        {tmuxInfo === undefined ? null : <div className="assistant-guide">
-          <Picker label={`Default transport: ${settings.chatTransport === 'tmux' ? 'tmux' : 'Stream'}`} title="Claude Code transport for new conversations" chosen={settings.chatTransport} choices={[
-            { value: 'stream', label: 'Stream', says: 'Claude Code' },
-            { value: 'tmux', label: 'tmux', says: tmuxInfo.name, disabled: window.geckit.platform === 'win32' },
-          ]} onPick={(value) => change({ chatTransport: value === 'tmux' ? 'tmux' : 'stream' })} />
-          <span style={NOTE}>For new local conversations. Existing conversations keep their transport.</span>
-        </div>}
         <details className="assistant-guide">
           <summary>GeckIt instructions</summary>
           <label className="check"><input type="checkbox" checked={settings.guideClaude} onChange={(event) => change({ guideClaude: event.target.checked })} />Tell Claude Code how GeckIt works</label>
@@ -226,7 +233,7 @@ function Assistants({ settings, change }: Part): React.JSX.Element {
           <label className="check"><input type="checkbox" checked={settings.guideCodex} onChange={(event) => change({ guideCodex: event.target.checked })} />Tell Codex how GeckIt works</label>
           <span style={NOTE}>Writes GECKIT.md in ~/.codex and links it from ~/.codex/AGENTS.md. Turning this off removes both.</span>
         </details>
-        {settings.providerPlugins.filter((one) => one.family !== 'claude' && one.replaces === undefined).map((one) => {
+        {providers.map((one) => {
           const instructions = instructionsFor(one)
           return (
           <Fragment key={one.id}>
@@ -261,6 +268,8 @@ function Libraries({ settings, change }: Part): React.JSX.Element {
   const [installError, setInstallError] = useState('')
   const [checking, setChecking] = useState(false)
   const [checkMessage, setCheckMessage] = useState('')
+  const [applying, setApplying] = useState('')
+  const [applyError, setApplyError] = useState('')
   const [confirming, setConfirming] = useState('')
   const [removing, setRemoving] = useState('')
   const [removeError, setRemoveError] = useState('')
@@ -274,6 +283,22 @@ function Libraries({ settings, change }: Part): React.JSX.Element {
       else setRemoveError(error)
     }).finally(() => setRemoving(''))
   }, [])
+  const applyLibrary = useCallback(async (provider: LlmProviderInfo): Promise<boolean> => {
+    setApplying(provider.id)
+    setApplyError('')
+    setCheckMessage('')
+    try {
+      await window.geckit.chat.applyProviderUpdate(provider.id)
+      setCheckMessage(`${provider.name} updated.`)
+      return true
+    } catch (error) {
+      const reason = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, '') : String(error)
+      setApplyError(`Could not apply ${provider.name}. ${reason}`)
+      return false
+    } finally {
+      setApplying('')
+    }
+  }, [])
   useLayoutEffect(() => {
     if (adding) addForm.current?.scrollIntoView({ block: 'center' })
   }, [adding])
@@ -286,10 +311,11 @@ function Libraries({ settings, change }: Part): React.JSX.Element {
         <h3 id="provider-libraries-title">Libraries</h3>
         <button type="button" className="provider-library-add-button" onClick={() => setAdding(true)} disabled={adding}><Icon name="plus" size={14} />Add library</button>
       </div>
-      <p className="provider-library-intro">Providers from GitHub. Updates load after restart.</p>
-      {settings.providerPlugins.length === 0 ? adding ? null : <p className="provider-library-empty">No libraries installed.</p> : <div className="provider-library-list">{settings.providerPlugins.map((one) => <ProviderLibraryRow key={one.id} provider={one} ready={readyLibraries.has(one.id)} confirming={confirming === one.id} removing={removing === one.id} onAsk={askRemove} onCancel={cancelRemove} onRemove={removeLibrary} />)}</div>}
+      <p className="provider-library-intro">Providers from GitHub. Apply updates without restarting GeckIt.</p>
+      {settings.providerPlugins.length === 0 ? adding ? null : <p className="provider-library-empty">No libraries installed.</p> : <div className="provider-library-list">{settings.providerPlugins.map((one) => <ProviderLibraryRow key={one.id} provider={one} ready={readyLibraries.has(one.id)} applying={applying === one.id} confirming={confirming === one.id} removing={removing === one.id} onApply={applyLibrary} onAsk={askRemove} onCancel={cancelRemove} onRemove={removeLibrary} />)}</div>}
       {settings.providerRemovalPending ? <p ref={restartNotice} className="provider-library-restart" role="status" tabIndex={-1}>Restart GeckIt to unload removed libraries.</p> : null}
       {removeError === '' ? null : <span className="error" role="alert">{removeError}</span>}
+      {applyError === '' ? null : <span className="error" role="alert">{applyError}</span>}
       {adding ? <form ref={addForm} className="provider-library-add" onSubmit={(event) => {
           event.preventDefault()
           setInstalling(true)

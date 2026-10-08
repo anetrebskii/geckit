@@ -1193,6 +1193,7 @@ textarea {
   white-space: nowrap;
 }
 
+.provider-library-apply,
 .provider-library-remove {
   padding: 3px 5px;
   color: var(--text-dim);
