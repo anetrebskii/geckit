@@ -185,7 +185,7 @@ describe('holding a conversation', () => {
     const plugin = {
       ...original,
       id: 'plugin:codex-mirror' as const,
-      family: 'plugin:codex-mirror',
+      family: 'plugin:codex-mirror' as const,
       name: 'Codex Mirror',
       available: true,
       account: async () => ({ provider: 'plugin:codex-mirror' as const, here: true, signedIn: true }),
