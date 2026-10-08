@@ -1990,18 +1990,19 @@ describe('marking a conversation', () => {
     let limit = 0
     let created = 0
     const held = fakeClaude()
+    const providerId = family === 'codex' ? 'plugin:codex-review-test' : 'plugin:claude-tmux'
     const provider: LlmProvider = {
       ...llmProvider({}, family),
-      id: family === 'claude' ? 'claude-tmux' : 'plugin:codex-review-test',
-      ...(family === 'codex' ? { family: 'plugin:codex-review-test' } : {}),
+      id: providerId,
+      family: providerId,
       available: true,
-      account: async () => ({ provider: family === 'codex' ? 'plugin:codex-review-test' : family, here: true, signedIn: true }),
-      create: async () => family === 'codex' ? `plugin:codex-review-test:library-${created++}` : `library-${created++}`,
+      account: async () => ({ provider: providerId, here: true, signedIn: true }),
+      create: async () => `${providerId}:library-${created++}`,
       hold: held.claude,
       goal: async () => undefined,
     }
     const built = build({ plugins: [provider], transport: () => 'tmux', limit: () => limit })
-    const id = await built.sessions.send({ provider: family === 'codex' ? 'plugin:codex-review-test' : family, root: ROOT, mode: 'manual', text: 'First task' })
+    const id = await built.sessions.send({ provider: providerId, root: ROOT, mode: 'manual', text: 'First task' })
     held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     built.sessions.mark(id, 'review')
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Immediate followup' })
@@ -2012,7 +2013,7 @@ describe('marking a conversation', () => {
     held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     built.sessions.mark(id, 'review')
     limit = 1
-    await built.sessions.send({ provider: family === 'codex' ? 'plugin:codex-review-test' : family, root: ROOT, mode: 'manual', text: 'Occupy the slot' })
+    await built.sessions.send({ provider: providerId, root: ROOT, mode: 'manual', text: 'Occupy the slot' })
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Queued followup' })
     expect(of(built.rows, id)?.status).toBeUndefined()
     expect(of(built.rows, id)?.waits).toBe(true)

@@ -748,9 +748,9 @@ export class Sessions {
       for (const [id, row] of this.#rows) if (providerOf(id) === provider.family && roots.includes(row.project ?? row.root)) this.#rows.delete(id)
       for (const row of await provider.list(roots)) if (providerOf(row.id) === provider.family && this.#keptHistory(row.id)) this.#rows.set(row.id, row)
     }
-    const goalRows = codexRows.filter((row) => this.#live.get(row.id)?.driver === undefined && (this.#deps.notes.all()[row.id]?.goal !== undefined || row.id === this.#watching))
+    const goalRows = [...this.#rows.values()].filter((row) => this.#provider(providerOf(row.id)).nativeGoals && this.#live.get(row.id)?.driver === undefined && (this.#deps.notes.all()[row.id]?.goal !== undefined || row.id === this.#watching))
     const messages = goalRows.map((row) => this.#live.get(row.id)?.messages)
-    const goals = await Promise.all(goalRows.map((row) => this.#providers.codex.goal(row.root, row.id).catch(() => undefined)))
+    const goals = await Promise.all(goalRows.map((row) => this.#provider(providerOf(row.id)).goal(row.root, row.id).catch(() => undefined)))
     for (const [index, row] of goalRows.entries()) {
       const goal = goals[index]
       const note = this.#deps.notes.all()[row.id]
