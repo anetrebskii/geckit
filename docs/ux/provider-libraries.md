@@ -17,6 +17,7 @@ created: 2026-10-02
 |---|---|---|
 | Settings > Assistants | Компактные строки встроенных ассистентов; инструкции GeckIt раскрываются по запросу | Всегда |
 | Settings > Assistants | Codex Mirror как отдельная строка и переключатель рядом с Codex | Когда библиотека Codex Mirror подключена |
+| Settings > Assistants | Выбор Claude Stream или Claude tmux как транспорта по умолчанию для новых бесед | Когда подключена библиотека Claude tmux |
 | Settings > Libraries | Список репозиториев с именем провайдера, адресом и состоянием обновления | После первой установки |
 | Settings > Libraries | Компактный список, переключатель Automatic updates, Check now и Add library | На компьютере |
 | Settings > Libraries | Remove у каждой библиотеки, с подтверждением в той же строке | Когда библиотека подключена |
@@ -42,6 +43,7 @@ block-beta
 | Ввод адреса | Нажат Add library | Поле URL, Add и Cancel вместо пустого состояния | Вставить адрес и нажать Add |
 | Установка | Нажат Add, `git clone` ещё работает | «Adding library…» у кнопки | Ничего, действие закончится само |
 | Подключено | Провайдер загружен | Строка с именем, иконкой и адресом | Включить или выключить ассистента выше, если нужно |
+| Транспорт Claude | Подключён `claude-tmux` с семейством `claude` | Claude остаётся одной идентичностью ассистента; Settings > Assistants показывает выбор Stream/tmux для новых бесед. В Composer остаётся выбор транспорта текущей беседы. | Выбрать tmux, чтобы новые локальные беседы Claude использовали подключённый транспорт |
 | Проверка | Нажат Check now | «Checking…» у кнопки | Ничего, действие закончится само |
 | Обновление готово | Новая версия проверена и записана | «Update ready» у строки | Перезапустить GeckIt, когда удобно |
 | Подтверждение удаления | Нажат Remove у библиотеки | «Remove <name>? Its installed copy moves to Trash. Restart GeckIt to unload its code.» и кнопки Remove library, Cancel | Подтвердить или отменить |
@@ -164,6 +166,7 @@ flowchart LR
 - **Повтор:** Add блокируется, пока идёт установка; существующий репозиторий не устанавливается второй раз.
 - **Устаревшая копия:** новая версия пишется отдельно и подменяет файлы только после проверки; действующие беседы продолжают работать на уже загруженном коде до перезапуска.
 - **Два провайдера одного семейства:** ограничения интерфейса провайдеров сохраняются, в частности один заменитель Codex.
+- **Claude tmux:** это альтернативный транспорт существующего Claude Code, а не отдельный AI-ассистент. Не показывать его как независимую строку или дополнительное имя в выборе Assistant. При установленной библиотеке показать в Settings > Assistants выбор транспорта по умолчанию для новых бесед; в Composer оставить выбор транспорта текущей беседы. Установка сохраняет текущий выбор Stream/tmux, пока пользователь сам его не изменит.
 - **Codex Mirror:** после обновления прежней библиотеки-заменителя Codex остаётся включён, если он был включён; Mirror появляется отдельным включённым ассистентом. Выключение одного не выключает другой. Обе строки бесед могут вести к одной сессии Codex.
 - **Удаление библиотеки:** установленная копия отправляется в Trash, ожидающее обновление удаляется. GeckIt не удаляет свои заметки о беседах; файлы бесед провайдер держит сам. Ассистент исчезает из выбора сразу; работающий процесс может закончить текущий ответ, код выгружается после перезапуска. Повторная установка той же библиотеки требует перезапуска.
 
@@ -216,3 +219,21 @@ Alex authorized moving Libraries and independent external providers into main. P
 - Keyboard review confirmed URL autofocus, disabled empty submission, cancellation, visible focus, Escape closure with restored opener focus and scrolling to model pricing/quotas while retaining the title. Fixtures use in-memory settings; no live library was installed or removed.
 - Static performance review found the existing board/phone row memoization, stable conversation identity and memoized list ordering retained. Library rows use memoization with stable callbacks and offscreen content visibility; typing the repository URL does not invalidate unchanged row props. Provider icons are memoized by primitive props. Polling runs only while visible; formatter construction remains outside render loops. No new infinite animation was introduced. The mobile bundle was rebuilt.
 - Needs measuring: library-list rendering in the running integrated Electron app. Native runtime profiling, live installation/update, physical iPhone and released-installer availability were not verified. Browser fixtures establish visual behavior, not native runtime performance.
+
+### Failed removal diagnosis - 2026-10-08
+
+Alex reported a failed Codex Mirror removal in the actual Libraries screen. Keep the installed row and confirmation on failure, and preserve files and conversation history. The error must expose the actionable failure reason instead of hiding it behind a generic retry message.
+
+- File/removal failure: "Could not remove <name>. <reason>". Strip Electron invocation wrappers; if no usable reason is available, retain "Could not remove <name>. Try again."
+- If the running main process does not yet have the library-removal handler: "Restart GeckIt to finish updating library management, then try again." The running renderer can update before the main process restarts; retrying alone cannot load the new handler.
+- Successful removal still moves the library to Trash and requests restart to unload its code.
+
+The running app was verified on 2026-10-08: its library-removal handler was registered, a disposable-folder Trash probe passed, and retrying the reported Codex Mirror removal through that handler succeeded. The installed directory disappeared, `providerPlugins` became empty, `providerRemovalPending` became true and builtin Codex remained enabled. Conversation deletion was not invoked. The earlier screenshot failure could not be reproduced after the main process restarted; its underlying exception was hidden by the old generic error message.
+
+### Claude tmux discoverability - 2026-10-08
+
+Alex installed `geckit-claude-tmux` and expected another assistant. Its manifest declares `id: claude-tmux`, `family: claude`, `transport: tmux`; this extends Claude Code's existing identity. Settings saved the plugin and kept Claude enabled, but `chatTransport` remained `stream`. The independent assistant filters correctly omit another Claude row, leaving the composer transport choice as the only visible entry point.
+
+Settings > Assistants now shows **Default transport: Stream/tmux** under Claude when that library is installed. Changing it controls new local conversations; the composer continues to control an individual conversation, and existing sessions keep their saved transport. Installation itself keeps the person's current Stream/tmux choice.
+
+Browser fixture review covered the full Settings dialog in light and dark themes at the default size and at 900 x 600. The selector menu and keyboard selection of tmux worked, the long removal error wrapped without clipping, and the failure retained the library row and confirmation. The running GeckIt Local window was unavailable to visual review because computer-use access was not approved; its installed manifest and saved settings were read directly. Native runtime behavior after restart remains unverified.

@@ -164,7 +164,7 @@ Sources: providers (`client/src/shared/providers.ts`), provider contract (`clien
 - Codex Chrome connection picker and persistent local names are present in the uncommitted tree.
 - Claude Remote Control can continue a conversation through claude.ai or the Claude app.
 - Hand over a supported conversation to a terminal using the provider's resume command.
-- Stream transport for builtin Claude; optional Claude tmux transport via a provider library.
+- Stream transport for builtin Claude; optional Claude tmux transport via a provider library. Choose the default for new local conversations in Settings > Assistants and change transport on individual conversations in the composer.
 
 Builtin Codex is local-only in the current provider definition. SSH support must not be advertised as builtin Codex support. MCP, browser integration, Remote Control, history branching and other optional operations depend on the selected provider's capabilities.
 
@@ -175,7 +175,7 @@ Sources: [SettingsDialog](../client/src/renderer/src/ui/SettingsDialog.tsx), plu
 Provider libraries and the independent external-provider example were extracted into main on 2026-10-08. Source support does not establish availability in a released installer. The integration excludes Agent VPN settings, admission gates and native routing. Validation passed: 668 tests, typecheck, source/test lint, desktop/mobile builds and the independent provider example test. Light/dark fixture review and keyboard/scroll checks are recorded in [Libraries UX](ux/provider-libraries.md#integration-verification); native runtime profiling and released-installer availability remain unverified.
 
 - Install several independent assistant libraries from public GitHub repository URLs.
-- Enable/disable installed assistants independently and select them in new conversations.
+- Enable/disable installed independent assistants and select them in new conversations. Claude tmux extends Claude's existing identity, with a default transport choice and a per-conversation transport choice.
 - Validate manifests, provider contract and prebuilt entry points during installation.
 - Display library identity, repository and update state in Settings > Libraries.
 - Automatic update checks at startup and every 24 hours; manual Check now.

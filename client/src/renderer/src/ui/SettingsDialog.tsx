@@ -11,6 +11,7 @@ import { Icon } from './Icon'
 import { Picker } from './Menu'
 import { MOD, said } from './Shortcuts'
 import { Version } from './UpdateNotice'
+import { removeProviderLibrary } from '../../../shared/library-removal'
 
 /**
  * Settings, a section at a time: General, Profiles, Hosts, Phrases, Correct and dictation, Phone, Version.
@@ -184,6 +185,7 @@ const ProviderLibraryRow = memo(function ProviderLibraryRow({ provider, ready, c
 function Assistants({ settings, change }: Part): React.JSX.Element {
   const enabled = assistantsIn(settings)
   const codexInfo = llmProviderInfo('codex', 'stream', settings.providerPlugins)
+  const tmuxInfo = settings.providerPlugins.find((one) => one.id === 'claude-tmux')
   const toggle = (provider: SessionProvider, on: boolean): void => {
     const chatProviders = on ? [...enabled, provider] : enabled.filter((one) => one !== provider)
     if (chatProviders.length === 0) return
@@ -200,6 +202,13 @@ function Assistants({ settings, change }: Part): React.JSX.Element {
           </span>
           <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Use Claude Code" aria-describedby="assistant-settings-note" checked={enabled.includes('claude')} disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(event) => toggle('claude', event.target.checked)} />
         </label>
+        {tmuxInfo === undefined ? null : <div className="assistant-guide">
+          <Picker label={`Default transport: ${settings.chatTransport === 'tmux' ? 'tmux' : 'Stream'}`} title="Claude Code transport for new conversations" chosen={settings.chatTransport} choices={[
+            { value: 'stream', label: 'Stream', says: 'Claude Code' },
+            { value: 'tmux', label: 'tmux', says: tmuxInfo.name, disabled: window.geckit.platform === 'win32' },
+          ]} onPick={(value) => change({ chatTransport: value === 'tmux' ? 'tmux' : 'stream' })} />
+          <span style={NOTE}>For new local conversations. Existing conversations keep their transport.</span>
+        </div>}
         <details className="assistant-guide">
           <summary>GeckIt instructions</summary>
           <label className="check"><input type="checkbox" checked={settings.guideClaude} onChange={(event) => change({ guideClaude: event.target.checked })} />Tell Claude Code how GeckIt works</label>
@@ -260,7 +269,10 @@ function Libraries({ settings, change }: Part): React.JSX.Element {
   const removeLibrary = useCallback((provider: LlmProviderInfo): void => {
     setRemoving(provider.id)
     setRemoveError('')
-    void window.geckit.chat.uninstallProvider(provider.id).then(() => setConfirming('')).catch(() => setRemoveError(`Could not remove ${provider.name}. Try again.`)).finally(() => setRemoving(''))
+    void removeProviderLibrary(window.geckit.chat, provider).then((error) => {
+      if (error === undefined) setConfirming('')
+      else setRemoveError(error)
+    }).finally(() => setRemoving(''))
   }, [])
   useLayoutEffect(() => {
     if (adding) addForm.current?.scrollIntoView({ block: 'center' })
