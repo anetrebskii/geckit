@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 
 import { planLine, programLine, shownProjects } from '../../../shared/api'
-import type { CodexLimitWindow, GitState, PlanUsage, PlanWindow } from '../../../shared/api'
+import { isCodexProvider, llmProviderInfo } from '../../../shared/providers'
+import { accountUsage, money } from '../../../shared/provider-usage'
+import { QuotaStats } from './ProviderUsage'
+import { Meter, until } from './UsageMeter'
+export { Meter, until } from './UsageMeter'
+import type { GitState, PlanUsage, PlanWindow } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
@@ -22,36 +27,6 @@ export const tokens = (count: number): string =>
   count >= 1_000_000 ? `${String(Math.round(count / 100_000) / 10)}M` : `${String(Math.round(count / 1000))}k`
 
 export const dollars = (cost: number): string => `$${cost < 10 ? cost.toFixed(2) : String(Math.round(cost))}`
-
-export function until(at: number, now: number): string {
-  const minutes = Math.max(0, Math.round((at - now) / 60_000))
-  const days = Math.floor(minutes / 1440)
-  const hours = Math.floor((minutes % 1440) / 60)
-  if (days > 0) return `${String(days)}d ${String(hours)}h`
-  if (hours > 0) return `${String(hours)}h ${String(minutes % 60)}m`
-  return `${String(minutes)}m`
-}
-
-/** The same thresholds a terminal status line uses: fine, getting there, nearly out. */
-const tone = (part: number): string => (part >= 0.9 ? 'high' : part >= 0.7 ? 'mid' : 'low')
-
-export function Meter({ part }: { readonly part: number }): React.JSX.Element {
-  return (
-    <span className={`meter ${tone(part)}`}>
-      <span style={{ width: `${String(Math.min(100, Math.round(part * 100)))}%` }} />
-    </span>
-  )
-}
-
-const resetTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-
-function CodexWindow({ name, window, now }: { readonly name: string; readonly window: CodexLimitWindow; readonly now: number }): React.JSX.Element {
-  const minutes = window.windowDurationMins
-  const duration = minutes === null ? 'Limit' : minutes === 10080 ? 'Week' : minutes % 1440 === 0 ? `${String(minutes / 1440)}d` : minutes % 60 === 0 ? `${String(minutes / 60)}h` : `${String(minutes)}m`
-  const resets = window.resetsAt === null ? undefined : window.resetsAt * 1000
-  const label = name === '' ? duration : `${name} ${duration}`
-  return <span className="stat" title={`${label}: ${String(Math.round(window.usedPercent))}% used${resets === undefined ? '' : `, resets ${resetTime.format(resets)}`}`}><span>{label}</span><Meter part={window.usedPercent / 100} /><span className="value">{Math.round(window.usedPercent)}%{resets === undefined ? null : <span className="resets">, resets in {until(resets, now)}</span>}</span></span>
-}
 
 function Window({ name, window, now }: { readonly name: string; readonly window: PlanWindow; readonly now: number }): React.JSX.Element {
   const at = new Date(window.resetsAt)
@@ -156,15 +131,15 @@ export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly on
   return (
     <div className="talk-status">
       {shownGit === undefined ? null : <Git git={shownGit} now={now} />}
-      {model === undefined ? null : <span className="stat" title={`Model reported by ${chat.provider === 'codex' ? 'Codex' : 'Claude Code'} for this conversation: ${model}. The composer selects the model for the next message.`}><span>Model</span><span className="value">{modelLabel}</span></span>}
-      {chat.provider !== 'codex' || chat.session?.actualReasoning === undefined ? null : <span className="stat" title="Reasoning level reported by Codex for this conversation. The composer selects the level for the next message."><span>Reasoning</span><span className="value">{chat.session.actualReasoning === 'xhigh' ? 'Extra high' : chat.session.actualReasoning.charAt(0).toUpperCase() + chat.session.actualReasoning.slice(1)}</span></span>}
+      {model === undefined ? null : <span className="stat" title={`Model reported by ${llmProviderInfo(chat.provider).name} for this conversation: ${model}. The composer selects the model for the next message.`}><span>Model</span><span className="value">{modelLabel}</span></span>}
+      {!isCodexProvider(chat.provider) || chat.session?.actualReasoning === undefined ? null : <span className="stat" title="Reasoning level reported by Codex for this conversation. The composer selects the level for the next message."><span>Reasoning</span><span className="value">{chat.session.actualReasoning === 'xhigh' ? 'Extra high' : chat.session.actualReasoning.charAt(0).toUpperCase() + chat.session.actualReasoning.slice(1)}</span></span>}
       {spend?.used === undefined ? null : (
         <span
           className="stat"
           title={
             spend.window === undefined
               ? `${spend.used.toLocaleString()} tokens in this conversation`
-              : `${spend.used.toLocaleString()} of ${spend.window.toLocaleString()} tokens in this conversation. ${chat.provider === 'codex' ? 'Codex' : 'Claude Code'} summarises it when it fills.`
+              : `${spend.used.toLocaleString()} of ${spend.window.toLocaleString()} tokens in this conversation. ${llmProviderInfo(chat.provider).name} summarises it when it fills.`
           }
         >
           <span>Context</span>
@@ -194,10 +169,10 @@ export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly on
       {spend?.cost === undefined ? null : (
         <span
           className="stat"
-          title="What this conversation would have cost at API prices, as Claude Code counts it. The plan covers it."
+          title={spend.costKind === 'billed' ? 'Cost reported as billed by the provider.' : 'Conversation cost at API prices, reported by the provider. This is not a subscription charge.'}
         >
-          <span>Cost</span>
-          <span className="value">{dollars(spend.cost)}</span>
+          <span>{spend.costKind === 'billed' ? 'Billed cost' : 'API equivalent'}</span>
+          <span className="value">{money(spend.cost, spend.currency)}</span>
         </span>
       )}
     </div>
@@ -236,7 +211,7 @@ function Compact({
   )
 }
 
-export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
+export function Status({ chat }: { readonly chat: Pick<Chat, 'provider' | 'account' | 'session' | 'chosen' | 'settings' | 'hosts' | 'plans' | 'plan' | 'plansAt' | 'trouble'> }): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   // Whose plan, and which Claude Code spends it: an older one runs fewer models.
   const program = chat.account?.program
@@ -253,7 +228,7 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
     only === undefined
       ? ''
       : host === undefined
-        ? [place === '' ? undefined : hostNamed(place), planLine(chat.account), programLine(chat.account)].filter((part) => part !== undefined).join(' · ')
+        ? [place === '' ? undefined : hostNamed(place), planLine(chat.account, chat.provider), programLine(chat.account, chat.provider)].filter((part) => part !== undefined).join(' · ')
         : [host.name, host.plan === undefined ? undefined : `Your Claude ${host.plan} plan`, host.version === undefined ? undefined : `Claude Code ${host.version}`]
             .filter((part) => part !== undefined)
             .join(' · ')
@@ -265,10 +240,12 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
     return () => clearInterval(tick)
   }, [])
 
-  if (chat.provider === 'codex') return <div className="status-bar"><span className="spacer" /><span className={`lead${chat.trouble === '' ? '' : ' trouble'}`}>{chat.trouble || (chat.account === undefined ? 'Looking for Codex...' : [planLine(chat.account), programLine(chat.account)].filter((one) => one !== undefined).join(' · '))}</span>{chat.account?.limits === undefined ? <span className="stat">Limits unavailable</span> : chat.account.limits.flatMap((limit, index) => [limit.primary, limit.secondary].flatMap((window, at) => window === null ? [] : [<CodexWindow key={`${limit.limitId ?? String(index)}:${String(at)}`} name={limit.limitId === 'codex' || chat.account?.limits?.length === 1 ? '' : limit.limitName ?? limit.limitId ?? 'Codex'} window={window} now={now} />]))}</div>
+  if (chat.provider !== 'claude') return <div className="status-bar"><div className="status-details" role="group" aria-label="Provider account and usage" tabIndex={0}><span className="spacer" /><span className={`lead${chat.trouble === '' ? '' : ' trouble'}`}>{chat.trouble || (chat.account === undefined ? `Looking for ${llmProviderInfo(chat.provider).name}...` : [planLine(chat.account, chat.provider), programLine(chat.account, chat.provider)].filter((one) => one !== undefined).join(' · '))}</span><QuotaStats usage={accountUsage(chat.account)} now={now} /></div></div>
 
   return (
     <div className="status-bar">
+
+      <div className="status-details" role="group" aria-label="Provider account and usage" tabIndex={0}>
       <span className="spacer" />
       {ON_PHONE || only !== undefined || chat.trouble !== ''
         ? null
@@ -309,6 +286,7 @@ export function Status({ chat }: { readonly chat: Chat }): React.JSX.Element {
       )}
       {only === undefined ? null : plan?.fiveHour === undefined ? <span className="stat plan-item">5h —</span> : <Window name="5h" window={plan.fiveHour} now={now} />}
       {only === undefined ? null : plan?.sevenDay === undefined ? <span className="stat plan-item">Week —</span> : <Window name="Week" window={plan.sevenDay} now={now} />}
+      </div>
     </div>
   )
 }

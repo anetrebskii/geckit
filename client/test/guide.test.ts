@@ -5,6 +5,9 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { GUIDE, keepCodexGuide, keepGuide } from '../src/main/guide'
+import { memoryNotes, Sessions } from '../src/main/sessions'
+import { llmProvider } from '../src/main/sessions/provider'
+import type { LlmProvider } from '../src/main/sessions/provider'
 
 describe('what Claude Code is told about GeckIt', () => {
   let folder = ''
@@ -76,5 +79,25 @@ describe('what Claude Code is told about GeckIt', () => {
     await keepCodexGuide(false)
     expect(await read('GECKIT.md')).toBe('gone')
     expect(await read('AGENTS.md')).toBe('# Mine\n\nAnswer in English.\n')
+  })
+
+  it('sets each built-in provider instructions through the provider contract', async () => {
+    await llmProvider({}, 'claude').setInstructions(true, { work: 'Work Chrome' })
+    expect(await read('CLAUDE.md')).toContain('@GECKIT.md')
+    expect(await read('GECKIT.md')).toContain('Work Chrome')
+    await llmProvider({}, 'claude').setInstructions(false, {})
+    await llmProvider({}, 'codex').setInstructions(true, {})
+    expect(await read('AGENTS.md')).toContain('GECKIT.md')
+    await llmProvider({}, 'codex').setInstructions(false, {})
+    expect(await read('GECKIT.md')).toBe('gone')
+  })
+
+  it('passes independent and shared settings to plugin instruction methods', async () => {
+    const called: [string, boolean][] = []
+    const kimi: LlmProvider = { ...llmProvider({}, 'claude'), id: 'plugin:kimi', family: 'plugin:kimi', setInstructions: async (enabled) => { called.push(['kimi', enabled]) } }
+    const mirror: LlmProvider = { ...llmProvider({}, 'codex'), id: 'plugin:codex-mirror', family: 'plugin:codex-mirror', runtime: 'codex', setInstructions: async (enabled) => { called.push(['mirror', enabled]) } }
+    const sessions = new Sessions({ notes: memoryNotes(), changed: () => {}, items: () => {}, account: () => {}, notify: () => {}, plugins: [kimi, mirror] })
+    await sessions.setAllInstructions({ guideClaude: true, guideCodex: false, guidePlugins: { 'plugin:kimi': false }, browserNames: {}, providerPlugins: [kimi, mirror] })
+    expect(called).toEqual([['kimi', false], ['mirror', false]])
   })
 })

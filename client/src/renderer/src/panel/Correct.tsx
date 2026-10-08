@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { CorrectAction, ModelsSaid, SessionProvider, Settings } from '../../../shared/api'
 import { assistantFor, assistantsIn, modelName } from '../../../shared/api'
+import { isCodexProvider, llmProviderInfo, registerProviderInfo, selectableProviders } from '../../../shared/providers'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 import type { Choice } from '../ui/Menu'
@@ -31,6 +32,7 @@ export function Correct({
   readonly settings: Settings
   readonly change: (change: Partial<Settings>) => void
 }): React.JSX.Element {
+  registerProviderInfo(settings.providerPlugins)
   const [text, setText] = useState('')
   const [before, setBefore] = useState<string | undefined>()
   const [working, setWorking] = useState(false)
@@ -45,9 +47,9 @@ export function Correct({
 
   const enabled = assistantsIn(settings)
   const provider = assistantFor({ ...settings, chatProvider: settings.correctProvider })
-  const model = provider === 'codex' ? settings.correctCodexModel : settings.correctPlanModel
+  const model = isCodexProvider(provider) ? settings.correctCodexModel : settings.correctPlanModel
   const catalog = models?.provider === provider ? models.said : 'unasked'
-  const assistant = provider === 'codex' ? 'Codex' : 'Claude Code'
+  const assistant = llmProviderInfo(provider, 'stream', settings.providerPlugins).name
 
   useEffect(() => field.current?.focus(), [])
 
@@ -190,7 +192,7 @@ export function Correct({
       </div>
 
       <div className="footer">
-        {enabled.length < 2 ? <span>{assistant}</span> : <Picker label={assistant} choices={enabled.map((one) => ({ value: one, label: one === 'codex' ? 'Codex' : 'Claude Code' }))} chosen={provider} title="Assistant" disabled={working} onPick={(value) => change({ correctProvider: value as SessionProvider })} />}
+        {enabled.length < 2 ? <span>{assistant}</span> : <Picker label={assistant} choices={selectableProviders(settings).map((one) => ({ value: one.family, label: one.name, icon: one.icon }))} chosen={provider} title="Assistant" disabled={working} onPick={(value) => change({ correctProvider: value as SessionProvider })} />}
         <Picker
           label={<span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{named}</span>}
           choices={planChoices}
@@ -200,7 +202,7 @@ export function Correct({
           onOpen={askModels}
           onPick={(value) => {
             if (value === '__asking') return
-            change(provider === 'codex' ? { correctCodexModel: value } : { correctPlanModel: value })
+            change(isCodexProvider(provider) ? { correctCodexModel: value } : { correctPlanModel: value })
           }}
         />
       </div>

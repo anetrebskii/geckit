@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { assistantFor, assistantsIn, modelName, SESSION_MODES, shownProjects } from '../../../shared/api'
+import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
 import type { ClaudeModel, ModelsSaid, SessionMode, SessionProvider, Shortcut, ShortcutDraft } from '../../../shared/api'
 import { isRemote } from '../../../shared/hosts'
 import { cronOf, describeCron, describeTime, nextRun, nextTimed, WEEKDAYS, whenOf } from '../../../shared/schedule'
@@ -70,8 +71,8 @@ export function ShortcutList({
       prompt: '',
       mode: 'auto',
       provider,
-      model: provider === 'codex' ? chat.settings.codexModel : chat.settings.chatModel,
-      ...(provider === 'codex' ? { reasoning: chat.settings.codexReasoning } : {}),
+      model: isCodexProvider(provider) ? chat.settings.codexModel : chat.settings.chatModel,
+      ...(isCodexProvider(provider) ? { reasoning: chat.settings.codexReasoning } : {}),
       on: true,
     }
   }
@@ -112,14 +113,15 @@ export function ShortcutList({
               const next = nextTimed(one, now)
               const running = busy(chat, one.lastSession)
               const provider = one.provider ?? 'claude'
-              const available = assistantsIn(chat.settings).includes(provider) && (provider !== 'codex' || !isRemote(one.root))
+              const info = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
+              const available = assistantsIn(chat.settings).includes(provider) && (info.localOnly !== true || !isRemote(one.root))
               return (
                 <div key={one.id} className="shortcut-row">
                   <button type="button" className="shortcut-text" title="Edit" onClick={() => setEditing(one)}>
                     <span className="shortcut-name">{one.name}</span>
                     <span className="shortcut-when">
                       <span className="tinted" style={tint(projectColor(one.root, chat.settings))}>{projectLabel(one.root)}</span>
-                      <span>{provider === 'codex' ? 'Codex' : 'Claude Code'}</span>
+                      <span>{info.name}</span>
                       {available ? null : <span>Assistant unavailable</span>}
                       {one.cron === undefined ? null : <span>{one.on ? describeCron(one.cron) : 'Timetable paused'}</span>}
                       {running ? (
@@ -183,8 +185,9 @@ function Editor({
   const [draft, setDraft] = useState<ShortcutDraft>(given)
   const provider = draft.provider ?? 'claude'
   const enabled = assistantsIn(chat.settings)
-  const available = enabled.includes(provider) && (provider !== 'codex' || !isRemote(draft.root))
-  const assistant = provider === 'codex' ? 'Codex' : 'Claude Code'
+  const info = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
+  const available = enabled.includes(provider) && (info.localOnly !== true || !isRemote(draft.root))
+  const assistant = info.name
   const [askedModels, setAskedModels] = useState<{ readonly provider: SessionProvider; readonly root: string; readonly said: ModelsSaid }>()
   useEffect(() => {
     if (!available) return
@@ -227,7 +230,7 @@ function Editor({
   const ready = name !== '' && draft.root !== '' && draft.prompt.trim() !== '' && (draft.cron === undefined || next !== undefined)
   const save = (): void => {
     if (!ready) return
-    void window.geckit.shortcuts.save({ ...draft, provider, ...(provider !== 'codex' ? {} : { reasoning }), name, prompt: draft.prompt.trim() }).then(onDone)
+    void window.geckit.shortcuts.save({ ...draft, provider, ...(!isCodexProvider(provider) ? {} : { reasoning }), name, prompt: draft.prompt.trim() }).then(onDone)
   }
 
   const time = (
@@ -278,7 +281,7 @@ function Editor({
           chosen={provider}
           choices={[
             ...(enabled.includes(provider) ? [] : [{ value: provider, label: assistant, disabled: true, says: 'Disabled in Settings' }]),
-            ...enabled.map((one) => ({ value: one, label: one === 'codex' ? 'Codex' : 'Claude Code', ...(one === 'codex' && isRemote(draft.root) ? { disabled: true, says: 'Local folders only' } : {}) })),
+            ...selectableProviders(chat.settings).map((one) => ({ value: one.family, label: one.name, icon: one.icon, ...(one.localOnly === true && isRemote(draft.root) ? { disabled: true, says: 'Local folders only' } : {}) })),
           ]}
           className="select"
           disabled={enabled.length === 1 && enabled.includes(provider)}
@@ -314,8 +317,8 @@ function Editor({
         />
         <span className="shortcut-next">
           {(draft.goal ?? '').trim() === ''
-            ? `No goal: the run stops when ${provider === 'codex' ? 'Codex' : 'Claude'} is done, and the card stays In progress.`
-            : `${provider === 'codex' ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review.`}
+            ? `No goal: the run stops when ${isCodexProvider(provider) ? 'Codex' : 'Claude'} is done, and the card stays In progress.`
+            : `${isCodexProvider(provider) ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review.`}
         </span>
       </div>
 
@@ -324,7 +327,7 @@ function Editor({
           <label>What it may do</label>
           <Picker
             label={SESSION_MODES.find((one) => one.mode === draft.mode)?.label ?? 'Auto'}
-            choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: provider === 'codex' ? one.mode === 'manual' ? 'Asks before running untrusted commands. Uses a sandbox.' : one.mode === 'auto' ? 'Works in a sandbox. Codex reviews requests for more access.' : 'Reads and proposes. Changes nothing.' : one.why }))}
+            choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: isCodexProvider(provider) ? one.mode === 'manual' ? 'Asks before running untrusted commands. Uses a sandbox.' : one.mode === 'auto' ? 'Works in a sandbox. Codex reviews requests for more access.' : 'Reads and proposes. Changes nothing.' : one.why }))}
             chosen={draft.mode}
             explained
             {...(draft.cron === undefined
@@ -345,13 +348,13 @@ function Editor({
               if (value === '__asking') return
               const { model: _model, ...rest } = draft
               const next = value === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === value)
-              setDraft({ ...rest, ...(value === '' ? {} : { model: value }), ...(provider !== 'codex' ? {} : { reasoning: next?.reasoning?.some((one) => one.value === reasoning) === true ? reasoning : '' }) })
+              setDraft({ ...rest, ...(value === '' ? {} : { model: value }), ...(!isCodexProvider(provider) ? {} : { reasoning: next?.reasoning?.some((one) => one.value === reasoning) === true ? reasoning : '' }) })
             }}
           />
         </div>
       </div>
 
-      {provider !== 'codex' ? null : <div className="field">
+      {!isCodexProvider(provider) ? null : <div className="field">
         <label>Reasoning</label>
         <Picker label={reasoningLabel} choices={reasoningChoices} chosen={reasoning} className="select" onPick={(value) => change({ reasoning: value as NonNullable<Shortcut['reasoning']> })} />
       </div>}

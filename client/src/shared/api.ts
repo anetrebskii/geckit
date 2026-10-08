@@ -1,5 +1,7 @@
 import { isRemote } from './hosts'
 import type { HostConfig } from './hosts'
+import type { LlmProviderInfo } from './providers'
+import { llmProviderInfo } from './providers'
 
 /**
  * The contract between the main process and the windows.
@@ -13,6 +15,7 @@ import type { HostConfig } from './hosts'
 export type SessionMode = 'manual' | 'auto' | 'plan'
 
 export type SessionProvider = 'claude' | 'codex' | `plugin:${string}`
+export type ClaudeTransport = 'stream' | 'tmux'
 
 export const providerOf = (id: string): SessionProvider => {
   if (id.startsWith('codex:')) return 'codex'
@@ -27,10 +30,11 @@ export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | '
 
 export const assistantsIn = (settings: Pick<Settings, 'chatProviders'>): readonly SessionProvider[] => settings.chatProviders.length === 0 ? ['claude'] : settings.chatProviders
 
-export function assistantFor(settings: Pick<Settings, 'chatProviders' | 'chatProvider'>, root = ''): SessionProvider {
+export function assistantFor(settings: Pick<Settings, 'chatProviders' | 'chatProvider'> & Partial<Pick<Settings, 'providerPlugins'>>, root = ''): SessionProvider {
   const enabled = assistantsIn(settings)
-  if (isRemote(root) && enabled.includes('claude')) return 'claude'
-  return enabled.includes(settings.chatProvider) ? settings.chatProvider : enabled[0] ?? 'claude'
+  const available = (provider: SessionProvider): boolean => !isRemote(root) || llmProviderInfo(provider, 'stream', settings.providerPlugins).localOnly !== true
+  if (enabled.includes(settings.chatProvider) && available(settings.chatProvider)) return settings.chatProvider
+  return enabled.find(available) ?? enabled[0] ?? 'claude'
 }
 
 export interface CodexLimitWindow {
@@ -212,6 +216,32 @@ export interface SessionSpend {
   readonly used?: number
   readonly window?: number
   readonly cost?: number
+  readonly currency?: string
+  readonly costKind?: 'api-equivalent' | 'billed'
+}
+
+export interface ProviderQuota extends Partial<PlanWindow> {
+  readonly id: string
+  readonly name: string
+  readonly used?: number
+  readonly limit?: number
+  readonly unit?: string
+}
+
+export interface ProviderUsage {
+  readonly quotas?: readonly ProviderQuota[]
+  readonly measuredAt?: number
+}
+
+/** Prices in the named currency per million tokens. Omitted rates are unknown. */
+export interface ModelPricing {
+  readonly currency: string
+  readonly input?: number
+  readonly output?: number
+  readonly cacheRead?: number
+  readonly cacheWrite?: number
+  readonly source?: string
+  readonly asOf?: string
 }
 
 /** Where a project's git checkout stands. */
@@ -289,6 +319,7 @@ export interface SessionNotice {
 /** One row in the sidebar. */
 export interface ChatSession {
   readonly provider?: SessionProvider
+  readonly transport?: ClaudeTransport
   readonly reasoning?: ReasoningEffort | ''
   readonly actualReasoning?: ReasoningEffort
   /** Claude Code's own id for it, which is what `claude --resume` takes. */
@@ -416,6 +447,7 @@ export interface Browser {
   readonly current: boolean
 }
 
+
 /** A picture sent with a message: what it is, and the picture itself as base64. */
 export interface SessionImage {
   readonly media: string
@@ -505,6 +537,7 @@ export interface SessionItems {
  * plan and never the secret, which is the one thing GeckIt must not hold.
  */
 export interface ClaudeAccount {
+  readonly usage?: ProviderUsage
   readonly provider?: SessionProvider
   readonly limits?: readonly CodexRateLimit[]
   /** The command answered on this machine. */
@@ -538,6 +571,7 @@ export interface ClaudeProgram {
 
 /** One model the tool says it has, in the tool's own words. */
 export interface ClaudeModel {
+  readonly pricing?: ModelPricing
   readonly reasoning?: readonly { readonly value: ReasoningEffort; readonly says: string }[]
   readonly defaultReasoning?: ReasoningEffort
   readonly isDefault?: boolean
@@ -549,6 +583,13 @@ export interface ClaudeModel {
   readonly says?: string
   /** The id it stands for, where the tool says: `claude-sonnet-5`. */
   readonly id?: string
+  /** Numeric release from the model's reported ID, where identifiable: `4.5`. */
+  readonly version?: string
+  readonly contextWindow?: number
+  readonly maxOutputTokens?: number
+  readonly supportsAdaptiveThinking?: boolean
+  readonly supportsFastMode?: boolean
+  readonly supportsAutoMode?: boolean
   /** Named by the tool and not runnable by it. What it says is its reason: `Update to 2.1.280+ to use Opus 5.5`. */
   readonly disabled?: true
 }
@@ -582,9 +623,16 @@ export function modelName(id: string): string {
 }
 
 /** Whose plan a question is about to be spent from, for the line over the composer. */
-export function planLine(account: ClaudeAccount | undefined): string {
-  if (account?.provider === 'codex') {
-    if (!account.here) return 'codex is not on this computer'
+export function planLine(account: ClaudeAccount | undefined, provider: SessionProvider = account?.provider ?? 'claude'): string {
+  if (provider !== 'claude' && provider !== 'codex') {
+    const info = llmProviderInfo(provider)
+    if (account === undefined || !account.here) return `${info.name} is not on this computer`
+    if (account.signedIn === false) return info.loginCommand === '' ? 'Nobody is signed in' : `Nobody is signed in. Run ${info.loginCommand} in a terminal.`
+    if (account.key === true && info.planName !== '') return 'Signed in with an API key, not a plan'
+    return info.planName === '' ? 'On this computer' : account.plan === undefined ? `Your ${info.planName} plan` : `Your ${info.planName} ${account.plan} plan`
+  }
+  if (provider === 'codex') {
+    if (account === undefined || !account.here) return 'codex is not on this computer'
     if (account.signedIn === false) return 'Nobody is signed in. Run codex login in a terminal.'
     if (account.key === true) return 'Signed in with an API key, not a plan'
     return account.plan === undefined ? 'Your ChatGPT plan' : `Your ChatGPT ${account.plan} plan`
@@ -597,14 +645,22 @@ export function planLine(account: ClaudeAccount | undefined): string {
 }
 
 /** Which Claude Code answers, for the foot of the model menu and the line along the bottom: "Claude Code 2.1.283 from Homebrew". */
-export function programLine(account: ClaudeAccount | undefined): string | undefined {
+export function programLine(account: ClaudeAccount | undefined, provider: SessionProvider = account?.provider ?? 'claude'): string | undefined {
   const program = account?.program
   if (program === undefined) return undefined
-  return `${account?.provider === 'codex' ? 'Codex' : 'Claude Code'} ${program.version}${program.from === undefined ? '' : ` from ${program.from}`}`
+  return `${llmProviderInfo(provider).name} ${program.version}${program.from === undefined ? '' : ` from ${program.from}`}`
 }
 
 /** What continues a session in a terminal opened in its folder. */
-export const resumeCommand = (id: string): string => providerOf(id) === 'codex' ? `codex resume ${id.slice(6)}` : `claude --resume ${id}`
+export const resumeCommand = (id: string): string | undefined => {
+  const provider = providerOf(id)
+  if (provider === 'codex') return `codex resume ${id.slice(6)}`
+  if (provider === 'claude') return `claude --resume ${id}`
+  const template = llmProviderInfo(provider).resumeCommand
+  if (template === undefined) return undefined
+  const session = id.slice(provider.length + 1).replaceAll("'", "'\\''")
+  return template.replaceAll('{id}', `'${session}'`)
+}
 
 /* ------------------------------------------------------------------ */
 /* Correct                                                             */
@@ -884,8 +940,13 @@ export interface Settings {
   readonly browserNames: Readonly<Record<string, string>>
   /** The model the next new session is handed. Empty is Default. */
   readonly chatModel: string
+  readonly chatTransport: ClaudeTransport
   readonly chatProvider: SessionProvider
   readonly chatProviders: readonly SessionProvider[]
+  readonly providerPlugins: readonly LlmProviderInfo[]
+  readonly providerAutoUpdate: boolean
+  readonly providerUpdatesReady: readonly string[]
+  readonly providerRemovalPending: boolean
   readonly codexModel: string
   readonly codexReasoning: ReasoningEffort | ''
   readonly chatMode: SessionMode
@@ -919,6 +980,7 @@ export interface Settings {
   readonly guideClaude: boolean
   /** False takes Codex's GECKIT.md and its instruction from the global AGENTS.md away. */
   readonly guideCodex: boolean
+  readonly guidePlugins: Readonly<Record<string, boolean>>
   /** Shortcuts in any application turned off here, as a copy run beside another GeckIt wants. */
   readonly anywhereOff: readonly Anywhere[]
   /** How many conversations may work at once before a new one waits in the queue. Nought is no limit. */
@@ -1018,8 +1080,13 @@ export const DEFAULT_SETTINGS: Settings = {
   projectColors: {},
   browserNames: {},
   chatModel: '',
+  chatTransport: 'stream',
   chatProvider: 'claude',
   chatProviders: ['claude', 'codex'],
+  providerPlugins: [],
+  providerAutoUpdate: true,
+  providerUpdatesReady: [],
+  providerRemovalPending: false,
   codexModel: '',
   codexReasoning: '',
   chatMode: 'auto',
@@ -1038,6 +1105,7 @@ export const DEFAULT_SETTINGS: Settings = {
   updateChannel: 'stable',
   guideClaude: true,
   guideCodex: true,
+  guidePlugins: {},
   anywhereOff: [],
   workingAtOnce: 6,
   progressOrder: [],

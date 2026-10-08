@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { correct } from '../src/main/correct'
 import { CodexSessions } from '../src/main/sessions/codex'
@@ -9,7 +9,8 @@ const fakes = vi.hoisted(() => ({ claude: vi.fn(async () => ({ ok: true, text: '
 vi.mock('../src/main/store', () => ({ getSettings: vi.fn() }))
 vi.mock('../src/main/correct-session', () => ({ correctKeeper: () => ({ ask: fakes.claude, stop: vi.fn() }) }))
 
-afterEach(() => vi.restoreAllMocks())
+beforeEach(() => { fakes.claude.mockClear() })
+afterEach(() => { vi.restoreAllMocks() })
 
 it('uses the saved Codex correction model when Claude is disabled', async () => {
   vi.mocked(getSettings).mockReturnValue({ ...DEFAULT_SETTINGS, chatProviders: ['codex'], correctCodexModel: 'codex-model' })

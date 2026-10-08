@@ -100,7 +100,7 @@ export function QuestionsMenu({
             onClose()
           }}
         >
-          <span className="question-title">{chat.showProviders ? <ProviderIcon id={one.id} /> : null}{title}</span>
+          <span className="question-title">{chat.showProviders ? <ProviderIcon id={one.id} transport={one.transport} /> : null}{title}</span>
           {one.stands === '' ? null : <span className="question-says">{one.stands}</span>}
         </button>
         {one.stays === true ? (

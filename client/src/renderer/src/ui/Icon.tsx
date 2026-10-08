@@ -1,3 +1,5 @@
+import { providerIconPath } from '../../../shared/providers'
+
 /**
  * Every glyph in the application, drawn on one 16x16 grid at one weight.
  *
@@ -70,7 +72,7 @@ export function Icon({
   readonly size?: number
   readonly className?: string
 }): React.JSX.Element | null {
-  const path = PATHS[name]
+  const path = PATHS[name] ?? providerIconPath(name)
   if (path === undefined) return null
   const filled = FILLED.has(name)
   // A spinner always turns, whatever it sits in.

@@ -230,6 +230,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     one.onClose(() => {
       if (one !== link) return
       down = true
+      told('phone:connection', false)
       for (const waiting of pending.values()) waiting.failed(new Error(LINK_DOWN))
       pending.clear()
     })
@@ -251,6 +252,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
         } catch {
           // The channel closed before it said so.
           down = true
+          told('phone:connection', false)
         }
       }
       const expired = window.setTimeout(() => {
@@ -487,6 +489,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     },
     chat: {
       open: nothing,
+      installProvider: () => Promise.reject(new Error('Install providers on the computer.')),
+      uninstallProvider: () => Promise.reject(new Error('Remove providers on the computer.')),
+      checkProviderUpdates: () => Promise.reject(new Error('Check provider updates on the computer.')),
       account: (provider) => call('chat.account', provider),
       models: (root, provider) => call('chat.models', root, provider),
       plan: () => call('chat.plan'),
@@ -586,6 +591,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       reorderQueued: (id, queued, target, after) => send('chat.reorderQueued', id, queued, target, after),
       delegate: (id, queued, history) => call('chat.delegate', id, queued, history),
       mode: (id, mode) => send('chat.mode', id, mode),
+      transport: (id, transport) => send('chat.transport', id, transport),
       rename: (id, title) => send('chat.rename', id, title),
       mark: (id, status) => send('chat.mark', id, status),
       hide: (id) => send('chat.hide', id),
@@ -746,6 +752,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
   }
   Object.defineProperty(window, 'geckitScreen', { value: screen })
   const calls: PhoneCalls = {
+    connected: () => !down,
+    onConnection: (said) => listen<boolean>('phone:connection', said),
     readOrders: (said) => call('orders.read', said),
     doOrders: () => call('orders.do'),
     folders: (path) => call('chat.folders', path),
@@ -767,6 +775,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     link = next
     down = false
     bind(next)
+    told('phone:connection', true)
     hideDropped()
     can(next)
     if (opened !== undefined) send('chat.watching', opened)

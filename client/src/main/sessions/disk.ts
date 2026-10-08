@@ -2,7 +2,7 @@ import { open, readdir, realpath, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import type { BackgroundTask, SessionGoal, SessionItem, WorkItem } from '../../shared/api'
+import type { BackgroundTask, SessionGoal, SessionItem, SessionSpend, WorkItem } from '../../shared/api'
 import type { Link } from '../../shared/links'
 import { linksInText, workItem } from '../../shared/links'
 import { costOf, goalOf, lastContext, lastSaid, replayClaude, saidIn, STILL_GOING, tasksOf, typed } from './claude-read'
@@ -25,7 +25,7 @@ import { firstLine } from './wording'
 type Json = Readonly<Record<string, unknown>>
 
 /** A conversation found on disk, as much of it as a row needs. */
-export interface Found {
+export interface Found extends Pick<SessionSpend, 'window' | 'cost' | 'currency' | 'costKind'> {
   readonly id: string
   readonly title: string
   /** The first line of the last thing said. */
@@ -314,7 +314,7 @@ async function entriesOf(path: string, wanted: (line: string) => boolean = () =>
 }
 
 /** One conversation read whole: what was said, and what it has cost where the tool counted it. */
-export interface Conversation {
+export interface Conversation extends Pick<SessionSpend, 'window' | 'currency' | 'costKind'> {
   readonly items: SessionItem[]
   readonly cost?: number
   readonly goal?: SessionGoal

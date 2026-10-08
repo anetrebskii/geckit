@@ -2,7 +2,7 @@
 
 This is the supporting audit. The concise, user-approved feature list is [docs/features.md](features.md).
 
-Source paths shown as code rather than links refer to files inspected in the source working tree that are not included in this documentation publication. Provider-library and context-item availability remains qualified below.
+Source paths shown as code rather than links refer to files inspected in the source working tree that are not included in this documentation publication. Released provider-library availability and proposed context-item attachment remain qualified below.
 
 Reviewed on 2026-10-04 against the live [homepage](https://geckit.app/), its expanded workflow FAQs, the [Kanban page](https://geckit.app/claude-code-kanban-board/), and the source inventory below. The live pages were read in Chrome because the web retrieval tool could not access the domain.
 
@@ -38,9 +38,9 @@ These are product workflows, rather than individual model capabilities. "Site" m
 | Mac control from the phone | Handle a browser/OS dialog that needs a person by viewing the Mac and controlling its pointer/keyboard | [Site: control](https://geckit.app/#phone) |
 | Encrypted phone connection and notices | Pair by QR, reach the computer over WebRTC and receive attention notices without a GeckIt conversation-storage service | [Site: pairing](https://geckit.app/#phone), [code: push](../client/src/main/push.ts) |
 | Work records available to agents/CLI | Read sessions, board moves and linked work; let agents request new tasks using GeckIt's own command | [Code: CLI](../client/src/cli/index.ts) |
-| Pluggable assistant workspace | Add independent assistant libraries while retaining GeckIt's board, phone, scheduling and input workflows | Code: libraries (`client/src/main/sessions/plugins.ts`); uncommitted additions |
+| Pluggable assistant workspace | Add independent assistant libraries while retaining GeckIt's board, phone, scheduling and input workflows | [Code: libraries](../client/src/main/sessions/plugins.ts); main integration on 2026-10-08 |
 
-The first 24 workflows are supported by the inspected website/source. The library workflow is present in uncommitted code. GitHub/Linear context-item attachment remains a proposal and is excluded from this current product list. Builtin Codex is local-only; the remote-work claims above concern Claude Code.
+The first 24 workflows are supported by the inspected website/source. The library workflow was extracted from `feat/agent-vpn` into main on 2026-10-08, independently of the paused VPN feature. GitHub/Linear context-item attachment remains a proposal and is excluded from this current product list. Builtin Codex is local-only; the remote-work claims above concern Claude Code.
 
 ## What the previous list misclassified
 
@@ -172,7 +172,7 @@ Builtin Codex is local-only in the current provider definition. SSH support must
 
 Sources: [SettingsDialog](../client/src/renderer/src/ui/SettingsDialog.tsx), plugins (`client/src/main/sessions/plugins.ts`), provider author guide (`provider-plugins.md`), standalone Codex example (`examples/codex-provider/README.md`).
 
-These additions are present in the working tree but have uncommitted implementation files; their presence does not establish release availability.
+Provider libraries and the independent external-provider example were extracted into main on 2026-10-08. Source support does not establish availability in a released installer. The integration excludes Agent VPN settings, admission gates and native routing. Validation passed: 668 tests, typecheck, source/test lint, desktop/mobile builds and the independent provider example test. Light/dark fixture review and keyboard/scroll checks are recorded in [Libraries UX](ux/provider-libraries.md#integration-verification); native runtime profiling and released-installer availability remain unverified.
 
 - Install several independent assistant libraries from public GitHub repository URLs.
 - Enable/disable installed assistants independently and select them in new conversations.

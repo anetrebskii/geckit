@@ -100,3 +100,11 @@ describe('Codex conversations in the GeckIt CLI', () => {
     expect(JSON.parse(await run(['linked', '--json']))).toMatchObject({ parent: { id: parent, status: 'done', title: 'Parent' } })
   })
 })
+
+it('provides standalone AI build instructions without contacting an AI provider', async () => {
+  expect(await run(['instructions', 'providers'])).toContain('examples/codex-provider')
+  expect(await run(['instructions', 'providers'])).toContain('per million tokens')
+  expect(await run(['instructions', 'app'])).toContain('npm run typecheck')
+  expect(codex.list).not.toHaveBeenCalled()
+  expect(codex.read).not.toHaveBeenCalled()
+})

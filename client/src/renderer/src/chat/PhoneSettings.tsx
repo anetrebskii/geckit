@@ -4,6 +4,7 @@ import { assistantsIn, planLine, providerOf, SESSION_MODES, shownProjects } from
 import type { ClaudeAccount, Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, SessionProvider, ShortcutDraft, Theme } from '../../../shared/api'
 import { hostOf } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
+import { isCodexProvider, llmProviderInfo } from '../../../shared/providers'
 import { ear, setEar, voice } from '../dictate'
 import type { Ear } from '../dictate'
 import { macs } from '../macs'
@@ -75,7 +76,7 @@ export function PhoneSettings({
   return <Root chat={chat} go={go} />
 }
 
-function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) => void }): React.JSX.Element {
+function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & { readonly go: (where: Where) => void }): React.JSX.Element {
   const [picking, setPicking] = useState<'theme' | 'mode' | 'limit' | 'language' | 'ear' | undefined>()
   const [heardBy, setHeardBy] = useState<Ear>(ear)
   const [switching, setSwitching] = useState(false)
@@ -88,6 +89,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       .catch(() => undefined)
   }, [])
   const settings = chat.settings
+  const codexInfo = llmProviderInfo('codex', 'stream', settings.providerPlugins)
   const enabled = assistantsIn(settings)
   const [assistantAccounts, setAssistantAccounts] = useState<readonly ClaudeAccount[]>([])
   useEffect(() => {
@@ -103,7 +105,7 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
     }
   }, [enabled])
   const claudeAccount = assistantAccounts.find((one) => (one.provider ?? 'claude') === 'claude')
-  const codexAccount = assistantAccounts.find((one) => one.provider === 'codex')
+  const codexAccount = assistantAccounts.find((one) => isCodexProvider(one.provider ?? 'claude'))
   const toggle = (provider: SessionProvider, on: boolean): void => {
     const chatProviders = on ? [...enabled, provider] : enabled.filter((one) => one !== provider)
     if (chatProviders.length === 0) return
@@ -174,12 +176,17 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
         <Cell label="Claude Code" says="Uses the host's Claude plan">
           <Switch on={enabled.includes('claude')} label="Claude Code" disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(on) => toggle('claude', on)} />
         </Cell>
-        <Cell label="Codex" says="Uses the host's ChatGPT plan for its local folders">
-          <Switch on={enabled.includes('codex')} label="Codex" disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(on) => toggle('codex', on)} />
+        <Cell label={codexInfo.name} icon={codexInfo.icon} says="Uses the host's ChatGPT plan for its local folders">
+          <Switch on={enabled.includes('codex')} label={codexInfo.name} disabled={enabled.length === 1 && enabled.includes('codex')} onChange={(on) => toggle('codex', on)} />
         </Cell>
+        {settings.providerPlugins.filter((one) => one.family !== 'claude' && one.replaces === undefined).map((one) => (
+          <Cell key={one.id} label={one.name} icon={one.icon} says="Installed on the host">
+            <Switch on={enabled.includes(one.family)} label={one.name} disabled={enabled.length === 1 && enabled.includes(one.family)} onChange={(on) => toggle(one.family, on)} />
+          </Cell>
+        ))}
       </div>
       <div className="phone-note">Choose at least one. Turning an assistant off hides its conversations until you turn it on again. Applies on the host and this phone.</div>
-      {enabled.includes('codex') ? <><div className="phone-head">ChatGPT plan usage</div><CodexLimits limits={codexAccount?.limits} /></> : null}
+      {enabled.some(isCodexProvider) ? <><div className="phone-head">ChatGPT plan usage</div><CodexLimits limits={codexAccount?.limits} /></> : null}
 
       <div className="phone-head">Board</div>
       <div className="phone-group">
@@ -222,7 +229,11 @@ function Root({ chat, go }: { readonly chat: Chat; readonly go: (where: Where) =
       <div className="phone-group">
         <Cell label={`GeckIt on ${thisMac?.name ?? 'the host'}`} value={version ?? '-'} />
         {enabled.includes('claude') ? <Cell label="Claude Code" value={claudeAccount?.program?.version ?? '-'} says={claudeAccount === undefined ? undefined : planLine(claudeAccount)} /> : null}
-        {enabled.includes('codex') ? <Cell label="Codex" value={codexAccount?.program?.version ?? '-'} says={codexAccount === undefined ? undefined : planLine(codexAccount)} /> : null}
+        {enabled.filter(isCodexProvider).map((provider) => {
+          const info = llmProviderInfo(provider, 'stream', settings.providerPlugins)
+          const account = assistantAccounts.find((one) => one.provider === provider)
+          return <Cell key={provider} label={info.name} icon={info.icon} value={account?.program?.version ?? '-'} says={account === undefined ? undefined : planLine(account)} />
+        })}
       </div>
 
       {picking === 'theme' ? (

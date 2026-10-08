@@ -3,10 +3,13 @@ import { tmpdir } from 'node:os'
 
 import type { Answered, CorrectAction, CorrectRequest } from '../shared/api'
 import { assistantFor } from '../shared/api'
+import { isCodexProvider } from '../shared/providers'
 import { correctKeeper } from './correct-session'
 import { claudeCommand, planOnly } from './sessions/account'
 import { getSettings } from './store'
 import { CodexSessions } from './sessions/codex'
+import { llmProvider } from './sessions/provider'
+import { pluginProvider } from './sessions/plugins'
 
 /**
  * One piece of text in, the same text put right and out.
@@ -123,16 +126,21 @@ const keeper = correctKeeper((args) =>
 )
 
 const codex = new CodexSessions()
+const providers = {
+  claude: llmProvider({ correct: (text, said, model) => keeper.ask(text, said, model), stopCorrect: () => keeper.stop() }, 'claude'),
+  codex: llmProvider({ codex }, 'codex'),
+}
 
 export const stopCorrecting = (): void => {
-  keeper.stop()
-  codex.dispose()
+  providers.claude.dispose()
+  providers.codex.dispose()
 }
 
 export async function correct(request: CorrectRequest): Promise<Answered> {
   const said = instruction(request.action, request.custom)
   const settings = getSettings()
   const provider = assistantFor({ ...settings, chatProvider: request.provider ?? settings.correctProvider })
-  const model = request.provider === provider || (request.provider === undefined && provider === 'claude') ? request.model : provider === 'codex' ? settings.correctCodexModel : settings.correctPlanModel
-  return provider === 'codex' ? codex.correct(request.text, said, model) : keeper.ask(request.text, said, model)
+  const model = request.provider === provider || (request.provider === undefined && provider === 'claude') ? request.model : isCodexProvider(provider) ? settings.correctCodexModel : settings.correctPlanModel
+  const backend = pluginProvider(provider) ?? (provider === 'claude' || provider === 'codex' ? providers[provider] : undefined)
+  return backend?.correct(request.text, said, model) ?? { ok: false, error: `Provider ${provider} is not installed.` }
 }

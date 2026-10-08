@@ -9,6 +9,7 @@ import type {
   Folders,
   ChatFound,
   ChatSession,
+  ClaudeTransport,
   ClaudeAccount,
   ClaudeModel,
   HiddenFolder,
@@ -44,6 +45,7 @@ import type {
 } from '../shared/api'
 import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from '../shared/hosts'
 import type { Link } from '../shared/links'
+import type { LlmProviderInfo, PluginUpdateResult } from '../shared/providers'
 import { pieceOf } from '../shared/pairing'
 import type { Pairing, Piece } from '../shared/pairing'
 
@@ -84,6 +86,7 @@ const geckit = {
     openAccessibility: (): void => ipcRenderer.send('settings:openAccessibility'),
   },
 
+
   errors: {
     /** What would be sent, while the question about errors is due. */
     question: (): Promise<string | undefined> => ipcRenderer.invoke('errors:question'),
@@ -121,6 +124,9 @@ const geckit = {
 
   chat: {
     open: (): void => ipcRenderer.send('chat:open'),
+    installProvider: (url: string): Promise<LlmProviderInfo> => ipcRenderer.invoke('chat:installProvider', url),
+    uninstallProvider: (id: string): Promise<void> => ipcRenderer.invoke('chat:uninstallProvider', id),
+    checkProviderUpdates: (): Promise<PluginUpdateResult> => ipcRenderer.invoke('chat:checkProviderUpdates'),
     account: (provider?: SessionProvider): Promise<ClaudeAccount> => ipcRenderer.invoke('chat:account', provider),
     /** A project's own root asks a host's own claude, where one is given; without it, this computer's. */
     models: (root?: string, provider?: SessionProvider): Promise<ClaudeModel[] | undefined> => ipcRenderer.invoke('chat:models', root, provider),
@@ -190,6 +196,7 @@ const geckit = {
       ipcRenderer.invoke('chat:delegate', id, queued, history),
     /** How a session may act, chosen under the field: it holds from now, not from the next message. */
     mode: (id: string, mode: SessionMode): void => ipcRenderer.send('chat:mode', id, mode),
+    transport: (id: string, transport: ClaudeTransport): void => ipcRenderer.send('chat:transport', id, transport),
     rename: (id: string, title: string): void => ipcRenderer.send('chat:rename', id, title),
     mark: (id: string, status: SessionStatus | undefined): void => ipcRenderer.send('chat:mark', id, status ?? null),
     hide: (id: string): void => ipcRenderer.send('chat:hide', id),

@@ -61,6 +61,7 @@ function build(limit = 0, providers: readonly SessionProvider[] = []): {
     goal: async () => null,
     setGoal: async () => { throw new Error('No goal expected') },
     clearGoal: async () => undefined,
+    correct: async () => ({ ok: true, text: '' }),
   } : undefined
   const sessions = new Sessions({
     ...(codex === undefined ? {} : { codex }),

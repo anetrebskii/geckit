@@ -46,7 +46,7 @@ export function Recent({
             <Dot session={session} />
             <span className="lines">
               <span className="head">
-                {showProviders ? <ProviderIcon id={session.id} /> : null}
+                {showProviders ? <ProviderIcon id={session.id} transport={session.transport} /> : null}
                 <span className="title">{session.title === '' ? 'Untitled' : session.title}</span>
               </span>
               <span className="stands">

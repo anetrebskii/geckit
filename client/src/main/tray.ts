@@ -9,6 +9,7 @@ import template from '../../assets/trayTemplate.png?asset'
 import template2x from '../../assets/trayTemplate@2x.png?asset'
 import { assistantsIn, shownProjects } from '../shared/api'
 import { isRemote } from '../shared/hosts'
+import { llmProviderInfo } from '../shared/providers'
 import { describeTime, nextTimed } from '../shared/schedule'
 import { getSettings } from './store'
 
@@ -77,7 +78,7 @@ export function drawTray(): void {
     .shortcuts.filter((one) => shown.includes(one.root))
     .map((one) => {
       const provider = one.provider ?? 'claude'
-      const available = assistantsIn(settings).includes(provider) && (provider !== 'codex' || !isRemote(one.root))
+      const available = assistantsIn(settings).includes(provider) && (llmProviderInfo(provider, 'stream', settings.providerPlugins).localOnly !== true || !isRemote(one.root))
       const next = nextTimed(one, now)
       const when =
         one.lastSession !== undefined && deps?.busy(one.lastSession) === true

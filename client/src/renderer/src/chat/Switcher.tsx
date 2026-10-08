@@ -254,7 +254,7 @@ const FoundRow = memo(function FoundRow({
         <Dot session={row.session} />
         <span className="lines">
           <span className="head">
-            {showProviders ? <ProviderIcon id={row.session.id} /> : null}
+            {showProviders ? <ProviderIcon id={row.session.id} transport={row.session.transport} /> : null}
             <span className="title">
               <Marked text={row.session.title === '' ? 'Untitled' : row.session.title} words={words} />
             </span>

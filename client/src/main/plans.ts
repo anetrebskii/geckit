@@ -85,7 +85,7 @@ export class Plans {
   /** Every place with a plan, as it stands right now: this computer's last measurement, and each host's. */
   async list(): Promise<PlaceUsage[]> {
     const sessions = this.#deps.sessions()
-    const account = await sessions?.account()
+    const account = await sessions?.account().catch(() => undefined)
     const usage = sessions?.plan()
     const local: PlaceUsage = {
       place: '',
@@ -100,7 +100,7 @@ export class Plans {
   async asked(): Promise<PlaceUsage[]> {
     this.#lastAsked = this.#now()
     const list = await this.list()
-    void this.#deps.sessions()?.measure()
+    void this.#deps.sessions()?.measure().catch(() => undefined)
     void this.#measureHosts()
     return list
   }

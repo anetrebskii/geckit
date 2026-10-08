@@ -1,3 +1,4 @@
+import { APP_BUILD_GUIDE, PROVIDER_BUILD_GUIDE } from '../shared/provider-build-guide'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
@@ -181,6 +182,10 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
       Preserves status, creation and move dates, titles, visibility and links. Moves favorites and board order to Codex.
       Existing Codex metadata is kept. --dry-run previews changes; applying saves a backup before writing.
 
+  geckit instructions [providers|app]
+      Build instructions for AI agents. Includes plugin contract, independent Codex example and verification steps.
+      providers is the default; app explains desktop and phone builds.
+
 Only start and migrate-codex write anything.`
 
 async function sessions(args: readonly string[]): Promise<string> {
@@ -317,6 +322,11 @@ async function linked(args: readonly string[]): Promise<string> {
 export async function run(args: readonly string[]): Promise<string> {
   try {
     const [what, ...rest] = args
+    if (what === 'instructions') {
+      if (rest[0] === undefined || rest[0] === 'providers') return PROVIDER_BUILD_GUIDE
+      if (rest[0] === 'app') return APP_BUILD_GUIDE
+      throw new Error('Use geckit instructions providers or geckit instructions app.')
+    }
     if (what === 'sessions') return await sessions(rest)
     if (what === 'show') return await show(rest)
     if (what === 'linked') return await linked(rest)

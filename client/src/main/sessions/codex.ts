@@ -1,4 +1,5 @@
 import type { Answered, ChatFound, ClaudeAccount, ClaudeModel, ReasoningEffort, SessionGoal, SessionMode } from '../../shared/api'
+import { modelVersion } from '../../shared/providers'
 import { readFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -45,6 +46,7 @@ export class CodexSessions {
   }
 
   async #connection(): Promise<CodexRpc> {
+
     if (this.#rpc === undefined) {
       this.#rpc = new CodexRpc(this.#launch, (event) => {
         if (event.method === 'account/rateLimits/updated') {
@@ -69,6 +71,7 @@ export class CodexSessions {
     const rpc = this.#rpc
     try {
       await rpc.ready
+
       return rpc
     } catch (error) {
       rpc.dispose()
@@ -102,7 +105,10 @@ export class CodexSessions {
       let cursor: string | null = null
       do {
         const page: RpcResults['model/list'] = await rpc.request('model/list', { cursor })
-        models.push(...page.data.filter((one) => !one.hidden).map((one) => ({ value: one.model, id: one.model, name: one.displayName, says: one.description, ...(one.supportedReasoningEfforts === undefined ? {} : { reasoning: one.supportedReasoningEfforts.map((effort) => ({ value: effort.reasoningEffort, says: effort.description })) }), ...(one.defaultReasoningEffort === undefined ? {} : { defaultReasoning: one.defaultReasoningEffort }), ...(one.isDefault === undefined ? {} : { isDefault: one.isDefault }) })))
+        models.push(...page.data.filter((one) => !one.hidden).map((one) => {
+          const version = modelVersion(one.model)
+          return { value: one.model, id: one.model, name: one.displayName, says: one.description, ...(version === undefined ? {} : { version }), ...(one.supportedReasoningEfforts === undefined ? {} : { reasoning: one.supportedReasoningEfforts.map((effort) => ({ value: effort.reasoningEffort, says: effort.description })) }), ...(one.defaultReasoningEffort === undefined ? {} : { defaultReasoning: one.defaultReasoningEffort }), ...(one.isDefault === undefined ? {} : { isDefault: one.isDefault }) }
+        }))
         cursor = page.nextCursor
       } while (cursor !== null)
       this.#models = models
@@ -199,7 +205,7 @@ export class CodexSessions {
       const imported = new Map((imports?.records ?? []).filter((one) => one.source_path.includes('/.claude/projects/')).map((one) => [one.imported_thread_id, basename(one.source_path, '.jsonl')]))
       let cursor: string | null = null
       do {
-        const page: RpcResults['thread/list'] = await rpc.request('thread/list', { cwd: [...roots], cursor, limit: 100, sortKey: 'updated_at', sourceKinds: ['cli', 'vscode', 'exec', 'appServer'] })
+        const page: RpcResults['thread/list'] = await rpc.request('thread/list', { cwd: [...roots], cursor, limit: 100, sortKey: 'updated_at', sourceKinds: ['cli', 'vscode', 'exec', 'appServer', 'unknown'] })
         for (const thread of page.data) if (typeof thread.path === 'string') this.#files.set(thread.id, { id: `codex:${thread.id}`, root: thread.cwd, path: thread.path })
         rows.push(...page.data.map((thread) => {
           const importedFrom = imported.get(thread.id)
@@ -318,6 +324,7 @@ export class CodexSessions {
         switch (event.method) {
           case 'turn/started':
             turnId = event.params.turn.id
+            if (!active) { active = true; signals({ kind: 'begun' }) }
             if (stopped) void rpc?.request('turn/interrupt', { threadId, turnId }).catch(() => undefined)
             return
           case 'thread/goal/updated':

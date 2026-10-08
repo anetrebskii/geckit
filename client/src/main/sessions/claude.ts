@@ -58,7 +58,7 @@ export interface Held {
 }
 
 /** GECKIT.md is the installed GeckIt's and names its command, so a conversation in a copy run from the source is told which command reaches that copy. */
-function sourceArgs(): string[] {
+export function sourceArgs(): string[] {
   const command = process.env['GECKIT_SOURCE_CLI']
   if (command === undefined) return []
   return ['--append-system-prompt', `This conversation runs in GeckIt started from its source, not the installed app. Wherever GECKIT.md names ${command.replace(/-local$/, '')}, use ${command} instead: the other one reaches only the installed GeckIt.`]

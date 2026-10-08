@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import type { ClaudeAccount, SessionProvider } from '../../../shared/api'
+import { llmProviderInfo, selectableProviders } from '../../../shared/providers'
+import type { LlmProviderInfo } from '../../../shared/providers'
 import { Icon } from '../ui/Icon'
 import { PhoneAccess } from '../ui/SettingsDialog'
 import { MOD } from '../ui/Shortcuts'
@@ -33,6 +35,7 @@ export function Welcome({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [account, setAccount] = useState<ClaudeAccount | undefined>()
   const done = useCallback(() => chat.change({ welcomed: true }), [chat])
   const provider = chat.settings.chatProvider
+  const providerInfo = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
   const chosenAccount = (account?.provider ?? 'claude') === provider ? account : undefined
   const state = found(chosenAccount)
 
@@ -74,9 +77,10 @@ export function Welcome({ chat }: { readonly chat: Chat }): React.JSX.Element {
         {page === 0 ? <About /> : null}
         {page === 1 ? (
           <>
-            <label className="new-task-label">Assistant<select className="new-task-where" value={provider} onChange={(event) => chat.change({ chatProvider: event.target.value as SessionProvider })}><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
+            <label className="new-task-label">Assistant<select className="new-task-where" value={provider} onChange={(event) => chat.change({ chatProvider: event.target.value as SessionProvider })}>{selectableProviders(chat.settings).map((one) => <option key={one.id} value={one.family}>{one.name}</option>)}</select></label>
             <Claude
               provider={provider}
+              info={providerInfo}
               account={chosenAccount}
               state={state}
               onCheck={() => {
@@ -162,17 +166,19 @@ function Claude({
   state,
   onCheck,
   provider,
+  info,
 }: {
   readonly account: ClaudeAccount | undefined
   readonly state: Found
   readonly onCheck: () => void
   readonly provider: SessionProvider
+  readonly info: LlmProviderInfo
 }): React.JSX.Element {
   const [copied, setCopied] = useState(false)
   const version = account?.program?.version
-  const name = provider === 'codex' ? 'Codex' : 'Claude Code'
-  const plan = provider === 'codex' ? 'ChatGPT' : 'Claude'
-  const command = state === 'missing' ? provider === 'codex' ? 'npm install -g @openai/codex' : INSTALL : provider === 'codex' ? 'codex login' : state === 'out' || state === 'key' ? 'claude auth login' : 'claude auth status'
+  const name = info.name
+  const plan = info.planName
+  const command = state === 'missing' ? provider === 'claude' ? INSTALL : provider === 'codex' ? 'npm install -g @openai/codex' : info.loginCommand : provider === 'claude' && state !== 'out' && state !== 'key' ? 'claude auth status' : info.loginCommand
   const says =
     state === 'checking'
       ? `Looking for ${name}...`
@@ -184,7 +190,7 @@ function Claude({
             ? `${name} is signed in with an API key. Sign in with your plan instead:`
             : state === 'unknown'
               ? `${name} is here. This version does not say who is signed in.`
-              : `Ready: your ${plan} ${account?.plan === undefined ? '' : `${account.plan} `}plan${version === undefined ? '' : `, ${name} ${version}`}.`
+              : plan === '' ? `Ready: ${name}${version === undefined ? '' : ` ${version}`}.` : `Ready: your ${plan} ${account?.plan === undefined ? '' : `${account.plan} `}plan${version === undefined ? '' : `, ${name} ${version}`}.`
   const needed = state === 'missing' || state === 'out' || state === 'key'
 
   return (

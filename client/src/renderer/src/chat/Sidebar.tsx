@@ -293,7 +293,7 @@ const Row = memo(function Row({
           />
         ) : (
           <span className="head">
-            {showProviders ? <ProviderIcon id={session.id} /> : null}
+            {showProviders ? <ProviderIcon id={session.id} transport={session.transport} /> : null}
             <span className="title">{session.title === '' ? 'Untitled' : session.title}</span>
             <span className="changed" title={new Date(session.at).toLocaleString()}>
               {changed}

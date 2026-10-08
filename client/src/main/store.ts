@@ -73,6 +73,11 @@ export function getSettings(): Settings {
     const welcomed = read<Partial<Settings>>(SETTINGS, {})?.welcomed
     settings = {
       ...found,
+      chatTransport: found.chatTransport === 'tmux' ? 'tmux' : 'stream',
+      providerPlugins: found.providerPlugins ?? [],
+      providerAutoUpdate: found.providerAutoUpdate ?? true,
+      providerUpdatesReady: found.providerUpdatesReady ?? [],
+      providerRemovalPending: found.providerRemovalPending ?? false,
       welcomed: welcomed ?? found.projects.length > 0,
       chatMode: sessionMode(found.chatMode),
       projectColors: withColors(found),

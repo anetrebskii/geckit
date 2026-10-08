@@ -116,7 +116,7 @@ export function PhoneBoard({
   const rows = useMemo(() => {
     const all = chat.sessions.filter((one) => columnOf(one) === shown).sort((one, other) => other.at - one.at)
     const positioned = shown === 'progress' ? ordered(all, chat.settings.progressOrder) : all
-    return positioned.sort((one, other) => Number(chat.settings.favorites.includes(other.id)) - Number(chat.settings.favorites.includes(one.id)))
+    return positioned.toSorted((one, other) => Number(chat.settings.favorites.includes(other.id)) - Number(chat.settings.favorites.includes(one.id)))
   }, [chat.sessions, shown, chat.settings.progressOrder, chat.settings.favorites])
   const counts = useMemo(() => {
     const count = { progress: 0, review: 0, done: 0 }
@@ -222,6 +222,7 @@ export function PhoneBoard({
     if (session.status !== status) chat.mark(session.id, status)
   }
   const favorite = (session: ChatSession): void => {
+    const favorites = chat.settings.favorites
     tap('light')
     chat.change({
       favorites: favorites.includes(session.id) ? favorites.filter((id) => id !== session.id) : [...favorites, session.id],
@@ -635,7 +636,7 @@ export function RowBody({
           {helpers === 0 ? null : <span className="phone-row-tag">{helpers === 1 ? 'a helper running' : `${helpers} helpers running`}</span>}
           {script === undefined ? null : <span className="phone-row-tag">{script}</span>}
           {queued === 0 ? null : <span className="phone-row-tag">{queued} queued</span>}
-          {chat.showProviders ? <ProviderIcon id={session.id} /> : null}
+          {chat.showProviders ? <ProviderIcon id={session.id} transport={session.transport} /> : null}
         </div>
         {parent === undefined ? null : (
           <div className="phone-row-from">

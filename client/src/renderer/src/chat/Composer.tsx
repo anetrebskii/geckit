@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 
 import { modelName, programLine, SESSION_MODES } from '../../../shared/api'
-import type { ClaudeModel, ReasoningEffort, SessionImage, SessionMode, SessionProvider } from '../../../shared/api'
+import type { ClaudeModel, ClaudeTransport, ReasoningEffort, SessionImage, SessionMode, SessionProvider } from '../../../shared/api'
+import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
 import { mentionAt, pathsFor } from '../../../shared/paths'
 import { dictate, dropUnheard, hearAgain, languageCode, readUnheard, useDictationLanguage, useLevel } from '../dictate'
 import type { Unheard } from '../dictate'
@@ -21,6 +22,7 @@ import { Mcp } from './Mcp'
 import { computerName, needsComputer } from './PhoneHosts'
 import { Preview } from './Preview'
 import { Tasks } from './Tasks'
+import { ModelDetailsButton } from './ModelDetails'
 import type { Choice } from '../ui/Menu'
 import { projectLabel } from './project'
 import { queueWhy } from './Queued'
@@ -155,7 +157,10 @@ function GoalEditor({ condition, onSave, onClear, onClose }: {
  * because here is where the question is asked.
  */
 export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
-  const assistant = chat.provider === 'codex' ? 'Codex' : 'Claude'
+  const providerInfo = llmProviderInfo(chat.provider, chat.transport, chat.settings.providerPlugins)
+  const providers = selectableProviders(chat.settings)
+  const tmuxInstalled = chat.settings.providerPlugins.some((one) => one.id === 'claude-tmux')
+  const assistant = providerInfo.shortName
   const field = useRef<HTMLTextAreaElement>(null)
   const photos = useRef<HTMLInputElement>(null)
   const offered = useRef<HTMLDivElement>(null)
@@ -353,7 +358,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         ? `${again}.`
         : `${again}: about ${(Math.round(used / 1000) * 1000).toLocaleString('en-US')} tokens from your plan.`
   // Which Claude Code named these: this computer's for a local project, that host's for one on a host, since an older one names fewer.
-  const program = host === undefined ? programLine(chat.account) : host.version === undefined ? undefined : `Claude Code ${host.version}`
+  const program = host === undefined ? programLine(chat.account, chat.provider) : host.version === undefined ? undefined : `Claude Code ${host.version}`
   const note = [program === undefined ? undefined : `${program}.`, cost].filter((line) => line !== undefined).join('\n')
   const away =
     host === undefined
@@ -369,7 +374,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const held = ON_PHONE && away !== undefined
   const shownAway = held ? undefined : away
   const cannot =
-    (chat.provider === 'codex' && chat.root !== undefined && isRemote(chat.root)) ||
+    (isCodexProvider(chat.provider) && chat.root !== undefined && isRemote(chat.root)) ||
     held ||
     chat.uploading ||
     chat.root === undefined ||
@@ -430,7 +435,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const checked =
     goal === undefined
       ? ''
-      : chat.provider === 'codex'
+      : isCodexProvider(chat.provider)
         ? 'Codex keeps working until this holds.'
         : goal.checks === 0
           ? 'Not checked yet. Each time Claude would stop, a check reads the conversation and sends it back to work until this holds.'
@@ -858,7 +863,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                     ? 'Writing down what you said'
                     : chat.working
                   ? `Send more: it waits until ${assistant} finishes. ! runs a command now`
-                  : `Ask ${chat.provider === 'codex' ? 'Codex' : 'Claude Code'}. @ picks a file, ! runs a command`
+                  : `Ask ${llmProviderInfo(chat.provider).name}. @ picks a file, ! runs a command`
           }
           disabled={chat.root === undefined}
           readOnly={listening !== undefined || writing || recorder.recording || hearing}
@@ -969,16 +974,29 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         )}
         <div className="composer-bar">
           {!chat.showProviders ? null : (
-            <Picker label={chat.provider === 'codex' ? 'Codex' : 'Claude Code'} title="Assistant" chosen={chat.provider} disabled={chat.session !== undefined} choices={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex', disabled: chat.root !== undefined && isRemote(chat.root), says: ON_PHONE ? 'Your ChatGPT plan, on the paired host' : 'Your ChatGPT plan, on this computer' }]} onPick={(value) => chat.setProvider(value as SessionProvider)} />
+            <Picker label={providerInfo.name} title="Assistant" chosen={chat.provider} disabled={chat.session !== undefined} choices={providers.map((one) => ({ value: one.family, label: one.name, icon: one.icon, ...(one.localOnly ? { disabled: chat.root !== undefined && isRemote(chat.root) } : {}), ...(one.family === 'codex' ? { says: ON_PHONE ? 'Your ChatGPT plan, on the paired host' : 'Your ChatGPT plan, on this computer' } : {}) }))} onPick={(value) => chat.setProvider(value as SessionProvider)} />
           )}
           <Picker
             label={SESSION_MODES.find((one) => one.mode === chat.mode)?.label ?? 'Ask'}
-            choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: chat.provider === 'codex' ? one.mode === 'manual' ? 'Asks before running untrusted commands. Uses a sandbox.' : one.mode === 'auto' ? 'Works in a sandbox. Codex reviews requests for more access.' : 'Reads and proposes. Changes nothing.' : one.why }))}
+            choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: isCodexProvider(chat.provider) ? one.mode === 'manual' ? 'Asks before running untrusted commands. Uses a sandbox.' : one.mode === 'auto' ? 'Works in a sandbox. Codex reviews requests for more access.' : 'Reads and proposes. Changes nothing.' : one.why }))}
             chosen={chat.mode}
             title="What it may do"
             explained
             onPick={(value) => chat.setMode(value as SessionMode)}
           />
+          {ON_PHONE || chat.provider !== 'claude' || !tmuxInstalled ? null : (
+            <Picker
+              label={chat.transport === 'tmux' ? 'tmux' : 'Stream'}
+              title="Claude Code transport"
+              chosen={chat.transport}
+              disabled={chat.working || chat.session?.remote !== undefined}
+              choices={[
+                { value: 'stream', label: 'Stream', says: 'Claude Code structured input and output' },
+                { value: 'tmux', label: 'tmux', disabled: window.geckit.platform === 'win32' || chat.root !== undefined && isRemote(chat.root), says: 'Interactive Claude Code; messages read from its transcript and hooks' },
+              ]}
+              onPick={(value) => chat.setTransport(value as ClaudeTransport)}
+            />
+          )}
           <Picker
             label={named}
             choices={models}
@@ -990,11 +1008,12 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               if (value !== '__asking') chat.setModel(value)
             }}
           />
-          {chat.provider !== 'codex' ? null : <Picker label={`Reasoning: ${efforts.find((one) => one.value === chat.reasoning)?.label ?? 'Default'}`} choices={efforts} chosen={chat.reasoning} title="Reasoning level for the next message" onOpen={() => chat.askModels()} onPick={(value) => chat.setReasoning(value as ReasoningEffort | '')} />}
-          {ON_PHONE || chat.provider === 'codex' ? null : (
+            {!ON_PHONE ? <ModelDetailsButton chat={chat} /> : null}
+          {!isCodexProvider(chat.provider) ? null : <Picker label={`Reasoning: ${efforts.find((one) => one.value === chat.reasoning)?.label ?? 'Default'}`} choices={efforts} chosen={chat.reasoning} title="Reasoning level for the next message" onOpen={() => chat.askModels()} onPick={(value) => chat.setReasoning(value as ReasoningEffort | '')} />}
+          {ON_PHONE ? null : (
             <>
               {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
-              {chat.root === undefined ? null : host === undefined ? (
+              {providerInfo.browser !== 'claude' || chat.root === undefined ? null : host === undefined ? (
                 <Chrome
                   root={chat.root}
                   id={chat.session?.id}
@@ -1093,7 +1112,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               className="send"
               disabled={cannot}
               onClick={submit}
-              title={`Queue it: it goes when ${assistant} finishes (Enter)`}
+              title={`Queue it: it goes when ${assistant} finishes${ON_PHONE ? '' : ' (Enter)'}`}
               aria-label="Queue"
             >
               <Icon name="send" size={14} />
@@ -1134,7 +1153,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               className="send"
               disabled={cannot || (chat.draft.trim() === '' && chat.pictures.length === 0)}
               onClick={submit}
-              title={queues ? 'Queue (Enter)' : 'Send (Enter)'}
+              title={ON_PHONE ? queues ? 'Queue' : 'Send' : queues ? 'Queue (Enter)' : 'Send (Enter)'}
               aria-label={queues ? 'Queue' : 'Send'}
             >
               <Icon name="send" size={14} />

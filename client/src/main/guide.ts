@@ -56,6 +56,10 @@ ${path} show <id> --last 10
 
 \`sessions\` prints one line each, newest first: a \\* for a favorite, the id, when it last changed, the project, how it stands - in progress, review, blocked or done - and the title. \`--today\` and \`--since\` also count one moved between columns in that time, and \`--favorites\` keeps only the favorites. \`show\` prints when it was created and each time it moved to another column, then what was said in it, the person and Claude, without what the tools printed. \`--json\` gives the same for reading with a program, with that history in \`history\` and \`favorite\` true or false.
 
+## Building GeckIt or a provider library
+
+When asked to create or change a provider, run \`${path} instructions providers\` for the contract, example, build and verification instructions. For GeckIt itself, run \`${path} instructions app\`. These commands only read and work with the installed CLI.
+
 ## Other conversations
 
 ### Asking for new ones
