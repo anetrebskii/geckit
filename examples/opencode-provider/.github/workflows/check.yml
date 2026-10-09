@@ -1,0 +1,43 @@
+name: Check library
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: git diff --exit-code -- index.mjs
+      - run: npm test
+  native:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - opencode: '1.18.35'
+            os: ubuntu-latest
+          - opencode: '2'
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - if: matrix.opencode == '1.18.35'
+        run: npm install --prefix "$RUNNER_TEMP/opencode-runtime" --no-audit --no-fund opencode-ai@1.18.35
+      - if: matrix.opencode == '1.18.35'
+        run: GECKIT_OPENCODE_BIN="$RUNNER_TEMP/opencode-runtime/node_modules/.bin/opencode" npm run test:native
+      - if: matrix.opencode == '2'
+        run: brew install opencode
+      - if: matrix.opencode == '2'
+        run: GECKIT_OPENCODE_BIN="$(brew --prefix)/bin/opencode" npm run test:native

@@ -3,6 +3,7 @@ import { basename } from 'node:path'
 
 import type { CardAnswer, SessionCard } from '../../shared/api'
 import { modelName } from '../../shared/api'
+import type { LlmProviderInfo } from '../../shared/providers'
 import { within } from './rule'
 import type { Wanted } from './rule'
 
@@ -351,10 +352,10 @@ export function limitStands(resetsAt: number | undefined, now: number): string {
 
 export const FAILED = 'Claude Code stopped before it finished.'
 
-/** Said where Auto was chosen and Claude Code did not take it up. */
-export function noAutoMode(model: string | undefined): string {
+/** Said where Auto was chosen and the provider did not take it up. */
+export function noAutoMode(model: string | undefined, provider: Pick<LlmProviderInfo, 'name'>): string {
   const which = model === undefined ? 'this model' : modelName(model)
-  return `Claude Code has no auto mode for ${which}, so this conversation asks first, as in Manual.`
+  return `${provider.name} has no auto mode for ${which}, so this conversation asks first, as in Manual.`
 }
 
 export const SUMMARISED = 'Earlier messages were summarised by Claude Code.'

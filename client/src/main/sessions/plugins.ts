@@ -122,13 +122,13 @@ export const loadPlugin = async (path: string): Promise<LoadedPlugin> => {
   const module = await import(moduleUrl.href) as Partial<PluginModule>
   if (typeof module.create !== 'function') throw new Error('Plugin must export create().')
 
+  const info = independentProviderInfo(manifest.provider)
   const provider = await module.create()
   const compatible = typeof provider === 'object' && provider !== null && typeof provider.setInstructions !== 'function'
     ? { ...provider, setInstructions: async () => {} }
     : provider
   if (typeof compatible !== 'object' || compatible === null || methods.some((method) => typeof compatible[method] !== 'function') || capabilities.some((field) => typeof compatible[field] !== 'boolean') || typeof compatible.idleMs !== 'number') throw new Error('Plugin does not implement LlmProvider.')
   if (provider.id !== manifest.provider.id) throw new Error('Plugin ID differs from its manifest.')
-  const info = independentProviderInfo(manifest.provider)
   return { path, info, provider: independentProvider({ ...compatible, ...manifest.provider }, info) }
 }
 

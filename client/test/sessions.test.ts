@@ -534,6 +534,24 @@ describe('what it may do unasked', () => {
     expect(last(built.fanned)?.items[0]).toMatchObject({ kind: 'note', note: 'mode', text: expect.stringContaining('Haiku 4.5') })
   })
 
+  it.each(['started', 'mode'] as const)('names the active library when Auto becomes Manual on %s', async (event) => {
+    const held = fakeClaude()
+    const provider: LlmProvider = {
+      ...llmProvider({ claude: held.claude }, 'claude'),
+      id: 'plugin:opencode-llama', family: 'plugin:opencode-llama', name: 'OpenCode + Ollama',
+      create: async () => 'plugin:opencode-llama:session',
+    }
+    const built = build({ plugins: [provider] })
+    const id = await built.sessions.send({ provider: provider.family, root: ROOT, mode: 'auto', text: 'hi' })
+    held.fake.hear({ signals: [{ kind: 'started', session: id, key: false, model: 'ollama/qwen3.5:0.8b', mode: event === 'started' ? 'default' : 'auto' }] })
+    if (event === 'mode') held.fake.hear({ signals: [{ kind: 'mode', mode: 'default' }] })
+    expect(of(built.rows, id)?.mode).toBe('manual')
+    expect(last(built.fanned)?.items[0]).toMatchObject({
+      kind: 'note', note: 'mode',
+      text: 'OpenCode + Ollama has no auto mode for ollama/qwen3.5:0.8b, so this conversation asks first, as in Manual.',
+    })
+  })
+
   it('leaves auto to Claude Code, and asks about whatever it still sends', async () => {
     const built = build()
     await started(built, 'auto')

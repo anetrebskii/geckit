@@ -1,0 +1,174 @@
+{
+  "version": "2.0.25",
+  "models": [
+    {
+      "value": "ollama/qwen-test",
+      "id": "ollama/qwen-test",
+      "name": "Qwen Test",
+      "isDefault": true,
+      "supportsAutoMode": false,
+      "contextWindow": 131072,
+      "maxOutputTokens": 4096
+    }
+  ],
+  "completed": {
+    "kind": "ended",
+    "how": "done"
+  },
+  "itemKinds": [
+    "mine",
+    "did",
+    "did",
+    "theirs"
+  ],
+  "mockRequests": [
+    {
+      "url": "/api/tags",
+      "method": "GET"
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "geckitInstructions": false
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "shell",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "shell",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "shell",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "shell",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "shell",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "write",
+        "execute"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "geckitInstructions": false
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "execute"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "execute"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "geckitInstructions": false
+    }
+  ],
+  "history": "read/list/search/rename/fork/delete, permission, two question cards, Stop/continue, Plan denial, owned instructions and correction pass",
+  "root": "/var/folders/c3/2y8b2_v56c9bl7_qfsfg9tsh0000gn/T/geckit-opencode-smoke-VIhtQ1"
+}

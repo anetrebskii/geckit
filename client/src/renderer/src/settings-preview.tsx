@@ -15,7 +15,7 @@ const sourceLibraries: readonly LlmProviderInfo[] = query.has('libraries') ? [
   { id: 'plugin:codex-mirror', family: 'plugin:codex-mirror', name: 'Codex Mirror', shortName: 'Mirror', icon: 'codex-mirror', iconPath: 'M8 1.8 14.2 8 8 14.2 1.8 8Z M8 4.6 11.4 8 8 11.4 4.6 8Z', browser: 'codex', loginCommand: 'codex login', planName: 'ChatGPT', runtime: 'codex', source: 'https://github.com/anetrebskii/geckit-codex-mirror' },
   { id: 'plugin:kimi', family: 'plugin:kimi', name: 'Kimi Code', shortName: 'Kimi', icon: 'terminal', browser: 'none', loginCommand: 'kimi login', planName: 'Kimi', source: 'https://github.com/example/geckit-kimi' },
   query.has('legacy') ? { ...claudeTmux, id: 'claude-tmux', family: 'claude', transport: 'tmux' } : claudeTmux,
-] : []
+ ] : []
 const libraries = sourceLibraries.filter((one) => !(query.has('failed') && one.id === 'plugin:claude-tmux'))
 const failedLibraries: readonly ProviderPluginFailure[] = query.has('failed') ? [{ id: 'plugin:claude-tmux', name: 'Claude Code (tmux)', icon: 'tmux', source: 'https://github.com/anetrebskii/geckit-claude-tmux', error: 'Plugin does not implement LlmProvider.' }] : []
 registerProviderInfo(libraries)
@@ -33,11 +33,11 @@ function Preview(): React.JSX.Element {
       reinstallProvider: async (id: string): Promise<LlmProviderInfo> => {
         if (query.has('reinstallDelay')) await new Promise<void>((resolve) => setTimeout(resolve, 1500))
         if (query.has('reinstallFail')) throw new Error('Preview reinstall failed')
-        const provider = sourceLibraries.find((one) => one.id === id)
+        const provider = failedLibraries.find((one) => one.id === id)
         if (provider === undefined) throw new Error('Library is not installed.')
-        setSettings((current) => ({ ...current, providerPlugins: [...current.providerPlugins, provider] }))
         setFailed((current) => current.filter((one) => one.id !== id))
-        return provider
+        setSettings((current) => ({ ...current, providerPlugins: [...current.providerPlugins.filter((one) => one.id !== id), claudeTmux] }))
+        return claudeTmux
       },
       uninstallProvider: async (id: string): Promise<void> => {
         if (query.has('removeDelay')) await new Promise<void>((resolve) => setTimeout(resolve, 4000))
@@ -45,6 +45,7 @@ function Preview(): React.JSX.Element {
         if (query.has('removeFailLong')) throw new Error("Error invoking remote method 'chat:uninstallProvider': Error: Failed to move /Users/alex/Library/Application Support/geckit-local/provider-plugins/plugin-codex-mirror to Trash: permission denied. Check access to the provider-plugins folder and try again.")
         if (query.has('removeFail')) throw new Error('Preview remove failed')
         setSettings((current) => ({ ...current, providerPlugins: current.providerPlugins.filter((one) => one.id !== id), providerRemovalPending: true }))
+        setFailed((current) => current.filter((one) => one.id !== id))
       },
       applyProviderUpdate: async (id: string): Promise<LlmProviderInfo> => {
         if (query.has('applyDelay')) await new Promise<void>((resolve) => setTimeout(resolve, 1500))

@@ -1,0 +1,43 @@
+{
+  "version": "1.18.35",
+  "models": [
+    {
+      "value": "mock/llama-test",
+      "id": "mock/llama-test",
+      "name": "Llama Test",
+      "isDefault": true,
+      "supportsAutoMode": false,
+      "contextWindow": 16384,
+      "maxOutputTokens": 4096,
+      "pricing": {
+        "currency": "USD",
+        "input": 0,
+        "output": 0
+      }
+    }
+  ],
+  "completed": {
+    "kind": "ended",
+    "how": "done"
+  },
+  "itemKinds": [
+    "mine",
+    "did",
+    "theirs"
+  ],
+  "mockRequests": [
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST"
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST"
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST"
+    }
+  ],
+  "history": "read/list/search/rename/fork/delete and native permission pass"
+}

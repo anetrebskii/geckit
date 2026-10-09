@@ -1,0 +1,209 @@
+{
+  "version": "1.18.35",
+  "models": [
+    {
+      "value": "ollama/qwen-test",
+      "id": "ollama/qwen-test",
+      "name": "Qwen Test",
+      "isDefault": true,
+      "supportsAutoMode": false,
+      "contextWindow": 16384,
+      "maxOutputTokens": 4096,
+      "pricing": {
+        "currency": "USD",
+        "input": 0,
+        "output": 0
+      }
+    }
+  ],
+  "completed": {
+    "kind": "ended",
+    "how": "done"
+  },
+  "incomplete": {
+    "kind": "ended",
+    "how": "failed",
+    "text": "OpenCode finished without a final text reply. Try another model or send again."
+  },
+  "itemKinds": [
+    "mine",
+    "did",
+    "did",
+    "theirs"
+  ],
+  "mockRequests": [
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "write"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "write"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "write"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "write"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "write"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "write"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "write"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "tools": [
+        "glob",
+        "grep",
+        "question",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch"
+      ],
+      "geckitInstructions": true
+    },
+    {
+      "url": "/v1/chat/completions",
+      "method": "POST",
+      "geckitInstructions": false
+    }
+  ],
+  "history": "read/list/search/rename/fork/delete, permission, two question cards, Stop/continue, reasoning-only failure/recovery, Plan denial, owned instructions and correction pass",
+  "root": "/var/folders/c3/2y8b2_v56c9bl7_qfsfg9tsh0000gn/T/geckit-opencode-smoke-H26sxh"
+}

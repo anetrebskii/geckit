@@ -2510,12 +2510,12 @@ export class Sessions {
     }
   }
 
-  /** Claude Code has no auto mode for some models, and runs as in Manual without saying so. */
+  /** Some providers run as in Manual without saying so when Auto is unavailable. */
   #noAuto(live: Live, model: string | undefined): void {
     live.mode = 'manual'
     live.runs = 'manual'
     this.#note(live.id, { mode: 'manual' })
-    const said: SessionItem = { kind: 'note', id: `mode:${String(this.#now())}`, note: 'mode', text: noAutoMode(model) }
+    const said: SessionItem = { kind: 'note', id: `mode:${String(this.#now())}`, note: 'mode', text: noAutoMode(model, this.#for(live)) }
     live.kept.push({ after: [...live.items.keys()].at(-1), item: said })
     live.items.set(said.id, said)
     this.#deps.items({ id: live.id, items: [said] })

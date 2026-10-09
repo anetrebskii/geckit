@@ -1,0 +1,5 @@
+# Contract
+
+Implement existing [LlmProvider](../../../client/src/main/sessions/plugin-api.ts), unchanged API v1. Export create(host); no module-load side effects. Use namespaced IDs at every GeckIt boundary. Native operations use /session, /session/:id/message, /session/:id/prompt_async, /session/:id/abort, /session/:id/fork, /permission/:id/reply, /question/:id/reply and /event with directory query. Missing optional capabilities return undefined or empty lists. Send ended once per active turn and left once per released driver.
+
+These paths describe the library's internal v1-compatible transport interface. OpenCode 2 uses a native adapter for `/api/session`, `/api/model`, `/api/model/default`, `/api/session/:id/prompt`, `/api/experimental/session/:id/wait`, `/api/session/:id/interrupt`, session-owned permission/form replies and `/api/event`. Consume pagination before returning snapshots. V2 events use `data` instead of `properties`; snapshots and streaming normalize to the same stable transcript identifiers.

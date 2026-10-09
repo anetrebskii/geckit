@@ -95,3 +95,9 @@ Use GeckIt's existing dialog, sheet, grouped rows and tokens. Preserve plugin AP
 ## 11. Requirements
 
 Provider-scoped usage covers libraries and builtins. Optional model pricing/version/capacity covers model details. Usage/spend events cover streaming updates. Shared details content gives phone parity. Author guide, independent Codex example and CLI instructions cover build documentation.
+
+## Auto-to-Manual notice
+
+When a provider starts outside Auto or switches out of Auto, the existing conversation note uses that conversation's active provider display name. The wording is "<provider> has no auto mode for <model>, so this conversation asks first, as in Manual." Missing model identity uses "this model". Claude names retain existing model formatting; plugin model IDs remain intact. The mode changes to Manual as before. For OpenCode + Ollama with ollama/qwen3.5:0.8b, the note begins "OpenCode + Ollama", matching the composer. Existing saved notes remain history; new fallback notices use corrected wording. No layout, focus, keyboard, scrolling or theme behavior changes.
+
+Provider notice verification (2026-10-09): 164 session tests, typecheck, scoped ESLint and desktop build pass. Reviewed actual Transcript and Composer in an isolated Chrome preview, light/dark desktop at 1352x708 and phone at 390x844. Provider identity matches the composer, complete notice remains readable and wraps on phone without clipping, adjacent spacing and density stay consistent. Keyboard Tab moves from composer input to Manual. No interactive controls or scrolling behavior changed. Preview removed and viewport restored. Native app activation remains unverified; the main-process change loads on the next GeckIt restart, with no active conversations restarted by this session. No renderer hot-path or animation changes.
