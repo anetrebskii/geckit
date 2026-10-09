@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { assistantsIn, planLine, providerOf, SESSION_MODES, shownProjects } from '../../../shared/api'
-import type { ClaudeAccount, Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, SessionProvider, ShortcutDraft, Theme } from '../../../shared/api'
+import { assistantsIn, providerOf, SESSION_MODES, shownProjects } from '../../../shared/api'
+import type { Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, SessionProvider, ShortcutDraft, Theme } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
-import { independentProviderInfo, isCodexProvider, llmProviderInfo } from '../../../shared/providers'
+import { independentProviderInfo, llmProviderInfo } from '../../../shared/providers'
 import { ear, setEar, voice } from '../dictate'
 import type { Ear } from '../dictate'
 import { macs } from '../macs'
@@ -90,20 +90,6 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
   const providers = settings.providerPlugins.map(independentProviderInfo)
   const codexInfo = llmProviderInfo('codex', 'stream', settings.providerPlugins)
   const enabled = assistantsIn(settings)
-  const [assistantAccounts, setAssistantAccounts] = useState<readonly ClaudeAccount[]>([])
-  useEffect(() => {
-    let alive = true
-    const keep = (account: ClaudeAccount): void => {
-      if (alive) setAssistantAccounts((before) => [...before.filter((one) => (one.provider ?? 'claude') !== (account.provider ?? 'claude')), account])
-    }
-    for (const provider of enabled) void window.geckit.chat.account(provider).then(keep).catch(() => undefined)
-    const off = window.geckit.chat.onAccount(keep)
-    return () => {
-      alive = false
-      off()
-    }
-  }, [enabled])
-  const claudeAccount = assistantAccounts.find((one) => (one.provider ?? 'claude') === 'claude')
   const toggle = (provider: SessionProvider, on: boolean): void => {
     const chatProviders = on ? [...enabled, provider] : enabled.filter((one) => one !== provider)
     if (chatProviders.length === 0) return
@@ -204,12 +190,6 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
       <div className="phone-head">About</div>
       <div className="phone-group">
         <Cell label={`GeckIt on ${thisMac?.name ?? 'the host'}`} value={version ?? '-'} />
-        {enabled.includes('claude') ? <Cell label="Claude Code" value={claudeAccount?.program?.version ?? '-'} says={claudeAccount === undefined ? undefined : planLine(claudeAccount)} /> : null}
-        {enabled.filter(isCodexProvider).map((provider) => {
-          const info = llmProviderInfo(provider, 'stream', settings.providerPlugins)
-          const account = assistantAccounts.find((one) => one.provider === provider)
-          return <Cell key={provider} label={info.name} icon={info.icon} value={account?.program?.version ?? '-'} says={account === undefined ? undefined : planLine(account)} />
-        })}
       </div>
 
       {picking === 'theme' ? (
