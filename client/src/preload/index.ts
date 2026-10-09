@@ -125,6 +125,7 @@ const geckit = {
   chat: {
     open: (): void => ipcRenderer.send('chat:open'),
     installProvider: (url: string): Promise<LlmProviderInfo> => ipcRenderer.invoke('chat:installProvider', url),
+    reinstallProvider: (id: string): Promise<LlmProviderInfo> => ipcRenderer.invoke('chat:reinstallProvider', id),
     uninstallProvider: (id: string): Promise<void> => ipcRenderer.invoke('chat:uninstallProvider', id),
     applyProviderUpdate: (id: string): Promise<LlmProviderInfo> => ipcRenderer.invoke('chat:applyProviderUpdate', id),
     checkProviderUpdates: (): Promise<PluginUpdateResult> => ipcRenderer.invoke('chat:checkProviderUpdates'),

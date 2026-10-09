@@ -1218,6 +1218,7 @@ textarea {
 }
 
 .provider-library-apply,
+.provider-library-reinstall,
 .provider-library-remove {
   padding: 3px 5px;
   color: var(--text-dim);

@@ -490,6 +490,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     chat: {
       open: nothing,
       installProvider: () => Promise.reject(new Error('Install providers on the computer.')),
+      reinstallProvider: () => Promise.reject(new Error('Reinstall providers on the computer.')),
       uninstallProvider: () => Promise.reject(new Error('Remove providers on the computer.')),
       applyProviderUpdate: () => Promise.reject(new Error('Apply provider updates on the computer.')),
       checkProviderUpdates: () => Promise.reject(new Error('Check provider updates on the computer.')),

@@ -207,8 +207,12 @@ async function recoverBackups(): Promise<void> {
       const manifest = await manifestAt(backup).catch(() => undefined)
       if (manifest === undefined) continue
       const destination = await libraryPath(manifest.provider.id)
-      if (await stat(destination).then(() => true, () => false)) await rm(backup, { recursive: true, force: true })
-      else await rename(backup, destination)
+      if (await stat(destination).then(() => true, () => false)) {
+        if (one.name.startsWith('.backup-reinstall-')) {
+          await rm(destination, { recursive: true, force: true })
+          await rename(backup, destination)
+        } else await rm(backup, { recursive: true, force: true })
+      } else await rename(backup, destination)
     } catch { /* A broken library must not stop GeckIt from opening. */ }
   }
   const copies = await readdir(folder(), { withFileTypes: true }).catch(() => [])
@@ -302,6 +306,42 @@ export async function installPlugin(given: string, host: PluginHost): Promise<Lo
     }
     catch (error) { await rm(destination, { recursive: true, force: true }); throw error }
   } finally { await rm(staging, { recursive: true, force: true }) }
+}
+
+export async function reinstallFailedPlugin(id: string, host: PluginHost): Promise<LoadedPlugin> {
+  const failure = loadFailures.find((one) => one.id === id)
+  if (failure?.source === undefined) throw new Error('A GitHub source could not be identified for this library.')
+  const url = githubUrl(failure.source)
+  await mkdir(folder(), { recursive: true })
+  const staging = join(folder(), `.reinstall-${randomUUID()}`)
+  const backup = join(folder(), `.backup-reinstall-${randomUUID()}`)
+  let destination: string | undefined
+  try {
+    await git(['clone', '--depth', '1', url, staging])
+    const manifest = await manifestAt(staging)
+    const info = independentProviderInfo(manifest.provider)
+    if (info.id !== id) throw new Error('The repository now contains a different provider.')
+    destination = await libraryPath(id)
+    const current = await manifestAt(destination)
+    if (independentProviderInfo(current.provider).id !== id) throw new Error('The installed provider ID does not match.')
+    await rename(destination, backup)
+    try {
+      await rename(staging, destination)
+      const loaded = await loadPluginSnapshot(destination, host)
+      const source = url.replace(/\.git$/, '')
+      const reinstalled = { ...loaded, info: { ...loaded.info, source }, provider: { ...loaded.provider, source } }
+      await rm(backup, { recursive: true, force: true })
+      active.set(reinstalled.provider.family, reinstalled.provider)
+      loadFailures = loadFailures.filter((one) => one.id !== id)
+      return reinstalled
+    } catch (error) {
+      await rm(destination, { recursive: true, force: true }).catch(() => undefined)
+      await rename(backup, destination)
+      throw error
+    }
+  } finally {
+    await rm(staging, { recursive: true, force: true })
+  }
 }
 
 export async function uninstallPlugin(id: string): Promise<LlmProviderInfo> {

@@ -80,7 +80,7 @@ import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import { CodexSessions } from './sessions/codex'
 import { llmProvider } from './sessions/provider'
-import { applyReadyPlugin, installPlugin, installedPlugins, pluginHost, providerPluginFailures, uninstallPlugin, updateInstalledPlugins } from './sessions/plugins'
+import { applyReadyPlugin, installPlugin, installedPlugins, pluginHost, providerPluginFailures, reinstallFailedPlugin, uninstallPlugin, updateInstalledPlugins } from './sessions/plugins'
 import { independentProviderInfo, instructionsFor, registerProviderInfo } from '../shared/providers'
 import type { PluginHost } from './sessions/plugins'
 import type { PluginUpdateResult } from '../shared/providers'
@@ -1097,6 +1097,18 @@ function wire(): void {
     registerProviderInfo(getSettings().providerPlugins)
     void sessions.refresh(getSettings().projects)
     return installed.info
+  })
+  ipcMain.handle('chat:reinstallProvider', async (_event, id: string) => {
+    if (pluginsHost === undefined || sessions === undefined) throw new Error('Chat is not ready yet.')
+    const reinstalled = await reinstallFailedPlugin(id, pluginsHost)
+    sessions.addProvider(reinstalled.provider)
+    const previous = getSettings()
+    const enabled = assistantsIn(previous)
+    const providerPlugins = [...previous.providerPlugins.filter((one) => one.id !== reinstalled.info.id), reinstalled.info]
+    setSettings({ providerPlugins, providerUpdatesReady: previous.providerUpdatesReady.filter((one) => one !== reinstalled.info.id), chatProviders: enabled.includes(reinstalled.info.family) ? enabled : [...enabled, reinstalled.info.family] })
+    registerProviderInfo(providerPlugins)
+    void sessions.refresh(getSettings().projects)
+    return reinstalled.info
   })
   ipcMain.handle('chat:uninstallProvider', async (_event, id: string) => {
     if (sessions === undefined) throw new Error('Chat is not ready yet.')

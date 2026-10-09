@@ -183,6 +183,7 @@ Provider libraries and the independent external-provider example were extracted 
 - Every installed library adds its own assistant entry and can be enabled or disabled without replacing a builtin or other library; select it for new conversations.
 - Validate manifests, provider contract and prebuilt entry points during installation.
 - Display library identity, repository and update state in Settings > Libraries.
+- Show load errors for installed libraries and offer Reinstall from the same GitHub repository when the provider ID and source are known. Reinstallation validates the replacement before swapping it in and preserves the failed copy if loading fails.
 - Automatic update checks at startup and every 24 hours; manual Check now.
 - Stage and validate updates, then apply them in Settings without restarting. Active turns finish on the old code; the next message resumes with the new version.
 - Confirm removal, move the installed copy to Trash and remove it from new assistant choices; restart unloads existing code.
