@@ -2,7 +2,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 
 import { ANYWHERE, UPDATE_CHANNELS, appName, assistantsIn, channelLabel, profileOf } from '../../../shared/api'
 import { independentProviderInfo, instructionsFor, llmProviderInfo } from '../../../shared/providers'
-import type { LlmProviderInfo } from '../../../shared/providers'
+import type { LlmProviderInfo, ProviderPluginFailure } from '../../../shared/providers'
 import type { Anywhere, OpenRule, PhoneView, ProjectProfile, SessionProvider, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
 import { hostOf } from '../../../shared/hosts'
@@ -196,6 +196,37 @@ const ProviderLibraryRow = memo(function ProviderLibraryRow({ provider, ready, a
   )
 })
 
+function FailedProviderLibraryRow({ failure, confirming, removing, removeError, onAsk, onCancel, onRemove }: {
+  readonly failure: ProviderPluginFailure
+  readonly confirming: boolean
+  readonly removing: boolean
+  readonly removeError: string
+  readonly onAsk: () => void
+  readonly onCancel: () => void
+  readonly onRemove: () => void
+}): React.JSX.Element {
+  const removeButton = useRef<HTMLButtonElement>(null)
+  const cancel = (): void => { onCancel(); removeButton.current?.focus() }
+  return (
+    <div className="provider-library-row provider-library-failure">
+      <span className="provider-library-icon"><Icon name={failure.icon} size={16} /></span>
+      <span className="provider-library-copy"><strong>{failure.name}</strong><span title={failure.source}>{failure.source?.replace(/^https:\/\//, '') ?? 'Installed locally'}</span></span>
+      {failure.id === undefined ? null : <button ref={removeButton} type="button" className="quiet provider-library-remove" aria-label={`Remove ${failure.name}`} aria-expanded={confirming} disabled={removing} onClick={confirming ? cancel : onAsk}>{confirming ? 'Cancel' : 'Remove'}</button>}
+      <p className="provider-library-failure-reason" role="alert">Could not load this library: {failure.error}</p>
+      <p className="provider-library-failure-help">Remove this copy and restart GeckIt before installing a compatible version.</p>
+      {failure.id === undefined ? <p className="provider-library-failure-help">GeckIt could not identify this library, so it cannot remove it here.</p> : null}
+      {removeError === '' ? null : <p className="provider-library-failure-reason" role="alert">{removeError}</p>}
+      {confirming ? <div className="provider-library-confirm">
+        <span>Remove {failure.name}? Its installed copy moves to Trash.</span>
+        <div>
+          <button type="button" className="quiet" disabled={removing} onClick={cancel}>Cancel</button>
+          <button type="button" className="primary danger" disabled={removing} onClick={onRemove}>{removing ? 'Removing…' : 'Remove library'}</button>
+        </div>
+      </div> : null}
+    </div>
+  )
+}
+
 function Assistants({ settings, change }: Part): React.JSX.Element {
   const enabled = assistantsIn(settings)
   const providers = settings.providerPlugins.map(independentProviderInfo)
@@ -260,6 +291,7 @@ function Assistants({ settings, change }: Part): React.JSX.Element {
 
 function Libraries({ settings, change }: Part): React.JSX.Element {
   const readyLibraries = useMemo(() => new Set(settings.providerUpdatesReady), [settings.providerUpdatesReady])
+  const [failedLibraries, setFailedLibraries] = useState<readonly ProviderPluginFailure[] | undefined>(undefined)
   const addForm = useRef<HTMLFormElement>(null)
   const restartNotice = useRef<HTMLParagraphElement>(null)
   const [repository, setRepository] = useState('')
@@ -273,6 +305,10 @@ function Libraries({ settings, change }: Part): React.JSX.Element {
   const [confirming, setConfirming] = useState('')
   const [removing, setRemoving] = useState('')
   const [removeError, setRemoveError] = useState('')
+  const [confirmingFailure, setConfirmingFailure] = useState('')
+  const [removingFailure, setRemovingFailure] = useState('')
+  const [failedRemoveErrors, setFailedRemoveErrors] = useState<readonly (Pick<ProviderPluginFailure, 'name'> & { readonly message: string })[]>([])
+  useEffect(() => { void window.geckit.chat.getProviderPluginFailures().then(setFailedLibraries).catch(() => setFailedLibraries([])) }, [])
   const askRemove = useCallback((id: LlmProviderInfo['id']): void => { setConfirming(id); setRemoveError('') }, [])
   const cancelRemove = useCallback((): void => setConfirming(''), [])
   const removeLibrary = useCallback((provider: LlmProviderInfo): void => {
@@ -282,6 +318,17 @@ function Libraries({ settings, change }: Part): React.JSX.Element {
       if (error === undefined) setConfirming('')
       else setRemoveError(error)
     }).finally(() => setRemoving(''))
+  }, [])
+  const removeFailedLibrary = useCallback((failure: ProviderPluginFailure): void => {
+    if (failure.id === undefined) return
+    setRemovingFailure(failure.name)
+    setFailedRemoveErrors((current) => current.filter((one) => one.name !== failure.name))
+    void removeProviderLibrary(window.geckit.chat, { id: failure.id, name: failure.name }).then((error) => {
+      if (error === undefined) {
+        setFailedLibraries((current) => (current ?? []).filter((one) => one.id !== failure.id))
+        setConfirmingFailure('')
+      } else setFailedRemoveErrors((current) => [...current.filter((one) => one.name !== failure.name), { name: failure.name, message: error }])
+    }).finally(() => setRemovingFailure(''))
   }, [])
   const applyLibrary = useCallback(async (provider: LlmProviderInfo): Promise<boolean> => {
     setApplying(provider.id)
@@ -303,8 +350,8 @@ function Libraries({ settings, change }: Part): React.JSX.Element {
     if (adding) addForm.current?.scrollIntoView({ block: 'center' })
   }, [adding])
   useLayoutEffect(() => {
-    if (settings.providerRemovalPending && removing !== '') restartNotice.current?.focus()
-  }, [settings.providerRemovalPending, removing])
+    if (settings.providerRemovalPending && (removing !== '' || removingFailure !== '')) restartNotice.current?.focus()
+  }, [settings.providerRemovalPending, removing, removingFailure])
   return (
     <section className="provider-libraries" aria-labelledby="provider-libraries-title">
       <div className="provider-library-head">
@@ -312,8 +359,11 @@ function Libraries({ settings, change }: Part): React.JSX.Element {
         <button type="button" className="provider-library-add-button" onClick={() => setAdding(true)} disabled={adding}><Icon name="plus" size={14} />Add library</button>
       </div>
       <p className="provider-library-intro">Providers from GitHub. Apply updates without restarting GeckIt.</p>
-      {settings.providerPlugins.length === 0 ? adding ? null : <p className="provider-library-empty">No libraries installed.</p> : <div className="provider-library-list">{settings.providerPlugins.map((one) => <ProviderLibraryRow key={one.id} provider={one} ready={readyLibraries.has(one.id)} applying={applying === one.id} confirming={confirming === one.id} removing={removing === one.id} onApply={applyLibrary} onAsk={askRemove} onCancel={cancelRemove} onRemove={removeLibrary} />)}</div>}
-      {settings.providerRemovalPending ? <p ref={restartNotice} className="provider-library-restart" role="status" tabIndex={-1}>Restart GeckIt to unload removed libraries.</p> : null}
+      {settings.providerPlugins.length === 0 && failedLibraries === undefined ? null : settings.providerPlugins.length === 0 && failedLibraries?.length === 0 ? adding ? null : <p className="provider-library-empty">No libraries installed.</p> : <div className="provider-library-list">
+        {(failedLibraries ?? []).map((failure) => <FailedProviderLibraryRow key={failure.id ?? failure.name} failure={failure} confirming={confirmingFailure === (failure.id ?? failure.name)} removing={removingFailure === failure.name} removeError={failedRemoveErrors.find((one) => one.name === failure.name)?.message ?? ''} onAsk={() => setConfirmingFailure(failure.id ?? failure.name)} onCancel={() => setConfirmingFailure('')} onRemove={() => removeFailedLibrary(failure)} />)}
+        {settings.providerPlugins.map((one) => <ProviderLibraryRow key={one.id} provider={one} ready={readyLibraries.has(one.id)} applying={applying === one.id} confirming={confirming === one.id} removing={removing === one.id} onApply={applyLibrary} onAsk={askRemove} onCancel={cancelRemove} onRemove={removeLibrary} />)}
+      </div>}
+      {settings.providerRemovalPending ? <p ref={restartNotice} className="provider-library-restart" role="status" tabIndex={-1}>Restart GeckIt to finish removing libraries.</p> : null}
       {removeError === '' ? null : <span className="error" role="alert">{removeError}</span>}
       {applyError === '' ? null : <span className="error" role="alert">{applyError}</span>}
       {adding ? <form ref={addForm} className="provider-library-add" onSubmit={(event) => {

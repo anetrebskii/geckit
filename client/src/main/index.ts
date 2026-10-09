@@ -80,7 +80,7 @@ import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import { CodexSessions } from './sessions/codex'
 import { llmProvider } from './sessions/provider'
-import { applyReadyPlugin, installPlugin, installedPlugins, pluginHost, uninstallPlugin, updateInstalledPlugins } from './sessions/plugins'
+import { applyReadyPlugin, installPlugin, installedPlugins, pluginHost, providerPluginFailures, uninstallPlugin, updateInstalledPlugins } from './sessions/plugins'
 import { independentProviderInfo, instructionsFor, registerProviderInfo } from '../shared/providers'
 import type { PluginHost } from './sessions/plugins'
 import type { PluginUpdateResult } from '../shared/providers'
@@ -1102,7 +1102,12 @@ function wire(): void {
     if (sessions === undefined) throw new Error('Chat is not ready yet.')
     const previous = getSettings()
     const provider = previous.providerPlugins.find((one) => one.id === id)
-    if (provider === undefined) throw new Error('Library is not installed.')
+    if (provider === undefined) {
+      if (!providerPluginFailures().some((one) => one.id === id)) throw new Error('Library is not installed.')
+      await uninstallPlugin(id)
+      setSettings({ providerRemovalPending: true })
+      return
+    }
     const ownInstructions = instructionsFor(provider) === 'own' && previous.guidePlugins[id] !== false
     if (ownInstructions) await sessions.setInstructions(provider.family, false, previous.browserNames)
     try { await uninstallPlugin(id) }
@@ -1140,6 +1145,7 @@ function wire(): void {
     return updated.info
   })
   ipcMain.handle('chat:checkProviderUpdates', () => checkProviderUpdates())
+  ipcMain.handle('chat:providerPluginFailures', () => providerPluginFailures())
   ipcMain.handle('chat:models', (_event, root: string | undefined, provider: SessionProvider | undefined) => sessions?.models(root ?? undefined, provider))
   ipcMain.handle('chat:plan', () => {
     void sessions?.measure()

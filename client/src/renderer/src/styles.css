@@ -1153,6 +1153,30 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
+.provider-library-failure .provider-library-icon {
+  color: var(--danger);
+  background: var(--bg-sunken);
+}
+
+.provider-library-failure-reason,
+.provider-library-failure-help {
+  flex: 1 0 100%;
+  min-width: 0;
+  margin: 0;
+  padding-inline-start: 38px;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.provider-library-failure-reason {
+  color: var(--danger);
+}
+
+.provider-library-failure-help {
+  color: var(--text-dim);
+}
+
 .provider-library-icon {
   display: grid;
   flex: 0 0 28px;

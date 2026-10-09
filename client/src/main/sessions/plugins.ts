@@ -1,12 +1,12 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
-import { join, relative, resolve } from 'node:path'
+import { basename, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { app, shell } from 'electron'
 
-import type { LlmProviderInfo, PluginUpdateResult } from '../../shared/providers'
+import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from '../../shared/providers'
 import { independentProviderInfo } from '../../shared/providers'
 import type { SessionProvider } from '../../shared/api'
 import { claudeCommand, OFF_PLAN, planOnly } from './account'
@@ -58,6 +58,8 @@ export interface LoadedPlugin {
 const folder = (): string => join(app.getPath('userData'), 'provider-plugins')
 const active = new Map<SessionProvider, LlmProvider>()
 const removedUntilRestart = new Set<string>()
+let loadFailures: readonly ProviderPluginFailure[] = []
+export const providerPluginFailures = (): readonly ProviderPluginFailure[] => loadFailures
 export const pluginProvider = (family: SessionProvider): LlmProvider | undefined => active.get(family)
 const git = (args: readonly string[], timeout = 120_000): Promise<string> => new Promise((done, fail) => {
   execFile('git', [...args], { timeout, maxBuffer: 1024 * 1024 }, (error, stdout) => error === null ? done(stdout.trim()) : fail(error))
@@ -159,13 +161,30 @@ export async function installedPlugins(host: PluginHost): Promise<LoadedPlugin[]
   await recoverBackups()
   await applyReadyUpdates(host)
   const entries = await readdir(folder(), { withFileTypes: true }).catch(() => [])
-  const loaded = await Promise.all(entries.filter((one) => one.isDirectory() && !one.name.startsWith('.')).map(async (one) => {
+  const attempts = await Promise.all(entries.filter((one) => one.isDirectory() && !one.name.startsWith('.')).map(async (one) => {
     const path = join(folder(), one.name)
-    const plugin = await loadPluginSnapshot(path, host)
-    const source = await sourceAt(path).catch(() => undefined)
-    return source === undefined ? plugin : { ...plugin, info: { ...plugin.info, source }, provider: { ...plugin.provider, source } }
-  }).map((one) => one.catch(() => undefined)))
-  const ready = loaded.filter((one): one is LoadedPlugin => one !== undefined)
+    try {
+      const plugin = await loadPluginSnapshot(path, host)
+      const source = await sourceAt(path).catch(() => undefined)
+      return { plugin: source === undefined ? plugin : { ...plugin, info: { ...plugin.info, source }, provider: { ...plugin.provider, source } } }
+    } catch (error) {
+      const manifest = await manifestAt(path).catch(() => undefined)
+      const source = await sourceAt(path).catch(() => undefined)
+      const info = manifest === undefined ? undefined : independentProviderInfo(manifest.provider)
+      const resolvedSource = source ?? info?.source
+      return {
+        failure: {
+          ...(info === undefined ? {} : { id: info.id }),
+          name: info?.name ?? basename(path),
+          icon: info?.icon ?? 'terminal',
+          ...(resolvedSource === undefined ? {} : { source: resolvedSource }),
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies ProviderPluginFailure,
+      }
+    }
+  }))
+  const ready = attempts.flatMap((one) => 'plugin' in one ? [one.plugin] : [])
+  loadFailures = attempts.flatMap((one) => 'failure' in one ? [one.failure] : [])
   for (const one of ready) active.set(one.provider.family, one.provider)
   return ready
 }
@@ -276,9 +295,10 @@ export async function installPlugin(given: string, host: PluginHost): Promise<Lo
     try {
       const found = await loadPluginSnapshot(destination, host)
       const source = url.replace(/\.git$/, '')
-      const loaded = { ...found, info: { ...found.info, source }, provider: { ...found.provider, source } }
-      active.set(loaded.provider.family, loaded.provider)
-      return loaded
+    const loaded = { ...found, info: { ...found.info, source }, provider: { ...found.provider, source } }
+    active.set(loaded.provider.family, loaded.provider)
+    loadFailures = loadFailures.filter((one) => one.id !== loaded.info.id)
+    return loaded
     }
     catch (error) { await rm(destination, { recursive: true, force: true }); throw error }
   } finally { await rm(staging, { recursive: true, force: true }) }
@@ -301,7 +321,9 @@ export async function uninstallPlugin(id: string): Promise<LlmProviderInfo> {
     const stored = await manifestAt(backup).catch(() => undefined)
     if (stored !== undefined && independentProviderInfo(stored.provider).id === id) await rm(backup, { recursive: true, force: true }).catch(() => undefined)
   }
-  return independentProviderInfo(manifest.provider)
+  const info = independentProviderInfo(manifest.provider)
+  loadFailures = loadFailures.filter((one) => one.id !== info.id)
+  return info
 }
 
 export async function updateInstalledPlugins(host: PluginHost): Promise<PluginUpdateResult> {

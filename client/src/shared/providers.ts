@@ -26,6 +26,10 @@ export interface PluginUpdateResult {
   readonly failed: readonly string[]
 }
 
+export type ProviderPluginFailure = Partial<Pick<LlmProviderInfo, 'id' | 'source'>> & Pick<LlmProviderInfo, 'name' | 'icon'> & {
+  readonly error: string
+}
+
 const CLAUDE_STREAM: LlmProviderInfo = { id: 'claude-stream', family: 'claude', transport: 'stream', name: 'Claude Code', shortName: 'Claude', icon: 'claude', browser: 'claude', loginCommand: 'claude auth login', planName: 'Claude' }
 const CODEX: LlmProviderInfo = { id: 'codex', family: 'codex', transport: undefined, name: 'Codex', shortName: 'Codex', icon: 'codex', browser: 'codex', loginCommand: 'codex login', planName: 'ChatGPT', localOnly: true, runtime: 'codex' }
 

@@ -493,6 +493,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       uninstallProvider: () => Promise.reject(new Error('Remove providers on the computer.')),
       applyProviderUpdate: () => Promise.reject(new Error('Apply provider updates on the computer.')),
       checkProviderUpdates: () => Promise.reject(new Error('Check provider updates on the computer.')),
+      getProviderPluginFailures: async () => [],
       account: (provider) => call('chat.account', provider),
       models: (root, provider) => call('chat.models', root, provider),
       plan: () => call('chat.plan'),
