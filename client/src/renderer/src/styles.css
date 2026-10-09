@@ -7726,11 +7726,6 @@ html.phone .send {
   border-radius: 16px;
 }
 
-html.phone .send.stop {
-  color: var(--text);
-  background: var(--fill-strong);
-}
-
 html.phone .send:disabled {
   color: var(--bg-raised);
   background: var(--fill-strong);
@@ -7762,7 +7757,7 @@ html.phone .spoken {
   border-radius: 16px;
 }
 
-html.phone .composer-inner:has(.spoken) textarea {
+html.phone .composer-inner:has(.spoken, .send.mic.beside) textarea {
   padding-right: 80px;
 }
 
