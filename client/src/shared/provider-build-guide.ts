@@ -28,6 +28,12 @@ Driver may optionally implement inject(text, images?, before?): Promise<void>, u
 
 setInstructions(enabled, browserNames) owns instruction setup/cleanup. Select instructions: own for an independent switch, or codex/claude only when sharing that provider's global instructions. Remove only files and references your library owns. dispose must release only your resources.
 
+## Local diagnostics
+
+The apiVersion: 1 factory receives create(context), where PluginContext provides only context.log: PluginLogger. Existing create() factories still work. Use optional context?.log?.write(level, event, fields) for compatibility with older GeckIt versions. Levels are debug/info/warn/error; event names are stable identifiers; fields contain scalar string/number/boolean/null values. Never log prompts, responses, tool arguments, images, credentials or raw backend bodies. Log counts, timings, skip reasons and failure categories instead.
+
+context.log.path is the local file under userData/provider-logs/<normalized-plugin-id>.jsonl (colon becomes hyphen). Writes are asynchronous and nonfatal; the current file and one .1 backup each retain at most 2 MiB. Plugin events receive loadId/loadKind automatically so active snapshots and validation candidates can share a log. Host plugin.load.* and limits.host.* events exist even for older libraries. A limits.host.requested event records a host request, not an actual backend measurement; log backend checks and cache/skip outcomes separately.
+
 ## Build and verify
 
 Use Node 22+. Bundle dependencies as ESM for Node/Electron into index.mjs; externalize only Node builtins and Electron. Do not import files from the GeckIt checkout at runtime. Keep TypeScript strict and derive types from the public contract. Avoid import-time side effects: GeckIt validates update candidates while the old provider still runs.

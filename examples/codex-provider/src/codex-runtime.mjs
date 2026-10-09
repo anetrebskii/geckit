@@ -4318,9 +4318,11 @@ var CodexSessions = class {
   #new = /* @__PURE__ */ new Map();
   #files = /* @__PURE__ */ new Map();
   #corrections = Promise.resolve(void 0);
-  constructor(launch = launchCodex, changed) {
+  #log;
+  constructor(launch = launchCodex, changed, log = () => {}) {
     this.#launch = launch;
     this.#changed = changed;
+    this.#log = log;
   }
   async #connection() {
     if (this.#rpc === void 0) {
@@ -4361,12 +4363,25 @@ var CodexSessions = class {
   async account() {
     try {
       const rpc = await this.#connection();
+      this.#log("debug", "account.backend.requested");
       const { account } = await rpc.request("account/read", { refreshToken: false });
+      this.#log("debug", "account.backend.completed", { signedIn: account !== null });
       const version = /^[^/]+\/(\S+)/.exec(rpc.userAgent)?.[1];
-      const usage = account?.type === "chatgpt" ? await rpc.request("account/rateLimits/read", {}).catch(() => void 0) : void 0;
+      let usage;
+      if (account?.type === "chatgpt") {
+        this.#log("info", "limits.backend.requested");
+        usage = await rpc.request("account/rateLimits/read", {}).then((result) => {
+          this.#log("info", "limits.backend.completed");
+          return result;
+        }, (error) => {
+          this.#log("warn", "limits.backend.failed", { errorKind: error?.name ?? "Error" });
+          return void 0;
+        });
+      } else this.#log("debug", "limits.backend.skipped", { reason: "not-signed-in-with-plan" });
       this.#account = { provider: "codex", here: true, signedIn: account !== null, ...account?.type === "chatgpt" ? { plan: account.planType } : account === null ? {} : { key: true }, ...version === void 0 ? {} : { program: { version } }, ...usage === void 0 ? {} : { limits: usage.rateLimitsByLimitId == null ? [usage.rateLimits] : Object.values(usage.rateLimitsByLimitId) } };
       return this.#account;
-    } catch {
+    } catch (error) {
+      this.#log("warn", "account.backend.failed", { errorKind: error?.name ?? "Error" });
       return { provider: "codex", here: false, signedIn: void 0 };
     }
   }

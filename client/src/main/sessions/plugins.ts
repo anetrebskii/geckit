@@ -10,6 +10,8 @@ import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from 
 import { independentProviderInfo } from '../../shared/providers'
 import type { SessionProvider } from '../../shared/api'
 import type { LlmProvider } from './provider'
+import type { PluginContext, PluginLogger } from './plugin-api'
+import { pluginLogger } from './plugin-logs'
 
 interface PluginManifest {
   readonly apiVersion: 1
@@ -18,7 +20,7 @@ interface PluginManifest {
 }
 
 interface PluginModule {
-  readonly create: () => LlmProvider | Promise<LlmProvider>
+  readonly create: (context: PluginContext) => LlmProvider | Promise<LlmProvider>
 }
 
 const sameProvider = (current: LlmProviderInfo, next: LlmProviderInfo): boolean =>
@@ -112,24 +114,60 @@ async function loadPluginSnapshot(path: string): Promise<LoadedPlugin> {
   }
 }
 
+const withPluginLogs = (provider: LlmProvider, log: PluginLogger): LlmProvider => ({
+  ...provider,
+  limits: async (models) => {
+    const requestId = randomUUID()
+    const started = Date.now()
+    log.write('debug', 'limits.host.requested', { requestId, modelCount: models.length })
+    try {
+      const limits = await provider.limits(models)
+      log.write('debug', 'limits.host.completed', { requestId, durationMs: Date.now() - started })
+      return limits
+    } catch (error) {
+      log.write('error', 'limits.host.failed', { requestId, durationMs: Date.now() - started })
+      throw error
+    }
+  },
+  dispose: () => {
+    log.write('info', 'plugin.dispose.requested')
+    return provider.dispose()
+  },
+})
+
 export const loadPlugin = async (path: string): Promise<LoadedPlugin> => {
   const manifest = await manifestAt(path)
-  const entry = await realpath(join(path, manifest.entry))
-  if (relative(await realpath(resolve(path)), entry).startsWith('..')) throw new Error('Plugin entry leaves its repository.')
-
-  const moduleUrl = pathToFileURL(entry)
-  moduleUrl.searchParams.set('geckit', randomUUID())
-  const module = await import(moduleUrl.href) as Partial<PluginModule>
-  if (typeof module.create !== 'function') throw new Error('Plugin must export create().')
-
   const info = independentProviderInfo(manifest.provider)
-  const provider = await module.create()
-  const compatible = typeof provider === 'object' && provider !== null && typeof provider.setInstructions !== 'function'
-    ? { ...provider, setInstructions: async () => {} }
-    : provider
-  if (typeof compatible !== 'object' || compatible === null || methods.some((method) => typeof compatible[method] !== 'function') || capabilities.some((field) => typeof compatible[field] !== 'boolean') || typeof compatible.idleMs !== 'number') throw new Error('Plugin does not implement LlmProvider.')
-  if (provider.id !== manifest.provider.id) throw new Error('Plugin ID differs from its manifest.')
-  return { path, info, provider: independentProvider({ ...compatible, ...manifest.provider }, info) }
+  const name = basename(path)
+  const loadKind = name.startsWith('.active-') ? 'snapshot' : /^\.(?:ready|update|install|reinstall)-/.test(name) ? 'candidate' : 'repository'
+  const log = pluginLogger(info, { loadId: randomUUID(), loadKind })
+  log.write('info', 'plugin.load.started')
+  let stage: 'entry' | 'module' | 'factory' | 'contract' = 'entry'
+  try {
+    const entry = await realpath(join(path, manifest.entry))
+    if (relative(await realpath(resolve(path)), entry).startsWith('..')) throw new Error('Plugin entry leaves its repository.')
+
+    const moduleUrl = pathToFileURL(entry)
+    moduleUrl.searchParams.set('geckit', randomUUID())
+    stage = 'module'
+    const module = await import(moduleUrl.href) as Partial<PluginModule>
+    if (typeof module.create !== 'function') throw new Error('Plugin must export create().')
+
+    stage = 'factory'
+    const provider = await module.create({ log })
+    stage = 'contract'
+    const compatible = typeof provider === 'object' && provider !== null && typeof provider.setInstructions !== 'function'
+      ? { ...provider, setInstructions: async () => {} }
+      : provider
+    if (typeof compatible !== 'object' || compatible === null || methods.some((method) => typeof compatible[method] !== 'function') || capabilities.some((field) => typeof compatible[field] !== 'boolean') || typeof compatible.idleMs !== 'number') throw new Error('Plugin does not implement LlmProvider.')
+    if (provider.id !== manifest.provider.id) throw new Error('Plugin ID differs from its manifest.')
+    const loaded = { path, info, provider: withPluginLogs(independentProvider({ ...compatible, ...manifest.provider }, info), log) }
+    log.write('info', 'plugin.load.completed')
+    return loaded
+  } catch (error) {
+    log.write('error', 'plugin.load.failed', { stage })
+    throw error
+  }
 }
 
 export async function installedPlugins(): Promise<LoadedPlugin[]> {

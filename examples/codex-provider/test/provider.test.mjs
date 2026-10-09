@@ -11,7 +11,8 @@ import { create as sourceCreate } from '../src/provider.mjs'
 test('built artifact uses its copied Codex CLI code for account, models, limits, sessions and streaming', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'geckit-codex-example-'))
   const before = { PATH: process.env.PATH, CODEX_HOME: process.env.CODEX_HOME, GECKIT_TEST_RPC_LOG: process.env.GECKIT_TEST_RPC_LOG }
-  const provider = create()
+  const logs = []
+  const provider = create({ log: { write: (level, event, fields) => logs.push({ level, event, fields }) } })
   try {
     await cp(new URL('./fake-codex.mjs', import.meta.url), join(folder, 'codex'))
     await chmod(join(folder, 'codex'), 0o755)
@@ -59,7 +60,7 @@ test('built artifact uses its copied Codex CLI code for account, models, limits,
     await provider.setInstructions(false, {})
     assert.doesNotMatch(await readFile(join(folder, 'AGENTS.md'), 'utf8'), /GECKIT\.md/)
     modelOverrides.set('gpt-5.4', { contextWindow: 12345, pricing: { currency: 'USD', input: 0, output: 2 } })
-    const custom = sourceCreate()
+    const custom = sourceCreate({ log: { write: (level, event, fields) => logs.push({ level, event, fields }) } })
     try {
       assert.deepEqual((await custom.models())[0].pricing, { currency: 'USD', input: 0, output: 2 })
       assert.equal((await custom.limits(['gpt-5.4'])).windows.get('gpt-5.4'), 12345)
@@ -73,6 +74,11 @@ test('built artifact uses its copied Codex CLI code for account, models, limits,
     assert.equal(steering.params.input[0].text, 'command output\n\nFocus on failing tests')
     assert.equal(steering.params.input[1].url, 'data:image/png;base64,aW1hZ2U=')
     assert.ok(!log.includes('plugin:codex-mirror:test-native-thread'), 'native RPC must not receive plugin IDs')
+    const requests = log.trim().split('\n').map((line) => JSON.parse(line)).filter((request) => request.method === 'account/rateLimits/read')
+    assert.equal(logs.filter((one) => one.event === 'limits.backend.requested').length, requests.length)
+    assert.equal(logs.filter((one) => one.event === 'limits.backend.completed').length, requests.length)
+    for (const event of ['provider.created', 'session.started', 'session.turn.ended', 'message.inject.completed', 'session.closed']) assert(logs.some((one) => one.event === event), event)
+    for (const privateText of ['Fixture message', 'Focus on failing tests', 'command output', 'aW1hZ2U=', 'Hello from copied code']) assert.equal(JSON.stringify(logs).includes(privateText), false, privateText)
   } finally {
     provider.dispose()
     for (const [key, value] of Object.entries(before)) { if (value === undefined) delete process.env[key]; else process.env[key] = value }

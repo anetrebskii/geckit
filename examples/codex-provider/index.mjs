@@ -4257,9 +4257,12 @@ var CodexSessions = class {
   #new = /* @__PURE__ */ new Map();
   #files = /* @__PURE__ */ new Map();
   #corrections = Promise.resolve(void 0);
-  constructor(launch = launchCodex, changed) {
+  #log;
+  constructor(launch = launchCodex, changed, log = () => {
+  }) {
     this.#launch = launch;
     this.#changed = changed;
+    this.#log = log;
   }
   async #connection() {
     if (this.#rpc === void 0) {
@@ -4300,12 +4303,25 @@ var CodexSessions = class {
   async account() {
     try {
       const rpc = await this.#connection();
+      this.#log("debug", "account.backend.requested");
       const { account } = await rpc.request("account/read", { refreshToken: false });
+      this.#log("debug", "account.backend.completed", { signedIn: account !== null });
       const version = /^[^/]+\/(\S+)/.exec(rpc.userAgent)?.[1];
-      const usage = account?.type === "chatgpt" ? await rpc.request("account/rateLimits/read", {}).catch(() => void 0) : void 0;
+      let usage;
+      if (account?.type === "chatgpt") {
+        this.#log("info", "limits.backend.requested");
+        usage = await rpc.request("account/rateLimits/read", {}).then((result) => {
+          this.#log("info", "limits.backend.completed");
+          return result;
+        }, (error) => {
+          this.#log("warn", "limits.backend.failed", { errorKind: error?.name ?? "Error" });
+          return void 0;
+        });
+      } else this.#log("debug", "limits.backend.skipped", { reason: "not-signed-in-with-plan" });
       this.#account = { provider: "codex", here: true, signedIn: account !== null, ...account?.type === "chatgpt" ? { plan: account.planType } : account === null ? {} : { key: true }, ...version === void 0 ? {} : { program: { version } }, ...usage === void 0 ? {} : { limits: usage.rateLimitsByLimitId == null ? [usage.rateLimits] : Object.values(usage.rateLimitsByLimitId) } };
       return this.#account;
-    } catch {
+    } catch (error) {
+      this.#log("warn", "account.backend.failed", { errorKind: error?.name ?? "Error" });
       return { provider: "codex", here: false, signedIn: void 0 };
     }
   }
@@ -4914,8 +4930,15 @@ var goalShown = (goal) => ({
   ...goal === null || goal.status === "complete" ? {} : { goal: { condition: goal.objective, checks: 0 } },
   ...goal === null ? {} : { status: goal.status }
 });
-function create() {
-  const codex = new CodexSessions(() => launchCodex());
+function create(context = {}) {
+  const log = (level, event, fields) => {
+    try {
+      context.log?.write(level, event, fields);
+    } catch {
+    }
+  };
+  const codex = new CodexSessions(() => launchCodex(), void 0, log);
+  log("info", "provider.created");
   return {
     id: family,
     family,
@@ -4958,10 +4981,36 @@ function create() {
     goal: async (_root, id) => goalShown(await codex.goal(native2(id))),
     setGoal: async (id, objective) => goalShown(await codex.setGoal(native2(id), objective)),
     clearGoal: (id) => codex.clearGoal(native2(id)),
-    hold: (options, hear, left) => codex.hold({ ...options, id: native2(options.id) }, (heard) => hear({
-      ...heard,
-      signals: heard.signals.map((signal) => signal.kind === "started" && signal.session !== "" ? { ...signal, session: mirror(signal.session) } : signal)
-    }), left),
+    hold: (options, hear, left) => {
+      const driver = codex.hold({ ...options, id: native2(options.id) }, (heard) => {
+        for (const signal of heard.signals) {
+          if (signal.kind === "begun") log("info", "session.turn.begun", { session: options.id });
+          if (signal.kind === "started") log("info", "session.started", { session: options.id });
+          if (signal.kind === "ended") log(signal.how === "failed" ? "warn" : "info", "session.turn.ended", { session: options.id, outcome: signal.how });
+        }
+        hear({ ...heard, signals: heard.signals.map((signal) => signal.kind === "started" && signal.session !== "" ? { ...signal, session: mirror(signal.session) } : signal) });
+      }, () => {
+        log("info", "session.closed", { session: options.id });
+        left();
+      });
+      return {
+        ...driver,
+        send: (...args) => {
+          log("info", "message.send.requested", { session: options.id });
+          return driver.send(...args);
+        },
+        ...typeof driver.inject !== "function" ? {} : { inject: async (...args) => {
+          log("info", "message.inject.requested", { session: options.id });
+          try {
+            await driver.inject(...args);
+            log("info", "message.inject.completed", { session: options.id });
+          } catch (error) {
+            log("warn", "message.inject.failed", { session: options.id, errorKind: error?.name ?? "Error" });
+            throw error;
+          }
+        } }
+      };
+    },
     rename: async (id, name) => {
       await codex.rename(native2(id), name);
     },
@@ -4973,7 +5022,10 @@ function create() {
     correct: (text2, instruction, model) => codex.correct(text2, instruction, model),
     setInstructions: (enabled) => keepCodexGuide(enabled),
     delete: (_root, id) => codex.delete(native2(id)),
-    dispose: () => codex.dispose()
+    dispose: () => {
+      log("info", "provider.disposed");
+      codex.dispose();
+    }
   };
 }
 export {

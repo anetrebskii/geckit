@@ -354,6 +354,12 @@ The reachable local Git history begins at the 2026-09-30 root snapshot. It is no
 
 No application code was changed for this inventory. Runtime behavior, installed-app versions, hosted services and App Store/TestFlight availability were not reverified.
 
+## Plugin diagnostic logs - 2026-10-09
+
+Alex explicitly requested plugin logging for all current plugins. The source adds a scoped logger to API v1 library factories, per-library JSONL files under `userData/provider-logs`, ordered asynchronous writes, redaction, nonfatal failures and 2 MiB current/previous file rotation. Host loading and `limits.host.*` events identify app requests; plugin events identify backend activity separately. Updated Claude tmux audits actual `/usage` submission, skip reasons, sent-message counters and cooldown times. Codex Mirror records actual rate-limit RPC outcomes. OpenCode + Ollama records cached capacities and transport/turn outcomes. Normal instrumentation excludes prompts, replies, tool arguments, credentials and backend bodies.
+
+Evidence: [logger](../client/src/main/sessions/plugin-logs.ts), [factory API](../client/src/main/sessions/plugin-api.ts), [loader](../client/src/main/sessions/plugins.ts), [guide](provider-plugins.md#local-diagnostic-logs), [UX](ux/plugin-logs.md), [spec and verification](../specs/008-plugin-logs/), and both maintained provider examples. The published external tmux, OpenCode + Ollama and Codex Mirror sources also implement logging. Files are inspected locally; there is no new app viewer or upload. This is source support, not a released/installed app claim.
+
 ## Assistant status overview - 2026-10-08
 
 Alex requested design and implementation for all enabled assistants on desktop and mobile. In the working tree, independent labeled desktop summaries and the phone Tasks Assistants disclosure open shared account details. The overview preserves each assistant identity, reports missing information explicitly, and keeps Claude host account grouping and disconnected measurements. Plan, CLI version/installation and every reported quota are available in details; opening status does not switch the conversation assistant.

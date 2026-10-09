@@ -28,7 +28,7 @@ Change the identity in **both** `geckit-plugin.json` and `src/provider.mjs`; cha
 
 The public [Codex Mirror repository](https://github.com/anetrebskii/geckit-codex-mirror) is the installation example. Both Codex and Mirror can list the same native conversations under distinct GeckIt IDs. Both share the native Codex history/account; deleting a native conversation affects both. The processes and provider implementations are independent.
 
-For a Claude-backed assistant that runs through tmux, see the separate [Claude tmux repository](https://github.com/anetrebskii/geckit-claude-tmux). GeckIt lists it as its own assistant and namespaces its GeckIt session IDs; the library carries its own copy of GeckIt's Claude code for account, models and native history, and reads plan limits by typing `/usage` into a tmux session of its own every 15 to 30 minutes.
+For a Claude-backed assistant that runs through tmux, see the separate [Claude tmux repository](https://github.com/anetrebskii/geckit-claude-tmux). GeckIt lists it as its own assistant and namespaces its GeckIt session IDs; the library carries its own copy of GeckIt's Claude code for account, models and native history. The updated library reads plan limits through `/usage` once initially, then only after a successfully sent message since the previous check and the randomized 15-30 minute cooldown. Quiet polling returns cached limits.
 
 ## AI-readable build guidance
 
@@ -96,7 +96,35 @@ Legacy manifests with `family: codex` and `replaces: codex` are also normalized 
 
 Import types from [`plugin-api.ts`](../client/src/main/sessions/plugin-api.ts). It re-exports the actual contract and domain types; there is no second hand-maintained interface.
 
-`index.mjs` exports `create()`, returning a complete `LlmProvider` or a promise for it. GeckIt gives a library nothing of its builtin providers: every method, including limits and instructions, is implemented inside the library. Code a library needs from GeckIt is copied into it, as `client/scripts/export-codex-runtime.mjs` and `client/scripts/export-claude-runtime.mjs` do for the two examples. Avoid import/create-time AI requests because GeckIt loads update candidates while the current implementation is still in use.
+`index.mjs` exports `create(context)`, returning a complete `LlmProvider` or a promise for it. The optional context contains a scoped logger; existing `create()` factories remain compatible. GeckIt gives a library nothing of its builtin providers: every method, including limits and instructions, is implemented inside the library. Code a library needs from GeckIt is copied into it, as `client/scripts/export-codex-runtime.mjs` and `client/scripts/export-claude-runtime.mjs` do for the two examples. Avoid import/create-time AI requests because GeckIt loads update candidates while the current implementation is still in use.
+
+### Local diagnostic logs
+
+Plugin logging is implemented in the current working tree; using it requires an updated GeckIt build. Detailed backend events also require updated libraries. Each library gets `<userData>/provider-logs/plugin-<slug>.jsonl`, plus `.jsonl.1` for the previous file. Each file is bounded to 2 MiB. Logging is local and does not upload diagnostics.
+
+On macOS, the installed app uses `~/Library/Application Support/geckit/provider-logs/`; development uses `geckit-local/provider-logs/`. Windows uses `%APPDATA%/geckit/provider-logs/` and Linux normally uses `~/.config/geckit/provider-logs/`, subject to the app's configured user-data directory.
+
+Follow the Claude tmux log after loading the updated app and library:
+
+```sh
+tail -F "$HOME/Library/Application Support/geckit/provider-logs/plugin-claude-tmux.jsonl"
+```
+
+Count actual `/usage` deliveries by filtering `"event":"usage.command.sent"`. Read the `.1` file too for rotated history. `limits.host.requested` means GeckIt asked a library for limits; it does not mean the backend was contacted. Tmux records `usage.check.started/completed/failed/skipped`, including check IDs, new-message counts, next allowed check time and skip reasons (`no-new-messages`, `cooldown`, `in-flight`). Codex Mirror records `limits.backend.requested/completed/failed` around actual account-limit RPCs. OpenCode records `limits.cache.returned` with `backendCheck: false`, plus server/request/turn outcomes.
+
+Authors can import `PluginContext`, `PluginLogger`, `PluginLogLevel` and `PluginLogFields` from `plugin-api.ts`:
+
+```js
+export function create(context = {}) {
+  const log = (level, event, fields) => context.log?.write(level, event, fields)
+  log('info', 'provider.created')
+  // Implement the complete provider using your own backend.
+}
+```
+
+`context.log.path` gives the file path. `write(level, event, fields?)` accepts `debug`, `info`, `warn` or `error` and scalar fields (string, finite number, boolean or null). Each JSON line has `at` (ISO timestamp), `level`, `plugin`, `event`, and `fields`. The host adds `loadId` and `loadKind` so candidate validation, repository loads and active snapshots remain distinguishable across concurrent versions. Writes are serialized across those versions, asynchronous and nonfatal. An unavailable data directory disables logging without blocking the library.
+
+Use event names and diagnostic counts/status/timing. Do not log prompts, answers, tool arguments, attachments, credentials, headers or raw backend bodies. The host filters sensitive field names and recognizable secrets, but plugin authors must avoid collecting content in the first place. Updated libraries should accept no context on older hosts and treat missing logging as a no-op.
 
 | Area | Methods / fields |
 |---|---|

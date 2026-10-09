@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -8,6 +8,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ app: { getPath: () => process.env['GECKIT_PLUGIN_TEST_HOME'] }, shell: { trashItem: async (path: string) => (await import('node:fs/promises')).rm(path, { recursive: true, force: true }) } }))
 
 import { installPlugin, installedPlugins, loadPlugin, uninstallPlugin, updateInstalledPlugins } from '../src/main/sessions/plugins'
+import { flushPluginLogs } from '../src/main/sessions/plugin-logs'
+import type { PluginLogEntry } from '../src/main/sessions/plugin-logs'
 import { providerOf } from '../src/shared/api'
 import type { ClaudeModel } from '../src/shared/api'
 import { isCodexProvider, llmProviderInfo, registerProviderInfo, selectableProviders } from '../src/shared/providers'
@@ -15,6 +17,16 @@ import { isCodexProvider, llmProviderInfo, registerProviderInfo, selectableProvi
 const folders: string[] = []
 const methods = ['account', 'program', 'models', 'limits', 'list', 'search', 'hidden', 'create', 'fork', 'has', 'read', 'links', 'goal', 'setGoal', 'clearGoal', 'hold', 'rename', 'remote', 'mcp', 'browsers', 'correct', 'setInstructions', 'delete', 'dispose']
 const own = `{ available: true, localOnly: false, subscriptionOnly: true, images: false, remoteControl: false, nativeGoals: false, idleMs: 600000, waitForExit: false, ${methods.map((method) => `${method}: async () => undefined`).join(', ')} }`
+const pluginLogEntries = async (home: string, id = 'plugin-logged'): Promise<PluginLogEntry[]> => {
+  const path = join(home, 'provider-logs', `${id}.jsonl`)
+  await flushPluginLogs(path)
+  return (await readFile(path, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as PluginLogEntry)
+}
+const loggingPlugin = async (path: string, source: string): Promise<void> => {
+  await mkdir(path, { recursive: true })
+  await writeFile(join(path, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { id: 'plugin:logged', family: 'plugin:logged', name: 'Logged', shortName: 'Logged', icon: 'terminal', browser: 'none', loginCommand: '', planName: '' } }))
+  await writeFile(join(path, 'index.mjs'), source)
+}
 afterEach(async () => {
   delete process.env['GECKIT_PLUGIN_TEST_HOME']
   delete process.env['GIT_CONFIG_COUNT']
@@ -39,6 +51,72 @@ it('loads an external provider that implements the whole interface', async () =>
   expect(await loaded.provider.create({ root: '/work', mode: 'auto' })).toBe('plugin:kimi:session-1')
   expect(typeof loaded.provider.hold).toBe('function')
   expect(selectableProviders({ chatProviders: ['claude', 'plugin:kimi'], providerPlugins: [loaded.info] }).map((one) => [one.name, one.icon])).toEqual([['Claude Code', 'claude'], ['Kimi Code', 'terminal']])
+})
+
+it('passes only a scoped logger to new factories and audits concurrent host limits without logging arguments', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'geckit-logged-plugin-'))
+  folders.push(home)
+  process.env['GECKIT_PLUGIN_TEST_HOME'] = home
+  const path = join(home, 'source')
+  await loggingPlugin(path, `export const create = (context) => {
+    if (Object.keys(context).join(',') !== 'log') throw new Error('Unexpected host access');
+    context.log.write('info', 'plugin.initialized', { ready: true });
+    return { ...${own}, id: 'plugin:logged', create: async () => context.log.path,
+      limits: async (models) => { if (models.length > 0) throw new Error('private backend body'); return { windows: new Map() }; }
+    };
+  }`)
+  const loaded = await loadPlugin(path)
+  expect(await loaded.provider.create({ root: '/private/root', mode: 'auto' })).toBe(join(home, 'provider-logs', 'plugin-logged.jsonl'))
+  await Promise.all([
+    expect(loaded.provider.limits([])).resolves.toEqual({ windows: new Map() }),
+    expect(loaded.provider.limits(['private model argument'])).rejects.toThrow('private backend body'),
+  ])
+  loaded.provider.dispose()
+  const entries = await pluginLogEntries(home)
+  expect(entries.map((entry) => entry.event)).toEqual([
+    'plugin.load.started', 'plugin.initialized', 'plugin.load.completed',
+    'limits.host.requested', 'limits.host.requested', 'limits.host.completed', 'limits.host.failed', 'plugin.dispose.requested',
+  ])
+  expect(new Set(entries.map((entry) => entry.fields?.['loadId'])).size).toBe(1)
+  expect(entries.every((entry) => entry.fields?.['loadKind'] === 'repository')).toBe(true)
+  const requested = entries.filter((entry) => entry.event === 'limits.host.requested')
+  expect(requested.map((entry) => entry.fields?.['modelCount'])).toEqual([0, 1])
+  expect(entries.find((entry) => entry.event === 'limits.host.completed')?.fields?.['requestId']).toBe(requested[0]?.fields?.['requestId'])
+  expect(entries.find((entry) => entry.event === 'limits.host.failed')?.fields?.['requestId']).toBe(requested[1]?.fields?.['requestId'])
+  expect(JSON.stringify(entries)).not.toMatch(/private backend body|private model argument|private\/root/)
+})
+
+it('keeps no-argument factories working and distinguishes candidates and snapshots sharing a log', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'geckit-legacy-logs-'))
+  folders.push(home)
+  process.env['GECKIT_PLUGIN_TEST_HOME'] = home
+  for (const name of ['.update-test', '.active-test']) {
+    const path = join(home, name)
+    await loggingPlugin(path, `export const create = () => ({ ...${own}, id: 'plugin:logged', limits: async () => ({ windows: new Map() }) })`)
+    await (await loadPlugin(path)).provider.limits([])
+  }
+  const entries = await pluginLogEntries(home)
+  expect(entries.filter((entry) => entry.event === 'plugin.load.started').map((entry) => entry.fields?.['loadKind'])).toEqual(['candidate', 'snapshot'])
+  expect(new Set(entries.map((entry) => entry.fields?.['loadId'])).size).toBe(2)
+  expect(entries.filter((entry) => entry.event === 'limits.host.completed')).toHaveLength(2)
+})
+
+it('records failed loading without capturing errors or interrupting successful loads after storage failures', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'geckit-failed-logs-'))
+  folders.push(home)
+  process.env['GECKIT_PLUGIN_TEST_HOME'] = home
+  const path = join(home, 'source')
+  await loggingPlugin(path, `export const create = () => { throw new Error('private prompt in error'); }`)
+  await expect(loadPlugin(path)).rejects.toThrow('private prompt in error')
+  const entries = await pluginLogEntries(home)
+  expect(entries.map((entry) => entry.event)).toEqual(['plugin.load.started', 'plugin.load.failed'])
+  expect(JSON.stringify(entries)).not.toContain('private prompt')
+  await rm(join(home, 'provider-logs'), { recursive: true })
+  await writeFile(join(home, 'provider-logs'), 'block logging')
+  await loggingPlugin(path, `export const create = () => ({ ...${own}, id: 'plugin:logged', limits: async () => ({ windows: new Map() }) })`)
+  const loaded = await loadPlugin(path)
+  await expect(loaded.provider.limits([])).resolves.toEqual({ windows: new Map() })
+  await expect(flushPluginLogs(join(home, 'provider-logs', 'plugin-logged.jsonl'))).resolves.toBeUndefined()
 })
 
 

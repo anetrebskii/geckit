@@ -12,8 +12,10 @@ const goalShown = (goal) => ({
   ...(goal === null ? {} : { status: goal.status }),
 })
 
-export function create() {
-  const codex = new CodexSessions(() => launchCodex())
+export function create(context = {}) {
+  const log = (level, event, fields) => { try { context.log?.write(level, event, fields) } catch {} }
+  const codex = new CodexSessions(() => launchCodex(), undefined, log)
+  log('info', 'provider.created')
   return {
     id: family,
     family,
@@ -56,10 +58,25 @@ export function create() {
     goal: async (_root, id) => goalShown(await codex.goal(native(id))),
     setGoal: async (id, objective) => goalShown(await codex.setGoal(native(id), objective)),
     clearGoal: (id) => codex.clearGoal(native(id)),
-    hold: (options, hear, left) => codex.hold({ ...options, id: native(options.id) }, (heard) => hear({
-      ...heard,
-      signals: heard.signals.map((signal) => signal.kind === 'started' && signal.session !== '' ? { ...signal, session: mirror(signal.session) } : signal),
-    }), left),
+    hold: (options, hear, left) => {
+      const driver = codex.hold({ ...options, id: native(options.id) }, (heard) => {
+        for (const signal of heard.signals) {
+          if (signal.kind === 'begun') log('info', 'session.turn.begun', { session: options.id })
+          if (signal.kind === 'started') log('info', 'session.started', { session: options.id })
+          if (signal.kind === 'ended') log(signal.how === 'failed' ? 'warn' : 'info', 'session.turn.ended', { session: options.id, outcome: signal.how })
+        }
+        hear({ ...heard, signals: heard.signals.map((signal) => signal.kind === 'started' && signal.session !== '' ? { ...signal, session: mirror(signal.session) } : signal) })
+      }, () => { log('info', 'session.closed', { session: options.id }); left() })
+      return {
+        ...driver,
+        send: (...args) => { log('info', 'message.send.requested', { session: options.id }); return driver.send(...args) },
+        ...typeof driver.inject !== 'function' ? {} : { inject: async (...args) => {
+          log('info', 'message.inject.requested', { session: options.id })
+          try { await driver.inject(...args); log('info', 'message.inject.completed', { session: options.id }) }
+          catch (error) { log('warn', 'message.inject.failed', { session: options.id, errorKind: error?.name ?? 'Error' }); throw error }
+        } },
+      }
+    },
     rename: async (id, name) => { await codex.rename(native(id), name) },
     remote: async () => { throw new Error('Codex Mirror does not support remote control.') },
     mcp: async () => undefined,
@@ -67,6 +84,6 @@ export function create() {
     correct: (text, instruction, model) => codex.correct(text, instruction, model),
     setInstructions: (enabled) => keepCodexGuide(enabled),
     delete: (_root, id) => codex.delete(native(id)),
-    dispose: () => codex.dispose(),
+    dispose: () => { log('info', 'provider.disposed'); codex.dispose() },
   }
 }

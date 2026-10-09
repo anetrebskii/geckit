@@ -38,3 +38,9 @@ The live driver implements optional `inject(text, images?, before?)` for GeckIt'
 The overrides map starts empty. Do not invent rates or capacity. To test custom catalog code, add verified metadata in `src/model-overrides.mjs`, keyed by a model ID returned by your CLI. Supported fields include `version`, `says`, `contextWindow`, `maxOutputTokens`, capability flags and `pricing: { currency, input, output, cacheRead, cacheWrite, source, asOf }`. Prices are per million tokens; absent means unknown, zero means free. Rebuild and commit `index.mjs` after editing.
 
 Full contract and author guide: [GeckIt provider libraries](https://github.com/anetrebskii/geckit/blob/main/docs/provider-plugins.md). Installed AI guidance: `geckit instructions providers` (or `geckit-local instructions providers`).
+
+## Logs
+
+On an updated GeckIt host, `create(context)` receives `context.log` and records lifecycle/turn outcomes and actual `account/rateLimits/read` calls as `limits.backend.requested/completed/failed`. These calls can come from account, program or limits requests. Diagnostic records omit prompts, replies, tool arguments and attachments. Older hosts without a logger continue working.
+
+The file is `<GeckIt userData>/provider-logs/plugin-codex-mirror.jsonl`, with one `.jsonl.1` backup (2 MiB each). On macOS the installed app uses `~/Library/Application Support/geckit/`; the development app uses `geckit-local/`. Host `limits.host.*` events describe app polling separately from backend calls. See the provider guide for other platforms and event fields.
