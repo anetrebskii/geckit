@@ -725,10 +725,10 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               {(chat.session?.canInject !== true && injecting !== one.id) || one.command === true ? null : (
                 <button
                   type="button"
-                  className="quiet queue-inject"
+                  className="icon-button queue-inject"
                   data-inject={one.id}
                   disabled={queueLocked || editing !== undefined}
-                  aria-label="Send this message into the current work"
+                  aria-label={injecting === one.id ? 'Sending this message into the current work' : 'Send this message into the current work'}
                   title="Send this message into the current work"
                   onClick={() => {
                     if (queueFocus.current !== undefined || queueLocked) return
@@ -739,7 +739,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                     void chat.injectQueued(one.id).finally(() => setSendingQueued((pending) => pending?.queued === one.id ? undefined : pending))
                   }}
                 >
-                  {injecting === one.id ? 'Sending...' : 'Send now'}
+                  <Icon name={injecting === one.id ? 'spinner' : 'send'} size={16} />
                 </button>
               )}
               <button

@@ -8,6 +8,7 @@ import { llmProviderInfo } from '../../../shared/providers'
 import { Icon } from '../ui/Icon'
 import { Sheet } from '../ui/Sheet'
 import { accountsOf, usageOf } from './plans'
+import { Cell } from './PhoneKit'
 import { quotaValue } from './ProviderUsage'
 import { Meter, until } from './UsageMeter'
 import type { Chat } from './useChat'
@@ -74,15 +75,6 @@ function groupsOf(provider: SessionProvider, snapshot: Snapshot | undefined, cha
     const localUsage = chat.plan === undefined ? accountUsage(account) ?? (quotas === undefined ? undefined : { quotas }) : { quotas: providerQuotas({ plan: chat.plan }) ?? [] }
     return { account, remote: !local, state: local ? base.state : host === undefined ? 'unavailable' : host.state === 'connecting' && plan === undefined ? 'checking' : 'ready', name: item.places.map(hostName).join(' · '), usage: local ? localUsage : quotas === undefined ? undefined : { quotas }, stale: !local && host?.state !== 'up', measuredAt: chat.plansAt[place] }
   })
-}
-
-function Summary({ group, now }: { readonly group: Group; readonly now: number }): React.JSX.Element {
-  const state = stateLine(group)
-  const quotas = group.usage?.quotas?.slice(0, 2) ?? []
-  return <>{state === undefined ? null : <span className="assistant-state">{state}</span>}{state !== undefined && state !== 'Last measured' ? null : quotas.map((quota) => {
-    const part = quotaPart(quota)
-    return <span className="assistant-quota" key={quota.id} title={`${quota.name}: ${quotaValue(quota)}${quota.resetsAt === undefined ? '' : `, resets in ${until(quota.resetsAt, now)}`}`}><span>{quota.name}</span>{part === undefined ? null : <Meter part={part} />}<span>{part === undefined ? quotaValue(quota) : `${String(Math.round(part * 100))}%`}</span></span>
-  })}</>
 }
 
 function Details({ chat, snapshots, providers, phone, now, onClose }: { readonly chat: AssistantStatusChat; readonly snapshots: readonly Snapshot[]; readonly providers: readonly SessionProvider[]; readonly phone: boolean; readonly now: number; readonly onClose: () => void }): React.JSX.Element {
@@ -152,14 +144,8 @@ function AssistantStatusView({ chat, phone = false }: { readonly chat: Assistant
   const [now, setNow] = useState(Date.now)
   const close = useCallback(() => setOpen(false), [])
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer) }, [])
-  const current = providers.includes(chat.provider) ? chat.provider : providers[0] ?? 'claude'
-  const currentInfo = llmProviderInfo(current, undefined, chat.settings.providerPlugins)
   return <>
-    {phone ? <button type="button" className="assistant-phone-row" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><span>Assistants <span className="assistant-count">{providers.length}</span></span><span className="assistant-phone-summary"><span className="assistant-phone-name">{currentInfo.shortName}</span><span>·</span><Summary group={groupsOf(current, snapshots.find((one) => one.provider === current), chat)[0]!} now={now} /></span><Icon name="chevron" size={14} /></button> : <div className="status-bar assistant-status"><div className="assistant-summaries" aria-label="Enabled assistant status">{providers.flatMap((provider) => {
-      const info = llmProviderInfo(provider, undefined, chat.settings.providerPlugins)
-      const groups = groupsOf(provider, snapshots.find((one) => one.provider === provider), chat)
-      return groups.map((group) => <button type="button" className="assistant-chip" key={`${provider}:${group.name}`} title={`${info.name}${group.name === '' ? '' : ` · ${group.name}`}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><Icon name={info.icon} size={12} /><span className="assistant-name">{info.shortName}{groups.length > 1 ? ` · ${group.name}` : ''}</span><Summary group={group} now={now} /></button>)
-    })}</div><button type="button" className="assistant-open" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Assistants<Icon name="chevron" size={10} /></button></div>}
+    {phone ? <Cell label="Account and limits" onPress={() => setOpen(true)} /> : <button type="button" className="quiet" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Account and limits</button>}
     {open ? <Details chat={chat} providers={providers} snapshots={snapshots} phone={phone} now={now} onClose={close} /> : null}
   </>
 }

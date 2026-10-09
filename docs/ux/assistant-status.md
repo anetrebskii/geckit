@@ -82,3 +82,23 @@ Rejected original layout: large prose-first sections and tiny detached meters ma
 Revision reviewed in actual component fixtures across desktop and phone, light/dark, 320px narrow screens, long quotas, keyboard focus and scrolling. [Review evidence](../../specs/004-assistant-status/design.md#redesign-verification). Native Electron/iPhone verification remains unavailable.
 
 Spacing correction: desktop panel is 520px wide; a single quota or final odd quota spans the full row. Header, section and card padding is reduced. Short paired quotas remain side by side on both platforms.
+
+## Revision - 2026-10-09: limits in Settings
+
+Alex requested that limits appear only in Settings. This supersedes the board/footer summary surfaces above and authorizes implementation.
+
+| Surface | Change | When visible |
+| --- | --- | --- |
+| Desktop board and conversation | Remove assistant account/usage footer | Always |
+| Phone Tasks | Remove Assistants footer and high-usage alerts | Always |
+| Desktop Settings > Assistants | "Account and limits" opens existing full assistant details | Settings open |
+| Phone Settings > Assistants | "Account and limits" opens existing assistant sheet, including libraries and remote accounts | Settings open |
+| Model details and phone conversation information | Remove account quota sections; retain conversation context and model information | Details open |
+
+The state and detail wording above remain in Settings. Closing details returns focus to "Account and limits". Closing Settings returns to the previous board/conversation. No account measurements, percentages, reset times or high-usage alerts appear on those working surfaces. The conversation's actual limit/error state remains visible because it needs action; working-at-once controls remain orchestration controls. Existing account refresh and reset-label timing apply while Settings account details are mounted. No new thresholds or provider behavior. Missing quotas, disconnected hosts, many providers and long names use existing detail states and scrolling.
+
+Rejected: retaining a compact quota footer or quota sections in chat menus, because these repeat Settings information in the space used for work. Existing shared assistant details are reused so independent library identities and host grouping are preserved. Requirement coverage: Settings-only usage, board/composer space, accessible compact send action.
+
+Revision review: actual PhoneHome, PhoneBoard and PhoneSettings in full screen context with bottom navigation at 391x844 CSS pixels in light/dark; the Tasks footer is absent and Settings opens the shared details sheet. Desktop Settings and account details reviewed at 1200x900 in light/dark with five enabled assistant fixtures. Checked alignment, grouping, density, scrolling, close/Escape and restored opener focus. Fixtures isolate UI from actual account/provider calls. Native Electron/iPhone review was not performed.
+
+Performance review against `docs/performance.md`: no problems found. Existing board row memo/comparisons and current-ref callbacks are unchanged. Removed board quota scans and summary rendering reduce per-render work; no new formatter, sorting/filtering, pointer handling or list is introduced. Pending spinner reuses `Icon`'s compositor span and unmounts after delivery. Existing assistant memo compares individual settings fields and host/plan references. Mobile bundle rebuilt. Live profiling was not needed for these control replacements and removals.

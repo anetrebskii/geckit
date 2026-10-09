@@ -1,8 +1,7 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { assistantsIn, planLine, providerOf, SESSION_MODES, shownProjects } from '../../../shared/api'
 import type { ClaudeAccount, Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, SessionProvider, ShortcutDraft, Theme } from '../../../shared/api'
-import { hostOf } from '../../../shared/hosts'
 import { projectColor } from '../../../shared/project-color'
 import { independentProviderInfo, isCodexProvider, llmProviderInfo } from '../../../shared/providers'
 import { ear, setEar, voice } from '../dictate'
@@ -13,13 +12,12 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { LANGUAGES } from '../ui/SettingsDialog'
-import { CodexLimits, Limits } from './PhoneInfo'
+import { AssistantStatus } from './AssistantStatus'
 import { Cell, Page, Switch, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
 import { computerName } from './PhoneHosts'
 import { PhoneProject } from './PhoneProject'
-import { accountsOf, placesOf, usageOf } from './plans'
 import { homePath, projectLabel } from './project'
 import { ALL } from './useChat'
 import type { Chat } from './useChat'
@@ -106,7 +104,6 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
     }
   }, [enabled])
   const claudeAccount = assistantAccounts.find((one) => (one.provider ?? 'claude') === 'claude')
-  const codexAccount = assistantAccounts.find((one) => isCodexProvider(one.provider ?? 'claude'))
   const toggle = (provider: SessionProvider, on: boolean): void => {
     const chatProviders = on ? [...enabled, provider] : enabled.filter((one) => one !== provider)
     if (chatProviders.length === 0) return
@@ -114,8 +111,6 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
   }
   const profile = settings.profiles.find((one) => one.id === settings.profile)
   const thisMac = paired?.find((one) => one.current)
-  const placeName = (place: string): string => (place === '' ? (thisMac?.name ?? 'Host') : (chat.hosts.find((one) => one.id === place)?.name ?? place))
-  const accounts = accountsOf(placesOf(['', ...settings.projects], hostOf), chat.plans, placeName)
 
   return (
     <Page title="Settings">
@@ -149,31 +144,12 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
           <div className="phone-group">
             <Cell label={thisMac?.name ?? 'Host'} says={paired.length > 1 ? `${String(paired.length)} hosts paired` : 'Paired'} onPress={() => setSwitching(true)} />
           </div>
-          {/* A plan is an account's: one group per account the projects run on, headed by where it was measured once there is more than one. */}
-          {(enabled.includes('claude') ? accounts : []).map((item, at) => {
-            const usage = usageOf(item, chat.plan)
-            if (usage?.fiveHour === undefined && usage?.sevenDay === undefined) return null
-            const place = item.places[0] ?? ''
-            const plan = item.entry?.plan ?? (place === '' ? claudeAccount?.plan : undefined)
-            return (
-              <Fragment key={place}>
-                <div className="phone-head">{accounts.length === 1 ? 'Plan usage' : `${placeName(place)}${plan === undefined ? '' : ` · ${plan}`}`}</div>
-                <Limits chat={chat} usage={usage} />
-                {at === accounts.length - 1 ? (
-                  <div className="phone-note">
-                    {accounts.length === 1
-                      ? `Of the plan the host's Claude Code runs on${plan === undefined ? '' : `, ${plan}`}, shared by every conversation on it.`
-                      : 'Each account has its own windows, shared by every conversation that runs on it.'}
-                  </div>
-                ) : null}
-              </Fragment>
-            )
-          })}
         </>
       )}
 
       <div className="phone-head">Assistants</div>
       <div className="phone-group">
+        <AssistantStatus chat={chat} phone />
         <Cell label="Claude Code" says="Uses the host's Claude plan">
           <Switch on={enabled.includes('claude')} label="Claude Code" disabled={enabled.length === 1 && enabled.includes('claude')} onChange={(on) => toggle('claude', on)} />
         </Cell>
@@ -187,7 +163,6 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
         ))}
       </div>
       <div className="phone-note">Choose at least one. Turning an assistant off hides its conversations until you turn it on again. Applies on the host and this phone.</div>
-      {enabled.some(isCodexProvider) ? <><div className="phone-head">ChatGPT plan usage</div><CodexLimits limits={codexAccount?.limits} /></> : null}
 
       <div className="phone-head">Board</div>
       <div className="phone-group">

@@ -1,20 +1,15 @@
 import { ProviderIcon } from './ProviderIcon'
-import { AssistantStatus } from './AssistantStatus'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { assistantsIn, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { homeOf, SESSION_STATUSES } from '../../../shared/api'
 import type { CardAnswer, ChatSession, SessionCard, SessionStatus } from '../../../shared/api'
-import { hostOf } from '../../../shared/hosts'
 import { movedOrder, ordered } from '../../../shared/order'
 import { projectColor } from '../../../shared/project-color'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
-import { computerName } from './PhoneHosts'
-import { codexWindowName, resetsAt } from './PhoneInfo'
-import { accountsOf, placesOf, usageOf } from './plans'
 import { PhoneScope, ScopeButton } from './PhoneScope'
 import { startedLine } from './Request'
 import { Ways } from './PhoneShortcuts'
@@ -241,23 +236,6 @@ export function PhoneBoard({
     latest.current = { mark, answer, lift, drop }
   })
 
-  // The plans of the projects shown, each account once: a host on another account has windows of its own.
-  const placeName = (place: string): string => (place === '' ? computerName() : (chat.hosts.find((one) => one.id === place)?.name ?? place))
-  const inView = chat.chosen.length > 0 ? chat.chosen : shownProjects(chat.settings)
-  const accounts = (assistantsIn(chat.settings).includes('claude') ? accountsOf(placesOf(inView.length === 0 ? [''] : inView, hostOf), chat.plans, placeName) : []).map((item) => ({
-    name: placeName(item.places[0] ?? ''),
-    usage: usageOf(item, chat.plan),
-  }))
-  const codexWindows = chat.provider === 'codex' ? chat.account?.limits?.flatMap((limit) => [limit.primary, limit.secondary].flatMap((window) => window === null ? [] : [{ name: codexWindowName(window, limit, chat.account?.limits?.length ?? 0), window }])) ?? [] : []
-  const codexHigh = codexWindows.find((one) => one.window.usedPercent >= 90)
-  const named = accounts.length > 1
-  const high = accounts
-    .flatMap((one) => [
-      { of: one.name, name: '5-hour window', window: one.usage?.fiveHour },
-      { of: one.name, name: 'Week', window: one.usage?.sevenDay },
-    ])
-    .find((one) => one.window !== undefined && one.window.part >= 0.9)
-
   return (
     <div
       className="phone-board"
@@ -353,14 +331,6 @@ export function PhoneBoard({
         className="phone-list"
         onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 30)}
       >
-        {codexHigh === undefined ? null : <div className="phone-alert">Codex {codexHigh.name} at {Math.round(codexHigh.window.usedPercent)}%.{codexHigh.window.resetsAt === null ? null : ` Resets ${resetsAt(codexHigh.window.resetsAt * 1000, now)}.`}</div>}
-        {high?.window === undefined ? null : (
-          <div className="phone-alert">
-            {named ? `${high.of}: ` : ''}
-            {high.name} at {Math.round(high.window.part * 100)}%. Resets at{' '}
-            {new Date(high.window.resetsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
-          </div>
-        )}
         {!chat.listed ? (
           <div className="phone-group" aria-busy="true" aria-label="Reading the conversations">
             {[0, 1, 2].map((one) => (
@@ -479,7 +449,6 @@ export function PhoneBoard({
               </Fragment>
             ))}
       </div>
-      <AssistantStatus chat={chat} phone />
 
       {pressed === undefined ? null : (
         <Pressed

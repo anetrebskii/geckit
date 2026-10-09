@@ -4,6 +4,8 @@ import { ANYWHERE, UPDATE_CHANNELS, appName, assistantsIn, channelLabel, profile
 import { independentProviderInfo, instructionsFor, llmProviderInfo } from '../../../shared/providers'
 import type { Anywhere, OpenRule, PhoneView, ProjectProfile, SessionProvider, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
+import { AssistantStatus } from '../chat/AssistantStatus'
+import type { AssistantStatusChat } from '../chat/AssistantStatus'
 import { hostOf } from '../../../shared/hosts'
 import { homePath, projectLabel, projectName } from '../chat/project'
 import { Icon } from './Icon'
@@ -71,6 +73,7 @@ export function SettingsDialog({
   onClose,
   onShortcuts,
   first,
+  assistantChat,
 }: {
   readonly settings: Settings
   readonly change: (change: Partial<Settings>) => void
@@ -78,6 +81,7 @@ export function SettingsDialog({
   readonly onShortcuts: () => void
   /** The section it opens on. */
   readonly first?: Section
+  readonly assistantChat?: AssistantStatusChat
 }): React.JSX.Element {
   const [section, setSection] = useState<Section>(first ?? 'general')
   const onPhone = document.documentElement.classList.contains('phone')
@@ -124,7 +128,7 @@ export function SettingsDialog({
               />
             ) : null}
             {section === 'profiles' ? <Profiles settings={settings} change={change} /> : null}
-            {section === 'assistants' ? <Assistants settings={settings} change={change} /> : null}
+            {section === 'assistants' ? <Assistants settings={settings} change={change} assistantChat={assistantChat} /> : null}
             {section === 'libraries' ? <Libraries settings={settings} change={change} /> : null}
             {section === 'hosts' ? <HostsSection /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
@@ -154,7 +158,7 @@ interface Part {
 }
 
 
-function Assistants({ settings, change }: Part): React.JSX.Element {
+function Assistants({ settings, change, assistantChat }: Part & { readonly assistantChat?: AssistantStatusChat | undefined }): React.JSX.Element {
   const enabled = assistantsIn(settings)
   const providers = settings.providerPlugins.map(independentProviderInfo)
   const codexInfo = llmProviderInfo('codex', 'stream', settings.providerPlugins)
@@ -166,6 +170,7 @@ function Assistants({ settings, change }: Part): React.JSX.Element {
   return (
     <section className="assistant-settings" aria-labelledby="assistant-settings-title">
       <h3 id="assistant-settings-title">Assistants</h3>
+      <AssistantStatus chat={assistantChat ?? { settings, provider: settings.chatProvider, hosts: [], plans: [], plan: undefined, plansAt: {} }} />
       <div className="assistant-options">
         <label className="assistant-option">
           <span className="assistant-option-copy">

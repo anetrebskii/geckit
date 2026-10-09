@@ -965,6 +965,10 @@ textarea {
   overflow-y: auto;
 }
 
+.assistant-settings > .quiet {
+  margin-bottom: 12px;
+}
+
 .assistant-settings h3 {
   margin: 2px 0 10px;
   font-size: 13px;
@@ -3823,11 +3827,17 @@ html.phone .request-foot .request-reply {
 
 .queue-inject {
   flex: none;
-  white-space: nowrap;
+  color: var(--accent);
 }
 
-html.phone .queue-inject {
-  min-height: 44px;
+.queued-one .icon-button.queue-inject {
+  width: 24px;
+  height: 24px;
+}
+
+html.phone .queued-one .icon-button.queue-inject {
+  width: 44px;
+  height: 44px;
 }
 
 .queued-edit {

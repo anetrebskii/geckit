@@ -2,11 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 
 import { homeOf, SESSION_MODES } from '../../../shared/api'
 import { isCodexProvider, llmProviderInfo } from '../../../shared/providers'
-import { accountUsage, money } from '../../../shared/provider-usage'
+import { money } from '../../../shared/provider-usage'
 import { ModelDetailsButton } from './ModelDetails'
-import { QuotaRows } from './ProviderUsage'
 import type { ClaudeAccount, CodexLimitWindow, CodexRateLimit, PlanUsage, PlanWindow } from '../../../shared/api'
-import { hostOf } from '../../../shared/hosts'
 import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
 import { Menu } from '../ui/Menu'
@@ -16,7 +14,6 @@ import { childSaid } from './Request'
 import { startedFrom } from './started'
 import { ago } from './time'
 import { Meter, tokens, until, useGit } from './Status'
-import { accountsOf, usageOf } from './plans'
 import type { Chat } from './useChat'
 
 /** When a window starts again: the time today, the weekday and time within a week, the date beyond. */
@@ -125,11 +122,6 @@ export function PhoneInfo({
   readonly onClear: () => void
   readonly onClose: () => void
 }): React.JSX.Element | null {
-  // The plan this conversation spends is its account's: a host's own where it runs on one.
-  const at = chat.session === undefined ? '' : (hostOf(chat.session.root) ?? '')
-  const item = accountsOf([at], chat.plans, (place) => place)[0]
-  const mine = item === undefined ? chat.plan : usageOf(item, chat.plan)
-  const mineName = at === '' ? undefined : (chat.hosts.find((one) => one.id === at)?.name ?? at)
   const [asking, setAsking] = useState<'compact' | 'clear'>()
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer) }, [])
@@ -265,13 +257,6 @@ export function PhoneInfo({
         )}
         <Cell label="Clear" says="Start a new task in this folder" danger onPress={() => setAsking('clear')} />
       </div>
-
-      {chat.provider !== 'claude' ? <><div className="phone-head">{llmProviderInfo(chat.provider).planName || llmProviderInfo(chat.provider).shortName} limits</div><QuotaRows usage={accountUsage(chat.account)} now={now} /></> : mine?.fiveHour === undefined && mine?.sevenDay === undefined ? null : (
-        <>
-          <div className="phone-head">{mineName === undefined ? 'Plan' : `Plan on ${mineName}`}</div>
-          <Limits chat={chat} usage={mine} />
-        </>
-      )}
 
       {asking === 'compact' ? (
         <Menu

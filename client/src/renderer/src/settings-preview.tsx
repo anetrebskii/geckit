@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import { DEFAULT_SETTINGS } from '../../shared/api'
-import type { Settings } from '../../shared/api'
+import type { ClaudeAccount, SessionProvider, Settings } from '../../shared/api'
 import type { LlmProviderInfo, ProviderPluginFailure } from '../../shared/providers'
 import { registerProviderInfo } from '../../shared/providers'
 import './styles.css'
@@ -20,7 +20,7 @@ const libraries = sourceLibraries.filter((one) => !(query.has('failed') && one.i
 const failedLibraries: readonly ProviderPluginFailure[] = query.has('failed') ? [{ id: 'plugin:claude-tmux', name: 'Claude Code (tmux)', icon: 'tmux', source: 'https://github.com/anetrebskii/geckit-claude-tmux', error: 'Plugin does not implement LlmProvider.' }] : []
 registerProviderInfo(libraries)
 document.documentElement.dataset.theme = theme
-Object.assign(window.geckit, { chat: { getProviderPluginFailures: async (): Promise<readonly ProviderPluginFailure[]> => failedLibraries } })
+Object.assign(window.geckit, { chat: { getProviderPluginFailures: async (): Promise<readonly ProviderPluginFailure[]> => failedLibraries, account: async (provider: SessionProvider): Promise<ClaudeAccount> => ({ provider, here: true, signedIn: true, plan: provider === 'codex' ? 'Plus' : 'Max', program: { version: 'preview' }, usage: { quotas: [{ id: 'five-hour', name: '5h', part: 0.24 }, { id: 'week', name: 'Week', part: 0.63 }], measuredAt: Date.now() } }), onAccount: () => () => undefined } })
 
 const { SettingsDialog } = await import('./ui/SettingsDialog')
 

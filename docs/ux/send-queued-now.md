@@ -14,7 +14,7 @@ Guidance waiting behind a running task can arrive too late to correct its direct
 
 | Surface | Addition | When visible |
 | --- | --- | --- |
-| Existing queued rows in desktop and phone Composer | Quiet "Send now" action beside existing row actions | Active supporting driver, no pending approval, ordinary message |
+| Existing queued rows in desktop and phone Composer | Compact send-arrow action beside existing row actions | Active supporting driver, no pending approval, ordinary message |
 | Existing trouble area | Delivery failure | Provider rejected delivery |
 | Existing transcript | Accepted selected message | Delivery succeeds |
 
@@ -26,8 +26,8 @@ Phone Send now has a minimum 44px touch target. Full desktop and phone review, b
 
 | State | Trigger | What Alex sees | Action |
 | --- | --- | --- | --- |
-| Queued, supporting active work | Guidance waits during work | "Send now" | Send now, edit or wait |
-| Sending | Send now pressed | "Sending...", disabled queue actions | Wait |
+| Queued, supporting active work | Guidance waits during work | Send-arrow icon | Send now, edit or wait |
+| Sending | Send now pressed | Spinner in the send control, disabled queue actions | Wait |
 | Accepted | Provider accepted input | Message in transcript; row gone | Continue reading |
 | Rejected | Provider cannot deliver | Existing error text; original queued row | Retry or wait |
 | Unavailable | Idle, unsupported, approval pending, or command | Existing queue actions only | Wait, edit, cancel or answer approval |
@@ -50,7 +50,7 @@ stateDiagram-v2
 
 | From | Event | To | Visible result |
 | --- | --- | --- | --- |
-| Queued | Alex presses "Send now" | Sending | "Sending..." |
+| Queued | Alex presses the send arrow | Sending | Spinner in the send control |
 | Sending | Provider accepts, automatically | Accepted | Row disappears; message appears in transcript |
 | Sending | Provider refuses or turn ended, automatically | Queued/unavailable | Error; original row retained |
 | Queued | Turn ends or approval appears, automatically | Unavailable | Send now disappears; queue remains |
@@ -67,9 +67,9 @@ No new timeout or delay in host. One delivery per conversation at a time prevent
 
 | State | Exact text |
 | --- | --- |
-| Available | "Send now" |
+| Available | Send-arrow icon; accessible name "Send this message into the current work" |
 | Accessible name / tooltip | "Send this message into the current work" |
-| Pending | "Sending..." |
+| Pending | Spinner; accessible name "Sending this message into the current work" |
 | Unsupported | "This assistant cannot receive a message while working." |
 | Turn ended | "The assistant is no longer working. Your message is still queued." |
 
@@ -82,7 +82,13 @@ Empty queue adds nothing. Long text stays in the current row. Attachments travel
 No automatic steering on Send, global default, stop-and-restart fallback or new concurrency slot. Older libraries remain usable without capability.
 
 ## 10. Decisions
-Use a visible text action matching existing queue controls. User's implementation request explicitly covers the previously proposed "Send now" behavior. No additional design approval gate is introduced. Per-driver optional method is the authority, so live versions and legacy libraries do not inherit a false capability from provider metadata.
+Use a compact icon action matching existing queue controls. Alex requested this revision on 2026-10-09 because the text button crowds the queued message on the phone. The arrow reuses the composer send icon; its accessible name preserves the action meaning. User's implementation request explicitly covers the previously proposed "Send now" behavior. No additional design approval gate is introduced. Per-driver optional method is the authority, so live versions and legacy libraries do not inherit a false capability from provider metadata.
 
 ## 11. Requirements coverage
 FR-001/002: sections 2-4. FR-003/004: states and edges. FR-005/006: surfaces and capability. FR-007: edges and deliberate omissions. No unresolved requirements.
+
+## Revision - 2026-10-09
+
+The queued send action uses the existing send-arrow icon, with a spinner while delivery is pending. Tooltip and accessible name explain delivery into current work. The phone retains a 44px touch target. No queue delivery, focus, error, or availability rule changes. Alex's request authorizes this revision.
+
+Review on 2026-10-09: actual Composer and Transcript at 391x844 and 1200x900 CSS viewports, light/dark; keyboard Tab/Enter, pending disabled actions/spinner, failed delivery retaining row and focus, and 15-message queue scrolling. DOM measurements confirmed 24x24 desktop and 44x44 phone controls. Native Electron/iPhone review was not performed.

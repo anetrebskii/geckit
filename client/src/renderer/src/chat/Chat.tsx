@@ -28,7 +28,7 @@ import { startedCount } from './started'
 import { computerName, needsComputer } from './PhoneHosts'
 import { homePath, projectLabel, projectName, tint } from './project'
 import { Sidebar, Tags } from './Sidebar'
-import { Status, TalkStatus } from './Status'
+import { TalkStatus } from './Status'
 import { Notices } from './Notices'
 import { Recent } from './Recent'
 import { ShortcutList } from './ShortcutList'
@@ -809,8 +809,6 @@ export function Chat(): React.JSX.Element {
         {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
       </div>
 
-      <Status chat={chat} />
-
       <Notices chat={chat} />
       {/* On the phone a host's question is a sheet over whatever is open, one at a time, the oldest first; what stands in the way of a host is on its page in Settings, since only the computer can fix it. */}
       {ON_PHONE ? (
@@ -854,7 +852,7 @@ export function Chat(): React.JSX.Element {
       )}
       {switching ? <Switcher chat={chat} onClose={() => setSwitching(false)} onSeek={setSeek} /> : null}
       {setting ? (
-        <SettingsDialog first={setting} settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />
+        <SettingsDialog assistantChat={chat} first={setting} settings={chat.settings} change={chat.change} onClose={closeSettings} onShortcuts={openKeys} />
       ) : null}
       {keys ? <ShortcutsDialog onClose={closeKeys} /> : null}
       {chat.settings.welcomed || ON_PHONE ? null : <Welcome chat={chat} />}

@@ -2,24 +2,19 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { modelDetailRows, pricingRows, resolvedModel } from '../../../shared/model-details'
-import { accountUsage } from '../../../shared/provider-usage'
 import { llmProviderInfo } from '../../../shared/providers'
 import { ON_PHONE } from '../on-phone'
 import { Sheet } from '../ui/Sheet'
 import { Cell } from './PhoneKit'
 import { Icon } from '../ui/Icon'
-import { QuotaRows } from './ProviderUsage'
 import type { Chat } from './useChat'
 import './phone-home.css'
 
 export type ModelDetailsChat = Pick<Chat, 'provider' | 'transport' | 'settings' | 'models' | 'model' | 'session' | 'root' | 'account' | 'askModels'>
 
-const measuredTime = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' })
-
 function Details({ chat, model, phone, onClose }: { readonly chat: ModelDetailsChat; readonly model: string | undefined; readonly phone: boolean; readonly onClose: () => void }): React.JSX.Element {
   const title = useId()
   const body = useRef<HTMLDivElement>(null)
-  const [now, setNow] = useState(Date.now)
   const provider = llmProviderInfo(chat.provider, chat.transport, chat.settings.providerPlugins)
   const found = resolvedModel(Array.isArray(chat.models) ? chat.models : undefined, model)
 
@@ -36,8 +31,7 @@ function Details({ chat, model, phone, onClose }: { readonly chat: ModelDetailsC
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
     window.addEventListener('keydown', key, true)
-    const timer = setInterval(() => setNow(Date.now()), 60_000)
-    return () => { window.removeEventListener('keydown', key, true); clearInterval(timer); opener?.focus() }
+    return () => { window.removeEventListener('keydown', key, true); opener?.focus() }
   }, [onClose])
 
   const content = <div ref={body} className="model-details">
@@ -56,9 +50,6 @@ function Details({ chat, model, phone, onClose }: { readonly chat: ModelDetailsC
         <p className="model-details-note">{found.pricing.currency} · API rates{found.pricing.asOf === undefined ? '' : ` · As of ${found.pricing.asOf}`}{found.pricing.source === undefined ? null : <> · <button type="button" className="act" onClick={() => window.geckit.chat.openLink(found.pricing?.source ?? '')}>Price source</button></>}</p>
       </>}
     </>}
-    <div className="phone-head">Account limits</div>
-    <QuotaRows usage={accountUsage(chat.account)} now={now} />
-    {chat.account?.usage?.measuredAt === undefined ? null : <p className="model-details-note">Measured {measuredTime.format(chat.account.usage.measuredAt)}</p>}
   </div>
 
   if (phone) return <Sheet title="Model details" className="model-details-sheet" cancel={false} onClose={onClose}>{content}</Sheet>
