@@ -892,6 +892,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         <textarea
           ref={field}
           rows={1}
+          enterKeyHint={ON_PHONE ? 'enter' : undefined}
           value={chat.draft}
           placeholder={
             chat.root === undefined
@@ -926,6 +927,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             addFiles(files)
           }}
           onKeyDown={(event) => {
+            if (ON_PHONE && event.key === 'Enter') return
             if (recorder.recording && (event.key === 'Enter' || event.key === 'Escape')) {
               event.preventDefault()
               event.stopPropagation()

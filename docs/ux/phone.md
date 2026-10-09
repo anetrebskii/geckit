@@ -129,6 +129,7 @@ stateDiagram-v2
 | Conversation | Presses Back | Board | The board, on the column they left |
 | Conversation | A permission card arrives, by itself | Asks | The card at the end of the transcript |
 | Asks | Presses Allow once / for the session / No | Conversation | The card goes; the work goes on |
+| Conversation | Presses Return in the message field | Conversation | A new line at the caret; the draft stays in the field and nothing is sent or queued |
 | Conversation | Presses Send | Conversation | Their message in the transcript; "Working" |
 | Any connected | The link breaks, by itself | Dropped | Nothing; the pill after 5 s if still down |
 | Dropped | The link is back, by itself | Where it was | The pill goes; the page stays where it was, and the list, the plan and the open conversation catch up with what happened meanwhile |
@@ -252,3 +253,13 @@ stateDiagram-v2
 | Peer-to-peer to the Mac | WebRTC; Firestore only introduces the two ends |
 
 **Missing from the request:** whether a notification is wanted when a card arrives while the app is closed; added later, in `phone-push.md`.
+
+## Mobile Return correction - 2026-10-09
+
+Alex explicitly requested restoring Return to insert a newline rather than sending. The conversation message field uses the phone keyboard's Return action, including an attached hardware keyboard. Return and Shift+Return insert a line at the caret or replace the selected text with a line break; draft text and attachments remain. This applies while idle, working or waiting for an answer, including commands beginning with "!" or "/" and an open file suggestion list. File suggestions remain selectable by tap. Sending or queuing requires the existing send/queue button. Read-only and disabled fields remain so. Desktop Enter, Shift+Enter, history navigation and file selection shortcuts retain their current behavior.
+
+Return keeps the conversation in its existing draft state; it adds no status message, notification, transition timing or new surface. The composer grows and scrolls using its existing multiline rules. Enter-to-send on the phone is rejected because it interrupts drafting and can send unfinished messages.
+
+Correction verification: actual Composer and Transcript reviewed in full screen phone context in Chrome at 391x844 CSS pixels, light/dark, and narrow 320x844 light. Return preserved the draft and queue count while idle, working and waiting; Shift+Return and command text remained multiline, the explicit Queue button delivered the entire draft, and long drafts stayed within the existing 260 px scrolling field. Desktop Shift+Enter still inserted a newline and Enter still submitted at 1200x900. Typecheck, scoped ESLint and mobile build pass. Physical iOS keyboard interaction was unavailable. Signed iPhone installation and matching bundled assets are verified; automatic launch was blocked by iOS because the device was locked.
+
+Performance review against `docs/performance.md`: no problems found. The phone-only Enter guard avoids submission work and uses the existing native textarea input/update path. No memoized rows, callback references, collections, formatters, pointer handlers or animations changed. Phone bundle rebuilt; no new work required live profiling.
