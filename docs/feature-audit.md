@@ -126,6 +126,7 @@ Sources: [Composer](../client/src/renderer/src/chat/Composer.tsx), [sessions](..
 - Keep working toward a goal; native goal updates are reflected in the conversation and card.
 - Move completed work to In review automatically; expose blocked goal state.
 - Queue multiple follow-up messages while an assistant works.
+- Send a selected queued message into active work through "Send now" on desktop or phone. Main implements builtin Codex `turn/steer` and builtin Claude next-priority input through optional [Driver.inject](../client/src/main/sessions/heard.ts), [atomic queue delivery](../client/src/main/sessions/index.ts), [composer](../client/src/renderer/src/chat/Composer.tsx) and the phone bridge. Delivery failure retains the message; pending delivery locks competing queue actions. Existing API v1 libraries without the method keep normal queue behavior. The independent Codex example is rebuilt with steering; the external tmux implementation and deterministic tests are preserved in [its reviewable patch](claude-tmux-steer.patch). This describes main source support; released installers and installed external-library versions must be checked separately. Requested explicitly by Alex on 2026-10-09.
 - Edit queued text without losing its place or pictures; cancel a queued message.
 - Delegate a queued message to a new conversation, with or without existing history where the provider supports it.
 - Limit conversations working at once: six by default, or no limit.

@@ -359,6 +359,8 @@ export interface ChatSession {
   readonly status?: SessionStatus
   /** Messages sent while it worked, oldest first, each going once the turn before it is answered. */
   readonly queued?: readonly QueuedMessage[]
+  readonly canInject?: true
+  readonly injecting?: QueuedMessage['id']
   /** Its queued messages wait for a slot, as many working as the limit. */
   readonly waits?: true
   /** A general question: shown while it is open, and never as a card or a row. */
@@ -376,6 +378,7 @@ export interface ChatSession {
 export interface QueuedMessage {
   readonly id: string
   readonly text: string
+  readonly command?: true
   /** How many pictures go with it; the pictures themselves come back only when it is taken out. */
   readonly images: number
 }

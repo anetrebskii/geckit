@@ -24,6 +24,8 @@ limits returns windows (a Map keyed by model ID/value) and optional quotas. A qu
 
 Stream transcript and control changes through hear({ items, gone, signals }). Emit spend for current context used/window and cumulative cost for the current driver run; set currency and costKind (api-equivalent or billed). Emit usage for account quotas. Emit ended once a turn finishes and call left when the driver exits. Persist sufficient data for list/read to restore conversations.
 
+Driver may optionally implement inject(text, images?, before?): Promise<void>, using the same arguments as send. Resolve after the active transport accepts guidance; this does not mean the model applied it. Reject when idle, disconnected, awaiting permission, or unable to deliver. Never start a new turn or interrupt as a fallback. GeckIt keeps the queued message until acceptance and offers Send now only for a supporting live driver. Existing apiVersion: 1 libraries without inject keep working.
+
 setInstructions(enabled, browserNames) owns instruction setup/cleanup. Select instructions: own for an independent switch, or codex/claude only when sharing that provider's global instructions. Remove only files and references your library owns. dispose must release only your resources.
 
 ## Build and verify

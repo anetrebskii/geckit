@@ -424,6 +424,16 @@ export class CodexSessions {
     })
     void ready.catch(() => undefined)
     return {
+      inject: async (text, images = [], before = []) => {
+        await ready
+        if (over || stopped || !active || turnId === undefined || rpc === undefined || this.#rpc !== rpc) throw new Error('The assistant is no longer working. Your message is still queued.')
+        if (requests.size > 0) throw new Error('Answer the assistant before sending this message.')
+        const input: CodexInput[] = [
+          { type: 'text', text: [...before, text].join('\n\n'), text_elements: [] },
+          ...images.map((one): CodexInput => ({ type: 'image', url: `data:${one.media};base64,${one.data}` })),
+        ]
+        await rpc.request('turn/steer', { threadId, input, expectedTurnId: turnId })
+      },
       send: (text, images = [], before = []) => {
         active = true
         stopped = false

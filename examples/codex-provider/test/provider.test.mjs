@@ -47,6 +47,9 @@ test('built artifact uses its copied Codex CLI code for account, models, limits,
     ended = false
     driver.send('wait for stop')
     await setTimeout(50)
+    assert.equal(typeof driver.inject, 'function')
+    await driver.inject('Focus on failing tests', [{ media: 'image/png', data: 'aW1hZ2U=' }], ['command output'])
+    assert.equal(ended, false, 'injection must not complete the running turn')
     driver.stop()
     for (let i = 0; i < 100 && !ended; i += 1) await setTimeout(10)
     assert.ok(signals.some((signal) => signal.kind === 'ended' && signal.how === 'stopped'))
@@ -63,6 +66,11 @@ test('built artifact uses its copied Codex CLI code for account, models, limits,
     assert.equal(await provider.delete('/work', id), true)
     const log = await readFile(join(folder, 'rpc.jsonl'), 'utf8')
     assert.ok(log.includes('Fixture message'))
+    const steering = log.trim().split('\n').map((line) => JSON.parse(line)).find((request) => request.method === 'turn/steer')
+    assert.equal(steering.params.threadId, 'test-native-thread')
+    assert.equal(steering.params.expectedTurnId, 'turn')
+    assert.equal(steering.params.input[0].text, 'command output\n\nFocus on failing tests')
+    assert.equal(steering.params.input[1].url, 'data:image/png;base64,aW1hZ2U=')
     assert.ok(!log.includes('plugin:codex-mirror:test-native-thread'), 'native RPC must not receive plugin IDs')
   } finally {
     provider.dispose()

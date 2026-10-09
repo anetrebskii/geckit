@@ -1,0 +1,221 @@
+diff --git a/README.md b/README.md
+index c978d0a..192aab9 100644
+--- a/README.md
++++ b/README.md
+@@ -12,6 +12,8 @@ Claude Code starts in its interactive terminal. The plugin types each prompt thr
+ 
+ Every 500 ms, the driver reads only appended transcript bytes. Incomplete JSONL lines remain buffered, including partial UTF-8 characters. Reply text is never reconstructed from terminal output. Saved message blocks arrive after Claude writes them; token-level hook streaming is removed.
+ 
++Queued messages in GeckIt can use **Send now** while this driver works. The optional `Driver.inject` method types the selected text and attachment paths into Claude's current input and presses Enter without waiting for an idle prompt. Claude processes that input after its current tool calls. This does not send Ctrl+C, Escape or Claude's interrupting Send now shortcut. Native questions and unknown terminal states reject injection; GeckIt retains the queued message. Submission confirms terminal delivery, not model application. Images stay available until the turn ends.
++
+ Working indicators keep the turn open. A recognized idle input prompt must appear on two consecutive polls after observed activity before GeckIt marks the turn finished. File silence and `end_turn` alone do not mean completion. Unknown terminal layouts remain working. Completion means the turn ended, not that the requested task succeeded.
+ 
+ Native numbered approvals and questions appear as existing GeckIt question cards with Claude's exact choices. Answering navigates the current menu and presses Enter; it rechecks the menu to reject stale answers. Unsupported dialogs must be handled in Claude's terminal. Stop sends Ctrl+C and waits for the idle prompt. The process remains open for follow-ups and shuts down after one hour idle following a finished turn. A new message resets the timer; working turns, pending approvals and tracked background tasks prevent shutdown.
+diff --git a/doc/ux/send-queued-now.md b/doc/ux/send-queued-now.md
+new file mode 100644
+index 0000000..09eb798
+--- /dev/null
++++ b/doc/ux/send-queued-now.md
+@@ -0,0 +1,25 @@
++---
++type: spec
++status: implemented
++owner: Alex
++created: 2026-10-09
++---
++
++# UX: Inject queued guidance into running Claude
++
++GeckIt's queued rows offer "Send now" when this live driver exposes optional `inject(text, images?, before?)`. The host retains its queue entry until terminal submission succeeds. The driver accepts only a running turn with a recognized working input, no native question, no concurrent typing/answering and no stop in progress.
++
++The driver types at the existing measured pace and presses Enter. It does not wait for idle, interrupt the work, alter permission mode or synthesize a second turn-start/completion event. Claude consumes the guidance at its next safe opportunity after current tool calls. Current transcript and work state remain authoritative.
++
++State transitions:
++
++| From | Event | To | Visible result |
++| --- | --- | --- | --- |
++| Working | Alex presses "Send now" | Submitting | Host displays "Sending..." |
++| Submitting | Terminal accepts Enter, automatically | Working | Host removes selected queue entry and adds message to transcript |
++| Working/Submitting | Terminal shows question or ceases working | Working/Waiting/Idle | Submission rejects; host retains queued message |
++| Working | Native turn ends, automatically | Idle | Existing completion and image cleanup |
++
++No native approval is answered by injection. A screen is checked before each typed character and Enter; if it becomes idle, an unsent input draft is cleared with Ctrl+U. If a question appears while typing, no final Enter is sent. Native question screens remain untouched, so any partial draft may require inspection in the terminal before retrying. This is an inherent race in terminal input; use builtin stream Claude for acknowledged structured delivery.
++
++No new polling, time threshold, theme rules or renderer controls belong to the library. Host queue layout, keyboard, focus and error behavior are shared. Tests use real isolated tmux with fake Claude, proving text/images/before, consumption at a safe boundary, one active lifecycle, no interruption and preserved native approval.
+diff --git a/index.mjs b/index.mjs
+index d8f7e58..7d09ee5 100644
+--- a/index.mjs
++++ b/index.mjs
+@@ -252,8 +252,9 @@ function holdTmux(host, options, hear, left) {
+     }
+     throw new Error("Claude Code did not become ready for input.");
+   };
+-  const keys = async (text) => {
++  const keys = async (text, ready) => {
+     for (const character of text) {
++      await ready?.();
+       if (character === "\n") {
+         await tmux(["send-keys", "-l", "-t", name, "\\"]);
+         await tmux(["send-keys", "-t", name, "Enter"]);
+@@ -262,6 +263,7 @@ function holdTmux(host, options, hear, left) {
+       }
+       await delay(typingDelay());
+     }
++    await ready?.();
+     await tmux(["send-keys", "-t", name, "Enter"]);
+   };
+   const close = async () => {
+@@ -276,6 +278,34 @@ function holdTmux(host, options, hear, left) {
+     left();
+   };
+   return {
++    async inject(text, images = [], before = []) {
++      if (ended || !running || !turn || stopping) throw new Error("Claude Code is no longer working. Your message is still queued.");
++      if (submitting || answering || pending !== void 0) throw new Error("Answer Claude Code's question before sending this message.");
++      submitting = true;
++      let typed = false;
++      const ready = async () => {
++        if (ended || stopping || !turn || !await alive()) throw new Error("Claude Code is no longer working. Your message is still queued.");
++        const screen = terminalScreen(await tmux(["capture-pane", "-p", "-t", name]));
++        if (screen.kind !== "working") throw new Error(screen.kind === "question" ? "Answer Claude Code's question before sending this message." : "Claude Code is not ready to receive this message. Your message is still queued.");
++      };
++      try {
++        await ready();
++        const paths = await imagesIn(images);
++        await ready();
++        const prompt = [...before, text, ...paths.map((path) => `Image attachment: ${path}`)].join("\n\n");
++        typed = true;
++        await keys(prompt, ready);
++        idle = 0;
++      } catch (error) {
++        if (typed && !ended) {
++          const screen = terminalScreen(await tmux(["capture-pane", "-p", "-t", name]).catch(() => ""));
++          if (screen.kind === "working" || screen.kind === "idle") await tmux(["send-keys", "-t", name, "C-u"]).catch(() => void 0);
++        }
++        throw error;
++      } finally {
++        submitting = false;
++      }
++    },
+     send(text, images = [], before = []) {
+       if (ended) return;
+       submitting = true;
+diff --git a/test/fake-claude.mjs b/test/fake-claude.mjs
+index e5f70ee..d3a9a0f 100755
+--- a/test/fake-claude.mjs
++++ b/test/fake-claude.mjs
+@@ -16,6 +16,8 @@ let selection = 0
+ let menu
+ let timer
+ let input = ''
++let busy = false
++const queued = []
+ let pasting = false
+ let typed = false
+ let trusting = Boolean(process.env.CLAUDE_TEST_TRUST)
+@@ -23,8 +25,8 @@ let trustFocus = 0
+ let trustMissed = false
+ const trustScreen = () => paint(`Quick safety check:\nIs this a project you created or one you trust?\n${trustFocus === 0 ? "❯" : " "} No, exit\n${trustFocus === 1 ? "❯" : " "} Yes, I trust this folder\nEnter to confirm`)
+ const paint = (text) => process.stdout.write('\x1b[2J\x1b[H' + text)
+-const idle = () => paint('Claude Code\n────────────────────\n❯\u00a0Try "ask anything"\n────────────────────\n  auto mode on\n')
+-const working = () => paint('Claude Code\n✶ Working…\n────────────────────\n❯\u00a0\n────────────────────\n')
++const idle = () => { busy = false; paint('Claude Code\n────────────────────\n❯\u00a0Try "ask anything"\n────────────────────\n  auto mode on\n') }
++const working = () => { busy = true; paint('Claude Code\n✶ Working…\n────────────────────\n❯\u00a0\n────────────────────\n') }
+ const choices = () => paint(`${menu.title}\n${menu.options.map((label, i) => `${i === selection ? '❯' : ' '} ${i + 1}. ${label}`).join('\n')}\n  Enter to select · Esc to cancel\n`)
+ const reply = (text) => {
+   write({ type: 'assistant', uuid: 'reply-' + ++count, message: { model: 'claude-test', stop_reason: 'end_turn', content: [{ type: 'text', text }] } })
+@@ -78,7 +80,8 @@ process.stdin.on('data', (chunk) => {
+       i += 2; continue
+     }
+     const c = chunk[i]
+-    if (c === '\x03') { clearTimeout(timer); menu = undefined; record({ stopped: true }); idle(); continue }
++    if (c === '\x03') { clearTimeout(timer); queued.length = 0; menu = undefined; record({ stopped: true }); idle(); continue }
++    if (c === '\x15') { input = ''; record({ clearedInput: true }); continue }
+     if ((c === '\r' || c === '\n') && !pasting) {
+       if (input.endsWith('\\')) { input = input.slice(0, -1) + '\n'; continue }
+       if (trusting) { if (trustFocus !== 1) process.exit(1); trusting = false; record({ trusted: true }); idle(); continue }
+@@ -89,7 +92,7 @@ process.stdin.on('data', (chunk) => {
+         if (choice === 'Type something.') { typed = true; paint('Type your answer\n'); continue }
+         reply('choice: ' + choice)
+       } else if (typed) { typed = false; reply('typed: ' + input); input = '' }
+-      else { const prompt = input; input = ''; say(prompt) }
++      else { const prompt = input; input = ''; if (busy) { queued.push(prompt); record({ injected: prompt }) } else say(prompt) }
+     } else input += pasting && c === '\r' ? '\n' : c
+   }
+ })
+@@ -100,6 +103,7 @@ setInterval(() => {
+   if (!command) return
+   writeFileSync(control, '')
+   if (command === 'change' && menu) { menu = { title: 'New question', options: ['Stay', 'Leave'] }; selection = 0; choices() }
++  if (command === 'release' && busy && queued.length > 0) { record({ consumed: queued.shift() }); reply('injection consumed') }
+ }, 40)
+ if (process.env.CLAUDE_TEST_TRUST) {
+   trustScreen()
+diff --git a/test/tmux.test.mjs b/test/tmux.test.mjs
+index abcb053..e1d9983 100644
+--- a/test/tmux.test.mjs
++++ b/test/tmux.test.mjs
+@@ -46,6 +46,63 @@ test('does not install host instructions', async () => {
+   assert.equal(provider.instructions, 'own')
+ })
+ 
++test('injects text and images into active work without interruption', { skip: !available, timeout: 30000 }, async () => {
++  const folder = await realpath(await mkdtemp(join(tmpdir(), 'claude-inject-test-')))
++  const id = randomUUID()
++  const binary = join(dirname(fileURLToPath(import.meta.url)), 'fake-claude.mjs')
++  await chmod(binary, 0o755)
++  const file = join(folder, 'projects', folder.replace(/[^A-Za-z0-9]/g, '-'), id + '.jsonl')
++  const log = join(folder, id + '.log')
++  const exists = (path) => stat(path).then(() => true, () => false)
++  const events = []
++  const host = {
++    claudeCommand: () => binary, offPlan: [],
++    planOnly: () => ({ ...process.env, CLAUDE_CONFIG_DIR: folder }),
++    claudeState: () => ({}),
++    readClaude: () => ({ items: [], gone: [], signals: [] }),
++    claudeFile: async () => await exists(file) ? file : undefined,
++  }
++  const driver = holdTmux(host, { id, root: folder, resume: false, mode: 'manual' }, (event) => events.push(event), () => {})
++  const signals = () => events.flatMap((event) => event.signals)
++  const logs = async () => (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
++  try {
++    await assert.rejects(driver.inject('idle'), /no longer working/)
++    driver.send('hold')
++    await until(() => exists(log))
++    await until(async () => (await logs()).some((entry) => entry.prompt === 'hold'))
++    await delay(600)
++    const begun = signals().filter((entry) => entry.kind === 'begun').length
++    const text = "only this file\n'quoted' $(literal)"
++    const delivery = driver.inject(text, [{ media: 'image/png', data: Buffer.from('image bytes').toString('base64') }], ['command output'])
++    await assert.rejects(driver.inject('duplicate'), /question/)
++    await delivery
++    await until(async () => (await logs()).some((entry) => entry.injected))
++    const accepted = (await logs()).find((entry) => entry.injected).injected
++    assert(accepted.startsWith('command output\n\n' + text + '\n\nImage attachment: '), accepted)
++    const image = accepted.split('Image attachment: ')[1]
++    assert.equal(await readFile(image, 'utf8'), 'image bytes')
++    assert.equal(signals().filter((entry) => entry.kind === 'begun').length, begun)
++    assert.equal(signals().filter((entry) => entry.kind === 'ended').length, 0)
++    assert.equal((await logs()).some((entry) => entry.stopped), false)
++    await writeFile(join(folder, id + '.control'), 'release')
++    await until(() => signals().some((entry) => entry.kind === 'ended'))
++    assert.equal((await logs()).find((entry) => entry.consumed).consumed, accepted)
++    assert.equal(await exists(image), false)
++    await assert.rejects(driver.inject('finished'), /no longer working/)
++    driver.send('permission')
++    await until(() => signals().some((entry) => entry.kind === 'asks'))
++    const ask = signals().findLast((entry) => entry.kind === 'asks')
++    await assert.rejects(driver.inject('do not answer approval'), /question/)
++    assert.equal(signals().some((entry) => entry.kind === 'resolved' && entry.ask === ask.ask), false)
++    assert.equal((await logs()).some((entry) => entry.choice), false)
++    driver.answer(ask.ask, 'No')
++    await until(() => signals().filter((entry) => entry.kind === 'ended').length === 2)
++  } finally {
++    await driver.end()
++    await rm(folder, { recursive: true, force: true })
++  }
++})
++
+ test('sends through tmux, tails JSONL, and confirms native lifecycle and approvals', { skip: !available, timeout: 50000 }, async () => {
+   const folder = await realpath(await mkdtemp(join(tmpdir(), 'claude-passive-test-')))
+   const id = randomUUID()

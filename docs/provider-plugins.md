@@ -164,6 +164,14 @@ hear({ items: [], gone: [], signals: [
 
 `spend.cost` is cumulative for the current driver run; GeckIt combines runs. `costKind` is `billed` or `api-equivalent` (legacy default); `currency` defaults to USD for existing plugins. Context used is occupancy, not total billable tokens. A provider's usage event does not change another provider's plan. Emit `ended` once per turn and call `left()` when the driver exits.
 
+### Messages during active work
+
+The live `Driver` may implement `inject(text, images?, before?): Promise<void>`, with the same arguments as `send`. GeckIt then offers **Send now** on ordinary queued messages while that driver is working and no approval or question is pending. Normal Send continues to queue messages. Capability comes from the running driver's method, so an old library or an active driver from an earlier library version is not assumed to support injection.
+
+Resolve when the transport accepts the message; this does not claim the model has already applied it. Reject when no turn is active, input is unsafe, or submission fails. Preserve text, images and preceding command output. Do not start a replacement turn, interrupt work, bypass a native approval, or emit a synthetic `begun`/`ended` for this operation. GeckIt keeps the selected queued entry until acceptance, disables competing queue actions during submission, and retains its position on failure. There is no automatic retry or stop-and-restart fallback.
+
+Builtin Codex uses `turn/steer` with `expectedTurnId`. Builtin Claude submits stream-json user input with `priority: "next"`; Claude applies it after current tool calls. The updated external Claude tmux library types input and presses Enter while work continues. Provider libraries without `inject` remain compatible with API v1 and keep the existing queue behavior.
+
 ### Instructions and lifecycle
 
 `setInstructions(enabled, browserNames)` installs/removes only the files/references the library owns. Shared Codex instructions may delegate to `host.codex.setInstructions`; AI requests need not delegate. `instructions: own` gives a separate switch. Old plugins missing this method retain their compatibility fallback.

@@ -318,6 +318,8 @@ interface Live {
   clearing: boolean
   /** Messages sent while it worked, oldest first. */
   queued: Queued[]
+  injecting: Queued['id'] | undefined
+  injectionEchoes: { readonly item: Extract<SessionItem, { kind: 'mine' }>; readonly text: SessionMessage['text']; native: SessionItem['id'] | undefined }[]
   /** Its turn ended in a failure, so its queued messages are left for the person rather than sent. */
   parked: boolean
   /** Started as a copy of another conversation, which its first run is told. */
@@ -565,7 +567,7 @@ export class Sessions {
     this.#retiredProviders.add(previous)
     for (const live of this.#live.values()) {
       if (providerOf(live.id) !== provider.family) continue
-      if (live.driver !== undefined || live.remote !== undefined || live.state === 'working' || live.state === 'asks') live.pendingBackend = provider
+      if (live.driver !== undefined || live.remote !== undefined || live.state === 'working' || live.state === 'asks' || live.injecting !== undefined) live.pendingBackend = provider
       else live.backend = provider
     }
     this.#disposeRetiredProviders()
@@ -582,10 +584,11 @@ export class Sessions {
 
   async #applyPendingProvider(live: Live): Promise<void> {
     const next = live.pendingBackend
-    if (next === undefined || live.state === 'working' || live.state === 'asks' || live.remote !== undefined) return
+    if (next === undefined || live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.injecting !== undefined) return
     const driver = live.driver
     live.pendingBackend = undefined
     live.backend = next
+    live.injectionEchoes = []
     if (driver !== undefined) {
       live.driver = undefined
       live.tasks = ended(live.tasks)
@@ -850,7 +853,9 @@ export class Sessions {
         ...(note?.status === undefined ? {} : { status: note.status }),
         ...(queued.length === 0
           ? {}
-          : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0 })) }),
+          : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0, ...(/^!|^\/[a-z][\w-]*(?:\s|$)/i.test(message.text.trim()) || message.goal?.trim() ? { command: true as const } : {}) })) }),
+        ...(live?.state === 'working' && live.asks.size === 0 && live.stopping === undefined && live.driver?.inject !== undefined ? { canInject: true as const } : {}),
+        ...(live?.injecting === undefined ? {} : { injecting: live.injecting }),
         ...(live !== undefined && this.#waiting(live) ? { waits: true } : {}),
         ...(live?.question === true ? { question: true } : {}),
         ...(live?.goes === undefined ? {} : { goes: live.goes }),
@@ -887,6 +892,7 @@ export class Sessions {
       live.state !== 'asks' &&
       !live.parked &&
       !live.clearing &&
+      live.injecting === undefined &&
       this.#deps.notes.all()[live.id]?.cut === undefined
     )
   }
@@ -1054,7 +1060,7 @@ export class Sessions {
   carryOn(id: string): void {
     const live = this.#live.get(id) ?? this.#adopt(id)
     const next = live?.queued[0]
-    if (live === undefined || next === undefined) return
+    if (live === undefined || next === undefined || live.injecting !== undefined) return
     if (this.#dispatching.has(id)) return
     this.#dispatching.add(id)
     void this.send({ ...next.message, mode: live.mode }, true).then(() => {
@@ -1187,6 +1193,8 @@ export class Sessions {
       goalStatus: undefined,
       clearing: false,
       queued: [],
+      injecting: undefined,
+      injectionEchoes: [],
       parked: false,
       fork: undefined,
       question,
@@ -1290,7 +1298,7 @@ export class Sessions {
     live.messages += 1
     live.goalStatus = undefined
     if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
-    const busy = live.state === 'working' || live.state === 'asks'
+    const busy = live.state === 'working' || live.state === 'asks' || live.injecting !== undefined
     // Written by the person, it is theirs again to be sent; a message waits behind the ones already queued, and for a slot.
     if (!go) live.parked = false
     const held = !busy && !go && !live.question && (live.queued.length > 0 || !this.#may())
@@ -1563,12 +1571,15 @@ export class Sessions {
 
       const old = live.driver
       live.driver = undefined
+      live.injectionEchoes = []
       live.tasks = ended(live.tasks)
       if (this.#for(live).waitForExit) await old.end()
       else void old.end()
     }
 
     if (live.driver !== undefined) return
+
+    live.injectionEchoes = []
 
     const backend = this.#for(live)
     const resume = live.begun || (await backend.has(live.root, live.id))
@@ -1594,6 +1605,7 @@ export class Sessions {
       () => {
         if (live.driver !== driver) return
         live.driver = undefined
+        live.injectionEchoes = []
         // What ran in the background went with the process. What it printed is still there to read.
         if (live.remote === undefined && !live.tasks.some(running)) return
         live.remote = undefined
@@ -1784,13 +1796,53 @@ export class Sessions {
       live.driver = undefined
       this.#ended(live, { kind: 'ended', how: 'stopped' })
     }, STOP_HEARD)
+    this.#changed()
+  }
+
+  async injectQueued(id: string, queued: string): Promise<void> {
+    const live = this.#live.get(id)
+    const selected = live?.queued.find((one) => one.id === queued)
+    if (live === undefined || selected === undefined || live.injecting !== undefined || this.#dispatching.has(id)) return
+    const driver = live.driver
+    if (driver?.inject === undefined) throw new Error('This assistant cannot receive a message while working.')
+    if (live.state !== 'working' || live.stopping !== undefined) throw new Error('The assistant is no longer working. Your message is still queued.')
+    if (live.asks.size > 0) throw new Error('Answer the assistant before sending this message.')
+    if (/^!|^\/[a-z][\w-]*(?:\s|$)/i.test(selected.message.text.trim()) || selected.message.goal?.trim()) throw new Error('Commands and goals wait until the current work finishes.')
+    const before = [...live.told]
+    const item: Extract<SessionItem, { kind: 'mine' }> = {
+      kind: 'mine', id: `mine:${randomUUID()}`, text: selected.message.text, at: this.#now(),
+      ...(selected.message.images === undefined || selected.message.images.length === 0 ? {} : { images: selected.message.images }),
+    }
+    const echo: Live['injectionEchoes'][number] = { item, text: [...before.flatMap((one) => one.blocks), selected.message.text].join('\n\n'), native: undefined }
+    live.injecting = queued
+    live.injectionEchoes.push(echo)
+    this.#changed()
+    try {
+      await driver.inject(selected.message.text, selected.message.images, before.flatMap((one) => one.blocks))
+      this.#queue(live, live.queued.filter((one) => one.id !== queued))
+      live.parked = false
+      live.told = live.told.filter((one) => !before.includes(one))
+      live.kept = live.kept.filter((kept) => !before.some((one) => one.id === kept.item.id))
+      live.items.set(item.id, item)
+      live.last = item.id
+      live.at = this.#now()
+      this.#deps.items({ id: live.id, items: [item] })
+    } catch (error) {
+      live.injectionEchoes = live.injectionEchoes.filter((one) => one !== echo)
+      live.parked = true
+      throw error
+    } finally {
+      live.injecting = undefined
+      this.#changed()
+      if (live.state !== 'working' && live.state !== 'asks') this.#glance()
+    }
   }
 
   /** A message taken out of the queue before it went, to be cancelled or typed again. */
   unqueue(id: string, queued: string): SessionMessage | undefined {
     const live = this.#live.get(id) ?? this.#adopt(id)
     const taken = live?.queued.find((one) => one.id === queued)
-    if (live === undefined || taken === undefined) return undefined
+    if (live === undefined || taken === undefined || live.injecting !== undefined) return undefined
     this.#queue(live, live.queued.filter((one) => one !== taken))
     this.#changed()
     return taken.message
@@ -1807,7 +1859,7 @@ export class Sessions {
     const live = this.#live.get(id) ?? this.#adopt(id)
     const at = live?.queued.findIndex((one) => one.id === queued) ?? -1
     const said = text.trim()
-    if (live === undefined || at === -1 || said === '') return
+    if (live === undefined || at === -1 || said === '' || live.injecting !== undefined) return
     const was = live.queued[at]
     if (was === undefined) return
     this.#queue(
@@ -1819,7 +1871,7 @@ export class Sessions {
 
   reorderQueued(id: string, queued: string, target: string, after: boolean): void {
     const live = this.#live.get(id) ?? this.#adopt(id)
-    if (live === undefined || queued === target) return
+    if (live === undefined || queued === target || live.injecting !== undefined) return
     const moved = live.queued.find((one) => one.id === queued)
     if (moved === undefined || !live.queued.some((one) => one.id === target)) return
     const next = live.queued.filter((one) => one !== moved)
@@ -1839,23 +1891,28 @@ export class Sessions {
     const at = from?.queued.find((one) => one.id === queued)?.at ?? this.#now()
     const taken = from?.queued.find((one) => one.id === queued)?.message
 
-    if (taken === undefined || from === undefined) return undefined
-    const { session: _from, again: _again, ...message } = taken
-    const mode = from.mode
-    if (!history) {
-      const started = await this.send({ ...message, mode, provider: providerOf(id) })
+    if (taken === undefined || from === undefined || from.injecting !== undefined || this.#dispatching.has(id)) return undefined
+    this.#dispatching.add(id)
+    try {
+      const { session: _from, again: _again, ...message } = taken
+      const mode = from.mode
+      if (!history) {
+        const started = await this.send({ ...message, mode, provider: providerOf(id) })
+        this.unqueue(id, queued)
+        return started
+      }
+      const forked = await this.#for(from).fork(from.root, id, at, mode, from.chosen)
+      const live = this.#fresh(forked.id, from.root, firstLine(message.text, 80), mode)
+      live.begun = forked.begun
+      live.fork = forked.fork
+      for (const item of forked.items) live.items.set(item.id, item)
+      if (forked.begun) this.#note(forked.id, { here: true })
+      const started = await this.send({ ...message, mode, session: forked.id })
       this.unqueue(id, queued)
       return started
+    } finally {
+      this.#dispatching.delete(id)
     }
-    const forked = await this.#for(from).fork(from.root, id, at, mode, from.chosen)
-    const live = this.#fresh(forked.id, from.root, firstLine(message.text, 80), mode)
-    live.begun = forked.begun
-    live.fork = forked.fork
-    for (const item of forked.items) live.items.set(item.id, item)
-    if (forked.begun) this.#note(forked.id, { here: true })
-    const started = await this.send({ ...message, mode, session: forked.id })
-    this.unqueue(id, queued)
-    return started
   }
 
   /** On a start, the conversations a closed GeckIt left with queued messages wait for a slot again, top of the board first. */
@@ -2227,7 +2284,13 @@ export class Sessions {
     if (this.#live.get(live.id) !== live) return
     const now = this.#now()
     // The stream does not say when; an answer is dated by when it first arrived here.
-    const items = heard.items.map((item): SessionItem => {
+    const items = heard.items.filter((item) => {
+      if (item.kind !== 'mine') return true
+      const echo = live.injectionEchoes.find((one) => (one.native === undefined || one.native === item.id) && (item.text === one.text || item.text === one.item.text) && (item.images?.length ?? 0) === (one.item.images?.length ?? 0) && (one.item.images ?? []).every((image, at) => image.media === item.images?.[at]?.media && image.data === item.images?.[at]?.data))
+      if (echo === undefined) return true
+      echo.native = item.id
+      return false
+    }).map((item): SessionItem => {
       if (item.kind !== 'theirs' || item.at !== undefined) return item
       const was = live.items.get(item.id)
       return { ...item, at: was?.kind === 'theirs' && was.at !== undefined ? was.at : now }

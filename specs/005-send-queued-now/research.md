@@ -1,0 +1,7 @@
+# Research
+
+- Decision: optional Driver.inject(text, images?, before?): Promise<void>. Rationale: per-running-version method availability avoids inherited false provider capability; legacy libraries keep loading. Rejected: required boolean and required method that breaks API v1 libraries.
+- Decision: Codex turn/steer with threadId and expectedTurnId. Rationale: official https://learn.chatgpt.com/docs/app-server#steer-an-active-turn appends into active turn without turn/started. Reject if no active turn; no start fallback.
+- Decision: Claude stream-json user input with priority next. Evidence: local cc-source cli/print.ts:4103 and query.ts:1547 consume next-priority queued input after tool results. now-priority interrupts and is rejected for this feature. Acceptance means transport write succeeded, not model already applied it.
+- Decision: tmux uses native terminal input and immediate queued-message processing. Official Claude interactive-mode docs and local PromptInput confirm one Enter during work queues guidance for the safe boundary after current tools; skip waitForPrompt. Extra Enter is ineffective; Ctrl+Enter can interrupt and is deliberately excluded. Preserve pending native question and reject unknown screens.
+- Decision: queue ownership remains in Sessions until acknowledged. Lock conflicting queue actions and automatic draining; failed injection leaves original position. No retries of ambiguous accepted operations.

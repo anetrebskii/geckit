@@ -3796,6 +3796,15 @@ html.phone .request-foot .request-reply {
   cursor: text;
 }
 
+.queue-inject {
+  flex: none;
+  white-space: nowrap;
+}
+
+html.phone .queue-inject {
+  min-height: 44px;
+}
+
 .queued-edit {
   flex: 1;
   min-width: 0;

@@ -22,7 +22,7 @@ import type { ChatSession, ReasoningEffort, SessionItems } from '../src/shared/a
 interface Request {
   id?: RpcId
   method?: string
-  params?: Partial<ThreadOptions> & { threadId?: string; turnId?: string; input?: CodexInput[]; cursor?: string | null; cwd?: string | string[]; effort?: ReasoningEffort | null; objective?: string; status?: CodexGoal['status'] }
+  params?: Partial<ThreadOptions> & { threadId?: string; turnId?: string; expectedTurnId?: CodexTurn['id']; input?: CodexInput[]; cursor?: string | null; cwd?: string | string[]; effort?: ReasoningEffort | null; objective?: string; status?: CodexGoal['status'] }
   result?: Json
   error?: { code: number; message: string }
 }
@@ -45,6 +45,7 @@ class Server extends EventEmitter implements Held {
   readonly goals = new Map<string, CodexGoal>()
   pauseResume = false
   turnErrors: string[] = []
+  steerError: string | undefined
   effort: ReasoningEffort = 'high'
   model = 'first'
   resolvedModel: string | undefined
@@ -103,6 +104,10 @@ class Server extends EventEmitter implements Held {
         return
       }
       case 'turn/interrupt': this.reply(id, {}); this.complete(request.params?.threadId ?? '', 'interrupted'); return
+      case 'turn/steer':
+        if (this.steerError !== undefined) this.stdout.write(`${JSON.stringify({ id, error: { code: -32600, message: this.steerError } })}\n`)
+        else this.reply(id, { turnId: request.params?.expectedTurnId })
+        return
       default: this.reply(id, {})
     }
   }
@@ -132,6 +137,48 @@ afterEach(() => {
 })
 
 describe('Codex app-server', () => {
+  it('steers the exact active turn with images and shell context without starting or interrupting', async () => {
+    const { server, codex, heard } = setup()
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto', model: 'second', reasoning: 'high' }, (one) => heard.push(one), () => undefined)
+    driver.send('Original')
+    await tick()
+    await driver.inject?.('Guidance', [{ media: 'image/png', data: 'AAAA' }], ['Shell context'])
+    expect(server.requests.find((one) => one.method === 'turn/steer')?.params).toEqual({ threadId: 'terminal', expectedTurnId: 'turn-terminal', input: [{ type: 'text', text: 'Shell context\n\nGuidance', text_elements: [] }, { type: 'image', url: 'data:image/png;base64,AAAA' }] })
+    expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(1)
+    expect(server.requests.some((one) => one.method === 'turn/interrupt')).toBe(false)
+    expect(heard.flatMap((one) => one.signals).filter((one) => one.kind === 'ended')).toHaveLength(0)
+    server.complete('terminal')
+    await expect(driver.inject?.('Too late')).rejects.toThrow('no longer working')
+    await driver.end()
+  })
+
+  it('rejects steering while native approval awaits and after stopping or disconnecting', async () => {
+    const { server, codex, heard } = setup()
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Original')
+    await tick()
+    server.event({ method: 'item/commandExecution/requestApproval', id: 'approval', params: { threadId: 'terminal', itemId: 'command', command: 'ls' } })
+    await expect(driver.inject?.('Guidance')).rejects.toThrow('Answer the assistant')
+    driver.stop()
+    await expect(driver.inject?.('Guidance')).rejects.toThrow('no longer working')
+    server.kill()
+    await expect(driver.inject?.('Guidance')).rejects.toThrow('no longer working')
+    expect(server.requests.some((one) => one.method === 'turn/steer')).toBe(false)
+  })
+
+  it('propagates a steer rejection without restarting or interrupting the turn', async () => {
+    const { server, codex, heard } = setup()
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Original')
+    await tick()
+    server.steerError = 'Expected turn is no longer active'
+    await expect(driver.inject?.('Guidance')).rejects.toThrow(server.steerError)
+    expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(1)
+    expect(server.requests.some((one) => one.method === 'turn/interrupt')).toBe(false)
+    expect(heard.flatMap((one) => one.signals).some((one) => one.kind === 'ended')).toBe(false)
+    await driver.end()
+  })
+
   it('resumes an unloaded thread and retries the same message once', async () => {
     const { server, codex, heard } = setup()
     const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto', model: 'second', reasoning: 'high' }, (one) => heard.push(one), () => undefined)

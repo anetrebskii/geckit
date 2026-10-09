@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 
 import { modelName, programLine, SESSION_MODES } from '../../../shared/api'
-import type { ClaudeModel, ReasoningEffort, SessionImage, SessionMode, SessionProvider } from '../../../shared/api'
+import type { ChatSession, ClaudeModel, QueuedMessage, ReasoningEffort, SessionImage, SessionMode, SessionProvider } from '../../../shared/api'
 import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
 import { mentionAt, pathsFor } from '../../../shared/paths'
 import { dictate, dropUnheard, hearAgain, languageCode, readUnheard, useDictationLanguage, useLevel } from '../dictate'
@@ -175,6 +175,15 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const queueDragRef = useRef<{ readonly id: string; readonly target: string; readonly after: boolean } | undefined>(undefined)
   const queueStart = useRef<number | undefined>(undefined)
   const queueList = useRef<HTMLDivElement>(null)
+  const [sendingQueued, setSendingQueued] = useState<Pick<ChatSession, 'id'> & { readonly queued: QueuedMessage['id'] }>()
+  const queueFocus = useRef<string | undefined>(undefined)
+  const queueNeighbor = useRef<string | undefined>(undefined)
+  const injecting = chat.session?.injecting ?? (sendingQueued?.id === chat.session?.id ? sendingQueued?.queued : undefined)
+  const queueLocked = injecting !== undefined
+  useLayoutEffect(() => {
+    queueFocus.current = undefined
+    queueNeighbor.current = undefined
+  }, [chat.session?.id])
   const [dropping, setDropping] = useState<string | undefined>()
   const [branching, setBranching] = useState<string | undefined>()
   const [editingGoal, setEditingGoal] = useState<string | undefined>()
@@ -440,7 +449,17 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           ? 'Not checked yet. Each time Claude would stop, a check reads the conversation and sends it back to work until this holds.'
         : `Checked ${String(goal.checks)} ${goal.checks === 1 ? 'time' : 'times'}, and it does not hold yet${goal.reason === undefined ? '.' : `: ${goal.reason}`}`
 
-  const queued = chat.session?.queued ?? []
+  const queued = useMemo(() => chat.session?.queued ?? [], [chat.session?.queued])
+  useLayoutEffect(() => {
+    if (queueFocus.current === undefined || queueLocked) return
+    const rows = [...(queueList.current?.querySelectorAll<HTMLDivElement>('[data-queued-id]') ?? [])]
+    const retained = rows.find((row) => row.dataset.queuedId === queueFocus.current) ?? rows.find((row) => row.dataset.queuedId === queueNeighbor.current)
+    const action = retained?.querySelector<HTMLButtonElement>('button[data-inject]:not(:disabled)') ?? retained?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? queueList.current?.querySelector<HTMLButtonElement>('button[data-inject]:not(:disabled)')
+    queueFocus.current = undefined
+    queueNeighbor.current = undefined
+    if (action !== undefined && action !== null) action.focus()
+    else field.current?.focus()
+  }, [queued, queueLocked])
   const session = chat.session?.id
   const phrases = chat.settings.phrases.filter((one) => one.trim() !== '')
   const draft = chat.draft.trim()
@@ -623,16 +642,18 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 <button
                   type="button"
                   className="queued-grip"
+                  disabled={queueLocked}
                   aria-label={`Reorder queued message ${String(queued.indexOf(one) + 1)} of ${String(queued.length)}`}
                   title="Drag to reorder. Use Up and Down when focused"
                   onPointerDown={(event) => {
-                    if (event.button !== 0) return
+                    if (event.button !== 0 || queueLocked) return
                     event.currentTarget.setPointerCapture(event.pointerId)
                     queueStart.current = event.clientY
                     queueDragRef.current = { id: one.id, target: one.id, after: false }
                     setQueueDrag(queueDragRef.current)
                   }}
                   onPointerMove={(event) => {
+                    if (queueLocked) return
                     if (queueDragRef.current?.id === one.id && queueStart.current !== undefined && Math.abs(event.clientY - queueStart.current) > 6) pointQueue(one.id, event.clientY)
                   }}
                   onPointerUp={() => {
@@ -640,7 +661,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                     queueDragRef.current = undefined
                     queueStart.current = undefined
                     setQueueDrag(undefined)
-                    if (moved !== undefined && moved.target !== moved.id) chat.reorderQueued(moved.id, moved.target, moved.after)
+                    if (!queueLocked && moved !== undefined && moved.target !== moved.id) chat.reorderQueued(moved.id, moved.target, moved.after)
                   }}
                   onPointerCancel={() => {
                     queueDragRef.current = undefined
@@ -648,6 +669,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                     setQueueDrag(undefined)
                   }}
                   onKeyDown={(event) => {
+                    if (queueLocked) return
                     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
                     event.preventDefault()
                     const index = queued.findIndex((item) => item.id === one.id)
@@ -666,6 +688,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               {editing?.id === one.id ? (
                 <textarea
                   className="queued-edit"
+                  disabled={queueLocked}
                   value={editing.text}
                   autoFocus
                   rows={1}
@@ -684,13 +707,14 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                   }}
                   onBlur={() => {
                     setEditing(undefined)
-                    chat.requeue(one.id, editing.text)
+                    if (!queueLocked) chat.requeue(one.id, editing.text)
                   }}
                 />
               ) : (
                 <button
                   type="button"
                   className="queued-text"
+                  disabled={queueLocked}
                   title="Press to say it in other words"
                   onClick={() => setEditing({ id: one.id, text: one.text })}
                 >
@@ -698,9 +722,30 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                 </button>
               )}
               {one.images <= 3 ? null : <span className="queued-more">+{String(one.images - 3)}</span>}
+              {(chat.session?.canInject !== true && injecting !== one.id) || one.command === true ? null : (
+                <button
+                  type="button"
+                  className="quiet queue-inject"
+                  data-inject={one.id}
+                  disabled={queueLocked || editing !== undefined}
+                  aria-label="Send this message into the current work"
+                  title="Send this message into the current work"
+                  onClick={() => {
+                    if (queueFocus.current !== undefined || queueLocked) return
+                    queueFocus.current = one.id
+                    const at = queued.findIndex((row) => row.id === one.id)
+                    queueNeighbor.current = queued[at + 1]?.id ?? queued[at - 1]?.id
+                    setSendingQueued({ id: chat.session?.id ?? '', queued: one.id })
+                    void chat.injectQueued(one.id).finally(() => setSendingQueued((pending) => pending?.queued === one.id ? undefined : pending))
+                  }}
+                >
+                  {injecting === one.id ? 'Sending...' : 'Send now'}
+                </button>
+              )}
               <button
                 type="button"
                 className="icon-button"
+                disabled={queueLocked}
                 aria-label="Start a new conversation with it"
                 title="Start a new conversation with it, in this folder, rather than wait here"
                 onClick={() => setBranching(one.id)}
@@ -710,6 +755,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               <button
                 type="button"
                 className="icon-button"
+                disabled={queueLocked}
                 aria-label="Cancel this message"
                 title="Cancel: it will not be sent"
                 onClick={() => setDropping(one.id)}

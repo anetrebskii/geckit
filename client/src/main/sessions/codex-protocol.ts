@@ -87,6 +87,7 @@ export interface RpcParams {
   'thread/compact/start': { threadId: string }
   'turn/start': { threadId: string; input: CodexInput[]; cwd: string; model?: string; effort?: ReasoningEffort | null; approvalPolicy: ThreadOptions['approvalPolicy']; approvalsReviewer: ThreadOptions['approvalsReviewer']; sandboxPolicy: { type: 'readOnly'; networkAccess: boolean } | { type: 'workspaceWrite'; writableRoots: string[]; networkAccess: boolean; excludeTmpdirEnvVar: boolean; excludeSlashTmp: boolean } }
   'turn/interrupt': { threadId: string; turnId: string }
+  'turn/steer': Pick<RpcParams['turn/start'], 'threadId' | 'input'> & { expectedTurnId: CodexTurn['id'] }
 }
 
 export interface RpcResults {
@@ -109,6 +110,7 @@ export interface RpcResults {
   'thread/compact/start': object
   'turn/start': { turn: CodexTurn }
   'turn/interrupt': object
+  'turn/steer': Pick<RpcParams['turn/interrupt'], 'turnId'>
 }
 
 export interface CodexQuestion {

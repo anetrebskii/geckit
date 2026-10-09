@@ -26,6 +26,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     case 'thread/goal/get': result = { goal: null }; break
     case 'thread/turns/list': result = { data: [], nextCursor: null }; break
     case 'turn/start': result = { turn: { id: 'turn', status: 'inProgress' } }; break
+    case 'turn/steer': result = { turnId: 'turn' }; break
   }
   send({ id: request.id, result })
   if (request.method === 'turn/start') {

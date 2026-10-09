@@ -31,6 +31,8 @@ Commit `index.mjs`. GeckIt installs the prebuilt entry and does not run scripts 
 
 The copied runtime is standalone JavaScript bundled from GeckIt's TypeScript. It has no runtime imports from the GeckIt checkout. Edit it directly; building does not replace it from upstream. `create(host)` is side-effect free until an operation needs Codex. Only `setInstructions` delegates to GeckIt's builtin Codex instruction setup because both use `~/.codex/AGENTS.md`.
 
+The live driver implements optional `inject(text, images?, before?)` for GeckIt's **Send now** queue action. It sends `turn/steer` with the current native turn ID, without starting or interrupting a turn. Older library builds without that method keep normal queue behavior. The fake-CLI test verifies text, attachments and the native IDs for steering.
+
 ## Model metadata
 
 The overrides map starts empty. Do not invent rates or capacity. To test custom catalog code, add verified metadata in `src/model-overrides.mjs`, keyed by a model ID returned by your CLI. Supported fields include `version`, `says`, `contextWindow`, `maxOutputTokens`, capability flags and `pricing: { currency, input, output, cacheRead, cacheWrite, source, asOf }`. Prices are per million tokens; absent means unknown, zero means free. Rebuild and commit `index.mjs` after editing.

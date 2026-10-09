@@ -160,6 +160,7 @@ export interface Chat {
   stop: () => void
   /** Cancels a message sent while Claude worked, before it goes. */
   unqueue: (queued: string) => void
+  injectQueued: (queued: string) => Promise<void>
   /** A message waiting in the queue, said again in other words. */
   requeue: (queued: string, text: string) => void
   reorderQueued: (queued: string, target: string, after: boolean) => void
@@ -194,9 +195,6 @@ export interface Chat {
   copyTerminal: (id: string) => Promise<boolean>
   refresh: () => void
 }
-
-// How long a message sent stays up on its own once the Mac has taken it.
-const SHOWN_FOR = 1500
 
 let before = new Map<string, { readonly said: string; readonly one: ChatSession }>()
 
@@ -418,19 +416,12 @@ export function useChat(): Chat {
     [],
   )
 
-  // A message sent is up the moment Send is pressed, and gives way to the Mac's own once that arrives.
-  const sending = useRef(0)
   useEffect(
     () =>
       window.geckit.chat.onItems((arrived) => {
         if (shownRef.current.kind !== 'session' || shownRef.current.id !== arrived.id) return
         setItems((held) => {
           const kept = new Map(held.map((item) => [item.id, item]))
-          for (const item of arrived.items) {
-            if (item.kind !== 'mine') continue
-            const mine = [...kept.values()].find((one) => one.kind === 'mine' && one.id.startsWith('sending:') && one.text === item.text)
-            if (mine !== undefined) kept.delete(mine.id)
-          }
           for (const id of arrived.gone ?? []) kept.delete(id)
           for (const item of arrived.items) kept.set(item.id, item)
           return [...kept.values()]
@@ -682,11 +673,6 @@ export function useChat(): Chat {
       }
       setTrouble('')
       const into = shownRef.current
-      const shownNow = `sending:${String(sending.current++)}`
-      if (into.kind === 'session' && again === undefined) {
-        setItems((held) => [...held, { kind: 'mine', id: shownNow, text, ...(carried.length === 0 ? {} : { images: carried }), at: Date.now() }])
-      }
-      const unshow = (): void => setItems((held) => held.filter((one) => one.id !== shownNow))
       void window.geckit.chat
         .send({
           ...(into.kind === 'session' ? { session: into.id } : {}),
@@ -701,13 +687,10 @@ export function useChat(): Chat {
         })
         .then(
           (id) => {
-            // What the Mac made of it has been told by now, unless it went into the queue or became something else.
-            setTimeout(unshow, SHOWN_FOR)
             if (shownRef.current.kind === 'session' && shownRef.current.id === id) return
             open({ kind: 'session', id })
           },
           (error: Error) => {
-            unshow()
             if (said === undefined) {
               setDrafts((all) => ({ ...all, [key]: text }))
               setPictures((all) => ({ ...all, [key]: carried }))
@@ -1026,6 +1009,16 @@ export function useChat(): Chat {
     },
     unqueue: (queued) => {
       if (shownRef.current.kind === 'session') void window.geckit.chat.unqueue(shownRef.current.id, queued)
+    },
+    injectQueued: async (queued) => {
+      if (shownRef.current.kind !== 'session') return
+      const id = shownRef.current.id
+      setTrouble('')
+      try {
+        await window.geckit.chat.injectQueued(id, queued)
+      } catch (error) {
+        if (shownRef.current.kind === 'session' && shownRef.current.id === id) setTrouble(error instanceof Error ? error.message : String(error))
+      }
     },
     requeue: (queued, text) => {
       if (shownRef.current.kind === 'session') window.geckit.chat.requeue(shownRef.current.id, queued, text)

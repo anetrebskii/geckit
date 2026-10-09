@@ -36,6 +36,8 @@ A conversation waits for a slot when it has queued messages and no turn running.
 
 Inside that conversation, queued messages go in the order shown. Moving a queued message only changes messages still waiting; it does not interrupt a running turn. A message already sent cannot be moved. If a queued message is sent or removed during a drag, dropping it makes no change.
 
+Desktop and phone show a message in the transcript only after the host has assigned it to a turn. Pressing Send clears the draft as before; the host then confirms either the transcript item or the queued row. A message waiting behind active work or for a slot appears only in the queue, without briefly looking sent. The UI does not predict the host's decision: its working state or slot count may change while the request is in flight. Failed submission restores text and attachments to the draft with the existing error.
+
 A turn that ends with messages of its own queued does not simply go on to its next message: after the pause the board is looked at from the top, and a conversation higher up with queued messages goes first. Pressing Stop is a job ending the same way.
 
 The limit is for tasks. A general question asked with Ask is never counted and never waits.
@@ -95,6 +97,7 @@ stateDiagram-v2
 | Top card has queued messages, the third is working with one queued, and Alex presses Stop on the third | The top card's first message goes; the third waits, with "Waiting for a slot" |
 | The same, with nothing queued above | The third goes on to its own next message |
 | Alex writes to a conversation that has just finished, while full | It waits for a slot like any other message: the slot went on when the turn ended |
+| A send request is in flight while a turn starts or the last free slot is taken | The host decides the destination; a queued message never appears as a temporary transcript item |
 | Two messages to the same waiting conversation | Both wait, in order; when it gets a slot the first goes, and the second when that turn ends |
 | A task with a goal, started while full | The conversation shows the task and `/goal` queued; the task goes when it gets a slot, and the goal waits for the next look like any other queued message |
 | Claude's request is answered while full | The approved tasks become conversations waiting for a slot; the command answers "Queued <id>" for each |

@@ -39,7 +39,7 @@ interface Fake {
   hear(heard: Partial<Heard>): void
 }
 
-function fakeClaude(): { claude: typeof holdClaude; fake: Fake } {
+function fakeClaude(inject?: Driver['inject']): { claude: typeof holdClaude; fake: Fake } {
   let heard: ((heard: Heard) => void) | undefined
   const fake: Fake = {
     made: [],
@@ -57,6 +57,7 @@ function fakeClaude(): { claude: typeof holdClaude; fake: Fake } {
     fake.made.push({ ...options })
     heard = hear
     const driver: Driver = {
+      ...(inject === undefined ? {} : { inject }),
       send: (text, images, before) =>
         fake.sent.push({
           text,
@@ -102,8 +103,8 @@ interface Built {
   readonly notes: SessionNotice[]
 }
 
-function build(over: Partial<SessionsDeps> = {}): Built {
-  const { claude, fake } = fakeClaude()
+function build(over: Partial<SessionsDeps> = {}, inject?: Driver['inject']): Built {
+  const { claude, fake } = fakeClaude(inject)
   const rows: (readonly ChatSession[])[] = []
   const fanned: SessionItems[] = []
   const notes: SessionNotice[] = []
@@ -149,6 +150,173 @@ function fakeCodex(over: Partial<NonNullable<SessionsDeps['codex']>>): NonNullab
 const last = <T>(all: readonly T[]): T | undefined => all.at(-1)
 const of = (all: readonly (readonly ChatSession[])[], id: string): ChatSession | undefined =>
   last(all)?.find((one) => one.id === id)
+
+describe('injecting a queued message', () => {
+  const more = (id: string, text: string, mode: SessionMode = 'manual'): Parameters<Sessions['send']>[0] => ({ session: id, root: ROOT, mode, text })
+
+  it('accepts guidance that starts with an absolute path', async () => {
+    const inject = vi.fn<NonNullable<Driver['inject']>>(async () => undefined)
+    const built = build({}, inject)
+    const id = await started(built)
+    await built.sessions.send(more(id, '/Users/alex/project/file.ts needs fixing'))
+    const selected = of(built.rows, id)?.queued?.[0]
+    expect(selected?.command).toBeUndefined()
+    await built.sessions.injectQueued(id, selected?.id ?? '')
+    expect(inject).toHaveBeenCalledWith('/Users/alex/project/file.ts needs fixing', undefined, [])
+  })
+  it('delivers only the selected message and images, keeping it persisted until accepted', async () => {
+    let accept: (() => void) | undefined
+    const notes = memoryNotes()
+    const inject = vi.fn<NonNullable<Driver['inject']>>(() => new Promise<void>((resolve) => { accept = resolve }))
+    const built = build({ notes }, inject)
+    const id = await started(built)
+    await built.sessions.send(more(id, 'first'))
+    await built.sessions.send({ ...more(id, 'selected'), images: [{ media: 'image/png', data: 'AAAA' }] })
+    const [first, selected] = of(built.rows, id)?.queued ?? []
+    expect(of(built.rows, id)?.canInject).toBe(true)
+    const delivery = built.sessions.injectQueued(id, selected?.id ?? '')
+    expect(of(built.rows, id)?.injecting).toBe(selected?.id)
+    expect(notes.all()[id]?.queued).toHaveLength(2)
+    expect(inject).toHaveBeenCalledWith('selected', [{ media: 'image/png', data: 'AAAA' }], [])
+    accept?.()
+    await delivery
+    expect(of(built.rows, id)?.queued).toEqual([first])
+    expect(notes.all()[id]?.queued).toHaveLength(1)
+    expect(of(built.rows, id)?.injecting).toBeUndefined()
+    expect(built.fake.sent).toHaveLength(1)
+    expect(built.fake.stopped).toBe(0)
+    expect(built.fake.ended).toBe(0)
+    const mine = built.fanned.flatMap((one) => one.items).filter((item) => item.kind === 'mine' && item.text === 'selected')
+    expect(mine).toHaveLength(1)
+    expect(mine[0]).toMatchObject({ images: [{ media: 'image/png', data: 'AAAA' }] })
+  })
+
+  it('locks duplicate submission, edits, cancellation, reordering, delegation and draining', async () => {
+    let accept: (() => void) | undefined
+    const inject = vi.fn<NonNullable<Driver['inject']>>(() => new Promise<void>((resolve) => { accept = resolve }))
+    const built = build({}, inject)
+    const id = await started(built)
+    await built.sessions.send(more(id, 'first'))
+    await built.sessions.send(more(id, 'second'))
+    const [first, second] = of(built.rows, id)?.queued ?? []
+    const queued = first?.id ?? ''
+    const delivery = built.sessions.injectQueued(id, queued)
+    await built.sessions.injectQueued(id, queued)
+    expect(built.sessions.unqueue(id, queued)).toBeUndefined()
+    built.sessions.requeue(id, queued, 'changed')
+    built.sessions.reorderQueued(id, queued, second?.id ?? '', true)
+    expect(await built.sessions.delegate(id, queued)).toBeUndefined()
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.carryOn(id)
+    expect(built.fake.sent).toHaveLength(1)
+    expect(of(built.rows, id)?.queued).toEqual([first, second])
+    accept?.()
+    await delivery
+    expect(inject).toHaveBeenCalledTimes(1)
+    expect(of(built.rows, id)?.queued).toEqual([second])
+  })
+
+  it('retains original queue and reports rejection even if work finishes while sending', async () => {
+    let refuse: ((error: Error) => void) | undefined
+    const notes = memoryNotes()
+    const built = build({ notes }, () => new Promise<void>((_resolve, reject) => { refuse = reject }))
+    const id = await started(built)
+    await built.sessions.send(more(id, 'first'))
+    await built.sessions.send(more(id, 'second'))
+    const queued = of(built.rows, id)?.queued ?? []
+    const delivery = built.sessions.injectQueued(id, queued[1]?.id ?? '')
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    refuse?.(new Error('Turn changed'))
+    await expect(delivery).rejects.toThrow('Turn changed')
+    expect(of(built.rows, id)?.queued).toEqual(queued)
+    expect(notes.all()[id]?.queued).toHaveLength(2)
+    expect(of(built.rows, id)?.injecting).toBeUndefined()
+    expect(of(built.rows, id)?.waits).toBeUndefined()
+    expect(built.fanned.flatMap((one) => one.items).some((item) => item.kind === 'mine' && item.text === 'second')).toBe(false)
+  })
+
+  it('renders one message when a supporting library echoes before and after acceptance', async () => {
+    let accept: (() => void) | undefined
+    const built = build({}, () => new Promise<void>((resolve) => { accept = resolve }))
+    const id = await started(built)
+    await built.sessions.send(more(id, 'guidance'))
+    const queued = of(built.rows, id)?.queued?.[0]?.id ?? ''
+    const delivery = built.sessions.injectQueued(id, queued)
+    const echo: SessionItem = { kind: 'mine', id: 'native-guidance', text: 'guidance' }
+    built.fake.hear({ items: [echo] })
+    accept?.()
+    await delivery
+    built.fake.hear({ items: [echo] })
+    expect(built.fanned.flatMap((one) => one.items).filter((item) => item.kind === 'mine' && item.text === 'guidance')).toHaveLength(1)
+  })
+
+  it('keeps legacy drivers usable without advertising delivery', async () => {
+    const built = build()
+    const id = await started(built)
+    await built.sessions.send(more(id, 'guidance'))
+    expect(of(built.rows, id)?.canInject).toBeUndefined()
+    await expect(built.sessions.injectQueued(id, of(built.rows, id)?.queued?.[0]?.id ?? '')).rejects.toThrow('This assistant cannot receive a message while working.')
+    expect(of(built.rows, id)?.queued).toHaveLength(1)
+  })
+
+  it('resumes normal draining after a rejected injection succeeds on retry', async () => {
+    let dispatch: (() => void) | undefined
+    const inject = vi.fn<NonNullable<Driver['inject']>>().mockRejectedValueOnce(new Error('Try again')).mockResolvedValue(undefined)
+    const built = build({ later: (run) => { dispatch = run; return () => undefined } }, inject)
+    const id = await started(built)
+    await built.sessions.send(more(id, 'guidance'))
+    await built.sessions.send(more(id, 'next turn'))
+    const queued = of(built.rows, id)?.queued?.[0]?.id ?? ''
+    await expect(built.sessions.injectQueued(id, queued)).rejects.toThrow('Try again')
+    await built.sessions.injectQueued(id, queued)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    dispatch?.()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(built.fake.sent.at(-1)?.text).toBe('next turn')
+    expect(of(built.rows, id)?.queued).toBeUndefined()
+  })
+
+  it('does not inject an entry already being delegated asynchronously', async () => {
+    let finishFork: ((id: string) => void) | undefined
+    const inject = vi.fn<NonNullable<Driver['inject']>>(async () => undefined)
+    const built = build({ disk: { list: async () => [], read: async () => ({ items: [], tasks: [] }), has: async () => false, forkPoint: () => new Promise<string>((resolve) => { finishFork = resolve }) } }, inject)
+    const id = await started(built)
+    await built.sessions.send(more(id, 'guidance'))
+    const queued = of(built.rows, id)?.queued?.[0]?.id ?? ''
+    const delegation = built.sessions.delegate(id, queued, true)
+    await built.sessions.injectQueued(id, queued)
+    expect(inject).not.toHaveBeenCalled()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    finishFork?.('last-message')
+    await delegation
+    expect(built.fake.sent.filter((one) => one.text === 'guidance')).toHaveLength(1)
+    expect(of(built.rows, id)?.queued).toBeUndefined()
+  })
+
+  it('refuses approvals, commands, attached goals, stopping and idle work', async () => {
+    const inject = vi.fn<NonNullable<Driver['inject']>>(async () => undefined)
+    const built = build({}, inject)
+    const id = await started(built)
+    await built.sessions.send(more(id, '/compact'))
+    await built.sessions.send({ ...more(id, 'goal message'), goal: 'Finish this' })
+    await built.sessions.send(more(id, 'guidance'))
+    const [command, goal, guidance] = of(built.rows, id)?.queued ?? []
+    expect(command?.command).toBe(true)
+    expect(goal?.command).toBe(true)
+    await expect(built.sessions.injectQueued(id, command?.id ?? '')).rejects.toThrow('Commands and goals')
+    await expect(built.sessions.injectQueued(id, goal?.id ?? '')).rejects.toThrow('Commands and goals')
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 'approval', wanted: { kind: 'command', command: 'ls' } }] })
+    expect(of(built.rows, id)?.canInject).toBeUndefined()
+    await expect(built.sessions.injectQueued(id, guidance?.id ?? '')).rejects.toThrow()
+    built.sessions.answer(id, 'card:approval', 'yes')
+    built.sessions.stop(id)
+    expect(of(built.rows, id)?.canInject).toBeUndefined()
+    await expect(built.sessions.injectQueued(id, guidance?.id ?? '')).rejects.toThrow('no longer working')
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await expect(built.sessions.injectQueued(id, guidance?.id ?? '')).rejects.toThrow('no longer working')
+    expect(inject).not.toHaveBeenCalled()
+  })
+})
 /** The cards that were drawn, one per card however many times it was sent again. */
 const cards = (fanned: readonly SessionItems[]): SessionItem[] => [
   ...new Map(

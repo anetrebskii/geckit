@@ -4629,6 +4629,16 @@ ${JSON.stringify(request.params.permissions, null, 2)}` } });
     });
     void ready.catch(() => void 0);
     return {
+      inject: async (text2, images = [], before = []) => {
+        await ready;
+        if (over || stopped || !active || turnId === void 0 || rpc === void 0 || this.#rpc !== rpc) throw new Error("The assistant is no longer working. Your message is still queued.");
+        if (requests.size > 0) throw new Error("Answer the assistant before sending this message.");
+        const input = [
+          { type: "text", text: [...before, text2].join("\n\n"), text_elements: [] },
+          ...images.map((one) => ({ type: "image", url: `data:${one.media};base64,${one.data}` }))
+        ];
+        await rpc.request("turn/steer", { threadId, input, expectedTurnId: turnId });
+      },
       send: (text2, images = [], before = []) => {
         active = true;
         stopped = false;

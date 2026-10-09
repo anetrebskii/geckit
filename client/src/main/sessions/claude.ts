@@ -64,6 +64,14 @@ export function sourceArgs(): string[] {
   return ['--append-system-prompt', `This conversation runs in GeckIt started from its source, not the installed app. Wherever GECKIT.md names ${command.replace(/-local$/, '')}, use ${command} instead: the other one reaches only the installed GeckIt.`]
 }
 
+const userContent = (text: string, images: NonNullable<SessionMessage['images']> = [], before: readonly string[] = []) =>
+  images.length === 0 && before.length === 0
+    ? text
+    : [
+        ...[...before, ...(text.trim() === '' ? [] : [text])].map((one) => ({ type: 'text' as const, text: one })),
+        ...images.map((one) => ({ type: 'image' as const, source: { type: 'base64' as const, media_type: one.media, data: one.data } })),
+      ]
+
 /** What `claude` is started with for a conversation, the same wherever it runs. */
 export function claudeArgs(options: Pick<ClaudeOptions, 'id' | 'resume' | 'mode' | 'model' | 'fork'>): string[] {
   return [
@@ -114,6 +122,7 @@ export function holdClaude(
   const waiting = new Map<string, { readonly done: (answer: Json) => void; readonly refused: (why: Error) => void }>()
   let sent = 0
   let turn = false
+  let stopping = false
   let turns = 0
   let over = false
   let last = ''
@@ -234,19 +243,23 @@ export function holdClaude(
   return {
     send(text, images = [], before = []) {
       turn = true
+      stopping = false
       // A message with pictures or commands ahead of it is sent as blocks,
       // which is the only shape that can carry them; plain text stays plain text.
-      const content =
-        images.length === 0 && before.length === 0
-          ? text
-          : [
-              ...[...before, ...(text.trim() === '' ? [] : [text])].map((one) => ({ type: 'text', text: one })),
-              ...images.map((one) => ({
-                type: 'image',
-                source: { type: 'base64', media_type: one.media, data: one.data },
-              })),
-            ]
+      const content = userContent(text, images, before)
       write({ type: 'user', message: { role: 'user', content } })
+    },
+
+    inject(text, images = [], before = []) {
+      if (over || stopping || !turn || !child.stdin.writable || child.stdin.destroyed) return Promise.reject(new Error('The assistant is no longer working. Your message is still queued.'))
+      if (requests.size > 0) return Promise.reject(new Error('Answer the assistant before sending this message.'))
+      return new Promise<void>((resolve, reject) => {
+        const message = { type: 'user', priority: 'next', message: { role: 'user', content: userContent(text, images, before) } }
+        child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
+          if (error != null) reject(error)
+          else resolve()
+        })
+      })
     },
 
     answer(ask, answer: CardAnswer | string) {
@@ -300,6 +313,7 @@ export function holdClaude(
     },
 
     stop() {
+      stopping = true
       requests.clear()
       asked.clear()
       write({
