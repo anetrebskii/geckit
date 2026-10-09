@@ -1,6 +1,6 @@
 # Codex Mirror: independent GeckIt provider example
 
-A complete library with an editable copy of GeckIt's Codex code. The adapter launches its own Codex app-server. AI requests, account, model catalog, quotas, history, streaming, approvals, goals, correction, Stop and cleanup execute inside this library. It does not forward them to `host.codex`.
+A complete library with an editable copy of GeckIt's Codex code. The adapter launches its own Codex app-server. AI requests, account, model catalog, quotas, history, streaming, approvals, goals, correction, Stop and cleanup execute inside this library. So does its instruction setup. It uses nothing of GeckIt's builtin Codex.
 
 ## Install in GeckIt
 
@@ -29,7 +29,7 @@ Commit `index.mjs`. GeckIt installs the prebuilt entry and does not run scripts 
 | `test/provider.test.mjs` | Built-entry account/catalog/limits/session/streaming/approval/Stop/cleanup and editable metadata checks |
 | `UPSTREAM.md`, `LICENSE` | Provenance and license |
 
-The copied runtime is standalone JavaScript bundled from GeckIt's TypeScript. It has no runtime imports from the GeckIt checkout. Edit it directly; building does not replace it from upstream. `create(host)` is side-effect free until an operation needs Codex. Only `setInstructions` delegates to GeckIt's builtin Codex instruction setup because both use `~/.codex/AGENTS.md`.
+The copied runtime is standalone JavaScript bundled from GeckIt's TypeScript. It has no runtime imports from the GeckIt checkout. Edit it directly; building does not replace it from upstream. `create()` is side-effect free until an operation needs Codex. `setInstructions` runs the copied guide setup, which writes the same `~/.codex/GECKIT.md` and `AGENTS.md` line as builtin Codex.
 
 The live driver implements optional `inject(text, images?, before?)` for GeckIt's **Send now** queue action. It sends `turn/steer` with the current native turn ID, without starting or interrupting a turn. Older library builds without that method keep normal queue behavior. The fake-CLI test verifies text, attachments and the native IDs for steering.
 

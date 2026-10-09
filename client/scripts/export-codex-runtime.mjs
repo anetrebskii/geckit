@@ -5,7 +5,7 @@ import { build } from 'esbuild'
 const root = resolve(import.meta.dirname, '..')
 const result = await build({
   stdin: {
-    contents: "export { launchCodex } from './src/main/sessions/codex-rpc'; export { linksIn } from './src/shared/links'; export { CodexSessions } from './src/main/sessions/codex'; export { providerQuotas } from './src/shared/provider-usage';",
+    contents: "export { launchCodex } from './src/main/sessions/codex-rpc'; export { linksIn } from './src/shared/links'; export { CodexSessions } from './src/main/sessions/codex'; export { providerQuotas } from './src/shared/provider-usage'; export { keepCodexGuide } from './src/main/guide';",
     resolveDir: root,
     sourcefile: 'codex-runtime.ts',
   },
@@ -14,6 +14,13 @@ const result = await build({
   target: 'node22',
   format: 'esm',
   external: ['electron'],
+  plugins: [{
+    name: 'electron-when-present',
+    setup: (build) => {
+      build.onResolve({ filter: /^electron$/ }, (args) => args.namespace === 'electron-when-present' ? { path: 'electron', external: true } : { path: 'electron', namespace: 'electron-when-present' })
+      build.onLoad({ filter: /.*/, namespace: 'electron-when-present' }, () => ({ contents: "export const app = process.versions.electron === undefined ? undefined : (await import('electron')).app" }))
+    },
+  }],
   banner: { js: "// Copied from GeckIt. Editable plugin-owned implementation; no host.codex calls.\nimport { createRequire as geckitCreateRequire } from 'node:module';\nconst require = geckitCreateRequire(import.meta.url);" },
   write: false,
   minify: false,

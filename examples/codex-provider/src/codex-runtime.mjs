@@ -4838,8 +4838,142 @@ function providerQuotas(source) {
     ...source.plan.sevenDay === void 0 ? [] : [{ id: "seven-day", name: "Week", ...source.plan.sevenDay }]
   ];
 }
+
+// client/src/main/guide.ts
+import { chmod, mkdir, readFile as readFile2, rm, writeFile } from "node:fs/promises";
+import { homedir as homedir5 } from "node:os";
+import { join as join4 } from "node:path";
+
+// electron-when-present:electron
+var app = process.versions.electron === void 0 ? void 0 : (await import("electron")).app;
+
+// client/src/main/guide.ts
+var codexWhere = () => process.env["CODEX_HOME"] ?? join4(homedir5(), ".codex");
+var fromSource = () => app?.isPackaged === false;
+var cliPath = () => join4(homedir5(), ".geckit", "bin", fromSource() ? "geckit-local" : "geckit");
+var COMMAND = (path) => `
+## Asking GeckIt about the work itself
+
+\`${path}\` answers about the conversations, and is the way to find out what was done today rather than reading Claude Code's own files. Everything but \`start\` only reads.
+
+\`\`\`
+${path} sessions --today
+${path} sessions --since 2d --project formula-business --status review
+${path} sessions --today --json
+${path} sessions --favorites
+${path} show <id>
+${path} show <id> --last 10
+\`\`\`
+
+\`sessions\` prints one line each, newest first: a \\* for a favorite, the id, when it last changed, the project, how it stands - in progress, review, blocked or done - and the title. \`--today\` and \`--since\` also count one moved between columns in that time, and \`--favorites\` keeps only the favorites. \`show\` prints when it was created and each time it moved to another column, then what was said in it, the person and Claude, without what the tools printed. \`--json\` gives the same for reading with a program, with that history in \`history\` and \`favorite\` true or false.
+
+## Building GeckIt or a provider library
+
+When asked to create or change a provider, run \`${path} instructions providers\` for the contract, example, build and verification instructions. For GeckIt itself, run \`${path} instructions app\`. These commands only read and work with the installed CLI.
+
+## Other conversations
+
+### Asking for new ones
+
+A conversation does the one job it was asked for. Other work that turns up goes to a conversation of its own, started through GeckIt, so this one can finish and the person sees each job as its own card.
+
+Start one when:
+
+- the person asks for work in another project, or asks to split a job into parts;
+- you find something worth doing that is not part of what was asked here: a bug beside the one being fixed, a test failing in code nobody touched, a follow-up the change will need later;
+- a part of the job can go on without this conversation, and doing it here would hold this one open.
+
+Do not do that work here, and do not only mention it at the end of an answer: a mention is lost once the card moves to Done. You need no leave to send it, since every one asked for is put in front of the person first and they start it or refuse it there. Where you cannot tell whether they want the work at all, ask in your answer and send it once they say yes. Do not send the job you are doing, or a step of it you are about to take yourself. A task, a to-do or a reminder the person asks you to write down is not a conversation either: it goes where their own instructions say such things are kept, and never through this command.
+
+Send everything in one command, run in the background, since it waits for the person and that can take hours:
+
+\`\`\`
+${path} start --conversations - <<'EOF'
+[
+  {
+    "project": "web",
+    "title": "Checkout button stays disabled after a failed payment",
+    "text": "In src/checkout/PayButton.tsx the button is disabled while a payment runs and never enabled again when the payment fails, so the buyer has to reload the page. Found while fixing the coupon field in another conversation; the failure can be forced with the card 4000 0000 0000 0002 on the test server. Enable the button again on failure and add a test beside PayButton.test.tsx. Done when that test passes and npm test is green.",
+    "goal": "a failed payment leaves the pay button enabled, and npm test passes"
+  }
+]
+EOF
+\`\`\`
+
+Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. For one short conversation, \`${path} start --project <name> [--title <title>] [--goal <condition>] <text>\` does the same, as long as the text has no quotes, \`$\`, \`;\` or \`&\` in it.
+
+- \`project\` is the folder's name as \`sessions\` prints it. At most 20 at once.
+- \`title\` is what the person reads on the card to decide, so say the work in a few words.
+- \`text\` is all the new conversation is given, and it knows nothing of this one. Write what to do, where - files, commands, links -, what you already found, and how to tell it is done.
+- \`goal\` is optional. Give it when being done can be checked, such as tests passing or a page loading.
+
+The command prints one line per conversation in the order sent - started or queued with its id, or refused - with the person's note on one if there is one, and their reply to you last. A note on a started one was also given to that conversation. A queued one is a conversation already, whose first message waits until fewer of the person's conversations are working. A refusal is an answer: do not send the same thing again, and follow the reply. Then say in your answer what you sent and how it stands.
+
+### Reading linked ones
+
+A conversation started this way remembers the one that asked for it.
+
+\`\`\`
+${path} linked
+${path} show <id> --last 10
+\`\`\`
+
+\`linked\` lists, for this conversation, the one it was started from, the ones it started and how each stands, and what it asked for and was refused. \`show --last\` reads the end of any of them. Look there before starting on anything a linked conversation may already have done or decided, and before telling the person how the work you asked for stands.
+`;
+var GUIDE = `# Working in GeckIt
+
+This session is being run by GeckIt, a desktop app, rather than by somebody at a terminal. GeckIt writes this file and rewrites it when it starts, so nothing added here is kept; put your own instructions in CLAUDE.md beside it.
+
+## What the person is looking at
+
+Each conversation is a card, and the cards stand in three columns: In progress, In review, Done. A card shows its title, the project it is in, the first line of the last thing you said, the goal if it has one, and how much is running in the background. The conversation itself opens over the board when the card is pressed.
+
+So the first line of an answer is the line the person reads without opening anything. Say where the work stands in it - what is done, what is left, what you need from them - and keep the explanation for the lines after it.
+
+## Goals
+
+The person sets a goal with \`/goal <condition>\`, and the condition is a description of what being finished means. A goal holds the session open: when you stop, the condition is checked, and you are sent back to work until it holds. Once it holds, GeckIt moves the card to In review by itself, and a goal given up on marks the card Blocked. Neither happens if they have already moved the card by hand.
+
+You do not set or clear goals. Say so instead: if the goal cannot be met, say what stands in the way, and if it is already met, say what proves it.
+
+## Links
+
+Every web address written in a conversation is collected on its card, newest first, so the person reaches the pull request, the issue, the document or the deployment from the board without opening anything. Write the whole address of anything you produce or change - a file path is not enough for this, since a path is not a link.
+
+## What runs in the background
+
+Commands, watches and helpers you leave running are listed on the card while they run, and stay there once they end until the person clears them. Nothing is hidden, so say what you have started and what it is waiting for.
+`;
+async function keepCodexGuide(wanted) {
+  if (fromSource()) return;
+  const folder = codexWhere();
+  const guide = join4(folder, "GECKIT.md");
+  const agents = join4(folder, "AGENTS.md");
+  const importLine = `Read ${guide} for how GeckIt works when this conversation runs in GeckIt.`;
+  const was = await readFile2(agents, "utf8").catch(() => "");
+  const linked = was.split("\n").some((line) => line.trim() === importLine);
+  if (!wanted) {
+    await rm(guide, { force: true }).catch(() => void 0);
+    if (!linked) return;
+    const without = was.split("\n").filter((line) => line.trim() !== importLine).join("\n").replace(/\n{3,}/g, "\n\n").replace(/\s*$/, "\n");
+    await writeFile(agents, without).catch(() => void 0);
+    return;
+  }
+  await mkdir(folder, { recursive: true }).catch(() => void 0);
+  const command = COMMAND(cliPath()).replaceAll("Claude Code", "Codex").replaceAll("Claude", "Codex").replace("Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. ", "");
+  const content = GUIDE.replace("CLAUDE.md beside it.", "AGENTS.md beside it.") + command;
+  await writeFile(guide, content).catch(() => void 0);
+  if (linked) return;
+  const next = was.trim() === "" ? `${importLine}
+` : `${was.replace(/\s*$/, "")}
+
+${importLine}
+`;
+  await writeFile(agents, next).catch(() => void 0);
+}
 export {
   CodexSessions,
+  keepCodexGuide,
   launchCodex,
   linksIn,
   providerQuotas

@@ -1,4 +1,4 @@
-import { CodexSessions, launchCodex, linksIn, providerQuotas } from './codex-runtime.mjs'
+import { CodexSessions, keepCodexGuide, launchCodex, linksIn, providerQuotas } from './codex-runtime.mjs'
 import { modelOverrides } from './model-overrides.mjs'
 
 const family = 'plugin:codex-mirror'
@@ -12,7 +12,7 @@ const goalShown = (goal) => ({
   ...(goal === null ? {} : { status: goal.status }),
 })
 
-export function create(host) {
+export function create() {
   const codex = new CodexSessions(() => launchCodex())
   return {
     id: family,
@@ -65,7 +65,7 @@ export function create(host) {
     mcp: async () => undefined,
     browsers: async () => undefined,
     correct: (text, instruction, model) => codex.correct(text, instruction, model),
-    setInstructions: (enabled, browserNames) => host.codex.setInstructions(enabled, browserNames),
+    setInstructions: (enabled) => keepCodexGuide(enabled),
     delete: (_root, id) => codex.delete(native(id)),
     dispose: () => codex.dispose(),
   }

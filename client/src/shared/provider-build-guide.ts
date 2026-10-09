@@ -8,7 +8,7 @@ Author guide: https://github.com/anetrebskii/geckit/blob/main/docs/provider-plug
 Public contract: client/src/main/sessions/plugin-api.ts in the GeckIt source.
 Independent Codex example: examples/codex-provider in the GeckIt source.
 
-The example includes a copy of the Codex implementation. It owns its own Codex app-server and does not call host.codex for AI requests. Copy the whole example directory into your repository; edit its src/provider.mjs and copied runtime sources, run npm ci, npm run build and npm test, then commit index.mjs with your sources. Keep the license and provenance file.
+The example includes a copy of the Codex implementation. It owns its own Codex app-server and instruction setup; GeckIt gives a library nothing of its builtin providers. Copy the whole example directory into your repository; edit its src/provider.mjs and copied runtime sources, run npm ci, npm run build and npm test, then commit index.mjs with your sources. Keep the license and provenance file.
 
 ## Identity
 

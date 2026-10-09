@@ -1,5 +1,4 @@
 export type { LlmProvider, ProviderBrowser, ProviderFork, ProviderGoal, ProviderLimits, ProviderRow } from './provider'
-export type { PluginHost } from './plugins'
 export type { Driver, Heard, Signal } from './heard'
 export type { ClaudeOptions as ProviderSessionOptions } from './claude'
 export type { Conversation as ProviderConversation } from './disk'

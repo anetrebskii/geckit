@@ -7,13 +7,14 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ app: { getPath: () => process.env['GECKIT_PLUGIN_TEST_HOME'] }, shell: { trashItem: async (path: string) => (await import('node:fs/promises')).rm(path, { recursive: true, force: true }) } }))
 
-import { installPlugin, installedPlugins, loadPlugin, pluginHost, uninstallPlugin, updateInstalledPlugins } from '../src/main/sessions/plugins'
-import { llmProvider } from '../src/main/sessions/provider'
+import { installPlugin, installedPlugins, loadPlugin, uninstallPlugin, updateInstalledPlugins } from '../src/main/sessions/plugins'
 import { providerOf } from '../src/shared/api'
 import type { ClaudeModel } from '../src/shared/api'
 import { isCodexProvider, llmProviderInfo, registerProviderInfo, selectableProviders } from '../src/shared/providers'
 
 const folders: string[] = []
+const methods = ['account', 'program', 'models', 'limits', 'list', 'search', 'hidden', 'create', 'fork', 'has', 'read', 'links', 'goal', 'setGoal', 'clearGoal', 'hold', 'rename', 'remote', 'mcp', 'browsers', 'correct', 'setInstructions', 'delete', 'dispose']
+const own = `{ available: true, localOnly: false, subscriptionOnly: true, images: false, remoteControl: false, nativeGoals: false, idleMs: 600000, waitForExit: false, ${methods.map((method) => `${method}: async () => undefined`).join(', ')} }`
 afterEach(async () => {
   delete process.env['GECKIT_PLUGIN_TEST_HOME']
   delete process.env['GIT_CONFIG_COUNT']
@@ -32,8 +33,8 @@ it('loads an external provider that implements the whole interface', async () =>
     entry: 'index.mjs',
     provider: { id: 'plugin:kimi', family: 'plugin:kimi', name: 'Kimi Code', shortName: 'Kimi', icon: 'terminal', browser: 'none', loginCommand: 'kimi login', planName: '', resumeCommand: 'kimi resume {id}' },
   }))
-  await writeFile(join(folder, 'index.mjs'), "export const create = (host) => ({ ...host.claude, id: 'plugin:kimi', subscriptionOnly: false, create: async () => 'plugin:kimi:session-1' })")
-  const loaded = await loadPlugin(folder, pluginHost(llmProvider({}, 'claude'), llmProvider({}, 'codex')))
+  await writeFile(join(folder, 'index.mjs'), `export const create = () => ({ ...${own}, id: 'plugin:kimi', subscriptionOnly: false, create: async () => 'plugin:kimi:session-1' })`)
+  const loaded = await loadPlugin(folder)
   expect(loaded.provider.name).toBe('Kimi Code')
   expect(await loaded.provider.create({ root: '/work', mode: 'auto' })).toBe('plugin:kimi:session-1')
   expect(typeof loaded.provider.hold).toBe('function')
@@ -50,7 +51,7 @@ it('installs a public GitHub provider through git and loads it at startup', asyn
     entry: 'index.mjs',
     provider: { id: 'plugin:kimi', family: 'plugin:kimi', name: 'Kimi Code', shortName: 'Kimi', icon: 'terminal', browser: 'none', loginCommand: 'kimi login', planName: '' },
   }))
-  await writeFile(join(source, 'index.mjs'), "export const create = (host) => ({ ...host.claude, id: 'plugin:kimi', subscriptionOnly: false })")
+  await writeFile(join(source, 'index.mjs'), `export const create = () => ({ ...${own}, id: 'plugin:kimi', subscriptionOnly: false })`)
   execFileSync('git', ['init', '-q', source])
   execFileSync('git', ['-C', source, 'add', '.'])
   execFileSync('git', ['-C', source, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Add provider'])
@@ -58,17 +59,16 @@ it('installs a public GitHub provider through git and loads it at startup', asyn
   process.env['GIT_CONFIG_COUNT'] = '1'
   process.env['GIT_CONFIG_KEY_0'] = `url.file://${source}.insteadOf`
   process.env['GIT_CONFIG_VALUE_0'] = 'https://github.com/example/kimi.git'
-  const host = pluginHost(llmProvider({}, 'claude'), llmProvider({}, 'codex'))
-  const loaded = await installPlugin('https://github.com/example/kimi', host)
+  const loaded = await installPlugin('https://github.com/example/kimi')
   expect(loaded.provider.id).toBe('plugin:kimi')
   expect(loaded.provider.subscriptionOnly).toBe(false)
-  await expect(installPlugin('https://github.com/example/kimi', host)).rejects.toThrow('already installed')
+  await expect(installPlugin('https://github.com/example/kimi')).rejects.toThrow('already installed')
   const ready = join(home, 'provider-plugins', '.ready-plugin-kimi')
   await mkdir(ready)
   await uninstallPlugin('plugin:kimi')
   expect(await stat(join(home, 'provider-plugins', 'plugin-kimi')).then(() => true, () => false)).toBe(false)
   expect(await stat(ready).then(() => true, () => false)).toBe(false)
-  await expect(installPlugin('https://github.com/example/kimi', host)).rejects.toThrow('Restart GeckIt')
+  await expect(installPlugin('https://github.com/example/kimi')).rejects.toThrow('Restart GeckIt')
 })
 
 it('keeps several libraries and applies validated updates on the next start', async () => {
@@ -78,7 +78,7 @@ it('keeps several libraries and applies validated updates on the next start', as
   for (const [at, source] of sources.entries()) {
     const name = at === 0 ? 'kimi' : 'other'
     await writeFile(join(source, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { id: `plugin:${name}`, family: `plugin:${name}`, name, shortName: name, icon: 'terminal', browser: 'none', loginCommand: '', planName: '' } }))
-    await writeFile(join(source, 'index.mjs'), `export const create = (host) => ({ ...host.claude, id: 'plugin:${name}' })`)
+    await writeFile(join(source, 'index.mjs'), `export const create = () => ({ ...${own}, id: 'plugin:${name}' })`)
     execFileSync('git', ['init', '-q', source])
     execFileSync('git', ['-C', source, 'add', '.'])
     execFileSync('git', ['-C', source, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Add provider'])
@@ -89,27 +89,26 @@ it('keeps several libraries and applies validated updates on the next start', as
     process.env[`GIT_CONFIG_KEY_${at}`] = `url.file://${source}.insteadOf`
     process.env[`GIT_CONFIG_VALUE_${at}`] = `https://github.com/example/${at === 0 ? 'kimi' : 'other'}.git`
   }
-  const host = pluginHost(llmProvider({}, 'claude'), llmProvider({}, 'codex'))
-  await installPlugin('https://github.com/example/kimi', host)
-  await installPlugin('https://github.com/example/other', host)
-  expect((await installedPlugins(host)).map((one) => one.info.source)).toEqual(['https://github.com/example/kimi', 'https://github.com/example/other'])
+  await installPlugin('https://github.com/example/kimi')
+  await installPlugin('https://github.com/example/other')
+  expect((await installedPlugins()).map((one) => one.info.source)).toEqual(['https://github.com/example/kimi', 'https://github.com/example/other'])
 
   const kimi = sources[0]
   if (kimi === undefined) throw new Error('Missing test repository.')
   await writeFile(join(kimi, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { id: 'plugin:kimi', family: 'plugin:kimi', name: 'Kimi 2', shortName: 'Kimi', icon: 'terminal', browser: 'none', loginCommand: '', planName: '' } }))
   execFileSync('git', ['-C', kimi, 'add', '.'])
   execFileSync('git', ['-C', kimi, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Update provider'])
-  expect(await updateInstalledPlugins(host)).toEqual({ ready: ['plugin:kimi'], failed: [] })
-  expect((await loadPlugin(join(home, 'provider-plugins', 'plugin-kimi'), host)).info.name).toBe('kimi')
-  expect((await installedPlugins(host)).find((one) => one.info.id === 'plugin:kimi')?.info.name).toBe('Kimi 2')
+  expect(await updateInstalledPlugins()).toEqual({ ready: ['plugin:kimi'], failed: [] })
+  expect((await loadPlugin(join(home, 'provider-plugins', 'plugin-kimi'))).info.name).toBe('kimi')
+  expect((await installedPlugins()).find((one) => one.info.id === 'plugin:kimi')?.info.name).toBe('Kimi 2')
 
   await writeFile(join(kimi, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { id: 'plugin:impostor', family: 'plugin:impostor', name: 'Impostor', shortName: 'Impostor', icon: 'terminal', browser: 'none', loginCommand: '', planName: '' } }))
   execFileSync('git', ['-C', kimi, 'add', '.'])
   execFileSync('git', ['-C', kimi, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Change identity'])
-  expect(await updateInstalledPlugins(host)).toEqual({ ready: [], failed: ['plugin-kimi'] })
-  expect((await loadPlugin(join(home, 'provider-plugins', 'plugin-kimi'), host)).info.name).toBe('Kimi 2')
+  expect(await updateInstalledPlugins()).toEqual({ ready: [], failed: ['plugin-kimi'] })
+  expect((await loadPlugin(join(home, 'provider-plugins', 'plugin-kimi'))).info.name).toBe('Kimi 2')
   await uninstallPlugin('plugin:kimi')
-  expect((await installedPlugins(host)).map((one) => one.info.id)).toEqual(['plugin:other'])
+  expect((await installedPlugins()).map((one) => one.info.id)).toEqual(['plugin:other'])
 })
 
 it('removes a library while its update is loading and never stages it again', async () => {
@@ -117,7 +116,7 @@ it('removes a library while its update is loading and never stages it again', as
   const home = await mkdtemp(join(tmpdir(), 'geckit-update-home-'))
   folders.push(source, home)
   await writeFile(join(source, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { id: 'plugin:delayed', family: 'plugin:delayed', name: 'Delayed', shortName: 'Delayed', icon: 'terminal', browser: 'none', loginCommand: '', planName: '' } }))
-  await writeFile(join(source, 'index.mjs'), "export const create = host => ({ ...host.claude, id: 'plugin:delayed' })")
+  await writeFile(join(source, 'index.mjs'), `export const create = () => ({ ...${own}, id: 'plugin:delayed' })`)
   execFileSync('git', ['init', '-q', source])
   execFileSync('git', ['-C', source, 'add', '.'])
   execFileSync('git', ['-C', source, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Add provider'])
@@ -129,12 +128,12 @@ it('removes a library while its update is loading and never stages it again', as
   let finish = (_models: ClaudeModel[] | undefined): void => undefined
   const loading = new Promise<void>((resolve) => { started = resolve })
   const release = new Promise<ClaudeModel[] | undefined>((resolve) => { finish = resolve })
-  const host = pluginHost(llmProvider({}, 'claude'), { ...llmProvider({}, 'codex'), models: () => { started(); return release } })
-  await installPlugin('https://github.com/example/delayed', host)
-  await writeFile(join(source, 'index.mjs'), "export const create = async host => { await host.codex.models(); return { ...host.claude, id: 'plugin:delayed' } }")
+  Object.assign(globalThis, { geckitPluginLoading: () => { started(); return release } })
+  await installPlugin('https://github.com/example/delayed')
+  await writeFile(join(source, 'index.mjs'), `export const create = async () => { await globalThis.geckitPluginLoading(); return { ...${own}, id: 'plugin:delayed' } }`)
   execFileSync('git', ['-C', source, 'add', '.'])
   execFileSync('git', ['-C', source, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Delay update loading'])
-  const updating = updateInstalledPlugins(host)
+  const updating = updateInstalledPlugins()
   await loading
   try {
     await uninstallPlugin('plugin:delayed')
@@ -142,7 +141,7 @@ it('removes a library while its update is loading and never stages it again', as
   } finally { finish(undefined) }
   expect(await updating).toEqual({ ready: [], failed: [] })
   expect(await stat(join(home, 'provider-plugins', '.ready-plugin-delayed')).then(() => true, () => false)).toBe(false)
-  expect(await installedPlugins(host)).toEqual([])
+  expect(await installedPlugins()).toEqual([])
 })
 
 it('updates Codex Mirror from a replacement to a separate assistant', async () => {
@@ -151,7 +150,7 @@ it('updates Codex Mirror from a replacement to a separate assistant', async () =
   folders.push(source, home)
   const provider = { id: 'plugin:codex-mirror', family: 'codex', replaces: 'codex', name: 'Codex Mirror', shortName: 'Codex Mirror', icon: 'codex-mirror', iconPath: 'M8 2 14 8 8 14 2 8Z', browser: 'codex', loginCommand: 'codex login', planName: 'ChatGPT', resumeCommand: 'codex resume {id}', localOnly: true, source: 'https://github.com/anetrebskii/geckit-codex-mirror' }
   await writeFile(join(source, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider }))
-  await writeFile(join(source, 'index.mjs'), "export const create = (host) => ({ ...host.codex, id: 'plugin:codex-mirror', replaces: 'codex' })")
+  await writeFile(join(source, 'index.mjs'), `export const create = () => ({ ...${own}, id: 'plugin:codex-mirror', replaces: 'codex' })`)
   execFileSync('git', ['init', '-q', source])
   execFileSync('git', ['-C', source, 'add', '.'])
   execFileSync('git', ['-C', source, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Add Codex Mirror'])
@@ -159,17 +158,16 @@ it('updates Codex Mirror from a replacement to a separate assistant', async () =
   process.env['GIT_CONFIG_COUNT'] = '1'
   process.env['GIT_CONFIG_KEY_0'] = `url.file://${source}.insteadOf`
   process.env['GIT_CONFIG_VALUE_0'] = 'https://github.com/anetrebskii/geckit-codex-mirror.git'
-  const host = pluginHost(llmProvider({}, 'claude'), llmProvider({}, 'codex'))
-  const loaded = await installPlugin('https://github.com/anetrebskii/geckit-codex-mirror', host)
+  const loaded = await installPlugin('https://github.com/anetrebskii/geckit-codex-mirror')
   expect(loaded.provider).toMatchObject({ id: 'plugin:codex-mirror', family: 'plugin:codex-mirror', name: 'Codex Mirror', icon: 'codex-mirror' })
   expect(loaded.provider.replaces).toBeUndefined()
   await writeFile(join(source, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { ...provider, family: 'plugin:codex-mirror', replaces: undefined, runtime: 'codex' } }))
-  await writeFile(join(source, 'index.mjs'), "export const create = (host) => ({ ...host.codex, id: 'plugin:codex-mirror', family: 'plugin:codex-mirror', create: async (options) => `plugin:codex-mirror:${(await host.codex.create(options)).slice(6)}` })")
+  await writeFile(join(source, 'index.mjs'), `export const create = () => ({ ...${own}, id: 'plugin:codex-mirror', family: 'plugin:codex-mirror', create: async () => 'plugin:codex-mirror:session-1' })`)
   execFileSync('git', ['-C', source, 'add', '.'])
   execFileSync('git', ['-C', source, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Make Mirror independent'])
 
-  expect(await updateInstalledPlugins(host)).toEqual({ ready: ['plugin:codex-mirror'], failed: [] })
-  const updated = (await installedPlugins(host)).find((one) => one.info.id === 'plugin:codex-mirror')
+  expect(await updateInstalledPlugins()).toEqual({ ready: ['plugin:codex-mirror'], failed: [] })
+  const updated = (await installedPlugins()).find((one) => one.info.id === 'plugin:codex-mirror')
   expect(updated?.info).toMatchObject({ family: 'plugin:codex-mirror', name: 'Codex Mirror', icon: 'codex-mirror' })
   expect(updated?.info.replaces).toBeUndefined()
   registerProviderInfo(updated === undefined ? [] : [updated.info])

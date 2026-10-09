@@ -11,8 +11,7 @@ import { create as sourceCreate } from '../src/provider.mjs'
 test('built artifact uses its copied Codex CLI code for account, models, limits, sessions and streaming', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'geckit-codex-example-'))
   const before = { PATH: process.env.PATH, CODEX_HOME: process.env.CODEX_HOME, GECKIT_TEST_RPC_LOG: process.env.GECKIT_TEST_RPC_LOG }
-  const instructions = []
-  const provider = create({ codex: { account: () => { throw new Error('Builtin account must not be used') }, hold: () => { throw new Error('Builtin hold must not be used') }, setInstructions: async (...args) => instructions.push(args) } })
+  const provider = create()
   try {
     await cp(new URL('./fake-codex.mjs', import.meta.url), join(folder, 'codex'))
     await chmod(join(folder, 'codex'), 0o755)
@@ -56,9 +55,11 @@ test('built artifact uses its copied Codex CLI code for account, models, limits,
     await driver.end()
     assert.ok(left)
     await provider.setInstructions(true, {})
-    assert.deepEqual(instructions, [[true, {}]])
+    assert.match(await readFile(join(folder, 'AGENTS.md'), 'utf8'), /GECKIT\.md for how GeckIt works/)
+    await provider.setInstructions(false, {})
+    assert.doesNotMatch(await readFile(join(folder, 'AGENTS.md'), 'utf8'), /GECKIT\.md/)
     modelOverrides.set('gpt-5.4', { contextWindow: 12345, pricing: { currency: 'USD', input: 0, output: 2 } })
-    const custom = sourceCreate({ codex: { setInstructions: async () => {} } })
+    const custom = sourceCreate()
     try {
       assert.deepEqual((await custom.models())[0].pricing, { currency: 'USD', input: 0, output: 2 })
       assert.equal((await custom.limits(['gpt-5.4'])).windows.get('gpt-5.4'), 12345)

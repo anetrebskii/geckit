@@ -9,32 +9,7 @@ import { app, shell } from 'electron'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from '../../shared/providers'
 import { independentProviderInfo } from '../../shared/providers'
 import type { SessionProvider } from '../../shared/api'
-import { claudeCommand, OFF_PLAN, planOnly } from './account'
-import { claudeState, readClaude } from './claude-read'
-import { sourceArgs } from './claude'
-import { claudeFile } from './disk'
-import { askId } from './heard'
 import type { LlmProvider } from './provider'
-import { questionsFromClaude, wantedFromClaude } from './wording'
-
-export interface PluginHost {
-  readonly claude: LlmProvider
-  readonly codex: LlmProvider
-  readonly claudeCommand: typeof claudeCommand
-  readonly offPlan: typeof OFF_PLAN
-  readonly planOnly: typeof planOnly
-  readonly claudeState: typeof claudeState
-  readonly readClaude: typeof readClaude
-  readonly claudeFile: typeof claudeFile
-  readonly sourceArgs: typeof sourceArgs
-  readonly askId: typeof askId
-  readonly questionsFromClaude: typeof questionsFromClaude
-  readonly wantedFromClaude: typeof wantedFromClaude
-}
-
-export const pluginHost = (claude: LlmProvider, codex: LlmProvider): PluginHost => ({
-  claude, codex, claudeCommand, offPlan: OFF_PLAN, planOnly, claudeState, readClaude, claudeFile, sourceArgs, askId, questionsFromClaude, wantedFromClaude,
-})
 
 interface PluginManifest {
   readonly apiVersion: 1
@@ -43,7 +18,7 @@ interface PluginManifest {
 }
 
 interface PluginModule {
-  readonly create: (host: PluginHost) => LlmProvider | Promise<LlmProvider>
+  readonly create: () => LlmProvider | Promise<LlmProvider>
 }
 
 const sameProvider = (current: LlmProviderInfo, next: LlmProviderInfo): boolean =>
@@ -126,18 +101,18 @@ const manifestAt = async (path: string): Promise<PluginManifest> => {
   return parsed as PluginManifest
 }
 
-async function loadPluginSnapshot(path: string, host: PluginHost): Promise<LoadedPlugin> {
+async function loadPluginSnapshot(path: string): Promise<LoadedPlugin> {
   const snapshot = join(folder(), `.active-${randomUUID()}`)
   try {
     await cp(path, snapshot, { recursive: true })
-    return await loadPlugin(snapshot, host)
+    return await loadPlugin(snapshot)
   } catch (error) {
     await rm(snapshot, { recursive: true, force: true })
     throw error
   }
 }
 
-export const loadPlugin = async (path: string, host: PluginHost): Promise<LoadedPlugin> => {
+export const loadPlugin = async (path: string): Promise<LoadedPlugin> => {
   const manifest = await manifestAt(path)
   const entry = await realpath(join(path, manifest.entry))
   if (relative(await realpath(resolve(path)), entry).startsWith('..')) throw new Error('Plugin entry leaves its repository.')
@@ -145,11 +120,11 @@ export const loadPlugin = async (path: string, host: PluginHost): Promise<Loaded
   const moduleUrl = pathToFileURL(entry)
   moduleUrl.searchParams.set('geckit', randomUUID())
   const module = await import(moduleUrl.href) as Partial<PluginModule>
-  if (typeof module.create !== 'function') throw new Error('Plugin must export create(host).')
+  if (typeof module.create !== 'function') throw new Error('Plugin must export create().')
 
-  const provider = await module.create(host)
+  const provider = await module.create()
   const compatible = typeof provider === 'object' && provider !== null && typeof provider.setInstructions !== 'function'
-    ? { ...provider, setInstructions: manifest.provider.replaces === 'codex' ? host.codex.setInstructions : manifest.provider.family === 'claude' ? host.claude.setInstructions : async () => {} }
+    ? { ...provider, setInstructions: async () => {} }
     : provider
   if (typeof compatible !== 'object' || compatible === null || methods.some((method) => typeof compatible[method] !== 'function') || capabilities.some((field) => typeof compatible[field] !== 'boolean') || typeof compatible.idleMs !== 'number') throw new Error('Plugin does not implement LlmProvider.')
   if (provider.id !== manifest.provider.id) throw new Error('Plugin ID differs from its manifest.')
@@ -157,14 +132,14 @@ export const loadPlugin = async (path: string, host: PluginHost): Promise<Loaded
   return { path, info, provider: independentProvider({ ...compatible, ...manifest.provider }, info) }
 }
 
-export async function installedPlugins(host: PluginHost): Promise<LoadedPlugin[]> {
+export async function installedPlugins(): Promise<LoadedPlugin[]> {
   await recoverBackups()
-  await applyReadyUpdates(host)
+  await applyReadyUpdates()
   const entries = await readdir(folder(), { withFileTypes: true }).catch(() => [])
   const attempts = await Promise.all(entries.filter((one) => one.isDirectory() && !one.name.startsWith('.')).map(async (one) => {
     const path = join(folder(), one.name)
     try {
-      const plugin = await loadPluginSnapshot(path, host)
+      const plugin = await loadPluginSnapshot(path)
       const source = await sourceAt(path).catch(() => undefined)
       return { plugin: source === undefined ? plugin : { ...plugin, info: { ...plugin.info, source }, provider: { ...plugin.provider, source } } }
     } catch (error) {
@@ -219,7 +194,7 @@ async function recoverBackups(): Promise<void> {
   await Promise.all(copies.filter((one) => one.isDirectory() && one.name.startsWith('.active-')).map((one) => rm(join(folder(), one.name), { recursive: true, force: true }).catch(() => undefined)))
 }
 
-async function applyReadyUpdates(host: PluginHost): Promise<void> {
+async function applyReadyUpdates(): Promise<void> {
   const entries = await readdir(folder(), { withFileTypes: true }).catch(() => [])
   for (const one of entries.filter((entry) => entry.isDirectory() && entry.name.startsWith('.ready-'))) {
     try {
@@ -229,7 +204,7 @@ async function applyReadyUpdates(host: PluginHost): Promise<void> {
       const destination = await libraryPath(manifest.provider.id)
       const current = await manifestAt(destination).catch(() => undefined)
       if (current === undefined || !sameProvider(current.provider, manifest.provider)) continue
-      const candidate = await loadPlugin(ready, host).catch(() => undefined)
+      const candidate = await loadPlugin(ready).catch(() => undefined)
       if (candidate === undefined) continue
       await candidate.provider.dispose()
       const backup = join(folder(), `.backup-${randomUUID()}`)
@@ -242,7 +217,7 @@ async function applyReadyUpdates(host: PluginHost): Promise<void> {
 }
 
 
-export async function applyReadyPlugin(id: string, host: PluginHost): Promise<LoadedPlugin> {
+export async function applyReadyPlugin(id: string): Promise<LoadedPlugin> {
   if (!pluginId(id)) throw new Error('Invalid provider ID.')
   const destination = await libraryPath(id)
   const current = await manifestAt(destination)
@@ -259,7 +234,7 @@ export async function applyReadyPlugin(id: string, host: PluginHost): Promise<Lo
   }
   if (ready === undefined) throw new Error('No update is ready for this library. Check for updates and try again.')
 
-  const candidate = await loadPlugin(ready, host)
+  const candidate = await loadPlugin(ready)
   if (!sameProvider(current.provider, candidate.info) || candidate.info.id !== id) {
     await candidate.provider.dispose()
     throw new Error('Updated plugin changed its provider identity.')
@@ -270,7 +245,7 @@ export async function applyReadyPlugin(id: string, host: PluginHost): Promise<Lo
   await rename(destination, backup)
   try {
     await rename(ready, destination)
-    const loaded = await loadPluginSnapshot(destination, host)
+    const loaded = await loadPluginSnapshot(destination)
     const source = await sourceAt(destination).catch(() => current.provider.source)
     const updated = source === undefined
       ? loaded
@@ -285,7 +260,7 @@ export async function applyReadyPlugin(id: string, host: PluginHost): Promise<Lo
   }
 }
 
-export async function installPlugin(given: string, host: PluginHost): Promise<LoadedPlugin> {
+export async function installPlugin(given: string): Promise<LoadedPlugin> {
   const url = githubUrl(given)
   await mkdir(folder(), { recursive: true })
   const staging = join(folder(), `.install-${randomUUID()}`)
@@ -297,7 +272,7 @@ export async function installPlugin(given: string, host: PluginHost): Promise<Lo
     if (await stat(destination).then(() => true, () => false)) throw new Error(`${manifest.provider.name} is already installed.`)
     await rename(staging, destination)
     try {
-      const found = await loadPluginSnapshot(destination, host)
+      const found = await loadPluginSnapshot(destination)
       const source = url.replace(/\.git$/, '')
     const loaded = { ...found, info: { ...found.info, source }, provider: { ...found.provider, source } }
     active.set(loaded.provider.family, loaded.provider)
@@ -308,7 +283,7 @@ export async function installPlugin(given: string, host: PluginHost): Promise<Lo
   } finally { await rm(staging, { recursive: true, force: true }) }
 }
 
-export async function reinstallFailedPlugin(id: string, host: PluginHost): Promise<LoadedPlugin> {
+export async function reinstallFailedPlugin(id: string): Promise<LoadedPlugin> {
   const failure = loadFailures.find((one) => one.id === id)
   if (failure?.source === undefined) throw new Error('A GitHub source could not be identified for this library.')
   const url = githubUrl(failure.source)
@@ -327,7 +302,7 @@ export async function reinstallFailedPlugin(id: string, host: PluginHost): Promi
     await rename(destination, backup)
     try {
       await rename(staging, destination)
-      const loaded = await loadPluginSnapshot(destination, host)
+      const loaded = await loadPluginSnapshot(destination)
       const source = url.replace(/\.git$/, '')
       const reinstalled = { ...loaded, info: { ...loaded.info, source }, provider: { ...loaded.provider, source } }
       await rm(backup, { recursive: true, force: true })
@@ -366,7 +341,7 @@ export async function uninstallPlugin(id: string): Promise<LlmProviderInfo> {
   return info
 }
 
-export async function updateInstalledPlugins(host: PluginHost): Promise<PluginUpdateResult> {
+export async function updateInstalledPlugins(): Promise<PluginUpdateResult> {
   const entries = await readdir(folder(), { withFileTypes: true }).catch(() => [])
   const libraries = entries.filter((one) => one.isDirectory() && !one.name.startsWith('.'))
   const checked = await Promise.allSettled(libraries.map(async (one) => {
@@ -382,7 +357,7 @@ export async function updateInstalledPlugins(host: PluginHost): Promise<PluginUp
         git(['-C', staging, 'rev-parse', 'HEAD']),
       ])
       if (before === after) return undefined
-      const next = await loadPlugin(staging, host)
+      const next = await loadPlugin(staging)
       try {
         if (removedUntilRestart.has(destination)) return undefined
         if (!sameProvider(current.provider, next.info)) throw new Error('Updated plugin changed its provider identity.')

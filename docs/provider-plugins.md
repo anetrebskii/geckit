@@ -14,7 +14,7 @@ Several libraries can be attached. Their code runs with GeckIt's local access; a
 
 ## Start with the independent Codex example
 
-[`examples/codex-provider`](../examples/codex-provider/README.md) contains a complete, standalone Codex Mirror library: manifest, editable provider adapter, copied Codex runtime, model overrides, build script, lockfile, built entry, license and fake-CLI test. Its own code launches and controls Codex; it does not forward AI requests to `host.codex`.
+[`examples/codex-provider`](../examples/codex-provider/README.md) contains a complete, standalone Codex Mirror library: manifest, editable provider adapter, copied Codex runtime, model overrides, build script, lockfile, built entry, license and fake-CLI test. Its own code launches and controls Codex, including its instruction setup.
 
 Copy that directory into a new repository:
 
@@ -28,7 +28,7 @@ Change the identity in **both** `geckit-plugin.json` and `src/provider.mjs`; cha
 
 The public [Codex Mirror repository](https://github.com/anetrebskii/geckit-codex-mirror) is the installation example. Both Codex and Mirror can list the same native conversations under distinct GeckIt IDs. Both share the native Codex history/account; deleting a native conversation affects both. The processes and provider implementations are independent.
 
-For a Claude-backed assistant that runs through tmux, see the separate [Claude tmux repository](https://github.com/anetrebskii/geckit-claude-tmux). GeckIt lists it as its own assistant and namespaces its GeckIt session IDs; the library delegates Claude account, model and native-history operations.
+For a Claude-backed assistant that runs through tmux, see the separate [Claude tmux repository](https://github.com/anetrebskii/geckit-claude-tmux). GeckIt lists it as its own assistant and namespaces its GeckIt session IDs; the library carries its own copy of GeckIt's Claude code for account, models and native history, and reads plan limits by typing `/usage` into a tmux session of its own every 15 to 30 minutes.
 
 ## AI-readable build guidance
 
@@ -88,7 +88,7 @@ LICENSE
 | `runtime` | Optional `codex` compatibility for existing reasoning/goal controls; not required for generic quotas or pricing |
 | `instructions` | `own` for an independent switch, `claude`/`codex` for shared global instructions |
 
-Every installed library is exposed as its own assistant identity and enabled independently alongside builtin assistants. The existing `claude-tmux` manifest keeps `family: claude` and `transport: tmux` for compatibility with its provider implementation; GeckIt exposes it as `plugin:claude-tmux`, with its own assistant and session IDs, while delegating Claude account, model and native-history operations. It does not replace builtin Claude.
+Every installed library is exposed as its own assistant identity and enabled independently alongside builtin assistants. The existing `claude-tmux` manifest keeps `family: claude` and `transport: tmux` for compatibility with its provider implementation; GeckIt exposes it as `plugin:claude-tmux`, with its own assistant and session IDs, and implements Claude account, model and native-history operations from its own copy of GeckIt's Claude code, and plan limits from `/usage` in its own tmux session. It does not replace builtin Claude.
 
 Legacy manifests with `family: codex` and `replaces: codex` are also normalized to their own `plugin:<slug>` assistant identity. The field no longer replaces builtin Codex. New libraries should use a matching `plugin:<slug>` id and family.
 
@@ -96,7 +96,7 @@ Legacy manifests with `family: codex` and `replaces: codex` are also normalized 
 
 Import types from [`plugin-api.ts`](../client/src/main/sessions/plugin-api.ts). It re-exports the actual contract and domain types; there is no second hand-maintained interface.
 
-`index.mjs` exports `create(host)`, returning a complete `LlmProvider` or a promise for it. `PluginHost` exposes builtin providers and existing Claude protocol helpers. Extending them is optional; an independent implementation can ignore them. Avoid import/create-time AI requests because GeckIt loads update candidates while the current implementation is still in use.
+`index.mjs` exports `create()`, returning a complete `LlmProvider` or a promise for it. GeckIt gives a library nothing of its builtin providers: every method, including limits and instructions, is implemented inside the library. Code a library needs from GeckIt is copied into it, as `client/scripts/export-codex-runtime.mjs` and `client/scripts/export-claude-runtime.mjs` do for the two examples. Avoid import/create-time AI requests because GeckIt loads update candidates while the current implementation is still in use.
 
 | Area | Methods / fields |
 |---|---|
@@ -174,9 +174,9 @@ Builtin Codex uses `turn/steer` with `expectedTurnId`. Builtin Claude submits st
 
 ### Instructions and lifecycle
 
-`setInstructions(enabled, browserNames)` installs/removes only the files/references the library owns. Shared Codex instructions may delegate to `host.codex.setInstructions`; AI requests need not delegate. `instructions: own` gives a separate switch. Old plugins missing this method retain their compatibility fallback.
+`setInstructions(enabled, browserNames)` installs/removes only the files/references the library owns. `instructions: own` gives a separate switch. A library without this method gets a setup that does nothing.
 
-`dispose()` releases only your own connections/processes. Candidate validation must not dispose a shared builtin provider. Bundle dependencies into the committed ESM entry; Node builtins and Electron can remain external. GeckIt never runs repository scripts or installs dependencies.
+`dispose()` releases only your own connections/processes. Bundle dependencies into the committed ESM entry; Node builtins and Electron can remain external. GeckIt never runs repository scripts or installs dependencies.
 
 ## Verification and maintenance
 

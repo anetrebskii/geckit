@@ -79,10 +79,8 @@ import type { LocalAsk } from '../shared/local'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import { CodexSessions } from './sessions/codex'
-import { llmProvider } from './sessions/provider'
-import { applyReadyPlugin, installPlugin, installedPlugins, pluginHost, providerPluginFailures, reinstallFailedPlugin, uninstallPlugin, updateInstalledPlugins } from './sessions/plugins'
+import { applyReadyPlugin, installPlugin, installedPlugins, providerPluginFailures, reinstallFailedPlugin, uninstallPlugin, updateInstalledPlugins } from './sessions/plugins'
 import { independentProviderInfo, instructionsFor, registerProviderInfo } from '../shared/providers'
-import type { PluginHost } from './sessions/plugins'
 import type { PluginUpdateResult } from '../shared/providers'
 import type { Asking, SessionsDeps } from './sessions'
 import { firstLine } from './sessions/wording'
@@ -162,7 +160,6 @@ const RECORD = ANYWHERE.record
 const SCREENSHOT = ANYWHERE.screenshot
 
 let sessions: Sessions | undefined
-let pluginsHost: PluginHost | undefined
 let providerUpdateCheck: Promise<PluginUpdateResult> | undefined
 let providerUpdateTimer: NodeJS.Timeout | undefined
 const conversationNotes = notesStore()
@@ -402,8 +399,7 @@ async function build(held: Routes): Promise<Sessions> {
       app.dock?.bounce(notice.asks ? 'critical' : 'informational')
     },
   }
-  pluginsHost = pluginHost(llmProvider(deps, 'claude'), llmProvider(deps, 'codex'))
-  const plugins = await installedPlugins(pluginsHost)
+  const plugins = await installedPlugins()
   registerProviderInfo(plugins.map((one) => one.info))
   const previous = getSettings()
   const available = new Set<SessionProvider>(['claude', 'codex', ...plugins.map((one) => one.info.family)])
@@ -431,9 +427,9 @@ async function build(held: Routes): Promise<Sessions> {
 }
 
 async function checkProviderUpdates(): Promise<PluginUpdateResult> {
-  if (pluginsHost === undefined) return { ready: [], failed: [] }
+  if (sessions === undefined) return { ready: [], failed: [] }
   if (providerUpdateCheck !== undefined) return providerUpdateCheck
-  providerUpdateCheck = updateInstalledPlugins(pluginsHost).then((result) => {
+  providerUpdateCheck = updateInstalledPlugins().then((result) => {
     const installed = new Set<string>(getSettings().providerPlugins.map((one) => one.id))
     const ready = result.ready.filter((id) => installed.has(id))
     if (ready.length > 0) setSettings({ providerUpdatesReady: [...new Set([...getSettings().providerUpdatesReady, ...ready])] })
@@ -1089,8 +1085,8 @@ function wire(): void {
   ipcMain.on('chat:listening', () => chatListening())
   ipcMain.handle('chat:account', (_event, provider: SessionProvider | undefined) => sessions?.account(provider))
   ipcMain.handle('chat:installProvider', async (_event, url: string) => {
-    if (pluginsHost === undefined || sessions === undefined) throw new Error('Chat is not ready yet.')
-    const installed = await installPlugin(url, pluginsHost)
+    if (sessions === undefined) throw new Error('Chat is not ready yet.')
+    const installed = await installPlugin(url)
     sessions.addProvider(installed.provider)
     const enabled = assistantsIn(getSettings())
     setSettings({ providerPlugins: [...getSettings().providerPlugins, installed.info], chatProviders: enabled.includes(installed.provider.family) ? enabled : [...enabled, installed.provider.family] })
@@ -1099,8 +1095,8 @@ function wire(): void {
     return installed.info
   })
   ipcMain.handle('chat:reinstallProvider', async (_event, id: string) => {
-    if (pluginsHost === undefined || sessions === undefined) throw new Error('Chat is not ready yet.')
-    const reinstalled = await reinstallFailedPlugin(id, pluginsHost)
+    if (sessions === undefined) throw new Error('Chat is not ready yet.')
+    const reinstalled = await reinstallFailedPlugin(id)
     sessions.addProvider(reinstalled.provider)
     const previous = getSettings()
     const enabled = assistantsIn(previous)
@@ -1144,10 +1140,10 @@ function wire(): void {
     void sessions.refresh(getSettings().projects)
   })
   ipcMain.handle('chat:applyProviderUpdate', async (_event, id: string) => {
-    if (pluginsHost === undefined || sessions === undefined) throw new Error('Chat is not ready yet.')
+    if (sessions === undefined) throw new Error('Chat is not ready yet.')
     const previous = getSettings()
     if (!previous.providerUpdatesReady.includes(id)) throw new Error('No update is ready for this library. Check for updates and try again.')
-    const updated = await applyReadyPlugin(id, pluginsHost)
+    const updated = await applyReadyPlugin(id)
     sessions.replaceProvider(updated.provider)
     const current = getSettings()
     const providerPlugins = current.providerPlugins.map((one) => one.id === id ? updated.info : one)
