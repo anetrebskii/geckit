@@ -28,7 +28,7 @@ import { startedCount } from './started'
 import { computerName, needsComputer } from './PhoneHosts'
 import { homePath, projectLabel, projectName, tint } from './project'
 import { Sidebar, Tags } from './Sidebar'
-import { TalkStatus } from './Status'
+import { Status, TalkStatus } from './Status'
 import { Notices } from './Notices'
 import { Recent } from './Recent'
 import { ShortcutList } from './ShortcutList'
@@ -808,6 +808,8 @@ export function Chat(): React.JSX.Element {
         <Composer chat={chat} />
         {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
       </div>
+
+      <Status chat={chat} />
 
       <Notices chat={chat} />
       {/* On the phone a host's question is a sheet over whatever is open, one at a time, the oldest first; what stands in the way of a host is on its page in Settings, since only the computer can fix it. */}

@@ -1,4 +1,5 @@
 import { ProviderIcon } from './ProviderIcon'
+import { AssistantStatus } from './AssistantStatus'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -449,6 +450,7 @@ export function PhoneBoard({
               </Fragment>
             ))}
       </div>
+      <AssistantStatus chat={chat} phone />
 
       {pressed === undefined ? null : (
         <Pressed

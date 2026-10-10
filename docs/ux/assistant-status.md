@@ -110,3 +110,17 @@ The supplied screenshot confirms assistant version and plan rows remain duplicat
 Cleanup review: actual PhoneHome Settings in full screen context at 391x844 CSS pixels in light/dark and 320x844 in light; checked bottom navigation, About alignment and spacing, scrolling, opening "Account and limits", Escape dismissal and restored opener focus. About has only the GeckIt version row. Native iPhone visual inspection was unavailable; signed installation and launch are verified separately.
 
 Cleanup performance review against `docs/performance.md`: no problems found. Removes duplicate account requests, subscription, state updates and rendered rows. No new list, formatter, callback, animation or per-render work. Typecheck, scoped ESLint and mobile build pass. Live profiling was unnecessary for this removal.
+
+## Revision - 2026-10-10: restore at-a-glance status
+
+Alex reports the recently implemented bottom status bar is missing and requests merging all worktrees. Restore the reviewed desktop assistant summaries and phone Tasks disclosure from the implementation already merged in `3f1bc7e`. This reverses the 2026-10-09 Settings-only placement decision for compact status summaries; full details remain in Settings.
+
+| Surface | Change | When visible |
+| --- | --- | --- |
+| Desktop board and conversation | Show each enabled assistant's short name and up to two reported quota summaries; Assistants opens full details | Always |
+| Phone Tasks | Show the enabled assistant count and current assistant summary above bottom navigation; tap opens all details | Tasks board |
+| Desktop Settings and phone Settings | Keep "Account and limits" and the full details view | Settings open |
+
+The status refreshes on account events, focus, and the existing five-minute visible refresh. Missing, unavailable, signed-out and stale account states keep their existing exact labels. No quota is inferred. Details keep existing Escape, close, focus return and scrolling behavior. The phone disclosure remains persistent while scrolling the board.
+
+The Settings-only revision is superseded only for these compact summary surfaces. Moving full quota details and installation metadata to Settings remains in effect.
