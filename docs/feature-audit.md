@@ -368,6 +368,8 @@ Evidence: `client/src/renderer/src/chat/AssistantStatus.tsx`, `Status.tsx`, `Pho
 
 ## Settings-only limits and compact queued send - 2026-10-09
 
+Phone Kanban correction (2026-10-12, working tree): Alex again requested removing the restored mobile limits footer. `chat/PhoneBoard.tsx` no longer imports or renders `AssistantStatus`; `chat/PhoneSettings.tsx` retains its assistant summary and full details sheet. Desktop status is unchanged. See the 2026-10-12 revision in `docs/ux/assistant-status.md` for UI and build verification.
+
 Alex requested a smaller Send now control and account limits only in Settings. The working tree uses a send-arrow icon (spinner during delivery) with the existing accessible action label, a 24px desktop control and 44px phone target. Desktop and phone board footers, phone high-usage alerts, model-details quota sections and conversation-info account limits are removed. Settings > Assistants > Account and limits opens the shared account details for builtin providers, libraries and Claude host accounts. Conversation context and actionable provider failures remain on the conversation.
 
 Evidence: `chat/Composer.tsx`, `chat/AssistantStatus.tsx`, `chat/Chat.tsx`, `chat/PhoneBoard.tsx`, `chat/PhoneInfo.tsx`, `chat/ModelDetails.tsx`, `chat/PhoneSettings.tsx`, `ui/SettingsDialog.tsx`, and `styles.css`. UX revisions: [queued send](ux/send-queued-now.md#revision---2026-10-09), [Settings-only limits](ux/assistant-status.md#revision---2026-10-09-limits-in-settings). This supersedes earlier footer-placement descriptions for the working tree; no installed/device release is claimed.

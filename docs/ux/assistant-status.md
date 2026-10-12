@@ -124,3 +124,13 @@ Alex reports the recently implemented bottom status bar is missing and requests 
 The status refreshes on account events, focus, and the existing five-minute visible refresh. Missing, unavailable, signed-out and stale account states keep their existing exact labels. No quota is inferred. Details keep existing Escape, close, focus return and scrolling behavior. The phone disclosure remains persistent while scrolling the board.
 
 The Settings-only revision is superseded only for these compact summary surfaces. Moving full quota details and installation metadata to Settings remains in effect.
+
+## Revision - 2026-10-12: remove phone Kanban limits again
+
+Alex requests removing limits from mobile Kanban again because the same information is available in Settings. This supersedes the 2026-10-10 phone Tasks disclosure decision. Phone Tasks has no Assistants row, account percentages, reset times or account availability summaries above bottom navigation, in every board column and while scrolling. Settings > Assistants keeps its existing account summary and details sheet. Desktop status remains as specified on 2026-10-10.
+
+Opening Settings shows the existing assistant row; tapping it opens the existing details sheet. Closing the sheet returns focus to its Settings opener; selecting Tasks returns to the board without a quota footer. Missing accounts, disconnected hosts and unavailable quotas remain silent on Tasks and use existing states in Settings. Actual conversation limit errors and working-at-once controls still describe work requiring action. No new wording, transitions, thresholds or timing. No compact replacement footer: it would duplicate Settings again.
+
+Review: actual PhoneHome/PhoneBoard/PhoneSettings in Chrome, full screen at 391x844 in light/dark and 320x844 in light. Checked card hierarchy, bottom navigation, narrow title wrapping, 28-row scrolling to the end, empty In review, Settings details, Tab, Escape and restored opener focus. No quota footer on Tasks; Settings still shows Week 7% and opens both assistant sections. Provider calls were fixtures; native iPhone visual verification was unavailable. Typecheck, scoped ESLint, mobile build and Capacitor iOS asset sync passed. The signed build was installed on Alex's iPhone 13 Pro; automatic launch was denied because the device was locked.
+
+Performance review: no problems found. Removes one persistent component and its account subscriptions/refresh timer from the board. Existing memoized rows, identity preservation, callbacks, formatters and scroll containment are unchanged. No new per-row work, animation or pointer handling; live profiling was unnecessary for this removal. Mobile bundle rebuilt.
