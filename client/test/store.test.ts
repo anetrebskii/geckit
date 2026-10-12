@@ -1,4 +1,4 @@
-import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -6,11 +6,19 @@ import { expect, it, vi } from 'vitest'
 
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { Settings } from '../src/shared/api'
+import { VpnSessionMonitor } from '../src/main/sessions/vpn-monitor'
 
 const state = vi.hoisted(() => ({ folder: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.folder } }))
 
 const { getSettings, onSettings, setSettings } = await import('../src/main/store')
+
+function loadVpnSettings(change: Partial<Settings> = {}): void {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-vpn-settings-'))
+  writeFileSync(join(state.folder, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, phoneKey: 'vpn-test', ...change }))
+  const stop = onSettings(() => {})
+  stop()
+}
 
 it('updates open windows when settings.json is replaced outside GeckIt', async () => {
   state.folder = mkdtempSync(join(tmpdir(), 'geckit-settings-'))
@@ -36,6 +44,122 @@ it('updates open windows when settings.json is replaced outside GeckIt', async (
     expect(changed).toHaveLength(2)
   } finally {
     stop()
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
+it('saves canonical VPN addresses and validates the entire settings change before applying it', async () => {
+  loadVpnSettings()
+  try {
+    const saved = setSettings({ vpnAllowedIps: ['8.8.8.8', '2001:4860:4860:0:0:0:0:8888', '8.8.8.8'], vpnIpCheck: true })
+    expect(saved.vpnAllowedIps).toEqual(['8.8.8.8', '2001:4860:4860::8888'])
+    expect(() => setSettings({ theme: 'dark', vpnAllowedIps: ['8.8.8.8', 'bad'] })).toThrow('Invalid address: bad')
+    expect(getSettings()).toEqual(saved)
+    expect(() => setSettings({ vpnAllowedIps: [] })).toThrow('no valid public IP addresses')
+    expect(setSettings({ vpnIpCheck: false }).vpnAllowedIps).toEqual(saved.vpnAllowedIps)
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
+it('rejects enabling the VPN check without saved public addresses', async () => {
+  loadVpnSettings()
+  try {
+    expect(() => setSettings({ vpnIpCheck: true })).toThrow('no valid public IP addresses')
+    expect(getSettings().vpnIpCheck).toBe(false)
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
+it('keeps protection enabled but clears an unusable saved list rather than weakening it', async () => {
+  loadVpnSettings({ vpnIpCheck: true, vpnAllowedIps: ['8.8.8.8', 'bad'] })
+  try {
+    expect(getSettings().vpnIpCheck).toBe(true)
+    expect(getSettings().vpnAllowedIps).toEqual([])
+    expect(setSettings({ vpnIpCheck: false }).vpnIpCheck).toBe(false)
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
+it('preserves the effective configuration and does not broadcast if a VPN save cannot be persisted', () => {
+  loadVpnSettings({ vpnAllowedIps: ['8.8.8.8'] })
+  const originalFolder = state.folder
+  const before = getSettings()
+  const changed: Settings[] = []
+  const stop = onSettings((settings) => changed.push(settings))
+  try {
+    state.folder = join(originalFolder, 'settings.json')
+    expect(() => setSettings({ vpnIpCheck: true })).toThrow()
+    expect(getSettings()).toEqual(before)
+    expect(changed).toEqual([])
+  } finally {
+    state.folder = originalFolder
+    stop()
+    rmSync(originalFolder, { recursive: true, force: true })
+  }
+})
+
+it.each(['false', 0, null])('treats an ambiguous persisted enable value as enabled: %s', (vpnIpCheck) => {
+  loadVpnSettings()
+  try {
+    writeFileSync(join(state.folder, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, phoneKey: 'vpn-test', vpnIpCheck, vpnAllowedIps: ['8.8.8.8'] }))
+    const stop = onSettings(() => {})
+    stop()
+    expect(getSettings().vpnIpCheck).toBe(true)
+    expect(getSettings().vpnAllowedIps).toEqual(['8.8.8.8'])
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
+it.each([true, false])('ignores legacy stopping false while master VPN checking is %s', async (vpnIpCheck) => {
+  loadVpnSettings()
+  vi.useFakeTimers()
+  let active = true
+  const failed = vi.fn<(explanation: string) => void>(() => { active = false; monitor.refresh() })
+  const check = vi.fn(async () => { throw new Error('VPN mismatch') })
+  const monitor = new VpnSessionMonitor({
+    active: () => active,
+    beforeSend: check,
+    failed,
+    vpnMonitor: () => {
+      const settings = getSettings()
+      return settings.vpnIpCheck ? JSON.stringify(settings.vpnAllowedIps) : undefined
+    },
+  })
+  try {
+    writeFileSync(join(state.folder, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, phoneKey: 'vpn-test', vpnIpCheck, vpnAllowedIps: ['8.8.8.8'], vpnStopOnFailure: false }))
+    const stop = onSettings(() => {})
+    stop()
+    expect(getSettings().vpnIpCheck).toBe(vpnIpCheck)
+    expect(getSettings()).not.toHaveProperty('vpnStopOnFailure')
+    expect(readFileSync(join(state.folder, 'settings.json'), 'utf8')).not.toContain('vpnStopOnFailure')
+    monitor.refresh()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(check).toHaveBeenCalledTimes(vpnIpCheck ? 1 : 0)
+    expect(failed).toHaveBeenCalledTimes(vpnIpCheck ? 1 : 0)
+    if (vpnIpCheck) expect(failed).toHaveBeenCalledWith('VPN mismatch')
+  } finally {
+    monitor.dispose()
+    vi.useRealTimers()
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
+it('discards legacy periodic-stop changes without weakening enabled VPN protection', () => {
+  loadVpnSettings({ vpnIpCheck: true, vpnAllowedIps: ['8.8.8.8'] })
+  try {
+    const change: Partial<Settings> = { theme: 'dark' }
+    Object.defineProperty(change, 'vpnStopOnFailure', { value: false, enumerable: true })
+    const saved = setSettings(change)
+    expect(saved).toMatchObject({ theme: 'dark', vpnIpCheck: true, vpnAllowedIps: ['8.8.8.8'] })
+    expect(saved).not.toHaveProperty('vpnStopOnFailure')
+    expect(readFileSync(join(state.folder, 'settings.json'), 'utf8')).not.toContain('vpnStopOnFailure')
+    expect(setSettings({ vpnIpCheck: false }).vpnAllowedIps).toEqual(['8.8.8.8'])
+    expect(setSettings({ vpnIpCheck: true }).vpnIpCheck).toBe(true)
+  } finally {
     rmSync(state.folder, { recursive: true, force: true })
   }
 })

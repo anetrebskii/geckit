@@ -969,6 +969,125 @@ textarea {
   margin-bottom: 12px;
 }
 
+.vpn-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-block-end: 16px;
+}
+
+.vpn-settings h3 {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.vpn-settings > .assistant-option {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.vpn-addresses {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.vpn-addresses > label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.vpn-addresses textarea {
+  inline-size: 100%;
+  min-block-size: 100px;
+  font-family: var(--font-code);
+  font-size: 12px;
+}
+
+.vpn-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  user-select: text;
+}
+
+.vpn-alert {
+  font-size: 12px;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.vpn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-block-start: 4px;
+}
+
+.vpn-actions [role='status'] {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.vpn-settings.phone {
+  gap: 0;
+}
+
+.vpn-settings.phone .phone-cell-label {
+  white-space: normal;
+  overflow: visible;
+  line-height: 1.35;
+}
+
+.vpn-settings.phone .phone-switch::before {
+  position: absolute;
+  inset-block: -7px;
+  inset-inline: 0;
+  content: '';
+}
+
+html.phone .composer .quiet.cancel,
+html.phone .transcript .quiet.retry {
+  min-block-size: 44px;
+}
+
+html.phone .composer .quiet.cancel {
+  position: absolute;
+  inset-inline-end: 4px;
+  inset-block-end: 4px;
+  inline-size: 82px;
+}
+
+html.phone .composer-inner:has(.quiet.cancel) textarea {
+  min-block-size: 52px;
+  padding-inline-end: 94px;
+}
+
+.vpn-settings.phone .vpn-addresses {
+  gap: 8px;
+  padding: 16px;
+  margin-block-start: 16px;
+}
+
+.vpn-settings.phone .vpn-addresses > label {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.vpn-settings.phone .vpn-note,
+.vpn-settings.phone .vpn-alert {
+  font-size: 13px;
+}
+
+.vpn-settings.phone .vpn-actions .quiet {
+  min-block-size: 44px;
+  padding-inline: 14px;
+}
+
 .assistant-settings h3 {
   margin: 2px 0 10px;
   font-size: 13px;

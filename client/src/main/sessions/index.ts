@@ -44,6 +44,8 @@ import type {
   WorkItem,
 } from '../../shared/api'
 import { providerOf, sessionMode } from '../../shared/api'
+import { VPN_IP_UNAVAILABLE_ERROR, vpnIpPausedError } from '../../shared/vpn-ip'
+import { VpnSessionMonitor } from './vpn-monitor'
 import { providerQuotas } from '../../shared/provider-usage'
 import { instructionsFor } from '../../shared/providers'
 import { isRemote, pathOf } from '../../shared/hosts'
@@ -88,6 +90,11 @@ import {
  */
 
 export interface SessionNote {
+  readonly heldOperation?: HeldOperation
+  readonly guardError?: string
+readonly guardItems?: readonly SessionItem[]
+readonly vpnPaused?: true | undefined
+readonly vpnGoalPaused?: true | undefined
   readonly importedFrom?: string
   readonly importedMetadata?: number
   readonly title?: string
@@ -196,7 +203,9 @@ interface Row extends Pick<SessionSpend, 'window' | 'cost' | 'currency' | 'costK
 export type { SessionNotice } from '../../shared/api'
 
 export interface SessionsDeps {
-  readonly codex?: Pick<CodexSessions, 'account' | 'models' | 'create' | 'list' | 'read' | 'turns' | 'search' | 'delete' | 'rename' | 'hold' | 'dispose' | 'goal' | 'setGoal' | 'clearGoal' | 'correct'>
+  readonly beforeSend?: () => Promise<void> | void
+  readonly vpnMonitor?: () => string | undefined
+  readonly codex?: Pick<CodexSessions, 'account' | 'models' | 'create' | 'list' | 'read' | 'turns' | 'search' | 'delete' | 'rename' | 'hold' | 'dispose' | 'goal' | 'setGoal' | 'clearGoal' | 'correct'> & Partial<Pick<CodexSessions, 'pauseGoal' | 'resumeGoal'>>
   readonly notes: NotesStore
   readonly changed: (sessions: readonly ChatSession[]) => void
   readonly items: (items: SessionItems) => void
@@ -252,7 +261,32 @@ export interface Kept {
   readonly item: SessionItem
 }
 
+type HeldOperation =
+  | { readonly kind: 'message'; readonly message: SessionMessage; readonly go: boolean; readonly queued?: Queued['id'] | undefined; readonly delegateFrom?: Live['id'] | undefined }
+  | { readonly kind: 'answer'; readonly card: string; readonly answer: CardAnswer | string }
+  | { readonly kind: 'inject'; readonly queued: Queued['id'] }
+  | { readonly kind: 'delegate'; readonly queued: Queued['id']; readonly history: boolean }
+  | { readonly kind: 'mode'; readonly mode: SessionMode }
+  | { readonly kind: 'remote' }
+  | { readonly kind: 'background'; readonly item: SessionItem['id'] }
+  | { readonly kind: 'continue' }
+
+class GuardRefused extends Error {}
+class GuardCancelled extends Error {}
+
+type GuardOwner = Readonly<Pick<Live, 'guardGeneration'>> & { readonly live: Live }
+type GuardAttempt = GuardOwner & { readonly deadline: number; readonly destination?: GuardOwner }
+
 interface Live {
+  checkingIp: boolean
+  guardGeneration: number
+  readonly guardCancels: Set<() => void>
+  vpnPaused: boolean
+  vpnGoalPaused: boolean
+  vpnGoalPause: Promise<void> | undefined
+  retrying: boolean
+  heldOperation: HeldOperation | undefined
+  guardError: string | undefined
   id: string
   readonly root: string
   title: string
@@ -465,6 +499,7 @@ export class Sessions {
   readonly #rows = new Map<string, Row>()
   #watching: string | undefined
   #goalWatch: ReturnType<typeof setInterval> | undefined
+  #vpnMonitor: VpnSessionMonitor | undefined
   #plan: PlanUsage | undefined
   /** How much context each model may hold, as the tool measures it; nothing for one it would not say. */
   readonly #measurements: ProviderMeasurements
@@ -480,6 +515,12 @@ export class Sessions {
 
   constructor(deps: SessionsDeps) {
     this.#deps = deps
+    if (deps.vpnMonitor !== undefined && deps.beforeSend !== undefined) this.#vpnMonitor = new VpnSessionMonitor({
+      vpnMonitor: deps.vpnMonitor,
+      beforeSend: deps.beforeSend,
+      active: () => [...this.#live.values()].some((live) => this.#vpnActive(live)),
+      failed: (explanation) => this.#pauseVpn(explanation),
+    })
     this.#measurements = new ProviderMeasurements(() => this.#now(), (provider, limits) => {
       if (provider === 'claude' && limits.plan !== undefined) {
         this.#plan = limits.plan
@@ -494,7 +535,7 @@ export class Sessions {
     }
     // Conversations begun with a message that was still waiting for a slot when GeckIt closed.
     for (const [id, note] of Object.entries(deps.notes.all())) {
-      if (note.unborn === undefined || (note.queued ?? []).length === 0) continue
+      if (note.unborn === undefined || ((note.queued ?? []).length === 0 && note.heldOperation === undefined)) continue
       const provider = providerOf(id)
       if (provider !== 'claude' && provider !== 'codex' && !this.#providers.plugins.has(provider)) continue
       const live = this.#fresh(id, note.unborn, note.title ?? '', sessionMode(note.mode))
@@ -625,7 +666,35 @@ export class Sessions {
   }
 
   #queue(live: Live, queued: Queued[]): void {
+    live.guardGeneration += 1
     live.queued = queued
+    for (const cancel of live.guardCancels) cancel()
+    for (const held of this.#live.values()) {
+      const operation = held.heldOperation
+      if (operation === undefined || (operation.kind !== 'message' && operation.kind !== 'inject' && operation.kind !== 'delegate') || operation.queued === undefined) continue
+      const source = operation.kind === 'message' ? operation.delegateFrom ?? held.id : held.id
+      if (source !== live.id) continue
+      const current = queued.find((one) => one.id === operation.queued)
+      if (current === undefined) {
+        if (operation.kind === 'message' && operation.message.again !== undefined) {
+          held.items.delete(operation.message.again)
+          held.kept = held.kept.filter((one) => one.item.id !== operation.message.again)
+          this.#deps.items({ id: held.id, items: [], gone: [operation.message.again] })
+        }
+        this.#clearGuard(held)
+      } else if (operation.kind === 'message' && operation.message.text !== current.message.text) {
+        const updated: typeof operation = { ...operation, message: { ...operation.message, text: current.message.text } }
+        held.heldOperation = updated
+        const mine = operation.message.again === undefined ? undefined : held.items.get(operation.message.again)
+        if (mine?.kind === 'mine' && mine.unsent === true) {
+          const item = { ...mine, text: current.message.text }
+          held.items.set(item.id, item)
+          held.kept = held.kept.map((one) => one.item.id === item.id ? { ...one, item } : one)
+          this.#deps.items({ id: held.id, items: [item] })
+        }
+        this.#note(held.id, { heldOperation: updated, guardItems: [...held.items.values()].filter((one) => one.id === 'vpn-ip-error' || (one.kind === 'mine' && one.unsent === true)) })
+      }
+    }
     if (live.question) return
     const { queued: _was, ...note } = this.#deps.notes.all()[live.id] ?? {}
     this.#deps.notes.set(live.id, queued.length === 0 ? note : { ...note, queued })
@@ -796,7 +865,7 @@ export class Sessions {
       if (note?.hidden === true) continue
       if ((live === undefined || (providerOf(id) === 'codex' && !live.question)) && row?.driven === true && note?.here !== true && note?.shown !== true) continue
       // Held only because it was looked at, and the tool has nothing under that id any more.
-      if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0 && live.queued.length === 0) {
+      if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0 && live.queued.length === 0 && !live.checkingIp) {
         continue
       }
       const quiet = live === undefined || live.state === 'idle'
@@ -853,8 +922,10 @@ export class Sessions {
         ...(note?.status === undefined ? {} : { status: note.status }),
         ...(queued.length === 0
           ? {}
-          : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0, ...(/^!|^\/[a-z][\w-]*(?:\s|$)/i.test(message.text.trim()) || message.goal?.trim() ? { command: true as const } : {}) })) }),
+          : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0, ...(message.again === undefined ? {} : { again: message.again }), ...(/^!|^\/[a-z][\w-]*(?:\s|$)/i.test(message.text.trim()) || message.goal?.trim() ? { command: true as const } : {}) })) }),
         ...(live?.state === 'working' && live.asks.size === 0 && live.stopping === undefined && live.driver?.inject !== undefined ? { canInject: true as const } : {}),
+        ...(live?.checkingIp === true ? { checkingIp: true as const } : {}),
+        ...(live?.heldOperation === undefined ? {} : { heldSend: true as const }),
         ...(live?.injecting === undefined ? {} : { injecting: live.injecting }),
         ...(live !== undefined && this.#waiting(live) ? { waits: true } : {}),
         ...(live?.question === true ? { question: true } : {}),
@@ -882,6 +953,57 @@ export class Sessions {
     const all = this.#listed()
     this.#deps.changed(all)
     this.#deps.lineup?.({ working: taken(this.#standing(all)), limit: this.#deps.limit?.() ?? 0 })
+    this.#vpnMonitor?.refresh()
+  }
+
+  #vpnActive(live: Live): boolean {
+    return live.driver !== undefined && !live.vpnPaused && (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.some(running))
+  }
+
+  #pauseVpn(explanation: string): void {
+    const affected = [...this.#live.values()].filter((live) => this.#vpnActive(live) || live.queued.length > 0)
+    for (const live of affected) {
+      const active = this.#vpnActive(live)
+      const first = live.queued[0]
+      live.vpnPaused = true
+      live.parked = true
+      if (active && this.#for(live).nativeGoals && live.goal !== undefined) {
+        live.vpnGoalPaused = true
+        live.vpnGoalPause = this.#for(live).pauseGoal?.(live.id).catch(() => undefined)
+      }
+      let operation: HeldOperation | undefined = live.heldOperation
+      if (operation?.kind === 'inject') {
+        const selected = operation.queued
+        const queued = live.queued.find((one) => one.id === selected)
+        if (queued !== undefined) operation = { kind: 'message', message: queued.message, go: true, queued: queued.id }
+      }
+      operation ??= active ? { kind: 'continue' } : first === undefined ? undefined : { kind: 'message', message: first.message, go: true, queued: first.id }
+      if (operation !== undefined) this.#blocked(live, operation, vpnIpPausedError(explanation, isRemote(live.root)))
+    }
+    for (const live of affected) {
+      const driver = live.driver
+      this.stop(live.id)
+      if (driver === undefined) continue
+      if (driver.control !== undefined) {
+        for (const task of live.tasks.filter(running)) void driver.control({ subtype: 'stop_task', task_id: task.id }).catch(() => undefined)
+        if (live.remote !== undefined) void this.#for(live).remote(driver, false).catch(() => undefined)
+      }
+      live.remote = undefined
+      live.tasks = ended(live.tasks)
+      clearTimeout(live.stopping)
+      live.stopping = setTimeout(() => {
+        live.stopping = undefined
+        if (!live.vpnPaused || live.driver !== driver) return
+        live.driver = undefined
+        this.#expireAsks(live)
+        live.closing = driver.end().catch(() => undefined).finally(() => { live.closing = undefined })
+        live.state = 'failed'
+        this.#uncut(live.id)
+        this.#changed()
+      }, STOP_HEARD)
+      if (live.state !== 'working' && live.state !== 'asks') live.state = 'failed'
+    }
+    this.#changed()
   }
 
   /** Has queued messages of its own to send and no turn running, so it waits for a slot. One cut off by GeckIt closing waits for its continue instead. */
@@ -891,6 +1013,8 @@ export class Sessions {
       live.state !== 'working' &&
       live.state !== 'asks' &&
       !live.parked &&
+      !live.checkingIp &&
+      live.heldOperation === undefined &&
       !live.clearing &&
       live.injecting === undefined &&
       this.#deps.notes.all()[live.id]?.cut === undefined
@@ -1036,7 +1160,7 @@ export class Sessions {
         this.#note(id, { parent: live.id })
         if (task.goal !== undefined) await this.send({ session: id, root, mode: pending.mode, text: `/goal ${task.goal}` })
         const child = this.#live.get(id)
-        if (child !== undefined && this.#waiting(child)) waits.add(id)
+        if (child !== undefined && (this.#waiting(child) || child.heldOperation !== undefined)) waits.add(id)
         tasks.push({ ...task, started: id, ...noted })
       }
 
@@ -1063,7 +1187,8 @@ export class Sessions {
     if (live === undefined || next === undefined || live.injecting !== undefined) return
     if (this.#dispatching.has(id)) return
     this.#dispatching.add(id)
-    void this.send({ ...next.message, mode: live.mode }, true).then(() => {
+    void this.send({ ...next.message, mode: live.mode }, true, undefined, next.id).then(() => {
+      if (live.heldOperation !== undefined) return
       this.#queue(live, live.queued.filter((one) => one.id !== next.id))
       this.#changed()
     }).catch(() => undefined).finally(() => this.#dispatching.delete(id))
@@ -1142,12 +1267,22 @@ export class Sessions {
     live.reasoning = note?.reasoning
     live.goal = note?.goal
     live.queued = [...(note?.queued ?? [])]
-    live.kept = [...(note?.requests ?? [])]
+    live.kept = [...live.kept, ...(note?.requests ?? [])]
     return live
   }
 
   #fresh(id: string, root: string, title: string, mode: SessionMode, question = false): Live {
+    const note = this.#deps.notes.all()[id]
     const live: Live = {
+      checkingIp: false,
+      guardGeneration: 0,
+      guardCancels: new Set(),
+      vpnPaused: note?.vpnPaused === true,
+      vpnGoalPaused: note?.vpnGoalPaused === true,
+      vpnGoalPause: undefined,
+      retrying: false,
+      heldOperation: note?.heldOperation,
+      guardError: note?.guardError,
       id,
       root,
       title,
@@ -1201,6 +1336,15 @@ export class Sessions {
       goes: undefined,
       stays: false,
     }
+    if (note?.heldOperation !== undefined) {
+      live.parked = true
+      live.state = 'failed'
+      live.stands = 'Not sent'
+      for (const item of note.guardItems ?? []) {
+        live.items.set(item.id, item)
+        live.kept.push({ after: undefined, item })
+      }
+    }
     this.#live.set(id, live)
     return live
   }
@@ -1224,13 +1368,30 @@ export class Sessions {
     const items = new Map(read.map((item) => [item.id, item]))
     // What only this window knows goes back where it was, unless the file says it too.
     const mine = read.filter((item) => item.kind === 'mine')
+    let queueIdentityChanged = false
     for (const kept of live.kept) {
-      if (items.has(kept.item.id)) continue
-      if (kept.item.kind === 'mine') {
+      const written = items.get(kept.item.id)
+      if (written !== undefined) {
+        if (written.kind === 'mine' && kept.item.kind === 'mine' && kept.item.unsent === true) items.set(written.id, { ...written, unsent: true })
+        continue
+      }
+      if (kept.item.kind === 'mine' && !(live.heldOperation !== undefined && kept.item.unsent === true)) {
         const text = kept.item.text
         const same = mine.find((item) => item.kind === 'mine' && item.text === text)
         if (same !== undefined) {
-          items.set(same.id, { ...same, unsent: true })
+          const item = { ...same, ...(kept.item.unsent === true ? { unsent: true } : {}) }
+          items.set(same.id, item)
+          live.kept = live.kept.map((one) => one.item.id === kept.item.id ? { ...one, item } : one)
+          if (live.queued.some((one) => one.message.again === kept.item.id)) {
+            live.queued = live.queued.map((one) => one.message.again === kept.item.id ? { ...one, message: { ...one.message, again: same.id } } : one)
+            this.#note(live.id, { queued: live.queued })
+            queueIdentityChanged = true
+          }
+          const operation = live.heldOperation
+          if (operation?.kind === 'message' && operation.message.again === kept.item.id) {
+            live.heldOperation = { ...operation, message: { ...operation.message, again: same.id } }
+            this.#note(live.id, { heldOperation: live.heldOperation })
+          }
           continue
         }
       }
@@ -1245,10 +1406,238 @@ export class Sessions {
       for (const [key, item] of ordered) items.set(key, item)
     }
     live.items = items
+    if (queueIdentityChanged) this.#changed()
+  }
+
+  #clearGuard(live: Live): void {
+    const saved = this.#deps.notes.all()[live.id]
+    if (!live.vpnPaused && live.heldOperation === undefined && live.guardError === undefined && saved?.heldOperation === undefined && saved?.guardError === undefined && saved?.guardItems === undefined && saved?.vpnPaused !== true && !live.items.has('vpn-ip-error')) return
+    live.heldOperation = undefined
+    live.guardError = undefined
+    live.vpnPaused = false
+    const { heldOperation: _held, guardError: _error, guardItems: _items, vpnPaused: _paused, ...note } = saved ?? {}
+    this.#deps.notes.set(live.id, note)
+    if (live.stands === 'Not sent' || live.stands === 'Paused by VPN IP check') {
+      const wanted = [...live.asks.values()][0]
+      if (live.state === 'working') live.stands = 'Working'
+      else if (live.state === 'asks' && wanted !== undefined) live.stands = waitingFor(wanted)
+    }
+    if (live.items.delete('vpn-ip-error')) {
+      live.kept = live.kept.filter((one) => one.item.id !== 'vpn-ip-error')
+      this.#deps.items({ id: live.id, items: [], gone: ['vpn-ip-error'] })
+    }
+  }
+
+  #blocked(live: Live, operation: HeldOperation, text: string): void {
+    if ((operation.kind === 'message' || operation.kind === 'inject' || operation.kind === 'delegate') && operation.queued !== undefined) {
+      const source = operation.kind === 'message' ? operation.delegateFrom ?? live.id : live.id
+      const queued = operation.queued
+      const current = this.#live.get(source)?.queued.find((one) => one.id === queued)
+      if (operation.kind === 'message' && operation.message.again !== undefined) {
+        const again = operation.message.again
+        const mine = live.items.get(again)
+        if (current === undefined) {
+          live.items.delete(again)
+          live.kept = live.kept.filter((one) => one.item.id !== again)
+          this.#deps.items({ id: live.id, items: [], gone: [again] })
+        } else if (mine?.kind === 'mine' && mine.text !== current.message.text) {
+          const item = { ...mine, text: current.message.text }
+          live.items.set(item.id, item)
+          live.kept = live.kept.map((one) => one.item.id === item.id ? { ...one, item } : one)
+          this.#deps.items({ id: live.id, items: [item] })
+        }
+      }
+      if (current === undefined) { this.#clearGuard(live); return }
+      if (operation.kind === 'message') operation = { ...operation, message: { ...operation.message, text: current.message.text } }
+    }
+    live.heldOperation = operation
+    live.guardError = text
+    live.parked = true
+    if (live.state !== 'working' && live.state !== 'asks') live.state = 'failed'
+    live.stands = live.vpnPaused ? 'Paused by VPN IP check' : 'Not sent'
+    const item: SessionItem = { kind: 'note', id: 'vpn-ip-error', note: 'failed', text }
+    live.items.set(item.id, item)
+    live.kept = live.kept.filter((one) => one.item.id !== item.id)
+    live.kept.push({ after: [...live.items.keys()].at(-2), item })
+    this.#note(live.id, { heldOperation: operation, guardError: text, guardItems: [...live.items.values()].filter((one) => one.id === item.id || (one.kind === 'mine' && one.unsent === true)), vpnPaused: live.vpnPaused ? true : undefined, vpnGoalPaused: live.vpnGoalPaused ? true : undefined, here: true, ...(live.begun ? {} : { unborn: live.root, title: live.title, mode: live.mode }) })
+    this.#deps.items({ id: live.id, items: [item] })
+    this.#changed()
+    this.#tell(live, live.vpnPaused ? 'Paused by VPN IP check' : 'Not sent', text, false)
+  }
+
+  async #check(live?: Live, attempt?: GuardAttempt): Promise<void> {
+    const check = this.#deps.beforeSend
+    if (check === undefined) return
+    const owner = attempt?.live ?? live
+    const generation = attempt?.guardGeneration ?? owner?.guardGeneration
+    const deadline = attempt?.deadline ?? Date.now() + 10_000
+    const liveGeneration = attempt?.destination?.guardGeneration ?? live?.guardGeneration
+    const cancelled = (): boolean =>
+      (owner !== undefined && (generation !== owner.guardGeneration || this.#live.get(owner.id) !== owner)) ||
+      (live !== undefined && (liveGeneration !== live.guardGeneration || this.#live.get(live.id) !== live))
+    if (cancelled()) throw new GuardCancelled('Cancelled')
+    let checking = false
+    let cancel: (() => void) | undefined
+    const owners = owner === undefined ? live === undefined ? [] : [live] : live === undefined || live === owner ? [owner] : [owner, live]
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const verification = check()
+      if (verification === undefined) return
+      checking = true
+      if (live !== undefined) { live.checkingIp = true; this.#changed() }
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        void verification.catch(() => undefined)
+        throw new GuardRefused(VPN_IP_UNAVAILABLE_ERROR)
+      }
+      const cancellation = new Promise<never>((_resolve, reject) => { cancel = () => reject(new GuardCancelled('Cancelled')) })
+      if (cancel !== undefined) for (const one of owners) one.guardCancels.add(cancel)
+      await Promise.race([verification, new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new GuardRefused(VPN_IP_UNAVAILABLE_ERROR)), remaining)
+      }), cancellation])
+      if (cancelled()) throw new GuardCancelled('Cancelled')
+    } catch (error) {
+      if (error instanceof GuardCancelled || cancelled()) throw new GuardCancelled('Cancelled')
+      throw new GuardRefused(error instanceof Error ? error.message : String(error))
+    } finally {
+      clearTimeout(timer)
+      if (cancel !== undefined) for (const one of owners) one.guardCancels.delete(cancel)
+      if (checking && live !== undefined) { live.checkingIp = false; this.#changed() }
+    }
+  }
+
+  async retry(id: string): Promise<string | undefined> {
+    const live = this.#live.get(id) ?? this.#adopt(id)
+    if (live === undefined || live.retrying || live.checkingIp) return undefined
+    live.retrying = true
+    const generation = live.guardGeneration
+    const operation = live.heldOperation
+    const paused = live.vpnPaused
+    const continued = (): Promise<string> => this.send({ session: id, root: live.root, mode: live.mode, text: 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }), ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }) }, true)
+    try {
+      if (live.vpnGoalPause !== undefined) await live.vpnGoalPause
+      if (generation !== live.guardGeneration) return id
+      if (live.vpnPaused && live.driver !== undefined) {
+        clearTimeout(live.stopping)
+        live.stopping = undefined
+        const driver = live.driver
+        live.driver = undefined
+        this.#expireAsks(live)
+        live.state = 'failed'
+        live.closing = driver.end().catch(() => undefined).finally(() => { live.closing = undefined })
+        await live.closing
+      }
+      if (generation !== live.guardGeneration) return id
+      switch (operation?.kind) {
+        case 'message': {
+          const next = await this.send(operation.message, operation.go, id, operation.queued, operation.delegateFrom)
+          const destination = this.#live.get(next)
+          if (next !== id && operation.delegateFrom === undefined && destination?.heldOperation === undefined && generation === live.guardGeneration) {
+            if (destination !== undefined && live.queued.length > 0) this.#queue(destination, live.queued.map((one) => ({ ...one, message: { ...one.message, session: next } })))
+            this.#live.delete(id)
+            this.#note(id, { hidden: true })
+          }
+          if (destination?.heldOperation === undefined) {
+            const source = operation.delegateFrom === undefined ? live : this.#live.get(operation.delegateFrom)
+            if (source !== undefined && operation.queued !== undefined) this.#queue(source, source.queued.filter((one) => one.id !== operation.queued))
+            if (operation.delegateFrom !== undefined) this.#clearGuard(live)
+          }
+          return next
+        }
+        case 'answer': {
+          const ask = operation.card.startsWith('card:') ? operation.card.slice('card:'.length) : operation.card
+          if (!live.asks.has(ask)) {
+            live.state = 'failed'
+            this.#clearGuard(live)
+            return await this.send({ session: id, root: live.root, mode: live.mode, text: 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }) }, true)
+          }
+          await this.answer(id, operation.card, operation.answer)
+          break
+        }
+        case 'inject': await this.injectQueued(id, operation.queued); break
+        case 'delegate': return await this.delegate(id, operation.queued, operation.history)
+        case 'mode':
+          await this.mode(id, operation.mode)
+          if (paused && live.heldOperation === undefined) return await continued()
+          break
+        case 'remote':
+          await this.remote(id, true)
+          if (paused && live.heldOperation === undefined) return await continued()
+          break
+        case 'background':
+          if (paused) return await continued()
+          await this.toBackground(id, operation.item)
+          break
+        default: return await continued()
+      }
+      return id
+    } finally { live.retrying = false; this.#changed() }
   }
 
   /** `go` is a message that is part of a turn already given its slot, so the limit never holds it. */
-  async send(message: SessionMessage, go = false): Promise<string> {
+  async send(message: SessionMessage, go = false, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt): Promise<string> {
+    let target = message.session === undefined
+      ? message.submission === undefined ? undefined : this.#live.get(message.submission)
+      : (this.#live.get(message.session) ?? this.#adopt(message.session))
+    target ??= guardSource === undefined ? undefined : this.#live.get(guardSource)
+    if (!go && guardSource === undefined && message.again !== undefined && target?.queued.some((one) => one.message.again === message.again)) return target.id
+    const saved = message.again === undefined ? undefined : target?.items.get(message.again)
+    if (saved?.kind === 'mine') {
+      const { text: _text, images: _images, ...submission } = message
+      message = { ...submission, text: saved.text, ...(saved.images === undefined ? {} : { images: saved.images }) }
+    }
+    if (target?.heldOperation !== undefined && guardSource === undefined && message.again === undefined && !go && !target.checkingIp) {
+      this.#queue(target, [...target.queued, { id: `queued:${randomUUID()}`, message: { ...message, session: target.id }, at: this.#now() }])
+      this.#changed()
+      return target.id
+    }
+    if (target?.checkingIp === true) throw new Error('Not sent: another public IP check is in progress. Try again when it finishes.')
+    const operation: Extract<HeldOperation, { kind: 'message' }> = { kind: 'message', message, go, queued, delegateFrom }
+    const provisional = message.session === undefined && guardSource === undefined && this.#deps.beforeSend !== undefined
+    if (target === undefined && provisional) {
+      const provider = message.provider ?? 'claude'
+      const id = message.submission ?? `${provider === 'claude' ? '' : `${provider}:`}pending-${randomUUID()}`
+      target = this.#fresh(id, message.question === true ? homedir() : message.root, firstLine(message.text, 80), message.mode, message.question === true)
+    }
+    const attempt: GuardAttempt | undefined = guardAttempt ?? (target === undefined ? undefined : { live: target, guardGeneration: target.guardGeneration, deadline: Date.now() + 10_000 })
+    try {
+      if (this.#deps.beforeSend !== undefined) await this.#check(target, attempt)
+      const id = await this.#send(message, go, attempt, queued, delegateFrom)
+      const live = this.#live.get(id)
+      if (live !== undefined && live.guardError === undefined) this.#clearGuard(live)
+      if (provisional && target !== undefined && id !== target.id) {
+        this.#live.delete(target.id)
+        this.#note(target.id, { hidden: true })
+        this.#changed()
+      }
+      return id
+    } catch (error) {
+      const cancelled = error instanceof GuardCancelled
+      if (!(error instanceof GuardRefused) && !cancelled) {
+        if (provisional && target !== undefined) { this.#live.delete(target.id); this.#changed() }
+        throw error
+      }
+      const text = cancelled ? 'Not sent: public IP check cancelled. Try again when you are ready.' : error.message
+      if (target === undefined) {
+        const provider = message.provider ?? (message.session === undefined ? 'claude' : providerOf(message.session))
+        const id = `${provider === 'claude' ? '' : `${provider}:`}pending-${randomUUID()}`
+        target = this.#fresh(id, message.question === true ? homedir() : message.root, firstLine(message.text, 80), message.mode, message.question === true)
+      }
+      const existing = message.again === undefined ? undefined : target.items.get(message.again)
+      if (existing?.kind !== 'mine' && !go && !(guardSource !== undefined && [...target.items.values()].some((one) => one.kind === 'mine' && one.unsent === true))) {
+        const mine: Extract<SessionItem, { kind: 'mine' }> = { kind: 'mine', id: `mine:${randomUUID()}`, text: message.text, at: this.#now(), unsent: true, ...(message.images === undefined ? {} : { images: message.images }) }
+        target.items.set(mine.id, mine)
+        this.#deps.items({ id: target.id, items: [mine] })
+      }
+      const mine = existing?.kind === 'mine' ? existing : [...target.items.values()].findLast((one) => one.kind === 'mine' && one.unsent === true)
+      const retained: HeldOperation = { ...operation, message: { ...message, ...(mine === undefined || message.session === undefined ? {} : { again: mine.id }) } }
+      if (cancelled) target.state = 'failed'
+      this.#blocked(target, retained, text)
+      return target.id
+    }
+  }
+
+  async #send(message: SessionMessage, go: boolean, attempt?: GuardAttempt, queued?: Queued['id'], delegateFrom?: Live['id']): Promise<string> {
 
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
@@ -1278,6 +1667,8 @@ export class Sessions {
       if (live.driver === undefined) await this.#reread(live)
     }
 
+    this.#clearGuard(live)
+    if (attempt !== undefined) attempt = { ...attempt, destination: { live, guardGeneration: live.guardGeneration } }
     const backend = this.#for(live)
     if (!backend.images && (message.images?.length ?? 0) > 0) {
       throw new Error(`${backend.name} accepts text only. Choose an assistant that supports images.`)
@@ -1285,6 +1676,7 @@ export class Sessions {
     const nativeGoal = backend.nativeGoals ? goalSent(message.text) : undefined
     if (nativeGoal !== undefined && nativeGoal.toLowerCase() !== 'pause' && nativeGoal.toLowerCase() !== 'resume') {
       if ((await backend.account()).key === true) throw new Error('Sign in with your ChatGPT plan to change a Codex goal.')
+      if (this.#deps.beforeSend !== undefined) await this.#check(live, attempt)
       if (nativeGoal === '') {
         await backend.clearGoal(live.id)
         this.#signal(live, { kind: 'goal', goal: undefined })
@@ -1293,6 +1685,8 @@ export class Sessions {
         this.#signal(live, { kind: 'goal', goal: goal?.goal, ...(goal?.status === undefined ? {} : { status: goal.status }) })
         if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
       }
+      live.vpnGoalPaused = false
+      this.#note(live.id, { vpnGoalPaused: undefined })
       return live.id
     }
     live.messages += 1
@@ -1384,15 +1778,42 @@ export class Sessions {
     live.at = this.#now()
 
     try {
-      await this.#hold(live)
+      await this.#hold(live, attempt)
+      if (this.#deps.beforeSend !== undefined) await this.#check(live, attempt)
+      if (backend.nativeGoals && live.vpnGoalPaused) {
+        await backend.resumeGoal?.(live.id)
+        live.vpnGoalPaused = false
+        this.#note(live.id, { vpnGoalPaused: undefined })
+      }
       if (backend.nativeGoals && message.goal?.trim()) await backend.setGoal(live.id, message.goal.trim())
       if (backend.nativeGoals && message.goal?.trim()) this.#note(live.id, { goal: live.goal })
     } catch (error) {
+      if (error instanceof GuardRefused || error instanceof GuardCancelled) {
+        const unsent = { ...mine, unsent: true }
+        live.items.set(mine.id, unsent)
+        this.#deps.items({ id: live.id, items: [unsent], gone })
+        live.state = 'failed'
+        this.#uncut(live.id)
+        this.#blocked(live, { kind: 'message', message: { ...message, session: live.id, again: mine.id }, go, queued, delegateFrom }, error instanceof GuardCancelled ? 'Not sent: public IP check cancelled. Try again when you are ready.' : error.message)
+        return live.id
+      }
       this.#deps.items({ id: live.id, items: [mine], gone })
       this.#ended(live, { kind: 'ended', how: 'failed', text: error instanceof Error ? error.message : String(error) })
       return live.id
     }
 
+    if (this.#deps.beforeSend !== undefined) {
+      try { await this.#check(live, attempt) } catch (error) {
+        const unsent = { ...mine, unsent: true }
+        live.items.set(mine.id, unsent)
+        this.#deps.items({ id: live.id, items: [unsent] })
+        live.state = 'failed'
+        this.#uncut(live.id)
+        this.#blocked(live, { kind: 'message', message: { ...message, session: live.id, again: mine.id }, go, queued, delegateFrom }, error instanceof GuardCancelled ? 'Not sent: public IP check cancelled. Try again when you are ready.' : error instanceof Error ? error.message : String(error))
+        this.#changed()
+        return live.id
+      }
+    }
     this.#note(live.id, {
       mode: live.mode,
       transport: live.transport,
@@ -1429,6 +1850,7 @@ export class Sessions {
       const provider = asked.session === undefined ? asked.provider ?? 'claude' : providerOf(asked.session)
       const backend = this.#provider(provider, isRemote(asked.root) || process.platform === 'win32' ? 'stream' : this.#deps.transport?.())
       if (backend.localOnly && isRemote(asked.root)) throw new Error(`${backend.name} is available for local folders.`)
+      if (this.#deps.beforeSend !== undefined) await this.#check(live)
       const id = backend.nativeGoals && asked.session !== undefined ? asked.session : await backend.create({ root: asked.root, mode: 'auto' })
       live = this.#fresh(id, asked.root, firstLine(`!${command}`, 80), sessionMode(undefined))
       if (backend.nativeGoals && asked.session !== undefined) {
@@ -1528,8 +1950,17 @@ export class Sessions {
   }
 
   /** A command the tool is waiting on, sent on in the background: the turn goes on, and so does the command. */
-  toBackground(id: string, item: string): void {
-    void this.#live.get(id)?.driver?.control?.({ subtype: 'background_tasks', tool_use_id: item }).catch(() => undefined)
+  async toBackground(id: string, item: string): Promise<void> {
+    const live = this.#live.get(id)
+    if (live?.driver?.control === undefined || live.checkingIp) return
+    if (this.#deps.beforeSend !== undefined) {
+      try { await this.#check(live) } catch (error) {
+        if (error instanceof GuardRefused) this.#blocked(live, { kind: 'background', item }, error.message)
+        return
+      }
+      this.#clearGuard(live)
+    }
+    await live.driver.control({ subtype: 'background_tasks', tool_use_id: item }).catch(() => undefined)
   }
 
   stopTask(id: string, task: string): void {
@@ -1560,7 +1991,7 @@ export class Sessions {
   }
 
   /** Have a process holding the conversation, started the way its mode needs. */
-  async #hold(live: Live): Promise<void> {
+  async #hold(live: Live, attempt?: GuardAttempt): Promise<void> {
 
     clearTimeout(live.quiet)
     if (live.closing !== undefined) await live.closing
@@ -1591,6 +2022,8 @@ export class Sessions {
     live.ran = live.chosen
     live.ranReasoning = live.reasoning
 
+    if (this.#deps.beforeSend !== undefined) await this.#check(live, attempt)
+    let assignedDriver: Driver | undefined = undefined
     const driver = backend.hold(
       {
         root: live.root,
@@ -1601,9 +2034,12 @@ export class Sessions {
         ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }),
         ...(resume || live.fork === undefined ? {} : { fork: live.fork }),
       },
-      (heard) => this.#hear(live, heard),
+      (heard) => {
+        if (assignedDriver !== undefined && live.driver !== assignedDriver) return
+        this.#hear(live, heard)
+      },
       () => {
-        if (live.driver !== driver) return
+        if (assignedDriver === undefined || live.driver !== assignedDriver) return
         live.driver = undefined
         live.injectionEchoes = []
         // What ran in the background went with the process. What it printed is still there to read.
@@ -1613,6 +2049,7 @@ export class Sessions {
         this.#changed()
       },
     )
+    assignedDriver = driver
     live.driver = driver
     if (live.remote !== undefined) void this.#remoteOn(live).catch(() => this.#remoteOff(live))
   }
@@ -1636,17 +2073,22 @@ export class Sessions {
       return { error: 'That claude is signed in with an API key, and GeckIt only runs sessions on a plan.' }
     }
     try {
-      await this.#hold(live)
-      return { url: await this.#remoteOn(live) }
+      const attempt: GuardAttempt = { live, guardGeneration: live.guardGeneration, deadline: Date.now() + 10_000 }
+      await this.#hold(live, attempt)
+      const url = await this.#remoteOn(live, attempt)
+      this.#clearGuard(live)
+      return { url }
     } catch (error) {
+      if (error instanceof GuardRefused) this.#blocked(live, { kind: 'remote' }, error.message)
       this.#remoteOff(live)
       return { error: error instanceof Error ? error.message : String(error) }
     }
   }
 
-  async #remoteOn(live: Live): Promise<string> {
+  async #remoteOn(live: Live, attempt?: GuardAttempt): Promise<string> {
     const driver = live.driver
     if (driver === undefined) throw new Error('Claude Code is not running for this conversation.')
+    if (this.#deps.beforeSend !== undefined) await this.#check(live, attempt)
     const url = await this.#for(live).remote(driver, true, this.#deps.notes.all()[live.id]?.title ?? live.title) ?? ''
     live.remote = url
     this.#changed()
@@ -1683,12 +2125,21 @@ export class Sessions {
   }
 
 
-  answer(id: string, card: string, answer: CardAnswer | string): void {
+  async answer(id: string, card: string, answer: CardAnswer | string): Promise<void> {
     const live = this.#live.get(id)
     const ask = card.startsWith('card:') ? card.slice('card:'.length) : card
     const wanted = live?.asks.get(ask)
     if (live === undefined || wanted === undefined) return
 
+    if (answer !== 'no' && this.#deps.beforeSend !== undefined) {
+      if (live.checkingIp) return
+      try { await this.#check(live) } catch (error) {
+        if (error instanceof GuardRefused) this.#blocked(live, { kind: 'answer', card, answer }, error.message)
+        return
+      }
+      if (!live.asks.has(ask)) return
+    }
+    this.#clearGuard(live)
     live.asks.delete(ask)
 
     if (answer === 'session') for (const key of grantKeys(wanted)) live.grants.add(key)
@@ -1733,9 +2184,17 @@ export class Sessions {
    * waiting when it goes into Auto is handed back, so its own check decides it.
    * Plan is still a new start at the next message.
    */
-  mode(id: string, mode: SessionMode): void {
+  async mode(id: string, mode: SessionMode): Promise<void> {
     const live = this.#live.get(id)
     if (live === undefined || live.mode === mode) return
+    if (mode === 'auto' && this.#deps.beforeSend !== undefined) {
+      if (live.checkingIp) return
+      try { await this.#check(live) } catch (error) {
+        if (error instanceof GuardRefused) this.#blocked(live, { kind: 'mode', mode }, error.message)
+        return
+      }
+      this.#clearGuard(live)
+    }
 
     live.mode = mode
     this.#note(live.id, { mode })
@@ -1781,6 +2240,15 @@ export class Sessions {
 
   stop(id: string): void {
     const live = this.#live.get(id)
+    if (live !== undefined) {
+      live.guardGeneration += 1
+      for (const cancel of live.guardCancels) cancel()
+      if (live.checkingIp) {
+        live.checkingIp = false
+        this.#changed()
+        if (live.driver === undefined) return
+      }
+    }
     for (const running of live?.commands.values() ?? []) running.stop()
     if (live === undefined || (live.state !== 'working' && live.state !== 'asks')) return
     if (live.driver === undefined) {
@@ -1808,6 +2276,15 @@ export class Sessions {
     if (live.state !== 'working' || live.stopping !== undefined) throw new Error('The assistant is no longer working. Your message is still queued.')
     if (live.asks.size > 0) throw new Error('Answer the assistant before sending this message.')
     if (/^!|^\/[a-z][\w-]*(?:\s|$)/i.test(selected.message.text.trim()) || selected.message.goal?.trim()) throw new Error('Commands and goals wait until the current work finishes.')
+    if (this.#deps.beforeSend !== undefined) {
+      if (live.checkingIp) return
+      try { await this.#check(live) } catch (error) {
+        if (error instanceof GuardRefused) this.#blocked(live, { kind: 'inject', queued }, error.message)
+        return
+      }
+      if (live.driver !== driver || live.state !== 'working' || live.stopping !== undefined || live.queued.find((one) => one.id === queued) !== selected) return
+      this.#clearGuard(live)
+    }
     const before = [...live.told]
     const item: Extract<SessionItem, { kind: 'mine' }> = {
       kind: 'mine', id: `mine:${randomUUID()}`, text: selected.message.text, at: this.#now(),
@@ -1893,22 +2370,37 @@ export class Sessions {
 
     if (taken === undefined || from === undefined || from.injecting !== undefined || this.#dispatching.has(id)) return undefined
     this.#dispatching.add(id)
+    const generation = from.guardGeneration
+    const attempt: GuardAttempt = { live: from, guardGeneration: generation, deadline: Date.now() + 10_000 }
     try {
       const { session: _from, again: _again, ...message } = taken
       const mode = from.mode
+      if (this.#deps.beforeSend !== undefined) {
+        try { await this.#check(from, attempt) } catch (error) {
+          if (error instanceof GuardRefused) this.#blocked(from, { kind: 'delegate', queued, history }, error.message)
+          return undefined
+        }
+      }
       if (!history) {
-        const started = await this.send({ ...message, mode, provider: providerOf(id) })
-        this.unqueue(id, queued)
+        const started = await this.send({ ...message, mode, provider: providerOf(id) }, false, id, queued, id, attempt)
+        if (this.#live.get(started)?.heldOperation === undefined) {
+          this.unqueue(id, queued)
+          this.#clearGuard(from)
+        }
         return started
       }
       const forked = await this.#for(from).fork(from.root, id, at, mode, from.chosen)
+      if (generation !== from.guardGeneration || !from.queued.some((one) => one.id === queued)) return undefined
       const live = this.#fresh(forked.id, from.root, firstLine(message.text, 80), mode)
       live.begun = forked.begun
       live.fork = forked.fork
       for (const item of forked.items) live.items.set(item.id, item)
       if (forked.begun) this.#note(forked.id, { here: true })
-      const started = await this.send({ ...message, mode, session: forked.id })
-      this.unqueue(id, queued)
+      const started = await this.send({ ...message, mode, session: forked.id }, false, id, queued, id, attempt)
+      if (this.#live.get(started)?.heldOperation === undefined) {
+        this.unqueue(id, queued)
+        this.#clearGuard(from)
+      }
       return started
     } finally {
       this.#dispatching.delete(id)
@@ -1957,7 +2449,12 @@ export class Sessions {
       live.queued = [...(note?.queued ?? [])]
       // What was said before is read from the file first; the stream then carries on from where it was read to.
       await this.#reread(live).catch(() => undefined)
-      await this.#hold(live)
+      try { await this.#hold(live) } catch (error) {
+        if (!(error instanceof GuardRefused)) throw error
+        live.state = 'failed'
+        this.#blocked(live, { kind: 'message', message: { session: live.id, root: live.root, mode: live.mode, text: 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }) }, go: true }, error.message)
+        continue
+      }
       this.#uncut(run.id)
       this.#changed()
     }
@@ -2260,6 +2757,7 @@ export class Sessions {
 
   /** Everything is going. Every process goes with it, and the conversations stay where the tool keeps them. */
   dispose(): void {
+    this.#vpnMonitor?.dispose()
     clearInterval(this.#goalWatch)
     for (const live of this.#live.values()) {
       clearTimeout(live.quiet)
@@ -2361,6 +2859,7 @@ export class Sessions {
   }
 
   #signal(live: Live, signal: Signal): void {
+    if (live.vpnPaused && (signal.kind === 'started' || signal.kind === 'doing' || signal.kind === 'said' || signal.kind === 'begun' || signal.kind === 'held' || signal.kind === 'asks' || signal.kind === 'resolved' || signal.kind === 'task')) return
     switch (signal.kind) {
       case 'started':
         // The tool's own word for what it is answering on, which knows about a
@@ -2525,7 +3024,8 @@ export class Sessions {
   #asked(live: Live, ask: string, wanted: Wanted, line?: string): void {
     const keys = grantKeys(wanted)
     const granted = keys.length > 0 && keys.every((key) => live.grants.has(key))
-    if (granted || (wanted.kind === 'command' && startsConversations(wanted.command))) {
+    const automatic = granted || (wanted.kind === 'command' && startsConversations(wanted.command))
+    if (automatic && this.#deps.beforeSend === undefined) {
       live.driver?.answer(ask, 'once')
       return
     }
@@ -2554,6 +3054,7 @@ export class Sessions {
     this.#deps.items({ id: live.id, items: [card], ...(gone.length > 0 ? { gone } : {}) })
     this.#changed()
 
+    if (automatic) { void this.answer(live.id, card.id, 'once'); return }
     this.#tell(live, 'Needs an answer', live.stands, true)
   }
 
@@ -2568,10 +3069,29 @@ export class Sessions {
     })
   }
 
+  #expireAsks(live: Live): void {
+    const gone = [...live.asks.keys()].map(cardId)
+    for (const id of gone) live.items.delete(id)
+    live.asks.clear()
+    live.held.clear()
+    if (gone.length > 0) this.#deps.items({ id: live.id, items: [], gone })
+  }
+
   #ended(live: Live, signal: Extract<Signal, { kind: 'ended' }>): void {
     clearTimeout(live.stopping)
     live.stopping = undefined
     this.#uncut(live.id)
+    if (live.vpnPaused) {
+      this.#expireAsks(live)
+      live.state = 'failed'
+      live.stands = 'Paused by VPN IP check'
+      live.parked = true
+      const driver = live.driver
+      live.driver = undefined
+      if (driver !== undefined) live.closing = driver.end().catch(() => undefined).finally(() => { live.closing = undefined })
+      this.#changed()
+      return
+    }
     const now = this.#now()
     const items: SessionItem[] = []
     // A card nobody answered is not waiting on anybody any more.

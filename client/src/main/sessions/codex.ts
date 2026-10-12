@@ -246,6 +246,16 @@ export class CodexSessions {
     await rpc.request('thread/goal/clear', { threadId: native(id) })
   }
 
+  async pauseGoal(id: string): Promise<void> {
+    const rpc = await this.#connection()
+    await rpc.request('thread/goal/set', { threadId: native(id), status: 'paused' })
+  }
+
+  async resumeGoal(id: string): Promise<void> {
+    const rpc = await this.#connection()
+    await rpc.request('thread/goal/set', { threadId: native(id), status: 'active' })
+  }
+
   async search(roots: readonly string[], asked: string): Promise<ChatFound[]> {
     await this.list(roots)
     return searchCodex([...this.#files.values()].filter((one) => roots.includes(one.root)), asked)

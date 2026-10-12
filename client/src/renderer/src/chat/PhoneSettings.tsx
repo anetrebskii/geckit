@@ -12,6 +12,7 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { LANGUAGES } from '../ui/SettingsDialog'
+import { PhoneVpnSettings } from '../ui/VpnIpSettings'
 import { AssistantStatus } from './AssistantStatus'
 import { Cell, Page, Switch, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
@@ -36,6 +37,7 @@ type Where =
   | { readonly page: 'hidden' }
   | { readonly page: 'phrases' }
   | { readonly page: 'shortcuts' }
+  | { readonly page: 'vpn' }
 
 const THEMES: readonly { readonly value: Theme; readonly label: string }[] = [
   { value: 'system', label: 'System' },
@@ -71,6 +73,7 @@ export function PhoneSettings({
   if (where.page === 'hidden') return <Hidden chat={chat} back={before()} onBack={back} />
   if (where.page === 'phrases') return <Phrases chat={chat} back={before()} onBack={back} />
   if (where.page === 'shortcuts') return <PhoneShortcuts chat={chat} back={before()} onBack={back} onEdit={onEdit} />
+  if (where.page === 'vpn') return <PhoneVpnSettings settings={chat.settings} back={before()} onBack={back} />
   return <Root chat={chat} go={go} />
 }
 
@@ -132,6 +135,11 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
           </div>
         </>
       )}
+
+      <div className="phone-head">Connection</div>
+      <div className="phone-group">
+        <Cell label="VPN IP check" value={settings.vpnIpCheck ? 'On' : 'Off'} says="Applies to the paired computer" onPress={() => go({ page: 'vpn' })} />
+      </div>
 
       <div className="phone-head">Assistants</div>
       <div className="phone-group">

@@ -137,6 +137,21 @@ afterEach(() => {
 })
 
 describe('Codex app-server', () => {
+  it('pauses a native goal as control without starting or resuming a model turn', async () => {
+    const { server, codex } = setup()
+    await codex.setGoal('codex:terminal', 'Tests pass')
+    server.requests.splice(0)
+    await codex.pauseGoal('codex:terminal')
+    expect(server.goals.get('terminal')).toMatchObject({ objective: 'Tests pass', status: 'paused' })
+    expect(server.requests.map((one) => one.method)).toEqual(['thread/goal/set'])
+    expect(server.requests[0]?.params).toEqual({ threadId: 'terminal', status: 'paused' })
+    server.requests.splice(0)
+    await codex.resumeGoal('codex:terminal')
+    expect(server.goals.get('terminal')).toMatchObject({ objective: 'Tests pass', status: 'active' })
+    expect(server.requests.map((one) => one.method)).toEqual(['thread/goal/set'])
+    expect(server.requests[0]?.params).toEqual({ threadId: 'terminal', status: 'active' })
+  })
+
   it('steers the exact active turn with images and shell context without starting or interrupting', async () => {
     const { server, codex, heard } = setup()
     const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto', model: 'second', reasoning: 'high' }, (one) => heard.push(one), () => undefined)

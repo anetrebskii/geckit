@@ -576,6 +576,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
         counting('chatSent')
         return call('chat.send', message)
       },
+      retry: (id) => call('chat.retry', id),
       shell: (command) => call('chat.shell', command),
       stopShell: (id, item) => send('chat.stopShell', id, item),
       typeShell: (id, item, text) => send('chat.typeShell', id, item, text),

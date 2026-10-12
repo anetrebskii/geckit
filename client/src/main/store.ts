@@ -10,6 +10,7 @@ import type { Settings } from '../shared/api'
 import { NO_CRASHES } from '../shared/reporting'
 import type { CrashRecord } from '../shared/reporting'
 import { withColors } from '../shared/project-color'
+import { validateVpnIps, VPN_IP_CONFIGURATION_ERROR } from '../shared/vpn-ip'
 import { carriedOver } from './carry-over'
 import { withMoves } from './sessions'
 import type { NotesStore, SessionNote } from './sessions'
@@ -68,12 +69,15 @@ export function getSettings(): Settings {
       correctKeyModel: _keyModel,
       dictation: _dictation,
       whisperModel: _whisper,
+      vpnStopOnFailure: _legacyVpnStop,
       ...found
     } = (read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }) as Settings & Readonly<Record<string, unknown>>
     // A build from before the welcome kept no answer, and anyone with a project has already set up.
     const welcomed = read<Partial<Settings>>(SETTINGS, {})?.welcomed
     settings = {
       ...found,
+      vpnIpCheck: found.vpnIpCheck !== false,
+      vpnAllowedIps: validateVpnIps(found.vpnAllowedIps).ips,
       chatTransport: found.chatTransport === 'tmux' ? 'tmux' : 'stream',
       providerPlugins: found.providerPlugins ?? [],
       providerAutoUpdate: found.providerAutoUpdate ?? true,
@@ -86,6 +90,7 @@ export function getSettings(): Settings {
     }
     // Projects listed before colours were, and the phone's key, given once and for all.
     if (
+      _legacyVpnStop !== undefined ||
       Object.keys(settings.projectColors).length !== Object.keys(found.projectColors).length ||
       settings.phoneKey !== found.phoneKey ||
       settings.welcomed !== welcomed
@@ -97,8 +102,25 @@ export function getSettings(): Settings {
 }
 
 export function setSettings(change: Partial<Settings>): Settings {
-  settings = { ...getSettings(), ...change }
-  write(SETTINGS, settings)
+  const current = getSettings()
+  let validated = { ...change }
+  Reflect.deleteProperty(validated, 'vpnStopOnFailure')
+  const vpnChange = Object.hasOwn(change, 'vpnIpCheck') || Object.hasOwn(change, 'vpnAllowedIps')
+  if (vpnChange) {
+    if (Object.hasOwn(change, 'vpnIpCheck') && typeof change.vpnIpCheck !== 'boolean') throw new Error(VPN_IP_CONFIGURATION_ERROR)
+    if (Object.hasOwn(change, 'vpnAllowedIps') && !Array.isArray(change.vpnAllowedIps)) throw new Error(VPN_IP_CONFIGURATION_ERROR)
+    const allowed = validateVpnIps(Object.hasOwn(change, 'vpnAllowedIps') ? change.vpnAllowedIps ?? [] : current.vpnAllowedIps)
+    if (allowed.error !== undefined) throw new Error(allowed.error)
+    if ((change.vpnIpCheck ?? current.vpnIpCheck) && allowed.ips.length === 0) throw new Error(VPN_IP_CONFIGURATION_ERROR)
+    validated = { ...validated, vpnAllowedIps: allowed.ips }
+  }
+  const next = { ...current, ...validated }
+  if (vpnChange) {
+    const path = join(folder(), SETTINGS)
+    writeFileSync(`${path}.new`, JSON.stringify(next, undefined, 2))
+    renameSync(`${path}.new`, path)
+  } else write(SETTINGS, next)
+  settings = next
   for (const watcher of watchers) watcher(settings)
   return settings
 }
