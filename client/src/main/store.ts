@@ -10,6 +10,7 @@ import type { Settings } from '../shared/api'
 import { NO_CRASHES } from '../shared/reporting'
 import type { CrashRecord } from '../shared/reporting'
 import { withColors } from '../shared/project-color'
+import { localCalendarZone, recurrenceError } from '../shared/recurrence'
 import { carriedOver } from './carry-over'
 import { withMoves } from './sessions'
 import type { NotesStore, SessionNote } from './sessions'
@@ -56,6 +57,7 @@ let settingsWatcher: ReturnType<typeof watch> | undefined
 const watchers = new Set<(settings: Settings) => void>()
 
 export function getSettings(): Settings {
+  const loaded = settings === undefined
   // No file yet means a first run, and the old build's keys are worth keeping.
   if (settings === undefined) {
     // Correct and dictation no longer run on a key: the keys and the choices that went with them are dropped.
@@ -68,6 +70,8 @@ export function getSettings(): Settings {
       correctKeyModel: _keyModel,
       dictation: _dictation,
       whisperModel: _whisper,
+      calendarTimeZone: _storedZone,
+      calendarRecurrenceVersion: _storedRecurrenceVersion,
       ...found
     } = (read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }) as Settings & Readonly<Record<string, unknown>>
     // A build from before the welcome kept no answer, and anyone with a project has already set up.
@@ -93,19 +97,47 @@ export function getSettings(): Settings {
       write(SETTINGS, settings)
     }
   }
+  const calendarTimeZone = localCalendarZone()
+  if (settings.calendarTimeZone !== calendarTimeZone || settings.calendarRecurrenceVersion !== 1) {
+    settings = { ...settings, calendarTimeZone, calendarRecurrenceVersion: 1 }
+    if (!loaded) for (const watcher of watchers) watcher(settings)
+  }
   return settings
 }
 
 export function setSettings(change: Partial<Settings>): Settings {
-  settings = { ...getSettings(), ...change }
-  write(SETTINGS, settings)
+  const current = getSettings()
+  const validated = { ...change }
+  Reflect.deleteProperty(validated, 'calendarTimeZone')
+  Reflect.deleteProperty(validated, 'calendarRecurrenceVersion')
+  if (change.shortcuts !== undefined) {
+    for (const shortcut of change.shortcuts) {
+      if (shortcut.recurrence === undefined) continue
+      const before = current.shortcuts.find((one) => one.id === shortcut.id)
+      if (before !== undefined && before.cron === shortcut.cron && isDeepStrictEqual(before.recurrence, shortcut.recurrence)) continue
+      if (shortcut.cron !== undefined) throw new Error('Choose one timetable.')
+      const error = recurrenceError(shortcut.recurrence, current.calendarTimeZone)
+      if (error !== undefined) throw new Error(error)
+    }
+  }
+  const next = { ...current, ...validated }
+  const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, ...persisted } = next
+  if (change.shortcuts !== undefined) {
+    const path = join(folder(), SETTINGS)
+    writeFileSync(`${path}.new`, JSON.stringify(persisted, undefined, 2))
+    renameSync(`${path}.new`, path)
+  } else write(SETTINGS, persisted)
+  settings = next
   for (const watcher of watchers) watcher(settings)
   return settings
 }
 
 const reloadSettings = (): void => {
   const found = read(SETTINGS, DEFAULT_SETTINGS)
-  if (found === undefined || isDeepStrictEqual(found, getSettings())) return
+  if (found === undefined) return
+  const { calendarTimeZone: _foundZone, calendarRecurrenceVersion: _foundRecurrenceVersion, ...disk } = found
+  const { calendarTimeZone: _currentZone, calendarRecurrenceVersion: _currentRecurrenceVersion, ...current } = getSettings()
+  if (isDeepStrictEqual(disk, current)) return
   settings = undefined
   const changed = getSettings()
   for (const watcher of watchers) watcher(changed)

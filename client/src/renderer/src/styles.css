@@ -5139,6 +5139,543 @@ html.phone .queued-one .icon-button.queue-inject {
   color: var(--text-dim);
 }
 
+.recurrence-scrim {
+  z-index: 70;
+  background: var(--scrim);
+}
+
+.dialog.recurrence-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(460px, 92vw);
+  max-height: 90dvh;
+  overflow: hidden;
+}
+
+.recurrence-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  margin-inline: -4px;
+  padding: 4px 4px 8px;
+}
+
+.recurrence-start {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.recurrence-body .field {
+  margin: 0;
+}
+
+.recurrence-interval {
+  display: flex;
+  gap: 10px;
+}
+
+.recurrence-interval > input {
+  width: 78px;
+}
+
+.recurrence-interval > .select {
+  min-width: 125px;
+}
+
+.recurrence-dialog input[type='date'],
+.recurrence-dialog input[type='time'] {
+  min-width: 0;
+  width: 100%;
+  color-scheme: light;
+}
+
+.recurrence-dialog input[type='date'] {
+  padding: 5px 8px;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+}
+
+:root[data-theme='dark'] .recurrence-dialog input {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .recurrence-dialog input {
+    color-scheme: dark;
+  }
+}
+
+.recurrence-week,
+.recurrence-ends {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.recurrence-ends {
+  gap: 8px;
+}
+
+.recurrence-week legend,
+.recurrence-ends legend {
+  margin-block-end: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.recurrence-days {
+  display: flex;
+  gap: 8px;
+}
+
+.recurrence-day {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border-radius: 50%;
+}
+
+.recurrence-day.on {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.recurrence-end-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recurrence-end,
+.recurrence-end > label,
+.recurrence-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recurrence-end > label,
+label.recurrence-end {
+  min-width: 80px;
+  min-height: 34px;
+}
+
+.recurrence-end input[type='radio'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.recurrence-end > input[type='date'],
+.recurrence-count {
+  flex: 1;
+  min-width: 0;
+}
+
+.recurrence-count > input {
+  width: 74px;
+}
+
+.recurrence-count > span {
+  color: var(--text-dim);
+}
+
+.recurrence-dialog input:disabled {
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+  cursor: default;
+}
+
+.recurrence-count:has(input:disabled) > span {
+  color: var(--text-faint);
+}
+
+.recurrence-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.recurrence-summary > span + span,
+.recurrence-zone {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.recurrence-error {
+  display: block;
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.recurrence-dialog [aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.recurrence-dialog button:focus-visible,
+.recurrence-dialog input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.recurrence-dialog input:not([type='radio']):focus-visible {
+  outline-offset: -2px;
+}
+
+.recurrence-scrim.phone {
+  align-items: flex-start;
+}
+
+.dialog.phone-recurrence {
+  width: 100%;
+  height: calc(100dvh - var(--keyboard, 0px));
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--ground);
+}
+
+.phone-recurrence .phone-task-bar {
+  flex-shrink: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  height: calc(52px + var(--top));
+  padding-block-start: var(--top);
+}
+
+.phone-recurrence .phone-task-bar b {
+  text-align: center;
+}
+
+.phone-recurrence .recurrence-body {
+  flex: 1;
+  margin-inline: 0;
+  padding: 16px 0 max(24px, var(--bottom));
+  gap: 0;
+  overflow-x: hidden;
+}
+
+.phone-recurrence .recurrence-body > * {
+  flex-shrink: 0;
+}
+
+.phone-recurrence .recurrence-start {
+  display: block;
+}
+
+.phone-recurrence .phone-cell {
+  min-width: 0;
+  padding-block: 0;
+}
+
+.phone-recurrence input.phone-time,
+.phone-recurrence input.phone-number {
+  min-width: 0;
+  min-height: 44px;
+  height: 44px;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-align: end;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.phone-recurrence input.phone-number {
+  padding-inline: 6px;
+  border-radius: 6px;
+}
+
+.phone-recurrence input.phone-number:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+}
+
+.phone-recurrence .recurrence-start input {
+  flex: none;
+  width: auto;
+  max-width: 70%;
+}
+
+.phone-recurrence input[type='date'],
+.phone-recurrence input[type='time'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0;
+  line-height: normal;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  appearance: none;
+}
+
+.phone-recurrence input::-webkit-date-and-time-value {
+  min-width: 0;
+  margin: 0;
+  line-height: normal;
+  text-align: end;
+}
+
+.phone-recurrence input:disabled {
+  opacity: 1;
+  color: var(--text-faint);
+  -webkit-text-fill-color: var(--text-faint);
+  background: none;
+}
+
+.phone-recurrence .recurrence-interval {
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.phone-recurrence .recurrence-interval > input {
+  width: 44px;
+}
+
+.phone-recurrence .recurrence-picker {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  min-height: 44px;
+  max-width: 55%;
+  padding: 0 2px;
+  font: inherit;
+  color: var(--accent);
+  text-align: end;
+  white-space: normal;
+}
+
+.phone-recurrence .recurrence-picker svg {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.phone-recurrence .recurrence-interval .recurrence-picker {
+  max-width: none;
+}
+
+.phone-recurrence .recurrence-frequency .phone-cell-label,
+.phone-recurrence .recurrence-pattern .phone-cell-label {
+  overflow: visible;
+  white-space: normal;
+}
+
+.phone-recurrence .recurrence-week,
+.phone-recurrence .recurrence-ends {
+  gap: 0;
+  margin-block-start: 22px;
+}
+
+.phone-recurrence .recurrence-week legend,
+.phone-recurrence .recurrence-ends legend {
+  margin: 0 32px 6px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.phone-recurrence .recurrence-days {
+  justify-content: space-between;
+  gap: 4px;
+  margin-inline: 16px;
+}
+
+.phone-recurrence .recurrence-day {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+.phone-recurrence .recurrence-day.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+}
+
+@media (max-width: 360px) {
+  .phone-recurrence .recurrence-days {
+    gap: 0;
+    margin-inline: 6px;
+  }
+}
+
+.phone-recurrence .recurrence-end-group {
+  display: block;
+}
+
+.phone-recurrence .recurrence-end-item {
+  display: block;
+}
+
+.phone-recurrence .recurrence-end {
+  gap: 10px;
+  min-height: 44px;
+}
+
+.phone-recurrence .recurrence-end > .recurrence-option {
+  position: relative;
+  flex: none;
+  min-width: 48px;
+  min-height: 44px;
+}
+
+.phone-recurrence .recurrence-end > input[type='date'] {
+  width: 0;
+}
+
+.phone-recurrence .recurrence-end input[type='radio'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+}
+
+.phone-recurrence .recurrence-selection {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  min-width: 18px;
+  min-height: 34px;
+  color: var(--accent);
+}
+
+.phone-recurrence .recurrence-selection svg {
+  visibility: hidden;
+}
+
+.phone-recurrence .recurrence-selection.on svg {
+  visibility: visible;
+}
+
+.phone-recurrence label:has(> input[type='radio']:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.phone-recurrence .recurrence-count {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0 6px;
+}
+
+.phone-recurrence .recurrence-count > input {
+  flex: none;
+  width: calc(5ch + 12px);
+}
+
+.phone-recurrence .recurrence-count > span {
+  font-size: inherit;
+}
+
+.phone-recurrence input[type='number']::-webkit-inner-spin-button,
+.phone-recurrence input[type='number']::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.phone-recurrence .recurrence-error {
+  font-size: 13px;
+}
+
+.phone-recurrence .phone-group .recurrence-error {
+  padding: 0 16px 12px;
+}
+
+.phone-recurrence .recurrence-body > .recurrence-error,
+.phone-recurrence .recurrence-week > .recurrence-error {
+  margin: 7px 32px 0;
+}
+
+.phone-recurrence .recurrence-summary {
+  margin: 7px 32px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.phone-recurrence .recurrence-summary > span + span,
+.phone-recurrence .recurrence-zone {
+  font-size: 13px;
+}
+
+.phone-recurrence .recurrence-zone {
+  margin: 7px 32px 0;
+}
+
+.recurrence-preview {
+  min-height: 100dvh;
+  background: var(--bg-sunken);
+}
+
+.recurrence-preview-tools {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  border-block-end: 1px solid var(--border);
+}
+
+.recurrence-preview-tools > label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recurrence-preview-context {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 80dvh;
+}
+
+.recurrence-preview-context > aside {
+  padding: 24px;
+  border-inline-end: 1px solid var(--border);
+}
+
+.recurrence-preview-context > article {
+  padding: 36px;
+}
+
+.recurrence-preview-context .phone-group {
+  padding: 20px;
+  max-width: 520px;
+}
+
+.recurrence-preview.phone .recurrence-preview-tools {
+  display: none;
+}
+
+html.phone:has(.phone-recurrence) .sheet:has([role='menu']),
+html.phone:has(.phone-recurrence) .sheet-scrim:has(+ .sheet [role='menu']) {
+  z-index: 80;
+}
+
 /* What runs in the background, as the terminal's /tasks has it. */
 
 .dialog.tasks {

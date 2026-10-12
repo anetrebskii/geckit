@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GeckIt - Calendar recurrence</title>
+  <link rel="stylesheet" href="../../client/src/renderer/src/styles.css">
+  <style>
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+    .preview { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    .preview aside { background: var(--bg-sunken); border-right: 1px solid var(--border); padding: 28px 20px; }
+    .preview aside p { padding: 10px 0; }
+    .preview main { padding: 34px; }
+    .preview header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+    .preview .shortcut-row { max-width: 720px; padding: 18px 0; }
+    .preview .shortcut-text { pointer-events: none; }
+    .preview .theme { padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+    dialog.recurrence { display: none; width: min(420px, calc(100vw - 32px)); padding: 0; max-height: 86vh; background: var(--bg-raised); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+    dialog.recurrence[open] { display: flex; flex-direction: column; }
+    dialog.recurrence::backdrop { background: var(--scrim); }
+    .recurrence h2 { padding: 22px 24px 0; margin: 0; }
+    .recurrence form { display: flex; flex-direction: column; overflow: hidden; }
+    .recurrence .body { display: flex; flex-direction: column; gap: 22px; padding: 22px 24px; overflow: auto; }
+    .recurrence .start { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .recurrence .field { margin: 0; }
+    .recurrence label, .recurrence legend { font-size: 13px; color: var(--text-dim); }
+    .recurrence .interval { display: flex; align-items: center; gap: 12px; }
+    .recurrence input, .recurrence select { min-width: 0; background: var(--field); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 7px 9px; font: inherit; }
+    .recurrence input[type=number] { width: 70px; }
+    .recurrence select { flex: 1; }
+    .recurrence .days { display: flex; justify-content: space-between; gap: 6px; padding-top: 12px; }
+    .recurrence .days button { width: 36px; height: 36px; flex: none; padding: 0; border: 1px solid var(--border); border-radius: 50%; color: var(--text-dim); background: var(--bg-sunken); }
+    .recurrence .days button[aria-pressed=true] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+    .recurrence fieldset { border: 0; padding: 0; margin: 0; }
+    .recurrence .end { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
+    .recurrence .end-row { display: flex; gap: 12px; align-items: center; min-height: 38px; }
+    .recurrence .end-row label { display: flex; align-items: center; gap: 10px; width: 110px; flex: none; color: var(--text); }
+    .recurrence input[type=radio] { accent-color: var(--accent); width: 17px; height: 17px; }
+    .recurrence input:disabled { opacity: .45; }
+    :root[data-theme="light"] .recurrence input, :root[data-theme="light"] .recurrence select { color-scheme: light; }
+    :root[data-theme="dark"] .recurrence input, :root[data-theme="dark"] .recurrence select { color-scheme: dark; }
+    .recurrence .summary { margin: 0; font-size: 12px; color: var(--text-faint); line-height: 1.5; }
+    .recurrence .error { color: var(--danger); font-size: 12px; margin: 0; }
+    .recurrence .dialog-actions { flex: none; margin: 0; padding: 14px 24px 20px; border-top: 1px solid var(--border); }
+    .recurrence :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .recurrence [hidden] { display: none; }
+    @media (max-width: 600px) {
+      .preview { display: block; }
+      .preview aside { display: none; }
+      .preview main { padding: 22px 16px; }
+      dialog.recurrence { width: calc(100vw - 16px); max-height: calc(100dvh - 20px); }
+      .recurrence h2 { padding: 20px 18px 0; }
+      .recurrence .body { padding: 20px 18px; gap: 20px; }
+      .recurrence .days button { width: 34px; height: 34px; }
+      .recurrence .interval { display: grid; grid-template-columns: 70px minmax(0, 1fr); }
+      .recurrence .interval > label { grid-column: 1 / -1; }
+      .recurrence .end-row label { width: 70px; }
+      .recurrence .end-row input[type=number] { width: 56px; }
+      .recurrence .dialog-actions { padding: 14px 18px; }
+    }
+    @media (max-width: 350px) {
+      .recurrence .days { gap: 4px; }
+      .recurrence .days button { width: 30px; height: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview">
+    <aside><h2>GeckIt</h2><p>Tasks</p><p>Conversations</p><p>Shortcuts</p><p>Settings</p></aside>
+    <main>
+      <header><h1>Shortcuts</h1><button class="theme" id="theme">Dark theme</button></header>
+      <p>A shortcut starts a new conversation in its folder with its prompt.</p>
+      <div class="shortcut-row">
+        <div class="shortcut-text"><span class="shortcut-name">Review my pull requests</span><span class="shortcut-when">GeckIt · Codex</span><span class="shortcut-prompt" id="saved">Every week on Tuesday at 09:00</span></div>
+        <button class="quiet" id="open">Custom...</button><button class="primary" type="button">Run</button>
+      </div>
+    </main>
+  </div>
+  <dialog class="recurrence" aria-labelledby="title">
+    <h2 id="title">Custom recurrence</h2>
+    <form novalidate>
+      <div class="body">
+        <div class="start">
+          <div class="field"><label for="start">Starts</label><input id="start" type="date" value="2026-10-13"></div>
+          <div class="field"><label for="time">At</label><input id="time" type="time" value="09:00"></div>
+        </div>
+        <div class="interval"><label for="interval">Repeat every</label><input id="interval" type="number" min="1" step="1" value="1"><select id="unit" aria-label="Recurrence unit"><option value="day">day</option><option value="week" selected>week</option><option value="month">month</option><option value="year">year</option></select></div>
+        <fieldset id="weekly"><legend>Repeat on</legend><div class="days">
+          <button type="button" aria-label="Monday" aria-pressed="false" data-day="1">M</button>
+          <button type="button" aria-label="Tuesday" aria-pressed="true" data-day="2">T</button>
+          <button type="button" aria-label="Wednesday" aria-pressed="false" data-day="3">W</button>
+          <button type="button" aria-label="Thursday" aria-pressed="false" data-day="4">T</button>
+          <button type="button" aria-label="Friday" aria-pressed="false" data-day="5">F</button>
+          <button type="button" aria-label="Saturday" aria-pressed="false" data-day="6">S</button>
+          <button type="button" aria-label="Sunday" aria-pressed="false" data-day="0">S</button>
+        </div></fieldset>
+        <div class="field" id="monthly" hidden><label for="pattern">Repeat on</label><select id="pattern"><option value="date">Monthly on day 13</option><option value="ordinal">Monthly on the second Tuesday</option><option value="last">Monthly on the last Tuesday</option></select></div>
+        <fieldset><legend>Ends</legend><div class="end">
+          <div class="end-row"><label><input type="radio" name="end" value="never" checked>Never</label></div>
+          <div class="end-row"><label><input type="radio" name="end" value="on">On</label><input id="until" type="date" aria-label="End date" value="2027-01-05" disabled></div>
+          <div class="end-row"><label><input type="radio" name="end" value="after">After</label><input id="count" type="number" aria-label="Occurrences" min="1" max="10000" step="1" value="13" disabled><span>occurrences</span></div>
+        </div></fieldset>
+        <p class="summary" id="summary"></p><p class="error" id="error" role="alert" hidden></p>
+      </div>
+      <div class="dialog-actions"><button type="button" id="cancel" class="quiet">Cancel</button><button type="submit" id="done" class="primary">Done</button></div>
+    </form>
+  </dialog>
+  <script>
+    const dialog = document.querySelector('dialog');
+    const form = document.querySelector('form');
+    const byId = id => document.getElementById(id);
+    const days = [...document.querySelectorAll('[data-day]')];
+    let kept;
+    const snapshot = () => ({ start: byId('start').value, time: byId('time').value, interval: byId('interval').value, unit: byId('unit').value, pattern: byId('pattern').value, end: form.elements.end.value, until: byId('until').value, count: byId('count').value, days: days.map(day => day.getAttribute('aria-pressed')) });
+    function restore(value) {
+      for (const key of ['start', 'time', 'interval', 'unit', 'pattern', 'until', 'count']) byId(key).value = value[key];
+      form.elements.end.value = value.end;
+      days.forEach((day, i) => day.setAttribute('aria-pressed', value.days[i]));
+    }
+    function update() {
+      const value = snapshot();
+      byId('weekly').hidden = value.unit !== 'week';
+      byId('monthly').hidden = value.unit !== 'month';
+      byId('until').disabled = value.end !== 'on';
+      byId('count').disabled = value.end !== 'after';
+      const selected = days.filter(day => day.getAttribute('aria-pressed') === 'true').map(day => day.getAttribute('aria-label'));
+      const interval = Number(value.interval);
+      const count = Number(value.count);
+      const error = !Number.isInteger(interval) || interval < 1 ? 'Enter a whole number of 1 or more.' : !value.start || !value.time ? 'Choose a start date and time.' : value.unit === 'week' && selected.length === 0 ? 'Choose at least one day.' : value.end === 'on' && (!value.until || value.until < value.start) ? 'Choose an end date on or after the start date.' : value.end === 'after' && (!Number.isInteger(count) || count < 1 || count > 10000) ? 'Enter a whole number from 1 to 10,000.' : '';
+      byId('error').hidden = error === '';
+      byId('error').textContent = error;
+      byId('done').disabled = error !== '';
+      const frequency = interval === 1 ? `Every ${value.unit}` : `Every ${interval} ${value.unit}s`;
+      const on = value.unit === 'week' ? ` on ${selected.join(' and ')}` : value.unit === 'month' ? `, ${byId('pattern').selectedOptions[0].textContent.toLowerCase()}` : '';
+      const end = value.end === 'on' ? `, through ${value.until}` : value.end === 'after' ? `, after ${value.count} occurrences` : '';
+      byId('summary').textContent = `${frequency}${on} at ${value.time}${end}`;
+    }
+    kept = snapshot();
+    byId('open').onclick = () => { restore(kept); update(); dialog.showModal(); byId('interval').focus(); };
+    byId('cancel').onclick = () => dialog.close();
+    byId('theme').onclick = () => { const dark = document.documentElement.dataset.theme !== 'dark'; document.documentElement.dataset.theme = dark ? 'dark' : 'light'; byId('theme').textContent = dark ? 'Light theme' : 'Dark theme'; };
+    form.addEventListener('input', update);
+    form.addEventListener('change', update);
+    days.forEach(day => { day.onclick = () => { day.setAttribute('aria-pressed', day.getAttribute('aria-pressed') !== 'true'); update(); }; });
+    form.onsubmit = event => { event.preventDefault(); update(); if (byId('done').disabled) return; kept = snapshot(); byId('saved').textContent = byId('summary').textContent; dialog.close(); };
+    dialog.addEventListener('close', () => byId('open').focus());
+    update();
+  </script>
+</body>
+</html>

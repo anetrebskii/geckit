@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { SESSION_MODES, shownProjects } from '../../../shared/api'
 import type { SessionMode, Shortcut, ShortcutDraft } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { cronOf, describeCron, describeTime, isCron, nextRun, nextTimed, WEEKDAYS, whenOf } from '../../../shared/schedule'
 import type { When } from '../../../shared/schedule'
+import { defaultRecurrence, describeRecurrence, nextRecurrence, recurrenceError } from '../../../shared/recurrence'
+import { saveShortcut } from '../../../shared/shortcut-save'
+import { CustomRecurrence } from './CustomRecurrence'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
@@ -12,24 +15,25 @@ import { Sheet } from '../ui/Sheet'
 import { Cell, FullSheet, Page, Switch } from './PhoneKit'
 import { projectLabel } from './project'
 import { FIRST_CRON, REPEATS, turned } from './ShortcutList'
-import type { Repeats } from './ShortcutList'
+import type { Repeats, ShortcutChat } from './ShortcutList'
 import type { Chat } from './useChat'
 
 /** Settings, Shortcuts: saved prompts, each run by hand from its row or on its timetable by the Mac. See docs/ux/phone-tabs.md. */
 
-const busy = (chat: Chat, session: string | undefined): boolean =>
+const busy = (chat: ShortcutChat, session: string | undefined): boolean =>
   session !== undefined && chat.everyone.some((one) => one.id === session && (one.state === 'working' || one.state === 'asks'))
 
 // "Tomorrow at 9:00 AM" after "next", its first word only.
 const lowered = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`
 
 /** What the row says under the name: when it runs next, that it is paused, or that it runs by hand. */
-function when(one: Shortcut, chat: Chat, now: number): string {
+function when(one: Shortcut, chat: ShortcutChat, now: number): string {
   if (busy(chat, one.lastSession)) return 'Running now'
-  if (one.cron === undefined) return one.lastRun === undefined ? 'By hand' : `By hand, last ${describeTime(one.lastRun, now)}`
-  if (!one.on) return 'Paused'
-  const next = nextTimed(one, now)
-  return next === undefined ? describeCron(one.cron) : `${describeCron(one.cron)}, next ${lowered(describeTime(next, now))}`
+  if (one.cron === undefined && one.recurrence === undefined) return one.lastRun === undefined ? 'By hand' : `By hand, last ${describeTime(one.lastRun, now)}`
+  if (!one.on) return 'Timetable paused'
+  const next = nextTimed(one, now, chat.settings.calendarTimeZone)
+  const summary = one.recurrence !== undefined ? describeRecurrence(one.recurrence) : describeCron(one.cron ?? '')
+  return next === undefined ? one.recurrence !== undefined ? `${summary}, Timetable ended` : summary : `${summary}, next ${lowered(describeTime(next, now, one.recurrence === undefined ? undefined : chat.settings.calendarTimeZone))}`
 }
 
 export function PhoneShortcuts({
@@ -38,7 +42,7 @@ export function PhoneShortcuts({
   onBack,
   onEdit,
 }: {
-  readonly chat: Chat
+  readonly chat: ShortcutChat
   readonly back: string
   readonly onBack: () => void
   readonly onEdit: (draft: ShortcutDraft) => void
@@ -99,13 +103,13 @@ export function PhoneShortcuts({
                 <button type="button" className="phone-pill" disabled={running === one.id} onClick={() => run(one)}>
                   {running === one.id ? <Icon name="spinner" size={14} /> : 'Run'}
                 </button>
-                {one.cron === undefined ? null : (
+                {one.cron === undefined && one.recurrence === undefined ? null : (
                   <Switch
                     on={one.on}
                     label={`Timetable for ${one.name}`}
                     onChange={(on) => {
                       tap('light')
-                      void window.geckit.shortcuts.save({ ...one, on })
+                      void saveShortcut(window.geckit.shortcuts, chat.settings, { ...one, on }).catch(() => undefined)
                     }}
                   />
                 )}
@@ -122,24 +126,34 @@ export function PhoneShortcuts({
 const MODE_LABEL = (mode: SessionMode): string => SESSION_MODES.find((one) => one.mode === mode)?.label ?? mode
 
 /** One shortcut, new or kept, with every field the Mac's editor has. */
-export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; readonly given: ShortcutDraft; readonly onClose: () => void }): React.JSX.Element {
+export function ShortcutSheet({ chat, given, onClose }: { readonly chat: ShortcutChat; readonly given: ShortcutDraft; readonly onClose: () => void }): React.JSX.Element {
   const [draft, setDraft] = useState<ShortcutDraft>(given)
-  const [repeats, setRepeats] = useState<Repeats>(() => (given.cron === undefined ? 'never' : whenOf(given.cron).kind))
+  const [repeats, setRepeats] = useState<Repeats>(() => given.recurrence !== undefined ? 'custom' : given.cron === undefined ? 'never' : whenOf(given.cron).kind)
+  const [custom, setCustom] = useState(false)
+  const trigger = useRef<HTMLElement | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [failedDraft, setFailedDraft] = useState<ShortcutDraft>()
+  const saveError = failedDraft === draft
   const [now] = useState(() => Date.now())
   const [picking, setPicking] = useState<'project' | 'mode' | 'repeats' | 'weekday' | 'delete' | undefined>()
   const change = (next: Partial<ShortcutDraft>): void => setDraft({ ...draft, ...next })
   const cron = draft.cron ?? FIRST_CRON
-  const shape: When = repeats === 'cron' ? { kind: 'cron', cron } : turned(whenOf(cron), repeats === 'never' ? 'weekdays' : repeats)
+  const shape: When = repeats === 'cron' ? { kind: 'cron', cron } : turned(whenOf(cron), repeats === 'never' || repeats === 'custom' ? 'weekdays' : repeats)
   const setWhen = (next: When): void => change({ cron: cronOf(next) })
-  const next = draft.cron === undefined ? undefined : nextRun(draft.cron, now)
+  const zone = chat.settings.calendarTimeZone
+  const ruleError = useMemo(() => draft.recurrence === undefined ? undefined : recurrenceError(draft.recurrence, zone), [draft.recurrence, zone])
+  const next = useMemo(() => draft.recurrence !== undefined ? nextRecurrence(draft.recurrence, now, zone) : draft.cron === undefined ? undefined : nextRun(draft.cron, now), [draft.recurrence, draft.cron, now, zone])
   const name = draft.name.trim() || (draft.prompt.trim().split('\n')[0] ?? '').slice(0, 60)
-  const ready = name !== '' && draft.root !== '' && draft.prompt.trim() !== '' && (draft.cron === undefined || next !== undefined)
+  const ready = !saving && name !== '' && draft.root !== '' && draft.prompt.trim() !== '' && (draft.recurrence !== undefined ? ruleError === undefined : draft.cron === undefined || next !== undefined)
   const kept = draft.id === undefined ? undefined : chat.settings.shortcuts.find((one) => one.id === draft.id)
 
   const save = (): void => {
     if (!ready) return
-    void window.geckit.shortcuts.save({ ...draft, name, prompt: draft.prompt.trim() }).then(onClose)
+    setSaving(true)
+    setFailedDraft(undefined)
+    void saveShortcut(window.geckit.shortcuts, chat.settings, { ...draft, name, prompt: draft.prompt.trim() }).then(onClose).catch(() => setFailedDraft(draft)).finally(() => setSaving(false))
   }
+  const closeCustom = (): void => { setCustom(false); trigger.current?.focus() }
   const time = (hour: number, minute: number, set: (hour: number, minute: number) => void): React.JSX.Element => (
     <input
       type="time"
@@ -155,7 +169,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; r
 
   return (
     <>
-      <FullSheet title={given.id === undefined ? 'New shortcut' : given.name} action="Save" ready={ready} onAction={save} onClose={onClose}>
+      <FullSheet title={given.id === undefined ? 'New shortcut' : given.name} action={saving ? 'Saving...' : 'Save'} ready={ready} onAction={save} onClose={onClose}>
         <div className="phone-task-label">Name</div>
         <input className="phone-task-goal" value={draft.name} placeholder={name === '' ? 'Morning check' : name} onChange={(event) => change({ name: event.target.value })} />
         <div className="phone-task-label">Prompt</div>
@@ -175,8 +189,8 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; r
           <Cell label="Mode" value={MODE_LABEL(draft.mode)} onPress={() => setPicking('mode')} />
         </div>
         <div className="phone-group phone-form-group">
-          <Cell label="Repeats" value={REPEATS.find((one) => one.value === repeats)?.label} onPress={() => setPicking('repeats')} />
-          {repeats === 'never' ? null : shape.kind === 'hour' ? (
+          <Cell label="Repeats" value={REPEATS.find((one) => one.value === repeats)?.label} onPress={() => { trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setPicking('repeats') }} />
+          {repeats === 'custom' ? <Cell label="Edit recurrence" says={draft.recurrence === undefined ? '' : describeRecurrence(draft.recurrence)} onPress={() => { trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setCustom(true) }} /> : repeats === 'never' ? null : shape.kind === 'hour' ? (
             <Cell label="Minutes past">
               <input
                 className="phone-number"
@@ -195,12 +209,13 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; r
               <Cell label="At">{time(shape.hour, shape.minute, (hour, minute) => setWhen({ ...shape, hour, minute }))}</Cell>
             </>
           )}
-          {draft.cron === undefined ? null : (
-            <Cell label="Timetable on" says={next === undefined ? (isCron(cron) ? 'It never comes round' : 'Not a cron line') : `Next ${lowered(describeTime(next, now))}`}>
+          {draft.cron === undefined && draft.recurrence === undefined ? null : (
+            <Cell label="Timetable on" says={!draft.on ? 'Timetable paused' : draft.recurrence !== undefined ? ruleError ?? (next === undefined ? 'Timetable ended' : `Next ${lowered(describeTime(next, now, zone))}`) : next === undefined ? (isCron(cron) ? 'It never comes round' : 'Not a cron line') : `Next ${lowered(describeTime(next, now))}`}>
               <Switch on={draft.on} label="Timetable on" onChange={(on) => change({ on })} />
             </Cell>
           )}
         </div>
+        {saveError ? <p className="recurrence-error" role="alert">Couldn't save the shortcut. Try again.</p> : null}
         {kept === undefined ? null : (
           <div className="phone-group phone-form-group">
             <Cell
@@ -244,11 +259,15 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; r
           choices={REPEATS.map((one) => ({ value: one.value, label: one.label }))}
           onPick={(value) => {
             const kind = value as Repeats
+            if (kind === 'custom') { setCustom(true); return }
             setRepeats(kind)
             if (kind === 'never') {
-              const { cron: _, ...rest } = draft
+              const { cron: _, recurrence: _recurrence, ...rest } = draft
               setDraft(rest)
-            } else setDraft({ ...draft, cron: cronOf(turned(whenOf(cron), kind)) })
+            } else {
+              const { recurrence: _recurrence, ...rest } = draft
+              setDraft({ ...rest, cron: cronOf(turned(whenOf(cron), kind)) })
+            }
           }}
           onClose={() => setPicking(undefined)}
         />
@@ -273,6 +292,12 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Chat; r
           onClose={() => setPicking(undefined)}
         />
       ) : null}
+      {custom ? <CustomRecurrence given={draft.recurrence !== undefined && ruleError === undefined ? draft.recurrence : defaultRecurrence(now, 'hour' in shape ? `${String(shape.hour).padStart(2, '0')}:${String(shape.minute).padStart(2, '0')}` : '09:00', zone)} now={now} phone {...(zone === undefined ? {} : { zone })} onCancel={closeCustom} onDone={(recurrence) => {
+        const { cron: _cron, ...rest } = draft
+        setDraft({ ...rest, recurrence })
+        setRepeats('custom')
+        closeCustom()
+      }} /> : null}
     </>
   )
 }

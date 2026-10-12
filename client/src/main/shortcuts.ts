@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 
 import { powerMonitor } from 'electron'
 import log from 'electron-log'
@@ -8,6 +9,7 @@ import { assistantsIn } from '../shared/api'
 import { isRemote } from '../shared/hosts'
 import { isCodexProvider, llmProviderInfo } from '../shared/providers'
 import { isDue } from '../shared/schedule'
+import { recurrenceError } from '../shared/recurrence'
 import { getSettings, setSettings } from './store'
 
 /** How often the timetables are looked at: a timed run starts within this of its minute. */
@@ -29,13 +31,17 @@ function look(): void {
   const now = Date.now()
   for (const one of getSettings().shortcuts) {
     if (!isDue(one, now)) continue
-    // The last run still going is left to finish, and this one is let go rather than piled up behind it.
-    if (one.lastSession !== undefined && deps?.busy(one.lastSession) === true) {
-      log.info(`Shortcut "${one.name}" skipped a timed run: the last one is still going`)
-      put(one.id, { since: now })
-      continue
+    try {
+      // The last run still going is left to finish, and this one is let go rather than piled up behind it.
+      if (one.lastSession !== undefined && deps?.busy(one.lastSession) === true) {
+        log.info(`Shortcut "${one.name}" skipped a timed run: the last one is still going`)
+        put(one.id, { since: now })
+        continue
+      }
+      void runShortcut(one.id, 'timetable')
+    } catch (error) {
+      log.warn(`Shortcut "${one.name}" could not save its timetable: ${error instanceof Error ? error.message : String(error)}`)
     }
-    void runShortcut(one.id, 'timetable')
   }
 }
 
@@ -55,8 +61,8 @@ export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise
   if (!assistantsIn(settings).includes(provider) || (llmProviderInfo(provider, 'stream', settings.providerPlugins).localOnly === true && isRemote(one.root))) return undefined
   const now = Date.now()
   // Counted before the conversation starts, so the next look does not start it again; a run by hand leaves the timetable where it was.
-  put(id, { lastRun: now, ...(by === 'timetable' ? { since: now } : {}) })
   try {
+    put(id, { lastRun: now, ...(by === 'timetable' ? { since: now } : {}) })
     const session = await deps.start({
       root: one.root,
       mode: one.mode,
@@ -82,8 +88,14 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
   const now = Date.now()
   const all = getSettings().shortcuts
   const was = all.find((one) => one.id === draft.id)
+  if (draft.id !== undefined && was === undefined) throw new Error('This shortcut was deleted.')
+  if (draft.recurrence !== undefined) {
+    if (draft.cron !== undefined) throw new Error('Choose one timetable.')
+    const error = recurrenceError(draft.recurrence)
+    if (error !== undefined) throw new Error(error)
+  }
   // A new time, or one turned back on, counts from now: a run it would have had before is not owed.
-  const since = was === undefined || was.cron !== draft.cron || (!was.on && draft.on) ? now : was.since
+  const since = was === undefined || was.cron !== draft.cron || !isDeepStrictEqual(was.recurrence, draft.recurrence) || (!was.on && draft.on) ? now : was.since
   const saved: Shortcut = {
     id: was?.id ?? randomUUID(),
     name: draft.name,
@@ -95,6 +107,7 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
     mode: draft.mode,
     ...(draft.model === undefined || draft.model === '' ? {} : { model: draft.model }),
     ...(draft.cron === undefined || draft.cron.trim() === '' ? {} : { cron: draft.cron.trim() }),
+    ...(draft.recurrence === undefined ? {} : { recurrence: draft.recurrence }),
     on: draft.on,
     since,
     ...(was?.lastRun === undefined ? {} : { lastRun: was.lastRun }),

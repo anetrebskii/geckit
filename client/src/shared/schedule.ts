@@ -1,4 +1,5 @@
 import type { Shortcut } from './api'
+import { calendarDate, nextRecurrence, recurrenceEnded } from './recurrence'
 
 /** The five fields of a cron line, and the values each may hold; a weekday of 7 is Sunday, as 0 is. */
 const FIELDS = [
@@ -87,12 +88,15 @@ export function nextRun(cron: string, after: number): number | undefined {
 }
 
 /** When a shortcut next runs by itself, or nothing for one run by hand or paused. */
-export function nextTimed(shortcut: Shortcut, after: number): number | undefined {
-  return shortcut.on && shortcut.cron !== undefined ? nextRun(shortcut.cron, Math.max(shortcut.since, after)) : undefined
+export function nextTimed(shortcut: Shortcut, after: number, zone?: string): number | undefined {
+  if (!shortcut.on) return undefined
+  if (shortcut.recurrence !== undefined) return shortcut.cron === undefined ? nextRecurrence(shortcut.recurrence, Math.max(shortcut.since, after), zone) : undefined
+  return shortcut.cron !== undefined ? nextRun(shortcut.cron, Math.max(shortcut.since, after)) : undefined
 }
 
 /** A run missed while the machine slept or the app was closed is one run once it is back, as launchd does it. */
 export function isDue(shortcut: Shortcut, now: number): boolean {
+  if (shortcut.recurrence !== undefined && recurrenceEnded(shortcut.recurrence, now)) return false
   const next = nextTimed(shortcut, shortcut.since)
   return next !== undefined && next <= now
 }
@@ -158,9 +162,22 @@ export function describeCron(cron: string): string {
 }
 
 /** "Today at 9:00", "Tomorrow at 9:00", "Mon 29 Sep at 9:00". */
-export function describeTime(at: number, now: number): string {
+const timeFormatters = new Map<string, Intl.DateTimeFormat>()
+const dayFormatters = new Map<string, Intl.DateTimeFormat>()
+function timeFormatter(zone: string | undefined, day: boolean): Intl.DateTimeFormat {
+  const cache = day ? dayFormatters : timeFormatters
+  const key = zone ?? ''
+  const found = cache.get(key)
+  if (found !== undefined) return found
+  const made = new Intl.DateTimeFormat(undefined, { ...(zone === undefined ? {} : { timeZone: zone }), ...(day ? { weekday: 'short', day: 'numeric', month: 'short' } as const : { hour: 'numeric', minute: '2-digit' } as const) })
+  if (cache.size >= 16) cache.clear()
+  cache.set(key, made)
+  return made
+}
+
+export function describeTime(at: number, now: number, zone?: string): string {
   const date = new Date(at)
-  const days = Math.round((new Date(at).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000)
+  const days = zone === undefined ? Math.round((new Date(at).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000) : (new Date(calendarDate(at, zone)).getTime() - new Date(calendarDate(now, zone)).getTime()) / 86_400_000
   const day =
     days === 0
       ? 'Today'
@@ -168,6 +185,6 @@ export function describeTime(at: number, now: number): string {
         ? 'Tomorrow'
         : days === -1
           ? 'Yesterday'
-          : date.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
-  return `${day} at ${clock(date.getHours(), date.getMinutes())}`
+          : timeFormatter(zone, true).format(date)
+  return `${day} at ${timeFormatter(zone, false).format(date)}`
 }

@@ -998,6 +998,8 @@ export interface Settings {
   readonly phoneKey: string
   /** Written by the main process only, over `shortcuts:*`, so a window's older copy never undoes a run. */
   readonly shortcuts: readonly Shortcut[]
+  readonly calendarTimeZone?: string
+  readonly calendarRecurrenceVersion?: 1
   /** What is written often, offered after ; in the message field. */
   readonly phrases: readonly string[]
   /** Other computers conversations run on, reached over SSH. Never a password: those are in the system's credential store. */
@@ -1017,6 +1019,7 @@ export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'>
   readonly model?: string
   /** When it also runs by itself, as cron writes it: minute, hour, day of the month, month, day of the week. Nothing is by hand only. */
   readonly cron?: string
+  readonly recurrence?: CalendarRecurrence
   /** False pauses the timetable and keeps it. */
   readonly on: boolean
   /** The next timed run is the first time the timetable names after this: when it was made, last ran on time, or had its time changed. */
@@ -1028,6 +1031,16 @@ export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'>
 
 /** What a window sends to make or change a shortcut; the main process keeps when it ran. */
 export type ShortcutDraft = Omit<Shortcut, 'id' | 'since' | 'lastRun' | 'lastSession'> & { readonly id?: string }
+
+export interface CalendarRecurrence {
+  readonly start: string
+  readonly time: string
+  readonly interval: number
+  readonly unit: 'day' | 'week' | 'month' | 'year'
+  readonly weekdays: readonly number[]
+  readonly monthly: 'day' | 'ordinal' | 'last'
+  readonly end: { readonly kind: 'never' } | { readonly kind: 'on'; readonly date: string } | { readonly kind: 'after'; readonly count: number }
+}
 
 /** The project a conversation is listed under. */
 export const homeOf = (session: Pick<ChatSession, 'root' | 'project'>): string => session.project ?? session.root

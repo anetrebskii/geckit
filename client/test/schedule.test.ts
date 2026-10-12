@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Shortcut } from '../src/shared/api'
+import type { CalendarRecurrence, Shortcut } from '../src/shared/api'
 import { cronOf, describeCron, isCron, isDue, nextRun, nextTimed, whenOf } from '../src/shared/schedule'
 
 const at = (text: string): number => new Date(text).getTime()
@@ -64,5 +64,19 @@ describe('a timed shortcut', () => {
     const { cron: _cron, ...byHand } = schedule
     expect(isDue(byHand, at('2026-09-25T14:00'))).toBe(false)
     expect(nextTimed(byHand, at('2026-09-25T14:00'))).toBeUndefined()
+  })
+
+  it('coalesces custom missed dates only through the last occurrence day and preserves a fixed count', () => {
+    const { cron: _cron, ...byHand } = schedule
+    const rule: CalendarRecurrence = { start: '2026-09-21', time: '09:00', interval: 1, unit: 'day', weekdays: [1], monthly: 'day', end: { kind: 'after', count: 3 } }
+    const custom: Shortcut = { ...byHand, since: at('2026-09-21T08:00'), recurrence: rule }
+    expect(isDue(custom, at('2026-09-23T09:00:10'))).toBe(true)
+    expect(isDue(custom, at('2026-09-24T00:00'))).toBe(false)
+    expect(nextTimed(custom, at('2026-09-22T09:00'))).toBe(at('2026-09-23T09:00'))
+    expect(nextTimed(custom, at('2026-09-23T09:00'))).toBeUndefined()
+    expect(isDue({ ...custom, since: at('2026-09-23T09:00:10') }, at('2026-09-23T12:00'))).toBe(false)
+    expect(isDue({ ...custom, on: false }, at('2026-09-23T09:00'))).toBe(false)
+    expect(isDue({ ...custom, cron: '0 9 * * *' }, at('2026-09-23T09:00'))).toBe(false)
+    expect(isDue({ ...custom, recurrence: { ...rule, unit: 'year', interval: 10_000 } }, at('2026-09-23T09:00'))).toBe(false)
   })
 })

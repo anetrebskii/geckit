@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { Settings, Shortcut } from '../src/shared/api'
+import type { CalendarRecurrence, Settings, Shortcut } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 
-const held = vi.hoisted(() => ({ shortcuts: [] as Shortcut[], chatProviders: ['claude', 'codex'] as Settings['chatProviders'] }))
+const held = vi.hoisted(() => ({ shortcuts: [] as Shortcut[], chatProviders: ['claude', 'codex'] as Settings['chatProviders'], writeFails: false }))
 
 vi.mock('electron', () => ({ powerMonitor: { on: vi.fn() } }))
 vi.mock('electron-log', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 vi.mock('../src/main/store', () => ({
   getSettings: () => ({ ...DEFAULT_SETTINGS, ...held }),
   setSettings: (change: Partial<Settings>) => {
+    if (held.writeFails) throw new Error('Could not write settings')
     if (change.shortcuts !== undefined) held.shortcuts = [...change.shortcuts]
   },
 }))
@@ -28,6 +29,7 @@ const morning: Shortcut = {
   on: true,
   since: at('2026-09-21T09:00'),
 }
+const custom: CalendarRecurrence = { start: '2026-09-21', time: '09:00', interval: 1, unit: 'day', weekdays: [1], monthly: 'day', end: { kind: 'after', count: 3 } }
 
 describe('the shortcuts', () => {
   const start = vi.fn(async () => 'session-1')
@@ -39,6 +41,7 @@ describe('the shortcuts', () => {
     vi.setSystemTime(at('2026-09-22T09:00:10'))
     held.shortcuts = [morning]
     held.chatProviders = ['claude', 'codex']
+    held.writeFails = false
     start.mockClear()
     rename.mockClear()
     busy = false
@@ -143,5 +146,96 @@ describe('the shortcuts', () => {
     expect(held.shortcuts[0]?.since).toBe(at('2026-09-22T12:00'))
     const { cron: _cron, ...byHand } = morning
     expect(saveShortcut(byHand).cron).toBeUndefined()
+  })
+
+  it('runs a finite custom series once after downtime, permits manual runs, and preserves progress on stale edits', async () => {
+    const { cron: _cron, ...manual } = morning
+    held.shortcuts = [{ ...manual, recurrence: custom }]
+    startShortcuts({ start, rename, busy: () => busy })
+    await vi.waitFor(() => expect(rename).toHaveBeenCalled())
+    const since = held.shortcuts[0]?.since
+    await runShortcut('m', 'hand')
+    expect(held.shortcuts[0]?.since).toBe(since)
+    const { end, ...unchanged } = custom
+    const edited = saveShortcut({ ...manual, recurrence: { end, ...unchanged }, name: 'New name' })
+    expect(edited).toMatchObject({ since, lastSession: 'session-1', recurrence: custom })
+    vi.setSystemTime(at('2026-09-23T09:00:10'))
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(start).toHaveBeenCalledTimes(3)
+    vi.setSystemTime(at('2026-09-24T09:00'))
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(start).toHaveBeenCalledTimes(3)
+    expect(await runShortcut('m', 'hand')).toBe('session-1')
+  })
+
+  it('resumes only future dates, keeps the anchor, and resets only the cursor for a changed recurrence', () => {
+    const { cron: _cron, ...manual } = morning
+    held.shortcuts = [{ ...manual, recurrence: custom, on: false }]
+    const resumed = saveShortcut({ ...manual, recurrence: custom, on: true })
+    expect(resumed.since).toBe(Date.now())
+    expect(resumed.recurrence).toEqual(custom)
+    vi.setSystemTime(at('2026-09-22T12:00'))
+    const changed = saveShortcut({ ...resumed, recurrence: { ...custom, time: '14:00' } })
+    expect(changed.since).toBe(Date.now())
+  })
+
+  it('rejects deleted and invalid drafts, including ambiguous cron plus custom rules', () => {
+    expect(() => saveShortcut({ ...morning, id: 'gone' })).toThrow('deleted')
+    expect(() => saveShortcut({ ...morning, recurrence: custom })).toThrow('one timetable')
+    const { cron: _cron, ...manual } = morning
+    expect(() => saveShortcut({ ...manual, recurrence: { ...custom, interval: 0 } })).toThrow('whole number')
+    expect(held.shortcuts).toEqual([morning])
+  })
+
+  it('does not launch an expired custom catch-up, while final-day delayed ticks still run', async () => {
+    const { cron: _cron, ...manual } = morning
+    held.shortcuts = [{ ...manual, recurrence: custom }]
+    vi.setSystemTime(at('2026-09-24T09:00'))
+    startShortcuts({ start, rename, busy: () => busy })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(start).not.toHaveBeenCalled()
+    vi.setSystemTime(at('2026-09-23T09:00:10'))
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(start).toHaveBeenCalledTimes(1)
+  })
+
+  it('consumes skipped and failed custom dates without moving the count endpoint', async () => {
+    const { cron: _cron, ...manual } = morning
+    held.shortcuts = [{ ...manual, recurrence: custom, lastSession: 'still-going' }]
+    busy = true
+    startShortcuts({ start, rename, busy: () => busy })
+    expect(held.shortcuts[0]?.since).toBe(Date.now())
+    expect(start).not.toHaveBeenCalled()
+    busy = false
+    start.mockRejectedValueOnce(new Error('launch failed'))
+    vi.setSystemTime(at('2026-09-23T09:00:10'))
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(start).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(40_000)
+    expect(start).toHaveBeenCalledTimes(1)
+    vi.setSystemTime(at('2026-09-24T09:00'))
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(start).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips malformed persisted rules without preventing a valid shortcut from starting', async () => {
+    const { cron: _cron, ...manual } = morning
+    held.shortcuts = [{ ...manual, id: 'bad', recurrence: { ...custom, interval: 0 } }, { ...manual, recurrence: custom }]
+    startShortcuts({ start, rename, busy: () => busy })
+    await vi.waitFor(() => expect(rename).toHaveBeenCalled())
+    expect(start).toHaveBeenCalledTimes(1)
+    expect(held.shortcuts[0]?.lastRun).toBeUndefined()
+    expect(held.shortcuts[1]?.lastSession).toBe('session-1')
+  })
+
+  it('retains history and never launches after a failed persistence update', async () => {
+    startShortcuts({ start, rename, busy: () => busy })
+    await vi.waitFor(() => expect(rename).toHaveBeenCalled())
+    const before = [...held.shortcuts]
+    start.mockClear()
+    held.writeFails = true
+    expect(await runShortcut('m', 'hand')).toBeUndefined()
+    expect(start).not.toHaveBeenCalled()
+    expect(held.shortcuts).toEqual(before)
   })
 })
