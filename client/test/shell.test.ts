@@ -36,6 +36,12 @@ describe('what a command printed', () => {
     expect(plain('\u001b[32mok\u001b[0m\n10%\r50%\r100%\ndone\r\n')).toBe('ok\n100%\ndone\n')
   })
 
+  it('leaves out the frames of a bar drawn again by moving up and clearing the line', () => {
+    expect(plain('one 10%\n\u001b[1A\u001b[2Kone 50%\n\u001b[1A\u001b[2Kone 100%\ndone\n')).toBe('one 100%\ndone\n')
+    expect(plain('\u001b[2K\u001b[1G10%\u001b[2K\u001b[1G50%\u001b[2K\u001b[1G100%\n')).toBe('100%\n')
+    expect(plain('a\nb\n\u001b[2A\u001b[Jc\n')).toBe('c\n')
+  })
+
   it('is handed to Claude in the shape the terminal writes', () => {
     expect(toldClaude('ls', { stdout: '', stderr: '', output: '', code: 0, stopped: false })).toEqual([
       '<bash-input>ls</bash-input>',

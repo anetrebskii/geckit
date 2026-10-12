@@ -40,9 +40,36 @@ const MOST = 30_000
 
 const ESCAPES = new RegExp(`${String.fromCharCode(27)}(\\[[0-9;?]*[ -/]*[@-~]|\\][^${String.fromCharCode(7)}]*${String.fromCharCode(7)}|[()][A-Z0-9])`, 'g')
 
-/** What a terminal would show: no colours, and a line a progress bar wrote over shown as it was left. */
+const CURSOR = new RegExp(`${String.fromCharCode(27)}\\[(\\d*)([ABGKJ])|${ESCAPES.source}|\\r\\n|[\\r\\n\\b]|[^${String.fromCharCode(27)}\\r\\n\\b]+`, 'g')
+
+/** What a terminal would show: no colours, and lines a progress bar wrote over, with a return or by moving up and clearing, shown as they were left. */
 export function plain(text: string): string {
-  return text.replace(ESCAPES, '').replace(/\r\n/g, '\n').replace(/^.*\r(?!$)/gm, '').replace(/\r$/gm, '')
+  const lines = ['']
+  let row = 0
+  let col = 0
+  for (const [whole, count, move] of text.matchAll(CURSOR)) {
+    const n = Number(count || 1)
+    const line = lines[row] ?? ''
+    if (whole === '\n' || whole === '\r\n') {
+      row += 1
+      col = 0
+      while (lines.length <= row) lines.push('')
+    } else if (whole === '\r') col = 0
+    else if (whole === '\b') col = Math.max(0, col - 1)
+    else if (move === 'A') row = Math.max(0, row - n)
+    else if (move === 'B') {
+      row += n
+      while (lines.length <= row) lines.push('')
+    } else if (move === 'G') col = n - 1
+    else if (move === 'K') lines[row] = count === '2' ? '' : count === '1' ? ' '.repeat(col) + line.slice(col) : line.slice(0, col)
+    else if (move === 'J') {
+      if (count === '' || count === '0') lines.splice(row, lines.length, line.slice(0, col))
+    } else if (!whole.startsWith(String.fromCharCode(27))) {
+      lines[row] = line.padEnd(col).slice(0, col) + whole + line.slice(col + whole.length)
+      col += whole.length
+    }
+  }
+  return lines.join('\n')
 }
 
 /** How long a command has to stop once asked before it is made to. */
