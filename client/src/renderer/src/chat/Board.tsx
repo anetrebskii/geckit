@@ -1,7 +1,7 @@
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
-import { assistantFor, ANYWHERE, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { assistantFor, ANYWHERE, homeOf, letsGo, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
 import { movedOrder, ordered } from '../../../shared/order'
 import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
@@ -494,6 +494,9 @@ export function Board({
                       { value: 'copy', label: 'Copy the command', icon: 'copy' },
                     ],
                   },
+                  ...(chat.everyone.some((session) => session.id === menu.id && letsGo(session))
+                    ? [{ value: 'letgo', label: 'Let the process go', says: 'Frees its memory; the next message reads its file', icon: 'stop' }]
+                    : []),
                   { value: 'hide', label: 'Hide from this list', icon: 'hidden' },
                   { value: 'delete', label: 'Delete', danger: true, icon: 'trash' },
                 ]),
@@ -519,6 +522,7 @@ export function Board({
             }
             if (value === 'copy') void chat.copyTerminal(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)
+            if (value === 'letgo') chat.letGo(menu.id)
             if (value === 'hide') hide(targets(menu.id))
             if (value === 'delete') {
               const ids = targets(menu.id)

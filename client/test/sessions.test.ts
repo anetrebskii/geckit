@@ -1438,6 +1438,15 @@ describe('the list', () => {
     built.sessions.handOver(id)
     expect(built.fake.ended).toBe(0)
   })
+
+  it('says a process holds it, and no longer once let go', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    expect(of(built.rows, id)?.held).toBe(true)
+    built.sessions.handOver(id)
+    expect(of(built.rows, id)?.held).toBeUndefined()
+  })
 })
 
 describe('what the status bar is drawn from', () => {

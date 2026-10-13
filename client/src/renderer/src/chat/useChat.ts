@@ -185,6 +185,8 @@ export interface Chat {
   /** In review, blocked or done; nothing takes the mark off. */
   mark: (id: string, status: SessionStatus | undefined) => void
   hide: (id: string) => void
+  /** Lets go of the process holding a quiet conversation. The next message takes it up again from the tool's own file. */
+  letGo: (id: string) => void
   /** Keeps a general question for good, or lets it go a day after its last answer again. */
   keep: (id: string, stays: boolean) => void
   /** Throws the conversations away for good. The window asks before this is called. */
@@ -882,6 +884,8 @@ export function useChat(): Chat {
       .catch(() => false)
   }, [])
 
+  const letGo = useCallback((id: string) => window.geckit.chat.handOver(id), [])
+
   const startNew = useCallback(() => open({ kind: 'new' }), [open])
 
   return {
@@ -1048,6 +1052,7 @@ export function useChat(): Chat {
     remove,
     terminal,
     copyTerminal,
+    letGo,
     refresh,
   }
 }

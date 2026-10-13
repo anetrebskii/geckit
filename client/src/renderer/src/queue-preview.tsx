@@ -66,7 +66,7 @@ function Preview(): React.JSX.Element {
     requeue: (id, text) => setQueued((rows) => rows.map((row) => row.id === id ? { ...row, text } : row)),
     reorderQueued: (id, target, after) => setQueued((rows) => { const selected = rows.find((row) => row.id === id); if (selected === undefined) return rows; const next = rows.filter((row) => row.id !== id); next.splice(next.findIndex((row) => row.id === target) + (after ? 1 : 0), 0, selected); return next }),
     delegate: noop, stopShell: noop, typeShell: noop, toBackground: noop, stopTask: noop, clearTask: noop, tasksShown: false, showTasks: noop, compacting: undefined, setCompacting: noop,
-    rename: noop, mark: noop, hide: noop, keep: noop, remove: noop, terminal: noop, copyTerminal: async () => false, refresh: noop,
+    rename: noop, mark: noop, hide: noop, keep: noop, remove: noop, terminal: noop, copyTerminal: async () => false, letGo: noop, refresh: noop,
   }
   return <main style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
     <header className="provider-preview-controls" style={{ flexWrap: 'wrap' }}>

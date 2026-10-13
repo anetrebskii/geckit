@@ -857,6 +857,7 @@ export class Sessions {
         ...(live?.state === 'working' && live.asks.size === 0 && live.stopping === undefined && live.driver?.inject !== undefined ? { canInject: true as const } : {}),
         ...(live?.injecting === undefined ? {} : { injecting: live.injecting }),
         ...(live !== undefined && this.#waiting(live) ? { waits: true } : {}),
+        ...(live?.driver === undefined ? {} : { held: true as const }),
         ...(live?.question === true ? { question: true } : {}),
         ...(live?.goes === undefined ? {} : { goes: live.goes }),
         ...(live?.stays === true ? { stays: true } : {}),
@@ -2168,7 +2169,8 @@ export class Sessions {
   }
 
   /**
-   * Let go of a session about to be continued in a terminal.
+   * Let go of a session about to be continued in a terminal, or let go from
+   * its card before the quiet time is up.
    *
    * The process holding it keeps the conversation in memory and would answer
    * the next message from where it stood, without whatever was said in the
@@ -2181,6 +2183,7 @@ export class Sessions {
     clearTimeout(live.quiet)
     live.driver?.end()
     live.driver = undefined
+    this.#changed()
   }
 
   /** The session the chat window is showing while it is in front, or none. */
@@ -2718,6 +2721,7 @@ export class Sessions {
         if (live.state === 'working' || live.state === 'asks' || live.remote !== undefined || live.tasks.some(running)) return
         live.driver?.end()
         live.driver = undefined
+        this.#changed()
         if (live.question && !live.stays) live.quiet = setTimeout(() => void this.remove([live.id]), QUESTION_KEPT - QUIET)
       },
       this.#for(live).idleMs,
