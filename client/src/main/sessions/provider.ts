@@ -59,6 +59,8 @@ export interface LlmProvider extends LlmProviderInfo {
   goal(root: string, id: string): Promise<ProviderGoal | undefined>
   setGoal(id: string, objective: string): Promise<ProviderGoal | undefined>
   clearGoal(id: string): Promise<void>
+  pauseGoal?(id: string): Promise<void>
+  resumeGoal?(id: string): Promise<void>
   hold(options: ClaudeOptions, hear: (heard: Heard) => void, left: () => void): Driver
   rename(id: string, name: string, driver?: Driver): Promise<void>
   remote(driver: Driver, enabled: boolean, name?: string): Promise<string | undefined>
@@ -113,6 +115,8 @@ export function llmProvider(deps: ProviderDeps, family: 'claude' | 'codex'): Llm
     goal: async (_root, id) => deps.codex === undefined ? undefined : shownGoal(await deps.codex.goal(id)),
     setGoal: async (id, objective) => deps.codex === undefined ? undefined : shownGoal(await deps.codex.setGoal(id, objective)),
     clearGoal: (id) => deps.codex?.clearGoal(id) ?? Promise.resolve(),
+    pauseGoal: (id) => deps.codex?.pauseGoal?.(id) ?? Promise.resolve(),
+    resumeGoal: (id) => deps.codex?.resumeGoal?.(id) ?? Promise.resolve(),
     hold: (options, hear, left) => {
       if (deps.codex === undefined) throw new Error('Codex is not available. Install Codex and run codex login in a terminal.')
       return deps.codex.hold(options, hear, left)

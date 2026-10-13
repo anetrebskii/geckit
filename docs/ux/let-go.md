@@ -15,7 +15,7 @@ A conversation keeps its `claude` process for ten minutes after its turn ends, s
 
 | Surface | What appears | When seen |
 |---|---|---|
-| Card menu on the board (`Board.tsx`), existing | "Let the process go", with "Frees its memory; the next message reads its file" beside it, after Terminal and before Hide from this list | While a process holds the conversation and no turn is running in it |
+| Card menu on the board (`Board.tsx`), existing | "Let the process go", with "Frees its memory; the next message reads its file" beside it, after Terminal and before Hide from this list | While a process holds the conversation, no turn or background task is running, and Remote Control is off |
 | Row menu in the sidebar (`Sidebar.tsx`), existing | The same item in the same place | The same |
 
 The item does what the ten minutes do, sooner. Nothing is hidden, moved or deleted; the card stays where it is, and the conversation on disk is whole.
@@ -26,7 +26,7 @@ The item does what the ten minutes do, sooner. Nothing is hidden, moved or delet
 |---|---|---|---|
 | Held | A turn ended less than ten minutes ago, or a message is queued in it | The item in the menu | Choose it, or leave it to go by itself |
 | Let go | The item chosen, or the ten minutes up | The item is not in the menu; the card is as it was | Nothing; write in it to take it up again |
-| Working or asking | A turn runs, or a question waits | The item is not in the menu | Stop the turn first, or answer |
+| Working, asking or retained | A turn runs, a question waits, a background task runs, or Remote Control is on | The item is not in the menu | Stop or finish the work, answer the question, or turn Remote Control off |
 
 ## 4. Transitions
 
@@ -73,3 +73,17 @@ The item does what the ten minutes do, sooner. Nothing is hidden, moved or delet
 |---|---|
 | End a finished conversation's process without losing the card | Section 2 |
 | Know it will carry on from where it was | Section 4, the last message takes it up from its file |
+
+## Review corrections - 2026-10-13
+
+- Background tasks and Remote Control retain the process, matching automatic quiet-time release. The menu hides the action, and main rejects a stale release request.
+- A follow-up waits for process shutdown before rereading the conversation file and resuming. Repeated release requests do nothing.
+
+## Verification - 2026-10-13
+
+Reviewed PR #20 against current main. No existing GitHub review comments or unresolved threads. Fixed release while background tasks or Remote Control retain the process, and immediate resume before process shutdown. Three regressions failed before correction and pass afterward; session tests also verify the file is not read until shutdown completes.
+
+- Client: 68 files / 896 tests pass; typecheck, full lint and desktop build pass. Phone bundle rebuilt successfully.
+- Browser: actual Chat, Board, Sidebar, Menu and useChat with explicit native IPC fixtures. Light/dark at 1352x677 and minimum desktop 760x520; full-screen hierarchy, spacing and clipping reviewed. Release through board click and sidebar Enter removes only the release action, keeps the card, and leaves all other menu actions available. Working, background-task and Remote Control menus hide release. Tab/Shift+Tab focus is visible; Escape closes; long sidebar scrolling works; minimum-size menus remain reachable by scrolling.
+- Native session boundary: dependency-injected Sessions tests cover driver termination, state broadcast, protected work, duplicate release and ordered file reread/resume. No live provider process or SSH host was terminated during review.
+- Performance checklist: no problems found. Existing row/card memoization and identity retention remain; stable letGo callback is reused. The eligibility scan runs only for the one open menu, with no per-card scans, new animation, formatter or list. Phone bundle rebuilt; no new many-row rendering path requires profiling.

@@ -26,7 +26,6 @@ import { hostOf, isRemote } from '../../../shared/hosts'
 import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { asImage, canShow } from '../pictures'
 import { useSettings } from '../settings'
-import { ON_PHONE } from '../on-phone'
 import type { Settings } from '../../../shared/api'
 import { hostName } from './project'
 import { useHosts } from './useHosts'
@@ -99,6 +98,9 @@ export interface Chat {
   readonly draft: string
   /** Pictures pasted or dropped into the field, waiting to go with the message. */
   readonly pictures: readonly SessionImage[]
+  readonly checkingIp: boolean
+  readonly retrying: boolean
+  readonly retry: () => void
   /** Said when something was pasted that cannot be sent. */
   readonly trouble: string
   /** A file dropped on a conversation on a host is still being copied there: the message waits for its path. */
@@ -247,6 +249,8 @@ export function useChat(): Chat {
   }, [drafts])
   const [pictures, setPictures] = useState<Record<string, readonly SessionImage[]>>({})
   const [trouble, setTrouble] = useState('')
+  const [pendingSends, setPendingSends] = useState<ReadonlyMap<string, string>>(new Map())
+  const pendingSendsRef = useRef(new Map<string, string>())
   // Files still being copied to a host, by the conversation they were dropped on.
   const [uploads, setUploads] = useState<Readonly<Record<string, number>>>({})
   const uploadsRef = useRef(uploads)
@@ -544,6 +548,7 @@ export function useChat(): Chat {
       taken.current.delete(id)
       return
     }
+    if (session?.heldSend === true || session?.checkingIp === true) return
     if (session?.state !== 'failed' && session?.state !== 'limit') return
     // One only, however many are waiting: the next is not pulled out too by the update the first one causes.
     if (taken.current.has(id)) return
@@ -644,13 +649,17 @@ export function useChat(): Chat {
     (again?: string, said?: string) => {
       const where = rootRef.current
       const key = keyOf(shownRef.current)
+      if (pendingSendsRef.current.has(key)) return
       const now = held.current
+      const original = again === undefined ? undefined : itemsRef.current.find((item): item is Extract<SessionItem, { kind: 'mine' }> => item.kind === 'mine' && item.id === again)
+      if (again !== undefined && original === undefined) return
+      const fromDraft = again === undefined && said === undefined
       // Words given here, as Continue gives them, go without touching what is typed in the field.
-      const text = said ?? now.drafts[key] ?? ''
-      const carried = said === undefined ? (now.pictures[key] ?? []) : []
+      const text = original?.text ?? said ?? now.drafts[key] ?? ''
+      const carried = original !== undefined ? original.images ?? [] : fromDraft ? now.pictures[key] ?? [] : []
       // The path of a file still on its way to the host is not in the words yet; it goes once it is.
-      if (said === undefined && (uploadsRef.current[key] ?? 0) > 0) return
-      if (where === undefined || (again === undefined && text.trim() === '' && carried.length === 0)) return
+      if (fromDraft && (uploadsRef.current[key] ?? 0) > 0) return
+      if (where === undefined || (text.trim() === '' && carried.length === 0)) return
       // A message that starts with ! is a command for the project folder, as in the terminal.
       const command = again === undefined && said === undefined && text.trim().startsWith('!') ? text.trim().slice(1).trim() : undefined
       if (command !== undefined) {
@@ -669,14 +678,20 @@ export function useChat(): Chat {
           })
         return
       }
-      if (said === undefined) {
+      if (fromDraft) {
         setDraft('')
         setPictures((all) => ({ ...all, [key]: [] }))
       }
       setTrouble('')
       const into = shownRef.current
+      const submission = now.settings.vpnIpCheck ? (into.kind === 'session' ? into.id : `${now.provider === 'claude' ? '' : `${now.provider}:`}pending-${crypto.randomUUID()}`) : undefined
+      if (submission !== undefined) {
+        pendingSendsRef.current.set(key, submission)
+        setPendingSends((all) => new Map(all).set(key, submission))
+      }
       void window.geckit.chat
         .send({
+          ...(submission === undefined ? {} : { submission }),
           ...(into.kind === 'session' ? { session: into.id } : {}),
           root: where,
           provider: now.provider,
@@ -689,20 +704,50 @@ export function useChat(): Chat {
         })
         .then(
           (id) => {
-            if (shownRef.current.kind === 'session' && shownRef.current.id === id) return
-            open({ kind: 'session', id })
+            if (shownRef.current.kind === 'session' && shownRef.current.id === id) {
+              setFocusSeed((seed) => seed + 1)
+              return
+            }
+            setDrafts((all) => ({ ...all, [id]: all[key] ?? '' }))
+            setPictures((all) => ({ ...all, [id]: all[key] ?? [] }))
+            if (keyOf(shownRef.current) === key) open({ kind: 'session', id })
           },
           (error: Error) => {
-            if (said === undefined) {
+            if (fromDraft) {
               setDrafts((all) => ({ ...all, [key]: text }))
               setPictures((all) => ({ ...all, [key]: carried }))
             }
-            setTrouble(ON_PHONE ? 'Not sent: the host could not be reached' : error.message)
+            setTrouble(error.message)
           },
-        )
+        ).finally(() => {
+          if (submission !== undefined && pendingSendsRef.current.get(key) === submission) {
+            pendingSendsRef.current.delete(key)
+            setPendingSends((all) => { const next = new Map(all); next.delete(key); return next })
+          }
+        })
     },
     [open, setDraft],
   )
+
+  const retrying = useRef(new Set<string>())
+  const [retryingSessions, setRetryingSessions] = useState<ReadonlySet<string>>(new Set())
+  const retry = useCallback(() => {
+    const shown = shownRef.current
+    if (shown.kind !== 'session' || retrying.current.has(shown.id)) return
+    retrying.current.add(shown.id)
+    setRetryingSessions(new Set(retrying.current))
+    setTrouble('')
+    void window.geckit.chat.retry(shown.id).then((id) => {
+      if (id === undefined) return
+      if (id === shown.id) {
+        if (shownRef.current.kind === 'session' && shownRef.current.id === shown.id) setFocusSeed((seed) => seed + 1)
+        return
+      }
+      setDrafts((all) => ({ ...all, [id]: all[shown.id] ?? '' }))
+      setPictures((all) => ({ ...all, [id]: all[shown.id] ?? [] }))
+      if (shownRef.current.kind === 'session' && shownRef.current.id === shown.id) open({ kind: 'session', id })
+    }).catch((error: Error) => setTrouble(error.message)).finally(() => { retrying.current.delete(shown.id); setRetryingSessions(new Set(retrying.current)) })
+  }, [open])
 
   const ask = useCallback(
     (text: string, images: readonly SessionImage[] = []) => {
@@ -913,6 +958,9 @@ export function useChat(): Chat {
     draft,
     pictures: pictures[keyOf(shown)] ?? NONE,
     trouble,
+    checkingIp: session?.checkingIp === true || pendingSends.has(keyOf(shown)),
+    retrying: shown.kind === 'session' && retryingSessions.has(shown.id),
+    retry,
     uploading: (uploads[keyOf(shown)] ?? 0) > 0,
     account: (account?.provider ?? 'claude') === provider ? account : undefined,
     plan,
@@ -1008,6 +1056,12 @@ export function useChat(): Chat {
     },
     answer,
     stop: () => {
+      const key = keyOf(shownRef.current)
+      const pending = pendingSendsRef.current.get(key)
+      if (pending !== undefined) {
+        window.geckit.chat.stop(pending)
+        return
+      }
       if (shownRef.current.kind !== 'session') return
       window.geckit.chat.stop(shownRef.current.id)
     },

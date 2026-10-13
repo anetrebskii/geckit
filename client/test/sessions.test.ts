@@ -13,6 +13,13 @@ import type { Driver, Heard, Signal } from '../src/main/sessions/heard'
 import { memoryNotes, Sessions, withMoves } from '../src/main/sessions'
 import type { SessionNotice, SessionsDeps } from '../src/main/sessions'
 import type { ChatSession, ClaudeAccount, SessionItem, SessionItems, SessionMode } from '../src/shared/api'
+import { letsGo } from '../src/shared/api'
+import { VPN_IP_UNAVAILABLE_ERROR } from '../src/shared/vpn-ip'
+
+vi.mock('../src/main/sessions/account', () => ({
+  claudeAccount: async (): Promise<ClaudeAccount> => ({ here: true, signedIn: true, plan: 'Max' }),
+  claudeProgram: async () => undefined,
+}))
 
 /**
  * What a conversation does, with nothing of the tool in it.
@@ -1439,6 +1446,52 @@ describe('the list', () => {
     expect(built.fake.ended).toBe(0)
   })
 
+  it('keeps a quiet process supporting a background task', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'task', task: { id: 'b1', kind: 'local_bash', what: 'npm run dev', status: 'running', started: 1 } }, { kind: 'ended', how: 'done' }] })
+    const row = of(built.rows, id)
+    if (row === undefined) throw new Error('Missing session')
+    expect(letsGo(row)).toBe(false)
+    built.sessions.handOver(id)
+    expect(built.fake.ended).toBe(0)
+    expect(of(built.rows, id)?.held).toBe(true)
+  })
+
+  it('keeps a quiet process supporting Remote Control', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.fake.answers['remote_control'] = { session_url: 'https://claude.ai/code/session_remote' }
+    await built.sessions.remote(id, true)
+    const row = of(built.rows, id)
+    if (row === undefined) throw new Error('Missing session')
+    expect(letsGo(row)).toBe(false)
+    built.sessions.handOver(id)
+    expect(built.fake.ended).toBe(0)
+  })
+
+  it('waits for a released process to close before resuming from disk', async () => {
+    const read = vi.fn(async () => undefined)
+    const built = build({ disk: { list: async () => [], read, has: async () => true } })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    let close: (() => void) | undefined
+    built.fake.closing = new Promise<void>((resolve) => { close = resolve })
+    built.sessions.handOver(id)
+    built.sessions.handOver(id)
+    expect(built.fake.ended).toBe(1)
+    const resumed = built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'continue' })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(built.fake.made).toHaveLength(1)
+    expect(read).not.toHaveBeenCalled()
+    close?.()
+    await resumed
+    expect(read).toHaveBeenCalledOnce()
+    expect(built.fake.made).toHaveLength(2)
+    expect(built.fake.made[1]?.resume).toBe(true)
+  })
+
   it('says a process holds it, and no longer once let go', async () => {
     const built = build()
     const id = await started(built)
@@ -2521,5 +2574,770 @@ describe('the moves between columns', () => {
 
   it('starts the record for a note written before there was one', () => {
     expect(withMoves({ status: 'review' }, { status: 'done' }, 7)).toEqual({ status: 'done', moves: [{ status: 'done', at: 7 }] })
+  })
+})
+
+
+describe('public IP dispatch guard', () => {
+  it('finishes cancellation immediately even when the verifier never resolves', async () => {
+    const built = build({ beforeSend: () => new Promise<void>(() => undefined) })
+    const sending = built.sessions.send({ submission: 'pending-never', root: ROOT, mode: 'manual', text: 'secret' })
+    expect(of(built.rows, 'pending-never')?.checkingIp).toBe(true)
+    built.sessions.stop('pending-never')
+    expect(await sending).toBe('pending-never')
+    expect(of(built.rows, 'pending-never')).toMatchObject({ state: 'failed', heldSend: true })
+    expect(built.fake.made).toEqual([])
+    expect(built.fake.sent).toEqual([])
+  })
+
+  it('does not show verification state when the policy is disabled', async () => {
+    const built = build({ beforeSend: () => undefined })
+    await started(built)
+    expect(built.rows.flat().some((one) => one.checkingIp === true)).toBe(false)
+    expect(built.fake.sent).toEqual([{ text: 'do the thing' }])
+  })
+
+  it('uses edited queued text on retry and clears retained work when canceled', async () => {
+    let allowed = true
+    const built = build({ beforeSend: async () => { if (!allowed) throw new Error('Not sent.') } })
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'old' })
+    const queued = of(built.rows, id)?.queued?.[0]?.id ?? ''
+    allowed = false
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.carryOn(id)
+    await vi.waitFor(() => expect(of(built.rows, id)?.heldSend).toBe(true))
+    built.sessions.requeue(id, queued, 'edited')
+    allowed = true
+    await built.sessions.retry(id)
+    expect(built.fake.sent.at(-1)?.text).toBe('edited')
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'cancel me' })
+    const canceled = of(built.rows, id)?.queued?.[0]?.id ?? ''
+    allowed = false
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.carryOn(id)
+    await vi.waitFor(() => expect(of(built.rows, id)?.heldSend).toBe(true))
+    built.sessions.unqueue(id, canceled)
+    expect(of(built.rows, id)?.heldSend).toBeUndefined()
+    expect((await built.sessions.items(id)).some((one) => one.id === 'vpn-ip-error')).toBe(false)
+    expect(built.fake.sent.map((one) => one.text)).toEqual(['do the thing', 'edited'])
+  })
+
+  it('does not reinstall a queued operation canceled while its lookup is pending', async () => {
+    let pending = false
+    let finish: (() => void) | undefined
+    const built = build({ beforeSend: async () => { if (pending) await new Promise<void>((resolve) => { finish = resolve }) } })
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'cancel me' })
+    const queued = of(built.rows, id)?.queued?.[0]?.id ?? ''
+    pending = true
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.carryOn(id)
+    await vi.waitFor(() => expect(of(built.rows, id)?.checkingIp).toBe(true))
+    built.sessions.unqueue(id, queued)
+    pending = false
+    finish?.()
+    await vi.waitFor(() => expect(of(built.rows, id)?.checkingIp).toBeUndefined())
+    expect(of(built.rows, id)?.heldSend).toBeUndefined()
+    expect(of(built.rows, id)?.queued).toBeUndefined()
+    expect(built.fake.sent.map((one) => one.text)).toEqual(['do the thing'])
+  })
+
+  it('retries a blocked separate delegation without replacing its parent session', async () => {
+    let allowed = true
+    const built = build({ beforeSend: async () => { if (!allowed) throw new Error('Not sent.') } })
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'separate' })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'remaining' })
+    const [selected, remaining] = of(built.rows, id)?.queued ?? []
+    allowed = false
+    expect(await built.sessions.delegate(id, selected?.id ?? '')).toBeUndefined()
+    expect(of(built.rows, id)?.heldSend).toBe(true)
+    allowed = true
+    const child = await built.sessions.retry(id)
+    expect(child).not.toBe(id)
+    expect(of(built.rows, id)).toBeDefined()
+    expect(of(built.rows, id)?.queued?.map((one) => one.id)).toEqual([remaining?.id])
+    expect(built.fake.sent.at(-1)?.text).toBe('separate')
+  })
+
+  it('finishes a delegated child retry by removing only its originating queue entry', async () => {
+    let calls = 0
+    let failAt = Infinity
+    const built = build({ beforeSend: async () => { if (++calls === failAt) throw new Error('Not sent.') } })
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'separate' })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'remaining' })
+    const [selected, remaining] = of(built.rows, id)?.queued ?? []
+    failAt = calls + 3
+    const child = await built.sessions.delegate(id, selected?.id ?? '')
+    expect(child).not.toBe(id)
+    expect(of(built.rows, child ?? '')?.heldSend).toBe(true)
+    expect(of(built.rows, id)?.queued).toHaveLength(2)
+    failAt = Infinity
+    await built.sessions.retry(child ?? '')
+    expect(of(built.rows, id)?.queued?.map((one) => one.id)).toEqual([remaining?.id])
+    expect(built.fake.sent.at(-1)?.text).toBe('separate')
+  })
+
+  it('preserves shell output until a blocked final send is retried', async () => {
+    let allowed = true
+    let calls = 0
+    let end: ((ran: Ran) => void) | undefined
+    const shell: typeof runShell = () => ({ done: new Promise<Ran>((resolve) => { end = resolve }), stop: () => undefined })
+    const built = build({ shell, beforeSend: async () => { if (!allowed && ++calls === 3) throw new Error('Not sent.') } })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await built.sessions.shell({ session: id, root: ROOT, command: 'git status' })
+    end?.({ stdout: 'changes', stderr: '', output: 'changes', code: 0, stopped: false })
+    await vi.waitFor(() => expect((last(built.fanned)?.items[0]?.kind)).toBe('shell'))
+    allowed = false
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'review changes' })
+    expect(built.fake.sent).toHaveLength(1)
+    expect(of(built.rows, id)?.state).toBe('failed')
+    allowed = true
+    await built.sessions.retry(id)
+    expect(built.fake.sent.at(-1)?.text).toBe('review changes')
+    expect(built.fake.sent.at(-1)?.before?.join('\n')).toContain('changes')
+  })
+
+  it('returns an explained remote-control refusal and preserves retry', async () => {
+    let allowed = true
+    const built = build({ beforeSend: async () => { if (!allowed) throw new Error('Not sent: VPN required.') } })
+    const id = await started(built)
+    allowed = false
+    expect(await built.sessions.remote(id, true)).toEqual({ error: 'Not sent: VPN required.' })
+    expect(built.fake.controls).toEqual([])
+    expect(of(built.rows, id)?.heldSend).toBe(true)
+  })
+
+  it('blocks continuing a persisted cut-off session before holding its process', async () => {
+    const notes = memoryNotes()
+    notes.set('existing', { cut: { root: ROOT, at: 100 }, mode: 'manual' })
+    const built = build({ notes, beforeSend: async () => { throw new Error('Not sent.') }, disk: {
+      list: async () => [{ id: 'existing', root: ROOT, title: 'Existing', stands: '', at: 100, driven: true }],
+      read: async () => ({ items: [], tasks: [] }), has: async () => true,
+    } })
+    await built.sessions.proceed('existing')
+    expect(built.fake.made).toEqual([])
+    expect(built.fake.sent).toEqual([])
+    expect(of(built.rows, 'existing')?.heldSend).toBe(true)
+  })
+
+  it('shows and cancels a new submission before creating a provider session', async () => {
+    let finish: (() => void) | undefined
+    const built = build({ beforeSend: () => new Promise<void>((resolve) => { finish = resolve }) })
+    const sending = built.sessions.send({ submission: 'pending-first', root: ROOT, mode: 'manual', text: 'secret', images: [{ media: 'image/png', data: 'saved' }] })
+    expect(of(built.rows, 'pending-first')?.checkingIp).toBe(true)
+    built.sessions.stop('pending-first')
+    finish?.()
+    expect(await sending).toBe('pending-first')
+    expect(built.fake.made).toEqual([])
+    expect(await built.sessions.items('pending-first')).toContainEqual(expect.objectContaining({ kind: 'mine', text: 'secret', unsent: true, images: [{ media: 'image/png', data: 'saved' }] }))
+  })
+
+  it('rejects a distinct send during verification without discarding its content', async () => {
+    let pending = false
+    let finish: (() => void) | undefined
+    const built = build({ beforeSend: async () => { if (pending) await new Promise<void>((resolve) => { finish = resolve }) } })
+    const id = await started(built)
+    pending = true
+    const sending = built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'queued first' })
+    await expect(built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'distinct' })).rejects.toThrow('another public IP check')
+    pending = false
+    finish?.()
+    await sending
+    expect(of(built.rows, id)?.queued?.map((one) => one.text)).toEqual(['queued first'])
+    expect(built.fake.sent.map((one) => one.text)).toEqual(['do the thing'])
+  })
+
+  it('cancels the real session during verification after provisional creation', async () => {
+    let calls = 0
+    let finish: (() => void) | undefined
+    const built = build({ beforeSend: async () => { if (++calls === 2) await new Promise<void>((resolve) => { finish = resolve }) } })
+    const sending = built.sessions.send({ submission: 'pending-later', root: ROOT, mode: 'manual', text: 'secret' })
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    const actual = last(built.rows)?.find((one) => one.id !== 'pending-later')?.id ?? ''
+    expect(actual).not.toBe('')
+    built.sessions.stop(actual)
+    finish?.()
+    await sending
+    expect(built.fake.made).toEqual([])
+    expect(built.fake.sent).toEqual([])
+    expect(of(built.rows, actual)?.state).toBe('failed')
+  })
+
+  it('bounds repeated dispatch checks to ten seconds for the whole attempt', async () => {
+    vi.useFakeTimers()
+    try {
+      const built = build({ beforeSend: () => new Promise<void>((resolve) => { setTimeout(resolve, 4_000) }) })
+      const sending = built.sessions.send({ root: ROOT, mode: 'manual', text: 'secret' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      const id = await sending
+      expect(built.fake.sent).toEqual([])
+      expect(of(built.rows, id)?.state).toBe('failed')
+      expect(await built.sessions.items(id)).toContainEqual(expect.objectContaining({ kind: 'note', text: VPN_IP_UNAVAILABLE_ERROR }))
+    } finally { vi.useRealTimers() }
+  })
+
+  it('restores blocked context after restart even when earlier text is identical', async () => {
+    let allowed = true
+    const notes = memoryNotes()
+    const disk: NonNullable<SessionsDeps['disk']> = {
+      list: async () => [{ id: 'existing', root: ROOT, title: 'Earlier', stands: '', at: 1_000, driven: true }],
+      read: async () => ({ items: [{ kind: 'mine', id: 'native-old', text: 'same', at: 10 }], tasks: [] }),
+      has: async () => true,
+    }
+    const built = build({ notes, disk, beforeSend: async () => { if (!allowed) throw new Error('Not sent.') } })
+    await built.sessions.list([ROOT])
+    allowed = false
+    await built.sessions.send({ session: 'existing', root: ROOT, mode: 'manual', text: 'same', images: [{ media: 'image/png', data: 'new' }] })
+    const reopened = build({ notes, disk })
+    await reopened.sessions.list([ROOT])
+    const items = await reopened.sessions.items('existing')
+    expect(items.filter((one) => one.kind === 'mine')).toHaveLength(2)
+    expect(items).toContainEqual(expect.objectContaining({ kind: 'mine', unsent: true, images: [{ media: 'image/png', data: 'new' }] }))
+    expect(items).toContainEqual(expect.objectContaining({ id: 'vpn-ip-error' }))
+  })
+
+  it('removes only the blocked queue entry when retrying identical text', async () => {
+    let allowed = true
+    const built = build({ beforeSend: async () => { if (!allowed) throw new Error('Not sent.') } })
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'same', images: [{ media: 'image/png', data: 'first' }] })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'same', images: [{ media: 'image/png', data: 'second' }] })
+    const second = of(built.rows, id)?.queued?.[1]?.id
+    allowed = false
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.carryOn(id)
+    await vi.waitFor(() => expect(of(built.rows, id)?.heldSend).toBe(true))
+    allowed = true
+    await built.sessions.retry(id)
+    expect(built.fake.sent.at(-1)).toMatchObject({ text: 'same', images: [{ media: 'image/png', data: 'first' }] })
+    expect(of(built.rows, id)?.queued?.map((one) => one.id)).toEqual([second])
+  })
+
+  it('blocks injection, mode escalation, background continuation and history fork', async () => {
+    let allowed = true
+    const inject = vi.fn<NonNullable<Driver['inject']>>(async () => undefined)
+    const forkPoint = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['forkPoint']>>(async () => 'earlier')
+    const built = build({ beforeSend: async () => { if (!allowed) throw new Error('Not sent.') }, disk: { list: async () => [], read: async () => undefined, has: async () => false, forkPoint } }, inject)
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'next' })
+    const queued = of(built.rows, id)?.queued?.[0]?.id ?? ''
+    allowed = false
+    await built.sessions.injectQueued(id, queued)
+    await built.sessions.mode(id, 'auto')
+    await built.sessions.toBackground(id, 'tool-1')
+    await built.sessions.delegate(id, queued, true)
+    expect(inject).not.toHaveBeenCalled()
+    expect(forkPoint).not.toHaveBeenCalled()
+    expect(built.fake.permitted).toEqual([])
+    expect(built.fake.controls).toEqual([])
+    expect(of(built.rows, id)?.queued?.[0]?.id).toBe(queued)
+  })
+
+  it('rechecks session-wide permission grants and preserves an unanswered card', async () => {
+    let allowed = true
+    const built = build({ beforeSend: async () => { if (!allowed) throw new Error('Not sent.') } })
+    const id = await started(built)
+    const wanted: Extract<Signal, { kind: 'asks' }>['wanted'] = { kind: 'write', paths: ['file.ts'] }
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 'first', wanted }] })
+    await built.sessions.answer(id, 'card:first', 'session')
+    allowed = false
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 'automatic', wanted }] })
+    await vi.waitFor(() => expect(of(built.rows, id)?.heldSend).toBe(true))
+    expect(built.fake.answered).toEqual([['first', 'session']])
+    allowed = true
+    await built.sessions.retry(id)
+    expect(built.fake.answered.at(-1)).toEqual(['automatic', 'once'])
+    expect((await built.sessions.items(id)).some((one) => one.id === 'vpn-ip-error')).toBe(false)
+  })
+
+  it('blocks native goal mutations and restart reattachment', async () => {
+    const setGoal = vi.fn<NonNullable<SessionsDeps['codex']>['setGoal']>()
+    const made = heldCodex('codex:existing', { setGoal })
+    const built = build({ codex: made.codex, beforeSend: async () => { throw new Error('Not sent.') } })
+    await built.sessions.list([ROOT])
+    await built.sessions.send({ session: 'codex:existing', root: ROOT, mode: 'manual', text: '/goal test passes' })
+    expect(setGoal).not.toHaveBeenCalled()
+    const restart = build({ beforeSend: async () => { throw new Error('Not sent.') } })
+    await restart.sessions.reattach([{ id: 'existing', root: ROOT }])
+    expect(restart.fake.made).toEqual([])
+    expect(of(restart.rows, 'existing')).toMatchObject({ state: 'failed', heldSend: true })
+  })
+
+  it('blocks creation before context can reach a provider and retains exact retry', async () => {
+    let allowed = false
+    const create = vi.fn<NonNullable<SessionsDeps['codex']>['create']>(async () => 'codex:guarded')
+    const made = heldCodex('codex:guarded', { create })
+    const built = build({ codex: made.codex, beforeSend: async () => { if (!allowed) throw new Error('Not sent: public IP 8.8.8.8 is not approved.') } })
+    const id = await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'private work', images: [{ media: 'image/png', data: 'pic' }] })
+    expect(create).not.toHaveBeenCalled()
+    expect(made.fake.sent).toEqual([])
+    expect(of(built.rows, id)?.heldSend).toBe(true)
+    allowed = true
+    const retried = await built.sessions.retry(id)
+    expect(retried).toBe('codex:guarded')
+    expect(made.fake.sent).toEqual([{ text: 'private work', images: [{ media: 'image/png', data: 'pic' }] }])
+    expect(create).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps blocked queue head and stops automatic draining', async () => {
+    let allowed = true
+    const built = build({ beforeSend: async () => { if (!allowed) throw new Error('Not sent: check failed.') } })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'first' })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'next' })
+    allowed = false
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.carryOn(id)
+    await vi.waitFor(() => expect(of(built.rows, id)?.heldSend).toBe(true))
+    expect(of(built.rows, id)?.queued?.map((one) => one.text)).toEqual(['next'])
+    expect(built.fake.sent.map((one) => one.text)).toEqual(['first'])
+  })
+
+  it('does not clear asks on a blocked positive answer and allows denial', async () => {
+    let allowed = true
+    const built = build({ beforeSend: async () => { if (!allowed) throw new Error('Not sent: check failed.') } })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'first' })
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 'permission', wanted: { kind: 'write', paths: ['file.ts'] } }] })
+    allowed = false
+    await built.sessions.answer(id, 'card:permission', 'once')
+    expect(built.fake.answered).toEqual([])
+    expect((await built.sessions.items(id)).some((one) => one.kind === 'card' && one.card.answered === undefined)).toBe(true)
+    await built.sessions.answer(id, 'card:permission', 'no')
+    expect(built.fake.answered).toEqual([['permission', 'no']])
+  })
+
+  it('locks duplicate retries and invalidates a cancelled lookup', async () => {
+    let finish: (() => void) | undefined
+    let pending = false
+    const built = build({ beforeSend: async () => { if (!pending) throw new Error('Not sent: check failed.'); await new Promise<void>((resolve) => { finish = resolve }) } })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'private' })
+    pending = true
+    const first = built.sessions.retry(id)
+    const second = built.sessions.retry(id)
+    built.sessions.stop(id)
+    finish?.()
+    await Promise.all([first, second])
+    expect(built.fake.sent).toEqual([])
+    expect(built.fake.made).toEqual([])
+  })
+
+  it.each([false, true])('queues saved Send again payload while an older turn works, pictures %s', async (withPictures) => {
+    let allowed = true
+    const notes = memoryNotes()
+    const images = withPictures ? [{ media: 'image/png', data: 'saved' }] : undefined
+    const built = build({ notes, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    const id = await started(built)
+    allowed = false
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'original unsent content', ...(images === undefined ? {} : { images }) })
+    const unsent = (await built.sessions.items(id)).find((one) => one.kind === 'mine' && one.unsent === true)
+    expect(unsent).toBeDefined()
+    allowed = true
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: '', images: [], again: unsent?.id ?? '' })
+    expect(of(built.rows, id)?.queued).toEqual([{ id: expect.any(String), text: 'original unsent content', images: withPictures ? 1 : 0, again: unsent?.id }])
+    expect(notes.all()[id]?.queued?.[0]?.message).toMatchObject({ text: 'original unsent content', again: unsent?.id })
+    expect(notes.all()[id]?.queued?.[0]?.message.images).toEqual(images)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.carryOn(id)
+    await vi.waitFor(() => expect(built.fake.sent).toEqual([{ text: 'do the thing' }, { text: 'original unsent content', ...(images === undefined ? {} : { images }) }]))
+    expect(of(built.rows, id)?.queued).toBeUndefined()
+    const sent = (await built.sessions.items(id)).filter((one) => one.kind === 'mine' && one.text === 'original unsent content')
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ id: unsent?.id })
+    expect(sent[0]?.kind === 'mine' ? sent[0].unsent : undefined).toBeUndefined()
+    built.sessions.dispose()
+  })
+
+  it('exposes queued Send again identity without marking it sent and ignores duplicate clicks', async () => {
+    let allowed = true
+    const built = build({ beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    const id = await started(built)
+    allowed = false
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'original unsent content' })
+    const unsent = (await built.sessions.items(id)).find((one) => one.kind === 'mine' && one.unsent === true)
+    const again = unsent?.id ?? ''
+    allowed = true
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: '', again })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: '', again })
+    expect(of(built.rows, id)?.queued).toEqual([{ id: expect.any(String), text: 'original unsent content', images: 0, again }])
+    expect(built.fanned).toContainEqual({ id, items: [], gone: ['vpn-ip-error'] })
+    expect((await built.sessions.items(id)).some((one) => one.id === 'vpn-ip-error')).toBe(false)
+    expect(await built.sessions.items(id)).toContainEqual(expect.objectContaining({ id: again, unsent: true }))
+    const queued = of(built.rows, id)?.queued?.[0]?.id ?? ''
+    built.sessions.unqueue(id, queued)
+    expect(of(built.rows, id)?.queued).toBeUndefined()
+    expect(await built.sessions.items(id)).toContainEqual(expect.objectContaining({ id: again, unsent: true }))
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: '', again })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.carryOn(id)
+    await vi.waitFor(() => expect(built.fake.sent.map((one) => one.text)).toEqual(['do the thing', 'original unsent content']))
+    expect((await built.sessions.items(id)).find((one) => one.id === again)).not.toHaveProperty('unsent', true)
+    built.sessions.dispose()
+  })
+
+  it('does not restore Send again after provider-ID reconciliation and successful dispatch', async () => {
+    const images = [{ media: 'image/png', data: 'saved' }]
+    let written: SessionItem[] = []
+    const disk: NonNullable<SessionsDeps['disk']> = { list: async () => [], has: async () => true, read: async () => ({ items: written, tasks: [] }) }
+    const built = build({ disk })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'original unsent content', images })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'offPlan' }] })
+    expect((await built.sessions.items(id)).find((one) => one.kind === 'mine')).toHaveProperty('unsent', true)
+    written = [{ kind: 'mine', id: 'native-mine', text: 'original unsent content', images, at: 100 }]
+    built.sessions.handOver(id)
+    expect((await built.sessions.items(id)).find((one) => one.id === 'native-mine')).toHaveProperty('unsent', true)
+    expect((await built.sessions.items(id)).find((one) => one.id === 'native-mine')).toHaveProperty('unsent', true)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: '', again: 'native-mine' })
+    expect(built.fake.sent).toEqual([{ text: 'original unsent content', images }, { text: 'original unsent content', images }])
+    expect((await built.sessions.items(id)).find((one) => one.id === 'native-mine')).not.toHaveProperty('unsent', true)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.handOver(id)
+    expect((await built.sessions.items(id)).find((one) => one.id === 'native-mine')).not.toHaveProperty('unsent', true)
+    built.sessions.dispose()
+  })
+
+  it('keeps queued Send again identity aligned with provider-ID reconciliation', async () => {
+    const notes = memoryNotes()
+    let written: SessionItem[] = []
+    const built = build({ notes, disk: { list: async () => [], has: async () => true, read: async () => ({ items: written, tasks: [] }) } })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'original unsent content' })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'offPlan' }] })
+    const original = (await built.sessions.items(id)).find((one) => one.kind === 'mine' && one.unsent === true)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'other work' })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: '', again: original?.id ?? '' })
+    written = [{ kind: 'mine', id: 'native-mine', text: 'original unsent content', at: 100 }]
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'failed' }] })
+    built.sessions.handOver(id)
+    expect((await built.sessions.items(id)).find((one) => one.id === 'native-mine')).toHaveProperty('unsent', true)
+    expect(of(built.rows, id)?.queued?.[0]?.again).toBe('native-mine')
+    expect(notes.all()[id]?.queued?.[0]?.message.again).toBe('native-mine')
+    built.sessions.carryOn(id)
+    await vi.waitFor(() => expect(built.fake.sent.map((one) => one.text)).toEqual(['original unsent content', 'other work', 'original unsent content']))
+    expect((await built.sessions.items(id)).find((one) => one.id === 'native-mine')).not.toHaveProperty('unsent', true)
+    built.sessions.dispose()
+  })
+
+  it('retains saved Send again content and pictures across another guard refusal', async () => {
+    let allowed = true
+    const notes = memoryNotes()
+    const images = [{ media: 'image/png', data: 'saved' }]
+    const built = build({ notes, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    const id = await started(built)
+    allowed = false
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'original unsent content', images })
+    const unsent = (await built.sessions.items(id)).find((one) => one.kind === 'mine' && one.unsent === true)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: '', images: [], again: unsent?.id ?? '' })
+    expect(notes.all()[id]?.heldOperation).toMatchObject({ kind: 'message', message: { text: 'original unsent content', images, again: unsent?.id } })
+    expect(built.fake.sent).toEqual([{ text: 'do the thing' }])
+    allowed = true
+    await built.sessions.retry(id)
+    expect(of(built.rows, id)?.queued?.[0]).toMatchObject({ text: 'original unsent content', images: 1 })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.carryOn(id)
+    await vi.waitFor(() => expect(built.fake.sent).toEqual([{ text: 'do the thing' }, { text: 'original unsent content', images }]))
+    expect((await built.sessions.items(id)).filter((one) => one.kind === 'mine' && one.text === 'original unsent content')).toHaveLength(1)
+    built.sessions.dispose()
+  })
+
+  it('restores normalized Send again queue payload after restart without its original transcript item', async () => {
+    let allowed = true
+    const notes = memoryNotes()
+    const images = [{ media: 'image/png', data: 'saved' }]
+    const built = build({ notes, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    const id = await started(built)
+    allowed = false
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'original unsent content', images })
+    const unsent = (await built.sessions.items(id)).find((one) => one.kind === 'mine' && one.unsent === true)
+    allowed = true
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: '', again: unsent?.id ?? '' })
+    built.sessions.dispose()
+    const reopened = build({ notes, disk: {
+      list: async () => [{ id, root: ROOT, title: 'Reopened', stands: '', at: 1_000, driven: true }],
+      read: async () => ({ items: [], tasks: [] }), has: async () => true,
+    } })
+    await reopened.sessions.resumeQueues()
+    expect(of(reopened.rows, id)?.queued?.[0]).toMatchObject({ text: 'original unsent content', images: 1 })
+    reopened.sessions.carryOn(id)
+    await vi.waitFor(() => expect(reopened.fake.sent).toEqual([{ text: 'original unsent content', images }]))
+    expect(of(reopened.rows, id)?.queued).toBeUndefined()
+    reopened.sessions.dispose()
+  })
+
+  it('drains legacy empty Send again queue from the referenced saved transcript item', async () => {
+    const notes = memoryNotes()
+    const images = [{ media: 'image/png', data: 'saved' }]
+    notes.set('existing', { queued: [{ id: 'queued:legacy', at: 100, message: { session: 'existing', root: ROOT, mode: 'manual', text: '', images: [], again: 'saved-mine' } }] })
+    const built = build({ notes, disk: {
+      list: async () => [{ id: 'existing', root: ROOT, title: 'Earlier', stands: '', at: 1_000, driven: true }],
+      read: async () => ({ items: [{ kind: 'mine', id: 'saved-mine', text: 'original unsent content', images, unsent: true, at: 10 }], tasks: [] }), has: async () => true,
+    } })
+    await built.sessions.resumeQueues()
+    built.sessions.carryOn('existing')
+    await vi.waitFor(() => expect(built.fake.sent).toEqual([{ text: 'original unsent content', images }]))
+    expect(of(built.rows, 'existing')?.queued).toBeUndefined()
+    expect((await built.sessions.items('existing')).filter((one) => one.kind === 'mine')).toHaveLength(1)
+    built.sessions.dispose()
+  })
+})
+
+describe('periodic active-session VPN protection', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
+
+  it('ignores replaced driver emissions after manual recovery', async () => {
+    let policy: string | undefined = undefined
+    let allowed = true
+    const held = fakeClaude()
+    const emissions: Parameters<typeof holdClaude>[1][] = []
+    const claude: typeof holdClaude = (options, hear, left) => {
+      emissions.push(hear)
+      hear({ items: [], gone: [], signals: [{ kind: 'begun' }] })
+      return held.claude(options, hear, left)
+    }
+    const built = build({ claude, vpnMonitor: () => policy, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'follow-up' })
+    allowed = false
+    policy = 'approved'
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(5_000)
+    allowed = true
+    policy = undefined
+    await built.sessions.retry(id)
+    expect(held.fake.made[1]?.resume).toBe(true)
+    expect(of(built.rows, id)?.state).toBe('working')
+    emissions[0]?.({ items: [{ kind: 'note', id: 'late-old-output', note: 'stopped', text: 'Old output' }], gone: [], signals: [{ kind: 'said', text: 'Old answer' }, { kind: 'ended', how: 'done' }] })
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(of(built.rows, id)).toMatchObject({ state: 'working', stands: 'Working' })
+    expect(of(built.rows, id)?.queued?.map((one) => one.text)).toEqual(['follow-up'])
+    expect(held.fake.sent.map((one) => one.text)).toEqual(['do the thing', 'continue'])
+    expect((await built.sessions.items(id)).some((one) => one.id === 'late-old-output')).toBe(false)
+    emissions[1]?.({ items: [], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    expect(of(built.rows, id)?.state).toBe('unread')
+    built.sessions.dispose()
+  })
+
+  it('sends exact blocked queued guidance after its active driver was interrupted', async () => {
+    let policy: string | undefined = undefined
+    let allowed = true
+    const inject = vi.fn<NonNullable<Driver['inject']>>(async () => undefined)
+    const built = build({ vpnMonitor: () => policy, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } }, inject)
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'unsent guidance' })
+    const queued = of(built.rows, id)?.queued?.[0]?.id ?? ''
+    allowed = false
+    await built.sessions.injectQueued(id, queued)
+    policy = 'approved'
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(5_000)
+    allowed = true
+    policy = undefined
+    await built.sessions.retry(id)
+    expect(built.fake.sent.at(-1)?.text).toBe('unsent guidance')
+    expect(inject).not.toHaveBeenCalled()
+    expect(of(built.rows, id)?.queued).toBeUndefined()
+    built.sessions.dispose()
+  })
+
+  it('continues instead of replying to an expired permission after interruption', async () => {
+    let policy: string | undefined = undefined
+    let allowed = true
+    const built = build({ vpnMonitor: () => policy, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 'permission', wanted: { kind: 'write', paths: ['file.ts'] } }] })
+    allowed = false
+    await built.sessions.answer(id, 'card:permission', 'once')
+    policy = 'approved'
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect((await built.sessions.items(id)).some((one) => one.id === 'card:permission')).toBe(false)
+    expect(built.fanned).toContainEqual({ id, items: [], gone: ['card:permission'] })
+    allowed = true
+    policy = undefined
+    await built.sessions.retry(id)
+    expect(built.fake.answered).toEqual([])
+    expect(built.fake.sent.at(-1)?.text).toBe('continue')
+    built.sessions.dispose()
+  })
+
+  it('interrupts shared active work, holds every existing queue, and only continues on manual retry', async () => {
+    let policy: string | undefined
+    let allowed = true
+    let limit = 0
+    const built = build({ limit: () => limit, vpnMonitor: () => policy, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    const first = await started(built)
+    const second = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'other active task' })
+    await built.sessions.send({ session: first, root: ROOT, mode: 'manual', text: 'follow-up' })
+    limit = 2
+    const waiting = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'waiting task' })
+    expect(of(built.rows, waiting)?.queued?.[0]?.text).toBe('waiting task')
+    allowed = false
+    policy = 'approved'
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(built.fake.stopped).toBe(2)
+    for (const id of [first, second, waiting]) {
+      expect(of(built.rows, id)?.heldSend).toBe(true)
+      expect(await built.sessions.items(id)).toContainEqual(expect.objectContaining({ text: 'Paused by VPN IP check. VPN mismatch' }))
+    }
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }, { kind: 'begun' }, { kind: 'asks', ask: 'late', wanted: { kind: 'write', paths: ['file.ts'] } }] })
+    expect(of(built.rows, second)).toMatchObject({ state: 'failed', heldSend: true })
+    allowed = true
+    policy = undefined
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(built.fake.sent.map((one) => one.text)).toEqual(['do the thing', 'other active task'])
+    expect(of(built.rows, first)?.queued?.[0]?.text).toBe('follow-up')
+    await built.sessions.retry(first)
+    expect(built.fake.sent.at(-1)?.text).toBe('continue')
+    expect(of(built.rows, waiting)?.heldSend).toBe(true)
+    built.sessions.dispose()
+  })
+
+  it('does not display checking state for silent periodic success', async () => {
+    let policy: string | undefined = undefined
+    const check = vi.fn(async () => undefined)
+    const built = build({ vpnMonitor: () => policy, beforeSend: check })
+    const id = await started(built)
+    check.mockClear()
+    built.rows.splice(0)
+    policy = 'approved'
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(check).toHaveBeenCalledTimes(1)
+    expect(built.rows.flat().some((one) => one.checkingIp)).toBe(false)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(check).toHaveBeenCalledTimes(2)
+    expect(of(built.rows, id)?.state).toBe('working')
+    built.sessions.dispose()
+  })
+
+  it('stops idle sessions held by background tasks and Remote Control', async () => {
+    let policy: string | undefined = undefined
+    let allowed = true
+    const built = build({ vpnMonitor: () => policy, beforeSend: async () => { if (!allowed) throw new Error('Connection unavailable') } })
+    const id = await started(built)
+    built.fake.answers['remote_control'] = { session_url: 'https://claude.ai/session/example' }
+    await built.sessions.remote(id, true)
+    built.fake.hear({ signals: [{ kind: 'task', task: { id: 'background', kind: 'local_bash', status: 'running', what: 'watch', started: 1 } }, { kind: 'ended', how: 'done' }] })
+    expect(of(built.rows, id)?.state).toBe('unread')
+    allowed = false
+    policy = 'approved'
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(built.fake.controls).toContainEqual({ subtype: 'stop_task', task_id: 'background' })
+    expect(built.fake.controls).toContainEqual({ subtype: 'remote_control', enabled: false })
+    expect(of(built.rows, id)?.remote).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(built.fake.ended).toBeGreaterThan(0)
+    expect(of(built.rows, id)).toMatchObject({ state: 'failed', heldSend: true })
+    built.sessions.dispose()
+  })
+
+  it('retains known unsent content rather than replacing it with continuation', async () => {
+    let policy: string | undefined
+    let allowed = true
+    const built = build({ vpnMonitor: () => policy, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    const id = await started(built)
+    allowed = false
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'unsent detail', images: [{ media: 'image/png', data: 'saved' }] })
+    policy = 'approved'
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(5_000)
+    allowed = true
+    policy = undefined
+    await built.sessions.retry(id)
+    expect(built.fake.sent.at(-1)).toEqual({ text: 'unsent detail', images: [{ media: 'image/png', data: 'saved' }] })
+    built.sessions.dispose()
+  })
+
+  it('persists a paused queued session across restart without automatically resuming', async () => {
+    let policy: string | undefined = undefined
+    let allowed = true
+    const notes = memoryNotes()
+    const built = build({ notes, limit: () => 1, vpnMonitor: () => policy, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    await started(built)
+    const queued = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'wait safely' })
+    allowed = false
+    policy = 'approved'
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(0)
+    built.sessions.dispose()
+    const reopened = build({ notes, beforeSend: async () => undefined })
+    await reopened.sessions.resumeQueues()
+    reopened.sessions.again()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(reopened.fake.sent).toEqual([])
+    expect(of(reopened.rows, queued)?.heldSend).toBe(true)
+    await reopened.sessions.retry(queued)
+    expect(reopened.fake.sent.at(-1)?.text).toBe('wait safely')
+    reopened.sessions.dispose()
+  })
+
+  it('pauses a native autonomous goal when shared verification fails', async () => {
+    let policy: string | undefined = undefined
+    let allowed = true
+    const pauseGoal = vi.fn<NonNullable<NonNullable<SessionsDeps['codex']>['pauseGoal']>>(async () => undefined)
+    const made = heldCodex('codex:goal', { pauseGoal, setGoal: async (id, objective) => ({ threadId: id.slice(6), objective, status: 'active', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1, updatedAt: 1 }) })
+    const built = build({ codex: made.codex, vpnMonitor: () => policy, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'auto', text: 'goal work', goal: 'Tests pass' })
+    allowed = false
+    policy = 'approved'
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(pauseGoal).toHaveBeenCalledWith('codex:goal')
+    expect(made.fake.sent).toEqual([{ text: 'goal work' }])
+    built.sessions.dispose()
+  })
+
+  it.each(['provider end', 'manual retry'] as const)('expires interrupted cards on %s', async (ending) => {
+    let policy: string | undefined = undefined
+    let allowed = true
+    const built = build({ vpnMonitor: () => policy, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 'permission', wanted: { kind: 'write', paths: ['file.ts'] } }] })
+    policy = 'approved'
+    allowed = false
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(0)
+    if (ending === 'provider end') built.fake.hear({ signals: [{ kind: 'ended', how: 'stopped' }] })
+    else {
+      allowed = true
+      policy = undefined
+      await built.sessions.retry(id)
+    }
+    expect((await built.sessions.items(id)).some((one) => one.id === 'card:permission')).toBe(false)
+    expect(built.fanned).toContainEqual({ id, items: [], gone: ['card:permission'] })
+    built.sessions.dispose()
+  })
+
+  it.each([false, true])('orders native goal controls before retry and observes cancellation %s', async (cancel) => {
+    let policy: string | undefined = undefined
+    let allowed = true
+    let finishPause: (() => void) | undefined
+    const pauseGoal = vi.fn<NonNullable<NonNullable<SessionsDeps['codex']>['pauseGoal']>>(() => new Promise<void>((resolve) => { finishPause = resolve }))
+    const resumeGoal = vi.fn<NonNullable<NonNullable<SessionsDeps['codex']>['resumeGoal']>>(async () => undefined)
+    const made = heldCodex('codex:goal', { pauseGoal, resumeGoal, setGoal: async (id, objective) => ({ threadId: id.slice(6), objective, status: 'active', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1, updatedAt: 1 }) })
+    const built = build({ codex: made.codex, vpnMonitor: () => policy, beforeSend: async () => { if (!allowed) throw new Error('VPN mismatch') } })
+    const id = await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'auto', text: 'goal work', goal: 'Tests pass' })
+    allowed = false
+    policy = 'approved'
+    built.sessions.again()
+    await vi.advanceTimersByTimeAsync(0)
+    allowed = true
+    policy = undefined
+    const retry = built.sessions.retry(id)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(resumeGoal).not.toHaveBeenCalled()
+    expect(made.fake.sent).toEqual([{ text: 'goal work' }])
+    if (cancel) built.sessions.stop(id)
+    finishPause?.()
+    await retry
+    expect(resumeGoal).toHaveBeenCalledTimes(cancel ? 0 : 1)
+    expect(made.fake.sent.map((one) => one.text)).toEqual(cancel ? ['goal work'] : ['goal work', 'continue'])
+    expect(of(built.rows, id)?.heldSend).toBe(cancel ? true : undefined)
+    built.sessions.dispose()
   })
 })

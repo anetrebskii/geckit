@@ -137,6 +137,21 @@ afterEach(() => {
 })
 
 describe('Codex app-server', () => {
+  it('pauses a native goal as control without starting or resuming a model turn', async () => {
+    const { server, codex } = setup()
+    await codex.setGoal('codex:terminal', 'Tests pass')
+    server.requests.splice(0)
+    await codex.pauseGoal('codex:terminal')
+    expect(server.goals.get('terminal')).toMatchObject({ objective: 'Tests pass', status: 'paused' })
+    expect(server.requests.map((one) => one.method)).toEqual(['thread/goal/set'])
+    expect(server.requests[0]?.params).toEqual({ threadId: 'terminal', status: 'paused' })
+    server.requests.splice(0)
+    await codex.resumeGoal('codex:terminal')
+    expect(server.goals.get('terminal')).toMatchObject({ objective: 'Tests pass', status: 'active' })
+    expect(server.requests.map((one) => one.method)).toEqual(['thread/goal/set'])
+    expect(server.requests[0]?.params).toEqual({ threadId: 'terminal', status: 'active' })
+  })
+
   it('steers the exact active turn with images and shell context without starting or interrupting', async () => {
     const { server, codex, heard } = setup()
     const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto', model: 'second', reasoning: 'high' }, (one) => heard.push(one), () => undefined)
@@ -562,6 +577,77 @@ describe('Codex app-server', () => {
     await driver.end()
   })
 
+  it.each(['form', 'openai/form', 'openaiForm'] as const)('forwards explicit MCP %s choices to their native requests', async (mode) => {
+    const { server, codex, heard } = setup()
+    const id = await codex.create(ROOT, 'auto')
+    const driver = codex.hold({ id, root: ROOT, resume: true, mode: 'auto' }, (one) => heard.push(one), () => undefined)
+    driver.send('Review the app')
+    await tick()
+    for (const [requestId, action] of [['mcp-accept', 'accept'], ['mcp-decline', 'decline'], ['mcp-cancel', 'cancel']] as const) {
+      server.event({ method: 'mcpServer/elicitation/request', id: requestId, params: { threadId: id.slice(6), turnId: null, serverName: 'computer', mode, _meta: null, message: 'Allow GeckIt Local?', requestedSchema: { type: 'object', properties: { approved: { type: 'boolean', title: 'Allow access' } }, required: ['approved'] } } })
+      expect(server.requests.some((one) => one.id === requestId && (one.result !== undefined || one.error !== undefined))).toBe(false)
+      expect(heard.flatMap((one) => one.signals)).toContainEqual({ kind: 'asks', ask: requestId, wanted: { kind: 'elicitation', serverName: 'computer', message: 'Allow GeckIt Local?', fields: [{ name: 'approved', label: 'Allow access', type: 'boolean', required: true }] } })
+      driver.answer(requestId, JSON.stringify({ action, content: { approved: true } }))
+      driver.answer(requestId, JSON.stringify({ action: 'accept', content: { approved: false } }))
+      expect(server.requests.filter((one) => one.id === requestId && one.result !== undefined).map((one) => one.result)).toEqual([{ action, content: action === 'accept' ? { approved: true } : null, _meta: null }])
+    }
+    await driver.end()
+  })
+
+  it('keeps invalid MCP input pending, honors resolution elsewhere and cancels pending requests on Stop', async () => {
+    const { server, codex, heard } = setup()
+    const id = await codex.create(ROOT, 'manual')
+    const driver = codex.hold({ id, root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Review the app')
+    await tick()
+    const params: Extract<CodexEvent, { method: 'mcpServer/elicitation/request' }>['params'] = { threadId: id.slice(6), turnId: null, serverName: 'computer', mode: 'form', _meta: null, message: 'Allow access?', requestedSchema: { type: 'object', properties: { approved: { type: 'boolean' } }, required: ['approved'] } }
+    server.event({ method: 'mcpServer/elicitation/request', id: 'resolved', params })
+    driver.answer('resolved', 'once')
+    expect(server.requests.some((one) => one.id === 'resolved' && one.result !== undefined)).toBe(false)
+    await expect(driver.inject?.('Still working')).rejects.toThrow('Answer the assistant')
+    server.event({ method: 'serverRequest/resolved', params: { threadId: id.slice(6), requestId: 'resolved' } })
+    expect(heard.at(-1)).toEqual({ items: [], gone: ['card:resolved'], signals: [{ kind: 'resolved', ask: 'resolved' }] })
+    driver.answer('resolved', JSON.stringify({ action: 'accept', content: { approved: true } }))
+    expect(server.requests.some((one) => one.id === 'resolved' && one.result !== undefined)).toBe(false)
+    server.event({ method: 'mcpServer/elicitation/request', id: 'stopped', params })
+    driver.stop()
+    driver.answer('stopped', JSON.stringify({ action: 'accept', content: { approved: true } }))
+    expect(server.requests.filter((one) => one.id === 'stopped' && one.result !== undefined).map((one) => one.result)).toEqual([{ action: 'cancel', content: null, _meta: null }])
+    expect(heard.flatMap((one) => one.gone)).toContain('card:stopped')
+    await driver.end()
+  })
+
+  it('clears standalone MCP requests on disconnect before a model turn begins', async () => {
+    const { server, codex, heard } = setup()
+    const id = await codex.create(ROOT, 'manual')
+    const driver = codex.hold({ id, root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    await tick()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'standalone', params: { threadId: id.slice(6), turnId: null, serverName: 'computer', mode: 'form', _meta: null, message: 'Allow access?', requestedSchema: { type: 'object', properties: {} } } })
+    server.kill()
+    expect(heard.flatMap((one) => one.gone)).toContain('card:standalone')
+    driver.answer('standalone', '{"action":"accept","content":{}}')
+    expect(server.requests.some((one) => one.id === 'standalone' && one.result !== undefined)).toBe(false)
+    await driver.end()
+  })
+
+  it('supports URL elicitation and removes stale MCP cards when Codex disconnects', async () => {
+    const { server, codex, heard } = setup()
+    const id = await codex.create(ROOT, 'manual')
+    const driver = codex.hold({ id, root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Authorize the app')
+    await tick()
+    const params = { threadId: id.slice(6), turnId: null, serverName: 'account', mode: 'url', _meta: null, message: 'Complete authorization', url: 'https://example.com/approve', elicitationId: 'native-id' } as const
+    server.event({ method: 'mcpServer/elicitation/request', id: 777, params })
+    driver.answer('777', '{"action":"accept","content":null}')
+    expect(server.requests.find((one) => one.id === 777 && one.result !== undefined)?.result).toEqual({ action: 'accept', content: null, _meta: null })
+    server.event({ method: 'mcpServer/elicitation/request', id: 'disconnect', params })
+    server.kill()
+    driver.answer('disconnect', '{"action":"accept","content":null}')
+    expect(heard.flatMap((one) => one.gone)).toContain('card:disconnect')
+    expect(server.requests.some((one) => one.id === 'disconnect' && one.result !== undefined)).toBe(false)
+    await driver.end()
+  })
+
   it('answers multiple questions with separate cards and one complete response', async () => {
     const { server, codex, heard } = setup()
     const id = await codex.create(ROOT, 'manual')
@@ -774,6 +860,37 @@ describe('provider routing', () => {
     expect(codexEnvironment({ OPENAI_API_KEY: 'test-key', CODEX_API_KEY: 'test-key', OPENAI_BASE_URL: 'https://example.test', CODEX_THREAD_ID: 'parent', CODEX_HOME: '/custom', PATH: '/bin' })).toMatchObject({ CODEX_HOME: '/custom' })
     expect(codexEnvironment({ OPENAI_API_KEY: 'test-key', CODEX_API_KEY: 'test-key' })).not.toHaveProperty('OPENAI_API_KEY')
     expect(codexEnvironment({ CODEX_API_KEY: 'test-key' })).not.toHaveProperty('CODEX_API_KEY')
+  })
+
+  it('keeps simultaneous MCP requests separate through the shared approval cards and Auto mode', async () => {
+    const { server, codex } = setup()
+    const rows: ChatSession[][] = []
+    const items: SessionItems[] = []
+    const sessions = new Sessions({ codex, notes: memoryNotes(), changed: (all) => rows.push([...all]), items: (one) => items.push(one), account: () => undefined, notify: () => undefined, there: async () => true, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    try {
+      const id = await sessions.send({ root: ROOT, provider: 'codex', mode: 'manual', text: 'Review the UI' })
+      await tick()
+      const params: Extract<CodexEvent, { method: 'mcpServer/elicitation/request' }>['params'] = { threadId: id.slice(6), turnId: null, serverName: 'computer', mode: 'openai/form', _meta: { context: 'private-server-metadata' }, message: 'Allow GeckIt Local?', requestedSchema: { type: 'object', properties: {} } }
+      for (const requestId of ['first', 'second']) server.event({ method: 'mcpServer/elicitation/request', id: requestId, params })
+      expect(rows.at(-1)?.find((one) => one.id === id)?.state).toBe('asks')
+      expect(items.flatMap((one) => one.items).filter((item) => item.kind === 'card').map((item) => item.card)).toEqual([
+        expect.objectContaining({ kind: 'elicitation', title: 'Allow GeckIt Local?', where: 'Requested by computer' }),
+        expect.objectContaining({ kind: 'elicitation', title: 'Allow GeckIt Local?', where: 'Requested by computer' }),
+      ])
+      expect(JSON.stringify(items)).not.toContain('private-server-metadata')
+      await sessions.mode(id, 'auto')
+      await sessions.answer(id, 'card:first', 'session')
+      expect(server.requests.some((one) => one.id === 'first' && one.result !== undefined)).toBe(false)
+      await sessions.answer(id, 'card:first', '{"action":"accept","content":{}}')
+      expect(rows.at(-1)?.find((one) => one.id === id)?.state).toBe('asks')
+      await sessions.answer(id, 'card:second', '{"action":"decline","content":null}')
+      expect(rows.at(-1)?.find((one) => one.id === id)?.state).toBe('working')
+      expect(server.requests.filter((one) => ['first', 'second'].includes(String(one.id)) && one.result !== undefined).map((one) => one.result)).toEqual([{ action: 'accept', content: {}, _meta: null }, { action: 'decline', content: null, _meta: null }])
+      expect(items.flatMap((one) => one.items).flatMap((item) => item.kind === 'card' && item.card.answered !== undefined ? [item.card.answered] : [])).toEqual(['Accepted: Allow GeckIt Local?', 'Declined: Allow GeckIt Local?'])
+      server.event({ method: 'mcpServer/elicitation/request', id: 'third', params })
+      expect(rows.at(-1)?.find((one) => one.id === id)?.state).toBe('asks')
+      expect(server.requests.some((one) => one.id === 'third' && one.result !== undefined)).toBe(false)
+    } finally { sessions.dispose() }
   })
 
   it('starts, queues and restores Codex sessions without invoking Claude', async () => {

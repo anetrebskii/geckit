@@ -96,7 +96,7 @@ export function Cell({
   )
 }
 
-export function Switch({ on, label, disabled = false, onChange }: { readonly on: boolean; readonly label: string; readonly disabled?: boolean; readonly onChange: (on: boolean) => void }): React.JSX.Element {
+export function Switch({ on, label, disabled = false, onChange, 'aria-describedby': describedBy }: { readonly on: boolean; readonly label: string; readonly disabled?: boolean; readonly onChange: (on: boolean) => void } & Pick<React.ComponentProps<'button'>, 'aria-describedby'>): React.JSX.Element {
   return (
     <button
       type="button"
@@ -104,6 +104,7 @@ export function Switch({ on, label, disabled = false, onChange }: { readonly on:
       disabled={disabled}
       aria-checked={on}
       aria-label={label}
+      aria-describedby={describedBy}
       className={`phone-switch${on ? ' on' : ''}`}
       onClick={(event) => {
         event.stopPropagation()
