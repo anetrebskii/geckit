@@ -35,7 +35,7 @@ Working in terminal tabs, it is easy to miss a conversation that is waiting for 
   <img src="docs/screenshots/board-light.png" alt="The board: Claude Code conversations from three projects as cards in In progress, In review and Done">
 </picture>
 
-- Three columns: In progress, In review, Done. A card is dragged from one to the next, and Done is grouped by the day.
+- Three columns: In progress, In review, Done. A card is dragged from one to the next, and Done is grouped by the day. A Columns control in the top bar shows one of them on its own across the whole board.
 - A card shows its project, whether the assistant is working or waiting for you, its goal and links from the conversation.
 - New task starts a conversation in a project, with an optional goal. The assistant keeps working until the goal holds, then the card moves to In review by itself.
 - All projects on one board, or one project at a time with Cmd+K.
@@ -68,6 +68,7 @@ Press a card and the conversation opens over the board. Work with Codex or Claud
 </picture>
 
 - Ctrl+Tab switches between conversations as it works in VS Code between files.
+- A conversation opens over the board, or below it: a button in its head keeps the board as a strip across the top, as tall as you drag it, with the conversation under it.
 - A notification when AI has finished its job, so you never miss it waiting for you.
 - The status bar shows usage limits, context size, cost and git information.
 - @ picks a file or folder from the project, a message starting with ! runs a command, Up brings back your past message, images can be pasted or dropped in.
