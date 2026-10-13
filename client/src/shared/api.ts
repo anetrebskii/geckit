@@ -367,6 +367,8 @@ export interface ChatSession {
   readonly injecting?: QueuedMessage['id']
   /** Its queued messages wait for a slot, as many working as the limit. */
   readonly waits?: true
+  /** A process holds it, with the conversation in memory. Let go, it is taken up again from the tool's own file by the next message. */
+  readonly held?: true
   /** A general question: shown while it is open, and never as a card or a row. */
   readonly question?: boolean
   /** When a general question that has gone quiet is deleted. */
@@ -395,6 +397,11 @@ export interface WorkItem {
   readonly url: string
   /** "twins-ai/Twins-AI pull request 3908" */
   readonly says: string
+}
+
+/** Whether the process holding a conversation can be let go: one holds it, and no turn is running in it. */
+export function letsGo(session: Pick<ChatSession, 'held' | 'state' | 'remote' | 'tasks'>): boolean {
+  return session.held === true && session.state !== 'working' && session.state !== 'asks' && session.remote === undefined && !session.tasks?.some((task) => task.status === 'running')
 }
 
 export type SessionStatus = 'review' | 'blocked' | 'done'

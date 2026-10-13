@@ -87,7 +87,7 @@ function Preview(): React.JSX.Element {
     setDraft, addFiles: noop, dropPicture: (index) => setPictures((held) => held.filter((_one, at) => at !== index)), setMode, setModel, setProvider: noop, askModels: noop,
     send: noop, ask: async () => undefined, startTask: async () => undefined, say: noop, answer: noop, stop: () => { generation.current++; setRetrying(false); setScenario('cancelled') },
     unqueue: (id) => setQueued((held) => held?.filter((one) => one.id !== id)), injectQueued: async () => undefined, requeue: noop, reorderQueued: noop, delegate: noop, stopShell: noop, typeShell: noop, toBackground: noop, stopTask: noop, clearTask: noop,
-    tasksShown: false, showTasks: noop, compacting: undefined, setCompacting: noop, rename: noop, mark: noop, hide: noop, keep: noop, remove: noop, terminal: noop, copyTerminal: async () => false, refresh: noop,
+    tasksShown: false, showTasks: noop, compacting: undefined, setCompacting: noop, rename: noop, mark: noop, hide: noop, keep: noop, remove: noop, terminal: noop, copyTerminal: async () => false, letGo: noop, refresh: noop,
   }
   const order = useRef<readonly ChatSession[]>([])
   return <main style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>

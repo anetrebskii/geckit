@@ -13,6 +13,7 @@ import type { Driver, Heard, Signal } from '../src/main/sessions/heard'
 import { memoryNotes, Sessions, withMoves } from '../src/main/sessions'
 import type { SessionNotice, SessionsDeps } from '../src/main/sessions'
 import type { ChatSession, ClaudeAccount, SessionItem, SessionItems, SessionMode } from '../src/shared/api'
+import { letsGo } from '../src/shared/api'
 import { VPN_IP_UNAVAILABLE_ERROR } from '../src/shared/vpn-ip'
 
 vi.mock('../src/main/sessions/account', () => ({
@@ -1443,6 +1444,61 @@ describe('the list', () => {
     const id = await started(built)
     built.sessions.handOver(id)
     expect(built.fake.ended).toBe(0)
+  })
+
+  it('keeps a quiet process supporting a background task', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'task', task: { id: 'b1', kind: 'local_bash', what: 'npm run dev', status: 'running', started: 1 } }, { kind: 'ended', how: 'done' }] })
+    const row = of(built.rows, id)
+    if (row === undefined) throw new Error('Missing session')
+    expect(letsGo(row)).toBe(false)
+    built.sessions.handOver(id)
+    expect(built.fake.ended).toBe(0)
+    expect(of(built.rows, id)?.held).toBe(true)
+  })
+
+  it('keeps a quiet process supporting Remote Control', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.fake.answers['remote_control'] = { session_url: 'https://claude.ai/code/session_remote' }
+    await built.sessions.remote(id, true)
+    const row = of(built.rows, id)
+    if (row === undefined) throw new Error('Missing session')
+    expect(letsGo(row)).toBe(false)
+    built.sessions.handOver(id)
+    expect(built.fake.ended).toBe(0)
+  })
+
+  it('waits for a released process to close before resuming from disk', async () => {
+    const read = vi.fn(async () => undefined)
+    const built = build({ disk: { list: async () => [], read, has: async () => true } })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    let close: (() => void) | undefined
+    built.fake.closing = new Promise<void>((resolve) => { close = resolve })
+    built.sessions.handOver(id)
+    built.sessions.handOver(id)
+    expect(built.fake.ended).toBe(1)
+    const resumed = built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'continue' })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(built.fake.made).toHaveLength(1)
+    expect(read).not.toHaveBeenCalled()
+    close?.()
+    await resumed
+    expect(read).toHaveBeenCalledOnce()
+    expect(built.fake.made).toHaveLength(2)
+    expect(built.fake.made[1]?.resume).toBe(true)
+  })
+
+  it('says a process holds it, and no longer once let go', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    expect(of(built.rows, id)?.held).toBe(true)
+    built.sessions.handOver(id)
+    expect(of(built.rows, id)?.held).toBeUndefined()
   })
 })
 

@@ -40,6 +40,7 @@ Working in terminal tabs, it is easy to miss a conversation that is waiting for 
 - New task starts a conversation in a project, with an optional goal. The assistant keeps working until the goal holds, then the card moves to In review by itself.
 - All projects on one board, or one project at a time with Cmd+K.
 - Cmd+click or Shift+click picks several cards, and they are moved, hidden or deleted together. Hidden conversations are behind their own button in the top bar.
+- A conversation keeps its process for ten minutes after it answers; the card's menu lets it go sooner, and the next message takes it up again from its file.
 - Ask (Cmd+Shift+N) is a question outside any project. It is not put on the board.
 
 ### Search

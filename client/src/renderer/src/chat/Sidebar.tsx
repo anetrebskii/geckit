@@ -2,7 +2,7 @@ import { ProviderIcon } from './ProviderIcon'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
-import { homeOf, SESSION_STATUSES } from '../../../shared/api'
+import { homeOf, letsGo, SESSION_STATUSES } from '../../../shared/api'
 import type { ChatGrouping, ChatSession, SessionStatus } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
@@ -771,6 +771,9 @@ export function Sidebar({
               ],
             },
             { value: 'select', label: 'Select', says: `${MOD}+click`, icon: 'select' },
+            ...(chat.everyone.some((session) => session.id === menu.id && letsGo(session))
+              ? [{ value: 'letgo', label: 'Let the process go', says: 'Frees its memory; the next message reads its file', icon: 'stop' }]
+              : []),
             { value: 'hide', label: 'Hide from this list', icon: 'hidden' },
             { value: 'delete', label: 'Delete', danger: true, icon: 'trash' },
           ]}
@@ -794,6 +797,7 @@ export function Sidebar({
             }
             if (value === 'copy') void chat.copyTerminal(menu.id)
             if (value === 'terminal') chat.terminal(menu.id)
+            if (value === 'letgo') chat.letGo(menu.id)
             if (value === 'hide') chat.hide(menu.id)
             if (value === 'select') {
               fromRef.current = menu.id
