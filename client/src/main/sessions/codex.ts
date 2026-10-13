@@ -1,4 +1,6 @@
 import type { Answered, ChatFound, ClaudeAccount, ClaudeModel, ReasoningEffort, SessionGoal, SessionMode } from '../../shared/api'
+import { elicitationAnswer, elicitationForm, elicitationUrl } from '../../shared/elicitation'
+import type { Elicitation } from '../../shared/elicitation'
 import { modelVersion } from '../../shared/providers'
 import { readFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
@@ -27,6 +29,7 @@ interface Asked {
   request: ApprovalEvent
   at: number
   answers: { [question: string]: { answers: string[] } }
+  elicitation?: Elicitation
 }
 
 export class CodexSessions {
@@ -246,6 +249,16 @@ export class CodexSessions {
     await rpc.request('thread/goal/clear', { threadId: native(id) })
   }
 
+  async pauseGoal(id: string): Promise<void> {
+    const rpc = await this.#connection()
+    await rpc.request('thread/goal/set', { threadId: native(id), status: 'paused' })
+  }
+
+  async resumeGoal(id: string): Promise<void> {
+    const rpc = await this.#connection()
+    await rpc.request('thread/goal/set', { threadId: native(id), status: 'active' })
+  }
+
   async search(roots: readonly string[], asked: string): Promise<ChatFound[]> {
     await this.list(roots)
     return searchCodex([...this.#files.values()].filter((one) => roots.includes(one.root)), asked)
@@ -288,16 +301,31 @@ export class CodexSessions {
     let model = options.model
     const signals = (...signals: Signal[]): void => hear({ items: [], gone: [], signals })
     const ended = (how: 'done' | 'stopped' | 'failed', text?: string): void => {
+      clearRequests()
       if (!active) return
       active = false
       turnId = undefined
-      requests.clear()
       signals({ kind: 'ended', how, ...(text === undefined ? {} : { text }) })
+    }
+    const clearRequests = (): void => {
+      for (const asked of requests.values()) {
+        if (asked.request.method !== 'mcpServer/elicitation/request') continue
+        const id = String(asked.request.id)
+        rpc?.reply(asked.request.id, { action: 'cancel', content: null, _meta: null })
+        hear({ items: [], gone: [`card:${id}`], signals: [{ kind: 'resolved', ask: id }] })
+      }
+      requests.clear()
     }
     const ask = (asked: Asked): void => {
       const request = asked.request
       const id = String(request.id)
       switch (request.method) {
+        case 'mcpServer/elicitation/request': {
+          const params = request.params
+          asked.elicitation = { serverName: params.serverName, message: params.message, ...(params.mode === 'url' ? { fields: [], url: params.url, ...(elicitationUrl(params.url) ? {} : { error: 'This form is not supported yet.' }) } : elicitationForm(params.requestedSchema)) }
+          signals({ kind: 'asks', ask: id, wanted: { kind: 'elicitation', ...asked.elicitation } })
+          return
+        }
         case 'item/tool/requestUserInput': {
           const question = request.params.questions[asked.at]
           if (question === undefined) return
@@ -377,7 +405,8 @@ export class CodexSessions {
           case 'item/commandExecution/requestApproval':
           case 'item/fileChange/requestApproval':
           case 'item/tool/requestUserInput':
-          case 'item/permissions/requestApproval': {
+          case 'item/permissions/requestApproval':
+          case 'mcpServer/elicitation/request': {
             const asked: Asked = { request: event, at: 0, answers: {} }
             requests.set(String(event.id), asked)
             ask(asked)
@@ -504,7 +533,11 @@ export class CodexSessions {
         const asked = requests.get(key)
         if (asked === undefined || rpc === undefined) return
         const request = asked.request
-        if (request.method === 'item/tool/requestUserInput') {
+        if (request.method === 'mcpServer/elicitation/request') {
+          const response = asked.elicitation === undefined ? undefined : elicitationAnswer(answer, asked.elicitation)
+          if (response === undefined) return
+          rpc.reply(request.id, { ...response })
+        } else if (request.method === 'item/tool/requestUserInput') {
           const question = request.params.questions[asked.at]
           if (question === undefined) return
           asked.answers[question.id] = { answers: [answer] }
@@ -521,11 +554,13 @@ export class CodexSessions {
       },
       stop: () => {
         stopped = true
+        clearRequests()
         if (turnId !== undefined) void rpc?.request('turn/interrupt', { threadId, turnId }).catch((error: Error) => ended('failed', error.message))
       },
       end: async () => {
         if (over) return
         over = true
+        clearRequests()
         this.#listeners.delete(threadId)
         if (active && turnId !== undefined) await rpc?.request('turn/interrupt', { threadId, turnId }).catch(() => undefined)
         await ready.catch(() => undefined)

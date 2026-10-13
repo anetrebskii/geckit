@@ -16,7 +16,7 @@ import type { ChatSession, SessionItem, SessionItems, SessionProvider } from '..
 const ROOT = '/work/app'
 const OTHER = '/work/other'
 
-function build(limit = 0, providers: readonly SessionProvider[] = []): {
+function build(limit = 0, providers: readonly SessionProvider[] = [], beforeSend?: SessionsDeps['beforeSend']): {
   readonly sessions: Sessions
   readonly sent: string[]
   readonly rows: (readonly ChatSession[])[]
@@ -64,6 +64,7 @@ function build(limit = 0, providers: readonly SessionProvider[] = []): {
     correct: async () => ({ ok: true, text: '' }),
   } : undefined
   const sessions = new Sessions({
+    ...(beforeSend === undefined ? {} : { beforeSend }),
     ...(codex === undefined ? {} : { codex }),
     notes: memoryNotes(),
     changed: (all) => rows.push(all),
@@ -102,6 +103,26 @@ const request = (fanned: readonly SessionItems[]): Extract<SessionItem, { kind: 
     .at(-1)
 
 describe('a request to start conversations', () => {
+  it('keeps requested child sessions blocked without transmitting task text or goals', async () => {
+    let allowed = true
+    const built = build(0, [], async () => { if (!allowed) throw new Error('Not sent.') })
+    const asker = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'look around' })
+    const requested = built.sessions.request(asker, TASKS, 'auto', new AbortController().signal)
+    const card = request(built.fanned)?.id ?? ''
+    allowed = false
+    await built.sessions.startAll(card, 'mac')
+    const response = await requested
+    expect(built.sent).toEqual(['look around'])
+    expect(response?.tasks.map((one) => one.answer)).toEqual(['queued', 'queued'])
+    const child = response?.tasks[0]?.id ?? ''
+    expect(row(built.rows, child)?.heldSend).toBe(true)
+    allowed = true
+    const resumed = await built.sessions.retry(child)
+    expect(built.sent.at(-1)).toBe(TASKS[0]?.text)
+    expect(resumed).not.toBe(child)
+    expect(row(built.rows, resumed ?? '')?.queued?.[0]?.text).toBe('/goal npm test passes')
+  })
+
   it('waits in the conversation that asked, and says so on its row and in a notice', async () => {
     const built = build()
     const asker = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'look around' })

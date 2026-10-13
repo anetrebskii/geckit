@@ -168,6 +168,7 @@ const geckit = {
     proceed: (ids: readonly string[]): void => ipcRenderer.send('chat:proceed', ids),
     /** Conversations in one project, or in every one offered, with a message holding every word. Nothing asked readies the index. */
     search: (asked: string, root?: string): Promise<ChatFound[]> => ipcRenderer.invoke('chat:search', asked, root),
+    retry: (id: string): Promise<string | undefined> => ipcRenderer.invoke('chat:retry', id),
     send: (message: SessionMessage): Promise<string> => ipcRenderer.invoke('chat:send', message),
     /** A command typed after `!`, run in the project; says which conversation it is in. */
     shell: (command: ShellCommand): Promise<string> => ipcRenderer.invoke('chat:shell', command),

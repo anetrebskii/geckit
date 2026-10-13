@@ -1,7 +1,13 @@
 import type { CodexRateLimit, ReasoningEffort, SessionItem, SessionMode } from '../../shared/api'
 
 export type RpcId = string | number
-export type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
+export type { Json } from '../../shared/elicitation'
+import type { Elicitation, Json } from '../../shared/elicitation'
+
+export type CodexElicitationParams = Pick<RpcParams['turn/interrupt'], 'threadId'> & Pick<Elicitation, 'serverName' | 'message'> & { turnId: string | null; _meta: Json | null } & (
+  | { mode: 'form' | 'openai/form' | 'openaiForm'; requestedSchema: Json }
+  | { mode: 'url'; url: string; elicitationId: string }
+)
 
 export interface CodexThread {
   id: string
@@ -131,6 +137,7 @@ export type CodexEvent =
   | { method: 'item/fileChange/requestApproval'; id: RpcId; params: { threadId: string; itemId: string; reason?: string; grantRoot?: string } }
   | { method: 'item/tool/requestUserInput'; id: RpcId; params: { threadId: string; itemId: string; questions: CodexQuestion[] } }
   | { method: 'item/permissions/requestApproval'; id: RpcId; params: { threadId: string; itemId: string; reason: string | null; permissions: { network: { enabled: boolean | null } | null; fileSystem: { read: string[] | null; write: string[] | null; entries?: Json[] } | null } } }
+  | { method: 'mcpServer/elicitation/request'; id: RpcId; params: CodexElicitationParams }
   | { method: 'serverRequest/resolved'; params: { threadId: string; requestId: RpcId } }
   | { method: 'error'; params: { threadId: string; error: { message: string }; willRetry: boolean } }
 

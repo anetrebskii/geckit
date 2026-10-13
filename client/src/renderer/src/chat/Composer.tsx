@@ -314,12 +314,15 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   useLayoutEffect(() => {
     const area = field.current
     if (area === null) return
-    area.style.height = '0px'
-    // Over the board the conversation is put away between openings, and a field
-    // that is not on the screen measures nothing. Left to itself it stands one
-    // line high, which is what it is measured to anyway.
-    const wanted = area.scrollHeight
-    area.style.height = wanted === 0 ? '' : `${String(Math.min(wanted, 260))}px`
+    area.style.height = ''
+    if (chat.draft !== '') {
+      area.style.height = '0px'
+      // Over the board the conversation is put away between openings, and a field
+      // that is not on the screen measures nothing. Left to itself it stands one
+      // line high, which is what it is measured to anyway.
+      const wanted = area.scrollHeight
+      area.style.height = wanted === 0 ? '' : `${String(Math.min(wanted, 260))}px`
+    }
     if (putCaret.current !== undefined) {
       area.setSelectionRange(putCaret.current, putCaret.current)
       putCaret.current = undefined
@@ -1140,7 +1143,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               <Icon name={recorder.recording ? 'check' : 'mic'} size={15} />
             </button>
           )}
-          {shownAway !== undefined ? null : chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
+          {chat.checkingIp || shownAway !== undefined ? null : chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
             <button
               type="button"
               className="send"
@@ -1156,17 +1159,19 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           {/* Otherwise an empty field offers dictation in the send button's place, as Messages does. */}
           {/* Beside the mic, the language it listens in: a press switches to the other of the two in Settings, and it stays so. */}
           {/* With a picture attached, or Stop in the round button, the mic and language sit to its left, so words can still be said. */}
-          {shownAway !== undefined ? null : ON_PHONE && dictate()?.live === true && listening === undefined && chat.draft.trim() === '' ? (
+          {chat.checkingIp || shownAway !== undefined ? null : ON_PHONE && dictate()?.live === true && listening === undefined && chat.draft.trim() === '' ? (
             <button type="button" className={chat.pictures.length > 0 || chat.working ? 'spoken beside' : 'spoken'} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
               {languageCode(spoken)}
             </button>
           ) : null}
-          {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
+          {chat.checkingIp || shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
             <button type="button" className="send mic beside" disabled={cannot || writing} onClick={() => listen()} aria-label={`Dictate in ${spoken}`}>
               <Icon name="mic" size={16} />
             </button>
           ) : null}
-          {shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
+          {chat.checkingIp ? (
+            <button type="button" className="quiet cancel" onClick={chat.stop}>Cancel</button>
+          ) : shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
             <button
               type="button"
               className={listening !== undefined ? 'send listening' : 'send'}
@@ -1185,7 +1190,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             <button
               type="button"
               className="send"
-              disabled={cannot || (chat.draft.trim() === '' && chat.pictures.length === 0)}
+              disabled={chat.checkingIp || cannot || (chat.draft.trim() === '' && chat.pictures.length === 0)}
               onClick={submit}
               title={ON_PHONE ? queues ? 'Queue' : 'Send' : queues ? 'Queue (Enter)' : 'Send (Enter)'}
               aria-label={queues ? 'Queue' : 'Send'}

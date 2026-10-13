@@ -1,7 +1,10 @@
+import type { Elicitation } from '../../shared/elicitation'
+
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 
 /** What the assistant is asking to do, in the shape a request is read into. */
 export type Wanted =
+  | ({ readonly kind: 'elicitation' } & Elicitation)
   | { readonly kind: 'write'; readonly paths: readonly string[] }
   | { readonly kind: 'command'; readonly command: string }
   | { readonly kind: 'web'; readonly url: string }

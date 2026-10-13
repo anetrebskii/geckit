@@ -1,4 +1,5 @@
 import { isRemote } from './hosts'
+import type { Elicitation } from './elicitation'
 import type { HostConfig } from './hosts'
 import type { LlmProviderInfo } from './providers'
 import { llmProviderInfo } from './providers'
@@ -69,7 +70,7 @@ export const sessionMode = (kept: unknown): SessionMode =>
   kept === 'manual' || kept === 'ask' ? 'manual' : kept === 'plan' ? 'plan' : 'auto'
 
 /** What a card is asking, which decides the buttons under it. */
-export type CardKind = 'permission' | 'question' | 'start'
+export type CardKind = 'permission' | 'question' | 'start' | 'elicitation'
 
 /** One thing the assistant may not do unasked, or one thing it asked. */
 export interface SessionCard {
@@ -81,6 +82,7 @@ export interface SessionCard {
   /** "in geckit", or "Outside this folder". */
   readonly where?: string
   readonly choices?: readonly string[]
+  readonly elicitation?: Elicitation
   /** What was answered, once it was: "Allowed: npm test". */
   readonly answered?: string
 }
@@ -359,6 +361,8 @@ export interface ChatSession {
   readonly status?: SessionStatus
   /** Messages sent while it worked, oldest first, each going once the turn before it is answered. */
   readonly queued?: readonly QueuedMessage[]
+  readonly checkingIp?: true
+  readonly heldSend?: true
   readonly canInject?: true
   readonly injecting?: QueuedMessage['id']
   /** Its queued messages wait for a slot, as many working as the limit. */
@@ -376,6 +380,7 @@ export interface ChatSession {
 }
 
 export interface QueuedMessage {
+  readonly again?: SessionMessage['again']
   readonly id: string
   readonly text: string
   readonly command?: true
@@ -494,6 +499,7 @@ export interface ChatFound {
 
 /** What is sent when Send is pressed. */
 export interface SessionMessage {
+  readonly submission?: string
   readonly provider?: SessionProvider
   readonly reasoning?: ReasoningEffort | ''
   /** Absent for the first message of a new session. */
@@ -922,6 +928,8 @@ export interface PhoneView {
 
 export interface Settings {
   readonly theme: Theme
+  readonly vpnIpCheck: boolean
+  readonly vpnAllowedIps: readonly string[]
   readonly nativeLanguage: string
   readonly secondLanguage: string
   readonly microphoneDeviceId: string
@@ -1083,6 +1091,8 @@ export function shownProjects(settings: Pick<Settings, 'projects' | 'profiles' |
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
+  vpnIpCheck: false,
+  vpnAllowedIps: [],
   nativeLanguage: 'English',
   secondLanguage: 'Russian',
   microphoneDeviceId: '',
