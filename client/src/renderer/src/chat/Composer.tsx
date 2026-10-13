@@ -314,12 +314,15 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   useLayoutEffect(() => {
     const area = field.current
     if (area === null) return
-    area.style.height = '0px'
-    // Over the board the conversation is put away between openings, and a field
-    // that is not on the screen measures nothing. Left to itself it stands one
-    // line high, which is what it is measured to anyway.
-    const wanted = area.scrollHeight
-    area.style.height = wanted === 0 ? '' : `${String(Math.min(wanted, 260))}px`
+    area.style.height = ''
+    if (chat.draft !== '') {
+      area.style.height = '0px'
+      // Over the board the conversation is put away between openings, and a field
+      // that is not on the screen measures nothing. Left to itself it stands one
+      // line high, which is what it is measured to anyway.
+      const wanted = area.scrollHeight
+      area.style.height = wanted === 0 ? '' : `${String(Math.min(wanted, 260))}px`
+    }
     if (putCaret.current !== undefined) {
       area.setSelectionRange(putCaret.current, putCaret.current)
       putCaret.current = undefined
