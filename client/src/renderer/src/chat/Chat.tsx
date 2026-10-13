@@ -789,8 +789,8 @@ export function Chat(): React.JSX.Element {
 
         {chat.shown.kind === 'new' && chat.items.length === 0 ? (
           <div className="transcript">
-            <div className="turn" style={{ paddingTop: 40, color: 'var(--text-dim)' }}>
-              {chat.root === undefined
+            <div className="turn" role={chat.checkingIp ? 'status' : undefined} style={{ paddingTop: 40, color: 'var(--text-dim)' }}>
+              {chat.checkingIp ? 'Checking public IP...' : chat.root === undefined
                 ? 'Choose a folder on the left. Everything asked here runs in that folder.'
                 : host !== undefined
                   ? host.state === 'lost'
@@ -840,6 +840,11 @@ export function Chat(): React.JSX.Element {
               onTypeShell={chat.typeShell}
               onBackground={chat.toBackground}
               onContinue={proceed}
+              onRetry={chat.retry}
+              checkingIp={chat.checkingIp}
+              retrying={chat.retrying}
+              queued={chat.session?.queued}
+              heldSend={chat.session?.heldSend === true}
               tasks={chat.session?.tasks}
               onTasks={chat.showTasks}
               seek={seek}

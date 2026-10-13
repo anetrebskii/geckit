@@ -5,6 +5,7 @@ import type { CardAnswer, SessionCard } from '../../shared/api'
 import { modelName } from '../../shared/api'
 import type { LlmProviderInfo } from '../../shared/providers'
 import { within } from './rule'
+import { elicitationSummary } from '../../shared/elicitation'
 import type { Wanted } from './rule'
 
 /**
@@ -274,6 +275,8 @@ export function cardFor(wanted: Wanted, root: string): SessionCard {
       return { kind: 'permission', title: 'Wants to open a web page', detail: wanted.url }
     case 'question':
       return { kind: 'question', title: wanted.question, choices: wanted.choices }
+    case 'elicitation':
+      return { kind: 'elicitation', title: wanted.message, where: `Requested by ${wanted.serverName}`, elicitation: wanted }
     case 'start':
       return { kind: 'start', title: 'Wants to start making these changes', detail: wanted.plan }
     case 'other':
@@ -296,6 +299,8 @@ function subject(wanted: Wanted, root: string): string {
       return 'making changes'
     case 'question':
       return wanted.question
+    case 'elicitation':
+      return wanted.message
     case 'other':
       return wanted.tool
   }
@@ -303,6 +308,7 @@ function subject(wanted: Wanted, root: string): string {
 
 /** The one line a card folds to once it has its answer. */
 export function answeredLine(wanted: Wanted, answer: CardAnswer | string, root: string): string {
+  if (wanted.kind === 'elicitation') return `${elicitationSummary(answer)}: ${wanted.message}`
   if (wanted.kind === 'question') return `Answered: ${answer}`
   const what = subject(wanted, root)
   if (answer === 'once') return `Allowed: ${what}`
@@ -323,6 +329,8 @@ export function waitingFor(wanted: Wanted): string {
       return 'Wants to open a web page'
     case 'question':
       return 'Asked you a question'
+    case 'elicitation':
+      return 'Needs your approval'
     case 'start':
       return 'Wants to start making changes'
     case 'other':

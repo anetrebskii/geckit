@@ -46,7 +46,7 @@ function Preview(): React.JSX.Element {
   const chat: Chat = {
     settings: { ...DEFAULT_SETTINGS, phrases: [] }, hosts: [], prompts: [], lineup: { working: 1, limit: 6 }, full: false, change: noop,
     root: session.root, scope: session.root, sessions: [session], listed: true, everyone: [session], questions: [], waiting: [], notices: [], shown: { kind: 'session', id: session.id }, session,
-    items, itemsFor: session.id, earlier: 0, showEarlier: noop, loadSteps: noop, draft, pictures: [], trouble, uploading: false,
+    items, itemsFor: session.id, earlier: 0, showEarlier: noop, loadSteps: noop, draft, pictures: [], trouble, checkingIp: false, retrying: false, retry: noop, uploading: false,
     account: { provider: 'codex', here: true, signedIn: true, plan: 'Plus' }, plan: undefined, plans: [], plansAt: {}, models: [{ value: 'gpt-preview', name: 'Preview model' }],
     mode, transport: 'stream', provider: 'codex', showProviders: true, reasoning: '', setReasoning: noop, model, working: session.state !== 'idle', focusSeed: 0, chosen: [session.root],
     setScope: noop, alsoScope: noop, choose: noop, setRoot: noop, addProject: noop, forgetProject: noop, open: noop, show: noop, goTo: noop, dismiss: noop, startNew: noop,
@@ -76,7 +76,7 @@ function Preview(): React.JSX.Element {
     </header>
     <div className="talk" style={{ flex: 1, minHeight: 0 }}>
       <header className="talk-head"><strong>{session.title}</strong><span className="place">geckit / client</span></header>
-      <Transcript at={session.id} items={items} working={chat.working} onAnswer={noop} onAgain={noop} onFile={noop} onStopShell={noop} onTypeShell={noop} onBackground={noop} onContinue={noop} tasks={undefined} onTasks={noop} />
+      <Transcript at={session.id} items={items} working={chat.working} onAnswer={noop} onAgain={noop} onFile={noop} onStopShell={noop} onTypeShell={noop} onBackground={noop} onContinue={noop} onRetry={noop} tasks={undefined} onTasks={noop} />
       <Composer chat={chat} />
       {trouble === '' ? null : <p role="alert" style={{ color: 'var(--danger)', padding: '0 20px' }}>{trouble}</p>}
     </div>
