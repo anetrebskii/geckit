@@ -1,9 +1,9 @@
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
-import { assistantFor, ANYWHERE, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
-import type { ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
-import { movedOrder, ordered } from '../../../shared/order'
+import { assistantFor, ANYWHERE, BOARD_COLUMNS, columnShown, homeOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import type { BoardColumn, ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
+import { landingIndex, movedOrder, ordered } from '../../../shared/order'
 import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
@@ -12,7 +12,7 @@ import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
 import { Icon } from '../ui/Icon'
-import { Menu } from '../ui/Menu'
+import { Menu, Picker } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
 import { HiddenChats } from './HiddenChats'
@@ -45,21 +45,32 @@ import type { Chat } from './useChat'
  * conversation itself over the board.
  */
 
-/** No column for what has not been started: a conversation exists because it was. */
-const COLUMNS: readonly { readonly status: SessionStatus | undefined; readonly title: string }[] = [
-  { status: undefined, title: 'In progress' },
-  { status: 'review', title: 'In review' },
-  { status: 'done', title: 'Done' },
+/** What the Columns control says for each choice: the column's own name, or that every one stands. */
+const COLUMN_CHOICES: readonly { readonly value: BoardColumn; readonly label: string; readonly says: string }[] = [
+  { value: 'all', label: 'All columns', says: 'In progress, In review and Done side by side' },
+  ...BOARD_COLUMNS.map((one) => ({ value: one.column, label: one.title, says: `Only ${one.title}, across the whole board` })),
 ]
 
-/** Before which card of In progress the pointer is, counting the cards above it in the part kept in the person's order. */
-function landingAt(column: HTMLElement, y: number): number {
+/** The board's Columns control: every column, or one on its own, for a board kept small or a look at one column alone. */
+function Columns({ chat }: { readonly chat: Chat }): React.JSX.Element {
+  const chosen = chat.settings.boardColumn
+  return (
+    <Picker
+      label={COLUMN_CHOICES.find((one) => one.value === chosen)?.label ?? 'All columns'}
+      tip="Columns: every one, or one on its own"
+      choices={COLUMN_CHOICES}
+      chosen={chosen}
+      explained
+      onPick={(value) => chat.change({ boardColumn: value as BoardColumn })}
+      className="picker no-drag board-columns-pick"
+    />
+  )
+}
+
+/** Before which card of In progress the pointer is, counting the cards in the part kept in the person's order; among tiles, where in the row too. */
+function landingAt(column: HTMLElement, x: number, y: number, tiled: boolean): number {
   const cards = [...column.querySelectorAll<HTMLElement>('[data-kept] [data-card]')]
-  const at = cards.findIndex((card) => {
-    const box = card.getBoundingClientRect()
-    return y < box.top + box.height / 2
-  })
-  return at === -1 ? cards.length : at
+  return landingIndex(cards.map((card) => card.getBoundingClientRect()), x, y, tiled)
 }
 
 /** The bar across the top in both views, so switching between them changes only what is below it. */
@@ -87,6 +98,7 @@ export function TopBar({
   return (
     <div className="board-head drag">
       <Views chat={chat} />
+      {chat.settings.chatView === 'board' && !ON_PHONE ? <Columns chat={chat} /> : null}
       <Projects chat={chat} />
       <BoardSearch chat={chat} onSeek={onSeek} />
       <button
@@ -223,9 +235,10 @@ export function Board({
     return () => clearInterval(tick)
   }, [])
 
-  const columns = useMemo(
+  // Every column is worked out, since In progress keeps the order whether or not it is shown; `columns` is what stands on the board.
+  const all = useMemo(
     () =>
-      COLUMNS.map((column) => ({
+      BOARD_COLUMNS.map((column) => ({
         ...column,
         // Blocked stands in the first column: it is work that is not over, and its
         // tag on the card says what it is waiting on.
@@ -238,6 +251,9 @@ export function Board({
       })),
     [chat.sessions, chat.settings.progressOrder],
   )
+  const columns = useMemo(() => all.filter((one) => columnShown(chat.settings.boardColumn, one.column)), [all, chat.settings.boardColumn])
+  // One column with the whole board to itself, or the strip above a conversation: the cards go side by side as tiles rather than one under another at the full width.
+  const tiled = columns.length < all.length || (chat.settings.conversationPlace === 'below' && chat.shown.kind === 'session')
   const startedLines = useMemo(() => {
     const lines = new Map<string, string>()
     for (const parent of new Set(chat.sessions.flatMap((one) => (one.parent === undefined ? [] : [one.parent])))) {
@@ -246,7 +262,7 @@ export function Board({
     }
     return lines
   }, [chat.sessions])
-  const progress = columns[0]?.rows ?? []
+  const progress = all[0]?.rows ?? []
   // What needs the person is drawn on top of In progress; the rest keeps the order, which still holds every card and decides who takes a free slot.
   const needs = useNeedsYou(progress, chat.shown.kind === 'session' ? chat.shown.id : undefined)
   // What works now comes under it, out of the order while it works and back in its place once it stops.
@@ -263,6 +279,8 @@ export function Board({
   }
   // Where in In progress a dragged card would land. The order is who a free slot goes to first, and moving a card changes nothing else.
   const [landing, setLanding] = useState<number | undefined>()
+  // The card it would land before, worked out once rather than by each card's place in the order.
+  const landingId = landing === undefined ? undefined : kept[landing]?.id
 
   // The cards picked with Cmd or Shift, to be moved, hidden or deleted together. One gone from the board is not picked any more.
   const [picks, setPicks] = useState<ReadonlySet<string>>(new Set())
@@ -348,7 +366,7 @@ export function Board({
   }
 
   return (
-    <div className="board">
+    <div className={`board${tiled ? ' tiled' : ''}`}>
       {emptyProfile(chat.settings) === undefined ? null : (
         <div className="board-empty">No folders in {emptyProfile(chat.settings)}. Tick some in Settings, Profiles.</div>
       )}
@@ -365,7 +383,7 @@ export function Board({
                   setLanding(undefined)
                   return
                 }
-                setLanding(landingAt(event.currentTarget, event.clientY))
+                setLanding(landingAt(event.currentTarget, event.clientX, event.clientY, tiled))
               }}
               onDragLeave={(event) => {
                 if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
@@ -401,7 +419,7 @@ export function Board({
                     )}
                     {(folded.has(day.heading) ? [] : day.rows).map((session) => (
                       <Fragment key={session.id}>
-                      {column.status === undefined && landing !== undefined && landing === kept.indexOf(session) ? <div className="board-drop" /> : null}
+                      {column.status === undefined && !tiled && landingId === session.id ? <div className="board-drop" /> : null}
                       <BoardCard
                         chat={chat}
                         showProviders={chat.showProviders}
@@ -409,6 +427,7 @@ export function Board({
                         now={now}
                         renaming={renaming === session.id}
                         picked={picked.has(session.id)}
+                        landing={column.status === undefined && tiled && landingId === session.id}
                         started={startedLines.get(session.id)}
                         onPress={(one, how) => latest.current.press(one, how)}
                         onDrag={(id) => (held.current = id === undefined ? [] : latest.current.targets(id))}
@@ -552,6 +571,7 @@ function Card({
   now,
   renaming,
   picked,
+  landing,
   started,
   onPress,
   onDrag,
@@ -565,6 +585,8 @@ function Card({
   readonly now: number
   readonly renaming: boolean
   readonly picked: boolean
+  /** A dragged card would land before this one: among tiles, its left edge says so, where a line between rows would not. */
+  readonly landing: boolean
   /** "Started 2 - 1 working", worked out once for the board rather than by each card. */
   readonly started: string | undefined
   /** Cmd+click picks one card, Shift+click the run up to it, and a plain click opens it unless some are picked. */
@@ -600,7 +622,7 @@ function Card({
   const detail = stands?.tone === 'said-working' ? session.stands.replace(/^Working - /, '') : session.stands
   return (
     <div
-      className={`board-card${starred ? ' starred' : ''}${open ? ' on' : ''}${picked ? ' picked' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
+      className={`board-card${starred ? ' starred' : ''}${open ? ' on' : ''}${picked ? ' picked' : ''}${landing ? ' landing' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
       draggable={!renaming}
       role="button"
       tabIndex={0}
@@ -746,6 +768,7 @@ const BoardCard = memo(
     was.now === now.now &&
     was.renaming === now.renaming &&
     was.picked === now.picked &&
+    was.landing === now.landing &&
     (was.chat.shown === now.chat.shown || opened(was.chat, was.session) === opened(now.chat, now.session)) &&
     (was.chat.settings === now.chat.settings ||
       (was.chat.settings.favorites.includes(was.session.id) === now.chat.settings.favorites.includes(now.session.id) &&

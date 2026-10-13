@@ -16,7 +16,7 @@ These are product workflows, rather than individual model capabilities. "Site" m
 |---|---|---|
 | Cross-project work board | See conversations from multiple projects and assistants together, with In progress, In review and Done | [Site: board](https://geckit.app/#board) |
 | Attention and review tracking | Identify which conversation is working, needs an answer or is ready to review; open it from a card or notification | [Site: board](https://geckit.app/#board) |
-| Card organization | Drag, reorder, move/hide/delete several conversations, group completed work by day, keep favorites or switch to List | [Site: Kanban page](https://geckit.app/claude-code-kanban-board/) |
+| Card organization | Drag, reorder, move/hide/delete several conversations, group completed work by day, keep favorites or switch to List. In the working tree, show one column on its own, and open a conversation below the board instead of over it | [Site: Kanban page](https://geckit.app/claude-code-kanban-board/), [working tree](#board-layout---2026-10-13) |
 | Project scopes and profiles | Narrow the whole workspace to chosen projects, or keep work and personal projects apart | [Site: profiles](https://geckit.app/claude-code-kanban-board/) |
 | Cross-conversation search | Recover a past decision by searching conversation content without remembering its project | [Site: search](https://geckit.app/claude-code-kanban-board/) |
 | Goals connected to task state | Set/view/edit the task's completion condition and see its completion reflected on the board; native goal execution remains the assistant's responsibility | [Site: demo](https://geckit.app/), [code](../client/src/renderer/src/chat/Composer.tsx) |
@@ -373,6 +373,12 @@ Phone Kanban correction (2026-10-12, working tree): Alex again requested removin
 Alex requested a smaller Send now control and account limits only in Settings. The working tree uses a send-arrow icon (spinner during delivery) with the existing accessible action label, a 24px desktop control and 44px phone target. Desktop and phone board footers, phone high-usage alerts, model-details quota sections and conversation-info account limits are removed. Settings > Assistants > Account and limits opens the shared account details for builtin providers, libraries and Claude host accounts. Conversation context and actionable provider failures remain on the conversation.
 
 Evidence: `chat/Composer.tsx`, `chat/AssistantStatus.tsx`, `chat/Chat.tsx`, `chat/PhoneBoard.tsx`, `chat/PhoneInfo.tsx`, `chat/ModelDetails.tsx`, `chat/PhoneSettings.tsx`, `ui/SettingsDialog.tsx`, and `styles.css`. UX revisions: [queued send](ux/send-queued-now.md#revision---2026-10-09), [Settings-only limits](ux/assistant-status.md#revision---2026-10-09-limits-in-settings). This supersedes earlier footer-placement descriptions for the working tree; no installed/device release is claimed.
+
+## Board layout - 2026-10-13
+
+Proposed by Anton, who works on Windows with many conversations open. In the working tree the board gains a Columns control in the top bar (every column, or In progress, In review or Done alone across the board, its cards as tiles), and a button in an open conversation's head that opens conversations below the board instead of over it, the board kept as a strip across the top whose lower edge is dragged. Every default keeps the board as it was; the phone is unchanged.
+
+Evidence: `client/src/renderer/src/chat/Board.tsx`, `Chat.tsx`, `styles.css`, `ui/Icon.tsx`, `ui/Shortcuts.tsx`, `client/src/shared/api.ts`, `client/src/shared/order.ts`, tests `client/test/board-columns.test.ts`, UX in [board layout](ux/board-layout.md) and the [views revision](ux/views.md#revision---2026-10-13-the-columns-control). Tried by hand on Windows 11 from the source. On macOS, the actual renderer was reviewed in a browser with native IPC fixtures in light and dark themes; native app UI inspection was unavailable. Alex tested the isolated desktop build and requested a larger resize target. The target is now 20 px tall with a visible center grip and immediate hover feedback; offset grabs and double-click reset were verified. Linux UI was not reviewed. This is source support, not a released/installed app claim.
 
 ## VPN IP check and session error retry - 2026-10-11
 

@@ -455,7 +455,6 @@ export interface Browser {
   readonly current: boolean
 }
 
-
 /** A picture sent with a message: what it is, and the picture itself as base64. */
 export interface SessionImage {
   readonly media: string
@@ -863,6 +862,24 @@ export type ChatGrouping = 'time' | 'project'
 /** How the conversations are shown: the list, or a board of cards in columns by how each stands. */
 export type ChatView = 'list' | 'board'
 
+/** Where a conversation opened from the board stands: over it as a popup, or below it, with the board kept as a strip across the top. */
+export type ConversationPlace = 'over' | 'below'
+
+/** Which of the board's columns are shown: every one, or one of them on its own. */
+export type BoardColumn = 'all' | 'progress' | 'review' | 'done'
+
+/** The board's columns in their order, each with the status its cards carry. No column for what has not been started, a conversation exists because it was: In progress holds what carries no status, blocked included. */
+export const BOARD_COLUMNS: readonly { readonly column: Exclude<BoardColumn, 'all'>; readonly status: SessionStatus | undefined; readonly title: string }[] = [
+  { column: 'progress', status: undefined, title: 'In progress' },
+  { column: 'review', status: 'review', title: 'In review' },
+  { column: 'done', status: 'done', title: 'Done' },
+]
+
+/** Whether a column stands on the board under this choice. A choice no column answers to, as a build from after this one may leave, shows every column rather than none. */
+export function columnShown(choice: BoardColumn, column: Exclude<BoardColumn, 'all'>): boolean {
+  return choice === 'all' || choice === column || !BOARD_COLUMNS.some((one) => one.column === choice)
+}
+
 /** Which builds this copy is offered: every build lands on Development first, and the ones promoted reach Stable. */
 export type UpdateChannel = 'stable' | 'dev'
 
@@ -964,6 +981,12 @@ export interface Settings {
   readonly chatGrouping: ChatGrouping
   /** The conversations as a list, or as a board of cards by what stands where. */
   readonly chatView: ChatView
+  /** A conversation opened from the board comes up over it, or below it with the board shrunk to a strip above. */
+  readonly conversationPlace: ConversationPlace
+  /** How tall the strip of board above a conversation was dragged, in pixels. */
+  readonly boardHeight: number
+  /** The board's columns: every one, or one on its own. */
+  readonly boardColumn: BoardColumn
   /** The chat window lists every project's conversations, and opens that way again. False is the newest project's. */
   readonly chatAll: boolean
   /** The projects whose conversations are listed. Empty is every one of them. */
@@ -1118,6 +1141,9 @@ export const DEFAULT_SETTINGS: Settings = {
   chatMode: 'auto',
   chatGrouping: 'time',
   chatView: 'board',
+  conversationPlace: 'over',
+  boardHeight: 240,
+  boardColumn: 'all',
   chatAll: false,
   chatProjects: [],
   favorites: [],
