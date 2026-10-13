@@ -89,3 +89,5 @@ Reviewed PR #20 against current main. No existing GitHub review comments or unre
 - Performance checklist: no problems found. Existing row/card memoization and identity retention remain; stable letGo callback is reused. The eligibility scan runs only for the one open menu, with no per-card scans, new animation, formatter or list. Phone bundle rebuilt; no new many-row rendering path requires profiling.
 
 Latest-main integration: retained the board column/docked-conversation imports and both feature-audit entries. Full tests, lint, types and desktop/phone builds pass after integration. Light/dark browser review repeated on the combined board; release still removes only its own menu action.
+
+Windows-attention integration: resolved only feature-audit conflicts after PR #19 reached main; retained both attention and process-release entries. All 217 affected session/notice/overlay tests, typecheck, lint and desktop/phone builds pass. The process-release implementation is unchanged from the reviewed version.

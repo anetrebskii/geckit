@@ -869,6 +869,14 @@ export type ChatGrouping = 'time' | 'project'
 /** How the conversations are shown: the list, or a board of cards in columns by how each stands. */
 export type ChatView = 'list' | 'board'
 
+/** When a notice about a conversation does something more than show: never, for a question or a request alone, or for every one. */
+export type NoticeWhen = 'never' | 'asks' | 'all'
+
+/** Whether a notice, asking or not, is one this choice wants. */
+export function noticeWanted(when: NoticeWhen, asks: boolean): boolean {
+  return when === 'all' || (when === 'asks' && asks)
+}
+
 /** Where a conversation opened from the board stands: over it as a popup, or below it, with the board kept as a strip across the top. */
 export type ConversationPlace = 'over' | 'below'
 
@@ -1024,6 +1032,10 @@ export interface Settings {
   readonly guidePlugins: Readonly<Record<string, boolean>>
   /** Shortcuts in any application turned off here, as a copy run beside another GeckIt wants. */
   readonly anywhereOff: readonly Anywhere[]
+  /** When the Chat window flashes in the taskbar for a notice, on Windows; the Mac bounces the Dock itself. */
+  readonly flashFor: NoticeWhen
+  /** When a notice sounds the system's alert, wherever the window is. */
+  readonly soundFor: NoticeWhen
   /** How many conversations may work at once before a new one waits in the queue. Nought is no limit. */
   readonly workingAtOnce: number
   /** The conversations in In progress, top first. One coming into the column is put on top, and after that only dragging or Move to top and Move to bottom move it. */
@@ -1166,6 +1178,8 @@ export const DEFAULT_SETTINGS: Settings = {
   guideCodex: true,
   guidePlugins: {},
   anywhereOff: [],
+  flashFor: 'asks',
+  soundFor: 'never',
   workingAtOnce: 6,
   progressOrder: [],
   // True until the main process says otherwise, so a window never flashes the sheet before its settings arrive.

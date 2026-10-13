@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 
 import { ANYWHERE, UPDATE_CHANNELS, appName, assistantsIn, channelLabel, profileOf } from '../../../shared/api'
 import { independentProviderInfo, instructionsFor, llmProviderInfo } from '../../../shared/providers'
-import type { Anywhere, OpenRule, PhoneView, ProjectProfile, SessionProvider, Settings, Theme, UpdateChannel } from '../../../shared/api'
+import type { Anywhere, NoticeWhen, OpenRule, PhoneView, ProjectProfile, SessionProvider, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
 import { AssistantStatus } from '../chat/AssistantStatus'
 import type { AssistantStatusChat } from '../chat/AssistantStatus'
@@ -57,6 +57,19 @@ const SECTIONS: readonly { readonly value: Section; readonly label: string }[] =
   { value: 'phone', label: 'Phone' },
   { value: 'version', label: 'Version' },
 ]
+
+/** Where the taskbar is: the flash is offered there alone, the Mac bouncing the Dock itself. */
+const WINDOWS = window.geckit.platform === 'win32'
+
+/** When a notice flashes or sounds: for a question or a request to start conversations, for every notice, or never. */
+const NOTICE_WHEN: readonly { readonly value: NoticeWhen; readonly label: string; readonly says: string }[] = [
+  { value: 'asks', label: 'For questions', says: 'A question, a permission, or a request to start conversations: what a conversation cannot go on without.' },
+  { value: 'all', label: 'For every notice', says: 'Questions, and a conversation finished, stopped or at the plan limit.' },
+  { value: 'never', label: 'Never', says: 'The card or the notification alone.' },
+]
+
+/** What a notice setting says of its value. */
+const noticeWhenLabel = (when: NoticeWhen): string => NOTICE_WHEN.find((one) => one.value === when)?.label ?? 'Never'
 
 const NOTE = { fontSize: 12, color: 'var(--text-faint)' } as const
 
@@ -305,6 +318,38 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
         </label>
         <span style={NOTE}>
           Sends Sentry the error and where in GeckIt it happened, with paths, addresses and links taken out. Never your conversations, files or keys. Off, errors are kept here and GeckIt asks before sending them.
+        </span>
+      </div>
+
+      {!WINDOWS ? null : (
+        <div className="field">
+          <label>Flash in the taskbar</label>
+          <Picker
+            label={noticeWhenLabel(settings.flashFor)}
+            choices={NOTICE_WHEN}
+            chosen={settings.flashFor}
+            explained
+            onPick={(value) => change({ flashFor: value as NoticeWhen })}
+            className="select"
+          />
+          <span style={NOTE}>
+            A notice about another conversation, when the window is not in front, flashes it in the taskbar until it is brought to the front.
+          </span>
+        </div>
+      )}
+
+      <div className="field">
+        <label>Sound for a notice</label>
+        <Picker
+          label={noticeWhenLabel(settings.soundFor)}
+          choices={NOTICE_WHEN}
+          chosen={settings.soundFor}
+          explained
+          onPick={(value) => change({ soundFor: value as NoticeWhen })}
+          className="select"
+        />
+        <span style={NOTE}>
+          The system alert, whether or not the window is in front: a notice is always about a conversation other than the open one.
         </span>
       </div>
 

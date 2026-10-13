@@ -15,8 +15,9 @@ These are product workflows, rather than individual model capabilities. "Site" m
 | GeckIt feature | What it gives the person | Evidence |
 |---|---|---|
 | Cross-project work board | See conversations from multiple projects and assistants together, with In progress, In review and Done | [Site: board](https://geckit.app/#board) |
-| Attention and review tracking | Identify which conversation is working, needs an answer or is ready to review; open it from a card or notification | [Site: board](https://geckit.app/#board) |
+| Attention and review tracking | Identify which conversation is working, needs an answer or is ready to review; open it from a card or notification. In the working tree, on Windows the count of conversations waiting is on the taskbar icon, the window flashes for a question, and a sound can be turned on | [Site: board](https://geckit.app/#board), [working tree](#attention-on-windows---2026-10-13) |
 | Card organization | Drag, reorder, move/hide/delete several conversations, group completed work by day, keep favorites or switch to List. In the working tree, show one column on its own, open a conversation below the board, or let a quiet conversation's process go without hiding its card | [Site: Kanban page](https://geckit.app/claude-code-kanban-board/), [board layout](#board-layout---2026-10-13), [letting go](#letting-a-process-go---2026-10-13) |
+
 | Project scopes and profiles | Narrow the whole workspace to chosen projects, or keep work and personal projects apart | [Site: profiles](https://geckit.app/claude-code-kanban-board/) |
 | Cross-conversation search | Recover a past decision by searching conversation content without remembering its project | [Site: search](https://geckit.app/claude-code-kanban-board/) |
 | Goals connected to task state | Set/view/edit the task's completion condition and see its completion reflected on the board; native goal execution remains the assistant's responsibility | [Site: demo](https://geckit.app/), [code](../client/src/renderer/src/chat/Composer.tsx) |
@@ -379,6 +380,12 @@ Evidence: `chat/Composer.tsx`, `chat/AssistantStatus.tsx`, `chat/Chat.tsx`, `cha
 Anton asked for a way to end a finished conversation's process without hiding or deleting its card, as closing a terminal would. In the working tree the card menu on the board and the row menu in the sidebar offer "Let the process go" while a process holds the conversation, no turn or background task is running, and Remote Control is off; it does what the ten quiet minutes do, sooner. The card stays, the conversation on disk is whole, and the next message takes it up again from the tool's file. The summary sent to the window now says whether a process holds a conversation (`held`), and says so again when one is let go, by hand or by the quiet time.
 
 Evidence: `client/src/main/sessions/index.ts` (`handOver`, `held` in the list), `client/src/shared/api.ts` (`letsGo`), `chat/Board.tsx`, `chat/Sidebar.tsx`, `chat/useChat.ts`, `client/test/sessions.test.ts`, `docs/ux/let-go.md`. Tried by hand on Windows 11 from the source; this is source support, not a released-app claim.
+
+## Attention on Windows - 2026-10-13
+
+Proposed by Anton, who works on Windows with many conversations open. In the working tree, on Windows the count of conversations waiting for the person is drawn over the Chat window's taskbar icon, the window flashes in the taskbar for a notice while it is behind another (Settings, General: for questions by default), and a sound can be chosen for a notice on every platform (off by default). The defaults keep the notices as they were; the Mac's Dock and the phone are unchanged.
+
+Evidence: `client/src/main/overlay.ts`, `client/src/main/index.ts`, `client/src/main/windows.ts`, `client/src/renderer/src/ui/SettingsDialog.tsx`, `client/src/shared/api.ts`, tests `client/test/overlay.test.ts` and `client/test/notices.test.ts`, UX in [attention on Windows](ux/windows-attention.md). Tried by hand on Windows 11 from the source; not on macOS or Linux. This is source support, not a released/installed app claim.
 
 ## Board layout - 2026-10-13
 
