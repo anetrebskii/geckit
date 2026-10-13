@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import { DEFAULT_SETTINGS } from '../../shared/api'
@@ -6,10 +6,12 @@ import type { ClaudeAccount, SessionProvider, Settings } from '../../shared/api'
 import type { LlmProviderInfo, ProviderPluginFailure } from '../../shared/providers'
 import { registerProviderInfo } from '../../shared/providers'
 import './styles.css'
+import './chat/phone-home.css'
 
 Object.assign(window, { geckit: { platform: 'darwin', home: '/Users/alex' } })
 const query = new URLSearchParams(location.search)
 const theme = query.get('theme') === 'light' ? 'light' : 'dark'
+if (query.has('phone')) document.documentElement.classList.add('phone')
 const claudeTmux: LlmProviderInfo = { id: 'plugin:claude-tmux', family: 'plugin:claude-tmux', name: 'Claude Code (tmux)', shortName: 'Claude tmux', icon: 'tmux', browser: 'claude', loginCommand: 'claude auth login', planName: 'Claude', localOnly: true, instructions: 'claude', source: 'https://github.com/example/geckit-claude-tmux' }
 const sourceLibraries: readonly LlmProviderInfo[] = query.has('libraries') ? [
   { id: 'plugin:codex-mirror', family: 'plugin:codex-mirror', name: 'Codex Mirror', shortName: 'Mirror', icon: 'codex-mirror', iconPath: 'M8 1.8 14.2 8 8 14.2 1.8 8Z M8 4.6 11.4 8 8 11.4 4.6 8Z', browser: 'codex', loginCommand: 'codex login', planName: 'ChatGPT', runtime: 'codex', source: 'https://github.com/anetrebskii/geckit-codex-mirror' },
@@ -23,10 +25,21 @@ document.documentElement.dataset.theme = theme
 Object.assign(window.geckit, { chat: { getProviderPluginFailures: async (): Promise<readonly ProviderPluginFailure[]> => failedLibraries, account: async (provider: SessionProvider): Promise<ClaudeAccount> => ({ provider, here: true, signedIn: true, plan: provider === 'codex' ? 'Plus' : 'Max', program: { version: 'preview' }, usage: { quotas: [{ id: 'five-hour', name: '5h', part: 0.24 }, { id: 'week', name: 'Week', part: 0.63 }], measuredAt: Date.now() } }), onAccount: () => () => undefined } })
 
 const { SettingsDialog } = await import('./ui/SettingsDialog')
+const { PhoneVpnSettings } = await import('./ui/VpnIpSettings')
+const { Cell, Page } = await import('./chat/PhoneKit')
 
 function Preview(): React.JSX.Element {
-  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, theme, providerPlugins: libraries, chatProviders: query.has('libraries') ? ['claude', 'codex', 'plugin:codex-mirror', 'plugin:kimi', 'plugin:claude-tmux'] : DEFAULT_SETTINGS.chatProviders, providerUpdatesReady: query.has('libraries') ? ['plugin:kimi'] : [] })
+  const [open, setOpen] = useState(true)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, theme, vpnIpCheck: query.has('vpnEnabled'), vpnAllowedIps: query.has('vpnLong') ? Array.from({ length: 64 }, (_one, index) => `8.8.4.${String(index + 1)}`) : query.has('vpnSaved') ? ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'] : DEFAULT_SETTINGS.vpnAllowedIps, providerPlugins: libraries, chatProviders: query.has('libraries') ? ['claude', 'codex', 'plugin:codex-mirror', 'plugin:kimi', 'plugin:claude-tmux'] : DEFAULT_SETTINGS.chatProviders, providerUpdatesReady: query.has('libraries') ? ['plugin:kimi'] : [] })
   const [failed, setFailed] = useState(failedLibraries)
+  useEffect(() => {
+    if (!open) trigger.current?.focus()
+  }, [open])
+  useEffect(() => {
+    if (settings.theme === 'system') delete document.documentElement.dataset.theme
+    else document.documentElement.dataset.theme = settings.theme
+  }, [settings.theme])
   useEffect(() => {
     Object.assign(window.geckit, { chat: {
       getProviderPluginFailures: async (): Promise<readonly ProviderPluginFailure[]> => failed,
@@ -57,7 +70,20 @@ function Preview(): React.JSX.Element {
       },
     } })
   }, [failed])
-  return <SettingsDialog first={query.get('section') === 'assistants' ? 'assistants' : 'libraries'} settings={settings} change={(change) => setSettings((current) => ({ ...current, ...change }))} onClose={() => undefined} onShortcuts={() => undefined} />
+  const change = (next: Partial<Settings>): void => setSettings((current) => ({ ...current, ...next }))
+  const save = async (next: Partial<Settings>): Promise<Settings> => {
+    if (query.has('vpnSaveDelay')) await new Promise<void>((resolve) => setTimeout(resolve, 1500))
+    if (query.has('vpnSaveFail')) throw new Error('Could not save VPN IP check. Try again.')
+    const updated = { ...settings, ...next }
+    setSettings(updated)
+    return updated
+  }
+  Object.assign(window.geckit, { settings: { set: save, pickApp: (): Promise<string | undefined> => Promise.resolve(undefined) } })
+  if (query.has('phone')) return open ? <PhoneVpnSettings settings={settings} save={save} back="Settings" onBack={() => setOpen(false)} /> : <Page title="Settings"><div className="phone-group"><Cell label="VPN IP check" value={settings.vpnIpCheck ? 'On' : 'Off'} onPress={() => setOpen(true)} /></div></Page>
+  return <>
+    <header className="board-head"><h1>GeckIt</h1><button ref={trigger} type="button" className="quiet" onClick={() => setOpen(true)}>Settings</button></header>
+    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : 'libraries'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
+  </>
 }
 
 createRoot(document.getElementById('root')!).render(<Preview />)

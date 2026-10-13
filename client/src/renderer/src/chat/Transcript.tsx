@@ -1,10 +1,11 @@
 import { Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { isStep, runKey } from '../../../shared/steps'
-import type { BackgroundTask, CardAnswer, SessionImage, SessionItem } from '../../../shared/api'
+import type { BackgroundTask, CardAnswer, ChatSession, SessionImage, SessionItem } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Code, CopyButton } from './Code'
 import { Preview } from './Preview'
+import { ElicitationForm } from './Elicitation'
 import { Request } from './Request'
 import { Files, opensTitle, Prose } from './Prose'
 import type { FileHow } from './Prose'
@@ -116,6 +117,11 @@ function Card({
       </div>
     )
   }
+  if (card.kind === 'elicitation' && card.elicitation !== undefined) return <div className="card elicitation">
+    <div className="card-title">{card.title}</div>
+    <div className="where">{card.where}</div>
+    <ElicitationForm request={card.elicitation} onAnswer={(answer) => onAnswer(item.id, answer)} />
+  </div>
   return (
     <div className="card">
       <div className="card-title">{card.title}</div>
@@ -300,7 +306,7 @@ const Turn = memo(function Turn({
   /** When it was said, where it is one to date: a message, or the end of an answer. */
   readonly when: string | undefined
   readonly onAnswer: (card: string, answer: CardAnswer | string) => void
-  readonly onAgain: (id: string) => void
+  readonly onAgain: ((id: string) => void) | undefined
   readonly onFile: (path: string, how: FileHow) => void
   readonly onPicture: (src: string) => void
   /** Copies an answer, which is the piece it ends with: what came before it is what was being done. */
@@ -329,7 +335,7 @@ const Turn = memo(function Turn({
               ))}
             </div>
           )}
-          {item.unsent === true ? (
+          {item.unsent === true && onAgain !== undefined ? (
             <div style={{ marginTop: 6 }}>
               <button type="button" className="quiet" onClick={() => onAgain(item.id)}>
                 Send again
@@ -489,6 +495,11 @@ export const Transcript = memo(function Transcript({
   onTypeShell,
   onBackground,
   onContinue,
+  onRetry,
+  checkingIp = false,
+  retrying = false,
+  queued,
+  heldSend = false,
   tasks,
   onTasks,
   seek,
@@ -511,6 +522,11 @@ export const Transcript = memo(function Transcript({
   readonly onBackground: (item: string) => void
   /** Sends "continue", offered under a Stop that is the last thing said. */
   readonly onContinue: () => void
+  readonly onRetry: () => void
+  readonly checkingIp?: boolean
+  readonly retrying?: boolean
+  readonly queued?: ChatSession['queued']
+  readonly heldSend?: boolean
   /** What Claude Code has in the background for it, and opening the dialog that lists it. */
   readonly tasks: readonly BackgroundTask[] | undefined
   readonly onTasks: (open: boolean) => void
@@ -542,6 +558,7 @@ export const Transcript = memo(function Transcript({
 
   const runs = useMemo(() => (tasks ?? []).filter(running), [tasks])
   const going = useMemo(() => new Set(runs.flatMap((task) => (task.use === undefined ? [] : [task.use]))), [runs])
+  const queuedAgain = useMemo(() => new Set((queued ?? []).flatMap((message) => message.again === undefined ? [] : [message.again])), [queued])
 
   // The Markdown it was written in is its plain text.
   const copyAnswer = useCallback((id: string, text: string) => {
@@ -735,7 +752,8 @@ export const Transcript = memo(function Transcript({
       ? stamp(item.at, now)
       : undefined
   const last = items.at(-1)
-  const stopped = !working && last?.kind === 'note' && last.note === 'stopped'
+  const retryable = !checkingIp && (heldSend || (!working && last?.kind === 'note' && (last.note === 'failed' || last.note === 'limit')))
+  const stopped = !checkingIp && !heldSend && !working && last?.kind === 'note' && last.note === 'stopped'
 
   // A conversation reads as what was asked and what was answered: each run of steps between them is one line, opened by a press.
   // On the phone a run arrives as one `steps` item, and its steps are asked for when it is opened.
@@ -842,7 +860,7 @@ export const Transcript = memo(function Transcript({
         {shown.map((item) => {
           const key = foldOf.get(item.id)
           const held = key === undefined ? undefined : folds.get(key)
-          if (key === undefined || held === undefined) return <Turn key={item.id} item={item} active={current.has(item.id)} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
+          if (key === undefined || held === undefined) return <Turn key={item.id} item={item} active={current.has(item.id)} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
           if (held.first !== item.id && !isOpen(key)) return null
           const open = (): void => {
             setOpened({ at, keys: new Set([...openKeys, key]) })
@@ -887,7 +905,7 @@ export const Transcript = memo(function Transcript({
                 going={going.has(item.id)}
                 when={when(item)}
                 onAnswer={onAnswer}
-                onAgain={onAgain}
+                onAgain={heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain}
                 onFile={onFile}
                 onPicture={picture}
                 onCopyAnswer={copyAnswer}
@@ -898,6 +916,16 @@ export const Transcript = memo(function Transcript({
             </Fragment>
           )
         })}
+
+        {retryable ? (
+          <div className="turn">
+            <button type="button" className="quiet retry" disabled={retrying} onClick={onRetry}>Try again</button>
+          </div>
+        ) : null}
+
+        {checkingIp ? (
+          <div className="turn"><div className="did" role="status">Checking public IP...</div></div>
+        ) : null}
 
         {stopped ? (
           <div className="turn">
@@ -940,7 +968,7 @@ export const Transcript = memo(function Transcript({
             going={false}
             when={undefined}
             onAnswer={onAnswer}
-            onAgain={onAgain}
+            onAgain={heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain}
             onFile={onFile}
             onPicture={picture}
             onCopyAnswer={copyAnswer}

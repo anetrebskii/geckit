@@ -13,6 +13,7 @@ import { Picker } from './Menu'
 import { MOD, said } from './Shortcuts'
 import { Version } from './UpdateNotice'
 import { Libraries } from './Libraries'
+import { VpnIpSettings } from './VpnIpSettings'
 
 /**
  * Settings, a section at a time: General, Profiles, Hosts, Phrases, Correct and dictation, Phone, Version.
@@ -42,10 +43,11 @@ export const LANGUAGES = [
   'Japanese',
 ]
 
-export type Section = 'general' | 'assistants' | 'libraries' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
+export type Section = 'general' | 'vpn' | 'assistants' | 'libraries' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
+  { value: 'vpn', label: 'VPN IP check' },
   { value: 'assistants', label: 'Assistants' },
   { value: 'libraries', label: 'Libraries' },
   { value: 'profiles', label: 'Profiles' },
@@ -141,6 +143,7 @@ export function SettingsDialog({
               />
             ) : null}
             {section === 'profiles' ? <Profiles settings={settings} change={change} /> : null}
+            {section === 'vpn' ? <VpnIpSettings settings={settings} /> : null}
             {section === 'assistants' ? <Assistants settings={settings} change={change} assistantChat={assistantChat} /> : null}
             {section === 'libraries' ? <Libraries settings={settings} change={change} /> : null}
             {section === 'hosts' ? <HostsSection /> : null}
@@ -260,6 +263,7 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
           className="select"
         />
       </div>
+
 
       <div className="field">
         <label htmlFor="open-with">Open files from a conversation with</label>

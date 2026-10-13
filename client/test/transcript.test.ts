@@ -1,4 +1,5 @@
 import { createElement } from 'react'
+import type { ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -12,7 +13,7 @@ const { Transcript } = await import('../src/renderer/src/chat/Transcript')
 
 const nothing = (): void => undefined
 
-function drawn(items: SessionItem[], working = false, tasks?: readonly BackgroundTask[]): string {
+function drawn(items: SessionItem[], working = false, tasks?: readonly BackgroundTask[], guard: Pick<ComponentProps<typeof Transcript>, 'checkingIp' | 'heldSend' | 'retrying' | 'queued'> = {}): string {
   return renderToStaticMarkup(
     createElement(Transcript, {
       at: 's1',
@@ -24,12 +25,72 @@ function drawn(items: SessionItem[], working = false, tasks?: readonly Backgroun
       onStopShell: nothing,
       onTypeShell: nothing,
       onBackground: nothing,
+      onRetry: () => undefined,
       onContinue: nothing,
       tasks,
       onTasks: nothing,
+      ...guard,
     }),
   )
 }
+
+describe('conversation recovery', () => {
+  const failure: SessionItem = { kind: 'note', id: 'failure', note: 'failed', text: 'Not sent. Connect your VPN, then try again.' }
+
+  it('offers Try again after provider failures and limits', () => {
+    expect(drawn([failure])).toContain('Try again</button>')
+    expect(drawn([{ ...failure, note: 'limit' }])).toContain('Try again</button>')
+  })
+
+  it('keeps Continue for an explicit Stop', () => {
+    const html = drawn([{ ...failure, note: 'stopped', text: 'Stopped' }])
+    expect(html).toContain('Continue')
+    expect(html).not.toContain('Try again</button>')
+  })
+
+  it('offers held recovery even if a question remains last', () => {
+    const html = drawn([failure, { kind: 'card', id: 'permission', card: { kind: 'permission', title: 'Run the checks?' } }], false, undefined, { heldSend: true })
+    expect(html).toContain('Run the checks?')
+    expect(html).toContain('Try again</button>')
+  })
+
+  it('keeps one recovery action for a held unsent message', () => {
+    const items: SessionItem[] = [{ kind: 'mine', id: 'unsent', text: 'Retained instruction', unsent: true }, failure]
+    expect(drawn(items, false, undefined, { heldSend: true })).not.toContain('Send again')
+    expect(drawn(items, false, undefined, { checkingIp: true })).not.toContain('Send again')
+    expect(drawn(items)).toContain('Send again')
+  })
+
+  it('hides only the accepted queued retry and restores its action when cancelled', () => {
+    const accepted: Extract<SessionItem, { kind: 'mine' }> = { kind: 'mine', id: 'accepted', text: 'First unsent message', unsent: true }
+    const available: Extract<SessionItem, { kind: 'mine' }> = { kind: 'mine', id: 'available', text: 'Other unsent message', unsent: true }
+    const items: SessionItem[] = [accepted, available]
+    const queued = drawn(items, true, undefined, { queued: [{ id: 'queued:first', text: 'First unsent message', images: 0, again: 'accepted' }] })
+    expect(queued.match(/Send again/g)).toHaveLength(1)
+    expect(queued.slice(queued.indexOf('First unsent message'), queued.indexOf('Other unsent message'))).not.toContain('Send again')
+    expect(drawn(items, true, undefined, { queued: [] }).match(/Send again/g)).toHaveLength(2)
+    expect(drawn([{ ...accepted, unsent: false }, available], true).match(/Send again/g)).toHaveLength(1)
+  })
+
+  it('replaces recovery actions with checking status during verification', () => {
+    const html = drawn([failure], false, undefined, { heldSend: true, checkingIp: true })
+    expect(html).toContain('Checking public IP...')
+    expect(html).not.toContain('Try again</button>')
+    expect(html).not.toContain('Continue</button>')
+  })
+
+  it('disables Try again while the saved retry is waiting for provider interruption without claiming an IP check', () => {
+    const html = drawn([failure], false, undefined, { heldSend: true, retrying: true })
+    expect(html).toContain('class="quiet retry" disabled="">Try again</button>')
+    expect(html).not.toContain('Checking public IP...')
+    expect(drawn([failure], false, undefined, { heldSend: true })).not.toContain('class="quiet retry" disabled=""')
+  })
+
+  it('clears the end action once a later message has been answered', () => {
+    const html = drawn([failure, { kind: 'mine', id: 'later', text: 'Continue the work' }, { kind: 'theirs', id: 'answer', text: 'Completed' }])
+    expect(html).not.toContain('Try again</button>')
+  })
+})
 
 describe('a turn in short', () => {
   const turn: SessionItem[] = [

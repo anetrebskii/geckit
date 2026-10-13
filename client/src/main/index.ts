@@ -61,6 +61,7 @@ import type {
   SessionImage,
 } from '../shared/api'
 import track from './analytics'
+import { checkVpnIp } from './vpn-ip'
 import { control } from './control'
 import { correct, stopCorrecting } from './correct'
 import { answerErrors, errorQuestion, followErrors, startErrors, watchErrors, windowError } from './errors'
@@ -342,6 +343,11 @@ async function build(held: Routes): Promise<Sessions> {
     codex: new CodexSessions(undefined, (account) => tellChats('chat:accountChanged', account)),
     transport: () => getSettings().chatTransport,
     notes: conversationNotes,
+    beforeSend: () => getSettings().vpnIpCheck ? checkVpnIp(getSettings) : undefined,
+    vpnMonitor: () => {
+      const settings = getSettings()
+      return settings.vpnIpCheck ? JSON.stringify(settings.vpnAllowedIps) : undefined
+    },
     ...(process.platform === 'darwin' ? { terminal: terminalFor } : {}),
     claude: routedClaude(held),
     disk: routedDisk(held),
@@ -380,7 +386,8 @@ async function build(held: Routes): Promise<Sessions> {
       shownPeer()?.webContents.send('peer:tell', 'chat:notice', notice)
       const { flashFor, soundFor } = getSettings()
       // Heard whether or not the window is in front: the conversation it is about is not the open one.
-      if (noticeWanted(soundFor, notice.asks)) shell.beep()
+      const sound = noticeWanted(soundFor, notice.asks)
+      if (sound) shell.beep()
       // The Mac bounces the Dock below; on Windows the window flashes in the taskbar until it is brought to the front.
       if (process.platform === 'win32' && !watchingChat() && noticeWanted(flashFor, notice.asks)) shownChat()?.flashFrame(true)
       // With no phone open and nobody at this Mac for a minute, it goes to the phones in the pocket.
@@ -396,6 +403,7 @@ async function build(held: Routes): Promise<Sessions> {
           title: notice.title,
           subtitle: notice.subtitle,
           body: notice.body,
+          silent: sound,
           actions: request === undefined ? [] : [{ type: 'button', text: 'Start all' }],
         })
         notices.add(note)
@@ -721,6 +729,9 @@ async function readSaid(said: string): Promise<Answered> {
     root: one.root,
     state: one.state,
   }))
+  try { await checkVpnIp(getSettings) } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
   const read = await askOrders(said, projects, told, undefined, hostNamed)
   if (read.error !== undefined) return { ok: false, error: read.error }
   const { orders, lines } = saying(read.orders, projects, told, hostNamed)
@@ -1216,6 +1227,7 @@ function wire(): void {
   ipcMain.on('chat:proceed', (_event, ids: readonly string[]) => {
     for (const id of ids) void sessions?.proceed(id)
   })
+  ipcMain.handle('chat:retry', (_event, id: string) => sessions?.retry(id))
   ipcMain.handle('chat:send', async (_event, message: SessionMessage) => {
     track('chatSent')
     return sessions?.send(message)
@@ -1423,6 +1435,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.waiting': (id: string) => waitingCard(id),
     'chat.search': (asked: string, root: string | undefined) =>
       searchChats(typeof root === 'string' && root !== '' ? [root] : getSettings().projects, asked),
+    'chat.retry': (id: string) => held()?.retry(id),
     'chat.send': (message: SessionMessage) => held()?.send(message),
     'chat.shell': (asked: ShellCommand) => held()?.shell(asked),
     'chat.stopShell': (id: string, item: string) => held()?.stopShell(id, item),
