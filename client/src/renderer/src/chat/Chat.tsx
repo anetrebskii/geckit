@@ -50,6 +50,12 @@ interface Recently {
 /** A sidebar as wide as the pointer says, leaving the conversation room to be read. */
 const sidebarAt = (x: number): number => Math.round(Math.min(Math.max(x, 220), window.innerWidth - 420))
 
+/** The bar across the top of the window, which the strip of board below a conversation starts under: `--bar` in the stylesheet. */
+const TOP_BAR = 45
+
+/** A strip of board as tall as the pointer says: never less than a card, and leaving the conversation its half of the window. */
+const boardAt = (y: number): number => Math.round(Math.min(Math.max(y - TOP_BAR, 96), Math.max(96, window.innerHeight / 2)))
+
 /**
  * Claude Code, in a window.
  *
@@ -84,6 +90,8 @@ export function Chat(): React.JSX.Element {
   const recentRef = useRef<Recently | undefined>(undefined)
   // The sidebar's width while its edge is dragged, and how far from the edge it was taken.
   const [sizing, setSizing] = useState<number | undefined>()
+  // The window's own element: the strip of board above a conversation is sized on it while its edge is dragged, so that no keystroke's worth of window is drawn again per pointer move.
+  const frame = useRef<HTMLDivElement>(null)
   // The conversation whose name is being typed over in the header.
   const [naming, setNaming] = useState<string | undefined>()
   // Asking whether to leave this conversation for a new one about something else.
@@ -122,6 +130,7 @@ export function Chat(): React.JSX.Element {
   // The Mac's own screen, shown on the phone.
   const [screening, setScreening] = useState(false)
   const grab = useRef(0)
+  const grabY = useRef(0)
   const { addFiles, send, root } = chat
   // The host the open conversation, or the one about to start, runs on.
   const host = root === undefined ? undefined : chat.hosts.find((one) => one.id === hostOf(root))
@@ -430,6 +439,9 @@ export function Chat(): React.JSX.Element {
   // The phone has no list, whichever view the Mac is on.
   const board = chat.settings.chatView === 'board' || ON_PHONE
   const overBoard = board && chat.shown.kind === 'session'
+  // Below the board rather than over it: the board stays as a strip across the top, and the conversation takes the rest. The phone has no room for both.
+  const below = board && !ON_PHONE && chat.settings.conversationPlace === 'below'
+  const docked = overBoard && below
 
   // The open card goes to the top or the bottom of In progress; the button for where it already stands is off.
   const openId = overBoard ? chat.session?.id : undefined
@@ -448,8 +460,9 @@ export function Chat(): React.JSX.Element {
 
   return (
     <div
-      className={`chat${board ? ' boarded' : ''}${ON_PHONE ? '' : ' topped'}${over ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
-      style={{ '--side': `${String(sizing ?? chat.settings.sidebarWidth)}px` } as React.CSSProperties}
+      ref={frame}
+      className={`chat${board ? ' boarded' : ''}${docked ? ' docked' : ''}${ON_PHONE ? '' : ' topped'}${over ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
+      style={{ '--side': `${String(sizing ?? chat.settings.sidebarWidth)}px`, '--dock': `${String(chat.settings.boardHeight)}px` } as React.CSSProperties}
       // The whole window takes a drop. Anywhere else on the page, a dropped
       // file is a page the window would go to instead.
       onDragOver={(event) => {
@@ -500,7 +513,7 @@ export function Chat(): React.JSX.Element {
           onShortcutFrom={shortcutFrom}
         />
       )}
-      {overBoard && !making && !asking ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
+      {overBoard && !below && !making && !asking ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
       {making ? (
         <>
           <div className="talk-scrim form-scrim" onMouseDown={formStarting ? undefined : closeForm} />
@@ -535,8 +548,32 @@ export function Chat(): React.JSX.Element {
         onLostPointerCapture={() => setSizing(undefined)}
         onDoubleClick={() => chat.change({ sidebarWidth: DEFAULT_SETTINGS.sidebarWidth })}
       />
+      {/* The lower edge of the strip of board above a conversation, dragged to give the board or the conversation more of the window. Unlike the sidebar's edge it is dragged with the whole board and a conversation drawn, so the height goes onto the element and only the end of the drag is kept. */}
+      <div
+        className="dock-grip"
+        hidden={!docked}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId)
+          const edge = event.currentTarget.getBoundingClientRect()
+          grabY.current = event.clientY - Math.round(edge.top + edge.height / 2)
+          frame.current?.classList.add('docking')
+          frame.current?.style.setProperty('--dock', `${String(boardAt(event.clientY - grabY.current))}px`)
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) frame.current?.style.setProperty('--dock', `${String(boardAt(event.clientY - grabY.current))}px`)
+        }}
+        onPointerUp={(event) => {
+          if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+          chat.change({ boardHeight: boardAt(event.clientY - grabY.current) })
+        }}
+        onLostPointerCapture={() => {
+          frame.current?.classList.remove('docking')
+          frame.current?.style.setProperty('--dock', `${String(chat.settings.boardHeight)}px`)
+        }}
+        onDoubleClick={() => chat.change({ boardHeight: DEFAULT_SETTINGS.boardHeight })}
+      />
 
-      <div className={`talk${board ? ' over' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}`} hidden={board && !overBoard}>
+      <div className={`talk${board && !below ? ' over' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}`} hidden={board && !overBoard}>
         {ON_PHONE && overBoard ? <EdgeBack onBack={() => chat.open({ kind: 'new' })} /> : null}
         {ON_PHONE && overBoard && chat.session !== undefined ? <EdgeInfo onPull={setPulled} onOpen={() => setInfoing(true)} /> : null}
         {ON_PHONE && overBoard && host?.state === 'lost' ? (
@@ -724,6 +761,17 @@ export function Chat(): React.JSX.Element {
                   <Icon name="behind" />
                 </button>
               </>
+            ) : null}
+            {overBoard ? (
+              <button
+                type="button"
+                className="icon-button no-drag"
+                title={below ? 'Open conversations over the board: a popup, the board dimmed behind it' : 'Open conversations below the board: the board stays as a strip across the top, as tall as you drag it'}
+                aria-label={below ? 'Open conversations over the board' : 'Open conversations below the board'}
+                onClick={() => chat.change({ conversationPlace: below ? 'over' : 'below' })}
+              >
+                <Icon name={below ? 'over' : 'below'} />
+              </button>
             ) : null}
             {overBoard ? (
               <button

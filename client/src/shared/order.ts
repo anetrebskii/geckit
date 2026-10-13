@@ -25,3 +25,23 @@ export function movedOrder(order: readonly string[], ids: readonly string[], to:
   const rest = order.filter((id) => !ids.includes(id))
   return to === 'top' ? [...ids, ...rest] : [...rest, ...ids]
 }
+
+/** A card's place on the screen, as `getBoundingClientRect` gives it. */
+export interface Box {
+  readonly top: number
+  readonly bottom: number
+  readonly left: number
+  readonly width: number
+}
+
+/**
+ * Before which of these cards the pointer stands: in a column, the first whose middle is below it; among tiles,
+ * the first of a row below it, or in its own row the first whose middle is to its right. Past them all, after the last.
+ */
+export function landingIndex(boxes: readonly Box[], x: number, y: number, tiled = false): number {
+  const at = boxes.findIndex((box) => {
+    if (!tiled) return y < box.top + (box.bottom - box.top) / 2
+    return y < box.top || (y < box.bottom && x < box.left + box.width / 2)
+  })
+  return at === -1 ? boxes.length : at
+}
