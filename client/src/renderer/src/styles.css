@@ -5895,18 +5895,30 @@ html.phone:has(.phone-recurrence) .sheet-scrim:has(+ .sheet [role='menu']) {
 
 .dock-grip {
   position: absolute;
-  top: calc(var(--bar) + var(--dock-height) - 3px);
+  top: calc(var(--bar) + var(--dock-height) - 10px);
   right: 0;
   left: 0;
   z-index: 3;
-  height: 6px;
+  height: 20px;
   cursor: row-resize;
   -webkit-app-region: no-drag;
 }
 
+.dock-grip::before {
+  position: absolute;
+  top: 8px;
+  left: calc(50% - 20px);
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-faint);
+  content: '';
+  pointer-events: none;
+}
+
 .dock-grip::after {
   position: absolute;
-  top: 2px;
+  top: 9px;
   right: 0;
   left: 0;
   height: 2px;
@@ -5916,7 +5928,11 @@ html.phone:has(.phone-recurrence) .sheet-scrim:has(+ .sheet [role='menu']) {
 
 .dock-grip:hover::after {
   background: var(--accent);
-  transition-delay: 200ms;
+}
+
+.dock-grip:hover::before,
+.chat.docking .dock-grip::before {
+  background: var(--accent);
 }
 
 .chat.docking .dock-grip::after {

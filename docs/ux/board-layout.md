@@ -43,6 +43,8 @@ The conversation below the board is the same conversation as over it: the head w
 | One column | A column chosen | That column across the board, its cards as tiles; the control reads its name | Choose All columns |
 | Over | The default; a conversation open from the board | The popup over the dimmed board, as before | Press the button in its head, or Esc |
 | Below | Below chosen; a conversation open | The strip of board above, the conversation below, the button in its head showing the way back | Press the button, or Esc |
+| Resize handle at rest | A conversation is below the board | A centered grip on the boundary between board and conversation | Grab anywhere along the boundary to resize |
+| Resize handle hovered | The pointer enters the boundary's grab area | The resize cursor and boundary highlight appear immediately | Drag to resize, or double-click to reset |
 | Dragging the edge | The strip's lower edge is held | The edge marked in the accent, the strip and the conversation sized as the pointer moves | Let go; double-click puts the strip back to its default height |
 | Board alone | No conversation open, in either place | The whole board, as before | Press a card |
 
@@ -78,6 +80,7 @@ The choices are kept in settings (`boardColumn`, `conversationPlace`, `boardHeig
 | Strip height | From 96 px to half the window, 240 by default | At 96 the column's head and the top of a card show and the strip scrolls, which is enough to see who waits; past half, the conversation has too little; 240 shows two rows of tiles |
 | Tile width | At least 280 px, the row's width shared | A card's title and its project fit; a window of 1280 px shows four to a row |
 | Tiles in the strip | Smaller gaps, 8 px between tiles and 6 within a column | The strip is small, so the cards sit closer |
+| Resize grab area | 20 px tall across the full boundary, centered on it | The previous 6 px target was hard to catch; the larger area accepts an imprecise grab without moving the surrounding layout |
 
 ## 7. Wording
 
@@ -97,6 +100,7 @@ The choices are kept in settings (`boardColumn`, `conversationPlace`, `boardHeig
 - **A long word on a tile:** a path or a branch name does not widen the tile past its track; it is cut as in a column.
 - **A small window:** the window is never under 520 px tall, and the strip never over half of it, so the conversation keeps at least its head, a few lines and the composer.
 - **The edge dragged out of the window:** the strip stops at half the window; letting go there keeps that.
+- **The edge grabbed above or below its center:** dragging keeps the initial pointer offset, so the strip does not jump when grabbed. Conversation-header actions remain reachable outside the grab area.
 - **The pointer lost mid-drag**, Alt+Tab: the strip goes back to its kept height, as the sidebar's edge does.
 - **A choice from a later build**, a column this build does not know: every column is shown rather than none.
 - **The phone:** the phone has its own board and no room for both; neither control is there, and a conversation opens as it did.
