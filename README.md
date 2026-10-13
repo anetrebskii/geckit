@@ -68,7 +68,7 @@ Press a card and the conversation opens over the board. Work with Codex or Claud
 
 - Ctrl+Tab switches between conversations as it works in VS Code between files.
 - A conversation opens over the board, or below it: a button in its head keeps the board as a strip across the top, as tall as you drag it, with the conversation under it.
-- A notification when AI has finished its job, so you never miss it waiting for you.
+- A notification when AI has finished its job, so you never miss it waiting for you. On Windows the count of conversations waiting for you is on the taskbar icon and the window flashes for a question, and a sound can be turned on in Settings.
 - The status bar shows usage limits, context size, cost and git information.
 - @ picks a file or folder from the project, a message starting with ! runs a command, Up brings back your past message, images can be pasted or dropped in.
 - Choose a mode and model under the message field. Codex uses its own permission checks. Claude Code also supports MCP servers, Claude in Chrome and Remote Control, which continues the conversation on claude.ai or in the Claude app.
