@@ -133,6 +133,8 @@ export function chatWindow(): BrowserWindow {
   outside(chat)
   remember(chat, 'chatBounds')
   chat.once('ready-to-show', () => chat?.show())
+  // Brought to the front, it stops flashing in the taskbar for the notice that made it; where nothing flashes, as on the Mac, this does nothing.
+  chat.on('focus', () => chat?.flashFrame(false))
   chat.webContents.on('did-start-loading', () => {
     listening = false
   })

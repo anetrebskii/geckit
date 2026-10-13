@@ -26,7 +26,7 @@ import {
 import log from 'electron-log'
 import QRCode from 'qrcode'
 
-import { ANYWHERE, assistantsIn, homeOf, providerOf, resumeCommand, shownProjects } from '../shared/api'
+import { ANYWHERE, assistantsIn, homeOf, noticeWanted, providerOf, resumeCommand, shownProjects } from '../shared/api'
 import { newKey, pairingLink, SIGNAL } from '../shared/pairing'
 import type {
   Anywhere,
@@ -143,6 +143,7 @@ import {
   voiceWindow,
   watchingChat,
 } from './windows'
+import { badgeIcon } from './overlay'
 
 log.transports.file.level = 'info'
 
@@ -209,10 +210,17 @@ function buildPlans(): Plans {
   })
 }
 
+/** The count the taskbar icon wears, so that the sessions changing without it does not draw it again. */
+let worn = -1
+
 const badge = (): void => {
-  if (process.platform !== 'darwin' || sessions === undefined) return
+  if (sessions === undefined) return
   const wanting = sessions.wanting()
-  app.dock?.setBadge(wanting === 0 ? '' : String(wanting))
+  if (wanting === worn) return
+  worn = wanting
+  if (process.platform === 'darwin') app.dock?.setBadge(wanting === 0 ? '' : String(wanting))
+  // Windows has no Dock: the count goes over the taskbar icon of the Chat window, while there is one.
+  if (process.platform === 'win32') shownChat()?.setOverlayIcon(badgeIcon(wanting), wanting === 0 ? '' : `${String(wanting)} waiting for you`)
 }
 
 /** How this computer is named, the way the phone is told it: without `.local`, read as words rather than a hostname. */
@@ -370,6 +378,11 @@ async function build(held: Routes): Promise<Sessions> {
     plan: (plan: PlanUsage) => tellChats('chat:plan', plan),
     notify: (notice) => {
       shownPeer()?.webContents.send('peer:tell', 'chat:notice', notice)
+      const { flashFor, soundFor } = getSettings()
+      // Heard whether or not the window is in front: the conversation it is about is not the open one.
+      if (noticeWanted(soundFor, notice.asks)) shell.beep()
+      // The Mac bounces the Dock below; on Windows the window flashes in the taskbar until it is brought to the front.
+      if (process.platform === 'win32' && !watchingChat() && noticeWanted(flashFor, notice.asks)) shownChat()?.flashFrame(true)
       // With no phone open and nobody at this Mac for a minute, it goes to the phones in the pocket.
       if (phoneOn && phonesHere === 0 && powerMonitor.getSystemIdleState(AWAY_AFTER) !== 'active') void pushTo(phoneKey, notice)
       // In front, the window says it itself; a banner is for when it is not being looked at.
@@ -1549,6 +1562,14 @@ if (!app.requestSingleInstanceLock()) {
     routes = held
     const started = await build(held)
     sessions = started
+    // A Chat window opened later wears the count too, from when it is shown: before that it has no button in the taskbar to wear it on, and when it is created it is not yet the one `shownChat` knows. Every window says so when shown; only the Chat window is drawn on.
+    app.on('browser-window-created', (_event, window) => {
+      window.on('show', () => {
+        if (window !== shownChat()) return
+        worn = -1
+        badge()
+      })
+    })
     plans = buildPlans()
     void started.resumeQueues().catch(() => undefined)
     // What was running on hosts when GeckIt closed is still running there, and is picked up. Their hosts are
