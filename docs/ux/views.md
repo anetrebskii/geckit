@@ -141,3 +141,7 @@ The choice is kept in settings (`chatView`), as before, so the app opens in the 
 | The list's top bar the same as the board's | Sections 2, 10 |
 
 **What the requirements do not say yet:** that New task and Cmd+N open the form in the list as well (section 10), and that "New conversation" leaves the sidebar (section 9).
+
+## Revision - 2026-10-13: the Columns control
+
+Section 2 says the bar does not change when the view does. With [one column on its own](board-layout.md) the bar holds a Columns control beside the switch, and it is there on the board only: the list has no columns, and a control that says "All columns" over the list would say nothing. That is the one thing in the bar that comes and goes with the view. A conversation opened from the board may also stand below it rather than over it; section 4's "still open over it" then reads "still open over or below it".

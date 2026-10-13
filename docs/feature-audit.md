@@ -16,7 +16,7 @@ These are product workflows, rather than individual model capabilities. "Site" m
 |---|---|---|
 | Cross-project work board | See conversations from multiple projects and assistants together, with In progress, In review and Done | [Site: board](https://geckit.app/#board) |
 | Attention and review tracking | Identify which conversation is working, needs an answer or is ready to review; open it from a card or notification. In the working tree, on Windows the count of conversations waiting is on the taskbar icon, the window flashes for a question, and a sound can be turned on | [Site: board](https://geckit.app/#board), [working tree](#attention-on-windows---2026-10-13) |
-| Card organization | Drag, reorder, move/hide/delete several conversations, group completed work by day, keep favorites or switch to List | [Site: Kanban page](https://geckit.app/claude-code-kanban-board/) |
+| Card organization | Drag, reorder, move/hide/delete several conversations, group completed work by day, keep favorites or switch to List. In the working tree, show one column on its own, and open a conversation below the board instead of over it | [Site: Kanban page](https://geckit.app/claude-code-kanban-board/), [working tree](#board-layout---2026-10-13) |
 | Project scopes and profiles | Narrow the whole workspace to chosen projects, or keep work and personal projects apart | [Site: profiles](https://geckit.app/claude-code-kanban-board/) |
 | Cross-conversation search | Recover a past decision by searching conversation content without remembering its project | [Site: search](https://geckit.app/claude-code-kanban-board/) |
 | Goals connected to task state | Set/view/edit the task's completion condition and see its completion reflected on the board; native goal execution remains the assistant's responsibility | [Site: demo](https://geckit.app/), [code](../client/src/renderer/src/chat/Composer.tsx) |
@@ -379,6 +379,12 @@ Evidence: `chat/Composer.tsx`, `chat/AssistantStatus.tsx`, `chat/Chat.tsx`, `cha
 Proposed by Anton, who works on Windows with many conversations open. In the working tree, on Windows the count of conversations waiting for the person is drawn over the Chat window's taskbar icon, the window flashes in the taskbar for a notice while it is behind another (Settings, General: for questions by default), and a sound can be chosen for a notice on every platform (off by default). The defaults keep the notices as they were; the Mac's Dock and the phone are unchanged.
 
 Evidence: `client/src/main/overlay.ts`, `client/src/main/index.ts`, `client/src/main/windows.ts`, `client/src/renderer/src/ui/SettingsDialog.tsx`, `client/src/shared/api.ts`, tests `client/test/overlay.test.ts` and `client/test/notices.test.ts`, UX in [attention on Windows](ux/windows-attention.md). Tried by hand on Windows 11 from the source; not on macOS or Linux. This is source support, not a released/installed app claim.
+
+## Board layout - 2026-10-13
+
+Proposed by Anton, who works on Windows with many conversations open. In the working tree the board gains a Columns control in the top bar (every column, or In progress, In review or Done alone across the board, its cards as tiles), and a button in an open conversation's head that opens conversations below the board instead of over it, the board kept as a strip across the top whose lower edge is dragged. Every default keeps the board as it was; the phone is unchanged.
+
+Evidence: `client/src/renderer/src/chat/Board.tsx`, `Chat.tsx`, `styles.css`, `ui/Icon.tsx`, `ui/Shortcuts.tsx`, `client/src/shared/api.ts`, `client/src/shared/order.ts`, tests `client/test/board-columns.test.ts`, UX in [board layout](ux/board-layout.md) and the [views revision](ux/views.md#revision---2026-10-13-the-columns-control). Tried by hand on Windows 11 from the source. On macOS, the actual renderer was reviewed in a browser with native IPC fixtures in light and dark themes; native app UI inspection was unavailable. Alex tested the isolated desktop build and requested a larger resize target. The target is now 20 px tall with a visible center grip and immediate hover feedback; offset grabs and double-click reset were verified. Linux UI was not reviewed. This is source support, not a released/installed app claim.
 
 ## VPN IP check and session error retry - 2026-10-11
 

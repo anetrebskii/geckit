@@ -40,7 +40,7 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
       ['Enter', 'Send'],
       ['Shift+Enter', 'New line'],
     ['Up, Down', 'What you said before in this conversation, from the first line of the field'],
-      [`Esc, ${MOD}+.`, 'Stop the answer; over the board Esc puts the conversation away instead'],
+      [`Esc, ${MOD}+.`, 'Stop the answer; on the board Esc puts the conversation away instead'],
     ['Ctrl+B', 'Run the command Claude is waiting on in the background'],
       [`${MOD}+click a file`, MAC ? 'Show it in the Finder' : 'Show it in its folder'],
       ['Right-click a file', 'Choose what opens it'],
