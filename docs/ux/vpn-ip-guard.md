@@ -148,7 +148,7 @@ The state table in section 3 owns the exact state messages; the following are co
 | Save completed | "Addresses saved." |
 | Save failed without a supplied main-process explanation | "Could not save VPN IP check. Try again." |
 | Scope note | "Checks the computer running GeckIt, including requests from your phone. Does not verify an SSH host's public IP. Periodic checks cannot prevent traffic between checks; use your VPN's kill switch for that." |
-| Service disclosure | "Public IP checked using ipify (IPv4 and IPv6). No conversation content is sent to this service." |
+| Service disclosure | "Checks public IP with ipify, with Amazon (IPv4) and icanhazip (IPv6) as fallbacks. No conversation content is sent." |
 | SSH interruption note | "Interruption was requested on the SSH host. Remote work may continue if the host cannot be reached." |
 | Recovery after error | "Try again" |
 | Recovery after Stop | "Continue" |
@@ -227,3 +227,11 @@ Alex requested a separate Settings tab on 2026-10-11. Alex approved the proposed
 | FR-014/015/016 | Single master setting, shared silent checks, stop/hold and manual recovery |
 
 No unresolved behavior is silently delegated to UI. Planning uses ipify IPv4 and IPv6 probes for configured address families; incomplete verification blocks. A public IP probe still cannot prove routing to every model destination.
+
+### Lookup recovery - 2026-10-14
+
+Alex requested the Claude plugin's bounded retries, independent fallback and diagnostic logging in GeckIt too. Each required address family gets up to three attempts: its ipify endpoint, an independent HTTPS endpoint (Amazon for IPv4, icanhazip for IPv6), then ipify again. Each attempt is capped at three seconds inside the existing ten-second overall deadline. Both usable families must still verify against the current saved policy; successful checks are never reused for a later send.
+
+Retries remain silent inside the existing checking state. A fresh valid unapproved address blocks immediately without another endpoint overriding it. Settings changes discard obsolete policy results; disabling the guard during recovery makes pending results obsolete. The shared periodic checker uses the same recovery, retains its ten-second cadence, and still pauses on exhausted verification failures with manual Try again.
+
+Local application logs record failed attempts, recovery, mismatches and deadline exhaustion with family, endpoint, attempt, elapsed milliseconds and the network error code/message. No prompts, tool output or response bodies enter diagnostics. A logging failure cannot affect verification. First-attempt success stays silent. Existing failure wording and recovery controls remain unchanged; update the desktop/phone service disclosure to name all lookup services.

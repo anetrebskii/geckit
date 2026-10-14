@@ -94,7 +94,7 @@ export function VpnIpSettings({ settings, save: persist = window.geckit.settings
         {issue === undefined ? null : <span id={`${id}-error`} className="vpn-alert" role="alert">{issue}</span>}
       </div>
       <span id={`${id}-scope`} className={`vpn-note${phone ? ' phone-note' : ''}`}>Checks the computer running GeckIt, including requests from your phone. Does not verify an SSH host's public IP. Periodic checks cannot prevent traffic between checks; use your VPN's kill switch for that.</span>
-      <span className={`vpn-note${phone ? ' phone-note' : ''}`}>Public IP checked using ipify (IPv4 and IPv6). No conversation content is sent to this service.</span>
+      <span className={`vpn-note${phone ? ' phone-note' : ''}`}>Checks public IP with ipify, with Amazon (IPv4) and icanhazip (IPv6) as fallbacks. No conversation content is sent.</span>
     </section>
   )
 }
