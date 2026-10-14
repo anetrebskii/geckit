@@ -40,6 +40,17 @@ function held(): { process: Process; driver: ReturnType<typeof holdClaude>; hear
 }
 
 describe('Claude active input', () => {
+  it('ends a hook-rejected turn once, after its result arrives', async () => {
+    const { process, driver, heard } = held()
+    driver.send('Original')
+    process.stdout.write(`${JSON.stringify({ type: 'system', subtype: 'informational', content: 'UserPromptSubmit operation blocked by hook:\nConnect VPN.' })}\n`)
+    expect(heard.flatMap((one) => one.signals)).toEqual([])
+    process.stdout.write(`${JSON.stringify({ type: 'result', subtype: 'success' })}\n`)
+    expect(heard.flatMap((one) => one.signals).filter((signal) => signal.kind === 'ended')).toEqual([{ kind: 'ended', how: 'blocked', text: 'UserPromptSubmit operation blocked by hook:\nConnect VPN.' }])
+    await expect(driver.inject?.('Too late')).rejects.toThrow('no longer working')
+    await driver.end()
+  })
+
   it('writes next-priority guidance and attachments without an interrupt or new lifecycle', async () => {
     const { process, driver, heard } = held()
     driver.send('Original')

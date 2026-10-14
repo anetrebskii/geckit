@@ -2579,6 +2579,36 @@ describe('the moves between columns', () => {
 
 
 describe('public IP dispatch guard', () => {
+  it('retains a hook-rejected prompt and its images for deliberate retry after reopening', async () => {
+    const notes = memoryNotes()
+    const built = build({ notes })
+    const images = [{ media: 'image/png', data: 'AAAA' }]
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'Check this screenshot.', images })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'blocked', text: 'VPN Guard: public IP lookup failed; request blocked.' }] })
+    expect(of(built.rows, id)).toMatchObject({ state: 'failed', stands: 'Blocked by hook', heldSend: true })
+    expect(built.fanned.flatMap((one) => one.items)).toContainEqual(expect.objectContaining({ kind: 'mine', text: 'Check this screenshot.', images, unsent: true }))
+    expect(built.fanned.flatMap((one) => one.items)).toContainEqual(expect.objectContaining({ kind: 'note', note: 'failed', text: 'Blocked by hook.', detail: 'VPN Guard: public IP lookup failed; request blocked.' }))
+    const after = build({ notes, disk: { list: async () => [{ id, root: ROOT, title: 'Hook rejection', stands: '', at: 1_000, driven: true }], read: async () => ({ items: [{ kind: 'mine', id: 'native-hook:prompt', text: 'Check this screenshot.', unsent: true }, { kind: 'note', id: 'hook:native-hook', note: 'failed', text: 'Blocked by hook.', detail: 'VPN Guard: public IP lookup failed; request blocked.' }], tasks: [] }), has: async () => true } })
+    await after.sessions.list([ROOT])
+    const reopened = await after.sessions.items(id)
+    expect(reopened.filter((item) => item.kind === 'mine')).toHaveLength(1)
+    expect(reopened.filter((item) => item.kind === 'note')).toHaveLength(1)
+    await after.sessions.retry(id)
+    expect(after.fake.sent).toEqual([{ text: 'Check this screenshot.', images }])
+    expect(notes.all()[id]?.heldOperation).toBeUndefined()
+    await built.sessions.dispose()
+    await after.sessions.dispose()
+  })
+
+  it('retries a hook-rejected prompt imported from a terminal', async () => {
+    const built = build({ disk: { list: async () => [{ id: 'terminal-hook', root: ROOT, title: 'Hook rejection', stands: '', at: 1_000, driven: true }], read: async () => ({ items: [{ kind: 'mine', id: 'hook:prompt', text: '  Keep leading spaces.\nThen check this.', unsent: true }, { kind: 'note', id: 'hook:blocked', note: 'failed', text: 'Blocked by hook.' }], tasks: [] }), has: async () => true } })
+    await built.sessions.list([ROOT])
+    await built.sessions.items('terminal-hook')
+    await built.sessions.retry('terminal-hook')
+    expect(built.fake.sent).toEqual([{ text: '  Keep leading spaces.\nThen check this.' }])
+    await built.sessions.dispose()
+  })
+
   it('finishes cancellation immediately even when the verifier never resolves', async () => {
     const built = build({ beforeSend: () => new Promise<void>(() => undefined) })
     const sending = built.sessions.send({ submission: 'pending-never', root: ROOT, mode: 'manual', text: 'secret' })

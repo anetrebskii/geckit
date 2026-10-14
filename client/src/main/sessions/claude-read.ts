@@ -75,6 +75,7 @@ export interface ClaudeState {
   interrupted: boolean
   /** Said by the tool itself rather than by the model, which is how it reports a failure. */
   synthetic: string | undefined
+  hookBlocked: string | undefined
   limit: { resetsAt?: number } | undefined
   /** The line for a summary just made, until the summary itself comes, as a message of its own right after it. */
   summarised: string | undefined
@@ -101,6 +102,7 @@ export function claudeState(root: string): ClaudeState {
     thought: false,
     interrupted: false,
     synthetic: undefined,
+    hookBlocked: undefined,
     limit: undefined,
     summarised: undefined,
     backgrounded: new Set(),
@@ -163,6 +165,12 @@ const INTERRUPTED = /^\[Request interrupted by user/
 const SUMMARY_HEAD = /^This session is being continued[^\n]*\n+Summary:\n/
 /** What the tool tells the model when a Stop hook will not let the turn end, a goal's check among them. */
 const HELD = /^Stop hook feedback:\n\[([\s\S]*?)\]: ([\s\S]*)$/
+
+export const HOOK_BLOCKED = 'Blocked by hook.'
+const hookBlock = (text: string): string | undefined =>
+  /^(UserPromptSubmit operation blocked by hook:|Operation stopped by hook(?::|$))/.test(text)
+    ? text.split('\n\nOriginal prompt:')[0]?.trim()
+    : undefined
 
 /** What the tool hands the model when something in the background ends, as it keeps it in the session file. */
 const TASK_NOTIFICATION = /^\s*<task-notification>([\s\S]*)<\/task-notification>\s*$/
@@ -486,7 +494,17 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
 
   if (type === 'system') {
     const subtype = string(message['subtype'])
-    if (subtype === 'init') {
+    const blocked = hookBlock(string(message['content']))
+    if (blocked !== undefined) {
+      state.hookBlocked = blocked
+      out.signals.push({ kind: 'ended', how: 'blocked', text: blocked })
+    } else if (subtype === 'hook_response' && string(message['hook_event']) === 'UserPromptSubmit') {
+      let decision: Json = {}
+      try { decision = object(JSON.parse(string(message['stdout']))) } catch { /* Plain hook output. */ }
+      if (message['exit_code'] === 2 || decision['decision'] === 'block' || decision['continue'] === false) {
+        state.hookBlocked = `UserPromptSubmit operation blocked by hook:\n${string(message['hook_name'])}\n${string(decision['stopReason']) || string(decision['reason']) || string(message['stderr']) || string(message['output'])}`.trim()
+      }
+    } else if (subtype === 'init') {
       const model = string(message['model'])
       const mode = string(message['permissionMode'])
       out.signals.push({
@@ -613,6 +631,11 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
     if (toolResults(state, message, out)) return out
     const content = object(message['message'])['content']
     const said = typeof content === 'string' ? content : resultText(content)
+    const blocked = hookBlock(said)
+    if (blocked !== undefined) {
+      state.hookBlocked = blocked
+      return out
+    }
     // Marked as the summary in the session file, and as made up by the tool in the stream.
     if (state.summarised !== undefined && (message['isCompactSummary'] === true || message['isSynthetic'] === true)) {
       out.items.push({ kind: 'note', id: state.summarised, note: 'summarised', text: SUMMARISED, detail: said.replace(SUMMARY_HEAD, '').trim() })
@@ -674,16 +697,21 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
     }
 
     const failed = message['is_error'] === true
-    const said = state.synthetic ?? string(message['result'])
+    const said = state.synthetic ?? (string(message['result']) || list(message['errors']).map(string).filter(Boolean).join('\n'))
+    const blocked = state.hookBlocked ?? hookBlock(said)
     const stopped = state.interrupted
     const limit = state.limit
     state.interrupted = false
     state.synthetic = undefined
+    state.hookBlocked = undefined
     state.limit = undefined
 
     if (stopped) {
       flush(state, out)
       out.signals.push({ kind: 'ended', how: 'stopped' })
+    } else if (blocked !== undefined) {
+      flush(state, out)
+      out.signals.push({ kind: 'ended', how: 'blocked', text: blocked })
     } else if (!failed && string(message['subtype']) === 'success') {
       flush(state, out)
       out.signals.push({ kind: 'ended', how: 'done' })
@@ -866,6 +894,22 @@ export function replayClaude(root: string, entries: readonly Json[], quietFor: n
   for (const entry of entries) {
     const type = string(entry['type'])
     if (entry['isSidechain'] === true || entry['isMeta'] === true) continue
+
+    const content = type === 'system' ? string(entry['content']) : type === 'user' ? resultText(object(entry['message'])['content']) : ''
+    const blocked = hookBlock(content)
+    if (blocked !== undefined) {
+      const id = string(entry['uuid'])
+      const marker = '\n\nOriginal prompt: '
+      const at = content.indexOf(marker)
+      if (at !== -1) items.set(`${id}:prompt`, { kind: 'mine', id: `${id}:prompt`, text: content.slice(at + marker.length), unsent: true, ...stamped(entry) })
+      else {
+        const mine = [...items.values()].findLast((item) => item.kind === 'mine')
+        if (mine?.kind === 'mine') items.set(mine.id, { ...mine, unsent: true })
+      }
+      items.set(`hook:${id}`, { kind: 'note', id: `hook:${id}`, note: 'failed', text: HOOK_BLOCKED, detail: blocked })
+      open = false
+      continue
+    }
 
     if (type === 'user') {
       const content = object(entry['message'])['content']

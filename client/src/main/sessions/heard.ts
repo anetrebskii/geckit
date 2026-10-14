@@ -42,7 +42,7 @@ export type Signal =
   | {
       readonly kind: 'ended'
       /** `offPlan` is never the tool's: it is what Sessions says when it would not start one on a key. */
-      readonly how: 'done' | 'stopped' | 'failed' | 'limit' | 'signedOut' | 'offPlan'
+      readonly how: 'done' | 'stopped' | 'failed' | 'blocked' | 'limit' | 'signedOut' | 'offPlan'
       readonly text?: string
       /** In milliseconds, where the tool said when. */
       readonly resetsAt?: number

@@ -43,6 +43,42 @@ const ended = (signals: readonly ClaudeSignal[]): string | undefined =>
   signals.flatMap((one) => (one.kind === 'ended' ? [one.how] : []))[0]
 
 describe('reading what claude prints', () => {
+  it('reports prompt-hook rejection even when the result says success', () => {
+    const state = claudeState(ROOT)
+    readClaude(state, { type: 'system', subtype: 'hook_response', hook_event: 'UserPromptSubmit', hook_name: 'vpn-guard', exit_code: 2, stderr: 'VPN Guard: public IP lookup failed; request blocked.' })
+    expect(readClaude(state, { type: 'result', subtype: 'success', is_error: false }).signals).toContainEqual({ kind: 'ended', how: 'blocked', text: 'UserPromptSubmit operation blocked by hook:\nvpn-guard\nVPN Guard: public IP lookup failed; request blocked.' })
+    expect(readClaude(state, { type: 'result', subtype: 'success' }).signals).toContainEqual({ kind: 'ended', how: 'done' })
+  })
+
+  it('does not stop work for a non-blocking Stop hook error', () => {
+    const state = claudeState(ROOT)
+    expect(readClaude(state, { type: 'system', subtype: 'hook_response', hook_event: 'Stop', exit_code: 1, outcome: 'error', stderr: 'No stderr output' }).signals).toEqual([])
+    expect(readClaude(state, { type: 'result', subtype: 'success' }).signals).toContainEqual({ kind: 'ended', how: 'done' })
+  })
+
+  it.each([{ decision: 'block', reason: 'Connect VPN.' }, { continue: false, stopReason: 'Connect VPN.' }])('reads JSON hook rejection with a zero exit code: %j', (decision) => {
+    const state = claudeState(ROOT)
+    readClaude(state, { type: 'system', subtype: 'hook_response', hook_event: 'UserPromptSubmit', hook_name: 'vpn-guard', exit_code: 0, stdout: JSON.stringify(decision) })
+    expect(readClaude(state, { type: 'result', subtype: 'success' }).signals).toContainEqual({ kind: 'ended', how: 'blocked', text: 'UserPromptSubmit operation blocked by hook:\nvpn-guard\nConnect VPN.' })
+  })
+
+  it('keeps hook warnings and rejected prompts when reopening terminal history', () => {
+    const detail = 'UserPromptSubmit operation blocked by hook:\n[vpn-guard]: VPN Guard: request blocked.'
+    const warning = { type: 'system', subtype: 'informational', uuid: 'hook-block', content: `${detail}\n\nOriginal prompt:   Is there anything else to implement?` }
+    expect(readClaude(claudeState(ROOT), warning).signals).toEqual([{ kind: 'ended', how: 'blocked', text: detail }])
+    expect(replayClaude(ROOT, [warning], 90_000)).toEqual([
+      { kind: 'mine', id: 'hook-block:prompt', text: '  Is there anything else to implement?', unsent: true },
+      { kind: 'note', id: 'hook:hook-block', note: 'failed', text: 'Blocked by hook.', detail },
+    ])
+  })
+
+  it('reads explicit hook stop reasons and result error arrays', () => {
+    const state = claudeState(ROOT)
+    readClaude(state, { type: 'user', message: { content: 'Operation stopped by hook: Connect VPN.' } })
+    expect(readClaude(state, { type: 'result', subtype: 'success' }).signals).toContainEqual({ kind: 'ended', how: 'blocked', text: 'Operation stopped by hook: Connect VPN.' })
+    expect(readClaude(state, { type: 'result', is_error: true, errors: ['Hook failed.', 'Check VPN.'] }).signals).toContainEqual({ kind: 'ended', how: 'failed', text: 'Hook failed.\nCheck VPN.' })
+  })
+
   it('says which session started, and that it is on a plan', () => {
     const { signals } = play('claude-command.jsonl')
     const started = signals.find((one) => one.kind === 'started')

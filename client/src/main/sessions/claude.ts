@@ -185,6 +185,7 @@ export function holdClaude(
     const read = readClaude(state, message)
     const out: Signal[] = []
     for (const signal of read.signals) {
+      if (signal.kind === 'ended' && signal.how === 'blocked' && message['type'] !== 'result') continue
       if (signal.kind === 'ended') {
         turn = false
         turns += 1

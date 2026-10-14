@@ -46,6 +46,7 @@ import type {
 import { providerOf, sessionMode } from '../../shared/api'
 import { VPN_IP_UNAVAILABLE_ERROR, vpnIpPausedError } from '../../shared/vpn-ip'
 import { VpnSessionMonitor } from './vpn-monitor'
+import { HOOK_BLOCKED } from './claude-read'
 import { providerQuotas } from '../../shared/provider-usage'
 import { instructionsFor } from '../../shared/providers'
 import { isRemote, pathOf } from '../../shared/hosts'
@@ -1261,7 +1262,7 @@ export class Sessions {
     const note = this.#deps.notes.all()[id]
     const live = this.#fresh(id, row.root, note?.title ?? row.title, sessionMode(note?.mode))
     live.begun = true
-    live.stands = row.stands
+    live.stands = note?.guardError === HOOK_BLOCKED ? 'Blocked by hook' : row.stands
     live.at = row.at
     live.model = row.model
     live.used = row.used
@@ -1342,7 +1343,7 @@ export class Sessions {
     if (note?.heldOperation !== undefined) {
       live.parked = true
       live.state = 'failed'
-      live.stands = 'Not sent'
+      live.stands = note.guardError === HOOK_BLOCKED ? 'Blocked by hook' : 'Not sent'
       for (const item of note.guardItems ?? []) {
         live.items.set(item.id, item)
         live.kept.push({ after: undefined, item })
@@ -1355,7 +1356,10 @@ export class Sessions {
   async #reread(live: Live): Promise<void> {
     const conversation = await this.#for(live).read(live.root, live.id).catch(() => undefined)
     if (conversation === undefined) return
-    const read = conversation.items
+    const last = conversation.items.at(-1)
+    const prompt = conversation.items.findLast((item) => item.kind === 'mine' && item.unsent === true)
+    const rejected = live.guardError === HOOK_BLOCKED && live.heldOperation?.kind === 'message' && prompt?.kind === 'mine' && prompt.text === live.heldOperation.message.text && last?.kind === 'note' && last.text === HOOK_BLOCKED
+    const read = rejected ? conversation.items.filter((item) => item.id !== prompt.id && item.id !== last.id) : conversation.items
     // Nothing holds it, so every run of the tool it had has written what it cost.
     live.spent = conversation.cost
     live.window = conversation.window
@@ -1571,7 +1575,12 @@ export class Sessions {
           if (paused) return await continued()
           await this.toBackground(id, operation.item)
           break
-        default: return await continued()
+        default: {
+          const last = [...live.items.values()].at(-1)
+          const mine = last?.kind === 'note' && last.text === HOOK_BLOCKED ? [...live.items.values()].findLast((item) => item.kind === 'mine' && item.unsent === true) : undefined
+          if (mine?.kind === 'mine') return await this.send({ session: id, root: live.root, mode: live.mode, text: mine.text, again: mine.id, ...(mine.images === undefined ? {} : { images: mine.images }), ...(live.chosen === undefined ? {} : { model: live.chosen }), ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }) }, true)
+          return await continued()
+        }
       }
       return id
     } finally { live.retrying = false; this.#changed() }
@@ -3143,8 +3152,12 @@ export class Sessions {
         }
         break
       }
+      case 'blocked':
       case 'failed': {
-        const failed = providerOf(live.id) === 'claude' ? FAILED : `${this.#for(live).name} stopped before it finished.`
+        const blocked = signal.how === 'blocked'
+        const failed = blocked ? HOOK_BLOCKED : providerOf(live.id) === 'claude' ? FAILED : `${this.#for(live).name} stopped before it finished.`
+        const mine = live.last === undefined ? undefined : live.items.get(live.last)
+        if (blocked && mine?.kind === 'mine') under({ ...mine, unsent: true }, true)
         under(
           {
             kind: 'note',
@@ -3156,8 +3169,13 @@ export class Sessions {
           true,
         )
         live.state = 'failed'
-        live.stands = 'Did not finish'
-        this.#tell(live, 'Stopped with an error', firstLine(signal.text ?? '') || failed, false)
+        live.stands = blocked ? 'Blocked by hook' : 'Did not finish'
+        if (blocked && mine?.kind === 'mine') {
+          live.heldOperation = { kind: 'message', message: { session: live.id, root: live.root, mode: live.mode, text: mine.text, again: mine.id, ...(mine.images === undefined ? {} : { images: mine.images }), ...(live.chosen === undefined ? {} : { model: live.chosen }), ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }) }, go: true }
+          live.guardError = HOOK_BLOCKED
+          this.#note(live.id, { heldOperation: live.heldOperation, guardError: HOOK_BLOCKED, guardItems: items, here: true })
+        }
+        this.#tell(live, blocked ? 'Blocked by hook' : 'Stopped with an error', firstLine(signal.text ?? '') || failed, false)
         break
       }
       case 'signedOut':
