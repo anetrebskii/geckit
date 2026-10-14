@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 
-import type { Elicitation, ElicitationField, Json, JsonObject } from '../../../shared/elicitation'
+import type { Elicitation, ElicitationField, ElicitationResponse, Json, JsonObject } from '../../../shared/elicitation'
 import { elicitationAnswer, elicitationUrl, validField } from '../../../shared/elicitation'
 
 interface Props {
@@ -15,9 +15,9 @@ export function ElicitationForm({ request, onAnswer }: Props): React.JSX.Element
   const sent = useRef(false)
   const form = useRef<HTMLFormElement>(null)
   const valid = request.error === undefined && request.fields.every((field) => validField(field, Object.hasOwn(values, field.name) ? values[field.name] : undefined))
-  const answer = (action: 'accept' | 'decline' | 'cancel'): void => {
+  const answer = (action: ElicitationResponse['action'], remember = false): void => {
     if (sent.current) return
-    const encoded = JSON.stringify({ action, content: action === 'accept' && request.url === undefined ? values : null })
+    const encoded = JSON.stringify({ action, content: action === 'accept' && request.url === undefined ? values : null, ...(action === 'accept' && remember ? { remember } : {}) })
     if (elicitationAnswer(encoded, request) === undefined || (action === 'accept' && form.current?.reportValidity() === false)) { setInvalid(true); return }
     sent.current = true
     setSending(true)
@@ -42,9 +42,15 @@ export function ElicitationForm({ request, onAnswer }: Props): React.JSX.Element
     </div>}
     {invalid ? <p className="elicitation-error" role="alert">Check the required fields and their limits.</p> : null}
     <div className="card-actions">
-      <button type="button" className="quiet" disabled={sending} onClick={() => answer('cancel')}>Cancel</button>
-      <button type="button" className="quiet" disabled={sending} onClick={() => answer('decline')}>Decline</button>
-      <button type="button" className="primary" disabled={sending || !valid} onClick={() => answer('accept')}>Accept</button>
+      {request.rememberAllowed === true ? <>
+        <button type="button" className="quiet" disabled={sending} onClick={() => answer('decline')}>Decline</button>
+        <button type="button" className="quiet" disabled={sending || !valid} onClick={() => answer('accept')}>Allow once</button>
+        <button type="button" className="primary" disabled={sending || !valid} onClick={() => answer('accept', true)}>Allow for this session</button>
+      </> : <>
+        <button type="button" className="quiet" disabled={sending} onClick={() => answer('cancel')}>Cancel</button>
+        <button type="button" className="quiet" disabled={sending} onClick={() => answer('decline')}>Decline</button>
+        <button type="button" className="primary" disabled={sending || !valid} onClick={() => answer('accept')}>Accept</button>
+      </>}
     </div>
   </form>
 }

@@ -1,5 +1,5 @@
 import type { Answered, ChatFound, ClaudeAccount, ClaudeModel, ReasoningEffort, SessionGoal, SessionMode } from '../../shared/api'
-import { elicitationAnswer, elicitationForm, elicitationUrl } from '../../shared/elicitation'
+import { elicitationAccessKey, elicitationAnswer, elicitationForm, elicitationUrl } from '../../shared/elicitation'
 import type { Elicitation } from '../../shared/elicitation'
 import { modelVersion } from '../../shared/providers'
 import { readFile } from 'node:fs/promises'
@@ -30,6 +30,7 @@ interface Asked {
   at: number
   answers: { [question: string]: { answers: string[] } }
   elicitation?: Elicitation
+  rememberKey?: string
 }
 
 export class CodexSessions {
@@ -293,6 +294,7 @@ export class CodexSessions {
     let threadId = native(options.id)
     const items = new Map<string, CodexItem>()
     const requests = new Map<string, Asked>()
+    const remembered = new Set<string>()
     let turnId: string | undefined
     let over = false
     let stopped = false
@@ -302,6 +304,7 @@ export class CodexSessions {
     const signals = (...signals: Signal[]): void => hear({ items: [], gone: [], signals })
     const ended = (how: 'done' | 'stopped' | 'failed', text?: string): void => {
       clearRequests()
+      if (how === 'stopped') remembered.clear()
       if (!active) return
       active = false
       turnId = undefined
@@ -323,6 +326,16 @@ export class CodexSessions {
         case 'mcpServer/elicitation/request': {
           const params = request.params
           asked.elicitation = { serverName: params.serverName, message: params.message, ...(params.mode === 'url' ? { fields: [], url: params.url, ...(elicitationUrl(params.url) ? {} : { error: 'This form is not supported yet.' }) } : elicitationForm(params.requestedSchema)) }
+          const key = params.mode === 'url' ? undefined : elicitationAccessKey(asked.elicitation, params.mode, params.requestedSchema, params._meta)
+          if (key !== undefined) {
+            asked.rememberKey = key
+            asked.elicitation = { ...asked.elicitation, rememberAllowed: true }
+            if (remembered.has(key)) {
+              rpc?.reply(request.id, { action: 'accept', content: {}, _meta: null })
+              requests.delete(id)
+              return
+            }
+          }
           signals({ kind: 'asks', ask: id, wanted: { kind: 'elicitation', ...asked.elicitation } })
           return
         }
@@ -346,7 +359,7 @@ export class CodexSessions {
       }
     }
     this.#listeners.set(threadId, {
-      closed: (error) => { ended('failed', error.message); over = true; left() },
+      closed: (error) => { remembered.clear(); ended('failed', error.message); over = true; left() },
       event: (event) => {
         if (over) return
         switch (event.method) {
@@ -471,6 +484,7 @@ export class CodexSessions {
           const previous = rpc
           const connection = await this.#connection()
           if (connection !== previous) {
+            remembered.clear()
             rpc = connection
             await connection.request('thread/resume', { ...codexOptions(options.root, options.mode, options.model), threadId, excludeTurns: true })
           }
@@ -536,7 +550,8 @@ export class CodexSessions {
         if (request.method === 'mcpServer/elicitation/request') {
           const response = asked.elicitation === undefined ? undefined : elicitationAnswer(answer, asked.elicitation)
           if (response === undefined) return
-          rpc.reply(request.id, { ...response })
+          if (response.remember === true && asked.rememberKey !== undefined) remembered.add(asked.rememberKey)
+          rpc.reply(request.id, { action: response.action, content: response.content, _meta: response._meta })
         } else if (request.method === 'item/tool/requestUserInput') {
           const question = request.params.questions[asked.at]
           if (question === undefined) return
@@ -554,12 +569,14 @@ export class CodexSessions {
       },
       stop: () => {
         stopped = true
+        remembered.clear()
         clearRequests()
         if (turnId !== undefined) void rpc?.request('turn/interrupt', { threadId, turnId }).catch((error: Error) => ended('failed', error.message))
       },
       end: async () => {
         if (over) return
         over = true
+        remembered.clear()
         clearRequests()
         this.#listeners.delete(threadId)
         if (active && turnId !== undefined) await rpc?.request('turn/interrupt', { threadId, turnId }).catch(() => undefined)

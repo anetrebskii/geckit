@@ -136,6 +136,174 @@ afterEach(() => {
   for (const provider of providers.splice(0)) provider.dispose()
 })
 
+type ElicitationParams = Extract<CodexEvent, { method: 'mcpServer/elicitation/request' }>['params']
+const accessParams = (threadId = 'terminal'): ElicitationParams => ({ threadId, turnId: null, serverName: 'cua_repl', mode: 'form', message: 'Allow Computer Use to use "Mail"?', requestedSchema: { type: 'object', properties: {} }, _meta: null })
+const rememberAccess = '{"action":"accept","content":{},"remember":true}'
+const acceptAccess = '{"action":"accept","content":{}}'
+const accessSetup = async () => {
+  const setupResult = setup()
+  const driver = setupResult.codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto' }, (one) => setupResult.heard.push(one), () => undefined)
+  driver.send('Review Mail')
+  await tick()
+  return { ...setupResult, driver }
+}
+
+describe('conversation Computer Use access', () => {
+  it.each(['accept', 'decline', 'cancel'] as const)('keeps ordinary %s one-time in Auto mode', async (action) => {
+    const { server, heard, driver } = await accessSetup()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'first', params: accessParams() })
+    expect(heard.flatMap((one) => one.signals)).toContainEqual({ kind: 'asks', ask: 'first', wanted: { kind: 'elicitation', serverName: 'cua_repl', message: accessParams().message, fields: [], rememberAllowed: true } })
+    driver.answer('first', JSON.stringify({ action, content: {} }))
+    server.event({ method: 'mcpServer/elicitation/request', id: 'repeat', params: accessParams() })
+    expect(server.requests.some((one) => one.id === 'repeat' && one.result !== undefined)).toBe(false)
+    expect(heard.flatMap((one) => one.signals).filter((one) => one.kind === 'asks').map((one) => one.ask)).toEqual(['first', 'repeat'])
+    await driver.end()
+  })
+
+  it('silently answers remembered repeats without leaking the choice or retaining pending state', async () => {
+    const { server, heard, driver } = await accessSetup()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'first', params: accessParams() })
+    driver.answer('first', rememberAccess)
+    driver.answer('first', '{"action":"decline"}')
+    const before = heard.length
+    server.event({ method: 'mcpServer/elicitation/request', id: 'repeat', params: { ...accessParams(), turnId: 'next-turn' } })
+    server.event({ method: 'serverRequest/resolved', params: { threadId: 'terminal', requestId: 'repeat' } })
+    driver.answer('repeat', '{"action":"cancel"}')
+    expect(heard).toHaveLength(before)
+    expect(server.requests.filter((one) => (one.id === 'first' || one.id === 'repeat') && one.result !== undefined).map((one) => one.result)).toEqual([{ action: 'accept', content: {}, _meta: null }, { action: 'accept', content: {}, _meta: null }])
+    await expect(driver.inject?.('Continue checking')).resolves.toBeUndefined()
+    await driver.end()
+  })
+
+  it('asks for changed apps, servers, modes, schemas and metadata', async () => {
+    const { server, heard, driver } = await accessSetup()
+    const params = accessParams()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'first', params })
+    driver.answer('first', rememberAccess)
+    const changes: ElicitationParams[] = [
+      { ...params, message: 'Allow Computer Use to use "Safari"?' }, { ...params, serverName: 'other' },
+      { ...params, mode: 'openai/form', requestedSchema: { type: 'object', properties: {} } },
+      { ...params, mode: 'openaiForm', requestedSchema: { type: 'object', properties: {} } },
+      { ...params, mode: 'form', requestedSchema: { type: 'object', properties: {}, title: 'Changed confirmation' } },
+      { ...params, _meta: { app: 'Mail', scope: { write: false } } },
+      { ...params, mode: 'url', url: 'https://example.com/authorize', elicitationId: 'authorization' },
+    ]
+    for (const [index, changed] of changes.entries()) {
+      const id = `changed-${String(index)}`
+      server.event({ method: 'mcpServer/elicitation/request', id, params: changed })
+      expect(server.requests.some((one) => one.id === id && one.result !== undefined)).toBe(false)
+      expect(heard.flatMap((one) => one.signals).some((one) => one.kind === 'asks' && one.ask === id)).toBe(true)
+      driver.answer(id, '{"action":"cancel"}')
+    }
+    await driver.end()
+  })
+
+  it('keeps visible simultaneous requests independent', async () => {
+    const { server, heard, driver } = await accessSetup()
+    for (const id of ['first', 'simultaneous']) server.event({ method: 'mcpServer/elicitation/request', id, params: accessParams() })
+    driver.answer('first', rememberAccess)
+    const before = heard.length
+    server.event({ method: 'mcpServer/elicitation/request', id: 'subsequent', params: accessParams() })
+    expect(heard).toHaveLength(before)
+    expect(server.requests.some((one) => one.id === 'simultaneous' && one.result !== undefined)).toBe(false)
+    await expect(driver.inject?.('Still waiting')).rejects.toThrow('Answer the assistant')
+    driver.answer('simultaneous', '{"action":"decline"}')
+    expect(server.requests.find((one) => one.id === 'simultaneous' && one.result !== undefined)?.result).toEqual({ action: 'decline', content: null, _meta: null })
+    await expect(driver.inject?.('Proceed')).resolves.toBeUndefined()
+    await driver.end()
+  })
+
+  it('persists across completed turns and isolates other conversations', async () => {
+    const { server, codex, heard, driver } = await accessSetup()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'first', params: accessParams() })
+    driver.answer('first', rememberAccess)
+    server.complete('terminal')
+    driver.send('Continue')
+    await tick()
+    const before = heard.length
+    server.event({ method: 'mcpServer/elicitation/request', id: 'next-turn', params: accessParams() })
+    expect(heard).toHaveLength(before)
+    expect(server.requests.find((one) => one.id === 'next-turn' && one.result !== undefined)?.result).toEqual({ action: 'accept', content: {}, _meta: null })
+    const otherHeard: Heard[] = []
+    const other = codex.hold({ id: 'codex:other', root: ROOT, resume: true, mode: 'auto' }, (one) => otherHeard.push(one), () => undefined)
+    other.send('Review Mail')
+    await tick()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'other', params: accessParams('other') })
+    expect(server.requests.some((one) => one.id === 'other' && one.result !== undefined)).toBe(false)
+    expect(otherHeard.flatMap((one) => one.signals).some((one) => one.kind === 'asks' && one.ask === 'other')).toBe(true)
+    await other.end()
+    await driver.end()
+  })
+
+  it('clears on Stop and ignores stale answers', async () => {
+    const { server, heard, driver } = await accessSetup()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'first', params: accessParams() })
+    driver.answer('first', rememberAccess)
+    server.event({ method: 'mcpServer/elicitation/request', id: 'different', params: { ...accessParams(), message: 'Allow Computer Use to use "Safari"?' } })
+    driver.stop()
+    driver.answer('different', rememberAccess)
+    await tick()
+    driver.send('Continue')
+    await tick()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'after-stop', params: accessParams() })
+    expect(server.requests.some((one) => one.id === 'after-stop' && one.result !== undefined)).toBe(false)
+    expect(heard.flatMap((one) => one.signals).some((one) => one.kind === 'asks' && one.ask === 'after-stop')).toBe(true)
+    expect(server.requests.filter((one) => one.id === 'different' && one.result !== undefined).map((one) => one.result)).toEqual([{ action: 'cancel', content: null, _meta: null }])
+    await driver.end()
+  })
+
+  it('clears on driver end when the same conversation reopens', async () => {
+    const { server, codex, driver } = await accessSetup()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'first', params: accessParams() })
+    driver.answer('first', rememberAccess)
+    await driver.end()
+    const heard: Heard[] = []
+    const reopened = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto' }, (one) => heard.push(one), () => undefined)
+    reopened.send('Continue')
+    await tick()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'reopened', params: accessParams() })
+    expect(server.requests.some((one) => one.id === 'reopened' && one.result !== undefined)).toBe(false)
+    expect(heard.flatMap((one) => one.signals).some((one) => one.kind === 'asks' && one.ask === 'reopened')).toBe(true)
+    await reopened.end()
+  })
+
+  it('clears on disconnect before the same conversation reconnects', async () => {
+    const firstServer = new Server()
+    const secondServer = new Server()
+    let connected = false
+    const codex = new CodexSessions(() => { const server = connected ? secondServer : firstServer; connected = true; return server })
+    providers.push(codex)
+    const first = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto' }, () => undefined, () => undefined)
+    first.send('Review Mail')
+    await tick()
+    firstServer.event({ method: 'mcpServer/elicitation/request', id: 'first', params: accessParams() })
+    first.answer('first', rememberAccess)
+    firstServer.kill()
+    const heard: Heard[] = []
+    const reopened = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'auto' }, (one) => heard.push(one), () => undefined)
+    reopened.send('Continue')
+    await tick()
+    secondServer.event({ method: 'mcpServer/elicitation/request', id: 'reconnected', params: accessParams() })
+    expect(secondServer.requests.some((one) => one.id === 'reconnected' && one.result !== undefined)).toBe(false)
+    expect(heard.flatMap((one) => one.signals).some((one) => one.kind === 'asks' && one.ask === 'reconnected')).toBe(true)
+    await reopened.end()
+  })
+
+  it('rejects invalid or ineligible remembering without a grant', async () => {
+    const { server, driver } = await accessSetup()
+    server.event({ method: 'mcpServer/elicitation/request', id: 'first', params: accessParams() })
+    for (const invalid of ['{"action":"decline","remember":true}', '{"action":"cancel","remember":true}', '{"action":"accept","content":{"scope":"all"},"remember":true}', '{"action":"accept","content":{},"remember":"true"}']) driver.answer('first', invalid)
+    expect(server.requests.some((one) => one.id === 'first' && one.result !== undefined)).toBe(false)
+    driver.answer('first', acceptAccess)
+    server.event({ method: 'mcpServer/elicitation/request', id: 'repeat', params: accessParams() })
+    expect(server.requests.some((one) => one.id === 'repeat' && one.result !== undefined)).toBe(false)
+    server.event({ method: 'mcpServer/elicitation/request', id: 'ineligible', params: { ...accessParams(), serverName: 'other' } })
+    driver.answer('ineligible', rememberAccess)
+    expect(server.requests.some((one) => one.id === 'ineligible' && one.result !== undefined)).toBe(false)
+    await driver.end()
+  })
+})
+
 describe('Codex app-server', () => {
   it('pauses a native goal as control without starting or resuming a model turn', async () => {
     const { server, codex } = setup()

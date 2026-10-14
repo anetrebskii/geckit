@@ -76,11 +76,11 @@ stateDiagram-v2
 
 ## 5. Silence
 
-Transport IDs, JSON schemas, protocol mode names and metadata remain hidden. No JSON editor or toast is added. Opening a link, selecting Auto mode, or writing consent in chat does not automatically submit the form. No persistent app permission is manufactured by GeckIt.
+Transport IDs, JSON schemas, protocol mode names and metadata remain hidden. No JSON editor or toast is added. Opening a link, selecting Auto mode, or writing consent in chat does not automatically submit the form. Cross-conversation app permissions are not persisted. Recognized Computer Use confirmations can be remembered explicitly for one live conversation, as described below.
 
 ## 6. Timing
 
-No timer or automatic acceptance is added. The server owns the request lifetime. Duplicate input must produce at most one response for the request. Separate simultaneous requests retain separate choices.
+No timer is added. The server owns the request lifetime. Remembered identical Computer Use confirmations are answered automatically for the approved conversation scope below. Duplicate input must produce at most one response for the request. Separate simultaneous requests retain separate choices.
 
 ## 7. Wording
 
@@ -114,7 +114,7 @@ No timer or automatic acceptance is added. The server owns the request lifetime.
 
 | Excluded | Reason |
 |---|---|
-| Automatic or persistent app approval | The permission belongs to the user and host, not GeckIt |
+| Automatic approval without an explicit remembered choice, or persistence across conversations | Broader access requires a separate user choice and revocation design |
 | General JSON form editor | Users should answer the request without interpreting schemas |
 | App restart or live permission bypass | Existing conversations and host security decisions must be preserved |
 | Claim that this fixes every localhost block | The browser failure may have a separate cause |
@@ -141,3 +141,82 @@ Rendered desktop light/dark approval cards were inspected in the real Sidebar/Tr
 Phone light/dark forms and URL prompts were reviewed at a measured CSS viewport of 390 x 844. The temporary extension blocker cleared on retry; no popup was visible. Enlarged checkbox labels, fields and Open link to 44 px touch targets after measuring smaller targets. Approval buttons remain 50 px high. Eighteen-field forms scroll to their actions without horizontal overflow. Evidence: `/private/tmp/geckit-mcp-approval-review/phone-dark.jpg` and `phone-light.jpg`. Native GeckIt access still uses the unchanged running backend; no active conversation or app was restarted. Native app integration remains unverified until the backend is rebuilt/reloaded.
 
 Performance review: no new per-conversation scanning, formatter, timer or animation. Existing Transcript/Turn and board memoization remain unchanged; input updates are local to one request. The phone build passed. No additional profiling is required for these local prompt controls.
+
+## Revision: remember Computer Use access
+
+Status: implemented in the working tree. Alex approved this conversation-scoped revision on October 14 with "Implement it". Not released or loaded into active conversation drivers.
+
+### Purpose and surfaces
+
+Alex reports more than 100 approval clicks in one session. Computer Use sends repeated app-access confirmations; GeckIt returns one-time acceptance. Auto mode does not remember MCP acceptance. Alex refined the approved design to a direct third action. Recognized Computer Use app-access confirmations show three buttons on desktop and phone: "Decline", "Allow once" and "Allow for this session". The session action grants the existing conversation-scoped remembered choice in one click. Escape still returns Cancel. Other MCP forms retain Cancel, Decline and Accept.
+
+### States and transitions
+
+| State | Trigger | What the user sees | Action |
+|---|---|---|---|
+| Waiting | First recognized app-access confirmation | Original request and three buttons | Allow once, Allow for this session, Decline or Escape to cancel |
+| Remembered | User chooses Allow for this session | Resolved card: "Accepted for this conversation: <request message>" | Continue; Stop clears remembered access |
+| Repeated | Identical confirmation arrives with remembered access | Nothing; GeckIt replies automatically | Nothing |
+| Cleared | Stop, disconnect, driver replacement or app restart | Existing stopped/error state, or nothing on restart | Approve again when requested |
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> waiting: First request
+  waiting --> remembered: Allow for session
+  waiting --> finished: Allow once
+  waiting --> finished: Decline or cancel
+  remembered --> remembered: Identical request
+  remembered --> cleared: Stop or disconnect
+  cleared --> waiting: New request
+  finished --> waiting: New request
+```
+
+| From | Event | To | What is shown |
+|---|---|---|---|
+| Waiting | User chooses Allow for this session | Remembered | "Accepted for this conversation: <request message>" |
+| Waiting | User chooses Allow once | Finished | Existing "Accepted: <request message>" |
+| Waiting | User chooses Decline or presses Escape | Finished | Existing "Declined" or "Cancelled" resolution |
+| Remembered | Identical request arrives, automatically | Remembered | Nothing |
+| Remembered | Different app, server, schema or metadata arrives | Waiting for separate request | Separate approval card |
+| Remembered | User stops, transport disconnects or driver ends | Cleared | Existing stopped/error state where applicable |
+| Cleared | Another confirmation arrives | Waiting | Approval card |
+
+### Silence and lifetime
+
+Remembered repeats produce no card, toast or attention notification. Remembering lasts across turns in one live conversation driver. It expires on Stop, disconnect, driver replacement or app restart; no clock timer or disk persistence is needed. Requests in other conversations require their own approval.
+
+### Wording and edge cases
+
+Use "Decline", "Allow once" and "Allow for this session" for recognized confirmations. Resolved session acceptance remains "Accepted for this conversation: <request message>". All three buttons are reachable by Tab with visible focus; Enter/Space activates only the focused button. Escape cancels without remembering. Generic MCP forms retain Cancel, Decline and Accept. Phone targets follow the existing approval buttons.
+
+Only recognize empty, supported form confirmations from `cua_repl` matching the app-access message shown in Alex's screenshot: `Allow Computer Use to use "<app>"?`. Match the exact server, mode, message, schema and metadata for reuse. Do not infer equivalence from an app name alone. Any changed request asks again. Forms with input, URL authorization, unsupported forms and other MCP servers keep their existing behavior. Decline and Cancel never create a remembered grant. Double-clicks and late answers still produce at most one reply. An already-visible simultaneous request remains independently answerable; remembering applies to subsequent requests.
+
+### Exclusions and decisions
+
+The previous exclusion of persistent app approval remains for cross-conversation and disk persistence. This approved revision changes the exclusion of automatic approval only after a user explicitly remembers one recognized confirmation. It does not disable Codex's action reviewer or grant access to another app.
+
+| Option | Verdict | Reason |
+|---|---|---|
+| Explicit conversation remembering | Use | Removes identical repeated app-access clicks with a bounded lifetime |
+| Remember every Accept automatically | Reject | Accept does not describe a lasting choice |
+| Persist across conversations | Exclude from this revision | Requires a revocation surface and storage design |
+| Automatically answer arbitrary MCP forms | Reject | Forms can request different decisions or data |
+
+### Requirements and verification
+
+This revision addresses repeated app-access prompts reported on October 14. It is an extension of the existing permission flow. Installed Codex CLI 0.159.3 generated types expose `action`, `content` and `_meta`; they expose no MCP session-accept action. Remembering is owned by GeckIt; the internal remember value is never sent as protocol metadata.
+
+Protocol and form tests verify repeated identical requests, changed apps/server/mode/schema/metadata, conversation isolation, ordinary Accept, Decline/Cancel, Stop/disconnect/end and duplicate responses. The initial review was blocked by browser policy loading failures and cancelled native access. Chrome browser automation recovered for the button refinement. The real renderer preview was then reviewed on desktop and phone in light/dark, including keyboard focus and scrolling; no native app access was requested again. Native repeated Computer Use access remains unverified until the implementation is loaded deliberately without restarting active work.
+
+### Performance review, October 14
+
+No performance problems found in this change. The session button uses the existing controls/CSS and removes checkbox state. Transcript and Turn memoization, unchanged object identity, history pagination and content visibility remain intact. Request matching and serialization run once per incoming permission request, outside renderer keystrokes; remembered lookups use a driver-local Set. No formatter, conversation scan, hover handler, timer or animation was added. No new repeated list, row, hover or animation requires profiling for this control replacement. The phone build is checked because it bundles the shared Chat sources.
+
+Verification results, October 14: 926 tests across 71 files pass, including 105 focused Codex/elicitation cases. Typecheck, direct `eslint src test`, desktop build, phone build and `git diff --check` pass. The new UX Mermaid diagram renders successfully to `/private/tmp/geckit-remember-review/flow.svg`. The initial UI review blockage was resolved for the button refinement; native integration remains unverified.
+
+Button refinement: Alex requested "Maybe 3rd button, allow for this session?". The direct session action replaces the checkbox and preserves the remembered scope, one-time alternative and explicit refusal; cancellation remains available through Escape. This supersedes the earlier checkbox presentation.
+
+Final button verification: the actual ElicitationForm inside the Transcript/Sidebar/Composer preview was inspected in full context in Chrome on desktop (1690 x 775 CSS pixels) and phone (390 x 844), light/dark. All three phone buttons are 50 px high and there is no page horizontal overflow. Session approval then Repeat request increments responses without another card; Allow once and Decline then Repeat request each show a fresh card. Escape cancels, Tab follows Decline -> Allow once -> Allow for this session with visible focus, and a 390 x 400 short viewport scrolls the session action into view. Generic forms retain their original buttons and invalid acceptance stays disabled. Provider/native APIs are preview fixtures; live driver behavior is covered by the protocol tests, and real Mail integration is unverified. Evidence: `/private/tmp/geckit-remember-review/desktop-button-dark.png`, `phone-button-dark.png`, `phone-button-light.png`. Viewport overrides were reset. After refinement, typecheck, changed-file lint, 105 focused tests and desktop/phone builds pass.
+
+Main delivery verification, October 14: isolated snapshot contains only this task's nine files. All 921 tests across 71 files, typecheck, direct source/test lint and desktop/phone builds pass. One initial settings file-watch timeout passed separately and on the full-suite rerun. Earlier 926-test verification included unrelated concurrent checkout changes, excluded from this delivery.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { elicitationAnswer, elicitationForm, elicitationSummary, elicitationUrl } from '../src/shared/elicitation'
+import { elicitationAccessKey, elicitationAnswer, elicitationForm, elicitationSummary, elicitationUrl } from '../src/shared/elicitation'
 import type { Elicitation, Json } from '../src/shared/elicitation'
 
 const request = (schema: Json): Elicitation => ({ serverName: 'computer', message: 'Allow access?', ...elicitationForm(schema) })
@@ -90,6 +90,34 @@ describe('MCP elicitation forms', () => {
     const form = request({ type: 'object', required: ['value'], properties: { value: { type: 'string', format } } })
     expect(elicitationAnswer(JSON.stringify({ action: 'accept', content: { value: valid } }), form)?.action).toBe('accept')
     expect(elicitationAnswer(JSON.stringify({ action: 'accept', content: { value: invalid } }), form)).toBeUndefined()
+  })
+
+  it('recognizes only supported empty Computer Use app confirmations', () => {
+    const schema: Json = { type: 'object', properties: {} }
+    const confirmation: Elicitation = { ...request(schema), serverName: 'cua_repl', message: 'Allow Computer Use to use "Mail"?' }
+    const key = elicitationAccessKey(confirmation, 'form', schema, null)
+    expect(key).toBeDefined()
+    for (const changed of [
+      { ...confirmation, serverName: 'computer-use' }, { ...confirmation, message: 'Allow Computer Use to use "Mail"? Extra' }, { ...confirmation, message: 'Allow Computer Use to use "Mail"?\n' },
+      { ...confirmation, message: 'Allow Computer Use to use ""?' }, { ...confirmation, message: 'Allow Computer Use to use "Mail\nOther"?' },
+      { ...confirmation, url: 'https://example.com' }, { ...confirmation, ...elicitationForm({ type: 'object', properties: { approved: { type: 'boolean' } } }) },
+      { ...confirmation, ...elicitationForm({ type: 'object', properties: { secret: { type: 'object' } } }) },
+    ]) expect(elicitationAccessKey(changed, 'form', schema, null)).toBeUndefined()
+    expect(elicitationAccessKey(confirmation, 'url', schema, null)).toBeUndefined()
+    for (const [mode, changedSchema, meta] of [['openai/form', schema, null], ['openaiForm', schema, null], ['form', { ...schema, title: 'Mail' }, null], ['form', schema, { scope: 'Mail' }]] as const) expect(elicitationAccessKey(confirmation, mode, changedSchema, meta)).not.toBe(key)
+    expect(elicitationAccessKey({ ...confirmation, message: 'Allow Computer Use to use "Safari"?' }, 'form', schema, null)).not.toBe(key)
+  })
+
+  it('validates explicit remembering separately from the protocol response', () => {
+    const form = { ...request({ type: 'object', properties: {} }), rememberAllowed: true }
+    const answer = '{"action":"accept","content":{},"remember":true}'
+    expect(elicitationAnswer(answer, form)).toEqual({ action: 'accept', content: {}, _meta: null, remember: true })
+    expect(elicitationSummary(answer)).toBe('Accepted for this conversation')
+    expect(elicitationAnswer('{"action":"accept","content":{},"remember":false}', form)).toEqual({ action: 'accept', content: {}, _meta: null })
+    expect(elicitationAnswer(answer, { ...form, rememberAllowed: false })).toBeUndefined()
+    expect(elicitationAnswer(answer, { ...form, fields: request(schema).fields })).toBeUndefined()
+    expect(elicitationAnswer(answer, { ...form, url: 'https://example.com' })).toBeUndefined()
+    for (const invalid of ['{"action":"decline","remember":true}', '{"action":"cancel","remember":true}', '{"action":"accept","content":{},"remember":"yes"}', '{"action":"accept","content":{"app":"Mail"},"remember":true}']) expect(elicitationAnswer(invalid, form)).toBeUndefined()
   })
 
   it('accepts URL completion without form data and allows only explicit http(s) navigation', () => {

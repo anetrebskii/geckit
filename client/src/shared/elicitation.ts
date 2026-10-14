@@ -25,12 +25,20 @@ export interface Elicitation {
   readonly fields: readonly ElicitationField[]
   readonly url?: string
   readonly error?: string
+  readonly rememberAllowed?: boolean
 }
 
 export interface ElicitationResponse {
   readonly action: 'accept' | 'decline' | 'cancel'
   readonly content: JsonObject | null
   readonly _meta: null
+}
+
+export type ElicitationAnswer = ElicitationResponse & { readonly remember?: true }
+
+export function elicitationAccessKey(request: Elicitation, mode: string, schema: Json, meta: Json): string | undefined {
+  if (meta === undefined || request.serverName !== 'cua_repl' || request.url !== undefined || request.error !== undefined || request.fields.length !== 0 || !['form', 'openai/form', 'openaiForm'].includes(mode) || !/^Allow Computer Use to use "[^"\r\n]+"\?$(?![\s\S])/.test(request.message)) return undefined
+  return JSON.stringify([request.serverName, mode, request.message, schema, meta])
 }
 
 export const jsonObject = (value: Json | undefined): JsonObject | undefined => typeof value === 'object' && value !== null && !Array.isArray(value) ? value : undefined
@@ -128,24 +136,27 @@ export function validField(field: ElicitationField, value: Json | undefined): va
   }
 }
 
-export function elicitationAnswer(answer: string, request: Elicitation): ElicitationResponse | undefined {
+export function elicitationAnswer(answer: string, request: Elicitation): ElicitationAnswer | undefined {
   let parsed: Json
   try { parsed = JSON.parse(answer) as Json } catch { return undefined }
   const value = jsonObject(parsed)
   const action = value?.['action']
+  const remember = value?.['remember']
+  if (remember !== undefined && typeof remember !== 'boolean') return undefined
+  if (remember === true && (action !== 'accept' || request.rememberAllowed !== true || request.error !== undefined || request.url !== undefined || request.fields.length !== 0)) return undefined
   if (action === 'decline' || action === 'cancel') return { action, content: null, _meta: null }
   if (action !== 'accept' || request.error !== undefined) return undefined
   const content = jsonObject(value?.['content'])
   if (request.url !== undefined) return { action, content: null, _meta: null }
   if (content === undefined || !only(content, request.fields.map((field) => field.name)) || request.fields.some((field) => !validField(field, Object.hasOwn(content, field.name) ? content[field.name] : undefined))) return undefined
-  return { action, content, _meta: null }
+  return { action, content, _meta: null, ...(remember === true ? { remember } : {}) }
 }
 
 export function elicitationSummary(answer: string): string {
   let parsed: Json
   try { parsed = JSON.parse(answer) as Json } catch { return 'Cancelled' }
   switch (jsonObject(parsed)?.['action']) {
-    case 'accept': return 'Accepted'
+    case 'accept': return jsonObject(parsed)?.['remember'] === true ? 'Accepted for this conversation' : 'Accepted'
     case 'decline': return 'Declined'
     default: return 'Cancelled'
   }

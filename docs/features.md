@@ -18,6 +18,7 @@ Combined product feature list agreed with Alex on 2026-10-04. Describe what Geck
 - **Voice workflows.** Speak commands to start, message, stop or mark work, with a review before execution. Dictate directly into conversations or other applications; import audio and retain transcription history.
 - **Selected-text correction.** Correct grammar, improve, translate or explain text selected in another application, then copy the result or restore the original.
 - **Reusable phrases.** Keep frequent instructions and add them to follow-up messages without retyping.
+- **Remember Computer Use app access.** In the working tree, choose "Allow for this session" on a recognized Codex app-access confirmation on desktop or phone. Identical requests continue automatically within that live conversation. Stop, disconnect, driver replacement or app restart clears the choice; other apps and conversations require their own approval.
 
 ## iPhone app
 
