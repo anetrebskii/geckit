@@ -169,6 +169,44 @@ stateDiagram-v2
 - **Stale:** the project picked in the form is kept; the recording does not choose a project when started from the form.
 - **Phone:** the row is not shown on the phone, which records nothing.
 
+### Remembering the task folder
+
+Added at Alex's request on 2026-10-14. The existing "Folder" picker on desktop and phone restores the last folder chosen for a task, so making another task does not require choosing it again. This is a preference in shared settings, separate from the form's temporary text and goal.
+
+| State | When it happens | What the person sees | What to do |
+|---|---|---|---|
+| Remembered folder | New task opens and the last folder is available in the active profile | "Folder" with that folder's name and path | Write the task or choose another folder |
+| Restored draft | The app restarts with an unfinished form | "Folder" with the draft's folder, and its text and goal | Continue the draft or choose another folder |
+| Fallback folder | No folder was remembered, or it was removed or excluded by the active profile | "Folder" with the current available folder, otherwise the first available folder; "Choose a folder" when none is available | Write the task or choose/add a folder |
+
+```mermaid
+stateDiagram-v2
+  state "Board" as board
+  state "Task form" as form
+  [*] --> board
+  board --> form: New task
+  form --> form: Choose folder
+  form --> board: Cancel or Start
+```
+
+| From | Event | To | What the person sees |
+|---|---|---|---|
+| Board | Opens New task; the folder is resolved automatically | Task form | The draft's folder, otherwise the available remembered folder, current folder or first available folder, in that order |
+| Task form | Chooses a folder | Task form | Its name and path; the choice is saved immediately |
+| Task form | Cancel, Escape or switches to Ask a question | Board or question form | The task form closes; its folder preference stays |
+| Task form | Starts a task | Board/conversation | The task starts in the displayed folder; that folder is remembered |
+| App closed | Opens the app, then New task | Task form | The same available folder after settings are loaded |
+
+The preference is saved on selection or Start, without a timer or expiry. Opening a question never changes it. Text, goal and pictures still follow the existing draft rules. An unfinished draft keeps its folder even before settings finish loading, following the existing recovery behavior; the person can change it if unavailable. Persistence stays quiet: the selected folder already shows what will be used, so there is no notice or added control.
+
+A profile fallback does not overwrite the previous choice until a folder is explicitly chosen or a task is started. An unavailable remembered folder is ignored, without reconnecting a host or re-adding a removed folder. An available SSH folder keeps its full host-qualified root. There is one preference shared by desktop and phone, matching the existing shared settings. It does not reorder folders or change the board's filter. Keeping the preference only after a successful task was rejected: "last chosen" must survive cancelling the form too.
+
+Requirement: "remember the last chosen folder" is covered by the selection, close/reopen and restart transitions above.
+
+Verification on 2026-10-14: the native settings test covers loading an older settings file, saving the chosen folder, changing the board scope and reading the folder from disk in a fresh settings-store instance. All 909 tests, typecheck, configured lint and desktop/mobile builds pass. Code review against `docs/performance.md` found no new per-card work, animation or per-keystroke settings writes; folder resolution runs only when the form opens.
+
+Browser verification remains unavailable: Chrome automation failed to load its request-header policy, the in-app browser was unavailable, and native Chrome control stalled. Reopen/reload, keyboard selection, scrolling and full-screen light/dark review were not completed. The temporary native-boundary harness is retained in `/private/tmp/geckit-folder-verification` for that review. No running GeckIt conversation was restarted.
+
 ## 9. What is left out on purpose
 
 | Not done | Why |
