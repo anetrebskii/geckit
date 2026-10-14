@@ -835,7 +835,15 @@ export function NewTask({
   readonly onStarting: (starting: boolean) => void
 }): React.JSX.Element {
   const [kept] = useState(() => keptTask(question))
-  const [root, setRoot] = useState(() => kept?.root ?? chat.root ?? shownProjects(chat.settings)[0] ?? '')
+  const [root, setRoot] = useState(() => {
+    const projects = shownProjects(chat.settings)
+    const remembered = chat.settings.newTaskRoot
+    return kept?.root ?? (projects.includes(remembered) ? remembered : undefined) ?? chat.root ?? projects[0] ?? ''
+  })
+  const pickRoot = (root: string): void => {
+    setRoot(root)
+    chat.change({ newTaskRoot: root })
+  }
   const provider = assistantFor(chat.settings, question ? '' : root)
   const providerInfo = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
   const modelRoot = question ? undefined : root || undefined
@@ -978,6 +986,7 @@ export function NewTask({
 
   const start = (): void => {
     if ((root === '' && !question) || !ready || startingRef.current) return
+    if (!question) chat.change({ newTaskRoot: root })
     // What the frames are and where the video is goes under the words, for Claude rather than for the form; on a host the video is not there, so only the frames are said.
     const note = recorded === undefined ? '' : recordedNote(recorded.seconds, frames, recorded.videos.join(' and ') || undefined, !question && isRemote(root))
     const said = note === '' ? text.trim() : `${text.trim()}\n\n${note}`.trim()
@@ -1004,7 +1013,7 @@ export function NewTask({
         text={text}
         goal={goal}
         pictures={pictures}
-        onRoot={setRoot}
+        onRoot={pickRoot}
         onText={setText}
         onGoal={setGoal}
         onPictures={take}
@@ -1057,7 +1066,7 @@ export function NewTask({
       {question ? null : (
         <div className="new-task-label">
           Folder
-          <Projects chat={chat} single={{ root, onPick: setRoot }} disabled={starting} />
+          <Projects chat={chat} single={{ root, onPick: pickRoot }} disabled={starting} />
         </div>
       )}
       {!chat.showProviders ? null : <label className="new-task-label">

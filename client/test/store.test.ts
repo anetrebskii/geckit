@@ -237,3 +237,23 @@ it('broadcasts a changed runtime computer zone once without persisting a phone p
     rmSync(state.folder, { recursive: true, force: true })
   }
 })
+
+it('persists the chosen task folder across board changes and a fresh settings load', async () => {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-task-folder-'))
+  writeFileSync(join(state.folder, 'settings.json'), JSON.stringify({ projects: ['/first', '/chosen'], phoneKey: 'key' }))
+  try {
+    vi.resetModules()
+    const initial = await import('../src/main/store')
+    expect(initial.getSettings().newTaskRoot).toBe('')
+    initial.setSettings({ newTaskRoot: '/chosen' })
+    initial.setSettings({ chatProjects: ['/first'] })
+    const persisted = JSON.parse(readFileSync(join(state.folder, 'settings.json'), 'utf8')) as Settings
+    expect(persisted.newTaskRoot).toBe('/chosen')
+    vi.resetModules()
+    const restarted = await import('../src/main/store')
+    expect(restarted.getSettings().newTaskRoot).toBe('/chosen')
+    expect(restarted.getSettings().chatProjects).toEqual(['/first'])
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})

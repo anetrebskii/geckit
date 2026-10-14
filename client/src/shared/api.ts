@@ -973,6 +973,7 @@ export interface Settings {
   readonly correctCodexModel: string
   /** Project folders the chat window offers, newest first. */
   readonly projects: readonly string[]
+  readonly newTaskRoot: string
   /** Named sets of projects, TwinsAI or Formula, each one what the whole application shows while it is in use. */
   readonly profiles: readonly ProjectProfile[]
   /** The profile in use, by id. Empty is All projects. */
@@ -1143,6 +1144,7 @@ export const DEFAULT_SETTINGS: Settings = {
   correctProvider: 'claude',
   correctCodexModel: '',
   projects: [],
+  newTaskRoot: '',
   profiles: [],
   profile: '',
   projectColors: {},
