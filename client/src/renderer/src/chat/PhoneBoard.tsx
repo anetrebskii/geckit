@@ -16,7 +16,7 @@ import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
 import type { Macs } from '../macs'
 import { awayLine, emptyProfile, projectLabel } from './project'
-import { helping, scripts, useNeedsYou, waitsOnHelpers, working } from './Tasks'
+import { helping, inBackground, scripts, useNeedsYou, waitsOnHelpers, working } from './Tasks'
 import { ago, byDay, questionLeft } from './time'
 import type { Chat } from './useChat'
 
@@ -523,7 +523,7 @@ function standing(session: ChatSession): { readonly tone: string; readonly words
   if (session.state === 'working' || session.runs !== undefined) return { tone: 'working', words: 'Working' }
   if (session.state === 'asks') return { tone: 'asks', words: 'Needs an answer' }
   if (session.waits === true) return { tone: 'read', words: 'Waiting for a slot' }
-  if (waitsOnHelpers(session)) return { tone: 'working', words: 'Working' }
+  if (waitsOnHelpers(session) || inBackground(session)) return { tone: 'working', words: 'Working' }
   if (session.state === 'failed') return { tone: 'failed', words: 'Stopped by an error' }
   if (session.state === 'limit') return { tone: 'failed', words: 'Out of the plan for now' }
   if (session.state === 'unread') return { tone: 'unread' }

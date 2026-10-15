@@ -66,7 +66,7 @@ export function cardSays(session: ChatSession): { readonly words: string; readon
   if (session.runs !== undefined && session.typing === true) return { words: `!${session.runs} waits for you to type`, tone: 'said-asks' }
   if (session.runs !== undefined) return { words: `Running !${session.runs}`, tone: 'said-working' }
   const script = scripts(session)
-  if (session.state === 'idle' && script !== undefined) return { words: script.charAt(0).toUpperCase() + script.slice(1), tone: '' }
+  if (session.state === 'idle' && script !== undefined) return { words: script.charAt(0).toUpperCase() + script.slice(1), tone: 'said-working' }
   return undefined
 }
 
@@ -77,9 +77,14 @@ export function needsYou(session: ChatSession): boolean {
   return session.state === 'asks' || session.state === 'unread' || session.state === 'failed' || session.state === 'limit' || session.status === 'blocked'
 }
 
-/** Whether a conversation in In progress is working now: Claude, a command typed after !, or a helper it is waiting on. */
+/** Whether its turn is over and read but a command, a watch or a helper it started still runs in the background. */
+export function inBackground(session: ChatSession): boolean {
+  return session.state === 'idle' && (session.tasks?.some(running) ?? false)
+}
+
+/** Whether a conversation in In progress is working now: Claude, a command typed after !, a helper it is waiting on, or anything it left running in the background. */
 export function working(session: ChatSession): boolean {
-  return session.state === 'working' || (session.runs !== undefined && session.typing !== true) || waitsOnHelpers(session)
+  return session.state === 'working' || (session.runs !== undefined && session.typing !== true) || waitsOnHelpers(session) || inBackground(session)
 }
 
 /**
