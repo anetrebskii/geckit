@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { homeOf, SESSION_MODES } from '../../../shared/api'
-import { isCodexProvider, llmProviderInfo } from '../../../shared/providers'
-import { money } from '../../../shared/provider-usage'
-import { ModelDetailsButton } from './ModelDetails'
+import { isCodexProvider } from '../../../shared/providers'
+import { accountUsage, money, providerQuotas } from '../../../shared/provider-usage'
 import type { ClaudeAccount, CodexLimitWindow, CodexRateLimit, PlanUsage, PlanWindow } from '../../../shared/api'
 import { shortUrl } from '../../../shared/links'
+import { hostOf } from '../../../shared/hosts'
 import type { Link } from '../../../shared/links'
 import { Menu } from '../ui/Menu'
 import { Cell, Drawer } from './PhoneKit'
 import { projectLabel } from './project'
+import { quotaValue } from './ProviderUsage'
 import { childSaid } from './Request'
 import { startedFrom } from './started'
 import { ago } from './time'
@@ -103,7 +104,7 @@ export const contextLine = (chat: Chat): string | undefined => {
 
 /**
  * What the Mac's window shows under a conversation and along its bottom, as a
- * drawer: its context, cost, checkout and model, the plan's windows, and
+ * drawer: its context, cost, checkout, the plan's windows, and
  * Compact and Clear, each asked about first.
  */
 export function PhoneInfo({
@@ -136,31 +137,30 @@ export function PhoneInfo({
   const parent = session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)
   const started = startedFrom(chat.sessions, session.id)
   const upstream = git?.upstream
+  const place = hostOf(session.root)
+  const remoteClaude = chat.provider === 'claude' && place !== undefined
+  const host = remoteClaude ? chat.hosts.find((one) => one.id === place) : undefined
+  const account = (chat.account?.provider ?? 'claude') === chat.provider ? chat.account : undefined
+  const plan = chat.provider === 'claude' ? remoteClaude ? chat.plans.find((one) => one.place === place)?.usage : chat.plan : undefined
+  const planQuotas = providerQuotas(plan === undefined ? {} : { plan })
+  const quotas = remoteClaude || planQuotas?.length ? planQuotas : accountUsage(account)?.quotas ?? planQuotas
+  const summary = quotas?.slice(0, 2).map((quota) => `${quota.name} ${quotaValue(quota)}`).join(' · ')
+  const limits = remoteClaude
+    ? host?.state === 'missing' ? 'Not installed' : host?.state === 'signin' ? 'Sign in required' : summary ? host?.state === 'up' ? summary : `Last measured: ${summary}` : host?.state === 'connecting' && quotas === undefined ? 'Checking...' : 'Unavailable'
+    : account?.here === false ? 'Not installed' : account?.signedIn === false ? 'Sign in required' : summary || (account === undefined && quotas === undefined ? 'Checking...' : 'Unavailable')
 
   return (
     <Drawer title="Conversation" {...(pulled === undefined ? {} : { pulled })} onClose={onClose}>
       <div className="phone-head">This conversation</div>
       <div className="phone-group">
-        {spend?.used === undefined ? null : (
+        {spend?.used !== undefined ? (
           <Cell
             label="Context"
-            says={spend.window === undefined ? undefined : `${tokens(spend.used)} of ${tokens(spend.window)} tokens`}
-            value={
-              spend.window === undefined ? (
-                tokens(spend.used)
-              ) : (
-                <span className="phone-meter">
-                  <Meter part={spend.used / spend.window} />
-                  {Math.round((spend.used / spend.window) * 100)}%
-                </span>
-              )
-            }
+            value={spend.window === undefined ? `${tokens(spend.used)} tokens` : `${tokens(spend.used)} / ${tokens(spend.window)}`}
           />
-        )}
+        ) : spend?.window === undefined ? null : <Cell label="Context limit" value={`${tokens(spend.window)} tokens`} />}
+        <Cell label="Limits" value={<span className="phone-plan-limits" title={limits}>{limits}</span>} />
         {spend?.cost === undefined ? null : <Cell label={spend.costKind === 'billed' ? 'Billed cost' : 'API equivalent'} says={spend.costKind === 'billed' ? 'Reported by the provider' : 'At API prices; not a subscription charge'} value={money(spend.cost, spend.currency)} />}
-        {session.model === undefined ? null : <Cell label="Model" value={session.model} />}
-        <ModelDetailsButton chat={chat} model={session.model} phone />
-        {!isCodexProvider(chat.provider) || session.actualReasoning === undefined ? null : <Cell label="Reasoning" value={session.actualReasoning === 'xhigh' ? 'Extra high' : session.actualReasoning.charAt(0).toUpperCase() + session.actualReasoning.slice(1)} />}
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === session.mode)?.label ?? '-'} />
         <Cell label="Folder" value={projectLabel(homeOf(session))} />
         {parent === undefined ? null : (
@@ -174,7 +174,6 @@ export function PhoneInfo({
           />
         )}
       </div>
-      {spend?.used === undefined ? null : <div className="phone-note">{llmProviderInfo(chat.provider).name} summarises the conversation when its context fills.</div>}
 
       {started.length === 0 ? null : (
         <>

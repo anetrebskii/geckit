@@ -144,6 +144,18 @@ html.keyboard .phone-tabs {
   white-space: nowrap;
 }
 
+.phone-cell:has(.phone-plan-limits) .phone-cell-words {
+  flex: none;
+}
+
+.phone-cell-value:has(.phone-plan-limits) {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  font-size: 15px;
+  text-align: end;
+}
+
 .phone-cell-check {
   flex: none;
   color: var(--accent);
