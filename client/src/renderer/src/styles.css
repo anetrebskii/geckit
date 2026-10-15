@@ -1050,21 +1050,36 @@ textarea {
   content: '';
 }
 
-html.phone .composer .quiet.cancel,
+.composer .quiet.sending {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--text-dim);
+  white-space: nowrap;
+  background: none;
+}
+
+.composer .quiet.sending:hover {
+  background: var(--bg-hover);
+}
+
+html.phone .composer .quiet.sending,
 html.phone .transcript .quiet.retry {
   min-block-size: 44px;
 }
 
-html.phone .composer .quiet.cancel {
+html.phone .composer .quiet.sending {
   position: absolute;
   inset-inline-end: 4px;
   inset-block-end: 4px;
-  inline-size: 82px;
+  inline-size: 128px;
+  justify-content: center;
+  font-size: 15px;
 }
 
-html.phone .composer-inner:has(.quiet.cancel) textarea {
+html.phone .composer-inner:has(.quiet.sending) textarea {
   min-block-size: 52px;
-  padding-inline-end: 94px;
+  padding-inline-end: 140px;
 }
 
 .vpn-settings.phone .vpn-addresses {
@@ -10822,6 +10837,22 @@ html.phone .model-details-title button {
 
 html.phone .model-details-sheet {
   padding-inline: 0;
+}
+
+html.phone .model-details-inline {
+  border-block: 0.5px solid var(--separator);
+}
+
+html.phone .model-details-inline .model-details-title {
+  position: static;
+  margin: 0;
+  padding: 0;
+  background: none;
+}
+
+.model-details-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .model-details .phone-cell-label {

@@ -32,7 +32,7 @@ Controls use the product's existing settings and conversation hierarchy. The exp
 | Address edit | The local address field differs from the saved list | "Approved public IP addresses" and "Save addresses" | Saves or closes to discard the edit |
 | Invalid edit | One or more entries fail validation | "Enter a public IPv4 or IPv6 address on each line. Invalid address: {entry}." | Corrects the named entry; saved configuration remains effective |
 | Ready | Enabled with saved valid addresses; no check underway | No ongoing status; the scope note remains in Settings | Sends or continues |
-| Checking | A guarded operation is awaiting verification | "Checking public IP..." | Waits, or cancels; retry/send is disabled for that operation |
+| Checking | A guarded operation is awaiting verification | "Checking public IP..." and a "Sending..." composer control with spinner and cancellation cross | Waits, or cancels; retry/send is disabled for that operation |
 | IP mismatch | A verified usable public IP is not approved | "Not sent. This computer's public IP is {ip}, which is not in your approved VPN IPs. Connect your VPN, then try again." | Connects the VPN and presses Try again, or changes Settings |
 | Check unavailable | Verification failed or a usable address family could not be verified | "Not sent. GeckIt could not verify this computer's public IP. Check your connection and VPN, then try again." | Repairs the connection and presses Try again |
 | Configuration missing | Enabled list is empty or unusable | "Not sent. VPN IP check is on, but no valid public IP addresses are saved. Add your VPN IPs in Settings." | Fixes the list or disables the guard, then retries |
@@ -87,7 +87,7 @@ stateDiagram-v2
 | Checking | Verification approves the current address and current saved settings, automatically without Alex | Working | The checking line goes; the operation appears once as sent |
 | Checking | Verification mismatches, times out or fails, automatically without Alex | Blocked | One specific explanation and Try again; nothing sent |
 | Checking | Settings change before completion | Checking or Blocked | Result for old settings is discarded; current rule decides; no send while unresolved |
-| Checking | Presses Cancel | Blocked | Dispatch is cancelled; no late lookup result sends it. Unsent content remains available for deliberate Try again |
+| Checking | Presses the cancellation cross in Sending | Blocked | Dispatch is cancelled; no late lookup result sends it. Unsent content remains available for deliberate Try again |
 | Checking or Blocked | Cancels the queued message | Ready | The selected queued message is removed; no late lookup result sends it |
 | Blocked | Connects VPN without pressing anything | Blocked | The explanation stays; nothing starts automatically |
 | Blocked | Presses Try again | Checking | Fresh check of the same saved operation; button disabled until checking, stop acknowledgement and dispatch complete |
@@ -152,7 +152,8 @@ The state table in section 3 owns the exact state messages; the following are co
 | SSH interruption note | "Interruption was requested on the SSH host. Remote work may continue if the host cannot be reached." |
 | Recovery after error | "Try again" |
 | Recovery after Stop | "Continue" |
-| Checking cancellation | "Cancel" |
+| Pending composer send | "Sending..." |
+| Checking cancellation accessible name and tooltip | "Cancel sending" |
 
 Preserve specific guard explanations on the phone; do not turn them into "Not sent: the host could not be reached".
 
@@ -235,3 +236,11 @@ Alex requested the Claude plugin's bounded retries, independent fallback and dia
 Retries remain silent inside the existing checking state. A fresh valid unapproved address blocks immediately without another endpoint overriding it. Settings changes discard obsolete policy results; disabling the guard during recovery makes pending results obsolete. The shared periodic checker uses the same recovery, retains its ten-second cadence, and still pauses on exhausted verification failures with manual Try again.
 
 Local application logs record failed attempts, recovery, mismatches and deadline exhaustion with family, endpoint, attempt, elapsed milliseconds and the network error code/message. No prompts, tool output or response bodies enter diagnostics. A logging failure cannot affect verification. First-attempt success stays silent. Existing failure wording and recovery controls remain unchanged; update the desktop/phone service disclosure to name all lookup services.
+
+### Pending-send presentation - 2026-10-15
+
+The composer now shows "Sending..." with a spinner and a cancellation cross while the before-send IP check runs. Its accessible name and tooltip are "Cancel sending"; activating it still calls the existing cancellation handler. The transcript retains "Checking public IP..." so the reason for waiting remains explicit. This replaces the prominent "Cancel" label at Alex's request.
+
+Actual Composer and Transcript components were checked in the existing fixture-backed chat preview: dark 390x844 and light 320x844 phone, plus light/dark 1280x800 desktop. The control fits without overflow, keeps a 44px phone target, supports keyboard focus/Enter, cancels without losing the next draft or attachment, and disappears after cancellation or successful fixture retry. No real public-IP lookup or provider send was exercised. Typecheck, full lint, 270 VPN/session tests and the mobile build passed.
+
+Performance review: no performance problems found. The spinner uses the existing compositor wrapper and unmounts when checking ends; the phone was rebuilt. Other ten checklist items are unchanged.

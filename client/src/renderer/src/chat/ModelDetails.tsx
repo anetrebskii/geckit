@@ -4,7 +4,6 @@ import { createPortal } from 'react-dom'
 import { modelDetailRows, pricingRows, resolvedModel } from '../../../shared/model-details'
 import { llmProviderInfo } from '../../../shared/providers'
 import { ON_PHONE } from '../on-phone'
-import { Sheet } from '../ui/Sheet'
 import { Cell } from './PhoneKit'
 import { Icon } from '../ui/Icon'
 import type { Chat } from './useChat'
@@ -12,18 +11,19 @@ import './phone-home.css'
 
 export type ModelDetailsChat = Pick<Chat, 'provider' | 'transport' | 'settings' | 'models' | 'model' | 'session' | 'root' | 'account' | 'askModels'>
 
-function Details({ chat, model, phone, onClose }: { readonly chat: ModelDetailsChat; readonly model: string | undefined; readonly phone: boolean; readonly onClose: () => void }): React.JSX.Element {
+function Details({ chat, model, phone, id, onClose }: { readonly chat: ModelDetailsChat; readonly model: string | undefined; readonly phone: boolean; readonly id: string; readonly onClose: () => void }): React.JSX.Element {
   const title = useId()
   const body = useRef<HTMLDivElement>(null)
   const provider = llmProviderInfo(chat.provider, chat.transport, chat.settings.providerPlugins)
   const found = resolvedModel(Array.isArray(chat.models) ? chat.models : undefined, model)
 
   useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
-    body.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    const previous = body.current?.previousElementSibling
+    const opener = phone && previous instanceof HTMLButtonElement ? previous : document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+    if (!phone) body.current?.querySelector<HTMLButtonElement>('button')?.focus()
     const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') { event.stopPropagation(); onClose(); return }
-      if (event.key !== 'Tab') return
+      if (event.key === 'Escape') { event.stopPropagation(); onClose(); if (phone) opener?.focus(); return }
+      if (phone || event.key !== 'Tab') return
       const controls = body.current?.querySelectorAll<HTMLElement>('button, a[href]')
       const first = controls?.[0]
       const last = controls?.[controls.length - 1]
@@ -31,14 +31,14 @@ function Details({ chat, model, phone, onClose }: { readonly chat: ModelDetailsC
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }
     window.addEventListener('keydown', key, true)
-    return () => { window.removeEventListener('keydown', key, true); opener?.focus() }
-  }, [onClose])
+    return () => { window.removeEventListener('keydown', key, true); if (!phone) opener?.focus() }
+  }, [onClose, phone])
 
-  const content = <div ref={body} className="model-details">
+  const content = <div ref={body} id={id} className={`model-details${phone ? ' model-details-inline' : ''}`} role={phone ? 'region' : undefined} aria-label={phone ? 'Model details' : undefined}>
     <div className="model-details-title">
       <Icon name={provider.icon} size={22} />
       <div><h2 id={title}>{found?.name ?? model ?? 'Model details'}</h2><span>{provider.name}{chat.account?.program === undefined ? '' : ` · CLI ${chat.account.program.version}`}</span></div>
-      <button type="button" className="quiet" onClick={onClose}>Done</button>
+      {phone ? null : <button type="button" className="quiet" onClick={onClose}>Done</button>}
     </div>
     {found === undefined ? <p role="status">{chat.models === 'asking' || chat.models === 'unasked' ? 'Loading model details...' : 'Model details unavailable'}</p> : <>
       {found.says === undefined ? null : <p className="model-details-description">{found.says}</p>}
@@ -52,13 +52,21 @@ function Details({ chat, model, phone, onClose }: { readonly chat: ModelDetailsC
     </>}
   </div>
 
-  if (phone) return <Sheet title="Model details" className="model-details-sheet" cancel={false} onClose={onClose}>{content}</Sheet>
+  if (phone) return content
   return createPortal(<div className="dialog-scrim" onMouseDown={onClose}><div className="dialog model-details-dialog" role="dialog" aria-modal="true" aria-labelledby={title} onMouseDown={(event) => event.stopPropagation()}>{content}</div></div>, document.body)
 }
 
 export function ModelDetailsButton({ chat, model = chat.model || chat.session?.model, phone = ON_PHONE }: { readonly chat: ModelDetailsChat; readonly model?: string | undefined; readonly phone?: boolean }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const id = useId()
   const close = useCallback(() => setOpen(false), [])
   const show = (): void => { setOpen(true); chat.askModels(chat.root); }
-  return <>{phone ? <Cell label="Model details" onPress={show} /> : <button type="button" className="model-details-button act" onClick={show}>Model details</button>}{open ? <Details chat={chat} model={model} phone={phone} onClose={close} /> : null}</>
+  if (phone) return <>
+    <button type="button" className="phone-cell model-details-toggle" aria-expanded={open} aria-controls={id} onClick={() => { if (open) close(); else show(); }}>
+      <span className="phone-cell-words"><span className="phone-cell-label">Model details</span></span>
+      <Icon name={open ? 'down' : 'right'} size={14} className="phone-cell-more" />
+    </button>
+    {open ? <Details chat={chat} model={model} phone={phone} id={id} onClose={close} /> : null}
+  </>
+  return <><button type="button" className="model-details-button act" onClick={show}>Model details</button>{open ? <Details chat={chat} model={model} phone={phone} id={id} onClose={close} /> : null}</>
 }

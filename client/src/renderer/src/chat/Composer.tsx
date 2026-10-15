@@ -1170,7 +1170,11 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
             </button>
           ) : null}
           {chat.checkingIp ? (
-            <button type="button" className="quiet cancel" onClick={chat.stop}>Cancel</button>
+            <button type="button" className="quiet sending" onClick={chat.stop} title="Cancel sending" aria-label="Cancel sending">
+              <Icon name="spinner" className="spinning" size={14} />
+              <span>Sending...</span>
+              <Icon name="close" size={12} />
+            </button>
           ) : shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
             <button
               type="button"
