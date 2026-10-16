@@ -11,6 +11,8 @@ export type Signal =
       readonly key: boolean
       /** The permission mode it actually runs in, which is not always the one it was asked for. */
       readonly mode?: string
+      /** What may follow a / at the start of a message here: commands and skills by name. */
+      readonly commands?: readonly string[]
     }
   /** Something is being done, said the way a row says it: "reading src/main.ts". */
   | { readonly kind: 'doing'; readonly what: string }

@@ -105,6 +105,8 @@ export function Chat(): React.JSX.Element {
   const [pulled, setPulled] = useState<number>()
   // On the phone, New task opened to be filled from a recording.
   const [recordFirst, setRecordFirst] = useState(false)
+  // The project of a conversation just cleared, which the form for the next one opens in.
+  const [clearedIn, setClearedIn] = useState<string | undefined>()
   const [asking, setAsking] = useState(() => keptTask(true) !== undefined)
   const [formStarting, setFormStarting] = useState(false)
   // The pictures a form opens with: the screenshot that opened it, or what the other form held.
@@ -119,6 +121,7 @@ export function Chat(): React.JSX.Element {
     setAsking(false)
     setFormStarting(false)
     setSeed([])
+    setClearedIn(undefined)
   }
   const [cut, setCut] = useState<readonly CutOff[] | undefined>()
   useEffect(() => {
@@ -517,7 +520,7 @@ export function Chat(): React.JSX.Element {
       {making ? (
         <>
           <div className="talk-scrim form-scrim" onMouseDown={formStarting ? undefined : closeForm} />
-          <NewTask chat={chat} record={recordFirst} seed={seed} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
+          <NewTask chat={chat} record={recordFirst} seed={seed} given={clearedIn} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
         </>
       ) : null}
       {cut === undefined ? null : <CutOffDialog list={cut} onClose={() => setCut(undefined)} />}
@@ -958,9 +961,15 @@ export function Chat(): React.JSX.Element {
                 className="primary"
                 autoFocus
                 onClick={() => {
-                  if (chat.session !== undefined) chat.setRoot(homeOf(chat.session))
+                  const home = chat.session === undefined ? undefined : homeOf(chat.session)
+                  if (home !== undefined) chat.setRoot(home)
                   chat.startNew()
                   setClearing(false)
+                  // On the board a new conversation is no conversation open at all, so the form for one comes up in its place, as on the phone.
+                  if (board) {
+                    setClearedIn(home)
+                    setMaking(true)
+                  }
                 }}
               >
                 Clear

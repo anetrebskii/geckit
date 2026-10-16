@@ -507,6 +507,9 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
     } else if (subtype === 'init') {
       const model = string(message['model'])
       const mode = string(message['permissionMode'])
+      // Those only a terminal runs are listed too, and so are the tool's own names starting with _.
+      const terminal = new Set(list(message['terminal_slash_commands']).map(string))
+      const commands = list(message['slash_commands']).map(string).filter((name) => name !== '' && !name.startsWith('_') && !terminal.has(name))
       out.signals.push({
         kind: 'started',
         session: string(message['session_id']),
@@ -514,6 +517,7 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
         key: !['', 'none'].includes(string(message['apiKeySource'])),
         ...(model === '' ? {} : { model }),
         ...(mode === '' ? {} : { mode }),
+        ...(commands.length === 0 ? {} : { commands }),
       })
     } else if (subtype === 'compact_boundary') {
       state.seq += 1
