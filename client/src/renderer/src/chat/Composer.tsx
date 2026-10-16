@@ -4,6 +4,7 @@ import { flushSync } from 'react-dom'
 import { modelName, programLine, SESSION_MODES } from '../../../shared/api'
 import type { ChatSession, ClaudeModel, QueuedMessage, ReasoningEffort, SessionImage, SessionMode, SessionProvider } from '../../../shared/api'
 import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
+import { commandAt, commandsFor } from '../../../shared/commands'
 import { mentionAt, pathsFor } from '../../../shared/paths'
 import { dictate, dropUnheard, hearAgain, languageCode, readUnheard, useDictationLanguage, useLevel } from '../dictate'
 import type { Unheard } from '../dictate'
@@ -170,6 +171,9 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [at, setAt] = useState(0)
   // Escape puts the list away for the @ it was up for.
   const [closed, setClosed] = useState<number | undefined>()
+  // What Claude Code says may follow a / here, and what was typed when Escape put the list away, until more is typed.
+  const [commands, setCommands] = useState<{ readonly root: string; readonly names: readonly string[] } | undefined>()
+  const [slashClosed, setSlashClosed] = useState<string | undefined>()
   const [editing, setEditing] = useState<{ readonly id: string; readonly text: string } | undefined>()
   const [queueDrag, setQueueDrag] = useState<{ readonly id: string; readonly target: string; readonly after: boolean }>()
   const queueDragRef = useRef<{ readonly id: string; readonly target: string; readonly after: boolean } | undefined>(undefined)
@@ -271,7 +275,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const root = chat.root
   const mention = root === undefined ? undefined : mentionAt(chat.draft, caret)
   const mentioning = mention !== undefined && mention.from !== closed
-  const found = mentioning && files !== undefined && files.root === root ? pathsFor(files.paths, mention.asked) : undefined
+  // Codex has no commands of its own to offer.
+  const slash = root === undefined || isCodexProvider(chat.provider) ? undefined : commandAt(chat.draft, caret)
+  const slashing = slash !== undefined && slashClosed !== chat.draft
+  const offer = mentioning ? mention : slashing ? slash : undefined
+  const found = mentioning
+    ? files !== undefined && files.root === root ? pathsFor(files.paths, mention.asked) : undefined
+    : slashing && commands !== undefined && commands.root === root ? commandsFor(commands.names, slash.asked) : undefined
   const here = Math.min(at, Math.max(0, (found?.length ?? 0) - 1))
 
   // Asked again whenever an @ is begun, so a file written since is there.
@@ -286,15 +296,27 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
     }
   }, [mentioning, root])
 
+  // Asked again whenever a / is begun, so a skill added since is there once the tool has started again.
+  useEffect(() => {
+    if (!slashing || root === undefined) return
+    let current = true
+    void window.geckit.chat.commands(root).then((names) => {
+      if (current) setCommands({ root, names })
+    })
+    return () => {
+      current = false
+    }
+  }, [slashing, root])
+
   useEffect(() => {
     offered.current?.querySelector('.on')?.scrollIntoView({ block: 'nearest' })
   }, [here])
 
   const put = (path: string): void => {
-    if (mention === undefined) return
-    const before = chat.draft.slice(0, mention.from)
+    if (offer === undefined) return
+    const before = chat.draft.slice(0, offer.from)
     // A folder is left open, so what is in it is offered next.
-    const said = `@${path}${path.endsWith('/') ? '' : ' '}`
+    const said = slashing ? `/${path} ` : `@${path}${path.endsWith('/') ? '' : ' '}`
     chat.setDraft(`${before}${said}${chat.draft.slice(caret)}`)
     putCaret.current = before.length + said.length
     setCaret(before.length + said.length)
@@ -845,7 +867,13 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
         {found === undefined ? null : (
           <div className="mentions" role="listbox" ref={offered}>
             {found.length === 0 ? (
-              <div className="empty">Nothing in {projectLabel(root ?? '')} by that name</div>
+              <div className="empty">
+                {!slashing
+                  ? `Nothing in ${projectLabel(root ?? '')} by that name`
+                  : commands?.names.length === 0
+                    ? `${llmProviderInfo(chat.provider).name} lists its commands and skills once it has started here`
+                    : 'No command or skill by that name'}
+              </div>
             ) : (
               found.map((path, index) => (
                 <div
@@ -862,7 +890,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
                     put(path)
                   }}
                 >
-                  <Offered path={path} />
+                  {slashing ? <span className="name">/{path}</span> : <Offered path={path} />}
                 </div>
               ))
             )}
@@ -938,14 +966,16 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               else recorder.cancel()
               return
             }
-            if (found !== undefined && mention !== undefined) {
+            if (found !== undefined && offer !== undefined) {
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault()
                 setAt(event.key === 'ArrowDown' ? Math.min(here + 1, found.length - 1) : Math.max(here - 1, 0))
                 return
               }
               const path = found[here]
-              if ((event.key === 'Enter' || event.key === 'Tab') && path !== undefined) {
+              // A command typed out in full is sent by Enter, as in the terminal, rather than put in again.
+              const typed = slashing && event.key === 'Enter' && path === slash.asked
+              if ((event.key === 'Enter' || event.key === 'Tab') && path !== undefined && !typed) {
                 event.preventDefault()
                 put(path)
                 return
@@ -953,7 +983,8 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               if (event.key === 'Escape') {
                 event.preventDefault()
                 event.stopPropagation()
-                setClosed(mention.from)
+                if (slashing) setSlashClosed(chat.draft)
+                else setClosed(offer.from)
                 return
               }
             }

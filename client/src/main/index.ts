@@ -67,6 +67,7 @@ import { correct, stopCorrecting } from './correct'
 import { answerErrors, errorQuestion, followErrors, startErrors, watchErrors, windowError } from './errors'
 import { askOrders, carryOut, projectSaid, saying } from './orders'
 import type { Order, Told } from './orders'
+import { commandsFor, keepCommands } from './commands'
 import { projectFiles } from './files'
 import { foldersIn } from './folders'
 import { fetchGit, gitRepo, gitState } from './git'
@@ -343,6 +344,7 @@ async function build(held: Routes): Promise<Sessions> {
     codex: new CodexSessions(undefined, (account) => tellChats('chat:accountChanged', account)),
     transport: () => getSettings().chatTransport,
     notes: conversationNotes,
+    commands: keepCommands,
     beforeSend: () => getSettings().vpnIpCheck ? checkVpnIp(getSettings) : undefined,
     vpnMonitor: () => {
       const settings = getSettings()
@@ -1291,6 +1293,7 @@ function wire(): void {
   ipcMain.handle('chat:file', (_event, root: string, path: string) => fileFor(root, path))
   ipcMain.handle('chat:repo', (_event, root: string) => repoFor(root))
   ipcMain.handle('chat:files', (_event, root: string) => filesFor(root))
+  ipcMain.handle('chat:commands', (_event, root: string) => commandsFor(root))
   ipcMain.on('chat:openFile', (_event, root: string, path: string) => {
     if (!isRemote(root)) openFile(getSettings().openWith, root, path)
   })
@@ -1473,6 +1476,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'local.fetch': (asked: LocalAsk) => localFetch(asked),
     'chat.repo': (root: string) => repoFor(root),
     'chat.files': (root: string) => filesFor(root),
+    'chat.commands': (root: string) => commandsFor(root),
     // The phone reaches hosts only through this computer: it sees them, answers what they ask, and adds their folders.
     'hosts.list': () => routes?.hosts.views() ?? [],
     'hosts.connect': (id: string) => void routes?.hosts.connect(id),
