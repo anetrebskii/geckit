@@ -7,6 +7,21 @@ created: 2026-10-02
 
 # UX: библиотеки провайдеров
 
+## Live questions while opening a conversation - 2026-10-16
+
+This correction restores the existing question flow requested by Alex: a conversation marked as needing an answer shows its question without pressing Stop. It applies to desktop and phone, including Claude Code (tmux).
+
+| From | Event | To | What the person sees |
+| --- | --- | --- | --- |
+| Conversation opening | A live question arrives automatically | Waiting for an answer | The existing question card and its choices appear immediately |
+| Waiting for an answer | The earlier transcript finishes loading automatically | Waiting for an answer | Earlier messages appear; the live question stays available |
+| Waiting for an answer | The question is answered or withdrawn automatically | Working | The existing answered card or removal remains authoritative when loading finishes |
+| Conversation opening | Another conversation is opened | Other conversation | Late replies from the previous opening do not replace this conversation |
+
+Loading and live-update reconciliation stay silent. Keep the existing question wording, keyboard controls, scrolling and provider-reported status; add no polling, delay, notification or Stop requirement. Reopening the same conversation also supersedes its previous load. A stale snapshot must neither erase a new question nor revive a resolved one. This is a correction to existing behavior, with no new product feature or layout.
+
+Verification: reproduced the missing card before the fix using the actual `useChat` and `Transcript` with a delayed native-boundary fixture. After the fix, the card survives loading, choice/free-text answers remain answered, withdrawn cards stay removed, and reopening ignores an earlier load. Reviewed Chrome at 1352x677 and 390x844 in light/dark, including a long transcript, automatic scrolling to its end and Enter submission; no runtime errors. Live tmux delivery and native iPhone interaction were not exercised. Performance review against `docs/performance.md` found no new render-time, per-row, timer or animation work; existing item identity and stable callbacks hold. The transient update buffer is used only during loading. Shared phone assets were rebuilt; live profiling was unnecessary for this event-order correction.
+
 ## 1. Зачем
 
 Репозитории провайдеров должны иметь своё место в Settings: список подключённых источников, добавление следующего и управление обновлениями. Alex хочет подключить несколько библиотек и получать их новые версии автоматически.

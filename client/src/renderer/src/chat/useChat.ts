@@ -14,6 +14,7 @@ import type {
   ReasoningEffort,
   SessionImage,
   SessionItem,
+  SessionItems,
   SessionMessage,
   SessionMode,
   SessionProvider,
@@ -29,6 +30,7 @@ import { useSettings } from '../settings'
 import type { Settings } from '../../../shared/api'
 import { hostName } from './project'
 import { useHosts } from './useHosts'
+import { updatedItems } from '../../../shared/transcript-items'
 
 /** What the window is showing: a conversation, or one that has not been sent yet. */
 export type Shown = { readonly kind: 'new' } | { readonly kind: 'session'; readonly id: string }
@@ -290,6 +292,7 @@ export function useChat(): Chat {
   const provider = shown.kind === 'session' ? providerOf(shown.id) : assistantFor(settings, scope === ALL ? started ?? shownProjects(settings)[0] ?? '' : scope)
 
   const shownRef = useRef(shown)
+  const loadingItems = useRef<{ readonly shown: Shown; readonly updates: SessionItems[] } | undefined>(undefined)
   const itemsRef = useRef(items)
   useEffect(() => {
     itemsRef.current = items
@@ -426,12 +429,8 @@ export function useChat(): Chat {
     () =>
       window.geckit.chat.onItems((arrived) => {
         if (shownRef.current.kind !== 'session' || shownRef.current.id !== arrived.id) return
-        setItems((held) => {
-          const kept = new Map(held.map((item) => [item.id, item]))
-          for (const id of arrived.gone ?? []) kept.delete(id)
-          for (const item of arrived.items) kept.set(item.id, item)
-          return [...kept.values()]
-        })
+        if (loadingItems.current?.shown === shownRef.current) loadingItems.current.updates.push(arrived)
+        setItems((held) => updatedItems(held, [arrived]))
       }),
     [],
   )
@@ -439,6 +438,7 @@ export function useChat(): Chat {
   const open = useCallback((next: Shown) => {
     const before = shownRef.current
     shownRef.current = next
+    loadingItems.current = undefined
     setShown(next)
     setFocusSeed((seed) => seed + 1)
     if (next.kind === 'new') {
@@ -451,10 +451,15 @@ export function useChat(): Chat {
     setEarlier({ id: next.id, left: 0 })
     // Another conversation's lines are not left up while this one is read.
     if (before.kind !== 'session' || before.id !== next.id) setItems([])
+    const updates: SessionItems[] = []
+    const loading = { shown: next, updates }
+    loadingItems.current = loading
     window.geckit.chat.watching(next.id)
     void window.geckit.chat.items(next.id).then((read) => {
-      if (shownRef.current.kind !== 'session' || shownRef.current.id !== next.id) return
-      setItems(read)
+      if (shownRef.current !== next) return
+      // Live changes received after this snapshot was requested take precedence.
+      setItems(updatedItems(read, loading.updates))
+      loadingItems.current = undefined
       setItemsFor(next.id)
     })
   }, [])
