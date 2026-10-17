@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { elicitationAccessKey, elicitationAnswer, elicitationForm, elicitationSummary, elicitationUrl } from '../src/shared/elicitation'
-import type { Elicitation, Json } from '../src/shared/elicitation'
+import type { Elicitation, Json, JsonObject } from '../src/shared/elicitation'
 
 const request = (schema: Json): Elicitation => ({ serverName: 'computer', message: 'Allow access?', ...elicitationForm(schema) })
 const schema: Json = {
@@ -106,6 +106,33 @@ describe('MCP elicitation forms', () => {
     expect(elicitationAccessKey(confirmation, 'url', schema, null)).toBeUndefined()
     for (const [mode, changedSchema, meta] of [['openai/form', schema, null], ['openaiForm', schema, null], ['form', { ...schema, title: 'Mail' }, null], ['form', schema, { scope: 'Mail' }]] as const) expect(elicitationAccessKey(confirmation, mode, changedSchema, meta)).not.toBe(key)
     expect(elicitationAccessKey({ ...confirmation, message: 'Allow Computer Use to use "Safari"?' }, 'form', schema, null)).not.toBe(key)
+  })
+
+  it('remembers recognized app access across operations without sharing distinct scopes', () => {
+    const schema: Json = { type: 'object', properties: {} }
+    const confirmation: Elicitation = { ...request(schema), serverName: 'cua_repl', message: 'Allow Computer Use to use "GeckIt Local"?' }
+    const meta: JsonObject = {
+      callId: 'call_first', codex_approval_kind: 'mcp_tool_call', connector_id: 'computer-use', connector_name: 'Computer Use', persist: ['session', 'always'], riskLevel: 'low',
+      'x-codex-turn-metadata': { auto_review_enabled: true, model: 'gpt-6.1-sol', thread_id: 'thread', turn_id: 'turn-first', workspaces: { '/repo': { has_changes: true } } },
+      tool_name: 'get_app_state', tool_params: { app: 'com.geckit.local.e38' }, tool_params_display: [{ display_name: 'App', name: 'app', value: 'GeckIt Local' }],
+    }
+    const next: JsonObject = { ...meta, callId: 'call_next', tool_name: 'click', 'x-codex-turn-metadata': { thread_id: 'thread', turn_id: 'turn-next' }, tool_params_display: [{ display_name: 'App', name: 'app', value: 'GeckIt' }] }
+    const key = elicitationAccessKey(confirmation, 'form', schema, meta)
+    expect(key).toBeDefined()
+    expect(elicitationAccessKey(confirmation, 'form', schema, next)).toBe(key)
+    for (const changed of [
+      { ...next, tool_params: { app: 'com.geckit.other' } }, { ...next, riskLevel: 'high' },
+      { ...next, connector_id: 'other' }, { ...next, connector_name: 'Other' }, { ...next, codex_approval_kind: 'other' },
+      { ...next, persist: ['always'] }, { ...next, tool_params: { app: 'com.geckit.local.e38', write: true } },
+      { ...next, scope: { write: true } }, { ...next, tool_params: { app: '' } },
+    ]) expect(elicitationAccessKey(confirmation, 'form', schema, changed)).not.toBe(key)
+    const scoped = { ...meta, scope: { write: false } }
+    expect(elicitationAccessKey(confirmation, 'form', schema, { ...next, scope: { write: true } })).not.toBe(elicitationAccessKey(confirmation, 'form', schema, scoped))
+    for (const unrecognized of [{ ...meta, connector_id: 'other' }, { ...meta, persist: ['always'] }, { ...meta, tool_params: { app: 'com.geckit.local.e38', write: false } }]) {
+      expect(elicitationAccessKey(confirmation, 'form', schema, { ...unrecognized, callId: 'call_next' })).not.toBe(elicitationAccessKey(confirmation, 'form', schema, unrecognized))
+    }
+    const nonemptySchema: Json = { type: 'object', properties: { enabled: { type: 'boolean' } } }
+    expect(elicitationAccessKey(confirmation, 'form', nonemptySchema, next)).not.toBe(elicitationAccessKey(confirmation, 'form', nonemptySchema, meta))
   })
 
   it('validates explicit remembering separately from the protocol response', () => {
