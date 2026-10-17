@@ -1051,16 +1051,52 @@ textarea {
 }
 
 .composer .quiet.sending {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  inline-size: 32px;
+  block-size: 32px;
+  padding: 0;
   color: var(--text-dim);
-  white-space: nowrap;
+  border: 0;
+  border-radius: 50%;
   background: none;
 }
 
-.composer .quiet.sending:hover {
-  background: var(--bg-hover);
+.composer .quiet.sending::before {
+  content: '';
+  grid-area: 1 / 1;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: 50%;
+  background: var(--fill);
+}
+
+.composer .quiet.sending:hover::before,
+.composer .quiet.sending:active::before {
+  background: var(--fill-strong);
+}
+
+.composer .quiet.sending > .spinner-turn,
+.composer .quiet.sending > svg {
+  grid-area: 1 / 1;
+  z-index: 1;
+}
+
+.composer .quiet.sending .spinner-turn svg {
+  inline-size: 32px;
+  block-size: 32px;
+  color: var(--accent);
+  stroke-width: 1;
+}
+
+.composer .quiet.sending > span:not(.spinner-turn) {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 
 html.phone .composer .quiet.sending,
@@ -1070,16 +1106,14 @@ html.phone .transcript .quiet.retry {
 
 html.phone .composer .quiet.sending {
   position: absolute;
-  inset-inline-end: 4px;
-  inset-block-end: 4px;
-  inline-size: 128px;
-  justify-content: center;
-  font-size: 15px;
+  inset-inline-end: -2px;
+  inset-block-end: -2px;
+  inline-size: 44px;
+  block-size: 44px;
 }
 
 html.phone .composer-inner:has(.quiet.sending) textarea {
-  min-block-size: 52px;
-  padding-inline-end: 140px;
+  padding-inline-end: 48px;
 }
 
 .vpn-settings.phone .vpn-addresses {

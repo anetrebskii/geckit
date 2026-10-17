@@ -244,3 +244,15 @@ The composer now shows "Sending..." with a spinner and a cancellation cross whil
 Actual Composer and Transcript components were checked in the existing fixture-backed chat preview: dark 390x844 and light 320x844 phone, plus light/dark 1280x800 desktop. The control fits without overflow, keeps a 44px phone target, supports keyboard focus/Enter, cancels without losing the next draft or attachment, and disappears after cancellation or successful fixture retry. No real public-IP lookup or provider send was exercised. Typecheck, full lint, 270 VPN/session tests and the mobile build passed.
 
 Performance review: no performance problems found. The spinner uses the existing compositor wrapper and unmounts when checking ends; the phone was rebuilt. Other ten checklist items are unchanged.
+
+### Phone sending-control styling - 2026-10-17
+
+At Alex's request, the existing phone pending-send control uses the same round footprint as Send: a progress ring surrounds its cancellation cross, with a 44px touch target. The visible label is visually hidden on the phone; the accessible name and tooltip remain "Cancel sending", and the transcript still says "Checking public IP...". The field keeps its normal height and text space. Desktop presentation and all cancellation, draft-retention and retry transitions remain unchanged.
+
+Reviewed the actual Composer in the fixture-backed browser preview: light/dark phone at 390x844 and 320x844, and desktop at 1280x800. Checked empty and long drafts, 44px target, visible keyboard focus, Enter and pointer cancellation, retained draft and fixture retry completion. No browser warnings/errors. The mobile production build and diff whitespace check passed. No performance problems found: the existing HTML spinner wrapper still turns on the compositor and unmounts when checking ends; no new animation or render work. Real IP verification, provider delivery and physical iPhone installation were not exercised for this styling change.
+
+### Desktop sending-control styling - 2026-10-17
+
+Alex requested the same compact progress ring and centered cancellation cross on desktop. The existing desktop action stays in the composer toolbar, with a 32px round footprint. The visible label is visually hidden, retaining "Cancel sending" as its accessible name and tooltip and "Checking public IP..." in the transcript. The phone retains its 44px touch target. All send, cancel and retry transitions stay the same.
+
+Reviewed actual Composer/Transcript fixtures in light/dark at 1280x800 and 900x700 desktop, including multiline drafts and an attachment. Keyboard focus and Enter cancellation, pointer cancellation, retained content and fixture retry completion passed; no browser warnings/errors. Phone light/dark at 390x844 still has the same appearance and 44px target. Desktop/mobile production builds and diff whitespace passed. Performance review found no added animation, timer or render work; the existing compositor spinner unmounts after checking. Native provider delivery was not exercised and active desktop conversations were not restarted.
