@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Icon } from '../ui/Icon'
+import { useBack } from '../phone-back'
 
 /**
  * One picture, filling the window.
@@ -50,6 +51,7 @@ export function Preview({ src, onClose }: { readonly src: string; readonly onClo
   const [easing, setEasing] = useState(false)
   const now = useRef(FIT)
   const box = useRef<HTMLDivElement>(null)
+  useBack(onClose, box)
   const picture = useRef<HTMLImageElement>(null)
   const pointers = useRef(new Map<number, Point>())
   const gesture = useRef<Gesture | undefined>(undefined)

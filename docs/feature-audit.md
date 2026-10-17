@@ -276,7 +276,7 @@ Sources: [Hosts](../client/src/renderer/src/chat/Hosts.tsx), [host manager](../c
 - Show host labels, connection state, running-work counts and per-host plan usage.
 - On phone, browse remote folders and answer host prompts through the paired computer; host management remains on desktop.
 
-### iPhone companion and remote computer control
+### Phone companion (iPhone and Android) and remote computer control
 
 Sources: [PhoneHome](../client/src/renderer/src/chat/PhoneHome.tsx), [PhoneBoard](../client/src/renderer/src/chat/PhoneBoard.tsx), [phone bridge](../client/src/renderer/src/phone.ts), [pairing](../client/src/shared/pairing.ts), [Screen](../client/src/renderer/src/chat/Screen.tsx), [control](../client/src/main/control.ts), [FileView](../client/src/renderer/src/chat/FileView.tsx), [local pages](../client/src/main/local-page.ts), [push](../client/src/main/push.ts).
 
@@ -296,7 +296,8 @@ Sources: [PhoneHome](../client/src/renderer/src/chat/PhoneHome.tsx), [PhoneBoard
 - Control the Mac pointer as a trackpad: clicks, multiple clicks, right-click, drag and scroll.
 - Type on the Mac and send modifier keys, Escape, Tab and arrows from the phone.
 - Remote pointer/keyboard control is implemented for macOS; it is not cross-platform desktop control.
-- Receive encrypted push notices when attention is needed away from the Mac, and open the relevant conversation.
+- Receive encrypted push notices when attention is needed away from the Mac, and open the relevant conversation (iPhone only; Android has no push yet).
+- Android app (`mobile/android`, working tree, built as an APK, not in Google Play): pairing by QR or a `geckit://` link, the board and conversations, sending, dictation heard by the phone or the host, the computer's screen and control, localhost pages through the computer, and screen recordings with frames and their words heard by the host; Android's Back closes what is open last; Android 8 and later.
 - Phone-specific appearance, dictation and consent settings.
 
 ### Files, settings, notifications and distribution

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GeckIt</string>
+    <string name="title_activity_main">GeckIt</string>
+    <string name="package_name">com.anetrebskii.geckit</string>
+    <string name="custom_url_scheme">com.anetrebskii.geckit</string>
+</resources>

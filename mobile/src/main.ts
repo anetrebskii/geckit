@@ -22,6 +22,9 @@ import type { Pairing } from '../../client/src/shared/pairing'
 import icon from './icon.png'
 
 const KEPT = 'pairing'
+
+// The page says which phone it is on where that is not an iPhone.
+if (Capacitor.getPlatform() === 'android') (window as { geckitPhoneOs?: string }).geckitPhoneOs = 'android'
 // A drop from switching networks mends in seconds; a Mac that is asleep should not be asked every second.
 const AGAIN = [0, 2000, 5000, 10_000, 30_000]
 
@@ -101,8 +104,11 @@ interface Dictation {
 const dictation = registerPlugin<Dictation>('Dictation')
 let hearing: PluginListenerHandle[] = []
 
+// The app's own plugins are written for iOS first: on Android what has none yet is left out, so the page offers only what works.
+const has = (plugin: string): boolean => Capacitor.getPlatform() !== 'android' || Capacitor.isPluginAvailable(plugin)
+
 // iOS's own speech recognition for the composer, which hears what is said while the button is held on.
-;(window as { geckitDictate?: Dictate }).geckitDictate = {
+if (has('Dictation')) (window as { geckitDictate?: Dictate }).geckitDictate = {
   start: async (language, heard, ended) => {
     for (const one of hearing.splice(0)) void one.remove()
     hearing = await Promise.all([
@@ -123,13 +129,13 @@ let hearing: PluginListenerHandle[] = []
 }
 
 // How loud the microphone is while either of the two listens.
-;(window as { geckitLevel?: Level }).geckitLevel = (said) => {
+if (has('Dictation')) (window as { geckitLevel?: Level }).geckitLevel = (said) => {
   const handle = dictation.addListener('level', (heard) => said(heard.level))
   return () => void handle.then((one) => one.remove())
 }
 
 // The microphone alone, for the host to hear what was said with its own model.
-;(window as { geckitVoice?: Voice }).geckitVoice = {
+if (has('Dictation')) (window as { geckitVoice?: Voice }).geckitVoice = {
   start: () => dictation.record(),
   stop: async () => (await dictation.recorded({ keep: true })).audio ?? '',
   drop: () => void dictation.recorded({ keep: false }).catch(() => undefined),
@@ -141,12 +147,18 @@ interface Recording {
   words(options: { path: string; language: string }): Promise<{ text: string }>
   frames(options: { path: string; count: number }): Promise<{ frames: { at: number; data: string }[] }>
   drop(options: { path: string }): Promise<void>
+  /** Android only: the sound decoded into a file of its own (an empty path for none), a stretch of it as a WAV, and bytes of the video, which the app's own server will not serve by range. */
+  audio(options: { path: string }): Promise<{ sound: string; seconds: number }>
+  sound(options: { path: string; from: number; to: number }): Promise<{ audio: string }>
+  piece(options: { path: string; from: number; to: number }): Promise<{ data: string }>
 }
 const recording = registerPlugin<Recording>('Recording')
+// Seconds of a recording's sound the host is given to hear in one message.
+const HEARD_AT_ONCE = 60
 const urls = new Map<string, string>()
 
 // A video from Photos, read on the phone: iOS hears its words and takes its frames, and the page reads the file to send it on.
-;(window as { geckitPicking?: Picking }).geckitPicking = {
+if (has('Recording')) (window as { geckitPicking?: Picking }).geckitPicking = {
   pick: async () => {
     const got = await recording.pick()
     if (got.path === undefined || got.url === undefined) return undefined
@@ -159,10 +171,30 @@ const urls = new Map<string, string>()
     urls.set(got.path, got.url)
     return { path: got.path, ext: got.ext ?? 'mov', seconds: got.seconds ?? 0, bytes: got.bytes ?? 0, made: got.made ?? since, thumb: got.thumb ?? '' }
   },
-  words: async (video, language) => (await recording.words({ path: video.path, language })).text,
+  // Android reads no file into words, so the host hears its sound with whisper, as it does dictation: a minute at a
+  // time, so no message holds a long recording whole and the link goes on answering between them.
+  words: async (video, language) => {
+    if (Capacitor.getPlatform() !== 'android') return (await recording.words({ path: video.path, language })).text
+    const { sound, seconds } = await recording.audio({ path: video.path })
+    if (sound === '') return ''
+    try {
+      const said: string[] = []
+      for (let from = 0; from < seconds; from += HEARD_AT_ONCE) {
+        const { audio } = await recording.sound({ path: sound, from, to: Math.min(seconds, from + HEARD_AT_ONCE) })
+        const answer = await window.geckit.transcribe({ audio })
+        if (!answer.ok) throw new Error(answer.error ?? 'The host heard nothing.')
+        if ((answer.text ?? '').trim() !== '') said.push((answer.text ?? '').trim())
+      }
+      return said.join(' ')
+    } finally {
+      void recording.drop({ path: sound }).catch(() => undefined)
+    }
+  },
   frames: async (video, count) => (await recording.frames({ path: video.path, count })).frames,
   piece: async (video, from, to) =>
-    (
+    Capacitor.getPlatform() === 'android'
+      ? new Blob([Uint8Array.from(atob((await recording.piece({ path: video.path, from, to })).data), (one) => one.charCodeAt(0))])
+      : (
       await fetch(Capacitor.convertFileSrc(urls.get(video.path) ?? `file://${video.path}`), {
         headers: { Range: `bytes=${String(from)}-${String(to - 1)}` },
       })
@@ -183,7 +215,8 @@ const keepKeys = (): Promise<void> =>
   pushKeys.keep({ keys: keptMacs().flatMap((mac) => readPairing(mac.link)?.key ?? []) }).catch(() => undefined)
 
 async function startPush(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return
+  // Android's pushes come through Firebase Cloud Messaging, which this app is not set up with yet.
+  if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() === 'android') return
   await keepKeys()
   let asked = (await PushNotifications.checkPermissions()).receive
   if (asked === 'prompt' || asked === 'prompt-with-rationale') asked = (await PushNotifications.requestPermissions()).receive
@@ -234,7 +267,7 @@ const localPage = registerPlugin<LocalPage>('LocalPage')
 
 // A page off the Mac's localhost, in the app's own view: each request it makes is made on the Mac, over the link.
 // A note, when the page's port moved on the way, is said over its title.
-;(window as { geckitLocal?: (url: string, note?: string) => void }).geckitLocal = (url, note) =>
+if (has('LocalPage')) (window as { geckitLocal?: (url: string, note?: string) => void }).geckitLocal = (url, note) =>
   void localPage.open({ url, ...(note === undefined ? {} : { note }) }).catch(() => undefined)
 void localPage
   .addListener('request', (asked) => {
@@ -252,11 +285,19 @@ void localPage
   })
   .catch(() => undefined)
 
+// Android's Back closes what the page has open last (phone-back.ts); with nothing open, or before the Chat window is up, the app goes to the background as Android's own apps do.
+void App.addListener('backButton', () => {
+  const closed = (window as { geckitBack?: () => boolean }).geckitBack?.() ?? false
+  if (!closed) void App.minimizeApp()
+}).catch(() => undefined)
+
 // The arrows and Done over the keys are for forms of many fields; the composer is one.
 void Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => undefined)
+// Android shrinks the web view over the keyboard itself, so there the page makes no room of its own.
+const ROOM = Capacitor.getPlatform() !== 'android'
 Keyboard.addListener('keyboardWillShow', (info) => {
   document.documentElement.classList.add('keyboard')
-  document.documentElement.style.setProperty('--keyboard', `${String(info.keyboardHeight)}px`)
+  document.documentElement.style.setProperty('--keyboard', ROOM ? `${String(info.keyboardHeight)}px` : '0px')
 }).catch(() => undefined)
 Keyboard.addListener('keyboardWillHide', () => {
   document.documentElement.classList.remove('keyboard')
@@ -319,7 +360,7 @@ function notPaired(wrong = false): void {
     [
       picture('pair-icon', `<img src="${icon}" alt="">`),
       line('GeckIt', 'pair-name', 'h1'),
-      line('Your conversations with Claude Code, on your iPhone.'),
+      line('Your conversations with Claude Code, on your phone.'),
       steps(['Open GeckIt on your host', 'Settings, then turn on Phone', 'Scan the code']),
       ...(wrong ? [line('That is not a GeckIt code.', 'pair-error')] : []),
     ],
@@ -476,16 +517,21 @@ async function connect(): Promise<void> {
   )
   let link: Link
   let boot: Boot
+  // Where it stopped and why, said under the failure: "did not answer" alone cannot tell a blocked service from a blocked route.
+  let reached: Stage = 'service'
   try {
     link = await dial(pairing, undefined, (at) => {
+      reached = at
       if (mine === attempt) step(at)
     })
     if (mine !== attempt) return link.close()
+    reached = 'boot'
     step('boot')
     boot = await bootOf(link)
     if (mine !== attempt) return link.close()
-  } catch {
+  } catch (error) {
     if (mine !== attempt) return
+    const why = `Stopped at: ${stageSaid(label ?? 'the host')[reached]}. ${error instanceof Error ? error.message : String(error)}`
     screen(
       [
         picture(
@@ -494,6 +540,7 @@ async function connect(): Promise<void> {
         ),
         line(`${label ?? 'The host'} did not answer.`, 'pair-title', 'h2'),
         line('GeckIt has to be open there, with Phone turned on in Settings.'),
+        line(why, 'pair-hint'),
       ],
       [
         button('Try again', 'pair-fill', () => void connect()),

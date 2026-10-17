@@ -15,6 +15,7 @@ import { HostDot } from './HostParts'
 import { projectLabel } from './project'
 import { startedCount } from './started'
 import type { Chat } from './useChat'
+import { useBack } from '../phone-back'
 
 /** The conversation's bar on the phone: back to the board, what it is, and everything else under More. */
 export function PhoneNav({
@@ -42,13 +43,16 @@ export function PhoneNav({
   const [deleting, setDeleting] = useState(false)
   const [hiding, setHiding] = useState(false)
   const [atStarted, setAtStarted] = useState(false)
+  const nav = useRef<HTMLDivElement>(null)
+  // Back from a conversation is the board, as its own back button is.
+  useBack(() => chat.open({ kind: 'new' }), nav)
   const session = chat.session
   const started = session === undefined ? 0 : startedCount(chat.sessions, session.id)
   const parent = session?.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)
   const on = session === undefined ? undefined : hostOf(homeOf(session))
   const host = on === undefined ? undefined : chat.hosts.find((one) => one.id === on)
   return (
-    <div className="phone-nav">
+    <div ref={nav} className="phone-nav">
       <button type="button" className="phone-back" onClick={() => chat.open({ kind: 'new' })}>
         <Icon name="left" size={22} />
         Board
