@@ -1,10 +1,13 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
-import { screen, systemPreferences } from 'electron'
+import { app, screen, systemPreferences } from 'electron'
 import log from 'electron-log'
 
 import type { ScreenControl, ScreenControlled, ScreenModifier } from '../shared/api'
+import { keyLine, powershellPath, typeLine, wheel, windowsHandArgs, WINDOWS_SCRIPT } from './control-windows'
 
 /**
  * The phone's hand on the Mac: one osascript kept running, which reads a line
@@ -102,23 +105,91 @@ let pointer: { x: number; y: number } | undefined
 let movedAt = 0
 let holding = false
 
+const WINDOWS = process.platform === 'win32'
+
+// A hand that dies this soon after starting was stopped by Windows (no PowerShell, a policy, antivirus), and starting it again only does the same.
+const QUICK = 5000
+const TRIES = 3
+const REST = 60_000
+let quickDeaths = 0
+let restUntil = 0
+let lastSaid = ''
+
+/** The script where PowerShell runs it from; written again only when it changed. */
+function scriptFile(): string {
+  const file = join(app.getPath('userData'), 'phone-hand.ps1')
+  let was = ''
+  try {
+    was = readFileSync(file, 'utf8')
+  } catch {
+    // Not written yet.
+  }
+  if (was !== WINDOWS_SCRIPT) writeFileSync(file, WINDOWS_SCRIPT)
+  return file
+}
+
 function handed(): ChildProcess {
   if (hand?.exitCode === null && hand.stdin?.writable === true) return hand
-  const next = spawn('osascript', ['-l', 'JavaScript', '-e', SCRIPT], { stdio: ['pipe', 'ignore', 'pipe'] })
-  next.stderr?.on('data', (chunk: Buffer) => log.warn(`control: ${chunk.toString().trim()}`))
+  const started = Date.now()
+  const next = WINDOWS
+    ? spawn(powershellPath(process.env.SystemRoot), windowsHandArgs(scriptFile()), { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    : spawn('osascript', ['-l', 'JavaScript', '-e', SCRIPT], { stdio: ['pipe', 'ignore', 'pipe'] })
+  next.stderr?.on('data', (chunk: Buffer) => {
+    const said = chunk.toString().trim()
+    lastSaid = said.split('\n').at(-1) ?? lastSaid
+    log.warn(`control: ${said}`)
+  })
+  // Once it says it is ready it works, and how soon it stops later says nothing of Windows.
+  next.stdout?.on('data', (chunk: Buffer) => {
+    if (chunk.toString().includes('ready')) quickDeaths = 0
+  })
+  // A program that is missing or blocked, or a write as it dies, is said here rather than thrown at the whole app.
+  next.on('error', (error) => {
+    lastSaid = error.message
+    log.warn(`control: ${error.message}`)
+  })
+  next.stdin?.on('error', (error) => log.warn(`control: ${error.message}`))
   next.on('exit', () => {
     if (hand === next) hand = undefined
+    if (!WINDOWS || Date.now() - started > QUICK) return
+    quickDeaths++
+    if (quickDeaths >= TRIES) {
+      restUntil = Date.now() + REST
+      quickDeaths = 0
+    }
   })
   hand = next
   return next
 }
 
-const post = (order: object): void => void handed().stdin?.write(`${JSON.stringify(order)}\n`)
+const send = (line: string): void => void handed().stdin?.write(`${line}\n`)
+const post = (order: object): void => send(JSON.stringify(order))
+const turned = wheel()
 
-/** Does it on the screen the phone is shown, and says where the pointer is now, or why the Mac will not let it. */
+/** Does on Windows what the Mac's script does, at the screen's own pixels rather than Electron's scaled ones. */
+function onWindows(order: ScreenControl, here: { x: number; y: number }, size: { width: number; height: number }): void {
+  const { x, y } = screen.dipToScreenPoint(here)
+  const at = `${String(Math.round(x))} ${String(Math.round(y))}`
+  let line: string | undefined
+  if (order.kind === 'move') line = `m ${at}`
+  else if (order.kind === 'press') line = `${order.down ? 'd' : 'u'} ${at}`
+  // Windows counts a double click itself, by the time and the place of the clicks.
+  else if (order.kind === 'click') line = `c ${at} ${order.button === 'right' ? '1' : '0'}`
+  else if (order.kind === 'scroll') {
+    const { vertical, horizontal } = turned(order.dx * size.width, order.dy * size.height)
+    if (vertical !== 0 || horizontal !== 0) line = `w ${at} ${String(vertical)} ${String(horizontal)}`
+  } else if (order.kind === 'type') line = typeLine(order.text)
+  else if (order.kind === 'key') line = keyLine(order.key, order.modifiers)
+  if (line !== undefined) send(line)
+}
+
+/** Does it on the screen the phone is shown, and says where the pointer is now, or why the computer will not let it. */
 export function control(order: ScreenControl, displayId: string | undefined): ScreenControlled {
-  if (process.platform !== 'darwin') return { error: 'Only a Mac can be worked from the phone' }
-  if (!systemPreferences.isTrustedAccessibilityClient(false)) {
+  if (process.platform !== 'darwin' && !WINDOWS) return { error: 'Only a Mac or a Windows computer can be worked from the phone' }
+  if (WINDOWS && Date.now() < restUntil) {
+    return { error: `Windows would not let GeckIt use the mouse and keyboard${lastSaid === '' ? '.' : `: ${lastSaid}`}` }
+  }
+  if (!WINDOWS && !systemPreferences.isTrustedAccessibilityClient(false)) {
     // Asked once, which is what puts GeckIt in the Mac's list to allow.
     if (!asked) systemPreferences.isTrustedAccessibilityClient(true)
     asked = true
@@ -127,15 +198,22 @@ export function control(order: ScreenControl, displayId: string | undefined): Sc
     }
   }
   const { x, y, width, height } = (screen.getAllDisplays().find((one) => String(one.id) === displayId) ?? screen.getPrimaryDisplay()).bounds
-  // Moves come faster than the Mac reports where they left the pointer, so a run of them is added up here; after a pause the Mac's own word is taken, since its mouse may have moved it.
+  // Moves come faster than the computer reports where they left the pointer, so a run of them is added up here; after a pause the computer's own word is taken, since its mouse may have moved it.
   const seen = Date.now() - movedAt < 1000 && pointer !== undefined ? pointer : screen.getCursorScreenPoint()
   const here = { x: Math.min(x + width - 1, Math.max(x, seen.x)), y: Math.min(y + height - 1, Math.max(y, seen.y)) }
   if (order.kind === 'move') {
     here.x = Math.min(x + width - 1, Math.max(x, here.x + order.dx * width))
     here.y = Math.min(y + height - 1, Math.max(y, here.y + order.dy * height))
-    post({ kind: 'move', ...here, drag: holding })
   } else if (order.kind === 'press') {
     holding = order.down
+  }
+  if (WINDOWS) {
+    // PowerShell takes a second or two to start, so it is started when the phone asks where the pointer is, as it does on turning to Control, rather than at the first touch.
+    if (order.kind === 'where') handed()
+    else onWindows(order, here, { width, height })
+  } else if (order.kind === 'move') {
+    post({ kind: 'move', ...here, drag: holding })
+  } else if (order.kind === 'press') {
     post({ kind: 'press', ...here, down: order.down })
   } else if (order.kind === 'click') {
     post({ kind: 'click', ...here, button: order.button, count: order.count })

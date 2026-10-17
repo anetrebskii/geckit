@@ -47,12 +47,21 @@ const KEYS: readonly { readonly key: string; readonly label: string }[] = [
   { key: 'right', label: '→' },
 ]
 
-const MODIFIERS: readonly { readonly modifier: ScreenModifier; readonly label: string }[] = [
-  { modifier: 'command', label: '⌘' },
-  { modifier: 'option', label: '⌥' },
-  { modifier: 'control', label: '⌃' },
-  { modifier: 'shift', label: '⇧' },
-]
+// A Windows host has its own keys, the Windows key standing in Command's place.
+const MODIFIERS: readonly { readonly modifier: ScreenModifier; readonly label: string }[] =
+  window.geckit.platform === 'win32'
+    ? [
+        { modifier: 'control', label: 'Ctrl' },
+        { modifier: 'option', label: 'Alt' },
+        { modifier: 'command', label: 'Win' },
+        { modifier: 'shift', label: 'Shift' },
+      ]
+    : [
+        { modifier: 'command', label: '⌘' },
+        { modifier: 'option', label: '⌥' },
+        { modifier: 'control', label: '⌃' },
+        { modifier: 'shift', label: '⇧' },
+      ]
 
 // What a touch is doing, decided as it goes: one finger moves the pointer or drags, two scroll or pinch, and what is left once two have been down does nothing until every finger is up.
 type Gesture =
