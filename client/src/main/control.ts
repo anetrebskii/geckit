@@ -1,11 +1,13 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
-import { screen, systemPreferences } from 'electron'
+import { app, screen, systemPreferences } from 'electron'
 import log from 'electron-log'
 
 import type { ScreenControl, ScreenControlled, ScreenModifier } from '../shared/api'
-import { keyLine, typeLine, wheelOf, windowsHandArgs } from './control-windows'
+import { keyLine, powershellPath, typeLine, wheel, windowsHandArgs, WINDOWS_SCRIPT } from './control-windows'
 
 /**
  * The phone's hand on the Mac: one osascript kept running, which reads a line
@@ -105,14 +107,56 @@ let holding = false
 
 const WINDOWS = process.platform === 'win32'
 
+// A hand that dies this soon after starting was stopped by Windows (no PowerShell, a policy, antivirus), and starting it again only does the same.
+const QUICK = 5000
+const TRIES = 3
+const REST = 60_000
+let quickDeaths = 0
+let restUntil = 0
+let lastSaid = ''
+
+/** The script where PowerShell runs it from; written again only when it changed. */
+function scriptFile(): string {
+  const file = join(app.getPath('userData'), 'phone-hand.ps1')
+  let was = ''
+  try {
+    was = readFileSync(file, 'utf8')
+  } catch {
+    // Not written yet.
+  }
+  if (was !== WINDOWS_SCRIPT) writeFileSync(file, WINDOWS_SCRIPT)
+  return file
+}
+
 function handed(): ChildProcess {
   if (hand?.exitCode === null && hand.stdin?.writable === true) return hand
+  const started = Date.now()
   const next = WINDOWS
-    ? spawn('powershell.exe', windowsHandArgs(), { stdio: ['pipe', 'ignore', 'pipe'], windowsHide: true })
+    ? spawn(powershellPath(process.env.SystemRoot), windowsHandArgs(scriptFile()), { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
     : spawn('osascript', ['-l', 'JavaScript', '-e', SCRIPT], { stdio: ['pipe', 'ignore', 'pipe'] })
-  next.stderr?.on('data', (chunk: Buffer) => log.warn(`control: ${chunk.toString().trim()}`))
+  next.stderr?.on('data', (chunk: Buffer) => {
+    const said = chunk.toString().trim()
+    lastSaid = said.split('\n').at(-1) ?? lastSaid
+    log.warn(`control: ${said}`)
+  })
+  // Once it says it is ready it works, and how soon it stops later says nothing of Windows.
+  next.stdout?.on('data', (chunk: Buffer) => {
+    if (chunk.toString().includes('ready')) quickDeaths = 0
+  })
+  // A program that is missing or blocked, or a write as it dies, is said here rather than thrown at the whole app.
+  next.on('error', (error) => {
+    lastSaid = error.message
+    log.warn(`control: ${error.message}`)
+  })
+  next.stdin?.on('error', (error) => log.warn(`control: ${error.message}`))
   next.on('exit', () => {
     if (hand === next) hand = undefined
+    if (!WINDOWS || Date.now() - started > QUICK) return
+    quickDeaths++
+    if (quickDeaths >= TRIES) {
+      restUntil = Date.now() + REST
+      quickDeaths = 0
+    }
   })
   hand = next
   return next
@@ -120,6 +164,7 @@ function handed(): ChildProcess {
 
 const send = (line: string): void => void handed().stdin?.write(`${line}\n`)
 const post = (order: object): void => send(JSON.stringify(order))
+const turned = wheel()
 
 /** Does on Windows what the Mac's script does, at the screen's own pixels rather than Electron's scaled ones. */
 function onWindows(order: ScreenControl, here: { x: number; y: number }, size: { width: number; height: number }): void {
@@ -131,7 +176,7 @@ function onWindows(order: ScreenControl, here: { x: number; y: number }, size: {
   // Windows counts a double click itself, by the time and the place of the clicks.
   else if (order.kind === 'click') line = `c ${at} ${order.button === 'right' ? '1' : '0'}`
   else if (order.kind === 'scroll') {
-    const { vertical, horizontal } = wheelOf(order.dx * size.width, order.dy * size.height)
+    const { vertical, horizontal } = turned(order.dx * size.width, order.dy * size.height)
     if (vertical !== 0 || horizontal !== 0) line = `w ${at} ${String(vertical)} ${String(horizontal)}`
   } else if (order.kind === 'type') line = typeLine(order.text)
   else if (order.kind === 'key') line = keyLine(order.key, order.modifiers)
@@ -141,6 +186,9 @@ function onWindows(order: ScreenControl, here: { x: number; y: number }, size: {
 /** Does it on the screen the phone is shown, and says where the pointer is now, or why the computer will not let it. */
 export function control(order: ScreenControl, displayId: string | undefined): ScreenControlled {
   if (process.platform !== 'darwin' && !WINDOWS) return { error: 'Only a Mac or a Windows computer can be worked from the phone' }
+  if (WINDOWS && Date.now() < restUntil) {
+    return { error: `Windows would not let GeckIt use the mouse and keyboard${lastSaid === '' ? '.' : `: ${lastSaid}`}` }
+  }
   if (!WINDOWS && !systemPreferences.isTrustedAccessibilityClient(false)) {
     // Asked once, which is what puts GeckIt in the Mac's list to allow.
     if (!asked) systemPreferences.isTrustedAccessibilityClient(true)

@@ -295,7 +295,7 @@ Sources: [PhoneHome](../client/src/renderer/src/chat/PhoneHome.tsx), [PhoneBoard
 - View the computer's screen, zoom/pan and use Look or Control mode.
 - Control the computer's pointer as a trackpad: clicks, multiple clicks, right-click, drag and scroll.
 - Type on the computer and send modifier keys, Escape, Tab and arrows from the phone; a Windows computer's keys read Ctrl, Alt, Win and Shift.
-- Remote pointer/keyboard control is implemented for macOS (`osascript` over CoreGraphics) and Windows (`main/control-windows.ts`: one PowerShell over `SendInput`, per-monitor DPI aware, text typed as Unicode whatever the layout); not on Linux. On Windows it cannot press in windows run as administrator or in the UAC prompt.
+- Remote pointer/keyboard control is implemented for macOS (`osascript` over CoreGraphics) and Windows (`main/control-windows.ts`: one PowerShell running `userData/phone-hand.ps1` over `SendInput`, per-monitor DPI aware, text typed as Unicode whatever the layout); not on Linux. On Windows it cannot press in windows run as administrator or in the UAC prompt, and where a policy or antivirus stops PowerShell compiling it (Constrained Language Mode, AppLocker) the phone is told Windows would not let it, after three quick failures, for a minute at a time.
 - Receive encrypted push notices when attention is needed away from the Mac, and open the relevant conversation.
 - Phone-specific appearance, dictation and consent settings.
 
