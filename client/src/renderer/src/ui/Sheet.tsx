@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useBack } from '../phone-back'
 
 /**
  * A sheet rising from the bottom of the phone, which is where a menu opens on
@@ -25,6 +26,7 @@ export function Sheet({
   const [dragged, setDragged] = useState<number | undefined>()
   const from = useRef<number | undefined>(undefined)
   const sheet = useRef<HTMLDivElement>(null)
+  useBack(onClose, sheet)
   const close = useRef(onClose)
 
   useEffect(() => {

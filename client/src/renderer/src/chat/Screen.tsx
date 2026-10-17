@@ -6,6 +6,7 @@ import { screenLink } from '../screen-link'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { pairedName } from './PhoneHosts'
+import { useBack } from '../phone-back'
 
 /**
  * The host's screen on the phone, the host being the one the phone works through. Look: pinch to get close, drag to move over
@@ -63,6 +64,7 @@ type Gesture =
 export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX.Element {
   const video = useRef<HTMLVideoElement>(null)
   const stage = useRef<HTMLDivElement>(null)
+  useBack(onClose, stage)
   const [trouble, setTrouble] = useState<string | undefined>(() =>
     screenLink() === undefined ? 'Only the phone shows the host\'s screen.' : undefined,
   )
@@ -111,11 +113,14 @@ export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX
   }, [tries])
 
   useEffect(() => {
+    // Taken first and kept here, as a sheet does, so the conversation under the screen does not close with it.
     const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !typing) onClose()
+      if (event.key !== 'Escape' || typing) return
+      event.stopPropagation()
+      onClose()
     }
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
   }, [onClose, typing])
 
   // Held to the picture rather than the black around it: a side that fills the screen cannot be dragged off it, and one that does not stays centred.

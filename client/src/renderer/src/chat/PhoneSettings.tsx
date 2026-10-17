@@ -8,6 +8,7 @@ import { ear, setEar, voice } from '../dictate'
 import type { Ear } from '../dictate'
 import { macs } from '../macs'
 import { phoneCalls } from '../phone-calls'
+import { phoneOs } from '../phone-os'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
@@ -187,12 +188,12 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
       <div className="phone-head">Dictation</div>
       <div className="phone-group">
         <Cell label="Your language" value={settings.nativeLanguage} onPress={() => setPicking('language')} />
-        {voice() === undefined ? null : <Cell label="Heard by" value={heardBy === 'host' ? (thisMac?.name ?? 'Host') : 'iPhone'} onPress={() => setPicking('ear')} />}
+        {voice() === undefined ? null : <Cell label="Heard by" value={heardBy === 'host' ? (thisMac?.name ?? 'Host') : phoneOs().phone} onPress={() => setPicking('ear')} />}
       </div>
       <div className="phone-note">
         {voice() === undefined || heardBy === 'phone'
-          ? 'What iOS listens for in the composer, in Say it, and in recordings.'
-          : 'The host writes down what you say in the composer and in Say it with its own speech model, in whichever language you speak, once you stop. Recordings are heard by iOS.'}
+          ? `What ${phoneOs().system} listens for in the composer, in Say it, and in recordings.`
+          : `The host writes down what you say in the composer and in Say it with its own speech model, in whichever language you speak, once you stop. Recordings are heard by ${phoneOs().system}.`}
       </div>
 
       <div className="phone-head">About</div>
@@ -245,7 +246,7 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
           chosen={heardBy}
           choices={[
             { value: 'host', label: thisMac?.name ?? 'Host', says: 'Its own speech model, which hears which language you speak. The words come once you stop.' },
-            { value: 'phone', label: 'iPhone', says: 'iOS speech recognition. The words come while you speak.' },
+            { value: 'phone', label: phoneOs().phone, says: `${phoneOs().system} speech recognition. The words come while you speak.` },
           ]}
           onPick={(value) => {
             setEar(value as Ear)

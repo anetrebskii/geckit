@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
+import { useBack } from '../phone-back'
 
 /**
  * The parts every screen of the phone's tabs is built of, as iOS draws them:
@@ -25,8 +26,10 @@ export function Page({
   readonly children: React.ReactNode
 }): React.JSX.Element {
   const [scrolled, setScrolled] = useState(false)
+  const page = useRef<HTMLDivElement>(null)
+  useBack(onBack, page)
   return (
-    <div className="phone-board phone-page">
+    <div ref={page} className="phone-board phone-page">
       {onBack === undefined ? null : <EdgeBack onBack={onBack} />}
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-bar-row">
@@ -142,6 +145,7 @@ export function FullSheet({
   const [dragged, setDragged] = useState<number | undefined>()
   const from = useRef<number | undefined>(undefined)
   const body = useRef<HTMLDivElement>(null)
+  useBack(onBack ?? onClose, body)
   const close = useRef(onClose)
   useEffect(() => {
     close.current = onClose
@@ -259,6 +263,7 @@ export function Drawer({
   readonly children: React.ReactNode
 }): React.JSX.Element {
   const panel = useRef<HTMLDivElement>(null)
+  useBack(onClose, panel)
   const [width, setWidth] = useState(0)
   const [phase, setPhase] = useState<'in' | 'open' | 'out'>(pulled === undefined ? 'in' : 'open')
   const [dragged, setDragged] = useState<number | undefined>()

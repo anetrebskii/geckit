@@ -19,6 +19,7 @@ import { awayLine, emptyProfile, projectLabel } from './project'
 import { helping, inBackground, scripts, useNeedsYou, waitsOnHelpers, working } from './Tasks'
 import { ago, byDay, questionLeft } from './time'
 import type { Chat } from './useChat'
+import { useBack } from '../phone-back'
 
 /**
  * The board as an iPhone draws a list: one column at a time under a large
@@ -875,6 +876,7 @@ function Pressed({
   readonly onClose: () => void
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
+  useBack(onClose, menu)
   const [top, setTop] = useState<number | undefined>()
   useEffect(() => {
     const height = menu.current?.offsetHeight ?? 0

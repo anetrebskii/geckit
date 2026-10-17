@@ -17,7 +17,7 @@ Describe GeckIt's user-visible workflow, not inherited model reasoning, coding o
 ## Repository Structure
 
 - **`client/`**: the app (electron-vite + React 19 + TypeScript, hand-written CSS)
-- **`mobile/`**: the iPhone app (Capacitor), built from the client's own Chat sources and React
+- **`mobile/`**: the iPhone and Android apps (Capacitor), built from the client's own Chat sources and React
 - **`signal/`**: the Firebase project `geckit-signal`: Firestore rules for the rooms the phone and the Mac meet in, and the `ice` function that hands out the relay
 
 ## Build Commands
@@ -33,7 +33,7 @@ npm run test           # vitest
 npm run typecheck      # tsc over the node and web configs
 ```
 
-From `mobile/` (needs `client/node_modules`): `npm run build` into `www/`, `npm run ios` to sync and open Xcode.
+From `mobile/` (needs `client/node_modules`): `npm run build` into `www/`, `npm run ios` to sync and open Xcode, `npm run android` to sync and open Android Studio (or `npx cap sync android` and `./gradlew assembleDebug` in `mobile/android/` with JDK 21 and the Android SDK, `sdk.dir` in `android/local.properties`).
 
 ## Architecture
 
@@ -81,6 +81,8 @@ The capsule, Transcribe and screen recording all go through `main/transcribe.ts`
 ### The phone
 
 With Phone on in Settings, main opens a hidden `peer` window, since WebRTC lives in a renderer and not in main. It listens in Firestore (`signal/`) for offers sealed with the key in the Settings QR (`shared/pairing.ts`, `renderer/src/link.ts`), answers each, and relays the phone's calls to main over `peer:call` against the list in `phoneCalls()`, and main's tells back. The app in `mobile/` scans the QR, dials, and installs a `window.geckit` built over the link (`renderer/src/phone.ts`) before loading the Chat window with `html.phone`. Cloudflare TURN is used only when `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` are in the `ice` function's environment (`signal/functions/.env`, not committed); without them it hands out STUN only. A file pressed in a conversation on the phone is read on the Mac (`main/file-shown.ts`, a page with what it links to put inside it) and shown in `chat/FileView.tsx`. A `http://localhost` link pressed on the phone opens in the app's own web view (`mobile/ios/App/App/LocalPage.swift`) as `geckit-local://`, and each request it makes is carried over the link to `local.fetch` and made on the Mac (`main/local-page.ts`), which follows redirects and keeps cookies itself, since WebKit does neither for a scheme of its own; websockets, and so hot reload, do not cross. With the app closed and nobody at the Mac for a minute, a notice goes to the phone as a push (`main/push.ts`): sealed with the pairing key, carried by the `push` function in `signal/` to APNs (its key in `signal/functions/.env`, not committed), and opened on the phone by the Notification Service Extension in `mobile/ios/App/NotificationService/`, which reads the keys from the App Group the app leaves them in. What it looks like and why is in `docs/ux/phone.md` and `docs/ux/phone-push.md`.
+
+On Android the same plugins are Java in `mobile/android/app/src/main/java/com/anetrebskii/geckit/`. A localhost page keeps its `http://localhost` address there, since Android's web view lets no page fetch from an app's own scheme: `LocalPagePlugin` takes over every loopback request, and a script put into those pages hands it the bodies Android does not. A recording's words are heard by the host, a minute at a time, since Android reads no file into words. Back is `renderer/src/phone-back.ts`: each sheet, menu, preview, page and conversation registers what Back closes while it is shown. There is no push on Android yet: it needs Firebase Cloud Messaging in `geckit-signal`, so `startPush` skips it.
 
 ### Settings
 
