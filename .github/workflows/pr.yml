@@ -104,6 +104,9 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      ANDROID_USER_HOME: ${{ runner.temp }}/geckit-android
+      ANDROID_AVD_HOME: ${{ runner.temp }}/geckit-android/avd
     defaults:
       run:
         working-directory: mobile
@@ -130,8 +133,10 @@ jobs:
         timeout-minutes: 10
         run: |
           sudo chmod 666 /dev/kvm
+          mkdir -p "$ANDROID_AVD_HOME"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'system-images;android-35;google_apis;x86_64'
-          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force -n geckit-test -k 'system-images;android-35;google_apis;x86_64'
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force -n geckit-test -p "$ANDROID_AVD_HOME/geckit-test.avd" -k 'system-images;android-35;google_apis;x86_64'
+          test -f "$ANDROID_AVD_HOME/geckit-test.ini"
           "$ANDROID_HOME/emulator/emulator" -avd geckit-test -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
           if ! timeout 180 "$ANDROID_HOME/platform-tools/adb" wait-for-device; then
             cat "$RUNNER_TEMP/emulator.log"
