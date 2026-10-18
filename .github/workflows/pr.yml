@@ -125,7 +125,7 @@ jobs:
           npx cap sync android
       - name: Build Android and tests
         working-directory: mobile/android
-        run: ./gradlew assembleDebug assembleDebugAndroidTest testDebugUnitTest
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest
       - name: Start Android emulator
         run: |
           sudo chmod 666 /dev/kvm
@@ -137,7 +137,7 @@ jobs:
           "$ANDROID_HOME/platform-tools/adb" shell input keyevent 82
       - name: Exercise native localhost form submissions
         working-directory: mobile/android
-        run: ./gradlew connectedDebugAndroidTest
+        run: ./gradlew :app:connectedDebugAndroidTest
       - uses: actions/upload-artifact@v4
         if: always()
         with:
