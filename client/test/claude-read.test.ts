@@ -631,3 +631,22 @@ describe('what a conversation put in the background, read back out of its file',
     expect(tasksOf([use('toolu_4', 'Bash', { command: 'ls', description: 'List' })])).toEqual([])
   })
 })
+
+describe('the commands the tool says it has', () => {
+  it('keeps what may follow a / here, without those only a terminal runs or its own', () => {
+    const read = readClaude(claudeState(ROOT), {
+      type: 'system',
+      subtype: 'init',
+      session_id: 's1',
+      apiKeySource: 'none',
+      slash_commands: ['commit', 'figma:figma-use', 'doctor', '__remote-workflow', 'clear'],
+      terminal_slash_commands: ['doctor', 'color'],
+    })
+    expect(read.signals).toContainEqual(expect.objectContaining({ kind: 'started', commands: ['commit', 'figma:figma-use', 'clear'] }))
+  })
+
+  it('says nothing of commands where the tool lists none', () => {
+    const read = readClaude(claudeState(ROOT), { type: 'system', subtype: 'init', session_id: 's1', apiKeySource: 'none' })
+    expect(read.signals.find((one) => one.kind === 'started')).not.toHaveProperty('commands')
+  })
+})

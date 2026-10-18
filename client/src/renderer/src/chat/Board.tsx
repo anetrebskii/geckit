@@ -819,6 +819,7 @@ export function NewTask({
   question = false,
   record = false,
   seed = [],
+  given,
   onSwitch,
   onStarting,
 }: {
@@ -828,6 +829,8 @@ export function NewTask({
   readonly question?: boolean
   /** On the phone: opened to be filled from a recording, whose picker comes up at once. */
   readonly record?: boolean
+  /** The project it opens in whatever was last picked: the one a cleared conversation was in. */
+  readonly given?: string | undefined
   /** The pictures it opens with: a screenshot that opened it, or what the other form held. */
   readonly seed?: readonly SessionImage[]
   /** Turned from a task into a question or back, with the pictures carried over; what is written goes over through what the other form keeps. */
@@ -838,7 +841,7 @@ export function NewTask({
   const [root, setRoot] = useState(() => {
     const projects = shownProjects(chat.settings)
     const remembered = chat.settings.newTaskRoot
-    return kept?.root ?? (projects.includes(remembered) ? remembered : undefined) ?? chat.root ?? projects[0] ?? ''
+    return given ?? kept?.root ?? (projects.includes(remembered) ? remembered : undefined) ?? chat.root ?? projects[0] ?? ''
   })
   const pickRoot = (root: string): void => {
     setRoot(root)
