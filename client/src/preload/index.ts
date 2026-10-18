@@ -246,6 +246,7 @@ const geckit = {
     repo: (root: string): Promise<string | undefined> => ipcRenderer.invoke('chat:repo', root),
     /** Every file and folder in a project, as paths from it, for @. */
     files: (root: string): Promise<string[]> => ipcRenderer.invoke('chat:files', root),
+    commands: (root: string): Promise<readonly string[]> => ipcRenderer.invoke('chat:commands', root),
     /** A file carried to a project on a host, for a message to point at: where it landed there, or unchanged for a local root. */
     upload: (root: string, path: string): Promise<Uploaded> => ipcRenderer.invoke('chat:upload', root, path),
     openLink: (href: string): void => ipcRenderer.send('open:link', href),
