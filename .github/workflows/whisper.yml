@@ -61,7 +61,7 @@ jobs:
             win-x64) "$bin/whisper-cli.exe" --help > /dev/null ;;
           esac
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: whisper-cli-${{ matrix.os }}-${{ matrix.arch }}
           path: client/whisper/bin/${{ matrix.os }}-${{ matrix.arch }}
