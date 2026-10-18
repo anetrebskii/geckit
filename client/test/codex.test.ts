@@ -137,7 +137,7 @@ afterEach(() => {
 })
 
 type ElicitationParams = Extract<CodexEvent, { method: 'mcpServer/elicitation/request' }>['params']
-const accessParams = (threadId = 'terminal'): ElicitationParams => ({ threadId, turnId: null, serverName: 'cua_repl', mode: 'form', message: 'Allow Computer Use to use "Mail"?', requestedSchema: { type: 'object', properties: {} }, _meta: null })
+const accessParams = (threadId = 'terminal'): Extract<ElicitationParams, { requestedSchema: Json }> => ({ threadId, turnId: null, serverName: 'cua_repl', mode: 'form', message: 'Allow Computer Use to use "Mail"?', requestedSchema: { type: 'object', properties: {} }, _meta: null })
 const rememberAccess = '{"action":"accept","content":{},"remember":true}'
 const acceptAccess = '{"action":"accept","content":{}}'
 const accessSetup = async () => {
@@ -190,6 +190,43 @@ describe('conversation Computer Use access', () => {
     ]
     for (const [index, changed] of changes.entries()) {
       const id = `changed-${String(index)}`
+      server.event({ method: 'mcpServer/elicitation/request', id, params: changed })
+      expect(server.requests.some((one) => one.id === id && one.result !== undefined)).toBe(false)
+      expect(heard.flatMap((one) => one.signals).some((one) => one.kind === 'asks' && one.ask === id)).toBe(true)
+      driver.answer(id, '{"action":"cancel"}')
+    }
+    await driver.end()
+  })
+
+  it('remembers real Computer Use app metadata across calls and turns while asking for changed scopes', async () => {
+    const { server, heard, driver } = await accessSetup()
+    const meta = {
+      callId: 'call_first', codex_approval_kind: 'mcp_tool_call', connector_id: 'computer-use', connector_name: 'Computer Use', persist: ['session', 'always'], riskLevel: 'low',
+      'x-codex-turn-metadata': { auto_review_enabled: true, model: 'gpt-6.1-sol', thread_id: 'terminal', turn_id: 'turn-first', workspaces: { '/repo': { has_changes: true } } },
+      tool_name: 'get_app_state', tool_params: { app: 'com.geckit.local.e38' }, tool_params_display: [{ display_name: 'App', name: 'app', value: 'GeckIt Local' }],
+    }
+    const params: ReturnType<typeof accessParams> = { ...accessParams(), message: 'Allow Computer Use to use "GeckIt Local"?', _meta: meta }
+    server.event({ method: 'mcpServer/elicitation/request', id: 'first', params })
+    driver.answer('first', rememberAccess)
+    server.complete('terminal')
+    driver.send('Continue')
+    await tick()
+    const before = heard.length
+    const next = { ...meta, callId: 'call_next', tool_name: 'click', 'x-codex-turn-metadata': { ...meta['x-codex-turn-metadata'], turn_id: 'turn-next' } }
+    server.event({ method: 'mcpServer/elicitation/request', id: 'repeat', params: { ...params, turnId: 'turn-next', _meta: next } })
+    expect(heard).toHaveLength(before)
+    expect(server.requests.find((one) => one.id === 'repeat' && one.result !== undefined)?.result).toEqual({ action: 'accept', content: {}, _meta: null })
+    const changes: ElicitationParams[] = [
+      { ...params, _meta: { ...next, tool_params: { app: 'com.geckit.other' } } },
+      { ...params, _meta: { ...next, riskLevel: 'high' } },
+      { ...params, _meta: { ...next, scope: { write: true } } },
+      { ...params, _meta: { ...next, tool_params: { app: 'com.geckit.local.e38', write: true } } },
+      { ...params, _meta: { ...next, connector_id: 'other' } },
+      { ...params, serverName: 'other', _meta: next },
+      { ...params, requestedSchema: { type: 'object', properties: { approved: { type: 'boolean' } } }, _meta: next },
+    ]
+    for (const [index, changed] of changes.entries()) {
+      const id = `scope-${String(index)}`
       server.event({ method: 'mcpServer/elicitation/request', id, params: changed })
       expect(server.requests.some((one) => one.id === id && one.result !== undefined)).toBe(false)
       expect(heard.flatMap((one) => one.signals).some((one) => one.kind === 'asks' && one.ask === id)).toBe(true)

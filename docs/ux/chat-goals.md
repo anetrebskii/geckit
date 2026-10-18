@@ -53,7 +53,7 @@ stateDiagram-v2
 | Editing | Press Save with nonempty text and the session accepts | Goal active | Updated goal text |
 | Editing | Press Clear goal and the session accepts | No goal | "Goal" |
 | Editing | Press Cancel, Escape, or outside | Previous state | No change to the goal or message draft |
-| Goal active | Codex completes the goal | No goal | Goal control returns to "Goal"; card moves to In review |
+| Goal active | Codex or Claude completes the goal, automatically | No goal | Goal control returns to "Goal"; card moves to In review unless moved by hand |
 | Editing | Session rejects Save or Clear | Previous state | Existing goal and chat error |
 
 ## 5. What stays quiet
@@ -85,6 +85,7 @@ There is no timeout or debounce. Save and Clear submit once when pressed.
 - Long conditions stay whole in the editor and truncate only in the composer button.
 - Save and Clear do not consume or rewrite an unsent chat message.
 - A goal changed in another Codex client updates from the native goal notification.
+- A Claude goal completed, given up or cleared in the terminal also clears its saved copy, including for the Claude tmux library, so reopening the conversation cannot restore an ended goal.
 - Switching conversations closes the editor so its text cannot be saved to another conversation.
 - While Codex is working, changing its goal updates the native goal directly. Clearing it removes the goal without stopping the current turn.
 
