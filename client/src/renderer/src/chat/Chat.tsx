@@ -595,8 +595,10 @@ export function Chat(): React.JSX.Element {
             onInfo={setInfoing}
             onFind={find}
             onClear={() => {
-              if (chat.session !== undefined) chat.setRoot(homeOf(chat.session))
+              const home = chat.session === undefined ? undefined : homeOf(chat.session)
+              if (home !== undefined) chat.setRoot(home)
               chat.startNew()
+              setClearedIn(home)
               setMaking(true)
             }}
           />
