@@ -29,3 +29,7 @@ In Control the bottom bar has the keyboard button and the keys a phone's keyboar
 ## The first time
 
 A line under the picture says how the trackpad is worked and goes at the first touch. If the Mac has not allowed GeckIt under Accessibility, the line over the picture says where to allow it.
+
+## Windows helper failures
+
+If Windows blocks or cannot start the input helper three times within five seconds of each start, Control reports "Windows would not let GeckIt use the mouse and keyboard", followed by the helper's last error when available. Spawn errors count once, just as early process exits do. Touches during the next minute report that error without starting another helper; the first action after the minute tries again. Three failures allow a transient failure to recover, while the one-minute pause prevents every touch from restarting a blocked helper. A ready helper clears the earlier failure count. Screen viewing remains available.

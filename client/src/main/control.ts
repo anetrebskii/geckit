@@ -134,6 +134,18 @@ function handed(): ChildProcess {
   const next = WINDOWS
     ? spawn(powershellPath(process.env.SystemRoot), windowsHandArgs(scriptFile()), { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
     : spawn('osascript', ['-l', 'JavaScript', '-e', SCRIPT], { stdio: ['pipe', 'ignore', 'pipe'] })
+  let ended = false
+  const stopped = (): void => {
+    if (ended) return
+    ended = true
+    if (hand === next) hand = undefined
+    if (!WINDOWS || Date.now() - started > QUICK) return
+    quickDeaths++
+    if (quickDeaths >= TRIES) {
+      restUntil = Date.now() + REST
+      quickDeaths = 0
+    }
+  }
   next.stderr?.on('data', (chunk: Buffer) => {
     const said = chunk.toString().trim()
     lastSaid = said.split('\n').at(-1) ?? lastSaid
@@ -147,17 +159,10 @@ function handed(): ChildProcess {
   next.on('error', (error) => {
     lastSaid = error.message
     log.warn(`control: ${error.message}`)
+    stopped()
   })
   next.stdin?.on('error', (error) => log.warn(`control: ${error.message}`))
-  next.on('exit', () => {
-    if (hand === next) hand = undefined
-    if (!WINDOWS || Date.now() - started > QUICK) return
-    quickDeaths++
-    if (quickDeaths >= TRIES) {
-      restUntil = Date.now() + REST
-      quickDeaths = 0
-    }
-  })
+  next.on('exit', stopped)
   hand = next
   return next
 }
