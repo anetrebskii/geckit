@@ -104,9 +104,6 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      ANDROID_USER_HOME: ${{ runner.temp }}/geckit-android
-      ANDROID_AVD_HOME: ${{ runner.temp }}/geckit-android/avd
     defaults:
       run:
         working-directory: mobile
@@ -119,8 +116,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: '**/package-lock.json'
-      - name: Use Java 21
-        run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - name: Configure Android tools
+        run: |
+          {
+            echo "JAVA_HOME=$JAVA_HOME_21_X64"
+            echo "ANDROID_USER_HOME=$RUNNER_TEMP/geckit-android"
+            echo "ANDROID_AVD_HOME=$RUNNER_TEMP/geckit-android/avd"
+          } >> "$GITHUB_ENV"
       - run: |
           npm ci --prefix ../client
           npm ci
@@ -142,6 +144,7 @@ jobs:
             cat "$RUNNER_TEMP/emulator.log"
             exit 1
           fi
+          # shellcheck disable=SC2016
           if ! timeout 240 bash -c 'until [ "$("$ANDROID_HOME/platform-tools/adb" shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'; then
             cat "$RUNNER_TEMP/emulator.log"
             exit 1
