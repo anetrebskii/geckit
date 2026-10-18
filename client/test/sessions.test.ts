@@ -707,6 +707,41 @@ describe('a goal', () => {
   const condition = 'the tests pass'
   const met: GoalRead['ended'] = { kind: 'note', id: '', note: 'goal', text: `Goal met: ${condition}`, detail: 'All 12 pass.' }
 
+  it.each([
+    { name: 'met', read: { ended: met, met: true }, status: 'review' },
+    { name: 'given up', read: { ended: met, met: false }, status: 'blocked' },
+    { name: 'cleared in the terminal', read: {}, status: undefined },
+  ] satisfies readonly { name: string; read: GoalRead; status: ChatSession['status'] }[])(
+    'removes a saved Claude tmux goal when it is $name, including after reopening',
+    async ({ read, status }) => {
+      const id = 'plugin:claude-tmux:session'
+      const notes = memoryNotes()
+      notes.set(id, { goal: { condition, checks: 0 }, here: true })
+      const terminal = fakeClaude()
+      let current: GoalRead = { goal: { condition, checks: 0 } }
+      const provider: LlmProvider = {
+        ...llmProvider({ claude: terminal.claude }, 'claude'),
+        id: 'plugin:claude-tmux', family: 'plugin:claude-tmux', name: 'Claude Code tmux',
+        list: async () => [{ id, root: ROOT, title: 'Goal task', stands: '', at: 1_000, driven: true }],
+        read: async () => ({ items: [], tasks: [], ...current.goal === undefined ? {} : { goal: current.goal } }),
+        goal: async () => current,
+      }
+      const built = build({ notes, plugins: [provider] })
+      await built.sessions.list([ROOT])
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Finish the goal' })
+      expect(of(built.rows, id)?.goal).toEqual({ condition, checks: 0 })
+
+      current = read
+      terminal.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await vi.waitFor(() => expect(of(built.rows, id)?.goal).toBeUndefined())
+      expect(notes.all()[id]?.goal).toBeUndefined()
+      expect(of(built.rows, id)?.status).toBe(status)
+
+      const reopened = build({ notes, plugins: [provider] })
+      expect((await reopened.sessions.list([ROOT])).find((row) => row.id === id)?.goal).toBeUndefined()
+    },
+  )
+
   it('shows on the row as soon as it is sent, and goes when it is cleared', async () => {
     const built = build({
       disk: { list: async () => [], read: async () => undefined, has: async () => false, goal: async () => ({ goal: { condition, checks: 0 } }) },

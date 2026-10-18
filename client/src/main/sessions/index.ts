@@ -1715,6 +1715,7 @@ export class Sessions {
       // A goal keeps the turn going until it holds, so it is cleared by stopping the turn and clearing it once it has.
       if (busy && live.goal !== undefined && goalSent(message.text) === '') {
         live.goal = undefined
+        this.#note(live.id, { goal: undefined })
         live.clearing = true
         this.stop(live.id)
         this.#changed()
@@ -1748,7 +1749,10 @@ export class Sessions {
     clearTimeout(live.back)
     // The goal holds from the moment it is sent; the file says the rest once the turn is over.
     const goal = message.goal?.trim() || (backend.nativeGoals ? undefined : goalSent(message.text))
-    if (goal !== undefined) live.goal = goal === '' ? undefined : { condition: goal, checks: 0 }
+    if (goal !== undefined) {
+      live.goal = goal === '' ? undefined : { condition: goal, checks: 0 }
+      if (!backend.nativeGoals) this.#note(live.id, { goal: live.goal })
+    }
 
     // The message is in the transcript before anything can go wrong with it.
     const again = message.again === undefined ? undefined : live.items.get(message.again)
@@ -3242,6 +3246,7 @@ export class Sessions {
     // A goal sent while the file was being read is newer than anything it says.
     if (read === undefined || this.#live.get(live.id) !== live || live.goal !== had || live.messages !== messages) return
     live.goal = read.goal
+    this.#note(live.id, { goal: read.goal })
     if (had !== undefined && read.goal === undefined && read.ended !== undefined) {
       const item: SessionItem = { ...read.ended, id: `goal:${String(this.#now())}` }
       live.items.set(item.id, item)

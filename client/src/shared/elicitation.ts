@@ -38,6 +38,14 @@ export type ElicitationAnswer = ElicitationResponse & { readonly remember?: true
 
 export function elicitationAccessKey(request: Elicitation, mode: string, schema: Json, meta: Json): string | undefined {
   if (meta === undefined || request.serverName !== 'cua_repl' || request.url !== undefined || request.error !== undefined || request.fields.length !== 0 || !['form', 'openai/form', 'openaiForm'].includes(mode) || !/^Allow Computer Use to use "[^"\r\n]+"\?$(?![\s\S])/.test(request.message)) return undefined
+  const properties = typeof schema === 'object' && schema !== null && !Array.isArray(schema) && schema['type'] === 'object' ? schema['properties'] : undefined
+  const empty = typeof properties === 'object' && properties !== null && !Array.isArray(properties) && Object.keys(properties).length === 0
+  if (empty && typeof meta === 'object' && meta !== null && !Array.isArray(meta) && meta['connector_id'] === 'computer-use' && meta['codex_approval_kind'] === 'mcp_tool_call' && Array.isArray(meta['persist']) && meta['persist'].includes('session')) {
+    const params = meta['tool_params']
+    if (typeof params === 'object' && params !== null && !Array.isArray(params) && typeof params['app'] === 'string' && params['app'].length !== 0 && Object.keys(params).length === 1) {
+      meta = Object.fromEntries(Object.entries(meta).filter(([key]) => !['callId', 'x-codex-turn-metadata', 'tool_name', 'tool_params_display'].includes(key)))
+    }
+  }
   return JSON.stringify([request.serverName, mode, request.message, schema, meta])
 }
 
