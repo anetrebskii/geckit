@@ -11,7 +11,7 @@ import { isRemote } from '../shared/hosts'
  * The tool names them only once it has started, so the last list each project
  * was given is kept on disk: a conversation whose process has been let go, or a
  * new one, still has something to offer. A project the tool has not started in
- * yet gets the last list from anywhere, since the built-in commands and the
+ * yet gets the last local list, since the built-in commands and the
  * person's own skills are the same in every folder; the skills and commands
  * that project keeps in its own .claude folder are left out of it.
  */
@@ -20,7 +20,7 @@ const FILE = 'commands.json'
 
 interface Kept {
   readonly roots: Readonly<Record<string, readonly string[]>>
-  readonly last: readonly string[]
+  readonly local: readonly string[]
 }
 
 let kept: Kept | undefined
@@ -34,10 +34,11 @@ const path = (): string => {
 function load(): Kept {
   if (kept !== undefined) return kept
   try {
-    const read = JSON.parse(readFileSync(path(), 'utf8')) as Partial<Kept>
-    kept = { roots: read.roots ?? {}, last: read.last ?? [] }
+    const read = JSON.parse(readFileSync(path(), 'utf8')) as Partial<Kept> & { readonly last?: Kept['local'] }
+    const roots = read.roots ?? {}
+    kept = { roots, local: read.local ?? (Object.keys(roots).some(isRemote) ? [] : read.last ?? []) }
   } catch {
-    kept = { roots: {}, last: [] }
+    kept = { roots: {}, local: [] }
   }
   return kept
 }
@@ -63,9 +64,9 @@ const same = (one: readonly string[] | undefined, other: readonly string[]): boo
 export function keepCommands(root: string, names: readonly string[]): void {
   const now = load()
   const own = ownOf(root)
-  const shared = names.filter((name) => !own.has(name))
-  if (same(now.roots[root], names) && same(now.last, shared)) return
-  kept = { roots: { ...now.roots, [root]: names }, last: shared }
+  const local = isRemote(root) ? now.local : names.filter((name) => !own.has(name))
+  if (same(now.roots[root], names) && same(now.local, local)) return
+  kept = { roots: { ...now.roots, [root]: names }, local }
   try {
     writeFileSync(`${path()}.new`, JSON.stringify(kept))
     renameSync(`${path()}.new`, path())
@@ -74,4 +75,4 @@ export function keepCommands(root: string, names: readonly string[]): void {
   }
 }
 
-export const commandsFor = (root: string): readonly string[] => load().roots[root] ?? load().last
+export const commandsFor = (root: string): readonly string[] => load().roots[root] ?? (isRemote(root) ? [] : load().local)
