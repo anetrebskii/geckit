@@ -127,6 +127,8 @@ stateDiagram-v2
 | Board | Presses a card | Conversation | The conversation over the whole screen |
 | Board | Presses New task | Conversation (new) | The New task form, as on the Mac |
 | Conversation | Presses Back | Board | The board, on the column they left |
+| Conversation drawer | Presses Clear | Clear confirmation | A confirmation sheet above the drawer; Cancel returns to the unchanged drawer |
+| Clear confirmation | Presses Clear | Conversation (new) | The New task form in the cleared conversation's folder, even if another folder was remembered; the old conversation stays on the board |
 | Conversation | A permission card arrives, by itself | Asks | The card at the end of the transcript |
 | Asks | Presses Allow once / for the session / No | Conversation | The card goes; the work goes on |
 | Conversation | Presses Return in the message field | Conversation | A new line at the caret; the draft stays in the field and nothing is sent or queued |

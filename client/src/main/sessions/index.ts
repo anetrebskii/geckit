@@ -218,6 +218,8 @@ export interface SessionsDeps {
   readonly notify: (notice: SessionNotice) => void
   /** Points the window at a conversation it is not showing, without bringing it forward. */
   readonly show?: (id: string) => void
+  /** The commands and skills a project's tool says it has, each time one starts there. */
+  readonly commands?: (root: string, names: readonly string[]) => void
   /** How many conversations may work at once; nought, or none given, is no limit. */
   readonly limit?: () => number
   /** In progress as it was dragged into order on the board, which is who a free slot goes to first. */
@@ -2910,6 +2912,7 @@ export class Sessions {
             this.#deps.show?.(live.id)
           } else this.#cleared(live, signal.session)
         }
+        if (signal.commands !== undefined) this.#deps.commands?.(live.root, signal.commands)
         if (this.#deps.notes.all()[live.id]?.title !== live.named) this.#name(live)
         if (live.mode === 'auto' && signal.mode !== undefined && signal.mode !== 'auto') this.#noAuto(live, signal.model)
         if (live.model !== signal.model || (signal.reasoning !== undefined && live.actualReasoning !== signal.reasoning)) {

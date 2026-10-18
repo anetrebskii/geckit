@@ -281,6 +281,7 @@ A conversation on a host moves between its columns exactly as a local one. Out o
 - **A file pressed in a conversation there.** It is read from the host and shown in the same file view.
 - **A `http://localhost:3000` link said there.** GeckIt forwards that port over the host's connection and opens it here. If 3000 is taken locally it uses the next free one and says "devbox's 3000 is at localhost:3001 here".
 - **Pictures and files put in the composer.** Copied to the host before the message is sent; the send waits for them.
+- **Slash commands before a conversation starts.** A host project offers only its own last saved list; a project with no saved list offers none until Claude Code reports them. Local projects can reuse the last local list with project-local commands and skills removed. An old fallback whose source could have been a host is discarded, while saved project lists remain available.
 - **`!` commands and the terminal button.** Run on the host. The terminal button opens the person's terminal already signed in to the host, in the conversation's folder.
 - **Git in the status bar.** Read on the host, the same line.
 - **A password that has changed.** The remembered one is refused; the card asks again, and a new one remembered replaces it.

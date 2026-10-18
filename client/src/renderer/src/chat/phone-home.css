@@ -696,7 +696,7 @@ html.keyboard .phone-tabs {
   position: fixed;
   inset-block: 0;
   right: 0;
-  z-index: 51;
+  z-index: 50;
   display: flex;
   flex-direction: column;
   width: min(88vw, 420px);
