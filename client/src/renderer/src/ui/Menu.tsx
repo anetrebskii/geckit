@@ -4,6 +4,7 @@ import { createPortal, flushSync } from 'react-dom'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from './Icon'
 import { Sheet } from './Sheet'
+import { useBack } from '../phone-back'
 
 /**
  * A menu hanging off the control that opened it.
@@ -54,6 +55,7 @@ export function Menu({
   readonly children?: React.ReactNode
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
+  useBack(onClose, menu)
   const [at, setAt] = useState<{ left: number; top: number; height: number } | undefined>()
   // The choice whose own list is open beside it, and where that list stands.
   const [open, setOpen] = useState<{ readonly value: string; readonly left: number; readonly top: number } | undefined>()

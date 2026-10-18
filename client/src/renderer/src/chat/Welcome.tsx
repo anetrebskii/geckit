@@ -336,7 +336,7 @@ function Phone({ chat }: { readonly chat: Chat }): React.JSX.Element {
         </div>
       </div>
       <h1>Your phone</h1>
-      <p>Follow your conversations from an iPhone.</p>
+      <p>Follow your conversations from your phone.</p>
       <PhoneAccess on={chat.settings.phone} change={(phone) => chat.change({ phone })} />
     </>
   )

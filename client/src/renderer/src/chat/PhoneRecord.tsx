@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Recording } from '../../../shared/api'
 import { clock, MOST_FRAMES } from '../../../shared/recording'
 import { phoneCalls } from '../phone-calls'
+import { phoneOs } from '../phone-os'
 import { picking } from '../picked'
 import type { PickedVideo } from '../picked'
 import { tap } from '../tap'
@@ -17,6 +18,22 @@ import { tooOld } from './PhoneKit'
  * and takes its frames on the phone, and the video goes to the Mac so Claude can
  * look at more of it. See docs/ux/phone-parity.md.
  */
+
+// How a screen recording is started, on the phone the app runs on.
+const howToRecord = (): { readonly open: string; readonly start: string; readonly stop: string; readonly missing: string } =>
+  phoneOs().system === 'Android'
+    ? {
+        open: 'Swipe down twice from the top of the screen',
+        start: 'Tap Screen record, choose to record the microphone, tap Start',
+        stop: 'Show it and talk, then stop it from the notification',
+        missing: 'No Screen record in Quick Settings? Tap the pencil there to add it.',
+      }
+    : {
+        open: 'Swipe down from the top right corner',
+        start: 'Hold Screen Recording, turn the Microphone on, tap Start Recording',
+        stop: 'Show it and talk, then tap the red pill to stop',
+        missing: 'No Screen Recording in Control Center? Hold an empty spot there to add it.',
+      }
 
 // Past this a phone network takes minutes over it, and the frames and words go without it.
 const MOST_BYTES = 200 * 1024 * 1024
@@ -43,7 +60,11 @@ export function PhoneRecord({ language, onClose }: { readonly language: string; 
   const [steps, setSteps] = useState<{ words: Done; frames: Done; video: Done }>({ words: 'waiting', frames: 'waiting', video: 'waiting' })
   const [share, setShare] = useState<number | undefined>()
   const [trouble, setTrouble] = useState<string | undefined>(() =>
-    picking() === undefined || phoneCalls() === undefined ? 'Recordings are read in the GeckIt app on the iPhone.' : undefined,
+    phoneCalls() === undefined
+      ? 'Recordings are read in the GeckIt app on the phone.'
+      : picking() === undefined
+        ? `Recordings are not read on ${phoneOs().system} yet.`
+        : undefined,
   )
   const [photos, setPhotos] = useState<string | undefined>()
   const gone = useRef(false)
@@ -231,27 +252,28 @@ export function PhoneRecord({ language, onClose }: { readonly language: string; 
       </Sheet>
     )
 
+  const shown = howToRecord()
   return (
     <Sheet title="Record the screen" onClose={cancel}>
       <div className="sheet-list">
         <div className="sheet-option phone-record-how">
           <span className="phone-record-num">1</span>
-          <span className="label">Swipe down from the top right corner</span>
+          <span className="label">{shown.open}</span>
         </div>
         <div className="sheet-option phone-record-how">
           <span className="phone-record-num">2</span>
-          <span className="label">Hold Screen Recording, turn the Microphone on, tap Start Recording</span>
+          <span className="label">{shown.start}</span>
         </div>
         <div className="sheet-option phone-record-how">
           <span className="phone-record-num">3</span>
-          <span className="label">Show it and talk, then tap the red pill to stop</span>
+          <span className="label">{shown.stop}</span>
         </div>
         <div className="sheet-option phone-record-how">
           <span className="phone-record-num">4</span>
           <span className="label">Come back to GeckIt, and the recording is offered here</span>
         </div>
       </div>
-      <div className="sheet-note">{photos ?? 'No Screen Recording in Control Center? Hold an empty spot there to add it.'}</div>
+      <div className="sheet-note">{photos ?? shown.missing}</div>
       <div className="phone-say-actions">
         <button type="button" className="phone-button grey" onClick={() => void choose()}>
           Choose a video instead

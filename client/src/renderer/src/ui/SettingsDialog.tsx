@@ -675,7 +675,7 @@ export function PhoneAccess({ on, change }: { readonly on: boolean; readonly cha
         Open the conversations on your phone
       </label>
       <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
-        Scan the code with the GeckIt app on your iPhone. The phone talks to this computer directly, and only with the key in this code.
+        Scan the code with the GeckIt app on your phone. The phone talks to this computer directly, and only with the key in this code.
       </span>
       {on && view.qr !== undefined ? (
         <div className="phone-link">

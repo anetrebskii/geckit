@@ -276,7 +276,7 @@ Sources: [Hosts](../client/src/renderer/src/chat/Hosts.tsx), [host manager](../c
 - Show host labels, connection state, running-work counts and per-host plan usage.
 - On phone, browse remote folders and answer host prompts through the paired computer; host management remains on desktop.
 
-### iPhone companion and remote computer control
+### Phone companion (iPhone and Android) and remote computer control
 
 Sources: [PhoneHome](../client/src/renderer/src/chat/PhoneHome.tsx), [PhoneBoard](../client/src/renderer/src/chat/PhoneBoard.tsx), [phone bridge](../client/src/renderer/src/phone.ts), [pairing](../client/src/shared/pairing.ts), [Screen](../client/src/renderer/src/chat/Screen.tsx), [control](../client/src/main/control.ts), [FileView](../client/src/renderer/src/chat/FileView.tsx), [local pages](../client/src/main/local-page.ts), [push](../client/src/main/push.ts).
 
@@ -296,7 +296,8 @@ Sources: [PhoneHome](../client/src/renderer/src/chat/PhoneHome.tsx), [PhoneBoard
 - Control the computer's pointer as a trackpad: clicks, multiple clicks, right-click, drag and scroll.
 - Type on the computer and send modifier keys, Escape, Tab and arrows from the phone; a Windows computer's keys read Ctrl, Alt, Win and Shift.
 - Remote pointer/keyboard control is implemented for macOS (`osascript` over CoreGraphics) and Windows (`main/control-windows.ts`: one PowerShell running `userData/phone-hand.ps1` over `SendInput`, per-monitor DPI aware, text typed as Unicode whatever the layout); not on Linux. On Windows it cannot press in windows run as administrator or in the UAC prompt, and where a policy or antivirus stops PowerShell compiling it (Constrained Language Mode, AppLocker) the phone is told Windows would not let it, after three quick failures, for a minute at a time.
-- Receive encrypted push notices when attention is needed away from the Mac, and open the relevant conversation.
+- Receive encrypted push notices when attention is needed away from the Mac, and open the relevant conversation (iPhone only; Android has no push yet).
+- Android app (`mobile/android`, working tree, built as an APK, not in Google Play): pairing by QR or a `geckit://` link, the board and conversations, sending, dictation heard by the phone or the host, the computer's screen and control, localhost pages through the computer, and screen recordings with frames and their words heard by the host; Android's Back closes what is open last; Android 8 and later.
 - Phone-specific appearance, dictation and consent settings.
 
 ### Files, settings, notifications and distribution
