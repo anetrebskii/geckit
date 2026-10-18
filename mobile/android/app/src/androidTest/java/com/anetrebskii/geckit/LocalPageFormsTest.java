@@ -91,6 +91,21 @@ public class LocalPageFormsTest {
         assertEquals("user=Alex", body(request));
     }
 
+    @Test public void delegatedPageHandlerKeepsControl() throws Exception {
+        JSONObject request = submitted("""
+            <form method=post action=/login><input name=user value=original><button>Continue</button></form>
+            <script>
+              document.addEventListener('submit', event => {
+                event.preventDefault()
+                document.querySelector('[name=user]').value = 'handled'
+                document.querySelector('form').submit()
+              })
+              addEventListener('load', () => document.querySelector('button').click())
+            </script>
+            """);
+        assertEquals("user=handled", body(request));
+    }
+
     @Test public void multipartRequestSubmitPreservesEncodingAndFile() throws Exception {
         JSONObject request = submitted("""
             <form method=post action=/login enctype=multipart/form-data><input name=user value=Alex>

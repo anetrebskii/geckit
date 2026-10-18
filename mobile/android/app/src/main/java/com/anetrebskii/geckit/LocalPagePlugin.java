@@ -126,7 +126,7 @@ public class LocalPagePlugin extends Plugin {
         "    const method = button?.getAttribute('formmethod') ?? form.getAttribute('method') ?? 'get'\n" +
         "    return method.toLowerCase() === 'post' && local(new URL(action || location.href, document.baseURI).href)\n" +
         "  }\n" +
-        "  document.addEventListener('submit', (event) => {\n" +
+        "  window.addEventListener('submit', (event) => {\n" +
         "    if (event.defaultPrevented || !(event.target instanceof HTMLFormElement) || !isPost(event.target, event.submitter)) return\n" +
         "    event.preventDefault()\n" +
         "    void submit(event.target, event.submitter)\n" +
