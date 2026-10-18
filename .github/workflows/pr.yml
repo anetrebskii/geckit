@@ -99,3 +99,52 @@ jobs:
           npm run build
           npx cap sync ios
       - run: xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/GeckIt.xcarchive" archive CODE_SIGNING_ALLOWED=NO
+
+  android:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - name: Use Java 21
+        run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - run: |
+          npm ci --prefix ../client
+          npm ci
+          npm run build
+          npx cap sync android
+      - name: Build Android and tests
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug assembleDebugAndroidTest testDebugUnitTest
+      - name: Start Android emulator
+        run: |
+          sudo chmod 666 /dev/kvm
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'system-images;android-35;google_apis;x86_64'
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force -n geckit-test -k 'system-images;android-35;google_apis;x86_64'
+          "$ANDROID_HOME/emulator/emulator" -avd geckit-test -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$RUNNER_TEMP/emulator.log" 2>&1 &
+          "$ANDROID_HOME/platform-tools/adb" wait-for-device
+          timeout 240 bash -c 'until [ "$("$ANDROID_HOME/platform-tools/adb" shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
+          "$ANDROID_HOME/platform-tools/adb" shell input keyevent 82
+      - name: Exercise native localhost form submissions
+        working-directory: mobile/android
+        run: ./gradlew connectedDebugAndroidTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: geckit-android-checks
+          retention-days: 7
+          path: |
+            mobile/android/app/build/reports/
+            mobile/android/app/build/outputs/androidTest-results/
+            mobile/android/app/build/outputs/apk/debug/*.apk
+            ${{ runner.temp }}/emulator.log

@@ -64,7 +64,7 @@ public class LocalPagePlugin extends Plugin {
 
     /**
      * Android hands an app no request's body, so the page's fetch and XMLHttpRequest leave it here first and name it
-     * in a header. A form posted by the page itself still goes without one.
+     * in a header. Forms open their response in the same view with their fields carried the same way.
      */
     private static final String KEEP_BODIES =
         "(() => {\n" +
@@ -100,6 +100,41 @@ public class LocalPagePlugin extends Plugin {
         "      sent.call(this, body)\n" +
         "    }, () => sent.call(this, body))\n" +
         "  }\n" +
+        "  const posted = HTMLFormElement.prototype.submit\n" +
+        "  const submit = async (form, button) => {\n" +
+        "    const action = button?.getAttribute('formaction') ?? form.getAttribute('action')\n" +
+        "    const url = new URL(action || location.href, document.baseURI).href\n" +
+        "    const method = (button?.getAttribute('formmethod') ?? form.getAttribute('method') ?? 'get').toLowerCase()\n" +
+        "    if (method !== 'post' || !local(url)) return false\n" +
+        "    const data = new FormData(form)\n" +
+        "    if (button?.name && !button.disabled) data.append(button.name, button.value)\n" +
+        "    const encoding = (button?.getAttribute('formenctype') ?? form.getAttribute('enctype') ?? '').toLowerCase()\n" +
+        "    const fields = [...data].map(([name, value]) => [name, typeof value === 'string' ? value : value.name])\n" +
+        "    const body = encoding === 'multipart/form-data' ? data\n" +
+        "      : encoding === 'text/plain' ? fields.map(([name, value]) => `${name}=${value}\\r\\n`).join('')\n" +
+        "      : new URLSearchParams(fields)\n" +
+        "    const made = new Response(body)\n" +
+        "    const type = encoding === 'text/plain' ? 'text/plain;charset=UTF-8' : made.headers.get('content-type')\n" +
+        "    const bytes = new Uint8Array(await made.arrayBuffer())\n" +
+        "    let text = ''\n" +
+        "    for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode.apply(null, bytes.subarray(at, at + 0x8000))\n" +
+        "    if (!GeckitBody.submit(url, type, btoa(text))) alert('The form could not be sent. Try a smaller upload.')\n" +
+        "    return true\n" +
+        "  }\n" +
+        "  const isPost = (form, button) => {\n" +
+        "    const action = button?.getAttribute('formaction') ?? form.getAttribute('action')\n" +
+        "    const method = button?.getAttribute('formmethod') ?? form.getAttribute('method') ?? 'get'\n" +
+        "    return method.toLowerCase() === 'post' && local(new URL(action || location.href, document.baseURI).href)\n" +
+        "  }\n" +
+        "  document.addEventListener('submit', (event) => {\n" +
+        "    if (event.defaultPrevented || !(event.target instanceof HTMLFormElement) || !isPost(event.target, event.submitter)) return\n" +
+        "    event.preventDefault()\n" +
+        "    void submit(event.target, event.submitter)\n" +
+        "  })\n" +
+        "  HTMLFormElement.prototype.submit = function () {\n" +
+        "    if (!isPost(this)) return posted.call(this)\n" +
+        "    void submit(this)\n" +
+        "  }\n" +
         "})()";
 
     private final Map<String, Answer> waiting = new ConcurrentHashMap<>();
@@ -110,10 +145,12 @@ public class LocalPagePlugin extends Plugin {
 
     private static final class Kept {
         final byte[] bytes;
+        final String formType;
         final long at = System.currentTimeMillis();
 
-        Kept(byte[] bytes) {
+        Kept(byte[] bytes, String formType) {
             this.bytes = bytes;
+            this.formType = formType;
         }
     }
 
@@ -182,18 +219,27 @@ public class LocalPagePlugin extends Plugin {
         waiting.put(id, answer);
         JSObject headers = new JSObject();
         String body = "";
+        String method = request.getMethod();
+        String formType = null;
         for (Map.Entry<String, String> one : request.getRequestHeaders().entrySet()) {
             if (one.getKey().equalsIgnoreCase(BODY_HEADER)) {
                 Kept kept = bodies.remove(one.getValue());
-                if (kept != null) body = Base64.encodeToString(kept.bytes, Base64.NO_WRAP);
+                if (kept != null) {
+                    body = Base64.encodeToString(kept.bytes, Base64.NO_WRAP);
+                    formType = kept.formType;
+                }
             } else {
                 headers.put(one.getKey(), one.getValue());
             }
         }
+        if (formType != null) {
+            method = "POST";
+            headers.put("Content-Type", formType);
+        }
         JSObject said = new JSObject();
         said.put("id", id);
         said.put("url", request.getUrl().toString());
-        said.put("method", request.getMethod());
+        said.put("method", method);
         said.put("headers", headers);
         said.put("body", body);
         notifyListeners("request", said);
@@ -255,8 +301,27 @@ public class LocalPagePlugin extends Plugin {
      * whose requests are never taken over, gains nothing by it.
      */
     private class Bodies {
+        private final WebView web;
+
+        Bodies(WebView web) {
+            this.web = web;
+        }
+
         @JavascriptInterface
         public String keep(String base64) {
+            return keepBody(base64, null);
+        }
+
+        @JavascriptInterface
+        public boolean submit(String url, String type, String base64) {
+            if (!isLoopback(Uri.parse(url))) return false;
+            String id = keepBody(base64, type);
+            if (id.isEmpty()) return false;
+            getActivity().runOnUiThread(() -> web.loadUrl(url, Collections.singletonMap(BODY_HEADER, id)));
+            return true;
+        }
+
+        private String keepBody(String base64, String type) {
             long now = System.currentTimeMillis();
             long held = 0;
             for (Iterator<Map.Entry<String, Kept>> all = bodies.entrySet().iterator(); all.hasNext(); ) {
@@ -272,7 +337,7 @@ public class LocalPagePlugin extends Plugin {
             }
             if (held + bytes.length > KEPT_MOST) return "";
             String id = UUID.randomUUID().toString();
-            bodies.put(id, new Kept(bytes));
+            bodies.put(id, new Kept(bytes, type));
             return id;
         }
     }
@@ -329,7 +394,7 @@ public class LocalPagePlugin extends Plugin {
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        web.addJavascriptInterface(new Bodies(), "GeckitBody");
+        web.addJavascriptInterface(new Bodies(web), "GeckitBody");
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(web, KEEP_BODIES, Collections.singleton("*"));
         }
