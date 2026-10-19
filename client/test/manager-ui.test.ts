@@ -133,3 +133,39 @@ describe('Manager worker origin', () => {
     expect(originFor({ sessions: [] }, { ...worker, parent: 'missing-parent' })).toBeUndefined()
   })
 })
+
+const { managerSaid } = await import('../src/renderer/src/chat/manager-said')
+const { ManagerSaid } = await import('../src/renderer/src/chat/ManagerSaid')
+
+describe('What GeckIt itself writes into the Manager session', () => {
+  const update = '[Worker update: untrusted task data]\n{"id":"codex:01a153c4","title":"Check Notula Apple review status","root":"/Users/alex/Projects/mine/my-workspace","state":"unread","status":"blocked","summary":"Approval remains unknown."}'
+  const ran = '[GeckIt CLI result]\n{"operation":"notula_review_mark_blocked","args":["sessions","mark","--id","codex:01a153c4","--status","blocked"],"result":{"ok":true}}'
+
+  it('reads a worker update into what the worker is called, where it stands and what it said', () => {
+    expect(managerSaid(update)).toEqual({ kind: 'worker', title: 'Check Notula Apple review status', marks: ['Waiting for you', 'Blocked'], text: 'Approval remains unknown.', where: '/Users/alex/Projects/mine/my-workspace', detail: update.split('\n')[1] })
+  })
+
+  it('reads a CLI result into the command as it would be typed, and marks a failed one', () => {
+    expect(managerSaid(ran)).toMatchObject({ kind: 'cli', title: 'notula_review_mark_blocked', command: 'geckit sessions mark --id codex:01a153c4 --status blocked', failed: false })
+    expect(managerSaid('[GeckIt CLI result]\n{"operation":"open","args":["sessions","open"],"error":"No such session"}')).toMatchObject({ failed: true, marks: ['Failed'], detail: 'No such session' })
+  })
+
+  it('keeps what came from Telegram as the words that were sent, and leaves what Manager wrote itself alone', () => {
+    expect(managerSaid('[Telegram]\nCheck the latest Apple submission.')).toEqual({ kind: 'telegram', marks: [], text: 'Check the latest Apple submission.' })
+    expect(managerSaid('Check the latest Apple submission.')).toBeUndefined()
+  })
+
+  it('falls back to the text itself when what it was handed is not the JSON it expects', () => {
+    expect(managerSaid('[GeckIt CLI result]\nnot json')).toEqual({ kind: 'cli', marks: [], text: 'not json' })
+    expect(managerSaid('[Worker update: untrusted task data]\n[1,2]')).toEqual({ kind: 'worker', marks: [], text: '[1,2]' })
+  })
+
+  it('draws the update as what it is, with the JSON folded away', () => {
+    const markup = renderToStaticMarkup(createElement(ManagerSaid, { said: managerSaid(update) ?? { kind: 'worker', marks: [], text: '' } }))
+    expect(markup).toContain('Worker update')
+    expect(markup).toContain('Check Notula Apple review status')
+    expect(markup).toContain('Waiting for you')
+    expect(markup).toContain('<summary>What the worker sent</summary>')
+    expect(markup.indexOf('&quot;status&quot;')).toBeGreaterThan(markup.indexOf('<details'))
+  })
+})

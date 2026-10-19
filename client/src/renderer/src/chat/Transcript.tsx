@@ -6,6 +6,8 @@ import { Icon } from '../ui/Icon'
 import { Code, CopyButton } from './Code'
 import { Preview } from './Preview'
 import { ElicitationForm } from './Elicitation'
+import { ManagerSaid } from './ManagerSaid'
+import { managerSaid } from './manager-said'
 import { Request } from './Request'
 import { Files, opensTitle, Prose } from './Prose'
 import type { FileHow } from './Prose'
@@ -325,6 +327,7 @@ function When({
 const Turn = memo(function Turn({
   item,
   readOnly,
+  manager,
   active,
   going,
   when,
@@ -339,6 +342,8 @@ const Turn = memo(function Turn({
 }: {
   readonly item: SessionItem
   readonly readOnly: boolean
+  /** The Manager session, where GeckIt writes the messages that carry worker and CLI results. */
+  readonly manager: boolean
   readonly active: boolean
   readonly going: boolean
   /** When it was said, where it is one to date: a message, or the end of an answer. */
@@ -363,7 +368,9 @@ const Turn = memo(function Turn({
     (item.kind === 'card' && item.card.answered !== undefined)
   return (
     <div className={`turn${step ? ' step' : ''}`} data-item={item.id}>
-      {item.kind === 'mine' ? (
+      {item.kind === 'mine' && manager && managerSaid(item.text) !== undefined ? (
+        <ManagerSaid said={managerSaid(item.text) ?? { kind: 'telegram', marks: [], text: item.text }} />
+      ) : item.kind === 'mine' ? (
         <div className={`mine${item.unsent === true ? ' unsent' : ''}`}>
           {item.text}
           {item.images === undefined ? null : (
@@ -525,6 +532,7 @@ function Fold({
 export const Transcript = memo(function Transcript({
   at,
   readOnly = false,
+  manager = false,
   items,
   working,
   onAnswer,
@@ -551,6 +559,8 @@ export const Transcript = memo(function Transcript({
   /** Which conversation this is, so another one opens at its end rather than where this one was left. */
   readonly at: string
   readonly readOnly?: boolean
+  /** Drawn as the Manager session: what GeckIt wrote into it reads as a worker update or a CLI result. */
+  readonly manager?: boolean
   readonly items: readonly SessionItem[]
   readonly working: boolean
   readonly onAnswer: (card: string, answer: CardAnswer | string) => void
@@ -902,7 +912,7 @@ export const Transcript = memo(function Transcript({
         {shown.map((item) => {
           const key = foldOf.get(item.id)
           const held = key === undefined ? undefined : folds.get(key)
-          if (key === undefined || held === undefined) return <Turn readOnly={readOnly} key={item.id} item={item} active={current.has(item.id)} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={readOnly || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
+          if (key === undefined || held === undefined) return <Turn readOnly={readOnly} manager={manager} key={item.id} item={item} active={current.has(item.id)} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={readOnly || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
           if (held.first !== item.id && !isOpen(key)) return null
           const open = (): void => {
             setOpened({ at, keys: new Set([...openKeys, key]) })
@@ -943,6 +953,7 @@ export const Transcript = memo(function Transcript({
               {held.first === item.id ? <Fold said={counted(held.ids.length)} icon="down" title="Hide what was done" onPress={close} /> : null}
               <Turn
                 readOnly={readOnly}
+                manager={manager}
                 item={item}
                 active={current.has(item.id)}
                 going={going.has(item.id)}
@@ -1006,6 +1017,7 @@ export const Transcript = memo(function Transcript({
         {waiting.map((item) => (
           <Turn
             readOnly={readOnly}
+            manager={manager}
             key={item.id}
             item={item}
             active={false}

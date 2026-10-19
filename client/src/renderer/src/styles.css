@@ -3143,6 +3143,7 @@ html.phone .find-bar .icon-button {
 .mine {
   padding: 9px 12px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   user-select: text;
   background: var(--bubble);
   border-radius: var(--radius-lg);
@@ -11385,38 +11386,38 @@ html.phone .model-details .phone-cell {
   opacity: 0;
 }
 
-.manager-flow-say {
+/* Named twice to outweigh `.dialog p`, which sets the margin shorthand and would otherwise take the centring and the gap away. */
+.manager-flow .manager-flow-say {
   max-inline-size: 44ch;
-  margin-block: 14px 0;
-  margin-inline: auto;
+  margin: 14px auto 0;
   text-align: center;
   text-wrap: balance;
   font-size: 12px;
 }
 
-.manager-flow.step-assistant .node-manager .manager-flow-ring,
-.manager-flow.step-enable .node-manager .manager-flow-ring {
-  animation: manager-flow-boot 2200ms var(--ease) infinite;
+/* The picture plays twice when the step opens or its answer changes, then rests: it explains once, and a loop above the step being read is movement, not explanation. Changing the step or the answer swaps which animation applies, which is what replays it. */
+.manager-flow.step-assistant .node-manager .manager-flow-ring {
+  animation: manager-flow-boot 2200ms var(--ease) 2;
 }
 
 .manager-flow.step-delegation[data-delegation='approve'] .node-you .manager-flow-ring {
-  animation: manager-flow-boot 3200ms var(--ease) infinite;
+  animation: manager-flow-boot 3200ms var(--ease) 2;
 }
 
 .manager-flow.step-delegation .manager-flow-mark {
-  animation: manager-flow-out 2400ms linear infinite;
+  animation: manager-flow-out 2400ms linear 2;
 }
 
 .manager-flow.step-delegation[data-delegation='approve'] .manager-flow-mark {
-  animation: manager-flow-ask 3200ms linear infinite;
+  animation: manager-flow-ask 3200ms linear 2;
 }
 
 .manager-flow.step-telegram .manager-flow-mark {
-  animation: manager-flow-ping 3000ms linear infinite;
+  animation: manager-flow-ping 3000ms linear 2;
 }
 
 .manager-flow.step-enable .manager-flow-mark {
-  animation: manager-flow-loop 4800ms linear infinite;
+  animation: manager-flow-loop 4800ms linear 2;
 }
 
 @keyframes manager-flow-boot {
@@ -11636,9 +11637,9 @@ button.manager-step-head:hover > svg {
   color: var(--text);
 }
 
-.manager-step-locked {
-  margin-block: 6px 0;
-  margin-inline-start: 32px;
+/* Named twice for the same reason as `.manager-flow-say`: `.dialog p` would flatten the indent that lines this up under the step's title. */
+.manager-step .manager-step-locked {
+  margin: 6px 0 0 32px;
   font-size: 12px;
 }
 
@@ -11830,6 +11831,10 @@ button.manager-step-head:hover > svg {
   white-space: nowrap;
 }
 
+.manager-inspection-header > button + button {
+  margin-inline-start: -8px;
+}
+
 /* Where Manager stands, as a dot in its own tone next to the word. */
 .manager-stand {
   display: inline-flex;
@@ -11939,6 +11944,102 @@ button.manager-step-head:hover > svg {
 .manager-inspection > .transcript {
   flex: 1;
   min-block-size: 0;
+}
+
+/* What GeckIt itself wrote into the Manager session: a worker's news, a CLI result, a message from Telegram. */
+.manager-said {
+  min-inline-size: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+  user-select: text;
+}
+
+.manager-said.is-telegram {
+  border-color: transparent;
+  background: var(--bubble);
+}
+
+.manager-said.failed {
+  border-color: var(--danger);
+}
+
+.manager-said-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.manager-said-head svg {
+  flex: none;
+}
+
+.manager-said-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.manager-said-mark {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-dim);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.manager-said.failed .manager-said-mark {
+  background: var(--danger);
+  color: var(--danger-text);
+}
+
+.manager-said p {
+  margin-block: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+.manager-said-title {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.manager-said-text {
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+
+.manager-said-command,
+.manager-said-where {
+  color: var(--text-faint);
+  font-family: var(--font-code);
+  font-size: 11px;
+}
+
+.manager-said-detail {
+  margin-block-start: 8px;
+}
+
+.manager-said-detail summary {
+  width: fit-content;
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.manager-said-detail pre {
+  max-block-size: 260px;
+  margin-block: 6px 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .manager-inspection-empty {

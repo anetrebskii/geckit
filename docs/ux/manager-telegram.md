@@ -352,7 +352,7 @@ Normal default resolution stays quiet until the dispatch result. The compact res
 | Per-project selection | Replaced at Alex's request: all current/future registered projects are included automatically |
 | Model selection and visible backing session | Adopt at Alex's request: provider-driven model picker and direct session access from Manager header |
 | Automatic delegation across all projects | Confirmed direction in Alex's revision: automatic management across all projects; Approve new sessions remains selectable |
-| User-owned dedicated bot | Draft default for review: local connection and no hosted multi-user account service. Shared bot remains a preference question |
+| User-owned dedicated bot | Settled 2026-10-19: it stays the only path. One bot serves one environment, so a shared bot cannot carry a dev and an installed GeckIt at once. The shared design and why it was dropped: [shared-telegram-bot.md](shared-telegram-bot.md) |
 | Pairing with desktop account confirmation | Adopt: possession of a Start link alone does not select the account with task access |
 | Same compact task record across compaction/restart | Adopt: logical continuity must survive replacement of a model transcript |
 
@@ -534,7 +534,7 @@ Blank messages are not sent. Leading/trailing blank lines and blank-only split c
 
 ### Setup direction
 
-A shared GeckIt Telegram bot is possible, using one hosted Bot API consumer plus authenticated account-to-computer routing. Sharing the same token among independent Desktop pollers is not that architecture: each installation could receive another installation's updates, and webhook/polling modes cannot be combined. No hosted service, shared secret or public endpoint exists in the current feature. This iteration can improve the personal-bot path without introducing one; Alex's choice about including a shared service is pending.
+A shared GeckIt Telegram bot is possible, using one hosted Bot API consumer plus authenticated account-to-computer routing. Sharing the same token among independent Desktop pollers is not that architecture: each installation could receive another installation's updates, and webhook/polling modes cannot be combined. No hosted service, shared secret or public endpoint exists in the current feature. This iteration improved the personal-bot path without introducing one. A shared service was designed on 2026-10-19 and rejected the same day, because one bot serves one environment and two installations behind one bot contend for its single update stream: [shared-telegram-bot.md](shared-telegram-bot.md) keeps the design and the reasoning. The personal path below is the only path.
 
 For the personal path, show "Connect your Telegram bot" with three ordered actions: "Create a bot", "Paste its token", "Connect your account". The first step opens the official @BotFather, explains `/newbot`, bot display name, a unique username ending in `bot`, and copying its API token. Token input is masked and remains local; cancellation clears it. Existing bot owners can go directly to token entry. After token verification, open the private pairing link and press Start, then explicitly confirm the displayed account on Desktop. Never show success before that confirmation. Back/cancel preserves an existing working connection and clears only the draft. Errors retain the relevant setup step with a retry; token-replacement recovery remains available. Keyboard focus enters the token field, Escape cancels the draft without dismissing all Settings, and cancellation restores its initiating control. Existing pairing expiry remains ten minutes; this revision adds no timer.
 
@@ -633,7 +633,7 @@ Settings > Manager shows every control at once: assistant, model, delegation, a 
 | Surface | Added behavior | When visible |
 | --- | --- | --- |
 | Settings > Manager | Four ordered steps: choose the assistant, decide how work starts, connect Telegram, turn Manager on. One step is open at a time; a later step is locked until the earlier ones are answered | Always |
-| Settings > Manager, above the steps | A three-node picture of You in Telegram, Manager and workers, in which only the parts the open step is about are lit, and a travelling mark shows the direction that step adds | Always; the mark stops when the window is not the open step's business |
+| Settings > Manager, above the steps | A three-node picture of You in Telegram, Manager and workers, in which only the parts the open step is about are lit, and a travelling mark shows the direction that step adds, twice, and then rests | Always; the mark stops when the window is not the open step's business |
 | Settings > Manager, each answered step | A collapsed line with the chosen value and a check, reopenable without losing the others | After that step is answered |
 | Settings > Manager, last step | Existing status, Save changes, Pause/Resume, Try again, Restart session and Disable Manager | After Manager is on, or while it is on with an earlier step changed |
 | Telegram step | Existing three-part bot setup - create a bot, paste its token, connect the account - with the part being answered marked | While Telegram is not connected, or when the step is reopened |
@@ -709,7 +709,9 @@ The picture never names a state Manager is not in: it shows the open step's dire
 
 ### Thresholds and time
 
-The travelling mark crosses its rail in 2.4 s and the Manager node's ring breathes in 2.2 s: slow enough to be followed without reading twice, and one loop finishes inside the time it takes to read the sentence under it. The approval variant holds the mark at Manager for 0.8 s of that loop, long enough to read as a stop rather than a stutter. A step opens and closes in 180 ms, the value already used for settling panels in this app. With reduced motion asked for, every loop is removed rather than shortened: a mark that restarts every millisecond is noise, and the sentence under the picture already carries the meaning.
+The travelling mark crosses its rail in 2.4 s and the Manager node's ring breathes in 2.2 s: slow enough to be followed without reading twice, and one pass finishes inside the time it takes to read the sentence under it. The approval variant holds the mark at Manager for 0.8 s of that pass, long enough to read as a stop rather than a stutter. A step opens and closes in 180 ms, the value already used for settling panels in this app. With reduced motion asked for, the motion is removed rather than shortened: a mark that restarts every millisecond is noise, and the sentence under the picture already carries the meaning.
+
+The picture plays twice and then rests. Amended 2026-10-19: it used to repeat for as long as the step was open, and a picture that keeps moving above a step somebody is reading is movement, not explanation. The explanation has landed by the second pass, and the panel stays open for as long as it takes to make a bot. Two passes is one to follow and one to confirm. It replays by itself whenever it has something new to say, because opening another step or changing an answer swaps which motion applies, so the person sees it exactly when they have just done something. On the last step the Manager ring no longer breathes while the mark travels: their periods are unrelated, so two things moved out of phase forever, and the summary should have one thing moving in it.
 
 ### Exact wording
 
@@ -759,9 +761,10 @@ Manager writes markdown, and Telegram was shown the markdown itself: stars aroun
 | The bot itself | A command menu in Telegram's own list (`/status`, `/pause`, `/resume`, `/settings`, `/help`) and a short profile line before the first message. |
 | `/status` | Where Manager stands, each worker with what it is doing, what waits for an answer, and how much is queued. |
 | `/help` and `/settings` | The same answers, with the commands as their own lines rather than a paragraph. |
-| Manager panel header | The word Manager, then where it stands as a dot in its own tone with one word beside it. |
+| Manager panel header | The word Manager, then where it stands as a dot in its own tone with one word beside it, and at the other end a gear and a close, both marks only. |
 | Manager panel second row | Assistant, model, workers and queued on one line, the session id quietly below it. |
 | Manager panel body, with nothing to show | One block in the middle of the window: a mark, what is the case, and what to do about it. |
+| Manager panel transcript, where GeckIt wrote into the session itself | What GeckIt wrote, drawn as what it is: what came from Telegram, a worker's news, or the result of a GeckIt command. The JSON the manager was handed is folded away under one line. |
 
 ### States
 
@@ -774,6 +777,10 @@ Manager writes markdown, and Telegram was shown the markdown itself: stars aroun
 | Panel loading | The Manager session is being read | A turning mark and one line, in the middle of the window | Wait |
 | Panel empty | The session has nothing in it yet | A mark, "No activity yet.", and where to send a task | Send a task in Telegram |
 | Panel failed | The session could not be read | A mark, the reason, and Try again | Try again |
+| From Telegram | Manager was given what Alex sent | The words, marked as what came from Telegram | Read it |
+| Worker news | A worker's state reached Manager | The worker's title, where it stands, what it said and its project | Read it |
+| Command result | Manager ran a GeckIt command | The operation, the command as it would be typed, and what it answered, folded | Read it |
+| Not what was expected | What GeckIt wrote is not the shape it should be | The text itself, under the same mark | Read it |
 
 ```mermaid
 stateDiagram-v2
@@ -823,7 +830,7 @@ The panel says "Read-only here. Send tasks and answer what it asks in Telegram."
 
 ### Edge cases
 
-Markdown that is not closed, such as a single star, is left as it was written rather than guessed at. Marks inside a code span are not read as marks. A table whose rows have different numbers of cells is padded to the widest row. A code block cut across two messages is closed and reopened, so neither message carries an open block. A line too long for one message is cut at a space, and never between the two halves of a character. A worker title containing markdown is rendered like any other text. A narrow Manager panel keeps the buttons on one line and shortens where Manager stands, with the facts line wrapping before the session id does.
+Markdown that is not closed, such as a single star, is left as it was written rather than guessed at. Marks inside a code span are not read as marks. A table whose rows have different numbers of cells is padded to the widest row. A code block cut across two messages is closed and reopened, so neither message carries an open block. A line too long for one message is cut at a space, and never between the two halves of a character. A worker title containing markdown is rendered like any other text. A narrow Manager panel keeps both marks on one line, with the facts line wrapping before the session id does; where Manager stands shortens only when even that is not enough.
 
 ### Deliberately not included
 
@@ -831,4 +838,10 @@ No link previews: they were already off, and a preview of a repository link woul
 
 ### Decisions and alternatives
 
-HTML rather than MarkdownV2: MarkdownV2 requires escaping fourteen characters inside every run of text, and one missed escape rejects the whole message; HTML needs three, and the places that need them are exactly the places a code block already marks. A refused message is sent again as plain words rather than dropped or retried with less formatting, because the words are the message and the shape is not. Buttons are cleared rather than replaced with a disabled-looking row, because Telegram has no disabled button and a dead one invites a tap. The panel keeps the session id, moved down and made quiet rather than removed, because it is what a support question asks for.
+HTML rather than MarkdownV2: MarkdownV2 requires escaping fourteen characters inside every run of text, and one missed escape rejects the whole message; HTML needs three, and the places that need them are exactly the places a code block already marks. A refused message is sent again as plain words rather than dropped or retried with less formatting, because the words are the message and the shape is not. Buttons are cleared rather than replaced with a disabled-looking row, because Telegram has no disabled button and a dead one invites a tap. The panel keeps the session id, moved down and made quiet rather than removed, because it is what a support question asks for. The way to the settings is a gear rather than the words Manager settings: a wide button beside the title read as the thing to do in a window whose whole point is that nothing is done in it, and the panel is already titled Manager, so the word was said twice. It is not removed, because the panel is modal and the settings are otherwise behind closing it.
+
+### What GeckIt writes into the Manager session
+
+Manager is talked to in Telegram, so GeckIt itself writes into its session: what Alex sent, what a worker is doing, what a GeckIt command answered. All three were written for the manager to read, as a prefix line and then JSON, and the panel showed them as they were: walls of quoted keys running past the right edge. The panel now reads each one and draws what it says. What came from Telegram is the words, marked as having come from there. A worker's news is its title, where it stands as one or two marks, what it said, and the project it is in. A command result is the operation, the command as it would be typed into a terminal, and what came back, folded away. What the manager was actually handed stays, one fold below, for the cases where the shape matters. A message that is not the shape it should be is shown as the text it is rather than dropped, since what GeckIt could not read is still what Manager read.
+
+Only GeckIt's own writing is drawn this way. Anything Alex typed, which in this session is nothing, stays as it is.

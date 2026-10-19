@@ -148,7 +148,7 @@ Production Chat, bottom status bar, ManagerInspection and Transcript were exerci
 | Replacement | A new current ID replaces the displayed identity/history; the delayed old read cannot overwrite it |
 | Disabled | Retained session opens with Manager disabled. History is kept.; opening does not enable it |
 | Long history | 650-entry fixture initially renders 303 turns including pinned requests; Show earlier adds 300 with internal keyboard scrolling and no window overflow |
-| Settings | Manager settings closes inspection before opening the existing Settings section |
+| Settings | The header gear closes inspection before opening the existing Settings section |
 | Phone | Actual phone Board fixture contains no Manager footer or inspection entry; ordinary worker remains present |
 
 The browser review found and fixed the first-click interception by the worker scrim, duplicate setup wording and missing disabled-history explanation; affected interactions were rerun successfully. Evidence: [dark inspector](evidence/manager-inspection-dark.png), [light inspector over retained worker](evidence/manager-inspection-light.png), [rendered state diagram](evidence/manager-inspection-states.svg). Mermaid parsed/rendered and was visually inspected.
@@ -159,7 +159,7 @@ Live Telegram/provider inference, real account permissions, native installed Ele
 
 ## Guided Manager setup - 2026-10-19
 
-Settings > Manager now asks its four answers in order: choose the assistant, decide how work starts, connect Telegram, turn Manager on. A later step is locked until the earlier one is answered, and Manager cannot be enabled while Telegram is unconnected, which was previously possible and produced an enabled Manager with no way to reach it. Above the steps, a three-node picture of Telegram, Manager and workers lights the parts the open step is about and moves a mark along the direction that step adds; the sentence under it carries the same meaning when motion is off. UX description: [docs/ux/manager-telegram.md](../../docs/ux/manager-telegram.md#guided-manager-setup---2026-10-19), [rendered state diagram](evidence/manager-setup-states.svg).
+Settings > Manager now asks its four answers in order: choose the assistant, decide how work starts, connect Telegram, turn Manager on. A later step is locked until the earlier one is answered, and Manager cannot be enabled while Telegram is unconnected, which was previously possible and produced an enabled Manager with no way to reach it. Above the steps, a three-node picture of Telegram, Manager and workers lights the parts the open step is about and moves a mark along the direction that step adds, twice, and then rests; the sentence under it carries the same meaning when motion is off. UX description: [docs/ux/manager-telegram.md](../../docs/ux/manager-telegram.md#guided-manager-setup---2026-10-19), [rendered state diagram](evidence/manager-setup-states.svg).
 
 `npm run typecheck`, `npm run lint` and `npm test` (1,081 tests across 80 files) pass. Two renderer tests were added: the first setup keeps steps 2-4 locked with their exact reasons, offers no Enable control, and shows the open step's explanation; an enabled Manager keeps "Manager is on" with its lifecycle controls and no locked Telegram line. One existing fixture worker title was renamed from "Worker" to "Add provider preferences" so the "no worker list in Settings" assertion is not satisfied by the picture's "Workers" label.
 
@@ -186,7 +186,26 @@ A fourth defect Alex saw is fixed and re-reviewed: the Telegram step in the conn
 
 Screenshots: [first step, light](evidence/manager-setup-step-light.png), [locked steps, light](evidence/manager-setup-locked-light.png), [Manager on, dark](evidence/manager-setup-running-dark.png), [Telegram step connected, dark](evidence/manager-setup-telegram-dark.png).
 
-Not covered: a real BotFather bot, a real Telegram account and a real provider session; motion was observed in single frames rather than measured over time; the forced-narrow check used an inline width override, not a real window size.
+A fifth defect Alex saw is fixed: the picture never stopped moving. All four animations were `infinite`, so a step being read always had movement above it, which `docs/performance.md` asks against even for an animation that is not seen. Each now plays twice and rests, and the replay is free because opening another step or changing an answer swaps which animation applies. The Manager ring no longer breathes on the last step, where it ran at 2.2 s against the mark's 4.8 s and the two drifted out of phase indefinitely. Measured in Chrome through the computed style and `document.getAnimations()` rather than by eye:
+
+| Step | Measured |
+| --- | --- |
+| Choose the assistant | The Manager ring runs `manager-flow-boot` for 2.2 s, iteration count 2, and the mark has no animation |
+| 5.2 s after that step opened | `document.getAnimations()` reports nothing running: the pane is still |
+| Decide how work starts, Approve | The mark runs `manager-flow-ask` and the Telegram ring `manager-flow-boot`, both 3.2 s and both twice, so they stay in phase with each other |
+| Connect Telegram | `manager-flow-ping`, 3 s, twice; nothing is running 6.4 s later |
+| Turn Manager on | `manager-flow-loop`, 4.8 s, twice, and no ring animation on any node |
+
+A sixth defect, found by measuring rather than by eye: two of the setup's own rules were losing to `.dialog p`, which sets the `margin` shorthand at a higher specificity and so dropped every margin they declared. The sentence under the picture had `margin-inline: auto` taken away and sat 79px left of centre under a centred picture, and its 14px gap above became 14px below. The locked step's reason had `margin-inline-start: 32px` taken away and sat under the step's number instead of under its title. Both rules are now named twice, `.manager-flow .manager-flow-say` and `.manager-step .manager-step-locked`, with a comment saying why, and both declare the margin as one shorthand so a future override is all-or-nothing rather than partial.
+
+| Measured through CDP matched styles | Before | After |
+| --- | --- | --- |
+| Centre of the sentence against the centre of the picture | 708 against 790 | 790 against 790 |
+| Computed `margin-inline` on the sentence | `0px` both sides | `82.45px` both sides, from `auto` |
+| Locked reason's inline start | Flush with the step's number | 32px, aligned under the step's title |
+| Every `p` in the dialog whose own rule declares a margin | Two clobbered by `.dialog p` | None |
+
+Not covered: a real BotFather bot, a real Telegram account and a real provider session; the forced-narrow check used an inline width override, not a real window size; the last two steps were measured by setting the picture's step class directly, since reaching them for real needs a token and an account.
 
 ## Telegram messages and the Manager panel - 2026-10-19
 
@@ -217,8 +236,26 @@ The Manager panel was reviewed in Chrome against the actual renderer through `ma
 | The session is still loading, dark | The turning mark and "Loading the Manager session..." in the middle of the window |
 | The history read failed, dark | A blocked mark, "Could not load the Manager session.", the reason and Try again, centred; the header dot is red beside "Unavailable" |
 | Coordinating | The dot takes the accent colour and beats once every 1.8 s, on `opacity` alone; with reduced motion it is still |
-| A 360px panel, below the real minimum width | Manager settings stays on one line, the state label ellipsizes, and neither the header nor the facts row overflows |
+| A 360px panel, below the real minimum width | The header stays on one line and neither it nor the facts row overflows |
 
 Screenshots: [the panel, light](evidence/manager-panel-light.png), [nothing to show, dark](evidence/manager-panel-empty-dark.png).
+
+### What GeckIt writes into the session
+
+The three messages GeckIt writes into the Manager session itself, which the panel showed as the prefix line and the JSON below it, are now read and drawn as what they say: `client/src/renderer/src/chat/manager-said.ts` reads them, `client/src/renderer/src/chat/ManagerSaid.tsx` draws them, and `Transcript` uses them only when it is the Manager panel. Five tests were added to `client/test/manager-ui.test.ts`; `npm run typecheck`, `npm run lint`, `npm test` (1,097 tests across 81 files) and `npm run build` pass. The two lint errors reported in `client/scripts/dev-bundle.js` are older than this change and untouched by it.
+
+| Interaction | Observed result |
+| --- | --- |
+| What came from Telegram | A filled bubble marked FROM TELEGRAM with the words Alex sent, and no JSON |
+| A worker's news | WORKER UPDATE with "Waiting for you" and "Blocked" beside it, the worker's title, what it said, and its project in quiet monospace |
+| The fold under it | "What the worker sent" opens the JSON the manager was handed, wrapped inside the card, with nothing running past the right edge |
+| A GeckIt command that worked | GECKIT CLI, the operation, and `geckit sessions mark --id codex:01a153c4-7e52-7e83-a8ee-b0b747d7c59c --status blocked` as it would be typed |
+| A GeckIt command that failed | The same card with a red border and "Failed", and the error under "What it answered" |
+| Something that is not the expected shape | The text itself under the same mark, rather than an empty card or a thrown render |
+| A 380px panel | Every card, the long command and the opened JSON wrap; no horizontal overflow anywhere |
+| Manager's own words, and anything Alex typed | Unchanged |
+| The header, after Alex asked for the Manager settings button to go | A gear beside the close, both marks only, labelled and titled Manager settings; at 380px "Needs your answer" now fits in full where the text button used to push it into an ellipsis |
+
+Screenshots: [the transcript, dark](evidence/manager-said-dark.png), [light, with the JSON open](evidence/manager-said-light.png), [380px](evidence/manager-said-narrow-light.png).
 
 Not covered: no message was sent to a real Telegram bot or account, so Telegram's own rendering of this HTML is argued from its Bot API documentation and the formatted/plain fallback, not observed; no real provider session, bot token or device was involved; the beat was observed in single frames and in the computed animation rather than measured over time.

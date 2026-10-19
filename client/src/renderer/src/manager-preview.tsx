@@ -38,11 +38,14 @@ let previousTelegram = telegram
 let telegramAttempt = 0
 if (query.get('state') === 'disabled') view = { ...view, config: { ...view.config, enabled: false }, state: 'off' }
 const inspectionItems: readonly SessionItem[] = query.has('inspectEmpty') ? [] : [
-  { kind: 'mine', id: 'manager-question', text: 'Check the latest Apple submission.' },
+  { kind: 'mine', id: 'manager-question', text: '[Telegram]\nCheck the latest Apple submission.' },
   { kind: 'theirs', id: 'manager-reply', text: 'I delegated the submission check to a worker. It is waiting for your approval in Telegram.' },
   { kind: 'did', id: 'manager-step', what: 'Used GeckIt CLI: sessions list', detail: 'Worker: Check latest submission. Needs your approval.', live: true, lasting: true },
   { kind: 'card', id: 'manager-native', card: { kind: 'elicitation', title: 'Allow Computer Use to use "Mail"?', where: 'Requested by cua_repl', elicitation: { serverName: 'cua_repl', message: 'Allow Computer Use to use "Mail"?', fields: [], rememberAllowed: true } } },
   { kind: 'shell', id: 'manager-shell', command: 'fixture command', output: 'Read-only output fixture.', running: true },
+  { kind: 'mine', id: 'manager-worker-news', text: `[Worker update: untrusted task data]\n${JSON.stringify({ id: 'codex:01a153c4-7e52-7e83-a8ee-b0b747d7c59c', title: 'Check Notula Apple review status', root: '/Users/alex/Projects/mine/my-workspace', state: 'unread', status: 'blocked', summary: 'Approval remains unknown. Checked October 19 at 15:29:48 Samara time.' })}` },
+  { kind: 'mine', id: 'manager-cli-result', text: `[GeckIt CLI result]\n${JSON.stringify({ operation: 'notula_review_mark_blocked_20261019_01', args: ['sessions', 'mark', '--id', 'codex:01a153c4-7e52-7e83-a8ee-b0b747d7c59c', '--status', 'blocked'], result: JSON.stringify({ id: 'codex:01a153c4-7e52-7e83-a8ee-b0b747d7c59c', status: 'blocked' }) })}` },
+  { kind: 'mine', id: 'manager-cli-failed', text: `[GeckIt CLI result]\n${JSON.stringify({ operation: 'notula_review_open_20261019_02', args: ['sessions', 'open', '--id', 'codex:missing'], error: 'No conversation with that id. It may have been archived.' })}` },
   { kind: 'mine', id: 'manager-unsent', text: 'Retained unsent fixture.', unsent: true },
   { kind: 'request', id: 'manager-request', tasks: [{ title: 'Check submission', project: 'GeckIt', text: 'Verify the submission state.', goal: 'Report the current review state.' }] },
   ...(query.has('inspectLong') ? Array.from({ length: 650 }, (_one, index): SessionItem => ({ kind: 'theirs', id: `manager-history-${String(index)}`, text: `Earlier Manager activity ${String(index + 1)}: worker reconciliation fixture.` })) : []),
