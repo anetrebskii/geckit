@@ -146,6 +146,7 @@ export function Chat(): React.JSX.Element {
   const closeSettings = useCallback(() => {
     setSetting(undefined)
   }, [])
+  const managerSettings = useCallback(() => setSetting('manager'), [])
   const closeKeys = useCallback(() => setKeys(false), [])
   const closeShortcuts = useCallback(() => setManaging(undefined), [])
   const shortcutFrom = useCallback(
@@ -867,7 +868,7 @@ export function Chat(): React.JSX.Element {
         {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
       </div>
 
-      <Status chat={chat} />
+      <Status chat={chat} onManagerSettings={managerSettings} />
 
       <Notices chat={chat} />
       {/* On the phone a host's question is a sheet over whatever is open, one at a time, the oldest first; what stands in the way of a host is on its page in Settings, since only the computer can fix it. */}

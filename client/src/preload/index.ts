@@ -48,6 +48,8 @@ import type { Link } from '../shared/links'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from '../shared/providers'
 import { pieceOf } from '../shared/pairing'
 import type { Pairing, Piece } from '../shared/pairing'
+import type { ManagerApi, ManagerConfig, ManagerView } from '../shared/manager'
+import type { TelegramAction, TelegramApi, TelegramView } from '../shared/telegram'
 
 /**
  * Everything a window may ask the main process, and nothing else.
@@ -74,6 +76,24 @@ const geckit = {
 
   /** Where a dropped file is, which the file itself no longer says. */
   pathFor: (file: File): string => webUtils.getPathForFile(file),
+
+  manager: {
+    view: (): Promise<ManagerView> => ipcRenderer.invoke('manager:view'),
+    inspect: (id: string): Promise<SessionItems> => ipcRenderer.invoke('manager:inspect', id),
+    onItems: (said: (items: SessionItems) => void): (() => void) => listen('manager:items', said),
+    configure: (change: Partial<ManagerConfig>): Promise<ManagerView> => ipcRenderer.invoke('manager:configure', change),
+    pause: (): Promise<ManagerView> => ipcRenderer.invoke('manager:pause'),
+    resume: (): Promise<ManagerView> => ipcRenderer.invoke('manager:resume'),
+    retry: (): Promise<ManagerView> => ipcRenderer.invoke('manager:retry'),
+    restart: (): Promise<ManagerView> => ipcRenderer.invoke('manager:restart'),
+    on: (said: (view: ManagerView) => void): (() => void) => listen('manager:view', said),
+  } satisfies ManagerApi,
+
+  telegram: {
+    view: (): Promise<TelegramView> => ipcRenderer.invoke('telegram:view'),
+    action: (action: TelegramAction): Promise<TelegramView> => ipcRenderer.invoke('telegram:action', action),
+    on: (said: (view: TelegramView) => void): (() => void) => listen('telegram:view', said),
+  } satisfies TelegramApi,
 
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),

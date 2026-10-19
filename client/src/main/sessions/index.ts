@@ -1,4 +1,6 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { managerContext, managerHistoryItem, managerVisibleItem } from '../manager-protocol'
+import { MANAGER_CHAT_GUIDANCE } from '../../shared/manager'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename } from 'node:path'
@@ -29,6 +31,7 @@ import type {
   RequestTask,
   SessionGoal,
   SessionImage,
+  SessionCard,
   SessionItem,
   SessionItems,
   SessionMessage,
@@ -92,6 +95,10 @@ import {
  */
 
 export interface SessionNote {
+  readonly managerPrompt?: string
+  readonly managerBegun?: true
+  readonly managerOwner?: string
+  readonly managerOperation?: string
   readonly heldOperation?: HeldOperation
   readonly guardError?: string
 readonly guardItems?: readonly SessionItem[]
@@ -493,6 +500,12 @@ export function startsConversations(command: string): boolean {
 const conversations = (count: number): string => (count === 1 ? 'a conversation' : `${String(count)} conversations`)
 
 export class Sessions {
+  #managerItems: ((items: SessionItems) => void) | undefined
+  #managerOutput: ((id: string, text: string) => void) | undefined
+  #managerSend: ((message: SessionMessage) => Promise<string>) | undefined
+  readonly #managerMessages = new WeakSet<SessionMessage>()
+  readonly #managerIds = new Set<string>()
+  readonly #suspendedManagers = new Set<string>()
   readonly #deps: SessionsDeps
   readonly #providers: { codex: LlmProvider; readonly stream: LlmProvider; readonly plugins: Map<string, LlmProvider> }
   readonly #dispatching = new Set<string>()
@@ -552,7 +565,8 @@ export class Sessions {
     for (const [id, note] of Object.entries(deps.notes.all())) {
       if ((note.question !== true && note.stays !== true) || note.hidden === true) continue
       const live = this.#fresh(id, homedir(), note.title ?? '', sessionMode(note.mode), true)
-      live.begun = true
+      live.begun = note.managerPrompt === undefined || note.managerBegun === true
+      live.chosen = note.model
       live.stays = note.stays === true
       live.at = note.seen ?? live.at
       live.stands = note.stands ?? ''
@@ -589,6 +603,79 @@ export class Sessions {
 
   #now(): number {
     return this.#deps.now?.() ?? Date.now()
+  }
+
+  managerOutput(heard: (id: string, text: string) => void): void {
+    this.#managerOutput = heard
+  }
+
+  managerSend(send: (message: SessionMessage) => Promise<string>): void {
+    this.#managerSend = send
+  }
+
+  managerItems(heard: (items: SessionItems) => void): void { this.#managerItems = heard }
+
+  #tellItems(items: SessionItems): void {
+    if (this.isManager(items.id)) this.#managerItems?.({ ...items, items: items.items.map((item) => managerVisibleItem(managerHistoryItem(item))) })
+    else this.#deps.items(items)
+  }
+
+  isManager(id: string): boolean { return this.#managerIds.has(id) || this.#deps.notes.all()[id]?.managerPrompt !== undefined }
+
+  #ordinary(id: string): void { if (this.isManager(id)) throw new Error(MANAGER_CHAT_GUIDANCE) }
+
+  protectManager(id: string): void { this.#managerIds.add(id) }
+
+  activateManager(id: string): void { this.#suspendedManagers.delete(id) }
+
+  suspendManager(id: string): readonly SessionMessage[] {
+    this.#suspendedManagers.add(id)
+    this.stop(id)
+    const live = this.#live.get(id)
+    const queued = live?.queued.map((one) => one.message) ?? []
+    if (live !== undefined && queued.length > 0) { this.#queue(live, []); this.#changed() }
+    return queued
+  }
+
+  sendManager(message: SessionMessage): Promise<string> {
+    if (message.session === undefined || this.#deps.notes.all()[message.session]?.managerPrompt === undefined) return Promise.reject(new Error('Manager instructions are missing. Restart Manager to restore its session.'))
+    if (this.#suspendedManagers.has(message.session)) return Promise.reject(new Error('This Manager session is paused or archived.'))
+    if (message.images?.length || message.goal !== undefined) return Promise.reject(new Error('Manager accepts text requests without a permanent goal.'))
+    if (message.provider !== undefined && providerOf(message.session) !== message.provider) return Promise.reject(new Error('The Manager session belongs to a different provider.'))
+    this.#managerMessages.add(message)
+    return this.send(message)
+  }
+
+  async managerSession(options: Pick<SessionMessage, 'root' | 'mode' | 'model' | 'provider'>, prompt: string): Promise<string> {
+    const provider = options.provider ?? 'claude'
+    const backend = this.#provider(provider)
+    if (!backend.available) throw new Error(`${backend.name} is unavailable. Restore its setup in Assistants.`)
+    const id = await backend.create(options)
+    if (providerOf(id) !== provider) throw new Error(`${backend.name} returned a session ID without its provider prefix.`)
+    this.protectManager(id)
+    const live = this.#fresh(id, options.root, 'Manager', options.mode, true)
+    live.stays = true
+    live.chosen = options.model
+    this.#note(id, { title: 'Manager', mode: options.mode, here: true, question: true, stays: true, managerPrompt: prompt, ...(options.model === undefined ? {} : { model: options.model }) })
+    this.#changed()
+    return id
+  }
+
+  updateManager(id: string, prompt: string): void {
+    const previous = this.#deps.notes.all()[id]?.managerPrompt
+    if (previous === undefined) throw new Error('That is not the manager session.')
+    if (previous !== prompt) this.handOver(id)
+    this.#note(id, { managerPrompt: prompt })
+  }
+
+  async startManaged(message: SessionMessage, owner: string, operation: string, parent = owner): Promise<string> {
+    const found = Object.entries(this.#deps.notes.all()).find(([, note]) => note.managerOwner === owner && note.managerOperation === operation)
+    if (found !== undefined) return found[0]
+    const provider = message.provider ?? 'claude'
+    const id = await this.#provider(provider).create({ root: message.root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }) })
+    this.#fresh(id, message.root, firstLine(message.text, 80), message.mode)
+    this.#note(id, { here: true, parent, managerOwner: owner, managerOperation: operation, unborn: message.root, title: firstLine(message.text, 80) })
+    return this.send({ ...message, session: id })
   }
 
   #provider(family: SessionProvider, _transport: ClaudeTransport = 'stream'): LlmProvider {
@@ -666,7 +753,7 @@ export class Sessions {
   }
 
   #note(id: string, change: SessionNote): void {
-    if (this.#live.get(id)?.question === true) return
+    if (this.#live.get(id)?.question === true && change.managerPrompt === undefined && this.#deps.notes.all()[id]?.managerPrompt === undefined) return
     this.#deps.notes.set(id, { ...this.#deps.notes.all()[id], ...change })
   }
 
@@ -684,7 +771,7 @@ export class Sessions {
         if (operation.kind === 'message' && operation.message.again !== undefined) {
           held.items.delete(operation.message.again)
           held.kept = held.kept.filter((one) => one.item.id !== operation.message.again)
-          this.#deps.items({ id: held.id, items: [], gone: [operation.message.again] })
+          this.#tellItems({ id: held.id, items: [], gone: [operation.message.again] })
         }
         this.#clearGuard(held)
       } else if (operation.kind === 'message' && operation.message.text !== current.message.text) {
@@ -695,7 +782,7 @@ export class Sessions {
           const item = { ...mine, text: current.message.text }
           held.items.set(item.id, item)
           held.kept = held.kept.map((one) => one.item.id === item.id ? { ...one, item } : one)
-          this.#deps.items({ id: held.id, items: [item] })
+          this.#tellItems({ id: held.id, items: [item] })
         }
         this.#note(held.id, { heldOperation: updated, guardItems: [...held.items.values()].filter((one) => one.id === 'vpn-ip-error' || (one.kind === 'mine' && one.unsent === true)) })
       }
@@ -796,6 +883,10 @@ export class Sessions {
 
   /** Every conversation about these projects, read again from where the tool keeps them. */
   async list(roots: readonly string[]): Promise<ChatSession[]> {
+    return (await this.allForManager(roots)).filter((one) => !this.isManager(one.id))
+  }
+
+  async allForManager(roots: readonly string[]): Promise<ChatSession[]> {
     for (const root of roots) {
       const found = await this.#providers.stream.list([root])
       for (const [id, row] of this.#rows) if ((row.project ?? row.root) === root) this.#rows.delete(id)
@@ -870,7 +961,7 @@ export class Sessions {
       if (note?.hidden === true) continue
       if ((live === undefined || (providerOf(id) === 'codex' && !live.question)) && row?.driven === true && note?.here !== true && note?.shown !== true) continue
       // Held only because it was looked at, and the tool has nothing under that id any more.
-      if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0 && live.queued.length === 0 && !live.checkingIp) {
+      if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0 && live.queued.length === 0 && !live.checkingIp && note?.managerPrompt === undefined) {
         continue
       }
       const quiet = live === undefined || live.state === 'idle'
@@ -892,6 +983,8 @@ export class Sessions {
       const goal = live?.goal ?? note?.goal
       sessions.push({
         id,
+        ...(this.isManager(id) ? { manager: true as const } : {}),
+        ...(note?.managerOwner === undefined ? {} : { managerManaged: true as const }),
         ...(providerOf(id) === 'claude' ? {} : { provider: providerOf(id) }),
         root: where,
         ...(project === undefined ? {} : { project }),
@@ -1035,7 +1128,7 @@ export class Sessions {
         state: one.state,
         at: one.at,
         ...(one.status === undefined ? {} : { status: one.status }),
-        ...(one.question === true ? { question: true } : {}),
+        ...(one.question === true && one.manager !== true ? { question: true } : {}),
         waiting: live !== undefined && this.#waiting(live),
       }
     })
@@ -1064,7 +1157,7 @@ export class Sessions {
   queuedHolding(roots: readonly string[], asked: string): ChatFound[] {
     const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
     if (words.length === 0) return []
-    return this.#listed(roots).flatMap((one) => {
+    return this.#listed(roots).filter((one) => !this.isManager(one.id)).flatMap((one) => {
       const hits = (this.#live.get(one.id)?.queued ?? []).filter((queued) => words.every((word) => queued.message.text.toLowerCase().includes(word)))
       const last = hits.at(-1)
       return last === undefined ? [] : [{ id: one.id, root: one.root, count: hits.length, said: last.message.text.replace(/\s+/g, ' ').trim().slice(0, 160) }]
@@ -1074,7 +1167,7 @@ export class Sessions {
   async search(roots: readonly string[], asked: string): Promise<ChatFound[]> {
     const providers = [this.#providers.stream, this.#providers.codex, ...this.#providers.plugins.values()]
     const found = await Promise.all(providers.map((provider) => provider.search(roots, asked)))
-    return found.flat().filter((row) => this.#keptHistory(row.id))
+    return found.flat().filter((row) => !this.isManager(row.id) && this.#keptHistory(row.id))
   }
 
   /** The limit changed: whatever it makes room for goes now. */
@@ -1124,7 +1217,7 @@ export class Sessions {
     return new Promise((answered) => {
       this.#requests.set(item.id, { session, roots: tasks.map((task) => task.root), mode, answered })
       gone.addEventListener('abort', () => this.#withdrawn(item.id))
-      this.#deps.items({ id: live.id, items: [item] })
+      this.#tellItems({ id: live.id, items: [item] })
       this.#changed()
       if (this.#watching === live.id) return
       const projects = [...new Set(tasks.map((task) => task.project))].join(', ')
@@ -1188,12 +1281,15 @@ export class Sessions {
 
   /** A conversation given a slot: the first of its queued messages goes. */
   carryOn(id: string): void {
+    if (this.#suspendedManagers.has(id)) return
     const live = this.#live.get(id) ?? this.#adopt(id)
     const next = live?.queued[0]
     if (live === undefined || next === undefined || live.injecting !== undefined) return
     if (this.#dispatching.has(id)) return
     this.#dispatching.add(id)
-    void this.send({ ...next.message, mode: live.mode }, true, undefined, next.id).then(() => {
+    const message = { ...next.message, mode: live.mode }
+    if (this.#managerIds.has(id)) this.#managerMessages.add(message)
+    void this.send(message, true, undefined, next.id).then(() => {
       if (live.heldOperation !== undefined) return
       this.#queue(live, live.queued.filter((one) => one.id !== next.id))
       this.#changed()
@@ -1227,7 +1323,7 @@ export class Sessions {
     live.kept = live.kept.map((one) => (one.item.id === item.id ? put : one))
     const written = (this.#deps.notes.all()[live.id]?.requests ?? []).filter((one) => one.item.id !== item.id)
     this.#note(live.id, { requests: [...written, put] })
-    this.#deps.items({ id: live.id, items: [item] })
+    this.#tellItems({ id: live.id, items: [item] })
     this.#changed()
   }
 
@@ -1237,6 +1333,16 @@ export class Sessions {
    * terminal in the meantime is the one that is shown and replied to.
    */
   async items(id: string): Promise<SessionItem[]> {
+    this.#ordinary(id)
+    return this.#readItems(id)
+  }
+
+  async inspectManager(id: string): Promise<SessionItem[]> {
+    if (!this.isManager(id)) throw new Error('This is not a Manager session.')
+    return this.#readItems(id)
+  }
+
+  async #readItems(id: string): Promise<SessionItem[]> {
     const live = this.#live.get(id) ?? this.#adopt(id)
     if (live === undefined) return []
     if (live.driver === undefined) {
@@ -1246,11 +1352,12 @@ export class Sessions {
       // What it cost is only in the file, so the row learns it here.
       if (live.spent !== spent || live.goal?.condition !== goal?.condition) this.#changed()
     } else if (this.#for(live).nativeGoals) await this.#goal(live)
-    return [...live.items.values()]
+    return [...live.items.values()].map((item) => this.#deps.notes.all()[id]?.managerPrompt === undefined ? item : managerVisibleItem(managerHistoryItem(item)))
   }
 
   /** The links written in a session, from what is held where it is running here and from its file where it is not. */
   async links(id: string): Promise<Link[]> {
+    this.#ordinary(id)
     const live = this.#live.get(id)
     if (live?.driver !== undefined) return linksIn([...live.items.values()])
     const root = live?.root ?? this.#rows.get(id)?.root
@@ -1361,7 +1468,8 @@ export class Sessions {
     const last = conversation.items.at(-1)
     const prompt = conversation.items.findLast((item) => item.kind === 'mine' && item.unsent === true)
     const rejected = live.guardError === HOOK_BLOCKED && live.heldOperation?.kind === 'message' && prompt?.kind === 'mine' && prompt.text === live.heldOperation.message.text && last?.kind === 'note' && last.text === HOOK_BLOCKED
-    const read = rejected ? conversation.items.filter((item) => item.id !== prompt.id && item.id !== last.id) : conversation.items
+    const nativeItems = rejected ? conversation.items.filter((item) => item.id !== prompt.id && item.id !== last.id) : conversation.items
+    const read = this.#deps.notes.all()[live.id]?.managerPrompt === undefined ? nativeItems : nativeItems.map(managerHistoryItem)
     // Nothing holds it, so every run of the tool it had has written what it cost.
     live.spent = conversation.cost
     live.window = conversation.window
@@ -1433,7 +1541,7 @@ export class Sessions {
     }
     if (live.items.delete('vpn-ip-error')) {
       live.kept = live.kept.filter((one) => one.item.id !== 'vpn-ip-error')
-      this.#deps.items({ id: live.id, items: [], gone: ['vpn-ip-error'] })
+      this.#tellItems({ id: live.id, items: [], gone: ['vpn-ip-error'] })
     }
   }
 
@@ -1448,12 +1556,12 @@ export class Sessions {
         if (current === undefined) {
           live.items.delete(again)
           live.kept = live.kept.filter((one) => one.item.id !== again)
-          this.#deps.items({ id: live.id, items: [], gone: [again] })
+          this.#tellItems({ id: live.id, items: [], gone: [again] })
         } else if (mine?.kind === 'mine' && mine.text !== current.message.text) {
           const item = { ...mine, text: current.message.text }
           live.items.set(item.id, item)
           live.kept = live.kept.map((one) => one.item.id === item.id ? { ...one, item } : one)
-          this.#deps.items({ id: live.id, items: [item] })
+          this.#tellItems({ id: live.id, items: [item] })
         }
       }
       if (current === undefined) { this.#clearGuard(live); return }
@@ -1469,7 +1577,7 @@ export class Sessions {
     live.kept = live.kept.filter((one) => one.item.id !== item.id)
     live.kept.push({ after: [...live.items.keys()].at(-2), item })
     this.#note(live.id, { heldOperation: operation, guardError: text, guardItems: [...live.items.values()].filter((one) => one.id === item.id || (one.kind === 'mine' && one.unsent === true)), vpnPaused: live.vpnPaused ? true : undefined, vpnGoalPaused: live.vpnGoalPaused ? true : undefined, here: true, ...(live.begun ? {} : { unborn: live.root, title: live.title, mode: live.mode }) })
-    this.#deps.items({ id: live.id, items: [item] })
+    this.#tellItems({ id: live.id, items: [item] })
     this.#changed()
     this.#tell(live, live.vpnPaused ? 'Paused by VPN IP check' : 'Not sent', text, false)
   }
@@ -1590,6 +1698,11 @@ export class Sessions {
 
   /** `go` is a message that is part of a turn already given its slot, so the limit never holds it. */
   async send(message: SessionMessage, go = false, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt): Promise<string> {
+    if (message.session !== undefined && this.isManager(message.session) && !this.#managerMessages.has(message)) {
+      if (this.#managerSend === undefined) this.#ordinary(message.session)
+      else return this.#managerSend(message)
+    }
+    if (message.session !== undefined && this.isManager(message.session) && this.#deps.notes.all()[message.session]?.managerPrompt === undefined) throw new Error('Manager instructions are missing. Restart Manager to restore its session.')
     let target = message.session === undefined
       ? message.submission === undefined ? undefined : this.#live.get(message.submission)
       : (this.#live.get(message.session) ?? this.#adopt(message.session))
@@ -1641,7 +1754,7 @@ export class Sessions {
       if (existing?.kind !== 'mine' && !go && !(guardSource !== undefined && [...target.items.values()].some((one) => one.kind === 'mine' && one.unsent === true))) {
         const mine: Extract<SessionItem, { kind: 'mine' }> = { kind: 'mine', id: `mine:${randomUUID()}`, text: message.text, at: this.#now(), unsent: true, ...(message.images === undefined ? {} : { images: message.images }) }
         target.items.set(mine.id, mine)
-        this.#deps.items({ id: target.id, items: [mine] })
+        this.#tellItems({ id: target.id, items: [mine] })
       }
       const mine = existing?.kind === 'mine' ? existing : [...target.items.values()].findLast((one) => one.kind === 'mine' && one.unsent === true)
       const retained: HeldOperation = { ...operation, message: { ...message, ...(mine === undefined || message.session === undefined ? {} : { again: mine.id }) } }
@@ -1710,7 +1823,7 @@ export class Sessions {
     const busy = live.state === 'working' || live.state === 'asks' || live.injecting !== undefined
     // Written by the person, it is theirs again to be sent; a message waits behind the ones already queued, and for a slot.
     if (!go) live.parked = false
-    const held = !busy && !go && !live.question && (live.queued.length > 0 || !this.#may())
+    const held = !busy && !go && (!live.question || this.#managerIds.has(live.id)) && (live.queued.length > 0 || !this.#may())
     if (busy || held) {
       // A goal keeps the turn going until it holds, so it is cleared by stopping the turn and clearing it once it has.
       if (busy && live.goal !== undefined && goalSent(message.text) === '') {
@@ -1787,7 +1900,7 @@ export class Sessions {
     // it, not by this computer's account: this computer may be signed in with
     // a key while the host it reaches is on a plan, or the other way round.
     if (backend.subscriptionOnly && live.driver === undefined && !isRemote(live.root) && (await this.account(providerOf(live.id))).key === true) {
-      this.#deps.items({ id: live.id, items: [mine], gone })
+      this.#tellItems({ id: live.id, items: [mine], gone })
       this.#ended(live, { kind: 'ended', how: 'offPlan' })
       return live.id
     }
@@ -1810,13 +1923,13 @@ export class Sessions {
       if (error instanceof GuardRefused || error instanceof GuardCancelled) {
         const unsent = { ...mine, unsent: true }
         live.items.set(mine.id, unsent)
-        this.#deps.items({ id: live.id, items: [unsent], gone })
+        this.#tellItems({ id: live.id, items: [unsent], gone })
         live.state = 'failed'
         this.#uncut(live.id)
         this.#blocked(live, { kind: 'message', message: { ...message, session: live.id, again: mine.id }, go, queued, delegateFrom }, error instanceof GuardCancelled ? 'Not sent: public IP check cancelled. Try again when you are ready.' : error.message)
         return live.id
       }
-      this.#deps.items({ id: live.id, items: [mine], gone })
+      this.#tellItems({ id: live.id, items: [mine], gone })
       this.#ended(live, { kind: 'ended', how: 'failed', text: error instanceof Error ? error.message : String(error) })
       return live.id
     }
@@ -1825,7 +1938,7 @@ export class Sessions {
       try { await this.#check(live, attempt) } catch (error) {
         const unsent = { ...mine, unsent: true }
         live.items.set(mine.id, unsent)
-        this.#deps.items({ id: live.id, items: [unsent] })
+        this.#tellItems({ id: live.id, items: [unsent] })
         live.state = 'failed'
         this.#uncut(live.id)
         this.#blocked(live, { kind: 'message', message: { ...message, session: live.id, again: mine.id }, go, queued, delegateFrom }, error instanceof GuardCancelled ? 'Not sent: public IP check cancelled. Try again when you are ready.' : error instanceof Error ? error.message : String(error))
@@ -1835,6 +1948,7 @@ export class Sessions {
     }
     this.#note(live.id, {
       mode: live.mode,
+      ...(this.#deps.notes.all()[live.id]?.managerPrompt === undefined ? {} : { managerBegun: true as const }),
       transport: live.transport,
       ...(live.chosen === undefined ? {} : { model: live.chosen }),
       reasoning: live.reasoning,
@@ -1843,7 +1957,7 @@ export class Sessions {
       // Written as the turn starts, since a crash leaves no chance to write anything as it ends.
       cut: { root: live.root, at: this.#now() },
     })
-    this.#deps.items({ id: live.id, items: [mine], gone })
+    this.#tellItems({ id: live.id, items: [mine], gone })
     this.#changed()
     live.begun = true
 
@@ -1851,7 +1965,8 @@ export class Sessions {
     const told = live.told
     live.told = []
     live.kept = live.kept.filter((kept) => !told.some((one) => one.id === kept.item.id))
-    live.driver?.send(saying.text, saying.images, told.flatMap((one) => one.blocks))
+    const managerPrompt = this.#deps.notes.all()[live.id]?.managerPrompt
+    live.driver?.send(managerPrompt === undefined ? saying.text : managerContext(managerPrompt, saying.text), saying.images, told.flatMap((one) => one.blocks))
     return live.id
   }
 
@@ -1862,6 +1977,8 @@ export class Sessions {
    * instead, and waited for there.
    */
   async shell(asked: ShellCommand): Promise<string> {
+
+    if (asked.session !== undefined && this.#deps.notes.all()[asked.session]?.managerPrompt !== undefined) throw new Error('Manager can operate GeckIt only through its restricted CLI interface.')
 
     let live = asked.session === undefined ? undefined : (this.#live.get(asked.session) ?? this.#adopt(asked.session))
     const command = asked.command.trim()
@@ -1895,13 +2012,13 @@ export class Sessions {
     held.kept.push({ after: [...held.items.keys()].at(-1), item })
     held.items.set(item.id, item)
     held.at = this.#now()
-    this.#deps.items({ id: held.id, items: [item] })
+    this.#tellItems({ id: held.id, items: [item] })
 
     const show = (next: SessionItem): void => {
       if (this.#live.get(held.id) !== held) return
       held.items.set(next.id, next)
       held.kept = held.kept.map((kept) => (kept.item.id === next.id ? { ...kept, item: next } : kept))
-      this.#deps.items({ id: held.id, items: [next] })
+      this.#tellItems({ id: held.id, items: [next] })
     }
     // What it prints is drawn a few times a second, not once a line.
     let printed = ''
@@ -2012,6 +2129,8 @@ export class Sessions {
   /** Have a process holding the conversation, started the way its mode needs. */
   async #hold(live: Live, attempt?: GuardAttempt): Promise<void> {
 
+    if (this.#managerIds.has(live.id) && (this.#deps.notes.all()[live.id]?.managerPrompt === undefined || this.#suspendedManagers.has(live.id))) throw new Error('Manager cannot start without its active session instructions.')
+
     clearTimeout(live.quiet)
     if (live.closing !== undefined) await live.closing
 
@@ -2049,6 +2168,7 @@ export class Sessions {
         id: live.id,
         resume,
         mode: live.mode,
+        ...(this.#deps.notes.all()[live.id]?.managerPrompt === undefined ? {} : { managerPrompt: this.#deps.notes.all()[live.id]?.managerPrompt }),
         ...(live.chosen === undefined ? {} : { model: live.chosen }),
         ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }),
         ...(resume || live.fork === undefined ? {} : { fork: live.fork }),
@@ -2079,6 +2199,7 @@ export class Sessions {
    * turned off. Says where it is on claude.ai, or why the tool would not.
    */
   async remote(id: string, on: boolean): Promise<{ readonly url?: string; readonly error?: string }> {
+    if (this.#deps.notes.all()[id]?.managerPrompt !== undefined) return { error: 'Use Telegram to talk to Manager.' }
     const live = this.#live.get(id) ?? this.#adopt(id)
     if (live === undefined) return { error: 'This conversation is not here any more.' }
     if (!this.#for(live).remoteControl) return { error: 'Remote Control is available in Stream mode.' }
@@ -2144,25 +2265,51 @@ export class Sessions {
   }
 
 
+  readonly #managerRequests = new WeakMap<Live, Map<string, string>>()
+
+  #managerFingerprint(live: Live, ask: string): string | undefined {
+    const revision = this.#managerRequests.get(live)?.get(ask)
+    const wanted = live.asks.get(ask)
+    return revision === undefined || wanted === undefined ? undefined : `${revision}:${createHash('sha256').update(JSON.stringify(wanted)).digest('hex')}`
+  }
+
+  pendingForManager(id: string): readonly { readonly id: string; readonly fingerprint: string; readonly card: SessionCard }[] {
+    const live = this.#live.get(id)
+    if (live?.driver === undefined) return []
+    return [...live.asks].map(([ask, wanted]) => ({ id: cardId(ask), fingerprint: this.#managerFingerprint(live, ask) ?? '', card: cardFor(wanted, pathOf(live.root)) }))
+  }
+
+  async answerForManager(id: string, card: string, answer: string, fingerprint: string, current: () => boolean): Promise<boolean> {
+    return this.#answer(id, card, answer, fingerprint, current)
+  }
+
   async answer(id: string, card: string, answer: CardAnswer | string): Promise<void> {
+    this.#ordinary(id)
+    await this.#answer(id, card, answer)
+  }
+
+  async #answer(id: string, card: string, answer: CardAnswer | string, expected?: string, current: () => boolean = () => true): Promise<boolean> {
     const live = this.#live.get(id)
     const ask = card.startsWith('card:') ? card.slice('card:'.length) : card
     const wanted = live?.asks.get(ask)
-    if (live === undefined || wanted === undefined) return
+    const driver = live?.driver
+    if (driver === undefined || !current() || live === undefined || wanted === undefined || (expected !== undefined && this.#managerFingerprint(live, ask) !== expected)) return false
 
     const elicitation = wanted.kind === 'elicitation' ? elicitationAnswer(answer, wanted) : undefined
-    if (wanted.kind === 'elicitation' && elicitation === undefined) return
+    if (wanted.kind === 'elicitation' && elicitation === undefined) return false
 
     if (answer !== 'no' && (elicitation === undefined || elicitation.action === 'accept') && this.#deps.beforeSend !== undefined) {
-      if (live.checkingIp) return
+      if (live.checkingIp) return false
       try { await this.#check(live) } catch (error) {
         if (error instanceof GuardRefused) this.#blocked(live, { kind: 'answer', card, answer }, error.message)
-        return
+        return false
       }
-      if (!live.asks.has(ask)) return
+      if (this.#live.get(id) !== live || live.asks.get(ask) !== wanted || (expected !== undefined && this.#managerFingerprint(live, ask) !== expected)) return false
     }
+    if (!current() || live.driver !== driver || this.#live.get(id) !== live || live.asks.get(ask) !== wanted) return false
     this.#clearGuard(live)
     live.asks.delete(ask)
+    this.#managerRequests.get(live)?.delete(ask)
 
     if (answer === 'session') for (const key of grantKeys(wanted)) live.grants.add(key)
     if (wanted.kind === 'start' && answer !== 'no') {
@@ -2187,7 +2334,7 @@ export class Sessions {
     live.held.delete(ask)
     const on = answer === 'no' || line === undefined ? [] : [line]
     for (const item of on) live.items.set(item.id, item)
-    this.#deps.items({ id: live.id, items: [folded, ...on] })
+    this.#tellItems({ id: live.id, items: [folded, ...on] })
 
     if (live.asks.size === 0) {
       const doing = on[0]?.kind === 'did' ? on[0].what : ''
@@ -2197,7 +2344,8 @@ export class Sessions {
       live.stands = waitingFor([...live.asks.values()][0] ?? wanted)
     }
     this.#changed()
-    live.driver?.answer(ask, answer)
+    driver.answer(ask, answer)
+    return true
   }
 
   /**
@@ -2229,6 +2377,7 @@ export class Sessions {
           : []
       for (const ask of again) {
         live.asks.delete(ask)
+        this.#managerRequests.get(live)?.delete(ask)
         live.held.delete(ask)
         live.items.delete(cardId(ask))
       }
@@ -2236,7 +2385,7 @@ export class Sessions {
         const next = [...live.asks.values()][0]
         live.state = next === undefined ? 'working' : 'asks'
         live.stands = next === undefined ? 'Working' : waitingFor(next)
-        this.#deps.items({ id: live.id, items: [], gone: again.map(cardId) })
+        this.#tellItems({ id: live.id, items: [], gone: again.map(cardId) })
       }
 
       live.driver.permit(mode, again)
@@ -2325,7 +2474,7 @@ export class Sessions {
       live.items.set(item.id, item)
       live.last = item.id
       live.at = this.#now()
-      this.#deps.items({ id: live.id, items: [item] })
+      this.#tellItems({ id: live.id, items: [item] })
     } catch (error) {
       live.injectionEchoes = live.injectionEchoes.filter((one) => one !== echo)
       live.parked = true
@@ -2485,7 +2634,7 @@ export class Sessions {
   cutOff(): CutOff[] {
     return Object.entries(this.#deps.notes.all())
       .flatMap(([id, note]) =>
-        note.cut === undefined || note.hidden === true || this.#live.has(id) || (note.queued?.length ?? 0) > 0
+        this.isManager(id) || note.cut === undefined || note.hidden === true || this.#live.has(id) || (note.queued?.length ?? 0) > 0
           ? []
           : [{ id, root: note.cut.root, title: note.title ?? '', at: note.cut.at }],
       )
@@ -2568,9 +2717,9 @@ export class Sessions {
       if (note?.hidden === true) return false
       return note?.here === true || note?.shown === true || (row !== undefined && !row.driven)
     }
-    const found = (await Promise.all([this.#providers.stream, ...this.#providers.plugins.values()].map((provider) => provider.hidden(older ? 0 : edge, older ? edge : Infinity, (id) => this.#keptHistory(id) && !listed(id))))).flat().filter((row) => this.#keptHistory(row.id))
+    const found = (await Promise.all([this.#providers.stream, ...this.#providers.plugins.values()].map((provider) => provider.hidden(older ? 0 : edge, older ? edge : Infinity, (id) => !this.isManager(id) && this.#keptHistory(id) && !listed(id))))).flat().filter((row) => !this.isManager(row.id) && this.#keptHistory(row.id))
     for (const row of this.#rows.values()) {
-      if (providerOf(row.id) !== 'codex' || listed(row.id) || row.at < (older ? 0 : edge) || row.at >= (older ? edge : Infinity)) continue
+      if (this.isManager(row.id) || providerOf(row.id) !== 'codex' || listed(row.id) || row.at < (older ? 0 : edge) || row.at >= (older ? edge : Infinity)) continue
       found.push({ ...row, cwd: row.root })
     }
     // Which reason, if any, keeps each row worth showing, before a folder is even asked for: figured once per row so a folder shared by several rows is asked about only once below.
@@ -2612,6 +2761,7 @@ export class Sessions {
 
   /** Put a conversation from Hidden conversations on the board. */
   bring(id: string): void {
+    this.#ordinary(id)
     this.#note(id, { hidden: false, shown: true })
     this.#changed()
   }
@@ -2715,6 +2865,7 @@ export class Sessions {
   }
 
   watching(id: string | undefined): void {
+    if (id !== undefined && this.isManager(id)) return
     clearInterval(this.#goalWatch)
     this.#goalWatch = undefined
     this.#watching = id
@@ -2805,6 +2956,7 @@ export class Sessions {
 
   #hear(live: Live, heard: Heard): void {
     if (this.#live.get(live.id) !== live) return
+    if (this.#deps.notes.all()[live.id]?.managerPrompt !== undefined) heard = { ...heard, items: heard.items.map(managerHistoryItem) }
     const now = this.#now()
     // The stream does not say when; an answer is dated by when it first arrived here.
     const items = heard.items.filter((item) => {
@@ -2824,9 +2976,14 @@ export class Sessions {
     // working would trade places in the list every second. A message sent, a
     // turn begun or over, and a card put up are what move a row.
     if (items.length > 0 || heard.gone.length > 0) {
-      this.#deps.items({ id: live.id, items, ...(heard.gone.length > 0 ? { gone: heard.gone } : {}) })
+      this.#tellItems({ id: live.id, items: this.#deps.notes.all()[live.id]?.managerPrompt === undefined ? items : items.map(managerVisibleItem), ...(heard.gone.length > 0 ? { gone: heard.gone } : {}) })
     }
     for (const signal of heard.signals) this.#signal(live, signal)
+    if (this.#deps.notes.all()[live.id]?.managerPrompt !== undefined && heard.signals.some((signal) => signal.kind === 'ended' && signal.how === 'done')) {
+      const all = [...live.items.values()]
+      const last = all.findLastIndex((item) => item.kind === 'mine')
+      this.#managerOutput?.(live.id, all.slice(last + 1).flatMap((item) => item.kind === 'theirs' ? [item.text] : []).join('\n\n'))
+    }
   }
 
   /**
@@ -2856,6 +3013,7 @@ export class Sessions {
     live.kept = []
     live.held.clear()
     live.asks.clear()
+    this.#managerRequests.delete(live)
     live.grants.clear()
     live.told = []
     live.tasks = []
@@ -2880,7 +3038,7 @@ export class Sessions {
     if (this.#watching === was) this.#watching = id
     // The list first, so the window has the row before it is sent to it.
     this.#changed()
-    this.#deps.show?.(id)
+    if (!this.isManager(id)) this.#deps.show?.(id)
   }
 
   #signal(live: Live, signal: Signal): void {
@@ -2909,7 +3067,7 @@ export class Sessions {
             this.#note(live.id, { ...note, here: true, queued: live.queued })
             if (this.#watching === was) this.#watching = live.id
             this.#changed()
-            this.#deps.show?.(live.id)
+            if (!this.isManager(live.id)) this.#deps.show?.(live.id)
           } else this.#cleared(live, signal.session)
         }
         if (signal.commands !== undefined) this.#deps.commands?.(live.root, signal.commands)
@@ -3006,7 +3164,7 @@ export class Sessions {
           if (previous !== undefined) {
             const item: SessionItem = { kind: 'note', id: `goal:${String(this.#now())}`, note: 'goal', text: signal.status === 'complete' ? `Goal met: ${previous.condition}` : `Goal stopped: ${previous.condition}` }
             live.items.set(item.id, item)
-            this.#deps.items({ id: live.id, items: [item] })
+            this.#tellItems({ id: live.id, items: [item] })
           }
           const status = signal.status === 'complete' ? 'review' : 'blocked'
           if (live.state === 'working' || live.state === 'asks') {
@@ -3023,6 +3181,7 @@ export class Sessions {
         return
       case 'resolved':
         live.asks.delete(signal.ask)
+        this.#managerRequests.get(live)?.delete(signal.ask)
         live.held.delete(signal.ask)
         if (live.asks.size === 0 && live.state === 'asks') {
           live.state = 'working'
@@ -3043,7 +3202,7 @@ export class Sessions {
     const said: SessionItem = { kind: 'note', id: `mode:${String(this.#now())}`, note: 'mode', text: noAutoMode(model, this.#for(live)) }
     live.kept.push({ after: [...live.items.keys()].at(-1), item: said })
     live.items.set(said.id, said)
-    this.#deps.items({ id: live.id, items: [said] })
+    this.#tellItems({ id: live.id, items: [said] })
     this.#changed()
   }
 
@@ -3063,6 +3222,9 @@ export class Sessions {
         ? { kind: 'start', plan: `Change ${wanted.paths.map((path) => shown(folder, path)).join(', ')}` }
         : wanted
     live.asks.set(ask, put)
+    let revisions = this.#managerRequests.get(live)
+    if (revisions === undefined) { revisions = new Map(); this.#managerRequests.set(live, revisions) }
+    revisions.set(ask, randomUUID())
     const card: SessionItem = { kind: 'card', id: cardId(ask), card: cardFor(put, folder) }
     // The tool says "running" before it asks whether it may. Nothing is running
     // while the card is up, and left where it was the line would end up above
@@ -3077,7 +3239,7 @@ export class Sessions {
     live.state = 'asks'
     live.stands = waitingFor(put)
     live.at = this.#now()
-    this.#deps.items({ id: live.id, items: [card], ...(gone.length > 0 ? { gone } : {}) })
+    this.#tellItems({ id: live.id, items: [card], ...(gone.length > 0 ? { gone } : {}) })
     this.#changed()
 
     if (automatic) { void this.answer(live.id, card.id, 'once'); return }
@@ -3099,8 +3261,9 @@ export class Sessions {
     const gone = [...live.asks.keys()].map(cardId)
     for (const id of gone) live.items.delete(id)
     live.asks.clear()
+    this.#managerRequests.delete(live)
     live.held.clear()
-    if (gone.length > 0) this.#deps.items({ id: live.id, items: [], gone })
+    if (gone.length > 0) this.#tellItems({ id: live.id, items: [], gone })
   }
 
   #ended(live: Live, signal: Extract<Signal, { kind: 'ended' }>): void {
@@ -3124,6 +3287,7 @@ export class Sessions {
     const gone = [...live.asks.keys()].map(cardId)
     for (const id of gone) live.items.delete(id)
     live.asks.clear()
+    this.#managerRequests.delete(live)
     live.held.clear()
 
     const under = (item: SessionItem, keep: boolean): void => {
@@ -3210,7 +3374,7 @@ export class Sessions {
     live.goalStatus = undefined
     live.at = now
     if (items.length > 0 || gone.length > 0) {
-      this.#deps.items({ id: live.id, items, ...(gone.length > 0 ? { gone } : {}) })
+      this.#tellItems({ id: live.id, items, ...(gone.length > 0 ? { gone } : {}) })
     }
     // Its own queued messages wait for the look at the queue like any other's, so a card higher up goes first; an ending nobody asked for leaves them for the window to put back in the field.
     live.parked = signal.how !== 'done' && signal.how !== 'stopped'
@@ -3250,7 +3414,7 @@ export class Sessions {
     if (had !== undefined && read.goal === undefined && read.ended !== undefined) {
       const item: SessionItem = { ...read.ended, id: `goal:${String(this.#now())}` }
       live.items.set(item.id, item)
-      this.#deps.items({ id: live.id, items: [item] })
+      this.#tellItems({ id: live.id, items: [item] })
       // A goal is what finished means: it held, so this is for the person to look
       // at; it was given up on, so it is for the person to unblock. A mark made by
       // hand is left as it is - it says what they decided, which this does not know.
@@ -3290,7 +3454,7 @@ export class Sessions {
     live.kept = live.kept.filter((kept) => !gone.includes(kept.item.id))
     live.state = 'idle'
     live.stands = live.said
-    this.#deps.items({ id: live.id, items: [], gone })
+    this.#tellItems({ id: live.id, items: [], gone })
     this.#changed()
   }
 }

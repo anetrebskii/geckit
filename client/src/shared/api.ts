@@ -3,6 +3,7 @@ import type { Elicitation } from './elicitation'
 import type { HostConfig } from './hosts'
 import type { LlmProviderInfo } from './providers'
 import { llmProviderInfo } from './providers'
+import type { ProjectAssistant } from './manager'
 
 /**
  * The contract between the main process and the windows.
@@ -320,6 +321,8 @@ export interface SessionNotice {
 
 /** One row in the sidebar. */
 export interface ChatSession {
+  readonly manager?: true
+  readonly managerManaged?: true
   readonly provider?: SessionProvider
   readonly transport?: ClaudeTransport
   readonly reasoning?: ReasoningEffort | ''
@@ -973,6 +976,7 @@ export interface Settings {
   readonly correctCodexModel: string
   /** Project folders the chat window offers, newest first. */
   readonly projects: readonly string[]
+  readonly projectAssistants: readonly ProjectAssistant[]
   readonly newTaskRoot: string
   /** Named sets of projects, TwinsAI or Formula, each one what the whole application shows while it is in use. */
   readonly profiles: readonly ProjectProfile[]
@@ -1144,6 +1148,7 @@ export const DEFAULT_SETTINGS: Settings = {
   correctProvider: 'claude',
   correctCodexModel: '',
   projects: [],
+  projectAssistants: [],
   newTaskRoot: '',
   profiles: [],
   profile: '',

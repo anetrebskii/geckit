@@ -117,6 +117,66 @@ describe('what the peer window tells phones', () => {
     expect(one.sent).toContainEqual({ t: 'reply', id: 3, value: { items: [], left: 0 } })
   })
 
+  it('carries an old pending question through the actual 60-item phone page without skipping earlier history', async () => {
+    const question: SessionItem = { kind: 'card', id: 'old-question', card: { kind: 'question', title: 'Choose timing checks', choices: ['Browser', 'Harness'] } }
+    const later = Array.from({ length: 140 }, (_value, index) => theirs(`later-${String(index)}`, 'Progress'))
+    const all = [question, ...later]
+    vi.stubGlobal('window', { ...window, geckit: { peer: { ...window.geckit.peer, call: () => Promise.resolve(all) } } })
+    const one = phone()
+    joined(one.link)
+    one.say({ t: 'call', id: 1, name: 'link.can', args: [['steps']] })
+    one.say({ t: 'call', id: 2, name: 'chat.turns', args: ['s1', 60] })
+    await vi.runAllTimersAsync()
+    expect(one.sent).toContainEqual({ t: 'reply', id: 2, value: { items: [...later.slice(81), question], left: 81 } })
+    one.say({ t: 'call', id: 3, name: 'chat.turnsBefore', args: ['s1', 'later-81', 200] })
+    await vi.runAllTimersAsync()
+    expect(one.sent).toContainEqual({ t: 'reply', id: 3, value: { items: later.slice(0, 81), left: 0 } })
+  })
+
+  it('retains every pending card when they exceed the phone page size', async () => {
+    const cards: SessionItem[] = Array.from({ length: 65 }, (_value, index) => ({ kind: 'card', id: `q${String(index)}`, card: { kind: 'question', title: 'Choose an option' } }))
+    const history = Array.from({ length: 140 }, (_value, index) => theirs(`history-${String(index)}`, 'Progress'))
+    vi.stubGlobal('window', { ...window, geckit: { peer: { ...window.geckit.peer, call: () => Promise.resolve([...cards, ...history]) } } })
+    const one = phone()
+    joined(one.link)
+    one.say({ t: 'call', id: 1, name: 'link.can', args: [['steps']] })
+    one.say({ t: 'call', id: 2, name: 'chat.turns', args: ['s1', 60] })
+    await vi.runAllTimersAsync()
+    expect(one.sent).toContainEqual({ t: 'reply', id: 2, value: { items: cards, left: 140 } })
+    one.say({ t: 'call', id: 3, name: 'chat.turnsBefore', args: ['s1', 'q0', 200] })
+    await vi.runAllTimersAsync()
+    expect(one.sent).toContainEqual({ t: 'reply', id: 3, value: { items: history, left: 0 } })
+  })
+
+  it('delivers the old question through the real peer into the phone bridge and removes its pinned copy once answered', async () => {
+    const question: Extract<SessionItem, { kind: 'card' }> = { kind: 'card', id: 'old-question', card: { kind: 'question', title: 'Choose timing checks', choices: ['Browser', 'Harness'] } }
+    const history = Array.from({ length: 140 }, (_value, index) => theirs(`history-${String(index)}`, 'Progress'))
+    const all = [question, ...history]
+    const hostCall = (name: string): Promise<SessionItem[] | null> => Promise.resolve(name === 'chat.items' ? all : null)
+    vi.stubGlobal('window', { ...window, clearTimeout, geckit: { peer: { ...window.geckit.peer, call: hostCall } } })
+    vi.stubGlobal('document', { querySelector: () => null })
+    const host = phone()
+    const receivers: ((message: LinkMessage) => void)[] = []
+    const hostLink: Link = { ...host.link, send: (message) => receivers.forEach((receive) => receive(message)) }
+    joined(hostLink)
+    const phoneLink: Link = { ...phone().link, send: host.say, onMessage: (receive) => receivers.push(receive) }
+    const { installGeckit } = await import('../src/renderer/src/phone')
+    installGeckit(phoneLink, { home: '/Users/alex', platform: 'darwin' }, 'test-host')
+    window.geckit.peer.call = hostCall
+    window.geckit.chat.watching('s1')
+    const items = await window.geckit.chat.items('s1')
+    expect(items).toEqual([...history.slice(81), question])
+    const page = new Map(items.map((item) => [item.id, item]))
+    window.geckit.chat.onItems((said) => {
+      for (const id of said.gone ?? []) page.delete(id)
+      for (const item of said.items) page.set(item.id, item)
+    })
+    tell('chat:items', { id: 's1', items: [{ ...question, card: { ...question.card, answered: 'Browser' } }] })
+    await vi.advanceTimersByTimeAsync(100)
+    expect([...page.values()].some((item) => item.kind === 'card' && item.id === question.id)).toBe(false)
+    expect([...page.keys()]).toEqual(['steps:old-question', ...history.map((item) => item.id)])
+  })
+
   it('sends a phone that can take them the rows that changed, and an older one the whole list', () => {
     const row = (id: string, at: number): unknown => ({ id, at, title: id })
     const newer = phone()
@@ -189,6 +249,96 @@ describe('what the peer window tells phones', () => {
       for (const item of said.items) page.set(item.id, item)
     }
     expect([...page.keys()]).toEqual(['m1', 'steps:d1', 't1'])
+  })
+
+  it('keeps a question received while its conversation snapshot is loading', async () => {
+    const all: SessionItem[] = [theirs('t1', 'Choose how to continue')]
+    const question: SessionItem = { kind: 'card', id: 'q1', card: { kind: 'question', title: 'Which option?', choices: ['First', 'Second'] } }
+    let finish: (items: SessionItem[]) => void = () => undefined
+    const snapshot = new Promise<SessionItem[]>((resolve) => { finish = resolve })
+    vi.stubGlobal('window', { ...window, geckit: { peer: { ...window.geckit.peer, call: () => snapshot } } })
+    const one = phone()
+    joined(one.link)
+    one.say({ t: 'call', id: 1, name: 'link.can', args: [['sessionsChanged', 'steps']] })
+    one.say({ t: 'call', id: 2, name: 'chat.watching', args: ['s1'] })
+    one.say({ t: 'call', id: 3, name: 'chat.turns', args: ['s1', 60] })
+    tell('chat:items', { id: 's1', items: [question] })
+    vi.advanceTimersByTime(100)
+    finish(all)
+    await vi.runAllTimersAsync()
+    expect(one.sent).toContainEqual({ t: 'reply', id: 3, value: { items: [...all, question], left: 0 } })
+    tell('chat:items', { id: 's1', items: [theirs('t2', 'Waiting for your answer')] })
+    vi.advanceTimersByTime(100)
+    expect(told(one, 'chat:items')).toEqual([{ id: 's1', items: [theirs('t2', 'Waiting for your answer'), question], gone: ['q1'] }])
+  })
+
+  it('does not restore a question resolved during a conversation refresh', async () => {
+    const question: SessionItem = { kind: 'card', id: 'q1', card: { kind: 'question', title: 'Which option?' } }
+    const all: SessionItem[] = [theirs('t1', 'Choose how to continue'), question]
+    vi.stubGlobal('window', { ...window, geckit: { peer: { ...window.geckit.peer, call: () => Promise.resolve(all) } } })
+    const one = phone()
+    joined(one.link)
+    one.say({ t: 'call', id: 1, name: 'link.can', args: [['sessionsChanged', 'steps']] })
+    one.say({ t: 'call', id: 2, name: 'chat.watching', args: ['s1'] })
+    one.say({ t: 'call', id: 3, name: 'chat.turns', args: ['s1', 60] })
+    await vi.runAllTimersAsync()
+    let finish: (items: SessionItem[]) => void = () => undefined
+    const snapshot = new Promise<SessionItem[]>((resolve) => { finish = resolve })
+    vi.stubGlobal('window', { ...window, geckit: { peer: { ...window.geckit.peer, call: () => snapshot } } })
+    one.say({ t: 'call', id: 4, name: 'chat.turns', args: ['s1', 60] })
+    tell('chat:items', { id: 's1', items: [], gone: ['q1'] })
+    vi.advanceTimersByTime(100)
+    finish(all)
+    await vi.runAllTimersAsync()
+    expect(one.sent).toContainEqual({ t: 'reply', id: 4, value: { items: [all[0]], left: 0 } })
+    tell('chat:items', { id: 's1', items: [theirs('t2', 'Continuing')] })
+    vi.advanceTimersByTime(100)
+    expect(told(one, 'chat:items')).toEqual([
+      { id: 's1', items: [], gone: ['q1'] },
+      { id: 's1', items: [theirs('t2', 'Continuing')] },
+    ])
+  })
+
+  it('keeps deletion and reinsertion order across a delayed snapshot', async () => {
+    const all = [theirs('a', 'First'), theirs('b', 'Second')]
+    let finish: (items: SessionItem[]) => void = () => undefined
+    const snapshot = new Promise<SessionItem[]>((resolve) => { finish = resolve })
+    vi.stubGlobal('window', { ...window, geckit: { peer: { ...window.geckit.peer, call: () => snapshot } } })
+    const one = phone()
+    joined(one.link)
+    one.say({ t: 'call', id: 1, name: 'link.can', args: [['steps']] })
+    one.say({ t: 'call', id: 2, name: 'chat.turns', args: ['s1', 60] })
+    tell('chat:items', { id: 's1', items: [theirs('b', 'Updated second'), theirs('c', 'Third')] })
+    tell('chat:items', { id: 's1', gone: ['b'], items: [theirs('b', 'Moved second')] })
+    tell('chat:items', { id: 's1', items: [theirs('c', 'Updated third')] })
+    vi.advanceTimersByTime(100)
+    finish(all)
+    await vi.runAllTimersAsync()
+    expect(one.sent).toContainEqual({
+      t: 'reply', id: 2,
+      value: { items: [all[0], theirs('c', 'Updated third'), theirs('b', 'Moved second')], left: 0 },
+    })
+  })
+
+  it('retries a failed snapshot without retaining its buffered changes', async () => {
+    let fail: (error: Error) => void = () => undefined
+    const snapshot = new Promise<SessionItem[]>((_resolve, reject) => { fail = reject })
+    const call = vi.fn().mockReturnValue(snapshot)
+    vi.stubGlobal('window', { ...window, geckit: { peer: { ...window.geckit.peer, call } } })
+    const one = phone()
+    joined(one.link)
+    one.say({ t: 'call', id: 1, name: 'link.can', args: [['steps']] })
+    one.say({ t: 'call', id: 2, name: 'chat.turns', args: ['s1', 60] })
+    tell('chat:items', { id: 's1', items: [theirs('old', 'Old snapshot update')] })
+    vi.advanceTimersByTime(100)
+    fail(new Error('Snapshot failed'))
+    await vi.runAllTimersAsync()
+    expect(one.sent).toContainEqual({ t: 'reply', id: 2, error: 'Snapshot failed' })
+    const all = [theirs('new', 'Fresh snapshot')]
+    call.mockResolvedValue(all)
+    one.say({ t: 'call', id: 3, name: 'chat.turns', args: ['s1', 60] })
+    await vi.runAllTimersAsync()
+    expect(one.sent).toContainEqual({ t: 'reply', id: 3, value: { items: all, left: 0 } })
   })
 
   it('sends a phone pictures by name, and a picture when it asks for it', async () => {

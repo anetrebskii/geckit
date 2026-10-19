@@ -9,6 +9,7 @@ import { WebSocketServer } from 'ws'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { memoryNotes, Sessions } from '../src/main/sessions'
+import { managerContext, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
 import type { Held } from '../src/main/sessions/claude'
 import { CodexSessions } from '../src/main/sessions/codex'
 import { codexOptions } from '../src/main/sessions/codex-protocol'
@@ -963,6 +964,32 @@ describe('Codex app-server', () => {
 })
 
 describe('provider routing', () => {
+  it('creates and resumes a real Codex manager thread with selected models, role text and normal runtime permissions', async () => {
+    const { server, codex } = setup()
+    const notes = memoryNotes()
+    const sessions = new Sessions({ codex, notes, changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined, claude: () => { throw new Error('Wrong provider') }, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    try {
+      const id = await sessions.managerSession({ root: ROOT, provider: 'codex', mode: 'auto', model: 'first' }, MANAGER_INSTRUCTIONS)
+      expect(id).toBe('codex:thread-1')
+      expect(server.requests.find((one) => one.method === 'thread/start')?.params).toEqual(codexOptions(ROOT, 'auto', 'first'))
+      await sessions.sendManager({ session: id, provider: 'codex', root: ROOT, mode: 'auto', model: 'first', text: 'Coordinate my projects' })
+      await tick()
+      const first = server.requests.find((one) => one.method === 'turn/start')
+      expect(first?.params).toMatchObject({ threadId: 'thread-1', approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandboxPolicy: { type: 'workspaceWrite' } })
+      expect(first?.params?.input).toEqual([{ type: 'text', text: managerContext(MANAGER_INSTRUCTIONS, 'Coordinate my projects'), text_elements: [] }])
+      server.complete('thread-1')
+      await tick()
+      server.history = [{ id: 'old', startedAt: 100, status: 'completed', error: null, items: [{ type: 'userMessage', id: 'original', content: [{ type: 'text', text: managerContext(MANAGER_INSTRUCTIONS, 'Coordinate my projects'), text_elements: [] }] }] }]
+      await sessions.sendManager({ session: id, provider: 'codex', root: ROOT, mode: 'auto', model: 'second', text: 'Continue coordination' })
+      await tick()
+      expect(server.requests.filter((one) => one.method === 'thread/start')).toHaveLength(1)
+      expect(server.requests.findLast((one) => one.method === 'thread/resume')?.params).toMatchObject({ ...codexOptions(ROOT, 'auto', 'second'), threadId: 'thread-1' })
+      expect(server.requests.findLast((one) => one.method === 'turn/start')?.params?.input).toEqual([{ type: 'text', text: managerContext(MANAGER_INSTRUCTIONS, 'Continue coordination'), text_elements: [] }])
+      await expect(sessions.items(id)).rejects.toThrow('Use Telegram to talk to Manager.')
+      expect(notes.all()[id]?.managerPrompt).toBe(MANAGER_INSTRUCTIONS)
+    } finally { sessions.dispose() }
+  })
+
   const shell: typeof runShell = (_root, _command, heard) => {
     heard('On branch main\n')
     return { done: Promise.resolve({ stdout: 'On branch main\n', stderr: '', output: 'On branch main\n', code: 0, stopped: false }), stop: () => undefined }

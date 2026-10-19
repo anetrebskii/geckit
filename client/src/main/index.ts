@@ -20,6 +20,7 @@ import {
   powerMonitor,
   powerSaveBlocker,
   screen,
+  safeStorage,
   shell,
   systemPreferences,
 } from 'electron'
@@ -80,6 +81,12 @@ import { localFetch } from './local-page'
 import type { LocalAsk } from '../shared/local'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
+import { Manager, runManagerCli } from './manager'
+import { ManagerTelegram } from './telegram'
+import { managerTelegramStatus } from './telegram-text'
+import { configureManagerAccess, phoneTelegramView, telegramActionAccess, telegramVault } from './telegram-access'
+import type { ManagerConfig, ManagerView } from '../shared/manager'
+import type { TelegramAction, TelegramView } from '../shared/telegram'
 import { CodexSessions } from './sessions/codex'
 import { applyReadyPlugin, installPlugin, installedPlugins, providerPluginFailures, reinstallFailedPlugin, uninstallPlugin, updateInstalledPlugins } from './sessions/plugins'
 import { independentProviderInfo, instructionsFor, registerProviderInfo } from '../shared/providers'
@@ -163,6 +170,8 @@ const RECORD = ANYWHERE.record
 const SCREENSHOT = ANYWHERE.screenshot
 
 let sessions: Sessions | undefined
+let manager: Manager | undefined
+let telegram: ManagerTelegram | undefined
 let providerUpdateCheck: Promise<PluginUpdateResult> | undefined
 let providerUpdateTimer: NodeJS.Timeout | undefined
 const conversationNotes = notesStore()
@@ -368,23 +377,26 @@ async function build(held: Routes): Promise<Sessions> {
       tellChats('lineup:changed', now)
     },
     changed: (all: readonly ChatSession[]) => {
+      manager?.observeSessions(all)
       // Every conversation it holds, which is more than the window lists: another profile's rows stay held after a switch until they are read again. A general question belongs to no project and is always told.
       const order = keptOrder(getSettings().progressOrder, all)
       if (order !== undefined) setSettings({ progressOrder: order })
       const settings = getSettings()
       const within = (where: readonly string[]): readonly ChatSession[] =>
-        all.filter((one) => one.question === true || where.includes(homeOf(one)))
+        all.filter((one) => one.manager !== true && (one.question === true || where.includes(homeOf(one))))
       shownChat()?.webContents.send('chat:sessions', within(shownProjects(settings)))
       // The phone is in no profile, so it is told every project's.
       shownPeer()?.webContents.send('peer:tell', 'chat:sessions', within(settings.projects))
       badge()
       drawTray()
     },
-    items: (items: SessionItems) => tellChats('chat:items', items),
+    items: (items: SessionItems) => { if (!sessions?.isManager(items.id)) tellChats('chat:items', items) },
     account: (account: ClaudeAccount) => tellChats('chat:accountChanged', account),
-    show: (id: string) => shownChat()?.webContents.send('chat:show', id),
+    show: (id: string) => { if (!sessions?.isManager(id)) shownChat()?.webContents.send('chat:show', id) },
     plan: (plan: PlanUsage) => tellChats('chat:plan', plan),
     notify: (notice) => {
+      if (sessions?.isManager(notice.session)) return
+      if (notice.asks && manager?.manages(notice.session) === true && sessions?.pendingForManager(notice.session).length === 0) void telegram?.notify(`${notice.title}\n${notice.body}\n\nOpen the worker in GeckIt to review this request.`).catch(() => undefined)
       shownPeer()?.webContents.send('peer:tell', 'chat:notice', notice)
       const { flashFor, soundFor } = getSettings()
       // Heard whether or not the window is in front: the conversation it is about is not the open one.
@@ -744,6 +756,7 @@ async function readSaid(said: string): Promise<Answered> {
 
 async function cliAsked(ask: CliAsked, gone: AbortSignal): Promise<CliAnswered> {
   if (!('action' in ask)) return startAsked(ask, gone)
+  if (ask.action === 'manage') return manager === undefined ? { ok: false, error: 'Manager is not ready yet.' } : manager.command(ask)
   if (ask.action !== 'migrate-codex' || typeof ask.imports !== 'string' || typeof ask.dryRun !== 'boolean') return { ok: false, error: 'That was not a migration request GeckIt reads.' }
   const report = migrateCodexMetadata(app.getPath('userData'), ask.imports, ask.dryRun, { notes: conversationNotes, settings: getSettings(), saveSettings: setSettings })
   if (!ask.dryRun) await sessions?.refresh(getSettings().projects)
@@ -989,6 +1002,86 @@ async function forwardLink(root: string, href: string): Promise<{ readonly href:
  */
 const cutOffHere = (): CutOff[] => (sessions?.cutOff() ?? []).filter((one) => routes?.runs.get(one.id) === undefined)
 
+function requireManager(): Manager {
+  if (manager === undefined) throw new Error('Manager is not ready yet.')
+  return manager
+}
+
+function requireTelegram(): ManagerTelegram {
+  if (telegram === undefined) throw new Error('Telegram is not ready yet.')
+  return telegram
+}
+
+async function configureManager(change: Partial<ManagerConfig>): Promise<ManagerView> {
+  return configureManagerAccess(requireManager(), requireTelegram(), change)
+}
+
+function telegramAction(action: TelegramAction): Promise<TelegramView> {
+  return telegramActionAccess(requireManager(), requireTelegram(), action, true)
+}
+
+async function buildManager(started: Sessions): Promise<void> {
+  const directory = app.getPath('userData')
+  const coordinator = new Manager({ directory, sessions: started, notes: conversationNotes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, join(app.getAppPath(), 'out', 'main', 'cli.js'), args, context) })
+  manager = coordinator
+  let view = await coordinator.view()
+  const decisions = new Map<string, string>()
+  let deliveryChannel = ''
+  const bridge = new ManagerTelegram({
+    directory,
+    vault: telegramVault(safeStorage, process.platform),
+    manager: {
+      submit: async (text, id) => { await coordinator.send(text, 'telegram', id) },
+      pause: async () => { await coordinator.pause() },
+      resume: async () => { await coordinator.resume() },
+      status: () => managerTelegramStatus(view),
+      enabled: () => coordinator.enabled(),
+      decisions: () => view.decisions,
+      hasDecision: (id) => view.decisions.some((item) => item.id === id),
+      answer: async (id, choice, authorized) => {
+        const decision = view.decisions.find((item) => item.id === id)
+        if (decision === undefined) return
+        if (decision.kind === 'native' || decision.choices.some((item) => item.value === choice)) await coordinator.answer(id, choice, authorized)
+        else await coordinator.send(`Reply to Manager decision ${id} (${decision.title}): ${choice}`, 'telegram')
+      },
+    },
+    changed: (changed) => {
+      for (const window of everyWindow()) window.webContents.send('telegram:view', changed)
+      shownPeer()?.webContents.send('peer:tell', 'telegram:view', phoneTelegramView(changed))
+      const channel = changed.account === undefined || changed.state !== 'connected' ? '' : `${String(changed.bot?.id)}:${String(changed.account.id)}`
+      if (channel !== '' && channel !== deliveryChannel) {
+        deliveryChannel = channel
+        decisions.clear()
+        notifyDecisions(view)
+      }
+      if (changed.state === 'disconnected') deliveryChannel = ''
+    },
+  })
+  telegram = bridge
+  const notifyDecisions = (changed: ManagerView): void => {
+    if (bridge.view().account === undefined) return
+    for (const id of decisions.keys()) if (!changed.decisions.some((item) => item.id === id)) {
+      decisions.delete(id)
+      try { bridge.resolve(id) } catch { /* Telegram reports its secure-storage failure in its own view. */ }
+    }
+    for (const decision of changed.decisions) {
+      const signature = JSON.stringify(decision)
+      if (decisions.get(decision.id) === signature) continue
+      decisions.set(decision.id, signature)
+      void bridge.notify(decision.title, decision).catch(() => undefined)
+    }
+  }
+  coordinator.on((changed) => {
+    view = changed
+    tell('manager:view', changed)
+    notifyDecisions(changed)
+  })
+  coordinator.onItems((items) => shownChat()?.webContents.send('manager:items', items))
+  coordinator.onResponse((text) => { void bridge.notify(text).catch(() => undefined) })
+  if (view.config.enabled) void bridge.start()
+  else await bridge.action({ kind: 'disconnect' })
+}
+
 /** What a window may ask about hosts. */
 function wireHosts(): void {
   const hosts = (): Hosts | undefined => routes?.hosts
@@ -1028,6 +1121,18 @@ function wireHosts(): void {
 }
 
 function wire(): void {
+  ipcMain.handle('manager:inspect', (event, id: string) => {
+    if (event.sender !== shownChat()?.webContents) throw new Error('Inspect Manager from the Desktop chat window.')
+    return requireManager().inspect(id)
+  })
+  ipcMain.handle('manager:view', () => requireManager().view())
+  ipcMain.handle('manager:configure', (_event, change: Partial<ManagerConfig>) => configureManager(change))
+  ipcMain.handle('manager:pause', () => requireManager().pause())
+  ipcMain.handle('manager:resume', () => requireManager().resume())
+  ipcMain.handle('manager:retry', () => requireManager().retry())
+  ipcMain.handle('manager:restart', () => requireManager().restart())
+  ipcMain.handle('telegram:view', () => requireTelegram().view())
+  ipcMain.handle('telegram:action', (_event, action: TelegramAction) => telegramAction(action))
   ipcMain.handle('settings:get', () => getSettings())
   ipcMain.handle('update:view', () => updateView())
   ipcMain.handle('update:check', () => checkForUpdates())
@@ -1410,6 +1515,14 @@ function phoneCalls(): Record<string, PhoneCall> {
   return {
     // The name the phone lists this Mac under, as the network knows it: Alexs-MacBook-Pro.local reads Alexs MacBook Pro.
     boot: () => ({ home: homedir(), platform: process.platform, name: computerName() }),
+    'manager.view': () => requireManager().view(),
+    'manager.configure': (change: Partial<ManagerConfig>) => configureManager(change),
+    'manager.pause': () => requireManager().pause(),
+    'manager.resume': () => requireManager().resume(),
+    'manager.retry': () => requireManager().retry(),
+    'manager.restart': () => requireManager().restart(),
+    'telegram.view': () => phoneTelegramView(requireTelegram().view()),
+    'telegram.action': (action: TelegramAction) => telegramActionAccess(requireManager(), requireTelegram(), action, false),
     'settings.get': () => phoneSettings(getSettings()),
     'settings.set': (change: Partial<Settings>) => setSettings(change),
     'update.view': () => updateView(),
@@ -1579,6 +1692,7 @@ if (!app.requestSingleInstanceLock()) {
     routes = held
     const started = await build(held)
     sessions = started
+    await buildManager(started)
     // A Chat window opened later wears the count too, from when it is shown: before that it has no button in the taskbar to wear it on, and when it is created it is not yet the one `shownChat` knows. Every window says so when shown; only the Chat window is drawn on.
     app.on('browser-window-created', (_event, window) => {
       window.on('show', () => {
@@ -1650,6 +1764,8 @@ if (!app.requestSingleInstanceLock()) {
 app.on('window-all-closed', () => undefined)
 
 app.on('will-quit', () => {
+  telegram?.stop()
+  manager?.dispose()
   if (providerUpdateTimer !== undefined) clearInterval(providerUpdateTimer)
   globalShortcut.unregisterAll()
   sessions?.dispose()

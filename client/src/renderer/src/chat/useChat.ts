@@ -1,4 +1,6 @@
 import { readAccount } from './accounts'
+import { useManager } from './useManager'
+import { MANAGER_CHAT_GUIDANCE } from '../../../shared/manager'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
@@ -220,6 +222,7 @@ function sameAsBefore(all: readonly ChatSession[]): ChatSession[] {
 
 export function useChat(): Chat {
   const [settings, change] = useSettings()
+  const manager = useManager()
   const { hosts, prompts } = useHosts()
   const [lineup, setLineup] = useState<Lineup>({ working: 0, limit: 0 })
   useEffect(() => {
@@ -285,9 +288,9 @@ export function useChat(): Chat {
   // One project is a scope the rest of the window understands; several are every project, narrowed.
   const scope = chosen.length === 1 ? (chosen[0] ?? ALL) : ALL
   const enabled = assistantsIn(settings)
-  const sessions = useMemo(() => storedSessions.filter((one) => enabled.includes(providerOf(one.id))), [storedSessions, enabled])
-  const everyone = useMemo(() => storedEveryone.filter((one) => enabled.includes(providerOf(one.id))), [storedEveryone, enabled])
-  const questions = useMemo(() => storedQuestions.filter((one) => enabled.includes(providerOf(one.id))), [storedQuestions, enabled])
+  const sessions = useMemo(() => storedSessions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedSessions, enabled])
+  const everyone = useMemo(() => storedEveryone.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedEveryone, enabled])
+  const questions = useMemo(() => storedQuestions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedQuestions, enabled])
   const visibleNotices = useMemo(() => notices.filter((one) => enabled.includes(providerOf(one.session))), [notices, enabled])
   const provider = shown.kind === 'session' ? providerOf(shown.id) : assistantFor(settings, scope === ALL ? started ?? shownProjects(settings)[0] ?? '' : scope)
 
@@ -435,7 +438,11 @@ export function useChat(): Chat {
     [],
   )
 
-  const open = useCallback((next: Shown) => {
+  const managerIds = useRef(new Set<string>())
+  useEffect(() => { if (manager?.session !== undefined) managerIds.current.add(manager.session.id) }, [manager?.session])
+
+  const open = useCallback((next: Shown): void => {
+    if (next.kind === 'session' && managerIds.current.has(next.id)) return
     const before = shownRef.current
     shownRef.current = next
     loadingItems.current = undefined
@@ -461,8 +468,27 @@ export function useChat(): Chat {
       setItems(updatedItems(read, loading.updates))
       loadingItems.current = undefined
       setItemsFor(next.id)
+    }).catch((error: Error) => {
+      if (!error.message.endsWith(MANAGER_CHAT_GUIDANCE)) throw error
+      managerIds.current.add(next.id)
+      if (shownRef.current !== next) return
+      shownRef.current = { kind: 'new' }
+      loadingItems.current = undefined
+      setShown({ kind: 'new' })
+      setItems([])
+      setItemsFor('new')
+      window.geckit.chat.watching(undefined)
     })
   }, [])
+
+  const currentManager = manager?.session?.id
+  const previousManager = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const previous = previousManager.current
+    previousManager.current = currentManager
+    const current = shownRef.current
+    if (current.kind === 'session' && (current.id === currentManager || (previous !== undefined && currentManager === undefined && current.id === previous))) open({ kind: 'new' })
+  }, [currentManager, open])
 
   if (shown.kind === 'session' && !enabled.includes(providerOf(shown.id))) {
     setShown({ kind: 'new' })
@@ -846,6 +872,7 @@ export function useChat(): Chat {
   // field draws the field and nothing else.
   const show = useCallback(
     (one: ChatSession) => {
+      if (one.manager === true) { managerIds.current.add(one.id); return }
       // Opened from somewhere the list does not show: that project joins the ones it does.
       if (chosenRef.current.length > 0 && !chosenRef.current.includes(homeOf(one))) {
         const next = [...chosenRef.current, homeOf(one)]
@@ -867,6 +894,7 @@ export function useChat(): Chat {
       // Asked for before the list was read, as when a notification opens the window.
       void window.geckit.chat.list(undefined).then((all) => {
         const listed = all.find((one) => one.id === id)
+        if (listed?.manager === true) { managerIds.current.add(listed.id); return }
         if (listed === undefined) open({ kind: 'session', id })
         else show(listed)
       })

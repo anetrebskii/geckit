@@ -3449,6 +3449,96 @@ html.phone .find-bar .icon-button {
   margin-top: 12px;
 }
 
+.question-options {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.question-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+  padding: 8px 10px;
+  text-align: start;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.question-option:hover {
+  background: var(--bg-hover);
+}
+
+.question-option[aria-checked='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.question-check {
+  display: grid;
+  place-items: center;
+  flex: 0 0 18px;
+  inline-size: 18px;
+  block-size: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+
+[aria-checked='true'] > .question-check {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.question-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.question-custom {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.question-custom label {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-inline-size: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.question-custom input {
+  inline-size: 100%;
+  min-inline-size: 0;
+  color: var(--text);
+}
+
+.question-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.question-footer .primary {
+  margin-inline-start: auto;
+}
+
+.question-option:focus-visible,
+.question-custom button:focus-visible,
+.question-footer button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .elicitation .card-title { white-space: pre-wrap; overflow-wrap: anywhere; }
 .elicitation-form { margin-top: 12px; }
 .elicitation-field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; padding: 0; min-inline-size: 0; border: none; }
@@ -8301,29 +8391,18 @@ html.phone .prose {
   line-height: 1.45;
 }
 
-/* A question waiting for an answer stays in reach at the foot of the conversation while the rest scrolls under it. */
-html.phone .talk.asks .turn:has(> .card:not(.answered)) {
-  position: sticky;
-  bottom: 8px;
-  z-index: 2;
-}
-
-/* The composer under a docked card waits: the card is what needs answering first. */
-html.phone .talk.asks .composer {
-  pointer-events: none;
-  opacity: 0.45;
-}
-
 html.phone .card:not(.answered) {
   padding: 16px;
-  border: 0;
-  border-radius: 18px;
-  box-shadow: var(--lift);
+  border: 1px solid var(--separator);
+  border-radius: 14px;
+  box-shadow: none;
 }
 
 html.phone .card .card-title {
   font-size: 17px;
   font-weight: 600;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 html.phone .card .where {
@@ -8331,21 +8410,63 @@ html.phone .card .where {
 }
 
 html.phone .card .card-actions {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 html.phone .card .card-actions button {
-  height: 50px;
-  font-size: 17px;
-  font-weight: 600;
-  border-radius: 12px;
+  flex: 1 1 auto;
+  min-height: 44px;
+  height: auto;
+  padding: 10px 12px;
+  font-size: 16px;
+  font-weight: 500;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  border-radius: 10px;
 }
 
 html.phone .card .card-actions input {
   min-height: 44px;
   padding: 0 14px;
   border-radius: 12px;
+}
+
+html.phone .question-options {
+  gap: 6px;
+}
+
+html.phone .question-option {
+  min-block-size: 44px;
+  padding: 10px;
+  font-size: 16px;
+  line-height: 1.35;
+  border-radius: 10px;
+}
+
+html.phone .question-hint,
+html.phone .question-custom label {
+  font-size: 13px;
+}
+
+html.phone .question-custom input,
+html.phone .question-custom button,
+html.phone .question-footer button {
+  min-block-size: 44px;
+  font-size: 16px;
+  border-radius: 10px;
+}
+
+html.phone .question-custom button,
+html.phone .question-footer button {
+  padding: 10px 14px;
+  white-space: normal;
+}
+
+html.phone .elicitation-form input,
+html.phone .elicitation-form select {
+  font-size: 16px;
 }
 
 html.phone .composer {
@@ -11033,3 +11154,836 @@ html.phone .model-details .phone-cell {
 .assistant-details-sheet .assistant-quota-tile.wide { grid-column: 1 / -1; }
 .assistant-details-sheet .assistant-quota-tile.wide .assistant-quota-heading { flex-wrap: wrap; }
 .assistant-details-sheet .assistant-quota-heading strong { flex: none; }
+
+.manager-settings {
+  min-inline-size: 0;
+}
+
+.manager-settings p,
+.manager-session p {
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.manager-setting,
+.manager-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manager-setting {
+  justify-content: space-between;
+  padding-block: 8px;
+  border-block-end: 1px solid var(--border);
+}
+
+.manager-setting > span:last-child {
+  text-align: end;
+  color: var(--text-dim);
+  max-inline-size: 60%;
+}
+
+.manager-actions {
+  flex-wrap: wrap;
+  margin-block-start: 12px;
+}
+
+.manager-settings .quiet.danger {
+  color: var(--danger);
+}
+
+.manager-telegram {
+  min-inline-size: 0;
+}
+
+/* Where Telegram stands: a dot in the state's tone, the state, and who it is connected as. */
+.manager-telegram-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-inline-size: 0;
+  margin-block-start: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+}
+
+.manager-telegram-state > div {
+  min-inline-size: 0;
+}
+
+.manager-telegram-state strong {
+  display: block;
+  font-size: 13px;
+}
+
+.manager-telegram-state p {
+  margin-block: 2px 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.manager-telegram-state .manager-telegram-id {
+  color: var(--text-faint);
+}
+
+.manager-telegram-state p.manager-telegram-detail {
+  margin-block-start: 6px;
+  color: var(--danger);
+}
+
+.manager-telegram-dot {
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  margin-block-start: 5px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.manager-telegram-state[data-state='connected'] .manager-telegram-dot {
+  background: var(--accent);
+}
+
+.manager-telegram-state[data-state='pairing'] .manager-telegram-dot,
+.manager-telegram-state[data-state='confirming'] .manager-telegram-dot,
+.manager-telegram-state[data-state='offline'] .manager-telegram-dot {
+  background: var(--review-solid);
+}
+
+.manager-telegram-state[data-state='revoked'] .manager-telegram-dot,
+.manager-telegram-state[data-state='conflict'] .manager-telegram-dot,
+.manager-telegram-state[data-state='storage-error'] .manager-telegram-dot {
+  background: var(--danger);
+}
+
+/* The quiet note a step can carry under its buttons. */
+.manager-aside {
+  margin-block-start: 12px;
+}
+
+.manager-aside summary {
+  width: fit-content;
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.manager-aside p {
+  margin-block: 6px 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* The picture above the steps: three parts, and the direction the open step adds. */
+.manager-flow {
+  margin-block: 12px 14px;
+  padding: 14px 12px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+}
+
+.manager-flow-stage {
+  position: relative;
+  /* The mark's carrier is as wide as the rail and slides along it, so its box leaves the stage. */
+  overflow: clip;
+  overflow-clip-margin: 16px;
+}
+
+.manager-flow-line {
+  position: absolute;
+  inset-block-start: 18px;
+  inset-inline: 16.667%;
+  block-size: 2px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+
+/* The mark travels by moving a rail-wide carrier, so only transform and opacity animate. */
+.manager-flow-mark {
+  position: absolute;
+  inset-block-start: 19px;
+  inset-inline: 16.667%;
+  block-size: 0;
+  opacity: 0;
+}
+
+.manager-flow-dot {
+  position: absolute;
+  inset-block-start: -4px;
+  inset-inline-start: -4px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.manager-flow-nodes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.manager-flow-node {
+  position: relative;
+  /* The mark passes behind a node rather than across its face. */
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  transition: color var(--settle) var(--ease);
+}
+
+.manager-flow-node.lit {
+  color: var(--text);
+}
+
+.manager-flow-name {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-flow-badge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 38px;
+  block-size: 38px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg);
+  transition: border-color var(--settle) var(--ease), background-color var(--settle) var(--ease);
+}
+
+.manager-flow-node.lit .manager-flow-badge {
+  border-color: var(--accent);
+  background: linear-gradient(var(--accent-soft), var(--accent-soft)) var(--bg);
+}
+
+.manager-flow-ring {
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.manager-flow-say {
+  max-inline-size: 44ch;
+  margin-block: 14px 0;
+  margin-inline: auto;
+  text-align: center;
+  text-wrap: balance;
+  font-size: 12px;
+}
+
+.manager-flow.step-assistant .node-manager .manager-flow-ring,
+.manager-flow.step-enable .node-manager .manager-flow-ring {
+  animation: manager-flow-boot 2200ms var(--ease) infinite;
+}
+
+.manager-flow.step-delegation[data-delegation='approve'] .node-you .manager-flow-ring {
+  animation: manager-flow-boot 3200ms var(--ease) infinite;
+}
+
+.manager-flow.step-delegation .manager-flow-mark {
+  animation: manager-flow-out 2400ms linear infinite;
+}
+
+.manager-flow.step-delegation[data-delegation='approve'] .manager-flow-mark {
+  animation: manager-flow-ask 3200ms linear infinite;
+}
+
+.manager-flow.step-telegram .manager-flow-mark {
+  animation: manager-flow-ping 3000ms linear infinite;
+}
+
+.manager-flow.step-enable .manager-flow-mark {
+  animation: manager-flow-loop 4800ms linear infinite;
+}
+
+@keyframes manager-flow-boot {
+  from {
+    transform: scale(0.72);
+    opacity: 0.55;
+  }
+  70% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes manager-flow-out {
+  from {
+    transform: translateX(50%);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Approval: the message stops just outside the manager and waits to be allowed. */
+@keyframes manager-flow-ask {
+  from {
+    transform: translateX(50%);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  22% {
+    transform: translateX(62%);
+  }
+  47% {
+    transform: translateX(62%);
+  }
+  92% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes manager-flow-ping {
+  from {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  40% {
+    transform: translateX(50%);
+  }
+  55% {
+    transform: translateX(50%);
+  }
+  90% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 0;
+  }
+}
+
+@keyframes manager-flow-loop {
+  from {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  25% {
+    transform: translateX(50%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  75% {
+    transform: translateX(50%);
+  }
+  92% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 0;
+  }
+}
+
+/* Standing still, the sentence under the picture is the whole explanation. */
+@media (prefers-reduced-motion: reduce) {
+  .manager-flow-mark,
+  .manager-flow-ring {
+    display: none;
+  }
+}
+
+.manager-steps {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.manager-step {
+  min-inline-size: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--settle) var(--ease), opacity var(--settle) var(--ease);
+}
+
+.manager-step.is-open {
+  border-color: var(--border-strong);
+}
+
+.manager-step.is-locked {
+  opacity: 0.55;
+}
+
+.manager-step-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+button.manager-step-head {
+  cursor: pointer;
+}
+
+.manager-step-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  inline-size: 22px;
+  block-size: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--settle) var(--ease), border-color var(--settle) var(--ease), color var(--settle) var(--ease);
+}
+
+.manager-step.is-open .manager-step-mark {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.manager-step.is-answered .manager-step-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+  animation: manager-step-done 260ms var(--ease);
+}
+
+@keyframes manager-step-done {
+  from {
+    transform: scale(0.55);
+  }
+}
+
+.manager-step-title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.manager-step-value {
+  flex: 0 100 auto;
+  min-inline-size: 0;
+  margin-inline-start: auto;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.manager-step-head > svg {
+  flex: none;
+  color: var(--text-faint);
+}
+
+button.manager-step-head:hover > svg {
+  color: var(--text);
+}
+
+.manager-step-locked {
+  margin-block: 6px 0;
+  margin-inline-start: 32px;
+  font-size: 12px;
+}
+
+.manager-step-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: manager-step-open var(--settle) var(--ease);
+}
+
+.manager-step-fold {
+  min-block-size: 0;
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+
+@keyframes manager-step-open {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+.manager-settings .manager-message {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.manager-settings .manager-error,
+.manager-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.manager-setup {
+  margin-block: 12px 0;
+}
+
+/* The three parts of the bot setup, with the line between them filling as they are answered. */
+.manager-setup-steps {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+  padding: 0;
+  margin-block: 4px 16px;
+  list-style: none;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.manager-setup-steps li {
+  position: relative;
+  padding-block-start: 14px;
+}
+
+.manager-setup-steps li::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 3px;
+  inset-inline: 0;
+  block-size: 2px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background-color var(--settle) var(--ease);
+}
+
+.manager-setup-steps li.done::before,
+.manager-setup-steps [aria-current='step']::before {
+  background: var(--accent);
+}
+
+.manager-setup-steps [aria-current='step'] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.manager-bot-guide p {
+  margin-block: 8px;
+}
+
+.manager-token {
+  display: grid;
+  gap: 8px;
+  margin-block: 16px;
+}
+
+.manager-token input {
+  inline-size: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--text);
+}
+
+.manager-token input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.manager-token p {
+  margin-block: 0;
+  font-size: 12px;
+}
+
+.manager-candidate,
+.manager-pairing {
+  margin-block: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.manager-session {
+  inline-size: min(560px, calc(100vw - 32px));
+  max-block-size: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.manager-session header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.manager-details {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin-block: 12px;
+  font-size: 12px;
+}
+
+.manager-details dt {
+  color: var(--text-faint);
+}
+
+.manager-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.manager-settings summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.manager-status {
+  position: relative;
+  z-index: 6;
+  flex: none;
+  gap: 6px;
+  max-inline-size: 280px;
+}
+
+.manager-status-label {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-faint);
+}
+
+.manager-inspection {
+  display: flex;
+  flex-direction: column;
+  inline-size: min(920px, calc(100vw - 32px));
+  block-size: min(740px, calc(100dvh - 48px));
+  padding: 0;
+  overflow: hidden;
+}
+
+.manager-inspection-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-block-end: 1px solid var(--border);
+}
+
+.manager-inspection-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.manager-inspection-header > button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Where Manager stands, as a dot in its own tone next to the word. */
+.manager-stand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  margin-inline-end: auto;
+  padding: 2px 9px 2px 7px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.manager-stand-text {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.manager-stand-dot {
+  flex: none;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.manager-stand[data-tone='ready'] .manager-stand-dot,
+.manager-stand[data-tone='working'] .manager-stand-dot {
+  background: var(--accent);
+}
+
+.manager-stand[data-tone='waiting'] .manager-stand-dot,
+.manager-stand[data-tone='paused'] .manager-stand-dot {
+  background: var(--review-solid);
+}
+
+.manager-stand[data-tone='error'] .manager-stand-dot {
+  background: var(--danger);
+}
+
+.manager-stand[data-tone='working'] .manager-stand-dot {
+  animation: manager-stand-beat 1.8s ease-in-out infinite;
+}
+
+@keyframes manager-stand-beat {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .manager-stand-dot {
+    animation: none !important;
+  }
+}
+
+.manager-inspection-info {
+  flex: none;
+  padding: 8px 16px;
+  max-block-size: 35%;
+  overflow-y: auto;
+  border-block-end: 1px solid var(--border);
+}
+
+.manager-inspection-info p {
+  margin-block: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.manager-inspection-facts {
+  color: var(--text) !important;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.manager-inspection-id {
+  color: var(--text-faint) !important;
+  font-family: var(--font-code);
+  font-size: 11px !important;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.manager-inspection-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin-block: 8px;
+  font-size: 12px;
+}
+
+.manager-inspection-details dt {
+  color: var(--text-faint);
+}
+
+.manager-inspection-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.manager-inspection > .transcript {
+  flex: 1;
+  min-block-size: 0;
+}
+
+.manager-inspection-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-block-size: 0;
+  padding: 24px 16px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.manager-inspection-empty svg {
+  color: var(--text-faint);
+}
+
+.manager-inspection-empty p {
+  max-inline-size: 42ch;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.manager-inspection-hint {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.manager-inspection-empty button {
+  margin-block-start: 4px;
+}
+
+.manager-inspection .manager-error {
+  color: var(--danger);
+}
+
+.manager-inspection .transcript:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (max-width: 900px) {
+  .manager-status {
+    max-inline-size: 180px;
+  }
+}
