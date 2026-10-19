@@ -258,6 +258,10 @@ describe('which commands are GeckIt asking', () => {
     '/Users/alex/.geckit/bin/geckit start --tasks tasks.json',
     '/Users/alex/.geckit/bin/geckit start --conversations list.json',
     '~/.geckit/bin/geckit-local start --project app "Fix it"',
+    'C:/Users/anton/.geckit/bin/geckit start --project app "Fix it"',
+    '"C:/Users/John Smith/.geckit/bin/geckit" start --project app "Fix it"',
+    '"/Users/john smith/.geckit/bin/geckit-local" start --tasks tasks.json',
+    "C:/Users/anton/.geckit/bin/geckit-local start --conversations - <<'EOF'\n[]\nEOF",
     "~/.geckit/bin/geckit start --tasks - <<'EOF'\n[{\"project\": \"app\", \"text\": \"a; b\"}]\nEOF",
   ])('lets through %s', (command) => expect(startsConversations(command)).toBe(true))
 
@@ -267,6 +271,10 @@ describe('which commands are GeckIt asking', () => {
     "~/.geckit/bin/geckit start --tasks - <<'EOF'\n[]\nEOF\nrm -rf ~\nEOF",
     '~/.geckit/bin/geckit sessions',
     'geckit start --project app x',
+    'C:\\Users\\anton\\.geckit\\bin\\geckit start --project app x',
+    'C:/Users/anton/.geckit/bin/geckit.cmd start --project app x',
+    'C:/Users/John Smith/.geckit/bin/geckit start --project app x',
+    '"C:/Users/John Smith/.geckit/bin/geckit" start --project app x && rm -rf ~',
   ])('asks about %s', (command) => expect(startsConversations(command)).toBe(false))
 })
 

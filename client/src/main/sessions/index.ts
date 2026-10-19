@@ -479,8 +479,10 @@ interface Pending {
  * GeckIt's own `geckit start`, run as itself: the request it makes is the
  * question, so Claude Code's own permission for it would ask the same thing
  * twice. A heredoc feeding it tasks is let through too, but nothing chained.
+ * On Windows the path begins with a drive letter and goes on with forward
+ * slashes, as GECKIT.md writes it there; a path with a space in it is quoted.
  */
-const GECKIT_START = /^(?:~|\$HOME|\/[^\s;&|<>`$]*)\/\.geckit\/bin\/geckit(?:-local)? start(?: [^;&|<>`$\n]*?)?(?: <<-?'([A-Z_]+)')?$/
+const GECKIT_START = /^(?:(?:~|\$HOME|\/[^\s;&|<>`$"]*|[A-Za-z]:\/[^\s;&|<>`$"]*)\/\.geckit\/bin\/geckit(?:-local)?|"(?:~|\$HOME|\/[^;&|<>`$"\n]*|[A-Za-z]:\/[^;&|<>`$"\n]*)\/\.geckit\/bin\/geckit(?:-local)?") start(?: [^;&|<>`$\n]*?)?(?: <<-?'([A-Z_]+)')?$/
 
 export function startsConversations(command: string): boolean {
   const [first = '', ...rest] = command.trim().split('\n')

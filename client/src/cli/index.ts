@@ -12,6 +12,7 @@ import type { Conversation, Found } from '../main/sessions/disk'
 import type { Move, SessionNote } from '../main/sessions'
 import { CodexSessions } from '../main/sessions/codex'
 import { belowRoot, hostOf, isRemote, pathOf } from '../shared/hosts'
+import { askedEndpoint } from './endpoint'
 import { answerLines, requestingSession, tasksFrom } from './start'
 import type { Answer } from './start'
 import { migrate } from './migrate'
@@ -268,7 +269,7 @@ export function start(args: readonly string[]): Promise<{ readonly said: string;
   const from = requestingSession()
   if (from === undefined) return Promise.resolve({ ok: false, said: 'Run this from a Claude Code or Codex session.' })
   return new Promise((done) => {
-    const socket = connect(join(data(), 'geckit.sock'))
+    const socket = connect(askedEndpoint(data()))
     let rest = ''
     socket.setEncoding('utf8')
     socket.on('connect', () => socket.write(`${JSON.stringify({ from, tasks })}\n`))

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
+import { askedEndpoint } from '../src/cli/endpoint'
 import type { StartAsked } from '../src/main/asked'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -51,7 +52,7 @@ describe('Codex conversations in the GeckIt CLI', () => {
     })
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject)
-      server.listen(join(folder, 'geckit.sock'), resolve)
+      server.listen(askedEndpoint(folder), resolve)
     })
     try {
       expect(await start(['--project', 'app', '--title', 'Requested title', 'Fix it'])).toEqual({ ok: true, said: '1 Queued codex:child' })
