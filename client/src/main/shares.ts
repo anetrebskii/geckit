@@ -103,20 +103,13 @@ export class Shares {
     return [...this.live.values()].map((share) => ({ id: share.id, key: share.key }))
   }
 
-  /** Whether a button is offered for what a message names: any localhost address, a path only when it is there and may be shared. */
-  async offerable(target: string): Promise<boolean> {
-    if (isSite(target)) return siteOf(target) !== undefined
-    const real = await this.real(target)
-    return real !== undefined && this.allowed(real)
-  }
-
   async open(target: string): Promise<Opened | { readonly why: string }> {
     if (isSite(target)) {
       const site = siteOf(target)
       if (site === undefined) return { why: 'Only an address on this computer can be shared.' }
       const held = [...this.live.values()].find((one) => one.kind === 'site' && one.target === site.origin)
       if (held !== undefined) return opened(held, true)
-      if (!(await answers(site.host, site.port))) return { why: `Nothing answers at ${site.host}:${String(site.port)} on your computer. Start it there, then press the button again.` }
+      if (!(await answers(site.host, site.port))) return { why: `Nothing answers at ${site.host}:${String(site.port)} on your computer. Start it there, then ask Manager again.` }
       return this.add('site', site.origin, new URL(site.origin).host, site.start)
     }
     const real = await this.real(target)
@@ -208,8 +201,9 @@ export class Shares {
     return share
   }
 
-  private add(kind: Share['kind'], target: string, title: string, start?: string): Opened | { readonly why: string } {
-    if (this.live.size >= MOST_LINKS) return { why: `${String(MOST_LINKS)} links are already shared. Stop one with /links, then press the button again.` }
+  private add(kind: Share['kind'], target: string, title: string, start?: string): Opened {
+    // Every message that names something makes a link, so the twenty-first ends the oldest rather than being refused.
+    for (const old of [...this.live.keys()].slice(0, Math.max(0, this.live.size - MOST_LINKS + 1))) this.stop(old)
     const id = randomBytes(9).toString('base64url')
     const timer = setTimeout(() => this.stop(id), LIFETIME)
     timer.unref()

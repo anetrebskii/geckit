@@ -6,7 +6,8 @@ import type { ManagerDecision } from '../shared/manager'
 import type { Json, JsonObject } from '../shared/elicitation'
 import { jsonObject } from '../shared/elicitation'
 import type { TelegramAction, TelegramAccount, TelegramBot, TelegramDecision, TelegramView } from '../shared/telegram'
-import { endsIn, shareLink, shareTargets, targetTitle } from '../shared/share'
+import { endsIn, shareLink, shareMentions } from '../shared/share'
+import type { ShareMention } from '../shared/share'
 import type { Shares } from './shares'
 import { telegramText } from './telegram-text'
 import { telegramMessages } from './telegram-render'
@@ -38,7 +39,7 @@ export interface TelegramOptions {
   readonly changed: (view: TelegramView) => void
   readonly fetch?: typeof fetch
   readonly now?: () => number
-  readonly shares?: Pick<Shares, 'offerable' | 'open' | 'stop' | 'stopAll' | 'list'>
+  readonly shares?: Pick<Shares, 'open' | 'stop' | 'stopAll' | 'list'>
 }
 
 type Button = { readonly text: string; readonly callback_data: string } | { readonly text: string; readonly url: string }
@@ -46,7 +47,6 @@ type Button = { readonly text: string; readonly callback_data: string } | { read
 type Callback = { readonly token: string } & (
   | { readonly kind: 'late'; readonly text: string; readonly run: boolean; readonly group: string; readonly question?: string }
   | { readonly kind: 'decision'; readonly id: TelegramDecision['id']; readonly value: string }
-  | { readonly kind: 'share'; readonly target: string }
   | { readonly kind: 'unshare'; readonly id: string }
 )
 
@@ -84,7 +84,7 @@ const COMMANDS = `/status - what Manager and its workers are doing
 /links - what is shared and how to stop it`
 
 const nonce = (): string => randomBytes(18).toString('base64url')
-// Offers and Stop buttons kept across restarts; the oldest fall away first, and a tap on one says it is no longer available.
+// Stop buttons kept across restarts; the oldest fall away first, and a tap on one says it is no longer available.
 const SHARE_BUTTONS = 60
 const safeInteger = (value: Json | undefined): value is number => typeof value === 'number' && Number.isSafeInteger(value)
 const accountOf = (value: Json | undefined): TelegramAccount | undefined => {
@@ -104,7 +104,6 @@ function keptOf(text: string): KeptTelegram | undefined {
     if (item === undefined || typeof item['token'] !== 'string') continue
     if (item['kind'] === 'late' && typeof item['text'] === 'string' && typeof item['run'] === 'boolean' && typeof item['group'] === 'string') callbacks.push({ token: item['token'], kind: 'late', text: item['text'], run: item['run'], group: item['group'], ...(typeof item['question'] === 'string' ? { question: item['question'] } : {}) })
     if (item['kind'] === 'decision' && typeof item['id'] === 'string' && typeof item['value'] === 'string') callbacks.push({ token: item['token'], kind: 'decision', id: item['id'], value: item['value'] })
-    if (item['kind'] === 'share' && typeof item['target'] === 'string') callbacks.push({ token: item['token'], kind: 'share', target: item['target'] })
     if (item['kind'] === 'unshare' && typeof item['id'] === 'string') callbacks.push({ token: item['token'], kind: 'unshare', id: item['id'] })
   }
   const questions: KeptTelegram['questions'][number][] = []
@@ -122,8 +121,6 @@ export class ManagerTelegram {
   private failure: TelegramView['state'] = 'disconnected'
   private detail: string | undefined
   private outgoing: Promise<void> = Promise.resolve()
-  // The replies that carry each live link's buttons, which go when the link ends.
-  private readonly linkMessages = new Map<string, number[]>()
   private readonly path: string
   private readonly now: () => number
 
@@ -235,37 +232,37 @@ export class ManagerTelegram {
         connection.kept = { ...connection.kept, callbacks: [...connection.kept.callbacks, ...callbacks] }
       }
       const limited = text.length > 32_768 ? `${text.slice(0, 32_768)}\n\nResponse shortened. Ask Manager here for a shorter summary or the missing part.` : text
-      await this.send(connection, limited, choices, question?.id, undefined, await this.offers(connection, text))
+      await this.send(connection, await this.linked(limited), choices, question?.id)
     })
     this.outgoing = job.catch(() => undefined)
     return job
   }
 
-  /** A link ended, by Stop, its time or the app: the buttons on the replies that carried it go. */
+  /** A link ended, by Stop, its time or the app: a Stop button left for it in Telegram stops being one. */
   linkEnded(id: string): void {
-    const messages = this.linkMessages.get(id) ?? []
-    this.linkMessages.delete(id)
     const connection = this.active
-    const account = connection?.kept.account
-    if (connection === undefined || account === undefined) return
-    for (const messageId of messages) void connection.client.call('editMessageReplyMarkup', { chat_id: account.chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }, connection.controller.signal).catch(() => undefined)
+    if (connection === undefined || connection.kept.account === undefined) return
     connection.kept = { ...connection.kept, callbacks: connection.kept.callbacks.filter((item) => item.kind !== 'unshare' || item.id !== id) }
     try { this.save(connection) } catch { /* Reported in the view by save itself. */ }
     this.changed()
   }
 
-  /** One button for each localhost address, file or folder a message names that may be shared; nothing is shared until one is pressed. */
-  private async offers(connection: Connection, text: string): Promise<Button[][]> {
+  /** The words a message uses for a localhost address, a file or a folder become the link to it; what cannot be shared is left as Manager wrote it, in silence. */
+  private async linked(text: string): Promise<string> {
     const shares = this.options.shares
-    if (shares === undefined) return []
-    const rows: Button[][] = []
-    for (const target of shareTargets(text)) {
-      if (!(await shares.offerable(target).catch(() => false))) continue
-      const token = nonce()
-      this.keepShareButton(connection, { token, kind: 'share', target })
-      rows.push([{ text: `Open ${targetTitle(target)}`.slice(0, 64), callback_data: token }])
+    if (shares === undefined) return text
+    const made: { readonly mention: ShareMention; readonly key: string }[] = []
+    for (const mention of shareMentions(text)) {
+      const opened = await shares.open(mention.target).catch(() => undefined)
+      if (opened === undefined || 'why' in opened) continue
+      made.push({ mention, key: opened.key })
     }
-    return rows
+    let out = text
+    for (const { mention, key } of made.reverse()) {
+      const words = text.slice(mention.at, mention.at + mention.length).replace(/^`|`$/g, '')
+      out = `${out.slice(0, mention.at)}[${words}](${shareLink(key)})${out.slice(mention.at + mention.length)}`
+    }
+    return out
   }
 
   private keepShareButton(connection: Connection, callback: Callback): void {
@@ -274,32 +271,16 @@ export class ManagerTelegram {
     connection.kept = { ...connection.kept, callbacks: [...connection.kept.callbacks.filter((item) => !dropped.has(item.token)), callback] }
   }
 
-  private async share(connection: Connection, callback: Extract<Callback, { readonly kind: 'share' | 'unshare' }>, replyTo: number): Promise<void> {
-    const shares = this.options.shares
-    if (shares === undefined) return
-    if (callback.kind === 'unshare') {
-      connection.kept = { ...connection.kept, callbacks: connection.kept.callbacks.filter((item) => item.token !== callback.token) }
-      this.save(connection)
-      const stopped = shares.stop(callback.id)
-      await this.send(connection, stopped === undefined ? 'This link has already ended.' : `Stopped sharing ${stopped.title}. The link no longer opens.`, [], undefined, replyTo)
-      return
-    }
-    if (!this.options.manager.enabled()) { await this.send(connection, 'Manager is disabled. Enable it in GeckIt Settings → Manager before sharing.'); return }
-    const opened = await shares.open(callback.target)
-    if ('why' in opened) { await this.send(connection, opened.why, [], undefined, replyTo); return }
-    const stop = nonce()
-    this.keepShareButton(connection, { token: stop, kind: 'unshare', id: opened.id })
+  private async unshare(connection: Connection, callback: Extract<Callback, { readonly kind: 'unshare' }>, replyTo: number): Promise<void> {
+    connection.kept = { ...connection.kept, callbacks: connection.kept.callbacks.filter((item) => item.token !== callback.token) }
     this.save(connection)
-    const text = opened.again
-      ? `**${opened.title} is already shared.** The link ends in ${endsIn(opened.expiresAt, this.now())}.`
-      : `**${opened.title} is shared for 12 hours.**\nOpen it from any phone or computer while GeckIt stays open here. Anyone with this link can see it until it ends.`
-    const sent = await this.send(connection, text, [], undefined, replyTo, [[{ text: `Open ${opened.title}`.slice(0, 64), url: shareLink(opened.key) }], [{ text: 'Stop sharing', callback_data: stop }]])
-    if (sent !== undefined && shares.list().some((one) => one.id === opened.id)) this.linkMessages.set(opened.id, [...(this.linkMessages.get(opened.id) ?? []), sent])
+    const stopped = this.options.shares?.stop(callback.id)
+    await this.send(connection, stopped === undefined ? 'This link has already ended.' : `Stopped sharing ${stopped.title}. The link no longer opens.`, [], undefined, replyTo)
   }
 
   private async links(connection: Connection): Promise<void> {
     const live = this.options.shares?.list() ?? []
-    if (live.length === 0) { await this.send(connection, 'Nothing is shared. A button appears under a Manager message that names a localhost address or a file.'); return }
+    if (live.length === 0) { await this.send(connection, 'Nothing is shared. A link appears in a Manager message that names a localhost address or a file.'); return }
     const rows: Button[][] = live.map((link) => {
       const token = nonce()
       this.keepShareButton(connection, { token, kind: 'unshare', id: link.id })
@@ -469,9 +450,9 @@ GeckIt must stay open on your computer.`)
         void connection.client.call('editMessageReplyMarkup', { chat_id: query.message.chatId, message_id: query.message.id, reply_markup: { inline_keyboard: [] } }, connection.controller.signal).catch(() => undefined)
         await this.send(connection, 'This action has already been answered or is no longer available. Use /status or ask Manager here for the current question.', [], undefined, query.message.id); return
       }
-      if (callback.kind === 'share' || callback.kind === 'unshare') {
+      if (callback.kind === 'unshare') {
         try { await connection.client.call('answerCallbackQuery', { callback_query_id: query.id }, connection.controller.signal) } catch { /* Callback acknowledgement does not prevent dispatch. */ }
-        await this.share(connection, callback, query.message.id); return
+        await this.unshare(connection, callback, query.message.id); return
       }
       if (callback.kind === 'decision' && this.options.manager.hasDecision?.(callback.id) === false) { this.retire(connection, callback.id); this.removeDecision(connection, callback.id); this.save(connection); await this.send(connection, 'This question has already been answered or is no longer available.', [], undefined, query.message.id); return }
       if (!this.options.manager.enabled()) { await this.send(connection, 'Manager is disabled. Enable it in GeckIt Settings → Manager before answering.'); return }

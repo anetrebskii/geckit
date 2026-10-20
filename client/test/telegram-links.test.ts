@@ -1,8 +1,10 @@
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Json, JsonObject } from '../src/shared/elicitation'
 import { jsonObject } from '../src/shared/elicitation'
@@ -17,6 +19,12 @@ const xor = (bytes: Buffer): Buffer => Buffer.from(bytes.map((byte) => byte ^ 12
 const vault: TelegramVault = { available: () => true, encrypt: (text) => xor(Buffer.from(text)), decrypt: (bytes) => xor(bytes).toString() }
 const cleanup: (() => void)[] = []
 afterEach(() => { for (const one of cleanup.splice(0)) one() })
+
+const server = createServer((_request, answer) => { answer.writeHead(200, { 'content-type': 'text/plain' }); answer.end('page') })
+await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+const site = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
+afterAll(() => { server.close() })
+const links = (text: string): string[] => [...text.matchAll(/<a href="(https:\/\/geckit-signal\.web\.app\/#[A-Za-z0-9_-]{43})">([^<]*)<\/a>/g)].map((one) => `${one[2] ?? ''} ${one[1] ?? ''}`)
 
 interface Call {
   readonly method: string
@@ -79,62 +87,52 @@ async function setUp(enabled = true): Promise<{ readonly telegram: ManagerTelegr
 }
 
 describe('opening what a Manager message names, from Telegram', () => {
-  it('offers a button for each target that may be shared, and shares nothing until one is pressed', async () => {
+  it('puts the link in place of the words, and leaves what cannot be shared as Manager wrote it', async () => {
     const { telegram, api, shares, project } = await setUp()
-    await telegram.notify(`Done. It runs at http://localhost:5173/app and the report is ${join(project, 'report.html')}. Secrets: ${join(project, '.env')}, ${join(project, 'gone.md')}`)
-    const offered = rows(sent(api).at(-1))
-    expect(offered.map((row) => row.map((button) => button['text']))).toEqual([['Open localhost:5173'], ['Open report.html']])
-    expect(offered.flat().every((button) => typeof button['callback_data'] === 'string' && button['url'] === undefined)).toBe(true)
-    expect(shares.list()).toEqual([])
+    await telegram.notify(`Done. It runs at ${site}/app and the report is ${join(project, 'report.html')}. Secrets: ${join(project, '.env')}, ${join(project, 'gone.md')}`)
+    const body = String(sent(api).at(-1)?.body['text'])
+    expect(links(body).map((one) => one.split(' ')[0])).toEqual([`${site}/app`, join(project, 'report.html')])
+    expect(body).toContain(`Secrets: ${join(project, '.env')}, ${join(project, 'gone.md')}`)
+    expect(rows(sent(api).at(-1))).toEqual([])
+    expect(sent(api).at(-1)?.body['link_preview_options']).toEqual({ is_disabled: true })
+    expect(shares.list().map((one) => one.title)).toEqual([new URL(site).host, 'report.html'])
+    expect(telegram.view().links?.map((one) => one.title)).toEqual([new URL(site).host, 'report.html'])
   })
 
-  it('shares the pressed file with a link button and Stop, for the paired account only', async () => {
+  it('shares each target once, so the same words in a later message carry the same link', async () => {
     const { telegram, api, shares, project } = await setUp()
     await telegram.notify(`Report: ${join(project, 'report.html')}`)
-    const offer = String(rows(sent(api).at(-1))[0]?.[0]?.['callback_data'])
-    const before = sent(api).length
-    api.deliver([press(10, offer, 99)])
-    api.deliver([press(11, offer)])
-    await vi.waitFor(() => expect(shares.list()).toHaveLength(1))
-    await vi.waitFor(() => expect(sent(api).length).toBeGreaterThan(before))
-    const reply = sent(api).at(-1)
-    const replyId = 100 + sent(api).length
-    expect(sent(api).slice(before)).toHaveLength(1)
-    expect(reply?.body['text']).toBe('<b>report.html is shared for 12 hours.</b>\nOpen it from any phone or computer while GeckIt stays open here. Anyone with this link can see it until it ends.')
-    expect(reply?.body['link_preview_options']).toEqual({ is_disabled: true })
-    const [[open], [stop]] = rows(reply) as [[JsonObject], [JsonObject]]
-    expect(open['text']).toBe('Open report.html')
-    expect(String(open['url'])).toMatch(/^https:\/\/geckit-signal\.web\.app\/#[A-Za-z0-9_-]{43}$/)
-    expect(String(reply?.body['text'])).not.toContain(String(open['url']).split('#')[1])
-    expect(telegram.view().links?.map((one) => one.title)).toEqual(['report.html'])
-
-    api.deliver([press(12, String(stop['callback_data']))])
-    await vi.waitFor(() => expect(shares.list()).toEqual([]))
-    await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe('Stopped sharing report.html. The link no longer opens.'))
-    expect(api.calls.some((call) => call.method === 'editMessageReplyMarkup' && call.body['message_id'] === replyId)).toBe(true)
-  })
-
-  it('hands back the same link on a second press, and refuses when Manager is off', async () => {
-    const { telegram, api, shares, project } = await setUp()
-    await telegram.notify(`Report: ${join(project, 'report.html')}`)
-    const offer = String(rows(sent(api).at(-1))[0]?.[0]?.['callback_data'])
-    api.deliver([press(10, offer)])
-    await vi.waitFor(() => expect(shares.list()).toHaveLength(1))
-    api.deliver([press(11, offer)])
-    await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe('<b>report.html is already shared.</b> The link ends in 12 h.'))
+    const first = links(String(sent(api).at(-1)?.body['text']))
+    await telegram.notify(`Still here: ${join(project, 'report.html')}`)
+    expect(links(String(sent(api).at(-1)?.body['text']))).toEqual(first)
     expect(shares.list()).toHaveLength(1)
+  })
 
-    const off = await setUp(false)
-    await off.telegram.notify(`Report: ${join(off.project, 'report.html')}`)
-    off.api.deliver([press(10, String(rows(sent(off.api).at(-1))[0]?.[0]?.['callback_data']))])
-    await vi.waitFor(() => expect(sent(off.api).at(-1)?.body['text']).toBe('Manager is disabled. Enable it in GeckIt Settings → Manager before sharing.'))
-    expect(off.shares.list()).toEqual([])
+  it('links a path written as code, and leaves a fenced block alone', async () => {
+    const { telegram, api, shares, project } = await setUp()
+    await telegram.notify(`Open \`${join(project, 'report.html')}\`\n\n\`\`\`\ncat ${join(project, 'report.html')}\n\`\`\``)
+    const body = String(sent(api).at(-1)?.body['text'])
+    expect(links(body).map((one) => one.split(' ')[0])).toEqual([join(project, 'report.html')])
+    expect(body).toContain(`<pre>cat ${join(project, 'report.html')}</pre>`)
+    expect(shares.list()).toHaveLength(1)
+  })
+
+  it('stops a link from Settings, and the Stop button left in Telegram says so', async () => {
+    const { telegram, api, shares, project } = await setUp()
+    await telegram.notify(`Report: ${join(project, 'report.html')}`)
+    api.deliver([message(20, '/links')])
+    await vi.waitFor(() => expect(String(sent(api).at(-1)?.body['text'])).toContain('<b>Shared links</b> (1)'))
+    const stop = String(rows(sent(api).at(-1))[0]?.[0]?.['callback_data'])
+    await telegram.action({ kind: 'stop-link', id: shares.list()[0]?.id ?? '' })
+    expect(shares.list()).toEqual([])
+    api.deliver([press(21, stop)])
+    await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe('This action has already been answered or is no longer available. Use /status or ask Manager here for the current question.'))
   })
 
   it('lists live links with /links, stops one from there, and ends every link on disconnect', async () => {
     const { telegram, api, shares, project } = await setUp()
     api.deliver([message(20, '/links')])
-    await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe('Nothing is shared. A button appears under a Manager message that names a localhost address or a file.'))
+    await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe('Nothing is shared. A link appears in a Manager message that names a localhost address or a file.'))
     await shares.open(join(project, 'report.html'))
     await shares.open(project)
     api.deliver([message(21, '/links')])

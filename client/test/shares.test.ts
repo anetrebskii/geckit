@@ -66,7 +66,8 @@ describe('what a message names that could be shared', () => {
       '~/notes/today.md',
     ])
     expect(shareTargets('http://localhost:3000 and http://localhost:3000')).toEqual(['http://localhost:3000'])
-    expect(shareTargets('a /Users/a/1 b /Users/a/2 c /Users/a/3 d /Users/a/4')).toHaveLength(3)
+    expect(shareTargets('a /Users/a/1 b /Users/a/2 c /Users/a/3 d /Users/a/4')).toHaveLength(4)
+    expect(shareTargets([...Array(12).keys()].map((at) => `/Users/a/${String(at)}`).join(' '))).toHaveLength(8)
     expect(shareTargets('**/Users/alex/app/report.html**')).toEqual(['/Users/alex/app/report.html'])
   })
 
@@ -78,14 +79,15 @@ describe('what a message names that could be shared', () => {
 })
 
 describe('a link to a file or folder', () => {
-  it('offers only what is there and may be shared', async () => {
+  it('shares only what is there and may be shared', async () => {
     const { shares } = made()
-    expect(await shares.offerable(join(project, 'report.html'))).toBe(true)
-    expect(await shares.offerable(project)).toBe(true)
-    expect(await shares.offerable(join(project, 'gone.html'))).toBe(false)
+    expect('why' in await shares.open(join(project, 'report.html'))).toBe(false)
+    expect('why' in await shares.open(project)).toBe(false)
+    expect('why' in await shares.open(join(project, 'gone.html'))).toBe(true)
     for (const refused of [home, join(home, 'Projects', '..'), '/', join(project, '.env'), join(project, '.git'), join(project, 'server.pem'), join(home, '.ssh', 'id_ed25519'), join(home, 'Library', 'Keychains', 'login.keychain-db'), join(home, 'Library')]) {
-      expect(await shares.offerable(refused), refused).toBe(false)
+      expect('why' in await shares.open(refused), refused).toBe(true)
     }
+    expect(shares.list()).toHaveLength(2)
   })
 
   it('refuses a private target when pressed, with the reason', async () => {
@@ -140,7 +142,7 @@ describe('a link to a file or folder', () => {
 describe('a link to a localhost site', () => {
   it('refuses a port nothing answers on', async () => {
     const { shares } = made()
-    expect(await shares.open('http://127.0.0.1:1/')).toEqual({ why: 'Nothing answers at 127.0.0.1:1 on your computer. Start it there, then press the button again.' })
+    expect(await shares.open('http://127.0.0.1:1/')).toEqual({ why: 'Nothing answers at 127.0.0.1:1 on your computer. Start it there, then ask Manager again.' })
   })
 
   it('asks only its own origin, with the origin the server knows, and follows redirects within it', async () => {
@@ -191,17 +193,23 @@ describe('how a link ends', () => {
     }
   })
 
-  it('keeps no more than twenty live, and ends them all at once', async () => {
+  it('keeps no more than twenty live, ending the oldest for a new one, and ends them all at once', async () => {
     const { shares, ended } = made()
+    let oldest: Opened | undefined
     for (let at = 0; at < MOST_LINKS; at++) {
       const file = join(project, 'docs', `f${String(at)}.txt`)
       writeFileSync(file, String(at))
-      live(await shares.open(file))
+      const one = live(await shares.open(file))
+      oldest ??= one
     }
     writeFileSync(join(project, 'docs', 'one-more.txt'), 'x')
-    expect(await shares.open(join(project, 'docs', 'one-more.txt'))).toEqual({ why: '20 links are already shared. Stop one with /links, then press the button again.' })
+    const extra = live(await shares.open(join(project, 'docs', 'one-more.txt')))
+    expect(shares.list()).toHaveLength(MOST_LINKS)
+    expect(shares.list().map((one) => one.id)).not.toContain(oldest?.id)
+    expect(shares.list().map((one) => one.id)).toContain(extra.id)
+    expect(ended).toHaveBeenCalledWith(oldest?.id)
     shares.stopAll()
     expect(shares.list()).toEqual([])
-    expect(ended).toHaveBeenCalledTimes(MOST_LINKS)
+    expect(ended).toHaveBeenCalledTimes(MOST_LINKS + 1)
   })
 })

@@ -94,7 +94,7 @@ function showEnded(): void {
   ended = true
   bar.hidden = true
   link?.close()
-  state('This link has ended. Press the button in Telegram again for a new one.')
+  state('This link has ended. Ask Manager in Telegram again for a new one.')
 }
 
 async function connect(key: string): Promise<void> {
