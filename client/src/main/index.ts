@@ -1043,7 +1043,8 @@ async function buildManager(started: Sessions): Promise<void> {
     shares,
     vault: telegramVault(safeStorage, process.platform),
     manager: {
-      submit: async (text, id) => { await coordinator.send(text, 'telegram', id) },
+      submit: (text, id) => coordinator.send(text, 'telegram', id),
+      reply: async (text, id, reference, authorized) => { await coordinator.reply(text, id, reference, authorized) },
       pause: async () => { await coordinator.pause() },
       resume: async () => { await coordinator.resume() },
       status: () => managerTelegramStatus(view),
@@ -1089,7 +1090,7 @@ async function buildManager(started: Sessions): Promise<void> {
     notifyDecisions(changed)
   })
   coordinator.onItems((items) => shownChat()?.webContents.send('manager:items', items))
-  coordinator.onResponse((text) => { void bridge.notify(text).catch(() => undefined) })
+  coordinator.onResponse((text, origin) => { void bridge.notify(text, undefined, origin).catch(() => undefined) })
   if (view.config.enabled) void bridge.start()
   else await bridge.action({ kind: 'disconnect' })
 }

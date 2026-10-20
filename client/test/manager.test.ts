@@ -11,7 +11,7 @@ import type { ManagerCliContext, ManagerDeps } from '../src/main/manager'
 import { managerFile, managerProvider } from '../src/main/manager-operations'
 import { managerCommands, managerContext, managerHistoryItem, managerMessage, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
 import { manage } from '../src/cli/manage'
-import type { ManagerActivity, ManagerCliAsked } from '../src/shared/manager'
+import type { ManagerActivity, ManagerCliAsked, ManagerReplyOrigin } from '../src/shared/manager'
 import { Sessions, memoryNotes } from '../src/main/sessions'
 import type { SessionsDeps } from '../src/main/sessions'
 import { llmProvider } from '../src/main/sessions/provider'
@@ -100,6 +100,50 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}) {
   const command = (id: string, args: readonly string[]): string => `I will coordinate that.\n\n\`\`\`geckit\n${JSON.stringify({ id, args })}\n\`\`\``
   return { manager: active, sessions, root, directory, notes, made, sent, fanned, answers, cli, finish, hear: (id: string, heard: Heard) => hearings.get(id)?.(heard), command, reload: () => { current.manager?.dispose(); const next = new Manager(deps); current.manager = next; return next }, settings: () => settings, set: (change: Partial<Settings>) => { settings = { ...settings, ...change } } }
 }
+
+describe('Manager reply provenance', () => {
+  it('binds real worker-event turns to their causal tasks, preserving multiple candidates and ownership', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const manager = await f.manager.open()
+    const first = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'First task' }, 'manager', 'reply-first')
+    const second = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Second task' }, 'manager', 'reply-second')
+    const responses: { readonly text: string; readonly origin: ManagerReplyOrigin }[] = []
+    f.manager.onResponse((text, origin) => responses.push({ text, origin }))
+    f.finish(first, 'First result')
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === manager && one.text.includes(first))).toBe(true))
+    f.finish(second, 'Second result')
+    f.finish(manager, 'First task report')
+    await vi.waitFor(() => expect(responses.some((one) => one.text === 'First task report')).toBe(true))
+    expect(responses.find((one) => one.text === 'First task report')?.origin.workers).toEqual([first])
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === manager && one.text.includes(second))).toBe(true))
+    f.finish(manager, 'Second task report')
+    await vi.waitFor(() => expect(responses.some((one) => one.text === 'Second task report')).toBe(true))
+    expect(responses.find((one) => one.text === 'Second task report')?.origin.workers).toEqual([second])
+    const reference = { session: manager, workers: [first], chatId: 81, messageId: 101, text: 'First task report' }
+    await f.manager.reply('Correct original', 'reply-original', reference)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('Correct original') && one.text.includes(first))).toBe(true))
+    expect(f.sent.filter((one) => one.id === first || one.id === second)).toHaveLength(2)
+    await expect(f.manager.reply('Do not attach', 'forged', { ...reference, workers: ['manual-session'] })).rejects.toThrow('no longer authorized')
+    await expect(f.manager.reply('Do not attach', 'forged-manager', { ...reference, session: 'manual-session' })).rejects.toThrow('no longer authorized')
+    let checks = 0
+    await expect(f.manager.reply('Revoked during refresh', 'revoked-refresh', reference, () => ++checks < 2)).rejects.toThrow('no longer authorized')
+    checks = 0
+    await expect(f.manager.reply('Revoked during open', 'revoked-open', reference, () => ++checks < 3)).rejects.toThrow('no longer authorized')
+    expect(f.sent.some((one) => one.text.includes('Revoked during'))).toBe(false)
+    f.finish(manager, 'Reply received')
+    await vi.waitFor(() => expect(responses.some((one) => one.text === 'Reply received')).toBe(true))
+    await f.manager.send('Reconcile both', 'event', 'mixed-tasks', [first, second])
+    await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('Reconcile both'))).toBe(true))
+    f.finish(manager, 'Both reports')
+    await vi.waitFor(() => expect(responses.some((one) => one.text === 'Both reports')).toBe(true))
+    expect(responses.find((one) => one.text === 'Both reports')?.origin.workers).toEqual([first, second])
+    expect((await f.manager.view()).workers.map((one) => one.id)).toEqual(expect.arrayContaining([first, second]))
+    const { managerOwner: _owner, ...detached } = f.notes.all()[first] ?? {}
+    f.notes.set(first, detached)
+    await expect(f.manager.reply('Old task detached', 'detached', reference)).rejects.toThrow('no longer authorized')
+  })
+})
 
 describe('Manager session inspection', () => {
   it('reads only the retained current backing without starting work, including disabled providers and Manager', async () => {

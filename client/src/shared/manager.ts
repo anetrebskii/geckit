@@ -1,3 +1,4 @@
+import type { TelegramAccount } from './telegram'
 import type { ChatSession, SessionItem, SessionItems, SessionMessage, SessionProvider, Settings } from './api'
 
 export const MANAGER_CHAT_GUIDANCE = 'Use Telegram to talk to Manager.'
@@ -70,3 +71,14 @@ export interface ProjectAssistant {
 }
 
 export const managerProjects = (settings: Pick<Settings, 'projects' | 'profiles'>): readonly string[] => [...new Set([...settings.projects, ...settings.profiles.flatMap((profile) => profile.projects)])]
+
+export type ManagerReplyOrigin = {
+  readonly session: ChatSession['id']
+  readonly workers: readonly ChatSession['id'][]
+}
+
+export type ManagerTelegramReply = ManagerReplyOrigin & {
+  readonly chatId: TelegramAccount['chatId']
+  readonly messageId: number
+  readonly text: Extract<SessionItem, { kind: 'theirs' }>['text']
+}
