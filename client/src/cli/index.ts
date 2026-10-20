@@ -188,7 +188,7 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
       providers is the default; app explains desktop and phone builds.
 
   Manager sessions additionally use capabilities, providers, projects, files,
-  sessions and settings through the running app's authenticated CLI interface.
+  sessions, settings, attachments and telegram through the running app's authenticated CLI interface.
   Run capabilities in Manager for supported operations and named limitations.
 
 Outside Manager, only start and migrate-codex write anything.

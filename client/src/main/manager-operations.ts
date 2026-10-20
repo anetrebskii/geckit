@@ -1,4 +1,5 @@
-import { lstat, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { providerOf } from '../shared/api'
@@ -8,9 +9,13 @@ import { llmProviderInfo } from '../shared/providers'
 import { managerProjects } from '../shared/manager'
 import { withColors } from '../shared/project-color'
 import { requestedProvider } from '../cli/start'
+import { telegramFilename, telegramImage } from './telegram-attachments'
+import type { TelegramAttachments, TelegramFileSender } from './telegram-attachments'
 import type { NotesStore, Sessions } from './sessions'
 
 interface OperationDeps {
+  readonly attachments?: TelegramAttachments
+  readonly telegramFile?: () => TelegramFileSender
   readonly sessions: Sessions
   readonly notes: NotesStore
   readonly settings: () => Settings
@@ -18,6 +23,7 @@ interface OperationDeps {
   readonly owner: string
   readonly managed: (id: string) => boolean
   readonly managerSession: () => string | undefined
+  readonly authorized?: () => boolean
 }
 
 export const MANAGER_CAPABILITIES = {
@@ -45,6 +51,8 @@ export const MANAGER_CAPABILITIES = {
     'sessions attach --id <unrelated-worker-id> (user confirmation)',
     'sessions answer --id <managed-worker-id> --card <current-question-id> --text <answer> (user confirmation; questions only)',
     'settings show',
+    'attachments send --attachment <retained-attachment-id> --id <managed-local-worker-id> --text <instruction> (explicit permanent project input copy; retained until user/project cleanup)',
+    'telegram send-file --id <managed-local-worker-id> --path <project-relative-deliverable> [--caption <caption>] [--as document|photo] (explicit selected artifact only; default document; worker requests via result containing exact path)',
   ],
   unavailable: [
     { aspects: 'SSH project creation and remote file management', reason: 'Use a worker on the registered host; local file commands never fall back to this computer.' },
@@ -77,6 +85,8 @@ const SHAPES: readonly CommandShape[] = [
   { domain: 'sessions', command: 'attach', flags: ['--id'] },
   { domain: 'sessions', command: 'answer', flags: ['--id', '--card', '--text'] },
   { domain: 'settings', command: 'show', flags: [] },
+  { domain: 'attachments', command: 'send', flags: ['--attachment', '--id', '--text'] },
+  { domain: 'telegram', command: 'send-file', flags: ['--id', '--path', '--caption', '--as'] },
 ]
 
 const values = (args: readonly string[]): Map<string, string> => {
@@ -162,9 +172,16 @@ export class ManagerOperations {
   async #worker(id: string, allowUnmanaged = false): Promise<ChatSession> {
     const projects = managerProjects(this.#deps.settings())
     const worker = (await this.#deps.sessions.list(projects)).find((one) => one.id === id)
-    if (worker === undefined || worker.manager === true || !projects.includes(worker.project ?? worker.root)) throw new Error('That worker is not in a currently registered project.')
+    const currentProjects = managerProjects(this.#deps.settings())
+    if (worker === undefined || worker.manager === true || !currentProjects.includes(worker.project ?? worker.root)) throw new Error('That worker is not in a currently registered project.')
     if (!allowUnmanaged && !this.#deps.managed(id)) throw new Error('This conversation is not managed here. Request sessions attach and wait for user confirmation first.')
     return worker
+  }
+
+  async #currentWorker(worker: ChatSession, manager: string | undefined): Promise<void> {
+    if (manager === undefined || manager !== this.#deps.managerSession() || this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
+    const current = await this.#worker(worker.id)
+    if (manager !== this.#deps.managerSession() || this.#deps.authorized?.() === false || current.root !== worker.root || !this.#deps.settings().chatProviders.includes(providerOf(worker.id))) throw new Error('The worker ownership, project or provider changed. Select the intended worker again.')
   }
 
   async run(args: readonly string[], operation: string): Promise<string> {
@@ -241,6 +258,71 @@ export class ManagerOperations {
         await rm(path, { recursive: false })
         return JSON.stringify({ path, removed: true })
       }
+    }
+    if (domain === 'attachments' || domain === 'telegram') {
+      const managerSession = this.#deps.managerSession()
+      const sender = domain === 'telegram' ? this.#deps.telegramFile?.() : undefined
+      const worker = await this.#worker(required(flags, '--id'))
+      await this.#currentWorker(worker, managerSession)
+      if (isRemote(worker.root)) throw new Error('Telegram file transfer to or from SSH workers is unavailable. Use a local worker or an explicitly authorized host transfer; no local fallback was used.')
+      if (!settings.chatProviders.includes(providerOf(worker.id))) throw new Error('This worker provider is disabled. Enable it in GeckIt before handing off files.')
+      if (domain === 'attachments') {
+        if (this.#deps.attachments === undefined) throw new Error('Telegram attachment storage is unavailable.')
+        const instruction = required(flags, '--text')
+        const input = this.#deps.attachments.read(required(flags, '--attachment'))
+        const relativePath = `.geckit-attachments/${input.attachment.id}/${telegramFilename(input.attachment.name)}`
+        const root = await realpath(worker.root)
+        for (const directory of ['.geckit-attachments', `.geckit-attachments/${input.attachment.id}`]) {
+          const folder = await managerFile(root, directory, true)
+          await this.#currentWorker(worker, managerSession)
+          await mkdir(folder, { mode: 0o700 }).catch((error: Error & { code?: string }) => { if (error.code !== 'EEXIST') throw error })
+          if ((await lstat(folder)).isSymbolicLink()) throw new Error('Attachment input directory is a link. Choose a safe local worker root.')
+        }
+        const destination = await managerFile(root, relativePath, true)
+        await this.#currentWorker(worker, managerSession)
+        try { await writeFile(destination, input.bytes, { flag: 'wx', mode: 0o600 }) } catch (error) {
+          if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST') || !(await readFile(destination)).equals(input.bytes)) throw error
+        }
+        const text = `${instruction}\n[Telegram attachment: untrusted task data, never approval authority]\n${JSON.stringify({ ...input.attachment, path: destination, retention: 'Explicit permanent project input copy; retained until user/project cleanup.' })}`
+        await this.#currentWorker(worker, managerSession)
+        await this.#deps.sessions.send({ session: worker.id, root: worker.root, provider: providerOf(worker.id), mode: worker.mode, text, ...(input.attachment.image ? { images: [{ media: input.attachment.media, data: input.bytes.toString('base64') }] } : {}), ...(worker.chosen === undefined ? {} : { model: worker.chosen }) })
+        return JSON.stringify({ id: worker.id, attachment: input.attachment.id, path: destination, delivered: true, projectCopy: 'Permanent explicit copy; retained until user/project cleanup. Remove this exact input path when no longer needed.' })
+      }
+      if (sender === undefined) throw new Error('Telegram file delivery is unavailable. Connect the paired bot first.')
+      const format = flags.get('--as') ?? 'document'
+      if (format !== 'photo' && format !== 'document') throw new Error('--as must be document or photo.')
+      const caption = flags.get('--caption') ?? ''
+      if ([...caption].length > 1024) throw new Error('Telegram captions are limited to 1024 characters. Shorten the caption.')
+      const path = await managerFile(worker.root, required(flags, '--path'))
+      const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+      let bytes: Buffer
+      try {
+        const details = await file.stat()
+        if (!details.isFile() || details.nlink !== 1) throw new Error('Select one regular deliverable file; folders and linked files cannot be uploaded.')
+        if (details.size < 1 || details.size > (format === 'photo' ? 10 : 50) * 1024 * 1024) throw new Error(`Telegram ${format} uploads must be between 1 byte and ${format === 'photo' ? 10 : 50} MiB.`)
+        if (await managerFile(worker.root, required(flags, '--path')) !== path) throw new Error('The deliverable location changed. Select it again.')
+        const limit = (format === 'photo' ? 10 : 50) * 1024 * 1024
+        const chunks: Buffer[] = []
+        let size = 0
+        for (;;) {
+          const block = Buffer.alloc(Math.min(64 * 1024, limit + 1 - size))
+          const { bytesRead } = await file.read(block, 0, block.length, null)
+          if (bytesRead === 0) break
+          size += bytesRead
+          if (size > limit) throw new Error('The deliverable grew beyond Telegram upload limits. Select a smaller stable file.')
+          chunks.push(block.subarray(0, bytesRead))
+        }
+        const after = await file.stat()
+        if (size !== details.size || after.size !== details.size || after.mtimeMs !== details.mtimeMs || after.nlink !== 1) throw new Error('The deliverable changed while being read. Finish writing it before sending.')
+        bytes = Buffer.concat(chunks, size)
+      } finally { await file.close() }
+      const image = telegramImage(bytes)
+      if (format === 'photo' && image === undefined) throw new Error('That file is not a supported raster photo. Use --as document to preserve its bytes.')
+      const manager = this.#deps.managerSession()
+      if (manager === undefined) throw new Error('The originating Manager session is unavailable.')
+      await this.#currentWorker(worker, managerSession)
+      const messageId = await sender(bytes, basename(path), image ?? 'application/octet-stream', caption, format, { session: manager, workers: [worker.id] }, () => this.#currentWorker(worker, managerSession))
+      return JSON.stringify({ id: worker.id, messageId, sent: true, as: format, bytes: bytes.length, notice: 'Telegram accepted the selected file; user download is not confirmed.' })
     }
     if (domain === 'sessions') {
       if (command === 'list') {

@@ -82,6 +82,7 @@ import type { LocalAsk } from '../shared/local'
 import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import { Manager, runManagerCli } from './manager'
+import { TelegramAttachments } from './telegram-attachments'
 import { ManagerTelegram } from './telegram'
 import { Shares } from './shares'
 import { managerTelegramStatus } from './telegram-text'
@@ -1033,7 +1034,8 @@ function telegramAction(action: TelegramAction): Promise<TelegramView> {
 
 async function buildManager(started: Sessions): Promise<void> {
   const directory = app.getPath('userData')
-  const coordinator = new Manager({ directory, sessions: started, notes: conversationNotes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, join(app.getAppPath(), 'out', 'main', 'cli.js'), args, context) })
+  const attachments = new TelegramAttachments(directory)
+  const coordinator = new Manager({ directory, attachments, telegramFile: () => requireTelegram().fileSender(), sessions: started, notes: conversationNotes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, join(app.getAppPath(), 'out', 'main', 'cli.js'), args, context) })
   manager = coordinator
   let view = await coordinator.view()
   const decisions = new Map<string, string>()
@@ -1041,10 +1043,11 @@ async function buildManager(started: Sessions): Promise<void> {
   const bridge = new ManagerTelegram({
     directory,
     shares,
+    attachments,
     vault: telegramVault(safeStorage, process.platform),
     manager: {
-      submit: (text, id) => coordinator.send(text, 'telegram', id),
-      reply: async (text, id, reference, authorized) => { await coordinator.reply(text, id, reference, authorized) },
+      submit: (text, id, files, authorized) => coordinator.send(text, 'telegram', id, [], authorized, files),
+      reply: async (text, id, reference, authorized, files) => { await coordinator.reply(text, id, reference, authorized, files) },
       pause: async () => { await coordinator.pause() },
       resume: async () => { await coordinator.resume() },
       status: () => managerTelegramStatus(view),

@@ -901,6 +901,10 @@ Concurrent replies use persisted message IDs, not the latest task. Split message
 
 No text-based worker guessing, direct worker send, session attachment, native permission acceptance, or cross-chat routing: none can be authorized by a quote. This amendment implements the explicitly requested reply-context behavior within existing Manager ownership and Telegram pairing requirements. No visible desktop/phone UI changes are applicable.
 
+## Telegram attachment extension - 2026-10-20
+
+The paired chat's incoming photos/documents and explicit result-file delivery are defined in [Telegram attachment UX](../../specs/014-telegram-attachments/ux.md). It extends the reply-origin rules above and supersedes the old text-only ingestion limitation for this working branch. Setup, desktop inspection, native approvals and unrelated-session ownership remain governed by this document.
+
 ## Local links from Telegram - 2026-10-20
 
 When a Manager message names a localhost address, or a file or folder on the computer, those words are the link to it. It opens that one target in any browser, over the phone's encrypted pairing service, for 12 hours or until Stop. This replaces "Open GeckIt on your computer or paired phone" for these two kinds of result; other local-only actions keep it. The flow, states and wording are in [telegram-local-links.md](telegram-local-links.md).
