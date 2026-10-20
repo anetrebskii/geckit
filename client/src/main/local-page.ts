@@ -44,7 +44,7 @@ export async function localFetch(asked: LocalAsk, within?: string): Promise<Loca
       return nothing(
         /ECONNREFUSED/.test(got.message)
           ? `Nothing answers at ${at.host} on the ${within === undefined ? 'Mac' : 'computer'}. The server may have stopped.`
-          : `${at.host} on the Mac did not answer: ${got.message}`,
+          : `${at.host} on the ${within === undefined ? 'Mac' : 'computer'} did not answer: ${got.message}`,
       )
     }
     const location = single(got.headers.location)
