@@ -635,6 +635,26 @@ describe('Manager Telegram, with a fake Bot API', () => {
     expect(sent(value.api).at(-1)?.body['parse_mode']).toBeUndefined()
   })
 
+  it('formats approval hook output while retaining its decision buttons and original fallback', async () => {
+    const value = fixture()
+    await paired(value)
+    const text = 'Approval - Telegram\n\n│ Hook requires confirmation:\n│\n│ FLAG  contractions  1 in 35 sentences\n│ ok    vocabulary    clean\n│\n│ Read [the skill](~/.claude/skills/own-english/SKILL.md).\n\nDo you want to proceed?'
+    const decision = { id: 'native:formatted', choices: [{ label: 'Yes', value: 'yes' }, { label: 'No', value: 'no' }] }
+    await value.telegram.notify(text, decision)
+    const body = sent(value.api).at(-1)?.body
+    expect(body?.['parse_mode']).toBe('HTML')
+    expect(body?.['text']).toContain('<pre>FLAG  contractions  1 in 35 sentences\nok    vocabulary    clean</pre>')
+    expect(body?.['text']).toContain('<blockquote>Hook requires confirmation:')
+    expect(body?.['text']).toContain('Read the skill (<code>~/.claude/skills/own-english/SKILL.md</code>).')
+    expect(buttons(value.api).map((button) => button['text'])).toEqual(['Yes', 'No'])
+    value.api.refuseFormatting()
+    await value.telegram.notify(text, decision)
+    expect(sent(value.api).at(-1)?.body['text']).toBe(text)
+    expect(sent(value.api).at(-1)?.body['parse_mode']).toBeUndefined()
+    expect(buttons(value.api).map((button) => button['text'])).toEqual(['Yes', 'No'])
+    expect(value.answer).not.toHaveBeenCalled()
+  })
+
   it('fills Telegram’s command menu once the account is confirmed', async () => {
     const value = fixture()
     await paired(value)

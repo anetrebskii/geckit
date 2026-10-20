@@ -905,3 +905,9 @@ No text-based worker guessing, direct worker send, session attachment, native pe
 ## Telegram attachment extension - 2026-10-20
 
 The paired chat's incoming photos/documents and explicit result-file delivery are defined in [Telegram attachment UX](../../specs/014-telegram-attachments/ux.md). It extends the reply-origin rules above and supersedes the old text-only ingestion limitation for this working branch. Setup, desktop inspection, native approvals and unrelated-session ownership remain governed by this document.
+
+## Telegram approval formatting repair - 2026-10-20
+
+Native approval text can include a terminal report with a vertical border on every line. Render consecutive bordered lines as Telegram quotes, removing the terminal border. Consecutive rows with aligned columns use a monospace block so report labels and results retain their alignment. Real Markdown tables and fenced code retain their existing rendering. Local Markdown file references show their label and a readable code-formatted path; they are not Telegram web links.
+
+This repairs the existing formatted-message state. Approval wording, choices, callback identity and the plain-text fallback stay as specified above. Fallback delivery preserves the diagnostic content; unsplit messages retain the original source. No approval is answered or retried by formatting it.

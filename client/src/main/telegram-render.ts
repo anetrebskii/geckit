@@ -29,7 +29,11 @@ function marks(text: string): string {
 
 /** A line of prose: code spans first, so the marks inside one stay as they were written. */
 function inline(text: string): string {
-  return text.split(/(``[^`\n]+``|`[^`\n]+`)/g).map((part, at) => at % 2 === 0 ? marks(escape(part)) : `<code>${escape(part.replace(/^`+|`+$/g, ''))}</code>`).join('')
+  return text.split(/(``[^`\n]+``|`[^`\n]+`|\[[^\]\n]+\]\((?:~\/|\/|\.\.?\/)[^\n)]+\))/g).map((part, at) => {
+    if (at % 2 === 0) return marks(escape(part))
+    const local = /^\[([^\]\n]+)\]\(([^\n)]+)\)$/.exec(part)
+    return local === null ? `<code>${escape(part.replace(/^`+|`+$/g, ''))}</code>` : `${escape(local[1] ?? '')} (<code>${escape(local[2] ?? '')}</code>)`
+  }).join('')
 }
 
 function line(source: string): string {
@@ -56,6 +60,23 @@ function table(rows: readonly string[]): string {
 
 const isTableRow = (source: string | undefined): boolean => source !== undefined && source.includes('|') && source.trim() !== ''
 const isTableRule = (source: string | undefined): boolean => source !== undefined && /^\s*\|?[\s:|-]*-[\s:|-]*\|[\s:|-]*$/.test(source)
+const terminalLine = (source: string): string | undefined => /^\s{0,3}[│|] ?(.*)$/.exec(source)?.[1]
+const aligned = (source: string | undefined): boolean => source !== undefined && /\S {2,}\S/.test(source)
+
+function terminal(lines: readonly string[], original: readonly string[]): Block[] {
+  const out: Block[] = []
+  for (let at = 0; at < lines.length;) {
+    const pre = aligned(lines[at]) && aligned(lines[at + 1])
+    let end = at + 1
+    if (pre) while (aligned(lines[end])) end++
+    else while (end < lines.length && !(aligned(lines[end]) && aligned(lines[end + 1]))) end++
+    const held = lines.slice(at, end)
+    const body = held.join('\n')
+    out.push({ kind: pre ? 'pre' : 'quote', html: pre ? code(body) : quote(held), text: original.slice(at, end).join('\n'), body })
+    at = end
+  }
+  return out
+}
 
 function blocks(source: string): Block[] {
   const lines = telegramText(source).split('\n')
@@ -94,23 +115,45 @@ function blocks(source: string): Block[] {
       at = end - 1
       continue
     }
+    if (terminalLine(current) !== undefined && terminalLine(lines[at + 1] ?? '') !== undefined) {
+      let end = at + 2
+      while (end < lines.length && terminalLine(lines[end] ?? '') !== undefined) end++
+      const original = lines.slice(at, end)
+      if (!original.every((one) => /^\s{0,3}\|.*\|/.test(one))) {
+        out.push(...terminal(original.map((one) => terminalLine(one) ?? ''), original))
+        at = end - 1
+        continue
+      }
+    }
     if (/^\s{0,3}([-*_])\s*(\1\s*){2,}$/.test(current)) { out.push({ kind: 'line', html: '', text: '' }); continue }
     out.push({ kind: 'line', html: line(current), text: current })
   }
   return out
 }
 
-const grouped = (lines: readonly string[], room: number): string[][] => lines.reduce<string[][]>((held, one) => {
-  const last = held.at(-1)
-  if (last === undefined || last.join('\n').length + one.length + 1 > room) held.push([one])
-  else last.push(one)
+function grouped(lines: readonly string[], render: (text: string) => string): string[][] {
+  const held: string[][] = []
+  for (const line of lines) {
+    let rest = line
+    do {
+      let take = rest.length
+      while (take > 1 && render(rest.slice(0, take)).length > LIMIT) take = Math.floor(take * 0.8)
+      const high = rest.charCodeAt(take - 1)
+      if (take < rest.length && high >= 0xd800 && high <= 0xdbff) take -= 1
+      const part = rest.slice(0, take)
+      const last = held.at(-1)
+      if (last === undefined || render([...last, part].join('\n')).length > LIMIT) held.push([part])
+      else last.push(part)
+      rest = rest.slice(take)
+    } while (rest !== '')
+  }
   return held
-}, [])
+}
 
 /** A block too long for one message, cut into whole lines, or at a space, so no tag or surrogate pair is split. */
 function split(block: Block): TelegramPiece[] {
-  if (block.kind === 'pre' && block.body !== undefined) return grouped(block.body.split('\n'), LIMIT - 64).map((held) => ({ html: code(held.join('\n'), block.language), text: held.join('\n') }))
-  if (block.kind === 'quote' && block.body !== undefined) return grouped(block.body.split('\n'), LIMIT - 64).map((held) => ({ html: quote(held), text: held.map((one) => `> ${one}`).join('\n') }))
+  if (block.kind === 'pre' && block.body !== undefined) return grouped(block.body.split('\n'), (text) => code(text, block.language)).map((held) => ({ html: code(held.join('\n'), block.language), text: held.join('\n') }))
+  if (block.kind === 'quote' && block.body !== undefined) return grouped(block.body.split('\n'), (text) => quote(text.split('\n'))).map((held) => ({ html: quote(held), text: held.map((one) => `> ${one}`).join('\n') }))
   const out: TelegramPiece[] = []
   let rest = block.text
   while (rest !== '') {
