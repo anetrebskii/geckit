@@ -50,16 +50,71 @@ const code = (text: string, language?: string): string => language === undefined
 
 const quote = (lines: readonly string[]): string => `<blockquote${lines.length > QUOTE_LINES || lines.join('\n').length > 600 ? ' expandable' : ''}>${lines.map((one) => line(one)).join('\n')}</blockquote>`
 
-/** A markdown table, kept readable by padding its columns inside a monospace block. */
-function table(rows: readonly string[]): string {
-  const cells = rows.map((row) => row.trim().replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim()))
-  const body = cells.filter((_row, at) => at !== 1)
-  const widths = body.reduce<number[]>((held, row) => row.map((cell, at) => Math.max(held[at] ?? 0, cell.length)), [])
-  return body.map((row) => row.map((cell, at) => cell.padEnd(widths[at] ?? 0)).join('  ').trimEnd()).join('\n')
+// What a phone held upright shows of a monospace line without wrapping it.
+const NARROW = 36
+
+/** A table row's cells: cut at its pipes, but not at one written \| or one inside a code span. */
+function cellsOf(row: string): string[] {
+  const text = row.trim().replace(/^\|/, '')
+  const cells: string[] = []
+  let cell = ''
+  let span = ''
+  for (let at = 0; at < text.length; at++) {
+    const one = text[at] ?? ''
+    if (one === '\\' && text[at + 1] === '|') { cell += '|'; at++; continue }
+    if (one === '`') {
+      const run = /^`+/.exec(text.slice(at))?.[0] ?? '`'
+      if (span === '' ? text.indexOf(run, at + run.length) !== -1 : run === span) span = span === '' ? run : ''
+      cell += run
+      at += run.length - 1
+      continue
+    }
+    if (one === '|' && span === '') { cells.push(cell.trim()); cell = ''; continue }
+    cell += one
+  }
+  if (cell.trim() !== '') cells.push(cell.trim())
+  return cells
 }
 
-const isTableRow = (source: string | undefined): boolean => source !== undefined && source.includes('|') && source.trim() !== ''
-const isTableRule = (source: string | undefined): boolean => source !== undefined && /^\s*\|?[\s:|-]*-[\s:|-]*\|[\s:|-]*$/.test(source)
+const isTableRow = (source: string | undefined): boolean => source !== undefined && source.includes('|') && source.trim() !== '' && !/^\s{0,3}(`{3,}|~{3,})/.test(source)
+const isTableRule = (source: string | undefined, count: number): boolean => {
+  if (source === undefined || !source.includes('-')) return false
+  const cells = cellsOf(source)
+  return cells.length === count && cells.every((cell) => /^:?-+:?$/.test(cell))
+}
+const MARKUP = /[`*_~]|\[[^\]\n]*\]\(/
+
+/**
+ * A markdown table, which Telegram has no form of. A narrow one stays a grid in a monospace block;
+ * anything wider becomes one entry per row, its first cell in bold and a "Header: value" line for each other cell.
+ */
+function table(rows: readonly string[]): Block[] {
+  const headers = cellsOf(rows[0] ?? '')
+  const body = rows.slice(2).map(cellsOf).map((row) => row.length < headers.length ? [...row, ...Array.from({ length: headers.length - row.length }, () => '')] : row)
+  const grid = [headers, ...body]
+  const widths = grid.reduce<number[]>((held, row) => row.map((cell, at) => Math.max(held[at] ?? 0, cell.length)), [])
+  const padded = grid.map((row) => row.map((cell, at) => cell.padEnd(widths[at] ?? 0)).join('  ').trimEnd()).join('\n')
+  if (padded.split('\n').every((one) => one.length <= NARROW) && !grid.flat().some((cell) => MARKUP.test(cell))) return [{ kind: 'pre', html: code(padded), text: padded, body: padded }]
+  const numbered = /^(#|№|no\.?|n)?$/i.test(headers[0] ?? '') && body.length > 0 && body.every((row) => /^\d+\.?$/.test(row[0] ?? ''))
+  const first = numbered ? 1 : 0
+  const out: Block[] = []
+  for (const [at, row] of body.entries()) {
+    const title = row[first] ?? ''
+    const number = numbered ? `${(row[0] ?? '').replace(/\.$/, '')}. ` : ''
+    const lines: TelegramPiece[] = title === '' && number === '' ? [] : [{ text: `${number}${title === '' || title.includes('**') ? title : `**${title}**`}`, html: `${number}${title === '' || title.includes('**') ? inline(title) : `<b>${inline(title)}</b>`}` }]
+    for (const [column, cell] of row.entries()) {
+      if (column === first || (numbered && column === 0) || cell === '') continue
+      const label = headers[column] ?? ''
+      lines.push(label === '' ? { text: cell, html: inline(cell) } : { text: `${label}: ${cell}`, html: `${inline(label)}: ${inline(cell)}` })
+    }
+    if (at > 0) out.push({ kind: 'line', html: '', text: '' })
+    const html = lines.map((one) => one.html).join('\n')
+    if (html.length <= LIMIT) out.push({ kind: 'line', html, text: lines.map((one) => one.text).join('\n') })
+    else out.push(...lines.map((one): Block => ({ kind: 'line', ...one })))
+  }
+  return out
+}
+
 const terminalLine = (source: string): string | undefined => /^\s{0,3}[│|] ?(.*)$/.exec(source)?.[1]
 const aligned = (source: string | undefined): boolean => source !== undefined && /\S {2,}\S/.test(source)
 
@@ -107,11 +162,10 @@ function blocks(source: string): Block[] {
       at = end - 1
       continue
     }
-    if (isTableRow(current) && isTableRule(lines[at + 1])) {
+    if (isTableRow(current) && isTableRule(lines[at + 1], cellsOf(current).length)) {
       let end = at + 2
       while (end < lines.length && isTableRow(lines[end])) end++
-      const body = table(lines.slice(at, end))
-      out.push({ kind: 'pre', html: code(body), text: lines.slice(at, end).join('\n'), body })
+      out.push(...table(lines.slice(at, end)))
       at = end - 1
       continue
     }
