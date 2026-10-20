@@ -396,6 +396,11 @@ const geckit = {
       }
     },
     state: (count: number, trouble: string | undefined): void => ipcRenderer.send('peer:state', count, trouble ?? null),
+    /** The rooms of the links shared now, each with its own key. */
+    shares: (): Promise<readonly { readonly id: string; readonly key: string }[]> => ipcRenderer.invoke('peer:shares'),
+    onShares: (said: (rooms: readonly { readonly id: string; readonly key: string }[]) => void): (() => void) => listen('peer:shares', said),
+    /** A call from a link page, answered for its own link only. */
+    share: (id: string, name: string, args: readonly unknown[]): Promise<unknown> => ipcRenderer.invoke('peer:share', id, name, args),
     /** Which screen to capture for a phone, or why this Mac will not let it be. */
     screen: (): Promise<{ readonly id?: string; readonly error?: string }> => ipcRenderer.invoke('peer:screen'),
   },

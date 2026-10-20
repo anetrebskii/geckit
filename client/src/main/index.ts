@@ -83,6 +83,7 @@ import { fileAt, fileMenu, isThere, openFile, pickApp } from './open-with'
 import { Sessions } from './sessions'
 import { Manager, runManagerCli } from './manager'
 import { ManagerTelegram } from './telegram'
+import { Shares } from './shares'
 import { managerTelegramStatus } from './telegram-text'
 import { configureManagerAccess, phoneTelegramView, telegramActionAccess, telegramVault } from './telegram-access'
 import type { ManagerConfig, ManagerView } from '../shared/manager'
@@ -172,6 +173,16 @@ const SCREENSHOT = ANYWHERE.screenshot
 let sessions: Sessions | undefined
 let manager: Manager | undefined
 let telegram: ManagerTelegram | undefined
+// Links shared from Telegram live while the app runs; the hidden peer window answers them, Phone on or not.
+const shares = new Shares({
+  changed: () => {
+    keepPeer()
+    shownPeer()?.webContents.send('peer:shares', shares.rooms())
+    const view = telegram?.view()
+    if (view !== undefined) for (const window of everyWindow()) window.webContents.send('telegram:view', view)
+  },
+  ended: (id) => telegram?.linkEnded(id),
+})
 let providerUpdateCheck: Promise<PluginUpdateResult> | undefined
 let providerUpdateTimer: NodeJS.Timeout | undefined
 const conversationNotes = notesStore()
@@ -1029,6 +1040,7 @@ async function buildManager(started: Sessions): Promise<void> {
   let deliveryChannel = ''
   const bridge = new ManagerTelegram({
     directory,
+    shares,
     vault: telegramVault(safeStorage, process.platform),
     manager: {
       submit: async (text, id) => { await coordinator.send(text, 'telegram', id) },
@@ -1423,8 +1435,17 @@ function wire(): void {
   ipcMain.on('phone:newCode', () => setSettings({ phoneKey: newKey() }))
   // Only the phone's own window may speak for the phone.
   ipcMain.handle('peer:pairing', (event) =>
-    event.sender === shownPeer()?.webContents ? { key: getSettings().phoneKey, signal: SIGNAL } : undefined,
+    event.sender === shownPeer()?.webContents && phoneOn ? { key: getSettings().phoneKey, signal: SIGNAL } : undefined,
   )
+  ipcMain.handle('peer:shares', (event) => (event.sender === shownPeer()?.webContents ? shares.rooms() : []))
+  // A link page may ask only about its own link, and only these three things.
+  ipcMain.handle('peer:share', async (event, id: string, name: string, args: readonly unknown[]) => {
+    if (event.sender !== shownPeer()?.webContents) throw new Error('Not the phone')
+    if (name === 'share.about') return shares.about(id)
+    if (name === 'share.fetch') return shares.fetch(id, args[0] as LocalAsk)
+    if (name === 'share.read') return shares.read(id, typeof args[0] === 'string' ? args[0] : '')
+    throw new Error(`No such call: ${name}`)
+  })
   ipcMain.handle('peer:call', async (event, name: string, args: readonly unknown[]) => {
     if (event.sender !== shownPeer()?.webContents) throw new Error('Not the phone')
     const run = Object.hasOwn(PHONE_CALLS, name) ? PHONE_CALLS[name] : undefined
@@ -1647,13 +1668,20 @@ function keepPhone(on: boolean, key: string): void {
   closePeer()
   phoneState = { count: 0 }
   phonesHere = 0
-  if (on) peerWindow()
+  keepPeer()
   if (on && awake === undefined) awake = powerSaveBlocker.start('prevent-app-suspension')
   if (!on && awake !== undefined) {
     powerSaveBlocker.stop(awake)
     awake = undefined
   }
   void phoneView().then((view) => tell('phone:state', view))
+}
+
+/** The peer window is there while Phone is on or a link is shared. */
+function keepPeer(): void {
+  const needed = phoneOn || shares.rooms().length > 0
+  if (needed) peerWindow()
+  else if (shownPeer() !== undefined) closePeer()
 }
 
 /** What Settings shows: the code to scan, and how many phones are on it. */

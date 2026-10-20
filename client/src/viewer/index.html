@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en" class="viewer">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
+    <title>GeckIt link</title>
+  </head>
+  <body>
+    <header class="viewer-bar" hidden>
+      <div class="viewer-what">
+        <strong id="viewer-title"></strong>
+        <span id="viewer-left"></span>
+      </div>
+      <span id="viewer-tools" class="viewer-tools"></span>
+      <button type="button" class="quiet" id="viewer-reload">Reload</button>
+    </header>
+    <main id="viewer-stage" class="viewer-stage" aria-live="polite"></main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

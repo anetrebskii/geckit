@@ -749,6 +749,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onTell: never,
       state: nothing,
       screen: () => Promise.resolve({}),
+      shares: () => Promise.resolve([]),
+      onShares: never,
+      share: () => Promise.resolve(undefined),
     },
   }
 

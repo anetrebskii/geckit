@@ -27,3 +27,4 @@ pnpm-debug.log*
 
 _video/
 client/.dev-restart.log
+signal/public/

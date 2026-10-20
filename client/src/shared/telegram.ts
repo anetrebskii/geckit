@@ -1,3 +1,5 @@
+import type { SharedLink } from './share'
+
 export interface TelegramAccount {
   readonly id: number
   readonly chatId: number
@@ -18,6 +20,8 @@ export interface TelegramView {
   readonly account?: TelegramAccount
   readonly detail?: string
   readonly pendingLate: number
+  /** The links shared from Telegram that are live now. */
+  readonly links?: readonly SharedLink[]
 }
 
 export type TelegramAction =
@@ -26,6 +30,7 @@ export type TelegramAction =
   | { readonly kind: 'cancel-pairing' }
   | { readonly kind: 'retry' }
   | { readonly kind: 'disconnect' }
+  | { readonly kind: 'stop-link'; readonly id: SharedLink['id'] }
 
 export interface TelegramDecision {
   readonly id: string

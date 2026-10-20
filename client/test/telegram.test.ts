@@ -282,7 +282,7 @@ describe('Manager Telegram, with a fake Bot API', () => {
     await paired(value)
     await vi.waitFor(() => expect(value.api.calls.some((item) => item.method === 'setMyCommands')).toBe(true))
     const commands = value.api.calls.find((item) => item.method === 'setMyCommands')?.body['commands']
-    expect(Array.isArray(commands) ? commands.map((one) => jsonObject(one)?.['command']) : []).toEqual(['status', 'pause', 'resume', 'settings', 'help'])
+    expect(Array.isArray(commands) ? commands.map((one) => jsonObject(one)?.['command']) : []).toEqual(['status', 'pause', 'resume', 'settings', 'links', 'help'])
   })
 
   it('acknowledges an instruction as a reply to it, and takes the buttons off a question it has answered', async () => {

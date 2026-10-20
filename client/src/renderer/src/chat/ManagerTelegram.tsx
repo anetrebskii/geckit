@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { endsIn } from '../../../shared/share'
+import type { SharedLink } from '../../../shared/share'
 import type { TelegramAction, TelegramView } from '../../../shared/telegram'
 
 export function useTelegram(): readonly [TelegramView | undefined, (next: TelegramView) => void] {
@@ -24,6 +26,51 @@ const label = (state: TelegramView['state']): string => {
     case 'offline': return 'Reconnecting to Telegram'
     case 'revoked': case 'conflict': case 'storage-error': return 'Telegram needs attention'
   }
+}
+
+/** The links shared from Telegram that are live, each with the time it has left and Stop, shown under the steps whenever there is one; focus moves to the next Stop, or the list, once one goes. */
+export function SharedLinks({ view, onView }: { readonly view: TelegramView | undefined; readonly onView: (next: TelegramView) => void }): React.JSX.Element | null {
+  const [now, setNow] = useState(Date.now)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  // The last one stopped here leaves a line saying so, which takes the focus its Stop had.
+  const [emptied, setEmptied] = useState(false)
+  const list = useRef<HTMLDivElement>(null)
+  const after = useRef<number | undefined>(undefined)
+  const shared = view?.links
+  const links: readonly SharedLink[] = shared ?? []
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  useEffect(() => {
+    if (after.current === undefined || busy) return
+    const buttons = list.current?.querySelectorAll('button') ?? []
+    const next = buttons[Math.min(after.current, buttons.length - 1)]
+    after.current = undefined
+    if (next !== undefined) next.focus()
+    else list.current?.focus()
+  }, [shared, busy])
+  if (links.length === 0 && !emptied) return null
+  const stop = async (id: SharedLink['id'], at: number): Promise<void> => {
+    setBusy(true); setError('')
+    try {
+      after.current = at
+      const next = await window.geckit.telegram.action({ kind: 'stop-link', id })
+      setEmptied((next.links ?? []).length === 0)
+      onView(next)
+    } catch (caught) { after.current = undefined; setError(caught instanceof Error ? caught.message : String(caught)) } finally { setBusy(false) }
+  }
+  return <div ref={list} className="manager-links" tabIndex={-1} aria-labelledby="manager-links-title">
+    <p id="manager-links-title" className="manager-links-title">Shared links</p>
+    {links.length === 0 ? <p className="manager-links-none" role="status">Nothing is shared now.</p> : null}
+    <ul>{links.map((link, at) => <li key={link.id}>
+      <span className="manager-links-name">{link.title}</span>
+      <span className="manager-links-left">Ends in {endsIn(link.expiresAt, now)}</span>
+      <button type="button" className="quiet" disabled={busy} aria-label={`Stop sharing ${link.title}`} onClick={() => { void stop(link.id, at) }}>Stop</button>
+    </li>)}</ul>
+    {error === '' ? null : <p className="manager-error" role="alert">{error}</p>}
+  </div>
 }
 
 const who = (view: TelegramView): string => [

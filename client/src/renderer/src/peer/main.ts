@@ -1,7 +1,7 @@
 import { listen } from '../link'
 import type { Link } from '../link'
 import type { ChatSession, SessionImage, SessionItem, SessionItems } from '../../../shared/api'
-import { pieceOf } from '../../../shared/pairing'
+import { pieceOf, SIGNAL } from '../../../shared/pairing'
 import { collapse, isPending, pendingLast, readPictureRef, withoutPictures } from '../../../shared/steps'
 
 /**
@@ -348,6 +348,53 @@ const joined = (link: Link): void => {
     )
   })
 }
+
+// Each shared link has a room and key of its own, and a page joined there may ask only about that link.
+const SHARE_CALLS = new Set(['share.about', 'share.fetch', 'share.read'])
+const shareRooms = new Map<string, { readonly stop: () => void; readonly links: Set<Link> }>()
+
+function shareJoined(id: string, link: Link): void {
+  const room = shareRooms.get(id)
+  if (room === undefined) return link.close()
+  room.links.add(link)
+  link.onClose(() => room.links.delete(link))
+  link.onMessage((message) => {
+    if (message.t !== 'call') return
+    if (message.name === 'link.can') {
+      link.send({ t: 'reply', id: message.id, value: { deflate: true } })
+      if ((message.args[0] as readonly string[]).includes('deflate')) link.compress(true)
+      return
+    }
+    if (!SHARE_CALLS.has(message.name)) return link.send({ t: 'reply', id: message.id, error: 'Not shared' })
+    window.geckit.peer.share(id, message.name, message.args).then(
+      (value) => link.send({ t: 'reply', id: message.id, value }),
+      (error: unknown) => link.send({ t: 'reply', id: message.id, error: error instanceof Error ? error.message : String(error) }),
+    )
+  })
+}
+
+function keepShares(rooms: readonly { readonly id: string; readonly key: string }[]): void {
+  const wanted = new Map(rooms.map((room) => [room.id, room.key]))
+  for (const [id, room] of shareRooms) {
+    if (wanted.has(id)) continue
+    // Said first, so the page shows the link has ended rather than a lost connection; then closed whether it heard or not.
+    // Stopping the room closes its connections, so it waits for that too.
+    for (const link of room.links) link.send({ t: 'tell', channel: 'share.ended', value: null })
+    window.setTimeout(() => {
+      for (const link of room.links) link.close()
+      room.stop()
+    }, 1000)
+    shareRooms.delete(id)
+  }
+  for (const [id, key] of wanted) {
+    if (shareRooms.has(id)) continue
+    const links = new Set<Link>()
+    shareRooms.set(id, { stop: listen({ key, signal: SIGNAL }, (link) => shareJoined(id, link), () => undefined), links })
+  }
+}
+
+window.geckit.peer.onShares(keepShares)
+void window.geckit.peer.shares().then(keepShares)
 
 void window.geckit.peer.pairing().then((pairing) => {
   if (pairing === undefined) return

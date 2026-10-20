@@ -11262,6 +11262,56 @@ html.phone .model-details .phone-cell {
   background: var(--danger);
 }
 
+/* The links shared from Telegram: what each is, the time it has left, and Stop. */
+.manager-links {
+  margin-block-start: 12px;
+  outline: none;
+}
+
+.manager-links-title {
+  margin-block: 0 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.manager-links-none {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.manager-links ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.manager-links li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+  padding-block: 4px;
+  border-block-end: 1px solid var(--border);
+}
+
+.manager-links-name {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.manager-links-left {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The quiet note a step can carry under its buttons. */
 .manager-aside {
   margin-block-start: 12px;
