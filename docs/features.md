@@ -20,6 +20,8 @@ Combined product feature list agreed with Alex on 2026-10-04. Describe what Geck
 - **Reusable phrases.** Keep frequent instructions and add them to follow-up messages without retyping.
 - **Remember Computer Use app access.** In the working tree, choose "Allow for this session" on a recognized Codex app-access confirmation on desktop or phone. Identical requests continue automatically within that live conversation. Stop, disconnect, driver replacement or app restart clears the choice; other apps and conversations require their own approval.
 
+- **Telegram reply context.** In the working tree, reply to saved Manager messages in the paired private bot chat with their original message text and known managed-task context, including earlier messages and after restart. Unknown or unauthorized references request a fresh instruction; native decisions keep their bound approval flow.
+
 ## iPhone app
 
 - **Encrypted P2P connection.** Pair by QR code and connect to the computer over WebRTC. Use a direct connection when possible, with an encrypted relay fallback when required.

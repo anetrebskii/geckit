@@ -845,3 +845,59 @@ HTML rather than MarkdownV2: MarkdownV2 requires escaping fourteen characters in
 Manager is talked to in Telegram, so GeckIt itself writes into its session: what Alex sent, what a worker is doing, what a GeckIt command answered. All three were written for the manager to read, as a prefix line and then JSON, and the panel showed them as they were: walls of quoted keys running past the right edge. The panel now reads each one and draws what it says. What came from Telegram is the words, marked as having come from there. A worker's news is its title, where it stands as one or two marks, what it said, and the project it is in. A command result is the operation, the command as it would be typed into a terminal, and what came back, folded away. What the manager was actually handed stays, one fold below, for the cases where the shape matters. A message that is not the shape it should be is shown as the text it is rather than dropped, since what GeckIt could not read is still what Manager read.
 
 Only GeckIt's own writing is drawn this way. Anything Alex typed, which in this session is nothing, stays as it is.
+
+
+## Telegram reply context - 2026-10-20
+
+### Purpose and path
+
+In a paired private Telegram chat, reply to an earlier Manager message to continue its subject. Pairing and desktop confirmation remain prerequisites. No additional setup or session picker is needed. The bot remembers the exact sent chunk and its originating Manager session in protected local storage. After restart the same reply still carries that context. Manager remains the coordinator; a reply never attaches or directly controls a manual worker.
+
+### Surfaces and states
+
+| Surface | State | Visible result | Next action |
+|---|---|---|---|
+| Existing Telegram chat | Known ordinary Manager message | “Sent to Manager.” | Wait for Manager's response |
+| Existing Telegram chat | Open decision | Existing decision-answer acknowledgement | Continue using current decision controls |
+| Existing Telegram chat | Unknown, inaccessible/unmapped, retired decision, external or ambiguous reference | “This reply cannot be matched to a saved Manager message. Reply to a known message or send a new instruction here.” | Choose known message or send ordinary instruction |
+| Existing Telegram chat | Origin no longer authorized | Existing instruction failure acknowledgement | Check /status or send a fresh instruction |
+
+### Transitions
+
+```mermaid
+stateDiagram-v2
+  [*] --> ready
+  ready --> routed: known reply
+  ready --> fallback: unknown reply
+  routed --> ready: acknowledged
+  fallback --> ready: resend
+```
+
+| From | Event | To | What user sees |
+|---|---|---|---|
+| Ready | User replies to saved Manager prose | Routed automatically | Existing acknowledgement |
+| Ready | User replies to open decision | Existing decision flow | Existing answer result |
+| Ready | User sends unknown/external reference | Fallback automatically, no dispatch | Exact fallback above |
+| Fallback | User chooses known message or sends ordinary text | Ready | Existing acknowledgement |
+
+Rendered transition evidence: [reply states](../../specs/011-manager-telegram/evidence/telegram-reply-states.svg).
+
+### Trusted task context
+
+Each Manager response carries the managed-worker IDs from its actual turn input: worker state events and successful single-worker CLI results with a validated `--id`. A mixed event preserves all candidate IDs and asks Manager to clarify rather than selecting the most recent worker. Replies propagate those IDs, while fresh ordinary instructions have no inferred worker. Arbitrary model prose, CLI result prose and historical transcript mentions never establish identity. Ownership is checked again after asynchronous refresh/open before accepting a reply.
+
+### Silent states
+
+Mapping writes and restart reads stay silent. Other accounts/chats remain ignored. Quoted text is untrusted task data, never identity or permission authority. Telegram-provided custom quote text cannot override the saved original.
+
+### Limits and wording
+
+Retain the latest 2,048 sent chunks to bound protected storage; older references use explicit fallback. Manager prose and its acknowledgements with known origins are mapped. Status, setup, error and other operational messages without trusted origin use fallback; open decisions keep their existing decision mapping. Each chunk is already bounded by Telegram's renderer. Existing ten-minute delayed-instruction confirmation also applies to replies and retains their saved origin. Commands retain their existing behavior, including /pause and /resume when sent as replies. No new renderer, time limit or approval action is introduced. Exact fallback: “This reply cannot be matched to a saved Manager message. Reply to a known message or send a new instruction here.”
+
+### Edge cases and decisions
+
+Concurrent replies use persisted message IDs, not the latest task. Split messages retain context per chunk. Retired decisions cannot become ordinary instructions. External replies and quote-only references fail safely. Unknown/deleted task origins do not create or attach sessions. Telegram message deletion is not detected: a retained known mapping can still supply context when Telegram supplies its usable message ID; inaccessible or missing references use fallback. Manager's current session receives historical owned-session context without resuming archived sessions; this preserves its coordinator role and native guard boundaries. Bot replacement/disconnect drops old mappings with existing credentials.
+
+### Intentionally absent and requirements
+
+No text-based worker guessing, direct worker send, session attachment, native permission acceptance, or cross-chat routing: none can be authorized by a quote. This amendment implements the explicitly requested reply-context behavior within existing Manager ownership and Telegram pairing requirements. No visible desktop/phone UI changes are applicable.

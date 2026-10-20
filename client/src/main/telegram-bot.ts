@@ -15,6 +15,7 @@ export interface TelegramMessage {
   readonly private: boolean
   readonly from?: TelegramAccount
   readonly text?: string
+  readonly reference?: { readonly chatId?: TelegramAccount['chatId']; readonly botId?: TelegramBot['id']; readonly external: boolean }
   readonly replyTo?: number
 }
 
@@ -37,8 +38,12 @@ function messageOf(value: Json | undefined): TelegramMessage | undefined {
   const chat = jsonObject(message?.['chat'])
   if (message === undefined || chat === undefined || !integer(chat['id']) || !integer(message['message_id']) || !integer(message['date'])) return undefined
   const from = telegramAccount(message['from'], chat['id'])
-  const reply = jsonObject(message['reply_to_message'])?.['message_id']
-  return { id: message['message_id'], date: message['date'], chatId: chat['id'], private: chat['type'] === 'private', ...(from === undefined ? {} : { from }), ...(typeof message['text'] === 'string' ? { text: message['text'] } : {}), ...(integer(reply) ? { replyTo: reply } : {}) }
+  const replied = jsonObject(message['reply_to_message'])
+  const reply = replied?.['message_id']
+  const replyChat = jsonObject(replied?.['chat'])?.['id']
+  const replyBot = jsonObject(replied?.['from'])
+  const referenced = replied !== undefined || message['external_reply'] !== undefined || message['quote'] !== undefined
+  return { id: message['message_id'], date: message['date'], chatId: chat['id'], private: chat['type'] === 'private', ...(from === undefined ? {} : { from }), ...(typeof message['text'] === 'string' ? { text: message['text'] } : {}), ...(integer(reply) ? { replyTo: reply } : {}), ...(referenced ? { reference: { external: message['external_reply'] !== undefined || replied === undefined || replyBot !== undefined && replyBot['is_bot'] !== true, ...(integer(replyChat) ? { chatId: replyChat } : {}), ...(replyBot?.['is_bot'] === true && integer(replyBot['id']) ? { botId: replyBot['id'] } : {}) } } : {}) }
 }
 
 export function telegramUpdate(value: Json): TelegramUpdate | undefined {
