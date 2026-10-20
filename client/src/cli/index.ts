@@ -13,7 +13,7 @@ import type { Move, SessionNote } from '../main/sessions'
 import { CodexSessions } from '../main/sessions/codex'
 import { belowRoot, hostOf, isRemote, pathOf } from '../shared/hosts'
 import { askedEndpoint } from './endpoint'
-import { answerLines, requestingSession, tasksFrom } from './start'
+import { answerLines, appNamed, requestingSession, tasksFrom } from './start'
 import type { Answer } from './start'
 import { migrate } from './migrate'
 
@@ -173,6 +173,7 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
       Asks GeckIt to start conversations, one or a batch of up to 20, and waits for the answer.
       The file, or - for stdin, is an array of { "project", "title", "text", "goal", "provider" }.
       GeckIt shows the request in this conversation; nothing starts until the person answers there.
+      Another program asks with --app <its name>: the request is a card of its own on the board, in the first project, gone once answered.
       Prints a line per conversation in the order sent, started or queued with its id, or refused, with the person's note, then their reply.
 
   geckit linked [<id>] [--json]
@@ -266,13 +267,15 @@ async function show(args: readonly string[]): Promise<string> {
 export function start(args: readonly string[]): Promise<{ readonly said: string; readonly ok: boolean }> {
   const tasks = tasksFrom(args, (file) => readFileSync(file === '-' ? 0 : file, 'utf8'))
   if (typeof tasks === 'string') return Promise.resolve({ ok: false, said: tasks })
+  const app = appNamed(args)
+  if (app === '') return Promise.resolve({ ok: false, said: 'geckit start --app <name of the program asking> ...' })
   const from = requestingSession()
-  if (from === undefined) return Promise.resolve({ ok: false, said: 'Run this from a Claude Code or Codex session.' })
+  if (from === undefined && app === undefined) return Promise.resolve({ ok: false, said: 'Run this from a Claude Code or Codex session, or name the program with --app.' })
   return new Promise((done) => {
     const socket = connect(askedEndpoint(data()))
     let rest = ''
     socket.setEncoding('utf8')
-    socket.on('connect', () => socket.write(`${JSON.stringify({ from, tasks })}\n`))
+    socket.on('connect', () => socket.write(`${JSON.stringify(app === undefined ? { from, tasks } : { app, tasks })}\n`))
     socket.on('data', (part: string) => {
       rest += part
     })

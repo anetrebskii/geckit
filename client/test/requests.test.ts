@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { answerLines, requestingSession, tasksFrom } from '../src/cli/start'
+import { answerLines, appNamed, requestingSession, tasksFrom } from '../src/cli/start'
 import type { holdClaude } from '../src/main/sessions/claude'
 import type { Driver } from '../src/main/sessions/heard'
 import { memoryNotes, Sessions, startsConversations } from '../src/main/sessions'
@@ -252,6 +252,58 @@ describe('a request to start conversations', () => {
   })
 })
 
+describe('a request from a program outside any conversation', () => {
+  const card = (rows: readonly (readonly ChatSession[])[]): ChatSession | undefined => rows.at(-1)?.find((one) => one.title.startsWith('Daykeeper:'))
+
+  it('stands on the board as a card of its own in the first project, named after the program, and says so in a notice', () => {
+    const built = build()
+    void built.sessions.requestFromApp('Daykeeper', TASKS, 'auto', new AbortController().signal)
+    expect(card(built.rows)).toMatchObject({ title: 'Daykeeper: 2 conversations', root: ROOT, state: 'asks', stands: 'Wants to start 2 conversations' })
+    expect(request(built.fanned)).toMatchObject({ app: 'Daykeeper', tasks: [{ title: 'Fix the flaky test' }, { title: 'Honour Retry-After' }] })
+    expect(built.notices.at(-1)).toMatchObject({ session: card(built.rows)?.id, title: 'Daykeeper wants to start 2 conversations - app, other', asks: true })
+    expect(built.sent).toEqual([])
+  })
+
+  it('starts what is ticked with no parent, answers the program, and the card goes', async () => {
+    const built = build()
+    const answer = built.sessions.requestFromApp('Daykeeper', TASKS.slice(0, 1), 'auto', new AbortController().signal)
+    const holder = card(built.rows)?.id ?? ''
+    expect(card(built.rows)?.title).toBe('Daykeeper: Fix the flaky test')
+    await built.sessions.answerRequest(request(built.fanned)?.id ?? '', { start: [true], notes: ['small'], where: 'mac' })
+    const said = await answer
+    const child = said?.tasks[0]?.id ?? ''
+    expect(said?.tasks[0]).toMatchObject({ answer: 'started', note: 'small' })
+    expect(built.sent).toEqual(['Fix the flaky upload test.\n\nNote: small'])
+    expect(row(built.rows, child)).toMatchObject({ title: 'Fix the flaky test', root: ROOT })
+    expect(row(built.rows, child)?.parent).toBeUndefined()
+    expect(row(built.rows, holder)).toBeUndefined()
+  })
+
+  it('takes nothing typed into its card', async () => {
+    const built = build()
+    void built.sessions.requestFromApp('Daykeeper', TASKS, 'auto', new AbortController().signal)
+    const holder = card(built.rows)?.id ?? ''
+    await expect(built.sessions.send({ session: holder, root: ROOT, mode: 'auto', text: 'hello' })).rejects.toThrow('Answer the request first')
+    expect(built.sent).toEqual([])
+  })
+
+  it('is refused when its card is deleted, and goes when the program stops waiting', async () => {
+    const built = build()
+    const refused = built.sessions.requestFromApp('Daykeeper', TASKS, 'auto', new AbortController().signal)
+    await built.sessions.remove([card(built.rows)?.id ?? ''])
+    expect(await refused).toEqual({ tasks: [{ answer: 'refused' }, { answer: 'refused' }] })
+    expect(card(built.rows)).toBeUndefined()
+
+    const gone = new AbortController()
+    const withdrawn = built.sessions.requestFromApp('Daykeeper', TASKS, 'auto', gone.signal)
+    expect(card(built.rows)).toBeDefined()
+    gone.abort()
+    expect(await withdrawn).toBeUndefined()
+    expect(card(built.rows)).toBeUndefined()
+    expect(built.sent).toEqual([])
+  })
+})
+
 describe('which commands are GeckIt asking', () => {
   it.each([
     '~/.geckit/bin/geckit start --project app "Fix it"',
@@ -295,6 +347,14 @@ describe('geckit start', () => {
     expect(requestingSession({ CODEX_THREAD_ID: 'thread', CLAUDE_CODE_SESSION_ID: 'claude-parent' })).toBe('codex:thread')
     expect(requestingSession({ CLAUDE_CODE_SESSION_ID: 'claude-parent' })).toBe('claude-parent')
     expect(requestingSession({})).toBeUndefined()
+  })
+
+  it('reads the program asking from --app and keeps it out of the text', () => {
+    expect(appNamed(['--app', 'Daykeeper', '--project', 'app', 'Fix'])).toBe('Daykeeper')
+    expect(appNamed(['--project', 'app', 'Fix'])).toBeUndefined()
+    expect(appNamed(['--app', '--project', 'app'])).toBe('')
+    expect(appNamed(['--app'])).toBe('')
+    expect(tasksFrom(['--app', 'Daykeeper', '--project', 'app', 'Fix', 'it'], () => '')).toEqual([{ project: 'app', text: 'Fix it' }])
   })
 
   it('reads explicit providers from flags and batches', () => {
