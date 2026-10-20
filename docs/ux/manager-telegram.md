@@ -901,3 +901,7 @@ Concurrent replies use persisted message IDs, not the latest task. Split message
 ### Intentionally absent and requirements
 
 No text-based worker guessing, direct worker send, session attachment, native permission acceptance, or cross-chat routing: none can be authorized by a quote. This amendment implements the explicitly requested reply-context behavior within existing Manager ownership and Telegram pairing requirements. No visible desktop/phone UI changes are applicable.
+
+## Telegram attachment extension - 2026-10-20
+
+The paired chat's incoming photos/documents and explicit result-file delivery are defined in [Telegram attachment UX](../../specs/014-telegram-attachments/ux.md). It extends the reply-origin rules above and supersedes the old text-only ingestion limitation for this working branch. Setup, desktop inspection, native approvals and unrelated-session ownership remain governed by this document.

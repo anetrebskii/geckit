@@ -20,7 +20,7 @@ Combined product feature list agreed with Alex on 2026-10-04. Describe what Geck
 - **Reusable phrases.** Keep frequent instructions and add them to follow-up messages without retyping.
 - **Remember Computer Use app access.** In the working tree, choose "Allow for this session" on a recognized Codex app-access confirmation on desktop or phone. Identical requests continue automatically within that live conversation. Stop, disconnect, driver replacement or app restart clears the choice; other apps and conversations require their own approval.
 
-- **Telegram reply context.** In the working tree, reply to saved Manager messages in the paired private bot chat with their original message text and known managed-task context, including earlier messages and after restart. Unknown or unauthorized references request a fresh instruction; native decisions keep their bound approval flow.
+- **Telegram replies and attachments.** In the working tree, send photos and document files with captions to Manager in the paired private bot chat, and receive explicitly selected deliverables from managed local workers as photos or downloadable files. Supported images use native assistant input; other files use local file tools. Replies retain saved Manager message text and known managed-task context, including earlier messages and after restart. Unknown or unauthorized references request a fresh instruction; files cannot answer native approvals. Attachment cache has size and retention limits; SSH file transfer is unavailable.
 
 ## iPhone app
 

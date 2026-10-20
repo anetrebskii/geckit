@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Json, JsonObject } from '../src/shared/elicitation'
 import { jsonObject } from '../src/shared/elicitation'
+import { TelegramAttachments } from '../src/main/telegram-attachments'
+import type { ManagerDeps } from '../src/main/manager'
+import type { SessionMessage } from '../src/shared/api'
 import { ManagerTelegram } from '../src/main/telegram'
 import type { TelegramManager, TelegramVault } from '../src/main/telegram'
 import { configureManagerAccess, phoneTelegramView, telegramActionAccess, telegramVault } from '../src/main/telegram-access'
@@ -31,8 +34,11 @@ interface Request {
   readonly body: JsonObject
 }
 
-function botApi(): { readonly fetch: typeof fetch; readonly calls: Request[]; readonly deliver: (updates: Json[]) => void; readonly failSend: () => void; readonly failPoll: (code: number) => void; readonly refuseFormatting: () => void } {
+function botApi(): { readonly fetch: typeof fetch; readonly calls: Request[]; readonly deliver: (updates: Json[]) => void; readonly failSend: () => void; readonly failPoll: (code: number) => void; readonly refuseFormatting: () => void; readonly files: Map<string, Buffer>; readonly uploads: FormData[]; readonly failUpload: (code: number) => void } {
   const calls: Request[] = []
+  const files = new Map<string, Buffer>()
+  const uploads: FormData[] = []
+  let uploadFailure = -1
   const waiting: ((response: Response) => void)[] = []
   const pending: Response[] = []
   let sendFailure = false
@@ -42,10 +48,18 @@ function botApi(): { readonly fetch: typeof fetch; readonly calls: Request[]; re
   const response = (result: Json): Response => Response.json({ ok: true, result })
   const fetcher: typeof fetch = async (input, init) => {
     const method = String(input).split('/').at(-1) ?? ''
+    if (String(input).includes('/file/bot')) { const bytes = files.get(method); return bytes === undefined ? new Response('', { status: 404 }) : new Response(new Uint8Array(bytes)) }
     const body = typeof init?.body === 'string' ? jsonObject(JSON.parse(init.body) as Json) ?? {} : {}
     calls.push({ method, body })
     if (method === 'getMe') return response({ id: String(input).includes('654321:') ? 2 : 1, username: 'geckit_test_bot', is_bot: true })
     if (method === 'getWebhookInfo') return response({ url: '' })
+    if (method === 'getFile') { const id = String(body['file_id']); const bytes = files.get(id); return bytes === undefined ? response(true) : response({ file_path: `documents/${id}`, file_size: bytes.length }) }
+    if (method === 'sendPhoto' || method === 'sendDocument') {
+      if (init?.body instanceof FormData) uploads.push(init.body)
+      if (uploadFailure === 0) { uploadFailure = -1; throw new Error(`https://api.telegram.org/bot${token}/sendDocument`) }
+      if (uploadFailure > 0) { const code = uploadFailure; uploadFailure = -1; return Response.json({ ok: false, error_code: code }, { status: code }) }
+      return response({ message_id: ++messageId })
+    }
     if (method === 'sendMessage') {
       if (sendFailure) { sendFailure = false; throw new Error(`Request failed: https://api.telegram.org/bot${token}/sendMessage`) }
       if (formatFailure && body['parse_mode'] !== undefined) { formatFailure = false; return Response.json({ ok: false, error_code: 400, description: "Bad Request: can't parse entities" }, { status: 400 }) }
@@ -64,7 +78,7 @@ function botApi(): { readonly fetch: typeof fetch; readonly calls: Request[]; re
     }
     return response(true)
   }
-  return { fetch: fetcher, calls, deliver: (updates) => deliver(response(updates)), failSend: () => { sendFailure = true }, failPoll: (code) => deliver(Response.json({ ok: false, error_code: code, description: `Secret ${token}` }, { status: code })), refuseFormatting: () => { formatFailure = true } }
+  return { fetch: fetcher, calls, files, uploads, failUpload: (code) => { uploadFailure = code }, deliver: (updates) => deliver(response(updates)), failSend: () => { sendFailure = true }, failPoll: (code) => deliver(Response.json({ ok: false, error_code: code, description: `Secret ${token}` }, { status: code })), refuseFormatting: () => { formatFailure = true } }
 }
 
 function fixture(options: { readonly api?: ReturnType<typeof botApi>; readonly directory?: string; readonly store?: TelegramVault; readonly manager?: Partial<TelegramManager> } = {}): { readonly telegram: ManagerTelegram; readonly api: ReturnType<typeof botApi>; readonly directory: string; readonly submit: ReturnType<typeof vi.fn<TelegramManager['submit']>>; readonly answer: ReturnType<typeof vi.fn<NonNullable<TelegramManager['answer']>>> } {
@@ -94,6 +108,172 @@ async function paired(value: ReturnType<typeof fixture>): Promise<void> {
   await value.telegram.action({ kind: 'confirm', userId: 81, chatId: 81 })
   expect(value.telegram.view().state).toBe('connected')
 }
+
+describe('Telegram attachment composition with actual Manager and Sessions', () => {
+  it('delivers native photo/image-document and readable file bytes with captions, known replies and album context, then returns a selected worker file', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'telegram-composed-'))
+    paths.push(directory)
+    const api = botApi()
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1kAAAAASUVORK5CYII=', 'base64')
+    api.files.set('best', png)
+    api.files.set('image-doc', png)
+    api.files.set('report', Buffer.from('ordinary document contents'))
+    const attachments = new TelegramAttachments(directory, () => now)
+    const hearing = new Map<string, (heard: Heard) => void>()
+    const inputs: (Pick<SessionMessage, 'text' | 'images'> & { readonly id: string })[] = []
+    const current: { manager?: Manager } = {}
+    const notes = memoryNotes()
+    const sessions = new Sessions({
+      notes, changed: (all) => current.manager?.observeSessions(all), items: () => undefined, notify: () => undefined, account: () => undefined,
+      claude: (options, hear) => { hearing.set(options.id, hear); return { send: (text, images) => inputs.push({ id: options.id, text, ...(images === undefined ? {} : { images }) }), answer: () => undefined, stop: () => undefined, end: async () => undefined } },
+      disk: { list: async () => [], read: async () => undefined, has: async () => false }, claudeAccount: async () => ({ here: true, signedIn: true, plan: 'Max' }), claudeProgram: async () => undefined, usage: async () => ({ windows: new Map() }),
+    })
+    const settings = { ...DEFAULT_SETTINGS, projects: [directory], chatProviders: ['claude'] as const, chatProvider: 'claude' as const }
+    const deps: ManagerDeps = { directory, attachments, sessions, notes, settings: () => settings, saveSettings: () => settings,
+      telegramFile: () => bridge.fileSender(),
+      cli: async (args, context) => { const result = await current.manager?.command({ action: 'manage', args, ...context }); if (result === undefined || !result.ok) throw new Error(result?.error ?? 'Missing Manager'); return result.result },
+    }
+    const manager = new Manager(deps)
+    current.manager = manager
+    const bridge = new ManagerTelegram({ directory, attachments, fetch: api.fetch, vault, now: () => now, changed: () => undefined, manager: {
+      submit: (text, id, files, authorized) => manager.send(text, 'telegram', id, [], authorized, files), reply: (text, id, reference, authorized, files) => manager.reply(text, id, reference, authorized, files),
+      pause: async () => { await manager.pause() }, resume: async () => { await manager.resume() }, status: () => 'Ready', enabled: () => manager.enabled(),
+    } })
+    running.push(bridge)
+    disposals.push(() => { manager.dispose(); sessions.dispose() })
+    await manager.configure({ enabled: true })
+    const managerId = await manager.open()
+    const value = fixture({ api, directory })
+    // Pair the actual composed controller, with the fixture helper providing only its transport shape.
+    value.telegram.stop()
+    await paired({ ...value, telegram: bridge })
+    const media = (id: number, content: JsonObject, extra: JsonObject = {}): Json => ({ update_id: id, message: { message_id: id, date: now / 1000, chat: { id: 81, type: 'private' }, from: user, ...content, ...extra } })
+    const finish = (id: string, text = 'Received'): void => hearing.get(id)?.({ items: [{ kind: 'theirs', id: `answer:${inputs.length}`, text }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    api.deliver([media(2, { photo: [{ file_id: 'tiny', width: 10, height: 10 }, { file_id: 'best', width: 100, height: 100, file_size: png.length }], caption: '  Inspect this screenshot\n    preserve indentation  ', media_group_id: 'album-1' })])
+    await vi.waitFor(() => expect(inputs.some((input) => input.id === managerId && input.images?.[0]?.data === png.toString('base64'))).toBe(true))
+    const photo = inputs.find((input) => input.images?.length)
+    expect(photo?.text).toContain('  Inspect this screenshot\n    preserve indentation  ')
+    expect(photo?.text).toContain('album-1')
+    expect(api.calls.filter((call) => call.method === 'getFile').map((call) => call.body['file_id'])).toEqual(['best'])
+    const receipt = sent(api).find((call) => call.body['text'] === 'Sent to Manager.')
+    expect(receipt).toBeDefined()
+    finish(managerId)
+    await vi.waitFor(() => expect(manager.enabled()).toBe(true))
+    api.deliver([media(3, { document: { file_id: 'image-doc', file_name: 'screen.png', mime_type: 'image/png', file_size: png.length }, media_group_id: 'album-1' })])
+    await vi.waitFor(() => expect(inputs.filter((input) => input.images?.length)).toHaveLength(2))
+    expect(inputs.at(-1)?.text).toContain('[Attachment without caption]')
+    finish(managerId)
+    await bridge.notify('Saved task report', undefined, { session: managerId, workers: [] })
+    const origin = 100 + api.uploads.length + sent(api).findIndex((call) => call.body['text'] === 'Saved task report') + 1
+    api.deliver([media(4, { document: { file_id: 'report', file_name: '../../report.txt', mime_type: 'text/plain', file_size: 26 }, caption: 'Use the original task context' }, { reply_to_message: { message_id: origin, chat: { id: 81, type: 'private' }, from: { id: 1, is_bot: true } } })])
+    await vi.waitFor(() => expect(inputs.some((input) => input.text.includes('ordinary document contents'))).toBe(true))
+    const ordinary = inputs.find((input) => input.text.includes('ordinary document contents'))
+    expect(ordinary?.text).toContain('Saved task report')
+    expect(ordinary?.text).toContain(managerId)
+    const records = readdirSync(attachments.directory)
+    const documentId = records.find((id) => attachments.read(id).bytes.toString() === 'ordinary document contents')
+    expect(documentId).toBeDefined()
+    finish(managerId)
+    const worker = await sessions.startManaged({ root: directory, mode: 'manual', text: 'Prepare the report' }, 'manager', 'attachment-worker')
+    await vi.waitFor(() => expect(inputs.some((input) => input.id === worker)).toBe(true))
+    await manager.send('Hand the selected input to this worker', 'telegram')
+    await vi.waitFor(() => expect(inputs.at(-1)?.id).toBe(managerId))
+    finish(managerId, `\`\`\`geckit\n${JSON.stringify({ id: 'copy-input', args: ['attachments', 'send', '--attachment', documentId, '--id', worker, '--text', 'Read this task input'] })}\n\`\`\``)
+    await vi.waitFor(() => expect(existsSync(join(directory, '.geckit-attachments', documentId ?? '', '__.._report.txt'))).toBe(true))
+    const copyPath = join(directory, '.geckit-attachments', documentId ?? '', '__.._report.txt')
+    expect(readFileSync(copyPath, 'utf8')).toBe('ordinary document contents')
+    writeFileSync(join(directory, 'deliverable.txt'), 'finished report bytes')
+    await vi.waitFor(() => expect(inputs.at(-1)?.text).toContain('copy-input'))
+    finish(managerId, `\`\`\`geckit\n${JSON.stringify({ id: 'return-file', args: ['telegram', 'send-file', '--id', worker, '--path', 'deliverable.txt', '--caption', 'Finished report'] })}\n\`\`\``)
+    await vi.waitFor(() => expect(api.uploads).toHaveLength(1))
+    const upload = api.uploads[0]
+    expect(upload?.get('chat_id')).toBe('81')
+    const bytes = upload?.get('document')
+    if (!(bytes instanceof Blob)) throw new Error('Missing file upload')
+    expect(Buffer.from(await bytes.arrayBuffer()).toString()).toBe('finished report bytes')
+    expect(upload?.get('caption')).toBe('Finished report')
+    await vi.waitFor(() => expect(inputs.at(-1)?.text).toContain('return-file'))
+    finish(managerId)
+    const kept = JSON.parse(vault.decrypt(readFileSync(join(directory, 'manager-telegram.sealed')))) as { readonly replies: readonly { readonly messageId: number; readonly workers: readonly string[] }[] }
+    const sentFile = kept.replies.find((reply) => reply.workers.includes(worker))
+    expect(sentFile).toBeDefined()
+    if (sentFile === undefined) throw new Error('Missing saved upload origin')
+    api.deliver([message(5, 'Revise this deliverable', { replyTo: sentFile.messageId })])
+    await vi.waitFor(() => expect(inputs.at(-1)?.text).toContain('Revise this deliverable'))
+    expect(inputs.at(-1)?.text).toContain(worker)
+  })
+})
+
+describe('Telegram attachment authorization and delivery failure', () => {
+  it('checks chat, sender, reply, decision and enabled state before fetching attachment bytes', async () => {
+    const value = fixture()
+    value.api.files.set('file', Buffer.from('input'))
+    await paired(value)
+    const media = (id: number, extra: JsonObject = {}): Json => ({ update_id: id, message: { message_id: id, date: now / 1000, chat: { id: 81, type: 'private' }, from: user, document: { file_id: 'file', file_name: 'input.txt' }, ...extra } })
+    value.api.deliver([media(2, { from: { ...user, id: 82 } }), media(3, { chat: { id: 82, type: 'private' } }), media(4, { chat: { id: 81, type: 'group' } }), media(5, { reply_to_message: { message_id: 999 } })])
+    await vi.waitFor(() => expect(value.api.calls.filter((call) => call.method === 'getUpdates').at(-1)?.body['offset']).toBe(6))
+    expect(value.api.calls.some((call) => call.method === 'getFile')).toBe(false)
+    await value.telegram.notify('Allow?', { id: 'approval', choices: [{ label: 'Allow', value: 'allow' }] })
+    const question = 100 + sent(value.api).length
+    value.api.deliver([media(6, { reply_to_message: { message_id: question } })])
+    await vi.waitFor(() => expect(sent(value.api).some((call) => String(call.body['text']).includes('A file cannot answer'))).toBe(true))
+    expect(value.api.calls.some((call) => call.method === 'getFile')).toBe(false)
+    expect(value.answer).not.toHaveBeenCalled()
+    const disabled = fixture({ manager: { enabled: () => false } })
+    await paired(disabled)
+    disabled.api.deliver([media(2)])
+    await vi.waitFor(() => expect(sent(disabled.api).some((call) => String(call.body['text']).includes('Manager is disabled'))).toBe(true))
+    expect(disabled.api.calls.some((call) => call.method === 'getFile')).toBe(false)
+  })
+
+  it('retains delayed file metadata across restart and downloads only after an explicit Run now', async () => {
+    const value = fixture()
+    value.api.files.set('late-file', Buffer.from('late contents'))
+    await paired(value)
+    value.api.deliver([{ update_id: 2, message: { message_id: 2, date: now / 1000 - 601, chat: { id: 81, type: 'private' }, from: user, caption: 'Use this input', document: { file_id: 'late-file', file_name: 'late.txt', mime_type: 'text/plain', file_size: 13 }, media_group_id: 'late-album' } }])
+    await vi.waitFor(() => expect(value.telegram.view().pendingLate).toBe(1))
+    expect(value.api.calls.some((call) => call.method === 'getFile')).toBe(false)
+    const run = String(buttons(value.api)[0]?.['callback_data'])
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory, api: value.api })
+    await again.telegram.start()
+    again.api.deliver([callback(3, run)])
+    await vi.waitFor(() => expect(again.submit).toHaveBeenCalledTimes(1))
+    const call = again.submit.mock.calls[0]
+    expect(call?.[0]).toContain('Use this input')
+    expect(call?.[0]).toContain('late-album')
+    const id = call?.[2]?.[0]
+    if (id === undefined) throw new Error('Missing retained attachment')
+    expect(again.telegram.attachments.read(id).bytes.toString()).toBe('late contents')
+    await again.telegram.action({ kind: 'disconnect' })
+    expect(existsSync(join(value.directory, 'telegram-attachments'))).toBe(false)
+  })
+
+  it('propagates definite upload failure, keeps unknown sends durable without retry, and rejects a captured stale pairing', async () => {
+    const value = fixture()
+    await paired(value)
+    const origin = { session: 'manager-session', workers: ['worker-session'] }
+    value.api.failUpload(400)
+    await expect(value.telegram.sendFile(Buffer.from('result'), 'result.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('rejected the file (400)')
+    expect(value.api.uploads).toHaveLength(1)
+    await expect(value.telegram.sendFile(Buffer.from('result'), 'result.txt', 'text/plain', '', 'document', origin)).resolves.toBeGreaterThan(0)
+    value.api.failUpload(0)
+    await expect(value.telegram.sendFile(Buffer.from('result'), 'result.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
+    expect(value.api.uploads).toHaveLength(3)
+    await expect(value.telegram.sendFile(Buffer.from('result'), 'result.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
+    expect(value.api.uploads).toHaveLength(3)
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory })
+    await again.telegram.start()
+    expect(again.telegram.view().detail).toContain('interrupted')
+    expect(again.api.uploads).toHaveLength(0)
+    const captured = again.telegram.fileSender()
+    await again.telegram.action({ kind: 'disconnect' })
+    await paired(again)
+    await expect(captured(Buffer.from('private'), 'result.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('not connected')
+    expect(again.api.uploads).toHaveLength(0)
+  })
+})
 
 describe('Manager Telegram, with a fake Bot API', () => {
   it('routes actual bot reply updates through real Manager and Sessions without touching concurrent workers or native cards', async () => {
@@ -543,12 +723,12 @@ describe('Manager Telegram, with a fake Bot API', () => {
     finish?.()
   })
 
-  it('explains unsupported attachments only to the confirmed private account', async () => {
+  it('explains failed attachment downloads only to the confirmed private account', async () => {
     const value = fixture()
     await paired(value)
     const attachment = (id: number, sender: number): Json => ({ update_id: id, message: { message_id: id, date: now / 1000, chat: { id: 81, type: 'private' }, from: { ...user, id: sender }, document: { file_id: 'doc' } } })
     value.api.deliver([attachment(2, 82), attachment(3, 81)])
-    await vi.waitFor(() => expect(sent(value.api).filter((item) => String(item.body['text']).includes('attachments are not supported'))).toHaveLength(1))
+    await vi.waitFor(() => expect(sent(value.api).filter((item) => String(item.body['text']).includes('invalid file location'))).toHaveLength(1))
     expect(value.submit).not.toHaveBeenCalled()
   })
 

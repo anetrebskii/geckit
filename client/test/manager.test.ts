@@ -6,9 +6,10 @@ import { createServer } from 'node:net'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { TelegramAttachments } from '../src/main/telegram-attachments'
 import { Manager, runManagerCli } from '../src/main/manager'
 import type { ManagerCliContext, ManagerDeps } from '../src/main/manager'
-import { managerFile, managerProvider } from '../src/main/manager-operations'
+import { ManagerOperations, managerFile, managerProvider } from '../src/main/manager-operations'
 import { managerCommands, managerContext, managerHistoryItem, managerMessage, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
 import { manage } from '../src/cli/manage'
 import type { ManagerActivity, ManagerCliAsked, ManagerReplyOrigin } from '../src/shared/manager'
@@ -851,5 +852,66 @@ describe('Manager provider and project boundaries', () => {
     await expect(managerFile(f.root, 'AGENTS.md', true)).rejects.toThrow('Credential')
     await expect(managerFile('ssh://host/project', 'file.txt')).rejects.toThrow('Remote')
     expect(await managerFile(f.root, 'notes.txt', true)).toBe(join(await realpath(f.root), 'notes.txt'))
+  })
+})
+
+
+describe('Manager explicit Telegram file operations', () => {
+  it('copies actual inputs without overwrite and selects only an owned local project deliverable', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const manager = await f.manager.open()
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Make report' }, 'manager', 'file-worker')
+    const attachments = new TelegramAttachments(f.directory)
+    const input = attachments.put(Buffer.from('document contents'), 'input.txt', 'text/plain')
+    const sent = vi.fn(async () => 901)
+    const operations = new ManagerOperations({ attachments, sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => { f.set(change); return f.settings() }, owner: 'manager', managed: (id) => f.manager.manages(id), managerSession: () => manager, telegramFile: () => sent })
+    const copied = JSON.parse(await operations.run(['attachments', 'send', '--attachment', input.id, '--id', worker, '--text', 'Use this document'], 'copy')) as { readonly path: string; readonly projectCopy: string }
+    expect(await readFile(copied.path, 'utf8')).toBe('document contents')
+    expect(copied.projectCopy).toContain('retained until user/project cleanup')
+    await writeFile(copied.path, 'user edit')
+    await expect(operations.run(['attachments', 'send', '--attachment', input.id, '--id', worker, '--text', 'Use this document'], 'copy-again')).rejects.toThrow()
+    expect(await readFile(copied.path, 'utf8')).toBe('user edit')
+    await writeFile(join(f.root, 'report.txt'), 'selected deliverable')
+    const result = JSON.parse(await operations.run(['telegram', 'send-file', '--id', worker, '--path', 'report.txt'], 'send')) as { readonly sent: boolean; readonly messageId: number }
+    expect(result).toMatchObject({ sent: true, messageId: 901 })
+    expect(sent).toHaveBeenCalledWith(Buffer.from('selected deliverable'), 'report.txt', 'application/octet-stream', '', 'document', { session: manager, workers: [worker] }, expect.any(Function))
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1kAAAAASUVORK5CYII=', 'base64')
+    await writeFile(join(f.root, 'result.png'), png)
+    const photoResult = JSON.parse(await operations.run(['telegram', 'send-file', '--id', worker, '--path', 'result.png', '--as', 'photo', '--caption', 'Selected image'], 'send-photo')) as { readonly as: string; readonly sent: boolean }
+    expect(photoResult).toMatchObject({ as: 'photo', sent: true })
+    expect(sent).toHaveBeenLastCalledWith(png, 'result.png', 'image/png', 'Selected image', 'photo', { session: manager, workers: [worker] }, expect.any(Function))
+    const manual = await f.sessions.send({ root: f.root, mode: 'manual', text: 'Unrelated manual conversation' })
+    await expect(operations.run(['telegram', 'send-file', '--id', manual, '--path', 'report.txt'], 'manual-session')).rejects.toThrow('not managed')
+    const remoteRoot = 'ssh://fixture-host/project'
+    f.set({ projects: [...f.settings().projects, remoteRoot] })
+    const remote = await f.sessions.startManaged({ root: remoteRoot, mode: 'manual', text: 'Remote task uses the fake driver' }, 'manager', 'remote-file-worker')
+    await expect(operations.run(['telegram', 'send-file', '--id', remote, '--path', 'report.txt'], 'remote-send')).rejects.toThrow('no local fallback')
+    await expect(operations.run(['attachments', 'send', '--attachment', input.id, '--id', remote, '--text', 'Read input'], 'remote-input')).rejects.toThrow('no local fallback')
+    await expect(operations.run(['telegram', 'send-file', '--id', manager, '--path', 'report.txt'], 'wrong-owner')).rejects.toThrow('worker')
+    await expect(operations.run(['telegram', 'send-file', '--id', worker, '--path', '../private.txt'], 'escape')).rejects.toThrow('outside')
+    await writeFile(join(f.directory, 'private.txt'), 'private')
+    await symlink(join(f.directory, 'private.txt'), join(f.root, 'linked.txt'))
+    await expect(operations.run(['telegram', 'send-file', '--id', worker, '--path', 'linked.txt'], 'linked')).rejects.toThrow('outside')
+    await writeFile(join(f.root, '.env'), 'secret')
+    await expect(operations.run(['telegram', 'send-file', '--id', worker, '--path', '.env'], 'credential')).rejects.toThrow('Credential')
+    await expect(operations.run(['telegram', 'send-file', '--id', worker, '--path', 'report.txt', '--caption', 'x'.repeat(1025)], 'caption')).rejects.toThrow('1024')
+    await expect(operations.run(['telegram', 'send-file', '--id', worker, '--path', 'report.txt', '--as', 'photo'], 'photo')).rejects.toThrow('raster')
+    expect(sent).toHaveBeenCalledTimes(2)
+  })
+
+  it('revalidates Manager authority and registered project after asynchronous work before any upload', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const manager = await f.manager.open()
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Report' }, 'manager', 'revoked-file-worker')
+    await writeFile(join(f.root, 'report.txt'), 'deliverable')
+    let authorized = true
+    const sent = vi.fn(async () => 1)
+    const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => manager, authorized: () => authorized, telegramFile: () => { authorized = false; return sent } })
+    await expect(operations.run(['telegram', 'send-file', '--id', worker, '--path', 'report.txt'], 'revoked')).rejects.toThrow('no longer authorized')
+    expect(sent).not.toHaveBeenCalled()
+    f.set({ projects: [], profiles: [] })
+    await expect(operations.run(['telegram', 'send-file', '--id', worker, '--path', 'report.txt'], 'unregistered')).rejects.toThrow('registered')
   })
 })

@@ -640,7 +640,7 @@ export class Sessions {
   sendManager(message: SessionMessage): Promise<string> {
     if (message.session === undefined || this.#deps.notes.all()[message.session]?.managerPrompt === undefined) return Promise.reject(new Error('Manager instructions are missing. Restart Manager to restore its session.'))
     if (this.#suspendedManagers.has(message.session)) return Promise.reject(new Error('This Manager session is paused or archived.'))
-    if (message.images?.length || message.goal !== undefined) return Promise.reject(new Error('Manager accepts text requests without a permanent goal.'))
+    if (message.goal !== undefined) return Promise.reject(new Error('Manager requests cannot set a permanent goal.'))
     if (message.provider !== undefined && providerOf(message.session) !== message.provider) return Promise.reject(new Error('The Manager session belongs to a different provider.'))
     this.#managerMessages.add(message)
     return this.send(message)
