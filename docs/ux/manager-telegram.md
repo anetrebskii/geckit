@@ -846,7 +846,6 @@ Manager is talked to in Telegram, so GeckIt itself writes into its session: what
 
 Only GeckIt's own writing is drawn this way. Anything Alex typed, which in this session is nothing, stays as it is.
 
-
 ## Telegram reply context - 2026-10-20
 
 ### Purpose and path
@@ -911,3 +910,7 @@ The paired chat's incoming photos/documents and explicit result-file delivery ar
 Native approval text can include a terminal report with a vertical border on every line. Render consecutive bordered lines as Telegram quotes, removing the terminal border. Consecutive rows with aligned columns use a monospace block so report labels and results retain their alignment. Real Markdown tables and fenced code retain their existing rendering. Local Markdown file references show their label and a readable code-formatted path; they are not Telegram web links.
 
 This repairs the existing formatted-message state. Approval wording, choices, callback identity and the plain-text fallback stay as specified above. Fallback delivery preserves the diagnostic content; unsplit messages retain the original source. No approval is answered or retried by formatting it.
+
+## Local links from Telegram - 2026-10-20
+
+When a Manager message names a localhost address, or a file or folder on the computer, those words are the link to it. It opens that one target in any browser, over the phone's encrypted pairing service, for 12 hours or until Stop. This replaces "Open GeckIt on your computer or paired phone" for these two kinds of result; other local-only actions keep it. The flow, states and wording are in [telegram-local-links.md](telegram-local-links.md).

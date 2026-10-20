@@ -23,11 +23,11 @@ export async function configureManagerAccess(manager: Pick<Manager, 'configure'>
 
 export function telegramActionAccess(manager: Pick<Manager, 'enabled'>, telegram: Pick<ManagerTelegram, 'action'>, action: TelegramAction, desktop: boolean): Promise<TelegramView> {
   if (!desktop) return Promise.reject(new Error('Manage the Telegram connection on the computer.'))
-  if (action.kind !== 'disconnect' && action.kind !== 'cancel-pairing' && !manager.enabled()) return Promise.reject(new Error('Enable Manager in GeckIt before connecting Telegram.'))
+  if (action.kind !== 'disconnect' && action.kind !== 'cancel-pairing' && action.kind !== 'stop-link' && !manager.enabled()) return Promise.reject(new Error('Enable Manager in GeckIt before connecting Telegram.'))
   return telegram.action(action)
 }
 
 export function phoneTelegramView(view: TelegramView): TelegramView {
-  const { pairing: _pairing, candidate: _candidate, ...safe } = view
+  const { pairing: _pairing, candidate: _candidate, links: _links, ...safe } = view
   return safe
 }

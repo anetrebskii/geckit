@@ -34,6 +34,8 @@ if (query.has('workerActions')) items = [...items, { kind: 'card', id: 'worker-c
 const telegramState = query.get('telegram')
 const initialTelegramState: TelegramView['state'] = telegramState === 'connected' || telegramState === 'offline' || telegramState === 'revoked' || telegramState === 'conflict' || telegramState === 'storage-error' ? telegramState : 'disconnected'
 let telegram: TelegramView = { state: initialTelegramState, pendingLate: 0, ...(initialTelegramState === 'disconnected' ? {} : { bot: { id: 1, username: 'geckit_fixture_bot' }, account: { id: 42, chatId: 42, name: 'Alex fixture', username: 'alex_fixture' } }), ...(initialTelegramState === 'conflict' ? { detail: 'Another app is using this bot. Stop its connection, then try again.' } : initialTelegramState === 'revoked' ? { detail: 'This bot token is no longer valid. Replace it with a token from BotFather.' } : initialTelegramState === 'storage-error' ? { detail: 'Secure storage is unavailable. Unlock your system credential store, then retry.' } : {}) }
+// ?links shows two links shared from Telegram, with Stop.
+if (query.has('links') && telegram.account !== undefined) telegram = { ...telegram, links: [{ id: 'fixture-site', title: 'localhost:5173', expiresAt: Date.now() + 11 * 3600_000 }, { id: 'fixture-file', title: 'weekly-report-with-a-long-name.html', expiresAt: Date.now() + 40 * 60_000 }] }
 let previousTelegram = telegram
 let telegramAttempt = 0
 if (query.get('state') === 'disabled') view = { ...view, config: { ...view.config, enabled: false }, state: 'off' }
@@ -114,6 +116,7 @@ const telegramAction = async (action: TelegramAction): Promise<TelegramView> => 
   } else if (action.kind === 'confirm' && telegram.candidate !== undefined) telegram = { state: 'connected', ...(telegram.bot === undefined ? {} : { bot: telegram.bot }), account: telegram.candidate, pendingLate: 0 }
   else if (action.kind === 'disconnect') { telegramAttempt++; telegram = { state: 'disconnected', pendingLate: 0 }; previousTelegram = telegram }
   else if (action.kind === 'cancel-pairing') { telegramAttempt++; telegram = previousTelegram }
+  else if (action.kind === 'stop-link') telegram = { ...telegram, links: (telegram.links ?? []).filter((one) => one.id !== action.id) }
   else if (action.kind === 'retry') { const { detail: cleared, ...rest } = telegram; void cleared; telegram = { ...rest, state: telegram.account === undefined ? 'disconnected' : 'connected' } }
   for (const callback of telegramListeners) callback(telegram)
   return telegram

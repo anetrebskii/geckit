@@ -18,24 +18,37 @@ interface Got {
   readonly body: Buffer
 }
 
-/** A request from a page the phone shows, made to the Mac's own localhost; redirects within it are followed here. */
-export async function localFetch(asked: LocalAsk): Promise<LocalAnswer> {
+/**
+ * A request from a page the phone shows, made to the Mac's own localhost; redirects within it are followed here.
+ * With `within`, a shared link's origin, nothing outside that origin is asked, and addresses go back as paths on it.
+ */
+export async function localFetch(asked: LocalAsk, within?: string): Promise<LocalAnswer> {
+  const inside = (href: string): boolean => isLocal(href) && (within === undefined || new URL(href).origin === within)
+  const outward = (href: string): string => {
+    if (within === undefined) return toPhone(href)
+    const at = new URL(href)
+    return `${at.pathname}${at.search}${at.hash}`
+  }
+  const moved = (location: string, from: string): string => {
+    const href = URL.canParse(location, from) ? new URL(location, from).href : undefined
+    return href !== undefined && inside(href) ? outward(href) : location
+  }
   let url = toMac(asked.url)
   let method = asked.method
   let body = asked.body === '' ? undefined : Buffer.from(asked.body, 'base64')
   for (let hop = 0; ; hop++) {
-    if (!isLocal(url)) return nothing('Only an address on the Mac itself opens here.')
+    if (!inside(url)) return nothing(within === undefined ? 'Only an address on the Mac itself opens here.' : 'Only the shared address opens here.')
     const at = new URL(url)
     const got = await once(at, method, asked.headers, body).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))))
     if (got instanceof Error) {
       return nothing(
         /ECONNREFUSED/.test(got.message)
-          ? `Nothing answers at ${at.host} on the Mac. The server may have stopped.`
-          : `${at.host} on the Mac did not answer: ${got.message}`,
+          ? `Nothing answers at ${at.host} on the ${within === undefined ? 'Mac' : 'computer'}. The server may have stopped.`
+          : `${at.host} on the ${within === undefined ? 'Mac' : 'computer'} did not answer: ${got.message}`,
       )
     }
     const location = single(got.headers.location)
-    if (got.status >= 300 && got.status < 400 && location !== undefined && hop < HOPS && isLocal(new URL(location, url).href)) {
+    if (got.status >= 300 && got.status < 400 && location !== undefined && hop < HOPS && inside(new URL(location, url).href)) {
       if (got.status === 303 || ((got.status === 301 || got.status === 302) && method === 'POST')) {
         method = 'GET'
         body = undefined
@@ -44,9 +57,9 @@ export async function localFetch(asked: LocalAsk): Promise<LocalAnswer> {
       continue
     }
     const headers = Object.entries(got.headers).flatMap(([name, value]): [string, string][] =>
-      value === undefined || DROPPED.has(name) ? [] : [[name, name === 'location' && isLocal(String(value)) ? toPhone(String(value)) : single(value) ?? '']],
+      value === undefined || DROPPED.has(name) ? [] : [[name, name === 'location' ? moved(String(value), url) : single(value) ?? '']],
     )
-    return { status: got.status, headers, body: got.body.toString('base64'), ...(url === toMac(asked.url) ? {} : { moved: toPhone(url) }) }
+    return { status: got.status, headers, body: got.body.toString('base64'), ...(url === toMac(asked.url) ? {} : { moved: outward(url) }) }
   }
 }
 

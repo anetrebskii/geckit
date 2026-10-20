@@ -8,7 +8,7 @@ import { Picker } from '../ui/Menu'
 import { ManagerFlow } from './ManagerFlow'
 import type { ManagerStepName } from './ManagerFlow'
 import { ManagerStep } from './ManagerStep'
-import { ManagerTelegram, useTelegram } from './ManagerTelegram'
+import { ManagerTelegram, SharedLinks, useTelegram } from './ManagerTelegram'
 import { managerAssistant } from './manager-label'
 import { managerLabel, useManager } from './useManager'
 
@@ -146,6 +146,7 @@ export function ManagerSettings({ settings }: { readonly settings: Settings }): 
           </>}
       </ManagerStep>
     </ol>
+    <SharedLinks view={telegram} onView={setTelegram} />
     {error === '' ? null : <p className="manager-error" role="alert">{error}</p>}
     {view.error === undefined ? null : <p className="manager-error" role="status">{view.error}</p>}
     {confirm === undefined ? null : <ManagerConfirm kind={confirm} busy={saving} working={view.state === 'working' || view.session?.state === 'working'} error={error} onCancel={() => setConfirm(undefined)} onConfirm={() => { if (confirm === 'change') save(); else void run(async () => { const next = await (confirm === 'restart' ? window.geckit.manager.restart() : window.geckit.manager.configure({ enabled: false })); setConfirm(undefined); return next }) }} />}
