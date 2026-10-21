@@ -45,3 +45,17 @@ GeckIt displays each submitted message immediately before OpenCode starts. The p
 ## Completion without a final reply
 
 Reasoning stays in the existing steps disclosure; final text remains outside it. A native successful completion with no nonblank text in the last assistant message of the current turn becomes the existing failed state, with detail "OpenCode finished without a final text reply. Try another model or send again." The person can select another model or send another message. Earlier turns and intermediate text before a final reasoning-only message do not count as the final reply. Native errors keep their own diagnostic, and Stop keeps the stopped state. No automatic retry, model change or promotion of reasoning into an answer occurs. Native history remains unchanged. This repairs the 2026-10-09 report where Qwen returned only reasoning and OpenCode marked the turn successful.
+
+## Recovering the connection while work continues
+
+Sending a task still enters Working, with the existing transcript and Stop control. OpenCode 2's completion observer renews its connection every 60 seconds while the native generation continues. This keeps each wait below the HTTP client's five-minute header deadline. The renewal is silent: the person has no decision to make and no extra message or tool action is submitted. Returning to the conversation uses the same native history.
+
+| From | Event | To | Person sees and action |
+| --- | --- | --- | --- |
+| Working | Completion wait reaches 60 seconds, automatically | Working | Nothing extra; existing streaming and Stop remain available |
+| Working | A safe read or completion wait loses its connection, automatically | Working | Nothing extra; the library retries after 1, 2 and 4 seconds |
+| Working | Retried observation succeeds, automatically | Working/Review | Existing transcript continues, or the normal completion appears |
+| Working | Three retries are exhausted, or a permanent error arrives | Failed | Existing backend diagnostic and "Try again"; repair setup or retry manually |
+| Working | Person presses Stop during renewal or backoff | Ready | Existing stopped state; no later retry resumes work |
+
+Three retries give a brief connection interruption seven seconds of backoff without hiding persistent failures indefinitely. The retry budget resets for each successful read or renewed wait. Text correction retains its 90-second completion deadline across renewals. Authentication, invalid requests, native model errors and missing final replies keep their existing error behavior. Prompt submission, tools, permission replies and other writes are never replayed, even if their response is lost. SSE disconnection still fails the turn. The earlier decision against automatic retries of model output remains; this recovery only repeats safe observation requests. No new UI, settings or wording are added. This closes the reported periodic "fetch failed" while waiting for long MiniMax work.
