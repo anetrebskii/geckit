@@ -914,3 +914,42 @@ This repairs the existing formatted-message state. Approval wording, choices, ca
 ## Local links from Telegram - 2026-10-20
 
 When a Manager message names a localhost address, or a file or folder on the computer, those words are the link to it. It opens that one target in any browser, over the phone's encrypted pairing service, for 12 hours or until Stop. This replaces "Open GeckIt on your computer or paired phone" for these two kinds of result; other local-only actions keep it. The flow, states and wording are in [telegram-local-links.md](telegram-local-links.md).
+
+## Automatic Manager recovery - 2026-10-21
+
+Alex requested automatic recovery from the desktop footer's "Manager unavailable" state. With Manager already enabled and its selected assistant enabled, an ordinary failed or interrupted turn retries coordination automatically, including an error retained across app restart. No setup or new control is needed. Recovery keeps the same backing session, selected assistant/model, workers, decisions and queued requests. A successful reconciliation followed by a response confirms readiness.
+
+| Surface/state | What Alex sees | Next action |
+|---|---|---|
+| Existing footer, panel and Settings while waiting to retry | Existing "Manager unavailable" / "Unavailable" and failure reason | Wait, or use existing Try again |
+| Recovery turn accepted | Existing "Coordinating", or slot-waiting state | Wait |
+| Recovery turn completes | Existing "Ready" or worker/decision status | Continue in Telegram |
+| Paused, disabled, permission, VPN/hook block, sign-in/plan refusal or uncertain CLI delivery | Existing state, reason and recovery controls | Resolve the stated condition or explicitly resume |
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  ready --> unavailable: turn fails
+  unavailable --> coordinating: retry timer
+  coordinating --> ready: reconciliation completes
+  coordinating --> unavailable: turn fails
+  unavailable --> held: user pauses
+  held --> coordinating: user resumes
+```
+
+| From | Concrete event | To | What Alex sees |
+|---|---|---|---|
+| Active | Ordinary turn fails or ends without a result, automatically | Unavailable | Existing error |
+| Unavailable | Retry delay expires and lifecycle/guard checks pass, automatically | Coordinating | Existing working or slot-waiting state |
+| Coordinating | Reconciliation completes, automatically | Ready | Existing status; queued requests continue in order |
+| Coordinating | Another ordinary failure arrives, automatically | Unavailable | Existing error; next delay increases |
+| Unavailable | Pause, disable, provider/model change, manual retry or app disposal | Existing requested state | Existing status; old timer cancelled |
+| Held | User resolves the condition and resumes or retries | Coordinating | Existing recovery flow |
+
+Retry after 5 seconds, doubling after repeated failures to a 60-second cap; a completed turn resets the delay. This recovers short interruptions promptly without a tight provider loop during an outage. Only one timer and one reconciliation can run at once. Timer bookkeeping stays silent because it needs no decision. No new layout or control wording is introduced, so a separate layout prototype is not applicable.
+
+An interrupted send after app restart shows the reason "Manager was interrupted. Reconcile current task state without replaying interrupted messages." until recovery starts. An interrupted CLI operation retains "Manager was interrupted. Review current task state before resuming; operations with uncertain delivery are not replayed." and its existing review decision. A late successful turn cancels an unnecessary retry and clears its ordinary failure.
+
+Before queued work, Manager receives: "Automatic recovery. Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations." Inputs whose send began are never replayed; inputs still queued remain queued. Recorded uncertain operations remain paused for review. Current native approvals, VPN/hook guards, plan/sign-in refusals, missing role instructions and provider mismatches cannot be cleared by automatic recovery. Disabled assistants are never replaced by a fallback. Timer callbacks and asynchronous session opening must recheck lifecycle generation so a later pause or configuration change wins. Workers continue independently.
+
+This supersedes manual-only recovery for ordinary turn failures. Replacing the backing session automatically was rejected because retaining its history makes reconciliation safer; broken identity/role metadata still uses explicit Restart. Repeating the interrupted user request was rejected because it may already have performed work. The amendment implements the requested recovery within the existing Manager lifecycle; it adds no inference, command or approval authority.

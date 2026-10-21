@@ -12,7 +12,7 @@ import type { ManagerCliContext, ManagerDeps } from '../src/main/manager'
 import { ManagerOperations, managerFile, managerProvider } from '../src/main/manager-operations'
 import { managerCommands, managerContext, managerHistoryItem, managerMessage, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
 import { manage } from '../src/cli/manage'
-import type { ManagerActivity, ManagerCliAsked, ManagerReplyOrigin } from '../src/shared/manager'
+import type { ManagerActivity, ManagerCliAsked, ManagerReplyOrigin, ManagerView } from '../src/shared/manager'
 import { Sessions, memoryNotes } from '../src/main/sessions'
 import type { SessionsDeps } from '../src/main/sessions'
 import { llmProvider } from '../src/main/sessions/provider'
@@ -32,7 +32,7 @@ interface Sent {
 }
 
 const cleanups: (() => Promise<void>)[] = []
-afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })
+afterEach(async () => { vi.useRealTimers(); for (const cleanup of cleanups.splice(0)) await cleanup() })
 
 function library() {
   const made: ClaudeOptions[] = []
@@ -101,6 +101,213 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}) {
   const command = (id: string, args: readonly string[]): string => `I will coordinate that.\n\n\`\`\`geckit\n${JSON.stringify({ id, args })}\n\`\`\``
   return { manager: active, sessions, root, directory, notes, made, sent, fanned, answers, cli, finish, hear: (id: string, heard: Heard) => hearings.get(id)?.(heard), command, reload: () => { current.manager?.dispose(); const next = new Manager(deps); current.manager = next; return next }, settings: () => settings, set: (change: Partial<Settings>) => { settings = { ...settings, ...change } } }
 }
+
+describe('Manager automatic recovery', () => {
+  const settle = async (): Promise<void> => { for (let turn = 0; turn < 8; turn++) await new Promise<void>((resolve) => setImmediate(resolve)) }
+
+  it('recovers a failed turn once before queued input without replaying it or disturbing workers', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true, chatModel: 'sonnet' })
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Keep working' }, 'manager', 'recovery-worker')
+    const id = await f.manager.send('Possibly delivered request', 'telegram')
+    await settle()
+    await f.manager.send('Next request', 'telegram')
+    await f.manager.send('Last request', 'telegram')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed', text: 'Connection lost' }] })
+    expect(await f.manager.view()).toMatchObject({ state: 'blocked', error: 'Did not finish', queued: 2 })
+    for (let repeat = 0; repeat < 3; repeat++) f.manager.observeSessions(await f.sessions.allForManager([f.root]))
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(f.sent.filter((one) => one.id === id)).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await settle()
+    expect(f.sent.filter((one) => one.id === id)).toHaveLength(2)
+    expect(f.sent.at(-1)?.text).toContain('Automatic recovery.')
+    expect(f.sent.at(-1)?.text).toContain('Do not replay interrupted messages or past operations.')
+    expect(await f.manager.view()).toMatchObject({ state: 'working', session: { id }, config: { chatModel: 'sonnet' } })
+    f.finish(id, 'Reconciled')
+    await settle()
+    expect(f.sent.at(-1)?.text).toBe('[Telegram]\nNext request')
+    f.finish(id, 'Next complete')
+    await settle()
+    expect(f.sent.at(-1)?.text).toBe('[Telegram]\nLast request')
+    f.finish(id, 'Last complete')
+    await settle()
+    expect((await f.manager.view()).error).toBeUndefined()
+    expect(f.sent.filter((one) => one.text === '[Telegram]\nPossibly delivered request')).toHaveLength(1)
+    expect((await f.manager.view()).workers.find((one) => one.id === worker)?.state).toBe('working')
+    expect(f.cli).toHaveLength(0)
+  })
+
+  it('backs off repeated failures to one minute and resets only after a completed turn', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Coordinate')
+    await settle()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    for (const delay of [5_000, 10_000, 20_000, 40_000, 60_000, 60_000]) {
+      const count = f.sent.length
+      f.hear(id, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed' }] })
+      await vi.advanceTimersByTimeAsync(delay - 1)
+      expect(f.sent).toHaveLength(count)
+      await vi.advanceTimersByTimeAsync(1)
+      await settle()
+      expect(f.sent).toHaveLength(count + 1)
+    }
+    f.finish(id, 'Recovered')
+    await settle()
+    await f.manager.send('New request')
+    await settle()
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed' }] })
+    const count = f.sent.length
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(f.sent).toHaveLength(count + 1)
+  })
+
+  it('accepts a late completed result and cancels an unnecessary recovery', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Coordinate')
+    await settle()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed' }] })
+    f.finish(id, 'Completed after the disconnect')
+    await settle()
+    expect((await f.manager.view()).error).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(f.sent).toHaveLength(1)
+  })
+
+  it('recovers a saved failure after reload with retained inbox and backing identity', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Interrupted request')
+    await settle()
+    await f.manager.send('Saved pending request')
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed' }] })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const reloaded = f.reload()
+    await settle()
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(f.sent.at(-1)?.text).toContain('Automatic recovery.')
+    expect((await reloaded.view()).session?.id).toBe(id)
+    f.finish(id, 'Current work reconciled')
+    await settle()
+    expect(f.sent.at(-1)?.text).toBe('Saved pending request')
+    expect(f.sent.filter((one) => one.text === 'Interrupted request')).toHaveLength(1)
+  })
+
+  it('reconciles an interrupted send after restart without resending its input', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.open()
+    const path = join(f.directory, 'manager.json')
+    const stored = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
+    await writeFile(path, JSON.stringify({ ...stored, inbox: [
+      { id: 'interrupted-send', text: 'Possibly delivered', source: 'telegram', at: 1, state: 'sending' },
+      { id: 'queued-next', text: 'Waiting request', source: 'desktop', at: 2, state: 'queued' },
+    ] }))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const recovered = f.reload()
+    await settle()
+    expect((await recovered.view()).state).toBe('blocked')
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(f.sent).toHaveLength(1)
+    expect(f.sent[0]?.text).toContain('Automatic recovery.')
+    f.finish(id, 'Reconciled actual state')
+    await settle()
+    expect(f.sent.at(-1)?.text).toBe('Waiting request')
+    expect(f.sent.some((one) => one.text.includes('Possibly delivered'))).toBe(false)
+  })
+
+  it.each(['pause', 'disable', 'dispose', 'retry', 'restart'] as const)('cancels the pending retry on %s', async (action) => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Coordinate')
+    await settle()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed' }] })
+    if (action === 'disable') await f.manager.configure({ enabled: false })
+    else if (action === 'dispose') f.manager.dispose()
+    else await f.manager[action]()
+    await settle()
+    const count = f.sent.length
+    await vi.advanceTimersByTimeAsync(60_000)
+    await settle()
+    expect(f.sent).toHaveLength(count)
+  })
+
+  it.each(['blocked', 'limit', 'signedOut', 'offPlan'] as const)('does not retry a native %s refusal', async (how) => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Coordinate')
+    await settle()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'ended', how }] })
+    await settle()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(f.sent).toHaveLength(1)
+    const reloaded = f.reload()
+    await settle()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(f.sent).toHaveLength(1)
+    expect((await reloaded.view()).session?.id).toBe(id)
+  })
+
+  it('keeps VPN guard failures held for manual retry', async () => {
+    const f = await fixture(0, { beforeSend: () => { throw new Error('VPN unavailable') } })
+    await f.manager.configure({ enabled: true })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    await f.manager.send('Guarded request')
+    await settle()
+    expect((await f.manager.view()).state).toBe('blocked')
+    const stored = await readFile(join(f.directory, 'manager.json'), 'utf8')
+    await vi.advanceTimersByTimeAsync(60_000)
+    await settle()
+    expect(f.made).toHaveLength(0)
+    expect(await readFile(join(f.directory, 'manager.json'), 'utf8')).toBe(stored)
+  })
+
+  it('retries only the selected provider and ignores recovery creation finishing after pause', async () => {
+    const plugin = library()
+    const f = await fixture(0, { plugins: [plugin.provider] })
+    f.set({ chatProviders: ['claude', 'plugin:manager-test'], providerPlugins: [plugin.provider] })
+    plugin.create.mockRejectedValueOnce(new Error('Temporarily unavailable'))
+    await expect(f.manager.configure({ enabled: true, provider: 'plugin:manager-test' })).rejects.toThrow('Temporarily unavailable')
+    let accept: ((id: string) => void) | undefined
+    plugin.create.mockImplementationOnce(() => new Promise<string>((resolve) => { accept = resolve }))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const recovered = f.reload()
+    await settle()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(plugin.create).toHaveBeenCalledTimes(2)
+    await recovered.pause()
+    accept?.('plugin:manager-test:late-recovery')
+    await settle()
+    expect((await recovered.view()).state).toBe('paused')
+    expect(plugin.sent).toHaveLength(0)
+    expect(f.made).toHaveLength(0)
+  })
+
+  it('retries a temporary creation error without falling back to another assistant', async () => {
+    const plugin = library()
+    const f = await fixture(0, { plugins: [plugin.provider] })
+    f.set({ chatProviders: ['claude', 'plugin:manager-test'], providerPlugins: [plugin.provider] })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    plugin.create.mockRejectedValueOnce(new Error('Temporary library outage'))
+    await expect(f.manager.configure({ enabled: true, provider: 'plugin:manager-test' })).rejects.toThrow('Temporary library outage')
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(plugin.create).toHaveBeenCalledTimes(2)
+    expect(plugin.sent).toHaveLength(1)
+    expect(plugin.sent[0]?.text).toContain('Automatic recovery.')
+    expect((await f.manager.view()).config.provider).toBe('plugin:manager-test')
+    expect(f.made).toHaveLength(0)
+  })
+})
 
 describe('Manager reply provenance', () => {
   it('binds real worker-event turns to their causal tasks, preserving multiple candidates and ownership', async () => {

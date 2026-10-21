@@ -54,6 +54,7 @@ interface ManagerRecord {
   readonly responseOrigin?: ManagerReplyOrigin | undefined
   readonly workerEvents: readonly WorkerEvent[]
   readonly error?: string | undefined
+  readonly manualRecovery?: boolean
 }
 
 export interface ManagerCliContext {
@@ -102,6 +103,8 @@ export class Manager {
   #generation = 0
   #configurationRevision = 0
   #opening: { readonly generation: number; readonly result: Promise<string> } | undefined
+  #recovery: ReturnType<typeof setTimeout> | undefined
+  #recoveryDelay = 5_000
 
   constructor(deps: ManagerDeps) {
     this.#deps = deps
@@ -111,12 +114,12 @@ export class Manager {
     try { stored = JSON.parse(readFileSync(this.#path(), 'utf8')) as Partial<ManagerRecord> } catch { /* First setup has no record. */ }
     const settings = deps.settings()
     const provider = settings.chatProviders.includes(settings.chatProvider) ? settings.chatProvider : settings.chatProviders[0] ?? DEFAULT_MANAGER_CONFIG.provider
-    this.#record = { config: { ...DEFAULT_MANAGER_CONFIG, provider, ...stored.config }, paused: stored.paused ?? false, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }) }
+    this.#record = { config: { ...DEFAULT_MANAGER_CONFIG, provider, ...stored.config }, paused: stored.paused ?? false, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }) }
     for (const id of this.#record.previousSessions) { deps.sessions.protectManager(id); deps.sessions.suspendManager(id) }
     if (this.#record.sessionId !== undefined) { deps.sessions.protectManager(this.#record.sessionId); if (this.#record.paused || !this.#record.config.enabled) deps.sessions.suspendManager(this.#record.sessionId) }
     if (this.#record.inbox.some((message) => message.state === 'sending') || this.#record.operations.some((operation) => operation.state === 'running')) {
       const interrupted = this.#record.operations.filter((operation) => operation.state === 'running')
-      this.#record = { ...this.#record, paused: true, operations: this.#record.operations.map((operation) => operation.state === 'running' ? { ...operation, state: 'uncertain' } : operation), decisions: [...this.#record.decisions, ...interrupted.filter((operation) => !this.#record.decisions.some((decision) => decision.command.id === operation.id)).map((operation): PendingDecision => ({ id: randomUUID(), title: `Delivery is uncertain: ${operation.command.slice(0, 2).join(' ')}. Check its current state in GeckIt before marking reviewed. This will not resend it.`, choices: [{ label: 'I checked its state', value: 'reviewed' }], command: { id: operation.id, args: operation.command }, uncertain: true }))], error: 'Manager was interrupted. Review current task state before resuming; operations with uncertain delivery are not replayed.' }
+      this.#record = { ...this.#record, paused: this.#record.paused || interrupted.length > 0, inbox: this.#record.inbox.map((message) => message.state === 'sending' ? { ...message, state: 'sent' } : message), operations: this.#record.operations.map((operation) => operation.state === 'running' ? { ...operation, state: 'uncertain' } : operation), decisions: [...this.#record.decisions, ...interrupted.filter((operation) => !this.#record.decisions.some((decision) => decision.command.id === operation.id)).map((operation): PendingDecision => ({ id: randomUUID(), title: `Delivery is uncertain: ${operation.command.slice(0, 2).join(' ')}. Check its current state in GeckIt before marking reviewed. This will not resend it.`, choices: [{ label: 'I checked its state', value: 'reviewed' }], command: { id: operation.id, args: operation.command }, uncertain: true }))], error: interrupted.length > 0 ? 'Manager was interrupted. Review current task state before resuming; operations with uncertain delivery are not replayed.' : 'Manager was interrupted. Reconcile current task state without replaying interrupted messages.' }
       this.#save({})
     }
     this.#pinAttachments()
@@ -134,6 +137,7 @@ export class Manager {
       this.#processing = this.#processing.then(() => id === this.#record.sessionId ? this.#output(id, text) : undefined).catch((error: Error) => this.#fail(error.message)).finally(() => { this.#processingOutput = false; void this.#dispatch() })
     })
     if (stored.config?.enabled === true && !this.#record.paused && this.#record.error === undefined) queueMicrotask(() => this.#reconcile('GeckIt restarted. Restore coordination from durable ownership and decisions, then reconcile fresh CLI task state. Do not replay old operations.'))
+    if (this.#record.error !== undefined) queueMicrotask(() => this.#scheduleRecovery())
   }
 
   #path(): string { return join(this.#deps.directory, 'manager.json') }
@@ -196,6 +200,7 @@ export class Manager {
       if (selected === undefined || selected.disabled === true) throw new Error('That Manager model is unavailable. Refresh the model list and choose another.')
     }
     if (revision !== this.#configurationRevision) throw new Error('Manager settings changed while validating the selection. Open its settings to continue.')
+    this.#cancelRecovery()
     const generation = ++this.#generation
     const previous = providerChanged ? this.#record.sessionId : undefined
     const inbox = (!config.enabled || providerChanged) && this.#record.sessionId !== undefined ? this.#interrupt(this.#record.sessionId) : this.#record.inbox
@@ -288,7 +293,8 @@ export class Manager {
   }
 
   async #output(session: string, text: string): Promise<void> {
-    this.#save({ inbox: this.#record.inbox.map((message) => message.state === 'sending' || message.state === 'sent' ? { ...message, state: 'sent', completed: true } : message) })
+    this.#cancelRecovery()
+    this.#save({ ...(this.#canRecover() ? { error: undefined } : {}), inbox: this.#record.inbox.map((message) => message.state === 'sending' || message.state === 'sent' ? { ...message, state: 'sent', completed: true } : message) })
     const origin = this.#record.responseOrigin ?? { session, workers: [] }
     this.#save({ responseOrigin: undefined })
     const visible = managerMessage(text)
@@ -363,7 +369,7 @@ export class Manager {
   observeSessions(sessions: readonly ChatSession[]): void {
     this.#sessions = sessions
     const manager = sessions.find((one) => one.id === this.#record.sessionId)
-    if (this.#record.config.enabled && !this.#record.paused && manager?.state === 'failed' && this.#record.error === undefined) this.#save({ error: manager.stands || 'The Manager turn failed. Retry after checking the selected assistant.' })
+    if (this.#record.config.enabled && !this.#record.paused && manager?.state === 'failed' && this.#record.error === undefined) this.#fail(manager.stands || 'The Manager turn failed. Retry after checking the selected assistant.')
     if (this.#awaitingOutput && manager !== undefined && manager.state !== 'working' && manager.state !== 'asks' && !manager.queued?.length) {
       const generation = this.#generation
       queueMicrotask(() => {
@@ -384,6 +390,7 @@ export class Manager {
     if (JSON.stringify(positions) !== JSON.stringify(this.#record.workerEvents)) this.#save({ workerEvents: positions })
     else this.#emit()
     if (events.length > 0 && this.#record.config.enabled) void this.send(events.join('\n'), 'event', randomUUID(), workers).catch((error: Error) => this.#fail(error.message))
+    this.#scheduleRecovery()
   }
 
   async answer(id: string, choice: string, authorized: () => boolean = () => true): Promise<ManagerView> {
@@ -435,7 +442,7 @@ export class Manager {
     return inbox
   }
 
-  async pause(): Promise<ManagerView> { this.#generation += 1; this.#save({ paused: true }); const inbox = this.#record.sessionId === undefined ? this.#record.inbox : this.#interrupt(this.#record.sessionId); this.#awaitingOutput = false; this.#save({ inbox }); return this.view() }
+  async pause(): Promise<ManagerView> { this.#cancelRecovery(); this.#generation += 1; this.#save({ paused: true }); const inbox = this.#record.sessionId === undefined ? this.#record.inbox : this.#interrupt(this.#record.sessionId); this.#awaitingOutput = false; this.#save({ inbox }); return this.view() }
   #reconcile(text: string): void {
     this.#save({ inbox: [{ id: randomUUID(), text, source: 'event', at: Date.now(), state: 'queued' }, ...this.#record.inbox] })
     void this.#dispatch()
@@ -443,15 +450,19 @@ export class Manager {
 
   async resume(): Promise<ManagerView> {
     this.#assertEnabled()
+    this.#cancelRecovery()
+    const generation = ++this.#generation
     this.#awaitingOutput = false
     this.#save({ paused: false, error: undefined, inbox: this.#record.inbox.map((one) => one.state === 'sending' ? { ...one, state: 'sent' } : one) })
-    try { await this.open() } catch (error) { this.#fail(error instanceof Error ? error.message : String(error)); throw error }
+    try { await this.open() } catch (error) { if (generation === this.#generation) this.#fail(error instanceof Error ? error.message : String(error)); throw error }
+    if (generation !== this.#generation || this.#stopped) return this.view()
     this.#reconcile('Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Reconcile current task state without replaying its CLI effects. Do not replay past operations.')
     return this.view()
   }
   async retry(): Promise<ManagerView> { return this.resume() }
   async restart(): Promise<ManagerView> {
     this.#assertEnabled()
+    this.#cancelRecovery()
     this.#generation += 1
     const previous = this.#record.sessionId
     const inbox = previous === undefined ? this.#record.inbox : this.#interrupt(previous)
@@ -462,6 +473,52 @@ export class Manager {
     return this.view()
   }
 
-  #fail(error: string): void { this.#save({ error }) }
-  dispose(): void { this.#stopped = true; this.#listeners.clear(); this.#responses.clear(); this.#itemListeners.clear() }
+  #canRecover(): boolean {
+    if (this.#stopped || !this.#record.config.enabled || this.#record.paused || this.#record.error === undefined || this.#record.manualRecovery === true || !this.#deps.settings().chatProviders.includes(this.#record.config.provider) || this.#record.operations.some((one) => one.state === 'running' || one.state === 'uncertain')) return false
+    const id = this.#record.sessionId
+    if (id === undefined) return true
+    const note = this.#deps.notes.all()[id]
+    const session = this.#sessions.find((one) => one.id === id)
+    return note?.managerPrompt !== undefined && note.guardError === undefined && note.heldOperation === undefined && note.vpnPaused !== true && providerOf(id) === this.#record.config.provider && session?.heldSend !== true && session?.state !== 'asks' && session?.state !== 'limit' && session?.stands !== 'Not sent'
+  }
+
+  #cancelRecovery(): void {
+    clearTimeout(this.#recovery)
+    this.#recovery = undefined
+    this.#recoveryDelay = 5_000
+  }
+
+  #scheduleRecovery(): void {
+    if (this.#recovery !== undefined || !this.#canRecover()) return
+    const generation = this.#generation
+    this.#recovery = setTimeout(() => {
+      this.#recovery = undefined
+      if (generation !== this.#generation || !this.#canRecover()) return
+      this.#recoveryDelay = Math.min(this.#recoveryDelay * 2, 60_000)
+      void this.#recover(generation)
+    }, this.#recoveryDelay)
+    this.#recovery.unref()
+  }
+
+  async #recover(generation: number): Promise<void> {
+    if (this.#dispatching || this.#processingOutput || this.#deps.sessions.busy(this.#record.sessionId ?? '')) { this.#scheduleRecovery(); return }
+    try {
+      await this.open()
+      if (generation !== this.#generation || !this.#canRecover()) return
+      this.#awaitingOutput = false
+      this.#save({ error: undefined, responseOrigin: undefined, inbox: this.#record.inbox.map((one) => one.state === 'sending' ? { ...one, state: 'sent' } : one) })
+      this.#reconcile('Automatic recovery. Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations.')
+    } catch (error) {
+      if (generation === this.#generation && !this.#stopped) this.#fail(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  #fail(error: string): void {
+    const session = this.#sessions.find((one) => one.id === this.#record.sessionId)
+    const note = this.#record.sessionId === undefined ? undefined : this.#deps.notes.all()[this.#record.sessionId]
+    const manualRecovery = session?.state === 'asks' || session?.state === 'limit' || session?.stands === 'Not sent' || note?.guardError !== undefined || note?.heldOperation !== undefined || note?.vpnPaused === true
+    this.#save({ error, manualRecovery })
+    this.#scheduleRecovery()
+  }
+  dispose(): void { this.#stopped = true; this.#generation += 1; this.#cancelRecovery(); this.#listeners.clear(); this.#responses.clear(); this.#itemListeners.clear() }
 }
