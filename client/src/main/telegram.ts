@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 
 import type { ManagerDecision, ManagerReplyOrigin, ManagerTelegramReply } from '../shared/manager'
 import type { Json, JsonObject } from '../shared/elicitation'
@@ -66,6 +66,8 @@ interface KeptTelegram {
   readonly incoming?: number
   readonly outgoing?: boolean
   readonly uncertain?: boolean
+  readonly pendingUpload?: string
+  readonly uncertainUploads?: readonly string[]
 }
 
 interface Connection {
@@ -128,7 +130,7 @@ function keptOf(text: string): KeptTelegram | undefined {
     const item = jsonObject(entry)
     if (item !== undefined && safeInteger(item['messageId']) && typeof item['id'] === 'string') questions.push({ messageId: item['messageId'], id: item['id'] })
   }
-  return { token: value['token'], bot: { id: bot['id'], username: bot['username'] }, offset: value['offset'], replies: Array.isArray(value['replies']) ? value['replies'].flatMap((entry) => { const reply = replyOf(entry); return reply === undefined ? [] : [reply] }).slice(-2048) : [], callbacks, questions, ...(account === undefined ? {} : { account }), ...(safeInteger(value['incoming']) ? { incoming: value['incoming'] } : {}), ...(value['outgoing'] === true ? { outgoing: true } : {}), ...(value['uncertain'] === true ? { uncertain: true } : {}) }
+  return { token: value['token'], bot: { id: bot['id'], username: bot['username'] }, offset: value['offset'], replies: Array.isArray(value['replies']) ? value['replies'].flatMap((entry) => { const reply = replyOf(entry); return reply === undefined ? [] : [reply] }).slice(-2048) : [], callbacks, questions, ...(account === undefined ? {} : { account }), ...(safeInteger(value['incoming']) ? { incoming: value['incoming'] } : {}), ...(value['outgoing'] === true ? { outgoing: true } : {}), ...(value['uncertain'] === true ? { uncertain: true } : {}), ...(typeof value['pendingUpload'] === 'string' && /^[a-f0-9]{64}$/.test(value['pendingUpload']) ? { pendingUpload: value['pendingUpload'] } : {}), uncertainUploads: Array.isArray(value['uncertainUploads']) ? value['uncertainUploads'].filter((entry): entry is string => typeof entry === 'string' && /^[a-f0-9]{64}$/.test(entry)) : [] }
 }
 
 export class ManagerTelegram {
@@ -183,8 +185,9 @@ export class ManagerTelegram {
     const connection = this.connection(kept)
     this.active = connection
     if (kept.incoming !== undefined || kept.outgoing === true || kept.uncertain === true) {
-      connection.kept = { ...kept, uncertain: true }
-      connection.detail = 'A previous delivery was interrupted. Use /status in Telegram and check worker sessions before sending again; uncertain deliveries are never retried automatically. After checking the chat, use /resume to allow new deliberate file sends.'
+      const { pendingUpload, ...rest } = kept
+      connection.kept = { ...rest, uncertain: true, uncertainUploads: [...new Set([...(kept.uncertainUploads ?? []), ...(pendingUpload === undefined ? [] : [pendingUpload])])] }
+      connection.detail = 'A previous delivery was interrupted. Uncertain deliveries are never retried automatically; other work continues.'
       try { this.save(connection) } catch { return }
     }
     await this.verifyAndPoll(connection)
@@ -330,25 +333,26 @@ export class ManagerTelegram {
     const connection = this.active
     if (connection === undefined || expected !== undefined && expected !== connection || connection.kept.account === undefined || !this.current(connection) || connection.state !== 'connected') return Promise.reject(new Error('Telegram is not connected to a paired account. Reconnect in GeckIt Settings.'))
     const chatId = connection.kept.account.chatId
+    const fingerprint = createHash('sha256').update(JSON.stringify({ workers: origin.workers.toSorted(), name: telegramFilename(name), as })).update(bytes).digest('hex')
     const job = connection.sending.then(async () => {
       await beforeSend?.()
       if (!this.current(connection) || !this.options.manager.enabled()) throw new Error('Telegram connection changed before upload. Nothing was sent.')
-      if (connection.kept.uncertain === true || connection.kept.outgoing === true) throw new Error('Previous Telegram delivery is uncertain. Check the paired chat before requesting another file send.')
+      if (connection.kept.uncertainUploads?.includes(fingerprint) === true) throw new Error('This Telegram file delivery is uncertain. This upload will not be repeated automatically; other work continues.')
       if (bytes.length === 0 || bytes.length > (as === 'photo' ? 10 : 50) * 1024 * 1024 || [...caption].length > 1024) throw new Error('File or caption exceeds Telegram limits: photo 10 MiB, document 50 MiB, caption 1024 characters.')
-      connection.kept = { ...connection.kept, outgoing: true }
+      connection.kept = { ...connection.kept, outgoing: true, pendingUpload: fingerprint }
       this.save(connection)
       try {
         const messageId = await connection.client.upload(chatId, bytes, telegramFilename(name), media, caption, as, connection.controller.signal)
         if (!this.current(connection)) throw new Error('Telegram file delivery is uncertain after the connection changed. Check the original paired chat.')
-        const { outgoing: _outgoing, ...kept } = connection.kept
+        const { outgoing: _outgoing, pendingUpload: _pendingUpload, ...kept } = connection.kept
         connection.kept = { ...kept, replies: [...kept.replies, { ...origin, chatId, messageId, text: caption || name }].slice(-2048) }
         this.save(connection)
         return messageId
       } catch (error) {
         const uncertain = !(error instanceof TelegramFailure)
-        const { outgoing: _outgoing, ...kept } = connection.kept
-        connection.kept = { ...kept, ...(uncertain ? { uncertain: true } : {}) }
-        connection.detail = uncertain ? 'Telegram file delivery is uncertain. Check the paired chat before requesting another send; uploads are never retried automatically. After checking the chat, use /resume to allow new deliberate file sends.' : `Telegram rejected the file (${String(error.code)}). Check the file and caption limits, then deliberately request a new send.`
+        const { outgoing: _outgoing, pendingUpload: _pendingUpload, ...kept } = connection.kept
+        connection.kept = { ...kept, ...(uncertain ? { uncertain: true, uncertainUploads: [...new Set([...(kept.uncertainUploads ?? []), fingerprint])] } : {}) }
+        connection.detail = uncertain ? 'Telegram file delivery is uncertain. This upload will not be repeated automatically; other work continues.' : `Telegram rejected the file (${String(error.code)}). Check the file and caption limits, then deliberately request a new send.`
         if (this.current(connection)) { this.save(connection); this.changed() }
         throw new Error(connection.detail)
       }
@@ -613,7 +617,7 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
         await connection.sending
         await this.options.manager.resume()
         if (this.current(connection)) {
-          const { outgoing: _outgoing, uncertain: _uncertain, ...kept } = connection.kept
+          const { outgoing: _outgoing, uncertain: _uncertain, pendingUpload: _pendingUpload, uncertainUploads: _uncertainUploads, ...kept } = connection.kept
           connection.kept = kept
           delete connection.detail
           this.save(connection)

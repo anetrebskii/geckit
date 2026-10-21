@@ -9,10 +9,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TelegramAttachments } from '../src/main/telegram-attachments'
 import { Manager, runManagerCli } from '../src/main/manager'
 import type { ManagerCliContext, ManagerDeps } from '../src/main/manager'
-import { ManagerOperations, managerFile, managerProvider } from '../src/main/manager-operations'
+import { ManagerOperations, managerFile, managerProvider, managerReadOnly } from '../src/main/manager-operations'
 import { managerCommands, managerContext, managerHistoryItem, managerMessage, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
 import { manage } from '../src/cli/manage'
-import type { ManagerActivity, ManagerCliAsked, ManagerReplyOrigin, ManagerView } from '../src/shared/manager'
+import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerReplyOrigin, ManagerView } from '../src/shared/manager'
 import { Sessions, memoryNotes } from '../src/main/sessions'
 import type { SessionsDeps } from '../src/main/sessions'
 import { llmProvider } from '../src/main/sessions/provider'
@@ -68,6 +68,7 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}) {
   const fanned: SessionItems[] = []
   const answers: NativeAnswer[] = []
   const cli: { readonly args: readonly string[]; readonly context: ManagerCliContext }[] = []
+  let callCli: ManagerDeps['cli'] | undefined
   const hearings = new Map<string, (heard: Heard) => void>()
   const sessions = new Sessions({
     notes,
@@ -90,6 +91,7 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}) {
   })
   const deps: ManagerDeps = { directory, sessions, notes, settings: () => settings, saveSettings: (change) => settings = { ...settings, ...change }, cli: async (args, context) => {
     cli.push({ args, context })
+    if (callCli !== undefined) return callCli(args, context)
     const result = await current.manager?.command({ action: 'manage', args, session: context.session, token: context.token, operation: context.operation })
     if (result === undefined || !result.ok) throw new Error(result?.error ?? 'Manager missing')
     return result.result
@@ -100,8 +102,160 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}) {
   cleanups.push(async () => { current.manager?.dispose(); sessions.dispose(); await rm(directory, { recursive: true, force: true }) })
   const finish = (id: string, text: string): void => hearings.get(id)?.({ items: [{ kind: 'theirs', id: `answer:${sent.length}`, text }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
   const command = (id: string, args: readonly string[]): string => `I will coordinate that.\n\n\`\`\`geckit\n${JSON.stringify({ id, args })}\n\`\`\``
-  return { manager: active, sessions, root, directory, notes, made, sent, fanned, answers, cli, finish, hear: (id: string, heard: Heard) => hearings.get(id)?.(heard), command, reload: () => { current.manager?.dispose(); const next = new Manager(deps); current.manager = next; return next }, settings: () => settings, set: (change: Partial<Settings>) => { settings = { ...settings, ...change } } }
+  return { manager: active, sessions, root, directory, notes, made, sent, fanned, answers, cli, finish, hear: (id: string, heard: Heard) => hearings.get(id)?.(heard), command, setCli: (run: ManagerDeps['cli'] | undefined) => { callCli = run }, reload: () => { current.manager?.dispose(); const next = new Manager(deps); current.manager = next; return next }, settings: () => settings, set: (change: Partial<Settings>) => { settings = { ...settings, ...change } } }
 }
+
+describe('Manager CLI delivery recovery', () => {
+  const settle = async (): Promise<void> => { for (let turn = 0; turn < 8; turn++) await new Promise<void>((resolve) => setImmediate(resolve)) }
+
+  it.each([
+    ['capabilities'], ['providers', 'list'], ['providers', 'models', '--provider', 'claude'],
+    ['projects', 'list'], ['projects', 'provider', '--project', 'project'],
+    ['files', 'read'], ['files', 'list'], ['sessions', 'list'], ['sessions', 'show'], ['settings', 'show'],
+  ])('recognizes the read-only command %j', (...args) => expect(managerReadOnly(args)).toBe(true))
+
+  it.each([
+    ['projects', 'provider', '--project', 'project', '--provider', 'claude'], ['projects', 'provider', '--clear'],
+    ['projects', 'create'], ['files', 'write'], ['sessions', 'start'], ['sessions', 'send'], ['telegram', 'send-file'], ['new-command'],
+  ])('does not classify mutation %j as a safe read', (...args) => expect(managerReadOnly(args)).toBe(false))
+
+  it('returns a failed read as context and continues with a fresh read without pausing', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Read current work')
+    await settle()
+    f.setCli(async () => { throw new Error('GeckIt timed out. Delivery is uncertain.') })
+    f.finish(id, f.command('read-timeout', ['sessions', 'list']))
+    await settle()
+    expect(await f.manager.view()).toMatchObject({ state: 'working', activity: [{ id: 'read-timeout', state: 'failed' }], decisions: [] })
+    expect(f.sent.at(-1)?.text).toContain('Retry a fresh read')
+    f.setCli(undefined)
+    f.finish(id, f.command('fresh-read', ['sessions', 'list']))
+    await settle()
+    expect((await f.manager.view()).activity[0]).toMatchObject({ id: 'fresh-read', state: 'done' })
+    expect(f.cli).toHaveLength(2)
+  })
+
+  it('recovers a lost CLI reply from its durable host receipt without creating a second worker', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Delegate work')
+    await settle()
+    f.setCli(async (args, context) => {
+      const answer = await f.manager.command({ action: 'manage', args, ...context })
+      expect(answer.ok).toBe(true)
+      const stored = JSON.parse(await readFile(join(f.directory, 'manager.json'), 'utf8')) as { readonly operations: readonly ManagerActivity[] }
+      expect(stored.operations.at(-1)?.state).toBe('done')
+      throw new Error('CLI delivery is uncertain after timeout')
+    })
+    const command = f.command('one-worker', ['sessions', 'start', '--project', f.root, '--text', 'Implement the fix', '--goal', 'Verified'])
+    f.finish(id, command)
+    await settle()
+    expect(await f.manager.view()).toMatchObject({ state: 'working', activity: [{ state: 'done' }], decisions: [] })
+    expect((await f.manager.view()).workers).toHaveLength(1)
+    expect(f.sent.at(-1)?.text).toContain('Recovered the host receipt')
+    f.finish(id, command)
+    await settle()
+    expect(f.cli).toHaveLength(1)
+    expect((await f.manager.view()).workers).toHaveLength(1)
+  })
+
+  it('records a late host completion after timeout and retires its uncertainty without resending', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Delegate work')
+    await settle()
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const start = f.sessions.startManaged.bind(f.sessions)
+    const create = vi.spyOn(f.sessions, 'startManaged').mockImplementation(async (...args) => { const worker = await start(...args); await gate; return worker })
+    let pending: Promise<ManagerCliAnswered> | undefined
+    f.setCli(async (args, context) => { pending = f.manager.command({ action: 'manage', args, ...context }); await settle(); throw new Error('CLI timed out') })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    f.finish(id, f.command('late-worker', ['sessions', 'start', '--project', f.root, '--text', 'Implement the fix', '--goal', 'Verified']))
+    await vi.waitFor(async () => expect((await f.manager.view()).activity[0]?.state).toBe('uncertain'))
+    expect((await f.manager.view()).state).toBe('blocked')
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(f.sent.at(-1)?.text).toContain('Unresolved operations')
+    expect(f.sent.at(-1)?.text).toContain('late-worker')
+    release?.()
+    await pending
+    await settle()
+    expect(create).toHaveBeenCalledTimes(1)
+    expect((await f.manager.view()).activity[0]?.state).toBe('done')
+    expect((await f.manager.view()).decisions).toEqual([])
+    f.finish(id, 'Reconciled current work')
+    await settle()
+    expect(f.sent.some((one) => one.text.includes('The original operation completed'))).toBe(true)
+  })
+
+  it.each(['read', 'mutation'] as const)('automatically migrates the saved delivery pause for a %s and drains queued work', async (kind) => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true, chatModel: 'sonnet' })
+    const id = await f.manager.open()
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Continue working' }, 'manager', 'keep-worker')
+    const path = join(f.directory, 'manager.json')
+    const stored = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
+    const args = kind === 'read' ? ['sessions', 'show', '--id', worker, '--last', '2'] : ['telegram', 'send-file', '--id', worker, '--path', 'report.txt']
+    await writeFile(path, JSON.stringify({ ...stored, paused: true, error: 'CLI delivery is uncertain. Review current state before resuming.', operations: [{ id: 'saved-uncertain', command: args, state: 'uncertain', at: 1 }], decisions: [{ id: 'review', command: { id: 'saved-uncertain', args }, uncertain: true, choices: [{ label: 'I checked its state', value: 'reviewed' }] }], inbox: [{ id: 'queued', text: 'Next Telegram request', source: 'telegram', state: 'queued', at: 1 }] }))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const recovered = f.reload()
+    await settle()
+    expect((await recovered.view()).state).toBe('blocked')
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(f.sent.at(-1)?.text).toContain('Automatic recovery.')
+    const view = await recovered.view()
+    expect(view.session?.id).toBe(id)
+    expect(view.config.chatModel).toBe('sonnet')
+    expect(view.workers.find((one) => one.id === worker)?.state).toBe('working')
+    expect(view.decisions).toHaveLength(kind === 'read' ? 0 : 1)
+    expect(view.activity[0]?.state).toBe(kind === 'read' ? 'failed' : 'uncertain')
+    f.finish(id, 'Reconciled without replay')
+    await settle()
+    expect(f.sent.at(-1)?.text).toBe('[Telegram]\nNext Telegram request')
+    expect(f.cli).toHaveLength(0)
+  })
+
+  it('keeps an explicit pause after uncertainty across restart', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Coordinate')
+    await settle()
+    f.setCli(async () => { throw new Error('CLI delivery is uncertain') })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    f.finish(id, f.command('unknown-send', ['sessions', 'send', '--id', 'worker', '--text', 'Possibly delivered']))
+    await settle()
+    await f.manager.pause()
+    const recovered = f.reload()
+    await settle()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect((await recovered.view()).state).toBe('paused')
+    expect(f.sent).toHaveLength(1)
+    expect(f.cli).toHaveLength(1)
+  })
+
+  it('discards remaining actions from an interrupted output and reconciles before queued requests', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Coordinate')
+    await settle()
+    await f.manager.send('Next request')
+    f.setCli(async () => { throw new Error('CLI delivery is uncertain') })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    f.finish(id, `${f.command('unknown-send', ['sessions', 'send', '--id', 'worker', '--text', 'Possibly delivered'])}\n${f.command('dependent-send', ['sessions', 'send', '--id', 'worker', '--text', 'Do the next step'])}`)
+    await settle()
+    expect(f.cli).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(f.sent.at(-1)?.text).toContain('Automatic recovery.')
+    f.finish(id, 'Reconciled actual state')
+    await settle()
+    expect(f.sent.at(-1)?.text).toBe('Next request')
+    expect(f.cli).toHaveLength(1)
+  })
+})
 
 describe('Manager automatic recovery', () => {
   const settle = async (): Promise<void> => { for (let turn = 0; turn < 8; turn++) await new Promise<void>((resolve) => setImmediate(resolve)) }
@@ -1035,7 +1189,7 @@ describe('Manager session', () => {
     expect(f.sent[1]?.text).toBe('Coordinate after the current task')
   })
 
-  it('recovers interrupted CLI operations as uncertain without replaying them', async () => {
+  it('recovers interrupted CLI operations as uncertain without pausing or replaying them', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true })
     const path = join(f.directory, 'manager.json')
@@ -1043,7 +1197,7 @@ describe('Manager session', () => {
     await writeFile(path, JSON.stringify({ ...stored, operations: [{ id: 'interrupted', at: 1, state: 'running', command: ['sessions', 'start', '--project', f.root, '--text', 'Work', '--goal', 'Finished'] }] }))
     const recovered = f.reload()
     const view = await recovered.view()
-    expect(view.state).toBe('paused')
+    expect(view.state).toBe('blocked')
     expect(view.activity[0]?.state).toBe('uncertain')
     expect(view.decisions[0]?.choices).toEqual([{ label: 'I checked its state', value: 'reviewed' }])
     expect(f.cli).toHaveLength(0)

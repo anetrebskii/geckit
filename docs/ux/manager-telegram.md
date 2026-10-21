@@ -967,3 +967,38 @@ Alex reproduced a Manager blocked by "Not sent. GeckIt could not verify this com
 | Lookup unavailable/Verifying | User pauses, disables or replaces Manager | Existing requested state | Existing status; old retry cannot deliver later |
 
 No new renderer, control or status wording is introduced. Ordinary worker sessions retain their existing manual VPN recovery. Automatic permission answering, bypassing a failed check and replacing the backing session were rejected because none is required to recover a transient lookup failure.
+
+### CLI delivery recovery correction - 2026-10-21
+
+Alex reported Manager paused by "CLI delivery is uncertain. Review current state before resuming." while away from the computer. The saved operation was a file upload refused by Telegram's connection-wide uncertainty flag. Delivery uncertainty must hold only the affected action; coordination and unrelated queued requests recover automatically. This supersedes the uncertain-CLI manual hold above. No new screen, control or layout is needed.
+
+| Surface/state | What Alex sees | Next action |
+|---|---|---|
+| CLI outcome unknown | "CLI delivery is uncertain. Manager will reconcile automatically without repeating changes." | Wait; no resume required |
+| Reconciliation accepted | Existing working or slot-waiting status | Wait; queued requests follow reconciliation |
+| One upload outcome unknown | "Telegram file delivery is uncertain. This upload will not be repeated automatically; other work continues." | Optional: inspect the chat; other files and coordination continue |
+| Explicit user pause, native approval or security/configuration hold | Existing reason and controls | Existing deliberate action; recovery cannot authorize it |
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  coordinating --> recovering: CLI interrupted
+  recovering --> coordinating: retry timer
+  recovering --> paused: user pauses
+  paused --> coordinating: user resumes
+```
+
+| From | Concrete event | To | What Alex sees |
+|---|---|---|---|
+| Coordinating | CLI timeout or uncertain mutation, automatically | Recovering | The recovery reason above; workers keep running |
+| Recovering | Existing 5-to-60-second retry timer expires, automatically | Coordinating | Fresh-state reconciliation before queued input; the uncertain mutation is not resent |
+| Old automatic delivery pause | App loads the retained record, automatically | Recovering | Same identity, workers, decisions and queue; no manual resume |
+| Interrupted read | App loads a running/uncertain read, automatically | Recovering | Read recorded as failed; a fresh read is safe, with no review decision |
+| Upload outcome unknown | Another file is deliberately selected, automatically | Coordinating | New file can upload; matching bytes/name/worker/format stay held across restart |
+| Any | User explicitly pauses | Paused | Existing paused status survives restart |
+
+CLI outcomes are saved by the authenticated host before replying to the subprocess. A lost CLI reply uses that receipt; a late outcome resolves its operation and supplies context without repeating the action. Read-only commands cannot have uncertain side effects. A failed read returns an error permitting a fresh read. Unresolved mutations retain their review decision as an optional action; they do not prevent recovery, status reads or unrelated work. Reconciliation includes unresolved operation IDs, arguments and outcomes so the backing assistant can check actual state. Operations already running are never resent.
+
+Telegram stores an upload fingerprint before sending and retains it if its receipt is lost, including across restart. Its fingerprint uses selected bytes, filename, format and worker identity; changing a caption cannot bypass it. Old connection-wide uncertainty remains diagnostic only. No automatic upload replay, approval, assistant replacement or security bypass is introduced. Explicit /resume may still clear reviewed upload holds. Retry timing stays at 5 seconds doubling to 60 seconds; duplicate retry timers and per-failure notifications remain silent.
+
+Requirements checked: unattended recovery from the reported pause, migration of the saved failure, continued queued work, retained identity/workers, no repeated mutations/uploads and explicit pauses preserved. Live Telegram receipt recovery cannot prove delivery when Telegram supplied no receipt; that individual upload remains held rather than guessing success.

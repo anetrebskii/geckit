@@ -89,6 +89,11 @@ const SHAPES: readonly CommandShape[] = [
   { domain: 'telegram', command: 'send-file', flags: ['--id', '--path', '--caption', '--as'] },
 ]
 
+export function managerReadOnly(args: readonly string[]): boolean {
+  const [domain, command] = args
+  return domain === 'capabilities' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && command === 'show'
+}
+
 const values = (args: readonly string[]): Map<string, string> => {
   const shape = SHAPES.find((one) => one.domain === args[0] && one.command === args[1])
   if (shape === undefined) throw new Error('This GeckIt CLI operation is unavailable. Run capabilities for supported commands and limitations.')
