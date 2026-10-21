@@ -559,6 +559,20 @@ describe('what it may do unasked', () => {
     })
   })
 
+  it('leaves Auto to a library that runs it', async () => {
+    const held = fakeClaude()
+    const provider: LlmProvider = {
+      ...llmProvider({ claude: held.claude }, 'claude'),
+      id: 'plugin:opencode-llama', family: 'plugin:opencode-llama', name: 'OpenCode + Ollama',
+      create: async () => 'plugin:opencode-llama:session',
+    }
+    const built = build({ plugins: [provider] })
+    const id = await built.sessions.send({ provider: provider.family, root: ROOT, mode: 'auto', text: 'hi' })
+    held.fake.hear({ signals: [{ kind: 'started', session: id, key: false, model: 'ollama/qwen3.5:0.8b', mode: 'auto' }] })
+    expect(of(built.rows, id)?.mode).toBe('auto')
+    expect(last(built.fanned)?.items.some((item) => item.kind === 'note' && item.note === 'mode')).toBe(false)
+  })
+
   it('leaves auto to Claude Code, and asks about whatever it still sends', async () => {
     const built = build()
     await started(built, 'auto')
@@ -609,6 +623,36 @@ describe('answering a card', () => {
       ['c2', 'once'],
     ])
     expect(cards(built.fanned)).toHaveLength(1)
+  })
+
+  it('never says it is asking about something already allowed for the session', async () => {
+    const built = build()
+    const id = await started(built, 'manual')
+    built.fake.hear({ signals: [wanted] })
+    built.sessions.answer(id, 'card:c1', 'session')
+    const before = built.rows.length
+    built.fake.hear({ signals: [{ ...wanted, ask: 'c2' }] })
+    await vi.waitFor(() => expect(built.fake.answered).toHaveLength(2))
+    const states = built.rows.slice(before).map((all) => all.find((one) => one.id === id)?.state)
+    expect(states).not.toContain('asks')
+    expect(of(built.rows, id)?.state).toBe('working')
+    expect(cards(built.fanned)).toHaveLength(1)
+  })
+
+  it('never says it is asking about a tool a library already allowed for the session', async () => {
+    // A library that names its tools rather than their commands, as OpenCode does.
+    const tool: Signal = { kind: 'asks', ask: 't1', wanted: { kind: 'other', tool: 'shell', detail: 'echo hello' } }
+    const built = build()
+    const id = await started(built, 'manual')
+    built.fake.hear({ signals: [tool] })
+    built.sessions.answer(id, 'card:t1', 'session')
+    const before = built.rows.length
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 't2', wanted: { kind: 'other', tool: 'shell', detail: 'echo goodbye' } }] })
+    await vi.waitFor(() => expect(built.fake.answered).toHaveLength(2))
+    const states = built.rows.slice(before).map((all) => all.find((one) => one.id === id)?.state)
+    expect(states).not.toContain('asks')
+    expect(built.fake.answered).toEqual([['t1', 'session'], ['t2', 'once']])
+    expect(of(built.rows, id)?.state).toBe('working')
   })
 
   it('asks again about the same thing when it was only allowed once', async () => {

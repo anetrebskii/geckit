@@ -275,6 +275,7 @@ export interface Kept {
 type HeldOperation =
   | { readonly kind: 'message'; readonly message: SessionMessage; readonly go: boolean; readonly queued?: Queued['id'] | undefined; readonly delegateFrom?: Live['id'] | undefined }
   | { readonly kind: 'answer'; readonly card: string; readonly answer: CardAnswer | string }
+  | { readonly kind: 'allowed'; readonly ask: string; readonly wanted: Wanted }
   | { readonly kind: 'inject'; readonly queued: Queued['id'] }
   | { readonly kind: 'delegate'; readonly queued: Queued['id']; readonly history: boolean }
   | { readonly kind: 'mode'; readonly mode: SessionMode }
@@ -1671,6 +1672,14 @@ export class Sessions {
           await this.answer(id, operation.card, operation.answer)
           break
         }
+        case 'allowed':
+          if (!live.asks.has(operation.ask)) {
+            live.state = 'failed'
+            this.#clearGuard(live)
+            return await this.send({ session: id, root: live.root, mode: live.mode, text: 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }) }, true)
+          }
+          await this.#allowed(live, operation.ask, operation.wanted)
+          break
         case 'inject': await this.injectQueued(id, operation.queued); break
         case 'delegate': return await this.delegate(id, operation.queued, operation.history)
         case 'mode':
@@ -3210,8 +3219,10 @@ export class Sessions {
     const keys = grantKeys(wanted)
     const granted = keys.length > 0 && keys.every((key) => live.grants.has(key))
     const automatic = granted || (wanted.kind === 'command' && startsConversations(wanted.command))
-    if (automatic && this.#deps.beforeSend === undefined) {
-      live.driver?.answer(ask, 'once')
+    if (automatic) {
+      // Already allowed for this session, so it is answered without a card. The
+      // public IP check still runs and holds it when the address is not approved.
+      void this.#allowed(live, ask, wanted)
       return
     }
 
@@ -3242,8 +3253,35 @@ export class Sessions {
     this.#tellItems({ id: live.id, items: [card], ...(gone.length > 0 ? { gone } : {}) })
     this.#changed()
 
-    if (automatic) { void this.answer(live.id, card.id, 'once'); return }
     this.#tell(live, 'Needs an answer', live.stands, true)
+  }
+
+  /**
+   * Something already allowed for this session, answered without a card.
+   *
+   * The card is never drawn, so the conversation never says it is asking: what it
+   * would have asked is answered on the spot. The public IP check still runs, and
+   * a refused check holds the answer for a retry, as it does for a card.
+   */
+  async #allowed(live: Live, ask: string, wanted: Wanted): Promise<void> {
+    const driver = live.driver
+    if (driver === undefined) return
+    // The ask is kept while it is decided, so a refused check can be retried.
+    live.asks.set(ask, wanted)
+    if (this.#deps.beforeSend !== undefined) {
+      if (live.checkingIp) return
+      try { await this.#check(live) } catch (error) {
+        if (error instanceof GuardRefused) this.#blocked(live, { kind: 'allowed', ask, wanted }, error.message)
+        return
+      }
+      if (this.#live.get(live.id) !== live || live.driver !== driver) return
+    }
+    if (this.#live.get(live.id) !== live || live.driver !== driver) return
+    this.#clearGuard(live)
+    live.asks.delete(ask)
+    this.#managerRequests.get(live)?.delete(ask)
+    driver.answer(ask, 'once')
+    this.#changed()
   }
 
   #tell(live: Live, what: string, body: string, asks: boolean): void {
