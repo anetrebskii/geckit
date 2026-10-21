@@ -953,3 +953,17 @@ An interrupted send after app restart shows the reason "Manager was interrupted.
 Before queued work, Manager receives: "Automatic recovery. Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations." Inputs whose send began are never replayed; inputs still queued remain queued. Recorded uncertain operations remain paused for review. Current native approvals, VPN/hook guards, plan/sign-in refusals, missing role instructions and provider mismatches cannot be cleared by automatic recovery. Disabled assistants are never replaced by a fallback. Timer callbacks and asynchronous session opening must recheck lifecycle generation so a later pause or configuration change wins. Workers continue independently.
 
 This supersedes manual-only recovery for ordinary turn failures. Replacing the backing session automatically was rejected because retaining its history makes reconciliation safer; broken identity/role metadata still uses explicit Restart. Repeating the interrupted user request was rejected because it may already have performed work. The amendment implements the requested recovery within the existing Manager lifecycle; it adds no inference, command or approval authority.
+
+### VPN lookup recovery correction - 2026-10-21
+
+Alex reproduced a Manager blocked by "Not sent. GeckIt could not verify this computer's public IP. Check your connection and VPN, then try again." This transient lookup failure now follows the same 5-to-60-second automatic retry schedule, including retained manual-only records from the first implementation. Each attempt runs the normal public IP verification again; no provider input or held operation is delivered before a verified approved address. A failed attempt retains the exact held send and its attachments. Once verified, a known unsent Manager message is delivered once before later queued input; an already-started turn stopped by the periodic lookup failure gets reconciliation rather than a replay of its prompt. This is an explicit exception to the VPN holds above, for the exact unavailable-lookup reason only. Configuration errors, verified unapproved addresses, hook refusals, pending native answers and uncertain CLI operations retain manual recovery.
+
+| From | Concrete event | To | What Alex sees |
+|---|---|---|---|
+| Lookup unavailable | Retry timer expires, automatically | Verifying | Existing IP-check status; no new notification |
+| Verifying | Lookup remains unavailable, automatically | Lookup unavailable | Existing failure reason; next delayed attempt |
+| Verifying | Public IP is approved, automatically | Coordinating | Existing working/slot-waiting status; retained input continues |
+| Verifying | Public IP is unapproved or configuration is invalid, automatically | Manual hold | Existing specific reason and recovery controls |
+| Lookup unavailable/Verifying | User pauses, disables or replaces Manager | Existing requested state | Existing status; old retry cannot deliver later |
+
+No new renderer, control or status wording is introduced. Ordinary worker sessions retain their existing manual VPN recovery. Automatic permission answering, bypassing a failed check and replacing the backing session were rejected because none is required to recover a transient lookup failure.

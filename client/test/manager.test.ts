@@ -22,6 +22,7 @@ import { claudeArgs } from '../src/main/sessions/claude'
 import type { Driver, Heard } from '../src/main/sessions/heard'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { SessionItems, Settings } from '../src/shared/api'
+import { VPN_IP_CONFIGURATION_ERROR, VPN_IP_UNAVAILABLE_ERROR, vpnIpMismatchError, vpnIpPausedError } from '../src/shared/vpn-ip'
 
 interface NativeAnswer { readonly id: string; readonly ask: string; readonly answer: string }
 
@@ -257,8 +258,8 @@ describe('Manager automatic recovery', () => {
     expect((await reloaded.view()).session?.id).toBe(id)
   })
 
-  it('keeps VPN guard failures held for manual retry', async () => {
-    const f = await fixture(0, { beforeSend: () => { throw new Error('VPN unavailable') } })
+  it.each([VPN_IP_CONFIGURATION_ERROR, vpnIpMismatchError('8.8.8.8'), 'VPN unavailable'])('keeps non-transient guard failure %s held for manual retry', async (error) => {
+    const f = await fixture(0, { beforeSend: () => { throw new Error(error) } })
     await f.manager.configure({ enabled: true })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     await f.manager.send('Guarded request')
@@ -269,6 +270,156 @@ describe('Manager automatic recovery', () => {
     await settle()
     expect(f.made).toHaveLength(0)
     expect(await readFile(join(f.directory, 'manager.json'), 'utf8')).toBe(stored)
+  })
+
+  it('revalidates an unavailable public IP and sends the held request once before queued input', async () => {
+    let unavailable = true
+    const check = vi.fn(() => { if (unavailable) throw new Error(VPN_IP_UNAVAILABLE_ERROR) })
+    const f = await fixture(0, { beforeSend: check })
+    await f.manager.configure({ enabled: true })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const id = await f.manager.send('Held Telegram request', 'telegram')
+    await settle()
+    await f.manager.send('Next request', 'telegram')
+    expect(await f.manager.view()).toMatchObject({ state: 'blocked', error: VPN_IP_UNAVAILABLE_ERROR, queued: 1 })
+    expect(f.made).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(check).toHaveBeenCalledTimes(2)
+    expect(f.made).toHaveLength(0)
+    expect(f.notes.all()[id]?.heldOperation?.kind).toBe('message')
+    unavailable = false
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(f.sent).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(1)
+    await settle()
+    expect(check.mock.calls.length).toBeGreaterThan(2)
+    expect(f.sent.map((one) => one.text)).toEqual(['[Telegram]\nHeld Telegram request'])
+    expect(f.notes.all()[id]?.guardError).toBeUndefined()
+    expect(f.notes.all()[id]?.heldOperation).toBeUndefined()
+    expect(await f.manager.view()).toMatchObject({ state: 'working', session: { id } })
+    f.finish(id, 'Held request complete')
+    await settle()
+    expect(f.sent.map((one) => one.text)).toEqual(['[Telegram]\nHeld Telegram request', '[Telegram]\nNext request'])
+  })
+
+  it('recovers a lookup hold saved by the old manual-only policy after reload', async () => {
+    let unavailable = true
+    const f = await fixture(0, { beforeSend: () => { if (unavailable) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Saved held request')
+    await settle()
+    const path = join(f.directory, 'manager.json')
+    const saved = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
+    await writeFile(path, JSON.stringify({ ...saved, manualRecovery: true, error: 'Not sent' }))
+    unavailable = false
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const reloaded = f.reload()
+    await settle()
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(f.sent.map((one) => one.text)).toEqual(['Saved held request'])
+    expect(await reloaded.view()).toMatchObject({ state: 'working', session: { id } })
+    expect((await reloaded.view()).error).toBeUndefined()
+  })
+
+  it('manual retry revalidates the original held message without queuing behind it', async () => {
+    let unavailable = true
+    const f = await fixture(0, { beforeSend: () => { if (unavailable) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Retry this held message')
+    await settle()
+    unavailable = false
+    await f.manager.retry()
+    await settle()
+    expect(f.sent.map((one) => one.text)).toEqual(['Retry this held message'])
+    expect(f.notes.all()[id]?.queued ?? []).toHaveLength(0)
+    expect((await f.manager.view()).error).toBeUndefined()
+  })
+
+  it('stops automatic recovery if revalidation finds an unapproved IP', async () => {
+    let error = VPN_IP_UNAVAILABLE_ERROR
+    const check = vi.fn(() => { throw new Error(error) })
+    const f = await fixture(0, { beforeSend: check })
+    await f.manager.configure({ enabled: true })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    await f.manager.send('Guarded request')
+    await settle()
+    error = vpnIpMismatchError('8.8.8.8')
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect((await f.manager.view()).error).toBe(error)
+    await vi.advanceTimersByTimeAsync(120_000)
+    await settle()
+    expect(check).toHaveBeenCalledTimes(2)
+    expect(f.made).toHaveLength(0)
+  })
+
+  it('does not retry a held native approval answer after a lookup failure', async () => {
+    let unavailable = false
+    const f = await fixture(0, { beforeSend: () => { if (unavailable) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Coordinate')
+    await settle()
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'asks', ask: 'approval', wanted: { kind: 'command', command: 'inspect project' } }] })
+    const decision = (await f.manager.view()).decisions[0]
+    if (decision === undefined) throw new Error('Missing native decision')
+    unavailable = true
+    await expect(f.manager.answer(decision.id, 'once')).rejects.toThrow('Approval was not sent')
+    expect(f.notes.all()[id]?.heldOperation?.kind).toBe('answer')
+    unavailable = false
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    expect(await f.sessions.retryManager(id, 'Do not send')).toBe(false)
+    await vi.advanceTimersByTimeAsync(120_000)
+    await settle()
+    expect(f.answers).toHaveLength(0)
+    expect(f.sent).toHaveLength(1)
+  })
+
+  it.each(['pause', 'disable', 'restart'] as const)('cancels a lookup retry in flight on %s', async (action) => {
+    let rechecking = false
+    let release: (() => void) | undefined
+    const f = await fixture(0, { beforeSend: () => {
+      if (!rechecking) throw new Error(VPN_IP_UNAVAILABLE_ERROR)
+      return new Promise<void>((resolve) => { release = resolve })
+    } })
+    await f.manager.configure({ enabled: true })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    await f.manager.send('Never deliver after cancellation')
+    await settle()
+    rechecking = true
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(release).toBeDefined()
+    if (action === 'disable') await f.manager.configure({ enabled: false })
+    else await f.manager[action]()
+    release?.()
+    await settle()
+    expect(f.sent.some((one) => one.text.includes('Never deliver after cancellation'))).toBe(false)
+  })
+
+  it('reconciles an active turn paused by the VPN monitor without replaying the original input', async () => {
+    let unavailable = false
+    let policy: string | undefined
+    const f = await fixture(0, { vpnMonitor: () => policy, beforeSend: () => { if (unavailable) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Already delivered request')
+    await settle()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    unavailable = true
+    policy = 'approved'
+    f.sessions.again()
+    await settle()
+    expect(f.notes.all()[id]?.guardError).toBe(vpnIpPausedError(VPN_IP_UNAVAILABLE_ERROR))
+    expect(f.notes.all()[id]?.heldOperation?.kind).toBe('continue')
+    unavailable = false
+    policy = undefined
+    await vi.advanceTimersByTimeAsync(5_000)
+    await settle()
+    expect(f.sent).toHaveLength(2)
+    expect(f.sent.at(-1)?.text).toContain('Automatic recovery.')
+    expect(f.sent.filter((one) => one.text === 'Already delivered request')).toHaveLength(1)
+    expect((await f.manager.view()).error).toBeUndefined()
   })
 
   it('retries only the selected provider and ignores recovery creation finishing after pause', async () => {

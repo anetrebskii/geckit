@@ -22,3 +22,15 @@ Runtime checks use the real Manager and Sessions, injected provider drivers, con
 The first sandboxed test run could not bind its Unix socket; the authorized rerun outside the sandbox passed. An RTK-rewritten lint invocation incorrectly included `scripts/dev-bundle.js`; the explicit proxy invocation ran the package's `eslint src test` successfully. Mermaid's default headless browser was absent; the installed Chrome render passed.
 
 At initial verification, changes were local and uncommitted on `main`. Alex subsequently authorized pushing this fix to `main`; delivery is recorded in the day-plan task. No app restart or installation was performed. Unrelated mobile edits retained. No temporary task worktree was created.
+
+## VPN lookup correction - 2026-10-21
+
+Follow-up screenshot showed `VPN_IP_UNAVAILABLE_ERROR`. Read-only local-state inspection confirmed Manager enabled and unpaused with a retained backing session, queued work, `error: "Not sent"`, `manualRecovery: true` and a held message carrying the exact lookup-unavailable reason. No private prompt text or credentials were copied into evidence.
+
+The first implementation deliberately excluded every VPN guard failure. This correction narrows that hold: temporary lookup unavailability schedules automatic fresh checks, while mismatch/configuration errors remain manual. The authorized Sessions retry preserves Manager identity and bypasses only ordinary-chat routing; every send still passes the normal IP guard. A known-unsent message retains its exact content; a monitor-interrupted active turn gets reconciliation instead of the original request. Old saved manual-only lookup holds recover without editing the stored data. Manual Try again now retries the held message instead of queuing behind it.
+
+Behavioral checks exercise Manager and Sessions together with fake IP outcomes/provider drivers and real temporary persistence. They cover unavailable checks with no provider creation; increasing retry delay; approved recovery exactly once before queued Telegram input; reload of the old manual-only record; manual retry without a dead queue; transition to an unapproved-IP hold; native approval answers staying held; cancellation during pending checks on pause/disable/restart; and monitor-triggered continuation without original-prompt replay. The initial native-answer regression expected success, but the existing API correctly rejected the blocked answer; the assertion now verifies that rejection and absence of automatic delivery.
+
+This is backend-only verification. No real VPN outage/reconnection, live provider inference, Telegram delivery or newly loaded installed app is claimed. The active app/conversations were not restarted. No temporary task worktree was created; unrelated mobile changes remain outside this correction.
+
+Correction validation passed: full client suite 1,177 tests; `npm run typecheck`; `rtk proxy npm run lint` (`eslint src test`); `npm run build`; and `git diff --check`. The earlier focused Manager/Sessions/VPN run passed 345 tests before the final native-answer regression was added; the full suite includes that regression.

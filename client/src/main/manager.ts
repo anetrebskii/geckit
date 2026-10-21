@@ -6,6 +6,7 @@ import { join } from 'node:path'
 
 import type { ChatSession, SessionItems, Settings } from '../shared/api'
 import { providerOf } from '../shared/api'
+import { VPN_IP_UNAVAILABLE_ERROR, vpnIpPausedError } from '../shared/vpn-ip'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE, managerProjects } from '../shared/manager'
 import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerConfig, ManagerDecision, ManagerView, ManagerReplyOrigin, ManagerTelegramReply } from '../shared/manager'
 import { TelegramAttachments } from './telegram-attachments'
@@ -369,7 +370,7 @@ export class Manager {
   observeSessions(sessions: readonly ChatSession[]): void {
     this.#sessions = sessions
     const manager = sessions.find((one) => one.id === this.#record.sessionId)
-    if (this.#record.config.enabled && !this.#record.paused && manager?.state === 'failed' && this.#record.error === undefined) this.#fail(manager.stands || 'The Manager turn failed. Retry after checking the selected assistant.')
+    if (this.#record.config.enabled && !this.#record.paused && manager?.state === 'failed' && this.#record.error === undefined) this.#fail(this.#deps.notes.all()[manager.id]?.guardError ?? (manager.stands || 'The Manager turn failed. Retry after checking the selected assistant.'))
     if (this.#awaitingOutput && manager !== undefined && manager.state !== 'working' && manager.state !== 'asks' && !manager.queued?.length) {
       const generation = this.#generation
       queueMicrotask(() => {
@@ -452,10 +453,12 @@ export class Manager {
     this.#assertEnabled()
     this.#cancelRecovery()
     const generation = ++this.#generation
+    const lookupHeld = this.#vpnLookupHeld()
     this.#awaitingOutput = false
-    this.#save({ paused: false, error: undefined, inbox: this.#record.inbox.map((one) => one.state === 'sending' ? { ...one, state: 'sent' } : one) })
+    this.#save({ paused: false, error: lookupHeld ? this.#record.error : undefined, inbox: this.#record.inbox.map((one) => one.state === 'sending' ? { ...one, state: 'sent' } : one) })
     try { await this.open() } catch (error) { if (generation === this.#generation) this.#fail(error instanceof Error ? error.message : String(error)); throw error }
     if (generation !== this.#generation || this.#stopped) return this.view()
+    if (lookupHeld) { await this.#recover(generation); return this.view() }
     this.#reconcile('Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Reconcile current task state without replaying its CLI effects. Do not replay past operations.')
     return this.view()
   }
@@ -473,13 +476,19 @@ export class Manager {
     return this.view()
   }
 
+  #vpnLookupHeld(): boolean {
+    const note = this.#record.sessionId === undefined ? undefined : this.#deps.notes.all()[this.#record.sessionId]
+    return (note?.guardError === VPN_IP_UNAVAILABLE_ERROR || note?.guardError === vpnIpPausedError(VPN_IP_UNAVAILABLE_ERROR)) && (note.heldOperation?.kind === 'message' || note.heldOperation?.kind === 'continue')
+  }
+
   #canRecover(): boolean {
-    if (this.#stopped || !this.#record.config.enabled || this.#record.paused || this.#record.error === undefined || this.#record.manualRecovery === true || !this.#deps.settings().chatProviders.includes(this.#record.config.provider) || this.#record.operations.some((one) => one.state === 'running' || one.state === 'uncertain')) return false
+    const lookupHeld = this.#vpnLookupHeld()
+    if (this.#stopped || !this.#record.config.enabled || this.#record.paused || this.#record.error === undefined || this.#record.manualRecovery === true && !lookupHeld || !this.#deps.settings().chatProviders.includes(this.#record.config.provider) || this.#record.operations.some((one) => one.state === 'running' || one.state === 'uncertain')) return false
     const id = this.#record.sessionId
     if (id === undefined) return true
     const note = this.#deps.notes.all()[id]
     const session = this.#sessions.find((one) => one.id === id)
-    return note?.managerPrompt !== undefined && note.guardError === undefined && note.heldOperation === undefined && note.vpnPaused !== true && providerOf(id) === this.#record.config.provider && session?.heldSend !== true && session?.state !== 'asks' && session?.state !== 'limit' && session?.stands !== 'Not sent'
+    return note?.managerPrompt !== undefined && providerOf(id) === this.#record.config.provider && session?.state !== 'asks' && session?.state !== 'limit' && (lookupHeld || note.guardError === undefined && note.heldOperation === undefined && note.vpnPaused !== true && session?.heldSend !== true && session?.stands !== 'Not sent')
   }
 
   #cancelRecovery(): void {
@@ -505,9 +514,22 @@ export class Manager {
     try {
       await this.open()
       if (generation !== this.#generation || !this.#canRecover()) return
+      const reconciliation = 'Automatic recovery. Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations.'
+      if (this.#vpnLookupHeld() && this.#record.sessionId !== undefined) {
+        const id = this.#record.sessionId
+        this.#awaitingOutput = true
+        const recovered = await this.#deps.sessions.retryManager(id, reconciliation)
+        if (generation !== this.#generation || this.#stopped) return
+        if (recovered) this.#save({ error: undefined, manualRecovery: false })
+        else {
+          this.#awaitingOutput = false
+          this.#fail(this.#deps.notes.all()[id]?.guardError ?? this.#record.error ?? VPN_IP_UNAVAILABLE_ERROR)
+        }
+        return
+      }
       this.#awaitingOutput = false
       this.#save({ error: undefined, responseOrigin: undefined, inbox: this.#record.inbox.map((one) => one.state === 'sending' ? { ...one, state: 'sent' } : one) })
-      this.#reconcile('Automatic recovery. Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations.')
+      this.#reconcile(reconciliation)
     } catch (error) {
       if (generation === this.#generation && !this.#stopped) this.#fail(error instanceof Error ? error.message : String(error))
     }

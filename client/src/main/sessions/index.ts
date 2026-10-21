@@ -1625,13 +1625,30 @@ export class Sessions {
   }
 
   async retry(id: string): Promise<string | undefined> {
+    return this.#retry(id)
+  }
+
+  async retryManager(id: string, reconciliation: string): Promise<boolean> {
+    const note = this.#deps.notes.all()[id]
+    if (!this.isManager(id) || note?.managerPrompt === undefined || this.#suspendedManagers.has(id)) return false
+    if (note.guardError !== VPN_IP_UNAVAILABLE_ERROR && note.guardError !== vpnIpPausedError(VPN_IP_UNAVAILABLE_ERROR)) return false
+    if (note.heldOperation?.kind !== 'message' && note.heldOperation?.kind !== 'continue') return false
+    await this.#retry(id, reconciliation)
+    return this.#deps.notes.all()[id]?.guardError === undefined
+  }
+
+  async #retry(id: string, managerReconciliation?: string): Promise<string | undefined> {
     const live = this.#live.get(id) ?? this.#adopt(id)
     if (live === undefined || live.retrying || live.checkingIp) return undefined
     live.retrying = true
     const generation = live.guardGeneration
     const operation = live.heldOperation
     const paused = live.vpnPaused
-    const continued = (): Promise<string> => this.send({ session: id, root: live.root, mode: live.mode, text: 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }), ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }) }, true)
+    const continued = (): Promise<string> => {
+      const message: SessionMessage = { session: id, root: live.root, mode: live.mode, text: managerReconciliation ?? 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }), ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }) }
+      if (managerReconciliation !== undefined) this.#managerMessages.add(message)
+      return this.send(message, true)
+    }
     try {
       if (live.vpnGoalPause !== undefined) await live.vpnGoalPause
       if (generation !== live.guardGeneration) return id
@@ -1648,6 +1665,7 @@ export class Sessions {
       if (generation !== live.guardGeneration) return id
       switch (operation?.kind) {
         case 'message': {
+          if (managerReconciliation !== undefined) this.#managerMessages.add(operation.message)
           const next = await this.send(operation.message, operation.go, id, operation.queued, operation.delegateFrom)
           const destination = this.#live.get(next)
           if (next !== id && operation.delegateFrom === undefined && destination?.heldOperation === undefined && generation === live.guardGeneration) {
