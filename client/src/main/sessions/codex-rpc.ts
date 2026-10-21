@@ -36,8 +36,9 @@ export class CodexRpc {
   #closed = false
   userAgent = ''
   readonly ready: Promise<void>
+  readonly viaSocket: boolean
 
-  constructor(launch: () => Held, event: (event: CodexEvent) => void, closed: (error: Error) => void) {
+  constructor(launch: () => Held, event: (event: CodexEvent) => void, closed: (error: Error) => void, socketAllowed = true) {
     let last = ''
     const failed = (error: Error): void => {
       if (this.#closed) return
@@ -62,7 +63,8 @@ export class CodexRpc {
       }
     }
     const socket = join(process.env['CODEX_HOME'] ?? join(homedir(), '.codex'), 'app-server-control', 'app-server-control.sock')
-    if (launch === launchCodex && process.platform !== 'win32' && existsSync(socket)) {
+    this.viaSocket = socketAllowed && launch === launchCodex && process.platform !== 'win32' && existsSync(socket)
+    if (this.viaSocket) {
       this.#socket = new WebSocket(`ws+unix://${socket}:/`)
       this.#socket.on('message', (data) => receive(data.toString()))
       this.#socket.on('error', failed)

@@ -50,37 +50,39 @@ export class CodexSessions {
   }
 
   async #connection(): Promise<CodexRpc> {
-
-    if (this.#rpc === undefined) {
-      this.#rpc = new CodexRpc(this.#launch, (event) => {
-        if (event.method === 'account/rateLimits/updated') {
-          if (this.#account !== undefined) {
-            const limit = event.params.rateLimits
-            this.#account = { ...this.#account, limits: [...(this.#account.limits ?? []).filter((one) => one.limitId !== limit.limitId), limit] }
-            this.#changed?.(this.#account)
-          }
-          return
-        }
-        const thread = event.params?.threadId
-        const listener = thread === undefined ? undefined : this.#listeners.get(thread)
-        if (listener !== undefined) listener.event(event)
-        else if ('id' in event) this.#rpc?.refuse(event.id)
-      }, (error) => {
-        this.#rpc = undefined
-        this.#new.clear()
-        for (const listener of this.#listeners.values()) listener.closed(error)
-        this.#listeners.clear()
-      })
-    }
+    if (this.#rpc === undefined) this.#rpc = this.#open(true)
     const rpc = this.#rpc
     try {
       await rpc.ready
-
       return rpc
     } catch (error) {
       rpc.dispose()
-      throw error
+      if (!rpc.viaSocket) throw error
+      if (this.#rpc === undefined || this.#rpc === rpc) this.#rpc = this.#open(false)
+      return this.#connection()
     }
+  }
+
+  #open(socketAllowed: boolean): CodexRpc {
+    return new CodexRpc(this.#launch, (event) => {
+      if (event.method === 'account/rateLimits/updated') {
+        if (this.#account !== undefined) {
+          const limit = event.params.rateLimits
+          this.#account = { ...this.#account, limits: [...(this.#account.limits ?? []).filter((one) => one.limitId !== limit.limitId), limit] }
+          this.#changed?.(this.#account)
+        }
+        return
+      }
+      const thread = event.params?.threadId
+      const listener = thread === undefined ? undefined : this.#listeners.get(thread)
+      if (listener !== undefined) listener.event(event)
+      else if ('id' in event) this.#rpc?.refuse(event.id)
+    }, (error) => {
+      this.#rpc = undefined
+      this.#new.clear()
+      for (const listener of this.#listeners.values()) listener.closed(error)
+      this.#listeners.clear()
+    }, socketAllowed)
   }
 
   #discardConnection(rpc: CodexRpc | undefined): void {
