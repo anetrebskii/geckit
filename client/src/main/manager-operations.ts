@@ -5,7 +5,7 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path
 import { providerOf } from '../shared/api'
 import type { ChatSession, SessionMessage, SessionProvider, Settings } from '../shared/api'
 import { isRemote } from '../shared/hosts'
-import { llmProviderInfo } from '../shared/providers'
+import { isCodexProvider, llmProviderInfo, providerModel } from '../shared/providers'
 import { managerProjects } from '../shared/manager'
 import { withColors } from '../shared/project-color'
 import { requestedProvider } from '../cli/start'
@@ -337,7 +337,8 @@ export class ManagerOperations {
         const resolved = managerProvider(settings, root, provider)
         const text = required(flags, '--text')
         const goal = required(flags, '--goal')
-        const message: SessionMessage = { root, provider: resolved.provider, mode: settings.chatMode, text, goal, ...(resolved.provider === 'claude' && settings.chatModel !== '' ? { model: settings.chatModel } : resolved.provider === 'codex' && settings.codexModel !== '' ? { model: settings.codexModel, reasoning: settings.codexReasoning } : {}) }
+        const model = providerModel(settings, resolved.provider)
+        const message: SessionMessage = { root, provider: resolved.provider, mode: settings.chatMode, text, goal, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
         const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, this.#deps.managerSession())
         if (flags.has('--title')) this.#deps.sessions.rename(id, required(flags, '--title'))
         const worker = await this.#worker(id)

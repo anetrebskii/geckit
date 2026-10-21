@@ -986,8 +986,9 @@ export interface Settings {
   readonly projectColors: Readonly<Record<string, number>>
   /** GeckIt's own names for the Chromes Claude in Chrome calls Browser 1, Browser 2, by device id. */
   readonly browserNames: Readonly<Record<string, string>>
-  /** The model the next new session is handed. Empty is Default. */
+  /** The model the next new builtin Claude session is handed. Empty is Default. */
   readonly chatModel: string
+  readonly providerModels: readonly Required<Pick<SessionMessage, 'provider' | 'model'>>[]
   readonly chatTransport: ClaudeTransport
   readonly chatProvider: SessionProvider
   readonly chatProviders: readonly SessionProvider[]
@@ -1155,6 +1156,7 @@ export const DEFAULT_SETTINGS: Settings = {
   projectColors: {},
   browserNames: {},
   chatModel: '',
+  providerModels: [],
   chatTransport: 'stream',
   chatProvider: 'claude',
   chatProviders: ['claude', 'codex'],
