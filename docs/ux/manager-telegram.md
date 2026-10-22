@@ -1002,3 +1002,33 @@ CLI outcomes are saved by the authenticated host before replying to the subproce
 Telegram stores an upload fingerprint before sending and retains it if its receipt is lost, including across restart. Its fingerprint uses selected bytes, filename, format and worker identity; changing a caption cannot bypass it. Old connection-wide uncertainty remains diagnostic only. No automatic upload replay, approval, assistant replacement or security bypass is introduced. Explicit /resume may still clear reviewed upload holds. Retry timing stays at 5 seconds doubling to 60 seconds; duplicate retry timers and per-failure notifications remain silent.
 
 Requirements checked: unattended recovery from the reported pause, migration of the saved failure, continued queued work, retained identity/workers, no repeated mutations/uploads and explicit pauses preserved. Live Telegram receipt recovery cannot prove delivery when Telegram supplied no receipt; that individual upload remains held rather than guessing success.
+
+### Stale approvals and optional delivery review - 2026-10-22
+
+Alex requested repair of the stale attach and uncertain-upload buttons. In the existing paired Telegram chat, /status and decision buttons must describe current requests. A fresh eligible-session observation plus existing Manager ownership can satisfy an attach request; this records an already-established fact and never grants permission. Unmanaged conversations still require the existing explicit attach confirmation. Native permissions retain their bound request identity, choices and safety checks.
+
+| Surface/state | What Alex sees | Next action |
+|---|---|---|
+| Already-managed attach | Removed from current waiting decisions; an old button says "This request is no longer pending. Use /status to see current requests." | Continue other work |
+| Old or duplicate decision button | The no-longer-pending message above; an unavailable callback mapping says "This action has already been answered or is no longer available. Use /status or ask Manager here for the current question." | Use /status if needed |
+| Uncertain mutation review | Existing "I checked its state" control remains optional | Inspect the actual state, then optionally acknowledge |
+| Review acknowledged | "Review recorded. Delivery remains uncertain; nothing was resent. Other work can continue." | Continue; obtain actual evidence before asserting an outcome |
+| Current request blocked by pause | "Manager is paused. Use /resume before answering this approval." | Resume deliberately and use the current request |
+| Current native request blocked by safety | "Answer was not sent. A native safety check blocked it. Check the current approval in GeckIt." | Resolve the condition in GeckIt |
+| Request changes during refresh | "This request changed. Use /status to see current requests." | Use the current request |
+| Invalid decision choice | "Use one of the current request’s choices. Typed forms must be answered in GeckIt." | Use a current choice or the native form |
+| Reused operation identity with changed arguments | Operation rejected; original request remains bound to its original arguments | Issue a fresh operation identity |
+
+| From | Concrete event | To | What Alex sees |
+|---|---|---|---|
+| Attach waiting | Fresh eligible sessions confirm existing ownership, automatically | Already satisfied | Waiting count drops; no attach command runs |
+| Decision waiting | User answers its exact current request | Handled | Existing answer acknowledgement |
+| Decision handled/retired | User taps old button again | Same state | Specific handled/no-longer-pending message; no repeated action |
+| Upload uncertain | User acknowledges inspection | Uncertain, reviewed | Review acknowledgement above; success is not inferred |
+| Upload uncertain | Original host supplies a definitive receipt, automatically | Proven outcome | Receipt supplies the result; no upload is replayed |
+| Upload uncertain | User sends /resume or app restarts | Still uncertain | Coordination continues; upload hold remains |
+| Optional review pending | Unrelated queued input or CLI command arrives, automatically | Coordination continues | Normal result; optional review stays available |
+
+Reconciliation bookkeeping stays silent until it changes current decisions or supplies an actual result. Empty decision lists show the existing status. Simultaneous native permissions remain pending even when an attach is satisfied or a delivery review is acknowledged. Old callback state survives restart sufficiently to reject repeats safely; an unavailable historical mapping uses the no-longer-pending response. No new timer, setup, layout, renderer or theme rule is introduced; Telegram controls keep their existing presentation.
+
+This supersedes the earlier rule that /resume clears reviewed upload holds and the implementation that labelled an inspected unknown outcome failed. Inspection is evidence only that Alex reviewed it, not evidence of delivery or failure. Identical uncertain actions remain held; independent queue items continue. New or changed approval arguments cannot borrow an earlier confirmation. Automatic re-upload, permission acceptance, inferred delivery and live-bot restart are intentionally absent. The requirement is truthful, idempotent recovery with actual approvals preserved; safe fixture verification covers CLI/Telegram behavior without sending real messages.

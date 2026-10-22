@@ -108,6 +108,162 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}) {
 describe('Manager CLI delivery recovery', () => {
   const settle = async (): Promise<void> => { for (let turn = 0; turn < 8; turn++) await new Promise<void>((resolve) => setImmediate(resolve)) }
 
+  it('reconciles a saved attach approval from fresh managed ownership without attaching or granting approval', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Coordinate existing workers')
+    await settle()
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Existing work' }, 'other', 'existing-worker')
+    const args = ['sessions', 'attach', '--id', worker]
+    f.finish(id, f.command('attach-existing', args))
+    await settle()
+    const decision = (await f.manager.view()).decisions[0]
+    if (decision === undefined) throw new Error('Missing attach approval')
+    expect(f.cli).toHaveLength(0)
+    f.notes.set(worker, { ...f.notes.all()[worker], managerOwner: 'manager' })
+    const attach = vi.spyOn(f.notes, 'set')
+    const restored = f.reload()
+    const view = await restored.view()
+    expect(view.decisions).toEqual([])
+    expect(view.activity[0]).toMatchObject({ id: 'attach-existing', state: 'done', result: expect.stringContaining('alreadyManaged') })
+    expect(view.activity[0]).not.toHaveProperty('approved')
+    await expect(restored.answer(decision.id, 'allow')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
+    await expect(restored.answer(decision.id, 'allow')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
+    expect(attach.mock.calls.filter(([target]) => target === worker)).toEqual([])
+    expect(f.cli).toHaveLength(0)
+  })
+
+  it.each(['done', 'failed'] as const)('preserves an existing %s attach receipt while retiring its stale decision', async (state) => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Existing work' }, 'manager', 'existing-worker')
+    const path = join(f.directory, 'manager.json')
+    const stored = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
+    const args = ['sessions', 'attach', '--id', worker]
+    const receipt: ManagerActivity & { readonly approved: true } = { id: 'attach-receipt', at: 123, command: args, state, result: 'Original host receipt', approved: true }
+    await writeFile(path, JSON.stringify({ ...stored, operations: [receipt], decisions: [{ id: 'stale-attach', command: { id: receipt.id, args }, title: 'Allow attach?', choices: [{ label: 'Allow', value: 'allow' }] }] }))
+    const restored = f.reload()
+    expect((await restored.view()).decisions).toEqual([])
+    expect((await restored.view()).activity).toEqual([receipt])
+    const saved = JSON.parse(await readFile(path, 'utf8')) as { readonly operations: readonly ManagerActivity[] }
+    expect(saved.operations).toEqual([receipt])
+    expect(f.cli).toHaveLength(0)
+  })
+
+  it.each(['unknown', 'removed project', 'manager', 'question'] as const)('does not satisfy an attach approval for a %s target from ownership alone', async (kind) => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Existing work' }, 'manager', 'existing-worker')
+    const rows = await f.sessions.allForManager([f.root])
+    const path = join(f.directory, 'manager.json')
+    const stored = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
+    const args = ['sessions', 'attach', '--id', worker]
+    await writeFile(path, JSON.stringify({ ...stored, decisions: [{ id: 'pending-attach', command: { id: 'attach', args }, title: 'Allow attach?', choices: [{ label: 'Allow', value: 'allow' }] }] }))
+    vi.spyOn(f.sessions, 'allForManager').mockResolvedValue(kind === 'unknown' ? [] : rows.map((row) => row.id !== worker ? row : { ...row, ...(kind === 'removed project' ? { project: '/unregistered' } : kind === 'manager' ? { manager: true } : { question: true }) }))
+    const restored = f.reload()
+    expect((await restored.view()).decisions.map((one) => one.id)).toEqual(['pending-attach'])
+    expect((await restored.view()).activity).toEqual([])
+    expect(f.cli).toHaveLength(0)
+  })
+
+  it('binds a pending operation ID to its original arguments and requires its actual approval', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true, delegation: 'approve' })
+    const id = await f.manager.send('Delegate work')
+    await settle()
+    const args = ['sessions', 'start', '--project', f.root, '--text', 'Original task', '--goal', 'Verified']
+    f.finish(id, f.command('bound-start', args))
+    await settle()
+    const decision = (await f.manager.view()).decisions[0]
+    if (decision === undefined) throw new Error('Missing start approval')
+    f.finish(id, f.command('bound-start', ['sessions', 'start', '--project', f.root, '--text', 'Changed task', '--goal', 'Different']))
+    await settle()
+    expect(f.sent.at(-1)?.text).toContain('different pending request')
+    expect((await f.manager.view()).decisions[0]?.id).toBe(decision.id)
+    expect(f.cli).toHaveLength(0)
+    await f.manager.answer(decision.id, 'allow')
+    await f.manager.answer(decision.id, 'allow')
+    expect(f.cli).toHaveLength(1)
+    expect(f.cli[0]?.args).toEqual(args)
+  })
+
+  it('retains genuine attach approval and refuses revoked authority after refreshing current state', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Coordinate an existing worker')
+    await settle()
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Existing work' }, 'other', 'unmanaged-worker')
+    f.finish(id, f.command('genuine-attach', ['sessions', 'attach', '--id', worker]))
+    await settle()
+    const decision = (await f.manager.view()).decisions[0]
+    if (decision === undefined) throw new Error('Missing attach approval')
+    const rows = await f.sessions.allForManager([f.root])
+    let refresh: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { refresh = resolve })
+    const listing = vi.spyOn(f.sessions, 'allForManager').mockImplementationOnce(async () => { await gate; return rows })
+    let authorized = true
+    const answer = f.manager.answer(decision.id, 'allow', () => authorized)
+    authorized = false
+    refresh?.()
+    await expect(answer).rejects.toThrow('request changed')
+    listing.mockRestore()
+    expect(f.notes.all()[worker]?.managerOwner).toBe('other')
+    expect((await f.manager.view()).decisions[0]?.id).toBe(decision.id)
+    expect(f.cli).toHaveLength(0)
+    await f.manager.answer(decision.id, 'allow')
+    expect(f.notes.all()[worker]?.managerOwner).toBe('manager')
+    expect(f.cli).toHaveLength(1)
+    await f.manager.answer(decision.id, 'allow')
+    expect(f.cli).toHaveLength(1)
+  })
+
+  it('keeps reviewed uploads uncertain across restart and rejects replays without blocking unrelated commands', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.open()
+    const path = join(f.directory, 'manager.json')
+    const stored = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
+    const args = ['telegram', 'send-file', '--id', 'worker', '--path', 'report.txt']
+    await writeFile(path, JSON.stringify({ ...stored, paused: true, pauseReason: 'user', operations: [{ id: 'uncertain-upload', at: 1, state: 'uncertain', command: args }], decisions: [{ id: 'review-upload', uncertain: true, command: { id: 'uncertain-upload', args }, title: 'Check state', choices: [{ label: 'I checked its state', value: 'reviewed' }] }] }))
+    const restored = f.reload()
+    await expect(restored.answer('review-upload', 'reviewed')).resolves.toMatchObject({ state: 'paused', answer: expect.stringContaining('Delivery remains uncertain') })
+    await expect(restored.answer('review-upload', 'reviewed')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
+    expect((await restored.view()).activity[0]?.state).toBe('uncertain')
+    expect(f.cli).toHaveLength(0)
+    const again = f.reload()
+    await again.resume()
+    await settle()
+    f.finish(id, `${f.command('uncertain-upload', args)}\n${f.command('renamed-upload', args)}\n${f.command('fresh-read', ['sessions', 'list'])}`)
+    await settle()
+    expect(f.cli.map((one) => one.args)).toEqual([['sessions', 'list']])
+    expect((await again.view()).error).toBeUndefined()
+    expect((await again.view()).decisions).toEqual([])
+    expect((await again.view()).activity.find((one) => one.id === 'uncertain-upload')?.state).toBe('uncertain')
+    expect((await again.view()).activity.find((one) => one.id === 'fresh-read')?.state).toBe('done')
+  })
+
+  it.each([false, true])('blocks caption and default-format variants of a legacy uncertain upload after restart (reviewed: %s)', async (reviewed) => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.open()
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Prepare report' }, 'manager', 'legacy-report-worker')
+    await writeFile(join(f.root, 'report.txt'), 'Report')
+    const path = join(f.directory, 'manager.json')
+    const stored = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
+    const args = ['telegram', 'send-file', '--id', worker, '--path', 'report.txt']
+    await writeFile(path, JSON.stringify({ ...stored, paused: true, pauseReason: 'user', operations: [{ id: 'legacy-upload', at: 1, state: 'uncertain', command: args, result: 'Previous Telegram delivery is uncertain. Check the paired chat before requesting another file send.', ...(reviewed ? { reviewed: true } : {}) }] }))
+    const restored = f.reload()
+    await restored.resume()
+    await settle()
+    f.finish(id, `${f.command('changed-caption', [...args, '--caption', 'New caption'])}\n${f.command('explicit-default', ['telegram', 'send-file', '--as', 'document', '--path', './report.txt', '--json', '--id', worker])}\n${f.command('lexical-path', ['telegram', 'send-file', '--path', 'folder/../report.txt', '--id', worker])}\n${f.command('unrelated-read', ['sessions', 'list'])}`)
+    await settle()
+    expect(f.cli.map((one) => one.args)).toEqual([['sessions', 'list']])
+    const view = await restored.view()
+    expect(view.error).toBeUndefined()
+    expect(view.activity.find((one) => one.id === 'legacy-upload')?.state).toBe('uncertain')
+    expect(view.activity.find((one) => one.id === 'unrelated-read')?.state).toBe('done')
+  })
+
   it.each([
     ['capabilities'], ['providers', 'list'], ['providers', 'models', '--provider', 'claude'],
     ['projects', 'list'], ['projects', 'provider', '--project', 'project'],
@@ -519,7 +675,7 @@ describe('Manager automatic recovery', () => {
     const decision = (await f.manager.view()).decisions[0]
     if (decision === undefined) throw new Error('Missing native decision')
     unavailable = true
-    await expect(f.manager.answer(decision.id, 'once')).rejects.toThrow('Approval was not sent')
+    await expect(f.manager.answer(decision.id, 'once')).rejects.toThrow('Answer was not sent')
     expect(f.notes.all()[id]?.heldOperation?.kind).toBe('answer')
     unavailable = false
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
@@ -787,6 +943,34 @@ describe('Manager session', () => {
     expect((await f.sessions.list([f.root])).map((one) => one.id)).toEqual([worker])
   })
 
+  it('reports a delivered native answer even when the next provider refresh fails', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Inspect project' }, 'manager', 'refresh-worker')
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'asks', ask: 'approval', wanted: { kind: 'command', command: 'inspect project' } }] })
+    const decision = (await f.manager.view()).decisions[0]
+    if (decision === undefined) throw new Error('Missing native approval')
+    const refresh = vi.spyOn(f.sessions, 'allForManager').mockRejectedValue(new Error('Provider refresh unavailable'))
+    await expect(f.manager.answer(decision.id, 'once')).resolves.toMatchObject({ answer: 'Answer sent.', decisions: [] })
+    expect(f.answers).toEqual([{ id: worker, ask: 'approval', answer: 'once' }])
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('reports a recorded uncertainty review even when a subsequent provider refresh would fail', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const path = join(f.directory, 'manager.json')
+    const stored = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
+    const args = ['telegram', 'send-file', '--id', 'worker', '--path', 'report.txt']
+    await writeFile(path, JSON.stringify({ ...stored, operations: [{ id: 'upload', at: 1, command: args, state: 'uncertain' }], decisions: [{ id: 'review', uncertain: true, command: { id: 'upload', args }, title: 'Check state', choices: [{ label: 'I checked its state', value: 'reviewed' }] }] }))
+    const restored = f.reload()
+    const rows = await f.sessions.allForManager([f.root])
+    const refresh = vi.spyOn(f.sessions, 'allForManager').mockResolvedValueOnce(rows).mockRejectedValue(new Error('Provider refresh unavailable'))
+    await expect(restored.answer('review', 'reviewed')).resolves.toMatchObject({ answer: expect.stringContaining('Review recorded'), decisions: [], activity: [{ id: 'upload', state: 'uncertain' }] })
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(f.cli).toHaveLength(0)
+  })
+
   it('answers a current Manager permission through the Telegram decision without exposing its transcript', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true })
@@ -815,13 +999,13 @@ describe('Manager session', () => {
     expect(decision.choices.map((one) => one.label)).toEqual(['Decline', 'Allow once', 'Allow for this session'])
     await expect(f.manager.answer(decision.id, 'yes')).rejects.toThrow('choices')
     f.hear(id, { items: [], gone: [], signals: [{ kind: 'asks', ask: 'approval', wanted: { ...wanted, message: 'Allow Computer Use to use "Calendar"?' } }] })
-    await expect(f.manager.answer(decision.id, decision.choices[1]?.value ?? '')).rejects.toThrow('no longer')
+    await expect(f.manager.answer(decision.id, decision.choices[1]?.value ?? '')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
     expect(f.answers).toEqual([])
     const current = (await f.manager.view()).decisions.find((one) => one.title.includes('Calendar'))
     if (current === undefined) throw new Error('Missing replacement decision')
     await f.manager.answer(current.id, current.choices[2]?.value ?? '')
     expect(f.answers.at(-1)).toMatchObject({ id, ask: 'approval', answer: JSON.stringify({ action: 'accept', content: {}, _meta: null, remember: true }) })
-    await expect(f.manager.answer(current.id, current.choices[2]?.value ?? '')).rejects.toThrow('no longer')
+    await expect(f.manager.answer(current.id, current.choices[2]?.value ?? '')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
     expect(f.answers).toHaveLength(1)
   })
 
@@ -838,7 +1022,7 @@ describe('Manager session', () => {
     expect(f.answers).toHaveLength(1)
     expect((await f.manager.view()).decisions.map((one) => one.id)).toEqual([decisions[1].id])
     await f.manager.restart()
-    await expect(f.manager.answer(decisions[1].id, 'once')).rejects.toThrow('no longer')
+    await expect(f.manager.answer(decisions[1].id, 'once')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
     const current = (await f.manager.view()).decisions[0]
     if (current === undefined) throw new Error('Missing fresh decision')
     await f.manager.answer(current.id, 'no')
@@ -880,7 +1064,7 @@ describe('Manager session', () => {
     await expect(f.manager.answer(first.id, 'once')).rejects.toThrow('not sent')
     f.hear(id, { items: [], gone: [], signals: [{ kind: 'asks', ask: 'approval', wanted }] })
     release()
-    await expect(answer).rejects.toThrow('not sent')
+    await expect(answer).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
     expect(f.answers).toEqual([])
     const current = (await f.manager.view()).decisions[0]
     expect(current?.id).not.toBe(first.id)
@@ -913,7 +1097,7 @@ describe('Manager session', () => {
     expect(f.answers).toEqual([])
     allowed = true
     await f.manager.restart()
-    await expect(f.manager.answer(decision.id, 'once')).rejects.toThrow('no longer')
+    await expect(f.manager.answer(decision.id, 'once')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
     await f.manager.configure({ enabled: false })
     await expect(f.manager.answer(decision.id, 'once')).rejects.toThrow('disabled')
     expect(f.answers).toEqual([])

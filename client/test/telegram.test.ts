@@ -13,6 +13,7 @@ import { ManagerTelegram } from '../src/main/telegram'
 import type { TelegramManager, TelegramVault } from '../src/main/telegram'
 import { configureManagerAccess, phoneTelegramView, telegramActionAccess, telegramVault } from '../src/main/telegram-access'
 import { Manager } from '../src/main/manager'
+import { ManagerDecisionFailure } from '../src/main/manager-approvals'
 import { memoryNotes, Sessions } from '../src/main/sessions'
 import type { Heard } from '../src/main/sessions/heard'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
@@ -857,15 +858,60 @@ describe('Manager Telegram, with a fake Bot API', () => {
     expect(value.submit).not.toHaveBeenCalled()
   })
 
+  it('reports reviewed uncertainty accurately and acknowledges repeated callbacks across restart without answering again', async () => {
+    let pending = true
+    const answer = vi.fn<NonNullable<TelegramManager['answer']>>(async () => {
+      pending = false
+      return 'Review recorded. Delivery remains uncertain; nothing was resent. Other work can continue.'
+    })
+    const value = fixture({ manager: { answer, hasDecision: () => pending } })
+    await paired(value)
+    await value.telegram.notify('Check uncertain upload', { id: 'review-upload', choices: [{ label: 'I checked its state', value: 'reviewed' }] })
+    const data = buttons(value.api)[0]?.['callback_data']
+    if (typeof data !== 'string') throw new Error('Missing review button')
+    value.api.deliver([callback(2, data), callback(3, data)])
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('already been answered'))
+    expect(sent(value.api).some((one) => String(one.body['text']).includes('Delivery remains uncertain; nothing was resent'))).toBe(true)
+    expect(answer).toHaveBeenCalledTimes(1)
+    expect(value.api.calls.filter((one) => one.method === 'answerCallbackQuery')).toHaveLength(2)
+    expect(value.api.calls.some((one) => one.method === 'editMessageReplyMarkup' && JSON.stringify(one.body).includes('"inline_keyboard":[]'))).toBe(true)
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory, manager: { answer, hasDecision: () => pending } })
+    await again.telegram.start()
+    again.api.deliver([callback(4, data)])
+    await vi.waitFor(() => expect(sent(again.api).at(-1)?.body['text']).toContain('already been answered'))
+    expect(answer).toHaveBeenCalledTimes(1)
+    expect(again.api.calls.filter((one) => one.method === 'answerCallbackQuery')).toHaveLength(1)
+  })
+
+  it('preserves uncertain upload holds through Telegram resume and restart while other uploads continue', async () => {
+    const value = fixture()
+    await paired(value)
+    const origin = { session: 'manager', workers: ['worker'] }
+    value.api.failUpload(0)
+    await expect(value.telegram.sendFile(Buffer.from('Uncertain report'), 'report.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
+    value.api.deliver([message(2, '/resume')])
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toBe('Manager resumed.'))
+    await expect(value.telegram.sendFile(Buffer.from('Uncertain report'), 'report.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
+    expect(value.api.uploads).toHaveLength(1)
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory })
+    await again.telegram.start()
+    await expect(again.telegram.sendFile(Buffer.from('Uncertain report'), 'report.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
+    expect(again.api.uploads).toHaveLength(0)
+    await expect(again.telegram.sendFile(Buffer.from('Unrelated report'), 'other.txt', 'text/plain', '', 'document', origin)).resolves.toBeTypeOf('number')
+    expect(again.api.uploads).toHaveLength(1)
+  })
+
   it('keeps a decision usable after Manager rejects an answer while paused', async () => {
-    const answer = vi.fn<NonNullable<TelegramManager['answer']>>().mockRejectedValueOnce(new Error('Resume Manager before answering.')).mockResolvedValue(undefined)
+    const answer = vi.fn<NonNullable<TelegramManager['answer']>>().mockRejectedValueOnce(new ManagerDecisionFailure('paused')).mockResolvedValue(undefined)
     const value = fixture({ manager: { answer } })
     await paired(value)
     await value.telegram.notify('Allow this operation?', { id: 'approval', choices: [{ label: 'Allow', value: 'allow' }] })
     const data = buttons(value.api)[0]?.['callback_data']
     if (typeof data !== 'string') throw new Error('Missing approval button')
     value.api.deliver([callback(2, data)])
-    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('Use /resume here'))
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('Use /resume before answering'))
     expect(value.telegram.view().state).toBe('connected')
     value.api.deliver([callback(3, data)])
     await vi.waitFor(() => expect(answer).toHaveBeenCalledTimes(2))

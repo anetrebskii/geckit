@@ -1,6 +1,6 @@
 import { constants } from 'node:fs'
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 
 import { providerOf } from '../shared/api'
 import type { ChatSession, SessionMessage, SessionProvider, Settings } from '../shared/api'
@@ -115,6 +115,20 @@ const required = (flags: Map<string, string>, name: string): string => {
   return value
 }
 
+export function managerAttachTarget(args: readonly string[]): string | undefined {
+  return args[0] === 'sessions' && args[1] === 'attach' ? required(values(args), '--id') : undefined
+}
+
+export function managerSameUpload(left: readonly string[], right: readonly string[]): boolean {
+  if (left[0] !== 'telegram' || left[1] !== 'send-file' || right[0] !== 'telegram' || right[1] !== 'send-file') return false
+  try {
+    const first = values(left)
+    const second = values(right)
+    const format = first.get('--as') ?? 'document'
+    return (format === 'document' || format === 'photo') && format === (second.get('--as') ?? 'document') && required(first, '--id') === required(second, '--id') && normalize(required(first, '--path')) === normalize(required(second, '--path'))
+  } catch { return false }
+}
+
 export function managerProvider(settings: Settings, root: string, override?: SessionProvider): { readonly provider: SessionProvider; readonly reason: 'task' | 'project' | 'default' } {
   const preference = settings.projectAssistants.find((one) => one.root === root)?.provider
   const provider = override ?? preference ?? settings.chatProvider
@@ -158,7 +172,7 @@ export class ManagerOperations {
   confirmation(args: readonly string[], policy: 'automatic' | 'approve'): string | undefined {
     const [domain, command] = args
     if (domain === 'sessions' && command === 'start' && policy === 'approve') return `Start this worker? ${JSON.stringify(args)}`
-    if (domain === 'sessions' && command === 'attach') return `Allow Manager to coordinate this existing conversation? ${JSON.stringify(args)}`
+    if (domain === 'sessions' && command === 'attach' && !this.#deps.managed(required(values(args), '--id'))) return `Allow Manager to coordinate this existing conversation? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'answer') return `Send this answer to the worker's question? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'mark' && args.includes('done')) return `Accept this task as Done? ${JSON.stringify(args)}`
     if (domain === 'projects' && (command === 'add' || command === 'create')) return `Register this folder for Manager access? ${JSON.stringify(args)}`
@@ -178,7 +192,7 @@ export class ManagerOperations {
     const projects = managerProjects(this.#deps.settings())
     const worker = (await this.#deps.sessions.list(projects)).find((one) => one.id === id)
     const currentProjects = managerProjects(this.#deps.settings())
-    if (worker === undefined || worker.manager === true || !currentProjects.includes(worker.project ?? worker.root)) throw new Error('That worker is not in a currently registered project.')
+    if (worker === undefined || worker.manager === true || worker.question === true || worker.id === this.#deps.managerSession() || !currentProjects.includes(worker.project ?? worker.root)) throw new Error('That worker is not in a currently registered project.')
     if (!allowUnmanaged && !this.#deps.managed(id)) throw new Error('This conversation is not managed here. Request sessions attach and wait for user confirmation first.')
     return worker
   }
@@ -352,6 +366,7 @@ export class ManagerOperations {
       const id = required(flags, '--id')
       const worker = await this.#worker(id, command === 'attach' || command === 'show')
       if (command === 'attach') {
+        if (this.#deps.managed(id)) return JSON.stringify({ id, attached: false, alreadyManaged: true })
         const note = this.#deps.notes.all()[id] ?? {}
         this.#deps.notes.set(id, { ...note, managerOwner: this.#deps.owner })
         return JSON.stringify({ id, attached: true })
