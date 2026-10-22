@@ -284,16 +284,16 @@ export class ManagerTelegram {
   private async linked(text: string): Promise<string> {
     const shares = this.options.shares
     if (shares === undefined) return text
-    const made: { readonly mention: ShareMention; readonly key: string }[] = []
+    const made: { readonly mention: ShareMention; readonly key: string; readonly expiresAt: number }[] = []
     for (const mention of shareMentions(text)) {
       const opened = await shares.open(mention.target).catch(() => undefined)
       if (opened === undefined || 'why' in opened) continue
-      made.push({ mention, key: opened.key })
+      made.push({ mention, key: opened.key, expiresAt: opened.expiresAt })
     }
     let out = text
-    for (const { mention, key } of made.reverse()) {
+    for (const { mention, key, expiresAt } of made.reverse()) {
       const words = text.slice(mention.at, mention.at + mention.length).replace(/^`|`$/g, '')
-      out = `${out.slice(0, mention.at)}[${words}](${shareLink(key)})${out.slice(mention.at + mention.length)}`
+      out = `${out.slice(0, mention.at)}[${words}](${shareLink(key, expiresAt)})${out.slice(mention.at + mention.length)}`
     }
     return out
   }
