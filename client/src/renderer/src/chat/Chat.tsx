@@ -465,7 +465,7 @@ export function Chat(): React.JSX.Element {
   return (
     <div
       ref={frame}
-      className={`chat${board ? ' boarded' : ''}${docked ? ' docked' : ''}${ON_PHONE ? '' : ' topped'}${over ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
+      className={`chat${board ? ' boarded' : ''}${docked ? ' docked' : ''}${ON_PHONE ? '' : ' topped'}${over && !making && !asking ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
       style={{ '--side': `${String(sizing ?? chat.settings.sidebarWidth)}px`, '--dock': `${String(chat.settings.boardHeight)}px` } as React.CSSProperties}
       // The whole window takes a drop. Anywhere else on the page, a dropped
       // file is a page the window would go to instead.
@@ -473,7 +473,7 @@ export function Chat(): React.JSX.Element {
         if (!event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
         event.dataTransfer.dropEffect = 'copy'
-        setOver(true)
+        setOver(!making && !asking)
       }}
       onDragLeave={(event) => {
         if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
@@ -483,6 +483,7 @@ export function Chat(): React.JSX.Element {
         if (!event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
         setOver(false)
+        if (making || asking) return
         addFiles([...event.dataTransfer.files])
       }}
     >
