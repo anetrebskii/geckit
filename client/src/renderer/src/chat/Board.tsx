@@ -1096,11 +1096,13 @@ export function NewTask({
           }}
           onDragOver={(event) => {
             event.preventDefault()
+            event.stopPropagation()
             setOver(true)
           }}
           onDragLeave={() => setOver(false)}
           onDrop={(event) => {
             event.preventDefault()
+            event.stopPropagation()
             setOver(false)
             take([...event.dataTransfer.files])
           }}
