@@ -8,6 +8,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Json, JsonObject } from '../src/shared/elicitation'
 import { jsonObject } from '../src/shared/elicitation'
+import { readShareLink } from '../src/shared/share'
 import { Shares } from '../src/main/shares'
 import { ManagerTelegram } from '../src/main/telegram'
 import type { TelegramVault } from '../src/main/telegram'
@@ -24,7 +25,7 @@ const server = createServer((_request, answer) => { answer.writeHead(200, { 'con
 await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
 const site = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
 afterAll(() => { server.close() })
-const links = (text: string): string[] => [...text.matchAll(/<a href="(https:\/\/geckit-signal\.web\.app\/#[A-Za-z0-9_-]{43})">([^<]*)<\/a>/g)].map((one) => `${one[2] ?? ''} ${one[1] ?? ''}`)
+const links = (text: string): string[] => [...text.matchAll(/<a href="(https:\/\/geckit-signal\.web\.app\/#[A-Za-z0-9_-]{43}\.[a-z0-9]+)">([^<]*)<\/a>/g)].map((one) => `${one[2] ?? ''} ${one[1] ?? ''}`)
 
 interface Call {
   readonly method: string
@@ -96,6 +97,7 @@ describe('opening what a Manager message names, from Telegram', () => {
     expect(rows(sent(api).at(-1))).toEqual([])
     expect(sent(api).at(-1)?.body['link_preview_options']).toEqual({ is_disabled: true })
     expect(shares.list().map((one) => one.title)).toEqual([new URL(site).host, 'report.html'])
+    expect(links(body).map((one) => readShareLink(new URL(one.slice(one.lastIndexOf(' ') + 1)).hash)?.expiresAt)).toEqual(shares.list().map((one) => one.expiresAt))
     expect(telegram.view().links?.map((one) => one.title)).toEqual([new URL(site).host, 'report.html'])
   })
 

@@ -88,3 +88,9 @@ Final validation on the completed patch:
 - `git diff --check`: passes.
 
 The first sandboxed focused run could not bind the existing Unix socket (`EPERM`); the final complete suite ran with socket binding available and that check passed. No security or native permission control was bypassed to make a behavioral assertion pass.
+
+### Main integration checks
+
+After Alex requested integration into main, required CI run `39762021464` reproduced the two old sharing-link assertions and exposed a timing-dependent assertion in the existing lost-receipt test. That test waited a fixed number of event-loop turns while the mocked CLI still had file I/O pending. It now waits for the recovered-receipt context, completed operation and single worker, then for the cached duplicate result before checking that no second command ran. The sharing-link matcher now requires the current expiry suffix and checks its decoded expiry against the saved share records. These are test corrections; production behavior is unchanged.
+
+`npm test -- --reporter=json --outputFile=/private/tmp/geckit-recovery-main-integration-full-results.json` passes all 1,222 tests. All four TypeScript targets and package lint pass. The original implementation regressions and safe-fixture/live-verification limits above still apply.
