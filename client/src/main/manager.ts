@@ -8,11 +8,11 @@ import type { ChatSession, SessionItems, Settings } from '../shared/api'
 import { providerOf } from '../shared/api'
 import { VPN_IP_UNAVAILABLE_ERROR, vpnIpPausedError } from '../shared/vpn-ip'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE, managerProjects } from '../shared/manager'
-import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerConfig, ManagerDecision, ManagerView, ManagerReplyOrigin, ManagerTelegramReply } from '../shared/manager'
+import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerConfig, ManagerDecision, ManagerDecisionOutcome, ManagerView, ManagerReplyOrigin, ManagerTelegramReply } from '../shared/manager'
 import { TelegramAttachments } from './telegram-attachments'
 import type { TelegramAttachment, TelegramFileSender } from './telegram-attachments'
-import { ManagerOperations, managerReadOnly } from './manager-operations'
-import { managerApproval } from './manager-approvals'
+import { ManagerOperations, managerAttachTarget, managerReadOnly, managerSameUpload } from './manager-operations'
+import { ManagerDecisionFailure, managerApproval } from './manager-approvals'
 import type { ManagerApproval } from './manager-approvals'
 import { managerCommands, managerMessage, MANAGER_INSTRUCTIONS } from './manager-protocol'
 import type { ManagerCommand } from './manager-protocol'
@@ -32,6 +32,7 @@ interface Message {
 interface Operation extends ManagerActivity {
   readonly approved?: boolean
   readonly fingerprint?: string
+  readonly reviewed?: true
 }
 
 interface PendingDecision extends ManagerDecision {
@@ -180,6 +181,7 @@ export class Manager {
 
   async view(): Promise<ManagerView> {
     this.#sessions = await this.#deps.sessions.allForManager(managerProjects(this.#deps.settings()))
+    this.#reconcileAttach()
     return this.#snapshot()
   }
 
@@ -312,16 +314,47 @@ export class Manager {
     void this.#dispatch()
   }
 
+  #satisfiedAttach(command: ManagerCommand): boolean {
+    let id: string | undefined
+    try { id = managerAttachTarget(command.args) } catch { return false }
+    if (id === undefined || id === this.#record.sessionId) return false
+    const worker = this.#sessions.find((one) => one.id === id && one.manager !== true && one.question !== true)
+    return worker !== undefined && this.manages(worker.id)
+  }
+
+  #reconcileAttach(): void {
+    const satisfied = this.#record.decisions.filter((one) => {
+      const receipt = this.#record.operations.find((operation) => operation.id === one.command.id)
+      return this.#satisfiedAttach(one.command) && (receipt === undefined || (receipt.fingerprint ?? createHash('sha256').update(JSON.stringify(receipt.command)).digest('hex')) === createHash('sha256').update(JSON.stringify(one.command.args)).digest('hex'))
+    })
+    if (satisfied.length === 0) return
+    const unresolved = satisfied.filter((one) => !this.#record.operations.some((operation) => operation.id === one.command.id && (operation.state === 'done' || operation.state === 'failed')))
+    const ids = new Set(unresolved.map((one) => one.command.id))
+    const operations = this.#record.operations.filter((one) => !ids.has(one.id))
+    this.#save({ decisions: this.#record.decisions.filter((one) => !satisfied.includes(one)), operations: [...operations, ...unresolved.map((one): Operation => ({ id: one.command.id, at: Date.now(), command: one.command.args, state: 'done', result: JSON.stringify({ attached: false, alreadyManaged: true, notice: 'This conversation is already managed. No approval or attach was performed.' }) }))] })
+  }
+
   async #execute(command: ManagerCommand, approved = false): Promise<void> {
     this.#assertEnabled()
+    const pending = this.#record.decisions.find((one) => one.command.id === command.id && one.uncertain !== true)
+    if (pending !== undefined && JSON.stringify(pending.command.args) !== JSON.stringify(command.args)) {
+      await this.send(JSON.stringify({ operation: command.id, error: 'This operation ID belongs to a different pending request. Its approval was not changed. Use a new operation ID.' }), 'cli')
+      return
+    }
     const previous = this.#record.operations.find((operation) => operation.id === command.id)
     if (previous !== undefined) {
       if ((previous.fingerprint ?? createHash('sha256').update(JSON.stringify(previous.command)).digest('hex')) !== createHash('sha256').update(JSON.stringify(command.args)).digest('hex')) throw new Error('Manager reused an operation ID for a different command.')
-      if (previous.state === 'running' || previous.state === 'uncertain') throw new Error('Delivery of that operation is uncertain. Check current task state before issuing another action.')
+      if (previous.state === 'running' || previous.state === 'uncertain') {
+        await this.send(JSON.stringify({ operation: command.id, state: previous.state, notice: 'Delivery remains uncertain. Nothing was resent. Use fresh read-only commands to inspect current state; unrelated coordination can continue.' }), 'cli', `uncertain:${this.#record.sessionId}:${command.id}`)
+        return
+      }
       await this.send(JSON.stringify({ operation: command.id, state: previous.state, result: previous.result, notice: 'Already handled; this command was not run again. Use a fresh operation ID for a fresh state check. This cached result is delivered once per backing session.' }), 'cli', `cached:${this.#record.sessionId}:${command.id}`)
       return
     }
-    if (this.#record.operations.some((operation) => operation.state === 'uncertain' && (operation.fingerprint ?? createHash('sha256').update(JSON.stringify(operation.command)).digest('hex')) === createHash('sha256').update(JSON.stringify(command.args)).digest('hex'))) throw new Error('An identical operation has uncertain delivery. Check its state and resolve the review decision before requesting it again.')
+    if (this.#record.operations.some((operation) => operation.state === 'uncertain' && (managerSameUpload(operation.command, command.args) || (operation.fingerprint ?? createHash('sha256').update(JSON.stringify(operation.command)).digest('hex')) === createHash('sha256').update(JSON.stringify(command.args)).digest('hex')))) {
+      await this.send(JSON.stringify({ operation: command.id, state: 'uncertain', notice: 'This operation or selected artifact has uncertain delivery. Nothing was resent. Review does not authorize a retry; unrelated coordination can continue.' }), 'cli', `uncertain:${this.#record.sessionId}:${command.id}`)
+      return
+    }
     const confirmation = this.#operations.confirmation(command.args, this.#record.config.delegation)
     if (!approved && confirmation !== undefined) {
       if (!this.#record.decisions.some((decision) => decision.command.id === command.id)) this.#save({ decisions: [...this.#record.decisions, { id: randomUUID(), title: confirmation, choices: [{ label: 'Allow', value: 'allow' }, { label: 'Refuse', value: 'refuse' }], command }] })
@@ -395,6 +428,7 @@ export class Manager {
 
   observeSessions(sessions: readonly ChatSession[]): void {
     this.#sessions = sessions
+    this.#reconcileAttach()
     const manager = sessions.find((one) => one.id === this.#record.sessionId)
     if (this.#record.config.enabled && !this.#record.paused && manager?.state === 'failed' && this.#record.error === undefined) this.#fail(this.#deps.notes.all()[manager.id]?.guardError ?? (manager.stands || 'The Manager turn failed. Retry after checking the selected assistant.'))
     if (this.#awaitingOutput && manager !== undefined && manager.state !== 'working' && manager.state !== 'asks' && !manager.queued?.length) {
@@ -420,34 +454,40 @@ export class Manager {
     this.#scheduleRecovery()
   }
 
-  async answer(id: string, choice: string, authorized: () => boolean = () => true): Promise<ManagerView> {
+  async answer(id: string, choice: string, authorized: () => boolean = () => true): Promise<ManagerView & { readonly answer: ManagerDecisionOutcome }> {
     this.#assertEnabled()
     if (!authorized()) throw new Error('This Telegram connection is no longer authorized.')
     if (id.startsWith('native:')) {
       const pending = this.#approvals().find((one) => one.decision.id === id)
-      if (pending === undefined) throw new Error('This approval is no longer pending. Use the current request in Telegram.')
-      if (!pending.decision.choices.some((one) => one.value === choice)) throw new Error('Use one of this approval’s choices. Typed forms must be answered in GeckIt.')
+      if (pending === undefined) return { ...await this.view(), answer: 'This request is no longer pending. Use /status to see current requests.' }
+      if (!pending.decision.choices.some((one) => one.value === choice)) throw new ManagerDecisionFailure('choice')
       const generation = this.#generation
       const accepted = await this.#deps.sessions.answerForManager(pending.session, pending.id, choice, pending.fingerprint, () => authorized() && generation === this.#generation && this.#record.config.enabled && this.#approvals().some((one) => one.decision.id === id))
-      if (!accepted) throw new Error('Approval was not sent. The request changed or a native safety check blocked it. Check GeckIt, then try the current request again.')
-      return this.view()
+      if (!accepted) {
+        if (!this.#approvals().some((one) => one.decision.id === id)) return { ...await this.view(), answer: 'This request is no longer pending. Use /status to see current requests.' }
+        throw new ManagerDecisionFailure('native')
+      }
+      return { ...this.#snapshot(), answer: 'Answer sent.' }
     }
-    if (this.#record.paused) throw new Error('Resume Manager before answering this decision.')
+    const generation = this.#generation
+    await this.view()
+    if (!authorized() || generation !== this.#generation || !this.#record.config.enabled || this.#stopped) throw new ManagerDecisionFailure('changed')
     const decision = this.#record.decisions.find((one) => one.id === id)
-    if (decision === undefined) return this.view()
-    if (!decision.choices.some((one) => one.value === choice)) throw new Error('That is not one of this decision’s choices.')
+    if (decision === undefined) return { ...await this.view(), answer: 'This request is no longer pending. Use /status to see current requests.' }
+    if (!decision.choices.some((one) => one.value === choice)) throw new ManagerDecisionFailure('choice')
+    if (this.#record.paused && decision.uncertain !== true) throw new ManagerDecisionFailure('paused')
     this.#save({ decisions: this.#record.decisions.filter((one) => one.id !== id) })
     if (decision.uncertain === true) {
-      this.#save({ operations: this.#record.operations.map((operation) => operation.id === decision.command.id ? { ...operation, state: 'failed', result: 'Delivery was uncertain. User checked the current state; nothing was resent.' } : operation) })
+      this.#save({ operations: this.#record.operations.map((operation) => operation.id === decision.command.id ? { ...operation, reviewed: true } : operation) })
       await this.send(`User reviewed uncertain operation ${decision.command.id}. Nothing was resent. Reconcile actual task state before planning further work.`, 'event')
-      return this.view()
+      return { ...this.#snapshot(), answer: 'Review recorded. Delivery remains uncertain; nothing was resent. Other work can continue.' }
     }
     if (choice === 'allow') await this.#execute(decision.command, true)
     else {
       this.#save({ operations: [...this.#record.operations, { id: decision.command.id, command: decision.command.args, at: Date.now(), state: 'failed', result: 'Refused by the user. Do not retry without a new explicit request.' }] })
       await this.send(`Operation ${decision.command.id} was refused by the user. Do not retry it.`, 'cli')
     }
-    return this.view()
+    return { ...this.#snapshot(), answer: 'Answer sent.' }
   }
 
   #pinAttachments(): void {
