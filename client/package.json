@@ -34,7 +34,7 @@
     "@sentry/electron": "^7.20.0",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
-    "firebase": "^12.19.0",
+    "firebase": "^13.0.0",
     "qrcode": "^1.5.4",
     "ws": "^8.22.0"
   },
