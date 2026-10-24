@@ -1,0 +1,10 @@
+{
+  "attachment-check.png": {
+    "bytes": 99,
+    "sha256": "b64c9dc246c60ce20864631a98ec41bad86d38a1e1ce1ad8ac02d3b3b0042061"
+  },
+  "attachment-check.txt": {
+    "bytes": 91,
+    "sha256": "ec3bb583f8a3293f80d15269099b91838cdabc898779ee0ba377b2a42059e9f6"
+  }
+}

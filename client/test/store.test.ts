@@ -257,3 +257,26 @@ it('persists the chosen task folder across board changes and a fresh settings lo
     rmSync(state.folder, { recursive: true, force: true })
   }
 })
+
+it('loads legacy builtin model settings and persists independent model choices across restarts', async () => {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-provider-models-'))
+  writeFileSync(join(state.folder, 'settings.json'), JSON.stringify({ chatModel: 'opus', codexModel: 'gpt-5.4', phoneKey: 'key' }))
+  try {
+    vi.resetModules()
+    const initial = await import('../src/main/store')
+    const { modelPreference, providerModel } = await import('../src/shared/providers')
+    expect(initial.getSettings().providerModels).toEqual([])
+    expect(providerModel(initial.getSettings(), 'plugin:opencode-ollama')).toBe('')
+    initial.setSettings(modelPreference(initial.getSettings(), 'plugin:claude-tmux', 'sonnet'))
+    initial.setSettings(modelPreference(initial.getSettings(), 'plugin:opencode-ollama', 'ollama/qwen3:8b'))
+    initial.setSettings(modelPreference(initial.getSettings(), 'plugin:claude-tmux', ''))
+    vi.resetModules()
+    const restarted = await import('../src/main/store')
+    expect(providerModel(restarted.getSettings(), 'claude')).toBe('opus')
+    expect(providerModel(restarted.getSettings(), 'codex')).toBe('gpt-5.4')
+    expect(providerModel(restarted.getSettings(), 'plugin:claude-tmux')).toBe('')
+    expect(providerModel(restarted.getSettings(), 'plugin:opencode-ollama')).toBe('ollama/qwen3:8b')
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})

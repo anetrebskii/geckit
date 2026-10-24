@@ -3,6 +3,7 @@ import type { Elicitation } from './elicitation'
 import type { HostConfig } from './hosts'
 import type { LlmProviderInfo } from './providers'
 import { llmProviderInfo } from './providers'
+import type { ProjectAssistant } from './manager'
 
 /**
  * The contract between the main process and the windows.
@@ -304,8 +305,19 @@ export const ANYWHERE = {
 
 export type Anywhere = keyof typeof ANYWHERE
 
+export type SessionDeliveryReceipt = Pick<ChatSession, 'id'> & {
+  readonly attempt: string
+  readonly action: 'send' | 'retry' | 'steer'
+  readonly status: 'pending' | 'accepted' | 'queued' | 'steered' | 'blocked' | 'unsupported' | 'failed' | 'uncertain'
+  readonly at: number
+  readonly acceptance?: 'host' | 'runtime'
+  readonly queued?: QueuedMessage['id']
+  readonly reason?: string
+}
+
 /** Something a conversation wants the person to know, and where the window is not showing it. */
 export interface SessionNotice {
+  readonly delivery?: SessionDeliveryReceipt
   readonly session: string
   /** What happened, and in which project: "Finished - geckit". */
   readonly title: string
@@ -320,6 +332,9 @@ export interface SessionNotice {
 
 /** One row in the sidebar. */
 export interface ChatSession {
+  readonly delivery?: SessionDeliveryReceipt
+  readonly manager?: true
+  readonly managerManaged?: true
   readonly provider?: SessionProvider
   readonly transport?: ClaudeTransport
   readonly reasoning?: ReasoningEffort | ''
@@ -973,6 +988,7 @@ export interface Settings {
   readonly correctCodexModel: string
   /** Project folders the chat window offers, newest first. */
   readonly projects: readonly string[]
+  readonly projectAssistants: readonly ProjectAssistant[]
   readonly newTaskRoot: string
   /** Named sets of projects, TwinsAI or Formula, each one what the whole application shows while it is in use. */
   readonly profiles: readonly ProjectProfile[]
@@ -982,8 +998,9 @@ export interface Settings {
   readonly projectColors: Readonly<Record<string, number>>
   /** GeckIt's own names for the Chromes Claude in Chrome calls Browser 1, Browser 2, by device id. */
   readonly browserNames: Readonly<Record<string, string>>
-  /** The model the next new session is handed. Empty is Default. */
+  /** The model the next new builtin Claude session is handed. Empty is Default. */
   readonly chatModel: string
+  readonly providerModels: readonly Required<Pick<SessionMessage, 'provider' | 'model'>>[]
   readonly chatTransport: ClaudeTransport
   readonly chatProvider: SessionProvider
   readonly chatProviders: readonly SessionProvider[]
@@ -1144,12 +1161,14 @@ export const DEFAULT_SETTINGS: Settings = {
   correctProvider: 'claude',
   correctCodexModel: '',
   projects: [],
+  projectAssistants: [],
   newTaskRoot: '',
   profiles: [],
   profile: '',
   projectColors: {},
   browserNames: {},
   chatModel: '',
+  providerModels: [],
   chatTransport: 'stream',
   chatProvider: 'claude',
   chatProviders: ['claude', 'codex'],

@@ -26,7 +26,8 @@
     "package": "electron-vite build && electron-builder --publish never",
     "lint": "eslint src test",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.viewer.json && tsc --noEmit -p tsconfig.sw.json",
+    "viewer": "vite build --config viewer.vite.config.ts"
   },
   "dependencies": {
     "@sentry/browser": "^10.75.0",

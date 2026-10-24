@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeckIt - Manager and Telegram</title>
+<style id="geckit-tokens">
+/* Snapshot of GeckIt theme and typography tokens, 2026-10-17. */
+:root,
+:root[data-theme='light'] {
+  --bg: #ffffff;
+  --bg-sunken: #f4f4f6;
+  --bg-raised: #ffffff;
+  /* The person's own message, and the field it was written in. */
+  --bubble: #f4f4f6;
+  --field: #ffffff;
+  --bg-hover: rgb(0 0 0 / 5%);
+  --bg-active: rgb(51 183 70 / 12%);
+  --border: #e3e3e6;
+  --border-strong: #cdcdd2;
+  --text: #1d1d1f;
+  --text-dim: #5c5c61;
+  --text-faint: #737378;
+  --accent: #1f8031;
+  --accent-text: #ffffff;
+  --accent-soft: #e6f4e8;
+  --danger: #c0392b;
+  --danger-solid: #c0392b;
+  --danger-text: #ffffff;
+  --warning-bg: #fdf3e0;
+  --warning-text: #8a6116;
+  --success-text: #2a7d3a;
+  --highlight: #fbeeb6;
+  --tooltip-bg: #2b2b2e;
+  --tooltip-text: #f2f2f4;
+  --code-bg: #f6f6f8;
+  /* The phone's own: iOS grouped lists, their hairlines, and the coloured backs of a swiped row. */
+  --ground: #f2f2f5;
+  --fill: rgb(118 118 128 / 12%);
+  --fill-strong: rgb(118 118 128 / 20%);
+  --separator: rgb(60 60 67 / 18%);
+  --scrim: rgb(0 0 0 / 28%);
+  --glass: rgb(249 249 251 / 82%);
+  --menu: rgb(246 246 248 / 96%);
+  --lift: 0 0 0 0.5px rgb(0 0 0 / 8%), 0 18px 50px rgb(0 0 0 / 22%);
+  --review-solid: #c08a1e;
+  --unread: #007aff;
+  --done-solid: #2e9a42;
+  --more-solid: #8e8e93;
+  --favorite: #ffcc00;
+  --sheet: #f2f2f5;
+  --on-solid: #ffffff;
+  /* The Mac's screen is shown on black in either theme, as a photo or a video is. */
+  --screen: #000000;
+  --screen-bar: rgb(0 0 0 / 55%);
+  --screen-text: #f2f2f4;
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
+  /* A project's name, in the colour it was given: sky, blue, indigo, violet, purple, magenta, pink, slate. */
+  --project-0: hsl(196 80% 32%);
+  --project-1: hsl(220 70% 45%);
+  --project-2: hsl(258 55% 52%);
+  --project-3: hsl(300 45% 40%);
+  --project-4: hsl(338 65% 44%);
+  --project-5: hsl(176 70% 26%);
+  --project-6: hsl(30 40% 38%);
+  --project-7: hsl(215 16% 42%);
+}
+
+:root[data-theme='dark'] {
+  --bg: #1e1e20;
+  --bg-sunken: #191919;
+  --bg-raised: #262629;
+  --bubble: #2a2a2d;
+  --field: #2a2a2d;
+  --bg-hover: rgb(255 255 255 / 7%);
+  --bg-active: rgb(74 200 92 / 18%);
+  --border: #35353a;
+  --border-strong: #4a4a50;
+  --text: #f2f2f4;
+  --text-dim: #a2a2a8;
+  --text-faint: #8e8e95;
+  --accent: #4ac85c;
+  --accent-text: #10210f;
+  --accent-soft: rgb(74 200 92 / 16%);
+  --danger: #e0796b;
+  --danger-solid: #e5484d;
+  --danger-text: #ffffff;
+  --warning-bg: #3a2f18;
+  --warning-text: #e0bb72;
+  --success-text: #7fc98d;
+  --highlight: #57481f;
+  --tooltip-bg: #3a3a3f;
+  --tooltip-text: #f2f2f4;
+  --code-bg: #1a1a1c;
+  --ground: #000000;
+  --fill: rgb(118 118 128 / 24%);
+  --fill-strong: rgb(118 118 128 / 36%);
+  --separator: rgb(84 84 88 / 55%);
+  --scrim: rgb(0 0 0 / 50%);
+  --glass: rgb(30 30 32 / 82%);
+  --menu: rgb(44 44 46 / 96%);
+  --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+  --review-solid: #a8781a;
+  --unread: #0a84ff;
+  --done-solid: #2b8a3c;
+  --more-solid: #636366;
+  --favorite: #ffd60a;
+  --sheet: #1c1c1e;
+  --on-solid: #ffffff;
+  --screen: #000000;
+  --screen-bar: rgb(0 0 0 / 55%);
+  --screen-text: #f2f2f4;
+  --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
+  --project-0: hsl(196 70% 64%);
+  --project-1: hsl(220 85% 72%);
+  --project-2: hsl(258 75% 78%);
+  --project-3: hsl(300 50% 72%);
+  --project-4: hsl(338 75% 75%);
+  --project-5: hsl(172 50% 58%);
+  --project-6: hsl(32 40% 66%);
+  --project-7: hsl(215 18% 68%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #1e1e20;
+    --bg-sunken: #191919;
+    --bg-raised: #262629;
+  --bubble: #2a2a2d;
+  --field: #2a2a2d;
+    --bg-hover: rgb(255 255 255 / 7%);
+    --bg-active: rgb(74 200 92 / 18%);
+    --border: #35353a;
+    --border-strong: #4a4a50;
+    --text: #f2f2f4;
+    --text-dim: #a2a2a8;
+    --text-faint: #8e8e95;
+    --accent: #4ac85c;
+    --accent-text: #10210f;
+    --accent-soft: rgb(74 200 92 / 16%);
+    --danger: #e0796b;
+    --danger-solid: #e5484d;
+    --danger-text: #ffffff;
+    --warning-bg: #3a2f18;
+    --warning-text: #e0bb72;
+    --success-text: #7fc98d;
+    --highlight: #57481f;
+    --tooltip-bg: #3a3a3f;
+    --tooltip-text: #f2f2f4;
+    --code-bg: #1a1a1c;
+    --ground: #000000;
+    --fill: rgb(118 118 128 / 24%);
+    --fill-strong: rgb(118 118 128 / 36%);
+    --separator: rgb(84 84 88 / 55%);
+    --scrim: rgb(0 0 0 / 50%);
+    --glass: rgb(30 30 32 / 82%);
+    --menu: rgb(44 44 46 / 96%);
+    --lift: 0 0 0 0.5px rgb(255 255 255 / 8%), 0 18px 50px rgb(0 0 0 / 60%);
+    --review-solid: #a8781a;
+    --unread: #0a84ff;
+    --done-solid: #2b8a3c;
+    --more-solid: #636366;
+    --favorite: #ffd60a;
+    --sheet: #1c1c1e;
+    --on-solid: #ffffff;
+    --screen: #000000;
+    --screen-bar: rgb(0 0 0 / 55%);
+    --screen-text: #f2f2f4;
+    --shadow: 0 0 0 0.5px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 46%), 0 2px 8px rgb(0 0 0 / 30%);
+    --project-0: hsl(196 70% 64%);
+    --project-1: hsl(220 85% 72%);
+    --project-2: hsl(258 75% 78%);
+    --project-3: hsl(300 50% 72%);
+    --project-4: hsl(338 75% 75%);
+    --project-5: hsl(172 50% 58%);
+    --project-6: hsl(32 40% 66%);
+    --project-7: hsl(215 18% 68%);
+  }
+}
+
+:root {
+  --font-ui: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-code: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --topbar: 38px;
+  --ease: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --quick: 90ms;
+  --settle: 180ms;
+}
+
+</style>
+<style>
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html[data-theme=dark] { color-scheme: dark; }
+body { block-size: 100dvh; display: flex; flex-direction: column; overflow: hidden; margin: 0; font: 13px/1.5 var(--font-ui); background: var(--bg); color: var(--text); }
+button,input,select,textarea { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; border-radius: var(--radius); padding: 6px 10px; }
+button:hover { background: var(--bg-hover); }
+button:disabled { opacity: .35; cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input,select,textarea { background: var(--field); border: 1px solid var(--border); border-radius: var(--radius); padding: 7px 9px; max-inline-size: 100%; }
+input[type=checkbox],input[type=radio] { accent-color: var(--accent); }
+textarea { resize: vertical; }
+a { color: var(--accent); }
+h1,h2,h3,p { margin: 0; }
+h1,h2 { font-size: 15px; font-weight: 600; }
+h3 { font-size: 13px; font-weight: 600; }
+small,.dim { font-size: 12px; color: var(--text-faint); }
+.quiet { padding: 6px 12px; color: var(--text-dim); border: 1px solid var(--border); border-radius: var(--radius); }
+.primary { padding: 6px 14px; color: var(--accent-text); background: var(--accent); border-radius: var(--radius); }
+.primary:hover { background: var(--accent); }
+.danger { color: var(--danger); }
+.row { display: flex; align-items: center; gap: 10px; }
+.spread { justify-content: space-between; }
+.stack { display: grid; gap: 12px; }
+.bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.prototype { padding: 9px 16px; display: flex; justify-content: space-between; gap: 12px; border-block-end: 1px solid var(--border); background: var(--bg-sunken); font-size: 11px; }
+.prototype select { max-inline-size: 210px; padding: 3px 6px; }
+.shell { display: grid; grid-template-columns: 220px minmax(0,1fr); flex: 1; min-block-size: 0; }
+.sidebar { padding: 24px 14px; background: var(--bg-sunken); border-inline-end: 1px solid var(--border); }
+.sidebar .brand { padding: 0 10px 26px; font-weight: 600; }
+.sidebar button { display: block; inline-size: 100%; text-align: start; padding: 9px 10px; }
+.sidebar .on { background: var(--bg-active); }
+.sidebar .section { margin: 24px 10px 8px; font-size: 11px; color: var(--text-faint); }
+.dot { display: inline-block; inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--accent); margin-inline-end: 7px; }
+.workspace { display: grid; grid-template-rows: auto minmax(0,1fr) auto; min-inline-size: 0; min-block-size: 0; }
+.head { padding: 20px 28px; border-block-end: 1px solid var(--border); }
+.head .dim { display: block; margin-block-start: 3px; }
+.content { overflow: auto; padding: 32px max(24px,calc((100% - 740px)/2)); }
+.welcome { margin-block: 16vh 0; text-align: center; }
+.welcome p { margin-block: 10px 20px; max-inline-size: 390px; margin-inline: auto; color: var(--text-dim); }
+.message { margin-block-end: 24px; max-inline-size: 640px; overflow-wrap: anywhere; }
+.message.mine { background: var(--bubble); border-radius: var(--radius-lg); padding: 12px 16px; margin-inline-start: auto; max-inline-size: 520px; }
+.message .source { display: block; color: var(--text-faint); font-size: 11px; margin-block-end: 5px; }
+.message .task { margin-block-start: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); }
+.message .task .bar { margin-block-start: 10px; }
+.notice { padding: 10px 14px; background: var(--warning-bg); color: var(--warning-text); border-radius: var(--radius); margin-block-end: 20px; }
+#new-updates { position: absolute; inset-block-end: 180px; inset-inline-end: 28px; background: var(--bg-raised); z-index: 2; }
+.composer { border-block-start: 1px solid var(--border); padding: 16px 28px; }
+.composer form { max-inline-size: 740px; margin-inline: auto; }
+.composer textarea { inline-size: 100%; min-block-size: 62px; background: var(--bubble); }
+.composer .bar { justify-content: space-between; margin-block-start: 8px; }
+.tasks { margin-block-start: 24px; border-block-start: 1px solid var(--border); padding-block-start: 16px; }
+.tasks summary { cursor: pointer; font-weight: 600; }
+.taskrow { padding-block: 12px; border-block-end: 1px solid var(--border); }
+.taskrow small { display: block; }
+.telegram { max-inline-size: 480px; margin-inline: auto; background: var(--ground); min-block-size: 100%; padding: 22px; border-inline: 1px solid var(--separator); }
+.telegram .message:not(.mine) { padding: 14px; background: var(--bg-raised); border-radius: var(--radius-lg); }
+dialog { color: var(--text); background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 20px 22px; max-block-size: calc(100dvh - 36px); }
+dialog::backdrop { background: var(--scrim); }
+dialog.settings { inline-size: min(820px,94vw); block-size: min(650px,91dvh); overflow: hidden; }
+.settings form { display: grid; grid-template-rows: auto minmax(0,1fr) auto; block-size: 100%; }
+.settings-body { display: grid; grid-template-columns: 168px minmax(0,1fr); gap: 18px; min-block-size: 0; margin-block-start: 14px; }
+.settings-nav { border-inline-end: 1px solid var(--border); padding-inline-end: 12px; overflow: auto; }
+.settings-nav button { display: block; inline-size: 100%; text-align: start; padding: 5px 10px; color: var(--text-dim); }
+.settings-nav .on { color: var(--text); background: var(--bg-active); }
+.settings-page { overflow: auto; padding-inline-end: 8px; }
+.settings-page > p { color: var(--text-dim); margin-block: 7px 20px; }
+.field { display: grid; gap: 6px; margin-block-end: 18px; }
+.field > label,.legend { color: var(--text-dim); font-size: 12px; }
+fieldset { border: 0; margin: 0 0 18px; padding: 0; }
+legend { margin-block-end: 7px; font-size: 12px; color: var(--text-dim); }
+.check { display: flex; align-items: start; gap: 8px; padding-block: 5px; }
+.check small { display: block; }
+.rule { padding-block: 16px; border-block-start: 1px solid var(--border); }
+.rule p { color: var(--text-faint); font-size: 12px; margin-block: 5px 12px; }
+.actions { display: flex; justify-content: end; flex-wrap: wrap; gap: 8px; border-block-start: 1px solid var(--border); margin-block-start: 16px; padding-block-start: 14px; }
+.connection { inline-size: min(430px,94vw); }
+.connection p { margin-block: 10px 16px; color: var(--text-dim); }
+.connection .field input { inline-size: 100%; }
+.account { padding: 14px; background: var(--bg-sunken); border-radius: var(--radius); margin-block: 14px; }
+.error { color: var(--danger); font-size: 12px; margin-block: 8px; }
+.session-details { inline-size: min(590px,94vw); }
+.session-details p { margin-block: 10px 18px; color: var(--text-dim); }
+.session-details dl { display: grid; grid-template-columns: 125px minmax(0,1fr); gap: 10px 16px; margin-block: 18px 24px; }
+.session-details dt { color: var(--text-faint); }
+.session-details dd { margin: 0; overflow-wrap: anywhere; }
+.session-details ul { padding-inline-start: 20px; color: var(--text-dim); }
+#session-meta { display: block; margin-block-start: 6px; overflow-wrap: anywhere; }
+.phone-settings { display: none; }
+.phone-tabs { display: none; }
+@media(max-width:680px) {
+ .prototype { padding: 6px 10px; display: grid; gap: 6px; font-size: 10px; }
+ .prototype .bar { gap: 5px; }
+ .prototype select { max-inline-size: 155px; font-size: 11px; }
+ .shell { display: block; min-block-size: 0; }
+ .sidebar { display: none; }
+ .workspace { block-size: 100%; }
+ .head { padding: 14px 16px; display: block; }
+ .head > .bar { margin-block-start: 10px; }
+ .session-details dl { grid-template-columns: 95px minmax(0,1fr); }
+ .head .bar { gap: 4px; }
+ .head button { padding: 6px; font-size: 12px; }
+ .content { padding: 20px 16px; }
+ .composer { padding: 12px 16px; }
+ .welcome { margin-block-start: 12vh; }
+ .welcome p { max-inline-size: 260px; }
+ dialog.settings { block-size: min(550px,85dvh); padding: 18px; }
+ .settings-body { display: block; }
+ .settings-nav,.desktop-settings { display: none; }
+ .phone-settings { display: grid; gap: 18px; padding-block-start: 14px; }
+ .phone-tabs { display: flex; justify-content: space-around; border-block-start: 1px solid var(--border); padding: 7px; font-size: 11px; }
+ .telegram { padding: 16px; border: 0; }
+}
+@media(prefers-reduced-motion:reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<header class="prototype"><span>Design prototype. No bot or AI sessions are connected.</span><div class="bar"><button id="theme" class="quiet">Dark theme</button><button id="channel" class="quiet">Telegram preview</button><select id="scenario" aria-label="Preview scenario"><option value="">Preview a state...</option><option value="question">Worker question</option><option value="complete">Worker finished</option><option value="permission">Permission required</option><option value="offline">Telegram disconnected</option><option value="late">Late request</option><option value="provider">Assistant unavailable</option><option value="active">Manager coordinating</option><option value="modelerror">Model unavailable</option><option value="file">Project and file action</option><option value="overflow">Long task list</option><option value="reset">Reset prototype</option></select></div></header>
+<div class="shell"><aside class="sidebar"><div class="brand">GeckIt</div><button id="manager" class="on"><span class="dot"></span>Manager</button><div class="section">WORKSPACE</div><button id="tasks-link">Tasks</button><button id="conversations">Conversations</button><div class="section">PROJECTS</div><p class="dim">&nbsp; GeckIt<br>&nbsp; Twins-AI<br>&nbsp; Formula</p><div class="section">SETTINGS</div><button id="settings">Settings</button></aside>
+<main class="workspace"><header class="head row spread"><div><h1 id="heading">Manager</h1><span id="status" class="dim">Set up Manager</span><small id="session-meta" hidden></small></div><div class="bar"><button id="session-info" hidden>Session info</button><button id="task-toggle" hidden>Managed tasks</button><button id="pause" hidden>Pause</button><button id="settings-top" aria-label="Manager settings">Settings</button></div></header><section class="content" id="content" aria-label="Manager conversation"></section><button id="new-updates" class="quiet" hidden>New updates</button><footer class="composer" id="composer" hidden><form id="message-form"><label for="message" class="dim">Message Manager</label><textarea id="message" placeholder="What would you like to get done?" rows="2"></textarea><div class="bar"><small id="composer-note">Detailed work stays in worker sessions.</small><button class="primary" type="submit">Send</button></div></form><nav class="phone-tabs" aria-label="Phone navigation"><button id="phone-tasks">Tasks</button><button id="phone-settings">Settings</button></nav></footer></main></div>
+<dialog class="settings" id="settings-dialog" aria-labelledby="settings-title"><form id="settings-form"><h2 id="settings-title">Settings</h2><div class="settings-body"><nav class="settings-nav" aria-label="Settings sections"><button type="button" disabled>General</button><button type="button" disabled>VPN IP check</button><button type="button" disabled>Assistants</button><button type="button" class="on" aria-current="page">Manager</button><button type="button" disabled>Libraries</button><button type="button" disabled>Profiles</button><button type="button" disabled>Hosts</button><button type="button" disabled>Phone</button><button type="button" disabled>Version</button></nav><section class="settings-page"><h2>Manager</h2><p>Talk to one manager. It delegates work to separate sessions and brings back results.</p><div class="desktop-settings"><div class="field"><label for="assistant">Assistant</label><select id="assistant"><option>Codex</option><option>Claude Code</option><option disabled>Other assistant - manager role unavailable</option></select><small>Manages GeckIt through its CLI. Delegates deep work to worker sessions.</small></div><div class="field"><label for="model">Model</label><select id="model"></select><small>Models come from the selected assistant. Names here are design examples.</small><p id="model-error" class="error" role="alert" hidden></p></div><div class="rule"><h3>All projects</h3><p>Includes current and future projects in GeckIt, across all profiles.</p><small>Manage sessions, files, projects, schedules and settings through the GeckIt CLI. Worker permissions still apply.</small></div><fieldset><legend>Delegation</legend><label class="check"><input type="radio" name="policy" value="auto" checked><span>Automatic delegation<small>Start and follow up on requested work across all projects. Worker permissions still apply.</small></span></label><label class="check"><input type="radio" name="policy" value="approve"><span>Approve new sessions<small>Review each new worker before it starts. Follow-ups stay in the same worker.</small></span></label></fieldset><div class="rule"><h3>Telegram</h3><p>Use your own bot to talk to this manager from Telegram.</p><div class="row spread"><span id="telegram-state">Telegram not connected</span><button id="connect" type="button" class="quiet" disabled>Connect Telegram</button></div><p>Keep this computer online with GeckIt open. Messages pass through Telegram.</p></div><div class="rule" id="disable-row" hidden><button type="button" id="disable" class="danger">Disable manager</button></div></div><div class="phone-settings"><p id="phone-summary">Set up Manager on your computer.</p><p class="dim">Bot credentials and management settings are configured on your computer.</p><button type="button" class="quiet" id="phone-pause" hidden>Pause manager</button></div><p id="settings-error" role="alert" class="error" hidden></p></section></div><footer class="actions"><button class="quiet" type="button" id="settings-cancel">Cancel</button><button class="primary desktop-settings" id="save" type="submit">Enable manager</button><button class="quiet phone-settings" type="button" id="phone-done">Done</button></footer></form></dialog>
+<dialog class="connection" id="connection" aria-labelledby="connection-title"><h2 id="connection-title" tabindex="-1">Connect your bot</h2><div id="connection-body"></div><div class="actions" id="connection-actions"></div></dialog>
+<dialog class="session-details" id="session-dialog" aria-labelledby="session-title"><h2 id="session-title" tabindex="-1">Manager session</h2><div id="session-body"></div><footer class="actions"><button id="session-close" class="quiet">Close</button><button id="session-pause" class="quiet">Pause manager</button><button id="session-retry" class="quiet" hidden>Try again</button><button id="session-restart" class="quiet">Restart session</button><button id="session-open" class="primary">Open session</button></footer></dialog>
+<dialog class="connection" id="confirm" aria-labelledby="confirm-title"><h2 id="confirm-title">Confirm</h2><p id="confirm-body"></p><div class="actions"><button class="quiet" id="confirm-cancel">Cancel</button><button class="primary" id="confirm-yes">Confirm</button></div></dialog>
+<script>
+const el=id=>document.getElementById(id);
+const escape=text=>String(text).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const state={enabled:false,configured:false,paused:false,assistant:'Codex',projects:['GeckIt','Twins-AI','Formula'],model:'default',pending:null,active:false,runtime:1,activity:[],policy:'auto',telegram:false,health:'',channel:'app',messages:[],tasks:[],question:null,provider:false};
+let opener=null,connectionOpener=null,confirmOpener=null,onConfirm=null;
+function say(text,who='manager'){state.messages.push({text,who,source:state.channel==='telegram'?'Telegram':'GeckIt'});}
+function openDialog(id,from){opener=from;el(id).showModal();}
+const modelLabel=value=>value==='default'?'Provider default':value==='reasoning'?'Reasoning model (example)':value==='fast'?'Fast model (example)':'Unavailable model';
+function models(value='default'){el('model').innerHTML='<option value="default">Provider default</option><option value="reasoning">Reasoning model (example)</option><option value="fast">Fast model (example)</option><option value="unavailable" disabled>Unavailable model (example)</option>';el('model').value=value;validateModel();}
+function validateModel(){const valid=el('model').value!=='unavailable'&&el('model').value!=='';el('save').disabled=!valid;el('model-error').hidden=valid;el('model-error').textContent=valid?'':'This model is unavailable. Choose another model or try again.';}
+function configure(from){const selection=state.pending||state;el('assistant').value=selection.assistant;models(selection.model);document.querySelector(`[name=policy][value=${state.policy}]`).checked=true;el('settings-error').hidden=true;syncSettings();openDialog('settings-dialog',from);el('assistant').focus();}
+function syncSettings(){el('connect').disabled=!state.enabled;el('connect').textContent=state.telegram?'Disconnect':'Connect Telegram';el('telegram-state').textContent=state.health||(state.telegram?'Connected · Alex · @geckit_manager_demo_bot':'Telegram not connected');el('save').textContent=state.enabled?'Save changes':'Enable manager';el('disable-row').hidden=!state.enabled;el('phone-summary').textContent=state.configured?`${state.assistant} · ${modelLabel(state.model)} · All projects · ${state.policy==='auto'?'Automatic delegation':'Approve new sessions'}`:'Set up Manager on your computer.';el('phone-pause').hidden=!state.enabled;el('phone-pause').textContent=state.paused?'Resume manager':'Pause manager';}
+function applyPending(){if(state.pending){state.assistant=state.pending.assistant;state.model=state.pending.model;state.pending=null;}}
+function sessionDetails(){el('session-body').innerHTML=`<p>This is the session you talk to in Manager. Telegram uses the same conversation.</p><dl><dt>Assistant</dt><dd>${escape(state.assistant)}</dd><dt>Model</dt><dd>${escape(modelLabel(state.model))}</dd>${state.pending?`<dt>Next turn</dt><dd>${escape(state.pending.assistant)} · ${escape(modelLabel(state.pending.model))}</dd>`:''}<dt>Access</dt><dd>All projects · ${state.projects.length} registered</dd><dt>State</dt><dd>${escape(el('status').textContent)}</dd><dt>Manager ID</dt><dd>manager-demo · design example</dd><dt>Session ID</dt><dd>demo-${escape(state.assistant.toLowerCase().replaceAll(' ','-'))}-manager-${state.runtime}</dd><dt>Last activity</dt><dd>${state.messages.length?'Just now · example':'No messages yet'}</dd><dt>Context usage</dt><dd>Not reported by this assistant</dd><dt>Managed work</dt><dd>${state.tasks.length} ${state.tasks.length===1?'worker':'workers'} · ${state.question?'1 pending question':'No pending questions'}</dd></dl><h3>Recent CLI activity</h3>${state.activity.length?`<ul>${state.activity.slice(-5).reverse().map(a=>`<li>${escape(a)}</li>`).join('')}</ul>`:'<p>No management operations yet.</p>'}<small>All IDs and activity in this prototype are simulated. Credentials never appear here.</small>`;el('session-pause').hidden=!state.enabled;el('session-pause').textContent=state.paused?'Resume manager':'Pause manager';el('session-restart').disabled=!state.enabled;el('session-retry').hidden=!state.provider;}
+el('session-info').onclick=()=>{sessionDetails();el('session-dialog').showModal();el('session-title').focus();};
+el('session-retry').onclick=()=>{state.provider=false;say('Manager is ready. Pending work has been retained.');draw();sessionDetails();el('session-title').focus();};
+let sessionReturnFocus='session-info';
+el('session-close').onclick=()=>el('session-dialog').close();
+el('session-open').onclick=()=>{state.channel='app';sessionReturnFocus=state.enabled?'message':'session-info';el('session-dialog').close();draw();};
+el('session-dialog').addEventListener('close',()=>{el(sessionReturnFocus).focus();sessionReturnFocus='session-info';});
+el('session-pause').onclick=()=>{pause();sessionDetails();};
+el('session-restart').onclick=e=>confirmation('Restart manager session?','Task history and decisions are kept. Workers continue.'+(state.active?' The active manager turn will be interrupted.':''),()=>{state.runtime++;state.active=false;state.provider=false;applyPending();state.activity.push('Manager runtime restarted · task record restored');say('Manager session restored. Task history and decisions were kept. Workers continue.');el('session-dialog').close();draw();},e.currentTarget);
+el('assistant').onchange=()=>models();el('model').onchange=validateModel;
+function confirmation(title,text,action,from){onConfirm=action;confirmOpener=from;el('confirm-title').textContent=title;el('confirm-body').textContent=text;el('confirm').showModal();el('confirm-cancel').focus();}
+let drawnMessages=0;
+el('new-updates').onclick=()=>{el('content').scrollTop=el('content').scrollHeight;el('new-updates').hidden=true;};
+function draw(){
+ el('heading').textContent=state.channel==='telegram'?'GeckIt Manager · bot':'Manager';el('status').textContent=!state.enabled?(state.configured?'Manager disabled':'Set up Manager'):state.paused?'Manager paused':state.provider?'Manager unavailable':state.question?'Needs your answer':state.active?'Coordinating':state.tasks.some(t=>t.status==='working')?'Workers are working':'Ready';
+ el('session-info').hidden=!state.configured;el('session-meta').hidden=!state.configured;el('session-meta').textContent=`${state.assistant} · ${modelLabel(state.model)} · All projects${state.pending?' · Next: '+state.pending.assistant+' / '+modelLabel(state.pending.model):''}`;
+ el('pause').hidden=!state.enabled;el('pause').textContent=state.paused?'Resume':'Pause';el('task-toggle').hidden=!state.enabled;el('composer').hidden=!state.enabled;el('channel').textContent=state.channel==='telegram'?'GeckIt preview':'Telegram preview';el('composer-note').textContent=state.channel==='telegram'?'Telegram preview · same manager conversation':'Detailed work stays in worker sessions.';
+ let html='';
+ if(!state.enabled&&!state.configured){html='<div class="welcome"><h2>One conversation for your work</h2><p>Give your manager the outcome. It delegates to worker sessions and brings back results.</p><button id="setup" class="primary">Set up Manager</button></div>';}
+ else{
+ if(!state.enabled)html+='<p class="notice">Manager disabled. Workers continue. Your history is kept. <button id="setup" class="quiet">Re-enable manager</button></p>';
+ if(state.paused)html+='<p class="notice">Manager paused. Workers continue.</p>';
+ if(state.provider)html+='<div class="notice">Manager unavailable. Your assistant needs attention. <button id="provider-retry" class="quiet">Try again</button></div>';
+ if(state.channel==='telegram'&&!state.telegram)html+='<p class="notice">Telegram not connected. Connect it in Settings on your computer.</p>';
+ if(state.health)html+=`<p class="notice">${escape(state.health)}. Desktop Manager is still available.</p>`;
+ if(!state.messages.length&&!state.question)html+='<div class="welcome"><h2>What would you like to get done?</h2><p>Try “Prepare a migration plan” or “What needs my answer?”</p></div>';
+ html+=state.messages.map(m=>`<article class="message ${m.who==='user'?'mine':''}"><span class="source">${m.who==='user'?'You · '+m.source:'Manager'}</span><p>${escape(m.text)}</p></article>`).join('');
+ if(state.question)html+=`<article class="message"><div class="task"><small>${escape(state.question.task)}</small><h3>${escape(state.question.text)}</h3><div class="bar">${state.question.options.map((o,i)=>`<button class="${i===0?'primary':'quiet'}" data-answer="${i}" ${!state.enabled||state.paused||state.provider?'disabled':''}>${escape(o)}</button>`).join('')}</div></div></article>`;
+ html+=`<details class="tasks" id="task-list"><summary>Managed tasks · ${state.tasks.length}</summary>${state.tasks.length?state.tasks.map(t=>`<div class="taskrow row spread"><div><b>${escape(t.title)}</b><small>${escape(t.project)} · ${escape(t.status)}</small></div><button class="quiet" data-stop="${t.id}" ${!state.enabled||state.paused||state.provider||t.status==='stopped'?'disabled':''}>Stop</button></div>`).join(''):'<p class="dim">No managed tasks yet.</p>'}<button id="attach" class="quiet" ${!state.enabled||state.paused||state.provider?'disabled':''}>Manage existing task</button></details>`;
+ }
+ const tasksOpen=el('task-list')?.open||false;
+ const previousScroll=el('content').scrollTop;
+ const nearBottom=el('content').scrollHeight-el('content').scrollTop-el('content').clientHeight<100;
+ el('content').innerHTML=state.channel==='telegram'?`<div class="telegram">${html}</div>`:html;
+ if(el('task-list'))el('task-list').open=tasksOpen;
+ el('content').scrollTop=nearBottom?el('content').scrollHeight:previousScroll;
+ el('new-updates').hidden=nearBottom||state.messages.length<=drawnMessages;drawnMessages=state.messages.length;
+ document.querySelectorAll('[data-answer]').forEach(b=>b.onclick=()=>answer(Number(b.dataset.answer)));
+ document.querySelectorAll('[data-stop]').forEach(b=>b.onclick=()=>{const task=state.tasks.find(t=>t.id===Number(b.dataset.stop));task.status='stopped';state.activity.push('Stopped worker: '+task.title);say(`Stopped: ${task.title}.`);draw();});
+ if(el('setup'))el('setup').onclick=e=>configure(e.currentTarget);
+ if(el('attach'))el('attach').onclick=e=>confirmation('Manage existing task?','Attach “Review session recovery” in '+state.projects[0]+' to Manager? It will receive manager follow-ups.',()=>{state.tasks.push({id:Date.now(),title:'Review session recovery',project:state.projects[0],status:'working'});say('Attached: Review session recovery.');draw();},e.currentTarget);
+ if(el('provider-retry'))el('provider-retry').onclick=()=>{state.provider=false;say('Manager is ready. Pending work has been retained.');draw();};
+ syncSettings();
+}
+function createTask(text){const project=state.projects.find(p=>text.toLowerCase().includes(p.toLowerCase()))||state.projects[0];const task={id:Date.now(),title:text,project,status:'working'};if(state.policy==='approve'){state.question={task:task.title,text:'Start this worker in '+task.project+'?',options:['Start','Refuse'],kind:'start',draft:task};}else{state.tasks.push(task);state.activity.push('Started worker: '+task.title+' · '+task.project);say(`Started: ${task.title} in ${task.project}. The worker will return its result and evidence here.`);}}
+function answer(index){if(!state.enabled||state.paused||state.provider)return;const q=state.question;if(!q)return;const choice=q.options[index];say(choice,'user');state.question=null;if(q.kind==='start'){if(index===0){state.tasks.push(q.draft);say('Started: '+q.draft.title+'.');}else say('Refused. No worker was started.');}else if(q.kind==='late'){if(index===0)createTask('Prepare a migration plan');else say('Discarded. No work was started.');}else if(q.kind==='permission')say('Open GeckIt on your computer or paired phone to answer the permission.');else say('Answer delivered to '+q.task+'.');draw();el('message').focus();}
+el('settings-form').onsubmit=e=>{e.preventDefault();validateModel();if(el('save').disabled)return;const changed=state.assistant!==el('assistant').value||state.model!==el('model').value;const selection={assistant:el('assistant').value,model:el('model').value};if(changed&&state.active){state.pending=selection;say('Model change queued for the next turn.');}else if(changed){state.assistant=selection.assistant;state.model=selection.model;state.pending=null;}state.enabled=true;state.configured=true;state.policy=document.querySelector('[name=policy]:checked').value;state.activity.push('Manager settings saved · All projects');el('settings-dialog').close();draw();el('message').focus();};
+el('settings-cancel').onclick=()=>el('settings-dialog').close();el('phone-done').onclick=()=>el('settings-dialog').close();el('settings-dialog').addEventListener('close',()=>opener?.focus());
+for(const id of ['settings','settings-top','phone-settings'])el(id).onclick=e=>configure(e.currentTarget);
+el('manager').onclick=()=>{state.channel='app';draw();};
+for(const id of ['tasks-link','conversations','phone-tasks','task-toggle'])el(id).onclick=()=>{if(!state.enabled){configure(el(id));return;}el('task-list').open=!el('task-list').open;el('task-list').scrollIntoView({block:'nearest'});};
+
+function pause(){state.paused=!state.paused;if(state.paused)state.active=false;say(state.paused?'Manager paused. Workers continue.':'Catching up...');draw();}el('pause').onclick=pause;el('phone-pause').onclick=pause;
+el('disable').onclick=e=>confirmation('Disable manager?','Coordination and Telegram controls will stop. Workers continue. Your task history is kept.',()=>{state.enabled=false;state.telegram=false;state.health='';el('settings-dialog').close();draw();},e.currentTarget);
+el('confirm-cancel').onclick=()=>el('confirm').close();el('confirm-yes').onclick=()=>{const action=onConfirm;el('confirm').close();action?.();};el('confirm').addEventListener('close',()=>confirmOpener?.focus());
+function connectionStep(step){
+ const title={token:'Connect your bot',checking:'Checking bot...',waiting:'Waiting for you in Telegram',candidate:'Confirm your Telegram account',expired:'Pairing link expired',error:'Telegram needs attention'}[step];el('connection-title').textContent=title;
+ let body='',actions='<button class="quiet" id="connection-cancel">Cancel</button>';
+ if(step==='token'){body='<p>Create a dedicated bot with @BotFather, then paste its token here.</p><div class="field"><label for="token">Bot token</label><input type="password" id="token" autocomplete="off" placeholder="Paste bot token"><small>Stored securely on this computer. Never shared with the manager or workers.</small></div><p class="dim">Your tasks and replies use Telegram\'s bot service. This is separate from GeckIt\'s encrypted phone connection.</p><p class="error" id="token-error" role="alert" hidden></p>';actions+='<button class="primary" id="token-next">Continue</button>';}
+ if(step==='checking')body='<p>Checking bot...</p>';
+ if(step==='waiting'){body='<p><b>@geckit_manager_demo_bot</b></p><p>Open Telegram and press Start. Then confirm your account here.</p><small>Pairing link expires in ten minutes.</small>';actions+='<button class="primary" id="telegram-open">Open Telegram</button>';}
+ if(step==='candidate'){body='<p>Confirm that this is your account before giving it access to Manager.</p><div class="account"><small>Telegram account</small><h3>Alex Netrebskiy</h3><small>Account ID: 123456789 · Design example</small></div><small>Keep this computer online with GeckIt open. Messages pass through Telegram.</small>';actions+='<button class="quiet" id="not-me">This is not me</button><button class="primary" id="account-confirm">Connect account</button>';}
+ if(step==='expired'){body='<p>Pairing link expired.</p>';actions+='<button class="primary" id="new-link">Create new link</button>';}
+ if(step==='error'){body='<p>That token was not accepted. Check it with @BotFather and try again.</p>';actions+='<button class="primary" id="replace">Replace token</button>';}
+ el('connection-body').innerHTML=body;el('connection-actions').innerHTML=actions;el('connection-cancel').onclick=()=>el('connection').close();el('connection-title').focus();
+ if(el('token-next'))el('token-next').onclick=()=>{if(!el('token').value.trim()){el('token-error').hidden=false;el('token-error').textContent='Enter your bot token.';el('token').focus();return;}const invalid=el('token').value==='invalid';connectionStep('checking');setTimeout(()=>{if(el('connection').open)connectionStep(invalid?'error':'waiting');},350);};
+ if(el('telegram-open'))el('telegram-open').onclick=()=>{connectionStep('candidate');};
+ if(el('not-me'))el('not-me').onclick=()=>connectionStep('waiting');
+ if(el('new-link'))el('new-link').onclick=()=>connectionStep('waiting');
+ if(el('replace'))el('replace').onclick=()=>connectionStep('token');
+ if(el('account-confirm'))el('account-confirm').onclick=()=>{state.telegram=true;state.health='';el('connection').close();say('Connected to Alex’s computer. Send a task or ask for progress. This computer must be online with GeckIt open.');draw();};
+}
+el('connect').onclick=e=>{if(state.telegram){confirmation('Disconnect Telegram?','This account will lose access. Manager and workers stay available in GeckIt. Telegram chat history is not deleted.',()=>{state.telegram=false;state.health='';draw();},e.currentTarget);return;}connectionOpener=e.currentTarget;el('connection').showModal();connectionStep('token');};
+el('connection').addEventListener('close',()=>{el('connection-body').innerHTML='';connectionOpener?.focus();});
+el('connection').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='token'){e.preventDefault();el('token-next').click();}});
+el('message-form').onsubmit=e=>{e.preventDefault();const text=el('message').value.trim();if(!text)return;if(state.channel==='telegram'&&!state.telegram){say('Telegram not connected. Connect it in Settings on your computer.');draw();return;}say(text,'user');el('message').value='';if(state.paused)say('Saved for when you resume Manager.');else if(state.provider)say('Manager unavailable. Resolve the assistant issue, then try again.');else if(state.question)say('Which task is this answer for? Use the task-bound choices above.');else if(/status|progress|answer/i.test(text))say(state.tasks.length?state.tasks.map(t=>`${t.title}: ${t.status}`).join('\n'):'No managed tasks yet.');else createTask(text);draw();};
+el('message').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();el('message-form').requestSubmit();}};
+el('theme').onclick=()=>{const dark=document.documentElement.dataset.theme!=='dark';document.documentElement.dataset.theme=dark?'dark':'light';el('theme').textContent=dark?'Light theme':'Dark theme';};
+el('channel').onclick=()=>{state.channel=state.channel==='app'?'telegram':'app';draw();};
+el('scenario').onchange=e=>{const kind=e.target.value;e.target.value='';if(!kind)return;if(kind==='reset'){location.reload();return;}if(!state.enabled){state.enabled=true;state.configured=true;draw();}const task=state.tasks[0]||{title:'Prepare a migration plan',project:state.projects[0]};if(kind==='active')state.active=true;if(kind==='modelerror'){configure(el('settings-top'));models('unavailable');}if(kind==='file'){state.projects.push('New project');state.activity.push('Created project New project and file docs/brief.md · succeeded');say('Created New project and docs/brief.md through GeckIt. The project is included automatically.');}if(kind==='question')state.question={task:task.title,text:'Should I use staging data for the plan?',options:['Use staging','Use production examples'],kind:'question'};if(kind==='complete'){state.active=false;applyPending();if(state.tasks[0])state.tasks[0].status='In review';say('Ready for review: '+task.title+'. The worker supplied its document and verification notes. Open this task in GeckIt to inspect local files.');}if(kind==='permission')state.question={task:task.title,text:task.title+' needs a permission in GeckIt.',options:['Open GeckIt'],kind:'permission'};if(kind==='offline')state.health='Reconnecting to Telegram';if(kind==='late')state.question={task:'Prepare a migration plan · received 25 minutes late',text:'This request arrived late. Still do this?',options:['Continue','Discard'],kind:'late'};if(kind==='provider')state.provider=true;if(kind==='overflow'){for(let i=1;i<=24;i++)state.tasks.push({id:Date.now()+i,title:'Review session recovery and retain pending project messages '+i,project:state.projects[0],status:i%3?'working':'In review'});}draw();};
+draw();
+</script>
+</body>
+</html>

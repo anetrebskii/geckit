@@ -27,6 +27,7 @@ import { questionsFromClaude } from './wording'
  */
 
 export interface ClaudeOptions {
+  readonly managerPrompt?: string | undefined
   readonly reasoning?: SessionMessage['reasoning']
   readonly root: string
   /** The conversation's id: ours to choose for a new one, the tool's own for one picked up again. */
@@ -73,7 +74,7 @@ const userContent = (text: string, images: NonNullable<SessionMessage['images']>
       ]
 
 /** What `claude` is started with for a conversation, the same wherever it runs. */
-export function claudeArgs(options: Pick<ClaudeOptions, 'id' | 'resume' | 'mode' | 'model' | 'fork'>): string[] {
+export function claudeArgs(options: Pick<ClaudeOptions, 'id' | 'resume' | 'mode' | 'model' | 'fork' | 'managerPrompt'>): string[] {
   return [
     '-p',
     '--input-format',

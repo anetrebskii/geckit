@@ -2,10 +2,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Link } from '../src/renderer/src/link'
 import type { Installed } from '../src/renderer/src/phone'
-import type { LinkMessage } from '../src/shared/pairing'
+import type { LinkMessage, Piece } from '../src/shared/pairing'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { SessionItem, SessionItems, Settings } from '../src/shared/api'
-import { collapse } from '../src/shared/steps'
+import { collapse, isPending, pendingLast } from '../src/shared/steps'
+
+const cache = vi.hoisted(() => new Map<string, string>())
+vi.mock('../src/renderer/src/kept', () => ({
+  readKept: async <T>(key: string): Promise<T | undefined> => {
+    const value = cache.get(key)
+    return value === undefined ? undefined : JSON.parse(value) as T
+  },
+  keep: async (key: string, value: Piece | Settings | readonly string[] | undefined): Promise<void> => {
+    if (value === undefined) cache.delete(key)
+    else cache.set(key, JSON.stringify(value))
+  },
+}))
 
 const theirs = (id: string): SessionItem => ({ kind: 'theirs', id, text: id })
 
@@ -35,13 +47,15 @@ function macWith(
       if (message.name === 'chat.items') return answer(message.id, all)
       if (message.name === 'chat.steps') return answer(message.id, all.filter((one) => (second as string[]).includes(one.id)))
       if (message.name === 'chat.turns') {
-        const folded = collapse(all)
-        return answer(message.id, { items: folded.slice(-(second as number)), left: Math.max(0, folded.length - (second as number)) })
+        const folded = pendingLast(collapse(all))
+        const count = Math.max(second as number, folded.filter(isPending).length)
+        return answer(message.id, { items: folded.slice(-count), left: Math.max(0, folded.length - count) })
       }
       if (message.name === 'chat.turnsBefore') {
-        const at = all.findIndex((one) => one.id === second)
+        const folded = pendingLast(collapse(all))
+        const at = folded.findIndex((one) => one.id === second)
         const start = Math.max(0, at - (third as number))
-        return answer(message.id, { items: all.slice(start, at), left: start })
+        return answer(message.id, { items: folded.slice(start, at), left: start })
       }
       answer(message.id, null)
     },
@@ -60,6 +74,7 @@ describe('the phone over the link', () => {
   let install: (first: Link | undefined) => Installed
 
   beforeEach(async () => {
+    cache.clear()
     vi.resetModules()
     vi.stubGlobal('window', { setTimeout, clearTimeout })
     vi.stubGlobal('document', { querySelector: () => null })
@@ -68,6 +83,7 @@ describe('the phone over the link', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -141,6 +157,65 @@ describe('the phone over the link', () => {
     expect(await window.geckit.chat.items('s1')).toEqual(all.slice(10))
     expect(await window.geckit.chat.before('s1', 'm10')).toEqual({ items: all.slice(0, 10), left: 0 })
     expect(asked).toContain('chat.items')
+  })
+
+  for (const old of [false, true]) {
+    it(`retains old questions and contiguous earlier pages (${old ? 'fallback host' : 'current host'})`, async () => {
+      const question: SessionItem = { kind: 'card', id: 'question', card: { kind: 'question', title: 'Choose measurements' } }
+      const history = Array.from({ length: 140 }, (_value, index) => theirs(`history-${String(index)}`))
+      install(macWith([question, ...history], old).link)
+      expect(await window.geckit.chat.items('s1')).toEqual([...history.slice(81), question])
+      expect(await window.geckit.chat.before('s1', 'history-81')).toEqual({ items: history.slice(0, 81), left: 0 })
+    })
+  }
+
+  it('keeps pending forms in the offline tail cache and removes resolved forms on reconnect', async () => {
+    vi.useFakeTimers()
+    Object.assign(window, { setTimeout, clearTimeout })
+    const question: Extract<SessionItem, { kind: 'card' }> = { kind: 'card', id: 'question', card: { kind: 'question', title: 'Choose measurements' } }
+    const history = Array.from({ length: 140 }, (_value, index) => theirs(`history-${String(index)}`))
+    const mac = macWith([question, ...history])
+    install(mac.link)
+    await window.geckit.chat.items('s1')
+    const added = Array.from({ length: 90 }, (_value, index) => theirs(`new-${String(index)}`))
+    mac.tell({ id: 's1', items: added })
+    await vi.advanceTimersByTimeAsync(1000)
+    const stored = JSON.parse(cache.get('mac:items2:s1') ?? 'null') as Piece
+    expect(stored.items).toEqual([...added.slice(31), question])
+    expect(stored.left).toBe(171)
+
+    vi.stubGlobal('window', { setTimeout, clearTimeout })
+    const { swap } = install(undefined)
+    const offline = await window.geckit.chat.items('s1')
+    expect(offline).toEqual(stored.items)
+    const page = new Map(offline.map((item) => [item.id, item]))
+    window.geckit.chat.onItems((said) => {
+      for (const id of said.gone ?? []) page.delete(id)
+      for (const item of said.items) page.set(item.id, item)
+    })
+    swap(macWith([{ ...question, card: { ...question.card, answered: 'Browser' } }, ...history, ...added]).link)
+    await vi.advanceTimersByTimeAsync(0)
+    expect([...page.values()].some((item) => item.kind === 'card' && item.id === 'question')).toBe(false)
+    expect([...page.values()]).toEqual(added.slice(30))
+  })
+
+  it('removes a resolved pinned card from the preserved reconnect prefix after later live updates', async () => {
+    const question: Extract<SessionItem, { kind: 'card' }> = { kind: 'card', id: 'question', card: { kind: 'question', title: 'Choose measurements' } }
+    const history = Array.from({ length: 140 }, (_value, index) => theirs(`history-${String(index)}`))
+    const first = macWith([question, ...history])
+    const { swap } = install(first.link)
+    const page = new Map((await window.geckit.chat.items('s1')).map((item) => [item.id, item]))
+    window.geckit.chat.onItems((said) => {
+      for (const id of said.gone ?? []) page.delete(id)
+      for (const item of said.items) page.set(item.id, item)
+    })
+    const added = Array.from({ length: 90 }, (_value, index) => theirs(`new-${String(index)}`))
+    first.tell({ id: 's1', items: added })
+    await new Promise((done) => setTimeout(done, 5))
+    swap(macWith([{ ...question, card: { ...question.card, answered: 'Browser' } }, ...history, ...added]).link)
+    await new Promise((done) => setTimeout(done, 5))
+    expect(page.has('question')).toBe(false)
+    expect([...page.values()]).toEqual([...history.slice(81), ...added])
   })
 
   it('keeps a run of steps open as it grows, asking only for the steps it has not got', async () => {
