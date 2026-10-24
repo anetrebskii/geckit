@@ -94,12 +94,18 @@ jobs:
       - name: Take whisper-cli
         uses: actions/download-artifact@v8
         with:
-          pattern: whisper-cli-${{ matrix.platform }}-*
-          path: client/whisper/bin
+          name: whisper-cli-${{ matrix.platform }}-x64
+          path: client/whisper/bin/${{ matrix.platform }}-x64
+
+      - name: Take Apple Silicon whisper-cli
+        if: matrix.platform == 'mac'
+        uses: actions/download-artifact@v8
+        with:
+          name: whisper-cli-mac-arm64
+          path: client/whisper/bin/mac-arm64
 
       - name: Install and build
         run: |
-          for bin in whisper/bin/*; do mv "$bin" "whisper/bin/${bin#whisper/bin/whisper-cli-}"; done
           chmod +x whisper/bin/*/whisper-cli*
           ls -lR whisper/bin
           npm ci
