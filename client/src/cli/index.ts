@@ -16,6 +16,7 @@ import { askedEndpoint } from './endpoint'
 import { answerLines, appNamed, requestingSession, tasksFrom } from './start'
 import type { Answer } from './start'
 import { migrate } from './migrate'
+import { manage, managerCommand } from './manage'
 
 interface Row extends Found {
   readonly root: string
@@ -188,7 +189,12 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
       Build instructions for AI agents. Includes plugin contract, independent Codex example and verification steps.
       providers is the default; app explains desktop and phone builds.
 
-Only start and migrate-codex write anything.`
+  Manager sessions additionally use capabilities, providers, projects, files,
+  sessions, settings, attachments and telegram through the running app's authenticated CLI interface.
+  Run capabilities in Manager for supported operations and named limitations.
+
+Outside Manager, only start and migrate-codex write anything.
+Authenticated Manager commands can make the changes advertised by capabilities.`
 
 async function sessions(args: readonly string[]): Promise<string> {
   const has = (flag: string): boolean => args.includes(flag)
@@ -325,6 +331,7 @@ async function linked(args: readonly string[]): Promise<string> {
 
 export async function run(args: readonly string[]): Promise<string> {
   try {
+    if (managerCommand(args)) return (await manage(args, data())).said
     const [what, ...rest] = args
     if (what === 'instructions') {
       if (rest[0] === undefined || rest[0] === 'providers') return PROVIDER_BUILD_GUIDE
@@ -344,7 +351,11 @@ export async function run(args: readonly string[]): Promise<string> {
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [what, ...rest] = process.argv.slice(2)
-  if (what === 'start') {
+  if (managerCommand(process.argv.slice(2))) {
+    const answer = await manage(process.argv.slice(2), data())
+    process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.ok ? 0 : 1
+  } else if (what === 'start') {
     const answer = await start(rest)
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1

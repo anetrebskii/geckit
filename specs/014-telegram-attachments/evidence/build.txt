@@ -1,0 +1,52 @@
+
+> geckit@1.0.0 build
+> electron-vite build
+
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 107 modules transformed.
+rendering chunks...
+out/main/chunks/trayTemplate-Ckly2nNy.png        0.49 kB
+out/main/chunks/trayTemplate@2x-Dd17v9N2.png     1.17 kB
+out/main/chunks/32x32-D88gcABV.png               1.38 kB
+out/main/cli.js                                 25.95 kB
+out/main/chunks/session-migration-BAc7CvjO.js  136.46 kB
+out/main/index.js                              639.59 kB
+✓ built in 414ms
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 2 modules transformed.
+rendering chunks...
+out/preload/index.mjs  20.78 kB
+✓ built in 12ms
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 426 modules transformed.
+rendering chunks...
+../../out/renderer/peer.html                                                        0.50 kB
+../../out/renderer/panel.html                                                       0.69 kB
+../../out/renderer/voice.html                                                       0.71 kB
+../../out/renderer/chat.html                                                        0.92 kB
+../../out/renderer/assets/jetbrains-mono-vietnamese-wght-normal-Bt-aOZkq.woff2      7.50 kB
+../../out/renderer/assets/jetbrains-mono-greek-wght-normal-Bw9x6K1M.woff2           9.00 kB
+../../out/renderer/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2              10.25 kB
+../../out/renderer/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2               11.23 kB
+../../out/renderer/assets/jetbrains-mono-cyrillic-wght-normal-D73BlboJ.woff2       12.11 kB
+../../out/renderer/assets/jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2      15.20 kB
+../../out/renderer/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2                18.75 kB
+../../out/renderer/assets/inter-greek-wght-normal-CkhJZR-_.woff2                   19.00 kB
+../../out/renderer/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2            25.96 kB
+../../out/renderer/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2          40.40 kB
+../../out/renderer/assets/inter-latin-wght-normal-Dx4kXJAl.woff2                   48.26 kB
+../../out/renderer/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2               85.07 kB
+../../out/renderer/assets/chat-BonrFIke.css                                        12.91 kB
+../../out/renderer/assets/speech-BcflxMuq.css                                     236.35 kB
+../../out/renderer/assets/recording-DdFynjWA.js                                     1.13 kB
+../../out/renderer/assets/steps-DRjsuMuZ.js                                         1.80 kB
+../../out/renderer/assets/Menu-CDBrEqCU.js                                         18.66 kB
+../../out/renderer/assets/panel-Dbr7PoHf.js                                        21.42 kB
+../../out/renderer/assets/voice-BDjsR7NX.js                                        29.98 kB
+../../out/renderer/assets/speech-DIdiZY_3.js                                      668.68 kB
+../../out/renderer/assets/peer-BTa5eV7k.js                                        953.89 kB
+../../out/renderer/assets/chat-z_UyCYgc.js                                      1,282.14 kB
+✓ built in 1.38s

@@ -146,6 +146,7 @@ export function Chat(): React.JSX.Element {
   const closeSettings = useCallback(() => {
     setSetting(undefined)
   }, [])
+  const managerSettings = useCallback(() => setSetting('manager'), [])
   const closeKeys = useCallback(() => setKeys(false), [])
   const closeShortcuts = useCallback(() => setManaging(undefined), [])
   const shortcutFrom = useCallback(
@@ -464,7 +465,7 @@ export function Chat(): React.JSX.Element {
   return (
     <div
       ref={frame}
-      className={`chat${board ? ' boarded' : ''}${docked ? ' docked' : ''}${ON_PHONE ? '' : ' topped'}${over ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
+      className={`chat${board ? ' boarded' : ''}${docked ? ' docked' : ''}${ON_PHONE ? '' : ' topped'}${over && !making && !asking ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
       style={{ '--side': `${String(sizing ?? chat.settings.sidebarWidth)}px`, '--dock': `${String(chat.settings.boardHeight)}px` } as React.CSSProperties}
       // The whole window takes a drop. Anywhere else on the page, a dropped
       // file is a page the window would go to instead.
@@ -472,7 +473,7 @@ export function Chat(): React.JSX.Element {
         if (!event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
         event.dataTransfer.dropEffect = 'copy'
-        setOver(true)
+        setOver(!making && !asking)
       }}
       onDragLeave={(event) => {
         if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
@@ -482,6 +483,7 @@ export function Chat(): React.JSX.Element {
         if (!event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
         setOver(false)
+        if (making || asking) return
         addFiles([...event.dataTransfer.files])
       }}
     >
@@ -867,7 +869,7 @@ export function Chat(): React.JSX.Element {
         {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
       </div>
 
-      <Status chat={chat} />
+      <Status chat={chat} onManagerSettings={managerSettings} />
 
       <Notices chat={chat} />
       {/* On the phone a host's question is a sheet over whatever is open, one at a time, the oldest first; what stands in the way of a host is on its page in Settings, since only the computer can fix it. */}

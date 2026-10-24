@@ -45,12 +45,13 @@ export async function fileShown(root: string, path: string): Promise<FileShown> 
 }
 
 /** A page's own styles, scripts, pictures and fonts put inside it, since the phone draws it where nothing beside it can be fetched. */
-async function withinPage(html: string, folder: string): Promise<string> {
+export async function withinPage(html: string, folder: string, allowed: (file: string) => Promise<boolean> | boolean = () => true): Promise<string> {
   const said = [...html.matchAll(/\b(?:src|href)\s*=\s*["']([^"'#?]+)[^"']*["']/gi)].map((one) => one[1] ?? '')
   const local = [...new Set(said)].filter((one) => !/^[a-z][a-z0-9+.-]*:|^\/\//i.test(one) && MEDIA[extname(one).toLowerCase()] !== undefined)
   const inlined = new Map<string, string>()
   for (const one of local) {
-    const bytes = await readFile(resolve(folder, decodeURI(one))).catch(() => undefined)
+    const file = resolve(folder, decodeURI(one))
+    const bytes = (await allowed(file)) ? await readFile(file).catch(() => undefined) : undefined
     if (bytes !== undefined) inlined.set(one, `data:${MEDIA[extname(one).toLowerCase()] ?? ''};base64,${bytes.toString('base64')}`)
   }
   return html.replace(/\b(src|href)(\s*=\s*)(["'])([^"'#?]+)([^"']*)\3/gi, (whole, name: string, eq: string, quote: string, path: string) => {

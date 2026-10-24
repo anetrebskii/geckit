@@ -1054,6 +1054,7 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
           </div>
         )}
         <div className="composer-bar">
+
           {!chat.showProviders ? null : (
             <Picker label={providerInfo.name} title="Assistant" chosen={chat.provider} disabled={chat.session !== undefined} choices={providers.map((one) => ({ value: one.family, label: one.name, icon: one.icon, ...(one.localOnly ? { disabled: chat.root !== undefined && isRemote(chat.root) } : {}), ...(one.family === 'codex' ? { says: ON_PHONE ? 'Your ChatGPT plan, on the paired host' : 'Your ChatGPT plan, on this computer' } : {}) }))} onPick={(value) => chat.setProvider(value as SessionProvider)} />
           )}

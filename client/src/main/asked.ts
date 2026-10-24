@@ -9,6 +9,7 @@ import type { RequestAnswered } from './sessions'
 import { askedEndpoint, endpointOnDisk } from '../cli/endpoint'
 import type { Task } from '../cli/start'
 import type { MigrationAnswered, MigrationAsked } from './session-migration'
+import type { ManagerCliAsked, ManagerCliAnswered } from '../shared/manager'
 
 /**
  * Where `geckit start` reaches the running application: a socket file, or a
@@ -27,8 +28,8 @@ export interface StartAsked {
 
 export type StartAnswered = { readonly ok: false; readonly error: string } | ({ readonly ok: true } & RequestAnswered)
 
-export type CliAsked = StartAsked | MigrationAsked
-export type CliAnswered = StartAnswered | MigrationAnswered
+export type CliAsked = StartAsked | MigrationAsked | ManagerCliAsked
+export type CliAnswered = StartAnswered | MigrationAnswered | ManagerCliAnswered
 
 export const askedPath = (): string => askedEndpoint(app.getPath('userData'))
 

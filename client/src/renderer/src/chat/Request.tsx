@@ -318,6 +318,11 @@ function Details({
   )
 }
 
+export function originFor(chat: Pick<Chat, 'sessions'>, session: ChatSession): ChatSession | undefined {
+  if (session.managerManaged === true || session.parent === 'manager') return undefined
+  return session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent && one.manager !== true)
+}
+
 /** "From <parent title>": the conversation that asked for this one, while it is still there. */
 export function From({
   chat,
@@ -328,7 +333,7 @@ export function From({
   readonly session: ChatSession
   readonly className: string
 }): React.JSX.Element | null {
-  const parent = session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)
+  const parent = originFor(chat, session)
   if (parent === undefined) return null
   return (
     <div className={className}>
@@ -408,7 +413,7 @@ export function StartedMenu({
 
 /** The way back from a started conversation to the one that asked for it, where "Started 3" stands in the parent. */
 export function Back({ chat, session }: { readonly chat: Chat; readonly session: ChatSession }): React.JSX.Element | null {
-  const parent = session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)
+  const parent = originFor(chat, session)
   if (parent === undefined) return null
   return (
     <button type="button" className="picker head-back no-drag" title="Open the conversation that started this one" onClick={() => chat.goTo(parent.id)}>
