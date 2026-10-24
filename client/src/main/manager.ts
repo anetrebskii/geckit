@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 import type { ChatSession, SessionItems, Settings } from '../shared/api'
 import { providerOf } from '../shared/api'
-import { VPN_IP_UNAVAILABLE_ERROR, vpnIpPausedError } from '../shared/vpn-ip'
+import { VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError } from '../shared/vpn-ip'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE, managerProjects } from '../shared/manager'
 import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerConfig, ManagerDecision, ManagerDecisionOutcome, ManagerView, ManagerReplyOrigin, ManagerTelegramReply } from '../shared/manager'
 import { TelegramAttachments } from './telegram-attachments'
@@ -544,7 +544,7 @@ export class Manager {
 
   #vpnLookupHeld(): boolean {
     const note = this.#record.sessionId === undefined ? undefined : this.#deps.notes.all()[this.#record.sessionId]
-    return (note?.guardError === VPN_IP_UNAVAILABLE_ERROR || note?.guardError === vpnIpPausedError(VPN_IP_UNAVAILABLE_ERROR)) && (note.heldOperation?.kind === 'message' || note.heldOperation?.kind === 'continue')
+    return retryableVpnIpError(note?.guardError) && (note?.heldOperation?.kind === 'message' || note?.heldOperation?.kind === 'continue')
   }
 
   #canRecover(): boolean {

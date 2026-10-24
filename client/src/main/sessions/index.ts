@@ -48,7 +48,7 @@ import type {
   WorkItem,
 } from '../../shared/api'
 import { providerOf, sessionMode } from '../../shared/api'
-import { VPN_IP_UNAVAILABLE_ERROR, vpnIpPausedError } from '../../shared/vpn-ip'
+import { VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError, vpnIpPausedError } from '../../shared/vpn-ip'
 import { VpnSessionMonitor } from './vpn-monitor'
 import { HOOK_BLOCKED } from './claude-read'
 import { providerQuotas } from '../../shared/provider-usage'
@@ -1674,7 +1674,7 @@ export class Sessions {
   async retryManager(id: string, reconciliation: string): Promise<boolean> {
     const note = this.#deps.notes.all()[id]
     if (!this.isManager(id) || note?.managerPrompt === undefined || this.#suspendedManagers.has(id)) return false
-    if (note.guardError !== VPN_IP_UNAVAILABLE_ERROR && note.guardError !== vpnIpPausedError(VPN_IP_UNAVAILABLE_ERROR)) return false
+    if (!retryableVpnIpError(note.guardError) || this.pendingForManager(id).length > 0) return false
     if (note.heldOperation?.kind !== 'message' && note.heldOperation?.kind !== 'continue') return false
     await this.#retry(id, reconciliation)
     return this.#deps.notes.all()[id]?.guardError === undefined

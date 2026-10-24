@@ -3,7 +3,7 @@ import type { networkInterfaces } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Settings } from '../src/shared/api'
-import { canonicalPublicIp, parseVpnIps, VPN_IP_CONFIGURATION_ERROR, VPN_IP_UNAVAILABLE_ERROR, vpnIpMismatchError } from '../src/shared/vpn-ip'
+import { canonicalPublicIp, parseVpnIps, VPN_IP_CONFIGURATION_ERROR, VPN_IP_UNAVAILABLE_ERROR, vpnIpMismatchError, vpnIpPausedError, retryableVpnIpError } from '../src/shared/vpn-ip'
 import { checkVpnIp } from '../src/main/vpn-ip'
 import type { VpnIpDependencies } from '../src/main/vpn-ip'
 import { VpnSessionMonitor } from '../src/main/sessions/vpn-monitor'
@@ -18,6 +18,18 @@ const enabled: Policy = { vpnIpCheck: true, vpnAllowedIps: ['8.8.8.8', '2001:486
 afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
+})
+
+describe('automatic VPN revalidation eligibility', () => {
+  it.each([VPN_IP_UNAVAILABLE_ERROR, vpnIpMismatchError('5.165.50.8'), vpnIpMismatchError('2001:4860:4860::8888')])('accepts only exact public-IP guard errors, including paused form: %s', (error) => {
+    expect(retryableVpnIpError(error)).toBe(true)
+    expect(retryableVpnIpError(vpnIpPausedError(error))).toBe(true)
+  })
+
+  it.each([undefined, VPN_IP_CONFIGURATION_ERROR, 'VPN unavailable', vpnIpMismatchError('127.0.0.1'), vpnIpMismatchError('008.8.8.8'), vpnIpMismatchError('2001:4860:4860:0:0:0:0:8888'), `${vpnIpMismatchError('8.8.8.8')} Hook refused`, `Hook refused: ${VPN_IP_UNAVAILABLE_ERROR}`])('rejects configuration and lookalike guard errors: %s', (error) => {
+    expect(retryableVpnIpError(error)).toBe(false)
+    if (error !== undefined) expect(retryableVpnIpError(vpnIpPausedError(error))).toBe(false)
+  })
 })
 
 describe('approved public IP addresses', () => {

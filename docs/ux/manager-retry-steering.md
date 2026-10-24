@@ -86,7 +86,7 @@ Native protocol IDs remain out of ordinary chat prose but are available for corr
 
 ## 6. Thresholds and time
 
-No new delay, retry loop or timeout. Existing 10-second public-IP verification budget remains because network validation already has a bounded policy. One native injection at a time preserves ordering; a second request receives a specific blocked result and is not silently queued. A runtime acknowledgment promises acceptance only; tool/permission boundaries can delay model consumption indefinitely.
+Manager reuses its existing recovery timer: first recheck after 5 seconds, exponential backoff capped at 60 seconds, one check in flight. This avoids a permanently latched network refusal without tight polling. No new timer is added. Existing 10-second public-IP verification budget remains because network validation already has a bounded policy. One native injection at a time preserves ordering; a second request receives a specific blocked result and is not silently queued. A runtime acknowledgment promises acceptance only; tool/permission boundaries can delay model consumption indefinitely.
 
 ## 7. Wording
 
@@ -128,3 +128,20 @@ Use explicit Retry sharing the app's recovery path, rather than guessing intent 
 - Busy/idle/failed/VPN-paused, pending permission, duplicates, stale updates, queue ordering and restart recovery have focused regression evidence.
 - Browser fixtures verify existing UI controls and observable results; native protocol fixtures are identified separately from real account/provider verification.
 - No live worker mutation, deployment, live restart or merge.
+
+## Manager recovery after a changed VPN address
+
+Alex can reconnect the VPN and leave Manager enabled. A saved public-IP lookup failure or an exact unapproved-IP refusal is eligible for guarded revalidation when the held operation is a message or continuation. Manager remains Unavailable with the exact existing VPN explanation until validation passes; other working chats are not proof that Manager is allowed to send. The existing status and error surfaces remain unchanged.
+
+| From | Event | To | What Alex sees |
+| --- | --- | --- | --- |
+| VPN blocked | Recovery timer fires automatically | Checking through existing retry path | Existing VPN reason remains until a result exists |
+| Checking | Current address is still unapproved or cannot be verified | VPN blocked | Current exact VPN error; no provider dispatch |
+| Checking | Current VPN policy passes automatically | Working | Unavailable clears; held unsent input is dispatched once, or interrupted work receives reconciliation without replaying completed commands |
+| VPN blocked/checking | Alex pauses or disables Manager | Paused/disabled | Existing pause state; pending recheck cannot dispatch afterward |
+| Saved VPN hold | Host restores enabled Manager automatically | VPN blocked/checking | Same guarded recovery; no user pause is undone |
+| Checking | Configuration, hook or genuine native permission blocks | Manual action needed | Existing specific reason; no automatic answer or bypass |
+
+Transient recheck attempts stay quiet: no repeated Telegram notifications or new success toast. An exact VPN mismatch is a changeable network condition, not a permanent manual-only error. Configuration errors, arbitrary text resembling a VPN refusal, held approval answers and disabled providers remain outside automatic retry. Recovery does not restart GeckIt or any worker. Multiple queued inputs retain order; the held input is not duplicated.
+
+Acceptance: prove mismatch-to-approved recovery, continued rejection while still mismatched, unavailable-to-mismatch-to-approved recovery, persisted manual-recovery restoration, interrupted-turn reconciliation without replay, and cancellation during validation. Prove configuration/hook/native approvals remain manual. Browser fixtures do not establish current live VPN eligibility.
