@@ -56,7 +56,7 @@ function library() {
   return { provider, create, made, sent, finish: (id: string, text = 'Coordinated') => hearing.get(id)?.({ items: [{ kind: 'theirs', id: `reply:${String(sent.length)}`, text }], gone: [], signals: [{ kind: 'ended', how: 'done' }] }) }
 }
 
-async function fixture(limit = 0, over: Partial<SessionsDeps> = {}) {
+async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Driver['inject']) {
   const directory = await mkdtemp(join(tmpdir(), 'geckit-manager-'))
   const root = join(directory, 'project')
   await mkdir(root)
@@ -79,7 +79,7 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}) {
     claude: (options, hear): Driver => {
       made.push(options)
       hearings.set(options.id, hear)
-      return { send: (text) => { const item = managerHistoryItem({ kind: 'mine', id: 'input', text }); sent.push({ id: options.id, text: item.kind === 'mine' ? item.text : text, input: text }) }, answer: (ask, answer) => answers.push({ id: options.id, ask, answer }), stop: () => hear({ items: [], gone: [], signals: [{ kind: 'ended', how: 'stopped' }] }), end: async () => undefined }
+      return { ...(inject === undefined ? {} : { inject }), send: (text) => { const item = managerHistoryItem({ kind: 'mine', id: 'input', text }); sent.push({ id: options.id, text: item.kind === 'mine' ? item.text : text, input: text }) }, answer: (ask, answer) => answers.push({ id: options.id, ask, answer }), stop: () => hear({ items: [], gone: [], signals: [{ kind: 'ended', how: 'stopped' }] }), end: async () => undefined }
     },
     disk: { list: async () => [], read: async () => undefined, has: async () => false },
     claudeAccount: async () => ({ here: true, signedIn: true, plan: 'Max' }),
@@ -569,7 +569,7 @@ describe('Manager automatic recovery', () => {
     expect((await reloaded.view()).session?.id).toBe(id)
   })
 
-  it.each([VPN_IP_CONFIGURATION_ERROR, vpnIpMismatchError('8.8.8.8'), 'VPN unavailable'])('keeps non-transient guard failure %s held for manual retry', async (error) => {
+  it.each([VPN_IP_CONFIGURATION_ERROR, 'VPN unavailable', `${vpnIpMismatchError('8.8.8.8')} Extra hook refusal`, vpnIpMismatchError('127.0.0.1')])('keeps non-transient guard failure %s held for manual retry', async (error) => {
     const f = await fixture(0, { beforeSend: () => { throw new Error(error) } })
     await f.manager.configure({ enabled: true })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
@@ -583,16 +583,16 @@ describe('Manager automatic recovery', () => {
     expect(await readFile(join(f.directory, 'manager.json'), 'utf8')).toBe(stored)
   })
 
-  it('revalidates an unavailable public IP and sends the held request once before queued input', async () => {
+  it.each([VPN_IP_UNAVAILABLE_ERROR, vpnIpMismatchError('8.8.8.8')])('revalidates an unavailable public IP and sends the held request once before queued input (%s)', async (guardError) => {
     let unavailable = true
-    const check = vi.fn(() => { if (unavailable) throw new Error(VPN_IP_UNAVAILABLE_ERROR) })
+    const check = vi.fn(() => { if (unavailable) throw new Error(guardError) })
     const f = await fixture(0, { beforeSend: check })
     await f.manager.configure({ enabled: true })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const id = await f.manager.send('Held Telegram request', 'telegram')
     await settle()
     await f.manager.send('Next request', 'telegram')
-    expect(await f.manager.view()).toMatchObject({ state: 'blocked', error: VPN_IP_UNAVAILABLE_ERROR, queued: 1 })
+    expect(await f.manager.view()).toMatchObject({ state: 'blocked', error: guardError, queued: 1 })
     expect(f.made).toHaveLength(0)
     await vi.advanceTimersByTimeAsync(5_000)
     await settle()
@@ -614,9 +614,9 @@ describe('Manager automatic recovery', () => {
     expect(f.sent.map((one) => one.text)).toEqual(['[Telegram]\nHeld Telegram request', '[Telegram]\nNext request'])
   })
 
-  it('recovers a lookup hold saved by the old manual-only policy after reload', async () => {
+  it.each([VPN_IP_UNAVAILABLE_ERROR, vpnIpMismatchError('8.8.8.8')])('recovers a lookup hold saved by the old manual-only policy after reload (%s)', async (guardError) => {
     let unavailable = true
-    const f = await fixture(0, { beforeSend: () => { if (unavailable) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    const f = await fixture(0, { beforeSend: () => { if (unavailable) throw new Error(guardError) } })
     await f.manager.configure({ enabled: true })
     const id = await f.manager.send('Saved held request')
     await settle()
@@ -634,9 +634,9 @@ describe('Manager automatic recovery', () => {
     expect((await reloaded.view()).error).toBeUndefined()
   })
 
-  it('manual retry revalidates the original held message without queuing behind it', async () => {
+  it.each([VPN_IP_UNAVAILABLE_ERROR, vpnIpMismatchError('8.8.8.8')])('manual retry revalidates the original held message without queuing behind it (%s)', async (guardError) => {
     let unavailable = true
-    const f = await fixture(0, { beforeSend: () => { if (unavailable) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    const f = await fixture(0, { beforeSend: () => { if (unavailable) throw new Error(guardError) } })
     await f.manager.configure({ enabled: true })
     const id = await f.manager.send('Retry this held message')
     await settle()
@@ -648,9 +648,9 @@ describe('Manager automatic recovery', () => {
     expect((await f.manager.view()).error).toBeUndefined()
   })
 
-  it('stops automatic recovery if revalidation finds an unapproved IP', async () => {
+  it('keeps bounded revalidation through unavailable and mismatch until the current IP passes', async () => {
     let error = VPN_IP_UNAVAILABLE_ERROR
-    const check = vi.fn(() => { throw new Error(error) })
+    const check = vi.fn(() => { if (error !== '') throw new Error(error) })
     const f = await fixture(0, { beforeSend: check })
     await f.manager.configure({ enabled: true })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
@@ -662,8 +662,12 @@ describe('Manager automatic recovery', () => {
     expect((await f.manager.view()).error).toBe(error)
     await vi.advanceTimersByTimeAsync(120_000)
     await settle()
-    expect(check).toHaveBeenCalledTimes(2)
+    expect(check).toHaveBeenCalledTimes(5)
     expect(f.made).toHaveLength(0)
+    error = ''
+    await vi.advanceTimersByTimeAsync(60_000)
+    await settle()
+    expect(f.sent.map((one) => one.text)).toEqual(['Guarded request'])
   })
 
   it('does not retry a held native approval answer after a lookup failure', async () => {
@@ -687,11 +691,29 @@ describe('Manager automatic recovery', () => {
     expect(f.sent).toHaveLength(1)
   })
 
-  it.each(['pause', 'disable', 'restart'] as const)('cancels a lookup retry in flight on %s', async (action) => {
+  it('does not revalidate a saved message hold while a native question is pending', async () => {
+    const check = vi.fn(() => undefined)
+    const f = await fixture(0, { beforeSend: check })
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Coordinate')
+    await settle()
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'asks', ask: 'approval', wanted: { kind: 'command', command: 'inspect project' } }] })
+    const heldOperation = { kind: 'message' as const, message: { session: id, root: f.root, mode: 'manual' as const, text: 'Held unsent request' }, go: true }
+    f.notes.set(id, { ...f.notes.all()[id], guardError: vpnIpMismatchError('8.8.8.8'), heldOperation })
+    const calls = check.mock.calls.length
+    expect(f.sessions.pendingForManager(id)).toHaveLength(1)
+    expect(await f.sessions.retryManager(id, 'Reconcile only after native answer')).toBe(false)
+    expect(check).toHaveBeenCalledTimes(calls)
+    expect(f.notes.all()[id]?.heldOperation).toEqual(heldOperation)
+    expect(f.answers).toHaveLength(0)
+    expect(f.sent).toHaveLength(1)
+  })
+
+  it.each(['pause', 'disable', 'restart'] as const)('cancels a mismatch retry in flight on %s', async (action) => {
     let rechecking = false
     let release: (() => void) | undefined
     const f = await fixture(0, { beforeSend: () => {
-      if (!rechecking) throw new Error(VPN_IP_UNAVAILABLE_ERROR)
+      if (!rechecking) throw new Error(vpnIpMismatchError('8.8.8.8'))
       return new Promise<void>((resolve) => { release = resolve })
     } })
     await f.manager.configure({ enabled: true })
@@ -709,10 +731,10 @@ describe('Manager automatic recovery', () => {
     expect(f.sent.some((one) => one.text.includes('Never deliver after cancellation'))).toBe(false)
   })
 
-  it('reconciles an active turn paused by the VPN monitor without replaying the original input', async () => {
+  it.each([VPN_IP_UNAVAILABLE_ERROR, vpnIpMismatchError('8.8.8.8')])('reconciles an active turn paused by the VPN monitor without replaying the original input (%s)', async (guardError) => {
     let unavailable = false
     let policy: string | undefined
-    const f = await fixture(0, { vpnMonitor: () => policy, beforeSend: () => { if (unavailable) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    const f = await fixture(0, { vpnMonitor: () => policy, beforeSend: () => { if (unavailable) throw new Error(guardError) } })
     await f.manager.configure({ enabled: true })
     const id = await f.manager.send('Already delivered request')
     await settle()
@@ -721,7 +743,7 @@ describe('Manager automatic recovery', () => {
     policy = 'approved'
     f.sessions.again()
     await settle()
-    expect(f.notes.all()[id]?.guardError).toBe(vpnIpPausedError(VPN_IP_UNAVAILABLE_ERROR))
+    expect(f.notes.all()[id]?.guardError).toBe(vpnIpPausedError(guardError))
     expect(f.notes.all()[id]?.heldOperation?.kind).toBe('continue')
     unavailable = false
     policy = undefined
@@ -1564,6 +1586,8 @@ describe('Manager explicit Telegram file operations', () => {
     const sent = vi.fn(async () => 901)
     const operations = new ManagerOperations({ attachments, sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => { f.set(change); return f.settings() }, owner: 'manager', managed: (id) => f.manager.manages(id), managerSession: () => manager, telegramFile: () => sent })
     const copied = JSON.parse(await operations.run(['attachments', 'send', '--attachment', input.id, '--id', worker, '--text', 'Use this document'], 'copy')) as { readonly path: string; readonly projectCopy: string }
+    expect(copied).toMatchObject({ status: 'queued', attempt: 'copy', queued: expect.any(String) })
+    expect(copied).not.toHaveProperty('delivered')
     expect(await readFile(copied.path, 'utf8')).toBe('document contents')
     expect(copied.projectCopy).toContain('retained until user/project cleanup')
     await writeFile(copied.path, 'user edit')
@@ -1610,5 +1634,110 @@ describe('Manager explicit Telegram file operations', () => {
     expect(sent).not.toHaveBeenCalled()
     f.set({ projects: [], profiles: [] })
     await expect(operations.run(['telegram', 'send-file', '--id', worker, '--path', 'report.txt'], 'unregistered')).rejects.toThrow('registered')
+  })
+})
+
+
+describe('worker delivery receipts and explicit recovery', () => {
+  const operationsFor = (f: Awaited<ReturnType<typeof fixture>>): ManagerOperations => new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => 'manager' })
+
+  it('reports VPN refusal as blocked instead of delivered and exposes the exact attempt', async () => {
+    let allowed = true
+    const f = await fixture(0, { beforeSend: async () => { if (!allowed) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Initial' }, 'manager', 'worker')
+    f.finish(worker, 'Done')
+    allowed = false
+    const operations = operationsFor(f)
+    const receipt: object = JSON.parse(await operations.run(['sessions', 'send', '--id', worker, '--text', 'Retained exact work'], 'blocked-send')) as object
+    expect(receipt).toMatchObject({ id: worker, status: 'blocked', attempt: 'blocked-send', reason: VPN_IP_UNAVAILABLE_ERROR })
+    expect(receipt).not.toHaveProperty('delivered')
+    expect(f.sent.filter((one) => one.id === worker).map((one) => one.text)).toEqual(['Initial'])
+    expect(JSON.parse(await operations.run(['sessions', 'show', '--id', worker], 'inspect'))).toMatchObject({ delivery: receipt })
+  })
+
+  it('uses explicit retry to resume the exact held work and reports a queued ordinary follow-up separately', async () => {
+    let allowed = true
+    const f = await fixture(0, { beforeSend: async () => { if (!allowed) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Initial' }, 'manager', 'worker')
+    f.finish(worker, 'Done')
+    allowed = false
+    const operations = operationsFor(f)
+    await operations.run(['sessions', 'send', '--id', worker, '--text', 'Exact held work'], 'held')
+    allowed = true
+    expect(JSON.parse(await operations.run(['sessions', 'retry', '--id', worker], 'retry-exact'))).toMatchObject({ id: worker, attempt: 'retry-exact', status: 'accepted', acceptance: 'host' })
+    expect(f.sent.filter((one) => one.id === worker).map((one) => one.text)).toEqual(['Initial', 'Exact held work'])
+    expect(JSON.parse(await operations.run(['sessions', 'send', '--id', worker, '--text', 'Later work'], 'later'))).toMatchObject({ status: 'queued', queued: expect.any(String) })
+  })
+
+  it('refuses unsupported direct steering without queueing or restarting work', async () => {
+    const f = await fixture()
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Initial' }, 'manager', 'worker')
+    const operations = operationsFor(f)
+    expect(JSON.parse(await operations.run(['sessions', 'steer', '--id', worker, '--text', 'Correction now'], 'steer'))).toMatchObject({ id: worker, status: 'unsupported', attempt: 'steer' })
+    expect((await f.sessions.list([f.root])).find((one) => one.id === worker)?.queued).toBeUndefined()
+    expect(f.made).toHaveLength(1)
+    expect(f.sent.filter((one) => one.id === worker)).toHaveLength(1)
+  })
+})
+
+
+describe('retry and steer command bridge', () => {
+  it('carries literal steering and retry receipts through CLI socket and reconciles duplicate operations after reload', async () => {
+    const inject = vi.fn<NonNullable<Driver['inject']>>(async () => undefined)
+    const f = await fixture(0, {}, inject)
+    const requests: ManagerCliAsked[] = []
+    const server = createServer((socket) => {
+      let input = ''
+      socket.setEncoding('utf8')
+      socket.on('data', (part: string) => {
+        input += part
+        if (!input.includes('\n')) return
+        const asked = JSON.parse(input) as ManagerCliAsked
+        requests.push(asked)
+        void f.manager.command(asked).then((answer) => socket.end(`${JSON.stringify(answer)}\n`))
+      })
+    })
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(join(f.directory, 'geckit.sock'), resolve) })
+    f.setCli(async (args, context) => {
+      const response = await manage(args, context.data, { GECKIT_MANAGER_SESSION: context.session, GECKIT_MANAGER_TOKEN: context.token, GECKIT_MANAGER_OPERATION: context.operation })
+      if (!response.ok) throw new Error(response.said)
+      return response.said
+    })
+    try {
+      await f.manager.configure({ enabled: true })
+      const manager = await f.manager.send('Coordinate current work')
+      await vi.waitFor(() => expect(f.sent.some((one) => one.id === manager)).toBe(true))
+      const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Original' }, 'manager', 'bridge-worker')
+      const steer = ['sessions', 'steer', '--id', worker, '--text', 'Literal $(no shell); correction']
+      f.finish(manager, f.command('bridge-steer', steer))
+      await vi.waitFor(async () => expect((await f.manager.view()).activity.find((one) => one.id === 'bridge-steer')).toMatchObject({ state: 'done', result: expect.stringContaining('"status":"steered"') }))
+      expect(inject).toHaveBeenCalledExactlyOnceWith(steer[5], undefined, [])
+      f.finish(manager, f.command('bridge-retry', ['sessions', 'retry', '--id', worker]))
+      await vi.waitFor(async () => expect((await f.manager.view()).activity.find((one) => one.id === 'bridge-retry')).toMatchObject({ state: 'done', result: expect.stringContaining('"status":"blocked"') }))
+      expect(requests.map((one) => one.operation)).toEqual(['bridge-steer', 'bridge-retry'])
+      const restored = f.reload()
+      await restored.resume()
+      f.finish(manager, f.command('bridge-steer', steer))
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      expect(inject).toHaveBeenCalledTimes(1)
+      expect((await restored.view()).activity.find((one) => one.id === 'bridge-steer')?.result).toContain('"status":"steered"')
+      expect((await f.sessions.list([f.root])).find((one) => one.id === worker)?.queued).toBeUndefined()
+    } finally { await new Promise<void>((resolve) => server.close(() => resolve())) }
+  })
+
+  it('does not emit a new failed worker event from historical state while retry is pending', async () => {
+    let rejectCheck: ((error: Error) => void) | undefined
+    let checking = false
+    const f = await fixture(0, { beforeSend: () => checking ? new Promise<void>((_resolve, reject) => { rejectCheck = reject }) : undefined })
+    await f.manager.configure({ enabled: true })
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Original' }, 'manager', 'pending-worker')
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed', text: 'Previous failure' }] })
+    const send = vi.spyOn(f.manager, 'send')
+    checking = true
+    const retry = f.sessions.retryWithReceipt(worker, 'current-retry')
+    expect(send.mock.calls.filter((call) => call[1] === 'event')).toEqual([])
+    rejectCheck?.(new Error(VPN_IP_UNAVAILABLE_ERROR))
+    expect(await retry).toMatchObject({ status: 'blocked', attempt: 'current-retry' })
+    expect(send.mock.calls.filter((call) => call[1] === 'event').some((call) => call[0].includes('"attempt":"current-retry"') && call[0].includes('"status":"blocked"'))).toBe(true)
   })
 })

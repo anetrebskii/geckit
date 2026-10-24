@@ -377,6 +377,7 @@ export class CodexSessions {
             signals({ kind: 'goal', goal: undefined })
             return
           case 'turn/completed':
+            if (turnId !== undefined && event.params.turn.id !== turnId) return
             if (event.params.turn.status === 'failed' && isDraining(event.params.turn.error?.message)) this.#discardConnection(rpc)
             ended(event.params.turn.status === 'completed' ? 'done' : event.params.turn.status === 'interrupted' ? 'stopped' : 'failed', event.params.turn.error?.message)
             return
