@@ -35,7 +35,9 @@ public class LocalPageFormsTest {
             scenario.onActivity(activity -> view.set(activity.getBridge().getWebView()));
             WebView web = view.get();
             long until = System.currentTimeMillis() + 20_000;
-            while (!"true".equals(evaluate(web, "!!window.Capacitor?.nativePromise")) && System.currentTimeMillis() < until) Thread.sleep(50);
+            String ready = "document.readyState === 'complete' && typeof window.geckitLocal === 'function'";
+            while (!"true".equals(evaluate(web, ready)) && System.currentTimeMillis() < until) Thread.sleep(50);
+            assertEquals("App local-page handler is ready before replacing its listeners", "true", evaluate(web, ready));
             String page = "<!doctype html><meta charset=utf-8>" + form;
             String script = """
                 (async () => {
