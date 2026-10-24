@@ -55,6 +55,8 @@ export interface ManagerDecision {
   readonly choices: readonly { readonly label: string; readonly value: string }[]
 }
 
+export type ManagerDecisionOutcome = 'Answer sent.' | 'This request is no longer pending. Use /status to see current requests.' | 'Review recorded. Delivery remains uncertain; nothing was resent. Other work can continue.'
+
 export interface ManagerCliAsked {
   readonly action: 'manage'
   readonly args: readonly string[]

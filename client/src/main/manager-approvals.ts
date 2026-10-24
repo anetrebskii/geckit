@@ -27,3 +27,9 @@ export function managerApproval(session: ChatSession, pending: Pending, epoch: s
   const fallback = session.manager === true ? 'This request needs the native GeckIt UI. Manager cannot continue here. Restart Manager or change its assistant in GeckIt Settings → Manager.' : 'This request needs the native GeckIt UI. Open the worker in GeckIt to review and answer it.'
   return { ...pending, session: session.id, decision: { id: `native:${identity}`, kind: 'native', title: supported ? title : `${title.length > 24_000 ? `Approval - ${session.title}\n\nThe full request is too large to show safely in Telegram.` : title}\n\n${fallback}`, choices: supported ? answers : [] } }
 }
+
+export class ManagerDecisionFailure extends Error {
+  constructor(readonly reason: 'paused' | 'native' | 'choice' | 'changed') {
+    super(reason === 'paused' ? 'Manager is paused. Use /resume before answering this approval.' : reason === 'native' ? 'Answer was not sent. A native safety check blocked it. Check the current approval in GeckIt.' : reason === 'changed' ? 'This request changed. Use /status to see current requests.' : 'Use one of the current request’s choices. Typed forms must be answered in GeckIt.')
+  }
+}
