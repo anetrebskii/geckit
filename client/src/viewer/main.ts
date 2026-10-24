@@ -4,7 +4,7 @@ import { dial } from '../renderer/src/link'
 import type { Dialing, Link } from '../renderer/src/link'
 import type { LocalAnswer, LocalAsk } from '../shared/local'
 import { SIGNAL } from '../shared/pairing'
-import { ENDED, endsIn } from '../shared/share'
+import { ENDED, endsIn, readShareLink } from '../shared/share'
 import type { ShareAbout, ShareRead } from '../shared/share'
 
 /**
@@ -13,7 +13,6 @@ import type { ShareAbout, ShareRead } from '../shared/share'
  * in its own, and asks it only about the one site, file or folder it shares.
  */
 
-const KEY = /^#([A-Za-z0-9_-]{32,})$/
 const ANSWER_WITHIN = 60_000
 const STEPS: Record<Dialing, string> = { service: 'Asking the pairing service...', mac: 'Waiting for your computer...', joining: 'Connecting...' }
 
@@ -303,7 +302,7 @@ function size(bytes: number): string {
 
 /* ------------------------------------------------------------------ */
 
-const key = KEY.exec(location.hash)?.[1]
+const opened = readShareLink(location.hash)
 reload.addEventListener('click', () => {
   if (about?.kind === 'site' && frame !== undefined) frame.src = about.start ?? '/'
   else if (about !== undefined) void open(history.state?.path ?? '', false)
@@ -315,5 +314,6 @@ window.addEventListener('popstate', (event: PopStateEvent) => {
 // Another link pasted into this tab changes only what is after the #, which loads nothing by itself.
 window.addEventListener('hashchange', () => location.reload())
 window.setInterval(tick, 60_000)
-if (key === undefined) state('This link is incomplete. Open it again from Telegram.')
-else void connect(key)
+if (opened === undefined) state('This link is incomplete. Open it again from Telegram.')
+else if (opened.expiresAt !== undefined && opened.expiresAt <= Date.now()) showEnded()
+else void connect(opened.key)

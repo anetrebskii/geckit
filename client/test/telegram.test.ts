@@ -8,11 +8,12 @@ import type { Json, JsonObject } from '../src/shared/elicitation'
 import { jsonObject } from '../src/shared/elicitation'
 import { TelegramAttachments } from '../src/main/telegram-attachments'
 import type { ManagerDeps } from '../src/main/manager'
-import type { SessionMessage } from '../src/shared/api'
+import type { SessionMessage, Settings } from '../src/shared/api'
 import { ManagerTelegram } from '../src/main/telegram'
 import type { TelegramManager, TelegramVault } from '../src/main/telegram'
 import { configureManagerAccess, phoneTelegramView, telegramActionAccess, telegramVault } from '../src/main/telegram-access'
 import { Manager } from '../src/main/manager'
+import { ManagerDecisionFailure } from '../src/main/manager-approvals'
 import { memoryNotes, Sessions } from '../src/main/sessions'
 import type { Heard } from '../src/main/sessions/heard'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
@@ -110,6 +111,62 @@ async function paired(value: ReturnType<typeof fixture>): Promise<void> {
 }
 
 describe('Telegram attachment composition with actual Manager and Sessions', () => {
+  it('recovers coordination and queued requests after an uncertain upload while keeping that upload unrepeated', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'telegram-recovery-'))
+    paths.push(directory)
+    const api = botApi()
+    const notes = memoryNotes()
+    const hearing = new Map<string, (heard: Heard) => void>()
+    const inputs: (Pick<SessionMessage, 'text'> & { readonly id: string })[] = []
+    const current: { manager?: Manager } = {}
+    const sessions = new Sessions({
+      notes, changed: (all) => current.manager?.observeSessions(all), items: () => undefined, notify: () => undefined, account: () => undefined,
+      claude: (options, hear) => { hearing.set(options.id, hear); return { send: (text) => { const item = managerHistoryItem({ kind: 'mine', id: 'input', text }); inputs.push({ id: options.id, text: item.kind === 'mine' ? item.text : text }) }, answer: () => undefined, stop: () => undefined, end: async () => undefined } },
+      disk: { list: async () => [], read: async () => undefined, has: async () => false }, claudeAccount: async () => ({ here: true, signedIn: true, plan: 'Max' }), claudeProgram: async () => undefined, usage: async () => ({ windows: new Map() }),
+    })
+    const settings: Settings = { ...DEFAULT_SETTINGS, projects: [directory], chatProviders: ['claude'], vpnIpCheck: false }
+    const manager: Manager = new Manager({ directory, sessions, notes, settings: () => settings, saveSettings: () => settings, telegramFile: () => bridge.fileSender(), cli: async (args, context) => {
+      const result = await manager.command({ action: 'manage', args, ...context })
+      if (!result.ok) throw new Error(result.error)
+      return result.result
+    } })
+    current.manager = manager
+    const bridge = new ManagerTelegram({ directory, fetch: api.fetch, vault, now: () => now, changed: () => undefined, manager: {
+      submit: (text, id) => manager.send(text, 'telegram', id), pause: async () => { await manager.pause() }, resume: async () => { await manager.resume() }, status: () => 'Ready', enabled: () => manager.enabled(),
+    } })
+    running.push(bridge)
+    disposals.push(() => { manager.dispose(); sessions.dispose() })
+    const value = fixture({ api, directory })
+    value.telegram.stop()
+    await paired({ ...value, telegram: bridge })
+    await manager.configure({ enabled: true })
+    const worker = await sessions.startManaged({ root: directory, mode: 'manual', text: 'Prepare reports' }, 'manager', 'report-worker')
+    writeFileSync(join(directory, 'report.txt'), 'First report')
+    writeFileSync(join(directory, 'other.txt'), 'Other report')
+    const id = await manager.send('Return the selected report')
+    await vi.waitFor(() => expect(inputs.some((one) => one.id === id)).toBe(true))
+    await manager.send('Next queued request', 'telegram')
+    const finish = (text: string): void => hearing.get(id)?.({ items: [{ kind: 'theirs', id: `reply:${inputs.length}`, text }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    const command = (operation: string, path: string): string => `\`\`\`geckit\n${JSON.stringify({ id: operation, args: ['telegram', 'send-file', '--id', worker, '--path', path] })}\n\`\`\``
+    api.failUpload(0)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      finish(command('uncertain-report', 'report.txt'))
+      await vi.waitFor(async () => expect((await manager.view()).activity[0]?.state).toBe('uncertain'))
+      expect((await manager.view()).state).toBe('blocked')
+      await vi.advanceTimersByTimeAsync(5_000)
+      await vi.waitFor(() => expect(inputs.at(-1)?.text).toContain('Automatic recovery.'))
+      finish('Current work reconciled; other requests continue.')
+      await vi.waitFor(() => expect(inputs.at(-1)?.text).toBe('[Telegram]\nNext queued request'))
+      finish(command('other-report', 'other.txt'))
+      await vi.waitFor(async () => expect((await manager.view()).activity[0]?.state).toBe('done'))
+      expect(api.uploads).toHaveLength(2)
+      expect((await manager.view()).state).toBe('working')
+      expect((await manager.view()).activity.find((one) => one.id === 'uncertain-report')?.state).toBe('uncertain')
+      expect((await manager.view()).workers[0]?.id).toBe(worker)
+    } finally { vi.useRealTimers() }
+  })
+
   it('delivers native photo/image-document and readable file bytes with captions, known replies and album context, then returns a selected worker file', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'telegram-composed-'))
     paths.push(directory)
@@ -272,6 +329,55 @@ describe('Telegram attachment authorization and delivery failure', () => {
     await paired(again)
     await expect(captured(Buffer.from('private'), 'result.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('not connected')
     expect(again.api.uploads).toHaveLength(0)
+  })
+
+  it('keeps fresh file delivery available after an uncertain text message, including restart', async () => {
+    const value = fixture()
+    await paired(value)
+    value.api.failSend()
+    await value.telegram.notify('An uncertain progress update')
+    expect(value.telegram.view().detail).toContain('not retried')
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory })
+    await again.telegram.start()
+    await expect(again.telegram.sendFile(Buffer.from('report'), 'report.txt', 'text/plain', '', 'document', { session: 'manager', workers: ['worker'] })).resolves.toBeGreaterThan(0)
+    expect(again.api.uploads).toHaveLength(1)
+  })
+
+  it('holds only the uncertain file across restart and caption changes while new files continue', async () => {
+    const value = fixture()
+    await paired(value)
+    const origin = { session: 'manager', workers: ['worker'] }
+    value.api.failUpload(0)
+    await expect(value.telegram.sendFile(Buffer.from('report'), 'report.txt', 'text/plain', 'Original', 'document', origin)).rejects.toThrow('uncertain')
+    await expect(value.telegram.sendFile(Buffer.from('report'), 'report.txt', 'text/plain', 'Changed caption', 'document', origin)).rejects.toThrow('uncertain')
+    await expect(value.telegram.sendFile(Buffer.from('other report'), 'other.txt', 'text/plain', '', 'document', origin)).resolves.toBeGreaterThan(0)
+    expect(value.api.uploads).toHaveLength(2)
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory })
+    await again.telegram.start()
+    await expect(again.telegram.sendFile(Buffer.from('report'), 'report.txt', 'text/plain', '', 'document', { ...origin, session: 'replacement-manager' })).rejects.toThrow('uncertain')
+    expect(again.api.uploads).toHaveLength(0)
+    await expect(again.telegram.sendFile(Buffer.from('new report'), 'new.txt', 'text/plain', '', 'document', origin)).resolves.toBeGreaterThan(0)
+    expect(again.api.uploads).toHaveLength(1)
+  })
+
+  it('restores an in-flight upload fingerprint after a crash without blocking other files', async () => {
+    const value = fixture()
+    await paired(value)
+    const origin = { session: 'manager', workers: ['worker'] }
+    value.api.failUpload(0)
+    await expect(value.telegram.sendFile(Buffer.from('report'), 'report.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
+    value.telegram.stop()
+    const path = join(value.directory, 'manager-telegram.sealed')
+    const stored = jsonObject(JSON.parse(vault.decrypt(readFileSync(path))) as Json)
+    if (stored === undefined || !Array.isArray(stored['uncertainUploads'])) throw new Error('Missing upload fingerprint')
+    writeFileSync(path, vault.encrypt(JSON.stringify({ ...stored, uncertain: false, outgoing: true, pendingUpload: stored['uncertainUploads'][0], uncertainUploads: [] })))
+    const again = fixture({ directory: value.directory })
+    await again.telegram.start()
+    await expect(again.telegram.sendFile(Buffer.from('report'), 'report.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
+    await expect(again.telegram.sendFile(Buffer.from('next'), 'next.txt', 'text/plain', '', 'document', origin)).resolves.toBeGreaterThan(0)
+    expect(again.api.uploads).toHaveLength(1)
   })
 })
 
@@ -752,15 +858,60 @@ describe('Manager Telegram, with a fake Bot API', () => {
     expect(value.submit).not.toHaveBeenCalled()
   })
 
+  it('reports reviewed uncertainty accurately and acknowledges repeated callbacks across restart without answering again', async () => {
+    let pending = true
+    const answer = vi.fn<NonNullable<TelegramManager['answer']>>(async () => {
+      pending = false
+      return 'Review recorded. Delivery remains uncertain; nothing was resent. Other work can continue.'
+    })
+    const value = fixture({ manager: { answer, hasDecision: () => pending } })
+    await paired(value)
+    await value.telegram.notify('Check uncertain upload', { id: 'review-upload', choices: [{ label: 'I checked its state', value: 'reviewed' }] })
+    const data = buttons(value.api)[0]?.['callback_data']
+    if (typeof data !== 'string') throw new Error('Missing review button')
+    value.api.deliver([callback(2, data), callback(3, data)])
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('already been answered'))
+    expect(sent(value.api).some((one) => String(one.body['text']).includes('Delivery remains uncertain; nothing was resent'))).toBe(true)
+    expect(answer).toHaveBeenCalledTimes(1)
+    expect(value.api.calls.filter((one) => one.method === 'answerCallbackQuery')).toHaveLength(2)
+    expect(value.api.calls.some((one) => one.method === 'editMessageReplyMarkup' && JSON.stringify(one.body).includes('"inline_keyboard":[]'))).toBe(true)
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory, manager: { answer, hasDecision: () => pending } })
+    await again.telegram.start()
+    again.api.deliver([callback(4, data)])
+    await vi.waitFor(() => expect(sent(again.api).at(-1)?.body['text']).toContain('already been answered'))
+    expect(answer).toHaveBeenCalledTimes(1)
+    expect(again.api.calls.filter((one) => one.method === 'answerCallbackQuery')).toHaveLength(1)
+  })
+
+  it('preserves uncertain upload holds through Telegram resume and restart while other uploads continue', async () => {
+    const value = fixture()
+    await paired(value)
+    const origin = { session: 'manager', workers: ['worker'] }
+    value.api.failUpload(0)
+    await expect(value.telegram.sendFile(Buffer.from('Uncertain report'), 'report.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
+    value.api.deliver([message(2, '/resume')])
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toBe('Manager resumed.'))
+    await expect(value.telegram.sendFile(Buffer.from('Uncertain report'), 'report.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
+    expect(value.api.uploads).toHaveLength(1)
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory })
+    await again.telegram.start()
+    await expect(again.telegram.sendFile(Buffer.from('Uncertain report'), 'report.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
+    expect(again.api.uploads).toHaveLength(0)
+    await expect(again.telegram.sendFile(Buffer.from('Unrelated report'), 'other.txt', 'text/plain', '', 'document', origin)).resolves.toBeTypeOf('number')
+    expect(again.api.uploads).toHaveLength(1)
+  })
+
   it('keeps a decision usable after Manager rejects an answer while paused', async () => {
-    const answer = vi.fn<NonNullable<TelegramManager['answer']>>().mockRejectedValueOnce(new Error('Resume Manager before answering.')).mockResolvedValue(undefined)
+    const answer = vi.fn<NonNullable<TelegramManager['answer']>>().mockRejectedValueOnce(new ManagerDecisionFailure('paused')).mockResolvedValue(undefined)
     const value = fixture({ manager: { answer } })
     await paired(value)
     await value.telegram.notify('Allow this operation?', { id: 'approval', choices: [{ label: 'Allow', value: 'allow' }] })
     const data = buttons(value.api)[0]?.['callback_data']
     if (typeof data !== 'string') throw new Error('Missing approval button')
     value.api.deliver([callback(2, data)])
-    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('Use /resume here'))
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('Use /resume before answering'))
     expect(value.telegram.view().state).toBe('connected')
     value.api.deliver([callback(3, data)])
     await vi.waitFor(() => expect(answer).toHaveBeenCalledTimes(2))

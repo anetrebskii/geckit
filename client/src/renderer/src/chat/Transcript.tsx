@@ -108,16 +108,17 @@ function Question({ choices = [], onAnswer }: Pick<SessionCard, 'choices'> & {
   const [answer, setAnswer] = useState('')
   const input = useRef<HTMLInputElement>(null)
   const field = useId()
+  const mcp = choices.includes('Enable selected') && choices.includes('Reject all') && choices.some((choice) => /^\[[ ✓✔xX]\]\s/.test(choice))
   const options = choices.map((choice) => {
     const marker = /^\[([ ✓✔xX])\]\s/.exec(choice)
     const label = marker === null ? choice : choice.slice(marker[0].length)
-    return { choice, label, checked: marker === null ? undefined : marker[1] !== ' ', custom: /^(?:type something\.?|other)$/i.test(label), primary: /^(?:submit(?: answers)?|next)$/i.test(label), secondary: /^(?:chat about this|cancel)$/i.test(label) }
+    return { choice, label, checked: marker === null ? undefined : marker[1] !== ' ', custom: !mcp && /^(?:type something\.?|other)$/i.test(label), primary: mcp ? choice === 'Enable selected' : /^(?:submit(?: answers)?|next)$/i.test(label), secondary: mcp ? choice === 'Reject all' : /^(?:chat about this|cancel)$/i.test(label) }
   })
   const checkboxes = options.some((option) => option.checked !== undefined)
   const review = choices.length === 2 && choices.some((choice) => /^submit answers$/i.test(choice)) && choices.some((choice) => /^cancel$/i.test(choice))
   const actions = [...options.filter((option) => option.secondary), ...options.filter((option) => option.primary)]
   return <>
-    {checkboxes ? <p className="question-hint">Choose one or more, then submit.</p> : null}
+    {checkboxes ? <p className="question-hint">{mcp ? 'Choose servers, then enable selected or reject all.' : 'Choose one or more, then submit.'}</p> : null}
     <div className="question-options">
       {options.filter((option) => !option.primary && !option.secondary).map((option) => <button
         key={option.choice}
@@ -130,7 +131,7 @@ function Question({ choices = [], onAnswer }: Pick<SessionCard, 'choices'> & {
         <span>{option.label}</span>
       </button>)}
     </div>
-    {review ? null : <form className="question-custom" onSubmit={(event) => {
+    {review || mcp ? null : <form className="question-custom" onSubmit={(event) => {
       event.preventDefault()
       if (answer.trim() !== '') onAnswer(answer.trim())
     }}>

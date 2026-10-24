@@ -373,6 +373,20 @@ describe('Codex app-server', () => {
     await driver.end()
   })
 
+  it('ignores a completed previous native turn while the current retry remains steerable', async () => {
+    const { server, codex, heard } = setup()
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Retry current work')
+    await tick()
+    const fresh: CodexTurn = { id: 'fresh-turn', status: 'inProgress', error: null, startedAt: 200, items: [] }
+    server.event({ method: 'turn/started', params: { threadId: 'terminal', turn: fresh } })
+    server.event({ method: 'turn/completed', params: { threadId: 'terminal', turn: { ...fresh, id: 'old-turn', status: 'failed', error: { message: 'Old failure' } } } })
+    expect(heard.flatMap((one) => one.signals).filter((one) => one.kind === 'ended')).toEqual([])
+    await expect(driver.inject?.('Correct current turn')).resolves.toBeUndefined()
+    expect(server.requests.findLast((one) => one.method === 'turn/steer')?.params?.expectedTurnId).toBe('fresh-turn')
+    await driver.end()
+  })
+
   it('rejects steering while native approval awaits and after stopping or disconnecting', async () => {
     const { server, codex, heard } = setup()
     const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)

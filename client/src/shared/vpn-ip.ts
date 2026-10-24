@@ -7,6 +7,16 @@ export const vpnIpPausedError = (explanation: string, remote = false): string =>
 
 export const vpnIpMismatchError = (ip: string): string => `Not sent. This computer's public IP is ${ip}, which is not in your approved VPN IPs. Connect your VPN, then try again.`
 
+export function retryableVpnIpError(error: string | undefined): boolean {
+  if (error === undefined) return false
+  const pausedPrefix = 'Paused by VPN IP check. '
+  const explanation = error.startsWith(pausedPrefix) ? `Not sent. ${error.slice(pausedPrefix.length)}` : error
+  if (explanation === VPN_IP_UNAVAILABLE_ERROR) return true
+  const match = /^Not sent\. This computer's public IP is ([\da-f:.]+), which is not in your approved VPN IPs\. Connect your VPN, then try again\.$/.exec(explanation)
+  const ip = match?.[1]
+  return ip !== undefined && canonicalPublicIp(ip) === ip && explanation === vpnIpMismatchError(ip)
+}
+
 export interface VpnIpParseResult {
   readonly ips: Settings['vpnAllowedIps']
   readonly error?: string
