@@ -10,6 +10,14 @@ export function requestingSession(env: NodeJS.ProcessEnv = process.env): string 
   return env['CLAUDE_CODE_SESSION_ID']?.trim() || undefined
 }
 
+/** The program a `start --app` comes from, '' where the flag has no name after it, and undefined without the flag. */
+export function appNamed(args: readonly string[]): string | undefined {
+  const at = args.indexOf('--app')
+  if (at < 0) return undefined
+  const name = (args[at + 1] ?? '').trim()
+  return name.startsWith('--') ? '' : name
+}
+
 export const requestedProvider = (value: string): SessionProvider | undefined =>
   value === 'codex' || value === 'claude' || /^plugin:[^:]+$/.test(value) ? value as SessionProvider : undefined
 
@@ -26,7 +34,7 @@ export function tasksFrom(args: readonly string[], read: (file: string) => strin
   const words: string[] = []
   for (let at = 0; at < args.length; at++) {
     const one = args[at] ?? ''
-    if (['--project', '--goal', '--title', '--conversations', '--tasks', '--provider'].includes(one)) {
+    if (['--project', '--goal', '--title', '--conversations', '--tasks', '--provider', '--app'].includes(one)) {
       flags.set(one, args[at + 1] ?? '')
       at++
     } else if (one !== '--json') words.push(one)

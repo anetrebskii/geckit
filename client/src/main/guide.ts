@@ -4,6 +4,8 @@ import { join } from 'node:path'
 
 import { app } from 'electron'
 
+import { forwardSlashes } from '../cli/endpoint'
+
 /**
  * What Claude Code is told about being run by GeckIt.
  *
@@ -22,43 +24,109 @@ const codexWhere = (): string => process.env['CODEX_HOME'] ?? join(homedir(), '.
 /** Run from the source rather than installed; outside Electron, as in the tests, it is taken as installed. */
 const fromSource = (): boolean => (app as typeof app | undefined)?.isPackaged === false
 
-/** Where the command is written, and what it is called from a shell. Run from the source it is `geckit-local`, which reaches that copy. */
-export const cliPath = (): string => join(homedir(), '.geckit', 'bin', fromSource() ? 'geckit-local' : 'geckit')
+/**
+ * Where the command is written, and what it is called from a shell. Run from
+ * the source it is `geckit-local`, which reaches that copy. Forward slashes on
+ * Windows too: every shell there reads them, and a backslash in a line of
+ * GECKIT.md would be read as an escape by the one Claude Code runs.
+ */
+export const cliPath = (): string => forwardSlashes(join(homedir(), '.geckit', 'bin', fromSource() ? 'geckit-local' : 'geckit'))
 
 /**
- * The command, as a line that runs the application's own Node on the script
+ * The command, as lines that run the application's own Node on the script
  * built beside the main process. Nothing has to be installed for it, and it
- * finds GeckIt's own folder because the path is written into the line.
+ * finds GeckIt's own folder because the path is written into the line. A
+ * shell script everywhere; on Windows a `.cmd` beside it as well, for cmd and
+ * PowerShell, since the script there is for Git Bash, which Claude Code runs.
+ * cmd reads a batch file in the console's code page, so a path under the
+ * person's profile is written as `%USERPROFILE%` and the rest, which cmd
+ * expands itself; `setlocal` keeps the variables out of the shell it ran in.
  */
-function launcher(): string {
-  const script = join(app.getAppPath(), 'out', 'main', 'cli.js')
-  return [
+export function launchers(execPath: string, script: string, data: string, platform: NodeJS.Platform = process.platform, home: string = homedir()): { readonly sh: string; readonly cmd?: string } {
+  const sh = [
     '#!/bin/sh',
     '# Written by GeckIt when it starts. Anything changed here is written over.',
-    `GECKIT_DATA=${JSON.stringify(app.getPath('userData'))} ELECTRON_RUN_AS_NODE=1 exec ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} "$@"`,
+    `GECKIT_DATA=${JSON.stringify(forwardSlashes(data))} ELECTRON_RUN_AS_NODE=1 exec ${JSON.stringify(forwardSlashes(execPath))} ${JSON.stringify(forwardSlashes(script))} "$@"`,
     '',
   ].join('\n')
+  if (platform !== 'win32') return { sh }
+  const profile = home.replace(/[\\/]+$/, '')
+  const forCmd = (path: string): string => {
+    const under = path.toLowerCase().startsWith(profile.toLowerCase()) && /[\\/]/.test(path.charAt(profile.length))
+    const rest = under ? path.slice(profile.length) : path
+    return `${under ? '%USERPROFILE%' : ''}${rest.replace(/%/g, '%%')}`
+  }
+  const cmd = [
+    '@echo off',
+    'setlocal',
+    'rem Written by GeckIt when it starts. Anything changed here is written over.',
+    `set "GECKIT_DATA=${forCmd(data)}"`,
+    'set "ELECTRON_RUN_AS_NODE=1"',
+    `"${forCmd(execPath)}" "${forCmd(script)}" %*`,
+    '',
+  ].join('\r\n')
+  return { sh, cmd }
 }
 
-const COMMAND = (path: string): string => `
+/** Writes the command where `cliPath` says, and the `.cmd` beside it on Windows; false when it could not be, or outside Electron. */
+async function writeLaunchers(command: string): Promise<boolean> {
+  const electron = app as typeof app | undefined
+  if (electron === undefined) return false
+  const made = launchers(process.execPath, join(electron.getAppPath(), 'out', 'main', 'cli.js'), electron.getPath('userData'))
+  try {
+    await mkdir(join(command, '..'), { recursive: true })
+    await writeFile(command, made.sh)
+    await chmod(command, 0o755)
+    if (made.cmd !== undefined) await writeFile(`${command}.cmd`, made.cmd)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function removeLaunchers(command: string): Promise<void> {
+  await rm(command, { force: true }).catch(() => undefined)
+  await rm(`${command}.cmd`, { force: true }).catch(() => undefined)
+}
+
+/** How a batch of conversations is sent: fed to the command by a heredoc, or from a file where the shell has no heredoc (PowerShell, which Codex runs on Windows). */
+type Batch = 'heredoc' | 'file'
+
+const EXAMPLE = `[
+  {
+    "project": "web",
+    "title": "Checkout button stays disabled after a failed payment",
+    "text": "In src/checkout/PayButton.tsx the button is disabled while a payment runs and never enabled again when the payment fails, so the buyer has to reload the page. Found while fixing the coupon field in another conversation; the failure can be forced with the card 4000 0000 0000 0002 on the test server. Enable the button again on failure and add a test beside PayButton.test.tsx. Done when that test passes and npm test is green.",
+    "goal": "a failed payment leaves the pay button enabled, and npm test passes"
+  }
+]`
+
+const SEND = (said: string, batch: Batch): string =>
+  batch === 'heredoc'
+    ? ['Send everything in one command, run in the background, since it waits for the person and that can take hours:', '', '```', `${said} start --conversations - <<'EOF'`, EXAMPLE, 'EOF', '```'].join('\n')
+    : ['Write the conversations to a file, then send them in one command, run in the background, since it waits for the person and that can take hours:', '', '```', `${said} start --conversations conversations.json`, '```', '', 'with the file holding', '', '```', EXAMPLE, '```'].join('\n')
+
+const COMMAND = (path: string, batch: Batch = 'heredoc'): string => {
+  const said = path.includes(' ') ? `"${path}"` : path
+  return `
 ## Asking GeckIt about the work itself
 
-\`${path}\` answers about the conversations, and is the way to find out what was done today rather than reading Claude Code's own files. Everything but \`start\` only reads.
+\`${said}\` answers about the conversations, and is the way to find out what was done today rather than reading Claude Code's own files. Everything but \`start\` only reads.
 
 \`\`\`
-${path} sessions --today
-${path} sessions --since 2d --project formula-business --status review
-${path} sessions --today --json
-${path} sessions --favorites
-${path} show <id>
-${path} show <id> --last 10
+${said} sessions --today
+${said} sessions --since 2d --project formula-business --status review
+${said} sessions --today --json
+${said} sessions --favorites
+${said} show <id>
+${said} show <id> --last 10
 \`\`\`
 
 \`sessions\` prints one line each, newest first: a \\* for a favorite, the id, when it last changed, the project, how it stands - in progress, review, blocked or done - and the title. \`--today\` and \`--since\` also count one moved between columns in that time, and \`--favorites\` keeps only the favorites. \`show\` prints when it was created and each time it moved to another column, then what was said in it, the person and Claude, without what the tools printed. \`--json\` gives the same for reading with a program, with that history in \`history\` and \`favorite\` true or false.
 
 ## Building GeckIt or a provider library
 
-When asked to create or change a provider, run \`${path} instructions providers\` for the contract, example, build and verification instructions. For GeckIt itself, run \`${path} instructions app\`. These commands only read and work with the installed CLI.
+When asked to create or change a provider, run \`${said} instructions providers\` for the contract, example, build and verification instructions. For GeckIt itself, run \`${said} instructions app\`. These commands only read and work with the installed CLI.
 
 ## Other conversations
 
@@ -74,22 +142,9 @@ Start one when:
 
 Do not do that work here, and do not only mention it at the end of an answer: a mention is lost once the card moves to Done. You need no leave to send it, since every one asked for is put in front of the person first and they start it or refuse it there. Where you cannot tell whether they want the work at all, ask in your answer and send it once they say yes. Do not send the job you are doing, or a step of it you are about to take yourself. A task, a to-do or a reminder the person asks you to write down is not a conversation either: it goes where their own instructions say such things are kept, and never through this command.
 
-Send everything in one command, run in the background, since it waits for the person and that can take hours:
+${SEND(said, batch)}
 
-\`\`\`
-${path} start --conversations - <<'EOF'
-[
-  {
-    "project": "web",
-    "title": "Checkout button stays disabled after a failed payment",
-    "text": "In src/checkout/PayButton.tsx the button is disabled while a payment runs and never enabled again when the payment fails, so the buyer has to reload the page. Found while fixing the coupon field in another conversation; the failure can be forced with the card 4000 0000 0000 0002 on the test server. Enable the button again on failure and add a test beside PayButton.test.tsx. Done when that test passes and npm test is green.",
-    "goal": "a failed payment leaves the pay button enabled, and npm test passes"
-  }
-]
-EOF
-\`\`\`
-
-Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. For one short conversation, \`${path} start --project <name> [--title <title>] [--goal <condition>] <text>\` does the same, as long as the text has no quotes, \`$\`, \`;\` or \`&\` in it.
+Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. For one short conversation, \`${said} start --project <name> [--title <title>] [--goal <condition>] <text>\` does the same, as long as the text has no quotes, \`$\`, \`;\` or \`&\` in it.
 
 - \`project\` is the folder's name as \`sessions\` prints it. At most 20 at once.
 - \`title\` is what the person reads on the card to decide, so say the work in a few words.
@@ -103,12 +158,13 @@ The command prints one line per conversation in the order sent - started or queu
 A conversation started this way remembers the one that asked for it.
 
 \`\`\`
-${path} linked
-${path} show <id> --last 10
+${said} linked
+${said} show <id> --last 10
 \`\`\`
 
 \`linked\` lists, for this conversation, the one it was started from, the ones it started and how each stands, and what it asked for and was refused. \`show --last\` reads the end of any of them. Look there before starting on anything a linked conversation may already have done or decided, and before telling the person how the work you asked for stands.
 `
+}
 
 export const GUIDE = `# Working in GeckIt
 
@@ -162,22 +218,16 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
   const linked = was.split('\n').some((line) => line.trim() === IMPORT)
   // Run from the source, it has its own command and leaves what Claude Code is told to the installed GeckIt.
   if (fromSource()) {
-    if (!wanted || process.platform === 'win32') {
-      await rm(command, { force: true }).catch(() => undefined)
+    if (!wanted) {
+      await removeLaunchers(command)
       return
     }
-    await mkdir(join(command, '..'), { recursive: true })
-      .then(() => writeFile(command, launcher()))
-      .then(() => chmod(command, 0o755))
-      .then(() => {
-        process.env['GECKIT_SOURCE_CLI'] = command
-      })
-      .catch(() => undefined)
+    if (await writeLaunchers(command)) process.env['GECKIT_SOURCE_CLI'] = command
     return
   }
   if (!wanted) {
     await rm(guide, { force: true }).catch(() => undefined)
-    await rm(command, { force: true }).catch(() => undefined)
+    await removeLaunchers(command)
     if (!linked) return
     const without = was
       .split('\n')
@@ -189,14 +239,7 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
     return
   }
   await mkdir(folder, { recursive: true }).catch(() => undefined)
-  // A shell line, so Windows is left with the guide alone until there is one it can run.
-  const told = await (process.platform === 'win32'
-    ? Promise.resolve(false)
-    : mkdir(join(command, '..'), { recursive: true })
-        .then(() => writeFile(command, launcher()))
-        .then(() => chmod(command, 0o755))
-        .then(() => true)
-        .catch(() => false))
+  const told = await writeLaunchers(command)
   await writeFile(guide, `${GUIDE}${BROWSERS(browsers)}${told ? COMMAND(command) : ''}`).catch(() => undefined)
   if (linked) return
   const next = was.trim() === '' ? `${IMPORT}\n` : `${was.replace(/\s*$/, '')}\n\n${IMPORT}\n`
@@ -220,7 +263,7 @@ export async function keepCodexGuide(wanted: boolean): Promise<void> {
     return
   }
   await mkdir(folder, { recursive: true }).catch(() => undefined)
-  const command = COMMAND(cliPath())
+  const command = (process.platform === 'win32' ? COMMAND(`${cliPath()}.cmd`, 'file') : COMMAND(cliPath()))
     .replaceAll('Claude Code', 'Codex')
     .replaceAll('Claude', 'Codex')
     .replace('Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. ', '')
