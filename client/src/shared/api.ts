@@ -305,8 +305,19 @@ export const ANYWHERE = {
 
 export type Anywhere = keyof typeof ANYWHERE
 
+export type SessionDeliveryReceipt = Pick<ChatSession, 'id'> & {
+  readonly attempt: string
+  readonly action: 'send' | 'retry' | 'steer'
+  readonly status: 'pending' | 'accepted' | 'queued' | 'steered' | 'blocked' | 'unsupported' | 'failed' | 'uncertain'
+  readonly at: number
+  readonly acceptance?: 'host' | 'runtime'
+  readonly queued?: QueuedMessage['id']
+  readonly reason?: string
+}
+
 /** Something a conversation wants the person to know, and where the window is not showing it. */
 export interface SessionNotice {
+  readonly delivery?: SessionDeliveryReceipt
   readonly session: string
   /** What happened, and in which project: "Finished - geckit". */
   readonly title: string
@@ -321,6 +332,7 @@ export interface SessionNotice {
 
 /** One row in the sidebar. */
 export interface ChatSession {
+  readonly delivery?: SessionDeliveryReceipt
   readonly manager?: true
   readonly managerManaged?: true
   readonly provider?: SessionProvider

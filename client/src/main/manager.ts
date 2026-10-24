@@ -441,12 +441,12 @@ export class Manager {
     const workers: string[] = []
     const positions = [...this.#record.workerEvents]
     for (const worker of sessions.filter((one) => this.manages(one.id))) {
-      const signature = JSON.stringify([worker.state, worker.status, worker.stands, worker.queued?.length ?? 0])
+      const signature = JSON.stringify([worker.state, worker.status, worker.stands, worker.queued?.length ?? 0, worker.delivery])
       const old = positions.find((one) => one.id === worker.id)
       if (old?.signature === signature) continue
       if (old !== undefined) positions.splice(positions.indexOf(old), 1)
       positions.push({ id: worker.id, signature })
-      if (worker.state === 'asks' && this.#deps.sessions.pendingForManager(worker.id).length === 0 || worker.state === 'failed' || worker.status === 'blocked' || worker.status === 'review' || worker.state === 'unread' || old !== undefined && worker.state === 'idle') { workers.push(worker.id); events.push(JSON.stringify({ id: worker.id, title: worker.title, root: worker.root, state: worker.state, status: worker.status, summary: worker.stands })) }
+      if (worker.delivery?.status !== 'pending' && (worker.state === 'asks' && this.#deps.sessions.pendingForManager(worker.id).length === 0 || worker.state === 'failed' || worker.status === 'blocked' || worker.status === 'review' || worker.state === 'unread' || old !== undefined && worker.state === 'idle')) { workers.push(worker.id); events.push(JSON.stringify({ observedAt: Date.now(), id: worker.id, title: worker.title, root: worker.root, state: worker.state, status: worker.status, summary: worker.stands, delivery: worker.delivery })) }
     }
     if (JSON.stringify(positions) !== JSON.stringify(this.#record.workerEvents)) this.#save({ workerEvents: positions })
     else this.#emit()
