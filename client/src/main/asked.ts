@@ -9,6 +9,7 @@ import log from 'electron-log'
 import type { RequestAnswered } from './sessions'
 import type { Task } from '../cli/start'
 import type { MigrationAnswered, MigrationAsked } from './session-migration'
+import type { ManagerCliAsked, ManagerCliAnswered } from '../shared/manager'
 
 /**
  * Where `geckit start` reaches the running application. One line of JSON in,
@@ -25,8 +26,8 @@ export interface StartAsked {
 
 export type StartAnswered = { readonly ok: false; readonly error: string } | ({ readonly ok: true } & RequestAnswered)
 
-export type CliAsked = StartAsked | MigrationAsked
-export type CliAnswered = StartAnswered | MigrationAnswered
+export type CliAsked = StartAsked | MigrationAsked | ManagerCliAsked
+export type CliAnswered = StartAnswered | MigrationAnswered | ManagerCliAnswered
 
 export const askedPath = (): string => join(app.getPath('userData'), 'geckit.sock')
 

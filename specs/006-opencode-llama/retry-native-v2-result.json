@@ -1,0 +1,19 @@
+{
+  "version": "2.0.25",
+  "completed": {
+    "kind": "ended",
+    "how": "done"
+  },
+  "incomplete": {
+    "kind": "ended",
+    "how": "failed",
+    "text": "OpenCode finished without a final text reply. Try another model or send again."
+  },
+  "renewalRequests": 1,
+  "renewed": 5,
+  "dropped": true,
+  "history": "read/list/search/rename/fork/delete, permission, two question cards, Stop/continue, reasoning-only failure/recovery, Plan denial, owned instructions and correction pass; v2 completion observation reconnects and renews without replay",
+  "modelBackend": "isolated local mock; no real Ollama/MiniMax inference",
+  "waitMs": 100,
+  "productionWaitMs": 60000
+}

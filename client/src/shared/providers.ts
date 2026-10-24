@@ -74,3 +74,13 @@ export const llmProviderInfo = (family: SessionProvider, _transport: ClaudeTrans
   }
 
 export const isCodexProvider = (family: SessionProvider): boolean => family === 'codex' || llmProviderInfo(family).runtime === 'codex'
+
+type ModelSettings = Pick<Settings, 'chatModel' | 'codexModel' | 'providerModels'>
+
+export const providerModel = (settings: ModelSettings, provider: SessionProvider): string =>
+  provider === 'claude' ? settings.chatModel : provider === 'codex' ? settings.codexModel : settings.providerModels.find((one) => one.provider === provider)?.model ?? ''
+
+export const modelPreference = (settings: ModelSettings, provider: SessionProvider, model: string): Partial<ModelSettings> =>
+  provider === 'claude' ? { chatModel: model } : provider === 'codex' ? { codexModel: model } : {
+    providerModels: [...settings.providerModels.filter((one) => one.provider !== provider), { provider, model }],
+  }

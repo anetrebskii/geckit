@@ -1,0 +1,13 @@
+
+> geckit@1.0.0 test
+> vitest run manager.test.ts -t Manager explicit Telegram file operations
+
+
+ RUN  v3.2.7 /private/tmp/geckit-telegram-attachments/client
+
+ ✓ test/manager.test.ts (42 tests | 40 skipped) 19ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 40 skipped (42)
+   Start at  16:33:10
+   Duration  473ms (transform 186ms, setup 0ms, collect 236ms, tests 19ms, environment 0ms, prepare 33ms)

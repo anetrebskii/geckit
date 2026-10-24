@@ -1,0 +1,64 @@
+Produced by client/src/main/telegram-render.ts through its own module, 2026-10-19.
+
+=== an answer from Manager ===
+--- what Manager wrote ---
+## Shipped the panel fix
+
+I changed three files and the tests pass.
+
+- **ManagerTelegram.tsx** - the status card
+- `styles.css` - the dot tones
+- [ ] still to do: the audit entry
+
+| Worker | State |
+| --- | --- |
+| chat panel | working |
+| docs | needs an answer |
+
+```ts
+const stand = managerStand(view)
+```
+
+> Could not reach the host over ssh; the run is kept.
+
+Next: [the PR](https://github.com/example/geckit/pull/25).
+--- what Telegram receives ---
+<b>Shipped the panel fix</b>
+
+I changed three files and the tests pass.
+
+• <b>ManagerTelegram.tsx</b> - the status card
+• <code>styles.css</code> - the dot tones
+• ☐ still to do: the audit entry
+
+<pre>Worker      State
+chat panel  working
+docs        needs an answer</pre>
+
+<pre><code class="language-ts">const stand = managerStand(view)</code></pre>
+
+<blockquote>Could not reach the host over ssh; the run is kept.</blockquote>
+
+Next: <a href="https://github.com/example/geckit/pull/25">the PR</a>.
+
+=== /status ===
+--- what Manager wrote ---
+**Manager** - working
+
+**Workers** (2)
+- Fix the panel markup - working
+- Add provider preferences - needs an answer
+
+**Waiting for your answer:** 1
+
+Queued instructions: 2
+--- what Telegram receives ---
+<b>Manager</b> - working
+
+<b>Workers</b> (2)
+• Fix the panel markup - working
+• Add provider preferences - needs an answer
+
+<b>Waiting for your answer:</b> 1
+
+Queued instructions: 2

@@ -1,11 +1,13 @@
-import { Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { isStep, runKey } from '../../../shared/steps'
-import type { BackgroundTask, CardAnswer, ChatSession, SessionImage, SessionItem } from '../../../shared/api'
+import type { BackgroundTask, CardAnswer, ChatSession, SessionCard, SessionImage, SessionItem } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Code, CopyButton } from './Code'
 import { Preview } from './Preview'
 import { ElicitationForm } from './Elicitation'
+import { ManagerSaid } from './ManagerSaid'
+import { managerSaid } from './manager-said'
 import { Request } from './Request'
 import { Files, opensTitle, Prose } from './Prose'
 import type { FileHow } from './Prose'
@@ -39,7 +41,9 @@ function Did({
   onFile,
   onBackground,
   onPicture,
+  readOnly,
 }: {
+  readonly readOnly: boolean
   readonly item: Extract<SessionItem, { kind: 'did' }>
   readonly active: boolean
   /** What it started still runs in the background. */
@@ -76,7 +80,7 @@ function Did({
   )
   return (
     <>
-      {active && item.live === true && item.lasting === true ? (
+      {!readOnly && active && item.live === true && item.lasting === true ? (
         <div className="did-row">
           {line}
           <button type="button" className="quiet small" onClick={() => onBackground(item.id)} title="Ctrl+B">
@@ -98,14 +102,59 @@ function Did({
   )
 }
 
+function Question({ choices = [], onAnswer }: Pick<SessionCard, 'choices'> & {
+  readonly onAnswer: (answer: string) => void
+}): React.JSX.Element {
+  const [answer, setAnswer] = useState('')
+  const input = useRef<HTMLInputElement>(null)
+  const field = useId()
+  const mcp = choices.includes('Enable selected') && choices.includes('Reject all') && choices.some((choice) => /^\[[ ✓✔xX]\]\s/.test(choice))
+  const options = choices.map((choice) => {
+    const marker = /^\[([ ✓✔xX])\]\s/.exec(choice)
+    const label = marker === null ? choice : choice.slice(marker[0].length)
+    return { choice, label, checked: marker === null ? undefined : marker[1] !== ' ', custom: !mcp && /^(?:type something\.?|other)$/i.test(label), primary: mcp ? choice === 'Enable selected' : /^(?:submit(?: answers)?|next)$/i.test(label), secondary: mcp ? choice === 'Reject all' : /^(?:chat about this|cancel)$/i.test(label) }
+  })
+  const checkboxes = options.some((option) => option.checked !== undefined)
+  const review = choices.length === 2 && choices.some((choice) => /^submit answers$/i.test(choice)) && choices.some((choice) => /^cancel$/i.test(choice))
+  const actions = [...options.filter((option) => option.secondary), ...options.filter((option) => option.primary)]
+  return <>
+    {checkboxes ? <p className="question-hint">{mcp ? 'Choose servers, then enable selected or reject all.' : 'Choose one or more, then submit.'}</p> : null}
+    <div className="question-options">
+      {options.filter((option) => !option.primary && !option.secondary).map((option) => <button
+        key={option.choice}
+        type="button"
+        className="quiet question-option"
+        {...(option.checked === undefined || option.custom ? {} : { role: 'checkbox', 'aria-checked': option.checked })}
+        onClick={() => { if (option.custom) input.current?.focus(); else onAnswer(option.choice) }}
+      >
+        {option.checked === undefined || option.custom ? null : <span className="question-check" aria-hidden="true">{option.checked ? <Icon name="check" size={14} /> : null}</span>}
+        <span>{option.label}</span>
+      </button>)}
+    </div>
+    {review || mcp ? null : <form className="question-custom" onSubmit={(event) => {
+      event.preventDefault()
+      if (answer.trim() !== '') onAnswer(answer.trim())
+    }}>
+      <label htmlFor={field}>Something else
+        <input ref={input} id={field} type="text" value={answer} onChange={(event) => setAnswer(event.target.value)} />
+      </label>
+      <button type="submit" className="quiet" disabled={answer.trim() === ''}>Send</button>
+    </form>}
+    {actions.length > 0 ? <div className="question-footer">
+      {actions.map((option) => <button key={option.choice} type="button" className={option.primary ? 'primary' : 'quiet'} onClick={() => onAnswer(option.choice)}>{option.label}</button>)}
+    </div> : null}
+  </>
+}
+
 function Card({
   item,
   onAnswer,
+  readOnly,
 }: {
   readonly item: Extract<SessionItem, { kind: 'card' }>
+  readonly readOnly: boolean
   readonly onAnswer: (card: string, answer: CardAnswer | string) => void
 }): React.JSX.Element {
-  const [else_, setElse] = useState('')
   const card = item.card
   if (card.answered !== undefined) {
     return (
@@ -117,6 +166,14 @@ function Card({
       </div>
     )
   }
+  if (readOnly) return <div className="card">
+    <div className="card-title">{card.title}</div>
+    {card.where === undefined ? null : <div className="where">{card.where}</div>}
+    {card.detail === undefined ? null : <Code detail>{card.detail}</Code>}
+    {card.elicitation === undefined ? null : <><p>{card.elicitation.message}</p>{card.elicitation.url === undefined ? null : <Code detail>{card.elicitation.url}</Code>}{card.elicitation.fields.map((field) => <p key={field.name}>{field.label}{field.required ? ' (required)' : ''}{field.description === undefined ? '' : ` - ${field.description}`}</p>)}</>}
+    {card.choices === undefined ? null : <ul>{card.choices.map((choice) => <li key={choice}>{choice}</li>)}</ul>}
+    <p>Answer this request in Telegram. For unsupported requests, open Manager settings.</p>
+  </div>
   if (card.kind === 'elicitation' && card.elicitation !== undefined) return <div className="card elicitation">
     <div className="card-title">{card.title}</div>
     <div className="where">{card.where}</div>
@@ -127,28 +184,8 @@ function Card({
       <div className="card-title">{card.title}</div>
       {card.where === undefined ? null : <div className="where">{card.where}</div>}
       {card.detail === undefined ? null : <Code detail>{card.detail}</Code>}
-      <div className="card-actions">
-        {card.kind === 'question' ? (
-          <>
-            {(card.choices ?? []).map((choice) => (
-              <button key={choice} type="button" className="quiet" onClick={() => onAnswer(item.id, choice)}>
-                {choice}
-              </button>
-            ))}
-            <input
-              type="text"
-              value={else_}
-              placeholder="Something else"
-              style={{ flex: 1, minWidth: 140 }}
-              onChange={(event) => setElse(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' || else_.trim() === '') return
-                event.preventDefault()
-                onAnswer(item.id, else_.trim())
-              }}
-            />
-          </>
-        ) : card.kind === 'start' ? (
+      {card.kind === 'question' ? <Question choices={card.choices ?? []} onAnswer={(answer) => onAnswer(item.id, answer)} /> : <div className="card-actions">
+        {card.kind === 'start' ? (
           <>
             <button type="button" className="quiet" onClick={() => onAnswer(item.id, 'no')}>
               Keep reading only
@@ -170,7 +207,7 @@ function Card({
             </button>
           </>
         )}
-      </div>
+      </div>}
     </div>
   )
 }
@@ -183,7 +220,9 @@ function Shell({
   item,
   onStop,
   onType,
+  readOnly,
 }: {
+  readonly readOnly: boolean
   readonly item: Extract<SessionItem, { kind: 'shell' }>
   readonly onStop: (item: string) => void
   readonly onType: (item: string, text: string) => void
@@ -210,16 +249,16 @@ function Shell({
             <span className="glyph spinning">
               <Icon name="spinner" size={12} />
             </span>
-            <button type="button" className="quiet small" onClick={() => onStop(item.id)}>
+            {readOnly ? null : <button type="button" className="quiet small" onClick={() => onStop(item.id)}>
               {terminal ? 'Stop waiting' : 'Stop'}
-            </button>
+            </button>}
           </>
         ) : ended === '' ? null : (
           <span className={`shell-ended${item.code === undefined ? '' : ' failed'}`}>{ended}</span>
         )}
       </div>
       {item.output === '' ? null : <Code detail>{item.output}</Code>}
-      {item.running === true && !terminal ? (
+      {!readOnly && item.running === true && !terminal ? (
         <input
           type={SECRET.test(item.output) ? 'password' : 'text'}
           className="shell-typed"
@@ -288,6 +327,8 @@ function When({
 
 const Turn = memo(function Turn({
   item,
+  readOnly,
+  manager,
   active,
   going,
   when,
@@ -301,6 +342,9 @@ const Turn = memo(function Turn({
   onBackground,
 }: {
   readonly item: SessionItem
+  readonly readOnly: boolean
+  /** The Manager session, where GeckIt writes the messages that carry worker and CLI results. */
+  readonly manager: boolean
   readonly active: boolean
   readonly going: boolean
   /** When it was said, where it is one to date: a message, or the end of an answer. */
@@ -325,7 +369,9 @@ const Turn = memo(function Turn({
     (item.kind === 'card' && item.card.answered !== undefined)
   return (
     <div className={`turn${step ? ' step' : ''}`} data-item={item.id}>
-      {item.kind === 'mine' ? (
+      {item.kind === 'mine' && manager && managerSaid(item.text) !== undefined ? (
+        <ManagerSaid said={managerSaid(item.text) ?? { kind: 'telegram', marks: [], text: item.text }} />
+      ) : item.kind === 'mine' ? (
         <div className={`mine${item.unsent === true ? ' unsent' : ''}`}>
           {item.text}
           {item.images === undefined ? null : (
@@ -351,15 +397,15 @@ const Turn = memo(function Turn({
           </div>
         </>
       ) : item.kind === 'did' ? (
-        <Did item={item} active={active} going={going} onFile={onFile} onBackground={onBackground} onPicture={onPicture} />
+        <Did readOnly={readOnly} item={item} active={active} going={going} onFile={onFile} onBackground={onBackground} onPicture={onPicture} />
       ) : item.kind === 'thought' ? (
         <div className="thought">{item.text === '' ? 'Thought about it' : item.text}</div>
       ) : item.kind === 'card' ? (
-        <Card item={item} onAnswer={onAnswer} />
+        <Card readOnly={readOnly} item={item} onAnswer={onAnswer} />
       ) : item.kind === 'request' ? (
-        <Request item={item} />
+        readOnly && item.answer === undefined ? <div className="card request"><div className="card-title">Requested conversations</div>{item.tasks.map((task, index) => <details key={index}><summary>{task.title} - {task.project}</summary><p>{task.text}</p>{task.goal === undefined ? null : <p>{task.goal}</p>}</details>)}<p>Review requests in Telegram.</p></div> : <Request item={item} />
       ) : item.kind === 'shell' ? (
-        <Shell item={item} onStop={onStopShell} onType={onTypeShell} />
+        <Shell readOnly={readOnly} item={item} onStop={onStopShell} onType={onTypeShell} />
       ) : item.kind === 'wrote' ? (
         <div className="wrote">
           Changed
@@ -486,6 +532,8 @@ function Fold({
 
 export const Transcript = memo(function Transcript({
   at,
+  readOnly = false,
+  manager = false,
   items,
   working,
   onAnswer,
@@ -511,6 +559,9 @@ export const Transcript = memo(function Transcript({
 }: {
   /** Which conversation this is, so another one opens at its end rather than where this one was left. */
   readonly at: string
+  readonly readOnly?: boolean
+  /** Drawn as the Manager session: what GeckIt wrote into it reads as a worker update or a CLI result. */
+  readonly manager?: boolean
   readonly items: readonly SessionItem[]
   readonly working: boolean
   readonly onAnswer: (card: string, answer: CardAnswer | string) => void
@@ -658,8 +709,8 @@ export const Transcript = memo(function Transcript({
   }, [page, at])
 
   const reach = Math.max(page, sought < 0 ? 0 : items.length - sought + 20, hit === undefined ? 0 : items.length - hit + 20)
-  // A request still waiting is kept at the end, where it is seen, while Claude goes on working above it; answered, it goes back to where it was asked.
-  const waiting = items.filter((item) => item.kind === 'request' && item.answer === undefined)
+  // Pending cards and requests stay at the end until answered, then return to where they were asked.
+  const waiting = items.filter((item) => (item.kind === 'request' && item.answer === undefined) || (item.kind === 'card' && item.card.answered === undefined))
   const inOrder = waiting.length === 0 ? items : items.filter((item) => !waiting.includes(item))
   const shown = inOrder.length > reach ? inOrder.slice(inOrder.length - reach) : inOrder
   const current = useMemo(() => {
@@ -835,6 +886,8 @@ export const Transcript = memo(function Transcript({
     )}
     <div
       className="transcript"
+      tabIndex={readOnly ? 0 : undefined}
+      aria-label={readOnly ? 'Manager transcript' : undefined}
       ref={box}
       onCopy={(event) => {
         const copied = richSelection(document.getSelection(), event.currentTarget)
@@ -860,7 +913,7 @@ export const Transcript = memo(function Transcript({
         {shown.map((item) => {
           const key = foldOf.get(item.id)
           const held = key === undefined ? undefined : folds.get(key)
-          if (key === undefined || held === undefined) return <Turn key={item.id} item={item} active={current.has(item.id)} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
+          if (key === undefined || held === undefined) return <Turn readOnly={readOnly} manager={manager} key={item.id} item={item} active={current.has(item.id)} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={readOnly || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
           if (held.first !== item.id && !isOpen(key)) return null
           const open = (): void => {
             setOpened({ at, keys: new Set([...openKeys, key]) })
@@ -900,12 +953,14 @@ export const Transcript = memo(function Transcript({
             <Fragment key={item.id}>
               {held.first === item.id ? <Fold said={counted(held.ids.length)} icon="down" title="Hide what was done" onPress={close} /> : null}
               <Turn
+                readOnly={readOnly}
+                manager={manager}
                 item={item}
                 active={current.has(item.id)}
                 going={going.has(item.id)}
                 when={when(item)}
                 onAnswer={onAnswer}
-                onAgain={heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain}
+                onAgain={readOnly || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain}
                 onFile={onFile}
                 onPicture={picture}
                 onCopyAnswer={copyAnswer}
@@ -917,7 +972,7 @@ export const Transcript = memo(function Transcript({
           )
         })}
 
-        {retryable ? (
+        {!readOnly && retryable ? (
           <div className="turn">
             <button type="button" className="quiet retry" disabled={retrying} onClick={onRetry}>Try again</button>
           </div>
@@ -927,7 +982,7 @@ export const Transcript = memo(function Transcript({
           <div className="turn"><div className="did" role="status">Checking public IP...</div></div>
         ) : null}
 
-        {stopped ? (
+        {!readOnly && stopped ? (
           <div className="turn">
             <button type="button" className="quiet" onClick={onContinue}>
               Continue
@@ -935,7 +990,7 @@ export const Transcript = memo(function Transcript({
           </div>
         ) : null}
 
-        {working && items.at(-1)?.kind !== 'card' ? (
+        {working && items.at(-1)?.kind !== 'card' && !waiting.some((item) => item.kind === 'card') ? (
           <div className="turn">
             <div className="did" role="status" style={{ cursor: 'default' }}>
               <span className="glyph spinning">
@@ -947,7 +1002,7 @@ export const Transcript = memo(function Transcript({
         ) : null}
 
         {/* Its turn is over, and what it started goes on. */}
-        {working || runs.length === 0 ? null : (
+        {readOnly || working || runs.length === 0 ? null : (
           <div className="turn">
             <button type="button" className="did" title="What runs in the background (/tasks)" onClick={() => onTasks(true)}>
               <span className="glyph spinning">
@@ -962,13 +1017,15 @@ export const Transcript = memo(function Transcript({
 
         {waiting.map((item) => (
           <Turn
+            readOnly={readOnly}
+            manager={manager}
             key={item.id}
             item={item}
             active={false}
             going={false}
             when={undefined}
             onAnswer={onAnswer}
-            onAgain={heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain}
+            onAgain={readOnly || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain}
             onFile={onFile}
             onPicture={picture}
             onCopyAnswer={copyAnswer}
