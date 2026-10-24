@@ -33,12 +33,12 @@ jobs:
             os: linux
             arch: x64
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - id: pinned
         run: echo "version=$(sed -n 's/^VERSION=//p' scripts/whisper.sh)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: client/whisper/bin/${{ matrix.os }}-${{ matrix.arch }}
           key: whisper-cli-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.pinned.outputs.version }}-${{ hashFiles('client/scripts/whisper.sh') }}
@@ -61,7 +61,7 @@ jobs:
             win-x64) "$bin/whisper-cli.exe" --help > /dev/null ;;
           esac
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: whisper-cli-${{ matrix.os }}-${{ matrix.arch }}
           path: client/whisper/bin/${{ matrix.os }}-${{ matrix.arch }}

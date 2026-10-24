@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { GUIDE, keepCodexGuide, keepGuide } from '../src/main/guide'
+import { GUIDE, keepCodexGuide, keepGuide, launchers } from '../src/main/guide'
 import { memoryNotes, Sessions } from '../src/main/sessions'
 import { llmProvider } from '../src/main/sessions/provider'
 import type { LlmProvider } from '../src/main/sessions/provider'
@@ -13,8 +13,9 @@ describe('what Claude Code is told about GeckIt', () => {
   let folder = ''
   const was = process.env['CLAUDE_CONFIG_DIR']
   const codexWas = process.env['CODEX_HOME']
-  // The command is written under the home folder, and a test that turns the guide off would delete the real one.
+  // The command is written under the home folder, and a test that turns the guide off would delete the real one. Windows reads the home from USERPROFILE.
   const home = process.env['HOME']
+  const profile = process.env['USERPROFILE']
   const read = (name: string): Promise<string> => readFile(join(folder, name), 'utf8').catch(() => 'gone')
 
   beforeEach(async () => {
@@ -22,6 +23,7 @@ describe('what Claude Code is told about GeckIt', () => {
     process.env['CLAUDE_CONFIG_DIR'] = folder
     process.env['CODEX_HOME'] = folder
     process.env['HOME'] = folder
+    process.env['USERPROFILE'] = folder
   })
 
   afterEach(() => {
@@ -30,6 +32,8 @@ describe('what Claude Code is told about GeckIt', () => {
     if (codexWas === undefined) delete process.env['CODEX_HOME']
     else process.env['CODEX_HOME'] = codexWas
     process.env['HOME'] = home
+    if (profile === undefined) delete process.env['USERPROFILE']
+    else process.env['USERPROFILE'] = profile
   })
 
   it('writes the file and one line that reads it, leaving what was there', async () => {
@@ -99,5 +103,45 @@ describe('what Claude Code is told about GeckIt', () => {
     const sessions = new Sessions({ notes: memoryNotes(), changed: () => {}, items: () => {}, account: () => {}, notify: () => {}, plugins: [kimi, mirror] })
     await sessions.setAllInstructions({ guideClaude: true, guideCodex: false, guidePlugins: { 'plugin:kimi': false }, browserNames: {}, providerPlugins: [kimi, mirror] })
     expect(called).toEqual([['kimi', false], ['mirror', false]])
+  })
+
+  it('writes the command as a shell script, and on Windows a .cmd beside it that cmd reads whatever the code page', () => {
+    const posix = launchers('/Applications/GeckIt.app/Contents/MacOS/GeckIt', '/Applications/GeckIt.app/Contents/Resources/app.asar/out/main/cli.js', '/Users/alex/Library/Application Support/geckit', 'darwin')
+    expect(posix.cmd).toBeUndefined()
+    expect(posix.sh).toBe([
+      '#!/bin/sh',
+      '# Written by GeckIt when it starts. Anything changed here is written over.',
+      'GECKIT_DATA="/Users/alex/Library/Application Support/geckit" ELECTRON_RUN_AS_NODE=1 exec "/Applications/GeckIt.app/Contents/MacOS/GeckIt" "/Applications/GeckIt.app/Contents/Resources/app.asar/out/main/cli.js" "$@"',
+      '',
+    ].join('\n'))
+    const windows = launchers('C:\\Users\\anton\\AppData\\Local\\Programs\\geckit\\GeckIt.exe', 'C:\\Users\\anton\\AppData\\Local\\Programs\\geckit\\resources\\app.asar\\out\\main\\cli.js', 'C:\\Users\\anton\\AppData\\Roaming\\geckit', 'win32', 'C:\\Users\\anton')
+    expect(windows.sh).toContain('GECKIT_DATA="C:/Users/anton/AppData/Roaming/geckit" ELECTRON_RUN_AS_NODE=1 exec "C:/Users/anton/AppData/Local/Programs/geckit/GeckIt.exe" "C:/Users/anton/AppData/Local/Programs/geckit/resources/app.asar/out/main/cli.js" "$@"')
+    expect(windows.cmd).toBe([
+      '@echo off',
+      'setlocal',
+      'rem Written by GeckIt when it starts. Anything changed here is written over.',
+      'set "GECKIT_DATA=%USERPROFILE%\\AppData\\Roaming\\geckit"',
+      'set "ELECTRON_RUN_AS_NODE=1"',
+      '"%USERPROFILE%\\AppData\\Local\\Programs\\geckit\\GeckIt.exe" "%USERPROFILE%\\AppData\\Local\\Programs\\geckit\\resources\\app.asar\\out\\main\\cli.js" %*',
+      '',
+    ].join('\r\n'))
+    const elsewhere = launchers('D:\\Tools\\100%\\GeckIt.exe', 'D:\\Tools\\100%\\resources\\app.asar\\out\\main\\cli.js', 'C:\\Users\\antonia\\AppData\\Roaming\\geckit', 'win32', 'C:\\Users\\anton\\')
+    expect(elsewhere.cmd).toContain('set "GECKIT_DATA=C:\\Users\\antonia\\AppData\\Roaming\\geckit"')
+    expect(elsewhere.cmd).toContain('"D:\\Tools\\100%%\\GeckIt.exe" "D:\\Tools\\100%%\\resources\\app.asar\\out\\main\\cli.js" %*')
+  })
+
+  it('on Windows tells Codex the .cmd and a batch from a file instead of a heredoc', async () => {
+    const was = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      await keepCodexGuide(true)
+      const guide = await read('GECKIT.md')
+      expect(guide).toContain('.geckit/bin/geckit.cmd start --conversations conversations.json')
+      expect(guide).not.toContain("<<'EOF'")
+      expect(guide).toContain('with the file holding')
+    } finally {
+      Object.defineProperty(process, 'platform', { value: was })
+      await keepCodexGuide(false)
+    }
   })
 })

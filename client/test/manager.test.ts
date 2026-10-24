@@ -12,6 +12,7 @@ import type { ManagerCliContext, ManagerDeps } from '../src/main/manager'
 import { ManagerOperations, managerFile, managerProvider, managerReadOnly } from '../src/main/manager-operations'
 import { managerCommands, managerContext, managerHistoryItem, managerMessage, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
 import { manage } from '../src/cli/manage'
+import { askedEndpoint } from '../src/cli/endpoint'
 import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerReplyOrigin, ManagerView } from '../src/shared/manager'
 import { Sessions, memoryNotes } from '../src/main/sessions'
 import type { SessionsDeps } from '../src/main/sessions'
@@ -1520,7 +1521,7 @@ describe('Manager session', () => {
         socket.end(`${JSON.stringify({ ok: true, result: JSON.stringify({ args: asked.args }) })}\n`)
       })
     })
-    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(join(f.directory, 'geckit.sock'), resolve) })
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(askedEndpoint(f.directory), resolve) })
     try {
       const result = await manage(['projects', 'list'], f.directory, { GECKIT_MANAGER_SESSION: 'real-session', GECKIT_MANAGER_TOKEN: 'socket-secret', GECKIT_MANAGER_OPERATION: 'list-1' })
       expect(result.ok).toBe(true)
@@ -1697,7 +1698,7 @@ describe('retry and steer command bridge', () => {
         void f.manager.command(asked).then((answer) => socket.end(`${JSON.stringify(answer)}\n`))
       })
     })
-    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(join(f.directory, 'geckit.sock'), resolve) })
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(askedEndpoint(f.directory), resolve) })
     f.setCli(async (args, context) => {
       const response = await manage(args, context.data, { GECKIT_MANAGER_SESSION: context.session, GECKIT_MANAGER_TOKEN: context.token, GECKIT_MANAGER_OPERATION: context.operation })
       if (!response.ok) throw new Error(response.said)

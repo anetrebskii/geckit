@@ -491,8 +491,10 @@ interface Pending {
  * GeckIt's own `geckit start`, run as itself: the request it makes is the
  * question, so Claude Code's own permission for it would ask the same thing
  * twice. A heredoc feeding it tasks is let through too, but nothing chained.
+ * On Windows the path begins with a drive letter and goes on with forward
+ * slashes, as GECKIT.md writes it there; a path with a space in it is quoted.
  */
-const GECKIT_START = /^(?:~|\$HOME|\/[^\s;&|<>`$]*)\/\.geckit\/bin\/geckit(?:-local)? start(?: [^;&|<>`$\n]*?)?(?: <<-?'([A-Z_]+)')?$/
+const GECKIT_START = /^(?:(?:~|\$HOME|\/[^\s;&|<>`$"]*|[A-Za-z]:\/[^\s;&|<>`$"]*)\/\.geckit\/bin\/geckit(?:-local)?|"(?:~|\$HOME|\/[^;&|<>`$"\n]*|[A-Za-z]:\/[^;&|<>`$"\n]*)\/\.geckit\/bin\/geckit(?:-local)?") start(?: [^;&|<>`$\n]*?)?(?: <<-?'([A-Z_]+)')?$/
 
 export function startsConversations(command: string): boolean {
   const [first = '', ...rest] = command.trim().split('\n')
@@ -519,6 +521,8 @@ export class Sessions {
   /** Requests from `geckit start` waiting for an answer, by the item showing them. */
   readonly #requests = new Map<string, Pending>()
   readonly #answering = new Set<string>()
+  /** The cards of requests made by a program rather than a conversation (`requestFromApp`). */
+  readonly #holders = new Set<string>()
   readonly #rows = new Map<string, Row>()
   #watching: string | undefined
   #goalWatch: ReturnType<typeof setInterval> | undefined
@@ -1219,12 +1223,31 @@ export class Sessions {
     session = this.requestOrigin(session)
     const live = this.#live.get(session) ?? this.#adopt(session)
     if (live === undefined) return Promise.resolve(undefined)
-    const item: SessionItem = { kind: 'request', id: `request:${randomUUID()}`, tasks: tasks.map(({ root: _root, ...task }) => task) }
+    return this.#ask(live, tasks, mode, gone)
+  }
+
+  /**
+   * A program on this computer asks, with `geckit start --app`, for
+   * conversations to be started. There is no conversation for it to ask in, so
+   * the request gets a card of its own, in the first task's project, held only
+   * in memory: nothing can be said in it, and once the request is answered or
+   * withdrawn the card goes, and what was started stands on the board instead.
+   */
+  requestFromApp(app: string, tasks: readonly Asking[], mode: SessionMode, gone: AbortSignal): Promise<RequestAnswered | undefined> {
+    const first = tasks[0]
+    if (first === undefined) return Promise.resolve(undefined)
+    const live = this.#fresh(`pending-${randomUUID()}`, first.root, `${app}: ${tasks.length === 1 ? first.title : conversations(tasks.length)}`, mode)
+    this.#holders.add(live.id)
+    return this.#ask(live, tasks, mode, gone, app)
+  }
+
+  #ask(live: Live, tasks: readonly Asking[], mode: SessionMode, gone: AbortSignal, app?: string): Promise<RequestAnswered | undefined> {
+    const item: SessionItem = { kind: 'request', id: `request:${randomUUID()}`, ...(app === undefined ? {} : { app }), tasks: tasks.map(({ root: _root, ...task }) => task) }
     live.kept.push({ after: [...live.items.keys()].at(-1), item })
     live.items.set(item.id, item)
     live.at = this.#now()
     return new Promise((answered) => {
-      this.#requests.set(item.id, { session, roots: tasks.map((task) => task.root), mode, answered })
+      this.#requests.set(item.id, { session: live.id, roots: tasks.map((task) => task.root), mode, answered })
       gone.addEventListener('abort', () => this.#withdrawn(item.id))
       this.#tellItems({ id: live.id, items: [item] })
       this.#changed()
@@ -1232,13 +1255,20 @@ export class Sessions {
       const projects = [...new Set(tasks.map((task) => task.project))].join(', ')
       this.#deps.notify({
         session: live.id,
-        title: `Wants to start ${conversations(tasks.length)} - ${projects}`,
+        title: `${app === undefined ? 'Wants' : `${app} wants`} to start ${conversations(tasks.length)} - ${projects}`,
         subtitle: this.#deps.notes.all()[live.id]?.title ?? live.title,
         body: tasks.map((task) => task.title).join('\n'),
         asks: true,
         request: item.id,
       })
     })
+  }
+
+  /** A program's request card, answered or withdrawn: it goes from the board, and nothing of it is written down. */
+  #dropHolder(id: string): void {
+    this.#holders.delete(id)
+    this.#live.delete(id)
+    this.#changed()
   }
 
   /** The person's answer to a request: the ticked tasks start a pause apart, each with its note, and the rest are refused. */
@@ -1265,7 +1295,8 @@ export class Sessions {
         if (tasks.some((one) => one.started !== undefined)) await new Promise<void>((resolve) => (this.#deps.later ?? after)(resolve, pause()))
         const id = await this.send({ root, mode: pending.mode, text, provider: task.provider ?? providerOf(live.id) })
         this.rename(id, task.title)
-        this.#note(id, { parent: live.id })
+        // A program's card is gone in a moment, so there is no conversation to be the parent.
+        if (!this.#holders.has(live.id)) this.#note(id, { parent: live.id })
         if (task.goal !== undefined) await this.send({ session: id, root, mode: pending.mode, text: `/goal ${task.goal}` })
         const child = this.#live.get(id)
         if (child !== undefined && (this.#waiting(child) || child.heldOperation !== undefined)) waits.add(id)
@@ -1273,7 +1304,8 @@ export class Sessions {
       }
 
       this.#requests.delete(request)
-      this.#settle(live, { ...item, tasks, answer: { how: 'answered', where: choice.where, ...(reply === undefined ? {} : { reply }) } })
+      if (this.#holders.has(live.id)) this.#dropHolder(live.id)
+      else this.#settle(live, { ...item, tasks, answer: { how: 'answered', where: choice.where, ...(reply === undefined ? {} : { reply }) } })
       pending.answered({
         tasks: tasks.map((task) =>
           task.started !== undefined
@@ -1319,7 +1351,8 @@ export class Sessions {
     this.#requests.delete(request)
     const live = this.#live.get(pending.session)
     const item = live?.items.get(request)
-    if (live !== undefined && item?.kind === 'request') this.#settle(live, { ...item, answer: { how: 'withdrawn' } })
+    if (this.#holders.has(pending.session)) this.#dropHolder(pending.session)
+    else if (live !== undefined && item?.kind === 'request') this.#settle(live, { ...item, answer: { how: 'withdrawn' } })
     else this.#changed()
     pending.answered(undefined)
   }
@@ -1780,6 +1813,7 @@ export class Sessions {
 
   /** `go` is a message that is part of a turn already given its slot, so the limit never holds it. */
   async send(message: SessionMessage, go = false, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt, delivery?: DeliveryAttempt): Promise<string> {
+    if (message.session !== undefined && this.#holders.has(message.session)) throw new Error('Answer the request first: nothing is said in its card.')
     if (message.session !== undefined && this.isManager(message.session) && !this.#managerMessages.has(message)) {
       if (this.#managerSend === undefined) this.#ordinary(message.session)
       else return this.#managerSend(message)
@@ -2957,6 +2991,13 @@ export class Sessions {
   async remove(ids: readonly string[]): Promise<string[]> {
     const gone: string[] = []
     for (const id of ids) {
+      // A program's request card deleted is the request refused, which takes the card away.
+      if (this.#holders.has(id)) {
+        const asked = [...this.#requests].find(([, pending]) => pending.session === id)?.[0]
+        if (asked === undefined) this.#dropHolder(id)
+        else await this.answerRequest(asked, { start: [], notes: [], where: 'mac' })
+        continue
+      }
       const root = this.#live.get(id)?.root ?? this.#rows.get(id)?.root
       if (root === undefined) continue
       // The tool writes to the file as it exits, so it goes first.
