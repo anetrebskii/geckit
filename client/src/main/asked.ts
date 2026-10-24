@@ -20,6 +20,8 @@ import type { MigrationAnswered, MigrationAsked } from './session-migration'
 export interface StartAsked {
   /** The requesting conversation's provider-qualified ID. */
   readonly from?: string
+  /** The program asking, outside any conversation, as it names itself (`geckit start --app`). */
+  readonly app?: string
   readonly tasks: readonly Task[]
 }
 

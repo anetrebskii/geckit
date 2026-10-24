@@ -154,6 +154,8 @@ export type SessionItem =
   | {
       readonly kind: 'request'
       readonly id: string
+      /** The program that asked, for a request made outside any conversation; Claude or Codex otherwise. */
+      readonly app?: string
       readonly tasks: readonly RequestTask[]
       readonly answer?: RequestAnswer
     }
