@@ -1,26 +1,28 @@
 import { rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import type { Server } from 'node:net'
-import { join } from 'node:path'
 
 import { app } from 'electron'
 import log from 'electron-log'
 
 import type { RequestAnswered } from './sessions'
+import { askedEndpoint, endpointOnDisk } from '../cli/endpoint'
 import type { Task } from '../cli/start'
 import type { MigrationAnswered, MigrationAsked } from './session-migration'
 import type { ManagerCliAsked, ManagerCliAnswered } from '../shared/manager'
 
 /**
- * Where `geckit start` reaches the running application. One line of JSON in,
- * one line out once the person has answered, so the command waits for them
- * and nothing starts without them. The command ending first withdraws what
- * it asked for.
+ * Where `geckit start` reaches the running application: a socket file, or a
+ * named pipe on Windows (`cli/endpoint.ts`). One line of JSON in, one line out
+ * once the person has answered, so the command waits for them and nothing
+ * starts without them. The command ending first withdraws what it asked for.
  */
 
 export interface StartAsked {
   /** The requesting conversation's provider-qualified ID. */
   readonly from?: string
+  /** The program asking, outside any conversation, as it names itself (`geckit start --app`). */
+  readonly app?: string
   readonly tasks: readonly Task[]
 }
 
@@ -29,11 +31,16 @@ export type StartAnswered = { readonly ok: false; readonly error: string } | ({ 
 export type CliAsked = StartAsked | MigrationAsked | ManagerCliAsked
 export type CliAnswered = StartAnswered | MigrationAnswered | ManagerCliAnswered
 
-export const askedPath = (): string => join(app.getPath('userData'), 'geckit.sock')
+export const askedPath = (): string => askedEndpoint(app.getPath('userData'))
+
+/** A socket file left by a run that ended badly would keep the next one from listening; a pipe leaves nothing. */
+const forget = (path: string): void => {
+  if (endpointOnDisk()) rmSync(path, { force: true })
+}
 
 export function listenAsked(answer: (asked: CliAsked, gone: AbortSignal) => Promise<CliAnswered>): Server {
   const path = askedPath()
-  rmSync(path, { force: true })
+  forget(path)
   const server = createServer((socket) => {
     const gone = new AbortController()
     socket.on('close', () => gone.abort())
@@ -65,5 +72,5 @@ export function listenAsked(answer: (asked: CliAsked, gone: AbortSignal) => Prom
 
 export function closeAsked(server: Server | undefined): void {
   server?.close()
-  rmSync(askedPath(), { force: true })
+  forget(askedPath())
 }

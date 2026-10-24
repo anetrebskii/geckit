@@ -166,15 +166,17 @@ function Waiting({
     submit()
   }
   const at = <T,>(list: readonly T[], index: number, value: T): readonly T[] => list.map((was, where) => (where === index ? value : was))
+  // A program asking outside any conversation names itself; in a conversation it is the assistant there.
+  const asker = item.app ?? 'Claude'
 
   return (
-    <div className="card request" role="group" aria-label={`Claude wants to start ${conversations(count)}`}>
+    <div className="card request" role="group" aria-label={`${asker} wants to start ${conversations(count)}`}>
       <div className="request-head">
         <span className="request-glyph">
           <Icon name="plus" size={12} />
         </span>
         <div className="request-heading">
-          <div className="card-title">Claude wants to start {conversations(count)}</div>
+          <div className="card-title">{asker} wants to start {conversations(count)}</div>
           <div className="request-sub">
             {lineup !== undefined
               ? `${String(lineup.working)} of ${String(lineup.limit)} working, so ${one ? 'this waits' : 'these wait'} in the queue.`

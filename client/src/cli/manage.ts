@@ -1,5 +1,5 @@
 import { connect } from 'node:net'
-import { join } from 'node:path'
+import { askedEndpoint } from './endpoint'
 
 import type { ManagerCliAnswered, ManagerCliAsked } from '../shared/manager'
 
@@ -12,7 +12,7 @@ export function manage(args: readonly string[], directory: string, env: NodeJS.P
   if (!session || !token || !operation) return Promise.resolve({ ok: false, said: 'These commands require the current Manager session. Open Manager in GeckIt.' })
   const asked: ManagerCliAsked = { action: 'manage', args, session, token, operation }
   return new Promise((resolve) => {
-    const socket = connect(join(directory, 'geckit.sock'))
+    const socket = connect(askedEndpoint(directory))
     let received = ''
     socket.setEncoding('utf8')
     socket.setTimeout(55_000, () => socket.destroy(new Error('GeckIt did not answer the Manager command. Delivery may be uncertain; check current state before retrying.')))
