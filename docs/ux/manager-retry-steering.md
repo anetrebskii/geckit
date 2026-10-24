@@ -145,3 +145,19 @@ Alex can reconnect the VPN and leave Manager enabled. A saved public-IP lookup f
 Transient recheck attempts stay quiet: no repeated Telegram notifications or new success toast. An exact VPN mismatch is a changeable network condition, not a permanent manual-only error. Configuration errors, arbitrary text resembling a VPN refusal, held approval answers and disabled providers remain outside automatic retry. Recovery does not restart GeckIt or any worker. Multiple queued inputs retain order; the held input is not duplicated.
 
 Acceptance: prove mismatch-to-approved recovery, continued rejection while still mismatched, unavailable-to-mismatch-to-approved recovery, persisted manual-recovery restoration, interrupted-turn reconciliation without replay, and cancellation during validation. Prove configuration/hook/native approvals remain manual. Browser fixtures do not establish current live VPN eligibility.
+
+## Delayed CLI receipts after recovery
+
+A result arriving after recovery describes the operation that actually ran, rather than the time Alex first requested the work. `sessions list` and `sessions show` expose `observedAt` for their fresh read. A cached operation retains its original result and observation time; use a new operation ID for a new read. Neither a delayed read nor a worker notification establishes that a previous retry caused the current state.
+
+A completed host operation and delivery of its receipt to Manager are separate boundaries. If VPN verification holds that receipt, it remains in the durable inbox and is delivered through guarded recovery before later queued inbox entries. Retrying receipt delivery must not rerun the CLI command. A failed worker creation stays failed with its exact provider reason; a recovered receipt does not turn it into a started worker or invent a session ID. An interrupted mutation without a definitive receipt remains uncertain and requires read-only reconciliation.
+
+| From | Event | To | What Alex sees |
+| --- | --- | --- | --- |
+| Host command complete | VPN check blocks its receipt automatically | Receipt held | Existing VPN reason; command result remains saved |
+| Receipt held | Guarded revalidation passes automatically | Receipt delivered | Original result, without running the command again |
+| Receipt delivered | Manager consumes the result automatically | Next queued entry | Existing queue continues in order |
+| Worker creation failed | Receipt arrives after recovery | Failed | Original provider error; no success or worker identity claimed |
+| Read complete | Same operation ID is requested again | Cached read | Original observation time and existing cached-result notice |
+
+No new UI or notification is added. Genuine permission requirements and optional uncertain-upload review retain their existing behavior. Regression fixtures distinguish host operation execution, runtime receipt acceptance, model consumption and restart reconciliation; fixture success is not a live provider or VPN test.
