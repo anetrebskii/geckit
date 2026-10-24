@@ -8,7 +8,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest'
 
 import { LIFETIME, MOST_LINKS, Shares } from '../src/main/shares'
 import type { Opened } from '../src/main/shares'
-import { ENDED, endsIn, shareLink, shareTargets } from '../src/shared/share'
+import { ENDED, endsIn, readShareLink, shareLink, shareTargets } from '../src/shared/share'
 
 const home = realpathSync(mkdtempSync(join(tmpdir(), 'geckit-shares-')))
 const project = join(home, 'Projects', 'app')
@@ -72,7 +72,11 @@ describe('what a message names that could be shared', () => {
   })
 
   it('puts the key after the #, which a browser never sends to the server', () => {
-    expect(shareLink('abc')).toBe('https://geckit-signal.web.app/#abc')
+    const key = 'a'.repeat(43)
+    expect(shareLink(key, 1_800_000_000_000)).toBe(`https://geckit-signal.web.app/#${key}.${(1_800_000_000_000).toString(36)}`)
+    expect(readShareLink(new URL(shareLink(key, 1_800_000_000_000)).hash)).toEqual({ key, expiresAt: 1_800_000_000_000 })
+    expect(readShareLink(`#${key}`)).toEqual({ key })
+    expect(readShareLink('#short')).toBeUndefined()
     expect(endsIn(LIFETIME, 0)).toBe('12 h')
     expect(endsIn(10 * 60_000, 0)).toBe('10 min')
   })

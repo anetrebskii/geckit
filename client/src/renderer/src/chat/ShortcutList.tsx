@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { assistantFor, assistantsIn, modelName, SESSION_MODES, shownProjects } from '../../../shared/api'
-import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
+import { isCodexProvider, llmProviderInfo, providerModel, selectableProviders } from '../../../shared/providers'
 import type { ClaudeModel, ModelsSaid, SessionMode, SessionProvider, Shortcut, ShortcutDraft } from '../../../shared/api'
 import { isRemote } from '../../../shared/hosts'
 import { cronOf, describeCron, describeTime, nextRun, nextTimed, WEEKDAYS, whenOf } from '../../../shared/schedule'
@@ -77,7 +77,7 @@ export function ShortcutList({
       prompt: '',
       mode: 'auto',
       provider,
-      model: isCodexProvider(provider) ? chat.settings.codexModel : chat.settings.chatModel,
+      model: providerModel(chat.settings, provider),
       ...(isCodexProvider(provider) ? { reasoning: chat.settings.codexReasoning } : {}),
       on: true,
     }
@@ -307,7 +307,7 @@ function Editor({
             if (value === provider) return
             const { model: _model, reasoning: _reasoning, goal: _goal, ...rest } = draft
             const nextProvider = value as SessionProvider
-            setDraft({ ...rest, provider: nextProvider, model: nextProvider === 'codex' ? chat.settings.codexModel : chat.settings.chatModel, ...(nextProvider === 'codex' ? { reasoning: chat.settings.codexReasoning } : {}) })
+            setDraft({ ...rest, provider: nextProvider, model: providerModel(chat.settings, nextProvider), ...(isCodexProvider(nextProvider) ? { reasoning: chat.settings.codexReasoning } : {}) })
           }}
         />
         {available ? null : <span className="shortcut-next wrong">{enabled.includes(provider) ? 'Codex supports local folders only.' : `This shortcut will not run while ${assistant} is disabled in Settings.`}</span>}

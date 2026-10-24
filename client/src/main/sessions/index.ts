@@ -39,6 +39,7 @@ import type {
   SessionProvider,
   Settings,
   SessionNotice,
+  SessionDeliveryReceipt,
   SessionState,
   SessionSpend,
   SessionStatus,
@@ -47,7 +48,7 @@ import type {
   WorkItem,
 } from '../../shared/api'
 import { providerOf, sessionMode } from '../../shared/api'
-import { VPN_IP_UNAVAILABLE_ERROR, vpnIpPausedError } from '../../shared/vpn-ip'
+import { VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError, vpnIpPausedError } from '../../shared/vpn-ip'
 import { VpnSessionMonitor } from './vpn-monitor'
 import { HOOK_BLOCKED } from './claude-read'
 import { providerQuotas } from '../../shared/provider-usage'
@@ -95,6 +96,7 @@ import {
  */
 
 export interface SessionNote {
+  readonly delivery?: SessionDeliveryReceipt
   readonly managerPrompt?: string
   readonly managerBegun?: true
   readonly managerOwner?: string
@@ -275,12 +277,15 @@ export interface Kept {
 type HeldOperation =
   | { readonly kind: 'message'; readonly message: SessionMessage; readonly go: boolean; readonly queued?: Queued['id'] | undefined; readonly delegateFrom?: Live['id'] | undefined }
   | { readonly kind: 'answer'; readonly card: string; readonly answer: CardAnswer | string }
+  | { readonly kind: 'allowed'; readonly ask: string; readonly wanted: Wanted }
   | { readonly kind: 'inject'; readonly queued: Queued['id'] }
   | { readonly kind: 'delegate'; readonly queued: Queued['id']; readonly history: boolean }
   | { readonly kind: 'mode'; readonly mode: SessionMode }
   | { readonly kind: 'remote' }
   | { readonly kind: 'background'; readonly item: SessionItem['id'] }
   | { readonly kind: 'continue' }
+
+interface DeliveryAttempt { receipt: SessionDeliveryReceipt }
 
 class GuardRefused extends Error {}
 class GuardCancelled extends Error {}
@@ -533,6 +538,9 @@ export class Sessions {
 
   constructor(deps: SessionsDeps) {
     this.#deps = deps
+    for (const [id, note] of Object.entries(deps.notes.all())) {
+      if (note.delivery?.status === 'pending') deps.notes.set(id, { ...note, delivery: { ...note.delivery, status: 'uncertain', reason: 'GeckIt closed before this attempt had a definitive receipt. Inspect current state; nothing was resent.' } })
+    }
     if (deps.vpnMonitor !== undefined && deps.beforeSend !== undefined) this.#vpnMonitor = new VpnSessionMonitor({
       vpnMonitor: deps.vpnMonitor,
       beforeSend: deps.beforeSend,
@@ -983,6 +991,7 @@ export class Sessions {
       const goal = live?.goal ?? note?.goal
       sessions.push({
         id,
+        ...(note?.delivery === undefined ? {} : { delivery: note.delivery }),
         ...(this.isManager(id) ? { manager: true as const } : {}),
         ...(note?.managerOwner === undefined ? {} : { managerManaged: true as const }),
         ...(providerOf(id) === 'claude' ? {} : { provider: providerOf(id) }),
@@ -1623,17 +1632,76 @@ export class Sessions {
     }
   }
 
+  #beginDelivery(id: string, action: SessionDeliveryReceipt['action'], attempt: string = randomUUID()): DeliveryAttempt {
+    const delivery: DeliveryAttempt = { receipt: { id, attempt, action, status: 'pending', at: this.#now() } }
+    if (id !== '') { this.#note(id, { delivery: delivery.receipt }); this.#changed() }
+    return delivery
+  }
+
+  #finishDelivery(delivery: DeliveryAttempt | undefined, id: string, status: SessionDeliveryReceipt['status'], detail: Pick<SessionDeliveryReceipt, 'reason' | 'queued' | 'acceptance'> = {}): void {
+    if (delivery === undefined) return
+    delivery.receipt = { ...delivery.receipt, id, status, ...detail }
+    const latest = this.#deps.notes.all()[id]?.delivery
+    if (latest === undefined || latest.attempt === delivery.receipt.attempt) {
+      this.#note(id, { delivery: delivery.receipt })
+      this.#changed()
+    }
+  }
+
+  async sendWithReceipt(message: SessionMessage, attempt?: string): Promise<SessionDeliveryReceipt> {
+    const delivery = this.#beginDelivery(message.session ?? message.submission ?? '', 'send', attempt)
+    try {
+      await this.send(message, false, undefined, undefined, undefined, undefined, delivery)
+      if (delivery.receipt.status === 'pending') this.#finishDelivery(delivery, delivery.receipt.id, 'blocked', { reason: 'The request did not dispatch. Inspect current state before retrying.' })
+    }
+    catch (error) { this.#finishDelivery(delivery, delivery.receipt.id, 'failed', { reason: error instanceof Error ? error.message : String(error) }) }
+    return delivery.receipt
+  }
+
+  async retryWithReceipt(id: string, attempt?: string): Promise<SessionDeliveryReceipt> {
+    const delivery = this.#beginDelivery(id, 'retry', attempt)
+    try { await this.#retry(id, undefined, delivery) }
+    catch (error) { this.#finishDelivery(delivery, id, 'failed', { reason: error instanceof Error ? error.message : String(error) }) }
+    return delivery.receipt
+  }
+
   async retry(id: string): Promise<string | undefined> {
+    const delivery = this.#beginDelivery(id, 'retry')
+    try { return await this.#retry(id, undefined, delivery) }
+    catch (error) { this.#finishDelivery(delivery, id, 'failed', { reason: error instanceof Error ? error.message : String(error) }); throw error }
+  }
+
+  async retryManager(id: string, reconciliation: string): Promise<boolean> {
+    const note = this.#deps.notes.all()[id]
+    if (!this.isManager(id) || note?.managerPrompt === undefined || this.#suspendedManagers.has(id)) return false
+    if (!retryableVpnIpError(note.guardError) || this.pendingForManager(id).length > 0) return false
+    if (note.heldOperation?.kind !== 'message' && note.heldOperation?.kind !== 'continue') return false
+    await this.#retry(id, reconciliation)
+    return this.#deps.notes.all()[id]?.guardError === undefined
+  }
+
+  async #retry(id: string, managerReconciliation?: string, delivery?: DeliveryAttempt): Promise<string | undefined> {
     const live = this.#live.get(id) ?? this.#adopt(id)
-    if (live === undefined || live.retrying || live.checkingIp) return undefined
+    if (live === undefined || live.retrying || live.checkingIp) {
+      this.#finishDelivery(delivery, id, 'blocked', { reason: live === undefined ? 'This conversation is not here any more.' : 'Another retry or public IP check is in progress.' })
+      return undefined
+    }
+    if (live.heldOperation === undefined && (live.state === 'working' || live.state === 'asks')) {
+      this.#finishDelivery(delivery, id, 'blocked', { reason: 'This conversation is already working or awaiting an answer. Nothing was queued.' })
+      return undefined
+    }
     live.retrying = true
     const generation = live.guardGeneration
     const operation = live.heldOperation
     const paused = live.vpnPaused
-    const continued = (): Promise<string> => this.send({ session: id, root: live.root, mode: live.mode, text: 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }), ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }) }, true)
+    const continued = (): Promise<string> => {
+      const message: SessionMessage = { session: id, root: live.root, mode: live.mode, text: managerReconciliation ?? 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }), ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }) }
+      if (managerReconciliation !== undefined) this.#managerMessages.add(message)
+      return this.send(message, true, undefined, undefined, undefined, undefined, delivery)
+    }
     try {
       if (live.vpnGoalPause !== undefined) await live.vpnGoalPause
-      if (generation !== live.guardGeneration) return id
+      if (generation !== live.guardGeneration) { this.#finishDelivery(delivery, id, 'blocked', { reason: 'The pending operation changed before retry.' }); return id }
       if (live.vpnPaused && live.driver !== undefined) {
         clearTimeout(live.stopping)
         live.stopping = undefined
@@ -1644,10 +1712,11 @@ export class Sessions {
         live.closing = driver.end().catch(() => undefined).finally(() => { live.closing = undefined })
         await live.closing
       }
-      if (generation !== live.guardGeneration) return id
+      if (generation !== live.guardGeneration) { this.#finishDelivery(delivery, id, 'blocked', { reason: 'The pending operation changed before retry.' }); return id }
       switch (operation?.kind) {
         case 'message': {
-          const next = await this.send(operation.message, operation.go, id, operation.queued, operation.delegateFrom)
+          if (managerReconciliation !== undefined) this.#managerMessages.add(operation.message)
+          const next = await this.send(operation.message, operation.go, id, operation.queued, operation.delegateFrom, undefined, delivery)
           const destination = this.#live.get(next)
           if (next !== id && operation.delegateFrom === undefined && destination?.heldOperation === undefined && generation === live.guardGeneration) {
             if (destination !== undefined && live.queued.length > 0) this.#queue(destination, live.queued.map((one) => ({ ...one, message: { ...one.message, session: next } })))
@@ -1666,13 +1735,21 @@ export class Sessions {
           if (!live.asks.has(ask)) {
             live.state = 'failed'
             this.#clearGuard(live)
-            return await this.send({ session: id, root: live.root, mode: live.mode, text: 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }) }, true)
+            return await this.send({ session: id, root: live.root, mode: live.mode, text: 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }) }, true, undefined, undefined, undefined, undefined, delivery)
           }
           await this.answer(id, operation.card, operation.answer)
           break
         }
-        case 'inject': await this.injectQueued(id, operation.queued); break
-        case 'delegate': return await this.delegate(id, operation.queued, operation.history)
+        case 'allowed':
+          if (!live.asks.has(operation.ask)) {
+            live.state = 'failed'
+            this.#clearGuard(live)
+            return await this.send({ session: id, root: live.root, mode: live.mode, text: 'continue', ...(live.chosen === undefined ? {} : { model: live.chosen }) }, true, undefined, undefined, undefined, undefined, delivery)
+          }
+          await this.#allowed(live, operation.ask, operation.wanted)
+          break
+        case 'inject': await this.injectQueued(id, operation.queued, delivery); break
+        case 'delegate': return await this.delegate(id, operation.queued, operation.history, delivery)
         case 'mode':
           await this.mode(id, operation.mode)
           if (paused && live.heldOperation === undefined) return await continued()
@@ -1688,16 +1765,21 @@ export class Sessions {
         default: {
           const last = [...live.items.values()].at(-1)
           const mine = last?.kind === 'note' && last.text === HOOK_BLOCKED ? [...live.items.values()].findLast((item) => item.kind === 'mine' && item.unsent === true) : undefined
-          if (mine?.kind === 'mine') return await this.send({ session: id, root: live.root, mode: live.mode, text: mine.text, again: mine.id, ...(mine.images === undefined ? {} : { images: mine.images }), ...(live.chosen === undefined ? {} : { model: live.chosen }), ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }) }, true)
+          if (mine?.kind === 'mine') return await this.send({ session: id, root: live.root, mode: live.mode, text: mine.text, again: mine.id, ...(mine.images === undefined ? {} : { images: mine.images }), ...(live.chosen === undefined ? {} : { model: live.chosen }), ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }) }, true, undefined, undefined, undefined, undefined, delivery)
           return await continued()
         }
       }
+      if (delivery?.receipt.status === 'pending') this.#finishDelivery(delivery, id, live.heldOperation === undefined ? 'accepted' : 'blocked', live.heldOperation === undefined ? { acceptance: 'host' } : { reason: live.guardError ?? 'The operation is still held.' })
       return id
-    } finally { live.retrying = false; this.#changed() }
+    } finally {
+      if (delivery?.receipt.status === 'pending') this.#finishDelivery(delivery, id, 'blocked', { reason: live.guardError ?? 'The pending operation changed before dispatch.' })
+      live.retrying = false
+      this.#changed()
+    }
   }
 
   /** `go` is a message that is part of a turn already given its slot, so the limit never holds it. */
-  async send(message: SessionMessage, go = false, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt): Promise<string> {
+  async send(message: SessionMessage, go = false, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt, delivery?: DeliveryAttempt): Promise<string> {
     if (message.session !== undefined && this.isManager(message.session) && !this.#managerMessages.has(message)) {
       if (this.#managerSend === undefined) this.#ordinary(message.session)
       else return this.#managerSend(message)
@@ -1707,14 +1789,20 @@ export class Sessions {
       ? message.submission === undefined ? undefined : this.#live.get(message.submission)
       : (this.#live.get(message.session) ?? this.#adopt(message.session))
     target ??= guardSource === undefined ? undefined : this.#live.get(guardSource)
-    if (!go && guardSource === undefined && message.again !== undefined && target?.queued.some((one) => one.message.again === message.again)) return target.id
+    const duplicate = message.again === undefined ? undefined : target?.queued.find((one) => one.message.again === message.again)
+    if (!go && guardSource === undefined && duplicate !== undefined && target !== undefined) {
+      this.#finishDelivery(delivery, target.id, 'queued', { queued: duplicate.id })
+      return target.id
+    }
     const saved = message.again === undefined ? undefined : target?.items.get(message.again)
     if (saved?.kind === 'mine') {
       const { text: _text, images: _images, ...submission } = message
       message = { ...submission, text: saved.text, ...(saved.images === undefined ? {} : { images: saved.images }) }
     }
     if (target?.heldOperation !== undefined && guardSource === undefined && message.again === undefined && !go && !target.checkingIp) {
-      this.#queue(target, [...target.queued, { id: `queued:${randomUUID()}`, message: { ...message, session: target.id }, at: this.#now() }])
+      const entry: Queued = { id: `queued:${randomUUID()}`, message: { ...message, session: target.id }, at: this.#now() }
+      this.#queue(target, [...target.queued, entry])
+      this.#finishDelivery(delivery, target.id, 'queued', { queued: entry.id })
       this.#changed()
       return target.id
     }
@@ -1729,7 +1817,7 @@ export class Sessions {
     const attempt: GuardAttempt | undefined = guardAttempt ?? (target === undefined ? undefined : { live: target, guardGeneration: target.guardGeneration, deadline: Date.now() + 10_000 })
     try {
       if (this.#deps.beforeSend !== undefined) await this.#check(target, attempt)
-      const id = await this.#send(message, go, attempt, queued, delegateFrom)
+      const id = await this.#send(message, go, attempt, queued, delegateFrom, delivery)
       const live = this.#live.get(id)
       if (live !== undefined && live.guardError === undefined) this.#clearGuard(live)
       if (provisional && target !== undefined && id !== target.id) {
@@ -1759,12 +1847,13 @@ export class Sessions {
       const mine = existing?.kind === 'mine' ? existing : [...target.items.values()].findLast((one) => one.kind === 'mine' && one.unsent === true)
       const retained: HeldOperation = { ...operation, message: { ...message, ...(mine === undefined || message.session === undefined ? {} : { again: mine.id }) } }
       if (cancelled) target.state = 'failed'
+      this.#finishDelivery(delivery, target.id, 'blocked', { reason: text })
       this.#blocked(target, retained, text)
       return target.id
     }
   }
 
-  async #send(message: SessionMessage, go: boolean, attempt?: GuardAttempt, queued?: Queued['id'], delegateFrom?: Live['id']): Promise<string> {
+  async #send(message: SessionMessage, go: boolean, attempt?: GuardAttempt, queued?: Queued['id'], delegateFrom?: Live['id'], delivery?: DeliveryAttempt): Promise<string> {
 
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
@@ -1815,6 +1904,7 @@ export class Sessions {
       }
       live.vpnGoalPaused = false
       this.#note(live.id, { vpnGoalPaused: undefined })
+      this.#finishDelivery(delivery, live.id, 'accepted', { acceptance: 'host' })
       return live.id
     }
     live.messages += 1
@@ -1838,7 +1928,9 @@ export class Sessions {
       const waiting = message.goal?.trim() || (backend.nativeGoals ? undefined : goalSent(message.text))
       if (waiting !== undefined && waiting !== '') live.goal = { condition: waiting, checks: 0 }
       if (message.goal?.trim()) this.#note(live.id, { goal: live.goal })
-      this.#queue(live, [...live.queued, { id: `queued:${randomUUID()}`, message: { ...message, session: live.id }, at: this.#now() }])
+      const entry: Queued = { id: `queued:${randomUUID()}`, message: { ...message, session: live.id }, at: this.#now() }
+      this.#queue(live, [...live.queued, entry])
+      this.#finishDelivery(delivery, live.id, 'queued', { queued: entry.id })
       if (!live.begun && !this.#rows.has(live.id) && !live.question) this.#note(live.id, { title: live.title, mode: live.mode, unborn: live.root })
       this.#changed()
       return live.id
@@ -1901,6 +1993,7 @@ export class Sessions {
     // a key while the host it reaches is on a plan, or the other way round.
     if (backend.subscriptionOnly && live.driver === undefined && !isRemote(live.root) && (await this.account(providerOf(live.id))).key === true) {
       this.#tellItems({ id: live.id, items: [mine], gone })
+      this.#finishDelivery(delivery, live.id, 'blocked', { reason: 'This assistant is signed in with an API key; a subscription is required.' })
       this.#ended(live, { kind: 'ended', how: 'offPlan' })
       return live.id
     }
@@ -1926,10 +2019,12 @@ export class Sessions {
         this.#tellItems({ id: live.id, items: [unsent], gone })
         live.state = 'failed'
         this.#uncut(live.id)
+        this.#finishDelivery(delivery, live.id, 'blocked', { reason: error instanceof Error ? error.message : String(error) })
         this.#blocked(live, { kind: 'message', message: { ...message, session: live.id, again: mine.id }, go, queued, delegateFrom }, error instanceof GuardCancelled ? 'Not sent: public IP check cancelled. Try again when you are ready.' : error.message)
         return live.id
       }
       this.#tellItems({ id: live.id, items: [mine], gone })
+      this.#finishDelivery(delivery, live.id, 'failed', { reason: error instanceof Error ? error.message : String(error) })
       this.#ended(live, { kind: 'ended', how: 'failed', text: error instanceof Error ? error.message : String(error) })
       return live.id
     }
@@ -1941,6 +2036,7 @@ export class Sessions {
         this.#tellItems({ id: live.id, items: [unsent] })
         live.state = 'failed'
         this.#uncut(live.id)
+        this.#finishDelivery(delivery, live.id, 'blocked', { reason: error instanceof Error ? error.message : String(error) })
         this.#blocked(live, { kind: 'message', message: { ...message, session: live.id, again: mine.id }, go, queued, delegateFrom }, error instanceof GuardCancelled ? 'Not sent: public IP check cancelled. Try again when you are ready.' : error instanceof Error ? error.message : String(error))
         this.#changed()
         return live.id
@@ -1966,7 +2062,16 @@ export class Sessions {
     live.told = []
     live.kept = live.kept.filter((kept) => !told.some((one) => one.id === kept.item.id))
     const managerPrompt = this.#deps.notes.all()[live.id]?.managerPrompt
-    live.driver?.send(managerPrompt === undefined ? saying.text : managerContext(managerPrompt, saying.text), saying.images, told.flatMap((one) => one.blocks))
+    if (live.driver === undefined) throw new Error('The assistant disconnected before dispatch.')
+    try {
+      live.driver.send(managerPrompt === undefined ? saying.text : managerContext(managerPrompt, saying.text), saying.images, told.flatMap((one) => one.blocks))
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      this.#finishDelivery(delivery, live.id, 'failed', { reason })
+      this.#ended(live, { kind: 'ended', how: 'failed', text: reason })
+      return live.id
+    }
+    this.#finishDelivery(delivery, live.id, 'accepted', { acceptance: 'host' })
     return live.id
   }
 
@@ -2438,24 +2543,61 @@ export class Sessions {
     this.#changed()
   }
 
-  async injectQueued(id: string, queued: string): Promise<void> {
+  async steer(id: string, text: string, attempt?: string): Promise<SessionDeliveryReceipt> {
+    const delivery = this.#beginDelivery(id, 'steer', attempt)
+    const live = this.#live.get(id)
+    const blocked = (reason: string, status: 'blocked' | 'unsupported' = 'blocked'): SessionDeliveryReceipt => {
+      this.#finishDelivery(delivery, id, status, { reason })
+      return delivery.receipt
+    }
+    if (!text.trim()) return blocked('Enter a correction before steering.')
+    if (live !== undefined && live.asks.size > 0) return blocked('Answer the assistant before sending this message.')
+    if (/^!|^\/[a-z][\w-]*(?:\s|$)/i.test(text.trim())) return blocked('Commands and goals wait until the current work finishes.')
+    if (live === undefined || live.state !== 'working' || live.vpnPaused || live.heldOperation !== undefined || live.stopping !== undefined) return blocked('The assistant is not working. Nothing was queued.')
+    if (live.injecting !== undefined || live.checkingIp || this.#dispatching.has(id)) return blocked('Another delivery or public IP check is in progress. Nothing was queued.')
+    if (live.driver?.inject === undefined) return blocked('This assistant cannot receive a message while working.', 'unsupported')
+    const selected: Queued = { id: `steer:${delivery.receipt.attempt}`, at: this.#now(), message: { session: id, root: live.root, mode: live.mode, text } }
+    try { await this.#inject(live, selected, true, delivery) }
+    catch (error) {
+      const reason = (error instanceof Error ? error.message : String(error)).replace('Your message is still queued.', 'Nothing was queued.')
+      this.#finishDelivery(delivery, id, error instanceof GuardRefused || error instanceof GuardCancelled ? 'blocked' : 'failed', { reason })
+    }
+    return delivery.receipt
+  }
+
+  async injectQueued(id: string, queued: string, delivery?: DeliveryAttempt): Promise<void> {
     const live = this.#live.get(id)
     const selected = live?.queued.find((one) => one.id === queued)
-    if (live === undefined || selected === undefined || live.injecting !== undefined || this.#dispatching.has(id)) return
+    if (live === undefined || selected === undefined || live.injecting !== undefined || this.#dispatching.has(id)) {
+      this.#finishDelivery(delivery, id, 'blocked', { reason: 'The queued message changed or another delivery is in progress.' })
+      return
+    }
+    await this.#inject(live, selected, false, delivery)
+  }
+
+  async #inject(live: Live, selected: Queued, direct: boolean, delivery?: DeliveryAttempt): Promise<void> {
+    const queued = selected.id
     const driver = live.driver
     if (driver?.inject === undefined) throw new Error('This assistant cannot receive a message while working.')
     if (live.state !== 'working' || live.stopping !== undefined) throw new Error('The assistant is no longer working. Your message is still queued.')
     if (live.asks.size > 0) throw new Error('Answer the assistant before sending this message.')
     if (/^!|^\/[a-z][\w-]*(?:\s|$)/i.test(selected.message.text.trim()) || selected.message.goal?.trim()) throw new Error('Commands and goals wait until the current work finishes.')
     if (this.#deps.beforeSend !== undefined) {
-      if (live.checkingIp) return
+      if (live.checkingIp) { if (direct) throw new GuardRefused('Another public IP check is in progress. Nothing was queued.'); return }
       try { await this.#check(live) } catch (error) {
+        if (direct) throw error
+        this.#finishDelivery(delivery, live.id, 'blocked', { reason: error instanceof Error ? error.message : String(error) })
         if (error instanceof GuardRefused) this.#blocked(live, { kind: 'inject', queued }, error.message)
         return
       }
-      if (live.driver !== driver || live.state !== 'working' || live.stopping !== undefined || live.queued.find((one) => one.id === queued) !== selected) return
+      if (live.driver !== driver || live.state !== 'working' || live.stopping !== undefined || live.asks.size > 0 || (!direct && live.queued.find((one) => one.id === queued) !== selected)) {
+        if (direct) throw new GuardCancelled('The working turn changed. Nothing was queued.')
+        this.#finishDelivery(delivery, live.id, 'blocked', { reason: 'The working turn or queued message changed before dispatch.' })
+        return
+      }
       this.#clearGuard(live)
     }
+    const generation = live.guardGeneration
     const before = [...live.told]
     const item: Extract<SessionItem, { kind: 'mine' }> = {
       kind: 'mine', id: `mine:${randomUUID()}`, text: selected.message.text, at: this.#now(),
@@ -2467,17 +2609,21 @@ export class Sessions {
     this.#changed()
     try {
       await driver.inject(selected.message.text, selected.message.images, before.flatMap((one) => one.blocks))
-      this.#queue(live, live.queued.filter((one) => one.id !== queued))
-      live.parked = false
-      live.told = live.told.filter((one) => !before.includes(one))
-      live.kept = live.kept.filter((kept) => !before.some((one) => one.id === kept.item.id))
+      const current = this.#live.get(live.id) === live && live.driver === driver && generation === live.guardGeneration
+      if (!direct) this.#queue(live, live.queued.filter((one) => one.id !== queued))
+      this.#finishDelivery(delivery, live.id, 'steered', { acceptance: 'runtime' })
+      if (current) {
+        live.parked = false
+        live.told = live.told.filter((one) => !before.includes(one))
+        live.kept = live.kept.filter((kept) => !before.some((one) => one.id === kept.item.id))
+      }
       live.items.set(item.id, item)
       live.last = item.id
       live.at = this.#now()
       this.#tellItems({ id: live.id, items: [item] })
     } catch (error) {
       live.injectionEchoes = live.injectionEchoes.filter((one) => one !== echo)
-      live.parked = true
+      if (!direct) live.parked = true
       throw error
     } finally {
       live.injecting = undefined
@@ -2534,7 +2680,7 @@ export class Sessions {
    * A message taken out of the queue and started as a conversation of its own, in the same project and mode:
    * empty, or with this one's history as it stood when the message was queued.
    */
-  async delegate(id: string, queued: string, history = false): Promise<string | undefined> {
+  async delegate(id: string, queued: string, history = false, delivery?: DeliveryAttempt): Promise<string | undefined> {
     const from = this.#live.get(id) ?? this.#adopt(id)
     const at = from?.queued.find((one) => one.id === queued)?.at ?? this.#now()
     const taken = from?.queued.find((one) => one.id === queued)?.message
@@ -2553,7 +2699,7 @@ export class Sessions {
         }
       }
       if (!history) {
-        const started = await this.send({ ...message, mode, provider: providerOf(id) }, false, id, queued, id, attempt)
+        const started = await this.send({ ...message, mode, provider: providerOf(id) }, false, id, queued, id, attempt, delivery)
         if (this.#live.get(started)?.heldOperation === undefined) {
           this.unqueue(id, queued)
           this.#clearGuard(from)
@@ -2567,7 +2713,7 @@ export class Sessions {
       live.fork = forked.fork
       for (const item of forked.items) live.items.set(item.id, item)
       if (forked.begun) this.#note(forked.id, { here: true })
-      const started = await this.send({ ...message, mode, session: forked.id }, false, id, queued, id, attempt)
+      const started = await this.send({ ...message, mode, session: forked.id }, false, id, queued, id, attempt, delivery)
       if (this.#live.get(started)?.heldOperation === undefined) {
         this.unqueue(id, queued)
         this.#clearGuard(from)
@@ -3210,8 +3356,10 @@ export class Sessions {
     const keys = grantKeys(wanted)
     const granted = keys.length > 0 && keys.every((key) => live.grants.has(key))
     const automatic = granted || (wanted.kind === 'command' && startsConversations(wanted.command))
-    if (automatic && this.#deps.beforeSend === undefined) {
-      live.driver?.answer(ask, 'once')
+    if (automatic) {
+      // Already allowed for this session, so it is answered without a card. The
+      // public IP check still runs and holds it when the address is not approved.
+      void this.#allowed(live, ask, wanted)
       return
     }
 
@@ -3242,14 +3390,43 @@ export class Sessions {
     this.#tellItems({ id: live.id, items: [card], ...(gone.length > 0 ? { gone } : {}) })
     this.#changed()
 
-    if (automatic) { void this.answer(live.id, card.id, 'once'); return }
     this.#tell(live, 'Needs an answer', live.stands, true)
+  }
+
+  /**
+   * Something already allowed for this session, answered without a card.
+   *
+   * The card is never drawn, so the conversation never says it is asking: what it
+   * would have asked is answered on the spot. The public IP check still runs, and
+   * a refused check holds the answer for a retry, as it does for a card.
+   */
+  async #allowed(live: Live, ask: string, wanted: Wanted): Promise<void> {
+    const driver = live.driver
+    if (driver === undefined) return
+    // The ask is kept while it is decided, so a refused check can be retried.
+    live.asks.set(ask, wanted)
+    if (this.#deps.beforeSend !== undefined) {
+      if (live.checkingIp) return
+      try { await this.#check(live) } catch (error) {
+        if (error instanceof GuardRefused) this.#blocked(live, { kind: 'allowed', ask, wanted }, error.message)
+        return
+      }
+      if (this.#live.get(live.id) !== live || live.driver !== driver) return
+    }
+    if (this.#live.get(live.id) !== live || live.driver !== driver) return
+    this.#clearGuard(live)
+    live.asks.delete(ask)
+    this.#managerRequests.get(live)?.delete(ask)
+    driver.answer(ask, 'once')
+    this.#changed()
   }
 
   #tell(live: Live, what: string, body: string, asks: boolean): void {
     if (this.#watching === live.id) return
+    const delivery = this.#deps.notes.all()[live.id]?.delivery
     this.#deps.notify({
       session: live.id,
+      ...(delivery === undefined ? {} : { delivery }),
       title: `${what} - ${basename(live.root)}`,
       subtitle: this.#deps.notes.all()[live.id]?.title ?? live.title,
       body,

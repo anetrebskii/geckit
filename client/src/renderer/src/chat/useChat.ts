@@ -24,7 +24,7 @@ import type {
   SessionStatus,
 } from '../../../shared/api'
 import { assistantFor, assistantsIn, homeOf, providerOf, resumeCommand, shownProjects } from '../../../shared/api'
-import { isCodexProvider } from '../../../shared/providers'
+import { isCodexProvider, modelPreference, providerModel } from '../../../shared/providers'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { asImage, canShow } from '../pictures'
@@ -539,7 +539,7 @@ export function useChat(): Chat {
   const mode = session?.mode ?? settings.chatMode
   const transport: ClaudeTransport = 'stream'
   const nextChoice = shown.kind === 'session' ? nextChoices.get(shown.id) : undefined
-  const model = nextChoice?.model ?? session?.chosen ?? (isCodexProvider(provider) ? session?.model ?? settings.codexModel : settings.chatModel)
+  const model = nextChoice?.model ?? session?.chosen ?? (provider === 'claude' ? undefined : session?.model) ?? providerModel(settings, provider)
   const wantedReasoning = nextChoice?.reasoning ?? session?.reasoning ?? settings.codexReasoning
   const catalog: readonly ClaudeModel[] | undefined = Array.isArray(models.said) && models.on.startsWith(`${provider}:`) ? models.said : undefined
   const reasoningModel = catalog?.find((one) => one.value === (model || session?.model)) ?? catalog?.find((one) => one.isDefault)
@@ -784,6 +784,7 @@ export function useChat(): Chat {
     (text: string, images: readonly SessionImage[] = []) => {
       const now = held.current
       const provider = assistantFor(now.settings)
+      const model = providerModel(now.settings, provider)
       return window.geckit.chat
         .send({
           root: '',
@@ -793,7 +794,7 @@ export function useChat(): Chat {
           text,
           question: true,
           ...(images.length === 0 ? {} : { images }),
-          ...((isCodexProvider(provider) ? now.settings.codexModel : now.settings.chatModel) === '' ? {} : { model: isCodexProvider(provider) ? now.settings.codexModel : now.settings.chatModel }),
+          ...(model === '' ? {} : { model }),
         })
         .then((id) => open({ kind: 'session', id }))
     },
@@ -804,7 +805,7 @@ export function useChat(): Chat {
     (root: string, text: string, goal: string, images: readonly SessionImage[] = []) => {
       const now = held.current
       const provider = assistantFor(now.settings, root)
-      const chosen = isCodexProvider(provider) ? now.settings.codexModel : now.settings.chatModel
+      const chosen = providerModel(now.settings, provider)
       const model = chosen === '' ? {} : { model: chosen }
       const carried = images.length === 0 ? {} : { images }
       return window.geckit.chat.send({ root, provider, ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(isCodexProvider(provider) && goal.trim() !== '' ? { goal: goal.trim() } : {}) }).then((id) => {
@@ -1050,7 +1051,7 @@ export function useChat(): Chat {
       }
     },
     setModel: (next) => {
-      change(isCodexProvider(provider) ? { codexModel: next, codexReasoning: '' } : { chatModel: next })
+      change({ ...modelPreference(settings, provider, next), ...(isCodexProvider(provider) ? { codexReasoning: '' } : {}) })
       if (shownRef.current.kind === 'session') {
         const id = shownRef.current.id
         setNextChoices((all) => new Map(all).set(id, { ...all.get(id), model: next, ...(isCodexProvider(provider) ? { reasoning: '' } : {}) }))
