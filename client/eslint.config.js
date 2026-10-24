@@ -16,5 +16,10 @@ export default ts.config(
       '@typescript-eslint/consistent-type-imports': 'error',
     },
   },
+  {
+    files: ['src/main/telegram-bot.ts', 'src/main/telegram.ts', 'src/main/vpn-ip.ts'],
+    // These boundaries replace provider/network errors with redacted messages.
+    rules: { 'preserve-caught-error': 'off' },
+  },
   { ignores: ['out/', 'release/', 'node_modules/'] },
 )
