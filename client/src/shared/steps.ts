@@ -1,5 +1,12 @@
 import type { SessionImage, SessionItem } from './api'
 
+export const isPending = (item: SessionItem): boolean =>
+  (item.kind === 'card' && item.card.answered === undefined) || (item.kind === 'request' && item.answer === undefined)
+
+export function pendingLast(items: readonly SessionItem[]): SessionItem[] {
+  return [...items.filter((item) => !isPending(item)), ...items.filter(isPending)]
+}
+
 /** What was done on the way to an answer, as opposed to what was said: read, ran, thought, changed, allowed. */
 export const isStep = (item: SessionItem): boolean =>
   item.kind === 'did' ||

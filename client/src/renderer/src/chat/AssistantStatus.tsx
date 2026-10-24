@@ -1,3 +1,4 @@
+import { ManagerStatus } from './ManagerInspection'
 import { readAccount } from './accounts'
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -144,7 +145,7 @@ function Details({ chat, snapshots, providers, phone, now, onClose }: { readonly
   return createPortal(<div className="dialog-scrim" onMouseDown={onClose}><div className="dialog assistant-details-dialog" role="dialog" aria-modal="true" aria-labelledby={title} onMouseDown={(event) => event.stopPropagation()}>{content}</div></div>, document.body)
 }
 
-function AssistantStatusView({ chat, phone = false }: { readonly chat: AssistantStatusChat; readonly phone?: boolean }): React.JSX.Element {
+function AssistantStatusView({ chat, phone = false, onManagerSettings }: { readonly chat: AssistantStatusChat; readonly phone?: boolean; readonly onManagerSettings?: (() => void) | undefined }): React.JSX.Element {
   const chatProviders = chat.settings.chatProviders
   const providers = useMemo(() => assistantsIn({ chatProviders }), [chatProviders])
   const snapshots = useAccounts(providers, phone)
@@ -159,9 +160,9 @@ function AssistantStatusView({ chat, phone = false }: { readonly chat: Assistant
       const info = llmProviderInfo(provider, undefined, chat.settings.providerPlugins)
       const groups = groupsOf(provider, snapshots.find((one) => one.provider === provider), chat)
       return groups.map((group) => <button type="button" className="assistant-chip" key={`${provider}:${group.name}`} title={`${info.name}${group.name === '' ? '' : ` · ${group.name}`}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><Icon name={info.icon} size={12} /><span className="assistant-name">{info.shortName}{groups.length > 1 ? ` · ${group.name}` : ''}</span><Summary group={group} now={now} /></button>)
-    })}</div><button type="button" className="assistant-open" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Assistants<Icon name="chevron" size={10} /></button></div>}
+    })}</div>{onManagerSettings === undefined ? null : <ManagerStatus settings={chat.settings} onSettings={onManagerSettings} />}<button type="button" className="assistant-open" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Assistants<Icon name="chevron" size={10} /></button></div>}
     {open ? <Details chat={chat} providers={providers} snapshots={snapshots} phone={phone} now={now} onClose={close} /> : null}
   </>
 }
 
-export const AssistantStatus = memo(AssistantStatusView, (previous, next) => previous.phone === next.phone && previous.chat.provider === next.chat.provider && previous.chat.settings.chatProviders === next.chat.settings.chatProviders && previous.chat.settings.providerPlugins === next.chat.settings.providerPlugins && previous.chat.hosts === next.chat.hosts && previous.chat.plans === next.chat.plans && previous.chat.plan === next.chat.plan && previous.chat.plansAt === next.chat.plansAt)
+export const AssistantStatus = memo(AssistantStatusView, (previous, next) => previous.phone === next.phone && previous.onManagerSettings === next.onManagerSettings && previous.chat.provider === next.chat.provider && previous.chat.settings.chatProviders === next.chat.settings.chatProviders && previous.chat.settings.providerPlugins === next.chat.settings.providerPlugins && previous.chat.hosts === next.chat.hosts && previous.chat.plans === next.chat.plans && previous.chat.plan === next.chat.plan && previous.chat.plansAt === next.chat.plansAt)

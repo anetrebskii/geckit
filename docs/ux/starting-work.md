@@ -207,6 +207,23 @@ Verification on 2026-10-14: the native settings test covers loading an older set
 
 Browser verification remains unavailable: Chrome automation failed to load its request-header policy, the in-app browser was unavailable, and native Chrome control stalled. Reopen/reload, keyboard selection, scrolling and full-screen light/dark review were not completed. The temporary native-boundary harness is retained in `/private/tmp/geckit-folder-verification` for that review. No running GeckIt conversation was restarted.
 
+### Assistant-specific model selection - 2026-10-21
+
+Fix the reported case where choosing OpenCode + Ollama after Claude Code (tmux) leaves "opus" selected and sends an incompatible model. In New task, Ask a question and a new conversation's composer, choose the assistant first, then its model, then submit. The displayed model and the submitted model must belong to the same assistant, including when a folder's assistant preference changes the effective assistant.
+
+| From | Event | To | What the person sees |
+|---|---|---|---|
+| Form or new composer | Chooses another assistant, or chooses a folder with another assistant | Same form with that assistant's saved model | Its saved model, or "Default" if none was saved; the previous assistant's model disappears immediately |
+| Form or new composer | Chooses a model, including "Default" | Same form with the chosen model | The choice is saved for that assistant alone |
+| Form or new composer | Switches back, reopens the form or restarts GeckIt | Restored selection | That assistant's own saved choice |
+| Model catalog loading or unavailable | Changes assistant | Same form with the new assistant's choice | "Default" or its own saved model, alongside the existing loading/unavailable option; no borrowed model while waiting |
+| Ready form or composer | Presses Start, Ask or Send | New task or question | The request uses exactly the displayed assistant and its model; "Default" leaves model selection to that assistant |
+| Existing conversation | Opens or continues it | Same conversation | Its existing chosen model remains; switching assistants elsewhere does not replace it |
+
+Use the existing wording, layout, keyboard controls and theme rules. Preference saving is immediate and silent, with no timer, notice or confirmation. Cancelling preserves the saved assistant/model preferences and follows the existing text/draft rules. Existing builtin Claude and Codex model preferences remain compatible; independent libraries start at "Default" until a model is chosen for that library. Libraries backed by the same runtime still have independent model preferences. Custom saved identifiers remain selectable if a catalog is temporarily unavailable. No new settings screen or catalog-based rejection is added: a missing catalog entry is not proof a saved model is invalid.
+
+Verification on 2026-10-21: all 1,149 tests across 85 files, type checks, lint and desktop/mobile builds passed. Fresh native-store loads verify legacy settings and independent model preferences survive restart. An isolated browser harness using the actual Board, NewTask, Composer and useChat verified Claude/tmux/Ollama/Codex switching, saved choices after reload, Default with unavailable catalogs, and matching task/question/composer send payloads. Full-context visual review covered desktop at 1352 x 621 and phone at 390 x 844 in light/dark, with form scrolling, focus and keyboard activation. Static performance review found no new row work, list sorting, polling or animation; model lookup scans only the small preference list. Native calls and model responses were fixtures: no live inference, installed-app update or physical-phone verification was performed. The temporary harness was removed after review.
+
 ## 9. What is left out on purpose
 
 | Not done | Why |

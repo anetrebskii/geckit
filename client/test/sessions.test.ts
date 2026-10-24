@@ -559,6 +559,20 @@ describe('what it may do unasked', () => {
     })
   })
 
+  it('leaves Auto to a library that runs it', async () => {
+    const held = fakeClaude()
+    const provider: LlmProvider = {
+      ...llmProvider({ claude: held.claude }, 'claude'),
+      id: 'plugin:opencode-llama', family: 'plugin:opencode-llama', name: 'OpenCode + Ollama',
+      create: async () => 'plugin:opencode-llama:session',
+    }
+    const built = build({ plugins: [provider] })
+    const id = await built.sessions.send({ provider: provider.family, root: ROOT, mode: 'auto', text: 'hi' })
+    held.fake.hear({ signals: [{ kind: 'started', session: id, key: false, model: 'ollama/qwen3.5:0.8b', mode: 'auto' }] })
+    expect(of(built.rows, id)?.mode).toBe('auto')
+    expect(last(built.fanned)?.items.some((item) => item.kind === 'note' && item.note === 'mode')).toBe(false)
+  })
+
   it('leaves auto to Claude Code, and asks about whatever it still sends', async () => {
     const built = build()
     await started(built, 'auto')
@@ -609,6 +623,36 @@ describe('answering a card', () => {
       ['c2', 'once'],
     ])
     expect(cards(built.fanned)).toHaveLength(1)
+  })
+
+  it('never says it is asking about something already allowed for the session', async () => {
+    const built = build()
+    const id = await started(built, 'manual')
+    built.fake.hear({ signals: [wanted] })
+    built.sessions.answer(id, 'card:c1', 'session')
+    const before = built.rows.length
+    built.fake.hear({ signals: [{ ...wanted, ask: 'c2' }] })
+    await vi.waitFor(() => expect(built.fake.answered).toHaveLength(2))
+    const states = built.rows.slice(before).map((all) => all.find((one) => one.id === id)?.state)
+    expect(states).not.toContain('asks')
+    expect(of(built.rows, id)?.state).toBe('working')
+    expect(cards(built.fanned)).toHaveLength(1)
+  })
+
+  it('never says it is asking about a tool a library already allowed for the session', async () => {
+    // A library that names its tools rather than their commands, as OpenCode does.
+    const tool: Signal = { kind: 'asks', ask: 't1', wanted: { kind: 'other', tool: 'shell', detail: 'echo hello' } }
+    const built = build()
+    const id = await started(built, 'manual')
+    built.fake.hear({ signals: [tool] })
+    built.sessions.answer(id, 'card:t1', 'session')
+    const before = built.rows.length
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 't2', wanted: { kind: 'other', tool: 'shell', detail: 'echo goodbye' } }] })
+    await vi.waitFor(() => expect(built.fake.answered).toHaveLength(2))
+    const states = built.rows.slice(before).map((all) => all.find((one) => one.id === id)?.state)
+    expect(states).not.toContain('asks')
+    expect(built.fake.answered).toEqual([['t1', 'session'], ['t2', 'once']])
+    expect(of(built.rows, id)?.state).toBe('working')
   })
 
   it('asks again about the same thing when it was only allowed once', async () => {
@@ -3405,4 +3449,111 @@ describe('periodic active-session VPN protection', () => {
     expect(of(built.rows, id)?.heldSend).toBe(cancel ? true : undefined)
     built.sessions.dispose()
   })
+})
+
+
+describe('attempt-bound worker delivery', () => {
+  it('steers native input without changing the normal queue or restarting the driver', async () => {
+    const inject = vi.fn<NonNullable<Driver['inject']>>(async () => undefined)
+    const built = build({}, inject)
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Ordered follow-up' })
+    const queued = of(built.rows, id)?.queued
+    const receipt = await built.sessions.steer(id, 'Immediate correction', 'native-steer')
+    expect(receipt).toMatchObject({ id, attempt: 'native-steer', status: 'steered', acceptance: 'runtime' })
+    expect(inject).toHaveBeenCalledExactlyOnceWith('Immediate correction', undefined, [])
+    expect(of(built.rows, id)?.queued).toEqual(queued)
+    expect(built.fake.sent).toHaveLength(1)
+    expect(built.fake.stopped).toBe(0)
+    expect(built.fake.ended).toBe(0)
+    expect(of(built.rows, id)?.delivery).toEqual(receipt)
+  })
+
+  it('keeps direct VPN refusal out of both the normal queue and retryable held operations', async () => {
+    let allowed = true
+    const inject = vi.fn<NonNullable<Driver['inject']>>(async () => undefined)
+    const notes = memoryNotes()
+    const built = build({ notes, beforeSend: async () => { if (!allowed) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } }, inject)
+    const id = await started(built)
+    allowed = false
+    expect(await built.sessions.steer(id, 'Do not defer this', 'blocked-steer')).toMatchObject({ status: 'blocked', reason: VPN_IP_UNAVAILABLE_ERROR })
+    expect(inject).not.toHaveBeenCalled()
+    expect(of(built.rows, id)?.queued).toBeUndefined()
+    expect(notes.all()[id]?.heldOperation).toBeUndefined()
+  })
+
+  it('refuses pending permissions and commands without answering or injecting them', async () => {
+    const inject = vi.fn<NonNullable<Driver['inject']>>(async () => undefined)
+    const built = build({}, inject)
+    const id = await started(built)
+    expect(await built.sessions.steer(id, '/goal bypass', 'command')).toMatchObject({ status: 'blocked', reason: expect.stringContaining('Commands and goals') })
+    built.fake.hear({ signals: [{ kind: 'asks', ask: 'native', wanted: { kind: 'write', paths: ['file.ts'] } }] })
+    expect(await built.sessions.steer(id, 'Allow it', 'permission')).toMatchObject({ status: 'blocked', reason: 'Answer the assistant before sending this message.' })
+    expect(built.fake.answered).toEqual([])
+    expect(inject).not.toHaveBeenCalled()
+    expect(of(built.rows, id)?.state).toBe('asks')
+  })
+
+  it('returns the original accepted result without overwriting a newer blocked attempt', async () => {
+    let accept: (() => void) | undefined
+    const inject = vi.fn<NonNullable<Driver['inject']>>(() => new Promise<void>((resolve) => { accept = resolve }))
+    const built = build({}, inject)
+    const id = await started(built)
+    const first = built.sessions.steer(id, 'First correction', 'first-steer')
+    expect(await built.sessions.steer(id, 'Second correction', 'second-steer')).toMatchObject({ status: 'blocked', attempt: 'second-steer' })
+    accept?.()
+    expect(await first).toMatchObject({ status: 'steered', attempt: 'first-steer' })
+    expect(of(built.rows, id)?.delivery).toMatchObject({ status: 'blocked', attempt: 'second-steer' })
+    expect(inject).toHaveBeenCalledTimes(1)
+    expect((await built.sessions.items(id)).filter((one) => one.kind === 'mine' && one.text === 'First correction')).toHaveLength(1)
+  })
+
+  it('does not clear a newer VPN hold when an older native injection accepts late', async () => {
+    let accept: (() => void) | undefined
+    let allowed = true
+    const inject = vi.fn<NonNullable<Driver['inject']>>(() => new Promise<void>((resolve) => { accept = resolve }))
+    const notes = memoryNotes()
+    const built = build({ notes, beforeSend: async () => { if (!allowed) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } }, inject)
+    const id = await started(built)
+    const first = built.sessions.steer(id, 'First correction', 'old-steer')
+    await vi.waitFor(() => expect(inject).toHaveBeenCalledTimes(1))
+    allowed = false
+    const blocked = await built.sessions.sendWithReceipt({ session: id, root: ROOT, mode: 'manual', text: 'New held work' }, 'new-send')
+    accept?.()
+    expect(await first).toMatchObject({ status: 'steered' })
+    expect(of(built.rows, id)?.delivery).toEqual(blocked)
+    expect(notes.all()[id]?.heldOperation).toMatchObject({ kind: 'message', message: { text: 'New held work' } })
+  })
+
+  it('restores a pending attempt as uncertain without replaying it after restart', () => {
+    const notes = memoryNotes()
+    notes.set('interrupted', { here: true, delivery: { id: 'interrupted', attempt: 'interrupted-steer', action: 'steer', at: 1, status: 'pending' } })
+    const built = build({ notes })
+    expect(notes.all()['interrupted']?.delivery).toMatchObject({ status: 'uncertain', attempt: 'interrupted-steer', reason: expect.stringContaining('nothing was resent') })
+    expect(built.fake.sent).toEqual([])
+    expect(built.fake.made).toEqual([])
+  })
+
+  it('reports synchronous native dispatch failure without a delivery claim', async () => {
+    const built = build({ claude: () => ({ send: () => { throw new Error('Transport closed') }, answer: () => undefined, stop: () => undefined, end: async () => undefined }) })
+    const receipt = await built.sessions.sendWithReceipt({ root: ROOT, mode: 'manual', text: 'Work' }, 'failed-send')
+    expect(receipt).toMatchObject({ status: 'failed', reason: 'Transport closed' })
+    expect(receipt).not.toHaveProperty('acceptance')
+  })
+})
+
+
+it('reports direct native steering failure without retaining or replaying the correction', async () => {
+  const notes = memoryNotes()
+  const inject = vi.fn<NonNullable<Driver['inject']>>(async () => { throw new Error('Native delivery rejected') })
+  const built = build({ notes }, inject)
+  const id = await started(built)
+  const receipt = await built.sessions.steer(id, 'Do not replay', 'failed-steer')
+  expect(receipt).toMatchObject({ status: 'failed', reason: 'Native delivery rejected' })
+  expect(receipt).not.toHaveProperty('acceptance')
+  expect(of(built.rows, id)?.queued).toBeUndefined()
+  expect(notes.all()[id]?.heldOperation).toBeUndefined()
+  expect((await built.sessions.items(id)).some((one) => one.kind === 'mine' && one.text === 'Do not replay')).toBe(false)
+  expect(built.fake.stopped).toBe(0)
+  expect(built.fake.ended).toBe(0)
 })

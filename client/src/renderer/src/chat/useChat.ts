@@ -1,4 +1,6 @@
 import { readAccount } from './accounts'
+import { useManager } from './useManager'
+import { MANAGER_CHAT_GUIDANCE } from '../../../shared/manager'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
@@ -22,7 +24,7 @@ import type {
   SessionStatus,
 } from '../../../shared/api'
 import { assistantFor, assistantsIn, homeOf, providerOf, resumeCommand, shownProjects } from '../../../shared/api'
-import { isCodexProvider } from '../../../shared/providers'
+import { isCodexProvider, modelPreference, providerModel } from '../../../shared/providers'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { asImage, canShow } from '../pictures'
@@ -220,6 +222,7 @@ function sameAsBefore(all: readonly ChatSession[]): ChatSession[] {
 
 export function useChat(): Chat {
   const [settings, change] = useSettings()
+  const manager = useManager()
   const { hosts, prompts } = useHosts()
   const [lineup, setLineup] = useState<Lineup>({ working: 0, limit: 0 })
   useEffect(() => {
@@ -285,9 +288,9 @@ export function useChat(): Chat {
   // One project is a scope the rest of the window understands; several are every project, narrowed.
   const scope = chosen.length === 1 ? (chosen[0] ?? ALL) : ALL
   const enabled = assistantsIn(settings)
-  const sessions = useMemo(() => storedSessions.filter((one) => enabled.includes(providerOf(one.id))), [storedSessions, enabled])
-  const everyone = useMemo(() => storedEveryone.filter((one) => enabled.includes(providerOf(one.id))), [storedEveryone, enabled])
-  const questions = useMemo(() => storedQuestions.filter((one) => enabled.includes(providerOf(one.id))), [storedQuestions, enabled])
+  const sessions = useMemo(() => storedSessions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedSessions, enabled])
+  const everyone = useMemo(() => storedEveryone.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedEveryone, enabled])
+  const questions = useMemo(() => storedQuestions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedQuestions, enabled])
   const visibleNotices = useMemo(() => notices.filter((one) => enabled.includes(providerOf(one.session))), [notices, enabled])
   const provider = shown.kind === 'session' ? providerOf(shown.id) : assistantFor(settings, scope === ALL ? started ?? shownProjects(settings)[0] ?? '' : scope)
 
@@ -435,7 +438,11 @@ export function useChat(): Chat {
     [],
   )
 
-  const open = useCallback((next: Shown) => {
+  const managerIds = useRef(new Set<string>())
+  useEffect(() => { if (manager?.session !== undefined) managerIds.current.add(manager.session.id) }, [manager?.session])
+
+  const open = useCallback((next: Shown): void => {
+    if (next.kind === 'session' && managerIds.current.has(next.id)) return
     const before = shownRef.current
     shownRef.current = next
     loadingItems.current = undefined
@@ -461,8 +468,27 @@ export function useChat(): Chat {
       setItems(updatedItems(read, loading.updates))
       loadingItems.current = undefined
       setItemsFor(next.id)
+    }).catch((error: Error) => {
+      if (!error.message.endsWith(MANAGER_CHAT_GUIDANCE)) throw error
+      managerIds.current.add(next.id)
+      if (shownRef.current !== next) return
+      shownRef.current = { kind: 'new' }
+      loadingItems.current = undefined
+      setShown({ kind: 'new' })
+      setItems([])
+      setItemsFor('new')
+      window.geckit.chat.watching(undefined)
     })
   }, [])
+
+  const currentManager = manager?.session?.id
+  const previousManager = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const previous = previousManager.current
+    previousManager.current = currentManager
+    const current = shownRef.current
+    if (current.kind === 'session' && (current.id === currentManager || (previous !== undefined && currentManager === undefined && current.id === previous))) open({ kind: 'new' })
+  }, [currentManager, open])
 
   if (shown.kind === 'session' && !enabled.includes(providerOf(shown.id))) {
     setShown({ kind: 'new' })
@@ -513,7 +539,7 @@ export function useChat(): Chat {
   const mode = session?.mode ?? settings.chatMode
   const transport: ClaudeTransport = 'stream'
   const nextChoice = shown.kind === 'session' ? nextChoices.get(shown.id) : undefined
-  const model = nextChoice?.model ?? session?.chosen ?? (isCodexProvider(provider) ? session?.model ?? settings.codexModel : settings.chatModel)
+  const model = nextChoice?.model ?? session?.chosen ?? (provider === 'claude' ? undefined : session?.model) ?? providerModel(settings, provider)
   const wantedReasoning = nextChoice?.reasoning ?? session?.reasoning ?? settings.codexReasoning
   const catalog: readonly ClaudeModel[] | undefined = Array.isArray(models.said) && models.on.startsWith(`${provider}:`) ? models.said : undefined
   const reasoningModel = catalog?.find((one) => one.value === (model || session?.model)) ?? catalog?.find((one) => one.isDefault)
@@ -758,6 +784,7 @@ export function useChat(): Chat {
     (text: string, images: readonly SessionImage[] = []) => {
       const now = held.current
       const provider = assistantFor(now.settings)
+      const model = providerModel(now.settings, provider)
       return window.geckit.chat
         .send({
           root: '',
@@ -767,7 +794,7 @@ export function useChat(): Chat {
           text,
           question: true,
           ...(images.length === 0 ? {} : { images }),
-          ...((isCodexProvider(provider) ? now.settings.codexModel : now.settings.chatModel) === '' ? {} : { model: isCodexProvider(provider) ? now.settings.codexModel : now.settings.chatModel }),
+          ...(model === '' ? {} : { model }),
         })
         .then((id) => open({ kind: 'session', id }))
     },
@@ -778,7 +805,7 @@ export function useChat(): Chat {
     (root: string, text: string, goal: string, images: readonly SessionImage[] = []) => {
       const now = held.current
       const provider = assistantFor(now.settings, root)
-      const chosen = isCodexProvider(provider) ? now.settings.codexModel : now.settings.chatModel
+      const chosen = providerModel(now.settings, provider)
       const model = chosen === '' ? {} : { model: chosen }
       const carried = images.length === 0 ? {} : { images }
       return window.geckit.chat.send({ root, provider, ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(isCodexProvider(provider) && goal.trim() !== '' ? { goal: goal.trim() } : {}) }).then((id) => {
@@ -846,6 +873,7 @@ export function useChat(): Chat {
   // field draws the field and nothing else.
   const show = useCallback(
     (one: ChatSession) => {
+      if (one.manager === true) { managerIds.current.add(one.id); return }
       // Opened from somewhere the list does not show: that project joins the ones it does.
       if (chosenRef.current.length > 0 && !chosenRef.current.includes(homeOf(one))) {
         const next = [...chosenRef.current, homeOf(one)]
@@ -867,6 +895,7 @@ export function useChat(): Chat {
       // Asked for before the list was read, as when a notification opens the window.
       void window.geckit.chat.list(undefined).then((all) => {
         const listed = all.find((one) => one.id === id)
+        if (listed?.manager === true) { managerIds.current.add(listed.id); return }
         if (listed === undefined) open({ kind: 'session', id })
         else show(listed)
       })
@@ -1022,7 +1051,7 @@ export function useChat(): Chat {
       }
     },
     setModel: (next) => {
-      change(isCodexProvider(provider) ? { codexModel: next, codexReasoning: '' } : { chatModel: next })
+      change({ ...modelPreference(settings, provider, next), ...(isCodexProvider(provider) ? { codexReasoning: '' } : {}) })
       if (shownRef.current.kind === 'session') {
         const id = shownRef.current.id
         setNextChoices((all) => new Map(all).set(id, { ...all.get(id), model: next, ...(isCodexProvider(provider) ? { reasoning: '' } : {}) }))

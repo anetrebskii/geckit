@@ -1,0 +1,9 @@
+# Validation: Manager and Telegram V1
+
+Run from `client/`: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. Run from `mobile/`: `npm run build` after shared renderer changes.
+
+Focused tests must cover Manager role delivery to enabled builtin/library runtimes and confirmed provider replacement, CLI argument validation, enabled provider precedence/host support, real temporary-disk persistence, worker follow-up/stop/ownership, duplicate and uncertain recovery, Telegram pairing/sender authorization/revocation/late callbacks and encrypted credential failure.
+
+Use the actual renderer preview with an explicit native boundary to inspect Desktop Settings entry, enabled-provider/model setup, provider-specific model refresh, cancellation/confirmation of assistant replacement with preserved workers/decisions, Settings-only pause/resume/retry/restart and Telegram setup/confirmation/error states. Confirm no Manager chat entry, transcript/composer, backing-session card/search result, stale direct route or phone Manager settings page remains, while ordinary workers still open. Review full-screen light/dark at 1280x800, 390x844 and 320x740, including focus/keyboard, cancellation and scrolling. Fixtures prove UI handling only.
+
+For real integration acceptance, use an enabled signed-in supported manager and dedicated BotFather bot through normal trusted UI. Submit two projects with different enabled provider preferences, correct/stop a worker and answer a question; restart and verify retained ownership. Send from paired/unpaired accounts, revoke token and simulate outage. No bot token or live provider turn is authorized merely by running offline tests. If real credentials or safe account verification are unavailable, record exact unverified boundary in verification.md instead of claiming full SC acceptance.
