@@ -914,3 +914,127 @@ This repairs the existing formatted-message state. Approval wording, choices, ca
 ## Local links from Telegram - 2026-10-20
 
 When a Manager message names a localhost address, or a file or folder on the computer, those words are the link to it. It opens that one target in any browser, over the phone's encrypted pairing service, for 12 hours or until Stop. This replaces "Open GeckIt on your computer or paired phone" for these two kinds of result; other local-only actions keep it. The flow, states and wording are in [telegram-local-links.md](telegram-local-links.md).
+
+## Automatic Manager recovery - 2026-10-21
+
+Alex requested automatic recovery from the desktop footer's "Manager unavailable" state. With Manager already enabled and its selected assistant enabled, an ordinary failed or interrupted turn retries coordination automatically, including an error retained across app restart. No setup or new control is needed. Recovery keeps the same backing session, selected assistant/model, workers, decisions and queued requests. A successful reconciliation followed by a response confirms readiness.
+
+| Surface/state | What Alex sees | Next action |
+|---|---|---|
+| Existing footer, panel and Settings while waiting to retry | Existing "Manager unavailable" / "Unavailable" and failure reason | Wait, or use existing Try again |
+| Recovery turn accepted | Existing "Coordinating", or slot-waiting state | Wait |
+| Recovery turn completes | Existing "Ready" or worker/decision status | Continue in Telegram |
+| Paused, disabled, permission, VPN/hook block, sign-in/plan refusal or uncertain CLI delivery | Existing state, reason and recovery controls | Resolve the stated condition or explicitly resume |
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  ready --> unavailable: turn fails
+  unavailable --> coordinating: retry timer
+  coordinating --> ready: reconciliation completes
+  coordinating --> unavailable: turn fails
+  unavailable --> held: user pauses
+  held --> coordinating: user resumes
+```
+
+| From | Concrete event | To | What Alex sees |
+|---|---|---|---|
+| Active | Ordinary turn fails or ends without a result, automatically | Unavailable | Existing error |
+| Unavailable | Retry delay expires and lifecycle/guard checks pass, automatically | Coordinating | Existing working or slot-waiting state |
+| Coordinating | Reconciliation completes, automatically | Ready | Existing status; queued requests continue in order |
+| Coordinating | Another ordinary failure arrives, automatically | Unavailable | Existing error; next delay increases |
+| Unavailable | Pause, disable, provider/model change, manual retry or app disposal | Existing requested state | Existing status; old timer cancelled |
+| Held | User resolves the condition and resumes or retries | Coordinating | Existing recovery flow |
+
+Retry after 5 seconds, doubling after repeated failures to a 60-second cap; a completed turn resets the delay. This recovers short interruptions promptly without a tight provider loop during an outage. Only one timer and one reconciliation can run at once. Timer bookkeeping stays silent because it needs no decision. No new layout or control wording is introduced, so a separate layout prototype is not applicable.
+
+An interrupted send after app restart shows the reason "Manager was interrupted. Reconcile current task state without replaying interrupted messages." until recovery starts. An interrupted CLI operation retains "Manager was interrupted. Review current task state before resuming; operations with uncertain delivery are not replayed." and its existing review decision. A late successful turn cancels an unnecessary retry and clears its ordinary failure.
+
+Before queued work, Manager receives: "Automatic recovery. Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations." Inputs whose send began are never replayed; inputs still queued remain queued. Recorded uncertain operations remain paused for review. Current native approvals, VPN/hook guards, plan/sign-in refusals, missing role instructions and provider mismatches cannot be cleared by automatic recovery. Disabled assistants are never replaced by a fallback. Timer callbacks and asynchronous session opening must recheck lifecycle generation so a later pause or configuration change wins. Workers continue independently.
+
+This supersedes manual-only recovery for ordinary turn failures. Replacing the backing session automatically was rejected because retaining its history makes reconciliation safer; broken identity/role metadata still uses explicit Restart. Repeating the interrupted user request was rejected because it may already have performed work. The amendment implements the requested recovery within the existing Manager lifecycle; it adds no inference, command or approval authority.
+
+### VPN lookup recovery correction - 2026-10-21
+
+Alex reproduced a Manager blocked by "Not sent. GeckIt could not verify this computer's public IP. Check your connection and VPN, then try again." This transient lookup failure now follows the same 5-to-60-second automatic retry schedule, including retained manual-only records from the first implementation. Each attempt runs the normal public IP verification again; no provider input or held operation is delivered before a verified approved address. A failed attempt retains the exact held send and its attachments. Once verified, a known unsent Manager message is delivered once before later queued input; an already-started turn stopped by the periodic lookup failure gets reconciliation rather than a replay of its prompt. This is an explicit exception to the VPN holds above, for the exact unavailable-lookup reason only. Configuration errors, verified unapproved addresses, hook refusals, pending native answers and uncertain CLI operations retain manual recovery.
+
+| From | Concrete event | To | What Alex sees |
+|---|---|---|---|
+| Lookup unavailable | Retry timer expires, automatically | Verifying | Existing IP-check status; no new notification |
+| Verifying | Lookup remains unavailable, automatically | Lookup unavailable | Existing failure reason; next delayed attempt |
+| Verifying | Public IP is approved, automatically | Coordinating | Existing working/slot-waiting status; retained input continues |
+| Verifying | Public IP is unapproved or configuration is invalid, automatically | Manual hold | Existing specific reason and recovery controls |
+| Lookup unavailable/Verifying | User pauses, disables or replaces Manager | Existing requested state | Existing status; old retry cannot deliver later |
+
+No new renderer, control or status wording is introduced. Ordinary worker sessions retain their existing manual VPN recovery. Automatic permission answering, bypassing a failed check and replacing the backing session were rejected because none is required to recover a transient lookup failure.
+
+### CLI delivery recovery correction - 2026-10-21
+
+Alex reported Manager paused by "CLI delivery is uncertain. Review current state before resuming." while away from the computer. The saved operation was a file upload refused by Telegram's connection-wide uncertainty flag. Delivery uncertainty must hold only the affected action; coordination and unrelated queued requests recover automatically. This supersedes the uncertain-CLI manual hold above. No new screen, control or layout is needed.
+
+| Surface/state | What Alex sees | Next action |
+|---|---|---|
+| CLI outcome unknown | "CLI delivery is uncertain. Manager will reconcile automatically without repeating changes." | Wait; no resume required |
+| Reconciliation accepted | Existing working or slot-waiting status | Wait; queued requests follow reconciliation |
+| One upload outcome unknown | "Telegram file delivery is uncertain. This upload will not be repeated automatically; other work continues." | Optional: inspect the chat; other files and coordination continue |
+| Explicit user pause, native approval or security/configuration hold | Existing reason and controls | Existing deliberate action; recovery cannot authorize it |
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  coordinating --> recovering: CLI interrupted
+  recovering --> coordinating: retry timer
+  recovering --> paused: user pauses
+  paused --> coordinating: user resumes
+```
+
+| From | Concrete event | To | What Alex sees |
+|---|---|---|---|
+| Coordinating | CLI timeout or uncertain mutation, automatically | Recovering | The recovery reason above; workers keep running |
+| Recovering | Existing 5-to-60-second retry timer expires, automatically | Coordinating | Fresh-state reconciliation before queued input; the uncertain mutation is not resent |
+| Old automatic delivery pause | App loads the retained record, automatically | Recovering | Same identity, workers, decisions and queue; no manual resume |
+| Interrupted read | App loads a running/uncertain read, automatically | Recovering | Read recorded as failed; a fresh read is safe, with no review decision |
+| Upload outcome unknown | Another file is deliberately selected, automatically | Coordinating | New file can upload; matching bytes/name/worker/format stay held across restart |
+| Any | User explicitly pauses | Paused | Existing paused status survives restart |
+
+CLI outcomes are saved by the authenticated host before replying to the subprocess. A lost CLI reply uses that receipt; a late outcome resolves its operation and supplies context without repeating the action. Read-only commands cannot have uncertain side effects. A failed read returns an error permitting a fresh read. Unresolved mutations retain their review decision as an optional action; they do not prevent recovery, status reads or unrelated work. Reconciliation includes unresolved operation IDs, arguments and outcomes so the backing assistant can check actual state. Operations already running are never resent.
+
+Telegram stores an upload fingerprint before sending and retains it if its receipt is lost, including across restart. Its fingerprint uses selected bytes, filename, format and worker identity; changing a caption cannot bypass it. Old connection-wide uncertainty remains diagnostic only. No automatic upload replay, approval, assistant replacement or security bypass is introduced. Explicit /resume may still clear reviewed upload holds. Retry timing stays at 5 seconds doubling to 60 seconds; duplicate retry timers and per-failure notifications remain silent.
+
+Requirements checked: unattended recovery from the reported pause, migration of the saved failure, continued queued work, retained identity/workers, no repeated mutations/uploads and explicit pauses preserved. Live Telegram receipt recovery cannot prove delivery when Telegram supplied no receipt; that individual upload remains held rather than guessing success.
+
+### Stale approvals and optional delivery review - 2026-10-22
+
+Alex requested repair of the stale attach and uncertain-upload buttons. In the existing paired Telegram chat, /status and decision buttons must describe current requests. A fresh eligible-session observation plus existing Manager ownership can satisfy an attach request; this records an already-established fact and never grants permission. Unmanaged conversations still require the existing explicit attach confirmation. Native permissions retain their bound request identity, choices and safety checks.
+
+| Surface/state | What Alex sees | Next action |
+|---|---|---|
+| Already-managed attach | Removed from current waiting decisions; an old button says "This request is no longer pending. Use /status to see current requests." | Continue other work |
+| Old or duplicate decision button | The no-longer-pending message above; an unavailable callback mapping says "This action has already been answered or is no longer available. Use /status or ask Manager here for the current question." | Use /status if needed |
+| Uncertain mutation review | Existing "I checked its state" control remains optional | Inspect the actual state, then optionally acknowledge |
+| Review acknowledged | "Review recorded. Delivery remains uncertain; nothing was resent. Other work can continue." | Continue; obtain actual evidence before asserting an outcome |
+| Current request blocked by pause | "Manager is paused. Use /resume before answering this approval." | Resume deliberately and use the current request |
+| Current native request blocked by safety | "Answer was not sent. A native safety check blocked it. Check the current approval in GeckIt." | Resolve the condition in GeckIt |
+| Request changes during refresh | "This request changed. Use /status to see current requests." | Use the current request |
+| Invalid decision choice | "Use one of the current request’s choices. Typed forms must be answered in GeckIt." | Use a current choice or the native form |
+| Reused operation identity with changed arguments | Operation rejected; original request remains bound to its original arguments | Issue a fresh operation identity |
+
+| From | Concrete event | To | What Alex sees |
+|---|---|---|---|
+| Attach waiting | Fresh eligible sessions confirm existing ownership, automatically | Already satisfied | Waiting count drops; no attach command runs |
+| Decision waiting | User answers its exact current request | Handled | Existing answer acknowledgement |
+| Decision handled/retired | User taps old button again | Same state | Specific handled/no-longer-pending message; no repeated action |
+| Upload uncertain | User acknowledges inspection | Uncertain, reviewed | Review acknowledgement above; success is not inferred |
+| Upload uncertain | Original host supplies a definitive receipt, automatically | Proven outcome | Receipt supplies the result; no upload is replayed |
+| Upload uncertain | User sends /resume or app restarts | Still uncertain | Coordination continues; upload hold remains |
+| Optional review pending | Unrelated queued input or CLI command arrives, automatically | Coordination continues | Normal result; optional review stays available |
+
+Reconciliation bookkeeping stays silent until it changes current decisions or supplies an actual result. Empty decision lists show the existing status. Simultaneous native permissions remain pending even when an attach is satisfied or a delivery review is acknowledged. Old callback state survives restart sufficiently to reject repeats safely; an unavailable historical mapping uses the no-longer-pending response. No new timer, setup, layout, renderer or theme rule is introduced; Telegram controls keep their existing presentation.
+
+This supersedes the earlier rule that /resume clears reviewed upload holds and the implementation that labelled an inspected unknown outcome failed. Inspection is evidence only that Alex reviewed it, not evidence of delivery or failure. Identical uncertain actions remain held; independent queue items continue. New or changed approval arguments cannot borrow an earlier confirmation. Automatic re-upload, permission acceptance, inferred delivery and live-bot restart are intentionally absent. The requirement is truthful, idempotent recovery with actual approvals preserved; safe fixture verification covers CLI/Telegram behavior without sending real messages.
+
+### VPN address-change recovery correction - 2026-10-24
+
+The earlier lookup-only exception above left Manager latched in manual recovery after an exact unapproved-address refusal, even when the VPN later changed. The same guarded revalidation now covers exact address mismatches as well as lookup failures; the 5-to-60-second schedule remains unchanged. A still-unapproved address blocks every attempt before provider dispatch. Configuration/hook/native approval holds and explicit pauses remain manual. Saved manual-recovery records are eligible only when their current session note retains a recognized transient VPN reason and a held message/continuation.
+
+[Current journey, transitions and acceptance criteria](manager-retry-steering.md#manager-recovery-after-a-changed-vpn-address). This explicitly supersedes the October 21 decision to stop automatic revalidation at a verified unapproved address. It changes recovery eligibility, never the VPN policy. The existing Manager inspection and Settings surfaces remain the UI authority.

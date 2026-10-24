@@ -1,0 +1,137 @@
+{
+  "passed": true,
+  "sends": 0,
+  "uploads": 0,
+  "checks": [
+    {
+      "name": "New task: background drag highlight absent during dragover",
+      "passed": true,
+      "detail": "chat topped"
+    },
+    {
+      "name": "New task: multiple files stay in the form",
+      "passed": true,
+      "detail": "\"C:\\Fixtures\\alpha report.txt\" C:\\Fixtures\\beta.txt "
+    },
+    {
+      "name": "New task: space-containing path remains quoted",
+      "passed": true,
+      "detail": "\"C:\\Fixtures\\alpha report.txt\" C:\\Fixtures\\beta.txt "
+    },
+    {
+      "name": "New task: background draft unchanged",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "New task: background drag highlight absent",
+      "passed": true,
+      "detail": "chat topped"
+    },
+    {
+      "name": "New task: .new-task-goal ignores file drop",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "New task: .new-task-head ignores file drop",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "New task: .form-scrim ignores file drop",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "New task: .chat ignores file drop",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "New task: supported image stays in the form",
+      "passed": true,
+      "detail": "background pictures: 0"
+    },
+    {
+      "name": "New task: cancel does not replay",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "Ask a question: background drag highlight absent during dragover",
+      "passed": true,
+      "detail": "chat topped"
+    },
+    {
+      "name": "Ask a question: multiple files stay in the form",
+      "passed": true,
+      "detail": "\"C:\\Fixtures\\alpha report.txt\" C:\\Fixtures\\beta.txt "
+    },
+    {
+      "name": "Ask a question: space-containing path remains quoted",
+      "passed": true,
+      "detail": "\"C:\\Fixtures\\alpha report.txt\" C:\\Fixtures\\beta.txt "
+    },
+    {
+      "name": "Ask a question: background draft unchanged",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "Ask a question: background drag highlight absent",
+      "passed": true,
+      "detail": "chat topped"
+    },
+    {
+      "name": "Ask a question: .new-task-head ignores file drop",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "Ask a question: .form-scrim ignores file drop",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "Ask a question: .chat ignores file drop",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "Ask a question: supported image stays in the form",
+      "passed": true,
+      "detail": "background pictures: 0"
+    },
+    {
+      "name": "Ask a question: cancel does not replay",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "Repeated reopen/cancel 1",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "Repeated reopen/cancel 2",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "Escape closes without replaying files or pending image conversion",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "backdrop closes without replaying files or pending image conversion",
+      "passed": true,
+      "detail": "{}"
+    },
+    {
+      "name": "No-modal drop still edits conversation draft",
+      "passed": true,
+      "detail": "{\"fixture-session\":\"\\\"C:\\\\Fixtures\\\\alpha report.txt\\\" C:\\\\Fixtures\\\\beta.txt \"}"
+    }
+  ]
+}

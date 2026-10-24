@@ -24,7 +24,7 @@ const { Composer } = await import('./chat/Composer')
 const { Transcript } = await import('./chat/Transcript')
 const { Sidebar } = await import('./chat/Sidebar')
 const { TalkStatus } = await import('./chat/Status')
-const scenarios = ['question', 'native-question', 'long-question', 'long-history', 'confirmation', 'empty-default', 'fields', 'url', 'unsupported', 'long', 'many-fields', 'multiple', 'answered', 'resolved', 'stopped'] as const
+const scenarios = ['startup-mcp', 'question', 'native-question', 'long-question', 'long-history', 'confirmation', 'empty-default', 'fields', 'url', 'unsupported', 'long', 'many-fields', 'multiple', 'answered', 'resolved', 'stopped'] as const
 type Scenario = typeof scenarios[number]
 const schema: Json = { type: 'object', required: ['approved'], properties: { approved: { type: 'boolean', title: 'Allow access', description: 'Permit computer use for this app.' }, scope: { type: 'string', title: 'Access scope', enum: ['view', 'control'], enumNames: ['View only', 'View and control'], default: 'view' }, count: { type: 'integer', title: 'Windows', minimum: 1, maximum: 5, default: 1 }, note: { type: 'string', title: 'Note', maxLength: 120 }, actions: { type: 'array', title: 'Allowed actions', items: { type: 'string', enum: ['Read the window', 'Click controls', 'Type text'] }, minItems: 1, maxItems: 2 } } }
 const basic = [{ kind: 'mine', id: 'first', text: 'Review the GeckIt Local interface.' }, { kind: 'theirs', id: 'reply', text: 'I will inspect the rendered app and check its layout, focus and scrolling.' }] satisfies SessionItem[]
@@ -41,7 +41,7 @@ const card = (id: string, request: Elicitation): SessionItem => ({ kind: 'card',
 function Preview(): React.JSX.Element {
   const [scenario, setScenario] = useState<Scenario>(scenarios.find((one) => one === query.get('state')) ?? 'confirmation')
   const [theme, setTheme] = useState(document.documentElement.dataset.theme)
-  const [native, setNative] = useState({ revision: 0, checked: nativeLabels.map(() => false), review: false })
+  const [native, setNative] = useState({ revision: 0, checked: nativeLabels.map((_label, index) => scenario === 'startup-mcp' && index < 2), review: false })
   const [nativeAnswered, setNativeAnswered] = useState<string>()
   const [answers, setAnswers] = useState<Json[]>([])
   const [draft, setDraft] = useState('')
@@ -51,9 +51,9 @@ function Preview(): React.JSX.Element {
   const [repeats, setRepeats] = useState<SessionItem[]>([])
   const [extra, setExtra] = useState<SessionItem[]>([])
   const pending = !['answered', 'resolved', 'stopped'].includes(scenario)
-  const nativeScenario = scenario === 'native-question' || scenario === 'long-question'
+  const nativeScenario = scenario === 'native-question' || scenario === 'long-question' || scenario === 'startup-mcp'
   const working = scenario === 'long-history' || nativeScenario
-  const nativeQuestion: Extract<SessionItem, { kind: 'card' }> = { kind: 'card', id: `card:native-${String(native.revision)}`, card: { kind: 'question', title: native.review ? 'Review your answers' : scenario === 'long-question' ? Array.from({ length: 8 }, () => 'The remaining spec items need a decision before the goal can close. Which should I take on now?').join(' ') : "The goal can't close until the remaining spec 017 items are handled, and each one needs a decision from you. Which should I take on now?", choices: native.review ? ['Submit answers', 'Cancel'] : [...nativeLabels.map((label, index) => `[${native.checked[index] === true ? '✓' : ' '}] ${label}`), 'Submit', 'Chat about this'], ...(nativeAnswered === undefined ? {} : { answered: nativeAnswered }) } }
+  const nativeQuestion: Extract<SessionItem, { kind: 'card' }> = { kind: 'card', id: `card:native-${String(native.revision)}`, card: { kind: 'question', title: scenario === 'startup-mcp' ? '2 new MCP servers found in this project\nSelect any you wish to enable.\n\nMCP servers may execute code or access system resources. All tool calls require approval. Learn more in the MCP documentation.' : native.review ? 'Review your answers' : scenario === 'long-question' ? Array.from({ length: 8 }, () => 'The remaining spec items need a decision before the goal can close. Which should I take on now?').join(' ') : "The goal can't close until the remaining spec 017 items are handled, and each one needs a decision from you. Which should I take on now?", choices: scenario === 'startup-mcp' ? [...['linear-formula', 'notion-formula'].map((label, index) => `[${native.checked[index] === true ? '✔' : ' '}] ${label}`), 'Enable selected', 'Reject all'] : native.review ? ['Submit answers', 'Cancel'] : [...nativeLabels.map((label, index) => `[${native.checked[index] === true ? '✓' : ' '}] ${label}`), 'Submit', 'Chat about this'], ...(nativeAnswered === undefined ? {} : { answered: nativeAnswered }) } }
   const request = makeRequest(scenario)
   const history: SessionItem[] = working ? Array.from({ length: 140 }, (_value, index) => ({ kind: 'theirs', id: `history-${String(index)}`, text: index === 139 ? 'Two bigger pieces would each be a sizeable job:\n\n- **Timing measurements:** SC-001, SC-002, SC-004 and SC-006 need traces from a real browser with 18 calls and the CPU slowed 4x.\n- **Commands between Electron windows:** test the real Electron app with two windows open.' : `Progress update ${String(index + 1)}: reviewed another part of the optimization work.` })) : []
   const initial: SessionItem[] = [...basic, ...(nativeScenario ? [nativeQuestion] : scenario === 'question' || scenario === 'long-history' ? [question] : pending ? [card('card:mcp-preview', request), ...(scenario === 'multiple' ? [card('card:mcp-second', { ...makeRequest('confirmation'), serverName: 'browser', message: 'Allow browsing the local preview?', rememberAllowed: false })] : [])] : scenario === 'answered' ? [{ kind: 'card', id: 'card:mcp-preview', card: { kind: 'elicitation', title: request.message, answered: `Accepted: ${request.message}` } } satisfies SessionItem] : [{ kind: 'note', id: 'resolved', note: 'stopped', text: scenario === 'stopped' ? 'Stopped' : 'The request was resolved elsewhere.' } satisfies SessionItem]), ...history]
@@ -64,6 +64,12 @@ function Preview(): React.JSX.Element {
     if (found.card.kind === 'question') {
       if (nativeScenario) {
         setAnswers((before) => [...before, value])
+        if (scenario === 'startup-mcp') {
+          const index = nativeQuestion.card.choices?.indexOf(value) ?? -1
+          if (index >= 0 && index < 2) setNative((before) => ({ ...before, revision: before.revision + 1, checked: before.checked.map((checked, at) => at === index ? !checked : checked) }))
+          else if (value === 'Enable selected' || value === 'Reject all') setNativeAnswered(value)
+          return
+        }
         if (native.review) {
           if (value === 'Cancel') setNative((before) => ({ ...before, review: false, revision: before.revision + 1 }))
           else setNativeAnswered(value)
@@ -98,7 +104,7 @@ function Preview(): React.JSX.Element {
   const reset = (next: Scenario): void => {
     remembered.current.clear()
     setScenario(next)
-    setNative({ revision: 0, checked: nativeLabels.map(() => false), review: false })
+    setNative({ revision: 0, checked: nativeLabels.map((_label, index) => next === 'startup-mcp' && index < 2), review: false })
     setNativeAnswered(undefined)
     setExtra([])
     setRepeats([])

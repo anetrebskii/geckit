@@ -8,7 +8,15 @@
 // The page a link opens, on Firebase Hosting in the same project as the rooms.
 export const VIEWER = 'https://geckit-signal.web.app'
 
-export const shareLink = (key: string): string => `${VIEWER}/#${key}`
+// When it ends goes after the key, so a page opened late says so at once instead of waiting for a computer that no longer listens.
+export const shareLink = (key: string, expiresAt: number): string => `${VIEWER}/#${key}.${expiresAt.toString(36)}`
+
+/** The key and, for links made since they carried it, when the link ends. */
+export function readShareLink(hash: string): { readonly key: string; readonly expiresAt?: number } | undefined {
+  const found = /^#([A-Za-z0-9_-]{32,})(?:\.([0-9a-z]+))?$/.exec(hash)
+  if (found?.[1] === undefined) return undefined
+  return found[2] === undefined ? { key: found[1] } : { key: found[1], expiresAt: parseInt(found[2], 36) }
+}
 
 export interface ShareAbout {
   readonly kind: 'site' | 'file' | 'folder'

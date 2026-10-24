@@ -1056,8 +1056,7 @@ async function buildManager(started: Sessions): Promise<void> {
       hasDecision: (id) => view.decisions.some((item) => item.id === id),
       answer: async (id, choice, authorized) => {
         const decision = view.decisions.find((item) => item.id === id)
-        if (decision === undefined) return
-        if (decision.kind === 'native' || decision.choices.some((item) => item.value === choice)) await coordinator.answer(id, choice, authorized)
+        if (decision === undefined || decision.kind === 'native' || decision.choices.some((item) => item.value === choice)) return (await coordinator.answer(id, choice, authorized)).answer
         else await coordinator.send(`Reply to Manager decision ${id} (${decision.title}): ${choice}`, 'telegram')
       },
     },
