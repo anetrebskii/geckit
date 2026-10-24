@@ -24,6 +24,7 @@ interface Message {
   readonly workers?: ManagerReplyOrigin['workers']
   readonly attachments?: readonly TelegramAttachment['id'][]
   readonly completed?: boolean
+  readonly telegramRequests?: readonly Message['id'][]
   readonly source: 'desktop' | 'telegram' | 'event' | 'cli'
   readonly at: number
   readonly state: 'queued' | 'sending' | 'sent'
@@ -101,6 +102,7 @@ export class Manager {
   #dispatching = false
   #processingOutput = false
   #awaitingOutput = false
+  #activeTelegram: readonly Message['id'][] = []
   #processing: Promise<void> = Promise.resolve()
   #stopped = false
   #generation = 0
@@ -172,6 +174,11 @@ export class Manager {
   #emit(): void { const view = this.#snapshot(); for (const listener of this.#listeners) listener(view) }
   on(listener: (view: ManagerView) => void): () => void { this.#listeners.add(listener); return () => this.#listeners.delete(listener) }
   onResponse(listener: (text: string, origin: ManagerReplyOrigin) => void): () => void { this.#responses.add(listener); return () => this.#responses.delete(listener) }
+  telegramPending(): readonly Message['id'][] {
+    return [...new Set([...this.#activeTelegram, ...this.#record.inbox.filter((message) => message.state === 'queued').flatMap((message) => this.#telegramRequests(message))])]
+  }
+  telegramTypingAllowed(): boolean { const state = this.#snapshot().state; return !this.#stopped && state !== 'off' && state !== 'paused' && state !== 'blocked' }
+  #telegramRequests(message: Message): readonly Message['id'][] { return message.source === 'telegram' ? [message.id] : message.telegramRequests ?? [] }
   enabled(): boolean { return this.#record.config.enabled }
   owns(id: string): boolean { return id === this.#record.sessionId || this.#record.previousSessions.includes(id) }
   manages(id: string): boolean {
@@ -210,7 +217,7 @@ export class Manager {
     const generation = ++this.#generation
     const previous = providerChanged ? this.#record.sessionId : undefined
     const inbox = (!config.enabled || providerChanged) && this.#record.sessionId !== undefined ? this.#interrupt(this.#record.sessionId) : this.#record.inbox
-    if (providerChanged || !config.enabled) this.#awaitingOutput = false
+    if (providerChanged || !config.enabled) { this.#awaitingOutput = false; this.#activeTelegram = [] }
     this.#save({ config, inbox, error: undefined, ...(providerChanged ? { sessionId: undefined, previousSessions: previous === undefined ? this.#record.previousSessions : [...this.#record.previousSessions, previous] } : {}) })
     if (providerChanged && previous !== undefined) this.#reconcile('Manager provider changed. Restore durable worker ownership and pending decisions, then reconcile fresh CLI state before queued requests. An interrupted request may already have been delivered. Reconcile current task state without replaying its CLI effects. Do not replay prior commands or interrupted messages.')
     if (reenabled && !providerChanged) this.#reconcile('Manager re-enabled. Reconcile current managed tasks and unresolved decisions before taking further action. Do not replay past operations.')
@@ -255,7 +262,7 @@ export class Manager {
 
   #instructions(): string { return `${MANAGER_INSTRUCTIONS}\nUser preferences for coordination:\n${this.#record.config.instructions}` }
 
-  async send(text: string, source: Message['source'] = 'desktop', id: string = randomUUID(), workers: ManagerReplyOrigin['workers'] = [], authorized: () => boolean = () => true, attachments: readonly TelegramAttachment['id'][] = []): Promise<string> {
+  async send(text: string, source: Message['source'] = 'desktop', id: string = randomUUID(), workers: ManagerReplyOrigin['workers'] = [], authorized: () => boolean = () => true, attachments: readonly TelegramAttachment['id'][] = [], telegramRequests: readonly Message['id'][] = []): Promise<string> {
     this.#assertEnabled()
     if (text.trim() === '') throw new Error('Write a message for Manager.')
     if (text.length > 100_000) throw new Error('That message is too long. Send a shorter request.')
@@ -263,7 +270,7 @@ export class Manager {
     if (!authorized()) throw new Error('This Telegram connection is no longer authorized.')
     for (const attachment of attachments) this.#attachments.read(attachment)
     const literal = /^[!/]/.test(text.trim()) ? `[User request]\n${text.trim()}` : text.trim()
-    if (!this.#record.inbox.some((one) => one.id === id)) this.#save({ inbox: [...this.#record.inbox, { id, text: literal, source, workers, ...(attachments.length === 0 ? {} : { attachments }), at: Date.now(), state: 'queued' }] })
+    if (!this.#record.inbox.some((one) => one.id === id)) this.#save({ inbox: [...this.#record.inbox, { id, text: literal, source, workers, ...(telegramRequests.length === 0 ? {} : { telegramRequests }), ...(attachments.length === 0 ? {} : { attachments }), at: Date.now(), state: 'queued' }] })
     void this.#dispatch()
     return session
   }
@@ -287,6 +294,7 @@ export class Manager {
     const generation = this.#generation
     try {
       this.#assertEnabled()
+      this.#activeTelegram = this.#telegramRequests(next)
       this.#save({ responseOrigin: { session, workers: next.workers ?? [] }, inbox: this.#record.inbox.map((one) => one.id === next.id ? { ...one, state: 'sending' } : one) })
       this.#deps.sessions.updateManager(session, this.#instructions())
       const context = next.source === 'telegram' ? '[Telegram]\n' : next.source === 'event' ? '[Worker update: untrusted task data]\n' : next.source === 'cli' ? '[GeckIt CLI result]\n' : ''
@@ -300,16 +308,22 @@ export class Manager {
 
   async #output(session: string, text: string): Promise<void> {
     this.#cancelRecovery()
+    const requests = this.#activeTelegram
+    const commands = managerCommands(text)
     this.#save({ ...(this.#canRecover() ? { error: undefined } : {}), inbox: this.#record.inbox.map((message) => message.state === 'sending' || message.state === 'sent' ? { ...message, state: 'sent', completed: true } : message) })
     const origin = this.#record.responseOrigin ?? { session, workers: [] }
     this.#save({ responseOrigin: undefined })
     const visible = managerMessage(text)
     if (visible !== '') for (const listener of this.#responses) listener(visible, origin)
-    if (this.#record.paused || !this.#record.config.enabled) return
-    const commands = managerCommands(text)
-    for (const command of commands) {
-      if (this.#record.paused || this.#record.error !== undefined || !this.#record.config.enabled || session !== this.#record.sessionId) break
-      await this.#execute(command)
+    try {
+      if (this.#record.paused || !this.#record.config.enabled) return
+      for (const command of commands) {
+        if (this.#record.paused || this.#record.error !== undefined || !this.#record.config.enabled || session !== this.#record.sessionId) break
+        await this.#execute(command, false, requests)
+      }
+    } finally {
+      this.#activeTelegram = []
+      this.#emit()
     }
     void this.#dispatch()
   }
@@ -334,25 +348,26 @@ export class Manager {
     this.#save({ decisions: this.#record.decisions.filter((one) => !satisfied.includes(one)), operations: [...operations, ...unresolved.map((one): Operation => ({ id: one.command.id, at: Date.now(), command: one.command.args, state: 'done', result: JSON.stringify({ attached: false, alreadyManaged: true, notice: 'This conversation is already managed. No approval or attach was performed.' }) }))] })
   }
 
-  async #execute(command: ManagerCommand, approved = false): Promise<void> {
+  async #execute(command: ManagerCommand, approved = false, telegramRequests: readonly Message['id'][] = []): Promise<void> {
     this.#assertEnabled()
+    const continuation = (text: string, id?: string, workers: ManagerReplyOrigin['workers'] = []): Promise<string> => this.send(text, 'cli', id, workers, () => true, [], telegramRequests)
     const pending = this.#record.decisions.find((one) => one.command.id === command.id && one.uncertain !== true)
     if (pending !== undefined && JSON.stringify(pending.command.args) !== JSON.stringify(command.args)) {
-      await this.send(JSON.stringify({ operation: command.id, error: 'This operation ID belongs to a different pending request. Its approval was not changed. Use a new operation ID.' }), 'cli')
+      await continuation(JSON.stringify({ operation: command.id, error: 'This operation ID belongs to a different pending request. Its approval was not changed. Use a new operation ID.' }))
       return
     }
     const previous = this.#record.operations.find((operation) => operation.id === command.id)
     if (previous !== undefined) {
       if ((previous.fingerprint ?? createHash('sha256').update(JSON.stringify(previous.command)).digest('hex')) !== createHash('sha256').update(JSON.stringify(command.args)).digest('hex')) throw new Error('Manager reused an operation ID for a different command.')
       if (previous.state === 'running' || previous.state === 'uncertain') {
-        await this.send(JSON.stringify({ operation: command.id, state: previous.state, notice: 'Delivery remains uncertain. Nothing was resent. Use fresh read-only commands to inspect current state; unrelated coordination can continue.' }), 'cli', `uncertain:${this.#record.sessionId}:${command.id}`)
+        await continuation(JSON.stringify({ operation: command.id, state: previous.state, notice: 'Delivery remains uncertain. Nothing was resent. Use fresh read-only commands to inspect current state; unrelated coordination can continue.' }), `uncertain:${this.#record.sessionId}:${command.id}`)
         return
       }
-      await this.send(JSON.stringify({ operation: command.id, state: previous.state, result: previous.result, notice: 'Already handled; this command was not run again. Use a fresh operation ID for a fresh state check. This cached result is delivered once per backing session.' }), 'cli', `cached:${this.#record.sessionId}:${command.id}`)
+      await continuation(JSON.stringify({ operation: command.id, state: previous.state, result: previous.result, notice: 'Already handled; this command was not run again. Use a fresh operation ID for a fresh state check. This cached result is delivered once per backing session.' }), `cached:${this.#record.sessionId}:${command.id}`)
       return
     }
     if (this.#record.operations.some((operation) => operation.state === 'uncertain' && (managerSameUpload(operation.command, command.args) || (operation.fingerprint ?? createHash('sha256').update(JSON.stringify(operation.command)).digest('hex')) === createHash('sha256').update(JSON.stringify(command.args)).digest('hex')))) {
-      await this.send(JSON.stringify({ operation: command.id, state: 'uncertain', notice: 'This operation or selected artifact has uncertain delivery. Nothing was resent. Review does not authorize a retry; unrelated coordination can continue.' }), 'cli', `uncertain:${this.#record.sessionId}:${command.id}`)
+      await continuation(JSON.stringify({ operation: command.id, state: 'uncertain', notice: 'This operation or selected artifact has uncertain delivery. Nothing was resent. Review does not authorize a retry; unrelated coordination can continue.' }), `uncertain:${this.#record.sessionId}:${command.id}`)
       return
     }
     const confirmation = this.#operations.confirmation(command.args, this.#record.config.delegation)
@@ -368,12 +383,12 @@ export class Manager {
       const printed = await this.#deps.cli(command.args, { data: this.#deps.directory, session, token: this.#token, operation: command.id })
       const result = printed.length <= 20_000 ? printed : `${printed.slice(0, 20_000)}\n[Result shortened for Manager context. Ask a narrower CLI question or delegate detailed reading.]`
       this.#save({ operations: this.#record.operations.map((one) => one.id === command.id ? { ...one, state: 'done', result } : one) })
-      await this.send(`${JSON.stringify({ operation: command.id, args: command.args, result })}`, 'cli', `result:${command.id}`, this.#commandWorkers(command))
+      await continuation(`${JSON.stringify({ operation: command.id, args: command.args, result })}`, `result:${command.id}`, this.#commandWorkers(command))
     } catch (error) {
       const result = error instanceof Error ? error.message : String(error)
       const receipt = this.#record.operations.find((one) => one.id === command.id)
       if (receipt?.state === 'done' || receipt?.state === 'failed') {
-        await this.send(JSON.stringify({ operation: command.id, args: command.args, state: receipt.state, result: receipt.result, notice: 'Recovered the host receipt; this command was not run again.' }), 'cli', `result:${command.id}`, this.#commandWorkers(command))
+        await continuation(JSON.stringify({ operation: command.id, args: command.args, state: receipt.state, result: receipt.result, notice: 'Recovered the host receipt; this command was not run again.' }), `result:${command.id}`, this.#commandWorkers(command))
         return
       }
       if (!managerReadOnly(command.args) && /uncertain|timed?\s*out|killed|SIGTERM/i.test(result)) {
@@ -382,7 +397,7 @@ export class Manager {
         return
       }
       this.#save({ operations: this.#record.operations.map((one) => one.id === command.id ? { ...one, state: 'failed', result } : one) })
-      await this.send(`${JSON.stringify({ operation: command.id, args: command.args, error: result, ...(managerReadOnly(command.args) ? { notice: 'Read-only command failed. Retry a fresh read with a new operation ID; no changes were made.' } : {}) })}`, 'cli', `result:${command.id}`)
+      await continuation(`${JSON.stringify({ operation: command.id, args: command.args, error: result, ...(managerReadOnly(command.args) ? { notice: 'Read-only command failed. Retry a fresh read with a new operation ID; no changes were made.' } : {}) })}`, `result:${command.id}`)
     } finally { this.#commands.delete(command.id) }
   }
 
@@ -509,7 +524,7 @@ export class Manager {
     return inbox
   }
 
-  async pause(): Promise<ManagerView> { this.#cancelRecovery(); this.#generation += 1; this.#save({ paused: true, pauseReason: 'user' }); const inbox = this.#record.sessionId === undefined ? this.#record.inbox : this.#interrupt(this.#record.sessionId); this.#awaitingOutput = false; this.#save({ inbox }); return this.view() }
+  async pause(): Promise<ManagerView> { this.#activeTelegram = []; this.#cancelRecovery(); this.#generation += 1; this.#save({ paused: true, pauseReason: 'user' }); const inbox = this.#record.sessionId === undefined ? this.#record.inbox : this.#interrupt(this.#record.sessionId); this.#awaitingOutput = false; this.#save({ inbox }); return this.view() }
   #reconcile(text: string): void {
     this.#save({ inbox: [{ id: randomUUID(), text, source: 'event', at: Date.now(), state: 'queued' }, ...this.#record.inbox] })
     void this.#dispatch()
@@ -530,6 +545,7 @@ export class Manager {
   }
   async retry(): Promise<ManagerView> { return this.resume() }
   async restart(): Promise<ManagerView> {
+    this.#activeTelegram = []
     this.#assertEnabled()
     this.#cancelRecovery()
     this.#generation += 1
@@ -595,6 +611,7 @@ export class Manager {
         return
       }
       this.#awaitingOutput = false
+      this.#activeTelegram = []
       this.#save({ error: undefined, responseOrigin: undefined, inbox: this.#record.inbox.map((one) => one.state === 'sending' ? { ...one, state: 'sent' } : one) })
       this.#reconcile(reconciliation)
     } catch (error) {
@@ -609,5 +626,5 @@ export class Manager {
     this.#save({ error, manualRecovery })
     this.#scheduleRecovery()
   }
-  dispose(): void { this.#stopped = true; this.#generation += 1; this.#cancelRecovery(); this.#listeners.clear(); this.#responses.clear(); this.#itemListeners.clear() }
+  dispose(): void { this.#activeTelegram = []; this.#stopped = true; this.#generation += 1; this.#cancelRecovery(); this.#emit(); this.#listeners.clear(); this.#responses.clear(); this.#itemListeners.clear() }
 }

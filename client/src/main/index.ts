@@ -1050,6 +1050,9 @@ async function buildManager(started: Sessions): Promise<void> {
     attachments,
     vault: telegramVault(safeStorage, process.platform),
     manager: {
+      pending: () => coordinator.telegramPending(),
+      typingAllowed: () => coordinator.telegramTypingAllowed(),
+      onPending: (changed) => coordinator.on(() => changed()),
       submit: (text, id, files, authorized) => coordinator.send(text, 'telegram', id, [], authorized, files),
       reply: async (text, id, reference, authorized, files) => { await coordinator.reply(text, id, reference, authorized, files) },
       pause: async () => { await coordinator.pause() },

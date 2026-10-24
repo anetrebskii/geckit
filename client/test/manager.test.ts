@@ -106,6 +106,63 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
   return { manager: active, sessions, root, directory, notes, made, sent, fanned, answers, cli, finish, hear: (id: string, heard: Heard) => hearings.get(id)?.(heard), command, setCli: (run: ManagerDeps['cli'] | undefined) => { callCli = run }, reload: () => { current.manager?.dispose(); const next = new Manager(deps); current.manager = next; return next }, settings: () => settings, set: (change: Partial<Settings>) => { settings = { ...settings, ...change } } }
 }
 
+describe('Manager Telegram response ownership', () => {
+  it('keeps input correlation through commentary and CLI continuation, independently of queued requests', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Inspect work', 'telegram', 'telegram:first')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    await f.manager.send('Clarification', 'telegram', 'telegram:second')
+    expect(f.manager.telegramPending()).toEqual(['telegram:first', 'telegram:second'])
+    f.finish(id, f.command('typing-status', ['status']))
+    await vi.waitFor(() => expect(f.sent.length).toBeGreaterThan(1))
+    expect(f.manager.telegramPending()).toContain('telegram:first')
+    expect(f.manager.telegramPending()).toContain('telegram:second')
+    f.finish(id, 'The clarification is answered.')
+    await vi.waitFor(() => expect(f.sent.length).toBeGreaterThan(2))
+    expect(f.manager.telegramPending()).toEqual(['telegram:first'])
+    f.finish(id, 'Final inspected state.')
+    await vi.waitFor(() => expect(f.manager.telegramPending()).toEqual([]))
+    await f.manager.send('Unrelated worker state', 'event', 'worker-event')
+    expect(f.manager.telegramPending()).toEqual([])
+    f.finish(id, 'Worker event answer.')
+    await vi.waitFor(() => expect(f.manager.telegramPending()).toEqual([]))
+  })
+
+  it('suppresses blocked, native permission, paused and disposed progress, then respects queue recovery', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Work', 'telegram', 'telegram:work')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    expect(f.manager.telegramTypingAllowed()).toBe(true)
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'asks', ask: 'typing-approval', wanted: { kind: 'command', command: 'inspect project' } }] })
+    expect(f.manager.telegramTypingAllowed()).toBe(false)
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed', text: 'Provider unavailable' }] })
+    await vi.waitFor(() => expect(f.manager.telegramTypingAllowed()).toBe(false))
+    await f.manager.send('Queued clarification', 'telegram', 'telegram:queued')
+    expect(f.manager.telegramTypingAllowed()).toBe(false)
+    expect(f.manager.telegramPending()).toContain('telegram:queued')
+    await f.manager.pause()
+    expect(f.manager.telegramTypingAllowed()).toBe(false)
+    f.manager.dispose()
+    expect(f.manager.telegramPending()).toContain('telegram:queued')
+    expect(f.manager.telegramTypingAllowed()).toBe(false)
+  })
+
+  it('restores queued ownership but does not revive sent input or replay it on restart', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    await f.manager.send('Already handed to runtime', 'telegram', 'telegram:sent')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    await f.manager.send('Still queued', 'telegram', 'telegram:queued')
+    const restored = f.reload()
+    expect(restored.telegramPending()).not.toContain('telegram:sent')
+    expect(restored.telegramPending()).toContain('telegram:queued')
+    expect(f.sent.filter((message) => message.text.includes('Already handed to runtime'))).toHaveLength(1)
+    restored.dispose()
+  })
+})
+
 describe('Manager CLI delivery recovery', () => {
   const settle = async (): Promise<void> => { for (let turn = 0; turn < 8; turn++) await new Promise<void>((resolve) => setImmediate(resolve)) }
 

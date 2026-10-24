@@ -5,7 +5,7 @@ import type { TelegramAttachment } from './telegram-attachments'
 import type { TelegramAccount, TelegramBot } from '../shared/telegram'
 
 export class TelegramFailure extends Error {
-  constructor(readonly code: number) {
+  constructor(readonly code: number, readonly retryAfter?: number) {
     super(code === 401 || code === 404 ? 'Bot token was rejected. Create a new token in BotFather and reconnect.' : code === 409 ? 'Another receiver or webhook is using this bot. Stop it, then retry.' : code === 429 ? 'Telegram is limiting requests. Wait, then retry.' : 'Telegram could not be reached. Check your connection and retry.')
   }
 }
@@ -93,7 +93,10 @@ export class TelegramBotClient {
       const timeout = AbortSignal.timeout(method === 'getUpdates' ? 35_000 : 15_000)
       const response = await this.fetcher(`https://api.telegram.org/bot${this.token}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: signal === undefined ? timeout : AbortSignal.any([signal, timeout]) })
       const result = jsonObject(await response.json() as Json)
-      if (!response.ok || result?.['ok'] !== true || result['result'] === undefined) throw new TelegramFailure(typeof result?.['error_code'] === 'number' ? result['error_code'] : response.status)
+      if (!response.ok || result?.['ok'] !== true || result['result'] === undefined) {
+        const retry = jsonObject(result?.['parameters'])?.['retry_after']
+        throw new TelegramFailure(typeof result?.['error_code'] === 'number' ? result['error_code'] : response.status, typeof retry === 'number' && Number.isFinite(retry) && retry > 0 ? retry : undefined)
+      }
       return result['result']
     } catch (error) {
       if (error instanceof TelegramFailure) throw error
