@@ -84,6 +84,7 @@ export function getSettings(): Settings {
       vpnAllowedIps: validateVpnIps(found.vpnAllowedIps).ips,
       chatTransport: found.chatTransport === 'tmux' ? 'tmux' : 'stream',
       providerPlugins: found.providerPlugins ?? [],
+      projectAssistants: found.projectAssistants ?? [],
       providerAutoUpdate: found.providerAutoUpdate ?? true,
       providerUpdatesReady: found.providerUpdatesReady ?? [],
       providerRemovalPending: found.providerRemovalPending ?? false,
@@ -137,7 +138,7 @@ export function setSettings(change: Partial<Settings>): Settings {
   }
   const next = { ...current, ...validated }
   const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, ...persisted } = next
-  if (vpnChange || change.shortcuts !== undefined) {
+  if (vpnChange || change.shortcuts !== undefined || change.projects !== undefined || change.projectAssistants !== undefined) {
     const path = join(folder(), SETTINGS)
     writeFileSync(`${path}.new`, JSON.stringify(persisted, undefined, 2))
     renameSync(`${path}.new`, path)
@@ -221,8 +222,16 @@ export function notesStore(): NotesStore {
   return {
     all: () => notes,
     set: (id, note) => {
-      notes = { ...notes, [id]: withMoves(notes[id], note, Date.now()) }
+      const next = { ...notes, [id]: withMoves(notes[id], note, Date.now()) }
       clearTimeout(soon)
+      if (note.managerPrompt !== undefined || note.managerOwner !== undefined) {
+        const path = join(folder(), NOTES)
+        writeFileSync(`${path}.new`, JSON.stringify(next, undefined, 2))
+        renameSync(`${path}.new`, path)
+        notes = next
+        return
+      }
+      notes = next
       soon = setTimeout(() => write(NOTES, notes), 250)
     },
     replace: (next) => {

@@ -13,7 +13,7 @@ const { Transcript } = await import('../src/renderer/src/chat/Transcript')
 
 const nothing = (): void => undefined
 
-function drawn(items: SessionItem[], working = false, tasks?: readonly BackgroundTask[], guard: Pick<ComponentProps<typeof Transcript>, 'checkingIp' | 'heldSend' | 'retrying' | 'queued'> = {}): string {
+function drawn(items: SessionItem[], working = false, tasks?: readonly BackgroundTask[], guard: Pick<ComponentProps<typeof Transcript>, 'checkingIp' | 'heldSend' | 'retrying' | 'queued' | 'readOnly'> = {}): string {
   return renderToStaticMarkup(
     createElement(Transcript, {
       at: 's1',
@@ -201,6 +201,49 @@ describe('progress belongs to the current turn', () => {
   }
 })
 
+describe('pending cards in long conversations', () => {
+  const cards: Extract<SessionItem, { kind: 'card' }>[] = [
+    { kind: 'card', id: 'old-question', card: { kind: 'question', title: 'Choose a timing approach', choices: ['Real browser', 'Harness'] } },
+    { kind: 'card', id: 'old-form', card: { kind: 'elicitation', title: 'Allow browser measurements?', elicitation: { serverName: 'browser', message: 'Allow browser measurements?', fields: [] } } },
+  ]
+  const later: SessionItem[] = Array.from({ length: 170 }, (_value, index) => [
+    { kind: 'did', id: `step-${String(index)}`, what: 'Read the next file' } satisfies SessionItem,
+    { kind: 'theirs', id: `reply-${String(index)}`, text: `Later progress ${String(index)}` } satisfies SessionItem,
+  ]).flat()
+
+  it('keeps the working status while a task handoff request waits', () => {
+    const html = drawn([{ kind: 'request', id: 'handoff', tasks: [] }, { kind: 'theirs', id: 'progress', text: 'Continuing independent work' }], true)
+    expect(html).toContain('Still working')
+    expect(html).toContain('Continuing independent work')
+  })
+
+  for (const phone of [false, true]) {
+    const input = (items: SessionItem[]): SessionItem[] => phone ? collapse(items) : items
+    for (const card of cards) {
+      it(`keeps an old unanswered ${card.card.kind} after newer history without Still working (${phone ? 'phone' : 'desktop'})`, () => {
+        const html = drawn(input([card, ...later]), true)
+        expect(html).toContain(card.card.title)
+        expect(html.match(new RegExp(`data-item="${card.id}"`, 'g'))).toHaveLength(1)
+        expect(html.indexOf(`data-item="${card.id}"`)).toBeGreaterThan(html.indexOf('Later progress 169'))
+        expect(html).not.toContain('Still working')
+      })
+
+      it(`returns an answered ${card.card.kind} to its history position (${phone ? 'phone' : 'desktop'})`, () => {
+        const answered = { ...card, card: { ...card.card, answered: 'Accepted browser measurements' } }
+        const near = drawn(input([
+          { kind: 'theirs', id: 'before', text: 'Before the question' }, answered,
+          { kind: 'theirs', id: 'after', text: 'After the answer' },
+        ]), true)
+        expect(near.match(/1 step/g)).toHaveLength(1)
+        expect(near.indexOf('1 step')).toBeGreaterThan(near.indexOf('Before the question'))
+        expect(near.indexOf('1 step')).toBeLessThan(near.indexOf('After the answer'))
+        expect(near).toContain('Still working')
+        expect(drawn(input([answered, ...later]), true)).not.toContain('Accepted browser measurements')
+      })
+    }
+  }
+})
+
 it('keeps legitimate background tasks running after the turn ends', () => {
   const html = drawn([
     { kind: 'mine', id: 'm1', text: 'Start a watch' },
@@ -231,4 +274,98 @@ it('keeps current progress active when an unsent message is present', () => {
   expect(html).toContain('1 step, Checking models')
   expect(html.match(/spinner-turn/g)).toHaveLength(2)
   expect(html).toContain('Send again')
+})
+
+describe('answering questions', () => {
+  const question = (choices: readonly string[]): SessionItem => ({ kind: 'card', id: 'question', card: { kind: 'question', title: 'Which work should run next?', choices } })
+
+  it('shows the native checked states as semantic checkbox rows without terminal markers', () => {
+    const html = drawn([question(['[ ] Live tests', '[✓] Electron commands', '[✔] Open the PR', '[x] Stop', '[X] Another item'])])
+    expect(html.match(/role="checkbox" aria-checked="false"/g)).toHaveLength(1)
+    expect(html.match(/role="checkbox" aria-checked="true"/g)).toHaveLength(4)
+    expect(html).toContain('Choose one or more, then submit.')
+    expect(html).toContain('<span>Electron commands</span>')
+    expect(html).not.toContain('[✓]')
+    expect(html).not.toContain('[ ]')
+  })
+
+  it('does not treat arbitrary bracketed labels as native checkboxes', () => {
+    const html = drawn([question(['[draft] Preview', '[] Not a native marker', '[ ]Missing separator'])])
+    expect(html).not.toContain('role="checkbox"')
+    expect(html).not.toContain('Choose one or more')
+    expect(html).toContain('[draft] Preview')
+  })
+
+  it('separates native submit and navigation actions from the choices', () => {
+    const html = drawn([question(['[ ] Live tests', '[ ] Type something', 'Submit', 'Chat about this'])])
+    const footer = html.slice(html.indexOf('class="question-footer"'))
+    expect(footer).toContain('class="primary">Submit</button>')
+    expect(footer).toContain('class="quiet">Chat about this</button>')
+    expect(footer).not.toContain('Live tests')
+    expect(footer.indexOf('Chat about this')).toBeLessThan(footer.indexOf('Submit</button>'))
+    expect(html.match(/role="checkbox"/g)).toHaveLength(1)
+    expect(html).toContain('<span>Type something</span>')
+  })
+
+  it('keeps ordinary choices quiet and exposes an explicit disabled custom send action', () => {
+    const html = drawn([question(['Harness', 'Live browser'])])
+    expect(html).toContain('class="quiet question-option"><span>Harness</span>')
+    expect(html).not.toContain('class="question-footer"')
+    expect(html).toContain('Something else<input')
+    expect(html).toContain('type="submit" class="quiet" disabled="">Send</button>')
+  })
+
+  it('gives review confirmation one primary action and a secondary cancel', () => {
+    const html = drawn([question(['Submit answers', 'Cancel'])])
+    expect(html).toContain('class="primary">Submit answers</button>')
+    expect(html).toContain('class="quiet">Cancel</button>')
+    expect(html.indexOf('Cancel</button>')).toBeLessThan(html.indexOf('Submit answers</button>'))
+    expect(html).not.toContain('question-custom')
+    expect(html).not.toContain('role="checkbox"')
+  })
+})
+
+
+describe('read-only Manager inspection', () => {
+  const pending: SessionItem[] = [
+    { kind: 'mine', id: 'unsent', text: 'Retained task', unsent: true },
+    { kind: 'shell', id: 'shell', command: 'check submission', output: 'Current output', running: true },
+    { kind: 'card', id: 'native', card: { kind: 'elicitation', title: 'Allow Computer Use to use "Mail"?', detail: 'Read the review notification in Mail.', elicitation: { serverName: 'cua_repl', message: 'Use Mail', fields: [], rememberAllowed: true } } },
+    { kind: 'request', id: 'handoff', tasks: [{ title: 'Check submission', project: 'Notula', text: 'Read current review state', goal: 'Return current status' }] },
+    { kind: 'note', id: 'stopped', note: 'stopped', text: 'Stopped' },
+  ]
+
+  it('shows actual request and command details while removing permission, shell, resend and handoff actions', () => {
+    const html = drawn(pending, false, undefined, { readOnly: true })
+    expect(html).toContain('Allow Computer Use to use &quot;Mail&quot;?')
+    expect(html).toContain('Read the review notification in Mail.')
+    expect(html).toContain('Current output')
+    expect(html).toContain('Read current review state')
+    expect(html).toContain('Return current status')
+    expect(html).toContain('Answer this request in Telegram.')
+    for (const action of ['Allow once</button>', 'Allow for this session</button>', 'Decline</button>', 'Send again</button>', 'Continue</button>', 'Stop</button>', 'answerRequest']) expect(html).not.toContain(action)
+    expect(html).not.toContain('<input')
+    expect(html).not.toContain('<form')
+    expect(html).toContain('aria-label="Manager transcript"')
+    const ordinary = drawn(pending)
+    expect(ordinary).toContain('Allow for this session</button>')
+    expect(ordinary).toContain('Send again</button>')
+    expect(ordinary).toContain('shell-typed')
+    expect(ordinary).toContain('Continue</button>')
+  })
+
+  it('keeps native question choices readable and removes recovery and background task controls', () => {
+    const items: SessionItem[] = [{ kind: 'card', id: 'question', card: { kind: 'question', title: 'Pick the next task', choices: ['First task', 'Second task'] } }, { kind: 'note', id: 'failed', note: 'failed', text: 'Could not continue' }]
+    const tasks: readonly BackgroundTask[] = [{ id: 'watch', kind: 'local_bash', what: 'Watch', status: 'running', started: 1 }]
+    const html = drawn(items, false, tasks, { readOnly: true, heldSend: true })
+    expect(html).toContain('First task')
+    expect(html).toContain('Second task')
+    expect(html).not.toContain('question-option')
+    expect(html).not.toContain('Try again</button>')
+    expect(html).not.toContain('Running in the background:')
+    const ordinary = drawn(items, false, tasks, { heldSend: true })
+    expect(ordinary).toContain('question-option')
+    expect(ordinary).toContain('Try again</button>')
+    expect(ordinary).toContain('Running in the background:')
+  })
 })

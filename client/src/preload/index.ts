@@ -48,6 +48,8 @@ import type { Link } from '../shared/links'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from '../shared/providers'
 import { pieceOf } from '../shared/pairing'
 import type { Pairing, Piece } from '../shared/pairing'
+import type { ManagerApi, ManagerConfig, ManagerView } from '../shared/manager'
+import type { TelegramAction, TelegramApi, TelegramView } from '../shared/telegram'
 
 /**
  * Everything a window may ask the main process, and nothing else.
@@ -74,6 +76,24 @@ const geckit = {
 
   /** Where a dropped file is, which the file itself no longer says. */
   pathFor: (file: File): string => webUtils.getPathForFile(file),
+
+  manager: {
+    view: (): Promise<ManagerView> => ipcRenderer.invoke('manager:view'),
+    inspect: (id: string): Promise<SessionItems> => ipcRenderer.invoke('manager:inspect', id),
+    onItems: (said: (items: SessionItems) => void): (() => void) => listen('manager:items', said),
+    configure: (change: Partial<ManagerConfig>): Promise<ManagerView> => ipcRenderer.invoke('manager:configure', change),
+    pause: (): Promise<ManagerView> => ipcRenderer.invoke('manager:pause'),
+    resume: (): Promise<ManagerView> => ipcRenderer.invoke('manager:resume'),
+    retry: (): Promise<ManagerView> => ipcRenderer.invoke('manager:retry'),
+    restart: (): Promise<ManagerView> => ipcRenderer.invoke('manager:restart'),
+    on: (said: (view: ManagerView) => void): (() => void) => listen('manager:view', said),
+  } satisfies ManagerApi,
+
+  telegram: {
+    view: (): Promise<TelegramView> => ipcRenderer.invoke('telegram:view'),
+    action: (action: TelegramAction): Promise<TelegramView> => ipcRenderer.invoke('telegram:action', action),
+    on: (said: (view: TelegramView) => void): (() => void) => listen('telegram:view', said),
+  } satisfies TelegramApi,
 
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
@@ -376,6 +396,11 @@ const geckit = {
       }
     },
     state: (count: number, trouble: string | undefined): void => ipcRenderer.send('peer:state', count, trouble ?? null),
+    /** The rooms of the links shared now, each with its own key. */
+    shares: (): Promise<readonly { readonly id: string; readonly key: string }[]> => ipcRenderer.invoke('peer:shares'),
+    onShares: (said: (rooms: readonly { readonly id: string; readonly key: string }[]) => void): (() => void) => listen('peer:shares', said),
+    /** A call from a link page, answered for its own link only. */
+    share: (id: string, name: string, args: readonly unknown[]): Promise<unknown> => ipcRenderer.invoke('peer:share', id, name, args),
     /** Which screen to capture for a phone, or why this Mac will not let it be. */
     screen: (): Promise<{ readonly id?: string; readonly error?: string }> => ipcRenderer.invoke('peer:screen'),
   },

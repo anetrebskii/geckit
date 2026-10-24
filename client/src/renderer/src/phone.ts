@@ -2,7 +2,7 @@ import type { Geckit } from '../../preload'
 import type { ChatSession, SessionImage, SessionItem, SessionItems, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
 import { isRemote } from '../../shared/hosts'
 import { pieceOf } from '../../shared/pairing'
-import { collapse, runKey } from '../../shared/steps'
+import { collapse, isPending, pendingLast, runKey } from '../../shared/steps'
 import { isLocal, toPhone } from '../../shared/local'
 import type { Piece } from '../../shared/pairing'
 import { countEvent } from '../../shared/counting'
@@ -326,8 +326,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     const now = shown
     if (now === undefined) return
     later(itemsKey(now.id), (): Piece => {
-      const all = [...now.items.values()]
-      const items = all.slice(-TAIL)
+      const all = pendingLast([...now.items.values()])
+      const items = all.slice(-Math.max(TAIL, all.filter(isPending).length))
       return { items, left: now.left + all.length - items.length }
     })
   }
@@ -335,7 +335,10 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
   // A conversation comes as its messages and replies, each run of steps between them one line; a Mac from before that sends all of it, and it is folded here.
   const tail = (id: string): Promise<Piece> =>
     orAsBefore(call<Piece>('chat.turns', id, TAIL), () =>
-      call<SessionItem[]>('chat.items', id).then((all) => pieceOf(collapse(all), undefined, TAIL)),
+      call<SessionItem[]>('chat.items', id).then((all) => {
+        const folded = pendingLast(collapse(all))
+        return pieceOf(folded, undefined, Math.max(TAIL, folded.filter(isPending).length))
+      }),
     )
 
   const stepsOf = (id: string, ids: readonly string[]): Promise<SessionItem[]> =>
@@ -387,8 +390,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
         const from = piece.items[0] === undefined ? -1 : order.indexOf(piece.items[0].id)
         // What the page has out of place is taken out too, so it goes back where the Mac has it.
         const coming = new Set(piece.items.map((item) => item.id))
-        const staying = (from === -1 ? [] : order.slice(0, from)).filter((one) => !coming.has(one))
-        const gone = [...new Set([...(from === -1 ? order : order.slice(from)), ...coming])]
+        const waiting = new Set([...now.items.values()].filter(isPending).map((item) => item.id))
+        const staying = (from === -1 ? [] : order.slice(0, from)).filter((one) => !coming.has(one) && !waiting.has(one))
+        const gone = [...new Set([...(from === -1 ? order : order.slice(from)), ...coming, ...waiting])]
         now.items = new Map([...staying.map((one): [string, SessionItem] => [one, now.items.get(one) as SessionItem]), ...piece.items.map((item): [string, SessionItem] => [item.id, item])])
         now.left = Math.max(0, piece.left - staying.length)
         told('chat:items', { id, items: piece.items, gone } satisfies SessionItems)
@@ -439,6 +443,22 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     home: boot.home,
     copy: (text) => void navigator.clipboard.writeText(text),
     pathFor: () => '',
+    manager: {
+      view: () => call('manager.view'),
+      inspect: () => Promise.reject(new Error('Inspect Manager on the computer.')),
+      onItems: () => () => undefined,
+      configure: (change) => call('manager.configure', change),
+      pause: () => call('manager.pause'),
+      resume: () => call('manager.resume'),
+      retry: () => call('manager.retry'),
+      restart: () => call('manager.restart'),
+      on: (said) => listen('manager:view', said),
+    },
+    telegram: {
+      view: () => call('telegram.view'),
+      action: () => Promise.reject(new Error('Manage the Telegram connection on the computer.')),
+      on: (said) => listen('telegram:view', said),
+    },
     settings: {
       get: () => keptFirst<Settings>('settings', () => call('settings.get'), 'settings:changed').then(own),
       set: async (change) => {
@@ -538,7 +558,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       },
       before: async (id, before) => {
         const piece = await orAsBefore(call<Piece>('chat.turnsBefore', id, before, EARLIER), () =>
-          call<SessionItem[]>('chat.items', id).then((all) => pieceOf(collapse(all), before, EARLIER)),
+          call<SessionItem[]>('chat.items', id).then((all) => pieceOf(pendingLast(collapse(all)), before, EARLIER)),
         )
         const now = shown
         if (now?.id === id) {
@@ -729,6 +749,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onTell: never,
       state: nothing,
       screen: () => Promise.resolve({}),
+      shares: () => Promise.resolve([]),
+      onShares: never,
+      share: () => Promise.resolve(undefined),
     },
   }
 

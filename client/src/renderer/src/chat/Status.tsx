@@ -164,6 +164,6 @@ export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly on
   )
 }
 
-export function Status({ chat }: { readonly chat: AssistantStatusChat }): React.JSX.Element | null {
-  return ON_PHONE ? null : <AssistantStatus chat={chat} />
+export function Status({ chat, onManagerSettings }: { readonly chat: AssistantStatusChat; readonly onManagerSettings?: () => void }): React.JSX.Element | null {
+  return ON_PHONE ? null : <AssistantStatus chat={chat} onManagerSettings={onManagerSettings} />
 }
