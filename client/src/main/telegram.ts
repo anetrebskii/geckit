@@ -17,6 +17,7 @@ import { TelegramAttachmentFailure, TelegramAttachments, telegramFilename } from
 import type { TelegramAttachment, TelegramFileSender } from './telegram-attachments'
 import { TelegramBotClient, TelegramFailure, telegramUpdate } from './telegram-bot'
 import type { TelegramMessage, TelegramUpdate } from './telegram-bot'
+import { TelegramTyping } from './telegram-typing'
 
 export interface TelegramVault {
   available(): boolean
@@ -27,6 +28,9 @@ export interface TelegramVault {
 export interface TelegramManager {
   submit(text: string, id?: string, attachments?: readonly TelegramAttachment['id'][], authorized?: () => boolean): Promise<void | ManagerReplyOrigin['session']>
   reply?(text: string, id: string | undefined, reference: ManagerTelegramReply, authorized?: () => boolean, attachments?: readonly TelegramAttachment['id'][]): Promise<void>
+  typingAllowed?(): boolean
+  pending?(): readonly string[]
+  onPending?(changed: () => void): () => void
   pause(): Promise<void>
   resume(): Promise<void>
   status(): string
@@ -61,6 +65,7 @@ interface KeptTelegram {
   readonly bot: TelegramBot
   readonly account?: TelegramAccount
   readonly offset: number
+  readonly pendingInputs?: readonly string[]
   readonly replies: readonly ManagerTelegramReply[]
   readonly callbacks: readonly Callback[]
   readonly questions: readonly { readonly messageId: number; readonly id: TelegramDecision['id'] }[]
@@ -78,6 +83,10 @@ interface Connection {
   state: TelegramView['state']
   detail?: string
   sending: Promise<void>
+  readonly typing: TelegramTyping
+  typingFailed: boolean
+  responses: number
+  readonly dispatches: Set<string>
 }
 
 interface Pairing extends Connection {
@@ -131,7 +140,7 @@ function keptOf(text: string): KeptTelegram | undefined {
     const item = jsonObject(entry)
     if (item !== undefined && safeInteger(item['messageId']) && typeof item['id'] === 'string') questions.push({ messageId: item['messageId'], id: item['id'] })
   }
-  return { token: value['token'], bot: { id: bot['id'], username: bot['username'] }, offset: value['offset'], replies: Array.isArray(value['replies']) ? value['replies'].flatMap((entry) => { const reply = replyOf(entry); return reply === undefined ? [] : [reply] }).slice(-2048) : [], callbacks, questions, ...(account === undefined ? {} : { account }), ...(safeInteger(value['incoming']) ? { incoming: value['incoming'] } : {}), ...(value['outgoing'] === true ? { outgoing: true } : {}), ...(value['uncertain'] === true ? { uncertain: true } : {}), ...(typeof value['pendingUpload'] === 'string' && /^[a-f0-9]{64}$/.test(value['pendingUpload']) ? { pendingUpload: value['pendingUpload'] } : {}), uncertainUploads: Array.isArray(value['uncertainUploads']) ? value['uncertainUploads'].filter((entry): entry is string => typeof entry === 'string' && /^[a-f0-9]{64}$/.test(entry)) : [] }
+  return { pendingInputs: Array.isArray(value['pendingInputs']) ? value['pendingInputs'].filter((id): id is string => typeof id === 'string') : [], token: value['token'], bot: { id: bot['id'], username: bot['username'] }, offset: value['offset'], replies: Array.isArray(value['replies']) ? value['replies'].flatMap((entry) => { const reply = replyOf(entry); return reply === undefined ? [] : [reply] }).slice(-2048) : [], callbacks, questions, ...(account === undefined ? {} : { account }), ...(safeInteger(value['incoming']) ? { incoming: value['incoming'] } : {}), ...(value['outgoing'] === true ? { outgoing: true } : {}), ...(value['uncertain'] === true ? { uncertain: true } : {}), ...(typeof value['pendingUpload'] === 'string' && /^[a-f0-9]{64}$/.test(value['pendingUpload']) ? { pendingUpload: value['pendingUpload'] } : {}), uncertainUploads: Array.isArray(value['uncertainUploads']) ? value['uncertainUploads'].filter((entry): entry is string => typeof entry === 'string' && /^[a-f0-9]{64}$/.test(entry)) : [] }
 }
 
 export class ManagerTelegram {
@@ -144,6 +153,7 @@ export class ManagerTelegram {
   private readonly path: string
   private readonly now: () => number
   readonly attachments: TelegramAttachments
+  private pendingListener: (() => void) | undefined
   private cleanupTimer: ReturnType<typeof setInterval> | undefined
 
   constructor(private readonly options: TelegramOptions) {
@@ -153,6 +163,7 @@ export class ManagerTelegram {
     this.attachments.cleanup()
     this.cleanupTimer = setInterval(() => { try { this.attachments.cleanup() } catch { /* Access reports storage failures. */ } }, 60_000)
     this.cleanupTimer.unref()
+    this.listenPending()
   }
 
   view(): TelegramView {
@@ -172,7 +183,12 @@ export class ManagerTelegram {
     }
   }
 
+  private listenPending(): void {
+    this.pendingListener ??= this.options.manager.onPending?.(() => { if (this.active !== undefined) { this.pruneInputs(this.active); this.syncTyping(this.active) } })
+  }
+
   async start(): Promise<void> {
+    this.listenPending()
     let bytes: Buffer
     try { bytes = readFileSync(this.path) } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return
@@ -195,6 +211,8 @@ export class ManagerTelegram {
   }
 
   stop(): void {
+    this.pendingListener?.()
+    this.pendingListener = undefined
     if (this.cleanupTimer !== undefined) clearInterval(this.cleanupTimer)
     this.cleanupTimer = undefined
     this.attempt?.abort()
@@ -203,6 +221,7 @@ export class ManagerTelegram {
   }
 
   async action(action: TelegramAction): Promise<TelegramView> {
+    if (action.kind !== 'disconnect') this.listenPending()
     if (this.cleanupTimer === undefined && action.kind !== 'disconnect') {
       this.cleanupTimer = setInterval(() => { try { this.attachments.cleanup() } catch { /* Access reports storage failures. */ } }, 60_000)
       this.cleanupTimer.unref()
@@ -212,6 +231,7 @@ export class ManagerTelegram {
         case 'connect': await this.connect(action.token); break
         case 'confirm': await this.confirm(action.userId, action.chatId); break
         case 'cancel-pairing':
+          this.active?.typing.update(false)
           this.attempt?.abort(); this.pairing?.controller.abort(); this.pairing = undefined; this.detail = undefined; this.failure = 'disconnected'; break
         case 'retry':
           if (this.pairing !== undefined) await this.connect(this.pairing.kept.token)
@@ -247,6 +267,8 @@ export class ManagerTelegram {
     if (text.trim() === '') return Promise.resolve()
     const connection = this.active
     if (connection === undefined || connection.kept.account === undefined) return Promise.resolve()
+    const pendingResponse = connection.dispatches.size > 0 || this.pendingInputs(connection).length > 0
+    if (pendingResponse) { connection.responses += 1; this.syncTyping(connection) }
     const job = this.outgoing.then(async () => {
       if (!this.current(connection)) return
       const choices: { readonly text: string; readonly callback_data: string }[] = []
@@ -268,8 +290,9 @@ export class ManagerTelegram {
       const limited = text.length > 32_768 ? `${text.slice(0, 32_768)}\n\nResponse shortened. Ask Manager here for a shorter summary or the missing part.` : text
       await this.send(connection, await this.linked(limited), choices, question?.id, undefined, origin)
     })
-    this.outgoing = job.catch(() => undefined)
-    return job
+    const finished = job.finally(() => { if (pendingResponse) connection.responses -= 1; this.syncTyping(connection) })
+    this.outgoing = finished.catch(() => undefined)
+    return finished
   }
 
   /** A link ended, by Stop, its time or the app: a Stop button left for it in Telegram stops being one. */
@@ -348,8 +371,12 @@ export class ManagerTelegram {
         const { outgoing: _outgoing, pendingUpload: _pendingUpload, ...kept } = connection.kept
         connection.kept = { ...kept, replies: [...kept.replies, { ...origin, chatId, messageId, text: caption || name }].slice(-2048) }
         this.save(connection)
+        this.syncTyping(connection)
+        connection.typing.sent()
         return messageId
       } catch (error) {
+        connection.typingFailed = true
+        connection.typing.update(false)
         const uncertain = !(error instanceof TelegramFailure)
         const { outgoing: _outgoing, pendingUpload: _pendingUpload, ...kept } = connection.kept
         connection.kept = { ...kept, ...(uncertain ? { uncertain: true, uncertainUploads: [...new Set([...(kept.uncertainUploads ?? []), fingerprint])] } : {}) }
@@ -370,15 +397,36 @@ export class ManagerTelegram {
     this.changed()
   }
 
-  private connection(kept: KeptTelegram): Connection {
-    return { kept, client: new TelegramBotClient(kept.token, this.options.fetch), controller: new AbortController(), state: 'connected', sending: Promise.resolve() }
+  private connection(kept: KeptTelegram, client = new TelegramBotClient(kept.token, this.options.fetch), controller = new AbortController()): Connection {
+    const connection: Connection = { kept, client, controller, state: 'connected', sending: Promise.resolve(), typingFailed: false, responses: 0, dispatches: new Set(), typing: new TelegramTyping(async (signal) => {
+      const chatId = connection.kept.account?.chatId
+      if (chatId !== undefined && this.current(connection) && connection.state === 'connected') await client.call('sendChatAction', { chat_id: chatId, action: 'typing' }, signal)
+    }, controller.signal, this.now) }
+    return connection
+  }
+
+  private pruneInputs(connection: Connection): void {
+    if (this.options.manager.pending === undefined || !this.current(connection)) return
+    const pendingInputs = this.pendingInputs(connection)
+    if (pendingInputs.length === (connection.kept.pendingInputs?.length ?? 0)) return
+    connection.kept = { ...connection.kept, pendingInputs }
+    this.save(connection)
+  }
+
+  private pendingInputs(connection: Connection): readonly string[] {
+    const pending = this.options.manager.pending?.() ?? []
+    return connection.kept.pendingInputs?.filter((id) => pending.includes(id) || connection.dispatches.has(id)) ?? []
+  }
+
+  private syncTyping(connection: Connection): void {
+    connection.typing.update(this.current(connection) && connection === this.active && !connection.typingFailed && this.pairing === undefined && connection.state === 'connected' && this.options.manager.enabled() && this.options.manager.typingAllowed?.() !== false && (connection.dispatches.size > 0 || connection.responses > 0 || this.pendingInputs(connection).length > 0))
   }
 
   private current(connection: Connection): boolean {
     return !connection.controller.signal.aborted && (connection === this.active || connection === this.pairing)
   }
 
-  private changed(): void { this.options.changed(this.view()) }
+  private changed(): void { if (this.active !== undefined) this.syncTyping(this.active); this.options.changed(this.view()) }
   private failed(state: TelegramView['state'], detail: string): void {
     this.failure = state; this.detail = detail
     if (this.active === undefined && this.pairing !== undefined) this.pairing.state = state
@@ -406,6 +454,7 @@ export class ManagerTelegram {
     const token = raw.trim()
     if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) { this.failed('revoked', 'Enter the bot token from BotFather.'); return }
     if (!this.options.vault.available()) { this.failed('storage-error', 'Secure storage is unavailable. Unlock your system credential store before connecting Telegram.'); return }
+    this.active?.typing.update(false)
     this.attempt?.abort(); this.pairing?.controller.abort(); this.pairing = undefined
     const controller = new AbortController()
     this.attempt = controller
@@ -415,7 +464,7 @@ export class ManagerTelegram {
     if (controller.signal.aborted || this.attempt !== controller) return
     if (this.active?.kept.bot.id === bot.id) { this.detail = 'This bot is already connected. Disconnect first if you want to pair it with a different Telegram account.'; return }
     this.detail = undefined
-    const pairing: Pairing = { kept: { token, bot, offset: 0, replies: [], callbacks: [], questions: [] }, client, controller, state: 'pairing', payload: nonce(), expiresAt: this.now() + 10 * 60_000, sending: Promise.resolve() }
+    const pairing: Pairing = Object.assign(this.connection({ token, bot, offset: 0, replies: [], callbacks: [], questions: [] }, client, controller), { state: 'pairing' as const, payload: nonce(), expiresAt: this.now() + 10 * 60_000 })
     this.pairing = pairing
     this.changed()
     void this.poll(pairing)
@@ -598,6 +647,8 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
     const previous = connection.kept
     let origin: ManagerReplyOrigin | undefined = reference
     const attachments: TelegramAttachment['id'][] = []
+    const typingId = question === undefined && command !== '/pause' && command !== '/resume' ? id : undefined
+    if (typingId !== undefined) { connection.typingFailed = false; connection.dispatches.add(typingId); connection.kept = { ...connection.kept, pendingInputs: [...new Set([...this.pendingInputs(connection), typingId])] }; this.save(connection); this.syncTyping(connection) }
     try {
       if (attachment?.file !== undefined) {
         const bytes = await connection.client.download(attachment.file, connection.controller.signal)
@@ -620,6 +671,7 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
         await connection.sending
         await this.options.manager.resume()
         if (this.current(connection)) {
+          connection.typingFailed = false
           const { outgoing: _outgoing, uncertain: _uncertain, ...kept } = connection.kept
           connection.kept = kept
           delete connection.detail
@@ -631,10 +683,10 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
         if (attachments.length === 0) await this.options.manager.reply(text, id, reference, () => this.current(connection) && this.options.manager.enabled())
         else await this.options.manager.reply(text, id, reference, () => this.current(connection) && this.options.manager.enabled(), attachments)
       } else {
-        const session = attachments.length === 0 ? await this.options.manager.submit(text, id) : await this.options.manager.submit(text, id, attachments, () => this.current(connection) && this.options.manager.enabled())
+        const session = attachments.length === 0 ? await this.options.manager.submit(text, id, undefined, () => this.current(connection) && this.options.manager.enabled()) : await this.options.manager.submit(text, id, attachments, () => this.current(connection) && this.options.manager.enabled())
         if (session !== undefined) origin = { session, workers: [] }
       }
-      await this.send(connection, question === undefined ? command === '/pause' ? 'Manager paused. Existing workers continue.' : command === '/resume' ? 'Manager resumed.' : 'Sent to Manager.' : 'Answer sent to Manager.', [], undefined, replyTo, question === undefined ? origin : undefined)
+      if (question !== undefined || command === '/pause' || command === '/resume') await this.send(connection, question !== undefined ? 'Answer sent to Manager.' : command === '/pause' ? 'Manager paused. Existing workers continue.' : 'Manager resumed.', [], undefined, replyTo, question === undefined ? origin : undefined)
     } catch (error) {
       if (question !== undefined) {
         if (this.options.manager.hasDecision?.(question) !== false) this.restoreDecision(connection, previous, question)
@@ -644,6 +696,10 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
       }
       if (attachment !== undefined) { await this.send(connection, error instanceof TelegramAttachmentFailure ? error.message : 'Telegram file could not be handed to Manager. Check Manager status and the connection, then resend the file.', [], undefined, replyTo); return }
       await this.send(connection, 'Manager could not accept this instruction. Use /status here or check GeckIt Settings → Manager before sending again.', [], undefined, replyTo)
+    } finally {
+      if (typingId !== undefined) connection.dispatches.delete(typingId)
+      this.pruneInputs(connection)
+      this.syncTyping(connection)
     }
   }
 
@@ -727,7 +783,11 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
       const { outgoing: _outgoing, ...kept } = connection.kept
       connection.kept = { ...kept, ...(origin !== undefined && safeInteger(result?.['message_id']) ? { replies: [...kept.replies, { ...origin, chatId: account.chatId, messageId: result['message_id'], text: piece.text }].slice(-2048) } : {}), ...(question !== undefined && safeInteger(result?.['message_id']) ? { questions: [...kept.questions, { messageId: result['message_id'], id: question }] } : {}) }
       this.save(connection)
+      this.syncTyping(connection)
+      connection.typing.sent()
     } catch (error) {
+      connection.typingFailed = true
+      connection.typing.update(false)
       if (!this.current(connection)) return
       const failure = error instanceof TelegramFailure ? error : new TelegramFailure(0)
       connection.detail = failure.code === 0 ? 'A Telegram message may not have arrived. Use /status in Telegram and check worker sessions; uncertain sends are not retried automatically.' : failure.message

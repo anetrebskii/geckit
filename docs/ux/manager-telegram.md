@@ -1038,3 +1038,7 @@ This supersedes the earlier rule that /resume clears reviewed upload holds and t
 The earlier lookup-only exception above left Manager latched in manual recovery after an exact unapproved-address refusal, even when the VPN later changed. The same guarded revalidation now covers exact address mismatches as well as lookup failures; the 5-to-60-second schedule remains unchanged. A still-unapproved address blocks every attempt before provider dispatch. Configuration/hook/native approval holds and explicit pauses remain manual. Saved manual-recovery records are eligible only when their current session note retains a recognized transient VPN reason and a held message/continuation.
 
 [Current journey, transitions and acceptance criteria](manager-retry-steering.md#manager-recovery-after-a-changed-vpn-address). This explicitly supersedes the October 21 decision to stop automatic revalidation at a verified unapproved address. It changes recovery eligibility, never the VPN policy. The existing Manager inspection and Settings surfaces remain the UI authority.
+
+### Native typing acknowledgement - 2026-10-24
+
+[Telegram typing lifecycle](telegram-manager-typing.md) replaces the successful ordinary "Sent to Manager." bubble with Telegram's native typing action. It follows correlated pending inputs through queueing, intermediate output and final response; existing permission, failure and recovery messages remain explicit.
