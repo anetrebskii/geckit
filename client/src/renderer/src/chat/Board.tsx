@@ -4,7 +4,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { assistantFor, ANYWHERE, BOARD_COLUMNS, columnShown, homeOf, letsGo, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { BoardColumn, ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
 import { landingIndex, movedOrder, ordered } from '../../../shared/order'
-import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
+import { isCodexProvider, llmProviderInfo, modelPreference, providerModel, selectableProviders } from '../../../shared/providers'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
 import { dictate, languageCode, useDictationLanguage, useLevel } from '../dictate'
@@ -860,7 +860,7 @@ export function NewTask({
     })
     return () => { current = false }
   }, [modelRoot, provider])
-  const model = isCodexProvider(provider) ? chat.settings.codexModel : chat.settings.chatModel
+  const model = providerModel(chat.settings, provider)
   const catalog: readonly ClaudeModel[] | undefined = models?.provider === provider && models.root === modelRoot && Array.isArray(models.said) ? models.said : undefined
   const selectedModel = model === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === model)
   const reasoning = chat.settings.codexReasoning
@@ -876,10 +876,10 @@ export function NewTask({
           value={model}
           onChange={(event) => {
             const value = event.target.value
-            if (!isCodexProvider(provider)) chat.change({ chatModel: value })
+            if (!isCodexProvider(provider)) chat.change(modelPreference(chat.settings, provider, value))
             else {
               const next = value === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === value)
-              chat.change({ codexModel: value, codexReasoning: next?.reasoning?.some((one) => one.value === reasoning) === true ? reasoning : '' })
+              chat.change({ ...modelPreference(chat.settings, provider, value), codexReasoning: next?.reasoning?.some((one) => one.value === reasoning) === true ? reasoning : '' })
             }
           }}
         >
@@ -1096,11 +1096,13 @@ export function NewTask({
           }}
           onDragOver={(event) => {
             event.preventDefault()
+            event.stopPropagation()
             setOver(true)
           }}
           onDragLeave={() => setOver(false)}
           onDrop={(event) => {
             event.preventDefault()
+            event.stopPropagation()
             setOver(false)
             take([...event.dataTransfer.files])
           }}

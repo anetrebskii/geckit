@@ -1,5 +1,20 @@
 # Verification: OpenCode Llama
 
+## Completion connection recovery - version 1.2.3, 2026-10-21
+
+Published library source and prebuilt entry: https://github.com/anetrebskii/geckit-opencode-llama/commit/a6ee02b268789f0f353507c3aa0d246b473a6169. Remote main verified at that commit. README own-english check passes vocabulary/punctuation; contraction and parallel-list flags reflect technical documentation structure.
+
+Library CI passes reproducible build, deterministic tests and native OpenCode 1.18.35/Linux plus 2/macOS smoke: https://github.com/anetrebskii/geckit-opencode-llama/actions/runs/39547384609.
+
+The reported MiniMax "fetch failed" coincides with repeated OpenCode 2 wait requests disconnected at about 302 seconds, including 2026-10-21 04:49:47/49 UTC in the installed OpenCode log. No matching native model error was persisted. This supports a completion-observer timeout rather than a model failure; Undici documents a [300-second default header timeout](https://undici.nodejs.org/api/Dispatcher). The installed OpenCode 2.0.25 OpenAPI describes `/api/experimental/session/{sessionID}/wait` as waiting for the agent loop to become idle.
+
+The library now renews this observation every 60 seconds. Safe GETs and the v2 wait POST retry transient network errors and HTTP 429/500/502/503/504 up to three times with 1/2/4-second backoff. Writes are never replayed. Stop and disposal cancel retries. Correction's total wait deadline remains bounded. Example sources and the standalone library source/prebuilt entry are synchronized; no host contract or renderer change.
+
+- 48 deterministic tests pass, including recovery/exhaustion, write exclusion, permanent errors, cancellation during backoff/active wait, repeated renewal and total completion deadline.
+- Standalone library build and 48 tests pass after synchronization; prebuilt entries match byte-for-byte. Scoped ESLint recommended rules and `git diff --check` pass.
+- Real installed OpenCode 2.0.25 passes the expanded native smoke using isolated XDG directories and a local mock model. One injected lost wait response recovers; five observed renewals do not interrupt generation. The deliberately delayed turn makes exactly one model request and adds exactly one user message. Existing approvals, questions, Stop/continue, Plan denial, history and correction checks pass. Summary: [retry-native-v2-result.json](retry-native-v2-result.json). The test accelerates renewal to 100 ms; production uses 60 seconds.
+- Actual Ollama/MiniMax inference, a full five-minute live reproduction, local OpenCode 1 native smoke, and applying the library update in the installed app were not performed in this task. No new UI was introduced, so browser visual checks do not exercise this transport change. Version 1.2.3 is available from library main; the installed copy has not been updated in this task.
+
 Date: 2026-10-09. Implementation: examples/opencode-provider. No GeckIt host-contract or renderer files changed by this task.
 
 ## Passed
