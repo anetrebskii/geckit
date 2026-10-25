@@ -185,8 +185,10 @@ describe('Manager source settings', () => {
     expect(markup).toContain('aria-expanded="false"')
     expect(markup).toContain('Working hours apply only to new task sources.')
     expect(markup).toContain('Manual messages and queued work continue at any time.')
-    expect(markup).toContain('Mon–Fri · 09:00–18:00')
-    expect(markup).toContain('<input type="checkbox"/>Enable automatic intake')
+    expect(markup).toContain('<span>Mon–Fri</span><span class="manager-hours-time">09:00 – 18:00</span>')
+    expect(markup).toMatch(/<input class="assistant-toggle" type="checkbox" role="switch" aria-label="Automatic intake"[^>]*\/>/)
+    expect(markup).not.toMatch(/aria-label="Automatic intake"[^>]*checked/)
+    expect(markup).not.toContain('Remove interval')
     expect(markup).toContain('Save task sources')
   })
 
@@ -194,6 +196,7 @@ describe('Manager source settings', () => {
     const source = { id: 'voice', kind: 'voice-memos', enabled: true, directory: '/fixture/Recordings' } as const
     const markup = renderToStaticMarkup(createElement(ManagerSources, { view: { ...ready, config: { ...ready.config, intake: { ...DEFAULT_MANAGER_INTAKE, enabled: true, sources: [source] } }, intake: { state: 'blocked', sources: [{ id: source.id, kind: source.kind, state: 'blocked', detail: 'Read permission denied' }], notesDirectory: '/fixture/manager-notes', items: [{ id: 'item', sourceId: source.id, revision: 'revision', title: 'Recorded idea', createdAt: 1, state: 'awaiting-user', summary: 'An idea to review' }, { id: 'saved', sourceId: source.id, revision: 'revision', title: 'Saved idea', createdAt: 1, state: 'note', notePath: '/fixture/manager-notes/saved.md' }] } } }))
     expect(markup).toContain('Read permission denied')
+    expect(markup).not.toContain('Voice Memos connected')
     expect(markup).not.toContain('/fixture/Recordings')
     expect(markup).toContain('<summary>Privacy and recent intake (2)</summary>')
     expect(markup).toContain('Existing recordings are excluded. Only new recordings will be reviewed.')

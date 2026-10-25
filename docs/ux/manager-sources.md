@@ -138,3 +138,123 @@ Alex explicitly authorized this revision and implementation; further design conf
 - Actual compiled auto-detection checked only the current user's standard Apple library database header and returned access denied (EPERM). No recording rows/audio were read, no TCC/preferences/pairing changed. Full Disk Access navigation, readable real-library ingestion, local transcription and live Telegram remain unverified in the running host.
 - Performance review: no background renderer polling, per-item subscriptions or animation loops added; connection checks are explicit single-flight actions, and history remains capped at 20 records.
 - Before/after captures and check logs are retained outside the temporary worktree; selected final fixture screenshots are copied into the managed project's `.geckit-attachments/manager-voice-memos-connect-20261025/`.
+
+## Revision: schedule and source layout, 2026-10-25 (second design review)
+
+Alex rejected the PR #44 layout: heavy outlined day chips, uneven large fields and buttons, "Remove interval 1", a time zone detached from the hours, long explanations, a native blue checkbox, and a form that needed scrolling to understand. The task and backend stay the same; the screen is reorganised around three questions read top to bottom: is intake on, is the source usable, when does it run.
+
+### Path and hierarchy
+1. **Section header.** Title, one status line and the intake switch on the right, the same switch Assistants uses. The switch edits the draft; the status line says what will happen.
+2. **Source row.** One row in a bordered list, like an assistant row: icon, name, one readiness line, then small text actions. With no source the row's only action is the primary "Connect Voice Memos". With a source, the row ends in a "Use Voice Memos" switch and offers "Check again", plus "Open Privacy Settings" only after an access denial.
+3. **Working hours, read view.** A bordered list: one row per interval, days on the left and "09:00 – 18:00" on the right, then a "Time zone" row with the IANA name and its current GMT offset. "Edit hours" sits on the heading line.
+4. **Working hours, edit view.** The same list in place. Each interval row has a compact seven-day strip, start and end time fields joined by a dash, and an icon-only remove button whose accessible name names the interval. Problems appear on the row that has them. "Add interval" adds weekdays 09:00–18:00 first, weekends after that. The time zone row is a searchable time zone list, described in the next revision.
+5. **Save group.** "Save task sources" is the primary action only while something changed, next to "Discard changes" and "Unsaved changes". After a successful save it shows "Saved" and the editor closes.
+
+Rejected: a modal or wizard for hours (one short form, no dependency between steps); a menu of every zone (more than 400 entries with no filtering in the existing Picker); a single-select segmented control for days (several days can be on at once).
+
+### States and exact copy
+| State | Trigger | Visible result | Next action |
+|---|---|---|---|
+| Intake off | Switch off | "Automatic intake is off. Manual Manager work is unchanged." | Turn the switch on and save |
+| Intake on, unsaved | Switch turned on, not saved | "Turns on when you save." | Save task sources |
+| Intake on, saved | Saved and enabled | Backend copy: "Watching for new recordings", "Outside working hours" or "Automatic intake needs attention" | None, or fix the reported item |
+| Source not added | No source | "Record on your iPhone. Review new recordings in Telegram." | Connect Voice Memos |
+| Not checked | Source saved, no check this window, backend not blocked | "Not checked in this window." | Check again |
+| Backend blocked | Saved source reported blocked | The backend's detail, in warning colour | Check again |
+| Checking / connected / access / missing / failed | As in the previous revision | Same exact copy as before; Full Disk Access denial is a warning, never "Voice Memos connected" | As before |
+| No hours | Every interval removed | "No working hours. New recordings wait until you add them." | Edit hours |
+| Interval invalid | No day, empty time, start equals end | "Choose at least one day." / "Enter a start and an end time." / "Start and end must differ." on the row | Fix the row; Save is refused with the existing alert |
+| Overnight | End earlier than start | Read: "22:00 – 01:00 next day"; edit: "Ends at 01:00 the next day." | None |
+| Unknown zone | A saved value this computer does not know | "Unknown time zone" beside the zone | Choose a zone from the list |
+| Unsaved | Draft differs from what was loaded or saved | Primary Save, "Discard changes", "Unsaved changes" | Save or discard |
+| Saved | Save succeeded | "Saved", editor closed | None |
+| Save failed | Storage error | The error as an alert; no "Saved" | Save again |
+| Busy | Saving, or a check in progress | Switches and Save disabled; hours locked while saving | Wait |
+
+### Transitions
+```mermaid
+stateDiagram-v2
+  direction LR
+  state "Read view" as read
+  state "Editing hours" as edit
+  state "Unsaved draft" as dirty
+  state "Saved" as saved
+  [*] --> read
+  read --> edit: Edit hours
+  edit --> read: Done editing
+  edit --> dirty: change a value
+  read --> dirty: switch flipped
+  dirty --> read: Discard changes
+  dirty --> saved: Save succeeds
+  dirty --> dirty: Save refused or fails
+  saved --> edit: Edit hours
+```
+| From | Event | To | User sees |
+|---|---|---|---|
+| Read view | Presses "Edit hours" | Editing hours | Same list becomes editable; button reads "Done editing" |
+| Editing hours | Presses "Done editing" | Read view | Draft kept, still unsaved if changed |
+| Any | Changes a day, time, zone or switch | Unsaved draft | Primary Save, "Discard changes", "Unsaved changes" |
+| Unsaved draft | Presses "Discard changes" | Read view | Values as last loaded or saved; editor closed |
+| Unsaved draft | Save with a row or zone problem | Unsaved draft | Inline problem plus the existing alert; nothing written |
+| Unsaved draft | Save succeeds | Saved | "Saved"; editor closed; read view shows the stored values |
+| Unsaved draft | Storage fails | Unsaved draft | Error alert; no "Saved" |
+| Any | Settings closed without Save | Persisted settings | Nothing written |
+
+### Silence and numbers
+The offset is computed for the current date and is not refreshed while the dialog stays open across a DST change; the stored value is the IANA name, so the schedule itself is right. No toast on save, the line next to Save is enough. A new configuration takes this Mac's zone; a saved zone is never replaced unless the user chooses another zone and saves.
+
+### Verification, 2026-10-25
+Implemented in `ManagerSources.tsx` and its styles. 45 browser checks against the real SettingsDialog, ManagerSettings and ManagerSources with the fixture native API: connect, save, edit, keyboard toggling of days, inline validation, overnight hint, add and remove, unknown zone, zone suggestions, discard, preserved saved zone, save failure, disabled while checking, Full Disk Access and blocked states, no horizontal overflow and reachable history in light and dark at 1280x900, 1024x720 and 760x700. The fixture does not verify native Voice Memos access, iCloud, transcription or Telegram.
+
+## Revision: searchable time zone list, 2026-10-25
+
+Alex asked for a real drop-down with search instead of the text field with suggestions. Typing a zone name by hand is the wrong task: the person knows a city or an offset, not the IANA spelling, and a half-typed value must never become the schedule.
+
+### Path
+In edit view the "Time zone" row has one control: a button showing the chosen zone and its current offset, for example "Europe/Samara  GMT+4". Pressing it opens a list anchored under it. Focus goes to a search field at the top of the list. The first row is this Mac's zone, marked "This Mac"; below are all zones the system knows, each with its current offset, ordered by offset and then by name so neighbouring zones sit together. Typing narrows the list by city, region or offset ("samara", "europe", "+4", "gmt+4", "utc"). Choosing a row sets the draft zone and closes the list; the value is saved only by "Save task sources", as every other change in the section. Escape, a press outside or Tab closes the list without changing anything.
+
+Rejected: keeping a free-text field (it let any text become the draft and produced "Unknown time zone" while typing); a native select (no search and 400 rows); a separate "Use this Mac's zone" link beside the control (the first row of the list does the same in one press and keeps the row to one control).
+
+### States and exact copy
+| State | Trigger | Visible result | Next action |
+|---|---|---|---|
+| Closed | Default | Button: zone name, then its offset in faint text | Press it |
+| Open | Button pressed, Enter, Space or Down | List under the button, search field focused, current zone highlighted and checked | Type or move with arrows |
+| Searching | Text typed | Only matching rows; the highlight moves to the first match; the draft zone is unchanged | Choose a row |
+| No matches | Text matches nothing | "No time zones match “<text>”." | Change the search or Escape |
+| Chosen | Row clicked or Enter on the highlighted row | List closes, button shows the new zone, focus back on the button, "Unsaved changes" | Save or discard |
+| Cancelled | Escape, Tab or a press outside | List closes, zone unchanged, focus back on the button after Escape | None |
+| Saved alias or legacy name | Saved value is not in the system list but is valid (for example "US/Eastern") | Shown as saved, with its offset, as the first row "Saved" | Keep it, or choose another zone |
+| Unknown saved value | Saved value is not a valid zone | Button shows the value and "Unknown time zone"; Save is refused | Choose a zone |
+
+### Transitions
+```mermaid
+stateDiagram-v2
+  direction LR
+  state "Closed" as closed
+  state "Open" as open
+  state "Searching" as search
+  [*] --> closed
+  closed --> open: press, Enter, Space, Down
+  open --> search: type
+  search --> open: clear search
+  open --> closed: choose row
+  search --> closed: choose row
+  open --> closed: Escape, Tab, outside
+  search --> closed: Escape, Tab, outside
+```
+| From | Event | To | User sees |
+|---|---|---|---|
+| Closed | Press, Enter, Space or Down on the button | Open | List, search focused, current zone highlighted |
+| Open or Searching | Down / Up | Same | Highlight moves one row, scrolled into view; stops at the ends |
+| Open or Searching | Home / End | Same | Highlight on the first or last row |
+| Open | Types | Searching | Rows filtered; zone not changed |
+| Open or Searching | Enter on a highlighted row, or a click | Closed | New zone on the button; draft changed |
+| Open or Searching | Escape | Closed | Zone unchanged; focus on the button |
+| Open or Searching | Tab or a press outside | Closed | Zone unchanged |
+
+### Numbers and silence
+Offsets are read for the current moment from the system's zone data, so a zone in daylight saving time shows its summer offset now and its winter offset in winter; the stored value is the zone name, never the offset, so the schedule follows the change. Zones with the same offset stay separate rows because their rules differ. UTC is always present. The list caps nothing: it scrolls inside a popover no taller than the window allows. Offsets are computed once per opening, about 420 zones. No toast and no confirmation for choosing a zone; "Unsaved changes" already says it.
+
+### Edges
+A saved value that the system lists under another name is kept as it is. "UTC" and "Etc/UTC" are both valid and kept as saved. A narrow Settings window makes the list as wide as the window allows and never scrolls the page sideways. The phone does not show this section.
