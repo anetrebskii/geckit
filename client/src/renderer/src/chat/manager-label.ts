@@ -19,6 +19,7 @@ export function managerStand(view: ManagerView | undefined): ManagerStand {
   if (!view.config.enabled) return view.session === undefined ? { label: 'Set up Manager', short: 'Not set up', tone: 'off' } : { label: 'Manager disabled', short: 'Disabled', tone: 'off' }
   if (view.state === 'paused') return { label: 'Manager paused', short: 'Paused', tone: 'paused' }
   if (view.state === 'blocked') return { label: 'Manager unavailable', short: 'Unavailable', tone: 'error' }
+  if (view.state === 'working' && view.session?.state === 'working' && view.session.retryNotice !== undefined) return { label: 'Waiting for Codex', short: 'Waiting for Codex', tone: 'waiting' }
   if (view.decisions.length > 0 || view.workers.some((one) => one.state === 'asks')) return { label: 'Needs your answer', short: 'Needs your answer', tone: 'waiting' }
   if (view.state === 'working') return { label: 'Coordinating', short: 'Coordinating', tone: 'working' }
   if (view.workers.some((one) => one.state === 'working')) return { label: 'Workers are working', short: 'Workers are working', tone: 'working' }

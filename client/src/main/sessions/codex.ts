@@ -303,8 +303,15 @@ export class CodexSessions {
     let active = false
     let rpc: CodexRpc | undefined
     let model = options.model
+    let retrying = false
     const signals = (...signals: Signal[]): void => hear({ items: [], gone: [], signals })
+    const clearRetry = (): void => {
+      if (!retrying) return
+      retrying = false
+      signals({ kind: 'retry', text: undefined })
+    }
     const ended = (how: 'done' | 'stopped' | 'failed', text?: string): void => {
+      clearRetry()
       clearRequests()
       if (how === 'stopped') remembered.clear()
       if (!active) return
@@ -366,6 +373,7 @@ export class CodexSessions {
         if (over) return
         switch (event.method) {
           case 'turn/started':
+            clearRetry()
             turnId = event.params.turn.id
             if (!active) { active = true; signals({ kind: 'begun' }) }
             if (stopped) void rpc?.request('turn/interrupt', { threadId, turnId }).catch(() => undefined)
@@ -386,11 +394,13 @@ export class CodexSessions {
             const item = event.params.item
             items.set(item.id, item)
             if (item.type === 'userMessage') return
+            clearRetry()
             const read = codexItem(item, options.root, event.method === 'item/started')
             hear({ items: read, gone: [], signals: item.type === 'agentMessage' ? [{ kind: 'said', text: item.text }] : read[0]?.kind === 'did' ? [{ kind: 'doing', what: read[0].what }] : [] })
             return
           }
           case 'item/agentMessage/delta': {
+            clearRetry()
             const before = items.get(event.params.itemId)
             const item: CodexItem = { ...(before?.type === 'agentMessage' ? before : {}), type: 'agentMessage', id: event.params.itemId, text: `${before?.type === 'agentMessage' ? before.text : ''}${event.params.delta}` }
             items.set(item.id, item)
@@ -398,6 +408,7 @@ export class CodexSessions {
             return
           }
           case 'item/reasoning/summaryTextDelta': {
+            clearRetry()
             const before = items.get(event.params.itemId)
             const summary = before?.type === 'reasoning' ? [...before.summary] : []
             const at = event.params.summaryIndex ?? 0
@@ -408,6 +419,7 @@ export class CodexSessions {
             return
           }
           case 'item/commandExecution/outputDelta': {
+            clearRetry()
             const before = items.get(event.params.itemId)
             if (before?.type !== 'commandExecution') return
             const item = { ...before, aggregatedOutput: `${before.aggregatedOutput ?? ''}${event.params.delta}` }
@@ -423,6 +435,7 @@ export class CodexSessions {
           case 'item/tool/requestUserInput':
           case 'item/permissions/requestApproval':
           case 'mcpServer/elicitation/request': {
+            clearRetry()
             const asked: Asked = { request: event, at: 0, answers: {} }
             requests.set(String(event.id), asked)
             ask(asked)
@@ -438,6 +451,12 @@ export class CodexSessions {
             return
           }
           case 'error':
+            if (event.params.turnId !== undefined && turnId !== undefined && event.params.turnId !== turnId) return
+            if (event.params.willRetry && active && !stopped) {
+              retrying = true
+              signals({ kind: 'retry', text: ['Codex is retrying automatically.', event.params.error.message, event.params.error.additionalDetails].filter(Boolean).join('\n') })
+              return
+            }
             if (!event.params.willRetry) {
               if (isDraining(event.params.error.message)) this.#discardConnection(rpc)
               ended('failed', event.params.error.message)
@@ -480,6 +499,7 @@ export class CodexSessions {
         await rpc.request('turn/steer', { threadId, input, expectedTurnId: turnId })
       },
       send: (text, images = [], before = []) => {
+        clearRetry()
         active = true
         stopped = false
         void ready.then(async () => {
@@ -571,6 +591,7 @@ export class CodexSessions {
         requests.delete(key)
       },
       stop: () => {
+        clearRetry()
         stopped = true
         remembered.clear()
         clearRequests()
@@ -578,6 +599,7 @@ export class CodexSessions {
       },
       end: async () => {
         if (over) return
+        clearRetry()
         over = true
         remembered.clear()
         clearRequests()

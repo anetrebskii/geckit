@@ -294,6 +294,7 @@ type GuardOwner = Readonly<Pick<Live, 'guardGeneration'>> & { readonly live: Liv
 type GuardAttempt = GuardOwner & { readonly deadline: number; readonly destination?: GuardOwner }
 
 interface Live {
+  retryNotice?: ChatSession['retryNotice']
   checkingIp: boolean
   guardGeneration: number
   readonly guardCancels: Set<() => void>
@@ -995,6 +996,7 @@ export class Sessions {
       const goal = live?.goal ?? note?.goal
       sessions.push({
         id,
+        ...(live?.state !== 'working' || live.retryNotice === undefined ? {} : { retryNotice: live.retryNotice }),
         ...(note?.delivery === undefined ? {} : { delivery: note.delivery }),
         ...(this.isManager(id) ? { manager: true as const } : {}),
         ...(note?.managerOwner === undefined ? {} : { managerManaged: true as const }),
@@ -3274,6 +3276,11 @@ export class Sessions {
         return
       case 'said':
         live.said = saidLine(signal.text)
+        return
+      case 'retry':
+        if (live.retryNotice === signal.text) return
+        live.retryNotice = signal.text
+        this.#changed()
         return
       case 'writing':
         return

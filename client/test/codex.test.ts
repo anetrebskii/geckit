@@ -917,6 +917,55 @@ describe('Codex app-server', () => {
     await driver.end()
   })
 
+  it('exposes native retry reasons without ending or redispatching the Manager turn', async () => {
+    const { server, codex } = setup()
+    const sessions = new Sessions({ codex, notes: memoryNotes(), changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    try {
+      const id = await sessions.managerSession({ root: ROOT, provider: 'codex', mode: 'auto' }, MANAGER_INSTRUCTIONS)
+      const output = vi.fn()
+      sessions.managerOutput(output)
+      await sessions.sendManager({ session: id, root: ROOT, provider: 'codex', mode: 'auto', text: 'Coordinate work' })
+      await tick()
+      const params = { threadId: id.slice(6), turnId: `turn-${id.slice(6)}`, error: { message: 'Reconnecting... 1/5', additionalDetails: '429 Too Many Requests' }, willRetry: true }
+      server.event({ method: 'error', params })
+      expect((await sessions.allForManager([ROOT])).find((one) => one.id === id)).toMatchObject({ state: 'working', retryNotice: 'Codex is retrying automatically.\nReconnecting... 1/5\n429 Too Many Requests' })
+      expect(sessions.busy(id)).toBe(true)
+      expect(output).not.toHaveBeenCalled()
+      expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(1)
+      server.event({ method: 'error', params: { ...params, error: { message: 'Reconnecting... 2/5' } } })
+      expect((await sessions.allForManager([ROOT])).find((one) => one.id === id)?.retryNotice).toContain('2/5')
+      server.event({ method: 'item/agentMessage/delta', params: { threadId: id.slice(6), itemId: 'answer', delta: 'Resumed' } })
+      expect((await sessions.allForManager([ROOT])).find((one) => one.id === id)?.retryNotice).toBeUndefined()
+      server.event({ method: 'error', params: { ...params, turnId: 'old-turn' } })
+      expect((await sessions.allForManager([ROOT])).find((one) => one.id === id)?.retryNotice).toBeUndefined()
+      server.complete(id.slice(6))
+      await tick()
+      expect(output).toHaveBeenCalledOnce()
+    } finally { sessions.dispose() }
+  })
+
+  it.each(['done', 'failed', 'stop', 'disconnect', 'approval', 'reasoning', 'tool'] as const)('clears the retry notice on %s', async (next) => {
+    const { server, codex, heard } = setup()
+    const id = await codex.create(ROOT, 'auto')
+    const threadId = id.slice(6)
+    const driver = codex.hold({ id, root: ROOT, resume: true, mode: 'auto' }, (one) => heard.push(one), () => undefined)
+    driver.send('Work')
+    await tick()
+    const params = { threadId, turnId: `turn-${threadId}`, error: { message: '429 Too Many Requests' }, willRetry: true }
+    server.event({ method: 'error', params })
+    if (next === 'done') server.complete(threadId)
+    else if (next === 'failed') server.event({ method: 'error', params: { ...params, willRetry: false } })
+    else if (next === 'stop') driver.stop()
+    else if (next === 'disconnect') server.kill()
+    else if (next === 'approval') server.event({ method: 'item/commandExecution/requestApproval', id: 77, params: { threadId, itemId: 'cmd', command: 'npm test' } })
+    else if (next === 'reasoning') server.event({ method: 'item/reasoning/summaryTextDelta', params: { threadId, itemId: 'thought', delta: 'Thinking' } })
+    else server.event({ method: 'item/started', params: { threadId, item: { type: 'commandExecution', id: 'cmd', command: 'npm test', cwd: ROOT, status: 'inProgress', aggregatedOutput: null, exitCode: null } } })
+    await tick()
+    expect(heard.flatMap((one) => one.signals).filter((one) => one.kind === 'retry').at(-1)).toEqual({ kind: 'retry', text: undefined })
+    if (next === 'approval') expect(heard.flatMap((one) => one.signals)).toContainEqual(expect.objectContaining({ kind: 'asks', ask: '77' }))
+    await driver.end()
+  })
+
   it('clears approval cards resolved by the native reviewer', async () => {
     const { server, codex, heard } = setup()
     const id = await codex.create(ROOT, 'auto')

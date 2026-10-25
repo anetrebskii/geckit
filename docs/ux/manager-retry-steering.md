@@ -145,3 +145,21 @@ Alex can reconnect the VPN and leave Manager enabled. A saved public-IP lookup f
 Transient recheck attempts stay quiet: no repeated Telegram notifications or new success toast. An exact VPN mismatch is a changeable network condition, not a permanent manual-only error. Configuration errors, arbitrary text resembling a VPN refusal, held approval answers and disabled providers remain outside automatic retry. Recovery does not restart GeckIt or any worker. Multiple queued inputs retain order; the held input is not duplicated.
 
 Acceptance: prove mismatch-to-approved recovery, continued rejection while still mismatched, unavailable-to-mismatch-to-approved recovery, persisted manual-recovery restoration, interrupted-turn reconciliation without replay, and cancellation during validation. Prove configuration/hook/native approvals remain manual. Browser fixtures do not establish current live VPN eligibility.
+
+
+## Native Codex retry visibility
+
+Alex opens Manager inspection to find why queued Telegram work has stopped advancing. A native retry remains an active turn, so GeckIt must show the reason while Codex waits, without starting another turn or replaying a command. The existing inspection header and information area are the surfaces; no new controls or setup are needed.
+
+| From | Event | To | What Alex sees |
+| --- | --- | --- | --- |
+| Coordinating | Codex reports an error with `willRetry: true`, automatically | Waiting for provider | Badge "Waiting for Codex" and "Codex is retrying automatically." followed by the native message and available additional details |
+| Waiting for provider | Another retry notice arrives, automatically | Waiting for provider | Current notice replaces the previous one |
+| Waiting for provider | Current turn produces output, reasoning or tool progress, automatically | Coordinating | Retry notice clears; ordinary Manager status returns |
+| Waiting for provider | Native approval arrives | Needs an answer | Retry notice clears; existing approval behavior applies |
+| Waiting for provider | Turn finishes, stops or fails, or connection closes | Existing completion/recovery state | Retry notice clears; terminal failures retain existing recovery behavior |
+| Waiting for provider | Alex pauses/disables Manager | Existing paused/disabled state | Lifecycle status takes precedence |
+
+A provider wait takes precedence over unrelated worker questions or historical delivery reviews in the summary badge; those decisions stay available in Telegram. A retry is not a new approval and does not mark queued messages complete. Only notices for the active turn are accepted; stale notices must not affect a newer turn. No timeout or retry schedule is invented: Codex owns its backoff, and an ETA is omitted because its error notification does not provide one. The transient notice is not restored as current state after restart. No repeated Telegram notifications are sent. Existing layout, scrolling, keyboard and theme behavior are reused.
+
+Acceptance: a native 429 retry appears while the same turn remains busy, updates without redispatch, clears on real progress and every terminal path, ignores stale turns, and keeps genuine approvals and queued work intact. Review the actual inspection in both themes with a long native message and pending decisions. This fixes hidden retry state; it cannot remove the provider's rate limit.

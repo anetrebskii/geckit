@@ -139,6 +139,6 @@ export type CodexEvent =
   | { method: 'item/permissions/requestApproval'; id: RpcId; params: { threadId: string; itemId: string; reason: string | null; permissions: { network: { enabled: boolean | null } | null; fileSystem: { read: string[] | null; write: string[] | null; entries?: Json[] } | null } } }
   | { method: 'mcpServer/elicitation/request'; id: RpcId; params: CodexElicitationParams }
   | { method: 'serverRequest/resolved'; params: { threadId: string; requestId: RpcId } }
-  | { method: 'error'; params: { threadId: string; error: { message: string }; willRetry: boolean } }
+  | { method: 'error'; params: { threadId: string; turnId?: string; error: { message: string; additionalDetails?: string | null }; willRetry: boolean } }
 
 export type ApprovalEvent = Extract<CodexEvent, { id: RpcId }>

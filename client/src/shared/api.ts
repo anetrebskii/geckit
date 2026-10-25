@@ -334,6 +334,7 @@ export interface SessionNotice {
 
 /** One row in the sidebar. */
 export interface ChatSession {
+  readonly retryNotice?: string
   readonly delivery?: SessionDeliveryReceipt
   readonly manager?: true
   readonly managerManaged?: true

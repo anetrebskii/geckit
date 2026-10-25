@@ -11960,6 +11960,11 @@ button.manager-step-head:hover > svg {
   font-size: 12px;
 }
 
+.manager-retry {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .manager-inspection-facts {
   color: var(--text) !important;
   font-weight: 500;

@@ -39,6 +39,16 @@ describe('Manager navigation state', () => {
     expect(managerLabel({ ...ready, config: DEFAULT_MANAGER_CONFIG, state: 'off' })).toBe('Set up Manager')
     expect(managerLabel({ ...ready, config: DEFAULT_MANAGER_CONFIG, state: 'off', session: { ...worker, manager: true } })).toBe('Manager disabled')
   })
+
+  it('shows a live provider retry ahead of unrelated decisions without hiding lifecycle blocks', () => {
+    const retrying: ManagerView = { ...ready, state: 'working', session: { ...worker, manager: true, retryNotice: 'Codex is retrying automatically.\n429 Too Many Requests' }, workers: [{ ...worker, state: 'asks' }], decisions: [{ id: 'old-review', title: 'Review uncertain delivery', choices: [{ label: 'Reviewed', value: 'reviewed' }] }] }
+    expect(managerLabel(retrying)).toBe('Waiting for Codex')
+    expect(retrying.decisions).toHaveLength(1)
+    expect(managerLabel({ ...retrying, state: 'paused' })).toBe('Manager paused')
+    expect(managerLabel({ ...retrying, state: 'blocked' })).toBe('Manager unavailable')
+    expect(managerLabel({ ...retrying, session: { ...worker, manager: true } })).toBe('Needs your answer')
+    expect(managerLabel({ ...retrying, state: 'idle' })).toBe('Needs your answer')
+  })
 })
 
 vi.stubGlobal('window', { geckit: { platform: 'darwin' } })

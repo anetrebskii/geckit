@@ -17,6 +17,7 @@ export type Signal =
   /** Something is being done, said the way a row says it: "reading src/main.ts". */
   | { readonly kind: 'doing'; readonly what: string }
   | { readonly kind: 'said'; readonly text: string }
+  | { readonly kind: 'retry'; readonly text: string | undefined }
   /** A write is on its way, whoever allowed it. Absolute paths. */
   | { readonly kind: 'writing'; readonly paths: readonly string[] }
   /**

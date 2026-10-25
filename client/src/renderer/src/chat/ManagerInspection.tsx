@@ -82,6 +82,7 @@ export function ManagerInspection({ view, settings, onClose, onSettings }: { rea
       <p>{view.config.enabled ? 'Read-only here. Send tasks and answer what it asks in Telegram.' : 'Manager disabled. What it did is kept.'}</p>
       {view.session === undefined ? null : <p className="manager-inspection-id">{view.session.id}</p>}
       {view.error === undefined ? null : <p className="manager-error" role="status">{view.error}</p>}
+      {view.state !== 'working' || view.session?.state !== 'working' || view.session.retryNotice === undefined ? null : <p className="manager-retry" role="status">{view.session.retryNotice}</p>}
     </div>
     {id === undefined
       ? <div className="manager-inspection-empty"><Icon name="terminal" size={20} /><p>No Manager session yet.</p><p className="manager-inspection-hint">Set one up, then send it a task in Telegram.</p><button type="button" className="primary" onClick={onSettings}>Manager settings</button></div>
