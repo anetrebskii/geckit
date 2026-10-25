@@ -14,6 +14,8 @@
 - [x] T009 Browser interaction/full context light-dark keyboard/scroll/viewports and performance review.
 ## Delivery
 - [x] T010 Run required client/mobile checks, inspect diff/security and record real integration limits.
-- [ ] T011 Commit/push/PR, verify remote, preserve artifacts, remove only owned worktree, day-plan In review.
+- [x] T011 Commit/push/PR, verify remote, preserve artifacts, remove only owned worktree, day-plan In review.
 
 Dependencies: T001->T002->T003->T004/T005->T006->T007; T008 follows contracts independently; T009 follows T008; T010 follows all then T011. No new agents required beyond strict TypeScript ownership.
+
+Delivery: PR https://github.com/anetrebskii/geckit/pull/43; retained branch `feat/manager-source-intake`. Final remote head, owned-worktree removal and day-plan review record are verified by the delivery session after this commit; evidence remains outside the worktree.
