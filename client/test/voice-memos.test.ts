@@ -1,11 +1,11 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { VoiceMemosSource, voiceMemosDirectory } from '../src/main/voice-memos'
+import { VoiceMemosSource, voiceMemosConnection, voiceMemosDirectory } from '../src/main/voice-memos'
 import { SourcePending } from '../src/main/manager-intake'
 import type { ManagerSourceConfig } from '../src/shared/manager-intake'
 
@@ -95,4 +95,40 @@ it.skipIf(process.platform !== 'darwin')('reads an uncheckpointed live WAL snaps
     const ended = new Promise<void>((resolve) => child.once('close', () => resolve()))
     child.stdin.end(); await ended
   }
+})
+
+
+it('distinguishes missing libraries from denied native access without reading recordings', async () => {
+  const missing = await voiceMemosConnection({ platform: 'darwin', home: '/definitely-not-a-geckit-home' })
+  expect(missing.state).toBe('missing')
+  const denied = Object.assign(new Error('denied'), { code: 'EPERM' })
+  const readHeader = vi.fn(async () => { throw denied })
+  const access = await voiceMemosConnection({ platform: 'darwin', home: '/fixture', readHeader })
+  expect(access).toMatchObject({ state: 'access', detail: expect.stringContaining('Full Disk Access') })
+  expect(readHeader).toHaveBeenCalledExactlyOnceWith('/fixture/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/CloudRecordings.db')
+})
+
+it.skipIf(process.platform !== 'darwin')('automatically discovers a synthetic current-user library without importing its rows', async () => {
+  const f = library()
+  const home = mkdtempSync(join(tmpdir(), 'geckit-auto-home-')); paths.push(home)
+  const directory = voiceMemosDirectory('', home); mkdirSync(directory, { recursive: true })
+  const database = join(directory, 'CloudRecordings.db'); copyFileSync(f.database, database)
+  const before = readFileSync(database), names = readdirSync(directory)
+  expect(await voiceMemosConnection({ platform: 'darwin', home })).toEqual({ state: 'connected', detail: 'Voice Memos connected' })
+  const automatic = new VoiceMemosSource({ id: 'auto', kind: 'voice-memos', enabled: true }, { home, platform: 'darwin', transcribe: f.transcribe })
+  expect(await automatic.status()).toEqual({ state: 'ready' })
+  const unavailable = new VoiceMemosSource({ id: 'auto', kind: 'voice-memos', enabled: true }, { home, platform: 'darwin', transcribe: f.transcribe, transcription: async () => ({ ready: false, detail: 'Local transcription is not ready. Open GeckIt Transcribe to finish setup.' }) })
+  expect(await unavailable.status()).toMatchObject({ state: 'blocked', detail: expect.stringContaining('GeckIt Transcribe') })
+  expect(f.transcribe).not.toHaveBeenCalled(); expect(readFileSync(database)).toEqual(before); expect(readdirSync(directory)).toEqual(names)
+  writeFileSync(database, 'not a database')
+  expect((await voiceMemosConnection({ platform: 'darwin', home })).state).toBe('failed')
+})
+
+it('keeps old explicit directories unchanged and reports missing transcription separately', async () => {
+  expect(voiceMemosDirectory('/legacy/path', '/other/home')).toBe('/legacy/path')
+  const transcription = { ready: false, detail: 'Local transcription is not ready. Open GeckIt Transcribe to finish setup.' }
+  const connection = await voiceMemosConnection({ platform: 'darwin', readHeader: async () => undefined, transcription: async () => transcription })
+  expect(connection).toMatchObject({ state: 'connected', transcription })
+  const source = new VoiceMemosSource({ id: 'legacy', kind: 'voice-memos', enabled: true, directory: '/nonexistent/legacy' }, { platform: 'darwin', transcribe: async () => '', transcription: async () => transcription })
+  expect((await source.status()).state).toBe('blocked')
 })

@@ -19,7 +19,7 @@ export function validateIntakeConfig(config: ManagerIntakeConfig): void {
   }
   const ids = new Set<string>()
   for (const source of config.sources) {
-    if (source.kind !== 'voice-memos' || !/^[a-zA-Z0-9_-]{1,80}$/.test(source.id) || ids.has(source.id) || source.enabled && source.directory.trim() === '') throw new Error('Each source needs a unique ID and a recordings directory.')
+    if (source.kind !== 'voice-memos' || !/^[a-zA-Z0-9_-]{1,80}$/.test(source.id) || ids.has(source.id) || source.directory !== undefined && typeof source.directory !== 'string') throw new Error('Each source needs a unique ID.')
     ids.add(source.id)
   }
 }

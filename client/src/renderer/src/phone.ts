@@ -444,6 +444,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     copy: (text) => void navigator.clipboard.writeText(text),
     pathFor: () => '',
     manager: {
+      voiceMemos: async () => ({ state: 'unsupported', detail: 'Connect Voice Memos on the computer.' }),
       view: () => call('manager.view'),
       inspect: () => Promise.reject(new Error('Inspect Manager on the computer.')),
       onItems: () => () => undefined,

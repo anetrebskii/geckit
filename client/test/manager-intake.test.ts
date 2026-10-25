@@ -156,3 +156,15 @@ it('does not erase corrupt history or clear its fail-closed state when Save retr
   expect(f.intake.view().state).toBe('blocked'); expect(readFileSync(path, 'utf8')).toBe('{broken-history')
   expect(f.adapter.list).not.toHaveBeenCalled(); expect(f.dispatch).not.toHaveBeenCalled()
 })
+
+it('accepts automatic discovery while preserving a saved legacy source baseline and handled IDs', async () => {
+  expect(() => validateIntakeConfig({ ...config, sources: [{ id: 'auto', kind: 'voice-memos', enabled: true }] })).not.toThrow()
+  expect(() => validateIntakeConfig({ ...config, sources: [{ id: 'auto', kind: 'voice-memos', enabled: true, directory: '' }] })).not.toThrow()
+  const f = fixture(); f.add('existing'); await f.intake.tick(); f.advance(); f.add('handled'); await f.intake.tick()
+  await f.intake.answer(f.decision(), 'ignore', () => true)
+  const path = join(f.directory, 'manager-intake.json')
+  const original = readFileSync(path, 'utf8')
+  f.reload(); f.configure({ ...config, sources: config.sources.map((source) => ({ ...source })) }); await f.intake.tick()
+  expect(readFileSync(path, 'utf8')).toBe(original)
+  expect(f.classify).toHaveBeenCalledTimes(1); expect(f.intake.decisions()).toEqual([])
+})

@@ -48,6 +48,7 @@ import type { Link } from '../shared/links'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from '../shared/providers'
 import { pieceOf } from '../shared/pairing'
 import type { Pairing, Piece } from '../shared/pairing'
+import type { VoiceMemosConnection } from '../shared/manager-intake'
 import type { ManagerApi, ManagerConfig, ManagerView } from '../shared/manager'
 import type { TelegramAction, TelegramApi, TelegramView } from '../shared/telegram'
 
@@ -78,6 +79,7 @@ const geckit = {
   pathFor: (file: File): string => webUtils.getPathForFile(file),
 
   manager: {
+    voiceMemos: (action?: 'privacy'): Promise<VoiceMemosConnection> => ipcRenderer.invoke('manager:voice-memos', action),
     view: (): Promise<ManagerView> => ipcRenderer.invoke('manager:view'),
     inspect: (id: string): Promise<SessionItems> => ipcRenderer.invoke('manager:inspect', id),
     onItems: (said: (items: SessionItems) => void): (() => void) => listen('manager:items', said),

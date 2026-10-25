@@ -8,7 +8,7 @@ export interface ManagerSourceConfig {
   readonly id: string
   readonly kind: 'voice-memos'
   readonly enabled: boolean
-  readonly directory: string
+  readonly directory?: string
 }
 
 export interface ManagerIntakeConfig {
@@ -61,4 +61,10 @@ export interface TaskSource {
   status(): Promise<Omit<SourceStatus, 'id' | 'kind'>>
   list(cursor?: string): Promise<{ readonly items: readonly SourceItem[]; readonly cursor: string }>
   read(item: SourceItem): Promise<{ readonly transcript: string }>
+}
+
+export interface VoiceMemosConnection {
+  readonly state: 'connected' | 'access' | 'missing' | 'unsupported' | 'failed'
+  readonly detail: string
+  readonly transcription?: { readonly ready: boolean; readonly detail: string }
 }

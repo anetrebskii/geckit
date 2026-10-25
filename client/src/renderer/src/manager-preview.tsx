@@ -63,6 +63,7 @@ const replaceBacking = (provider: SessionProvider, model: string): void => {
   backing = { ...backing, id: provider === 'claude' ? id : `${provider}:${id}`, model: model || modelsFor(provider)[0]?.value || '', chosen: model }
 }
 const manager: ManagerApi = {
+  voiceMemos: async () => ({ state: 'unsupported', detail: 'Voice Memos connection checks are unavailable in this preview.' }),
   view: async () => view,
   inspect: async (id) => {
     const attempt = ++inspectionAttempts

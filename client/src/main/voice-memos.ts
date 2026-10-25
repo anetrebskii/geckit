@@ -1,17 +1,46 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFile, lstat, mkdtemp, realpath, rm, stat } from 'node:fs/promises'
+import { copyFile, lstat, mkdtemp, open, realpath, rm, stat } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 import type { Json } from '../shared/elicitation'
 import { jsonObject } from '../shared/elicitation'
-import type { ManagerSourceConfig, SourceItem, TaskSource } from '../shared/manager-intake'
+import type { ManagerSourceConfig, SourceItem, TaskSource, VoiceMemosConnection } from '../shared/manager-intake'
 import { SourcePending } from './manager-intake'
 
 const run = promisify(execFile)
-export const voiceMemosDirectory = (directory: string): string => directory.startsWith('~/') ? join(homedir(), directory.slice(2)) : directory
+export const voiceMemosDirectory = (directory = '', home = homedir()): string => directory.trim() === '' ? join(home, 'Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings') : directory.startsWith('~/') ? join(home, directory.slice(2)) : directory
+
+const readDatabaseHeader = async (database: string): Promise<void> => {
+  await identity(database)
+  const file = await open(database, 'r')
+  try {
+    const header = Buffer.alloc(16)
+    const { bytesRead } = await file.read(header, 0, header.length, 0)
+    if (bytesRead !== 16 || header.toString('ascii') !== 'SQLite format 3\0') throw new Error('The Voice Memos database format is unsupported.')
+  } finally { await file.close() }
+}
+export interface VoiceMemosConnectionDeps {
+  readonly platform?: NodeJS.Platform
+  readonly home?: string
+  readonly transcription?: () => Promise<NonNullable<VoiceMemosConnection['transcription']>>
+  readonly readHeader?: (database: string) => Promise<void>
+}
+
+export async function voiceMemosConnection(deps: VoiceMemosConnectionDeps = {}, directory?: string): Promise<VoiceMemosConnection> {
+  if ((deps.platform ?? process.platform) !== 'darwin') return { state: 'unsupported', detail: 'Apple Voice Memos is available only on macOS.' }
+  let connection: Omit<VoiceMemosConnection, 'transcription'>
+  try {
+    await (deps.readHeader ?? readDatabaseHeader)(join(voiceMemosDirectory(directory, deps.home), 'CloudRecordings.db'))
+    connection = { state: 'connected', detail: 'Voice Memos connected' }
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? error.code : undefined
+    connection = code === 'EPERM' || code === 'EACCES' ? { state: 'access', detail: 'Allow GeckIt in System Settings → Privacy & Security → Full Disk Access, then check again.' } : code === 'ENOENT' ? { state: 'missing', detail: 'Open Voice Memos on this Mac and turn on Voice Memos in iCloud, then check again.' } : { state: 'failed', detail: 'Voice Memos could not be checked. Its local database may be unavailable or unsupported. Check again after Voice Memos has synced.' }
+  }
+  return { ...connection, ...(deps.transcription === undefined ? {} : { transcription: await deps.transcription() }) }
+}
 interface FileIdentity { readonly size: number; readonly mtimeMs: number; readonly ino: number }
 const identity = async (path: string): Promise<FileIdentity> => { const file = await lstat(path); if (!file.isFile() || file.isSymbolicLink()) throw new Error('Voice Memos requires regular local files.'); return { size: file.size, mtimeMs: file.mtimeMs, ino: file.ino } }
 const same = (left: FileIdentity, right: FileIdentity): boolean => left.size === right.size && left.mtimeMs === right.mtimeMs && left.ino === right.ino
@@ -19,22 +48,23 @@ const optionalIdentity = async (path: string): Promise<FileIdentity | undefined>
 const sameOptional = (left: FileIdentity | undefined, right: FileIdentity | undefined): boolean => left === undefined || right === undefined ? left === right : same(left, right)
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 
-export interface VoiceMemosDeps {
+export interface VoiceMemosDeps extends Pick<VoiceMemosConnectionDeps, 'platform' | 'home' | 'transcription'> {
   readonly transcribe: (wav: string) => Promise<string>
-  readonly platform?: NodeJS.Platform
   readonly now?: () => number
 }
 
 export class VoiceMemosSource implements TaskSource {
   readonly id: ManagerSourceConfig['id']
   readonly capabilities = { audio: true, transcript: false }
-  readonly #config: ManagerSourceConfig
+  readonly #config: ManagerSourceConfig & { readonly directory: string }
   readonly #deps: VoiceMemosDeps
   readonly #observed = new Map<SourceItem['revision'], { readonly at: number; readonly identity: FileIdentity }>()
-  constructor(config: ManagerSourceConfig, deps: VoiceMemosDeps) { this.id = config.id; this.#config = { ...config, directory: voiceMemosDirectory(config.directory) }; this.#deps = deps }
+  constructor(config: ManagerSourceConfig, deps: VoiceMemosDeps) { this.id = config.id; this.#config = { ...config, directory: voiceMemosDirectory(config.directory, deps.home) }; this.#deps = deps }
   async status(): ReturnType<TaskSource['status']> {
-    if ((this.#deps.platform ?? process.platform) !== 'darwin') return { state: 'blocked', detail: 'Voice Memos intake is available only on macOS.' }
-    try { await identity(join(this.#config.directory, 'CloudRecordings.db')); return { state: 'ready' } } catch { return { state: 'blocked', detail: 'Cannot read the Voice Memos database. Check the configured Recordings directory and macOS privacy access. GeckIt does not change permissions.' } }
+    const connection = await voiceMemosConnection(this.#deps, this.#config.directory)
+    if (connection.state !== 'connected') return { state: 'blocked', detail: connection.detail }
+    if (connection.transcription?.ready === false) return { state: 'blocked', detail: connection.transcription.detail }
+    return { state: 'ready' }
   }
   async list(_cursor?: string): ReturnType<TaskSource['list']> {
     const temporary = await mkdtemp(join(tmpdir(), 'geckit-memo-db-'))

@@ -1,4 +1,4 @@
-import type { ManagerIntakeConfig, ManagerIntakeView } from './manager-intake'
+import type { ManagerIntakeConfig, ManagerIntakeView, VoiceMemosConnection } from './manager-intake'
 import type { TelegramAccount } from './telegram'
 import type { ChatSession, SessionItem, SessionItems, SessionMessage, SessionProvider, Settings } from './api'
 
@@ -38,6 +38,7 @@ export interface ManagerView {
 }
 
 export interface ManagerApi {
+  voiceMemos(action?: 'privacy'): Promise<VoiceMemosConnection>
   view(): Promise<ManagerView>
   inspect(id: ChatSession['id']): Promise<SessionItems>
   onItems(said: (items: SessionItems) => void): () => void
