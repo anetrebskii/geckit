@@ -4,13 +4,13 @@ import type { ManagerView } from '../../../shared/manager'
 import { DEFAULT_MANAGER_INTAKE } from '../../../shared/manager-intake'
 import type { ManagerIntakeConfig, ManagerWorkingWindow, VoiceMemosConnection } from '../../../shared/manager-intake'
 import { Icon } from '../ui/Icon'
+import { LOCAL_ZONE, ZonePicker, zoneOffset } from './ZonePicker'
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const
 const ITEM_STATES = { 'waiting-sync': 'Waiting for recording to finish syncing', transcribing: 'Transcribing locally', classifying: 'Reviewing recording', 'awaiting-user': 'Waiting for your answer in Telegram', claiming: 'Handing to Manager', claimed: 'Handed to Manager', note: 'Note saved', ignored: 'Skipped', failed: 'Failed' } as const
 const INTAKE_STATES = { off: 'Automatic intake is off. Manual Manager work is unchanged.', 'outside-hours': 'Outside working hours', ready: 'Watching for new recordings', blocked: 'Automatic intake needs attention' } as const
-const LOCAL_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 const NEW_WINDOW: ManagerWorkingWindow = { days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00' }
 
 function daysLabel(days: ManagerWorkingWindow['days']): string {
@@ -18,10 +18,6 @@ function daysLabel(days: ManagerWorkingWindow['days']): string {
   if (days.length === 5 && [1, 2, 3, 4, 5].every((day) => days.includes(day))) return 'Mon–Fri'
   if (days.length === 2 && days.includes(0) && days.includes(6)) return 'Weekends'
   return DAY_ORDER.filter((day) => days.includes(day)).map((day) => DAYS[day]).join(', ')
-}
-
-function zoneOffset(timeZone: string): string | undefined {
-  try { return new Intl.DateTimeFormat('en', { timeZone, timeZoneName: 'shortOffset' }).formatToParts(new Date()).find((part) => part.type === 'timeZoneName')?.value } catch { return undefined }
 }
 
 function windowProblem(one: ManagerWorkingWindow): string | undefined {
@@ -49,7 +45,6 @@ export function ManagerSources({ view }: { readonly view: ManagerView }): React.
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [hoursOpen, setHoursOpen] = useState(false)
-  const [zones, setZones] = useState<readonly string[]>([])
   const [connection, setConnection] = useState<VoiceMemosConnection>()
   const [checking, setChecking] = useState(false)
   const check = useRef({ active: true, busy: false, generation: 0 })
@@ -158,11 +153,8 @@ export function ManagerSources({ view }: { readonly view: ManagerView }): React.
             <button type="button" className="manager-source-link" disabled={saving} onClick={() => edit({ windows: [...draft.windows, draft.windows.length === 0 ? NEW_WINDOW : { ...NEW_WINDOW, days: [0, 6] }] })}><Icon name="plus" size={12} /> Add interval</button>
           </div>
           <div className="manager-hours-row manager-hours-zone-edit">
-            <label htmlFor={`${id}-zone`} className="manager-hours-label">Time zone</label>
-            <input id={`${id}-zone`} list={`${id}-zones`} spellCheck={false} autoComplete="off" aria-invalid={offset === undefined} aria-describedby={`${id}-zone-note`} value={draft.timeZone} disabled={saving} onFocus={() => { if (zones.length === 0) setZones(Intl.supportedValuesOf('timeZone')) }} onChange={(event) => edit({ timeZone: event.target.value })} />
-            <datalist id={`${id}-zones`}>{zones.map((zone) => <option key={zone} value={zone} />)}</datalist>
-            <small id={`${id}-zone-note`} className={offset === undefined ? 'manager-hours-problem' : 'manager-hours-offset'}>{offset ?? 'Unknown time zone'}</small>
-            {draft.timeZone === LOCAL_ZONE ? null : <button type="button" className="manager-source-link" disabled={saving} title="This Mac’s time zone" onClick={() => edit({ timeZone: LOCAL_ZONE })}>Use {LOCAL_ZONE}</button>}
+            <span id={`${id}-zone`} className="manager-hours-label">Time zone</span>
+            <ZonePicker value={draft.timeZone} disabled={saving} labelledBy={`${id}-zone`} onPick={(timeZone) => edit({ timeZone })} />
           </div>
         </>}
     </div>

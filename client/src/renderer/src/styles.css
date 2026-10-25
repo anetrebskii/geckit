@@ -12182,7 +12182,30 @@ button.manager-step-head:hover > svg {
 .manager-hours-window > p { flex-basis: 100%; margin: 0; font-size: 11px; }
 .manager-hours-hint { color: var(--text-faint); }
 .manager-sources .manager-hours-problem { color: var(--danger); }
-.manager-hours-zone-edit input { flex: 1 1 160px; max-inline-size: 220px; }
+.zone-picker { display: inline-flex; align-items: center; gap: 6px; min-inline-size: 0; max-inline-size: 100%; block-size: 26px; padding-inline: 8px 6px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-sunken); color: var(--text); font-size: 12px; transition: border-color var(--quick) var(--ease); }
+.zone-picker:hover:not(:disabled), .zone-picker[aria-expanded='true'] { border-color: var(--border-strong); }
+.zone-picker > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zone-picker > small { flex: none; color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.zone-picker > svg { flex: none; color: var(--text-faint); }
+.zone-picker.unknown > small { color: var(--danger); }
+.zone-picker:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.zone-search input:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.zone-menu { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.zone-search { position: relative; flex: none; padding: 6px; border-block-end: 1px solid var(--border); }
+.zone-search > svg { position: absolute; inset-block-start: 50%; inset-inline-start: 14px; color: var(--text-faint); transform: translateY(-50%); pointer-events: none; }
+.zone-search input { box-sizing: border-box; inline-size: 100%; block-size: 28px; padding-inline: 26px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-sunken); color: var(--text); font: inherit; font-size: 12px; }
+.zone-list { display: flex; flex: 1; flex-direction: column; min-block-size: 0; }
+.zone-pinned { flex: none; padding: 4px; }
+.zone-pinned + .zone-all { border-block-start: 1px solid var(--border); }
+.zone-all { flex: 1; min-block-size: 0; padding: 4px; overflow-y: auto; }
+.zone-option { cursor: default; font-size: 12px; }
+.zone-option.lit { background: var(--bg-hover); }
+.zone-check { display: flex; flex: none; inline-size: 14px; }
+.zone-option .label { flex: 0 1 auto; max-inline-size: none; min-inline-size: 0; }
+.zone-option .label small { color: var(--text-faint); font-size: 11px; }
+.zone-mark { flex: none; padding: 1px 5px; border-radius: 4px; background: var(--fill); color: var(--text-dim); font-size: 10px; }
+.zone-option .says { flex: none; margin-inline-start: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+.zone-empty { margin: 0; padding: 12px 9px; color: var(--text-faint); font-size: 12px; overflow-wrap: anywhere; }
 .manager-sources-actions { align-items: center; margin-block-start: 16px; }
 .manager-sources-unsaved, .manager-sources-saved { display: inline-flex; align-items: center; gap: 4px; color: var(--text-faint); font-size: 11px; }
 .manager-sources-saved { color: var(--success-text); }
