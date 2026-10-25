@@ -8,6 +8,7 @@ import { Picker } from '../ui/Menu'
 import { ManagerFlow } from './ManagerFlow'
 import type { ManagerStepName } from './ManagerFlow'
 import { ManagerStep } from './ManagerStep'
+import { ManagerSources } from './ManagerSources'
 import { ManagerTelegram, SharedLinks, useTelegram } from './ManagerTelegram'
 import { managerAssistant } from './manager-label'
 import { managerLabel, useManager } from './useManager'
@@ -146,6 +147,7 @@ export function ManagerSettings({ settings }: { readonly settings: Settings }): 
           </>}
       </ManagerStep>
     </ol>
+    <ManagerSources view={view} />
     <SharedLinks view={telegram} onView={setTelegram} />
     {error === '' ? null : <p className="manager-error" role="alert">{error}</p>}
     {view.error === undefined ? null : <p className="manager-error" role="status">{view.error}</p>}

@@ -41,6 +41,8 @@ const folder = (): string => join(app.getPath('userData'), 'whisper')
 const modelPath = (): string => join(folder(), NAME)
 const partPath = (): string => `${modelPath()}.part`
 
+export const installedSpeechModel = (): string | undefined => existsSync(modelPath()) ? modelPath() : undefined
+
 const sizeOf = (path: string): number => {
   try {
     return statSync(path).size

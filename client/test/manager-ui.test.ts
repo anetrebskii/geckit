@@ -169,3 +169,31 @@ describe('What GeckIt itself writes into the Manager session', () => {
     expect(markup.indexOf('&quot;status&quot;')).toBeGreaterThan(markup.indexOf('<details'))
   })
 })
+
+const { ManagerSources } = await import('../src/renderer/src/chat/ManagerSources')
+const { DEFAULT_MANAGER_INTAKE } = await import('../src/shared/manager-intake')
+
+describe('Manager source settings', () => {
+  it('keeps automatic intake opt-in and explains its separate schedule and baseline', () => {
+    const markup = renderToStaticMarkup(createElement(ManagerSources, { view: ready }))
+    expect(markup).toContain('Automatic intake is off. Manual Manager work is unchanged.')
+    expect(markup).toContain('No task sources yet.')
+    expect(markup).toContain('Working hours apply only to new task sources.')
+    expect(markup).toContain('Manual messages and queued work continue at any time.')
+    expect(markup).toContain('An end time before the start continues into the next day.')
+    expect(markup).toContain('<input type="checkbox"/>Enable automatic intake')
+    expect(markup).toContain('Save task sources')
+  })
+
+  it('shows access errors and real note paths without offering to start an unconfirmed task', () => {
+    const source = { id: 'voice', kind: 'voice-memos', enabled: true, directory: '/fixture/Recordings' } as const
+    const markup = renderToStaticMarkup(createElement(ManagerSources, { view: { ...ready, config: { ...ready.config, intake: { ...DEFAULT_MANAGER_INTAKE, enabled: true, sources: [source] } }, intake: { state: 'blocked', sources: [{ id: source.id, kind: source.kind, state: 'blocked', detail: 'Read permission denied' }], notesDirectory: '/fixture/manager-notes', items: [{ id: 'item', sourceId: source.id, revision: 'revision', title: 'Recorded idea', createdAt: 1, state: 'awaiting-user', summary: 'An idea to review' }, { id: 'saved', sourceId: source.id, revision: 'revision', title: 'Saved idea', createdAt: 1, state: 'note', notePath: '/fixture/manager-notes/saved.md' }] } } }))
+    expect(markup).toContain('Read permission denied')
+    expect(markup).toContain('Correct the prerequisite, then Save to retry.')
+    expect(markup).toContain('Existing recordings are excluded. Only new recordings will be reviewed.')
+    expect(markup).toContain('Waiting for your answer in Telegram')
+    expect(markup).toContain('/fixture/manager-notes/saved.md')
+    expect(markup).not.toContain('>Take into work</button>')
+    expect(markup).toContain('Recording transcripts are sent to your selected Manager assistant for classification.')
+  })
+})

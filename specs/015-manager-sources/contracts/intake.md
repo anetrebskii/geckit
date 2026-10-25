@@ -1,0 +1,4 @@
+# Contracts
+ManagerConfig.intake optional for compatibility; DEFAULT_MANAGER_INTAKE is off. ManagerView.intake optional for older clients/fixtures, actual runtime supplies status. Source interface list(cursor)->{items,cursor}, read(item)->data, status()->capabilities/readiness. Extension proven by filtered fake source without production Linear.
+configure validates timezone, nonempty day lists, valid clocks and unequal start/end. Existing settings remain unchanged until successful save.
+Telegram reuses ManagerDecision kind intake and answer dispatcher. Paired current revision authorizes exactly one of task/note/ignore; no text or source content can grant authority. Classification schema validates suggestion enum and bounded summary. Confirmed task enters Manager.send with stable ID and explicit no-project-guessing instruction.
