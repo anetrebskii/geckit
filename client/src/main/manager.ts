@@ -187,6 +187,7 @@ export class Manager {
   }
   telegramTypingAllowed(): boolean { const state = this.#snapshot().state; return !this.#stopped && state !== 'off' && state !== 'paused' && state !== 'blocked' }
   #telegramRequests(message: Message): readonly Message['id'][] { return message.source === 'telegram' ? [message.id] : message.telegramRequests ?? [] }
+  voiceMemosDirectory(): string | undefined { return this.#record.config.intake?.sources.find((source) => source.kind === 'voice-memos')?.directory }
   enabled(): boolean { return this.#record.config.enabled }
   owns(id: string): boolean { return id === this.#record.sessionId || this.#record.previousSessions.includes(id) }
   manages(id: string): boolean {

@@ -65,7 +65,8 @@ import track from './analytics'
 import { checkVpnIp } from './vpn-ip'
 import { control } from './control'
 import { correct, stopCorrecting } from './correct'
-import { VoiceMemosSource } from './voice-memos'
+import { VoiceMemosSource, voiceMemosConnection } from './voice-memos'
+import { localTranscriptionReadiness } from './local-transcription'
 import { transcribeInstalledFile } from './transcribe'
 import { DEFAULT_MANAGER_INTAKE } from '../shared/manager-intake'
 import { classifyIntake } from './intake-classify'
@@ -135,7 +136,7 @@ import { searchClaude } from './sessions/search'
 import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
 import { forgetProject, forgetRoots, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
-import { fetchSpeechModel, onSpeechModel, speechModel } from './whisper'
+import { fetchSpeechModel, installedSpeechModel, onSpeechModel, speechModel, whisperCli } from './whisper'
 import { addToRecording, dropRecording, keepRecording, startRecording, sweepRecordings } from './recordings'
 import { recordedNote } from '../shared/recording'
 import { drawTray, startTray } from './tray'
@@ -1046,7 +1047,7 @@ async function buildManager(started: Sessions): Promise<void> {
   const sources = new Map<string, VoiceMemosSource>()
   const coordinator: Manager = new Manager({ directory, attachments, intake: {
     pairing: () => { const state = telegram?.view(); return state?.state === 'connected' && state.account !== undefined && state.bot !== undefined ? `${String(state.bot.id)}:${String(state.account.id)}:${String(state.account.chatId)}` : undefined },
-    adapters: () => (view.config.intake ?? DEFAULT_MANAGER_INTAKE).sources.filter((source) => source.enabled).map((source) => { const key = JSON.stringify(source); let adapter = sources.get(key); if (adapter === undefined) { adapter = new VoiceMemosSource(source, { transcribe: transcribeInstalledFile }); sources.set(key, adapter) }; return adapter }),
+    adapters: () => (view.config.intake ?? DEFAULT_MANAGER_INTAKE).sources.filter((source) => source.enabled).map((source) => { const key = JSON.stringify(source); let adapter = sources.get(key); if (adapter === undefined) { adapter = new VoiceMemosSource(source, { transcribe: transcribeInstalledFile, transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }); sources.set(key, adapter) }; return adapter }),
     classify: (text) => classifyIntake(text, { config: () => view.config, settings: getSettings, check: () => checkVpnIp(getSettings), correct }),
   }, telegramFile: () => requireTelegram().fileSender(), sessions: started, notes: conversationNotes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, join(app.getAppPath(), 'out', 'main', 'cli.js'), args, context) })
   manager = coordinator
@@ -1155,6 +1156,12 @@ function wire(): void {
   ipcMain.handle('manager:inspect', (event, id: string) => {
     if (event.sender !== shownChat()?.webContents) throw new Error('Inspect Manager from the Desktop chat window.')
     return requireManager().inspect(id)
+  })
+  ipcMain.handle('manager:voice-memos', async (event, action?: 'privacy') => {
+    if (event.sender !== shownChat()?.webContents) throw new Error('Check Voice Memos from the Desktop chat window.')
+    if (action !== undefined && action !== 'privacy') throw new Error('Unsupported Voice Memos connection action.')
+    if (action === 'privacy' && process.platform === 'darwin') await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles')
+    return voiceMemosConnection({ transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }, requireManager().voiceMemosDirectory())
   })
   ipcMain.handle('manager:view', () => requireManager().view())
   ipcMain.handle('manager:configure', (_event, change: Partial<ManagerConfig>) => configureManager(change))

@@ -18,7 +18,7 @@ The paired user sees a summary and chooses Take into work, Save note or Skip. No
 **Acceptance**: confirmed task uses existing Manager delegation; ambiguous project requires clarification; note has a real deterministic file; ignore persists.
 
 ### US3 - Set a schedule and sources (P2)
-Settings exposes opt-in intake, timezone, weekly intervals, source path, availability and recent items. Manual Manager work and queue remain usable outside source hours.
+Settings exposes opt-in intake, timezone, compact weekly intervals, automatic Apple Voice Memos connection, availability and recent items. Manual Manager work and queue remain usable outside source hours.
 **Independent test**: browser edits and saves configuration, exercises empty/access/error states; clock fixtures cover overnight, DST, sleep/restart.
 
 ## Requirements
@@ -30,7 +30,7 @@ Settings exposes opt-in intake, timezone, weekly intervals, source path, availab
 - FR-005: Initial baseline excludes existing items and late-synced older recordings. Reconfiguring the source establishes a fresh baseline.
 - FR-006: Use installed local transcription only, report missing model/tool; restricted AI classification validates output and treats content as untrusted data.
 - FR-007: Paired Telegram confirmation binds current source/item/revision. Take work, Save note and Skip are idempotent, durable and explicit. Ordinary delegation permissions remain.
-- FR-008: Settings exposes working time, source enable/config/status/access issues and empty state; no preference changes until Save.
+- FR-008: Settings exposes working time, source connection/status/access issues without manual library or transcription parameters and empty state; no preference changes until Save.
 - FR-009: Notes persist in the computer's GeckIt data directory; task handoff is durable and never guesses an ambiguous project.
 - FR-010: Errors are visible, retryable where safe; no LLM polling/dedup/claim, paid API, automatic model downloads or host restart.
 
@@ -45,3 +45,5 @@ Source configuration; weekly schedule; baseline/cursor; item revision; classific
 
 ## Assumptions
 GeckIt remains open for intake. iCloud sync is performed by Apple, not GeckIt. Voice Memos storage is an observed private macOS format, not a promised Apple API; configured access can be unavailable. Telegram pairing and an enabled compatible Manager are prerequisites for approval delivery.
+
+Revision acceptance: automatic current-user library discovery, safe legacy-setting preservation, explicit native access and local-transcription readiness, source-first compact settings, no path/folder/SQL/command/model fields in normal setup.

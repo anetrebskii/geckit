@@ -1886,3 +1886,13 @@ it('keeps manual Manager delivery available with an invalid persisted intake tim
   expect(list).not.toHaveBeenCalled()
   expect((JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>).config.intake?.timeZone).toBe('invalid/timezone')
 })
+
+it('checks the stored legacy Voice Memos location without taking a new baseline or changing source identity', async () => {
+  const f = await fixture()
+  expect(f.manager.voiceMemosDirectory()).toBeUndefined()
+  const source = { id: 'legacy-memos', kind: 'voice-memos' as const, enabled: false, directory: '/legacy/recordings' }
+  await f.manager.configure({ intake: { ...DEFAULT_MANAGER_INTAKE, sources: [source] } })
+  expect(f.manager.voiceMemosDirectory()).toBe('/legacy/recordings')
+  expect((await f.manager.view()).config.intake?.sources).toEqual([source])
+  expect(f.sent).toHaveLength(0)
+})

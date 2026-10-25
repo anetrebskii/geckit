@@ -6,9 +6,10 @@
 Desktop Settings > Manager, local intake and existing Telegram decisions. Phone uses existing Telegram interaction. Manual coordination remains unchanged.
 ## Artifacts
 - [UX](../../docs/ux/manager-sources.md)
-- [Layout prototype](../../docs/design/manager-sources.html)
+- [Original layout prototype, superseded by the automatic-connect revision](../../docs/design/manager-sources.html)
+- Current interactive design surface: `client/test/browser/manager-sources/`, mounting actual Settings components.
 ## Decisions
-Separate automatic intake from existing setup; schedule first, source configuration second, durable outcomes last. Use existing tokens/components. Details, exact copy, states and timing are defined by UX.
+Separate automatic intake from existing setup; source connection first, compact schedule second, durable outcomes in secondary disclosure. Use existing tokens/components. Details, exact copy, states and timing are defined by UX.
 ## Requirement Coverage
 US1 FR001-006 source card/status and baseline; US2 FR007/009 paired decisions and notes; US3 FR003/008/010 schedule form/error states. Validate via offline source/clock fixtures and actual renderer harness.
 ## Review Evidence
