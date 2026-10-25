@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Json, JsonObject } from '../src/shared/elicitation'
 import { jsonObject } from '../src/shared/elicitation'
+import { ManagerIntake } from '../src/main/manager-intake'
+import { DEFAULT_MANAGER_INTAKE } from '../src/shared/manager-intake'
+import type { SourceItem, TaskSource } from '../src/shared/manager-intake'
 import { TelegramAttachments } from '../src/main/telegram-attachments'
 import type { ManagerDeps } from '../src/main/manager'
 import type { SessionMessage, Settings } from '../src/shared/api'
@@ -1123,5 +1126,36 @@ describe('Telegram Manager typing transport lifecycle', () => {
       expect(vi.getTimerCount()).toBe(0)
       expect(pending.filter((id) => id === 'telegram:2')).toHaveLength(1)
     } finally { again.telegram.stop(); vi.useRealTimers() }
+  })
+})
+
+
+describe('Telegram intake confirmation transport with real persistent intake and fake Bot API', () => {
+  for (const choice of ['task', 'note', 'ignore'] as const) it(`confirms ${choice} once for the paired user, rejects foreign and repeated callbacks`, async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'telegram-intake-')); paths.push(directory)
+    let items: SourceItem[] = []
+    const adapter: TaskSource = { id: 'memos', capabilities: { audio: true, transcript: false }, status: async () => ({ state: 'ready' }), list: async () => ({ items, cursor: String(items.length) }), read: async () => ({ transcript: 'A fixture recording' }) }
+    const dispatch = vi.fn(async () => undefined)
+    const intake = new ManagerIntake({ directory, config: () => ({ ...DEFAULT_MANAGER_INTAKE, enabled: true, windows: [{ days: [0, 1, 2, 3, 4, 5, 6], start: '00:00', end: '23:59' }], sources: [{ id: 'memos', kind: 'voice-memos', enabled: true, directory: '/fixture' }] }), allowed: () => true, pairing: () => 'paired-fixture', now: () => now, adapters: () => [adapter], classify: async () => ({ suggestion: 'note', summary: 'Fixture idea' }), dispatch, changed: () => undefined })
+    disposals.push(() => intake.dispose())
+    const f = fixture({ directory, manager: { decisions: () => intake.decisions(), hasDecision: (id) => intake.decisions().some((one) => one.id === id), answer: (id, value, authorized) => intake.answer(id, value, authorized ?? (() => false)) } })
+    await paired(f)
+    await intake.tick(); items = [{ id: 'new', revision: '1', title: 'Fixture memo', createdAt: now + 1, location: 'fixture' }]; await intake.tick()
+    const decision = intake.decisions()[0]
+    expect(decision).toBeDefined()
+    await f.telegram.notify(decision?.title ?? '', decision)
+    const data = buttons(f.api).find((button) => button['text'] === (choice === 'task' ? 'Take into work' : choice === 'note' ? 'Save note' : 'Skip'))?.['callback_data']
+    expect(typeof data).toBe('string')
+    const polls = f.api.calls.filter((call) => call.method === 'getUpdates').length
+    f.api.deliver([callback(2, String(data), 999)])
+    await vi.waitFor(() => expect(f.api.calls.filter((call) => call.method === 'getUpdates').length).toBeGreaterThan(polls))
+    expect(f.api.calls.filter((call) => call.method === 'answerCallbackQuery')).toHaveLength(0)
+    expect(intake.view().items[0]?.state).toBe('awaiting-user')
+    f.api.deliver([callback(3, String(data))])
+    await vi.waitFor(() => expect(intake.view().items[0]?.state).toBe(choice === 'task' ? 'claimed' : choice === 'note' ? 'note' : 'ignored'))
+    f.api.deliver([callback(4, String(data))])
+    await vi.waitFor(() => expect(f.api.calls.filter((call) => call.method === 'answerCallbackQuery').length).toBeGreaterThanOrEqual(2))
+    expect(dispatch).toHaveBeenCalledTimes(choice === 'task' ? 1 : 0)
+    if (choice === 'note') expect(readFileSync(intake.view().items[0]?.notePath ?? '', 'utf8')).toContain('A fixture recording')
   })
 })

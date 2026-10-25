@@ -21,6 +21,8 @@ import type { LlmProvider } from '../src/main/sessions/provider'
 import type { ClaudeOptions } from '../src/main/sessions/claude'
 import { claudeArgs } from '../src/main/sessions/claude'
 import type { Driver, Heard } from '../src/main/sessions/heard'
+import { DEFAULT_MANAGER_INTAKE } from '../src/shared/manager-intake'
+import type { SourceItem, TaskSource } from '../src/shared/manager-intake'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { SessionItems, Settings } from '../src/shared/api'
 import { VPN_IP_CONFIGURATION_ERROR, VPN_IP_UNAVAILABLE_ERROR, vpnIpMismatchError, vpnIpPausedError } from '../src/shared/vpn-ip'
@@ -57,7 +59,7 @@ function library() {
   return { provider, create, made, sent, finish: (id: string, text = 'Coordinated') => hearing.get(id)?.({ items: [{ kind: 'theirs', id: `reply:${String(sent.length)}`, text }], gone: [], signals: [{ kind: 'ended', how: 'done' }] }) }
 }
 
-async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Driver['inject']) {
+async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Driver['inject'], intake?: ManagerDeps['intake']) {
   const directory = await mkdtemp(join(tmpdir(), 'geckit-manager-'))
   const root = join(directory, 'project')
   await mkdir(root)
@@ -90,7 +92,7 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
     limit: () => limit,
     ...over,
   })
-  const deps: ManagerDeps = { directory, sessions, notes, settings: () => settings, saveSettings: (change) => settings = { ...settings, ...change }, cli: async (args, context) => {
+  const deps: ManagerDeps = { directory, sessions, notes, ...(intake === undefined ? {} : { intake }), settings: () => settings, saveSettings: (change) => settings = { ...settings, ...change }, cli: async (args, context) => {
     cli.push({ args, context })
     if (callCli !== undefined) return callCli(args, context)
     const result = await current.manager?.command({ action: 'manage', args, session: context.session, token: context.token, operation: context.operation })
@@ -1798,4 +1800,89 @@ describe('retry and steer command bridge', () => {
     expect(await retry).toMatchObject({ status: 'blocked', attempt: 'current-retry' })
     expect(send.mock.calls.filter((call) => call[1] === 'event').some((call) => call[0].includes('"attempt":"current-retry"') && call[0].includes('"status":"blocked"'))).toBe(true)
   })
+})
+
+
+describe('Manager source intake through the production decision boundary', () => {
+  it('classifies without delegation, confirms one durable task and returns the updated view', async () => {
+    const now = Date.parse('2026-10-25T12:00:00Z')
+    let items: SourceItem[] = []
+    let paired: string | undefined = 'bot:user:chat'
+    const adapter: TaskSource = { id: 'memos', capabilities: { audio: true, transcript: false }, status: async () => ({ state: 'ready' }), list: async () => ({ items, cursor: String(items.length) }), read: async () => ({ transcript: 'Build the thing, but which project?' }) }
+    const classify = vi.fn<NonNullable<ManagerDeps['intake']>['classify']>(async () => ({ suggestion: 'task', summary: 'Build the thing' }))
+    const f = await fixture(0, {}, undefined, { now: () => now, adapters: () => [adapter], pairing: () => paired, classify })
+    await f.manager.configure({ enabled: true, intake: { ...DEFAULT_MANAGER_INTAKE, enabled: true, windows: [{ days: [0], start: '00:00', end: '23:59' }], sources: [{ id: 'memos', kind: 'voice-memos', enabled: true, directory: '/fixture' }] } })
+    await f.manager.tickIntake()
+    items = [{ id: 'recording', revision: '1', title: 'An idea', createdAt: now + 1, location: 'fixture' }]
+    await f.manager.tickIntake()
+    expect(classify).toHaveBeenCalledTimes(1)
+    expect(f.sent).toHaveLength(0)
+    const decision = (await f.manager.view()).decisions.find((one) => one.kind === 'intake')
+    expect(decision).toBeDefined()
+    paired = 'foreign'
+    expect((await f.manager.answer(decision?.id ?? '', 'task')).answer).toContain('no longer pending')
+    expect(f.sent).toHaveLength(0)
+    paired = 'bot:user:chat'
+    const accepted = await f.manager.answer(decision?.id ?? '', 'task')
+    expect(accepted.answer).toBe('Task accepted by Manager.')
+    expect(accepted.decisions.some((one) => one.id === decision?.id)).toBe(false)
+    expect(accepted.intake?.items[0]?.state).toBe('claimed')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    expect(f.sent[0]?.text).toContain('No project has been selected')
+    expect(f.cli).toEqual([])
+    expect((await f.manager.answer(decision?.id ?? '', 'task')).answer).toContain('no longer pending')
+    const restored = f.reload()
+    await restored.tickIntake()
+    const record = JSON.parse(await readFile(join(f.directory, 'manager.json'), 'utf8')) as { readonly inbox: readonly { readonly id: string }[] }
+    expect(record.inbox.filter((one) => one.id.startsWith('intake-task:'))).toHaveLength(1)
+    expect(f.sent.filter((one) => one.text.includes('[User confirmed this source item'))).toHaveLength(1)
+  })
+})
+
+it('stops the scheduled source loop on Manager disposal without a remaining intake callback', async () => {
+  vi.useFakeTimers()
+  const list = vi.fn<TaskSource['list']>(async () => ({ items: [], cursor: 'baseline' }))
+  const adapter: TaskSource = { id: 'memos', capabilities: { audio: true, transcript: false }, status: async () => ({ state: 'ready' }), list, read: async () => ({ transcript: '' }) }
+  const f = await fixture(0, {}, undefined, { now: () => Date.parse('2026-10-25T12:00:00Z'), pairing: () => 'paired', adapters: () => [adapter], classify: async () => ({ suggestion: 'ignore', summary: 'No action' }) })
+  await f.manager.configure({ enabled: true, intake: { ...DEFAULT_MANAGER_INTAKE, enabled: true, windows: [{ days: [0], start: '00:00', end: '23:59' }], sources: [{ id: 'memos', kind: 'voice-memos', enabled: true, directory: '/fixture' }] } })
+  await f.manager.tickIntake()
+  const calls = list.mock.calls.length
+  f.manager.dispose()
+  await vi.advanceTimersByTimeAsync(180_000)
+  expect(list).toHaveBeenCalledTimes(calls)
+})
+
+it('keeps manual Manager delivery available when automatic intake cannot persist state', async () => {
+  const adapter: TaskSource = { id: 'memos', capabilities: { audio: true, transcript: false }, status: async () => ({ state: 'ready' }), list: async () => ({ items: [], cursor: 'baseline' }), read: async () => ({ transcript: '' }) }
+  const classify = vi.fn<NonNullable<ManagerDeps['intake']>['classify']>(async () => ({ suggestion: 'ignore', summary: 'No action' }))
+  const f = await fixture(0, {}, undefined, { now: () => Date.parse('2026-10-25T12:00:00Z'), pairing: () => 'paired', adapters: () => [adapter], classify })
+  await mkdir(join(f.directory, 'manager-intake.json.new'))
+  await expect(f.manager.configure({ enabled: true, intake: { ...DEFAULT_MANAGER_INTAKE, enabled: true, windows: [{ days: [0], start: '00:00', end: '23:59' }], sources: [{ id: 'memos', kind: 'voice-memos', enabled: true, directory: '/fixture' }] } })).rejects.toThrow('state could not be saved')
+  await expect(f.manager.tickIntake()).resolves.toBeUndefined()
+  const view = await f.manager.view()
+  expect(view.intake?.state).toBe('blocked'); expect(view.state).toBe('idle'); expect(view.error).toBeUndefined()
+  await f.manager.send('Manual work continues', 'telegram')
+  await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+  expect(f.sent[0]?.text).toContain('Manual work continues'); expect(classify).not.toHaveBeenCalled()
+})
+
+it('keeps manual Manager delivery available with an invalid persisted intake timezone', async () => {
+  const list = vi.fn<TaskSource['list']>(async () => ({ items: [], cursor: 'baseline' }))
+  const adapter: TaskSource = { id: 'memos', capabilities: { audio: true, transcript: false }, status: async () => ({ state: 'ready' }), list, read: async () => ({ transcript: '' }) }
+  const f = await fixture(0, {}, undefined, { pairing: () => 'paired', adapters: () => [adapter], classify: async () => ({ suggestion: 'ignore', summary: 'No action' }) })
+  await f.manager.configure({ enabled: true })
+  const path = join(f.directory, 'manager.json')
+  const stored = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
+  await writeFile(path, JSON.stringify({ ...stored, config: { ...stored.config, intake: { ...DEFAULT_MANAGER_INTAKE, enabled: true, timeZone: 'invalid/timezone', sources: [{ id: 'memos', kind: 'voice-memos', enabled: true, directory: '/fixture' }] } } }))
+  const restored = f.reload()
+  await expect(restored.tickIntake()).resolves.toBeUndefined()
+  const view = await restored.view()
+  expect(view.intake).toMatchObject({ state: 'blocked', detail: 'Choose a valid IANA timezone.' })
+  expect(view.error).toBeUndefined(); expect(view.decisions.filter((one) => one.kind === 'intake')).toEqual([])
+  const session = await restored.send('Manual work with invalid source settings', 'telegram')
+  await vi.waitFor(() => expect(f.sent.length).toBeGreaterThan(0))
+  f.finish(session, 'Restart reconciliation complete.')
+  await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('Manual work with invalid source settings'))).toBe(true))
+  expect(list).not.toHaveBeenCalled()
+  expect((JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>).config.intake?.timeZone).toBe('invalid/timezone')
 })

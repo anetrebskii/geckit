@@ -9,6 +9,9 @@ import { providerOf } from '../shared/api'
 import { VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError } from '../shared/vpn-ip'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE, managerProjects } from '../shared/manager'
 import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerConfig, ManagerDecision, ManagerDecisionOutcome, ManagerView, ManagerReplyOrigin, ManagerTelegramReply } from '../shared/manager'
+import { DEFAULT_MANAGER_INTAKE } from '../shared/manager-intake'
+import { ManagerIntake, validateIntakeConfig } from './manager-intake'
+import type { ManagerIntakeDeps } from './manager-intake'
 import { TelegramAttachments } from './telegram-attachments'
 import type { TelegramAttachment, TelegramFileSender } from './telegram-attachments'
 import { ManagerOperations, managerAttachTarget, managerReadOnly, managerSameUpload } from './manager-operations'
@@ -79,6 +82,7 @@ export function runManagerCli(executable: string, script: string, args: readonly
 
 export interface ManagerDeps {
   readonly directory: string
+  readonly intake?: Pick<ManagerIntakeDeps, 'adapters' | 'classify' | 'pairing' | 'now'>
   readonly attachments?: TelegramAttachments
   readonly telegramFile?: () => TelegramFileSender
   readonly sessions: Sessions
@@ -90,6 +94,8 @@ export interface ManagerDeps {
 
 export class Manager {
   readonly #deps: ManagerDeps
+  readonly #intake: ManagerIntake
+  #intakeTimer: ReturnType<typeof setTimeout> | undefined
   readonly #token = randomBytes(32).toString('hex')
   readonly #listeners = new Set<(view: ManagerView) => void>()
   readonly #itemListeners = new Set<(items: SessionItems) => void>()
@@ -129,6 +135,8 @@ export class Manager {
       this.#record = { ...this.#record, inbox: this.#record.inbox.map((message) => message.state === 'sending' ? { ...message, state: 'sent' } : message), operations: this.#record.operations.map((operation) => operation.state === 'running' || operation.state === 'uncertain' && managerReadOnly(operation.command) ? { ...operation, state: managerReadOnly(operation.command) ? 'failed' : 'uncertain', ...(managerReadOnly(operation.command) ? { result: 'Read interrupted. No changes were made; request a fresh read.' } : {}) } : operation), decisions: [...this.#record.decisions.filter((decision) => decision.uncertain !== true || !managerReadOnly(decision.command.args)), ...interrupted.filter((operation) => !this.#record.decisions.some((decision) => decision.command.id === operation.id)).map((operation): PendingDecision => ({ id: randomUUID(), title: `Delivery is uncertain: ${operation.command.slice(0, 2).join(' ')}. Check its current state in GeckIt before marking reviewed. This will not resend it.`, choices: [{ label: 'I checked its state', value: 'reviewed' }], command: { id: operation.id, args: operation.command }, uncertain: true }))], error: 'Manager was interrupted. Reconcile current task state without replaying interrupted messages.' }
       this.#save({})
     }
+    this.#intake = new ManagerIntake({ directory: deps.directory, config: () => this.#record.config.intake ?? DEFAULT_MANAGER_INTAKE, allowed: () => !this.#stopped && this.#record.config.enabled && !this.#record.paused && this.#record.error === undefined, adapters: () => deps.intake?.adapters() ?? [], pairing: () => deps.intake?.pairing(), classify: (text) => deps.intake?.classify(text) ?? Promise.reject(new Error('This Manager assistant does not support restricted classification.')), dispatch: async (text, id) => { await this.send(text, 'event', id) }, changed: () => this.#emit(), ...(deps.intake?.now === undefined ? {} : { now: deps.intake.now }) })
+    this.#scheduleIntake()
     this.#pinAttachments()
     this.#attachments.cleanup()
     this.#operations = new ManagerOperations({ ...deps, attachments: this.#attachments, authorized: () => this.#record.config.enabled && !this.#record.paused && !this.#stopped, owner: 'manager', managed: (id) => this.manages(id), managerSession: () => this.#record.sessionId })
@@ -163,7 +171,7 @@ export class Manager {
     const session = this.#sessions.find((one) => one.id === this.#record.sessionId)
     const providers = this.#deps.settings().chatProviders.map((provider) => ({ provider, available: true }))
     const error = this.#record.config.enabled && !this.#deps.settings().chatProviders.includes(this.#record.config.provider) ? 'The Manager assistant is disabled. Open Assistants to restore it.' : this.#record.error ?? (session?.state === 'asks' ? this.#approvals().some((one) => one.session === session.id && one.decision.choices.length > 0) ? 'Manager is waiting for your approval in Telegram.' : 'Manager is waiting for a request that needs the native UI. Restart Manager or change its assistant in Settings.' : undefined)
-    return { queued: this.#record.inbox.filter((message) => message.state === 'queued').length, config: this.#record.config, state: !this.#record.config.enabled ? 'off' : this.#record.paused ? 'paused' : error !== undefined ? 'blocked' : session?.state === 'working' || this.#dispatching ? 'working' : 'idle', ...(session === undefined ? {} : { session }), workers: this.#sessions.filter((one) => this.manages(one.id)), activity: this.#record.operations.slice(-100).toReversed(), providers, decisions: [...this.#record.decisions.map(({ command: _command, ...decision }) => decision), ...this.#approvals().map((one) => one.decision)], ...(error === undefined ? {} : { error }) }
+    return { ...(this.#intake === undefined ? {} : { intake: this.#intake.view() }), queued: this.#record.inbox.filter((message) => message.state === 'queued').length, config: this.#record.config, state: !this.#record.config.enabled ? 'off' : this.#record.paused ? 'paused' : error !== undefined ? 'blocked' : session?.state === 'working' || this.#dispatching ? 'working' : 'idle', ...(session === undefined ? {} : { session }), workers: this.#sessions.filter((one) => this.manages(one.id)), activity: this.#record.operations.slice(-100).toReversed(), providers, decisions: [...(this.#intake?.decisions() ?? []), ...this.#record.decisions.map(({ command: _command, ...decision }) => decision), ...this.#approvals().map((one) => one.decision)], ...(error === undefined ? {} : { error }) }
   }
 
   #approvals(): readonly ManagerApproval[] {
@@ -202,6 +210,7 @@ export class Manager {
   }
 
   async configure(change: Partial<ManagerConfig>): Promise<ManagerView> {
+    if (change.intake !== undefined) validateIntakeConfig(change.intake)
     const revision = ++this.#configurationRevision
     const reenabled = change.enabled === true && !this.#record.config.enabled && this.#record.sessionId !== undefined
     const providerChanged = change.provider !== undefined && change.provider !== this.#record.config.provider
@@ -224,6 +233,8 @@ export class Manager {
     if (config.enabled) {
       try { await this.open() } catch (error) { if (generation === this.#generation) this.#fail(error instanceof Error ? error.message : String(error)); throw error }
     }
+    if (change.intake !== undefined) this.#intake.retryFailed()
+    void this.tickIntake()
     void this.#dispatch()
     return this.view()
   }
@@ -472,6 +483,7 @@ export class Manager {
   async answer(id: string, choice: string, authorized: () => boolean = () => true): Promise<ManagerView & { readonly answer: ManagerDecisionOutcome }> {
     this.#assertEnabled()
     if (!authorized()) throw new Error('This Telegram connection is no longer authorized.')
+    if (id.startsWith('intake:')) { const answer = await this.#intake.answer(id, choice, authorized); return { ...await this.view(), answer } }
     if (id.startsWith('native:')) {
       const pending = this.#approvals().find((one) => one.decision.id === id)
       if (pending === undefined) return { ...await this.view(), answer: 'This request is no longer pending. Use /status to see current requests.' }
@@ -626,5 +638,10 @@ export class Manager {
     this.#save({ error, manualRecovery })
     this.#scheduleRecovery()
   }
-  dispose(): void { this.#activeTelegram = []; this.#stopped = true; this.#generation += 1; this.#cancelRecovery(); this.#emit(); this.#listeners.clear(); this.#responses.clear(); this.#itemListeners.clear() }
+  #scheduleIntake(): void {
+    this.#intakeTimer = setTimeout(() => { this.#intakeTimer = undefined; void this.tickIntake().finally(() => { if (!this.#stopped) this.#scheduleIntake() }) }, 60_000)
+    this.#intakeTimer.unref()
+  }
+  tickIntake(): Promise<void> { return this.#intake.tick() }
+  dispose(): void { if (this.#intakeTimer !== undefined) clearTimeout(this.#intakeTimer); this.#intake.dispose(); this.#activeTelegram = []; this.#stopped = true; this.#generation += 1; this.#cancelRecovery(); this.#emit(); this.#listeners.clear(); this.#responses.clear(); this.#itemListeners.clear() }
 }

@@ -1,3 +1,4 @@
+import type { ManagerIntakeConfig, ManagerIntakeView } from './manager-intake'
 import type { TelegramAccount } from './telegram'
 import type { ChatSession, SessionItem, SessionItems, SessionMessage, SessionProvider, Settings } from './api'
 
@@ -7,6 +8,7 @@ export type ManagerConfig = Required<Pick<SessionMessage, 'provider'>> & Pick<Se
   readonly enabled: boolean
   readonly instructions: string
   readonly delegation: 'automatic' | 'approve'
+  readonly intake?: ManagerIntakeConfig
 }
 
 export type ManagerActivity = Pick<SessionItem, 'id'> & {
@@ -23,6 +25,7 @@ export interface ManagerProvider {
 }
 
 export interface ManagerView {
+  readonly intake?: ManagerIntakeView
   readonly config: ManagerConfig
   readonly state: 'off' | 'idle' | 'working' | 'paused' | 'blocked'
   readonly session?: ChatSession
@@ -49,13 +52,13 @@ export interface ManagerApi {
 export const DEFAULT_MANAGER_CONFIG: ManagerConfig = { enabled: false, provider: 'claude', chatModel: '', instructions: '', delegation: 'automatic' }
 
 export interface ManagerDecision {
-  readonly kind?: 'native'
+  readonly kind?: 'native' | 'intake'
   readonly id: string
   readonly title: string
   readonly choices: readonly { readonly label: string; readonly value: string }[]
 }
 
-export type ManagerDecisionOutcome = 'Answer sent.' | 'This request is no longer pending. Use /status to see current requests.' | 'Review recorded. Delivery remains uncertain; nothing was resent. Other work can continue.'
+export type ManagerDecisionOutcome = 'This recording could not be checked. Nothing was accepted. Check the source in Settings, then try again.' | 'Task confirmation saved. Manager handoff is pending; it will not create duplicate work.' | 'Task accepted by Manager.' | 'Note saved.' | 'Recording skipped.' | 'Answer sent.' | 'This request is no longer pending. Use /status to see current requests.' | 'Review recorded. Delivery remains uncertain; nothing was resent. Other work can continue.'
 
 export interface ManagerCliAsked {
   readonly action: 'manage'

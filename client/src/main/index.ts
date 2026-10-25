@@ -65,6 +65,10 @@ import track from './analytics'
 import { checkVpnIp } from './vpn-ip'
 import { control } from './control'
 import { correct, stopCorrecting } from './correct'
+import { VoiceMemosSource } from './voice-memos'
+import { transcribeInstalledFile } from './transcribe'
+import { DEFAULT_MANAGER_INTAKE } from '../shared/manager-intake'
+import { classifyIntake } from './intake-classify'
 import { answerErrors, errorQuestion, followErrors, startErrors, watchErrors, windowError } from './errors'
 import { askOrders, carryOut, projectSaid, saying } from './orders'
 import type { Order, Told } from './orders'
@@ -1039,9 +1043,14 @@ function telegramAction(action: TelegramAction): Promise<TelegramView> {
 async function buildManager(started: Sessions): Promise<void> {
   const directory = app.getPath('userData')
   const attachments = new TelegramAttachments(directory)
-  const coordinator = new Manager({ directory, attachments, telegramFile: () => requireTelegram().fileSender(), sessions: started, notes: conversationNotes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, join(app.getAppPath(), 'out', 'main', 'cli.js'), args, context) })
+  const sources = new Map<string, VoiceMemosSource>()
+  const coordinator: Manager = new Manager({ directory, attachments, intake: {
+    pairing: () => { const state = telegram?.view(); return state?.state === 'connected' && state.account !== undefined && state.bot !== undefined ? `${String(state.bot.id)}:${String(state.account.id)}:${String(state.account.chatId)}` : undefined },
+    adapters: () => (view.config.intake ?? DEFAULT_MANAGER_INTAKE).sources.filter((source) => source.enabled).map((source) => { const key = JSON.stringify(source); let adapter = sources.get(key); if (adapter === undefined) { adapter = new VoiceMemosSource(source, { transcribe: transcribeInstalledFile }); sources.set(key, adapter) }; return adapter }),
+    classify: (text) => classifyIntake(text, { config: () => view.config, settings: getSettings, check: () => checkVpnIp(getSettings), correct }),
+  }, telegramFile: () => requireTelegram().fileSender(), sessions: started, notes: conversationNotes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, join(app.getAppPath(), 'out', 'main', 'cli.js'), args, context) })
   manager = coordinator
-  let view = await coordinator.view()
+  let view: ManagerView = await coordinator.view()
   const decisions = new Map<string, string>()
   let deliveryChannel = ''
   const bridge = new ManagerTelegram({

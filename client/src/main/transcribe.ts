@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 import type { Answered, TranscribeRequest } from '../shared/api'
-import { fetchSpeechModel, whisperCli } from './whisper'
+import { fetchSpeechModel, installedSpeechModel, whisperCli } from './whisper'
 
 const run = promisify(execFile)
 
@@ -44,4 +44,11 @@ export async function transcribe(request: TranscribeRequest): Promise<Answered> 
       // Already gone, or never written.
     }
   }
+}
+
+export async function transcribeInstalledFile(path: string): Promise<string> {
+  const model = installedSpeechModel()
+  if (model === undefined) throw new Error('Local transcription unavailable: install the speech model in GeckIt Transcribe first. Automatic intake never downloads a model.')
+  const { stdout } = await run(whisperCli(), ['-m', model, '-f', path, '-l', 'auto', '-t', String(Math.min(8, availableParallelism())), '-nt', '-np'], { timeout: 300_000, maxBuffer: 16 * 1024 * 1024 })
+  return heard(stdout)
 }
