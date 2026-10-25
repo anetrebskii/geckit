@@ -12175,7 +12175,8 @@ button.manager-step-head:hover > svg {
 .manager-hours-days button { inline-size: 30px; block-size: 22px; border-radius: 4px; color: var(--text-faint); font-size: 11px; transition: background-color var(--quick) var(--ease), color var(--quick) var(--ease); }
 .manager-hours-days button:hover:not(:disabled) { color: var(--text); }
 .manager-hours-days button.on { background: var(--bg-raised); color: var(--text); font-weight: 600; box-shadow: 0 0 0 0.5px var(--separator); }
-.manager-hours-span { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; color: var(--text-faint); }
+.manager-hours-span { display: inline-flex; align-items: center; gap: 6px; color: var(--text-faint); }
+.manager-hours-window > .icon-button { margin-inline-start: auto; }
 .manager-hours-span input { inline-size: 76px; }
 .manager-hours-span input::-webkit-calendar-picker-indicator { display: none; }
 .manager-hours-window > p { flex-basis: 100%; margin: 0; font-size: 11px; }

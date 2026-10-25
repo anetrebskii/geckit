@@ -149,8 +149,8 @@ export function ManagerSources({ view }: { readonly view: ManagerView }): React.
                 <input type="time" aria-label={`Start, interval ${index + 1}`} aria-invalid={clash} value={one.start} disabled={saving} onChange={(event) => windowAt(index, { start: event.target.value })} />
                 <span aria-hidden="true">–</span>
                 <input type="time" aria-label={`End, interval ${index + 1}`} aria-invalid={clash} value={one.end} disabled={saving} onChange={(event) => windowAt(index, { end: event.target.value })} />
-                <button type="button" className="icon-button" aria-label={`Remove interval ${index + 1}, ${daysLabel(one.days) || 'no days'} ${one.start}–${one.end}`} title="Remove" disabled={saving} onClick={() => edit({ windows: draft.windows.filter((_, at) => at !== index) })}><Icon name="trash" size={13} /></button>
               </div>
+              <button type="button" className="icon-button" aria-label={`Remove interval ${index + 1}, ${daysLabel(one.days) || 'no days'} ${one.start}–${one.end}`} title="Remove" disabled={saving} onClick={() => edit({ windows: draft.windows.filter((_, at) => at !== index) })}><Icon name="trash" size={13} /></button>
               {problem !== undefined ? <p className="manager-hours-problem">{problem}</p> : one.end < one.start ? <p className="manager-hours-hint">Ends at {one.end} the next day.</p> : null}
             </div>
           })}
