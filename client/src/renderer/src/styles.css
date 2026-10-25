@@ -12140,42 +12140,55 @@ button.manager-step-head:hover > svg {
 }
 
 .manager-sources { margin-block-start: 24px; padding-block-start: 20px; border-block-start: 1px solid var(--border); min-inline-size: 0; }
-.manager-sources h4 { margin-block: 0 12px; font-size: 13px; font-weight: 600; }
 .manager-sources p { margin-block: 6px; font-size: 12px; overflow-wrap: anywhere; }
-.manager-sources input:not([type='checkbox']) { box-sizing: border-box; min-inline-size: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-sunken); color: var(--text); font: inherit; }
+.manager-sources input:not([type='checkbox']) { box-sizing: border-box; min-inline-size: 0; block-size: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-sunken); color: var(--text); font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; }
+.manager-sources input[aria-invalid='true'] { border-color: var(--danger); }
 .manager-sources input:focus-visible, .manager-sources button:focus-visible, .manager-sources summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.manager-source-card { padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-sunken); }
-.manager-source-heading { display: flex; align-items: center; gap: 10px; }
-.manager-source-heading > div { min-inline-size: 0; }
-.manager-source-heading strong { font-size: 13px; font-weight: 600; }
-.manager-source-heading p { margin-block: 3px 0; }
-.manager-source-icon { display: flex; align-items: center; justify-content: center; flex: none; inline-size: 32px; block-size: 32px; border-radius: var(--radius); background: var(--bg-raised); color: var(--text-dim); }
-.manager-source-connect { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-block-start: 12px; }
-.manager-source-connect .manager-sources-check { margin: 0; margin-inline-start: auto; font-size: 12px; }
-.manager-source-card .manager-source-readiness { margin-block-start: 10px; }
-.manager-source-readiness[data-state='connected'] { color: var(--success-text); }
-.manager-source-card .manager-source-baseline { margin-block-start: 12px; font-size: 11px; color: var(--text-faint); }
-.manager-source-hours { margin-block: 16px 12px; }
-.manager-source-hours .manager-setting { align-items: start; border-block-end: 0; }
-.manager-source-hours .manager-setting strong { font-size: 12px; font-weight: 600; }
-.manager-source-hours .manager-setting p { color: var(--text); }
-.manager-source-zone { font-size: 11px; color: var(--text-faint); overflow-wrap: anywhere; }
-.manager-source-hours-editor { padding-block: 4px 10px; }
-.manager-source-window + .manager-source-window { margin-block-start: 16px; padding-block-start: 16px; border-block-start: 1px solid var(--border); }
-.manager-source-days { display: flex; flex-wrap: wrap; gap: 4px; margin-block-end: 10px; }
-.manager-source-days button { padding: 5px 8px; min-inline-size: 36px; border-radius: var(--radius); border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-size: 11px; }
-.manager-source-days button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-.manager-source-times { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.manager-source-times label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
-.manager-source-times input { inline-size: 110px; }
-.manager-source-timezone { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-block-start: 12px; font-size: 11px; color: var(--text-dim); }
-.manager-source-timezone input { flex: 1; max-inline-size: 220px; }
-.manager-sources-check { display: flex; align-items: center; gap: 8px; margin-block: 12px; font-size: 13px; }
-.manager-source-enable { margin-block: 16px 8px; }
-.manager-sources-status { color: var(--text-dim); }
+.manager-sources .assistant-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.manager-sources-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-block-end: 12px; }
+.manager-sources-head h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.manager-sources-head .manager-sources-status { margin-block: 2px 0; color: var(--text-dim); }
+.manager-source-list, .manager-hours { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.manager-source-row { display: flex; align-items: center; gap: 12px; min-block-size: 48px; padding: 10px 12px; }
+.manager-source-icon { display: flex; align-items: center; justify-content: center; flex: none; inline-size: 28px; block-size: 28px; border-radius: var(--radius); background: var(--fill); color: var(--text-dim); }
+.manager-source-copy { display: flex; flex: 1; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.manager-source-copy strong { font-size: 13px; font-weight: 500; }
+.manager-source-readiness { color: var(--text-dim); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.manager-source-readiness[data-state='connected'], .manager-source-readiness[data-state='ready'] { color: var(--success-text); }
+.manager-source-readiness[data-state='access'], .manager-source-readiness[data-state='missing'], .manager-source-readiness[data-state='blocked'], .manager-source-readiness[data-state='not-ready'] { color: var(--warning-text); }
+.manager-source-readiness[data-state='failed'] { color: var(--danger); }
+.manager-source-links { display: flex; flex-wrap: wrap; gap: 12px; margin-block-start: 2px; }
+.manager-source-link { display: inline-flex; align-items: center; gap: 4px; padding: 0; border-radius: 3px; color: var(--accent); font-size: 12px; }
+.manager-source-link:hover:not(:disabled) { text-decoration: underline; }
+.manager-sources .manager-source-note { margin-block: 6px 0; color: var(--text-faint); font-size: 11px; text-wrap: pretty; }
+.manager-hours-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-block: 20px 8px; }
+.manager-hours-head h5 { margin: 0; font-size: 12px; font-weight: 600; }
+.manager-hours-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; min-block-size: 36px; padding: 6px 12px; font-size: 12px; }
+.manager-hours-row + .manager-hours-row { border-block-start: 1px solid var(--border); }
+.manager-hours-time, .manager-hours-zone { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.manager-hours small, .manager-hours-offset { color: var(--text-faint); font-size: 11px; }
+.manager-hours-label { color: var(--text-dim); }
+.manager-hours-empty { color: var(--text-faint); }
+.manager-hours.editing .manager-hours-row { justify-content: flex-start; }
+.manager-hours-window { padding-block: 8px; }
+.manager-hours-days { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--radius); background: var(--fill); }
+.manager-hours-days button { inline-size: 30px; block-size: 22px; border-radius: 4px; color: var(--text-faint); font-size: 11px; transition: background-color var(--quick) var(--ease), color var(--quick) var(--ease); }
+.manager-hours-days button:hover:not(:disabled) { color: var(--text); }
+.manager-hours-days button.on { background: var(--bg-raised); color: var(--text); font-weight: 600; box-shadow: 0 0 0 0.5px var(--separator); }
+.manager-hours-span { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; color: var(--text-faint); }
+.manager-hours-span input { inline-size: 76px; }
+.manager-hours-span input::-webkit-calendar-picker-indicator { display: none; }
+.manager-hours-window > p { flex-basis: 100%; margin: 0; font-size: 11px; }
+.manager-hours-hint { color: var(--text-faint); }
+.manager-sources .manager-hours-problem { color: var(--danger); }
+.manager-hours-zone-edit input { flex: 1 1 160px; max-inline-size: 220px; }
+.manager-sources-actions { align-items: center; margin-block-start: 16px; }
+.manager-sources-unsaved, .manager-sources-saved { display: inline-flex; align-items: center; gap: 4px; color: var(--text-faint); font-size: 11px; }
+.manager-sources-saved { color: var(--success-text); }
 .manager-source-path { overflow-wrap: anywhere; }
 .manager-source-history { margin-block-start: 16px; padding-block-start: 12px; border-block-start: 1px solid var(--border); }
 .manager-source-history > summary { color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.manager-source-history > p { color: var(--text-dim); }
 .manager-source-history > p:first-of-type { margin-block-start: 10px; }
 .manager-source-recent { margin-block-start: 12px; }
 .manager-source-recent ul { list-style: none; padding: 0; margin: 0; }
