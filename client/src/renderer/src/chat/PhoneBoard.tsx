@@ -122,8 +122,9 @@ export function PhoneBoard({
   }, [chat.sessions])
   const needs = useNeedsYou(shown === 'progress' ? rows : [], chat.shown.kind === 'session' ? chat.shown.id : undefined)
   const asking = shown === 'progress' ? needs : []
-  const busy = shown === 'progress' ? rows.filter((one) => !asking.includes(one) && working(one)) : []
-  const rest = rows.filter((one) => !asking.includes(one) && !busy.includes(one))
+  const busy = shown === 'progress' ? rows.filter((one) => !asking.includes(one) && one.state === 'working') : []
+  const background = shown === 'progress' ? rows.filter((one) => !asking.includes(one) && one.state !== 'working' && working(one)) : []
+  const rest = rows.filter((one) => !asking.includes(one) && !busy.includes(one) && !background.includes(one))
   const [ways, setWays] = useState(false)
   const [scoping, setScoping] = useState(false)
   const [limiting, setLimiting] = useState(false)
@@ -186,7 +187,7 @@ export function PhoneBoard({
     const placed = [...others.slice(0, landing), moved, ...others.slice(landing)]
     let next = 0
     tap('firm')
-    const order = rows.map((one) => (asking.includes(one) || busy.includes(one) ? one.id : (placed[next++]?.id ?? one.id)))
+    const order = rows.map((one) => (asking.includes(one) || busy.includes(one) || background.includes(one) ? one.id : (placed[next++]?.id ?? one.id)))
     chat.change({ progressOrder: [...order, ...chat.settings.progressOrder.filter((id) => !order.includes(id))] })
   }
 
@@ -255,7 +256,8 @@ export function PhoneBoard({
             <button
               type="button"
               className={`phone-lineup${chat.lineup.working > 0 ? ' said-working' : ''}${chat.full ? ' full' : ''}`}
-              aria-label={`${String(chat.lineup.working)} of ${String(chat.lineup.limit)} conversations working`}
+              aria-label={`${String(chat.lineup.working)} of ${String(chat.lineup.limit)} conversations working across this computer`}
+              title="Conversations working across this computer. Background work does not count against the limit."
               onClick={() => {
                 tap('light')
                 setLimiting(true)
@@ -379,11 +381,11 @@ export function PhoneBoard({
             </div>
           </>
         )}
-        {busy.length === 0 ? null : (
-          <>
-            <div className="phone-head">Working</div>
+        {[{ heading: 'Working', rows: busy }, { heading: 'In the background', rows: background }].map((group) => group.rows.length === 0 ? null : (
+          <Fragment key={group.heading}>
+            <div className="phone-head">{group.heading}</div>
             <div className="phone-group">
-              {busy.map((session) => (
+              {group.rows.map((session) => (
                 <PhoneRow
                   key={session.id}
                   chat={chat}
@@ -400,8 +402,8 @@ export function PhoneBoard({
                 />
               ))}
             </div>
-          </>
-        )}
+          </Fragment>
+        ))}
         {rest.length === 0
           ? null
           : byDay(rest, now, shown === 'done').map((day) => (
@@ -418,7 +420,7 @@ export function PhoneBoard({
                     <span className="n">{day.rows.length}</span>
                     <Icon name={foldedDays.has(day.heading) ? 'right' : 'down'} size={13} />
                   </button>
-                ) : asking.length === 0 && busy.length === 0 ? null : (
+                ) : asking.length === 0 && busy.length === 0 && background.length === 0 ? null : (
                   <div className="phone-head">In your order</div>
                 )}
                 {foldedDays.has(day.heading) ? null : <div ref={shown === 'progress' ? restGroup : undefined} className={`phone-group${drag === undefined ? '' : ' dragging'}`}>

@@ -266,14 +266,16 @@ export function Board({
   // What needs the person is drawn on top of In progress; the rest keeps the order, which still holds every card and decides who takes a free slot.
   const needs = useNeedsYou(progress, chat.shown.kind === 'session' ? chat.shown.id : undefined)
   // What works now comes under it, out of the order while it works and back in its place once it stops.
-  const busy = progress.filter((one) => !needs.includes(one) && working(one))
-  const kept = progress.filter((one) => !needs.includes(one) && !busy.includes(one))
+  const busy = progress.filter((one) => !needs.includes(one) && one.state === 'working')
+  const background = progress.filter((one) => !needs.includes(one) && one.state !== 'working' && working(one))
+  const kept = progress.filter((one) => !needs.includes(one) && !busy.includes(one) && !background.includes(one))
   const groups = (column: (typeof columns)[number]): { readonly heading: string; readonly rows: readonly ChatSession[] }[] => {
     if (column.status !== undefined) return byDay(column.rows, now, column.status === 'done')
-    if (needs.length === 0 && busy.length === 0) return [{ heading: '', rows: kept }]
+    if (needs.length === 0 && busy.length === 0 && background.length === 0) return [{ heading: '', rows: kept }]
     return [
       ...(needs.length === 0 ? [] : [{ heading: 'Needs you', rows: needs }]),
       ...(busy.length === 0 ? [] : [{ heading: 'Working', rows: busy }]),
+      ...(background.length === 0 ? [] : [{ heading: 'In the background', rows: background }]),
       { heading: 'In your order', rows: kept },
     ]
   }
@@ -399,7 +401,7 @@ export function Board({
                 {column.title}
                 <span className="spacer" />
                 {column.status === undefined && chat.lineup.limit !== 0 ? (
-                  <span className={`state-said working-count${chat.lineup.working > 0 ? ' said-working' : ''}`} title="Conversations working, against the limit set in Settings">
+                  <span className={`state-said working-count${chat.lineup.working > 0 ? ' said-working' : ''}`} title="Conversations working across this computer. Background work does not count against the limit.">
                     <span className="state-dot" />
                     {`${String(chat.lineup.working)} of ${String(chat.lineup.limit)} working`}
                   </span>
