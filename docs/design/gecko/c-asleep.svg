@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 33" width="144" height="132" role="img" aria-label="GeckIt gecko, asleep">
+<defs>
+<linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6edb7a"/><stop offset="0.55" stop-color="#3fb551"/><stop offset="1" stop-color="#1c8c33"/></linearGradient>
+<linearGradient id="white" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="28"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#dff3e2"/></linearGradient>
+<linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<filter id="lift" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="0.8" stdDeviation="0.6" flood-color="#06280f" flood-opacity="0.35"/></filter>
+<filter id="tileglass" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+<feGaussianBlur in="SourceAlpha" stdDeviation="1.4" result="blur"/><feComposite in="SourceAlpha" in2="blur" operator="arithmetic" k2="1" k3="-1" result="edge"/>
+<feFlood flood-color="#e4ffe6" flood-opacity="0.8"/><feComposite in2="edge" operator="in" result="glow"/>
+<feGaussianBlur in="SourceAlpha" stdDeviation="0.9" result="s"/><feOffset in="s" dy="1" result="d"/><feFlood flood-color="#06280f" flood-opacity="0.3"/><feComposite in2="d" operator="in" result="shadow"/>
+<feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/><feMergeNode in="glow"/></feMerge>
+</filter>
+</defs>
+<rect x="2.5" y="2.5" width="28" height="28" rx="8.4" fill="url(#tile)" stroke="#16782b" stroke-width="0.6" filter="url(#tileglass)"/>
+<path d="M4 10 Q4 3.6 10.6 3.6 L22.4 3.6 Q29 3.6 29 10 Q16.5 7.4 4 10 Z" fill="url(#sheen)"/>
+<g transform="translate(16.4 17) rotate(-90) scale(0.47) translate(-24 -16)"><g fill="url(#white)" stroke="url(#white)" filter="url(#lift)"><path d="M18 12 Q16 10 14.6 9.6" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="13.43" cy="10.28" r="1.05" stroke="none"/><circle cx="13.33" cy="9.14" r="1.05" stroke="none"/><circle cx="14.14" cy="8.33" r="1.05" stroke="none"/><path d="M30 11.6 Q32 9.6 33.6 9.2" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="34.06" cy="7.93" r="1.05" stroke="none"/><circle cx="34.87" cy="8.74" r="1.05" stroke="none"/><circle cx="34.77" cy="9.88" r="1.05" stroke="none"/><path d="M16.6 21.6 C 17.2 27, 22 28.4, 26.8 27.2" pathLength="100" fill="none" stroke-width="3.8" stroke-linecap="round" stroke-dasharray="45 200"/><path d="M16.6 21.6 C 17.2 27, 22 28.4, 26.8 27.2" pathLength="100" fill="none" stroke-width="2.8" stroke-linecap="round" stroke-dasharray="75 200"/><path d="M16.6 21.6 C 17.2 27, 22 28.4, 26.8 27.2" pathLength="100" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-dasharray="100 200"/><path d="M31.5 21 A 8.2 7.2 0 1 0 16.4 21.4" fill="none" stroke-width="8.6" stroke-linecap="round"/><ellipse stroke="none" cx="31.6" cy="22.6" rx="5.6" ry="4.4" transform="rotate(-150 31.6 22.6)"/></g></g>
+</svg>
