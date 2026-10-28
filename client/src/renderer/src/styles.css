@@ -6426,6 +6426,99 @@ html.framed .board-head {
   border-radius: var(--radius) 0 0 var(--radius);
 }
 
+/* The gecko: the app icon's glass tile before Ask, 28 px of tile in the 28 px row, standing out of it by its shadow. The tile carries the state as well as the gecko in it. */
+.gecko {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 31px;
+  margin: -1.5px 2px -1.5px 0;
+  border-radius: 9px;
+}
+
+.gecko svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.gecko-asleep {
+  opacity: 0.6;
+  filter: saturate(0.5);
+}
+
+/* Two strides, one shown at a time: opacity on the layers, so it walks on the compositor. */
+.gecko-walking .gecko-art {
+  animation: gecko-stride 560ms steps(1, end) infinite;
+}
+
+.gecko-walking .gecko-art.stride {
+  animation-delay: -280ms;
+}
+
+@keyframes gecko-stride {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.gecko-hop {
+  animation: gecko-hop 1000ms var(--ease);
+}
+
+@keyframes gecko-hop {
+  0%,
+  100% {
+    transform: none;
+  }
+  15% {
+    transform: translateY(1px) scale(1.06, 0.92);
+  }
+  40% {
+    transform: translateY(-6px) scale(0.97, 1.03);
+  }
+  65% {
+    transform: none;
+  }
+  75% {
+    transform: translateY(0.5px) scale(1.04, 0.95);
+  }
+}
+
+/* The count from 2, in the board's own colour for asking you. */
+.gecko-count {
+  position: absolute;
+  top: -3px;
+  right: -6px;
+  box-sizing: border-box;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  color: var(--bg);
+  background: var(--warning-text);
+  box-shadow: 0 0 0 1.5px var(--bg);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 15px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gecko-walking .gecko-art {
+    animation: none;
+  }
+
+  .gecko .gecko-art.stride {
+    display: none;
+  }
+}
+
 .board-more {
   display: flex;
   align-items: center;

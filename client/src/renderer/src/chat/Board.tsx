@@ -15,6 +15,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
+import { Gecko } from './Gecko'
 import { HiddenChats } from './HiddenChats'
 import { NameField } from './NameField'
 import { PhoneProject } from './PhoneProject'
@@ -162,6 +163,7 @@ export function TopBar({
         <Icon name="settings" />
       </button>
       <span className="spacer" />
+      <Gecko chat={chat} />
       <button
         type="button"
         className={`icon-button no-drag board-questions${asked === undefined ? '' : ' on'}`}
