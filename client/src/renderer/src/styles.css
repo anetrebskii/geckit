@@ -12606,6 +12606,11 @@ button.manager-step-head:hover > svg {
   transform: translate(var(--x), var(--y));
 }
 
+/* The press keeps the item where it is: without it, every button's press transform pulls it back to the gecko and the release misses it. */
+.gk-ring-open .gk-item:active {
+  transform: translate(var(--x), var(--y)) scale(0.97);
+}
+
 .gk-item:focus-visible,
 .gk-item:focus {
   outline: none;
