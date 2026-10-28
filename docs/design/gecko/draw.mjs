@@ -192,6 +192,3 @@ for (const pose of ['asleep', 'working', 'waiting']) {
   writeFileSync(join(out, `tray-b-${pose}.svg`), traySide(pose))
   writeFileSync(join(out, `tray-c-${pose}.svg`), trayTop(pose, 'c'))
 }
-// The built tile draws the same C gecko; its tile, defs and count are the component's own.
-const art = poses.map((pose) => `  ${pose}: '${chipGecko(pose)}',`).join('\n')
-writeFileSync(join(import.meta.dirname, '../../../client/src/renderer/src/chat/gecko-art.ts'), `// Written by docs/design/gecko/draw.mjs from the C poses: change it there and run it again.\nexport const GECKO_ART = {\n${art}\n} as const\n`)

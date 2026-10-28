@@ -1,14 +1,20 @@
 import type { ChatSession } from './api'
 
-/** What the gecko shows: the tile and the tray follow the same three, and a hop on review comes on top. */
+/** What the gecko shows: the floating panel and the tray follow the same three, and a hop on review comes on top. */
 export type GeckoPose = 'asleep' | 'working' | 'waiting'
 
 export interface GeckoState {
   readonly pose: GeckoPose
   /** The conversations waiting for the person, the one that has waited longest first. */
   readonly waiting: readonly string[]
-  /** A card has just reached In review, with nothing waiting: the tile hops once. */
+  /** A card has just reached In review, with nothing waiting: the gecko hops once. */
   readonly review: boolean
+}
+
+/** What the floating panel is told: its pose, and how many wait for the count. */
+export interface GeckoView {
+  readonly pose: GeckoPose
+  readonly count: number
 }
 
 type Counted = Pick<ChatSession, 'id' | 'state' | 'at' | 'status' | 'waits' | 'runs' | 'typing' | 'tasks' | 'question' | 'manager'>

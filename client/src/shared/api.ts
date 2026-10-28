@@ -1033,6 +1033,8 @@ export interface Settings {
   readonly transcriptions: readonly Transcription[]
   readonly chatBounds?: Bounds
   readonly panelBounds?: Bounds
+  /** Where the floating gecko was dragged to. */
+  readonly geckoBounds?: Bounds
   /** How wide the Chat window's sidebar was dragged, in pixels. */
   readonly sidebarWidth: number
   /** This installation, for counting how often each thing is used. Nothing else is sent. */
@@ -1043,7 +1045,7 @@ export interface Settings {
   readonly analyticsAsked: boolean
   /** Errors go to Sentry, redacted. Off until the error card is answered Send, or it is turned on in Settings. */
   readonly sendErrors: boolean
-  /** The gecko in the board's top bar and the tray, showing what the conversations are doing. Off, the tray has its plain icon. */
+  /** The gecko floating on the desktop and in the tray, showing what the conversations are doing. Off, the tray has its plain icon. */
   readonly showGecko: boolean
   /** False stops the checks on launch and every hour; Check for Updates in Settings still works. */
   readonly autoUpdate: boolean
