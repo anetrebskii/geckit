@@ -11,6 +11,7 @@ import { dictate, languageCode, useDictationLanguage, useLevel } from '../dictat
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
+import geckoGlyph from '../gecko/frames/hA.webp'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
@@ -152,6 +153,11 @@ export function TopBar({
       >
         <Icon name="hidden" />
       </button>
+      {chat.settings.showGecko || ON_PHONE ? null : (
+        <button type="button" className="icon-button no-drag" aria-label="Show the gecko" title="Show the gecko" onClick={() => chat.change({ showGecko: true })}>
+          <img className="gecko-glyph" src={geckoGlyph} alt="" />
+        </button>
+      )}
       <button
         type="button"
         className="icon-button no-drag"

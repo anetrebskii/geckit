@@ -12268,6 +12268,12 @@ button.manager-step-head:hover > svg {
 .manager-source-recent li > span { margin-block-start: 4px; color: var(--text-dim); }
 
 /* The floating gecko: its window is transparent and square, the gecko drawn from its frames standing in it, the same on every system and in light and dark. Sizes are fractions of the window, so it scales when it is resized. */
+.gecko-glyph {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
 .gecko-window {
   position: fixed;
   inset: 0;

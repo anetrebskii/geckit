@@ -44,7 +44,7 @@ The tray / menu bar icon uses a simplified gecko silhouette with the same three 
 ### US4 - It stays out of the way (P1)
 
 **Acceptance**:
-- Settings has one switch to hide the gecko; the window goes and the tray falls back to today's icon. Right-clicking it and choosing "Hide the gecko" does the same; the tray menu's "Show the Gecko" brings it back without opening Settings.
+- Settings has one switch to hide the gecko; the window goes and the tray falls back to today's icon. Right-clicking it and choosing "Hide the gecko" does the same; the tray menu's "Show the Gecko", and the gecko button that the board's top bar shows next to Settings while it is hidden, bring it back without opening Settings.
 - It can be dragged anywhere, kept wholly on the display it is dropped on, and resized from its corner from 72 to 320 px; both are remembered. It is on every desktop, above other windows, never in the Dock, the taskbar or the window switcher, and never takes the focus.
 - Reduced motion (system setting) replaces animation with still poses; the eyes still follow the cursor, since a look is a pose.
 - No animation runs while the panel is hidden or the screen is locked; idle CPU does not change measurably.
