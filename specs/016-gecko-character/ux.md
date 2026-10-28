@@ -1,33 +1,46 @@
 ---
 type: spec
 feature: 016-gecko-character
-status: direction C built (steps 2-5)
+status: the floating panel built (steps 2-5)
 ---
 
 # The gecko: states and behaviour
 
 ## Why
 
-Today the person has to read the board's cards to learn whether anything needs them. With several conversations running and attention elsewhere in the window, a waiting question sits unseen. The gecko answers one question without reading: does anything need me right now.
+Today the person has to read the board's cards to learn whether anything needs them. With several conversations running and attention in another app, a waiting question sits unseen. The gecko answers one question without reading: does anything need me right now.
 
 ## What is added
 
 | Surface | What appears on it |
 |---|---|
-| Board top bar (`TopBar` in `client/src/renderer/src/chat/Board.tsx`), in the empty stretch before Ask | The C glass tile, 28 px of tile, the gecko inside it in one of four poses; a count on the tile's corner when more than one conversation waits |
+| A floating panel of its own (`client/src/main/gecko.ts`, the window in `client/src/main/windows.ts`, the page `client/src/renderer/gecko.html`) | A small glass panel, about 100 px square, always on top and on every desktop, with the gecko sitting in it facing the person, in one of four states; a count on the panel's corner when more than one conversation waits. Not in the board: the board's top bar is as it was before spec 016 |
 | Tray / menu bar (`client/src/main/tray.ts`) | The gecko's simplified silhouette in three states (asleep, working, waiting), on macOS; Windows and Linux keep the colour app icon |
-| Settings, General | One switch, "Show the gecko", on by default |
+| Settings, General | One switch, "Show the gecko", on by default: it shows or hides the panel and the tray's gecko together |
 
 ## States
 
 | State | When | What the person sees | What they do |
 |---|---|---|---|
-| asleep | nothing working, nothing waiting | gecko curled up, eyes shut, the tile dimmed and without its inner glow | nothing; it is safe to look away |
-| working | at least one working, none waiting | the gecko walks inside the tile: two mirrored strides, 280 ms each | nothing; Claude is busy |
-| waiting | at least one asking, finished and unread, or a command after ! waiting to be typed into | gecko stopped, head turned toward the board, eyes on it; count when 2 or more | press the gecko to open the conversation that has waited longest |
-| review | a card has just moved to In review | the whole tile hops once, about 1 s, the gecko inside with its tail curled | look at In review when convenient; the gecko returns to the state below on its own |
+| asleep | nothing working, nothing waiting | eyes shut, head resting on its front feet, tail wrapped round them; a few slow breaths, then it lies still | nothing; it is safe to look away |
+| working | at least one working, none waiting | busy in place: it bobs, its front feet tap in turn, its tail swings a beat behind the body | nothing; Claude is busy |
+| waiting | at least one asking, finished and unread, or a command after ! waiting to be typed into | it perks up, pupils wide, looking at the person, and bounces gently three times; count when 2 or more | press the gecko to open the conversation that has waited longest |
+| review | a card has just moved to In review | a happy hop of about 0.9 s, squashed on landing, the tail curling up; then the state below returns | look at In review when convenient |
 
 Waiting wins over working; review is a one-off on top of whichever of the other three holds.
+
+In every awake state the pupils, and a little the head, follow the mouse cursor anywhere on screen; it blinks with its lids every few seconds and now and then tilts its head.
+
+### What the person does to it
+
+| Action | What happens |
+|---|---|
+| Moves the cursor anywhere | the pupils follow it, the head turns a little after them (not asleep: the eyes are shut) |
+| Hovers it, awake | it looks up at them, pupils wide, with a small happy wiggle |
+| Hovers it, asleep | it opens one eye sleepily and shuts it again; it stays asleep |
+| Presses it | a small squash, then GeckIt comes to the front on the longest-waiting conversation, the next on each press; with nothing waiting, GeckIt just comes to the front |
+| Drags it | it moves with the pointer anywhere on the screen and is there again on the next launch |
+| Right-clicks it | a menu with one item, "Hide the gecko", which turns the Settings switch off |
 
 ## Transitions
 
@@ -61,21 +74,23 @@ stateDiagram-v2
 
 | From | Event | To | What the person sees |
 |---|---|---|---|
-| asleep | a conversation starts working (by itself, no action) | working | the gecko wakes and walks |
-| working | the last working conversation stops with nothing waiting (by itself) | asleep | the gecko curls up |
-| working or asleep | a conversation asks a question, a permission or a reply (by itself) | waiting | the gecko stops and looks at the board; count when 2 or more |
-| waiting | the person answers the last waiting conversation, others still work | working | the gecko walks again |
-| waiting | the person answers the last waiting conversation, nothing works | asleep | the gecko curls up |
-| waiting | the person presses the gecko | waiting (or the state below once answered) | the longest-waiting conversation opens; pressing again opens the next |
-| working or asleep | a card moves to In review | review | one hop of the tile |
+| asleep | a conversation starts working (by itself, no action) | working | the eyes open, the head lifts, it gets busy |
+| working | the last working conversation stops with nothing waiting (by itself) | asleep | the eyes shut, the head goes down onto its feet, the tail wraps round |
+| working or asleep | a conversation asks a question, a permission or a reply (by itself) | waiting | it perks up and looks at the person; count when 2 or more |
+| waiting | the person answers the last waiting conversation, others still work | working | it gets busy again |
+| waiting | the person answers the last waiting conversation, nothing works | asleep | it goes to sleep |
+| waiting | the person presses the gecko | waiting (or the state below once answered) | GeckIt comes to the front on the longest-waiting conversation; pressing again opens the next |
+| working or asleep | a card moves to In review | review | one happy hop |
 | review | the hop finishes (by itself) | the state that holds now | the pose of that state |
-| any | the person presses the gecko with nothing waiting | same | the board opens: the List view switches to Board, an open conversation is put away; nothing else happens |
+| any | the person presses the gecko with nothing waiting | same | GeckIt comes to the front as it was; nothing else happens |
+
+Between states the head, the pupils and the tail move to their new places with a springy ease rather than jumping.
 
 A card moving to In review while something waits does not interrupt waiting: the hop is dropped, since the person has a more urgent thing to see.
 
 ## What stays silent
 
-- How many conversations work: the gecko walks the same for one or five. The board shows the number; the gecko only says "busy".
+- How many conversations work: the gecko is busy the same for one or five. The board shows the number; the gecko only says "busy".
 - Which project waits: the conversation opens on press; the gecko itself names nothing (no text from the gecko, spec "Out of scope").
 - Hidden conversations and other profiles' projects: not counted, as on the board.
 - Background tasks inside a conversation: the conversation's own state counts, not its tasks.
@@ -84,17 +99,22 @@ A card moving to In review while something waits does not interrupt waiting: the
 
 ## Thresholds and time
 
-- Pose follows within one second of the change (spec US1): the board's own session updates already arrive faster than that, so no extra polling.
-- Review hop plays once, one second, then returns: long enough to be noticed in the corner of the eye, short enough not to compete with waiting. A hop that would come while the window is not seen is dropped, not saved.
+- Pose follows within one second of the change (spec US1): main works the state out from the same session updates the board gets, so no extra polling.
+- Review hop plays once, 0.9 s, then returns. A hop that would come while the panel is not seen is dropped, not saved.
 - Count shown from 2: one waiting conversation needs no number, the pose says it.
+- Blinks every 2.5 to 6.5 s, a third of them with a head tilt of 0.9 s.
+- The cursor is read by main ten times a second while it moves, once a second after it has rested two seconds, and never without a panel; the panel is told only when it moved.
+- What runs without end: only the working state's bob, taps and tail. Asleep breathes eight times (about 34 s) and waiting bounces three times, then they hold still apart from blinks, so a panel left sleeping or waiting all day costs nothing (measured below).
 
 ## Wording
 
-- Accessible name, asleep: "Nothing running"
+- Accessible name and tooltip of the panel, asleep: "Nothing running"
 - Working: "Claude is working"
 - Waiting, one: "1 conversation waiting for you"
 - Waiting, more: "2 conversations waiting for you" (the number changes)
 - Review is not announced on its own: the name stays that of the state below.
+- Right-click menu: "Hide the gecko".
+- Settings note under the switch: "A small gecko floats on the desktop and sits in the menu bar, showing whether Claude is working or a conversation is waiting for you. Press it to open the one that waits, drag it anywhere. Off, the menu bar has its plain icon."
 - Tray tooltip keeps today's "GeckIt" text.
 
 ## Edge cases
@@ -102,13 +122,16 @@ A card moving to In review while something waits does not interrupt waiting: the
 - Everything at once (waiting, working, review): waiting.
 - A waiting conversation is hidden: it stops counting; the gecko leaves waiting if it was the only one.
 - Two cards reach In review together: one hop.
-- The window is hidden or minimised: the pose is still right when it comes back; nothing animates meanwhile (step 5).
-- Reduced motion: the still pose of each state, no hop, no walking cycle.
-- The gecko switched off: no gecko in the bar; the tray shows today's icon.
+- The screen is locked: the panel's window is closed and made again on unlock, so nothing runs meanwhile.
+- The panel was left on a display that is no longer connected: it comes back at the top right of the main display.
+- Reduced motion: the still pose of each state, no hop, no breathing, no bounce, no blinks, no wiggle or squash; the eyes still follow the cursor.
+- The gecko switched off: no panel and no window for it at all; the tray shows today's icon.
+- The panel never takes the keyboard: typing elsewhere is never interrupted, and a press brings GeckIt forward itself.
 
 ## Not included on purpose
 
 - Speech bubbles, text or a "z" for sleeping: the spec keeps the gecko wordless; the shut eyes carry sleep.
+- Keyboard access to the panel itself: it never takes the focus, by design; the board and the tray are the keyboard way to the same conversations.
 - A separate pose for errors: errors belong to the card that has them.
 - Sound.
 
@@ -116,14 +139,17 @@ A card moving to In review while something waits does not interrupt waiting: the
 
 | Question | Verdict | Why |
 |---|---|---|
-| Which visual direction (A glass gecko, B gecko on the edge, C glass tile) | C, the glass tile (Alex, 2026-10-28) | strongest link to the app icon; its weakness, poses that are hard to tell apart at 30 px, is answered by letting the tile carry the state too (next row) |
-| How C stays readable at 30 px | the tile carries the state as well as the gecko: asleep dims the tile and stops the inner glow; working walks the gecko inside; waiting adds the amber badge on the tile's corner; review lifts the whole tile in one small hop | the gecko inside is about 20 px long, too small to carry four poses alone; tile brightness, badge and hop read from the corner of the eye |
-| Where in the top bar | the empty stretch before Ask, right-aligned | the only place in the bar with no control; it never covers one |
-| Count form | HTML disc on the tile's top right corner, 15 px, 10 px bold numeral, `--warning-text` with a `--bg` numeral and ring | amber is the board's own "asking you" colour; in light it reads darker, ochre, because the token is the text colour the board uses for "Asking you" |
+| Where the gecko lives | a separate small floating glass panel, not in the board (Alex, 2026-10-28) | like Mochi in Coucou, the gecko is seen while the person works in other apps, which is when a waiting question goes unseen; in the board it was only seen by someone already looking at the board. The tile in the top bar (commits a177dcb to de64496) is removed |
+| How it is drawn and moves | front-facing, sitting in the panel looking out, drawn in parts with smooth eased motion, and its eyes follow the cursor (Alex, 2026-10-28) | the top-down C gecko read as the icon, not as a creature; facing the person with big slit-pupil eyes it can look at them, which is what makes a mascot. The icon's green, glossy body, toe pads and curling tail keep it the GeckIt gecko; the eyes sit on the sides of the head so it does not read as a frog |
+| Glass on each system | macOS: the window's own vibrancy (`popover`, kept active), the page adds only the shine; Windows and Linux: a transparent window with the CSS glass of the earlier tile (translucent gradient, light border, sheen), no blur | only the system can blur the desktop behind a window; a page cannot see it |
+| Breathing and bouncing that stop | asleep breathes eight times and waiting bounces three times, then they hold still | the panel is always on screen, and a state that lasts hours must not keep the computer awake. Alex to confirm, or say if breathing should never stop |
+| Default | on | the panel is the feature; it is one right-click to hide |
+| Which visual direction (A glass gecko, B gecko on the edge, C glass tile) | C, the glass tile (Alex, 2026-10-28), later redrawn front-facing (rows above) | strongest link to the app icon; at panel size its weakness, poses that were hard to tell apart at 30 px, is gone |
+| Count form | HTML disc on the panel's top right corner, 20 px, 12 px bold numeral, `--warning-text` with a `--bg` numeral and ring | amber is the board's own "asking you" colour; in light it reads darker, ochre, because the token is the text colour the board uses for "Asking you" |
 | Review hop when the person moves the card | it hops too | the list carries no record of who moved a card, so a card the person drags to In review hops the same as one a goal or the manager moved; the hop then confirms the move. Alex to confirm |
 | Which conversations count | every folder of the profile in use (`chat.everyone`), not only the folders the board is narrowed to | the gecko answers "does anything need me", as the Dock badge; hidden conversations and other profiles' folders are still left out |
 | Tray on Windows and Linux | unchanged, the colour app icon | a black template is lost on a dark taskbar, and only macOS colours template images itself |
 
 ## Coverage
 
-FR-001 is `geckoState` in `client/src/shared/gecko.ts` with `client/test/gecko.test.ts`; FR-002, FR-003, FR-005 and FR-007 are `client/src/renderer/src/chat/Gecko.tsx`, the Settings switch and the preview; FR-004 is `client/src/main/tray.ts`; FR-006 holds, no new dependency. The phone (US5) is not built.
+FR-001 is `geckoState` in `client/src/shared/gecko.ts` with `client/test/gecko.test.ts`, worked out in main (`client/src/main/index.ts`) from the list the window gets; FR-002, FR-003 and FR-005 are `client/src/main/gecko.ts`, the window in `client/src/main/windows.ts`, the page `client/src/renderer/src/gecko/Gecko.tsx` (tests in `client/test/gecko-panel.test.ts`) and the Settings switch; FR-004 is `client/src/main/tray.ts`; FR-006 holds, no new dependency; FR-007 is `client/src/renderer/src/gecko-preview.tsx`. The phone (US5) is not built.
