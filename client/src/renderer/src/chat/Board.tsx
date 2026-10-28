@@ -852,6 +852,7 @@ export function NewTask({
   record = false,
   seed = [],
   seedPaths = [],
+  seedText = '',
   given,
   onSwitch,
   onStarting,
@@ -868,6 +869,8 @@ export function NewTask({
   readonly seed?: readonly SessionImage[]
   /** Paths of files that are not pictures, dropped on the gecko, for the words. */
   readonly seedPaths?: readonly string[]
+  /** What was said to the gecko for a voice task, for the words. */
+  readonly seedText?: string
   /** Turned from a task into a question or back, with the pictures carried over; what is written goes over through what the other form keeps. */
   readonly onSwitch?: ((pictures: readonly SessionImage[]) => void) | undefined
   readonly onStarting: (starting: boolean) => void
@@ -934,7 +937,12 @@ export function NewTask({
       </label>}
     </div>
   )
-  const [text, setText] = useState(kept?.text ?? '')
+  // What was said to the gecko goes after anything already written.
+  const [text, setText] = useState(() => {
+    const was = kept?.text ?? ''
+    const said = seedText.trim()
+    return said === '' ? was : was.trim() === '' ? said : `${was.trimEnd()}\n${said}`
+  })
   const [goal, setGoal] = useState(kept?.goal ?? '')
   useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal })), [question, root, text, goal])
   // Closed on purpose, it is let go of; a restart does not unmount it, so what was written stays for the next start.
@@ -1027,6 +1035,8 @@ export function NewTask({
       window.geckit.chat.onTask((handed) => {
         setPictures((held) => [...held, ...handed.images].slice(0, 8))
         for (const one of handed.paths) takeRef.current(one, fileName(one))
+        const said = handed.text?.trim() ?? ''
+        if (said !== '') setText((now) => (now.trim() === '' ? said : `${now.trimEnd()}\n${said}`))
       }),
     [],
   )

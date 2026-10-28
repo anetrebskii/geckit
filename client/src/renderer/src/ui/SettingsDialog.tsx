@@ -274,7 +274,7 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
           Show the gecko
         </label>
         <span style={NOTE}>
-          A small gecko floats on the desktop and sits in the menu bar, showing whether Claude is working or a conversation is waiting for you. Press it, or drop files on it, for what it can do, drag it anywhere. Off, the menu bar has its plain icon.
+          A small gecko floats on the desktop and sits in the menu bar, showing whether Claude is working or a conversation is waiting for you. Press it for its menu, drop files on it, drag it anywhere, and resize it from its corner. Off, the menu bar has its plain icon; the menu bar's own menu shows it again.
         </span>
       </div>
 

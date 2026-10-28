@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { BrowserWindow, screen, shell } from 'electron'
 
 import type { Bounds } from '../shared/api'
+import { GECKO_SIDE, geckoRing, geckoSide, keptIn } from '../shared/gecko'
+import type { GeckoRing } from '../shared/gecko'
 import { getSettings, setSettings } from './store'
 
 /**
@@ -277,19 +279,19 @@ export function closePeer(): void {
   peer = undefined
 }
 
-/** The floating gecko's side: a 96 px tile drawn by the page, with room around it for its shadow. */
-const GECKO_SIDE = 108
-
-/** The gecko floating on the desktop: above other windows and on every desktop, never in the Dock, the taskbar or the window switcher, and never taking the keyboard, so it can sit there while the person types elsewhere. */
+/** The gecko floating on the desktop: above other windows and on every desktop, never in the Dock, the taskbar or the window switcher, and never taking the keyboard, so it can sit there while the person types elsewhere. Square, as large as it was made, and on a screen this computer has. */
 export function geckoWindow(): BrowserWindow {
   if (gecko !== undefined && !gecko.isDestroyed()) return gecko
   const area = screen.getPrimaryDisplay().workArea
+  const kept = getSettings().geckoBounds
+  const side = geckoSide(kept?.width ?? GECKO_SIDE)
+  const at = onScreen(kept === undefined ? undefined : { ...kept, width: side, height: side })
   gecko = new BrowserWindow({
-    width: GECKO_SIDE,
-    height: GECKO_SIDE,
-    x: area.x + area.width - GECKO_SIDE - 24,
+    width: side,
+    height: side,
+    x: area.x + area.width - side - 24,
     y: area.y + 24,
-    ...onScreen(getSettings().geckoBounds),
+    ...at,
     show: false,
     frame: false,
     resizable: false,
@@ -318,11 +320,31 @@ export function geckoWindow(): BrowserWindow {
   return gecko
 }
 
+/** The gecko where it was dropped: all of it on the screen it is mostly on. */
+export function keepGecko(): void {
+  const window = shownGecko()
+  if (window === undefined) return
+  const at = window.getBounds()
+  const kept = keptIn(at, screen.getDisplayMatching(at).workArea)
+  if (kept.x !== at.x || kept.y !== at.y) window.setPosition(kept.x, kept.y)
+}
+
+/** The gecko made larger or smaller from its top left corner, square, between its smallest and largest, and kept on its screen. */
+export function sizeGecko(side: number): void {
+  const window = shownGecko()
+  if (window === undefined) return
+  const at = window.getBounds()
+  const next = geckoSide(side)
+  if (next === at.width && next === at.height) return
+  window.setBounds(keptIn({ x: at.x, y: at.y, width: next, height: next }, screen.getDisplayMatching(at).workArea))
+}
+
 export const shownGecko = (): BrowserWindow | undefined =>
   gecko !== undefined && !gecko.isDestroyed() ? gecko : undefined
 
 export function closeGecko(): void {
   closeBubble()
+  closeRing()
   shownGecko()?.destroy()
   gecko = undefined
 }
@@ -337,6 +359,7 @@ let bubbleArea: Bounds | undefined
 /** The gecko's speech bubble, beside it: to its left, or to its right where the screen has no room. It takes the keyboard, without bringing the rest of GeckIt forward, and goes as soon as it loses it. */
 export function bubbleWindow(beside: Bounds): BrowserWindow {
   closeBubble()
+  closeRing()
   const area = screen.getDisplayMatching(beside).workArea
   const left = beside.x - BUBBLE_WIDTH >= area.x
   const made = new BrowserWindow({
@@ -372,13 +395,17 @@ export function bubbleWindow(beside: Bounds): BrowserWindow {
   return made
 }
 
-/** The page has drawn the bubble at this height: it is sized to it, kept on its screen, and shown. */
-export function fitBubble(height: number): void {
+/** The page has drawn the bubble at this height: it is sized to it, kept on its screen, and shown; a note that only tells how something goes is shown without taking the keyboard. */
+export function fitBubble(height: number, quiet = false): void {
   const window = shownBubble()
   if (window === undefined || bubbleArea === undefined || window.isVisible()) return
   const at = window.getBounds()
   const tall = Math.min(Math.round(height), bubbleArea.height)
   window.setBounds({ ...at, height: tall, y: Math.max(bubbleArea.y, Math.min(at.y, bubbleArea.y + bubbleArea.height - tall)) })
+  if (quiet) {
+    window.showInactive()
+    return
+  }
   // Shown, it takes the keyboard; a focus on top made the Mac take it away again the second time.
   window.show()
 }
@@ -391,8 +418,60 @@ export function closeBubble(): void {
   bubble = undefined
 }
 
+let ring: BrowserWindow | undefined
+let ringLaid: GeckoRing | undefined
+
+/** The gecko's menu, round it in a transparent window of its own laid out for the gecko's screen. Like the bubble, it takes the keyboard without bringing the rest of GeckIt forward, and goes as soon as it loses it. */
+export function ringWindow(around: Bounds, count: number): BrowserWindow {
+  closeRing()
+  closeBubble()
+  const laid = geckoRing(around, screen.getDisplayMatching(around).workArea, count)
+  const made = new BrowserWindow({
+    ...laid.window,
+    show: false,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    transparent: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
+    webPreferences: { preload, sandbox: false, devTools: false },
+  })
+  ring = made
+  ringLaid = laid
+  made.setAlwaysOnTop(true, 'floating')
+  made.setVisibleOnAllWorkspaces(true, { skipTransformProcessType: true })
+  load(made, 'gecko', { ring: '1' })
+  made.once('ready-to-show', () => made.show())
+  made.on('blur', () => made.close())
+  made.webContents.on('render-process-gone', () => made.destroy())
+  made.on('closed', () => {
+    if (ring === made) {
+      ring = undefined
+      ringLaid = undefined
+    }
+  })
+  return made
+}
+
+export const shownRing = (): BrowserWindow | undefined => (ring !== undefined && !ring.isDestroyed() ? ring : undefined)
+
+/** How the open menu is laid out, for its page. */
+export const ringLayout = (): GeckoRing | undefined => (shownRing() === undefined ? undefined : ringLaid)
+
+export function closeRing(): void {
+  shownRing()?.destroy()
+  ring = undefined
+  ringLaid = undefined
+}
+
 /** Every window, for telling them all the same thing. */
 export const everyWindow = (): BrowserWindow[] => BrowserWindow.getAllWindows().filter((one) => !one.isDestroyed())
 
 /** The windows a person can see and go back to; the phone's is not one, nor the gecko's or its bubble. */
-export const personWindows = (): BrowserWindow[] => everyWindow().filter((one) => one !== peer && one !== gecko && one !== bubble)
+export const personWindows = (): BrowserWindow[] => everyWindow().filter((one) => one !== peer && one !== gecko && one !== bubble && one !== ring)
