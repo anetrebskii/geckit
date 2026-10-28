@@ -29,3 +29,5 @@ _video/
 client/.dev-restart.log
 signal/public/
 signal/.firebase/
+.geckit-attachments/
+mobile/src/stub-data.json
