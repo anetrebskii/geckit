@@ -7,11 +7,11 @@ import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 
 import type { TranscribeRequest } from '../shared/api'
 import { geckoItems } from '../shared/gecko'
-import type { GeckoAction, GeckoBubble, GeckoChoice, GeckoHanded, GeckoRing, GeckoState, GeckoView } from '../shared/gecko'
+import type { GeckoAction, GeckoBubble, GeckoChoice, GeckoHanded, GeckoState, GeckoView } from '../shared/gecko'
 import { getSettings, onSettings, setSettings } from './store'
 import { transcribe } from './transcribe'
 import { onSpeechModel, speechModel } from './whisper'
-import { bubbleWindow, closeBubble, closeGecko, closeRing, fitBubble, geckoWindow, keepGecko, openChat, ringLayout, ringWindow, shownBubble, shownGecko, shownRing, sizeGecko, tellChat } from './windows'
+import { bubbleWindow, closeBubble, closeGecko, closeRing, fitBubble, geckoWindow, keepGecko, openChat, openRing, revealRing, ringPage, shownBubble, shownGecko, shownRing, sizeGecko, tellChat, warmRing } from './windows'
 
 /** The floating gecko: its window while it is switched on and the screen is not locked, what it is told, its menu and what each choice does, and the bubble for dropped files and notes. */
 
@@ -69,6 +69,7 @@ function keep(): void {
   if (!getSettings().showGecko || locked) heardOut()
   if (getSettings().showGecko && !locked) {
     geckoWindow()
+    warmRing()
     if (polling === undefined) {
       cursor = { x: Number.NaN, y: Number.NaN }
       follow()
@@ -110,11 +111,8 @@ function toggleRing(): void {
     closeRing()
     return
   }
-  const made = ringWindow(window.getBounds(), offered().length)
+  openRing(window.getBounds(), offered())
   window.webContents.send('gecko:ring', true)
-  made.on('closed', () => {
-    if (shownRing() === undefined) shownGecko()?.webContents.send('gecko:ring', false)
-  })
 }
 
 /** Listening ends: Esc is given back to the other apps. */
@@ -262,15 +260,14 @@ export function startGecko(): void {
   ipcMain.on('gecko:moved', (event) => {
     if (fromGecko(event)) keepGecko()
   })
-  ipcMain.handle('gecko:ringLayout', (event): { readonly laid: GeckoRing; readonly items: ReturnType<typeof geckoItems> } | undefined => {
-    const laid = ringLayout()
-    return event.sender === shownRing()?.webContents && laid !== undefined ? { laid, items: offered().slice(0, laid.items.length) } : undefined
+  ipcMain.on('gecko:ringShown', (event) => {
+    if (event.sender === ringPage()?.webContents) revealRing()
   })
   ipcMain.on('gecko:act', (event, action: GeckoAction) => {
     if (event.sender === shownRing()?.webContents) act(action)
   })
   ipcMain.on('gecko:ringClose', (event) => {
-    if (event.sender === shownRing()?.webContents) closeRing()
+    if (event.sender === ringPage()?.webContents) closeRing()
   })
   // The item the menu has in focus: the gecko's eyes go to it.
   ipcMain.on('gecko:aim', (event, x: number, y: number) => {

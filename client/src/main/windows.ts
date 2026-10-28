@@ -4,7 +4,7 @@ import { BrowserWindow, screen, shell } from 'electron'
 
 import type { Bounds } from '../shared/api'
 import { GECKO_SIDE, geckoRing, geckoSide, keptIn } from '../shared/gecko'
-import type { GeckoRing } from '../shared/gecko'
+import type { GeckoItem, GeckoRing } from '../shared/gecko'
 import { getSettings, setSettings } from './store'
 
 /**
@@ -344,7 +344,7 @@ export const shownGecko = (): BrowserWindow | undefined =>
 
 export function closeGecko(): void {
   closeBubble()
-  closeRing()
+  dropRing()
   shownGecko()?.destroy()
   gecko = undefined
 }
@@ -419,15 +419,16 @@ export function closeBubble(): void {
 }
 
 let ring: BrowserWindow | undefined
-let ringLaid: GeckoRing | undefined
+let ringLoaded = false
+/** What the menu shows next, held until its page has loaded. */
+let ringNext: { readonly laid: GeckoRing; readonly items: readonly GeckoItem[] } | undefined
 
-/** The gecko's menu, round it in a transparent window of its own laid out for the gecko's screen. Like the bubble, it takes the keyboard without bringing the rest of GeckIt forward, and goes as soon as it loses it. */
-export function ringWindow(around: Bounds, count: number): BrowserWindow {
-  closeRing()
-  closeBubble()
-  const laid = geckoRing(around, screen.getDisplayMatching(around).workArea, count)
+/** The gecko's menu, in a transparent window of its own made with the gecko and kept hidden, so a press only places and shows it. Like the bubble, it takes the keyboard without bringing the rest of GeckIt forward, and goes as soon as it loses it. */
+export function warmRing(): BrowserWindow {
+  if (ring !== undefined && !ring.isDestroyed()) return ring
   const made = new BrowserWindow({
-    ...laid.window,
+    width: 1,
+    height: 1,
     show: false,
     frame: false,
     resizable: false,
@@ -440,34 +441,64 @@ export function ringWindow(around: Bounds, count: number): BrowserWindow {
     hasShadow: false,
     backgroundColor: '#00000000',
     ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
-    webPreferences: { preload, sandbox: false, devTools: false },
+    webPreferences: { preload, sandbox: false, devTools: false, backgroundThrottling: false },
   })
   ring = made
-  ringLaid = laid
+  ringLoaded = false
   made.setAlwaysOnTop(true, 'floating')
   made.setVisibleOnAllWorkspaces(true, { skipTransformProcessType: true })
   load(made, 'gecko', { ring: '1' })
-  made.once('ready-to-show', () => made.show())
-  made.on('blur', () => made.close())
+  made.webContents.on('did-finish-load', () => {
+    ringLoaded = true
+    if (ringNext !== undefined) made.webContents.send('gecko:ringShow', ringNext)
+  })
+  made.on('blur', closeRing)
   made.webContents.on('render-process-gone', () => made.destroy())
   made.on('closed', () => {
     if (ring === made) {
       ring = undefined
-      ringLaid = undefined
+      ringNext = undefined
     }
   })
   return made
 }
 
-export const shownRing = (): BrowserWindow | undefined => (ring !== undefined && !ring.isDestroyed() ? ring : undefined)
+/** The menu laid out round the gecko for its screen; the page draws it and says so, and only then is it shown. */
+export function openRing(around: Bounds, items: readonly GeckoItem[]): void {
+  closeBubble()
+  const made = warmRing()
+  const laid = geckoRing(around, screen.getDisplayMatching(around).workArea, items.length)
+  made.setBounds(laid.window)
+  ringNext = { laid, items: items.slice(0, laid.items.length) }
+  if (ringLoaded) made.webContents.send('gecko:ringShow', ringNext)
+}
 
-/** How the open menu is laid out, for its page. */
-export const ringLayout = (): GeckoRing | undefined => (shownRing() === undefined ? undefined : ringLaid)
+/** The page has drawn the menu: shown, it takes the keyboard. */
+export function revealRing(): void {
+  if (ringNext !== undefined) ring?.show()
+}
 
+/** The menu's page, shown or not, for telling what it sends. */
+export const ringPage = (): BrowserWindow | undefined => (ring !== undefined && !ring.isDestroyed() ? ring : undefined)
+
+export const shownRing = (): BrowserWindow | undefined => (ringPage()?.isVisible() === true ? ring : undefined)
+
+/** Hidden again, ready for the next press, and the gecko stops looking at it. */
 export function closeRing(): void {
-  shownRing()?.destroy()
+  const page = ringPage()
+  const was = ringNext !== undefined || page?.isVisible() === true
+  ringNext = undefined
+  if (page === undefined || !was) return
+  page.webContents.send('gecko:ringHide')
+  page.hide()
+  shownGecko()?.webContents.send('gecko:ring', false)
+}
+
+/** Gone with the gecko. */
+export function dropRing(): void {
+  ringPage()?.destroy()
   ring = undefined
-  ringLaid = undefined
+  ringNext = undefined
 }
 
 /** Every window, for telling them all the same thing. */

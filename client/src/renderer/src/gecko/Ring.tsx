@@ -120,15 +120,27 @@ export function RingCard({
   )
 }
 
-/** The menu's own window: asks main how it is laid out, sends the items out, and goes with a choice, Esc, or a click beside them. */
+/** The menu's own window, kept hidden between presses: told how it is laid out each time, sends the items out, and goes with a choice, Esc, or a click beside them. */
 export function Ring(): React.JSX.Element | null {
   const [shown, setShown] = useState<{ readonly laid: GeckoRing; readonly items: readonly GeckoItem[] } | undefined>()
   const [open, setOpen] = useState(false)
   useEffect(() => {
-    void window.geckit.gecko.ring().then(setShown)
+    const offShow = window.geckit.gecko.onRingShow((next) => {
+      setOpen(false)
+      setShown(next)
+    })
+    const offHide = window.geckit.gecko.onRingHide(() => {
+      setOpen(false)
+      setShown(undefined)
+    })
+    return () => {
+      offShow()
+      offHide()
+    }
   }, [])
   useEffect(() => {
     if (shown === undefined) return
+    window.geckit.gecko.ringShown()
     const frame = requestAnimationFrame(() => setOpen(true))
     return () => cancelAnimationFrame(frame)
   }, [shown])

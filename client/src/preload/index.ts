@@ -420,7 +420,11 @@ const geckit = {
     fit: (height: number): void => ipcRenderer.send('gecko:fit', height),
     choose: (choice: GeckoChoice): void => ipcRenderer.send('gecko:choose', choice),
     /** The menu's window, and nothing else, uses these: how it is laid out, the item in focus for the eyes, a choice, and closing. */
-    ring: (): Promise<{ readonly laid: GeckoRing; readonly items: readonly GeckoItem[] } | undefined> => ipcRenderer.invoke('gecko:ringLayout'),
+    /** Main laid the menu out round the gecko: draw it, then say so with `ringShown`, and it is shown. */
+    onRingShow: (said: (shown: { readonly laid: GeckoRing; readonly items: readonly GeckoItem[] }) => void): (() => void) => listen('gecko:ringShow', said),
+    ringShown: (): void => ipcRenderer.send('gecko:ringShown'),
+    /** The menu was hidden, kept for the next press. */
+    onRingHide: (said: () => void): (() => void) => listen('gecko:ringHide', said),
     aim: (x: number, y: number): void => ipcRenderer.send('gecko:aim', x, y),
     act: (action: GeckoAction): void => ipcRenderer.send('gecko:act', action),
     close: (): void => ipcRenderer.send('gecko:ringClose'),
