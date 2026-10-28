@@ -12271,6 +12271,7 @@ button.manager-step-head:hover > svg {
 .gecko-window {
   position: fixed;
   inset: 0;
+  cursor: pointer;
 }
 
 .gecko-hold {

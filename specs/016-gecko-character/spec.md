@@ -44,7 +44,7 @@ The tray / menu bar icon uses a simplified gecko silhouette with the same three 
 ### US4 - It stays out of the way (P1)
 
 **Acceptance**:
-- Settings has one switch to hide the gecko; the window goes and the tray falls back to today's icon. Right-clicking it, and the menu's Hide, do the same; the tray menu's "Show the Gecko" brings it back without opening Settings.
+- Settings has one switch to hide the gecko; the window goes and the tray falls back to today's icon. Right-clicking it and choosing "Hide the gecko" does the same; the tray menu's "Show the Gecko" brings it back without opening Settings.
 - It can be dragged anywhere, kept wholly on the display it is dropped on, and resized from its corner from 72 to 320 px; both are remembered. It is on every desktop, above other windows, never in the Dock, the taskbar or the window switcher, and never takes the focus.
 - Reduced motion (system setting) replaces animation with still poses; the eyes still follow the cursor, since a look is a pose.
 - No animation runs while the panel is hidden or the screen is locked; idle CPU does not change measurably.
@@ -64,7 +64,7 @@ The iPhone and Android apps show the same gecko in the Tasks header with the sam
 
 - FR-001: One aggregate state is derived from the board's own session data (working, waiting, idle, just-moved-to-review), with waiting taking priority. It is a pure function with tests.
 - FR-002: The gecko renders in a separate always-on-top, frameless, transparent window from that state, with the poses in the US1 table and the demo's frames; not in the board. Waiting and the look after a hop fall asleep after 5 minutes without a hover, a click or a new event.
-- FR-003: Pressing it opens the radial menu round it, in its own window kept on the gecko's screen: Screenshot (macOS; the camera pose and flash, then `screencapture -i`), New task, Voice task (listens and writes, a press stops, the app's own local transcription, then New task with the words; Esc or the right-click menu cancels), Waiting (longest-waiting first, cycling on repeat, only while one waits), Open GeckIt, Hide. Right-click: "Hide the gecko".
+- FR-003: Pressing it opens the radial menu round it, in its own window kept on the gecko's screen: Screenshot (macOS; `screencapture -i` at once, while the gecko shows the camera pose and flash), New task, Voice task (the dictation capsule opens and the gecko listens with it; Stop, the app's own local transcription, then New task with the words; the capsule's Cancel or Esc keeps nothing), Waiting (longest-waiting first, cycling on repeat, only while one waits), Open GeckIt. Right-click: "Hide the gecko". The gecko's window is a panel, so pressing it does not bring GeckIt's other windows forward; only Open GeckIt and the items that open a form do. Over it the pointer is a hand.
 - FR-004: The tray icon follows the same state with simplified images; the tray menu gains "Show the Gecko" / "Hide the Gecko".
 - FR-005: Settings switch to show or hide the gecko; reduced motion honoured; nothing animates and no timer runs while it is hidden or the screen is locked.
 - FR-006: The art is the demo's raster frames (WebP) with CSS and SVG layering; no new runtime dependency.

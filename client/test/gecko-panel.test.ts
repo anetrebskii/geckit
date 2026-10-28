@@ -85,8 +85,8 @@ describe('the gecko menu as drawn', () => {
 
   it('is a menu of items with their labels, the waiting one with its count', () => {
     expect(markup).toContain('role="menu" aria-label="Gecko"')
-    expect(markup.match(/role="menuitem"/g)).toHaveLength(6)
-    for (const label of ['Screenshot', 'New task', 'Voice task', 'Waiting', 'Open GeckIt', 'Hide']) expect(markup).toContain(`<span class="gk-lbl">${label}</span>`)
+    expect(markup.match(/role="menuitem"/g)).toHaveLength(5)
+    for (const label of ['Screenshot', 'New task', 'Voice task', 'Waiting', 'Open GeckIt']) expect(markup).toContain(`<span class="gk-lbl">${label}</span>`)
     expect(markup).toContain('<b class="gk-cnt">2</b>')
   })
 

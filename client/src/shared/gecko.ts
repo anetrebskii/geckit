@@ -97,7 +97,7 @@ export const canDoze = (now: Omit<GeckoNow, 'dozing'>): boolean =>
   !now.menu && !now.drag && !now.got && !now.camera && !now.listen && (now.pose === 'waiting' || (now.pose === 'asleep' && now.done))
 
 /** What its menu offers. */
-export type GeckoAction = 'screenshot' | 'task' | 'voice' | 'waiting' | 'open' | 'hide'
+export type GeckoAction = 'screenshot' | 'task' | 'voice' | 'waiting' | 'open'
 
 export interface GeckoItem {
   readonly action: GeckoAction
@@ -114,7 +114,6 @@ export function geckoItems({ waiting, screenshot }: { readonly waiting: number; 
     { action: 'voice', label: 'Voice task' },
     ...(waiting > 0 ? [{ action: 'waiting' as const, label: 'Waiting', count: waiting }] : []),
     { action: 'open', label: 'Open GeckIt' },
-    { action: 'hide', label: 'Hide' },
   ]
 }
 

@@ -766,8 +766,8 @@ export interface SpeechModel {
   readonly error?: string
 }
 
-/** What the capsule was opened for: typing with the words, telling the application what to do, showing the screen, or showing it for the New task form that is open. */
-export type VoiceMode = 'paste' | 'orders' | 'record' | 'fill'
+/** What the capsule was opened for: typing with the words, telling the application what to do, a new task from the gecko, showing the screen, or showing it for the New task form that is open. */
+export type VoiceMode = 'paste' | 'orders' | 'task' | 'record' | 'fill'
 
 /** The screen the capsule records, or why it cannot. */
 export type ScreenSource = { readonly id: string } | { readonly denied: true } | { readonly error: string }

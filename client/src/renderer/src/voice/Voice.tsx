@@ -20,7 +20,7 @@ type State = 'recording' | 'transcribing' | 'asking' | 'doing' | 'done' | 'error
 /** How long what was done stays up to be read before the capsule goes. */
 const READ_IT = 4_000
 
-export function Voice(): React.JSX.Element {
+export function Voice({ task }: { readonly task: boolean }): React.JSX.Element {
   const [settings, change] = useSettings()
   const [state, setState] = useState<State>('recording')
   const [error, setError] = useState('')
@@ -222,8 +222,8 @@ export function Voice(): React.JSX.Element {
             <button
               type="button"
               className="icon-button"
-              aria-label="Stop and paste"
-              title="Stop and paste (Enter)"
+              aria-label={task ? 'Stop and make a task' : 'Stop and paste'}
+              title={task ? 'Stop and make a task (Enter)' : 'Stop and paste (Enter)'}
               style={{ color: 'var(--danger)' }}
               onClick={() => recorder.stop()}
             >

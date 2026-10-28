@@ -97,10 +97,10 @@ describe('the gecko menu', () => {
   const actions = (waiting: number, screenshot: boolean): string[] => geckoItems({ waiting, screenshot }).map((one) => one.action)
 
   it('offers the screenshot only where one can be taken, and the waiting conversation only while one waits', () => {
-    expect(actions(0, true)).toEqual(['screenshot', 'task', 'voice', 'open', 'hide'])
-    expect(actions(0, false)).toEqual(['task', 'voice', 'open', 'hide'])
-    expect(actions(2, true)).toEqual(['screenshot', 'task', 'voice', 'waiting', 'open', 'hide'])
-    expect(geckoItems({ waiting: 2, screenshot: true }).map((one) => one.label)).toEqual(['Screenshot', 'New task', 'Voice task', 'Waiting', 'Open GeckIt', 'Hide'])
+    expect(actions(0, true)).toEqual(['screenshot', 'task', 'voice', 'open'])
+    expect(actions(0, false)).toEqual(['task', 'voice', 'open'])
+    expect(actions(2, true)).toEqual(['screenshot', 'task', 'voice', 'waiting', 'open'])
+    expect(geckoItems({ waiting: 2, screenshot: true }).map((one) => one.label)).toEqual(['Screenshot', 'New task', 'Voice task', 'Waiting', 'Open GeckIt'])
     expect(geckoItems({ waiting: 3, screenshot: false }).find((one) => one.action === 'waiting')?.count).toBe(3)
   })
 

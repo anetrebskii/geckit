@@ -4,8 +4,6 @@ import type { SessionImage } from '../../../shared/api'
 import { canDoze, DOZE, geckoShown } from '../../../shared/gecko'
 import type { GeckoShown, GeckoView } from '../../../shared/gecko'
 import { asImage, canShow } from '../pictures'
-import { toHear, useRecorder } from '../recorder'
-import { useSettings } from '../settings'
 import { EYES, GeckoArt } from './Art'
 import type { Aim } from './Art'
 
@@ -136,7 +134,7 @@ function aimAt(art: SVGSVGElement | null, at: { readonly x: number; readonly y: 
 
 /** How long the catch shows before the bubble asks about the files. */
 const CATCH = 1100
-/** The camera is raised this long, then it flashes, and the crosshair comes once the flash is over. */
+/** The camera is raised this long, then it flashes, while the crosshair is already up. */
 const RAISE = 1000
 const FLASH = 500
 
@@ -154,7 +152,6 @@ async function handed(files: readonly File[]): Promise<{ images: SessionImage[];
 
 /** The floating gecko: told its state and the cursor by main; pressed for its menu, given files, listening for a voice task, dragged anywhere and resized from its grip. */
 export function Gecko(): React.JSX.Element | null {
-  const [settings] = useSettings()
   const [view, setView] = useState<GeckoView | undefined>()
   const [done, setDone] = useState(false)
   const [dozing, setDozing] = useState(false)
@@ -232,37 +229,6 @@ export function Gecko(): React.JSX.Element | null {
     requestAnimationFrame(() => setPressing(true))
   }
 
-  // The voice task: the microphone records while it writes; a press stops it, and what was said goes for a new task.
-  const writing = useRef(false)
-  const recorder = useRecorder(settings.microphoneDeviceId, (audio) => {
-    writing.current = true
-    void toHear(audio)
-      .then((request) => window.geckit.gecko.heard(request))
-      .catch((error: unknown) => window.geckit.gecko.heard({ error: error instanceof Error ? error.message : String(error) }))
-      .finally(() => {
-        writing.current = false
-        setListen(false)
-      })
-  })
-  const { start, stop, cancel, recording, error } = recorder
-  const began = useRef(false)
-  useEffect(() => {
-    if (recording) began.current = true
-  }, [recording])
-  // Stopped with nothing recorded, or the microphone could not be opened: it says so, and stops listening.
-  useEffect(() => {
-    if (!listen || recording || writing.current || (error === '' && !began.current)) return
-    const soon = setTimeout(
-      () => {
-        if (writing.current) return
-        setListen(false)
-        void window.geckit.gecko.heard({ error: error === '' ? 'Nothing was heard' : `Nothing could be recorded: ${error}` })
-      },
-      error === '' ? 400 : 0,
-    )
-    return () => clearTimeout(soon)
-  }, [listen, recording, error])
-
   const held = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | undefined>(undefined)
   const sizing = useRef<{ x: number; y: number; side: number } | undefined>(undefined)
   const depth = useRef(0)
@@ -302,14 +268,11 @@ export function Gecko(): React.JSX.Element | null {
     return () => clearTimeout(soon)
   }, [hopping])
 
-  // The screenshot: the camera raised, a flash at the lens and round the gecko, then the Mac's crosshair.
+  // The screenshot: while the Mac's crosshair is up, the camera raised and a flash at the lens and round the gecko.
   useEffect(
     () =>
       window.geckit.gecko.onCamera(() => {
-        if (!moving) {
-          window.geckit.gecko.shoot()
-          return
-        }
+        if (!moving) return
         setCamera(true)
         setTimeout(() => {
           setSnapping(true)
@@ -318,7 +281,6 @@ export function Gecko(): React.JSX.Element | null {
           setTimeout(() => {
             setSnapping(false)
             setCamera(false)
-            window.geckit.gecko.shoot()
           }, FLASH)
         }, RAISE)
       }),
@@ -327,18 +289,8 @@ export function Gecko(): React.JSX.Element | null {
 
   useEffect(
     () =>
-      window.geckit.gecko.onListen((what) => {
-        if (what === 'start') {
-          began.current = false
-          writing.current = false
-          setListen(true)
-          start()
-          return
-        }
-        cancel()
-        setListen(false)
-      }),
-    [start, cancel],
+      window.geckit.gecko.onListen((what) => setListen(what === 'start')),
+    [],
   )
 
   if (view === undefined) return null
@@ -379,9 +331,7 @@ export function Gecko(): React.JSX.Element | null {
         }
         stir()
         squash()
-        // Listening, a press stops it and what was said is written down; otherwise its menu opens round it.
-        if (listen) stop()
-        else window.geckit.gecko.press()
+        window.geckit.gecko.press()
       }}
       onPointerCancel={() => {
         held.current = undefined

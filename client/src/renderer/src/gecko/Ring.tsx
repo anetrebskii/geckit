@@ -24,16 +24,10 @@ function Glyph({ action }: { readonly action: GeckoAction }): React.JSX.Element 
           <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" {...line} />
           <path d="M10 20.5h4" {...line} />
         </>
-      ) : action === 'open' ? (
+      ) : (
         <>
           <rect x="4" y="5" width="16" height="14" rx="3" {...line} />
           <path d="M4 9h16" {...line} />
-        </>
-      ) : (
-        <>
-          <path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" {...line} />
-          <circle cx="12" cy="12" r="2.6" {...line} />
-          <path d="M4 20L20 4" {...line} />
         </>
       )}
     </svg>

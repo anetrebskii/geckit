@@ -401,9 +401,7 @@ const geckit = {
     /** Pressed: its menu opens round it, or closes. */
     press: (): void => ipcRenderer.send('gecko:press'),
     /** The camera is raised and has flashed: the crosshair comes. */
-    shoot: (): void => ipcRenderer.send('gecko:shoot'),
     /** What was said for a voice task, to be written down for a new task; or why nothing could be recorded. */
-    heard: (request: TranscribeRequest | { readonly error: string }): Promise<void> => ipcRenderer.invoke('gecko:heard', request),
     /** Files dropped on it: its bubble opens, asking what to do with them. */
     drop: (given: GeckoHanded): void => ipcRenderer.send('gecko:drop', given),
     /** Its own small menu, at the pointer. */

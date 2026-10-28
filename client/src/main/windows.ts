@@ -306,6 +306,8 @@ export function geckoWindow(): BrowserWindow {
     transparent: true,
     hasShadow: false,
     backgroundColor: '#00000000',
+    // A panel, so a press does not bring GeckIt's other windows forward.
+    ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
     webPreferences: { preload, sandbox: false, devTools: false },
   })
   gecko.setAlwaysOnTop(true, 'floating')

@@ -142,7 +142,7 @@ import { recordedNote } from '../shared/recording'
 import { drawTray, startTray } from './tray'
 import { geckoState } from '../shared/gecko'
 import type { GeckoPose } from '../shared/gecko'
-import { startGecko, tellGecko } from './gecko'
+import { geckoListens, startGecko, tellGecko } from './gecko'
 import { checkForUpdates, follow, restartToUpdate, startUpdates, updateView } from './updates'
 import {
   chatListening,
@@ -574,10 +574,25 @@ function recordScreen(): void {
   voiceWindow().setContentProtection(true)
 }
 
+/** The capsule, for a voice task from the gecko, which listens with it: what was said opens the New task form. */
+function voiceTask(): void {
+  const open = listeningVoice()
+  if (open !== undefined) {
+    open.webContents.send('voice:stop')
+    return
+  }
+  heardFor = 'task'
+  dictatedInto = undefined
+  readyToHear()
+  voiceWindow()
+  geckoListens(true)
+}
+
 /** The capsule goes; a form's recording brings Chat back to the form, whatever became of it. */
 function closeCapsule(): void {
   closeVoice()
   dropRecording()
+  geckoListens(false)
   if (heardFor !== 'fill') return
   heardFor = 'record'
   const chat = shownChat()
@@ -1224,6 +1239,13 @@ function wire(): void {
     if (!said.ok || said.text === undefined || said.text.trim() === '') return said
     // Said to the application: it is carried out, and the capsule stays up to say what was done.
     if (heardFor === 'orders') return readSaid(said.text)
+    if (heardFor === 'task') {
+      closeCapsule()
+      if (process.platform === 'darwin') app.focus({ steal: true })
+      openChat()
+      tellChat('chat:task', { images: [], paths: [], text: said.text.trim() })
+      return said
+    }
     pasteBack(said.text)
     return said
   })
@@ -1810,7 +1832,7 @@ if (!app.requestSingleInstanceLock()) {
       record: recordScreen,
       pose: () => pose,
     })
-    startGecko()
+    startGecko(voiceTask)
     keepShortcuts(getSettings().anywhereOff)
     sweepRecordings()
     startUpdates({

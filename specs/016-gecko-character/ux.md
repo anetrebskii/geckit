@@ -34,8 +34,8 @@ The pose follows the conversations, and what the person is doing with the gecko 
 | look | its menu is open | the same happy look, still, its eyes on the item in focus | `bA`, `bAh`, pupils |
 | catch | files are dragged over it | both hands up, its eyes on the file | `cUp`, pupils |
 | got | files were dropped on it | holding the file, a squash, for 1.1 s; then the bubble asks | `cGot` |
-| camera | Screenshot was chosen | it raises a camera to one eye for 1 s, the lens flashes and a white glow flashes round it, then the Mac's crosshair comes | `cam`, the other eye's pupil, the lens flash |
-| listen | Voice task was chosen, until the words are written down | headphones on, writing a few strokes, a pause, again | `lA` and `lB` in turn |
+| camera | Screenshot was chosen | the Mac's crosshair comes at once; meanwhile it raises a camera to one eye for 1 s, the lens flashes and a white glow flashes round it | `cam`, the other eye's pupil, the lens flash |
+| listen | Voice task was chosen, while its capsule is open | headphones on, writing a few strokes, a pause, again | `lA` and `lB` in turn |
 
 In waiting, done and look the pupils follow the cursor anywhere on screen, moving up to 16 units of the 1024 view towards it, less when it is near. Every 2.2 to 5.2 s it blinks: the sitting head is swapped for the drawn closed eyes (`tAc` or `bAc`) for 130 ms. Only the hands, the foot or the pen change between frames; the head stays one image, so nothing flickers.
 
@@ -46,15 +46,15 @@ In waiting, done and look the pupils follow the cursor anywhere on screen, movin
 | Moves the cursor anywhere | the pupils follow it (waiting, done, look) |
 | Hovers it | a pet: over 1.3 s the head bends on its eight pre-drawn frames and back (sitting poses use the pet head, working and asleep bend their own); cancelled by any change of pose, and not while the menu is open, files are dragged, the camera is up or it listens. A hover also wakes it from dozing |
 | Presses it | a small squash, and its menu opens round it; pressed again on the gecko, or anywhere else, the menu closes |
-| Chooses in the menu | the menu goes and: Screenshot raises the camera, then the crosshair; New task opens GeckIt on the New task form; Voice task starts listening; Waiting opens the conversation that has waited longest (the next one each time); Open GeckIt brings GeckIt forward; Hide turns the Settings switch off |
+| Chooses in the menu | the menu goes and: Screenshot brings the crosshair at once while the gecko raises its camera; New task opens GeckIt on the New task form; Voice task opens the dictation capsule; Waiting opens the conversation that has waited longest (the next one each time); Open GeckIt brings GeckIt forward |
 | Uses the keyboard in the menu | the first item is in focus when it opens; the arrows go round, Enter or Space chooses, Esc closes; pointing at an item puts it in focus too. The gecko looks at the item in focus |
-| Speaks after Voice task | the microphone records while it writes; a press on the gecko stops it, the words are heard on this computer by the app's own whisper.cpp, and GeckIt opens on New task with them in the words, after anything already written there |
-| Presses Esc while it listens, or right-clicks it and chooses "Cancel the voice task" | it stops listening and nothing is kept |
+| Speaks after Voice task | the capsule records while the gecko writes; the capsule's Stop (or Enter) ends it, the words are heard on this computer by the app's own whisper.cpp, and GeckIt opens on New task with them in the words, after anything already written there |
+| Cancels the capsule | it stops listening and nothing is kept |
 | Drags files over it | it raises its hands and looks at the file |
 | Drops files on it | it catches them, then its bubble asks what to do with them: a new task with them, sending them to the waiting conversation (only while one waits), or Cancel |
 | Drags it | it moves with the pointer; let go, all of it is moved onto the display it is mostly on, and the place is remembered |
 | Drags the grip on its bottom right corner (shown while it is pointed at) | it grows or shrinks square from its top left corner, from 72 to 320 px, kept on its display, and the size is remembered |
-| Right-clicks it | a menu with "Hide the gecko" (and "Cancel the voice task" while it listens) |
+| Right-clicks it | a menu with "Hide the gecko" |
 | Chooses "Show the Gecko" or "Hide the Gecko" in the menu bar's menu | the Settings switch turns on or off |
 
 ## Transitions
@@ -96,8 +96,8 @@ stateDiagram-v2
 | done | 5 minutes alone | asleep | it falls asleep, and a later hover wakes it to the state that holds, not to done |
 | any | a press | look, with the menu | the items fly out from it |
 | look | a choice, Esc, a click elsewhere | the pose of the choice, or the state | the menu goes |
-| any | Screenshot | camera, then the state | camera, flash, crosshair |
-| any | Voice task | listen until the words are written down | it writes; GeckIt opens on New task |
+| any | Screenshot | camera, then the state | crosshair at once, camera and flash beside it |
+| any | Voice task | listen while the capsule is open | the capsule hears; GeckIt opens on New task |
 
 ## What stays silent
 
@@ -120,11 +120,11 @@ stateDiagram-v2
 ## Wording
 
 - Accessible name and tooltip, asleep: "Nothing running"; working: "Claude is working"; waiting: "1 conversation waiting for you", "2 conversations waiting for you". Review is not announced on its own. Dozing keeps the name of the state it holds.
-- Menu, named "Gecko", clockwise from the top: "Screenshot" (macOS only), "New task", "Voice task", "Waiting" (only while one waits, with the count on its disc), "Open GeckIt", "Hide".
-- Right-click menu: "Hide the gecko"; while listening also "Cancel the voice task".
+- Menu, named "Gecko", clockwise from the top: "Screenshot" (macOS only), "New task", "Voice task", "Waiting" (only while one waits, with the count on its disc), "Open GeckIt".
+- Right-click menu: "Hide the gecko".
 - Tray menu: "Hide the Gecko" or "Show the Gecko", in the title case of the rest of that menu.
 - Bubble after a drop: "What should I do with this file?" or "What should I do with these 3 files?"; choices "New task with this file" or "New task with these files", "Send to the waiting conversation" (only while one waits), "Cancel".
-- Voice task notes, in the bubble with "Close": "Nothing was heard"; "Nothing could be recorded: " and the browser's reason; whisper-cli missing: "whisper-cli is missing: run scripts/whisper.sh in client/"; while the model downloads, shown without taking the keyboard and updated as it goes: "Downloading the speech model, 212 of 574 MB. It is written down once that is done". These are the capsule's own words.
+- Voice task notes are the capsule's own: it says what was not heard or could not be recorded, and how far the speech model has downloaded.
 - Settings note under the switch: "A small gecko floats on the desktop and sits in the menu bar, showing whether Claude is working or a conversation is waiting for you. Press it for its menu, drop files on it, drag it anywhere, and resize it from its corner. Off, the menu bar has its plain icon; the menu bar's own menu shows it again."
 - Tray tooltip keeps "GeckIt".
 
@@ -132,12 +132,10 @@ stateDiagram-v2
 
 - Everything at once (waiting, working, review): waiting; the hop is dropped.
 - A waiting conversation is hidden: it stops counting.
-- The screen is locked, or the gecko switched off: its window, menu and bubble are closed, listening stops and Esc is given back; nothing of it runs.
+- The screen is locked, or the gecko switched off: its window, menu and bubble are closed; nothing of it runs.
 - The window was left on a display no longer connected: it comes back at the top right of the main display.
 - Dragged partly off a display: on release all of it is moved onto the display it is mostly on. Resized near an edge: kept on that display.
 - The menu near an edge or in a corner: the items spread over the part of the circle that is on the gecko's screen, the first at the end nearer the top, and the circle grows until they are a disc and a half apart. The items always clear the gecko's corners, where its count is.
-- A press while listening stops the recording; it never opens the menu.
-- The microphone cannot be opened, or nothing was recorded: the bubble says so and listening ends.
 - The speech model is not downloaded: the first voice task downloads it, the bubble shows the progress without taking the keyboard, and the New task form opens once the words are written down.
 - Reduced motion: no breathing, bounce, sway, nod, hop (the happy look after it still shows), blinks, pet, squash, catch or camera; the first frame of each pose holds; Screenshot goes straight to the crosshair; the menu's items appear in place. The eyes still follow the cursor.
 - Not seen (the window hidden or covered): no frame loops, no blinks, no doze timer, no CSS animation.
@@ -146,7 +144,7 @@ stateDiagram-v2
 ## Not included on purpose
 
 - Text on the gecko itself, or a "z" for sleeping.
-- Keyboard access to the floating gecko itself: it never takes the focus; its menu and bubble do while open, and the tray and the board are the keyboard way to the same places. Esc while listening is caught for the whole system only while it listens.
+- Keyboard access to the floating gecko itself: it never takes the focus; its menu and bubble do while open, and the tray and the board are the keyboard way to the same places.
 - A darkening scrim behind the menu: the demo darkens its stage, but on the desktop that would cover the person's other apps.
 - The demo's In review item and green count, and the headphones-only frame (`hp.png`): not shown by any state the app has.
 - Sound.
@@ -159,7 +157,9 @@ stateDiagram-v2
 | What a press does | opens the demo's radial menu in its own transparent window round the gecko, replacing the bubble's question; the bubble stays for dropped files and the voice task's notes | the gecko window is small and never takes the keyboard; a panel window round it takes the keyboard without bringing GeckIt forward, as the bubble did |
 | Idle sleep | waiting and done fall asleep after 5 minutes without a hover, a click or a new event; the count stays; working keeps working | a waiting gecko bouncing all day costs CPU and attention; the count still says something waits |
 | Count | the demo's orange disc `#f08c1e` with a white ring, from one waiting conversation, sized with the gecko; it replaces the count from 2 | asleep from the doze, the pose no longer says waiting, so the count has to |
-| Esc during the voice task | a system-wide Esc shortcut, only while it listens | the gecko window cannot take the keyboard; the right-click menu's "Cancel the voice task" is the other way |
+| Voice task | the dictation capsule, with the gecko in its listen pose while it is open (Alex, 2026-10-28) | the capsule shows that it records and has Stop and Cancel; the gecko listening alone gave no sign of either |
+| Screenshot | the crosshair at once, the camera beside it (Alex, 2026-10-28) | waiting 1.5 s for the camera before the crosshair felt slow |
+| Hide | only in the right-click menu (Alex, 2026-10-28) | it was one press from the menu, which made it easy to hide the gecko by mistake |
 | Where the gecko lives | a separate small floating glass panel, not in the board (Alex, 2026-10-28) | like Mochi in Coucou, the gecko is seen while the person works in other apps, which is when a waiting question goes unseen; in the board it was only seen by someone already looking at the board. The tile in the top bar (commits a177dcb to de64496) is removed |
 | How it is drawn and moves | front-facing, sitting in the panel looking out, drawn in parts with smooth eased motion, and its eyes follow the cursor (Alex, 2026-10-28) | the top-down C gecko read as the icon, not as a creature; facing the person with big slit-pupil eyes it can look at them, which is what makes a mascot. The icon's green, glossy body, toe pads and curling tail keep it the GeckIt gecko; the eyes sit on the sides of the head so it does not read as a frog |
 | How cute | cute, not babyish (Alex, 2026-10-28): a small gecko sitting up on its front legs, three-quarter toward the person, head about a third of its height and wedge-shaped with a pointed snout, eyes on the sides of the head about a quarter of its width with slit pupils, slim body, long legs with splayed toe pads, long tapering curled tail, no cheeks | the first front-facing drawing, a big round head with large eyes on top and pink cheeks, read as a baby or a frog; a charming small lizard reads as a gecko. Before and after: `docs/design/gecko/panel-redraw-compare.jpg` |
