@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
+import type { SessionImage } from '../../../shared/api'
 import type { GeckoPose, GeckoView } from '../../../shared/gecko'
+import { asImage, canShow } from '../pictures'
 
 /** What a screen reader and the tooltip say; review is not said on its own. */
 export function named(pose: GeckoPose, count: number): string {
@@ -175,6 +177,7 @@ export function GeckoPanel({
   tapping = false,
   hovering = false,
   pressing = false,
+  catching = false,
   look = { x: 0, y: 0 },
   onHopped,
 }: GeckoView & {
@@ -187,6 +190,8 @@ export function GeckoPanel({
   readonly tapping?: boolean
   readonly hovering?: boolean
   readonly pressing?: boolean
+  /** Files dropped on it: a happy squash as it catches them. */
+  readonly catching?: boolean
   readonly look?: Look
   readonly onHopped?: () => void
 }): React.JSX.Element {
@@ -201,6 +206,7 @@ export function GeckoPanel({
     tapping ? 'gecko-tapping' : '',
     hovering ? 'gecko-hover' : '',
     pressing ? 'gecko-press' : '',
+    catching ? 'gecko-catch' : '',
   ].filter((one) => one !== '')
   return (
     <div
@@ -283,12 +289,29 @@ function lookAt(cursor: { readonly x: number; readonly y: number }): Look {
   return { x: (dx / far) * reach, y: (dy / far) * reach }
 }
 
-/** The floating gecko: told its state and the cursor by main, pressed to open the one that waits, dragged anywhere. */
+/** How long the catch lasts before the bubble asks about the files. */
+const CATCH = 420
+
+/** Files dropped on the gecko as main takes them: pictures read as the chat reads a dropped one, the paths of the rest, and of a picture too big to send. */
+async function handed(files: readonly File[]): Promise<{ images: SessionImage[]; paths: string[] }> {
+  const images: SessionImage[] = []
+  const paths: string[] = []
+  for (const file of files) {
+    const image = canShow(file) && images.length < 8 ? await asImage(file).catch(() => undefined) : undefined
+    if (image !== undefined) images.push(image)
+    else if (window.geckit.pathFor(file) !== '') paths.push(window.geckit.pathFor(file))
+  }
+  return { images, paths }
+}
+
+/** The floating gecko: told its state and the cursor by main, pressed or given files to open its bubble, dragged anywhere. */
 export function Gecko(): React.JSX.Element | null {
   const [view, setView] = useState<GeckoView | undefined>()
   const [hopping, setHopping] = useState(false)
   const [hovering, setHovering] = useState(false)
   const [pressing, setPressing] = useState(false)
+  const [over, setOver] = useState(false)
+  const [catching, setCatching] = useState(false)
   const [look, setLook] = useState<Look>({ x: 0, y: 0 })
   const seen = useSeen()
   const { blinking, tilting, tapping } = useFidget(seen && view !== undefined && view.pose !== 'asleep', view?.pose === 'waiting')
@@ -361,6 +384,23 @@ export function Gecko(): React.JSX.Element | null {
         event.preventDefault()
         window.geckit.gecko.menu()
       }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        setOver(true)
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        setOver(false)
+        const files = [...event.dataTransfer.files]
+        if (!reduced()) setCatching(true)
+        void Promise.all([handed(files), new Promise((done) => setTimeout(done, reduced() ? 0 : CATCH))]).then(([given]) => {
+          setCatching(false)
+          window.geckit.gecko.drop(given)
+        })
+      }}
     >
       <GeckoPanel
         {...view}
@@ -369,9 +409,10 @@ export function Gecko(): React.JSX.Element | null {
         blinking={blinking}
         tilting={tilting}
         tapping={tapping}
-        hovering={hovering}
+        hovering={hovering && !over}
         pressing={pressing}
-        look={look}
+        catching={catching}
+        look={over ? { x: 0, y: -1 } : look}
         onHopped={() => setHopping(false)}
       />
     </div>

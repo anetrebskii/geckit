@@ -1,4 +1,4 @@
-import type { ChatSession } from './api'
+import type { ChatSession, SessionImage } from './api'
 
 /** What the gecko shows: the floating panel and the tray follow the same three, and a hop on review comes on top. */
 export type GeckoPose = 'asleep' | 'working' | 'waiting'
@@ -41,4 +41,20 @@ export function geckoState(now: readonly Counted[], before: readonly Counted[] =
   const review = waiting.length === 0 && now.some((one) => one.status === 'review' && was.has(one.id) && was.get(one.id) !== 'review')
   const pose = waiting.length > 0 ? 'waiting' : counted.some((one) => one.state === 'working') ? 'working' : 'asleep'
   return { pose, waiting, review }
+}
+
+/** What the bubble asks, worked out by main when it opens: files dropped on the gecko, how many wait, and whether a screenshot can be taken here. */
+export interface GeckoBubble {
+  readonly files: number
+  readonly waiting: number
+  readonly screenshot: boolean
+}
+
+/** A choice in the bubble. */
+export type GeckoChoice = 'screenshot' | 'task' | 'waiting' | 'open' | 'cancel'
+
+/** Files dropped on the gecko, for a new task or a conversation: the pictures to go with the message, and the paths of the rest for its words. */
+export interface GeckoHanded {
+  readonly images: readonly SessionImage[]
+  readonly paths: readonly string[]
 }

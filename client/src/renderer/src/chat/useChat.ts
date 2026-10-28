@@ -603,6 +603,31 @@ export function useChat(): Chat {
     })
   }
 
+  // What was dropped is a path on this computer; a host cannot read it, so it is copied there first. Says whether it is.
+  const addLocal = useCallback((key: string, where: string | undefined, local: string, name: string): boolean => {
+    if (where === undefined || !isRemote(where)) {
+      addPath(key, local)
+      return false
+    }
+    const busy = `Copying ${name} to ${hostName(where) ?? where}...`
+    const count = (by: number): void => setUploads((held) => ({ ...held, [key]: Math.max(0, (held[key] ?? 0) + by) }))
+    count(1)
+    setTrouble(busy)
+    void window.geckit.chat
+      .upload(where, local)
+      .catch(() => ({ problem: `Could not copy ${name}.` }))
+      .then((landed) => {
+        count(-1)
+        if ('problem' in landed) {
+          setTrouble(landed.problem)
+          return
+        }
+        setTrouble((now) => (now === busy ? '' : now))
+        addPath(key, landed.path)
+      })
+    return true
+  }, [])
+
   const addFiles = useCallback((files: readonly File[]) => {
     const dropped = files.filter((one) => !canShow(one))
     let copying = false
@@ -611,29 +636,7 @@ export function useChat(): Chat {
       const key = keyOf(shownRef.current)
       for (const one of dropped) {
         const local = window.geckit.pathFor(one)
-        if (local === '') continue
-        // What was dropped is a path on this computer; a host cannot read it, so it is copied there first.
-        if (where === undefined || !isRemote(where)) {
-          addPath(key, local)
-          continue
-        }
-        const busy = `Copying ${one.name} to ${hostName(where) ?? where}...`
-        const count = (by: number): void => setUploads((held) => ({ ...held, [key]: Math.max(0, (held[key] ?? 0) + by) }))
-        copying = true
-        count(1)
-        setTrouble(busy)
-        void window.geckit.chat
-          .upload(where, local)
-          .catch(() => ({ problem: `Could not copy ${one.name}.` }))
-          .then((landed) => {
-            count(-1)
-            if ('problem' in landed) {
-              setTrouble(landed.problem)
-              return
-            }
-            setTrouble((now) => (now === busy ? '' : now))
-            addPath(key, landed.path)
-          })
+        if (local !== '' && addLocal(key, where, local, one.name)) copying = true
       }
     }
 
@@ -648,7 +651,7 @@ export function useChat(): Chat {
       const key = keyOf(shownRef.current)
       setPictures((held) => ({ ...held, [key]: [...(held[key] ?? []), ...kept].slice(0, MOST_PICTURES) }))
     })
-  }, [])
+  }, [addLocal])
 
   const dropPicture = useCallback((at: number) => {
     const key = keyOf(shownRef.current)
@@ -904,6 +907,16 @@ export function useChat(): Chat {
   )
 
   useEffect(() => window.geckit.chat.onShow(goTo), [goTo])
+  // Files dropped on the gecko for the conversation that waits, which main has just shown: they go into its message, as if dropped on it.
+  useEffect(
+    () =>
+      window.geckit.chat.onAttach(({ id, images, paths }) => {
+        const where = everyoneRef.current.find((one) => one.id === id)?.root
+        for (const one of paths) addLocal(id, where, one, one.split(/[\\/]/).pop() ?? one)
+        if (images.length > 0) setPictures((held) => ({ ...held, [id]: [...(held[id] ?? []), ...images].slice(0, MOST_PICTURES) }))
+      }),
+    [addLocal],
+  )
 
   const dismiss = useCallback((session: string) => setNotices((held) => held.filter((one) => one.session !== session)), [])
 

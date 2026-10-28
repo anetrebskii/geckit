@@ -24,7 +24,7 @@ Today the person has to read the board's cards to learn whether anything needs t
 |---|---|---|---|
 | asleep | nothing working, nothing waiting | lying on its belly, chin on its front paws, eyes shut arcs; the back rises and falls a few times and the tail tip twitches, then it lies still | nothing; it is safe to look away |
 | working | at least one working, none waiting | sitting at a tiny laptop in front of it, paws tapping the keys in turn, the head nodding, now and then glancing down at the screen, the tail swaying behind | nothing; Claude is busy |
-| waiting | at least one asking, finished and unread, or a command after ! waiting to be typed into | it sits up and looks straight at the person with an \"o\" mouth; now and then a slow blink and a burst of impatient foot taps with a small sway; the orange count pops in from 2 | press the gecko to open the conversation that has waited longest |
+| waiting | at least one asking, finished and unread, or a command after ! waiting to be typed into | it sits up and looks straight at the person with an \"o\" mouth; now and then a slow blink and a burst of impatient foot taps with a small sway; the orange count pops in from 2 | press the gecko and choose to open the conversation that has waited longest |
 | review | a card has just moved to In review | a happy hop of about 0.9 s with paws up and happy arc eyes, squashed on landing, the tail flicking; then the state below returns | look at In review when convenient |
 
 Waiting wins over working; review is a one-off on top of whichever of the other three holds.
@@ -38,7 +38,11 @@ In every awake state the dot eyes, and a little the head, follow the mouse curso
 | Moves the cursor anywhere | the dot eyes follow it, the head turns a little after them (not asleep: the eyes are shut) |
 | Hovers it, awake | it looks straight at them with a small happy wiggle |
 | Hovers it, asleep | it opens one eye sleepily and shuts it again; it stays asleep |
-| Presses it | a small squash, then GeckIt comes to the front on the longest-waiting conversation, the next on each press; with nothing waiting, GeckIt just comes to the front |
+| Presses it | a small squash, then its bubble opens beside it asking "What should I do?": Take a screenshot (macOS only), New task, Open the waiting conversation (only while one waits; the longest-waiting first, the next each time), Open GeckIt |
+| Drags files over it | it looks up |
+| Drops files on it | a happy squash as it catches them, then its bubble asks what to do with them: a new task with them, sending them to the waiting conversation (only while one waits), or Cancel |
+| Chooses in the bubble | the bubble goes and GeckIt comes forward for that choice: the New task form, with any dropped pictures among its pictures and other files' paths in its words; the waiting conversation, with the dropped files in its message; or GeckIt as it was. Take a screenshot gives the Mac's crosshair first, and the picture goes to the New task form, or to the form already open |
+| Presses Esc, or clicks anywhere else, while the bubble is open | the bubble goes, nothing else happens; dropped files are let go of |
 | Drags it | it moves with the pointer anywhere on the screen and is there again on the next launch |
 | Right-clicks it | a menu with one item, "Hide the gecko", which turns the Settings switch off |
 
@@ -79,10 +83,10 @@ stateDiagram-v2
 | working or asleep | a conversation asks a question, a permission or a reply (by itself) | waiting | it perks up and looks at the person; count when 2 or more |
 | waiting | the person answers the last waiting conversation, others still work | working | it gets busy again |
 | waiting | the person answers the last waiting conversation, nothing works | asleep | it goes to sleep |
-| waiting | the person presses the gecko | waiting (or the state below once answered) | GeckIt comes to the front on the longest-waiting conversation; pressing again opens the next |
+| waiting | the person presses the gecko and chooses the waiting conversation | waiting (or the state below once answered) | GeckIt comes to the front on the longest-waiting conversation; the next time, the next one |
 | working or asleep | a card moves to In review | review | one happy hop |
 | review | the hop finishes (by itself) | the state that holds now | the pose of that state |
-| any | the person presses the gecko with nothing waiting | same | GeckIt comes to the front as it was; nothing else happens |
+| any | the person presses the gecko, or drops files on it | same | its bubble opens; the gecko's state does not change |
 
 Between states the head, the pupils and the tail move to their new places with a springy ease rather than jumping.
 
@@ -91,7 +95,7 @@ A card moving to In review while something waits does not interrupt waiting: the
 ## What stays silent
 
 - How many conversations work: the gecko is busy the same for one or five. The board shows the number; the gecko only says "busy".
-- Which project waits: the conversation opens on press; the gecko itself names nothing (no text from the gecko, spec "Out of scope").
+- Which project waits: the conversation opens from the bubble; neither the gecko nor its bubble names it.
 - Hidden conversations and other profiles' projects: not counted, as on the board.
 - Background tasks inside a conversation: the conversation's own state counts, not its tasks.
 - Errors, "Out of the plan for now" and cards marked Blocked: not a gecko state; the card shows them.
@@ -114,7 +118,9 @@ A card moving to In review while something waits does not interrupt waiting: the
 - Waiting, more: "2 conversations waiting for you" (the number changes)
 - Review is not announced on its own: the name stays that of the state below.
 - Right-click menu: "Hide the gecko".
-- Settings note under the switch: "A small gecko floats on the desktop and sits in the menu bar, showing whether Claude is working or a conversation is waiting for you. Press it to open the one that waits, drag it anywhere. Off, the menu bar has its plain icon."
+- Bubble after a press: "What should I do?"; choices "Take a screenshot" (macOS only), "New task", "Open the waiting conversation" (with " (2)" and so on from 2, only while one waits), "Open GeckIt".
+- Bubble after a drop: "What should I do with this file?" or "What should I do with these 3 files?"; choices "New task with this file" or "New task with these files", "Send to the waiting conversation" (only while one waits), "Cancel".
+- Settings note under the switch: "A small gecko floats on the desktop and sits in the menu bar, showing whether Claude is working or a conversation is waiting for you. Press it, or drop files on it, for what it can do, drag it anywhere. Off, the menu bar has its plain icon."
 - Tray tooltip keeps today's "GeckIt" text.
 
 ## Edge cases
@@ -124,14 +130,19 @@ A card moving to In review while something waits does not interrupt waiting: the
 - Two cards reach In review together: one hop.
 - The screen is locked: the panel's window is closed and made again on unlock, so nothing runs meanwhile.
 - The panel was left on a display that is no longer connected: it comes back at the top right of the main display.
-- Reduced motion: the still pose of each state, no hop, no breathing, no bounce, no blinks, no wiggle or squash; the eyes still follow the cursor.
+- Reduced motion: the still pose of each state, no hop, no breathing, no bounce, no blinks, no wiggle, squash or catch, and the bubble appears without its pop; the eyes still follow the cursor.
+- The bubble does not fit to the gecko's left: it opens to its right. It always stays on the gecko's screen.
+- Pressed again while the bubble is open: the bubble opens afresh. Files dropped while it is open replace what it asked about.
+- A dropped file is a picture too big to send, or more than 8 pictures: the rest go into the words as paths.
+- The project of the new task or the waiting conversation is on another computer: other files are copied there first and their path there goes into the words, as for a file dropped on the chat.
+- The screenshot crosshair is left with Esc: nothing is taken and nothing opens. Without the screen recording permission, macOS asks for it.
 - The gecko switched off: no panel and no window for it at all; the tray shows today's icon.
-- The panel never takes the keyboard: typing elsewhere is never interrupted, and a press brings GeckIt forward itself.
+- The panel never takes the keyboard: typing elsewhere is never interrupted. The bubble does, as a panel that leaves the app in front where it is, and gives it back when it goes; only a choice brings GeckIt forward.
 
 ## Not included on purpose
 
-- Speech bubbles, text or a "z" for sleeping: the spec keeps the gecko wordless; the shut eyes carry sleep.
-- Keyboard access to the panel itself: it never takes the focus, by design; the board and the tray are the keyboard way to the same conversations.
+- Text on the gecko itself or a "z" for sleeping: the shut eyes carry sleep; words are only in the bubble it opens when asked.
+- Keyboard access to the panel itself: it never takes the focus, by design; the bubble, once open, is reached with the keyboard, and the board and the tray are the keyboard way to the same conversations.
 - A separate pose for errors: errors belong to the card that has them.
 - Sound.
 
@@ -145,6 +156,7 @@ A card moving to In review while something waits does not interrupt waiting: the
 | Style | in the style of Mochi from Coucou: flat, soft, rounded, no outlines, white with a mint tint, small dot eyes, pink oval blush, tiny mouth, round toe pads, spiral tail (Alex, 2026-10-28); drawn after the reference in `docs/design/gecko/ref/`, made with Gemini through Echopub and approved by Alex | the two drawings before it (front-facing glossy, then a three-quarter lizard) were rejected; the reference is what Alex wants the gecko to be. The rows above about how it is drawn are kept as the record of what was tried |
 | Tile or glass | the app icon's green tile, the same on every system and in light and dark; no macOS vibrancy | a white gecko on light glass nearly disappears in light mode; on the green tile it reads in both, and it is the reference's own look |
 | Breathing and bouncing that stop | asleep breathes eight times and waiting bounces three times, then they hold still | the panel is always on screen, and a state that lasts hours must not keep the computer awake. Alex to confirm, or say if breathing should never stop |
+| Speech bubbles | allowed (Alex, 2026-10-28), for what a press or a drop asks: a bubble beside the gecko with choices, in a window of its own that takes the keyboard. Before, the spec had speech bubbles out of scope and a press went straight to the waiting conversation | a press that can only open GeckIt wastes the one thing the gecko is always close to; a short question with four choices, and files dropped straight on it, make it the quickest way into a new task from any app |
 | Default | on | the panel is the feature; it is one right-click to hide |
 | Which visual direction (A glass gecko, B gecko on the edge, C glass tile) | C, the glass tile (Alex, 2026-10-28), later redrawn front-facing (rows above) | strongest link to the app icon; at panel size its weakness, poses that were hard to tell apart at 30 px, is gone |
 | Count form | HTML disc on the panel's top right corner, 20 px, 12 px bold white numeral on orange `#ec9a2c`, popping in | as in the reference; the board's own amber token read ochre on the green tile |
@@ -154,4 +166,4 @@ A card moving to In review while something waits does not interrupt waiting: the
 
 ## Coverage
 
-FR-001 is `geckoState` in `client/src/shared/gecko.ts` with `client/test/gecko.test.ts`, worked out in main (`client/src/main/index.ts`) from the list the window gets; FR-002, FR-003 and FR-005 are `client/src/main/gecko.ts`, the window in `client/src/main/windows.ts`, the page `client/src/renderer/src/gecko/Gecko.tsx` (tests in `client/test/gecko-panel.test.ts`) and the Settings switch; FR-004 is `client/src/main/tray.ts`; FR-006 holds, no new dependency; FR-007 is `client/src/renderer/src/gecko-preview.tsx`. The phone (US5) is not built.
+FR-001 is `geckoState` in `client/src/shared/gecko.ts` with `client/test/gecko.test.ts`, worked out in main (`client/src/main/index.ts`) from the list the window gets; FR-002, FR-003, FR-005 and FR-008 are `client/src/main/gecko.ts`, the windows in `client/src/main/windows.ts`, the pages `client/src/renderer/src/gecko/Gecko.tsx` and `Bubble.tsx` (tests in `client/test/gecko-panel.test.ts`), what the chat does with the choices in `client/src/renderer/src/chat/Chat.tsx`, `Board.tsx` and `useChat.ts` and the Settings switch; FR-004 is `client/src/main/tray.ts`; FR-006 holds, no new dependency; FR-007 is `client/src/renderer/src/gecko-preview.tsx`. The phone (US5) is not built.
