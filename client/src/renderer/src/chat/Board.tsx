@@ -815,12 +815,16 @@ interface Recorded {
   readonly frames: readonly RecordedFrame[]
 }
 
+/** The last part of a path, for saying which file is being copied. */
+const fileName = (path: string): string => path.split(/[\\/]/).pop() ?? path
+
 export function NewTask({
   chat,
   onClose,
   question = false,
   record = false,
   seed = [],
+  seedPaths = [],
   given,
   onSwitch,
   onStarting,
@@ -835,6 +839,8 @@ export function NewTask({
   readonly given?: string | undefined
   /** The pictures it opens with: a screenshot that opened it, or what the other form held. */
   readonly seed?: readonly SessionImage[]
+  /** Paths of files that are not pictures, dropped on the gecko, for the words. */
+  readonly seedPaths?: readonly string[]
   /** Turned from a task into a question or back, with the pictures carried over; what is written goes over through what the other form keeps. */
   readonly onSwitch?: ((pictures: readonly SessionImage[]) => void) | undefined
   readonly onStarting: (starting: boolean) => void
@@ -955,31 +961,52 @@ export function NewTask({
   // Pictures are carried with the first message; anything else goes into the field as its path, as the composer does.
   const addPath = (path: string): void =>
     setText((now) => `${now}${now === '' || now.endsWith(' ') ? '' : ' '}${path.includes(' ') ? `"${path}"` : path} `)
-  const take = (files: readonly File[]): void => {
+  const takePath = (local: string, name: string): void => {
     // A general question runs on this computer whatever project the board is on, so nothing of it goes to a host.
     const target = question ? '' : root
+    if (target === '' || !isRemote(target)) {
+      addPath(local)
+      return
+    }
+    const busy = `Copying ${name} to ${hostName(target) ?? target}...`
+    setCopying({ text: busy, failed: false })
+    setUploading((now) => now + 1)
+    void window.geckit.chat
+      .upload(target, local)
+      .catch(() => ({ problem: `Could not copy ${name}.` }))
+      .then((landed) => {
+        setUploading((now) => Math.max(0, now - 1))
+        if ('problem' in landed) {
+          setCopying({ text: landed.problem, failed: true })
+          return
+        }
+        setCopying((now) => (now?.text === busy ? undefined : now))
+        addPath(landed.path)
+      })
+  }
+  // The gecko hands files over: those it opened the form with, once, then any while the form is open.
+  const handedOver = useRef(false)
+  const takeRef = useRef(takePath)
+  useEffect(() => {
+    takeRef.current = takePath
+  })
+  useEffect(() => {
+    if (handedOver.current) return
+    handedOver.current = true
+    for (const one of seedPaths) takeRef.current(one, fileName(one))
+  }, [seedPaths])
+  useEffect(
+    () =>
+      window.geckit.chat.onTask((handed) => {
+        setPictures((held) => [...held, ...handed.images].slice(0, 8))
+        for (const one of handed.paths) takeRef.current(one, fileName(one))
+      }),
+    [],
+  )
+  const take = (files: readonly File[]): void => {
     for (const one of files.filter((one) => !canShow(one))) {
       const local = window.geckit.pathFor(one)
-      if (local === '') continue
-      if (target === '' || !isRemote(target)) {
-        addPath(local)
-        continue
-      }
-      const busy = `Copying ${one.name} to ${hostName(target) ?? target}...`
-      setCopying({ text: busy, failed: false })
-      setUploading((now) => now + 1)
-      void window.geckit.chat
-        .upload(target, local)
-        .catch(() => ({ problem: `Could not copy ${one.name}.` }))
-        .then((landed) => {
-          setUploading((now) => Math.max(0, now - 1))
-          if ('problem' in landed) {
-            setCopying({ text: landed.problem, failed: true })
-            return
-          }
-          setCopying((now) => (now?.text === busy ? undefined : now))
-          addPath(landed.path)
-        })
+      if (local !== '') takePath(local, one.name)
     }
     const wanted = files.filter(canShow)
     if (wanted.length === 0) return

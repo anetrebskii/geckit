@@ -43,7 +43,7 @@ import type {
   Uploaded,
   VoiceMode,
 } from '../shared/api'
-import type { GeckoView } from '../shared/gecko'
+import type { GeckoBubble, GeckoChoice, GeckoHanded, GeckoView } from '../shared/gecko'
 import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from '../shared/hosts'
 import type { Link } from '../shared/links'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from '../shared/providers'
@@ -283,6 +283,10 @@ const geckit = {
     onRecorded: (said: (recording: Recording) => void): (() => void) => listen('chat:recorded', said),
     /** The screenshot shortcut was pressed, and this is what it took. */
     onScreenshot: (said: (image: SessionImage) => void): (() => void) => listen('chat:screenshot', said),
+    /** New task was chosen in the gecko's bubble, with what was dropped on it, if anything. */
+    onTask: (said: (handed: GeckoHanded) => void): (() => void) => listen('chat:task', said),
+    /** Files dropped on the gecko, for the conversation that waits. */
+    onAttach: (said: (attached: GeckoHanded & { readonly id: string }) => void): (() => void) => listen('chat:attach', said),
     /** Something happened in another conversation while this window is in front. */
     onNotice: (said: (notice: SessionNotice) => void): (() => void) => listen('chat:notice', said),
     /** The search shortcut was pressed in another application, or again over the search. */
@@ -388,12 +392,18 @@ const geckit = {
     onHop: (said: () => void): (() => void) => listen('gecko:hop', said),
     /** Where the cursor is on the screen, told only when it moves, for the eyes to follow. */
     onCursor: (said: (at: { x: number; y: number }) => void): (() => void) => listen('gecko:cursor', said),
-    /** GeckIt to the front, on the conversation that has waited longest, the next on each press. */
+    /** Pressed: its bubble opens. */
     press: (): void => ipcRenderer.send('gecko:press'),
+    /** Files dropped on it: its bubble opens, asking what to do with them. */
+    drop: (given: GeckoHanded): void => ipcRenderer.send('gecko:drop', given),
     /** Its own small menu, at the pointer. */
     menu: (): void => ipcRenderer.send('gecko:menu'),
     /** Dragged: where its top left corner goes on the screen. */
     move: (x: number, y: number): void => ipcRenderer.send('gecko:move', x, y),
+    /** The bubble's window, and nothing else, uses these: what it asks, its height once drawn, and the choice. */
+    bubble: (): Promise<GeckoBubble | undefined> => ipcRenderer.invoke('gecko:bubble'),
+    fit: (height: number): void => ipcRenderer.send('gecko:fit', height),
+    choose: (choice: GeckoChoice): void => ipcRenderer.send('gecko:choose', choice),
   },
 
   phone: {

@@ -12,6 +12,7 @@ const noop = (): void => undefined
 Object.assign(window, { geckit: { platform: 'darwin', home: '/Users/alex', copy: noop, chat: { openLink: noop, queuedPicture: async () => undefined, mcp: async () => [], browsers: async () => [], search: async () => [] } } })
 const { TopBar } = await import('./chat/Board')
 const { GeckoPanel } = await import('./gecko/Gecko')
+const { BubbleCard } = await import('./gecko/Bubble')
 const pngs = import.meta.glob<string>('../../../assets/tray*Template@2x.png', { eager: true, query: '?url', import: 'default' })
 const tray = {
   asleep: pngs['../../../assets/trayAsleepTemplate@2x.png'] ?? '',
@@ -66,7 +67,22 @@ function Floating({ state }: { readonly state: (typeof cycle)[number] }): React.
   </div>
 }
 
-/** The real panel going through the four states, 3.5 s each, with its blinks, the hop, the eyes on the pointer, a wiggle on hover and a squash on a press. */
+/** The bubble beside the gecko as its window shows it: what it asks after a press, or after files are dropped on it. */
+const asking = [
+  { key: 'press', name: 'Pressed', says: 'nothing waiting', pose: 'working', asked: { files: 0, waiting: 0, screenshot: true } },
+  { key: 'press-waiting', name: 'Pressed, 2 waiting', says: 'the next waiting one each time', pose: 'waiting', asked: { files: 0, waiting: 2, screenshot: true } },
+  { key: 'drop', name: 'A file dropped', says: 'it caught the file', pose: 'waiting', asked: { files: 1, waiting: 2, screenshot: true } },
+  { key: 'drop-files', name: '3 files dropped', says: 'nothing waiting', pose: 'asleep', asked: { files: 3, waiting: 0, screenshot: true } },
+] as const
+
+function Asking({ one }: { readonly one: (typeof asking)[number] }): React.JSX.Element {
+  return <div className="gecko-asking" data-state={one.key}>
+    <div className="gecko-bubble-window"><BubbleCard asked={one.asked} side="left" focus={false} onChoose={noop} /></div>
+    <div className="gecko-float"><GeckoPanel pose={one.pose} count={one.pose === 'waiting' ? 2 : 0} moving={false} /></div>
+  </div>
+}
+
+/** The real panel going through the four states, 3.5 s each, with its blinks, the hop, the eyes on the pointer, a wiggle on hover, a squash and its bubble on a press, and a catch and its bubble when a file is dropped on it. */
 function Live(): React.JSX.Element {
   const [at, setAt] = useState(0)
   const [hopping, setHopping] = useState(false)
@@ -74,6 +90,9 @@ function Live(): React.JSX.Element {
   const [tapping, setTapping] = useState(false)
   const [hovering, setHovering] = useState(false)
   const [pressing, setPressing] = useState(false)
+  const [over, setOver] = useState(false)
+  const [catching, setCatching] = useState(false)
+  const [files, setFiles] = useState<number | undefined>()
   const [look, setLook] = useState({ x: 0, y: 0 })
   const held = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -98,8 +117,25 @@ function Live(): React.JSX.Element {
   }, [])
   const state = cycle[at] ?? 'asleep'
   const pose = state === 'review' ? 'working' : state
-  return <div ref={held} className="gecko-float gecko-live" onPointerEnter={() => setHovering(true)} onPointerLeave={() => setHovering(false)} onClick={() => { setPressing(true); setTimeout(() => setPressing(false), 170) }}>
-    <GeckoPanel pose={pose} count={state === 'waiting' ? 2 : 0} hopping={hopping} blinking={blinking && pose !== 'asleep'} tapping={tapping && pose === 'waiting'} hovering={hovering} pressing={pressing} look={look} onHopped={() => setHopping(false)} />
+  return <div ref={held} className="gecko-float gecko-live">
+    <div
+      className="gecko-live-hit"
+      onPointerEnter={() => setHovering(true)}
+      onPointerLeave={() => setHovering(false)}
+      onClick={() => { setPressing(true); setTimeout(() => { setPressing(false); setFiles(0) }, 170) }}
+      onDragOver={(event) => { event.preventDefault(); setOver(true) }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(event) => {
+        event.preventDefault()
+        const count = event.dataTransfer.files.length
+        setOver(false)
+        setCatching(true)
+        setTimeout(() => { setCatching(false); setFiles(count) }, 420)
+      }}
+    >
+      <GeckoPanel pose={pose} count={state === 'waiting' ? 2 : 0} hopping={hopping} blinking={blinking && pose !== 'asleep'} tapping={tapping && pose === 'waiting'} hovering={hovering && !over} pressing={pressing} catching={catching} look={over ? { x: 0, y: -1 } : look} onHopped={() => setHopping(false)} />
+    </div>
+    {files === undefined ? null : <div className="gecko-bubble-window gecko-live-bubble"><BubbleCard asked={{ files, waiting: pose === 'waiting' ? 2 : 0, screenshot: true }} side="left" onChoose={() => setFiles(undefined)} /></div>}
   </div>
 }
 
@@ -127,6 +163,11 @@ function Preview(): React.JSX.Element {
       <div className="gecko-desktop">
         {built.map((state) => <figure key={state.key}><Floating state={state.key} /><figcaption>{state.name}<small>{state.says}</small></figcaption></figure>)}
         <figure><Live /><figcaption>Live<small>the four in turn, 3.5 s each; its eyes follow the pointer</small></figcaption></figure>
+      </div>
+      <h2>The bubble</h2>
+      <p>A press, or files dropped on it, opens a speech bubble beside it in a window of its own: to its left, or to its right where the screen has no room. It takes the keyboard, the first choice focused; arrows move, Esc or a click elsewhere closes it. On Windows and Linux there is no screenshot choice. In Live above, press the gecko or drop a file on it.</p>
+      <div className="gecko-desktop gecko-asking-row">
+        {asking.map((one) => <figure key={one.key}><Asking one={one} /><figcaption>{one.name}<small>{one.says}</small></figcaption></figure>)}
       </div>
       <p>The reference Alex approved, made with Gemini through Echopub (<code>docs/design/gecko/ref/</code>): asleep, working, waiting with 2, happy hop.</p>
       <div className="gecko-reference">
@@ -185,6 +226,12 @@ style.textContent = `
 .gecko-desktop figure { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 0; color: #fff; font-weight: 600; text-shadow: 0 1px 2px rgb(0 0 0 / 40%); }
 .gecko-desktop small { display: block; font-weight: 400; text-align: center; }
 .gecko-float { position: relative; width: 108px; height: 108px; }
+.gecko-live-hit { position: absolute; inset: 0; }
+.gecko-asking { display: flex; align-items: flex-start; }
+.gecko-asking .gecko-bubble-window { width: 280px; box-sizing: border-box; }
+.gecko-asking .gecko-float { margin-inline-start: -6px; }
+.gecko-asking-row figure { color: #fff; }
+.gecko-live-bubble { position: absolute; top: 0; right: calc(100% - 6px); z-index: 1; width: 280px; box-sizing: border-box; }
 .gecko-reference { display: flex; align-items: center; gap: 24px; margin: 12px 0 16px; padding: 16px; border-radius: 10px; background: #eef7ef; }
 .gecko-reference img { width: 260px; height: 260px; }
 .gecko-reference-built { display: grid; grid-template-columns: 108px 108px; gap: 12px 20px; zoom: 1.2; }

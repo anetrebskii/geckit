@@ -7,7 +7,7 @@
 
 ## The idea in one paragraph
 
-One small gecko lives in a panel of its own, the app icon's green tile, that floats on the desktop, outside the board, like Mochi in Coucou. It shows, at a glance and without opening GeckIt, what the conversations are doing: it is busy while Claude works, perks up and looks at the person when a conversation is waiting for them, hops and curls its tail when a card moves to In review, and sleeps when nothing runs. Pressing it brings GeckIt forward on the conversation that is waiting. The tray icon shows the same state in the gecko's simplest form. The board itself stays as it is.
+One small gecko lives in a panel of its own, the app icon's green tile, that floats on the desktop, outside the board, like Mochi in Coucou. It shows, at a glance and without opening GeckIt, what the conversations are doing: it is busy while Claude works, perks up and looks at the person when a conversation is waiting for them, hops and curls its tail when a card moves to In review, and sleeps when nothing runs. Pressing it opens a small speech bubble asking what to do: take a screenshot, start a new task, open the conversation that is waiting, or open GeckIt; files dropped on it can start a new task or go to the waiting conversation. The tray icon shows the same state in the gecko's simplest form. The board itself stays as it is.
 
 ## User Scenarios & Testing
 
@@ -31,9 +31,9 @@ The person has several conversations running and is working in another app. The 
 
 ### US2 - Go to the conversation that needs me (P1)
 
-**Independent test**: with two waiting conversations, pressing the gecko brings GeckIt to the front on the one that has waited longest; pressing again opens the next.
+**Independent test**: with two waiting conversations, pressing the gecko and choosing the waiting conversation brings GeckIt to the front on the one that has waited longest; doing it again opens the next.
 
-**Acceptance**: an accessible name that says the state ("2 conversations waiting for you"); with nothing waiting it only brings GeckIt to the front. The panel never takes the keyboard, so the keyboard way to the same conversations stays the board and the tray.
+**Acceptance**: an accessible name that says the state ("2 conversations waiting for you"); with nothing waiting it only brings GeckIt to the front. The panel never takes the keyboard; its bubble does while open, and the board and the tray stay the keyboard way to the same conversations.
 
 ### US3 - The gecko outside the window (P2)
 
@@ -61,22 +61,23 @@ The iPhone and Android apps show the same gecko in the Tasks header with the sam
 - Not fully transparent: at 24-32 px and in a phone-sized video the silhouette must stay solid and readable.
 - It must not read as a copy of Mochi (a white rounded blob with dot eyes). The gecko keeps its own silhouette, colour and moves.
 - It is drawn in the style of Mochi: flat, soft and rounded, no outlines, white with a light mint tint, a big round head a little wider than tall, small dot eyes set wide, pink oval blush, a tiny mouth, short paws with round toe pads, a tail ending in a spiral curl, a soft shadow. The reference Alex approved is `docs/design/gecko/ref/`. It is drawn in parts (body, head, each eye, mouth shapes, each paw, tail) so each part moves on its own, with continuous eased motion: springy easing, squash and stretch, the tail following the body a beat late, blinks, a small head tilt now and then.
-- It notices the person: its pupils, and a little its head, follow the mouse cursor anywhere on screen; hovered, it looks up at them with a small happy wiggle (asleep, it opens one eye sleepily and shuts it again); pressed, it squashes a little before GeckIt comes forward.
+- It notices the person: its pupils, and a little its head, follow the mouse cursor anywhere on screen; hovered, it looks up at them with a small happy wiggle (asleep, it opens one eye sleepily and shuts it again); pressed, it squashes a little before its bubble opens; files dropped on it, it catches with a happy squash.
 - A floating panel about 100 px square, the gecko about 80 px tall in it, large enough to be funny and expressive.
 
 ## Requirements
 
 - FR-001: One aggregate state is derived from the board's own session data (working, waiting, idle, just-moved-to-review), with waiting taking priority. It is a pure function with tests.
 - FR-002: The gecko renders in a separate always-on-top, frameless panel from that state, with the poses in the US1 table; not in the board.
-- FR-003: Pressing it brings GeckIt to the front on the longest-waiting conversation, cycling on repeat; with nothing waiting it only brings GeckIt to the front. Right-click: "Hide the gecko".
+- FR-003: Pressing it opens its bubble: Take a screenshot (macOS), New task, Open the waiting conversation (longest-waiting first, cycling on repeat, only while one waits), Open GeckIt. Right-click: "Hide the gecko".
 - FR-004: The tray icon follows the same state with simplified images; the existing tray menu is unchanged.
 - FR-005: Settings switch to show or hide the panel; reduced motion honoured; nothing animates while the panel is hidden or the screen is locked.
 - FR-006: The art is vector (SVG or Lottie-free CSS/SVG animation) in the repo; no new runtime dependency unless the design step shows SVG/CSS cannot do it.
 - FR-007: A preview page like the other `*-preview.tsx` mounts the panel in all four states, light and dark, for review and for recording the reel.
+- FR-008: Files dropped on it open its bubble: a new task with them, or into the waiting conversation's message (only while one waits), or Cancel. Pictures go with the message, other files as their paths. The bubble is keyboard reachable, named by its question, and closes on Esc or a click elsewhere.
 
 ## Out of scope
 
-Speech bubbles or text from the gecko, a personality that talks, placing it in the macOS notch, sounds, more than one gecko, customising it.
+Text on the gecko itself, a personality that talks (speech bubbles were out of scope until Alex allowed them on 2026-10-28, for the choices a press or a drop asks), placing it in the macOS notch, sounds, more than one gecko, customising it.
 
 ## Success Criteria
 
