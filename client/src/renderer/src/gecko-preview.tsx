@@ -11,7 +11,7 @@ document.documentElement.dataset.theme = query.get('theme') === 'dark' ? 'dark' 
 const noop = (): void => undefined
 Object.assign(window, { geckit: { platform: 'darwin', home: '/Users/alex', copy: noop, chat: { openLink: noop, queuedPicture: async () => undefined, mcp: async () => [], browsers: async () => [], search: async () => [] } } })
 const { TopBar } = await import('./chat/Board')
-const { GeckoTile } = await import('./chat/Gecko')
+const { GeckoPanel } = await import('./gecko/Gecko')
 const pngs = import.meta.glob<string>('../../../assets/tray*Template@2x.png', { eager: true, query: '?url', import: 'default' })
 const tray = {
   asleep: pngs['../../../assets/trayAsleepTemplate@2x.png'] ?? '',
@@ -51,25 +51,54 @@ const chat: Chat = {
   rename: noop, mark: noop, hide: noop, keep: noop, remove: noop, terminal: noop, copyTerminal: async () => false, letGo: noop, refresh: noop,
 }
 
-const still: Chat = { ...chat, settings: { ...chat.settings, showGecko: false } }
-const row = (id: string, more: Partial<ChatSession>): ChatSession => ({ ...session, id, title: id, state: 'idle', ...more })
 const built = [
-  { key: 'asleep', name: 'Asleep', says: 'nothing working, nothing waiting', rows: [row('a', {}), row('b', { status: 'review' })] },
-  { key: 'working', name: 'Working', says: 'two working', rows: [row('a', { state: 'working' }), row('b', { state: 'working' })] },
-  { key: 'waiting', name: 'Waiting', says: 'one asking, one finished and unread, one working', rows: [row('a', { state: 'asks', at: 2 }), row('b', { state: 'unread', at: 1 }), row('c', { state: 'working' })] },
-  { key: 'review', name: 'Moved to review', says: 'a working card reaches In review every 3 s', rows: [row('a', { state: 'working' }), row('b', { state: 'working' })] },
+  { key: 'asleep', name: 'Asleep', says: 'nothing working, nothing waiting' },
+  { key: 'working', name: 'Working', says: 'at least one working' },
+  { key: 'waiting', name: 'Waiting', says: '2 waiting for you' },
+  { key: 'review', name: 'Moved to review', says: 'a happy hop, tail curled' },
 ] as const
+const cycle = ['asleep', 'working', 'waiting', 'review'] as const
 
-/** The real top bar with the real gecko, on fixture conversations; the review row moves a card to In review and back every 3 s. */
-function Live({ rows, review }: { readonly rows: readonly ChatSession[]; readonly review: boolean }): React.JSX.Element {
-  const [now, setNow] = useState(rows)
+/** One panel as its window shows it, 108 px of transparent window, on a stand-in desktop. */
+function Floating({ state, mac = false }: { readonly state: (typeof cycle)[number]; readonly mac?: boolean }): React.JSX.Element {
+  return <div className={`gecko-float${mac ? ' vibrant' : ''}`} data-state={state}>
+    <GeckoPanel pose={state === 'review' ? 'working' : state} count={state === 'waiting' ? 2 : 0} hopping={state === 'review'} moving={false} />
+  </div>
+}
+
+/** The real panel going through the four states, 3.5 s each, with its blinks, the hop, the eyes on the pointer, a wiggle on hover and a squash on a press. */
+function Live(): React.JSX.Element {
+  const [at, setAt] = useState(0)
+  const [hopping, setHopping] = useState(false)
+  const [blinking, setBlinking] = useState(false)
+  const [hovering, setHovering] = useState(false)
+  const [pressing, setPressing] = useState(false)
+  const [look, setLook] = useState({ x: 0, y: 0 })
+  const held = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!review) return
-    const every = setInterval(() => setNow((was) => was.map((one, at) => (at === 0 ? { ...one, state: was[0]?.status === 'review' ? 'working' : 'idle', status: was[0]?.status === 'review' ? undefined : 'review' } as ChatSession : one))), 1500)
-    return () => clearInterval(every)
-  }, [review])
-  return <div className="gecko-bar">
-    <TopBar chat={{ ...chat, sessions: now, everyone: now }} onNew={noop} onAsk={noop} onSeek={noop} onSettings={noop} onKeys={noop} onShortcuts={noop} />
+    let now = 0
+    const every = setInterval(() => {
+      now = (now + 1) % cycle.length
+      setAt(now)
+      setHopping(cycle[now] === 'review')
+    }, 3500)
+    const blink = setInterval(() => { setBlinking(true); setTimeout(() => setBlinking(false), 160) }, 2300)
+    const follow = (event: MouseEvent): void => {
+      const box = held.current?.getBoundingClientRect()
+      if (box === undefined) return
+      const dx = event.clientX - (box.left + box.width / 2)
+      const dy = event.clientY - (box.top + box.height * 0.36)
+      const far = Math.hypot(dx, dy)
+      const reach = Math.min(1, far / 240)
+      setLook(far < 1 ? { x: 0, y: 0 } : { x: (dx / far) * reach, y: (dy / far) * reach })
+    }
+    addEventListener('mousemove', follow)
+    return () => { clearInterval(every); clearInterval(blink); removeEventListener('mousemove', follow) }
+  }, [])
+  const state = cycle[at] ?? 'asleep'
+  const pose = state === 'review' ? 'working' : state
+  return <div ref={held} className="gecko-float gecko-live" onPointerEnter={() => setHovering(true)} onPointerLeave={() => setHovering(false)} onClick={() => { setPressing(true); setTimeout(() => setPressing(false), 170) }}>
+    <GeckoPanel pose={pose} count={state === 'waiting' ? 2 : 0} hopping={hopping} blinking={blinking && pose !== 'asleep'} hovering={hovering} pressing={pressing} look={look} onHopped={() => setHopping(false)} />
   </div>
 }
 
@@ -79,7 +108,7 @@ function Bar({ src, label }: { readonly src: string; readonly label: string }): 
   const [spot, setSpot] = useState<Element | null>(null)
   useLayoutEffect(() => setSpot(held.current?.querySelector('.board-head > .spacer') ?? null), [])
   return <div ref={held} className="gecko-bar">
-    <TopBar chat={still} onNew={noop} onAsk={noop} onSeek={noop} onSettings={noop} onKeys={noop} onShortcuts={noop} />
+    <TopBar chat={chat} onNew={noop} onAsk={noop} onSeek={noop} onSettings={noop} onKeys={noop} onShortcuts={noop} />
     {spot === null ? null : createPortal(<span className="gecko-spot"><img src={src} alt={label} /></span>, spot)}
   </div>
 }
@@ -92,14 +121,15 @@ function Preview(): React.JSX.Element {
       <label>Theme <select aria-label="Theme" value={theme} onChange={(event) => { document.documentElement.dataset.theme = event.target.value; setTheme(event.target.value) }}><option>light</option><option>dark</option></select></label>
     </header>
     <section className="gecko-direction gecko-built">
-      <h2>Built: C, the glass tile</h2>
-      <p>The real top bar and the real gecko, from fixture conversations. Hover for the accessible name.</p>
-      {built.map((state) => <div key={state.key} className="gecko-row" data-state={state.key}>
-        <span className="gecko-label">{state.name}<small>{state.says}</small></span>
-        <Live rows={state.rows} review={state.key === 'review'} />
-      </div>)}
-      <div className="gecko-large">
-        {built.map((state) => <figure key={state.key}><GeckoTile pose={state.key === 'review' ? 'working' : state.key} count={2} hopping={state.key === 'review'} moving={false} /><figcaption>{state.name}</figcaption></figure>)}
+      <h2>Built: the floating panel</h2>
+      <p>The real panel, at its real size, on a stand-in desktop. Its own window is transparent, always on top and on every desktop. Hover for the accessible name.</p>
+      <div className="gecko-desktop">
+        {built.map((state) => <figure key={state.key}><Floating state={state.key} /><figcaption>{state.name}<small>{state.says}</small></figcaption></figure>)}
+        <figure><Live /><figcaption>Live<small>the four in turn, 3.5 s each; its eyes follow the pointer</small></figcaption></figure>
+      </div>
+      <p>On a Mac the window is the system's glass (vibrancy) and the page adds only the shine; here a blur stands in for it.</p>
+      <div className="gecko-desktop">
+        {built.map((state) => <figure key={state.key}><Floating state={state.key} mac /><figcaption>{state.name}</figcaption></figure>)}
       </div>
       <div className="gecko-trays">
         {(['light', 'dark'] as const).map((bar) => <div key={bar} className={`gecko-menubar ${bar}`}>
@@ -146,7 +176,13 @@ style.textContent = `
 .gecko-large { display: flex; flex-wrap: wrap; gap: 24px; margin: 16px 0; }
 .gecko-large figure { margin: 0; text-align: center; color: var(--text-dim); }
 .gecko-large img { height: 128px; display: block; }
-.gecko-large .gecko { zoom: 4; margin: 0; }
+.gecko-desktop { display: flex; flex-wrap: wrap; gap: 28px; margin: 12px 0 16px; padding: 28px; border-radius: 10px; background: linear-gradient(135deg, #f3b38a, #b98fd9 45%, #6fb7e8); }
+:root[data-theme='dark'] .gecko-desktop { background: linear-gradient(135deg, #3a2a4f, #1d3550 50%, #0f2a2a); }
+.gecko-desktop figure { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 0; color: #fff; font-weight: 600; text-shadow: 0 1px 2px rgb(0 0 0 / 40%); }
+.gecko-desktop small { display: block; font-weight: 400; text-align: center; }
+.gecko-float { position: relative; width: 108px; height: 108px; }
+.gecko-float.vibrant { width: 100px; height: 100px; margin: 4px; overflow: hidden; border-radius: 16px; background: rgb(246 246 246 / 55%); backdrop-filter: blur(20px) saturate(1.8); box-shadow: 0 0 0 0.5px rgb(0 0 0 / 15%), 0 6px 16px rgb(0 0 0 / 25%); }
+:root[data-theme='dark'] .gecko-float.vibrant { background: rgb(40 40 44 / 55%); }
 .gecko-stills { margin: 24px 16px 0; font-size: 15px; }
 .gecko-trays { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--text-faint); }
 .gecko-menubar { display: flex; align-items: center; gap: 14px; height: 30px; padding: 0 14px; border-radius: 6px; }
