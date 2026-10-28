@@ -152,10 +152,15 @@ export interface GeckoRing {
 const DISC = 62
 const LABEL = 30
 const ITEM = 92
+/** Room round each item for its shadow, its swell in focus and the spring of its way out, which the window's edge would cut. */
+const ROOM = 24
 
 /** Where each item can stand on the screen: within the area, the label too. */
 const fits = (x: number, y: number, scale: number, area: Box): boolean =>
-  x - (ITEM / 2) * scale >= area.x && x + (ITEM / 2) * scale <= area.x + area.width && y - (DISC / 2) * scale >= area.y && y + (DISC / 2 + LABEL) * scale <= area.y + area.height
+  x - (ITEM / 2) * scale - ROOM >= area.x &&
+  x + (ITEM / 2) * scale + ROOM <= area.x + area.width &&
+  y - (DISC / 2) * scale - ROOM >= area.y &&
+  y + (DISC / 2 + LABEL) * scale + ROOM <= area.y + area.height
 
 /**
  * The items on a circle round the gecko, the first at the top, as the demo has them; near an edge of the screen they spread over the
@@ -196,7 +201,7 @@ export function geckoRing(gecko: Box, area: Box, count: number): GeckoRing {
     if (count === 1 && best.length > 0) points = [at(best.from + span / 2 - 90)]
     else if (count > 1 && span / (count - 1) >= step) points = Array.from({ length: count }, (_one, n) => at(along(n) - 90))
   }
-  const reach = { x: (ITEM / 2) * scale, top: (DISC / 2) * scale, bottom: (DISC / 2 + LABEL) * scale }
+  const reach = { x: (ITEM / 2) * scale + ROOM, top: (DISC / 2) * scale + ROOM, bottom: (DISC / 2 + LABEL) * scale + ROOM }
   const left = Math.floor(Math.min(gecko.x, ...points.map((one) => one.x - reach.x)))
   const top = Math.floor(Math.min(gecko.y, ...points.map((one) => one.y - reach.top)))
   const right = Math.ceil(Math.max(gecko.x + gecko.width, ...points.map((one) => one.x + reach.x)))
