@@ -12,7 +12,7 @@ import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
 import { Icon } from '../ui/Icon'
-import { Menu, Picker } from '../ui/Menu'
+import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
 import { HiddenChats } from './HiddenChats'
@@ -51,19 +51,41 @@ const COLUMN_CHOICES: readonly { readonly value: BoardColumn; readonly label: st
   ...BOARD_COLUMNS.map((one) => ({ value: one.column, label: one.title, says: `Only ${one.title}, across the whole board` })),
 ]
 
-/** The board's Columns control: every column, or one on its own, for a board kept small or a look at one column alone. */
 function Columns({ chat }: { readonly chat: Chat }): React.JSX.Element {
+  const [anchor, setAnchor] = useState<DOMRect | undefined>()
   const chosen = chat.settings.boardColumn
+  const label = COLUMN_CHOICES.find((one) => one.value === chosen)?.label ?? 'All columns'
   return (
-    <Picker
-      label={COLUMN_CHOICES.find((one) => one.value === chosen)?.label ?? 'All columns'}
-      tip="Columns: every one, or one on its own"
-      choices={COLUMN_CHOICES}
-      chosen={chosen}
-      explained
-      onPick={(value) => chat.change({ boardColumn: value as BoardColumn })}
-      className="picker no-drag board-columns-pick"
-    />
+    <>
+      <button
+        type="button"
+        className={`icon-button board-view-options${anchor === undefined ? '' : ' on'}`}
+        aria-label={`View options: ${label}`}
+        aria-haspopup="menu"
+        aria-expanded={anchor !== undefined}
+        title={`View options: ${label}`}
+        data-focus-tip
+        onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}
+      >
+        <Icon name="sliders" />
+        {chosen === 'all' ? null : <span className="board-view-dot" />}
+      </button>
+      {anchor === undefined ? null : (
+        <Menu
+          anchor={anchor}
+          title="Visible columns"
+          choices={COLUMN_CHOICES}
+          chosen={chosen}
+          explained
+          autoFocus
+          onPick={(value) => {
+            const choice = COLUMN_CHOICES.find((one) => one.value === value)
+            if (choice !== undefined) chat.change({ boardColumn: choice.value })
+          }}
+          onClose={() => setAnchor(undefined)}
+        />
+      )}
+    </>
   )
 }
 
@@ -97,8 +119,10 @@ export function TopBar({
   const [hidden, setHidden] = useState(false)
   return (
     <div className="board-head drag">
-      <Views chat={chat} />
-      {chat.settings.chatView === 'board' && !ON_PHONE ? <Columns chat={chat} /> : null}
+      <div className="board-views no-drag" role="group" aria-label="View controls">
+        <Views chat={chat} />
+        {chat.settings.chatView === 'board' && !ON_PHONE ? <Columns chat={chat} /> : null}
+      </div>
       <Projects chat={chat} />
       <BoardSearch chat={chat} onSeek={onSeek} />
       <button
@@ -140,19 +164,22 @@ export function TopBar({
       <span className="spacer" />
       <button
         type="button"
-        className="new-session no-drag board-new"
-        title="A question that is not about a folder: it is not put on the board, and is deleted a day after the last answer"
+        className={`icon-button no-drag board-questions${asked === undefined ? '' : ' on'}`}
+        aria-label={chat.questions.length === 0 ? 'Ask a question' : `Questions (${String(chat.questions.length)})`}
+        aria-haspopup={chat.questions.length === 0 ? undefined : 'menu'}
+        aria-expanded={chat.questions.length === 0 ? undefined : asked !== undefined}
+        title={`${chat.questions.length === 0 ? 'Ask a question' : `Questions (${String(chat.questions.length)})`} (${MOD}+Shift+N)`}
+        data-focus-tip
         onClick={(event) => {
           if (chat.questions.length === 0) onAsk()
           else setAsked(event.currentTarget.getBoundingClientRect())
         }}
       >
         <Icon name="chat" />
-        {chat.questions.length === 0 ? 'Ask' : `Questions ${String(chat.questions.length)}`}
-        <span className="keys">{MOD}+Shift+N</span>
+        {chat.questions.length === 0 ? null : <span className="board-question-count" aria-hidden="true">{chat.questions.length}</span>}
       </button>
       {asked === undefined ? null : (
-        <QuestionsMenu chat={chat} anchor={asked} onAsk={onAsk} onClose={() => setAsked(undefined)} />
+        <QuestionsMenu chat={chat} anchor={asked} autoFocus onAsk={onAsk} onClose={() => setAsked(undefined)} />
       )}
       {/* Writing it is the usual way; the arrow offers the others, each saying what it does, so recording and speaking read as ways to start a task. */}
       <span className="board-split no-drag">

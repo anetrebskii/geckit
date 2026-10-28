@@ -16,15 +16,19 @@ import type { Chat } from './useChat'
 export function QuestionsMenu({
   chat,
   anchor,
+  autoFocus = false,
   onAsk,
   onClose,
 }: {
   readonly chat: Chat
   readonly anchor: DOMRect
+  readonly autoFocus?: boolean
   readonly onAsk: () => void
   readonly onClose: () => void
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
+  const opener = useRef(document.activeElement)
+  const focused = useRef(false)
   const [at, setAt] = useState<{ left: number; top: number; height: number } | undefined>()
   const [confirming, setConfirming] = useState<string | undefined>()
   const [now, setNow] = useState(() => Date.now())
@@ -52,17 +56,39 @@ export function QuestionsMenu({
     setAt({ left, height, top: under ? anchor.bottom + 4 : anchor.top - height - 4 })
   }, [anchor, chat.questions.length, confirming])
 
+  useLayoutEffect(() => {
+    if (!autoFocus || at === undefined || focused.current) return
+    const first = menu.current?.querySelector<HTMLButtonElement>('button')
+    if (first === null || first === undefined) return
+    first.focus()
+    focused.current = true
+  }, [autoFocus, at])
+
   // Escape takes back a delete being asked about before it closes the menu.
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        if (confirming === undefined) {
+          onClose()
+          if (autoFocus && opener.current instanceof HTMLElement) opener.current.focus()
+        } else setConfirming(undefined)
+        return
+      }
+      if (!autoFocus || menu.current === null || !menu.current.contains(document.activeElement)) return
+      const rows = [...menu.current.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+      const index = rows.findIndex((one) => one === document.activeElement)
+      const next = event.key === 'ArrowDown' ? (index + 1) % rows.length
+        : event.key === 'ArrowUp' ? (index - 1 + rows.length) % rows.length
+          : event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : undefined
+      if (next === undefined) return
+      event.preventDefault()
       event.stopPropagation()
-      if (confirming === undefined) onClose()
-      else setConfirming(undefined)
+      rows[next]?.focus()
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [confirming, onClose])
+  }, [autoFocus, confirming, onClose])
 
   const row = (one: ChatSession): React.JSX.Element => {
     const title = one.title === '' ? 'Untitled' : one.title

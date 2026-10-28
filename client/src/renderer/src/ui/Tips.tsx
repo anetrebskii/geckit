@@ -24,11 +24,14 @@ export function Tips(): React.JSX.Element | null {
   useEffect(() => {
     let over: { readonly element: Element; readonly text: string } | undefined
     let timer: number | undefined
+    let watched: MutationObserver | undefined
     let shown = false
     let hiddenAt = 0
 
     const hide = (): void => {
       window.clearTimeout(timer)
+      watched?.disconnect()
+      watched = undefined
       if (over !== undefined && !over.element.hasAttribute('title')) over.element.setAttribute('title', over.text)
       if (shown) hiddenAt = Date.now()
       over = undefined
@@ -36,24 +39,42 @@ export function Tips(): React.JSX.Element | null {
       setTip(undefined)
     }
 
-    const enter = (event: PointerEvent): void => {
+    const enter = (event: PointerEvent | FocusEvent): void => {
       const target = event.target instanceof Element ? event.target : null
       if (target === null || (over !== undefined && over.element.contains(target))) return
       hide()
-      const element = target.closest('[title]')
+      const keyboard = event.type === 'focusin'
+      const element = target.closest(keyboard ? '[data-focus-tip][title]' : '[title]')
       const text = element?.getAttribute('title') ?? ''
       if (element === null || text === '') return
       element.removeAttribute('title')
       over = { element, text }
       const show = (): void => {
-        if (over?.element !== element || !element.isConnected) return
+        const current = over
+        if (current?.element !== element || !element.isConnected) return
         shown = true
-        setTip({ text, around: element.getBoundingClientRect() })
+        setTip({ text: current.text, around: element.getBoundingClientRect() })
       }
-      if (Date.now() - hiddenAt < STILL_WARM) show()
+      if (element.hasAttribute('data-focus-tip')) {
+        watched = new MutationObserver(() => {
+          const next = element.getAttribute('title')
+          if (over?.element !== element || next === null || next === '') return
+          over = { element, text: next }
+          element.removeAttribute('title')
+          if (shown) show()
+        })
+        watched.observe(element, { attributes: true, attributeFilter: ['title'] })
+      }
+      if (keyboard || Date.now() - hiddenAt < STILL_WARM) show()
       else timer = window.setTimeout(show, WAIT)
     }
 
+    const blur = (event: FocusEvent): void => {
+      if (event.target === over?.element) hide()
+    }
+
+    document.addEventListener('focusin', enter)
+    document.addEventListener('focusout', blur)
     document.addEventListener('pointerover', enter)
     document.documentElement.addEventListener('pointerleave', hide)
     document.addEventListener('pointerdown', hide, true)
@@ -62,6 +83,8 @@ export function Tips(): React.JSX.Element | null {
     window.addEventListener('blur', hide)
     return () => {
       hide()
+      document.removeEventListener('focusin', enter)
+      document.removeEventListener('focusout', blur)
       document.removeEventListener('pointerover', enter)
       document.documentElement.removeEventListener('pointerleave', hide)
       document.removeEventListener('pointerdown', hide, true)

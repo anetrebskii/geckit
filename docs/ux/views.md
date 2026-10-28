@@ -145,3 +145,7 @@ The choice is kept in settings (`chatView`), as before, so the app opens in the 
 ## Revision - 2026-10-13: the Columns control
 
 Section 2 says the bar does not change when the view does. With [one column on its own](board-layout.md) the bar holds a Columns control beside the switch, and it is there on the board only: the list has no columns, and a control that says "All columns" over the list would say nothing. That is the one thing in the bar that comes and goes with the view. A conversation opened from the board may also stand below it rather than over it; section 4's "still open over it" then reads "still open over or below it".
+
+## Revision - 2026-10-28: group display controls
+
+Board/List and the compact View options icon form one group at the left of the desktop toolbar. A separator distinguishes this display group from All folders and Search. View options opens the column choices directly and appears only on the board; see [board layout](board-layout.md). Board/List retains both labels and its existing behavior. Questions remains a separate compact action on the right beside New task, with its count visible; see [questions](questions.md).

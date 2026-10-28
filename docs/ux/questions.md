@@ -127,11 +127,11 @@ stateDiagram-v2
 
 ## 8. Edge cases
 
-- **Empty:** with no questions the Questions button reads "Ask" and opens a new one, as now.
+- **Empty:** with no questions the Questions button shows only the speech-bubble icon and opens a new question. Its accessible name and hover/focus tooltip say "Ask a question" and the existing shortcut.
 - **Long title:** cut with an ellipsis before "23h left"; the time left is never cut.
 - **Long answer:** one line with an ellipsis; the whole of it is in the conversation.
 - **Deleting while it answers:** allowed; the confirmation reads the same, and Delete stops the answer and deletes it.
-- **Deleting the last one:** the menu closes, the button reads "Ask" again.
+- **Deleting the last one:** the menu closes and the button returns to the icon alone, with "Ask a question" in its accessible name and tooltip.
 - **Pressing Delete twice:** the row is gone after the first; nothing is under the pointer to press again.
 - **GeckIt quits:** questions leave the list and are not brought back. Known, and out of scope here.
 
@@ -200,3 +200,16 @@ stateDiagram-v2
 ## Kept questions
 
 A kept question is never deleted by time. Every question is written into the session notes with when it goes (`question`, `goes`, `stays`), so a restart brings each back with the time it had left, and deletes it then. Unkeeping it starts its day again from that moment.
+
+## Revision - 2026-10-28: compact Questions button
+
+The desktop toolbar keeps Questions on the right beside New task, using its existing speech-bubble icon and a count badge when at least one question exists. There is no persistent text label or shortcut. Hover and keyboard focus reveal "Questions (3) (Cmd+Shift+N)" (with the actual count and platform modifier), or "Ask a question (Cmd+Shift+N)" at zero. Accessible names carry the same meaning. The count remains visible because it tells the person that saved questions are available; zero stays quiet.
+
+| From | Event | To | What the person sees |
+|---|---|---|---|
+| No questions | Click icon or press Enter/Space while focused | New question | Existing Ask form |
+| Questions available | Click icon or press Enter/Space while focused | Menu open | Existing questions menu; button reports expanded |
+| Menu open | Escape or click outside | Menu closed | Count remains; keyboard dismissal restores focus to the trigger |
+| Questions available | Last question is deleted or expires, automatically for expiry | No questions | Badge disappears; next activation opens Ask |
+
+Hit areas, question lifetime, pinning, deletion, menu actions and the existing keyboard shortcut are unchanged. Large counts grow within the compact button rather than clipping the digits. Folder selection and search remain separate from Questions and from the display-control group. Hiding Questions in View options is rejected: saved questions need a visible count and direct access.

@@ -17,7 +17,7 @@ Both come from Anton, who works with many conversations at once on Windows and k
 
 | Surface | What appears | When seen |
 |---|---|---|
-| Top bar, existing | Columns, a control beside the Board/List switch: All columns, In progress, In review or Done | On the board, not in the list |
+| Top bar, existing | View options, a compact icon grouped with Board/List; opens All columns, In progress, In review or Done directly | On the desktop board, not in the list |
 | The board, existing | The columns chosen, each the same width; one on its own takes the whole board, its cards as tiles side by side, as many to a row as fit | When one column is chosen |
 | An open conversation's head, existing | A button beside Back to the board: open conversations below the board, or over it again | When a conversation is open from the board |
 | The window, new | With conversations below the board: the board as a strip across the top, the conversation under it, the strip's lower edge dragged to size | When a conversation is open and Below is chosen |
@@ -25,7 +25,7 @@ Both come from Anton, who works with many conversations at once on Windows and k
 ```mermaid
 block-beta
   columns 3
-  t1["[Board | List]  All columns  All projects  Search  ...  Ask  New task"]:3
+  t1["[Board | List] [View options]  All folders  Search  ...  [Questions count]  New task"]:3
   b1["In progress: tiles, as many to a row as fit, the strip scrolling"]:3
   g1["the edge, dragged"]:3
   c1["The conversation: head, transcript, composer"]:3
@@ -39,8 +39,8 @@ The conversation below the board is the same conversation as over it: the head w
 
 | State | When it happens | What the person sees | What to do |
 |---|---|---|---|
-| All columns | The default; nothing chosen | Three columns, the control reads All columns | Choose a column |
-| One column | A column chosen | That column across the board, its cards as tiles; the control reads its name | Choose All columns |
+| All columns | The default; nothing chosen | Three columns; the View options icon has no indicator | Choose a column |
+| One column | A column chosen | That column across the board, its cards as tiles; View options shows a small indicator and its tooltip names the column | Choose All columns |
 | Over | The default; a conversation open from the board | The popup over the dimmed board, as before | Press the button in its head, or Esc |
 | Below | Below chosen; a conversation open | The strip of board above, the conversation below, the button in its head showing the way back | Press the button, or Esc |
 | Resize handle at rest | A conversation is below the board | A centered grip on the boundary between board and conversation | Grab anywhere along the boundary to resize |
@@ -86,7 +86,8 @@ The choices are kept in settings (`boardColumn`, `conversationPlace`, `boardHeig
 
 | State | Text |
 |---|---|
-| Columns control, tooltip | "Columns: every one, or one on its own" |
+| Columns control, accessible name | "View options" |
+| Columns control, hover/focus tooltip | "View options: All columns", "View options: In progress", "View options: In review", "View options: Done" |
 | Columns control, choices | "All columns", "In progress", "In review", "Done" |
 | Columns control, what each says | "In progress, In review and Done side by side"; "Only In progress, across the whole board", and so for the others |
 | Head button, over | "Open conversations below the board: the board stays as a strip across the top, as tall as you drag it" |
@@ -148,3 +149,19 @@ The choices are kept in settings (`boardColumn`, `conversationPlace`, `boardHeig
 ## Performance review against docs/performance.md
 
 Nothing drawn per card changed its cost: `BoardCard` keeps its memo, with the landing mark as one more compared value, so a drag draws again only the tile the mark moves from and to. The column shown is one filter in a `useMemo` over the columns already worked out. The strip's edge is dragged on the element itself, the window drawn again once at the end, unlike the sidebar's edge, which has no board and no conversation under it. No formatter is made per call and nothing animates. Not measured in the running app on a board of hundreds: the drag lays the window out on every pointer move, as any resize does.
+
+## Revision - 2026-10-28: compact view controls
+
+Alex approved grouping column selection with Board/List. Enter from the existing desktop toolbar, open View options and choose a column; the board changes immediately and keeps the existing saved setting. Returning to Board restores that choice. Board/List and View options form one group, separated from folder selection and search. The existing choices are single-select: all columns or one column, with no additional submenu.
+
+| From | Event | To | What the person sees |
+|---|---|---|---|
+| Closed | Click View options, or focus it and press Enter/Space | Choices open | Existing column menu with the current choice marked |
+| Choices open | Choose a column | Closed, chosen column | Board updates; indicator shows that other columns are hidden |
+| Choices open | Choose All columns | Closed, all columns | All three columns; indicator goes |
+| Choices open | Escape or click outside | Closed | Same board and choice; keyboard dismissal returns focus to the trigger |
+| Board | Choose List | List | Board/List remains; View options is absent and its saved choice is kept |
+
+The tooltip appears on pointer hover and keyboard focus and names the current choice. The accessible name includes the current choice, such as "View options: All columns", and the button reports whether its menu is expanded. The menu is titled "Visible columns". All-columns state stays quiet: no badge or count. No new timing thresholds or persistence rules are introduced. The icon retains the toolbar hit area. Questions stays on the right as a separate action, described in [questions](questions.md).
+
+The former always-visible selected-column label is replaced by an icon to reclaim toolbar width. Putting column selection in Settings or an extra submenu is rejected because it adds steps to a frequent board action.

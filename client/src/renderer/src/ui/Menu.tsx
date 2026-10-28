@@ -36,6 +36,7 @@ export function Menu({
   chosen,
   title,
   explained = false,
+  autoFocus = false,
   note,
   onPick,
   onClose,
@@ -47,6 +48,7 @@ export function Menu({
   readonly title?: string
   /** What each choice says is a sentence, put under its name rather than beside it. */
   readonly explained?: boolean
+  readonly autoFocus?: boolean
   /** A sentence under the choices about choosing any of them. It wraps to the menu's width rather than widening it. */
   readonly note?: string
   readonly onPick: (value: string) => void
@@ -55,6 +57,8 @@ export function Menu({
   readonly children?: React.ReactNode
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
+  const opener = useRef(document.activeElement)
+  const focused = useRef(false)
   useBack(onClose, menu)
   const [at, setAt] = useState<{ left: number; top: number; height: number } | undefined>()
   // The choice whose own list is open beside it, and where that list stands.
@@ -84,16 +88,39 @@ export function Menu({
     setAt({ left, height, top: under ? anchor.bottom + 4 : anchor.top - height - 4 })
   }, [anchor, choices, note])
 
+  useLayoutEffect(() => {
+    if (!autoFocus || at === undefined || focused.current) return
+    const node = menu.current
+    const first = node?.querySelector<HTMLButtonElement>('.menu-item:not(:disabled)')
+    if (first === null || first === undefined) return
+    const selected = node?.querySelector<HTMLButtonElement>('.menu-item.on:not(:disabled)')
+    const target = selected ?? first
+    target.focus()
+    focused.current = true
+  }, [autoFocus, at])
+
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         event.stopPropagation()
         onClose()
+        if (autoFocus && opener.current instanceof HTMLElement) opener.current.focus()
+        return
       }
+      if (!autoFocus || menu.current === null || !menu.current.contains(document.activeElement)) return
+      const rows = [...menu.current.querySelectorAll<HTMLButtonElement>('.menu-item:not(:disabled)')]
+      const index = rows.findIndex((one) => one === document.activeElement)
+      const next = event.key === 'ArrowDown' ? (index + 1) % rows.length
+        : event.key === 'ArrowUp' ? (index - 1 + rows.length) % rows.length
+          : event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : undefined
+      if (next === undefined) return
+      event.preventDefault()
+      event.stopPropagation()
+      rows[next]?.focus()
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [onClose])
+  }, [autoFocus, onClose])
 
   if (ON_PHONE) {
     return (
@@ -164,6 +191,7 @@ export function Menu({
               if (choice.choices !== undefined) return
               onPick(choice.value)
               onClose()
+              if (autoFocus && opener.current instanceof HTMLElement) opener.current.focus()
             }}
           >
             {row(choice, chosen)}
