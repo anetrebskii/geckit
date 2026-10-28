@@ -2,6 +2,10 @@
 
 Step 1 of [spec 016](../../specs/016-gecko-character/spec.md): still poses for Alex to choose a direction from. No animation, no app integration, no state logic. States, transitions and wording are in the [UX document](../../specs/016-gecko-character/ux.md).
 
+## Choice
+
+Alex chose **C, the glass tile**, on 2026-10-28. A and B stay in the repository as drawn alternatives. Because C's poses are hard to tell apart at bar size, the tile itself carries the state as well: dimmed when asleep, the badge when waiting, a hop of the whole tile on review (see the [UX document](../../specs/016-gecko-character/ux.md), Decisions).
+
 ## The three directions
 
 All three keep the icon's green (`#54cc61` to `#1c8c33`), its species and its toe pads and curling tail. The "glass" is drawn into the character: a top-to-bottom green gradient, a dark green rim so the silhouette stays solid on any background, a pale inner edge glow, a white specular streak on the back and head, and a soft drop shadow. None of it depends on the OS blur, so it looks the same on Mac, Windows and Linux.
