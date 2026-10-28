@@ -12312,7 +12312,7 @@ button.manager-step-head:hover > svg {
 }
 
 .gk-art .gk-tail {
-  transform-origin: 62px 84px;
+  transform-origin: 68px 82px;
   transition: opacity 400ms;
 }
 
@@ -12322,17 +12322,17 @@ button.manager-step-head:hover > svg {
 }
 
 .gk-art .gk-foot-l {
-  transform-origin: 41px 64px;
+  transform-origin: 43px 61px;
 }
 
 .gk-art .gk-foot-r {
-  transform-origin: 59px 64px;
+  transform-origin: 52px 60px;
 }
 
 .gk-art .gk-head-pose,
 .gk-art .gk-head-look,
 .gk-art .gk-head {
-  transform-origin: 50px 62px;
+  transform-origin: 46px 56px;
 }
 
 .gk-head-pose {
@@ -12341,12 +12341,12 @@ button.manager-step-head:hover > svg {
 
 /* The head follows the cursor a little, the pupils a lot. */
 .gk-head-look {
-  transform: translate(calc(var(--lx) * 2px), calc(var(--ly) * 1.4px)) rotate(calc(var(--lx) * 5deg));
+  transform: translate(calc(var(--lx) * 1.6px), calc(var(--ly) * 1.2px)) rotate(calc(var(--lx) * 4deg));
   transition: transform 300ms var(--gk-spring);
 }
 
 .gk-art .gk-pupil {
-  transform: translate(calc(var(--lx) * 3.4px), calc(var(--ly) * 3px));
+  transform: translate(calc(var(--lx) * 1.8px), calc(var(--ly) * 1.4px));
   transition: transform 180ms ease-out;
 }
 
@@ -12365,7 +12365,7 @@ button.manager-step-head:hover > svg {
 }
 
 .gk-art .gk-shadow {
-  transform-origin: 50px 93px;
+  transform-origin: 56px 92px;
 }
 
 .gecko-blink .gk-lid {
@@ -12376,13 +12376,13 @@ button.manager-step-head:hover > svg {
   animation: gk-tilt 900ms var(--gk-spring);
 }
 
-/* Asleep: eyes shut, head down on its feet, tail wrapped round them, a few slow breaths, then it lies still. */
+/* Asleep: eyes shut, head down to its front feet, tail wrapped round them, a few slow breaths, then it lies still. */
 .gecko-asleep .gk-lid {
   transform: none;
 }
 
 .gecko-asleep .gk-head-pose {
-  transform: translateY(9px) rotate(-5deg);
+  transform: translate(3px, 12px) rotate(-14deg);
 }
 
 .gecko-asleep .gk-tail {
@@ -12468,7 +12468,7 @@ button.manager-step-head:hover > svg {
 }
 
 .gecko-hover:not(.gecko-asleep) .gk-art .gk-pupil {
-  transform: translate(0, -1.5px);
+  transform: translate(0, -0.8px);
 }
 
 .gecko-hover:not(.gecko-asleep) .gk-wiggle {
@@ -12563,7 +12563,7 @@ button.manager-step-head:hover > svg {
     transform: scale(1.1, 0.88);
   }
   42% {
-    transform: translateY(-16px) scale(0.95, 1.06);
+    transform: translateY(-9px) scale(0.95, 1.06);
   }
   68% {
     transform: none;

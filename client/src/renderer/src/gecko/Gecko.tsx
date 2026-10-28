@@ -15,97 +15,104 @@ export interface Look {
 }
 
 const RIM = '#0e5a22'
-/** The eyes sit on the sides of the head, as a gecko's do, not on top of it as a frog's. */
-const EYE_Y = 41
 
-/** The darker spots of its skin, as on the icon's gecko: x, y and size. */
-const SPOTS_HEAD = [[43, 34, 1.6], [56, 32, 2], [50, 38, 1.3], [62, 37, 1.3]] as const
-const SPOTS_BODY = [[38, 64, 1.8], [62, 65, 1.6], [36, 74, 1.3], [64, 76, 1.5]] as const
+/** A limb as a rimmed stroke, and the splayed toes at its end, each ending in a round pad. */
+function Limb({ d, foot, toes, skin, width = 4.6 }: { readonly d: string; readonly foot: readonly [number, number]; readonly toes: readonly number[]; readonly skin: string; readonly width?: number }): React.JSX.Element {
+  const [x, y] = foot
+  const ends = toes.map((deg) => [x + 3.6 * Math.cos((deg * Math.PI) / 180), y + 3.6 * Math.sin((deg * Math.PI) / 180)] as const)
+  return (
+    <>
+      <path d={d} fill="none" stroke={RIM} strokeWidth={width + 2.2} strokeLinecap="round" strokeLinejoin="round" />
+      {ends.map(([ex, ey]) => <path key={`${String(ex)}-r`} d={`M${String(x)} ${String(y)} L${ex.toFixed(2)} ${ey.toFixed(2)}`} stroke={RIM} strokeWidth="3.2" strokeLinecap="round" />)}
+      <path d={d} fill="none" stroke={skin} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />
+      {ends.map(([ex, ey]) => <path key={`${String(ex)}-s`} d={`M${String(x)} ${String(y)} L${ex.toFixed(2)} ${ey.toFixed(2)}`} stroke={skin} strokeWidth="1.4" strokeLinecap="round" />)}
+      {ends.map(([ex, ey]) => <circle key={`${String(ex)}-p`} cx={ex} cy={ey} r="1.5" fill={skin} stroke={RIM} strokeWidth="0.7" />)}
+    </>
+  )
+}
 
-/** One big eye: the socket, the white, the slit pupil that follows the look and widens, and the lid that closes from the top. */
-function Eye({ x, side, skin }: { readonly x: number; readonly side: 'l' | 'r'; readonly skin: string }): React.JSX.Element {
+/** A tail that tapers: the same path drawn wide for its first part, narrower further, thinnest to the tip. */
+function Taper({ d, skin, widths }: { readonly d: string; readonly skin: string; readonly widths: readonly [number, number, number] }): React.JSX.Element {
+  const parts = [45, 75, 100] as const
+  return (
+    <>
+      {parts.map((dash, at) => <path key={`r${String(dash)}`} d={d} pathLength="100" fill="none" stroke={RIM} strokeWidth={widths[at]! + 2} strokeLinecap="round" strokeDasharray={`${String(dash)} 200`} />)}
+      {parts.map((dash, at) => <path key={`s${String(dash)}`} d={d} pathLength="100" fill="none" stroke={skin} strokeWidth={widths[at]} strokeLinecap="round" strokeDasharray={`${String(dash)} 200`} />)}
+    </>
+  )
+}
+
+/** One eye on the side of the head: the white, a vertical slit pupil that follows the look and widens, the line of the upper lid, and the lid that closes over it. */
+function Eye({ x, y, r, side, skin, clip }: { readonly x: number; readonly y: number; readonly r: number; readonly side: 'l' | 'r'; readonly skin: string; readonly clip: string }): React.JSX.Element {
   return (
     <g className={`gk-eye gk-eye-${side}`}>
-      <circle cx={x} cy={EYE_Y} r="11.6" fill={skin} stroke={RIM} strokeWidth="1.2" />
-      <circle cx={x} cy={EYE_Y} r="9" fill="#f2f7c8" stroke={RIM} strokeWidth="0.8" />
-      <g className="gk-pupil">
-        <rect className="gk-slit" x={x - 1.9} y={EYE_Y - 7} width="3.8" height="14" rx="1.9" fill="#10331a" />
-        <circle cx={x - 3.2} cy={EYE_Y - 3.4} r="2" fill="#fff" />
+      <clipPath id={clip}>
+        <circle cx={x} cy={y} r={r} />
+      </clipPath>
+      <circle cx={x} cy={y} r={r + 1.1} fill={skin} stroke={RIM} strokeWidth="1" />
+      <circle cx={x} cy={y} r={r} fill="#f2f7c8" stroke={RIM} strokeWidth="0.6" />
+      <g clipPath={`url(#${clip})`}>
+        <g className="gk-pupil">
+          <rect className="gk-slit" x={x - r * 0.17} y={y - r * 0.8} width={r * 0.34} height={r * 1.6} rx={r * 0.17} fill="#10331a" />
+          <circle cx={x - r * 0.38} cy={y - r * 0.4} r={r * 0.24} fill="#fff" />
+        </g>
       </g>
-      <circle className="gk-lid" cx={x} cy={EYE_Y} r="9.4" fill={skin} stroke={RIM} strokeWidth="1" />
+      <path d={`M${String(x - r)} ${String(y - r * 0.25)} Q${String(x)} ${String(y - r * 1.25)} ${String(x + r)} ${String(y - r * 0.25)}`} fill="none" stroke={RIM} strokeWidth="0.8" strokeLinecap="round" />
+      <circle className="gk-lid" cx={x} cy={y} r={r + 0.3} fill={skin} stroke={RIM} strokeWidth="0.8" />
     </g>
   )
 }
 
-/** A front foot: the arm down from the shoulder and three toe pads. */
-function Foot({ x, side, skin }: { readonly x: number; readonly side: 'l' | 'r'; readonly skin: string }): React.JSX.Element {
-  const out = side === 'l' ? -1 : 1
-  return (
-    <g className={`gk-foot gk-foot-${side}`}>
-      <path d={`M${x} 64 Q${x + out * 4} 74 ${x + out} 82`} fill="none" stroke={RIM} strokeWidth="7.6" strokeLinecap="round" />
-      <path d={`M${x} 64 Q${x + out * 4} 74 ${x + out} 82`} fill="none" stroke={skin} strokeWidth="5.4" strokeLinecap="round" />
-      {[-4, 0, 4].map((dx) => (
-        <circle key={dx} cx={x + out + dx} cy={dx === 0 ? 86 : 85} r="2.4" fill={skin} stroke={RIM} strokeWidth="0.9" />
-      ))}
-    </g>
-  )
-}
+/** The darker spots of its skin, as on the icon's gecko: x, y and size. */
+const SPOTS = [[47, 34, 1.3], [41, 31, 0.9], [52, 64, 1.6], [58, 70, 1.3], [63, 76, 1.5], [56, 78, 1], [77, 87, 1.1]] as const
 
-/** The gecko facing the person, in parts that move on their own: tail, body, feet, head, each eye with its lid and pupil. */
+/** The gecko sitting up on its front legs, three-quarter toward the person, in parts that move on their own: tail, body, legs, head, each eye with its lid and pupil. */
 function Drawing(): React.JSX.Element {
   const id = useId().replace(/[^\w-]/g, '')
   const skin = `url(#${id}-skin)`
-  const tail = 'M60 84 C 76 90, 90 82, 88 68 C 86 57, 75 57, 75 65 C 75 71, 82 72, 83 67'
-  const wrapped = 'M64 85 C 74 92, 60 96, 46 94 C 34 93, 27 91, 29 86'
+  const tail = 'M68 82 C 80 89, 92 86, 92 74 C 92 63, 81 61, 79 68 C 78 72, 82 74, 84 71'
+  const wrapped = 'M70 84 C 76 92, 60 95, 44 94 C 32 93, 25 91, 27 87'
   return (
-    <svg className="gk-art" viewBox="0 0 100 100" aria-hidden="true">
+    <svg className="gk-art" viewBox="9 13 88 88" aria-hidden="true">
       <defs>
-        <linearGradient id={`${id}-skin`} gradientUnits="userSpaceOnUse" x1="0" y1="20" x2="0" y2="94">
+        <linearGradient id={`${id}-skin`} gradientUnits="userSpaceOnUse" x1="0" y1="24" x2="0" y2="94">
           <stop offset="0" stopColor="#86e690" />
           <stop offset="0.45" stopColor="#47c257" />
           <stop offset="1" stopColor="#1c8c33" />
         </linearGradient>
       </defs>
-      <ellipse className="gk-shadow" cx="50" cy="93" rx="24" ry="3.2" fill="#06280f" opacity="0.18" />
+      <ellipse className="gk-shadow" cx="56" cy="92" rx="30" ry="3" fill="#06280f" opacity="0.18" />
       <g className="gk-hop">
         <g className="gk-press">
           <g className="gk-wiggle">
             <g className="gk-bob">
               <g className="gk-tail">
-                <path d={tail} fill="none" stroke={RIM} strokeWidth="8.2" strokeLinecap="round" />
-                <path d={tail} fill="none" stroke={skin} strokeWidth="6" strokeLinecap="round" />
+                <Taper d={tail} skin={skin} widths={[7, 5, 3]} />
               </g>
               <g className="gk-breathe">
-                <ellipse cx="33" cy="85" rx="9" ry="6" fill={skin} stroke={RIM} strokeWidth="1.2" />
-                <ellipse cx="67" cy="85" rx="9" ry="6" fill={skin} stroke={RIM} strokeWidth="1.2" />
-                {[26, 30.4, 35].map((x, at) => (
-                  <g key={x}>
-                    <circle cx={x} cy={at === 0 ? 88.6 : 90.4} r="2.2" fill={skin} stroke={RIM} strokeWidth="0.9" />
-                    <circle cx={100 - x} cy={at === 0 ? 88.6 : 90.4} r="2.2" fill={skin} stroke={RIM} strokeWidth="0.9" />
-                  </g>
-                ))}
-                <ellipse cx="50" cy="70" rx="19" ry="17" fill={skin} stroke={RIM} strokeWidth="1.2" />
-                <ellipse cx="50" cy="74" rx="11" ry="10" fill="#d6f7c6" opacity="0.5" />
-                {SPOTS_BODY.map(([x, y, r]) => <circle key={`${String(x)}-${String(y)}`} cx={x} cy={y} r={r} fill="#1f8f36" opacity="0.45" />)}
-                <g className="gk-wrapped">
-                  <path d={wrapped} fill="none" stroke={RIM} strokeWidth="7.4" strokeLinecap="round" />
-                  <path d={wrapped} fill="none" stroke={skin} strokeWidth="5.2" strokeLinecap="round" />
+                <Limb d="M64 76 Q74 76 75 88" foot={[75, 88]} toes={[200, 150, 100, 50]} skin={skin} width={5.4} />
+                <g className="gk-foot gk-foot-r">
+                  <Limb d="M54 62 Q60 70 57 78 Q55 82 55 86" foot={[55, 86]} toes={[160, 120, 75, 30]} skin={skin} />
                 </g>
-                <Foot x={41} side="l" skin={skin} />
-                <Foot x={59} side="r" skin={skin} />
+                <path d="M41 47 C 49 45, 57 52, 62 60 C 70 70, 74 84, 62 85.5 C 51 86.5, 45 76, 42 67 C 40 61, 37 51, 41 47 Z" fill={skin} stroke={RIM} strokeWidth="1.1" />
+                <path d="M48 52 C 54 54, 60 61, 64 69" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" opacity="0.4" />
+                {SPOTS.slice(2).map(([x, y, r]) => <circle key={`${String(x)}-${String(y)}`} cx={x} cy={y} r={r} fill="#1f8f36" opacity="0.5" />)}
+                <g className="gk-wrapped">
+                  <Taper d={wrapped} skin={skin} widths={[6, 4.4, 2.8]} />
+                </g>
+                <g className="gk-foot gk-foot-l">
+                  <Limb d="M44 62 Q33 67 35 76 Q37 81 36 87" foot={[36, 87]} toes={[170, 130, 85, 40]} skin={skin} />
+                </g>
                 <g className="gk-head-pose">
                   <g className="gk-head-look">
                     <g className="gk-head">
-                      <path d="M50 25 C 66 25, 77 34, 76 45 C 75 56, 64 62, 50 62 C 36 62, 25 56, 24 45 C 23 34, 34 25, 50 25 Z" fill={skin} stroke={RIM} strokeWidth="1.2" />
-                      <ellipse cx="50" cy="31" rx="11" ry="3.6" fill="#fff" opacity="0.45" />
-                      {SPOTS_HEAD.map(([x, y, r]) => <circle key={`${String(x)}-${String(y)}`} cx={x} cy={y} r={r} fill="#1f8f36" opacity="0.45" />)}
-                      <circle cx="34" cy="53" r="3.6" fill="#ff9fb0" opacity="0.45" />
-                      <circle cx="66" cy="53" r="3.6" fill="#ff9fb0" opacity="0.45" />
-                      <circle cx="46.4" cy="47" r="0.9" fill={RIM} />
-                      <circle cx="53.6" cy="47" r="0.9" fill={RIM} />
-                      <path className="gk-mouth" d="M42 54 Q50 60 58 54" fill="none" stroke={RIM} strokeWidth="1.6" strokeLinecap="round" />
-                      <Eye x={27} side="l" skin={skin} />
-                      <Eye x={73} side="r" skin={skin} />
+                      <path d="M57 38 C 56 30, 47 26, 39 28 C 31 30, 23 36, 21 42 C 19.5 47, 24 51, 32 51 C 43 51, 55 47, 57 38 Z" fill={skin} stroke={RIM} strokeWidth="1.1" />
+                      <path d="M30 31.6 C 36 28.4, 45 28, 51 30.4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" opacity="0.45" />
+                      {SPOTS.slice(0, 2).map(([x, y, r]) => <circle key={`${String(x)}-${String(y)}`} cx={x} cy={y} r={r} fill="#1f8f36" opacity="0.5" />)}
+                      <circle cx="23.6" cy="41.2" r="0.7" fill={RIM} />
+                      <path className="gk-mouth" d="M22.4 45.4 Q30 49.6 41.6 47.2" fill="none" stroke={RIM} strokeWidth="1.1" strokeLinecap="round" />
+                      <Eye x={50.4} y={33.6} r={4.1} side="r" skin={skin} clip={`${id}-eye-r`} />
+                      <Eye x={34} y={36} r={5.2} side="l" skin={skin} clip={`${id}-eye-l`} />
                     </g>
                   </g>
                 </g>
