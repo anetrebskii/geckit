@@ -43,16 +43,6 @@ export function geckoState(now: readonly Counted[], before: readonly Counted[] =
   return { pose, waiting, review }
 }
 
-/** What the bubble asks, worked out by main when it opens: files dropped on the gecko, and how many wait; or a note it has to say, as about the voice task. */
-export interface GeckoBubble {
-  readonly files: number
-  readonly waiting: number
-  readonly note?: string
-}
-
-/** A choice in the bubble. */
-export type GeckoChoice = 'task' | 'waiting' | 'cancel'
-
 /** Files dropped on the gecko, or words said to it, for a new task or a conversation: the pictures to go with the message, the paths of the rest for its words, and what was said. */
 export interface GeckoHanded {
   readonly images: readonly SessionImage[]

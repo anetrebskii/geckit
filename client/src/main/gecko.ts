@@ -6,20 +6,16 @@ import { app, ipcMain, Menu, nativeImage, powerMonitor, screen } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 
 import { geckoItems } from '../shared/gecko'
-import type { GeckoAction, GeckoBubble, GeckoChoice, GeckoHanded, GeckoState, GeckoView } from '../shared/gecko'
+import type { GeckoAction, GeckoHanded, GeckoState, GeckoView } from '../shared/gecko'
 import { getSettings, onSettings, setSettings } from './store'
-import { bubbleWindow, closeBubble, closeGecko, closeRing, fitBubble, geckoWindow, keepGecko, openChat, openRing, revealRing, ringPage, shownBubble, shownGecko, shownRing, sizeGecko, tellChat, warmRing } from './windows'
+import { closeGecko, closeRing, geckoWindow, keepGecko, openChat, openRing, revealRing, ringPage, shownGecko, shownRing, sizeGecko, tellChat, warmRing } from './windows'
 
-/** The floating gecko: its window while it is switched on and the screen is not locked, what it is told, its menu and what each choice does, and the bubble for dropped files and notes. */
+/** The floating gecko: its window while it is switched on and the screen is not locked, what it is told, its menu and what each choice does, and the files dropped on it. */
 
 let state: GeckoState = { pose: 'asleep', waiting: [], review: false }
-/** The waiting one the bubble opened last, so the next time it opens the next. */
+/** The waiting one the menu opened last, so the next time it opens the next. */
 let opened: string | undefined
 let locked = false
-/** Files dropped on the gecko, held while its bubble asks what to do with them. */
-let handed: GeckoHanded | undefined
-/** What the bubble says when it is a note rather than a question. */
-let note: string | undefined
 /** The capsule, opened for a voice task. */
 let voiceTask = (): void => undefined
 
@@ -72,27 +68,6 @@ function keep(): void {
 }
 
 const fromGecko = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => event.sender === shownGecko()?.webContents
-const fromBubble = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => event.sender === shownBubble()?.webContents
-
-/** The bubble opens beside the gecko, asking about what was dropped on it, or saying a note. */
-function ask(given: GeckoHanded | undefined, said?: string): void {
-  const window = shownGecko()
-  if (window === undefined) return
-  // Gone without a choice, as on a click elsewhere, the files are let go of.
-  bubbleWindow(window.getBounds()).on('closed', () => {
-    if (shownBubble() !== undefined) return
-    handed = undefined
-    note = undefined
-  })
-  handed = given
-  note = said
-}
-
-const asked = (): GeckoBubble => ({
-  files: (handed?.images.length ?? 0) + (handed?.paths.length ?? 0),
-  waiting: state.waiting.length,
-  ...(note === undefined ? {} : { note }),
-})
 
 /** What the menu offers now. */
 const offered = (): ReturnType<typeof geckoItems> => geckoItems({ waiting: state.waiting.length, screenshot: process.platform === 'darwin' })
@@ -141,25 +116,6 @@ function nextWaiting(): string | undefined {
   return next
 }
 
-/** A choice in the bubble, about dropped files. */
-function choose(choice: GeckoChoice): void {
-  const given = handed
-  handed = undefined
-  note = undefined
-  closeBubble()
-  if (choice === 'cancel') return
-  // Neither the gecko nor its bubble brings the app forward by itself.
-  if (process.platform === 'darwin') app.focus({ steal: true })
-  if (choice === 'task') {
-    openChat()
-    tellChat('chat:task', given ?? { images: [], paths: [] })
-    return
-  }
-  const next = nextWaiting()
-  openChat(next)
-  if (next !== undefined && given !== undefined) tellChat('chat:attach', { id: next, ...given })
-}
-
 /** A choice in the menu. The screenshot's crosshair comes at once while the gecko flashes its camera, the voice task opens the capsule; the rest bring GeckIt forward. */
 function act(action: GeckoAction): void {
   closeRing()
@@ -206,15 +162,12 @@ export function startGecko(voice: () => void): void {
   ipcMain.on('gecko:aim', (event, x: number, y: number) => {
     if (event.sender === shownRing()?.webContents) shownGecko()?.webContents.send('gecko:cursor', { x, y })
   })
+  // Caught: GeckIt comes forward on the New task form with the files.
   ipcMain.on('gecko:drop', (event, given: GeckoHanded) => {
-    if (fromGecko(event) && given.images.length + given.paths.length > 0) ask(given)
-  })
-  ipcMain.handle('gecko:bubble', (event) => (fromBubble(event) ? asked() : undefined))
-  ipcMain.on('gecko:fit', (event, height: number) => {
-    if (fromBubble(event)) fitBubble(height)
-  })
-  ipcMain.on('gecko:choose', (event, choice: GeckoChoice) => {
-    if (fromBubble(event)) choose(choice)
+    if (!fromGecko(event) || given.images.length + given.paths.length === 0) return
+    if (process.platform === 'darwin') app.focus({ steal: true })
+    openChat()
+    tellChat('chat:task', given)
   })
   ipcMain.on('gecko:menu', (event) => {
     const window = shownGecko()

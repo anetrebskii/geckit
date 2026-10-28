@@ -907,17 +907,6 @@ export function useChat(): Chat {
   )
 
   useEffect(() => window.geckit.chat.onShow(goTo), [goTo])
-  // Files dropped on the gecko for the conversation that waits, which main has just shown: they go into its message, as if dropped on it.
-  useEffect(
-    () =>
-      window.geckit.chat.onAttach(({ id, images, paths }) => {
-        const where = everyoneRef.current.find((one) => one.id === id)?.root
-        for (const one of paths) addLocal(id, where, one, one.split(/[\\/]/).pop() ?? one)
-        if (images.length > 0) setPictures((held) => ({ ...held, [id]: [...(held[id] ?? []), ...images].slice(0, MOST_PICTURES) }))
-      }),
-    [addLocal],
-  )
-
   const dismiss = useCallback((session: string) => setNotices((held) => held.filter((one) => one.session !== session)), [])
 
   const waiting = useMemo(

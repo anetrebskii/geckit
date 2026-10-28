@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import { geckoItems, geckoRing } from '../src/shared/gecko'
 import type { GeckoShown } from '../src/shared/gecko'
 import { GeckoArt, layers } from '../src/renderer/src/gecko/Art'
-import { BubbleCard, choices, question } from '../src/renderer/src/gecko/Bubble'
 import { bend } from '../src/renderer/src/gecko/Gecko'
 import { RingCard } from '../src/renderer/src/gecko/Ring'
 
@@ -94,27 +93,5 @@ describe('the gecko menu as drawn', () => {
     expect(markup).toContain('class="gk-ring gk-ring-open"')
     const first = laid.items[0]
     expect(markup).toContain(`--x:${String((first?.x ?? 0) - (laid.gecko.x + 60))}px`)
-  })
-})
-
-describe('the gecko bubble', () => {
-  const labels = (files: number, waiting: number): string[] => choices({ files, waiting }).map((one) => one.label)
-
-  it('asks about dropped files', () => {
-    expect(question({ files: 1, waiting: 0 })).toBe('What should I do with this file?')
-    expect(question({ files: 2, waiting: 0 })).toBe('What should I do with these 2 files?')
-    expect(labels(1, 0)).toEqual(['New task with this file', 'Cancel'])
-    expect(labels(2, 1)).toEqual(['New task with these files', 'Send to the waiting conversation', 'Cancel'])
-  })
-
-  it('says a note, to be closed', () => {
-    expect(question({ files: 0, waiting: 0, note: 'Nothing was heard' })).toBe('Nothing was heard')
-    expect(choices({ files: 0, waiting: 2, note: 'Nothing was heard' }).map((one) => one.label)).toEqual(['Close'])
-  })
-
-  it('is a dialog named by its question, its tail on the gecko side', () => {
-    const markup = renderToStaticMarkup(createElement(BubbleCard, { asked: { files: 1, waiting: 0 }, side: 'left', onChoose: () => undefined }))
-    expect(markup).toMatch(/class="gecko-bubble gecko-bubble-left" role="dialog" aria-labelledby="([^"]+)".*<p id="\1">What should I do with this file\?<\/p>/)
-    expect(markup.match(/<button/g)).toHaveLength(2)
   })
 })

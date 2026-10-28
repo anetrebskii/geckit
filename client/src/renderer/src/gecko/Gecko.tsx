@@ -132,7 +132,7 @@ function aimAt(art: SVGSVGElement | null, at: { readonly x: number; readonly y: 
   return [one(EYES[0]), one(EYES[1])]
 }
 
-/** How long the catch shows before the bubble asks about the files. */
+/** How long the catch shows before GeckIt opens on New task with the files. */
 const CATCH = 1100
 /** The camera is raised this long, then it flashes, while the crosshair is already up. */
 const RAISE = 1000

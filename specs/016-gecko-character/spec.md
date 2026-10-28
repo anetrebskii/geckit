@@ -7,7 +7,7 @@
 
 ## The idea in one paragraph
 
-One small gecko stands on the desktop in a transparent window of its own, always on top, outside the board, like Mochi in Coucou. It shows, at a glance and without opening GeckIt, what the conversations are doing: it types on a little laptop while Claude works, sits up and watches the cursor with an orange count when a conversation waits for the person, hops for joy when a card moves to In review, and sleeps when nothing runs; left alone for 5 minutes, waiting falls asleep too. Pressing it opens a radial menu round it: take a screenshot (it raises a camera), start a new task, say a task (it listens and writes), open the waiting conversation, open GeckIt, or hide it. Files dropped on it are caught and can start a new task or go to the waiting conversation. It can be dragged anywhere and resized from its corner. The tray icon shows the same state in the gecko's simplest form, and its menu shows or hides the gecko. The look and behaviour are the finished HTML demo's (`~/Desktop/gecko-ref/port/gecko-demo.html`, Alex's), drawn from its frames; the Mochi-style SVG drawing built before it is replaced.
+One small gecko stands on the desktop in a transparent window of its own, always on top, outside the board, like Mochi in Coucou. It shows, at a glance and without opening GeckIt, what the conversations are doing: it types on a little laptop while Claude works, sits up and watches the cursor with an orange count when a conversation waits for the person, hops for joy when a card moves to In review, and sleeps when nothing runs; left alone for 5 minutes, waiting falls asleep too. Pressing it opens a radial menu round it: take a screenshot (it raises a camera), start a new task, say a task (it listens and writes), open the waiting conversation, open GeckIt, or hide it. Files dropped on it are caught and open GeckIt on a new task with them. It can be dragged anywhere and resized from its corner. The tray icon shows the same state in the gecko's simplest form, and its menu shows or hides the gecko. The look and behaviour are the finished HTML demo's (`~/Desktop/gecko-ref/port/gecko-demo.html`, Alex's), drawn from its frames; the Mochi-style SVG drawing built before it is replaced.
 
 ## User Scenarios & Testing
 
@@ -68,13 +68,13 @@ The iPhone and Android apps show the same gecko in the Tasks header with the sam
 - FR-004: The tray icon follows the same state with simplified images; the tray menu gains "Show the Gecko" / "Hide the Gecko".
 - FR-005: Settings switch to show or hide the gecko; reduced motion honoured; nothing animates and no timer runs while it is hidden or the screen is locked.
 - FR-006: The art is the demo's raster frames (WebP) with CSS and SVG layering; no new runtime dependency.
-- FR-007: A preview page like the other `*-preview.tsx` mounts the gecko in every pose, at four sizes, its menu and its bubble, light and dark.
+- FR-007: A preview page like the other `*-preview.tsx` mounts the gecko in every pose, at four sizes, and its menu, light and dark.
 - FR-009: Resize from a grip on its corner, square, 72 to 320 px; a drag is kept wholly on the display it is dropped on; both remembered in `geckoBounds`.
-- FR-008: Files dropped on it open its bubble: a new task with them, or into the waiting conversation's message (only while one waits), or Cancel. Pictures go with the message, other files as their paths. The bubble is keyboard reachable, named by its question, and closes on Esc or a click elsewhere.
+- FR-008: Files dropped on it are caught, and after the catch GeckIt opens on the New task form with them, with no question (Alex, 2026-10-29). Pictures go with the message, other files as their paths.
 
 ## Out of scope
 
-Text on the gecko itself, a personality that talks (speech bubbles were out of scope until Alex allowed them on 2026-10-28; they now carry the drop question and the voice task's notes), placing it in the macOS notch, sounds, more than one gecko, customising it, an In review count.
+Text on the gecko itself, a personality that talks (a speech bubble was built on 2026-10-28 for the drop question and the voice task's notes, and removed on 2026-10-29 once a drop went straight to New task and the voice task moved to the capsule), placing it in the macOS notch, sounds, more than one gecko, customising it, an In review count.
 
 ## Success Criteria
 

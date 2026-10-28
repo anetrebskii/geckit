@@ -13,7 +13,6 @@ const noop = (): void => undefined
 Object.assign(window, { geckit: { platform: 'darwin', home: '/Users/alex', copy: noop, chat: { openLink: noop, queuedPicture: async () => undefined, mcp: async () => [], browsers: async () => [], search: async () => [] } } })
 const { TopBar } = await import('./chat/Board')
 const { GeckoArt } = await import('./gecko/Art')
-const { BubbleCard } = await import('./gecko/Bubble')
 const { RingCard } = await import('./gecko/Ring')
 const { geckoItems, geckoRing } = await import('../../shared/gecko')
 const pngs = import.meta.glob<string>('../../../assets/tray*Template@2x.png', { eager: true, query: '?url', import: 'default' })
@@ -95,21 +94,6 @@ function Menu({ at, waiting, side = 120 }: { readonly at: { x: number; y: number
       </div>
       <RingCard laid={laid} items={items} focus={false} onAct={noop} onClose={noop} />
     </div>
-  </div>
-}
-
-/** The bubble beside the gecko as its window shows it: what it asks after files are dropped on it, or a note about the voice task. */
-const asking = [
-  { key: 'drop', name: 'A file dropped', says: '2 waiting', asked: { files: 1, waiting: 2 } },
-  { key: 'drop-files', name: '3 files dropped', says: 'nothing waiting', asked: { files: 3, waiting: 0 } },
-  { key: 'note', name: 'Voice task, model', says: 'shown without taking the keyboard', asked: { files: 0, waiting: 0, note: 'Downloading the speech model, 212 of 574 MB. It is written down once that is done' } },
-  { key: 'nothing', name: 'Voice task, silence', says: 'Esc or Close', asked: { files: 0, waiting: 0, note: 'Nothing was heard' } },
-] as const
-
-function Asking({ one }: { readonly one: (typeof asking)[number] }): React.JSX.Element {
-  return <div className="gecko-asking" data-state={one.key}>
-    <div className="gecko-bubble-window"><BubbleCard asked={one.asked} side="left" focus={false} onChoose={noop} /></div>
-    <Floating one={byKey(one.key === 'note' || one.key === 'nothing' ? 'listen' : 'got')} />
   </div>
 }
 
@@ -205,11 +189,6 @@ function Preview(): React.JSX.Element {
         <Menu at={{ x: 1296, y: 49 }} waiting={0} />
         <Menu at={{ x: 1100, y: 560 }} waiting={1} side={320} />
       </div>
-      <h2>The bubble</h2>
-      <p>Files dropped on it are caught, then a bubble beside it asks what to do with them. The voice task says in the same bubble when nothing was heard or the speech model is still downloading.</p>
-      <div className="gecko-desktop gecko-asking-row">
-        {asking.map((one) => <figure key={one.key}><Asking one={one} /><figcaption>{one.name}<small>{one.says}</small></figcaption></figure>)}
-      </div>
       <h2>Live</h2>
       <p>Asleep, working, waiting and after a hop, 4 s each; the eyes follow the pointer, hover for a pet, click for the menu.</p>
       <div className="gecko-desktop"><Live /></div>
@@ -271,10 +250,6 @@ style.textContent = `
 :root[data-theme='dark'] .gecko-screen { background: linear-gradient(135deg, #3a2a4f, #1d3550 50%, #0f2a2a); }
 .gecko-live-stage { position: relative; width: 460px; height: 420px; }
 .gecko-live-stage .gk-ring, .gecko-screen-ring .gk-ring { position: absolute; }
-.gecko-asking { display: flex; align-items: flex-start; }
-.gecko-asking .gecko-bubble-window { width: 280px; box-sizing: border-box; }
-.gecko-asking .gecko-float { margin-inline-start: -6px; flex: none; }
-.gecko-asking-row figure { color: #fff; }
 .gecko-stills { margin: 24px 16px 0; font-size: 15px; }
 .gecko-trays { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--text-faint); }
 .gecko-menubar { display: flex; align-items: center; gap: 14px; height: 30px; padding: 0 14px; border-radius: 6px; }

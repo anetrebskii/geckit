@@ -12682,92 +12682,9 @@ button.manager-step-head:hover > svg {
   text-align: center;
 }
 
-/* The gecko's speech bubble, in its own window beside the gecko; the tail points at the gecko's head. */
-.gecko-bubble-window {
-  padding: 10px 14px 16px;
-}
-
-.gecko-bubble {
-  position: relative;
-  padding: 10px 6px 6px;
-  border: 0.5px solid var(--border);
-  border-radius: 14px;
-  color: var(--text);
-  font-weight: 400;
-  text-align: start;
-  text-shadow: none;
-  background: var(--bg-raised);
-  box-shadow: var(--shadow);
-  animation: gk-bubble 160ms ease-out;
-}
-
-.gecko-bubble-left {
-  transform-origin: right 34px;
-}
-
-.gecko-bubble-right {
-  transform-origin: left 34px;
-}
-
-.gecko-bubble::after {
-  position: absolute;
-  top: 26px;
-  width: 12px;
-  height: 12px;
-  border: inherit;
-  background: inherit;
-  content: '';
-}
-
-.gecko-bubble-left::after {
-  right: -6.5px;
-  border-width: 0.5px 0.5px 0 0;
-  transform: rotate(45deg);
-}
-
-.gecko-bubble-right::after {
-  left: -6.5px;
-  border-width: 0 0 0.5px 0.5px;
-  transform: rotate(45deg);
-}
-
-.gecko-bubble p {
-  margin: 0 8px 6px;
-  font-weight: 600;
-}
-
-.gecko-bubble-choices {
-  display: flex;
-  flex-direction: column;
-}
-
-.gecko-bubble-choices button {
-  padding: 5px 8px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  text-align: start;
-}
-
-.gecko-bubble-choices button:hover {
-  background: var(--bg-hover);
-}
-
-@keyframes gk-bubble {
-  0% {
-    opacity: 0;
-    transform: scale(0.92);
-  }
-  100% {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .gecko-art *,
-  .gk-badge,
-  .gecko-bubble {
+  .gk-badge {
     animation: none !important;
   }
 

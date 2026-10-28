@@ -43,7 +43,7 @@ import type {
   Uploaded,
   VoiceMode,
 } from '../shared/api'
-import type { GeckoAction, GeckoBubble, GeckoChoice, GeckoHanded, GeckoItem, GeckoRing, GeckoView } from '../shared/gecko'
+import type { GeckoAction, GeckoHanded, GeckoItem, GeckoRing, GeckoView } from '../shared/gecko'
 import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from '../shared/hosts'
 import type { Link } from '../shared/links'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from '../shared/providers'
@@ -283,10 +283,8 @@ const geckit = {
     onRecorded: (said: (recording: Recording) => void): (() => void) => listen('chat:recorded', said),
     /** The screenshot shortcut was pressed, and this is what it took. */
     onScreenshot: (said: (image: SessionImage) => void): (() => void) => listen('chat:screenshot', said),
-    /** New task was chosen in the gecko's bubble, with what was dropped on it, if anything. */
+    /** A new task from the gecko, with what was dropped on it or said to it. */
     onTask: (said: (handed: GeckoHanded) => void): (() => void) => listen('chat:task', said),
-    /** Files dropped on the gecko, for the conversation that waits. */
-    onAttach: (said: (attached: GeckoHanded & { readonly id: string }) => void): (() => void) => listen('chat:attach', said),
     /** Something happened in another conversation while this window is in front. */
     onNotice: (said: (notice: SessionNotice) => void): (() => void) => listen('chat:notice', said),
     /** The search shortcut was pressed in another application, or again over the search. */
@@ -400,9 +398,7 @@ const geckit = {
     onListen: (said: (what: 'start' | 'cancel') => void): (() => void) => listen('gecko:listen', said),
     /** Pressed: its menu opens round it, or closes. */
     press: (): void => ipcRenderer.send('gecko:press'),
-    /** The camera is raised and has flashed: the crosshair comes. */
-    /** What was said for a voice task, to be written down for a new task; or why nothing could be recorded. */
-    /** Files dropped on it: its bubble opens, asking what to do with them. */
+    /** Files dropped on it: GeckIt opens on New task with them. */
     drop: (given: GeckoHanded): void => ipcRenderer.send('gecko:drop', given),
     /** Its own small menu, at the pointer. */
     menu: (): void => ipcRenderer.send('gecko:menu'),
@@ -412,11 +408,6 @@ const geckit = {
     moved: (): void => ipcRenderer.send('gecko:moved'),
     /** Its grip dragged: its new side. */
     resize: (side: number): void => ipcRenderer.send('gecko:resize', side),
-    /** The bubble's window, and nothing else, uses these: what it asks, its height once drawn, a note that changes, and the choice. */
-    bubble: (): Promise<GeckoBubble | undefined> => ipcRenderer.invoke('gecko:bubble'),
-    onNote: (said: (note: string) => void): (() => void) => listen('gecko:note', said),
-    fit: (height: number): void => ipcRenderer.send('gecko:fit', height),
-    choose: (choice: GeckoChoice): void => ipcRenderer.send('gecko:choose', choice),
     /** The menu's window, and nothing else, uses these: how it is laid out, the item in focus for the eyes, a choice, and closing. */
     /** Main laid the menu out round the gecko: draw it, then say so with `ringShown`, and it is shown. */
     onRingShow: (said: (shown: { readonly laid: GeckoRing; readonly items: readonly GeckoItem[] }) => void): (() => void) => listen('gecko:ringShow', said),

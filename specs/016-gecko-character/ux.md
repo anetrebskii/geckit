@@ -16,7 +16,6 @@ Today the person has to read the board's cards to learn whether anything needs t
 |---|---|
 | A floating window of its own (`client/src/main/gecko.ts`, the windows in `client/src/main/windows.ts`, the page `client/src/renderer/gecko.html`) | The gecko drawn from the finished demo's frames (`client/src/renderer/src/gecko/frames/`), standing in a transparent square window, always on top and on every desktop, 120 px by default and resizable from 72 to 320 px; the orange waiting count on its top right corner from one waiting conversation. No tile behind it: the demo's gecko stands on the desktop with its own soft shadow. Not in the board |
 | Its menu (`client/src/renderer/src/gecko/Ring.tsx`) | A transparent window of its own round the gecko, opened by a press: glass discs with a label each, laid out round the gecko and kept on the gecko's screen |
-| Its bubble (`client/src/renderer/src/gecko/Bubble.tsx`) | Beside the gecko: what to do with dropped files, and the notes of the voice task |
 | Tray / menu bar (`client/src/main/tray.ts`) | The gecko's simplified silhouette in three states (asleep, working, waiting), on macOS; Windows and Linux keep the colour app icon. Its menu has "Show the Gecko" or "Hide the Gecko" |
 | Settings, General | One switch, "Show the gecko", on by default: it shows or hides the floating gecko and the tray's gecko together |
 
@@ -33,7 +32,7 @@ The pose follows the conversations, and what the person is doing with the gecko 
 | done | after a hop, until it dozes or another state takes over | a happy look, swaying a little, blinking, eyes on the cursor | `bA` with the head `bAh`, the pupils over it |
 | look | its menu is open | the same happy look, still, its eyes on the item in focus | `bA`, `bAh`, pupils |
 | catch | files are dragged over it | both hands up, its eyes on the file | `cUp`, pupils |
-| got | files were dropped on it | holding the file, a squash, for 1.1 s; then the bubble asks | `cGot` |
+| got | files were dropped on it | holding the file, a squash, for 1.1 s; then GeckIt opens on New task with the files | `cGot` |
 | camera | Screenshot was chosen | the Mac's crosshair comes at once; meanwhile it raises a camera to one eye for 1 s, the lens flashes and a white glow flashes round it | `cam`, the other eye's pupil, the lens flash |
 | listen | Voice task was chosen, while its capsule is open | headphones on, writing a few strokes, a pause, again | `lA` and `lB` in turn |
 
@@ -51,7 +50,7 @@ In waiting, done and look the pupils follow the cursor anywhere on screen, movin
 | Speaks after Voice task | the capsule records while the gecko writes; the capsule's Stop (or Enter) ends it, the words are heard on this computer by the app's own whisper.cpp, and GeckIt opens on New task with them in the words, after anything already written there |
 | Cancels the capsule | it stops listening and nothing is kept |
 | Drags files over it | it raises its hands and looks at the file |
-| Drops files on it | it catches them, then its bubble asks what to do with them: a new task with them, sending them to the waiting conversation (only while one waits), or Cancel |
+| Drops files on it | it catches them, then GeckIt comes forward on the New task form with them |
 | Drags it | it moves with the pointer; let go, all of it is moved onto the display it is mostly on, and the place is remembered |
 | Drags the grip on its bottom right corner (shown while it is pointed at) | it grows or shrinks square from its top left corner, from 72 to 320 px, kept on its display, and the size is remembered |
 | Right-clicks it | a menu with "Hide the gecko" |
@@ -123,20 +122,19 @@ stateDiagram-v2
 - Menu, named "Gecko", clockwise from the top: "Screenshot" (macOS only), "New task", "Voice task", "Waiting" (only while one waits, with the count on its disc), "Open GeckIt".
 - Right-click menu: "Hide the gecko".
 - Tray menu: "Hide the Gecko" or "Show the Gecko", in the title case of the rest of that menu.
-- Bubble after a drop: "What should I do with this file?" or "What should I do with these 3 files?"; choices "New task with this file" or "New task with these files", "Send to the waiting conversation" (only while one waits), "Cancel".
 - Voice task notes are the capsule's own: it says what was not heard or could not be recorded, and how far the speech model has downloaded.
 - Settings note under the switch: "A small gecko floats on the desktop and sits in the menu bar, showing whether Claude is working or a conversation is waiting for you. Press it for its menu, drop files on it, drag it anywhere, and resize it from its corner. Off, the menu bar has its plain icon; the menu bar's own menu shows it again."
 - Tray tooltip keeps "GeckIt".
 
 ## Edge cases
 
-- Everything at once (waiting, working, review): waiting; the hop is dropped.
+- Everything at once (waiting, working, review): working with the count; the hop is dropped.
 - A waiting conversation is hidden: it stops counting.
-- The screen is locked, or the gecko switched off: its window, menu and bubble are closed; nothing of it runs.
+- The screen is locked, or the gecko switched off: its window and menu are closed; nothing of it runs.
 - The window was left on a display no longer connected: it comes back at the top right of the main display.
 - Dragged partly off a display: on release all of it is moved onto the display it is mostly on. Resized near an edge: kept on that display.
 - The menu near an edge or in a corner: the items spread over the part of the circle that is on the gecko's screen, the first at the end nearer the top, and the circle grows until they are a disc and a half apart. The items always clear the gecko's corners, where its count is.
-- The speech model is not downloaded: the first voice task downloads it, the bubble shows the progress without taking the keyboard, and the New task form opens once the words are written down.
+- The speech model is not downloaded: the first voice task downloads it, the capsule shows the progress, and the New task form opens once the words are written down.
 - Reduced motion: no breathing, bounce, sway, nod, hop (the happy look after it still shows), blinks, pet, squash, catch or camera; the first frame of each pose holds; Screenshot goes straight to the crosshair; the menu's items appear in place. The eyes still follow the cursor.
 - Not seen (the window hidden or covered): no frame loops, no blinks, no doze timer, no CSS animation.
 - Windows and Linux: no Screenshot item; the gecko and the menu otherwise the same.
@@ -144,7 +142,7 @@ stateDiagram-v2
 ## Not included on purpose
 
 - Text on the gecko itself, or a "z" for sleeping.
-- Keyboard access to the floating gecko itself: it never takes the focus; its menu and bubble do while open, and the tray and the board are the keyboard way to the same places.
+- Keyboard access to the floating gecko itself: it never takes the focus; its menu does while open, and the tray and the board are the keyboard way to the same places.
 - A darkening scrim behind the menu: the demo darkens its stage, but on the desktop that would cover the person's other apps.
 - The demo's In review item and green count, and the headphones-only frame (`hp.png`): not shown by any state the app has.
 - Sound.
@@ -154,7 +152,7 @@ stateDiagram-v2
 | Question | Verdict | Why |
 |---|---|---|
 | How it is drawn (2026-10-28, later) | the finished HTML demo's frames, ported as they are: one body frame and one head layered, the drawn closed eyes for a blink, pupils masked into the eyes, the pre-drawn bent heads for a pet; no tile behind it. The Mochi-style SVG drawing (the rows below about drawing, style, tile and breathing) is replaced and kept here as the record | Alex's demo is the source of truth for the look and the behaviour; frames are converted to WebP (heads downscaled to 0.6) only for size, 7.7 MB to 0.9 MB |
-| What a press does | opens the demo's radial menu in its own transparent window round the gecko, replacing the bubble's question; the bubble stays for dropped files and the voice task's notes | the gecko window is small and never takes the keyboard; a panel window round it takes the keyboard without bringing GeckIt forward, as the bubble did |
+| What a press does | opens the demo's radial menu in its own transparent window round the gecko | the gecko window is small and never takes the keyboard; a panel window round it takes the keyboard without bringing GeckIt forward |
 | Idle sleep | waiting and done fall asleep after 5 minutes without a hover, a click or a new event; the count stays; working keeps working | a waiting gecko bouncing all day costs CPU and attention; the count still says something waits |
 | Count | the demo's orange disc `#f08c1e` with a white ring, from one waiting conversation, sized with the gecko; it replaces the count from 2 | asleep from the doze, the pose no longer says waiting, so the count has to |
 | Voice task | the dictation capsule, with the gecko in its listen pose while it is open (Alex, 2026-10-28) | the capsule shows that it records and has Stop and Cancel; the gecko listening alone gave no sign of either |
@@ -166,7 +164,7 @@ stateDiagram-v2
 | Style | in the style of Mochi from Coucou: flat, soft, rounded, no outlines, white with a mint tint, small dot eyes, pink oval blush, tiny mouth, round toe pads, spiral tail (Alex, 2026-10-28); drawn after the reference in `docs/design/gecko/ref/`, made with Gemini through Echopub and approved by Alex | the two drawings before it (front-facing glossy, then a three-quarter lizard) were rejected; the reference is what Alex wants the gecko to be. The rows above about how it is drawn are kept as the record of what was tried |
 | Tile or glass | the app icon's green tile, the same on every system and in light and dark; no macOS vibrancy | a white gecko on light glass nearly disappears in light mode; on the green tile it reads in both, and it is the reference's own look |
 | Breathing and bouncing that stop | asleep breathes eight times and waiting bounces three times, then they hold still | the panel is always on screen, and a state that lasts hours must not keep the computer awake. Alex to confirm, or say if breathing should never stop |
-| Speech bubbles | allowed (Alex, 2026-10-28), for what a press or a drop asks: a bubble beside the gecko with choices, in a window of its own that takes the keyboard. Before, the spec had speech bubbles out of scope and a press went straight to the waiting conversation | a press that can only open GeckIt wastes the one thing the gecko is always close to; a short question with four choices, and files dropped straight on it, make it the quickest way into a new task from any app |
+| Speech bubbles | none: built on 2026-10-28 for the drop question and the voice task's notes, removed on 2026-10-29 (Alex) | a drop goes straight to New task, and the voice task's notes are the capsule's |
 | Default | on | the panel is the feature; it is one right-click to hide |
 | Which visual direction (A glass gecko, B gecko on the edge, C glass tile) | C, the glass tile (Alex, 2026-10-28), later redrawn front-facing (rows above) | strongest link to the app icon; at panel size its weakness, poses that were hard to tell apart at 30 px, is gone |
 | Count form | HTML disc on the panel's top right corner, 20 px, 12 px bold white numeral on orange `#ec9a2c`, popping in | as in the reference; the board's own amber token read ochre on the green tile |
@@ -176,4 +174,4 @@ stateDiagram-v2
 
 ## Coverage
 
-FR-001 and the pose rules are `geckoState`, `geckoShown`, `canDoze` and `DOZE` in `client/src/shared/gecko.ts` with `client/test/gecko.test.ts`; the menu's items and layout are `geckoItems` and `geckoRing`, the size and place `geckoSide` and `keptIn`, tested there too. The window, menu, bubble, camera, voice task, resize and move are `client/src/main/gecko.ts` and `client/src/main/windows.ts`; the pages are `client/src/renderer/src/gecko/Art.tsx` (the frames and their layers), `Gecko.tsx`, `Ring.tsx` and `Bubble.tsx`, tested in `client/test/gecko-panel.test.ts`; New task with the spoken words is `Chat.tsx` and `Board.tsx`; the tray item is `client/src/main/tray.ts`; the preview is `client/src/renderer/src/gecko-preview.tsx`. The phone (US5) is not built.
+FR-001 and the pose rules are `geckoState`, `geckoShown`, `canDoze` and `DOZE` in `client/src/shared/gecko.ts` with `client/test/gecko.test.ts`; the menu's items and layout are `geckoItems` and `geckoRing`, the size and place `geckoSide` and `keptIn`, tested there too. The window, menu, drop, camera, voice task, resize and move are `client/src/main/gecko.ts` and `client/src/main/windows.ts`; the pages are `client/src/renderer/src/gecko/Art.tsx` (the frames and their layers), `Gecko.tsx` and `Ring.tsx`, tested in `client/test/gecko-panel.test.ts`; New task with the spoken words is `Chat.tsx` and `Board.tsx`; the tray item is `client/src/main/tray.ts`; the preview is `client/src/renderer/src/gecko-preview.tsx`. The phone (US5) is not built.
