@@ -1043,6 +1043,8 @@ export interface Settings {
   readonly analyticsAsked: boolean
   /** Errors go to Sentry, redacted. Off until the error card is answered Send, or it is turned on in Settings. */
   readonly sendErrors: boolean
+  /** The gecko in the board's top bar and the tray, showing what the conversations are doing. Off, the tray has its plain icon. */
+  readonly showGecko: boolean
   /** False stops the checks on launch and every hour; Check for Updates in Settings still works. */
   readonly autoUpdate: boolean
   readonly updateChannel: UpdateChannel
@@ -1196,6 +1198,7 @@ export const DEFAULT_SETTINGS: Settings = {
   analytics: false,
   analyticsAsked: false,
   sendErrors: false,
+  showGecko: true,
   autoUpdate: true,
   updateChannel: 'stable',
   guideClaude: true,

@@ -130,9 +130,13 @@ function glassSide(name) {
   return svg(48, 32, inner, `GeckIt gecko, ${name}`)
 }
 
-function chip(name) {
+const chipGecko = (name) => {
   const p = top[name]
-  const g = `<g transform="translate(16.4 17) rotate(-90) scale(0.47) translate(-24 -16)"><g fill="url(#white)" stroke="url(#white)" filter="url(#lift)">${p.legs.map((l) => leg(...l)).join('')}${tail(p.tail)}${p.body}</g>${name === 'asleep' ? '' : eyesDots(name)}</g>`
+  return `<g transform="translate(16.4 17) rotate(-90) scale(0.47) translate(-24 -16)"><g fill="url(#white)" stroke="url(#white)" filter="url(#lift)">${p.legs.map((l) => leg(...l)).join('')}${tail(p.tail)}${p.body}</g>${name === 'asleep' ? '' : eyesDots(name)}</g>`
+}
+
+function chip(name) {
+  const g = chipGecko(name)
   let inner = `<defs>
 <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6edb7a"/><stop offset="0.55" stop-color="#3fb551"/><stop offset="1" stop-color="#1c8c33"/></linearGradient>
 <linearGradient id="white" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="28"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#dff3e2"/></linearGradient>
@@ -188,3 +192,6 @@ for (const pose of ['asleep', 'working', 'waiting']) {
   writeFileSync(join(out, `tray-b-${pose}.svg`), traySide(pose))
   writeFileSync(join(out, `tray-c-${pose}.svg`), trayTop(pose, 'c'))
 }
+// The built tile draws the same C gecko; its tile, defs and count are the component's own.
+const art = poses.map((pose) => `  ${pose}: '${chipGecko(pose)}',`).join('\n')
+writeFileSync(join(import.meta.dirname, '../../../client/src/renderer/src/chat/gecko-art.ts'), `// Written by docs/design/gecko/draw.mjs from the C poses: change it there and run it again.\nexport const GECKO_ART = {\n${art}\n} as const\n`)

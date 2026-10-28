@@ -6,5 +6,5 @@
     "composite": true
   },
   "include": ["src/main", "src/cli","src/preload", "src/shared", "test", "electron.vite.config.ts", "eslint.config.js"],
-  "exclude": ["test/browser/new-task-drop", "test/browser/manager-sources", "test/accounts.test.ts", "test/peer.test.ts", "test/phone.test.ts", "test/plans.test.ts", "test/started.test.ts", "test/transcript.test.ts", "test/switcher.test.ts", "test/manager-ui.test.ts", "test/board-groups.test.ts"]
+  "exclude": ["test/browser/new-task-drop", "test/browser/manager-sources", "test/accounts.test.ts", "test/peer.test.ts", "test/phone.test.ts", "test/plans.test.ts", "test/started.test.ts", "test/transcript.test.ts", "test/switcher.test.ts", "test/manager-ui.test.ts", "test/board-groups.test.ts", "test/gecko-tile.test.ts"]
 }
