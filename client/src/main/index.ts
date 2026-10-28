@@ -140,6 +140,8 @@ import { fetchSpeechModel, installedSpeechModel, onSpeechModel, speechModel, whi
 import { addToRecording, dropRecording, keepRecording, startRecording, sweepRecordings } from './recordings'
 import { recordedNote } from '../shared/recording'
 import { drawTray, startTray } from './tray'
+import { geckoState } from '../shared/gecko'
+import type { GeckoPose } from '../shared/gecko'
 import { checkForUpdates, follow, restartToUpdate, startUpdates, updateView } from './updates'
 import {
   chatListening,
@@ -240,6 +242,8 @@ function buildPlans(): Plans {
 
 /** The count the taskbar icon wears, so that the sessions changing without it does not draw it again. */
 let worn = -1
+/** What the conversations are doing, as the gecko in the tray shows it. */
+let pose: GeckoPose = 'asleep'
 
 const badge = (): void => {
   if (sessions === undefined) return
@@ -401,7 +405,10 @@ async function build(held: Routes): Promise<Sessions> {
       const settings = getSettings()
       const within = (where: readonly string[]): readonly ChatSession[] =>
         all.filter((one) => one.manager !== true && (one.question === true || where.includes(homeOf(one))))
-      shownChat()?.webContents.send('chat:sessions', within(shownProjects(settings)))
+      const shown = within(shownProjects(settings))
+      shownChat()?.webContents.send('chat:sessions', shown)
+      // The tray's gecko counts what the window lists, with the assistants switched off left out as the window leaves them.
+      pose = geckoState(shown.filter((one) => assistantsIn(settings).includes(providerOf(one.id)))).pose
       // The phone is in no profile, so it is told every project's.
       shownPeer()?.webContents.send('peer:tell', 'chat:sessions', within(settings.projects))
       badge()
@@ -1794,6 +1801,7 @@ if (!app.requestSingleInstanceLock()) {
         }),
       busy: (id) => started.busy(id),
       record: recordScreen,
+      pose: () => pose,
     })
     keepShortcuts(getSettings().anywhereOff)
     sweepRecordings()

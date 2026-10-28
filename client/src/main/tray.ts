@@ -5,9 +5,16 @@ import { app, Menu, nativeImage, Tray } from 'electron'
 import type { MenuItemConstructorOptions, NativeImage } from 'electron'
 
 import appIcon from '../../assets/icons/32x32.png?asset'
+import asleep from '../../assets/trayAsleepTemplate.png?asset'
+import asleep2x from '../../assets/trayAsleepTemplate@2x.png?asset'
 import template from '../../assets/trayTemplate.png?asset'
 import template2x from '../../assets/trayTemplate@2x.png?asset'
+import waiting from '../../assets/trayWaitingTemplate.png?asset'
+import waiting2x from '../../assets/trayWaitingTemplate@2x.png?asset'
+import working from '../../assets/trayWorkingTemplate.png?asset'
+import working2x from '../../assets/trayWorkingTemplate@2x.png?asset'
 import { assistantsIn, shownProjects } from '../shared/api'
+import type { GeckoPose } from '../shared/gecko'
 import { isRemote } from '../shared/hosts'
 import { llmProviderInfo } from '../shared/providers'
 import { describeTime, nextTimed } from '../shared/schedule'
@@ -21,11 +28,22 @@ export interface TrayDeps {
   readonly run: (id: string) => void
   readonly busy: (id: string) => boolean
   readonly record: () => void
+  /** What the conversations are doing, which the gecko in the tray shows. */
+  readonly pose: () => GeckoPose
 }
 
 let tray: Tray | undefined
 let deps: TrayDeps | undefined
 let drawn = ''
+let worn: GeckoPose | 'plain' = 'plain'
+
+/** Each image at 1x and 2x: today's icon, and the gecko's three. */
+const IMAGES: Record<GeckoPose | 'plain', readonly [string, string]> = {
+  plain: [template, template2x],
+  asleep: [asleep, asleep2x],
+  working: [working, working2x],
+  waiting: [waiting, waiting2x],
+}
 
 /** The Local orange of the dev Dock icon. */
 const LOCAL = { r: 0xf2, g: 0x8c, b: 0x28 }
@@ -44,22 +62,27 @@ function orange(buffer: Buffer): NativeImage {
 }
 
 /** On a Mac, black on clear, which the menu bar colours for itself; run from the source, the same in orange; elsewhere the app's own icon. */
-function image(): NativeImage {
+function image(which: GeckoPose | 'plain'): NativeImage {
   if (process.platform !== 'darwin') return nativeImage.createFromBuffer(readFileSync(appIcon))
+  const [one, two] = IMAGES[which]
   if (!app.isPackaged) {
-    const made = orange(readFileSync(template))
-    made.addRepresentation({ scaleFactor: 2, buffer: orange(readFileSync(template2x)).toPNG() })
+    const made = orange(readFileSync(one))
+    made.addRepresentation({ scaleFactor: 2, buffer: orange(readFileSync(two)).toPNG() })
     return made
   }
-  const made = nativeImage.createFromBuffer(readFileSync(template), { scaleFactor: 1 })
-  made.addRepresentation({ scaleFactor: 2, buffer: readFileSync(template2x) })
+  const made = nativeImage.createFromBuffer(readFileSync(one), { scaleFactor: 1 })
+  made.addRepresentation({ scaleFactor: 2, buffer: readFileSync(two) })
   made.setTemplateImage(true)
   return made
 }
 
+/** The gecko's pose on a Mac while it is shown; today's icon when it is switched off, and on the other systems, whose trays wear the colour icon. */
+const wanted = (): GeckoPose | 'plain' => (process.platform === 'darwin' && getSettings().showGecko && deps !== undefined ? deps.pose() : 'plain')
+
 export function startTray(given: TrayDeps): void {
   deps = given
-  tray = new Tray(image())
+  worn = wanted()
+  tray = new Tray(image(worn))
   // Run from the source, it is told apart from the installed GeckIt's beside it by its orange icon, no wider than the other.
   tray.setToolTip(app.isPackaged ? 'GeckIt' : 'GeckIt Local')
   drawTray()
@@ -70,6 +93,11 @@ export function startTray(given: TrayDeps): void {
 /** Built again only when something it says has changed, since it is asked on every change in any conversation. */
 export function drawTray(): void {
   if (tray === undefined || deps === undefined) return
+  const wear = wanted()
+  if (wear !== worn) {
+    worn = wear
+    tray.setImage(image(wear))
+  }
   const now = Date.now()
   // Another profile's shortcuts run all the same, and are listed only where that profile is in use.
   const settings = getSettings()
