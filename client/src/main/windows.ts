@@ -276,8 +276,8 @@ export function closePeer(): void {
   peer = undefined
 }
 
-/** The floating gecko's side: on a Mac the window is the glass; elsewhere the page draws it, with room around it for its shadow. */
-const GECKO_SIDE = process.platform === 'darwin' ? 100 : 108
+/** The floating gecko's side: a 96 px tile drawn by the page, with room around it for its shadow. */
+const GECKO_SIDE = 108
 
 /** The gecko floating on the desktop: above other windows and on every desktop, never in the Dock, the taskbar or the window switcher, and never taking the keyboard, so it can sit there while the person types elsewhere. */
 export function geckoWindow(): BrowserWindow {
@@ -299,9 +299,9 @@ export function geckoWindow(): BrowserWindow {
     focusable: false,
     acceptFirstMouse: true,
     alwaysOnTop: true,
-    ...(process.platform === 'darwin'
-      ? { vibrancy: 'popover' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' }
-      : { transparent: true, hasShadow: false, backgroundColor: '#00000000' }),
+    transparent: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
     webPreferences: { preload, sandbox: false, devTools: false },
   })
   gecko.setAlwaysOnTop(true, 'floating')
