@@ -274,7 +274,7 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
           Show the gecko
         </label>
         <span style={NOTE}>
-          In the top bar and the menu bar, it shows whether Claude is working or a conversation is waiting for you. Off, the menu bar has its plain icon.
+          A small gecko floats on the desktop and sits in the menu bar, showing whether Claude is working or a conversation is waiting for you. Press it to open the one that waits, drag it anywhere. Off, the menu bar has its plain icon.
         </span>
       </div>
 

@@ -35,6 +35,7 @@ export default defineConfig({
           chat: resolve(here, 'src/renderer/chat.html'),
           voice: resolve(here, 'src/renderer/voice.html'),
           peer: resolve(here, 'src/renderer/peer.html'),
+          gecko: resolve(here, 'src/renderer/gecko.html'),
         },
       },
     },

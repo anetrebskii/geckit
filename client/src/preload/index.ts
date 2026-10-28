@@ -43,6 +43,7 @@ import type {
   Uploaded,
   VoiceMode,
 } from '../shared/api'
+import type { GeckoView } from '../shared/gecko'
 import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from '../shared/hosts'
 import type { Link } from '../shared/links'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from '../shared/providers'
@@ -377,6 +378,22 @@ const geckit = {
     cancel: (): void => ipcRenderer.send('voice:cancel'),
     onStart: (said: () => void): (() => void) => listen('voice:start', said),
     onStop: (said: () => void): (() => void) => listen('voice:stop', said),
+  },
+
+  /** The floating gecko's window, and nothing else, uses these. */
+  gecko: {
+    state: (): Promise<GeckoView> => ipcRenderer.invoke('gecko:state'),
+    onState: (said: (view: GeckoView) => void): (() => void) => listen('gecko:state', said),
+    /** A card has just reached In review: one hop. */
+    onHop: (said: () => void): (() => void) => listen('gecko:hop', said),
+    /** Where the cursor is on the screen, told only when it moves, for the eyes to follow. */
+    onCursor: (said: (at: { x: number; y: number }) => void): (() => void) => listen('gecko:cursor', said),
+    /** GeckIt to the front, on the conversation that has waited longest, the next on each press. */
+    press: (): void => ipcRenderer.send('gecko:press'),
+    /** Its own small menu, at the pointer. */
+    menu: (): void => ipcRenderer.send('gecko:menu'),
+    /** Dragged: where its top left corner goes on the screen. */
+    move: (x: number, y: number): void => ipcRenderer.send('gecko:move', x, y),
   },
 
   phone: {

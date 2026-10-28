@@ -142,6 +142,7 @@ import { recordedNote } from '../shared/recording'
 import { drawTray, startTray } from './tray'
 import { geckoState } from '../shared/gecko'
 import type { GeckoPose } from '../shared/gecko'
+import { startGecko, tellGecko } from './gecko'
 import { checkForUpdates, follow, restartToUpdate, startUpdates, updateView } from './updates'
 import {
   chatListening,
@@ -244,6 +245,8 @@ function buildPlans(): Plans {
 let worn = -1
 /** What the conversations are doing, as the gecko in the tray shows it. */
 let pose: GeckoPose = 'asleep'
+/** The conversations the gecko counted last, so a card arriving in In review is seen once. */
+let counted: readonly ChatSession[] = []
 
 const badge = (): void => {
   if (sessions === undefined) return
@@ -407,8 +410,12 @@ async function build(held: Routes): Promise<Sessions> {
         all.filter((one) => one.manager !== true && (one.question === true || where.includes(homeOf(one))))
       const shown = within(shownProjects(settings))
       shownChat()?.webContents.send('chat:sessions', shown)
-      // The tray's gecko counts what the window lists, with the assistants switched off left out as the window leaves them.
-      pose = geckoState(shown.filter((one) => assistantsIn(settings).includes(providerOf(one.id)))).pose
+      // The gecko counts what the window lists, with the assistants switched off left out as the window leaves them.
+      const now = shown.filter((one) => assistantsIn(settings).includes(providerOf(one.id)))
+      const gecko = geckoState(now, counted)
+      counted = now
+      pose = gecko.pose
+      tellGecko(gecko)
       // The phone is in no profile, so it is told every project's.
       shownPeer()?.webContents.send('peer:tell', 'chat:sessions', within(settings.projects))
       badge()
@@ -1803,6 +1810,7 @@ if (!app.requestSingleInstanceLock()) {
       record: recordScreen,
       pose: () => pose,
     })
+    startGecko()
     keepShortcuts(getSettings().anywhereOff)
     sweepRecordings()
     startUpdates({

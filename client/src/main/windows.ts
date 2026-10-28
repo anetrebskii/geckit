@@ -6,12 +6,14 @@ import type { Bounds } from '../shared/api'
 import { getSettings, setSettings } from './store'
 
 /**
- * The three windows.
+ * The windows.
  *
  * The panel is the small one that opens on the shortcut: correcting and
  * dictating, one press from anywhere. Chat is a window of its own, big enough
  * to work in. Voice is the capsule that appears while something is being
  * dictated.
+ *
+ * The gecko floats on the desktop, showing what the conversations are doing.
  */
 
 const preload = join(import.meta.dirname, '../preload/index.mjs')
@@ -32,7 +34,7 @@ html::after { content: 'Local'; position: fixed; top: 0; left: 50%; z-index: 214
 const load = (window: BrowserWindow, name: string): void => {
   const where = page(name)
   void ('url' in where ? window.loadURL(where.url) : window.loadFile(where.file))
-  if ('url' in where && name !== 'voice') window.webContents.on('did-finish-load', () => void window.webContents.insertCSS(LOCAL))
+  if ('url' in where && name !== 'voice' && name !== 'gecko') window.webContents.on('did-finish-load', () => void window.webContents.insertCSS(LOCAL))
 }
 
 /** Bounds that are still on a screen this computer has. */
@@ -50,7 +52,7 @@ function onScreen(bounds: Bounds | undefined): Partial<Bounds> {
   return fits ? bounds : {}
 }
 
-const remember = (window: BrowserWindow, which: 'panelBounds' | 'chatBounds'): void => {
+const remember = (window: BrowserWindow, which: 'panelBounds' | 'chatBounds' | 'geckoBounds'): void => {
   let soon: NodeJS.Timeout | undefined
   const keep = (): void => {
     clearTimeout(soon)
@@ -74,6 +76,7 @@ let panel: BrowserWindow | undefined
 let chat: BrowserWindow | undefined
 let voice: BrowserWindow | undefined
 let peer: BrowserWindow | undefined
+let gecko: BrowserWindow | undefined
 
 export function panelWindow(): BrowserWindow {
   if (panel !== undefined && !panel.isDestroyed()) return panel
@@ -273,8 +276,57 @@ export function closePeer(): void {
   peer = undefined
 }
 
+/** The floating gecko's side: on a Mac the window is the glass; elsewhere the page draws it, with room around it for its shadow. */
+const GECKO_SIDE = process.platform === 'darwin' ? 100 : 108
+
+/** The gecko floating on the desktop: above other windows and on every desktop, never in the Dock, the taskbar or the window switcher, and never taking the keyboard, so it can sit there while the person types elsewhere. */
+export function geckoWindow(): BrowserWindow {
+  if (gecko !== undefined && !gecko.isDestroyed()) return gecko
+  const area = screen.getPrimaryDisplay().workArea
+  gecko = new BrowserWindow({
+    width: GECKO_SIDE,
+    height: GECKO_SIDE,
+    x: area.x + area.width - GECKO_SIDE - 24,
+    y: area.y + 24,
+    ...onScreen(getSettings().geckoBounds),
+    show: false,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: false,
+    acceptFirstMouse: true,
+    alwaysOnTop: true,
+    ...(process.platform === 'darwin'
+      ? { vibrancy: 'popover' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' }
+      : { transparent: true, hasShadow: false, backgroundColor: '#00000000' }),
+    webPreferences: { preload, sandbox: false, devTools: false },
+  })
+  gecko.setAlwaysOnTop(true, 'floating')
+  // Without the full screen spaces, which would turn GeckIt into an app with no Dock icon to get there.
+  gecko.setVisibleOnAllWorkspaces(true, { skipTransformProcessType: true })
+  load(gecko, 'gecko')
+  remember(gecko, 'geckoBounds')
+  gecko.once('ready-to-show', () => gecko?.showInactive())
+  gecko.webContents.on('render-process-gone', () => gecko?.destroy())
+  gecko.on('closed', () => {
+    gecko = undefined
+  })
+  return gecko
+}
+
+export const shownGecko = (): BrowserWindow | undefined =>
+  gecko !== undefined && !gecko.isDestroyed() ? gecko : undefined
+
+export function closeGecko(): void {
+  shownGecko()?.destroy()
+  gecko = undefined
+}
+
 /** Every window, for telling them all the same thing. */
 export const everyWindow = (): BrowserWindow[] => BrowserWindow.getAllWindows().filter((one) => !one.isDestroyed())
 
-/** The windows a person can see and go back to; the phone's is not one. */
-export const personWindows = (): BrowserWindow[] => everyWindow().filter((one) => one !== peer)
+/** The windows a person can see and go back to; the phone's is not one, nor the gecko's. */
+export const personWindows = (): BrowserWindow[] => everyWindow().filter((one) => one !== peer && one !== gecko)
