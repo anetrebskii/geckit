@@ -141,8 +141,9 @@ export function chatWindow(): BrowserWindow {
   chat.once('ready-to-show', () => chat?.show())
   // Brought to the front, it stops flashing in the taskbar for the notice that made it; where nothing flashes, as on the Mac, this does nothing.
   chat.on('focus', () => chat?.flashFrame(false))
-  chat.webContents.on('did-start-loading', () => {
-    listening = false
+  // Only the page itself loading again; a frame inside it, as a file's HTML shown, leaves its listeners where they are.
+  chat.webContents.on('did-start-navigation', ({ isMainFrame, isSameDocument }) => {
+    if (isMainFrame && !isSameDocument) listening = false
   })
   chat.on('closed', () => {
     chat = undefined
