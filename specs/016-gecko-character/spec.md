@@ -7,7 +7,7 @@
 
 ## The idea in one paragraph
 
-One small gecko lives in a glass panel of its own that floats on the desktop, outside the board, like Mochi in Coucou. It shows, at a glance and without opening GeckIt, what the conversations are doing: it is busy while Claude works, perks up and looks at the person when a conversation is waiting for them, hops and curls its tail when a card moves to In review, and sleeps when nothing runs. Pressing it brings GeckIt forward on the conversation that is waiting. The tray icon shows the same state in the gecko's simplest form. The board itself stays as it is.
+One small gecko lives in a panel of its own, the app icon's green tile, that floats on the desktop, outside the board, like Mochi in Coucou. It shows, at a glance and without opening GeckIt, what the conversations are doing: it is busy while Claude works, perks up and looks at the person when a conversation is waiting for them, hops and curls its tail when a card moves to In review, and sleeps when nothing runs. Pressing it brings GeckIt forward on the conversation that is waiting. The tray icon shows the same state in the gecko's simplest form. The board itself stays as it is.
 
 ## User Scenarios & Testing
 
@@ -60,14 +60,14 @@ The iPhone and Android apps show the same gecko in the Tasks header with the sam
 - "Glass" means the character's own material: a soft glossy body with a highlight and a gentle inner glow, close to macOS 26 Liquid Glass in feel. It is drawn into the character, not taken from the OS blur, so it looks the same on Mac, Windows and Linux and in light and dark.
 - Not fully transparent: at 24-32 px and in a phone-sized video the silhouette must stay solid and readable.
 - It must not read as a copy of Mochi (a white rounded blob with dot eyes). The gecko keeps its own silhouette, colour and moves.
-- It is a charming small gecko, cute but not babyish: sitting up on its front legs, three-quarter toward the person, a wedge-shaped head about a third of its height, eyes on the sides of the head with gecko slit pupils that widen, a slim body, long legs with splayed toe pads, the curling tail, the icon's green gradient and glossy body. It is drawn in parts (body, head, each eye with its lid and pupil, tail, front feet) so each part moves on its own, with continuous eased motion: springy easing, squash and stretch, the tail following the body a beat late, blinks with lids, a small head tilt now and then.
+- It is drawn in the style of Mochi: flat, soft and rounded, no outlines, white with a light mint tint, a big round head a little wider than tall, small dot eyes set wide, pink oval blush, a tiny mouth, short paws with round toe pads, a tail ending in a spiral curl, a soft shadow. The reference Alex approved is `docs/design/gecko/ref/`. It is drawn in parts (body, head, each eye, mouth shapes, each paw, tail) so each part moves on its own, with continuous eased motion: springy easing, squash and stretch, the tail following the body a beat late, blinks, a small head tilt now and then.
 - It notices the person: its pupils, and a little its head, follow the mouse cursor anywhere on screen; hovered, it looks up at them with a small happy wiggle (asleep, it opens one eye sleepily and shuts it again); pressed, it squashes a little before GeckIt comes forward.
 - A floating panel about 100 px square, the gecko about 80 px tall in it, large enough to be funny and expressive.
 
 ## Requirements
 
 - FR-001: One aggregate state is derived from the board's own session data (working, waiting, idle, just-moved-to-review), with waiting taking priority. It is a pure function with tests.
-- FR-002: The gecko renders in a separate always-on-top, frameless glass panel from that state, with the poses in the US1 table; not in the board.
+- FR-002: The gecko renders in a separate always-on-top, frameless panel from that state, with the poses in the US1 table; not in the board.
 - FR-003: Pressing it brings GeckIt to the front on the longest-waiting conversation, cycling on repeat; with nothing waiting it only brings GeckIt to the front. Right-click: "Hide the gecko".
 - FR-004: The tray icon follows the same state with simplified images; the existing tray menu is unchanged.
 - FR-005: Settings switch to show or hide the panel; reduced motion honoured; nothing animates while the panel is hidden or the screen is locked.

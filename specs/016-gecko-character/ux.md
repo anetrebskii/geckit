@@ -14,7 +14,7 @@ Today the person has to read the board's cards to learn whether anything needs t
 
 | Surface | What appears on it |
 |---|---|
-| A floating panel of its own (`client/src/main/gecko.ts`, the window in `client/src/main/windows.ts`, the page `client/src/renderer/gecko.html`) | A small glass panel, about 100 px square, always on top and on every desktop, with the gecko sitting in it facing the person, in one of four states; a count on the panel's corner when more than one conversation waits. Not in the board: the board's top bar is as it was before spec 016 |
+| A floating panel of its own (`client/src/main/gecko.ts`, the window in `client/src/main/windows.ts`, the page `client/src/renderer/gecko.html`) | A small panel, the app icon's green tile about 100 px square, always on top and on every desktop, with the gecko sitting on it facing the person, in one of four states; a count on the panel's corner when more than one conversation waits. Not in the board: the board's top bar is as it was before spec 016 |
 | Tray / menu bar (`client/src/main/tray.ts`) | The gecko's simplified silhouette in three states (asleep, working, waiting), on macOS; Windows and Linux keep the colour app icon |
 | Settings, General | One switch, "Show the gecko", on by default: it shows or hides the panel and the tray's gecko together |
 
@@ -22,21 +22,21 @@ Today the person has to read the board's cards to learn whether anything needs t
 
 | State | When | What the person sees | What they do |
 |---|---|---|---|
-| asleep | nothing working, nothing waiting | eyes shut, head lowered toward its front feet, tail wrapped round them; a few slow breaths, then it lies still | nothing; it is safe to look away |
-| working | at least one working, none waiting | busy in place: it bobs, its front feet tap in turn, its tail swings a beat behind the body | nothing; Claude is busy |
-| waiting | at least one asking, finished and unread, or a command after ! waiting to be typed into | it perks up, pupils wide, looking at the person, and bounces gently three times; count when 2 or more | press the gecko to open the conversation that has waited longest |
-| review | a card has just moved to In review | a happy hop of about 0.9 s, squashed on landing, the tail curling up; then the state below returns | look at In review when convenient |
+| asleep | nothing working, nothing waiting | lying on its belly, chin on its front paws, eyes shut arcs; the back rises and falls a few times and the tail tip twitches, then it lies still | nothing; it is safe to look away |
+| working | at least one working, none waiting | sitting, front paws tapping in turn as if typing, the head nodding to the beat, the tail swaying behind | nothing; Claude is busy |
+| waiting | at least one asking, finished and unread, or a command after ! waiting to be typed into | it sits up and looks straight at the person with an \"o\" mouth, and bounces gently three times; the orange count pops in from 2 | press the gecko to open the conversation that has waited longest |
+| review | a card has just moved to In review | a happy hop of about 0.9 s with paws up and happy arc eyes, squashed on landing, the tail flicking; then the state below returns | look at In review when convenient |
 
 Waiting wins over working; review is a one-off on top of whichever of the other three holds.
 
-In every awake state the pupils, and a little the head, follow the mouse cursor anywhere on screen; it blinks with its lids every few seconds and now and then tilts its head.
+In every awake state the dot eyes, and a little the head, follow the mouse cursor anywhere on screen; it blinks every few seconds and now and then tilts its head.
 
 ### What the person does to it
 
 | Action | What happens |
 |---|---|
-| Moves the cursor anywhere | the pupils follow it, the head turns a little after them (not asleep: the eyes are shut) |
-| Hovers it, awake | it looks up at them, pupils wide, with a small happy wiggle |
+| Moves the cursor anywhere | the dot eyes follow it, the head turns a little after them (not asleep: the eyes are shut) |
+| Hovers it, awake | it looks straight at them with a small happy wiggle |
 | Hovers it, asleep | it opens one eye sleepily and shuts it again; it stays asleep |
 | Presses it | a small squash, then GeckIt comes to the front on the longest-waiting conversation, the next on each press; with nothing waiting, GeckIt just comes to the front |
 | Drags it | it moves with the pointer anywhere on the screen and is there again on the next launch |
@@ -142,11 +142,12 @@ A card moving to In review while something waits does not interrupt waiting: the
 | Where the gecko lives | a separate small floating glass panel, not in the board (Alex, 2026-10-28) | like Mochi in Coucou, the gecko is seen while the person works in other apps, which is when a waiting question goes unseen; in the board it was only seen by someone already looking at the board. The tile in the top bar (commits a177dcb to de64496) is removed |
 | How it is drawn and moves | front-facing, sitting in the panel looking out, drawn in parts with smooth eased motion, and its eyes follow the cursor (Alex, 2026-10-28) | the top-down C gecko read as the icon, not as a creature; facing the person with big slit-pupil eyes it can look at them, which is what makes a mascot. The icon's green, glossy body, toe pads and curling tail keep it the GeckIt gecko; the eyes sit on the sides of the head so it does not read as a frog |
 | How cute | cute, not babyish (Alex, 2026-10-28): a small gecko sitting up on its front legs, three-quarter toward the person, head about a third of its height and wedge-shaped with a pointed snout, eyes on the sides of the head about a quarter of its width with slit pupils, slim body, long legs with splayed toe pads, long tapering curled tail, no cheeks | the first front-facing drawing, a big round head with large eyes on top and pink cheeks, read as a baby or a frog; a charming small lizard reads as a gecko. Before and after: `docs/design/gecko/panel-redraw-compare.jpg` |
-| Glass on each system | macOS: the window's own vibrancy (`popover`, kept active), the page adds only the shine; Windows and Linux: a transparent window with the CSS glass of the earlier tile (translucent gradient, light border, sheen), no blur | only the system can blur the desktop behind a window; a page cannot see it |
+| Style | in the style of Mochi from Coucou: flat, soft, rounded, no outlines, white with a mint tint, small dot eyes, pink oval blush, tiny mouth, round toe pads, spiral tail (Alex, 2026-10-28); drawn after the reference in `docs/design/gecko/ref/`, made with Gemini through Echopub and approved by Alex | the two drawings before it (front-facing glossy, then a three-quarter lizard) were rejected; the reference is what Alex wants the gecko to be. The rows above about how it is drawn are kept as the record of what was tried |
+| Tile or glass | the app icon's green tile, the same on every system and in light and dark; no macOS vibrancy | a white gecko on light glass nearly disappears in light mode; on the green tile it reads in both, and it is the reference's own look |
 | Breathing and bouncing that stop | asleep breathes eight times and waiting bounces three times, then they hold still | the panel is always on screen, and a state that lasts hours must not keep the computer awake. Alex to confirm, or say if breathing should never stop |
 | Default | on | the panel is the feature; it is one right-click to hide |
 | Which visual direction (A glass gecko, B gecko on the edge, C glass tile) | C, the glass tile (Alex, 2026-10-28), later redrawn front-facing (rows above) | strongest link to the app icon; at panel size its weakness, poses that were hard to tell apart at 30 px, is gone |
-| Count form | HTML disc on the panel's top right corner, 20 px, 12 px bold numeral, `--warning-text` with a `--bg` numeral and ring | amber is the board's own "asking you" colour; in light it reads darker, ochre, because the token is the text colour the board uses for "Asking you" |
+| Count form | HTML disc on the panel's top right corner, 20 px, 12 px bold white numeral on orange `#ec9a2c`, popping in | as in the reference; the board's own amber token read ochre on the green tile |
 | Review hop when the person moves the card | it hops too | the list carries no record of who moved a card, so a card the person drags to In review hops the same as one a goal or the manager moved; the hop then confirms the move. Alex to confirm |
 | Which conversations count | every folder of the profile in use (`chat.everyone`), not only the folders the board is narrowed to | the gecko answers "does anything need me", as the Dock badge; hidden conversations and other profiles' folders are still left out |
 | Tray on Windows and Linux | unchanged, the colour app icon | a black template is lost on a dark taskbar, and only macOS colours template images itself |
