@@ -1,234 +1,29 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { SessionImage } from '../../../shared/api'
-import type { GeckoPose, GeckoView } from '../../../shared/gecko'
+import { canDoze, DOZE, geckoShown } from '../../../shared/gecko'
+import type { GeckoShown, GeckoView } from '../../../shared/gecko'
 import { asImage, canShow } from '../pictures'
+import { toHear, useRecorder } from '../recorder'
+import { useSettings } from '../settings'
+import { EYES, GeckoArt } from './Art'
+import type { Aim } from './Art'
 
-/** What a screen reader and the tooltip say; review is not said on its own. */
-export function named(pose: GeckoPose, count: number): string {
-  if (pose === 'waiting') return `${String(count)} ${count === 1 ? 'conversation' : 'conversations'} waiting for you`
-  return pose === 'working' ? 'Claude is working' : 'Nothing running'
+const reducedNow = (): boolean => matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** Whether the system asks for reduced motion, kept up to date. */
+function useReduced(): boolean {
+  const [reduced, setReduced] = useState(reducedNow)
+  useEffect(() => {
+    const query = matchMedia('(prefers-reduced-motion: reduce)')
+    const change = (): void => setReduced(query.matches)
+    query.addEventListener('change', change)
+    return () => query.removeEventListener('change', change)
+  }, [])
+  return reduced
 }
 
-/** Where it looks, each from -1 to 1: right and down are positive. */
-export interface Look {
-  readonly x: number
-  readonly y: number
-}
-
-const INK = '#2b211c'
-const PAD = '#bfe3c8'
-const BLUSH = '#f6a8bc'
-
-/** An eye: a small dot that follows the look and closes in a blink, the shut arc of sleep and the upturned arc of a happy face. */
-function Eye({ x, y, side }: { readonly x: number; readonly y: number; readonly side: 'l' | 'r' }): React.JSX.Element {
-  return (
-    <g className={`gk-eye gk-eye-${side}`}>
-      <g className="gk-pupil">
-        <ellipse className="gk-dot" cx={x} cy={y} rx="2.5" ry="2.8" fill={INK} />
-        <circle className="gk-dot" cx={x - 0.8} cy={y - 1} r="0.7" fill="#fff" />
-      </g>
-      <path className="gk-shut" d={`M${String(x - 2.8)} ${String(y - 0.4)} Q${String(x)} ${String(y + 2.2)} ${String(x + 2.8)} ${String(y - 0.4)}`} fill="none" stroke={INK} strokeWidth="1" strokeLinecap="round" />
-      <path className="gk-happy" d={`M${String(x - 2.8)} ${String(y + 0.8)} Q${String(x)} ${String(y - 2.4)} ${String(x + 2.8)} ${String(y + 0.8)}`} fill="none" stroke={INK} strokeWidth="1.1" strokeLinecap="round" />
-    </g>
-  )
-}
-
-/** A sole turned to the person: one big pad and three toe pads, a little darker than the skin. */
-function Sole({ x, y }: { readonly x: number; readonly y: number }): React.JSX.Element {
-  return (
-    <g>
-      <ellipse cx={x} cy={y + 1.2} rx="2.6" ry="2.1" fill={PAD} />
-      {[-2.9, 0, 2.9].map((dx) => <circle key={dx} cx={x + dx} cy={y - (dx === 0 ? 2.6 : 1.8)} r="1.1" fill={PAD} />)}
-    </g>
-  )
-}
-
-/** A paw on the laptop's keys, seen over the lid while it types. */
-function Typing({ x }: { readonly x: number }): React.JSX.Element {
-  return (
-    <g className="gk-typing">
-      <circle cx={x} cy="64.4" r="3.1" fill="#fff" />
-      {[-1.6, 0, 1.6].map((dx) => <circle key={dx} cx={x + dx} cy="63.2" r="0.6" fill={PAD} />)}
-    </g>
-  )
-}
-
-/** The gecko in the soft, flat style of its reference: white with a mint tint, no outlines, dot eyes, pink blush. Sitting for working, waiting and review; lying on its belly asleep. Each part moves on its own. */
-function Drawing(): React.JSX.Element {
-  const id = useId().replace(/[^\w-]/g, '')
-  const skin = `url(#${id}-skin)`
-  const soft = `url(#${id}-soft)`
-  const tail = 'M58 79 C 71 82, 80.6 75, 80.6 65 C 80.6 56.6, 72.4 53.4, 67.8 57.4 C 64.6 60.4, 66.6 65.6, 70.8 64.8 C 73.4 64.2, 73.8 61, 71.6 60.2'
-  return (
-    <svg className="gk-art" viewBox="12 17 78 78" aria-hidden="true">
-      <defs>
-        <linearGradient id={`${id}-skin`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ffffff" />
-          <stop offset="1" stopColor="#dcf1e1" />
-        </linearGradient>
-        <linearGradient id={`${id}-lid`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#dfe7e3" />
-          <stop offset="1" stopColor="#b9c7c0" />
-        </linearGradient>
-        <filter id={`${id}-soft`} x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="1.4" />
-        </filter>
-      </defs>
-      <ellipse className="gk-shadow" cx="50" cy="87" rx="30" ry="3.6" fill="#06280f" opacity="0.2" />
-      <g className="gk-hop">
-        <g className="gk-press">
-          <g className="gk-wiggle">
-            <g className="gk-bob">
-              <g className="gk-sit">
-                <g className="gk-tail">
-                  <path d="M58 79 C 70 82, 79 77, 80.4 68" fill="none" stroke={skin} strokeWidth="8" strokeLinecap="round" />
-                  <path d={tail} fill="none" stroke={skin} strokeWidth="4.4" strokeLinecap="round" />
-                  <path d="M71.6 60.2 C 69.4 59.6, 68.4 62.4, 70.4 63" fill="none" stroke="#cfe8d5" strokeWidth="0.7" strokeLinecap="round" />
-                </g>
-                <g className="gk-breathe">
-                  <path d="M50 52 C 63 52, 69 63, 68 72 C 67 81, 60 85, 50 85 C 40 85, 33 81, 32 72 C 31 63, 37 52, 50 52 Z" fill={skin} />
-                  <ellipse cx="50" cy="73" rx="10.5" ry="9.5" fill="#fff" opacity="0.85" />
-                  <ellipse cx="50" cy="59" rx="13" ry="3" fill="#bfe0c7" opacity="0.6" filter={soft} />
-                  <g>
-                    <ellipse cx="36" cy="81.5" rx="6.6" ry="5.6" fill={skin} />
-                    <Sole x={36} y={82} />
-                    <g className="gk-heel">
-                      <ellipse cx="64" cy="81.5" rx="6.6" ry="5.6" fill={skin} />
-                      <Sole x={64} y={82} />
-                    </g>
-                  </g>
-                  <g className="gk-foot gk-foot-l">
-                    <ellipse cx="40.4" cy="66.4" rx="3.6" ry="7" fill={skin} transform="rotate(18 40.4 66.4)" />
-                    <path d="M42.6 61 C 44.6 65, 44.4 70, 42 72.6" fill="none" stroke="#cfe8d5" strokeWidth="0.8" strokeLinecap="round" />
-                    <Typing x={43} />
-                  </g>
-                  <g className="gk-foot gk-foot-r">
-                    <ellipse cx="59.6" cy="66.4" rx="3.6" ry="7" fill={skin} transform="rotate(-18 59.6 66.4)" />
-                    <path d="M57.4 61 C 55.4 65, 55.6 70, 58 72.6" fill="none" stroke="#cfe8d5" strokeWidth="0.8" strokeLinecap="round" />
-                    <Typing x={57} />
-                  </g>
-                  <g className="gk-laptop">
-                    <ellipse cx="50" cy="61" rx="15" ry="6" fill="#9ff0c4" opacity="0.5" filter={soft} />
-                    <rect x="35" y="65" width="30" height="17" rx="2.6" fill={`url(#${id}-lid)`} />
-                    <circle cx="50" cy="73.4" r="1.8" fill="#f2fbf4" />
-                    <rect x="31" y="81.2" width="38" height="3.2" rx="1.6" fill="#a9b8b0" />
-                  </g>
-                  <g className="gk-head-pose">
-                    <g className="gk-head-look">
-                      <g className="gk-head">
-                        <path d="M50 21 C 64.5 21, 73 32, 73 43 C 73 53, 63 58.6, 50 58.6 C 37 58.6, 27 53, 27 43 C 27 32, 35.5 21, 50 21 Z" fill={skin} />
-                        <ellipse cx="44" cy="28" rx="9" ry="3.4" fill="#fff" opacity="0.9" />
-                        <circle cx="48.6" cy="47.6" r="0.6" fill={INK} opacity="0.7" />
-                        <circle cx="51.4" cy="47.6" r="0.6" fill={INK} opacity="0.7" />
-                        <ellipse cx="36.4" cy="48.6" rx="3.6" ry="2.2" fill={BLUSH} opacity="0.85" />
-                        <ellipse cx="63.6" cy="48.6" rx="3.6" ry="2.2" fill={BLUSH} opacity="0.85" />
-                        <path className="gk-mouth gk-mouth-smile" d="M47 50.6 Q50 53.2 53 50.6" fill="none" stroke={INK} strokeWidth="1" strokeLinecap="round" />
-                        <ellipse className="gk-mouth gk-mouth-o" cx="50" cy="52" rx="1.2" ry="1.6" fill={INK} />
-                        <path className="gk-mouth gk-mouth-happy" d="M45.6 50.2 Q50 55 54.4 50.2" fill="none" stroke={INK} strokeWidth="1.1" strokeLinecap="round" />
-                        <Eye x={39.6} y={43} side="l" />
-                        <Eye x={60.4} y={43} side="r" />
-                      </g>
-                    </g>
-                  </g>
-                </g>
-              </g>
-              <g className="gk-lie">
-                <g className="gk-lie-tail">
-                  <path d="M80 81.6 C 88 81.6, 92.6 76, 90.4 71 C 88.4 67, 83.6 67.6, 83.6 71.2 C 83.6 73.6, 86.4 74.4, 87.4 72.6" fill="none" stroke={skin} strokeWidth="4.4" strokeLinecap="round" />
-                </g>
-                <g className="gk-lie-back">
-                  <path d="M38 85 C 36 68, 49 57, 64 57 C 78 57, 86.6 66, 85.6 75.6 C 85 82, 80 85, 73 85 Z" fill={skin} />
-                  <path d="M66 78 C 71 73, 77 75, 78 82" fill="none" stroke="#cfe8d5" strokeWidth="0.9" strokeLinecap="round" />
-                  <ellipse cx="62" cy="61.6" rx="9" ry="2.6" fill="#fff" opacity="0.9" />
-                </g>
-                <g className="gk-lie-head">
-                  <path d="M32 58 C 43 58, 49 65, 49 72 C 49 79, 42 84, 32 84 C 22 84, 16 79, 16 72 C 16 65, 21 58, 32 58 Z" fill={skin} />
-                  <ellipse cx="28" cy="62" rx="7" ry="2.4" fill="#fff" opacity="0.9" />
-                  <ellipse cx="21.6" cy="75.4" rx="3" ry="1.8" fill={BLUSH} opacity="0.85" />
-                  <ellipse cx="41.4" cy="75.4" rx="3" ry="1.8" fill={BLUSH} opacity="0.85" />
-                  <circle cx="30.2" cy="77.4" r="0.55" fill={INK} opacity="0.7" />
-                  <circle cx="33" cy="77.4" r="0.55" fill={INK} opacity="0.7" />
-                  <path d="M20.4 71 Q23.4 73.4 26.4 71" fill="none" stroke={INK} strokeWidth="1" strokeLinecap="round" />
-                  <g className="gk-peek-shut">
-                    <path d="M36.4 71 Q39.4 73.4 42.4 71" fill="none" stroke={INK} strokeWidth="1" strokeLinecap="round" />
-                  </g>
-                  <ellipse className="gk-peek-open" cx="39.4" cy="71.4" rx="2.1" ry="1.3" fill={INK} />
-                </g>
-                <ellipse cx="33" cy="84.6" rx="9" ry="2.8" fill={skin} />
-                <path d="M33 82.6 L33 86" stroke="#cfe8d5" strokeWidth="0.7" strokeLinecap="round" />
-              </g>
-            </g>
-          </g>
-        </g>
-      </g>
-    </svg>
-  )
-}
-
-/** The panel, drawn from what it is told: the floating window and the preview use the same one. */
-export function GeckoPanel({
-  pose,
-  count,
-  hopping = false,
-  moving = true,
-  blinking = false,
-  tilting = false,
-  tapping = false,
-  hovering = false,
-  pressing = false,
-  catching = false,
-  look = { x: 0, y: 0 },
-  onHopped,
-}: GeckoView & {
-  readonly hopping?: boolean
-  /** False while the panel is not seen, and in stills: nothing animates. */
-  readonly moving?: boolean
-  readonly blinking?: boolean
-  readonly tilting?: boolean
-  /** Waiting: a burst of impatient taps of one foot. */
-  readonly tapping?: boolean
-  readonly hovering?: boolean
-  readonly pressing?: boolean
-  /** Files dropped on it: a happy squash as it catches them. */
-  readonly catching?: boolean
-  readonly look?: Look
-  readonly onHopped?: () => void
-}): React.JSX.Element {
-  const name = named(pose, count)
-  const classes = [
-    'gecko-panel',
-    `gecko-${pose}`,
-    hopping ? 'gecko-hop' : '',
-    moving ? '' : 'gecko-still',
-    blinking ? 'gecko-blink' : '',
-    tilting ? 'gecko-tilt' : '',
-    tapping ? 'gecko-tapping' : '',
-    hovering ? 'gecko-hover' : '',
-    pressing ? 'gecko-press' : '',
-    catching ? 'gecko-catch' : '',
-  ].filter((one) => one !== '')
-  return (
-    <div
-      className={classes.join(' ')}
-      role="img"
-      aria-label={name}
-      title={name}
-      style={{ '--lx': look.x.toFixed(3), '--ly': look.y.toFixed(3) } as React.CSSProperties}
-      onAnimationEnd={(event) => {
-        if (event.animationName === 'gk-hop') onHopped?.()
-      }}
-    >
-      <Drawing />
-      {pose === 'waiting' && count > 1 ? <span className="gecko-count" aria-hidden="true">{count}</span> : null}
-    </div>
-  )
-}
-
-const reduced = (): boolean => matchMedia('(prefers-reduced-motion: reduce)').matches
-const still = (): boolean => document.hidden || reduced()
-
-/** Whether the panel is seen: hidden, nothing animates. */
+/** Whether the window is seen: hidden, nothing animates and no timer runs. */
 function useSeen(): boolean {
   const [seen, setSeen] = useState(() => !document.hidden)
   useEffect(() => {
@@ -239,58 +34,111 @@ function useSeen(): boolean {
   return seen
 }
 
-/** A blink now and then while its eyes are open, sometimes with a tilt of the head; waiting, a slow blink and now and then a burst of impatient foot taps. One short timer at a time, none while asleep or not seen. */
-function useFidget(awake: boolean, waiting: boolean): { readonly blinking: boolean; readonly tilting: boolean; readonly tapping: boolean } {
-  const [blinking, setBlinking] = useState(false)
-  const [tilting, setTilting] = useState(false)
-  const [tapping, setTapping] = useState(false)
+const pause = (ms: number, run: { stopped: boolean }): Promise<boolean> => new Promise((done) => setTimeout(() => done(!run.stopped), ms))
+const between = (from: number, spread: number): number => from + Math.random() * spread
+
+/**
+ * The two frames of a pose taking turns, with the demo's rhythm: the hands typing a few keys then resting, the foot tapping three
+ * times now and then, the pen writing a few strokes. Only while it is in that pose and moving; otherwise the first frame holds.
+ */
+function useAlternate(shown: GeckoShown, moving: boolean): boolean {
+  const [alt, setAlt] = useState(false)
+  const active = moving && (shown === 'working' || shown === 'waiting' || shown === 'listen')
   useEffect(() => {
-    if (!awake) return
+    if (!active) return
+    const run = { stopped: false }
+    const loop = async (): Promise<void> => {
+      while (!run.stopped) {
+        if (shown === 'waiting') {
+          for (let tap = 0; tap < 3; tap += 1) {
+            setAlt(true)
+            if (!(await pause(170, run))) return
+            setAlt(false)
+            if (!(await pause(200, run))) return
+          }
+          if (!(await pause(between(1600, 1200), run))) return
+          continue
+        }
+        const strokes = shown === 'working' ? 5 + Math.floor(Math.random() * 8) : 3 + Math.floor(Math.random() * 4)
+        for (let one = 0; one < strokes; one += 1) {
+          setAlt(one % 2 === 0)
+          if (!(await pause(shown === 'working' ? between(130, 90) : between(170, 120), run))) return
+        }
+        setAlt(false)
+        if (!(await pause(between(500, 900), run))) return
+      }
+    }
+    void loop()
+    return () => {
+      run.stopped = true
+    }
+  }, [shown, active])
+  return active && alt
+}
+
+/** A blink now and then, for 130 ms, while the sitting head's eyes are open. */
+function useBlink(on: boolean): boolean {
+  const [blinking, setBlinking] = useState(false)
+  useEffect(() => {
+    if (!on) return
     let timer: ReturnType<typeof setTimeout>
     const next = (): void => {
-      timer = setTimeout(
-        () => {
-          if (still()) return next()
-          const tilt = !waiting && Math.random() < 0.35
-          const tap = waiting && Math.random() < 0.6
-          setBlinking(true)
-          setTilting(tilt)
-          setTapping(tap)
-          timer = setTimeout(() => {
-            setBlinking(false)
-            timer = setTimeout(() => {
-              setTilting(false)
-              setTapping(false)
-              next()
-            }, tap ? 1000 : tilt ? 900 : 0)
-          }, waiting ? 420 : 160)
-        },
-        2500 + Math.random() * 4000,
-      )
+      timer = setTimeout(() => {
+        setBlinking(true)
+        timer = setTimeout(() => {
+          setBlinking(false)
+          next()
+        }, 130)
+      }, between(2200, 3000))
     }
     next()
     return () => {
       clearTimeout(timer)
       setBlinking(false)
-      setTilting(false)
-      setTapping(false)
     }
-  }, [awake, waiting])
-  return { blinking, tilting, tapping }
+  }, [on])
+  return blinking
 }
 
-/** Where the cursor is from the gecko's eyes, as a look: the direction, weaker when it is close. */
-function lookAt(cursor: { readonly x: number; readonly y: number }): Look {
-  const dx = cursor.x - (window.screenX + window.innerWidth / 2)
-  const dy = cursor.y - (window.screenY + window.innerHeight * 0.36)
-  const far = Math.hypot(dx, dy)
-  if (far < 1) return { x: 0, y: 0 }
-  const reach = Math.min(1, far / 240)
-  return { x: (dx / far) * reach, y: (dy / far) * reach }
+/** The pet's bend over 1.3 s, as the demo keys it: up to 7 and back, a little rebound in the middle. */
+const KEYS = [
+  [0, 0],
+  [0.3, 7],
+  [0.5, 4],
+  [0.7, 7],
+  [1, 0],
+] as const
+const ease = (t: number): number => t * t * (3 - 2 * t)
+export function bend(t: number): number {
+  for (let at = 1; at < KEYS.length; at += 1) {
+    const [t1, a1] = KEYS[at] ?? [1, 0]
+    if (t > t1) continue
+    const [t0, a0] = KEYS[at - 1] ?? [0, 0]
+    return Math.round(a0 + (a1 - a0) * ease((t - t0) / (t1 - t0)))
+  }
+  return 0
 }
 
-/** How long the catch lasts before the bubble asks about the files. */
-const CATCH = 420
+/** Where each pupil looks to see a point on the screen, in the drawing's units: towards it, less when it is near. */
+function aimAt(art: SVGSVGElement | null, at: { readonly x: number; readonly y: number }): readonly [Aim, Aim] {
+  const box = art?.getBoundingClientRect()
+  if (box === undefined || box.width === 0) return [{ x: 0, y: 0 }, { x: 0, y: 0 }]
+  const scale = box.width / 1024
+  const one = (eye: (typeof EYES)[number]): Aim => {
+    const dx = at.x - (window.screenX + box.left + eye.x * scale)
+    const dy = at.y - (window.screenY + box.top + eye.y * scale)
+    const far = Math.hypot(dx, dy) || 1
+    const reach = Math.min(16, far / 8)
+    return { x: (dx / far) * reach, y: (dy / far) * reach }
+  }
+  return [one(EYES[0]), one(EYES[1])]
+}
+
+/** How long the catch shows before the bubble asks about the files. */
+const CATCH = 1100
+/** The camera is raised this long, then it flashes, and the crosshair comes once the flash is over. */
+const RAISE = 1000
+const FLASH = 500
 
 /** Files dropped on the gecko as main takes them: pictures read as the chat reads a dropped one, the paths of the rest, and of a picture too big to send. */
 async function handed(files: readonly File[]): Promise<{ images: SessionImage[]; paths: string[] }> {
@@ -304,45 +152,203 @@ async function handed(files: readonly File[]): Promise<{ images: SessionImage[];
   return { images, paths }
 }
 
-/** The floating gecko: told its state and the cursor by main, pressed or given files to open its bubble, dragged anywhere. */
+/** The floating gecko: told its state and the cursor by main; pressed for its menu, given files, listening for a voice task, dragged anywhere and resized from its grip. */
 export function Gecko(): React.JSX.Element | null {
+  const [settings] = useSettings()
   const [view, setView] = useState<GeckoView | undefined>()
+  const [done, setDone] = useState(false)
+  const [dozing, setDozing] = useState(false)
+  const [menu, setMenu] = useState(false)
+  const [drag, setDrag] = useState(false)
+  const [got, setGot] = useState(false)
+  const [camera, setCamera] = useState(false)
+  const [snapping, setSnapping] = useState(false)
+  const [listen, setListen] = useState(false)
   const [hopping, setHopping] = useState(false)
-  const [hovering, setHovering] = useState(false)
   const [pressing, setPressing] = useState(false)
-  const [over, setOver] = useState(false)
-  const [catching, setCatching] = useState(false)
-  const [look, setLook] = useState<Look>({ x: 0, y: 0 })
+  // A pet belongs to the pose it began in, and ends with any change of pose.
+  const [pet, setPet] = useState<{ readonly shown: GeckoShown; readonly tilt: number } | undefined>()
+  const [look, setLook] = useState<readonly [Aim, Aim]>([
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+  ])
+  const art = useRef<SVGSVGElement | null>(null)
   const seen = useSeen()
-  const { blinking, tilting, tapping } = useFidget(seen && view !== undefined && view.pose !== 'asleep', view?.pose === 'waiting')
+  const reduced = useReduced()
+  const moving = seen && !reduced
+  const pose = view?.pose ?? 'asleep'
+  const now = { pose, done, menu, drag, got, camera, listen }
+  const shown = geckoShown({ ...now, dozing })
+  const alt = useAlternate(shown, moving)
+  const petting = pet !== undefined && pet.shown === shown
+  const tilt = petting ? pet.tilt : 0
+  const blinking = useBlink(moving && !petting && (shown === 'waiting' || shown === 'done' || shown === 'look'))
+
+  // Falling asleep: waiting or done, left alone for the time it takes; a hover, a click or anything new wakes it.
+  const dozes = canDoze(now)
+  const [stirred, setStirred] = useState(0)
+  const stir = useCallback(() => {
+    setDozing(false)
+    setStirred((was) => was + 1)
+  }, [])
+  useEffect(() => {
+    if (!dozes || !seen) return
+    const timer = setTimeout(() => {
+      setDozing(true)
+      setDone(false)
+    }, DOZE)
+    return () => clearTimeout(timer)
+  }, [dozes, seen, stirred])
+
+  const petFrame = useRef(0)
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(petFrame.current)
+      petFrame.current = 0
+    },
+    [shown],
+  )
+  const startPet = (): void => {
+    if (!moving || petFrame.current !== 0 || menu || listen || drag || got || camera || hopping) return
+    const from = performance.now()
+    const during = shown
+    setPet({ shown: during, tilt: 0 })
+    const step = (time: number): void => {
+      const t = (time - from) / 1300
+      if (t >= 1) {
+        petFrame.current = 0
+        setPet(undefined)
+        return
+      }
+      setPet({ shown: during, tilt: bend(t) })
+      petFrame.current = requestAnimationFrame(step)
+    }
+    petFrame.current = requestAnimationFrame(step)
+  }
+
+  const squash = (): void => {
+    if (reduced) return
+    setPressing(false)
+    requestAnimationFrame(() => setPressing(true))
+  }
+
+  // The voice task: the microphone records while it writes; a press stops it, and what was said goes for a new task.
+  const writing = useRef(false)
+  const recorder = useRecorder(settings.microphoneDeviceId, (audio) => {
+    writing.current = true
+    void toHear(audio)
+      .then((request) => window.geckit.gecko.heard(request))
+      .catch((error: unknown) => window.geckit.gecko.heard({ error: error instanceof Error ? error.message : String(error) }))
+      .finally(() => {
+        writing.current = false
+        setListen(false)
+      })
+  })
+  const { start, stop, cancel, recording, error } = recorder
+  const began = useRef(false)
+  useEffect(() => {
+    if (recording) began.current = true
+  }, [recording])
+  // Stopped with nothing recorded, or the microphone could not be opened: it says so, and stops listening.
+  useEffect(() => {
+    if (!listen || recording || writing.current || (error === '' && !began.current)) return
+    const soon = setTimeout(
+      () => {
+        if (writing.current) return
+        setListen(false)
+        void window.geckit.gecko.heard({ error: error === '' ? 'Nothing was heard' : `Nothing could be recorded: ${error}` })
+      },
+      error === '' ? 400 : 0,
+    )
+    return () => clearTimeout(soon)
+  }, [listen, recording, error])
+
   const held = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | undefined>(undefined)
+  const sizing = useRef<{ x: number; y: number; side: number } | undefined>(undefined)
+  const depth = useRef(0)
 
   useEffect(() => {
     void window.geckit.gecko.state().then(setView)
-    const off = window.geckit.gecko.onState((next) => {
-      setView(next)
-      // Waiting drops a hop under way: the person has something more urgent to see.
-      if (next.pose === 'waiting') setHopping(false)
-    })
-    // Reduced motion and a panel not seen keep the still pose; the hop is not saved for later.
-    const offHop = window.geckit.gecko.onHop(() => {
-      if (!still()) setHopping(true)
-    })
-    // The eyes follow even with reduced motion: a look is a pose, not a movement.
-    const offCursor = window.geckit.gecko.onCursor((cursor) => setLook(lookAt(cursor)))
-    return () => {
-      off()
-      offHop()
-      offCursor()
-    }
-  }, [])
+    const offs = [
+      window.geckit.gecko.onState((next) => {
+        setView(next)
+        stir()
+        // Waiting drops a hop under way: the person has something more urgent to see.
+        if (next.pose === 'waiting') setHopping(false)
+      }),
+      // The eyes follow even with reduced motion: a look is a pose, not a movement.
+      window.geckit.gecko.onCursor((cursor) => setLook(aimAt(art.current, cursor))),
+      window.geckit.gecko.onRing((open) => {
+        setMenu(open)
+        stir()
+      }),
+    ]
+    return () => offs.forEach((off) => off())
+  }, [stir])
+
+  // A hop once a card reaches In review, then the happy look; not while something else is going on, and not saved for later.
+  useEffect(
+    () =>
+      window.geckit.gecko.onHop(() => {
+        stir()
+        setDone(true)
+        if (moving && !menu && !listen && !camera && !drag && !got && pose !== 'waiting') setHopping(true)
+      }),
+    [stir, moving, menu, listen, camera, drag, got, pose],
+  )
+  useEffect(() => {
+    if (!hopping) return
+    const soon = setTimeout(() => setHopping(false), 1100)
+    return () => clearTimeout(soon)
+  }, [hopping])
+
+  // The screenshot: the camera raised, a flash at the lens and round the gecko, then the Mac's crosshair.
+  useEffect(
+    () =>
+      window.geckit.gecko.onCamera(() => {
+        if (!moving) {
+          window.geckit.gecko.shoot()
+          return
+        }
+        setCamera(true)
+        setTimeout(() => {
+          setSnapping(true)
+          setPressing(false)
+          requestAnimationFrame(() => setPressing(true))
+          setTimeout(() => {
+            setSnapping(false)
+            setCamera(false)
+            window.geckit.gecko.shoot()
+          }, FLASH)
+        }, RAISE)
+      }),
+    [moving],
+  )
+
+  useEffect(
+    () =>
+      window.geckit.gecko.onListen((what) => {
+        if (what === 'start') {
+          began.current = false
+          writing.current = false
+          setListen(true)
+          start()
+          return
+        }
+        cancel()
+        setListen(false)
+      }),
+    [start, cancel],
+  )
 
   if (view === undefined) return null
   return (
     <div
       className="gecko-window"
-      onPointerEnter={() => setHovering(true)}
-      onPointerLeave={() => setHovering(false)}
+      onPointerEnter={() => {
+        stir()
+        startPet()
+      }}
       onPointerDown={(event) => {
         if (event.button !== 0) return
         event.currentTarget.setPointerCapture(event.pointerId)
@@ -354,6 +360,7 @@ export function Gecko(): React.JSX.Element | null {
         // A release that never arrived, as outside the window: the drag is over.
         if (event.buttons === 0) {
           held.current = undefined
+          if (from.moved) window.geckit.gecko.moved()
           return
         }
         const dx = event.screenX - from.x
@@ -365,17 +372,16 @@ export function Gecko(): React.JSX.Element | null {
       onPointerUp={() => {
         const from = held.current
         held.current = undefined
-        if (from === undefined || from.moved) return
-        if (reduced()) {
-          window.geckit.gecko.press()
+        if (from === undefined) return
+        if (from.moved) {
+          window.geckit.gecko.moved()
           return
         }
-        // A little squash first, then GeckIt comes forward.
-        setPressing(true)
-        setTimeout(() => {
-          setPressing(false)
-          window.geckit.gecko.press()
-        }, 170)
+        stir()
+        squash()
+        // Listening, a press stops it and what was said is written down; otherwise its menu opens round it.
+        if (listen) stop()
+        else window.geckit.gecko.press()
       }}
       onPointerCancel={() => {
         held.current = undefined
@@ -384,36 +390,88 @@ export function Gecko(): React.JSX.Element | null {
         event.preventDefault()
         window.geckit.gecko.menu()
       }}
+      onDragEnter={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        depth.current += 1
+        if (depth.current > 1) return
+        stir()
+        setDrag(true)
+        squash()
+      }}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
-        setOver(true)
+        // The eyes on the file.
+        setLook(aimAt(art.current, { x: window.screenX + event.clientX, y: window.screenY + event.clientY }))
       }}
-      onDragLeave={() => setOver(false)}
+      onDragLeave={() => {
+        depth.current = Math.max(0, depth.current - 1)
+        if (depth.current === 0) setDrag(false)
+      }}
       onDrop={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
-        setOver(false)
+        depth.current = 0
+        setDrag(false)
+        stir()
         const files = [...event.dataTransfer.files]
-        if (!reduced()) setCatching(true)
-        void Promise.all([handed(files), new Promise((done) => setTimeout(done, reduced() ? 0 : CATCH))]).then(([given]) => {
-          setCatching(false)
+        setGot(moving)
+        void Promise.all([handed(files), new Promise((done) => setTimeout(done, moving ? CATCH : 0))]).then(([given]) => {
+          setGot(false)
           window.geckit.gecko.drop(given)
         })
       }}
     >
-      <GeckoPanel
-        {...view}
-        hopping={hopping}
-        moving={seen}
-        blinking={blinking}
-        tilting={tilting}
-        tapping={tapping}
-        hovering={hovering && !over}
-        pressing={pressing}
-        catching={catching}
-        look={over ? { x: 0, y: -1 } : look}
-        onHopped={() => setHopping(false)}
+      <div
+        className="gecko-hold"
+        ref={(element) => {
+          art.current = element?.querySelector('svg') ?? null
+        }}
+        onAnimationEnd={(event) => {
+          if (event.animationName === 'gk-squash') setPressing(false)
+        }}
+      >
+        <GeckoArt
+          pose={pose}
+          count={view.count}
+          shown={shown}
+          alt={alt}
+          blinking={blinking}
+          petting={petting}
+          hopping={hopping}
+          tilt={tilt}
+          look={look}
+          pressing={pressing}
+          snapping={snapping}
+          still={!moving}
+        />
+      </div>
+      <span
+        className="gk-grip"
+        aria-hidden="true"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return
+          event.stopPropagation()
+          event.currentTarget.setPointerCapture(event.pointerId)
+          sizing.current = { x: event.screenX, y: event.screenY, side: window.innerWidth }
+        }}
+        onPointerMove={(event) => {
+          const from = sizing.current
+          if (from === undefined) return
+          event.stopPropagation()
+          if (event.buttons === 0) {
+            sizing.current = undefined
+            return
+          }
+          // Square: the larger of the two moves.
+          const by = Math.max(event.screenX - from.x, event.screenY - from.y)
+          window.geckit.gecko.resize(from.side + by)
+        }}
+        onPointerUp={(event) => {
+          event.stopPropagation()
+          sizing.current = undefined
+        }}
       />
     </div>
   )

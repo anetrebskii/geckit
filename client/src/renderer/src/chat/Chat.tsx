@@ -113,9 +113,12 @@ export function Chat(): React.JSX.Element {
   const [seed, setSeed] = useState<readonly SessionImage[]>([])
   // The paths of other files dropped on the gecko, for the words of the form it opened.
   const [seedPaths, setSeedPaths] = useState<readonly string[]>([])
+  // What was said to the gecko for a voice task, for the words of the form it opened.
+  const [seedText, setSeedText] = useState('')
   const switchForm = (pictures: readonly SessionImage[]): void => {
     setSeed(pictures)
     setSeedPaths([])
+    setSeedText('')
     setMaking((was) => !was)
     setAsking((was) => !was)
   }
@@ -125,6 +128,7 @@ export function Chat(): React.JSX.Element {
     setFormStarting(false)
     setSeed([])
     setSeedPaths([])
+    setSeedText('')
     setClearedIn(undefined)
   }
   const [cut, setCut] = useState<readonly CutOff[] | undefined>()
@@ -269,13 +273,14 @@ export function Chat(): React.JSX.Element {
       }),
     [making, asking],
   )
-  // New task chosen in the gecko's bubble opens the form with what was dropped on it; an open form takes it itself.
+  // New task chosen at the gecko opens the form with what was dropped on it or said to it; an open form takes it itself.
   useEffect(
     () =>
       window.geckit.chat.onTask((handed) => {
         if (making || asking) return
         setSeed(handed.images)
         setSeedPaths(handed.paths)
+        setSeedText(handed.text ?? '')
         setMaking(true)
       }),
     [making, asking],
@@ -537,7 +542,7 @@ export function Chat(): React.JSX.Element {
       {making ? (
         <>
           <div className="talk-scrim form-scrim" onMouseDown={formStarting ? undefined : closeForm} />
-          <NewTask chat={chat} record={recordFirst} seed={seed} seedPaths={seedPaths} given={clearedIn} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
+          <NewTask chat={chat} record={recordFirst} seed={seed} seedPaths={seedPaths} seedText={seedText} given={clearedIn} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
         </>
       ) : null}
       {cut === undefined ? null : <CutOffDialog list={cut} onClose={() => setCut(undefined)} />}

@@ -43,7 +43,7 @@ import type {
   Uploaded,
   VoiceMode,
 } from '../shared/api'
-import type { GeckoBubble, GeckoChoice, GeckoHanded, GeckoView } from '../shared/gecko'
+import type { GeckoAction, GeckoBubble, GeckoChoice, GeckoHanded, GeckoItem, GeckoRing, GeckoView } from '../shared/gecko'
 import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from '../shared/hosts'
 import type { Link } from '../shared/links'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from '../shared/providers'
@@ -392,18 +392,38 @@ const geckit = {
     onHop: (said: () => void): (() => void) => listen('gecko:hop', said),
     /** Where the cursor is on the screen, told only when it moves, for the eyes to follow. */
     onCursor: (said: (at: { x: number; y: number }) => void): (() => void) => listen('gecko:cursor', said),
-    /** Pressed: its bubble opens. */
+    /** Its menu opened round it, or closed. */
+    onRing: (said: (open: boolean) => void): (() => void) => listen('gecko:ring', said),
+    /** Screenshot was chosen: it raises its camera, then says to take the shot. */
+    onCamera: (said: () => void): (() => void) => listen('gecko:camera', said),
+    /** Voice task was chosen, or cancelled with Esc or its menu. */
+    onListen: (said: (what: 'start' | 'cancel') => void): (() => void) => listen('gecko:listen', said),
+    /** Pressed: its menu opens round it, or closes. */
     press: (): void => ipcRenderer.send('gecko:press'),
+    /** The camera is raised and has flashed: the crosshair comes. */
+    shoot: (): void => ipcRenderer.send('gecko:shoot'),
+    /** What was said for a voice task, to be written down for a new task; or why nothing could be recorded. */
+    heard: (request: TranscribeRequest | { readonly error: string }): Promise<void> => ipcRenderer.invoke('gecko:heard', request),
     /** Files dropped on it: its bubble opens, asking what to do with them. */
     drop: (given: GeckoHanded): void => ipcRenderer.send('gecko:drop', given),
     /** Its own small menu, at the pointer. */
     menu: (): void => ipcRenderer.send('gecko:menu'),
     /** Dragged: where its top left corner goes on the screen. */
     move: (x: number, y: number): void => ipcRenderer.send('gecko:move', x, y),
-    /** The bubble's window, and nothing else, uses these: what it asks, its height once drawn, and the choice. */
+    /** Let go of after a drag: kept on the screen it was dropped on. */
+    moved: (): void => ipcRenderer.send('gecko:moved'),
+    /** Its grip dragged: its new side. */
+    resize: (side: number): void => ipcRenderer.send('gecko:resize', side),
+    /** The bubble's window, and nothing else, uses these: what it asks, its height once drawn, a note that changes, and the choice. */
     bubble: (): Promise<GeckoBubble | undefined> => ipcRenderer.invoke('gecko:bubble'),
+    onNote: (said: (note: string) => void): (() => void) => listen('gecko:note', said),
     fit: (height: number): void => ipcRenderer.send('gecko:fit', height),
     choose: (choice: GeckoChoice): void => ipcRenderer.send('gecko:choose', choice),
+    /** The menu's window, and nothing else, uses these: how it is laid out, the item in focus for the eyes, a choice, and closing. */
+    ring: (): Promise<{ readonly laid: GeckoRing; readonly items: readonly GeckoItem[] } | undefined> => ipcRenderer.invoke('gecko:ringLayout'),
+    aim: (x: number, y: number): void => ipcRenderer.send('gecko:aim', x, y),
+    act: (action: GeckoAction): void => ipcRenderer.send('gecko:act', action),
+    close: (): void => ipcRenderer.send('gecko:ringClose'),
   },
 
   phone: {

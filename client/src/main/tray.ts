@@ -18,7 +18,7 @@ import type { GeckoPose } from '../shared/gecko'
 import { isRemote } from '../shared/hosts'
 import { llmProviderInfo } from '../shared/providers'
 import { describeTime, nextTimed } from '../shared/schedule'
-import { getSettings } from './store'
+import { getSettings, setSettings } from './store'
 
 export interface TrayDeps {
   readonly openChat: (session?: string) => void
@@ -116,7 +116,7 @@ export function drawTray(): void {
             : `next ${describeTime(next, now).replace(/^[A-Z]/, (first) => first.toLowerCase())}`
       return { one, available, says: !available ? `${basename(one.root)}, assistant unavailable` : when === undefined ? basename(one.root) : `${basename(one.root)}, ${when}` }
     })
-  const key = JSON.stringify(rows.map(({ one, available, says }) => [one.id, one.name, available, says]))
+  const key = JSON.stringify([settings.showGecko, rows.map(({ one, available, says }) => [one.id, one.name, available, says])])
   if (key === drawn) return
   drawn = key
 
@@ -125,6 +125,8 @@ export function drawTray(): void {
     { label: 'Open Chat', click: () => deps?.openChat() },
     { label: 'Correct and Transcribe', click: () => deps?.openPanel() },
     { label: 'Record the Screen', click: () => deps?.record() },
+    // The gecko comes back from here, without opening Settings.
+    { label: settings.showGecko ? 'Hide the Gecko' : 'Show the Gecko', click: () => setSettings({ showGecko: !getSettings().showGecko }) },
     { type: 'separator' },
     { label: 'Shortcuts', enabled: false },
     ...rows.map(

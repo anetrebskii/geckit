@@ -745,7 +745,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onStop: never,
     },
     panel: { onText: never },
-    gecko: { state: () => Promise.resolve({ pose: 'asleep', count: 0 }), onState: never, onHop: never, onCursor: never, press: nothing, drop: nothing, menu: nothing, move: nothing, bubble: () => Promise.resolve(undefined), fit: nothing, choose: nothing },
+    gecko: { state: () => Promise.resolve({ pose: 'asleep', count: 0 }), onState: never, onHop: never, onCursor: never, onRing: never, onCamera: never, onListen: never, press: nothing, shoot: nothing, heard: () => Promise.resolve(), drop: nothing, menu: nothing, move: nothing, moved: nothing, resize: nothing, bubble: () => Promise.resolve(undefined), onNote: never, fit: nothing, choose: nothing, ring: () => Promise.resolve(undefined), aim: nothing, act: nothing, close: nothing },
     phone: { state: () => Promise.resolve({ count: 0 }), onState: never, newCode: nothing },
     peer: {
       pairing: () => Promise.resolve(undefined),

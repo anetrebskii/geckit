@@ -2,25 +2,19 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 
 import type { GeckoBubble, GeckoChoice } from '../../../shared/gecko'
 
-/** What the bubble asks: about the files dropped on the gecko, or what to do. */
-export function question({ files }: GeckoBubble): string {
-  if (files === 0) return 'What should I do?'
+/** What the bubble asks about the files dropped on the gecko, or the note it says. */
+export function question({ files, note }: GeckoBubble): string {
+  if (note !== undefined) return note
   return files === 1 ? 'What should I do with this file?' : `What should I do with these ${String(files)} files?`
 }
 
-/** Its choices, in order: a screenshot only where one can be taken, a waiting conversation only when one waits. */
-export function choices({ files, waiting, screenshot }: GeckoBubble): readonly { readonly choice: GeckoChoice; readonly label: string }[] {
-  if (files > 0)
-    return [
-      { choice: 'task', label: files === 1 ? 'New task with this file' : 'New task with these files' },
-      ...(waiting > 0 ? [{ choice: 'waiting' as const, label: 'Send to the waiting conversation' }] : []),
-      { choice: 'cancel', label: 'Cancel' },
-    ]
+/** Its choices, in order: the waiting conversation only when one waits; a note is only closed. */
+export function choices({ waiting, files, note }: GeckoBubble): readonly { readonly choice: GeckoChoice; readonly label: string }[] {
+  if (note !== undefined) return [{ choice: 'cancel', label: 'Close' }]
   return [
-    ...(screenshot ? [{ choice: 'screenshot' as const, label: 'Take a screenshot' }] : []),
-    { choice: 'task', label: 'New task' },
-    ...(waiting > 0 ? [{ choice: 'waiting' as const, label: waiting === 1 ? 'Open the waiting conversation' : `Open the waiting conversation (${String(waiting)})` }] : []),
-    { choice: 'open', label: 'Open GeckIt' },
+    { choice: 'task', label: files === 1 ? 'New task with this file' : 'New task with these files' },
+    ...(waiting > 0 ? [{ choice: 'waiting' as const, label: 'Send to the waiting conversation' }] : []),
+    { choice: 'cancel', label: 'Cancel' },
   ]
 }
 
@@ -70,11 +64,16 @@ export function Bubble({ side }: { readonly side: 'left' | 'right' }): React.JSX
   const held = useRef<HTMLDivElement>(null)
   useEffect(() => {
     void window.geckit.gecko.bubble().then(setAsked)
+    // A note that tells how something goes, as the speech model downloading, is told again as it moves.
+    const offNote = window.geckit.gecko.onNote((note) => setAsked((was) => (was === undefined ? was : { ...was, note })))
     const esc = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') window.geckit.gecko.choose('cancel')
     }
     window.addEventListener('keydown', esc)
-    return () => window.removeEventListener('keydown', esc)
+    return () => {
+      offNote()
+      window.removeEventListener('keydown', esc)
+    }
   }, [])
   useLayoutEffect(() => {
     if (asked !== undefined && held.current !== null) window.geckit.gecko.fit(Math.ceil(held.current.getBoundingClientRect().height))
