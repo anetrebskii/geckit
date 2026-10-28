@@ -71,6 +71,7 @@ function Live(): React.JSX.Element {
   const [at, setAt] = useState(0)
   const [hopping, setHopping] = useState(false)
   const [blinking, setBlinking] = useState(false)
+  const [tapping, setTapping] = useState(false)
   const [hovering, setHovering] = useState(false)
   const [pressing, setPressing] = useState(false)
   const [look, setLook] = useState({ x: 0, y: 0 })
@@ -82,7 +83,7 @@ function Live(): React.JSX.Element {
       setAt(now)
       setHopping(cycle[now] === 'review')
     }, 3500)
-    const blink = setInterval(() => { setBlinking(true); setTimeout(() => setBlinking(false), 160) }, 2300)
+    const blink = setInterval(() => { setBlinking(true); setTapping(true); setTimeout(() => setBlinking(false), 300); setTimeout(() => setTapping(false), 1200) }, 2300)
     const follow = (event: MouseEvent): void => {
       const box = held.current?.getBoundingClientRect()
       if (box === undefined) return
@@ -98,7 +99,7 @@ function Live(): React.JSX.Element {
   const state = cycle[at] ?? 'asleep'
   const pose = state === 'review' ? 'working' : state
   return <div ref={held} className="gecko-float gecko-live" onPointerEnter={() => setHovering(true)} onPointerLeave={() => setHovering(false)} onClick={() => { setPressing(true); setTimeout(() => setPressing(false), 170) }}>
-    <GeckoPanel pose={pose} count={state === 'waiting' ? 2 : 0} hopping={hopping} blinking={blinking && pose !== 'asleep'} hovering={hovering} pressing={pressing} look={look} onHopped={() => setHopping(false)} />
+    <GeckoPanel pose={pose} count={state === 'waiting' ? 2 : 0} hopping={hopping} blinking={blinking && pose !== 'asleep'} tapping={tapping && pose === 'waiting'} hovering={hovering} pressing={pressing} look={look} onHopped={() => setHopping(false)} />
   </div>
 }
 

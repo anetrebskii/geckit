@@ -42,6 +42,16 @@ function Sole({ x, y }: { readonly x: number; readonly y: number }): React.JSX.E
   )
 }
 
+/** A paw on the laptop's keys, seen over the lid while it types. */
+function Typing({ x, skin }: { readonly x: number; readonly skin: string }): React.JSX.Element {
+  return (
+    <g className="gk-typing">
+      <circle cx={x} cy="64.4" r="3.1" fill="#fff" />
+      {[-1.6, 0, 1.6].map((dx) => <circle key={dx} cx={x + dx} cy="63.2" r="0.6" fill={PAD} />)}
+    </g>
+  )
+}
+
 /** The gecko in the soft, flat style of its reference: white with a mint tint, no outlines, dot eyes, pink blush. Sitting for working, waiting and review; lying on its belly asleep. Each part moves on its own. */
 function Drawing(): React.JSX.Element {
   const id = useId().replace(/[^\w-]/g, '')
@@ -54,6 +64,10 @@ function Drawing(): React.JSX.Element {
         <linearGradient id={`${id}-skin`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#ffffff" />
           <stop offset="1" stopColor="#dcf1e1" />
+        </linearGradient>
+        <linearGradient id={`${id}-lid`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#dfe7e3" />
+          <stop offset="1" stopColor="#b9c7c0" />
         </linearGradient>
         <filter id={`${id}-soft`} x="-30%" y="-30%" width="160%" height="160%">
           <feGaussianBlur stdDeviation="1.4" />
@@ -77,16 +91,26 @@ function Drawing(): React.JSX.Element {
                   <g>
                     <ellipse cx="36" cy="81.5" rx="6.6" ry="5.6" fill={skin} />
                     <Sole x={36} y={82} />
-                    <ellipse cx="64" cy="81.5" rx="6.6" ry="5.6" fill={skin} />
-                    <Sole x={64} y={82} />
+                    <g className="gk-heel">
+                      <ellipse cx="64" cy="81.5" rx="6.6" ry="5.6" fill={skin} />
+                      <Sole x={64} y={82} />
+                    </g>
                   </g>
                   <g className="gk-foot gk-foot-l">
                     <ellipse cx="40.4" cy="66.4" rx="3.6" ry="7" fill={skin} transform="rotate(18 40.4 66.4)" />
                     <path d="M42.6 61 C 44.6 65, 44.4 70, 42 72.6" fill="none" stroke="#cfe8d5" strokeWidth="0.8" strokeLinecap="round" />
+                    <Typing x={43} skin={skin} />
                   </g>
                   <g className="gk-foot gk-foot-r">
                     <ellipse cx="59.6" cy="66.4" rx="3.6" ry="7" fill={skin} transform="rotate(-18 59.6 66.4)" />
                     <path d="M57.4 61 C 55.4 65, 55.6 70, 58 72.6" fill="none" stroke="#cfe8d5" strokeWidth="0.8" strokeLinecap="round" />
+                    <Typing x={57} skin={skin} />
+                  </g>
+                  <g className="gk-laptop">
+                    <ellipse cx="50" cy="61" rx="15" ry="6" fill="#9ff0c4" opacity="0.5" filter={soft} />
+                    <rect x="35" y="65" width="30" height="17" rx="2.6" fill={`url(#${id}-lid)`} />
+                    <circle cx="50" cy="73.4" r="1.8" fill="#f2fbf4" />
+                    <rect x="31" y="81.2" width="38" height="3.2" rx="1.6" fill="#a9b8b0" />
                   </g>
                   <g className="gk-head-pose">
                     <g className="gk-head-look">
@@ -148,6 +172,7 @@ export function GeckoPanel({
   moving = true,
   blinking = false,
   tilting = false,
+  tapping = false,
   hovering = false,
   pressing = false,
   look = { x: 0, y: 0 },
@@ -158,6 +183,8 @@ export function GeckoPanel({
   readonly moving?: boolean
   readonly blinking?: boolean
   readonly tilting?: boolean
+  /** Waiting: a burst of impatient taps of one foot. */
+  readonly tapping?: boolean
   readonly hovering?: boolean
   readonly pressing?: boolean
   readonly look?: Look
@@ -171,6 +198,7 @@ export function GeckoPanel({
     moving ? '' : 'gecko-still',
     blinking ? 'gecko-blink' : '',
     tilting ? 'gecko-tilt' : '',
+    tapping ? 'gecko-tapping' : '',
     hovering ? 'gecko-hover' : '',
     pressing ? 'gecko-press' : '',
   ].filter((one) => one !== '')
@@ -205,10 +233,11 @@ function useSeen(): boolean {
   return seen
 }
 
-/** A blink now and then while its eyes are open, sometimes with a tilt of the head: one short timer at a time, none while asleep or not seen. */
-function useFidget(awake: boolean): { readonly blinking: boolean; readonly tilting: boolean } {
+/** A blink now and then while its eyes are open, sometimes with a tilt of the head; waiting, a slow blink and now and then a burst of impatient foot taps. One short timer at a time, none while asleep or not seen. */
+function useFidget(awake: boolean, waiting: boolean): { readonly blinking: boolean; readonly tilting: boolean; readonly tapping: boolean } {
   const [blinking, setBlinking] = useState(false)
   const [tilting, setTilting] = useState(false)
+  const [tapping, setTapping] = useState(false)
   useEffect(() => {
     if (!awake) return
     let timer: ReturnType<typeof setTimeout>
@@ -216,16 +245,19 @@ function useFidget(awake: boolean): { readonly blinking: boolean; readonly tilti
       timer = setTimeout(
         () => {
           if (still()) return next()
-          const tilt = Math.random() < 0.35
+          const tilt = !waiting && Math.random() < 0.35
+          const tap = waiting && Math.random() < 0.6
           setBlinking(true)
           setTilting(tilt)
+          setTapping(tap)
           timer = setTimeout(() => {
             setBlinking(false)
             timer = setTimeout(() => {
               setTilting(false)
+              setTapping(false)
               next()
-            }, tilt ? 900 : 0)
-          }, 160)
+            }, tap ? 1000 : tilt ? 900 : 0)
+          }, waiting ? 420 : 160)
         },
         2500 + Math.random() * 4000,
       )
@@ -235,9 +267,10 @@ function useFidget(awake: boolean): { readonly blinking: boolean; readonly tilti
       clearTimeout(timer)
       setBlinking(false)
       setTilting(false)
+      setTapping(false)
     }
-  }, [awake])
-  return { blinking, tilting }
+  }, [awake, waiting])
+  return { blinking, tilting, tapping }
 }
 
 /** Where the cursor is from the gecko's eyes, as a look: the direction, weaker when it is close. */
@@ -258,7 +291,7 @@ export function Gecko(): React.JSX.Element | null {
   const [pressing, setPressing] = useState(false)
   const [look, setLook] = useState<Look>({ x: 0, y: 0 })
   const seen = useSeen()
-  const { blinking, tilting } = useFidget(seen && view !== undefined && view.pose !== 'asleep')
+  const { blinking, tilting, tapping } = useFidget(seen && view !== undefined && view.pose !== 'asleep', view?.pose === 'waiting')
   const held = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | undefined>(undefined)
 
   useEffect(() => {
@@ -335,6 +368,7 @@ export function Gecko(): React.JSX.Element | null {
         moving={seen}
         blinking={blinking}
         tilting={tilting}
+        tapping={tapping}
         hovering={hovering}
         pressing={pressing}
         look={look}

@@ -23,8 +23,8 @@ Today the person has to read the board's cards to learn whether anything needs t
 | State | When | What the person sees | What they do |
 |---|---|---|---|
 | asleep | nothing working, nothing waiting | lying on its belly, chin on its front paws, eyes shut arcs; the back rises and falls a few times and the tail tip twitches, then it lies still | nothing; it is safe to look away |
-| working | at least one working, none waiting | sitting, front paws tapping in turn as if typing, the head nodding to the beat, the tail swaying behind | nothing; Claude is busy |
-| waiting | at least one asking, finished and unread, or a command after ! waiting to be typed into | it sits up and looks straight at the person with an \"o\" mouth, and bounces gently three times; the orange count pops in from 2 | press the gecko to open the conversation that has waited longest |
+| working | at least one working, none waiting | sitting at a tiny laptop in front of it, paws tapping the keys in turn, the head nodding, now and then glancing down at the screen, the tail swaying behind | nothing; Claude is busy |
+| waiting | at least one asking, finished and unread, or a command after ! waiting to be typed into | it sits up and looks straight at the person with an \"o\" mouth; now and then a slow blink and a burst of impatient foot taps with a small sway; the orange count pops in from 2 | press the gecko to open the conversation that has waited longest |
 | review | a card has just moved to In review | a happy hop of about 0.9 s with paws up and happy arc eyes, squashed on landing, the tail flicking; then the state below returns | look at In review when convenient |
 
 Waiting wins over working; review is a one-off on top of whichever of the other three holds.
@@ -104,7 +104,7 @@ A card moving to In review while something waits does not interrupt waiting: the
 - Count shown from 2: one waiting conversation needs no number, the pose says it.
 - Blinks every 2.5 to 6.5 s, a third of them with a head tilt of 0.9 s.
 - The cursor is read by main ten times a second while it moves, once a second after it has rested two seconds, and never without a panel; the panel is told only when it moved.
-- What runs without end: only the working state's bob, taps and tail. Asleep breathes eight times (about 34 s) and waiting bounces three times, then they hold still apart from blinks, so a panel left sleeping or waiting all day costs nothing (measured below).
+- What runs without end: only the working state's typing, nod, glance and tail. Asleep breathes eight times (about 34 s) and waiting moves only in short bursts at the blink timer's moments (a slow blink, sometimes a second of foot taps), then holds still, so a panel left sleeping or waiting all day costs nothing (measured below).
 
 ## Wording
 
