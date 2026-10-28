@@ -20,8 +20,8 @@ const tray = {
   plain: pngs['../../../assets/trayTemplate@2x.png'] ?? '',
 }
 
-const art = import.meta.glob<string>('../../../../docs/design/gecko/*.svg', { eager: true, query: '?url', import: 'default' })
-const drawn = (name: string): string => art[`../../../../docs/design/gecko/${name}.svg`] ?? ''
+const art = import.meta.glob<string>(['../../../../docs/design/gecko/*.svg', '../../../../docs/design/gecko/ref/*.jpg'], { eager: true, query: '?url', import: 'default' })
+const drawn = (name: string, kind = 'svg'): string => art[`../../../../docs/design/gecko/${name}.${kind}`] ?? ''
 
 const directions = [
   { key: 'a', name: 'A. Glass gecko', says: 'The icon gecko seen from above, out of its tile, in green glass with a slit-pupil eye.' },
@@ -60,8 +60,8 @@ const built = [
 const cycle = ['asleep', 'working', 'waiting', 'review'] as const
 
 /** One panel as its window shows it, 108 px of transparent window, on a stand-in desktop. */
-function Floating({ state, mac = false }: { readonly state: (typeof cycle)[number]; readonly mac?: boolean }): React.JSX.Element {
-  return <div className={`gecko-float${mac ? ' vibrant' : ''}`} data-state={state}>
+function Floating({ state }: { readonly state: (typeof cycle)[number] }): React.JSX.Element {
+  return <div className="gecko-float" data-state={state}>
     <GeckoPanel pose={state === 'review' ? 'working' : state} count={state === 'waiting' ? 2 : 0} hopping={state === 'review'} moving={false} />
   </div>
 }
@@ -122,14 +122,17 @@ function Preview(): React.JSX.Element {
     </header>
     <section className="gecko-direction gecko-built">
       <h2>Built: the floating panel</h2>
-      <p>The real panel, at its real size, on a stand-in desktop. Its own window is transparent, always on top and on every desktop. Hover for the accessible name.</p>
+      <p>The real panel, at its real size, on a stand-in desktop: the app icon's green tile with the gecko on it. Its own window is transparent, always on top and on every desktop. Hover for the accessible name.</p>
       <div className="gecko-desktop">
         {built.map((state) => <figure key={state.key}><Floating state={state.key} /><figcaption>{state.name}<small>{state.says}</small></figcaption></figure>)}
         <figure><Live /><figcaption>Live<small>the four in turn, 3.5 s each; its eyes follow the pointer</small></figcaption></figure>
       </div>
-      <p>On a Mac the window is the system's glass (vibrancy) and the page adds only the shine; here a blur stands in for it.</p>
-      <div className="gecko-desktop">
-        {built.map((state) => <figure key={state.key}><Floating state={state.key} mac /><figcaption>{state.name}</figcaption></figure>)}
+      <p>The reference Alex approved, made with Gemini through Echopub (<code>docs/design/gecko/ref/</code>): asleep, working, waiting with 2, happy hop.</p>
+      <div className="gecko-reference">
+        <img src={drawn('ref/gecko-poses', 'jpg')} alt="Reference poses" />
+        <div className="gecko-reference-built">
+          {built.map((state) => <Floating key={state.key} state={state.key} />)}
+        </div>
       </div>
       <div className="gecko-trays">
         {(['light', 'dark'] as const).map((bar) => <div key={bar} className={`gecko-menubar ${bar}`}>
@@ -181,8 +184,9 @@ style.textContent = `
 .gecko-desktop figure { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 0; color: #fff; font-weight: 600; text-shadow: 0 1px 2px rgb(0 0 0 / 40%); }
 .gecko-desktop small { display: block; font-weight: 400; text-align: center; }
 .gecko-float { position: relative; width: 108px; height: 108px; }
-.gecko-float.vibrant { width: 100px; height: 100px; margin: 4px; overflow: hidden; border-radius: 16px; background: rgb(246 246 246 / 55%); backdrop-filter: blur(20px) saturate(1.8); box-shadow: 0 0 0 0.5px rgb(0 0 0 / 15%), 0 6px 16px rgb(0 0 0 / 25%); }
-:root[data-theme='dark'] .gecko-float.vibrant { background: rgb(40 40 44 / 55%); }
+.gecko-reference { display: flex; align-items: center; gap: 24px; margin: 12px 0 16px; padding: 16px; border-radius: 10px; background: #eef7ef; }
+.gecko-reference img { width: 260px; height: 260px; }
+.gecko-reference-built { display: grid; grid-template-columns: 108px 108px; gap: 12px 20px; zoom: 1.2; }
 .gecko-stills { margin: 24px 16px 0; font-size: 15px; }
 .gecko-trays { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--text-faint); }
 .gecko-menubar { display: flex; align-items: center; gap: 14px; height: 30px; padding: 0 14px; border-radius: 6px; }

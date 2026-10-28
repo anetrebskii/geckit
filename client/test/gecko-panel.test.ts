@@ -23,7 +23,7 @@ describe('the gecko panel', () => {
 
   it('is drawn in parts that move on their own', () => {
     const markup = drawn('working', 0)
-    for (const part of ['gk-tail', 'gk-breathe', 'gk-foot-l', 'gk-foot-r', 'gk-head', 'gk-eye-l', 'gk-eye-r', 'gk-pupil', 'gk-slit', 'gk-lid']) expect(markup).toContain(part)
+    for (const part of ['gk-tail', 'gk-breathe', 'gk-foot-l', 'gk-foot-r', 'gk-head', 'gk-eye-l', 'gk-eye-r', 'gk-pupil', 'gk-dot', 'gk-shut', 'gk-happy', 'gk-mouth-smile', 'gk-mouth-o', 'gk-mouth-happy', 'gk-lie', 'gk-lie-back', 'gk-lie-tail', 'gk-peek-open']) expect(markup).toContain(part)
   })
 
   it('carries what it is doing as classes, and holds still when not seen', () => {

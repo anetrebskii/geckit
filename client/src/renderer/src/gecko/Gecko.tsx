@@ -14,108 +14,123 @@ export interface Look {
   readonly y: number
 }
 
-const RIM = '#0e5a22'
+const INK = '#2b211c'
+const PAD = '#bfe3c8'
+const BLUSH = '#f6a8bc'
 
-/** A limb as a rimmed stroke, and the splayed toes at its end, each ending in a round pad. */
-function Limb({ d, foot, toes, skin, width = 4.6 }: { readonly d: string; readonly foot: readonly [number, number]; readonly toes: readonly number[]; readonly skin: string; readonly width?: number }): React.JSX.Element {
-  const [x, y] = foot
-  const ends = toes.map((deg) => [x + 3.6 * Math.cos((deg * Math.PI) / 180), y + 3.6 * Math.sin((deg * Math.PI) / 180)] as const)
-  return (
-    <>
-      <path d={d} fill="none" stroke={RIM} strokeWidth={width + 2.2} strokeLinecap="round" strokeLinejoin="round" />
-      {ends.map(([ex, ey]) => <path key={`${String(ex)}-r`} d={`M${String(x)} ${String(y)} L${ex.toFixed(2)} ${ey.toFixed(2)}`} stroke={RIM} strokeWidth="3.2" strokeLinecap="round" />)}
-      <path d={d} fill="none" stroke={skin} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />
-      {ends.map(([ex, ey]) => <path key={`${String(ex)}-s`} d={`M${String(x)} ${String(y)} L${ex.toFixed(2)} ${ey.toFixed(2)}`} stroke={skin} strokeWidth="1.4" strokeLinecap="round" />)}
-      {ends.map(([ex, ey]) => <circle key={`${String(ex)}-p`} cx={ex} cy={ey} r="1.5" fill={skin} stroke={RIM} strokeWidth="0.7" />)}
-    </>
-  )
-}
-
-/** A tail that tapers: the same path drawn wide for its first part, narrower further, thinnest to the tip. */
-function Taper({ d, skin, widths }: { readonly d: string; readonly skin: string; readonly widths: readonly [number, number, number] }): React.JSX.Element {
-  const parts = [45, 75, 100] as const
-  return (
-    <>
-      {parts.map((dash, at) => <path key={`r${String(dash)}`} d={d} pathLength="100" fill="none" stroke={RIM} strokeWidth={widths[at]! + 2} strokeLinecap="round" strokeDasharray={`${String(dash)} 200`} />)}
-      {parts.map((dash, at) => <path key={`s${String(dash)}`} d={d} pathLength="100" fill="none" stroke={skin} strokeWidth={widths[at]} strokeLinecap="round" strokeDasharray={`${String(dash)} 200`} />)}
-    </>
-  )
-}
-
-/** One eye on the side of the head: the white, a vertical slit pupil that follows the look and widens, the line of the upper lid, and the lid that closes over it. */
-function Eye({ x, y, r, side, skin, clip }: { readonly x: number; readonly y: number; readonly r: number; readonly side: 'l' | 'r'; readonly skin: string; readonly clip: string }): React.JSX.Element {
+/** An eye: a small dot that follows the look and closes in a blink, the shut arc of sleep and the upturned arc of a happy face. */
+function Eye({ x, y, side }: { readonly x: number; readonly y: number; readonly side: 'l' | 'r' }): React.JSX.Element {
   return (
     <g className={`gk-eye gk-eye-${side}`}>
-      <clipPath id={clip}>
-        <circle cx={x} cy={y} r={r} />
-      </clipPath>
-      <circle cx={x} cy={y} r={r + 1.1} fill={skin} stroke={RIM} strokeWidth="1" />
-      <circle cx={x} cy={y} r={r} fill="#f2f7c8" stroke={RIM} strokeWidth="0.6" />
-      <g clipPath={`url(#${clip})`}>
-        <g className="gk-pupil">
-          <rect className="gk-slit" x={x - r * 0.17} y={y - r * 0.8} width={r * 0.34} height={r * 1.6} rx={r * 0.17} fill="#10331a" />
-          <circle cx={x - r * 0.38} cy={y - r * 0.4} r={r * 0.24} fill="#fff" />
-        </g>
+      <g className="gk-pupil">
+        <ellipse className="gk-dot" cx={x} cy={y} rx="2.5" ry="2.8" fill={INK} />
+        <circle className="gk-dot" cx={x - 0.8} cy={y - 1} r="0.7" fill="#fff" />
       </g>
-      <path d={`M${String(x - r)} ${String(y - r * 0.25)} Q${String(x)} ${String(y - r * 1.25)} ${String(x + r)} ${String(y - r * 0.25)}`} fill="none" stroke={RIM} strokeWidth="0.8" strokeLinecap="round" />
-      <circle className="gk-lid" cx={x} cy={y} r={r + 0.3} fill={skin} stroke={RIM} strokeWidth="0.8" />
+      <path className="gk-shut" d={`M${String(x - 2.8)} ${String(y - 0.4)} Q${String(x)} ${String(y + 2.2)} ${String(x + 2.8)} ${String(y - 0.4)}`} fill="none" stroke={INK} strokeWidth="1" strokeLinecap="round" />
+      <path className="gk-happy" d={`M${String(x - 2.8)} ${String(y + 0.8)} Q${String(x)} ${String(y - 2.4)} ${String(x + 2.8)} ${String(y + 0.8)}`} fill="none" stroke={INK} strokeWidth="1.1" strokeLinecap="round" />
     </g>
   )
 }
 
-/** The darker spots of its skin, as on the icon's gecko: x, y and size. */
-const SPOTS = [[47, 34, 1.3], [41, 31, 0.9], [52, 64, 1.6], [58, 70, 1.3], [63, 76, 1.5], [56, 78, 1], [77, 87, 1.1]] as const
+/** A sole turned to the person: one big pad and three toe pads, a little darker than the skin. */
+function Sole({ x, y }: { readonly x: number; readonly y: number }): React.JSX.Element {
+  return (
+    <g>
+      <ellipse cx={x} cy={y + 1.2} rx="2.6" ry="2.1" fill={PAD} />
+      {[-2.9, 0, 2.9].map((dx) => <circle key={dx} cx={x + dx} cy={y - (dx === 0 ? 2.6 : 1.8)} r="1.1" fill={PAD} />)}
+    </g>
+  )
+}
 
-/** The gecko sitting up on its front legs, three-quarter toward the person, in parts that move on their own: tail, body, legs, head, each eye with its lid and pupil. */
+/** The gecko in the soft, flat style of its reference: white with a mint tint, no outlines, dot eyes, pink blush. Sitting for working, waiting and review; lying on its belly asleep. Each part moves on its own. */
 function Drawing(): React.JSX.Element {
   const id = useId().replace(/[^\w-]/g, '')
   const skin = `url(#${id}-skin)`
-  const tail = 'M68 82 C 80 89, 92 86, 92 74 C 92 63, 81 61, 79 68 C 78 72, 82 74, 84 71'
-  const wrapped = 'M70 84 C 76 92, 60 95, 44 94 C 32 93, 25 91, 27 87'
+  const soft = `url(#${id}-soft)`
+  const tail = 'M58 79 C 71 82, 80.6 75, 80.6 65 C 80.6 56.6, 72.4 53.4, 67.8 57.4 C 64.6 60.4, 66.6 65.6, 70.8 64.8 C 73.4 64.2, 73.8 61, 71.6 60.2'
   return (
-    <svg className="gk-art" viewBox="9 13 88 88" aria-hidden="true">
+    <svg className="gk-art" viewBox="12 17 78 78" aria-hidden="true">
       <defs>
-        <linearGradient id={`${id}-skin`} gradientUnits="userSpaceOnUse" x1="0" y1="24" x2="0" y2="94">
-          <stop offset="0" stopColor="#86e690" />
-          <stop offset="0.45" stopColor="#47c257" />
-          <stop offset="1" stopColor="#1c8c33" />
+        <linearGradient id={`${id}-skin`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#dcf1e1" />
         </linearGradient>
+        <filter id={`${id}-soft`} x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="1.4" />
+        </filter>
       </defs>
-      <ellipse className="gk-shadow" cx="56" cy="92" rx="30" ry="3" fill="#06280f" opacity="0.18" />
+      <ellipse className="gk-shadow" cx="50" cy="87" rx="30" ry="3.6" fill="#06280f" opacity="0.2" />
       <g className="gk-hop">
         <g className="gk-press">
           <g className="gk-wiggle">
             <g className="gk-bob">
-              <g className="gk-tail">
-                <Taper d={tail} skin={skin} widths={[7, 5, 3]} />
-              </g>
-              <g className="gk-breathe">
-                <Limb d="M64 76 Q74 76 75 88" foot={[75, 88]} toes={[200, 150, 100, 50]} skin={skin} width={5.4} />
-                <g className="gk-foot gk-foot-r">
-                  <Limb d="M54 62 Q60 70 57 78 Q55 82 55 86" foot={[55, 86]} toes={[160, 120, 75, 30]} skin={skin} />
+              <g className="gk-sit">
+                <g className="gk-tail">
+                  <path d="M58 79 C 70 82, 79 77, 80.4 68" fill="none" stroke={skin} strokeWidth="8" strokeLinecap="round" />
+                  <path d={tail} fill="none" stroke={skin} strokeWidth="4.4" strokeLinecap="round" />
+                  <path d="M71.6 60.2 C 69.4 59.6, 68.4 62.4, 70.4 63" fill="none" stroke="#cfe8d5" strokeWidth="0.7" strokeLinecap="round" />
                 </g>
-                <path d="M41 47 C 49 45, 57 52, 62 60 C 70 70, 74 84, 62 85.5 C 51 86.5, 45 76, 42 67 C 40 61, 37 51, 41 47 Z" fill={skin} stroke={RIM} strokeWidth="1.1" />
-                <path d="M48 52 C 54 54, 60 61, 64 69" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" opacity="0.4" />
-                {SPOTS.slice(2).map(([x, y, r]) => <circle key={`${String(x)}-${String(y)}`} cx={x} cy={y} r={r} fill="#1f8f36" opacity="0.5" />)}
-                <g className="gk-wrapped">
-                  <Taper d={wrapped} skin={skin} widths={[6, 4.4, 2.8]} />
-                </g>
-                <g className="gk-foot gk-foot-l">
-                  <Limb d="M44 62 Q33 67 35 76 Q37 81 36 87" foot={[36, 87]} toes={[170, 130, 85, 40]} skin={skin} />
-                </g>
-                <g className="gk-head-pose">
-                  <g className="gk-head-look">
-                    <g className="gk-head">
-                      <path d="M57 38 C 56 30, 47 26, 39 28 C 31 30, 23 36, 21 42 C 19.5 47, 24 51, 32 51 C 43 51, 55 47, 57 38 Z" fill={skin} stroke={RIM} strokeWidth="1.1" />
-                      <path d="M30 31.6 C 36 28.4, 45 28, 51 30.4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" opacity="0.45" />
-                      {SPOTS.slice(0, 2).map(([x, y, r]) => <circle key={`${String(x)}-${String(y)}`} cx={x} cy={y} r={r} fill="#1f8f36" opacity="0.5" />)}
-                      <circle cx="23.6" cy="41.2" r="0.7" fill={RIM} />
-                      <path className="gk-mouth" d="M22.4 45.4 Q30 49.6 41.6 47.2" fill="none" stroke={RIM} strokeWidth="1.1" strokeLinecap="round" />
-                      <Eye x={50.4} y={33.6} r={4.1} side="r" skin={skin} clip={`${id}-eye-r`} />
-                      <Eye x={34} y={36} r={5.2} side="l" skin={skin} clip={`${id}-eye-l`} />
+                <g className="gk-breathe">
+                  <path d="M50 52 C 63 52, 69 63, 68 72 C 67 81, 60 85, 50 85 C 40 85, 33 81, 32 72 C 31 63, 37 52, 50 52 Z" fill={skin} />
+                  <ellipse cx="50" cy="73" rx="10.5" ry="9.5" fill="#fff" opacity="0.85" />
+                  <ellipse cx="50" cy="59" rx="13" ry="3" fill="#bfe0c7" opacity="0.6" filter={soft} />
+                  <g>
+                    <ellipse cx="36" cy="81.5" rx="6.6" ry="5.6" fill={skin} />
+                    <Sole x={36} y={82} />
+                    <ellipse cx="64" cy="81.5" rx="6.6" ry="5.6" fill={skin} />
+                    <Sole x={64} y={82} />
+                  </g>
+                  <g className="gk-foot gk-foot-l">
+                    <ellipse cx="40.4" cy="66.4" rx="3.6" ry="7" fill={skin} transform="rotate(18 40.4 66.4)" />
+                    <path d="M42.6 61 C 44.6 65, 44.4 70, 42 72.6" fill="none" stroke="#cfe8d5" strokeWidth="0.8" strokeLinecap="round" />
+                  </g>
+                  <g className="gk-foot gk-foot-r">
+                    <ellipse cx="59.6" cy="66.4" rx="3.6" ry="7" fill={skin} transform="rotate(-18 59.6 66.4)" />
+                    <path d="M57.4 61 C 55.4 65, 55.6 70, 58 72.6" fill="none" stroke="#cfe8d5" strokeWidth="0.8" strokeLinecap="round" />
+                  </g>
+                  <g className="gk-head-pose">
+                    <g className="gk-head-look">
+                      <g className="gk-head">
+                        <path d="M50 21 C 64.5 21, 73 32, 73 43 C 73 53, 63 58.6, 50 58.6 C 37 58.6, 27 53, 27 43 C 27 32, 35.5 21, 50 21 Z" fill={skin} />
+                        <ellipse cx="44" cy="28" rx="9" ry="3.4" fill="#fff" opacity="0.9" />
+                        <circle cx="48.6" cy="47.6" r="0.6" fill={INK} opacity="0.7" />
+                        <circle cx="51.4" cy="47.6" r="0.6" fill={INK} opacity="0.7" />
+                        <ellipse cx="36.4" cy="48.6" rx="3.6" ry="2.2" fill={BLUSH} opacity="0.85" />
+                        <ellipse cx="63.6" cy="48.6" rx="3.6" ry="2.2" fill={BLUSH} opacity="0.85" />
+                        <path className="gk-mouth gk-mouth-smile" d="M47 50.6 Q50 53.2 53 50.6" fill="none" stroke={INK} strokeWidth="1" strokeLinecap="round" />
+                        <ellipse className="gk-mouth gk-mouth-o" cx="50" cy="52" rx="1.2" ry="1.6" fill={INK} />
+                        <path className="gk-mouth gk-mouth-happy" d="M45.6 50.2 Q50 55 54.4 50.2" fill="none" stroke={INK} strokeWidth="1.1" strokeLinecap="round" />
+                        <Eye x={39.6} y={43} side="l" />
+                        <Eye x={60.4} y={43} side="r" />
+                      </g>
                     </g>
                   </g>
                 </g>
+              </g>
+              <g className="gk-lie">
+                <g className="gk-lie-tail">
+                  <path d="M80 81.6 C 88 81.6, 92.6 76, 90.4 71 C 88.4 67, 83.6 67.6, 83.6 71.2 C 83.6 73.6, 86.4 74.4, 87.4 72.6" fill="none" stroke={skin} strokeWidth="4.4" strokeLinecap="round" />
+                </g>
+                <g className="gk-lie-back">
+                  <path d="M38 85 C 36 68, 49 57, 64 57 C 78 57, 86.6 66, 85.6 75.6 C 85 82, 80 85, 73 85 Z" fill={skin} />
+                  <path d="M66 78 C 71 73, 77 75, 78 82" fill="none" stroke="#cfe8d5" strokeWidth="0.9" strokeLinecap="round" />
+                  <ellipse cx="62" cy="61.6" rx="9" ry="2.6" fill="#fff" opacity="0.9" />
+                </g>
+                <g className="gk-lie-head">
+                  <path d="M32 58 C 43 58, 49 65, 49 72 C 49 79, 42 84, 32 84 C 22 84, 16 79, 16 72 C 16 65, 21 58, 32 58 Z" fill={skin} />
+                  <ellipse cx="28" cy="62" rx="7" ry="2.4" fill="#fff" opacity="0.9" />
+                  <ellipse cx="21.6" cy="75.4" rx="3" ry="1.8" fill={BLUSH} opacity="0.85" />
+                  <ellipse cx="41.4" cy="75.4" rx="3" ry="1.8" fill={BLUSH} opacity="0.85" />
+                  <circle cx="30.2" cy="77.4" r="0.55" fill={INK} opacity="0.7" />
+                  <circle cx="33" cy="77.4" r="0.55" fill={INK} opacity="0.7" />
+                  <path d="M20.4 71 Q23.4 73.4 26.4 71" fill="none" stroke={INK} strokeWidth="1" strokeLinecap="round" />
+                  <g className="gk-peek-shut">
+                    <path d="M36.4 71 Q39.4 73.4 42.4 71" fill="none" stroke={INK} strokeWidth="1" strokeLinecap="round" />
+                  </g>
+                  <ellipse className="gk-peek-open" cx="39.4" cy="71.4" rx="2.1" ry="1.3" fill={INK} />
+                </g>
+                <ellipse cx="33" cy="84.6" rx="9" ry="2.8" fill={skin} />
+                <path d="M33 82.6 L33 86" stroke="#cfe8d5" strokeWidth="0.7" strokeLinecap="round" />
               </g>
             </g>
           </g>

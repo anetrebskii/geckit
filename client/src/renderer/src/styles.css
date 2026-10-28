@@ -12225,7 +12225,7 @@ button.manager-step-head:hover > svg {
 .manager-source-recent li > strong, .manager-source-recent li > span { display: block; font-size: 12px; }
 .manager-source-recent li > span { margin-block-start: 4px; color: var(--text-dim); }
 
-/* The floating gecko. Its window is transparent and the panel fills it; on a Mac the window itself is the system's glass, elsewhere the page draws it, without a blur, since a page cannot see the desktop behind its window. */
+/* The floating gecko: its window is transparent and the panel is the app icon's green tile, the white gecko sitting on it, the same on every system and in light and dark. */
 .gecko-window {
   position: fixed;
   inset: 0;
@@ -12234,199 +12234,173 @@ button.manager-step-head:hover > svg {
 .gecko-panel {
   position: absolute;
   inset: 6px;
-  border: 0.5px solid rgb(255 255 255 / 70%);
-  border-radius: 26px;
-  background: linear-gradient(rgb(255 255 255 / 72%), rgb(255 255 255 / 45%));
+  border: 0.5px solid rgb(255 255 255 / 35%);
+  border-radius: 24px;
+  background: linear-gradient(#62c96d, #23963a);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 90%),
-    inset 0 -1px 1px rgb(0 0 0 / 6%),
-    0 0 0 0.5px rgb(0 0 0 / 12%),
-    0 2px 5px rgb(0 0 0 / 16%);
+    inset 0 1px 0 rgb(255 255 255 / 45%),
+    inset 0 -1px 1px rgb(0 0 0 / 10%),
+    0 0 0 0.5px rgb(0 0 0 / 15%),
+    0 2px 5px rgb(0 0 0 / 22%);
 }
 
 .gecko-panel::before {
   position: absolute;
-  inset: 1px 4px 55% 4px;
-  border-radius: 24px 24px 50% 50% / 24px 24px 12px 12px;
-  background: linear-gradient(rgb(255 255 255 / 60%), rgb(255 255 255 / 0%));
+  inset: 1px 4px 60% 4px;
+  border-radius: 22px 22px 50% 50% / 22px 22px 12px 12px;
+  background: linear-gradient(rgb(255 255 255 / 28%), rgb(255 255 255 / 0%));
   content: '';
   pointer-events: none;
 }
 
-:root[data-theme='dark'] .gecko-panel {
-  border-color: rgb(255 255 255 / 18%);
-  background: linear-gradient(rgb(64 64 70 / 72%), rgb(30 30 34 / 62%));
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 22%),
-    inset 0 -1px 1px rgb(0 0 0 / 20%),
-    0 0 0 0.5px rgb(0 0 0 / 40%),
-    0 2px 5px rgb(0 0 0 / 35%);
-}
-
-:root[data-theme='dark'] .gecko-panel::before {
-  background: linear-gradient(rgb(255 255 255 / 16%), rgb(255 255 255 / 0%));
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .gecko-panel {
-    border-color: rgb(255 255 255 / 18%);
-    background: linear-gradient(rgb(64 64 70 / 72%), rgb(30 30 34 / 62%));
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 22%),
-      inset 0 -1px 1px rgb(0 0 0 / 20%),
-      0 0 0 0.5px rgb(0 0 0 / 40%),
-      0 2px 5px rgb(0 0 0 / 35%);
-  }
-
-  :root:not([data-theme]) .gecko-panel::before {
-    background: linear-gradient(rgb(255 255 255 / 16%), rgb(255 255 255 / 0%));
-  }
-}
-
-/* On a Mac the window's own vibrancy is the glass, with the system's corners and shadow: the page adds only the shine. */
-:is(:root.vibrant, .vibrant) .gecko-panel {
-  inset: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-}
-
-/* The gecko faces the person, drawn in parts; each part turns about its own joint, given in the drawing's units. */
+/* The gecko, in parts; each part turns about its own joint, given in the drawing's units. */
 .gecko-panel {
   --gk-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .gk-art {
   position: absolute;
-  inset: 2px;
-  width: calc(100% - 4px);
-  height: calc(100% - 4px);
+  inset: 4px;
+  width: calc(100% - 8px);
+  height: calc(100% - 8px);
   overflow: visible;
 }
 
 .gk-art g,
-.gk-art ellipse {
+.gk-art .gk-shadow {
   transform-box: view-box;
-  transform-origin: 50px 92px;
+  transform-origin: 50px 86px;
 }
 
 .gk-art .gk-tail {
-  transform-origin: 68px 82px;
-  transition: opacity 400ms;
-}
-
-.gk-wrapped {
-  opacity: 0;
-  transition: opacity 400ms;
+  transform-origin: 60px 79px;
 }
 
 .gk-art .gk-foot-l {
-  transform-origin: 43px 61px;
+  transform-origin: 40px 60px;
 }
 
 .gk-art .gk-foot-r {
-  transform-origin: 52px 60px;
+  transform-origin: 60px 60px;
 }
 
 .gk-art .gk-head-pose,
 .gk-art .gk-head-look,
 .gk-art .gk-head {
-  transform-origin: 46px 56px;
+  transform-origin: 50px 58px;
+}
+
+.gk-art .gk-lie-back {
+  transform-origin: 60px 84px;
+}
+
+.gk-art .gk-lie-tail {
+  transform-origin: 81px 81.6px;
+}
+
+.gk-art .gk-shadow {
+  transform-origin: 50px 87px;
+}
+
+/* Sitting and lying are two drawings of the one gecko: asleep it lies down, otherwise it sits. */
+.gk-sit,
+.gk-lie {
+  transition: opacity 300ms;
+}
+
+.gk-lie,
+.gecko-asleep .gk-sit {
+  opacity: 0;
+}
+
+.gecko-asleep .gk-lie {
+  opacity: 1;
 }
 
 .gk-head-pose {
   transition: transform 500ms var(--gk-spring);
 }
 
-/* The head follows the cursor a little, the pupils a lot. */
+/* The head follows the cursor a little, the dot eyes more, inside the face. */
 .gk-head-look {
-  transform: translate(calc(var(--lx) * 1.6px), calc(var(--ly) * 1.2px)) rotate(calc(var(--lx) * 4deg));
+  transform: translate(calc(var(--lx) * 1.4px), calc(var(--ly) * 1px)) rotate(calc(var(--lx) * 4deg));
   transition: transform 300ms var(--gk-spring);
 }
 
 .gk-art .gk-pupil {
-  transform: translate(calc(var(--lx) * 1.8px), calc(var(--ly) * 1.4px));
+  transform: translate(calc(var(--lx) * 2px), calc(var(--ly) * 1.6px));
   transition: transform 180ms ease-out;
 }
 
-.gk-slit {
+.gk-art .gk-dot {
   transform-box: fill-box;
   transform-origin: center;
-  transition: transform 260ms var(--gk-spring);
+  transition: transform 80ms ease-in;
 }
 
-/* The lid closes from the top of the eye. */
-.gk-lid {
-  transform-box: fill-box;
-  transform-origin: 50% 0;
-  transform: scaleY(0);
-  transition: transform 90ms ease-in;
+.gk-shut,
+.gk-happy,
+.gk-mouth-o,
+.gk-mouth-happy,
+.gk-peek-open {
+  opacity: 0;
 }
 
-.gk-art .gk-shadow {
-  transform-origin: 56px 92px;
-}
-
-.gecko-blink .gk-lid {
-  transform: none;
+.gecko-blink .gk-art .gk-dot {
+  transform: scaleY(0.1);
 }
 
 .gecko-tilt .gk-head {
   animation: gk-tilt 900ms var(--gk-spring);
 }
 
-/* Asleep: eyes shut, head down to its front feet, tail wrapped round them, a few slow breaths, then it lies still. */
-.gecko-asleep .gk-lid {
-  transform: none;
-}
-
-.gecko-asleep .gk-head-pose {
-  transform: translate(3px, 12px) rotate(-14deg);
-}
-
-.gecko-asleep .gk-tail {
-  opacity: 0;
-}
-
-.gecko-asleep .gk-wrapped {
-  opacity: 1;
-}
-
-.gecko-asleep .gk-breathe {
+/* Asleep: on its belly, chin on its front paws, eyes shut; the back rises and falls a few times and the tail tip twitches, then it lies still. */
+.gecko-asleep .gk-lie-back {
   animation: gk-breathe 4.2s ease-in-out 8;
 }
 
-/* Hovered while asleep: one eye opens sleepily and closes again. */
-.gecko-asleep.gecko-hover .gk-eye-l .gk-lid {
-  animation: gk-peek 1.8s ease-in-out;
+.gecko-asleep .gk-lie-tail {
+  animation: gk-twitch 8.4s ease-in-out 4;
 }
 
-/* Working: busy in place, bobbing, the front feet tapping in turn, the tail swinging a beat behind. */
-.gecko-working .gk-bob {
-  animation: gk-busy 640ms ease-in-out infinite;
+/* Hovered while asleep: one eye opens sleepily and shuts again. */
+.gecko-asleep.gecko-hover .gk-peek-open {
+  animation: gk-peek-open 1.8s ease-in-out;
 }
 
+.gecko-asleep.gecko-hover .gk-peek-shut {
+  animation: gk-peek-shut 1.8s ease-in-out;
+}
+
+/* Working: sitting, its front paws tapping in turn as if typing, nodding to the beat, the tail swaying behind. */
 .gecko-working .gk-foot-l,
 .gecko-working .gk-foot-r {
-  animation: gk-tap 640ms ease-in-out infinite;
+  animation: gk-tap 560ms ease-in-out infinite;
 }
 
 .gecko-working .gk-foot-r {
-  animation-delay: -320ms;
+  animation-delay: -280ms;
+}
+
+.gecko-working .gk-head-pose {
+  animation: gk-nod 560ms ease-in-out infinite;
 }
 
 .gecko-working .gk-tail {
-  animation: gk-swing 640ms ease-in-out 120ms infinite;
+  animation: gk-swing 1120ms ease-in-out 160ms infinite;
 }
 
-/* Waiting: it perks up, its pupils wide, and bounces gently a few times. */
+/* Waiting: it sits up, looks straight out with an "o" mouth and bounces gently a few times. */
 .gecko-waiting .gk-head-pose {
-  transform: translateY(-3px) scale(1.04);
+  transform: translateY(-2.5px) scale(1.03);
 }
 
-.gecko-waiting .gk-slit {
-  transform: scaleX(2.6);
+.gecko-waiting .gk-mouth-smile {
+  opacity: 0;
+}
+
+.gecko-waiting .gk-mouth-o {
+  opacity: 1;
 }
 
 .gecko-waiting .gk-bob {
@@ -12437,7 +12411,7 @@ button.manager-step-head:hover > svg {
   animation: gk-swing 1.4s ease-in-out 200ms 3;
 }
 
-/* Review: a happy hop, squashed on landing, the tail curling up. */
+/* Review: a happy hop with its paws up and happy eyes, squashed on landing, the tail flicking. */
 .gecko-hop .gk-hop {
   animation: gk-hop 900ms ease-out;
 }
@@ -12447,28 +12421,41 @@ button.manager-step-head:hover > svg {
 }
 
 .gecko-hop .gk-tail {
-  animation: gk-curl 900ms var(--gk-spring);
+  animation: gk-flick 900ms var(--gk-spring);
 }
 
-.gecko-hop.gecko-still .gk-tail {
-  transform: rotate(-18deg) scale(0.92);
+.gecko-hop .gk-foot-l {
+  transform: rotate(110deg);
 }
 
-.gecko-hop .gk-slit {
-  transform: scaleX(1.8);
+.gecko-hop .gk-foot-r {
+  transform: rotate(-110deg);
 }
 
-/* Hovered awake: it looks up at the person, pupils wide, with a little wiggle. */
-.gecko-hover:not(.gecko-asleep) .gk-head-pose {
-  transform: translateY(-3px);
+.gecko-hop .gk-pupil,
+.gecko-hop .gk-mouth-smile,
+.gecko-hop .gk-mouth-o {
+  opacity: 0;
 }
 
-.gecko-hover:not(.gecko-asleep) .gk-slit {
-  transform: scaleX(2.6);
+.gecko-hop .gk-happy,
+.gecko-hop .gk-mouth-happy {
+  opacity: 1;
 }
 
+.gk-foot {
+  transition: transform 260ms var(--gk-spring);
+}
+
+.gecko-hop .gk-foot-l,
+.gecko-hop .gk-foot-r,
+.gecko-hop .gk-head-pose {
+  animation: none;
+}
+
+/* Hovered awake: it looks straight at the person with a little wiggle. */
 .gecko-hover:not(.gecko-asleep) .gk-art .gk-pupil {
-  transform: translate(0, -0.8px);
+  transform: none;
 }
 
 .gecko-hover:not(.gecko-asleep) .gk-wiggle {
@@ -12481,8 +12468,9 @@ button.manager-step-head:hover > svg {
 
 /* Not seen, and in stills: nothing moves. */
 .gecko-still .gk-art g,
-.gecko-still .gk-art circle,
-.gecko-still .gk-art ellipse {
+.gecko-still .gk-art ellipse,
+.gecko-still .gk-art path,
+.gecko-still .gecko-count {
   animation: none;
 }
 
@@ -12492,31 +12480,43 @@ button.manager-step-head:hover > svg {
     transform: none;
   }
   45% {
-    transform: scale(1.035, 1.05);
+    transform: scale(1.02, 1.06);
   }
 }
 
-@keyframes gk-peek {
+@keyframes gk-twitch {
   0%,
+  86%,
   100% {
     transform: none;
   }
-  30%,
+  89% {
+    transform: rotate(-14deg);
+  }
+  92% {
+    transform: rotate(6deg);
+  }
+}
+
+@keyframes gk-peek-open {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  25%,
   65% {
-    transform: scaleY(0.5);
+    opacity: 1;
   }
 }
 
-@keyframes gk-busy {
+@keyframes gk-peek-shut {
   0%,
   100% {
-    transform: none;
+    opacity: 1;
   }
-  45% {
-    transform: translateY(-2.5px) scale(0.99, 1.02);
-  }
-  85% {
-    transform: scale(1.03, 0.97);
+  25%,
+  65% {
+    opacity: 0;
   }
 }
 
@@ -12527,7 +12527,17 @@ button.manager-step-head:hover > svg {
     transform: none;
   }
   25% {
-    transform: translateY(-3px) rotate(-6deg);
+    transform: translateY(-2.5px) rotate(-8deg);
+  }
+}
+
+@keyframes gk-nod {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: translateY(1px) rotate(2deg);
   }
 }
 
@@ -12563,7 +12573,7 @@ button.manager-step-head:hover > svg {
     transform: scale(1.1, 0.88);
   }
   42% {
-    transform: translateY(-9px) scale(0.95, 1.06);
+    transform: translateY(-6px) scale(0.95, 1.06);
   }
   68% {
     transform: none;
@@ -12580,7 +12590,7 @@ button.manager-step-head:hover > svg {
   0%,
   100% {
     transform: none;
-    opacity: 0.18;
+    opacity: 0.2;
   }
   42% {
     transform: scale(0.7);
@@ -12588,13 +12598,16 @@ button.manager-step-head:hover > svg {
   }
 }
 
-@keyframes gk-curl {
+@keyframes gk-flick {
   0%,
   100% {
     transform: none;
   }
-  45% {
-    transform: rotate(-24deg) scale(0.9);
+  35% {
+    transform: rotate(-20deg);
+  }
+  60% {
+    transform: rotate(10deg);
   }
 }
 
@@ -12631,34 +12644,45 @@ button.manager-step-head:hover > svg {
   }
   35%,
   70% {
-    transform: rotate(9deg);
+    transform: rotate(8deg);
   }
 }
 
-/* The count from 2, in the board's own colour for asking you. */
+/* The count from 2: an orange disc with a white numeral, popping in. */
 .gecko-count {
   position: absolute;
-  top: 7px;
-  right: 7px;
+  top: 6px;
+  right: 6px;
   box-sizing: border-box;
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
   border-radius: 10px;
-  color: var(--bg);
-  background: var(--warning-text);
-  box-shadow: 0 0 0 1.5px var(--bg);
+  color: #fff;
+  background: #ec9a2c;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 20px;
   text-align: center;
+  animation: gk-pop 420ms var(--gk-spring);
+}
+
+@keyframes gk-pop {
+  0% {
+    transform: scale(0);
+  }
+  100% {
+    transform: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .gecko-panel .gk-art g,
-  .gecko-panel .gk-art circle,
-  .gecko-panel .gk-art ellipse {
+  .gecko-panel .gk-art ellipse,
+  .gecko-panel .gk-art path,
+  .gecko-count {
     animation: none;
   }
 }
