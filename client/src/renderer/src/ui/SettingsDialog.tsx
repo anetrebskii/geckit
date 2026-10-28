@@ -267,6 +267,17 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
         />
       </div>
 
+      <div className="field">
+        <label>Gecko</label>
+        <label className="check">
+          <input type="checkbox" role="switch" checked={settings.showGecko} onChange={(event) => change({ showGecko: event.target.checked })} />
+          Show the gecko
+        </label>
+        <span style={NOTE}>
+          In the top bar and the menu bar, it shows whether Claude is working or a conversation is waiting for you. Off, the menu bar has its plain icon.
+        </span>
+      </div>
+
 
       <div className="field">
         <label htmlFor="open-with">Open files from a conversation with</label>
