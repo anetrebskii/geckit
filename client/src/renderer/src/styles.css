@@ -12372,7 +12372,27 @@ button.manager-step-head:hover > svg {
   animation: gk-peek-shut 1.8s ease-in-out;
 }
 
-/* Working: sitting, its front paws tapping in turn as if typing, nodding to the beat, the tail swaying behind. */
+/* Working: at a little laptop in front of it, its paws on the keys in turn, nodding to the beat, now and then glancing down at the screen, the tail swaying behind. */
+.gk-laptop,
+.gk-typing {
+  opacity: 0;
+  transition: opacity 300ms;
+}
+
+.gecko-working .gk-laptop,
+.gecko-working .gk-typing {
+  opacity: 1;
+}
+
+.gecko-working.gecko-hop .gk-laptop,
+.gecko-working.gecko-hop .gk-typing {
+  opacity: 0;
+}
+
+.gecko-working .gk-head {
+  animation: gk-glance 4.8s ease-in-out infinite;
+}
+
 .gecko-working .gk-foot-l,
 .gecko-working .gk-foot-r {
   animation: gk-tap 560ms ease-in-out infinite;
@@ -12404,11 +12424,29 @@ button.manager-step-head:hover > svg {
 }
 
 .gecko-waiting .gk-bob {
-  animation: gk-bounce 1.4s var(--gk-spring) 3;
+  animation: gk-bounce 1.4s var(--gk-spring);
 }
 
-.gecko-waiting .gk-tail {
-  animation: gk-swing 1.4s ease-in-out 200ms 3;
+/* Now and then, impatient: one foot taps three times while it sways and the tail swings. */
+.gk-art .gk-heel {
+  transform-origin: 60px 86px;
+}
+
+.gecko-waiting.gecko-tapping .gk-heel {
+  animation: gk-heel 330ms ease-in-out 3;
+}
+
+.gecko-waiting.gecko-tapping .gk-sit {
+  animation: gk-sway 1s ease-in-out;
+}
+
+.gecko-waiting.gecko-tapping .gk-tail {
+  animation: gk-swing 1s ease-in-out 120ms;
+}
+
+/* Its blinks are slow while it waits. */
+.gecko-waiting .gk-art .gk-dot {
+  transition-duration: 220ms;
 }
 
 /* Review: a happy hop with its paws up and happy eyes, squashed on landing, the tail flicking. */
@@ -12528,6 +12566,42 @@ button.manager-step-head:hover > svg {
   }
   25% {
     transform: translateY(-2.5px) rotate(-8deg);
+  }
+}
+
+@keyframes gk-glance {
+  0%,
+  62%,
+  92%,
+  100% {
+    transform: none;
+  }
+  70%,
+  84% {
+    transform: translateY(1.6px) rotate(-3deg);
+  }
+}
+
+@keyframes gk-heel {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: rotate(-16deg);
+  }
+}
+
+@keyframes gk-sway {
+  0%,
+  100% {
+    transform: none;
+  }
+  30% {
+    transform: rotate(-2.5deg);
+  }
+  70% {
+    transform: rotate(2.5deg);
   }
 }
 
