@@ -1,7 +1,7 @@
 ---
 type: spec
 feature: 016-gecko-character
-status: draft, for Alex to read with the still poses
+status: draft, direction C chosen
 ---
 
 # The gecko: states and behaviour
@@ -115,7 +115,8 @@ A card moving to In review while something waits does not interrupt waiting: the
 
 | Question | Verdict | Why |
 |---|---|---|
-| Which visual direction (A glass gecko, B gecko on the edge, C glass tile) | Open: Alex picks from the stills | the spec makes the look Alex's call before animation is built |
+| Which visual direction (A glass gecko, B gecko on the edge, C glass tile) | C, the glass tile (Alex, 2026-10-28) | strongest link to the app icon; its weakness, poses that are hard to tell apart at 30 px, is answered by letting the tile carry the state too (next row) |
+| How C stays readable at 30 px | the tile carries the state as well as the gecko: asleep dims the tile and stops the inner glow; working walks the gecko inside; waiting adds the amber badge on the tile's corner; review lifts the whole tile in one small hop | the gecko inside is about 20 px long, too small to carry four poses alone; tile brightness, badge and hop read from the corner of the eye |
 | Where in the top bar | the empty stretch before Ask, right-aligned | the only place in the bar with no control; it never covers one |
 | Count form | small amber disc at the gecko's shoulder, white numeral | amber is the board's own "asking you" colour; the final badge will be HTML from the app's tokens, the stills only place it |
 
