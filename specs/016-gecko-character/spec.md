@@ -18,7 +18,7 @@ The person has several conversations running and is working in another app. The 
 **Independent test**: with fixture sessions, every combination of working / waiting / none produces the pose in the table below within one second of the change.
 
 **Acceptance**:
-- Waiting wins over working: one waiting conversation among five working ones shows the waiting pose.
+- Working wins over waiting: while at least one conversation works the gecko types, and the ones waiting show only as the orange count (Alex, 2026-10-29).
 - The gecko never shows waiting when nothing is waiting, and never sleeps while something works.
 - Hidden conversations and other profiles' projects do not count, the same as the board.
 
@@ -26,7 +26,7 @@ The person has several conversations running and is working in another app. The 
 |---|---|
 | nothing working, nothing waiting | asleep: sitting, eyes shut, eight slow breaths |
 | at least one working, none waiting | typing on a little laptop, nodding |
-| at least one waiting for the person (question, permission, a reply) | sits up with an "o" mouth, watches the cursor, bounces, taps its foot now and then; the orange count from one; asleep after 5 minutes alone, the count staying |
+| at least one waiting for the person (question, permission, a reply) and none working | sits up with an "o" mouth, watches the cursor, bounces, taps its foot now and then; the orange count from one; asleep after 5 minutes alone, the count staying |
 | a card has just moved to In review | a happy hop with arms up, then a happy look until it dozes or another state takes over |
 
 ### US2 - Go to the conversation that needs me (P1)

@@ -15,9 +15,10 @@ describe('the gecko state', () => {
     expect(geckoState([one('a', { state: 'working' }), one('b')]).pose).toBe('working')
   })
 
-  it('waits when one of five working conversations asks, and waiting wins', () => {
+  it('keeps working when one of five working conversations asks, the asking one in its count', () => {
     const rows = [1, 2, 3, 4, 5].map((n) => one(String(n), { state: 'working' }))
-    expect(geckoState([...rows, one('asks', { state: 'asks' })])).toEqual({ pose: 'waiting', waiting: ['asks'], review: false })
+    expect(geckoState([...rows, one('asks', { state: 'asks' })])).toEqual({ pose: 'working', waiting: ['asks'], review: false })
+    expect(geckoState([one('asks', { state: 'asks' })]).pose).toBe('waiting')
   })
 
   it('lists the waiting ones longest first, a reply and a question alike', () => {

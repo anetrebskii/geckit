@@ -22,7 +22,7 @@ Today the person has to read the board's cards to learn whether anything needs t
 
 ## States
 
-The pose follows the conversations, and what the person is doing with the gecko comes first. In order: files dragged over it (catch), files just dropped (got), the screenshot (camera), the voice task (listen), the menu open (look), then waiting, working, the happy look after a hop (done), asleep. Dozing puts waiting and done to sleep; working keeps working.
+The pose follows the conversations, and what the person is doing with the gecko comes first. In order: files dragged over it (catch), files just dropped (got), the screenshot (camera), the voice task (listen), the menu open (look), then working, waiting, the happy look after a hop (done), asleep. Dozing puts waiting and done to sleep; working keeps working.
 
 | Pose | When | What the person sees | Frames |
 |---|---|---|---|

@@ -33,13 +33,13 @@ function waitsForYou(one: Counted): boolean {
   return one.state === 'asks' || one.state === 'unread'
 }
 
-/** The one state of every conversation listed, with `before` the list as it was, so a card arriving in In review is seen. Waiting wins over everything. */
+/** The one state of every conversation listed, with `before` the list as it was, so a card arriving in In review is seen. Working wins: while one works it types, and what waits shows only in its count. */
 export function geckoState(now: readonly Counted[], before: readonly Counted[] = []): GeckoState {
   const counted = now.filter(inProgress)
   const waiting = counted.filter(waitsForYou).sort((one, other) => one.at - other.at).map((one) => one.id)
   const was = new Map(before.map((one) => [one.id, one.status]))
   const review = waiting.length === 0 && now.some((one) => one.status === 'review' && was.has(one.id) && was.get(one.id) !== 'review')
-  const pose = waiting.length > 0 ? 'waiting' : counted.some((one) => one.state === 'working') ? 'working' : 'asleep'
+  const pose = counted.some((one) => one.state === 'working') ? 'working' : waiting.length > 0 ? 'waiting' : 'asleep'
   return { pose, waiting, review }
 }
 
