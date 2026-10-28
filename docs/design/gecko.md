@@ -1,42 +1,52 @@
 # The gecko
 
-Step 1 of [spec 016](../../specs/016-gecko-character/spec.md) drew still poses for Alex to choose a direction from; steps 2-5 built direction C into the app (see Build, below). States, transitions and wording are in the [UX document](../../specs/016-gecko-character/ux.md).
+Step 1 of [spec 016](../../specs/016-gecko-character/spec.md) drew still poses for Alex to choose a direction from; steps 2-5 built it, first as a tile in the board's top bar, then, on Alex's direction of 2026-10-28, as a separate floating panel with the gecko redrawn facing the person (see Build, below). States, transitions and wording are in the [UX document](../../specs/016-gecko-character/ux.md).
 
 ## Choice
 
-Alex chose **C, the glass tile**, on 2026-10-28. A and B stay in the repository as drawn alternatives. Because C's poses are hard to tell apart at bar size, the tile itself carries the state as well: dimmed when asleep, the badge when waiting, a hop of the whole tile on review (see the [UX document](../../specs/016-gecko-character/ux.md), Decisions).
+Alex chose **C, the glass tile**, on 2026-10-28, and later the same day moved the gecko out of the board: **a small floating glass panel of its own**, like Mochi in Coucou, with the gecko **front-facing, moving smoothly and following the cursor**. A and B stay in the repository as drawn alternatives; the top-down stills below are the record of step 1.
 
-## Build (steps 2-5)
+## Build: the floating panel
 
-What differs from the stills:
+- **Placement.** Its own window: frameless, transparent, always on top (`floating` level), on every desktop (`setVisibleOnAllWorkspaces` without the full screen spaces, which would take GeckIt's Dock icon away), not in the Dock, the taskbar or the window switcher (`skipTaskbar`, `focusable: false`), never taking the keyboard, clicks accepted without activating (`acceptFirstMouse`). 100 px square on macOS, 108 px elsewhere (a 96 px panel plus room for its shadow). First at the top right of the main display, 24 px in; dragged, the position is kept in `geckoBounds` in settings. Switched off or with the screen locked there is no window at all.
+- **Glass.** macOS: the window's vibrancy (`popover`, `visualEffectState: 'active'` so it stays glass while GeckIt is in the background), with the system's corners and shadow; the page adds only the top shine. Windows and Linux: the CSS glass of the earlier tile on a transparent window: a white gradient at 72% to 45% (dark: grey at 72% to 62%), a 0.5 px light border, an inner top highlight, the sheen and a small shadow. No blur there, since a page cannot see the desktop behind its window.
+- **The gecko.** Drawn in `client/src/renderer/src/gecko/Gecko.tsx` as one SVG of parts: tail, body with belly and back feet, the tail wrapped round the feet (shown asleep), two front feet, and the head with two eyes, each eye a socket, a white, a slit pupil with its highlight and a lid. Green from the icon (`#86e690`, `#47c257`, `#1c8c33`), a dark green rim (`#0e5a22`), a white gloss on the head, darker spots, pink cheeks, a small smile. The eyes sit on the sides of the head, as a gecko's do, so it does not read as a frog.
+- **Motion.** CSS keyframes and transitions on the parts' transforms only, each part turning about its own joint: springy easing (`cubic-bezier(0.34, 1.56, 0.64, 1)`), squash and stretch on the hop, the press and the bounce, the tail a beat behind the body. Working: bob 640 ms, front feet tapping in turn, tail swinging, without end. Asleep: lids shut, head down 9 px onto the feet, tail wrapped, eight breaths of 4.2 s, then still. Waiting: head up and 4% larger, pupils widened 2.6 times, three bounces of 1.4 s. Review: a 0.9 s hop 16 px high with a squash on take-off and landing, the shadow shrinking under it, the tail curling. Blinks every 2.5 to 6.5 s with the lids, a third with a 9 degree head tilt. Hover: looks up with wide pupils and wiggles; asleep, one eye opens halfway and shuts. Press: a 170 ms squash, then GeckIt comes forward.
+- **The eyes follow the cursor.** Main reads `screen.getCursorScreenPoint()` ten times a second while the cursor moves and once a second after it has rested two seconds, and tells the panel only when it moved; the page turns that into a direction from its eyes, weaker within 240 px, which moves the pupils up to 3.4 units and the head up to 5 degrees.
+- **Reduced motion and not seen.** Reduced motion keeps the still pose of each state (no keyframes, no hop, no blinks, no wiggle or squash); the eyes still follow. A hidden page holds still too.
+- **Tray.** Unchanged from the tile build: `client/assets/tray{Asleep,Working,Waiting}Template.png` and `@2x`, rendered from `tray-c-*.svg` at 18 and 36 px. macOS only; Windows and Linux keep the colour app icon. Switched off, the tray goes back to `trayTemplate.png`. Seen composed on a [light bar](gecko/build-c-tray-light.jpg) and a [dark bar](gecko/build-c-tray-dark.jpg), not in the real menu bar.
 
-- **The tile carries the state.** Asleep: the tile at 60% opacity and half saturation, its inner glow dropped, the curled gecko still. Working: the gecko walks, the working pose and its mirror image across the body swapped every 280 ms; the swap is opacity on two stacked layers, so it runs on the compositor (`docs/performance.md`). Waiting: the stopped, head-turned pose. Review: the whole tile hops once in 1 s (squash, lift 6 px, settle) showing the tail-spiral pose, then the state below returns.
-- **The count is HTML**, not drawn: a 15 px disc on the tile's top right corner, 10 px bold numeral, `--warning-text` with a `--bg` numeral and ring, shown from 2. In light it is ochre rather than the stills' bright amber, because that token is the board's "Asking you" text colour.
-- **Size.** The tile is 28 px, the button 30 x 31 px with -1.5 px vertical margin, so the 28 px row and the bar's height do not change. It sits right-aligned in the empty stretch, 2 px plus the bar's 8 px gap before Ask.
-- **Tray.** `client/assets/tray{Asleep,Working,Waiting}Template.png` and `@2x`, rendered from `tray-c-*.svg` at 18 and 36 px (the size of today's `trayTemplate.png`) with `rsvg-convert -w 18 -h 18` and `-w 36 -h 36`. macOS only; Windows and Linux keep the colour app icon. Run from the source they are orange, as today's icon is. Switched off, the tray goes back to `trayTemplate.png`.
-- **Geometry has one source.** `draw.mjs` also writes `client/src/renderer/src/chat/gecko-art.ts`, the C gecko of each pose; `Gecko.tsx` draws the tile, the defs (named per tile with `useId`) and the count around it.
+Code: `client/src/shared/gecko.ts` (the state, tests in `client/test/gecko.test.ts`), `client/src/main/gecko.ts` (window life, state, cursor, press, menu, drag), the window in `client/src/main/windows.ts`, `client/src/renderer/gecko.html` and `client/src/renderer/src/gecko/` (the page, tests in `client/test/gecko-panel.test.ts`), `client/src/main/tray.ts`, the "Show the gecko" switch in Settings, General.
 
-Code: `client/src/shared/gecko.ts` (the state, tests in `client/test/gecko.test.ts`), `client/src/renderer/src/chat/Gecko.tsx` (the tile and the press, tests in `client/test/gecko-tile.test.ts`), `client/src/main/tray.ts`, the "Show the gecko" switch in Settings, General.
+The preview opens with "Built: the floating panel": the four states at real size on a stand-in desktop, a live panel going through them every 3.5 s that follows the pointer, wiggles on hover and squashes on a click, the same four with a blur standing in for the Mac's vibrancy, and the tray PNGs on a light and a dark bar. The step 1 stills follow below it.
 
-The preview now opens with "Built: C, the glass tile": the real `TopBar` with the real gecko on fixture conversations for each state (the review row moves a card to In review and back every 1.5 s, so it hops every 3 s), the four tiles at 4x, and the tray PNGs on a light and a dark bar. The step 1 stills follow below it.
+### Screenshots and recordings
 
-### Screenshots of the build
+- Asleep: [light](gecko/panel-asleep-light.jpg), [dark](gecko/panel-asleep-dark.jpg)
+- Working: [light](gecko/panel-working-light.jpg), [dark](gecko/panel-working-dark.jpg)
+- Waiting with 2: [light](gecko/panel-waiting-light.jpg), [dark](gecko/panel-waiting-dark.jpg)
+- Review hop: [light](gecko/panel-review-light.jpg), [dark](gecko/panel-review-dark.jpg)
+- The preview section: [light](gecko/panel-preview-light.jpg), [dark](gecko/panel-preview-dark.jpg); the Mac stand-in: [light](gecko/panel-mac-light.jpg), [dark](gecko/panel-mac-dark.jpg)
+- 15 s of the live panel (asleep with a hover peek, working with a hover wiggle and a press, waiting, review), the eyes following a white dot that stands for the cursor: [light](gecko/panel-live-light.mp4), [dark](gecko/panel-live-dark.mp4)
+- The page as Electron draws it in the real window, captured with `capturePage` (asleep, working, waiting, review mid-hop, then looking at a cursor down and to the left): [panel-electron.jpg](gecko/panel-electron.jpg). The vibrancy is not in a page capture; the backdrop is added.
 
-- Preview section: [light](gecko/build-c-preview-light.jpg), [dark](gecko/build-c-preview-dark.jpg)
-- Top bar, asleep: [light](gecko/build-c-asleep-light.jpg), [dark](gecko/build-c-asleep-dark.jpg)
-- Top bar, working: [light](gecko/build-c-working-light.jpg), [dark](gecko/build-c-working-dark.jpg)
-- Top bar, waiting with 2: [light](gecko/build-c-waiting-light.jpg), [dark](gecko/build-c-waiting-dark.jpg)
-- Top bar, review hop: [light](gecko/build-c-review-light.jpg), [dark](gecko/build-c-review-dark.jpg)
-- Tray @2x, asleep, working, waiting, then today's icon: [light bar](gecko/build-c-tray-light.jpg), [dark bar](gecko/build-c-tray-dark.jpg)
+The stills are from Chrome at 1200 x 900, device scale 2, the states drawn still; the review stills freeze the hop at 380 ms, its highest point. The recordings are Chrome's screencast at about 60 frames a second with the live panel at 2x, cut to 800 x 450.
 
-The bar shots are from Chrome at 1440 x 900 at 1x, so the tile is small in them; the 4x tiles are in the preview shots. The review shots freeze the hop at 40% (its highest point) with an injected `animation-play-state: paused`. The tray shots are the PNGs composed on #ececec and, inverted as macOS does, on #2b2b2e, scaled 3x without smoothing; they are not a capture of the menu bar.
+### Checked in Electron
 
-### Not checked in the build
+The worktree's Electron 38.8.6 was installed into `client/node_modules` and the app built with `electron-vite build`. The whole app was not started: it would share Claude's and GeckIt's real folders with the instance already running. Instead a small harness opened the built `gecko.html` with the real preload in a window made with exactly the options of `geckoWindow`, on a profile folder of its own, and found:
 
-- The real macOS menu bar. A bare Electron script made the three template trays (macOS accepted them and gave them places), but the screen capture came back black: this session has no screen recording permission. The GeckIt app itself was not launched, since a dev instance from the main checkout was already running on the same `geckit-local` folder.
-- The real app window: the top bar was checked in the preview under Vite, not in Electron. Pressing the gecko (opening the longest waiting, cycling, opening the board) is covered by reading the code only.
-- Idle CPU with the window hidden, and the walking cycle's CPU (`docs/performance.md` asks for `top -pid` on the renderer).
-- Windows and Linux trays.
+- The window shown without focus: visible, always on top, on all workspaces, not focusable, no focused window afterwards, the Dock icon still there.
+- A click sent `gecko:press` (after the squash), a 40 px drag sent `gecko:move` and moved the window 40 px, a right-click sent `gecko:menu`.
+- Renderer and GPU CPU over 5 s, from `app.getAppMetrics`: asleep after its breaths 0.00% and 0.00%; waiting after its bounces 0.02% and 0.06%; working 1.2% and 2.0%.
+
+### Not checked
+
+- How it looks on the real desktop: the vibrancy, the system's corner radius against the page's shine, the shadow, the transparency over other apps. Screen capture needs screen recording permission this session does not have.
+- Real hover in a window that is not focused (the harness sends synthetic events), the right-click menu's position, and dragging across displays.
+- Spaces and full screen apps, the window switcher, the lock screen closing and reopening the panel, a disconnected display.
+- Windows and Linux: the transparent window, `focusable: false` keeping it out of Alt+Tab, the trays.
+- The real menu bar with the tray images.
 
 ## The three directions
 
