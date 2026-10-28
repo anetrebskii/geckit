@@ -43,7 +43,7 @@ function Sole({ x, y }: { readonly x: number; readonly y: number }): React.JSX.E
 }
 
 /** A paw on the laptop's keys, seen over the lid while it types. */
-function Typing({ x, skin }: { readonly x: number; readonly skin: string }): React.JSX.Element {
+function Typing({ x }: { readonly x: number }): React.JSX.Element {
   return (
     <g className="gk-typing">
       <circle cx={x} cy="64.4" r="3.1" fill="#fff" />
@@ -99,12 +99,12 @@ function Drawing(): React.JSX.Element {
                   <g className="gk-foot gk-foot-l">
                     <ellipse cx="40.4" cy="66.4" rx="3.6" ry="7" fill={skin} transform="rotate(18 40.4 66.4)" />
                     <path d="M42.6 61 C 44.6 65, 44.4 70, 42 72.6" fill="none" stroke="#cfe8d5" strokeWidth="0.8" strokeLinecap="round" />
-                    <Typing x={43} skin={skin} />
+                    <Typing x={43} />
                   </g>
                   <g className="gk-foot gk-foot-r">
                     <ellipse cx="59.6" cy="66.4" rx="3.6" ry="7" fill={skin} transform="rotate(-18 59.6 66.4)" />
                     <path d="M57.4 61 C 55.4 65, 55.6 70, 58 72.6" fill="none" stroke="#cfe8d5" strokeWidth="0.8" strokeLinecap="round" />
-                    <Typing x={57} skin={skin} />
+                    <Typing x={57} />
                   </g>
                   <g className="gk-laptop">
                     <ellipse cx="50" cy="61" rx="15" ry="6" fill="#9ff0c4" opacity="0.5" filter={soft} />
