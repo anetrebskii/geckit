@@ -2,12 +2,12 @@
 
 **Feature Branch**: `feat/gecko-character`
 **Created**: 2026-10-28
-**Status**: Draft, design first
+**Status**: Built on the desktop: the gecko from the finished demo's frames, with its menu, voice task, camera, idle sleep, resize, move and hide/show
 **Input**: Alex wants GeckIt to have a character, the gecko from its icon, drawn in a soft glossy "glass" style, that people remember and share. The reason is measured: @louis_rlee's Coucou mascot Mochi is in two of his three biggest reels (2.4M and 442k views), and Mochi works because its face is the status of Claude, not decoration. GeckIt's whole job is showing which conversation is working and which is waiting, so the gecko carries that.
 
 ## The idea in one paragraph
 
-One small gecko lives in a panel of its own, the app icon's green tile, that floats on the desktop, outside the board, like Mochi in Coucou. It shows, at a glance and without opening GeckIt, what the conversations are doing: it is busy while Claude works, perks up and looks at the person when a conversation is waiting for them, hops and curls its tail when a card moves to In review, and sleeps when nothing runs. Pressing it opens a small speech bubble asking what to do: take a screenshot, start a new task, open the conversation that is waiting, or open GeckIt; files dropped on it can start a new task or go to the waiting conversation. The tray icon shows the same state in the gecko's simplest form. The board itself stays as it is.
+One small gecko stands on the desktop in a transparent window of its own, always on top, outside the board, like Mochi in Coucou. It shows, at a glance and without opening GeckIt, what the conversations are doing: it types on a little laptop while Claude works, sits up and watches the cursor with an orange count when a conversation waits for the person, hops for joy when a card moves to In review, and sleeps when nothing runs; left alone for 5 minutes, waiting falls asleep too. Pressing it opens a radial menu round it: take a screenshot (it raises a camera), start a new task, say a task (it listens and writes), open the waiting conversation, open GeckIt, or hide it. Files dropped on it are caught and can start a new task or go to the waiting conversation. It can be dragged anywhere and resized from its corner. The tray icon shows the same state in the gecko's simplest form, and its menu shows or hides the gecko. The look and behaviour are the finished HTML demo's (`~/Desktop/gecko-ref/port/gecko-demo.html`, Alex's), drawn from its frames; the Mochi-style SVG drawing built before it is replaced.
 
 ## User Scenarios & Testing
 
@@ -24,16 +24,16 @@ The person has several conversations running and is working in another app. The 
 
 | What the conversations are doing | Gecko |
 |---|---|
-| nothing working, nothing waiting | asleep: eyes shut, head resting on its feet, tail wrapped round them, a few slow breaths |
-| at least one working, none waiting | busy in place: bobbing, front feet tapping in turn, tail swinging a beat behind |
-| at least one waiting for the person (question, permission, a reply) | perks up, pupils wide, looks at the person, a gentle bounce; a small count when more than one |
-| a card has just moved to In review by itself | a happy hop, squashed on landing, the tail curling up, then back to the state above |
+| nothing working, nothing waiting | asleep: sitting, eyes shut, eight slow breaths |
+| at least one working, none waiting | typing on a little laptop, nodding |
+| at least one waiting for the person (question, permission, a reply) | sits up with an "o" mouth, watches the cursor, bounces, taps its foot now and then; the orange count from one; asleep after 5 minutes alone, the count staying |
+| a card has just moved to In review | a happy hop with arms up, then a happy look until it dozes or another state takes over |
 
 ### US2 - Go to the conversation that needs me (P1)
 
 **Independent test**: with two waiting conversations, pressing the gecko and choosing the waiting conversation brings GeckIt to the front on the one that has waited longest; doing it again opens the next.
 
-**Acceptance**: an accessible name that says the state ("2 conversations waiting for you"); with nothing waiting it only brings GeckIt to the front. The panel never takes the keyboard; its bubble does while open, and the board and the tray stay the keyboard way to the same conversations.
+**Acceptance**: an accessible name that says the state ("2 conversations waiting for you"); the menu's Waiting item appears only while one waits. The floating gecko never takes the keyboard; its menu does while open (arrows, Enter, Esc), and the board and the tray stay the keyboard way to the same conversations.
 
 ### US3 - The gecko outside the window (P2)
 
@@ -44,8 +44,8 @@ The tray / menu bar icon uses a simplified gecko silhouette with the same three 
 ### US4 - It stays out of the way (P1)
 
 **Acceptance**:
-- Settings has one switch to hide the gecko; the panel goes and the tray falls back to today's icon. Right-clicking the panel offers the same, "Hide the gecko".
-- The panel can be dragged anywhere and comes back where it was left; it is on every desktop, above other windows, never in the Dock, the taskbar or the window switcher, and never takes the focus.
+- Settings has one switch to hide the gecko; the window goes and the tray falls back to today's icon. Right-clicking it, and the menu's Hide, do the same; the tray menu's "Show the Gecko" brings it back without opening Settings.
+- It can be dragged anywhere, kept wholly on the display it is dropped on, and resized from its corner from 72 to 320 px; both are remembered. It is on every desktop, above other windows, never in the Dock, the taskbar or the window switcher, and never takes the focus.
 - Reduced motion (system setting) replaces animation with still poses; the eyes still follow the cursor, since a look is a pose.
 - No animation runs while the panel is hidden or the screen is locked; idle CPU does not change measurably.
 - No sound.
@@ -56,28 +56,25 @@ The iPhone and Android apps show the same gecko in the Tasks header with the sam
 
 ## Look
 
-- The existing green gecko from the app icon (`docs/icon-walk.svg`, `client/assets/icons`) is the character. Its identity is kept: same species, same green, same silhouette.
-- "Glass" means the character's own material: a soft glossy body with a highlight and a gentle inner glow, close to macOS 26 Liquid Glass in feel. It is drawn into the character, not taken from the OS blur, so it looks the same on Mac, Windows and Linux and in light and dark.
-- Not fully transparent: at 24-32 px and in a phone-sized video the silhouette must stay solid and readable.
-- It must not read as a copy of Mochi (a white rounded blob with dot eyes). The gecko keeps its own silhouette, colour and moves.
-- It is drawn in the style of Mochi: flat, soft and rounded, no outlines, white with a light mint tint, a big round head a little wider than tall, small dot eyes set wide, pink oval blush, a tiny mouth, short paws with round toe pads, a tail ending in a spiral curl, a soft shadow. The reference Alex approved is `docs/design/gecko/ref/`. It is drawn in parts (body, head, each eye, mouth shapes, each paw, tail) so each part moves on its own, with continuous eased motion: springy easing, squash and stretch, the tail following the body a beat late, blinks, a small head tilt now and then.
-- It notices the person: its pupils, and a little its head, follow the mouse cursor anywhere on screen; hovered, it looks up at them with a small happy wiggle (asleep, it opens one eye sleepily and shuts it again); pressed, it squashes a little before its bubble opens; files dropped on it, it catches with a happy squash.
-- A floating panel about 100 px square, the gecko about 80 px tall in it, large enough to be funny and expressive.
+- The gecko is the finished HTML demo's (`gecko-demo.html` and its frames, 512 px transparent PNGs drawn in a 1024 view), ported exactly: a green gecko with a pale belly and spots, big eyes with pupils that follow the cursor, standing on the desktop with a soft shadow and no tile. The frames are in `client/src/renderer/src/gecko/frames/` as WebP; nothing was redrawn or generated.
+- Each pose is one body frame with one head over it; only the hands, the foot or the pen change between frames, so nothing flickers. A blink swaps in the drawn closed eyes for 130 ms; a hover bends the head on eight pre-drawn frames.
+- Superseded: the earlier rows of this section (the glossy "glass" gecko, then the Mochi-style white SVG drawn in parts on the icon's green tile) describe drawings that were built and replaced; their screenshots stay in `docs/design/gecko/` as the record.
 
 ## Requirements
 
 - FR-001: One aggregate state is derived from the board's own session data (working, waiting, idle, just-moved-to-review), with waiting taking priority. It is a pure function with tests.
-- FR-002: The gecko renders in a separate always-on-top, frameless panel from that state, with the poses in the US1 table; not in the board.
-- FR-003: Pressing it opens its bubble: Take a screenshot (macOS), New task, Open the waiting conversation (longest-waiting first, cycling on repeat, only while one waits), Open GeckIt. Right-click: "Hide the gecko".
-- FR-004: The tray icon follows the same state with simplified images; the existing tray menu is unchanged.
-- FR-005: Settings switch to show or hide the panel; reduced motion honoured; nothing animates while the panel is hidden or the screen is locked.
-- FR-006: The art is vector (SVG or Lottie-free CSS/SVG animation) in the repo; no new runtime dependency unless the design step shows SVG/CSS cannot do it.
-- FR-007: A preview page like the other `*-preview.tsx` mounts the panel in all four states, light and dark, for review and for recording the reel.
+- FR-002: The gecko renders in a separate always-on-top, frameless, transparent window from that state, with the poses in the US1 table and the demo's frames; not in the board. Waiting and the look after a hop fall asleep after 5 minutes without a hover, a click or a new event.
+- FR-003: Pressing it opens the radial menu round it, in its own window kept on the gecko's screen: Screenshot (macOS; the camera pose and flash, then `screencapture -i`), New task, Voice task (listens and writes, a press stops, the app's own local transcription, then New task with the words; Esc or the right-click menu cancels), Waiting (longest-waiting first, cycling on repeat, only while one waits), Open GeckIt, Hide. Right-click: "Hide the gecko".
+- FR-004: The tray icon follows the same state with simplified images; the tray menu gains "Show the Gecko" / "Hide the Gecko".
+- FR-005: Settings switch to show or hide the gecko; reduced motion honoured; nothing animates and no timer runs while it is hidden or the screen is locked.
+- FR-006: The art is the demo's raster frames (WebP) with CSS and SVG layering; no new runtime dependency.
+- FR-007: A preview page like the other `*-preview.tsx` mounts the gecko in every pose, at four sizes, its menu and its bubble, light and dark.
+- FR-009: Resize from a grip on its corner, square, 72 to 320 px; a drag is kept wholly on the display it is dropped on; both remembered in `geckoBounds`.
 - FR-008: Files dropped on it open its bubble: a new task with them, or into the waiting conversation's message (only while one waits), or Cancel. Pictures go with the message, other files as their paths. The bubble is keyboard reachable, named by its question, and closes on Esc or a click elsewhere.
 
 ## Out of scope
 
-Text on the gecko itself, a personality that talks (speech bubbles were out of scope until Alex allowed them on 2026-10-28, for the choices a press or a drop asks), placing it in the macOS notch, sounds, more than one gecko, customising it.
+Text on the gecko itself, a personality that talks (speech bubbles were out of scope until Alex allowed them on 2026-10-28; they now carry the drop question and the voice task's notes), placing it in the macOS notch, sounds, more than one gecko, customising it, an In review count.
 
 ## Success Criteria
 

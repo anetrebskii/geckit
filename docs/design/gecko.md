@@ -1,12 +1,55 @@
 # The gecko
 
-Step 1 of [spec 016](../../specs/016-gecko-character/spec.md) drew still poses for Alex to choose a direction from; steps 2-5 built it, first as a tile in the board's top bar, then, on Alex's direction of 2026-10-28, as a separate floating panel with the gecko redrawn facing the person (see Build, below). States, transitions and wording are in the [UX document](../../specs/016-gecko-character/ux.md).
+Step 1 of [spec 016](../../specs/016-gecko-character/spec.md) drew still poses for Alex to choose a direction from; steps 2-5 built it (now drawn from Alex's finished demo, see the first Build section), first as a tile in the board's top bar, then, on Alex's direction of 2026-10-28, as a separate floating panel with the gecko redrawn facing the person (see Build, below). States, transitions and wording are in the [UX document](../../specs/016-gecko-character/ux.md).
 
 ## Choice
 
 Alex chose **C, the glass tile**, on 2026-10-28, and later the same day moved the gecko out of the board into **a small floating panel of its own**, like Mochi in Coucou. Two drawings of that panel were rejected the same day (a front-facing gecko that read as a baby or a frog, then a three-quarter lizard, see [the first comparison](gecko/panel-redraw-compare.jpg)); the one built is **in the style of Mochi**, drawn after a reference Alex approved, made with Gemini through Echopub: [`ref/gecko-master.jpg`](gecko/ref/gecko-master.jpg) and [`ref/gecko-poses.jpg`](gecko/ref/gecko-poses.jpg). A and B stay in the repository as drawn alternatives; the top-down stills below are the record of step 1.
 
-## Build: the floating panel
+## Build: the gecko from the demo's frames
+
+Alex finished an HTML demo of the gecko (`~/Desktop/gecko-ref/port/gecko-demo.html` with its frames, not in the repository); it is the source of truth for the look and the behaviour, and it replaces the Mochi-style drawing below. States, the menu, the voice task and wording are in the [UX document](../../specs/016-gecko-character/ux.md).
+
+- **Frames.** The demo's 512 px transparent PNGs, drawn in a 1024 view, converted to WebP in `client/src/renderer/src/gecko/frames/` (quality 90, alpha lossless; the heads downscaled to 0.6, since 320 px at 2x is about 0.55 of the view): 7.7 MB to 0.9 MB. The eye masks stay PNG. Not used: the headphones-only frame and two masks the demo defines but never uses. Nothing was redrawn. `*.webp` is marked binary in `client/.gitattributes`, since `* text eol=lf` would rewrite them.
+- **Layers.** `client/src/renderer/src/gecko/Art.tsx` draws one SVG in the 1024 view with every frame in it, each shown or hidden by opacity, swapped at once with no fade, as the demo does: working is the head `wHead` over the hands `wA`/`wB`; waiting the head `tHead` over the foot `tB`/`tA`; done and look `bAh` over `bA`; asleep `aAh` over `aA`; catch `cUp`, got `cGot`, camera `cam`, listen `lA`/`lB`, the hop `hA` alone. The pupils are circles masked into the eyes, moved up to 16 units towards the cursor. A blink hides the sitting head and the pupils and shows `tAc` or `bAc` for 130 ms. A pet shows the head bent on its eight frames over 1.3 s (keys 0, 7, 4, 7, 0 with a smoothstep). `layers()` is the one place that says what shows, and is tested.
+- **Motion.** The demo's body animations (breathe, nod, bounce, sway, hop, squash, shadow) run on three HTML wrappers round the SVG, so the compositor draws them; translations are the demo's view units as percentages. Breathing stops after eight breaths; the bounce and sway end when it dozes.
+- **Window.** Transparent and square, 120 px by default, the drawing 88% of it and set at the bottom so the hop stays inside; the badge, the drawing and the grip are sized with the window (container units). The grip, on the bottom right corner while pointed at, resizes it from its top left corner from 72 to 320 px (`sizeGecko`); a drag ends with `keepGecko`, which moves it wholly onto the display it is mostly on (`keptIn`).
+- **Menu.** A transparent panel window round the gecko (`ringWindow`), laid out by `geckoRing` in `client/src/shared/gecko.ts`: the items on a circle clear of the gecko's corners, the first at the top; near an edge they spread over the longest arc that is on the screen, the first at the end nearer the top, and the circle grows until they are a disc and a half apart. The discs, labels and gaps scale with the gecko (0.75 to 1). The demo's glass discs, green in focus, white labels; the items fly out from the gecko. No scrim. A click on the gecko or beside the items, Esc, or the window losing the keyboard closes it.
+- **Voice task.** The gecko's page records with the app's recorder (`useRecorder`, the Settings microphone), decodes to a 16 kHz WAV (`toHear`) and hands it to main, which hears it with `transcribe()` as dictation does and opens New task with the words (`chat:task` now carries `text`). While it listens, Esc is a system-wide shortcut that cancels.
+- **Camera.** The camera pose for 1 s, then the lens flash and a white glow round the gecko for 0.5 s, then main's existing `screencapture -i -x`.
+
+Code: `client/src/shared/gecko.ts`, `client/src/main/gecko.ts`, `client/src/main/windows.ts`, `client/src/main/tray.ts`, `client/src/renderer/src/gecko/` (`Art.tsx`, `Gecko.tsx`, `Ring.tsx`, `Bubble.tsx`), `client/src/renderer/src/chat/Chat.tsx` and `Board.tsx`; tests `client/test/gecko.test.ts` and `client/test/gecko-panel.test.ts`.
+
+### Screenshots
+
+- The preview, every pose at 120 px, four sizes, the menu in the middle, in the top right corner and at 320 px in a corner, the bubble and the voice notes: [light](gecko/frames-preview-light.jpg), [dark](gecko/frames-preview-dark.jpg). Chrome at 1300 px wide, device scale 2, from a Vite server on port 5199 with the renderer settings.
+- The real gecko window in Electron, captured with `capturePage` (asleep, working, waiting, waiting with its eyes down and left, a pet, the hop, done, look, camera, listen, catch, got), the backdrop added: [frames-electron.jpg](gecko/frames-electron.jpg). The grip shows from the hover step on.
+- The menu's real window round the gecko window, after Right moved the focus: [menu-electron.jpg](gecko/menu-electron.jpg). The focus is on Open GeckIt there, not New task: a real pointer moved over the items during the run.
+
+### Checked in Electron
+
+`electron-vite build`, then a harness that opened the built `gecko.html` with the real preload in a window with `geckoWindow`'s options, and `gecko.html?ring=1` in one with `ringWindow`'s, on a profile folder of its own, answering their IPC itself (with the real `geckoRing`, `geckoSide` and `keptIn`), with Chromium's fake microphone:
+
+- Shown without focus, not focusable, no focused window. Every one of the 56 images laid out. The poses carried their classes; the pupils moved to `translate(-11.2 11.4)` for a cursor down and left; a hover showed `bend48-k7` at 400 ms.
+- A press sent `gecko:press`; the menu window took the keyboard with Screenshot in focus and the gecko in its look pose; Right moved to New task and sent `gecko:aim`; Enter sent `gecko:act` `task`; Esc sent `gecko:ringClose`.
+- `gecko:camera` gave the camera pose and sent `gecko:shoot` after the flash.
+- `gecko:listen start` recorded the fake microphone; a press on the gecko stopped it and sent `gecko:heard` with a 48,700 character WAV, without sending a press; a cancel ended listening.
+- Files dragged over gave the catch pose, a drop the got pose, then `gecko:drop`.
+- The grip dragged 120 px sent sides 140, 180, 240 and the window became 240 px; 1000 gave 320 and 10 gave 72. A window dropped past a display's corner was moved wholly onto the display it was mostly on (two displays).
+- Renderer and GPU CPU over 5 s: asleep after its breaths 0.00% and 0.00% with no animation running; working 0.67% and 0.51% (the nod); waiting 0.45% and 0.30% (the bounce); done 0.33% and 0.47% (the sway).
+
+### Not checked
+
+- Speech heard for real: the fake microphone's tone was recorded and handed over, but `transcribe()`, the model download note and New task opening with the words were not run; main's flow is checked by type and lint only.
+- The real menu bar's Show the Gecko / Hide the Gecko, and the system-wide Esc while listening.
+- The crosshair after the camera, and the picture reaching the form.
+- How the transparent window and the menu look over real apps (no screen recording permission), Spaces and full screen apps, the lock screen, Windows and Linux.
+- Real drag of files from Finder.
+
+## Build: the floating panel (replaced)
+
+Replaced by the build above; kept as the record of the Mochi-style drawing.
+
 
 - **Placement.** Its own window: frameless, transparent, always on top (`floating` level), on every desktop (`setVisibleOnAllWorkspaces` without the full screen spaces, which would take GeckIt's Dock icon away), not in the Dock, the taskbar or the window switcher (`skipTaskbar`, `focusable: false`), never taking the keyboard, clicks accepted without activating (`acceptFirstMouse`). 108 px square: a 96 px tile plus room for its shadow. First at the top right of the main display, 24 px in; dragged, the position is kept in `geckoBounds` in settings. Switched off or with the screen locked there is no window at all.
 - **Tile, not glass.** The gecko sits on the app icon's green tile (`#62c96d` to `#23963a`, 24 px corners, a soft top shine, a light edge and a small shadow), drawn by the page the same on every system and in light and dark. The glass panel was tried with this drawing too and dropped: a white gecko on light glass nearly disappears in light mode and only reads on dark, while on the green tile it reads in both and is the reference's own look. macOS vibrancy is no longer used, since an opaque tile covers it.
