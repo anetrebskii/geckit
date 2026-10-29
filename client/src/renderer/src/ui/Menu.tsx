@@ -38,6 +38,7 @@ export function Menu({
   explained = false,
   autoFocus = false,
   note,
+  stays = false,
   onPick,
   onClose,
   children,
@@ -51,6 +52,8 @@ export function Menu({
   readonly autoFocus?: boolean
   /** A sentence under the choices about choosing any of them. It wraps to the menu's width rather than widening it. */
   readonly note?: string
+  /** Choosing leaves it open, for a menu of things each ticked on or off. */
+  readonly stays?: boolean
   readonly onPick: (value: string) => void
   readonly onClose: () => void
   /** Rows of its own drawn after the choices, for a list whose rows say more than a name. */
@@ -135,7 +138,7 @@ export function Menu({
               disabled={choice.disabled === true}
               onClick={() => {
                 onPick(choice.value)
-                onClose()
+                if (!stays) onClose()
               }}
             >
               <span className="sheet-words">
@@ -190,6 +193,7 @@ export function Menu({
             onClick={() => {
               if (choice.choices !== undefined) return
               onPick(choice.value)
+              if (stays) return
               onClose()
               if (autoFocus && opener.current instanceof HTMLElement) opener.current.focus()
             }}

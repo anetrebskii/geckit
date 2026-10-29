@@ -334,6 +334,7 @@ export interface SessionNotice {
 
 /** One row in the sidebar. */
 export interface ChatSession {
+  readonly prepared?: true
   readonly retryNotice?: string
   readonly delivery?: SessionDeliveryReceipt
   readonly manager?: true
@@ -369,6 +370,10 @@ export interface ChatSession {
   /** What Claude Code has running in the background for it. */
   readonly tasks?: readonly BackgroundTask[]
   readonly goal?: SessionGoal
+  /** The goal that held; the card stays where it is and says so. */
+  readonly goalMet?: string
+  /** When it was last moved into the column it stands in, which is the day Done shows it under. */
+  readonly since?: number
   /** A command typed after ! that is still running in it, the first where there are more. */
   readonly runs?: string
   /** That command has stopped on a question and waits for something typed. */
@@ -422,13 +427,18 @@ export function letsGo(session: Pick<ChatSession, 'held' | 'state' | 'remote' | 
   return session.held === true && session.state !== 'working' && session.state !== 'asks' && session.remote === undefined && !session.tasks?.some((task) => task.status === 'running')
 }
 
-export type SessionStatus = 'review' | 'blocked' | 'done'
+export type SessionStatus = 'todo' | 'blocked' | 'done'
 
 export const SESSION_STATUSES: readonly { readonly status: SessionStatus; readonly label: string; readonly why: string }[] = [
-  { status: 'review', label: 'In review', why: 'Finished, and waiting for you to check what it did' },
+  { status: 'todo', label: 'To do', why: 'Planned and not started; a message to it moves it to In progress' },
   { status: 'blocked', label: 'Blocked', why: 'Waiting on something outside it' },
   { status: 'done', label: 'Done', why: 'Moved out of the list into Done at the bottom' },
 ]
+
+/** Whether the card says its goal was reached: the goal that held is the one it has, or it has none since. */
+export function goalMet(session: Pick<ChatSession, 'goal' | 'goalMet'>): boolean {
+  return session.goalMet !== undefined && (session.goal === undefined || session.goal.condition === session.goalMet)
+}
 
 /** A goal set with `/goal` or attached to a new task. */
 export interface SessionGoal {
@@ -541,6 +551,8 @@ export interface SessionMessage {
   /** A general question, in no project: kept off the board and the list, and deleted a day after its last answer. */
   readonly question?: boolean
 }
+
+export type PreparedConversationDraft = Partial<Pick<SessionMessage, 'text' | 'model' | 'reasoning'>>
 
 /** A command typed after `!` in the composer. */
 export interface ShellCommand {
@@ -898,19 +910,53 @@ export function noticeWanted(when: NoticeWhen, asks: boolean): boolean {
 /** Where a conversation opened from the board stands: over it as a popup, or below it, with the board kept as a strip across the top. */
 export type ConversationPlace = 'over' | 'below'
 
-/** Which of the board's columns are shown: every one, or one of them on its own. */
-export type BoardColumn = 'all' | 'progress' | 'review' | 'done'
+/**
+ * One of the board's columns: the status its cards carry, and how they are ordered. Kept as data so the
+ * columns can one day be the person's own. `lineup` is the column whose order decides who takes a free slot,
+ * drawn with what needs the person on top; `manual` keeps only the order the cards were dragged into.
+ */
+export interface BoardColumn {
+  readonly id: string
+  readonly title: string
+  readonly status: SessionStatus | undefined
+  readonly order: 'lineup' | 'manual'
+  /** Its cards stand under the day each came into it, the newest day first, in the order by hand within a day. */
+  readonly byDay?: true
+  /** What the phone says when the column is empty. */
+  readonly empty: string
+}
 
-/** The board's columns in their order, each with the status its cards carry. No column for what has not been started, a conversation exists because it was: In progress holds what carries no status, blocked included. */
-export const BOARD_COLUMNS: readonly { readonly column: Exclude<BoardColumn, 'all'>; readonly status: SessionStatus | undefined; readonly title: string }[] = [
-  { column: 'progress', status: undefined, title: 'In progress' },
-  { column: 'review', status: 'review', title: 'In review' },
-  { column: 'done', status: 'done', title: 'Done' },
+/** In progress holds what carries no status, blocked included. */
+const PROGRESS: BoardColumn = { id: 'progress', title: 'In progress', status: undefined, order: 'lineup', empty: 'Nothing in progress.' }
+
+/** The board's columns in their order. */
+export const BOARD_COLUMNS: readonly BoardColumn[] = [
+  { id: 'todo', title: 'To do', status: 'todo', order: 'manual', empty: 'Nothing planned.' },
+  PROGRESS,
+  { id: 'done', title: 'Done', status: 'done', order: 'manual', byDay: true, empty: 'Nothing done yet.' },
 ]
 
-/** Whether a column stands on the board under this choice. A choice no column answers to, as a build from after this one may leave, shows every column rather than none. */
-export function columnShown(choice: BoardColumn, column: Exclude<BoardColumn, 'all'>): boolean {
-  return choice === 'all' || choice === column || !BOARD_COLUMNS.some((one) => one.column === choice)
+/** The column a card stands in. A status no column carries, blocked or one an earlier build kept, is In progress. */
+export function columnOf(status: SessionStatus | undefined): BoardColumn {
+  return BOARD_COLUMNS.find((one) => one.status !== undefined && one.status === status) ?? PROGRESS
+}
+
+/** Whether a conversation stands in the column whose order decides who takes a free slot. */
+export function inProgress(status: SessionStatus | undefined): boolean {
+  return columnOf(status).order === 'lineup'
+}
+
+/** Whether a column stands on the board under this choice. Nothing chosen, or only ids no column answers to, shows every column rather than none. */
+export function columnShown(choice: readonly string[], column: string): boolean {
+  return choice.includes(column) || !BOARD_COLUMNS.some((one) => choice.includes(one.id))
+}
+
+/** The columns ticked after one more choice: All columns is every one, and a column is ticked on or off. None ticked, or every one, is every column. */
+export function toggledColumns(shown: readonly string[], value: string): readonly string[] {
+  if (value === 'all') return []
+  const ticked = BOARD_COLUMNS.filter((one) => columnShown(shown, one.id)).map((one) => one.id)
+  const next = ticked.includes(value) ? ticked.filter((id) => id !== value) : BOARD_COLUMNS.map((one) => one.id).filter((id) => id === value || ticked.includes(id))
+  return next.length === BOARD_COLUMNS.length ? [] : next
 }
 
 /** Which builds this copy is offered: every build lands on Development first, and the ones promoted reach Stable. */
@@ -1021,8 +1067,8 @@ export interface Settings {
   readonly conversationPlace: ConversationPlace
   /** How tall the strip of board above a conversation was dragged, in pixels. */
   readonly boardHeight: number
-  /** The board's columns: every one, or one on its own. */
-  readonly boardColumn: BoardColumn
+  /** The board's columns shown, by id. Empty is every one. */
+  readonly boardColumns: readonly string[]
   /** The chat window lists every project's conversations, and opens that way again. False is the newest project's. */
   readonly chatAll: boolean
   /** The projects whose conversations are listed. Empty is every one of them. */
@@ -1065,6 +1111,8 @@ export interface Settings {
   readonly workingAtOnce: number
   /** The conversations in In progress, top first. One coming into the column is put on top, and after that only dragging or Move to top and Move to bottom move it. */
   readonly progressOrder: readonly string[]
+  /** The order cards were dragged into in each column ordered by hand, by column id, top first. One not in it stands on top, newest first. */
+  readonly columnOrders: Readonly<Record<string, readonly string[]>>
   /** The first-start sheet was finished or skipped. False shows it again. */
   readonly welcomed: boolean
   /** Phones with GeckIt's app can reach the conversations. */
@@ -1190,7 +1238,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatView: 'board',
   conversationPlace: 'over',
   boardHeight: 240,
-  boardColumn: 'all',
+  boardColumns: [],
   chatAll: false,
   chatProjects: [],
   favorites: [],
@@ -1211,6 +1259,7 @@ export const DEFAULT_SETTINGS: Settings = {
   soundFor: 'never',
   workingAtOnce: 6,
   progressOrder: [],
+  columnOrders: {},
   // True until the main process says otherwise, so a window never flashes the sheet before its settings arrive.
   welcomed: true,
   phone: false,

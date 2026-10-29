@@ -74,6 +74,7 @@ export function getSettings(): Settings {
       vpnStopOnFailure: _legacyVpnStop,
       calendarTimeZone: _storedZone,
       calendarRecurrenceVersion: _storedRecurrenceVersion,
+      boardColumn: _boardColumn,
       ...found
     } = (read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }) as Settings & Readonly<Record<string, unknown>>
     // A build from before the welcome kept no answer, and anyone with a project has already set up.
@@ -92,10 +93,13 @@ export function getSettings(): Settings {
       chatMode: sessionMode(found.chatMode),
       projectColors: withColors(found),
       phoneKey: found.phoneKey === '' ? newKey() : found.phoneKey,
+      // One column chosen on its own by an earlier build is that column ticked; In review, gone now, is every column.
+      boardColumns: found.boardColumns.length === 0 && (_boardColumn === 'progress' || _boardColumn === 'done') ? [_boardColumn] : found.boardColumns,
     }
     // Projects listed before colours were, and the phone's key, given once and for all.
     if (
       _legacyVpnStop !== undefined ||
+      _boardColumn !== undefined ||
       Object.keys(settings.projectColors).length !== Object.keys(found.projectColors).length ||
       settings.phoneKey !== found.phoneKey ||
       settings.welcomed !== welcomed
@@ -217,14 +221,19 @@ export function forgetRoots(matches: (root: string) => boolean): Settings {
 
 /** What the tool's own session file will not say back, kept beside it. */
 export function notesStore(): NotesStore {
-  let notes = read<Record<string, SessionNote>>(NOTES, {}) ?? {}
+  // In review is gone: a card an earlier build put there stands in In progress.
+  let notes = Object.fromEntries(Object.entries(read<Record<string, SessionNote>>(NOTES, {}) ?? {}).map(([id, note]) => {
+    if ((note.status as string | undefined) !== 'review') return [id, note]
+    const { status: _review, ...rest } = note
+    return [id, rest]
+  }))
   let soon: NodeJS.Timeout | undefined
   return {
     all: () => notes,
     set: (id, note) => {
       const next = { ...notes, [id]: withMoves(notes[id], note, Date.now()) }
       clearTimeout(soon)
-      if (note.managerPrompt !== undefined || note.managerOwner !== undefined) {
+      if (note.managerPrompt !== undefined || note.managerOwner !== undefined || (note.prepared !== undefined && notes[id] === undefined)) {
         const path = join(folder(), NOTES)
         writeFileSync(`${path}.new`, JSON.stringify(next, undefined, 2))
         renameSync(`${path}.new`, path)

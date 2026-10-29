@@ -52,14 +52,14 @@ interface Waits {
   readonly unread: number
 }
 
-/** What stands in a project, in the board's own two columns. */
+/** What stands in a project, in the board's columns that are not over. */
 interface Work {
   readonly progress: number
-  readonly review: number
+  readonly todo: number
 }
 
 function Standing({ work }: { readonly work: Work | undefined }): React.JSX.Element | null {
-  if (work === undefined || (work.progress === 0 && work.review === 0)) return null
+  if (work === undefined || (work.progress === 0 && work.todo === 0)) return null
   return (
     <>
       {work.progress === 0 ? null : (
@@ -67,10 +67,10 @@ function Standing({ work }: { readonly work: Work | undefined }): React.JSX.Elem
           {work.progress}
         </span>
       )}
-      {work.review === 0 ? null : (
-        <span className="project-count review" title={`${String(work.review)} in review`}>
-          <Icon name="eye" size={11} />
-          {work.review}
+      {work.todo === 0 ? null : (
+        <span className="project-count" title={`${String(work.todo)} to do`}>
+          <Icon name="todo" size={11} />
+          {work.todo}
         </span>
       )}
     </>
@@ -106,7 +106,7 @@ const sumWaits = (all: readonly (Waits | undefined)[]): Waits | undefined =>
   all.reduce<Waits | undefined>((sum, one) => (one === undefined ? sum : { asks: (sum?.asks ?? 0) + one.asks, unread: (sum?.unread ?? 0) + one.unread }), undefined)
 
 const sumWork = (all: readonly (Work | undefined)[]): Work =>
-  all.reduce<Work>((sum, one) => ({ progress: sum.progress + (one?.progress ?? 0), review: sum.review + (one?.review ?? 0) }), { progress: 0, review: 0 })
+  all.reduce<Work>((sum, one) => ({ progress: sum.progress + (one?.progress ?? 0), todo: sum.todo + (one?.todo ?? 0) }), { progress: 0, todo: 0 })
 
 type SingleFolder = Pick<Chat, 'root'> & { readonly onPick: Chat['setRoot'] }
 
@@ -180,12 +180,12 @@ function Menu({
   const work = new Map<string, Work>()
   for (const one of single === undefined ? chat.everyone : []) {
     if (one.status === 'done') continue
-    const held = work.get(homeOf(one)) ?? { progress: 0, review: 0 }
-    work.set(homeOf(one), one.status === 'review' ? { ...held, review: held.review + 1 } : { ...held, progress: held.progress + 1 })
+    const held = work.get(homeOf(one)) ?? { progress: 0, todo: 0 }
+    work.set(homeOf(one), one.status === 'todo' ? { ...held, todo: held.todo + 1 } : { ...held, progress: held.progress + 1 })
   }
   const standing = [...work.values()].reduce<Work>(
-    (sum, one) => ({ progress: sum.progress + one.progress, review: sum.review + one.review }),
-    { progress: 0, review: 0 },
+    (sum, one) => ({ progress: sum.progress + one.progress, todo: sum.todo + one.todo }),
+    { progress: 0, todo: 0 },
   )
 
   const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')

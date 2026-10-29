@@ -26,7 +26,7 @@ export function childSaid(session: ChatSession): { readonly words: string; reado
   if (session.state === 'asks') return { words: 'asking you', tone: 'said-asks' }
   if (session.state === 'working') return { words: 'working', tone: 'said-working' }
   if (session.waits === true) return { words: 'queued', tone: '' }
-  if (session.status === 'review') return { words: 'in review', tone: 'said-review' }
+  if (session.status === 'todo') return { words: 'to do', tone: '' }
   if (session.status === 'blocked') return { words: 'blocked', tone: 'said-asks' }
   if (session.status === 'done') return { words: 'done', tone: 'said-done' }
   return { words: 'in progress', tone: '' }

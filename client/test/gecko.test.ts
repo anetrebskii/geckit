@@ -7,7 +7,7 @@ const one = (id: string, more: Partial<ChatSession> = {}): ChatSession => ({ id,
 
 describe('the gecko state', () => {
   it('sleeps when nothing works and nothing waits', () => {
-    expect(geckoState([])).toEqual({ pose: 'asleep', waiting: [], review: false })
+    expect(geckoState([])).toEqual({ pose: 'asleep', waiting: [], reached: false })
     expect(geckoState([one('a'), one('b', { state: 'failed' }), one('c', { state: 'limit' })]).pose).toBe('asleep')
   })
 
@@ -17,7 +17,7 @@ describe('the gecko state', () => {
 
   it('keeps working when one of five working conversations asks, the asking one in its count', () => {
     const rows = [1, 2, 3, 4, 5].map((n) => one(String(n), { state: 'working' }))
-    expect(geckoState([...rows, one('asks', { state: 'asks' })])).toEqual({ pose: 'working', waiting: ['asks'], review: false })
+    expect(geckoState([...rows, one('asks', { state: 'asks' })])).toEqual({ pose: 'working', waiting: ['asks'], reached: false })
     expect(geckoState([one('asks', { state: 'asks' })]).pose).toBe('waiting')
   })
 
@@ -29,31 +29,31 @@ describe('the gecko state', () => {
   it('does not count what the board does not show as needing the person', () => {
     const rows = [
       one('done', { state: 'asks', status: 'done' }),
-      one('review', { state: 'unread', status: 'review' }),
+      one('todo', { state: 'unread', status: 'todo' }),
       one('question', { state: 'asks', question: true }),
       one('manager', { state: 'working', manager: true }),
       one('slot', { state: 'unread', waits: true }),
       one('helper', { state: 'unread', tasks: [{ id: 't', kind: 'local_agent', what: 'Helping', status: 'running', started: 1 }] }),
       one('shell', { runs: 'npm test' }),
     ]
-    expect(geckoState(rows)).toEqual({ pose: 'asleep', waiting: [], review: false })
+    expect(geckoState(rows)).toEqual({ pose: 'asleep', waiting: [], reached: false })
   })
 
   it('counts a conversation, not what it runs in the background', () => {
     expect(geckoState([one('a', { tasks: [{ id: 't', kind: 'local_bash', what: 'Watching', status: 'running', started: 1 }] })]).pose).toBe('asleep')
   })
 
-  it('hops once when a card reaches In review, on top of the state below', () => {
+  it("hops once when a card's goal is reached, on top of the state below", () => {
     const before = [one('a', { state: 'working' }), one('b', { state: 'working' })]
-    const now = [one('a', { status: 'review' }), one('b', { state: 'working' })]
-    expect(geckoState(now, before)).toEqual({ pose: 'working', waiting: [], review: true })
-    expect(geckoState(now, now).review).toBe(false)
+    const now = [one('a', { goalMet: 'tests pass' }), one('b', { state: 'working' })]
+    expect(geckoState(now, before)).toEqual({ pose: 'working', waiting: [], reached: true })
+    expect(geckoState(now, now).reached).toBe(false)
   })
 
-  it('does not hop for a card first seen in review, or while something waits', () => {
-    expect(geckoState([one('a', { status: 'review' })], []).review).toBe(false)
+  it('does not hop for a card first seen with its goal reached, or while something waits', () => {
+    expect(geckoState([one('a', { goalMet: 'tests pass' })], []).reached).toBe(false)
     const before = [one('a'), one('b')]
-    expect(geckoState([one('a', { status: 'review' }), one('b', { state: 'asks' })], before)).toEqual({ pose: 'waiting', waiting: ['b'], review: false })
+    expect(geckoState([one('a', { goalMet: 'tests pass' }), one('b', { state: 'asks' })], before)).toEqual({ pose: 'waiting', waiting: ['b'], reached: false })
   })
 })
 

@@ -85,7 +85,7 @@ function Preview(): React.JSX.Element {
     mode, transport: 'stream', provider: 'codex', showProviders: true, reasoning: '', setReasoning: noop, model, working: session.state === 'working', focusSeed, chosen: [session.root],
     setScope: noop, alsoScope: noop, choose: noop, setRoot: noop, addProject: noop, forgetProject: noop, open: noop, show: noop, goTo: noop, dismiss: noop, startNew: noop,
     setDraft, addFiles: noop, dropPicture: (index) => setPictures((held) => held.filter((_one, at) => at !== index)), setMode, setModel, setProvider: noop, askModels: noop,
-    send: noop, ask: async () => undefined, startTask: async () => undefined, say: noop, answer: noop, stop: () => { generation.current++; setRetrying(false); setScenario('cancelled') },
+    send: noop, ask: async () => undefined, startTask: async () => undefined, planTask: async () => undefined, say: noop, answer: noop, stop: () => { generation.current++; setRetrying(false); setScenario('cancelled') },
     unqueue: (id) => setQueued((held) => held?.filter((one) => one.id !== id)), injectQueued: async () => undefined, requeue: noop, reorderQueued: noop, delegate: noop, stopShell: noop, typeShell: noop, toBackground: noop, stopTask: noop, clearTask: noop,
     tasksShown: false, showTasks: noop, compacting: undefined, setCompacting: noop, rename: noop, mark: noop, hide: noop, keep: noop, remove: noop, terminal: noop, copyTerminal: async () => false, letGo: noop, refresh: noop,
   }

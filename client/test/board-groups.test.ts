@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { BackgroundTask, ChatSession } from '../src/shared/api'
 
+import { byDay } from '../src/renderer/src/chat/time'
+
 vi.stubGlobal('window', { geckit: { platform: 'darwin' } })
 vi.stubGlobal('document', { documentElement: { classList: { contains: () => false } } })
 vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined })
@@ -70,3 +72,15 @@ for (const phone of [false, true]) {
     })
   })
 }
+
+describe('Done by the day', () => {
+  const card = (id: string, since: number | undefined, at = 0): ChatSession => ({ id, root: '/work', title: id, stands: '', state: 'idle', at, here: true, mode: 'auto', ...(since === undefined ? {} : { since }) })
+  const now = new Date(2026, 9, 29, 15).getTime()
+  const day = (date: number, hour = 12): number => new Date(2026, 9, date, hour).getTime()
+
+  it('stands each card under the day it was closed, the newest day first, keeping the order by hand within a day', () => {
+    const days = byDay([card('a', day(27)), card('b', day(29, 9)), card('c', day(28)), card('d', day(29, 14)), card('e', undefined, day(28, 8))], now)
+    expect(days.map((one) => one.heading)).toEqual(['Today', 'Yesterday', new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(day(27))])
+    expect(days.map((one) => one.rows.map((row) => row.id))).toEqual([['b', 'd'], ['c', 'e'], ['a']])
+  })
+})

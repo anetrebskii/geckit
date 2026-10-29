@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { DEFAULT_SETTINGS, homeOf, providerOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { DEFAULT_SETTINGS, homeOf, inProgress, providerOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, CutOff, SessionImage, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
 import { linksIn, shortUrl } from '../../../shared/links'
 import { llmProviderInfo, registerProviderInfo } from '../../../shared/providers'
@@ -472,7 +472,7 @@ export function Chat(): React.JSX.Element {
   const [topOrder, bottomOrder] = useMemo(() => {
     if (openId === undefined) return [undefined, undefined]
     const all = ordered(
-      chat.sessions.filter((one) => one.status !== 'review' && one.status !== 'done'),
+      chat.sessions.filter((one) => inProgress(one.status)),
       chat.settings.progressOrder,
     ).map((one) => one.id)
     if (!all.includes(openId)) return [undefined, undefined]
@@ -761,7 +761,7 @@ export function Chat(): React.JSX.Element {
                 </button>
               </>
             )}
-            {overBoard && chat.session !== undefined && chat.session.status !== 'review' && chat.session.status !== 'done' ? (
+            {overBoard && chat.session !== undefined && inProgress(chat.session.status) ? (
               <>
                 <button
                   type="button"

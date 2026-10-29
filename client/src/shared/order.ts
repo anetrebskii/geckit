@@ -1,3 +1,4 @@
+import { inProgress } from './api'
 import type { ChatSession } from './api'
 
 /** In progress in the order kept for it; a conversation it does not have yet stands on top, newest first. */
@@ -10,12 +11,11 @@ export function ordered<Row extends Pick<ChatSession, 'id'>>(rows: readonly Row[
 
 /** The order with a conversation that came into In progress put on top, and one that left it taken out. Undefined when nothing changed. */
 export function keptOrder(order: readonly string[], all: readonly Pick<ChatSession, 'id' | 'status' | 'at'>[]): readonly string[] | undefined {
-  const within = (one: Pick<ChatSession, 'status'>): boolean => one.status !== 'review' && one.status !== 'done'
   const fresh = all
-    .filter((one) => within(one) && !order.includes(one.id))
+    .filter((one) => inProgress(one.status) && !order.includes(one.id))
     .sort((one, other) => other.at - one.at)
     .map((one) => one.id)
-  const gone = new Set(all.filter((one) => !within(one)).map((one) => one.id))
+  const gone = new Set(all.filter((one) => !inProgress(one.status)).map((one) => one.id))
   if (fresh.length === 0 && !order.some((id) => gone.has(id))) return undefined
   return [...fresh, ...order.filter((id) => !gone.has(id))]
 }

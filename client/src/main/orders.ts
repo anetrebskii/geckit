@@ -1,5 +1,6 @@
 import { basename } from 'node:path'
 
+import { SESSION_STATUSES } from '../shared/api'
 import type { Planned, SessionStatus } from '../shared/api'
 import { hostOf } from '../shared/hosts'
 import { askPlan } from './correct'
@@ -29,9 +30,11 @@ export interface Told {
   readonly state: string
 }
 
-const STATUSES = new Set(['review', 'blocked', 'done'])
+const STATUSES = new Set(['todo', 'blocked', 'done'])
 
-const MARKS: Record<SessionStatus, string> = { review: 'eye', blocked: 'blocked', done: 'done' }
+const MARKS: Record<SessionStatus, string> = { todo: 'todo', blocked: 'blocked', done: 'done' }
+
+const said = (status: SessionStatus): string => SESSION_STATUSES.find((one) => one.status === status)?.label ?? status
 
 const string = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
 
@@ -112,7 +115,7 @@ export const ORDERS = [
   '{"do":"start","project":"<a project from the list>","text":"<what to ask it to do>","goal":"<what has to be true for this to be finished>"}',
   '{"do":"say","chat":"<an id from the list>","text":"<what to say in that conversation>"}',
   '{"do":"stop","chat":"<an id>"}',
-  '{"do":"mark","chat":"<an id>","status":"review"|"blocked"|"done"}',
+  '{"do":"mark","chat":"<an id>","status":"todo"|"blocked"|"done"}',
   '{"do":"open","chat":"<an id>"}',
   '{"do":"delete","chat":"<an id>"}',
   'Rules:',
@@ -180,7 +183,7 @@ export function saying(
     kept.push(order)
     if (order.do === 'say') lines.push({ icon: 'chat', head: `Say in ${title}`, text: order.text })
     if (order.do === 'stop') lines.push({ icon: 'stop', head: `Stop ${title}` })
-    if (order.do === 'mark') lines.push({ icon: MARKS[order.status], head: `Mark ${title} as ${order.status}` })
+    if (order.do === 'mark') lines.push({ icon: MARKS[order.status], head: `Mark ${title} as ${said(order.status)}` })
     if (order.do === 'open') lines.push({ icon: 'ahead', head: `Open ${title}` })
     if (order.do === 'delete') lines.push({ icon: 'trash', head: `Delete ${title}` })
   }
@@ -237,7 +240,7 @@ export async function carryOut(
         break
       case 'mark':
         doing.mark(order.chat, order.status)
-        done.push(`Marked ${title} as ${order.status}`)
+        done.push(`Marked ${title} as ${said(order.status)}`)
         break
       case 'open':
         doing.open(order.chat)

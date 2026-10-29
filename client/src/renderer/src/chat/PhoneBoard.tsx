@@ -2,7 +2,7 @@ import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { homeOf, SESSION_STATUSES } from '../../../shared/api'
+import { BOARD_COLUMNS, columnOf, goalMet, homeOf, SESSION_STATUSES } from '../../../shared/api'
 import type { CardAnswer, ChatSession, SessionCard, SessionStatus } from '../../../shared/api'
 import { movedOrder, ordered } from '../../../shared/order'
 import { projectColor } from '../../../shared/project-color'
@@ -28,16 +28,8 @@ import { useBack } from '../phone-back'
  * opens. See docs/ux/phone-design.md.
  */
 
-type Column = 'progress' | 'review' | 'done'
-
-const COLUMNS: readonly { readonly column: Column; readonly title: string; readonly empty: string }[] = [
-  { column: 'progress', title: 'In progress', empty: 'Nothing in progress.' },
-  { column: 'review', title: 'In review', empty: 'Nothing in review.' },
-  { column: 'done', title: 'Done', empty: 'Nothing done yet.' },
-]
-
-const columnOf = (session: ChatSession): Column =>
-  session.status === 'review' ? 'review' : session.status === 'done' ? 'done' : 'progress'
+/** A column's id, as the board's columns name it. */
+type Column = string
 
 // Past this share of a row's width a swipe is a decision rather than a peek, as in Mail.
 const FULL = 0.5
@@ -77,8 +69,10 @@ export function PhoneBoard({
 }): React.JSX.Element {
   const [shown, setShown] = useState<Column>(() => {
     const kept = localStorage.getItem('phoneColumn')
-    return kept === 'review' || kept === 'done' ? kept : 'progress'
+    return BOARD_COLUMNS.find((one) => one.id === kept)?.id ?? columnOf(undefined).id
   })
+  const column = BOARD_COLUMNS.find((one) => one.id === shown) ?? columnOf(undefined)
+  const lineup = column.order === 'lineup'
   const show = (column: Column): void => {
     setShown(column)
     localStorage.setItem('phoneColumn', column)
@@ -111,19 +105,19 @@ export function PhoneBoard({
   }, [])
 
   const rows = useMemo(() => {
-    const all = chat.sessions.filter((one) => columnOf(one) === shown).sort((one, other) => other.at - one.at)
-    const positioned = shown === 'progress' ? ordered(all, chat.settings.progressOrder) : all
+    const all = chat.sessions.filter((one) => columnOf(one.status).id === column.id).sort((one, other) => other.at - one.at)
+    const positioned = ordered(all, lineup ? chat.settings.progressOrder : (chat.settings.columnOrders[column.id] ?? []))
     return positioned.toSorted((one, other) => Number(chat.settings.favorites.includes(other.id)) - Number(chat.settings.favorites.includes(one.id)))
-  }, [chat.sessions, shown, chat.settings.progressOrder, chat.settings.favorites])
+  }, [chat.sessions, column.id, lineup, chat.settings.progressOrder, chat.settings.columnOrders, chat.settings.favorites])
   const counts = useMemo(() => {
-    const count = { progress: 0, review: 0, done: 0 }
-    for (const one of chat.sessions) count[columnOf(one)] += 1
+    const count = new Map<string, number>()
+    for (const one of chat.sessions) count.set(columnOf(one.status).id, (count.get(columnOf(one.status).id) ?? 0) + 1)
     return count
   }, [chat.sessions])
-  const needs = useNeedsYou(shown === 'progress' ? rows : [], chat.shown.kind === 'session' ? chat.shown.id : undefined)
-  const asking = shown === 'progress' ? needs : []
-  const busy = shown === 'progress' ? rows.filter((one) => !asking.includes(one) && one.state === 'working') : []
-  const background = shown === 'progress' ? rows.filter((one) => !asking.includes(one) && one.state !== 'working' && working(one)) : []
+  const needs = useNeedsYou(lineup ? rows : [], chat.shown.kind === 'session' ? chat.shown.id : undefined)
+  const asking = lineup ? needs : []
+  const busy = lineup ? rows.filter((one) => !asking.includes(one) && one.state === 'working') : []
+  const background = lineup ? rows.filter((one) => !asking.includes(one) && one.state !== 'working' && working(one)) : []
   const rest = rows.filter((one) => !asking.includes(one) && !busy.includes(one) && !background.includes(one))
   const [ways, setWays] = useState(false)
   const [scoping, setScoping] = useState(false)
@@ -132,7 +126,7 @@ export function PhoneBoard({
   const newHeld = useRef(false)
   const folded = unfolded || asking.length <= FOLD ? 0 : asking.length - FOLD
 
-  // A row held and then moved up or down takes a new place in In progress, as a card dragged on the Mac does.
+  // A row held and then moved up or down takes a new place in its column, as a card dragged on the Mac does.
   const [drag, setDrag] = useState<
     { readonly id: string; readonly moved: number; readonly scrolled: number; readonly scroll: number; readonly middles: readonly number[]; readonly height: number } | undefined
   >()
@@ -188,7 +182,8 @@ export function PhoneBoard({
     let next = 0
     tap('firm')
     const order = rows.map((one) => (asking.includes(one) || busy.includes(one) || background.includes(one) ? one.id : (placed[next++]?.id ?? one.id)))
-    chat.change({ progressOrder: [...order, ...chat.settings.progressOrder.filter((id) => !order.includes(id))] })
+    if (lineup) chat.change({ progressOrder: [...order, ...chat.settings.progressOrder.filter((id) => !order.includes(id))] })
+    else chat.change({ columnOrders: { ...chat.settings.columnOrders, [column.id]: order } })
   }
 
   // Which card each asking session waits on, asked for again whenever one of them moves.
@@ -218,6 +213,11 @@ export function PhoneBoard({
 
   const mark = (session: ChatSession, status: SessionStatus | undefined): void => {
     if (session.status !== status) chat.mark(session.id, status)
+  }
+  // To the top or the bottom of the column it is in, the way the Mac's card menu moves it.
+  const move = (session: ChatSession, to: 'top' | 'bottom'): void => {
+    if (lineup) chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, [session.id], to) })
+    else chat.change({ columnOrders: { ...chat.settings.columnOrders, [column.id]: movedOrder(rows.map((one) => one.id), [session.id], to) } })
   }
   const favorite = (session: ChatSession): void => {
     const favorites = chat.settings.favorites
@@ -308,22 +308,22 @@ export function PhoneBoard({
           <ScopeButton chat={chat} onPress={() => setScoping(true)} />
         </div>
         <div className={`phone-seg-bar${scrolled ? ' scrolled' : ''}`}>
-          <div className="phone-seg" role="tablist" style={{ '--at': COLUMNS.findIndex((one) => one.column === shown) } as React.CSSProperties}>
+          <div className="phone-seg" role="tablist" style={{ '--at': BOARD_COLUMNS.findIndex((one) => one.id === shown) } as React.CSSProperties}>
             <span className="phone-seg-thumb" />
-            {COLUMNS.map((one) => (
+            {BOARD_COLUMNS.map((one) => (
               <button
-                key={one.column}
+                key={one.id}
                 type="button"
                 role="tab"
-                aria-selected={one.column === shown}
-                className={one.column === shown ? 'on' : ''}
+                aria-selected={one.id === shown}
+                className={one.id === shown ? 'on' : ''}
                 onClick={() => {
-                  show(one.column)
+                  show(one.id)
                   tap('light')
                 }}
               >
                 {one.title}
-                {chat.listed ? <span className="n">{counts[one.column]}</span> : null}
+                {chat.listed ? <span className="n">{counts.get(one.id) ?? 0}</span> : null}
               </button>
             ))}
           </div>
@@ -349,7 +349,7 @@ export function PhoneBoard({
         ) : rows.length === 0 ? (
           <div className="phone-empty">
             {emptyProfile(chat.settings) === undefined
-              ? COLUMNS.find((one) => one.column === shown)?.empty
+              ? column.empty
               : `No folders in ${emptyProfile(chat.settings) ?? ''}. Tick some in Settings, Profiles.`}
           </div>
         ) : null}
@@ -404,27 +404,18 @@ export function PhoneBoard({
             </div>
           </Fragment>
         ))}
-        {rest.length === 0
-          ? null
-          : byDay(rest, now, shown === 'done').map((day) => (
-              <Fragment key={day.heading}>
-                {day.heading !== '' ? (
-                  <button
-                    type="button"
-                    className="phone-head phone-day-head"
-                    aria-expanded={!foldedDays.has(day.heading)}
-                    onClick={() => foldDay(day.heading)}
-                  >
-                    {day.heading}
-                    <span className="spacer" />
-                    <span className="n">{day.rows.length}</span>
-                    <Icon name={foldedDays.has(day.heading) ? 'right' : 'down'} size={13} />
-                  </button>
-                ) : asking.length === 0 && busy.length === 0 && background.length === 0 ? null : (
-                  <div className="phone-head">In your order</div>
-                )}
-                {foldedDays.has(day.heading) ? null : <div ref={shown === 'progress' ? restGroup : undefined} className={`phone-group${drag === undefined ? '' : ' dragging'}`}>
-                  {day.rows.map((session, at) => (
+        {rest.length === 0 ? null : column.byDay === true ? (
+          byDay(rest, now).map((day) => (
+            <Fragment key={day.heading}>
+              <button type="button" className="phone-head phone-day-head" aria-expanded={!foldedDays.has(day.heading)} onClick={() => foldDay(day.heading)}>
+                {day.heading}
+                <span className="spacer" />
+                <span className="n">{day.rows.length}</span>
+                <Icon name={foldedDays.has(day.heading) ? 'right' : 'down'} size={13} />
+              </button>
+              {foldedDays.has(day.heading) ? null : (
+                <div className="phone-group">
+                  {day.rows.map((session) => (
                     <PhoneRow
                       key={session.id}
                       chat={chat}
@@ -438,19 +429,43 @@ export function PhoneBoard({
                       onMore={() => setMore(session)}
                       onPress={(at) => setPressed({ session, at })}
                       onAnswer={() => undefined}
-                      onLift={shown === 'progress' ? () => latest.current.lift(session) : undefined}
-                      onDrag={(moved, y) => {
-                        finger.current = y
-                        setDrag((was) => (was === undefined ? was : { ...was, moved }))
-                      }}
-                      onDrop={() => latest.current.drop()}
-                      shift={shown === 'progress' ? shift(at) : 0}
-                      lifted={drag?.id === session.id}
                     />
                   ))}
-                </div>}
-              </Fragment>
-            ))}
+                </div>
+              )}
+            </Fragment>
+          ))
+        ) : (
+          <>
+            {asking.length === 0 && busy.length === 0 && background.length === 0 ? null : <div className="phone-head">In your order</div>}
+            <div ref={restGroup} className={`phone-group${drag === undefined ? '' : ' dragging'}`}>
+              {rest.map((session, at) => (
+                <PhoneRow
+                  key={session.id}
+                  chat={chat}
+                  session={session}
+                  now={now}
+                  column={shown}
+                  open={open === session.id}
+                  waiting={undefined}
+                  onOpen={(on) => setOpen(on ? session.id : undefined)}
+                  onMark={(status) => latest.current.mark(session, status)}
+                  onMore={() => setMore(session)}
+                  onPress={(at) => setPressed({ session, at })}
+                  onAnswer={() => undefined}
+                  onLift={() => latest.current.lift(session)}
+                  onDrag={(moved, y) => {
+                    finger.current = y
+                    setDrag((was) => (was === undefined ? was : { ...was, moved }))
+                  }}
+                  onDrop={() => latest.current.drop()}
+                  shift={shift(at)}
+                  lifted={drag?.id === session.id}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {pressed === undefined ? null : (
@@ -463,6 +478,7 @@ export function PhoneBoard({
           onAnswer={(how) => answer(pressed.session, how)}
           onMark={(status) => mark(pressed.session, status)}
           onFavorite={() => favorite(pressed.session)}
+          onMove={(to) => move(pressed.session, to)}
           onRename={() => setRenaming(pressed.session)}
           onShortcut={() => onShortcut(pressed.session)}
           onHide={() => setHiding(pressed.session)}
@@ -533,11 +549,11 @@ function standing(session: ChatSession): { readonly tone: string; readonly words
   return { tone: 'read' }
 }
 
-/** What a swipe each way does in a column, the way into the column next to it. */
+/** What a swipe each way does in a column, the way into another column. */
 function swipes(column: Column): { readonly lead: { status: SessionStatus | undefined; label: string; tone: string }; readonly trail: { status: SessionStatus | undefined; label: string; tone: string } } {
-  if (column === 'progress') return { lead: { status: 'review', label: 'In review', tone: 'review' }, trail: { status: 'done', label: 'Done', tone: 'done' } }
-  if (column === 'review') return { lead: { status: undefined, label: 'In progress', tone: 'back' }, trail: { status: 'done', label: 'Done', tone: 'done' } }
-  return { lead: { status: undefined, label: 'In progress', tone: 'back' }, trail: { status: 'review', label: 'In review', tone: 'review' } }
+  if (column === 'todo') return { lead: { status: undefined, label: 'In progress', tone: 'back' }, trail: { status: 'done', label: 'Done', tone: 'done' } }
+  if (column === 'done') return { lead: { status: undefined, label: 'In progress', tone: 'back' }, trail: { status: 'todo', label: 'To do', tone: 'todo' } }
+  return { lead: { status: 'todo', label: 'To do', tone: 'todo' }, trail: { status: 'done', label: 'Done', tone: 'done' } }
 }
 
 export function RowBody({
@@ -546,14 +562,12 @@ export function RowBody({
   now,
   waiting,
   onAnswer,
-  dayHeaded,
 }: {
   readonly chat: Chat
   readonly session: ChatSession
   readonly now: number
   readonly waiting: Waiting | undefined
   readonly onAnswer?: (how: CardAnswer) => void
-  readonly dayHeaded?: boolean
 }): React.JSX.Element {
   const stands = standing(session)
   const helpers = session.tasks?.filter(helping).length ?? 0
@@ -572,7 +586,7 @@ export function RowBody({
         <div className="phone-row-line">
           {chat.settings.favorites.includes(session.id) ? <Icon name="star" size={13} className="phone-row-star" /> : null}
           <span className="phone-row-title">{session.title}</span>
-          <span className="phone-row-time">{session.question === true ? (questionLeft(session, now) ?? '') : ago(session.at, now, dayHeaded)}</span>
+          <span className="phone-row-time">{session.question === true ? (questionLeft(session, now) ?? '') : ago(session.at, now)}</span>
         </div>
         {session.state === 'asks' ? (
           <>
@@ -589,7 +603,7 @@ export function RowBody({
             {projectLabel(homeOf(session))}
           </span>
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
-          {session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
+          {goalMet(session) ? <span className="phone-row-tag met">Goal reached</span> : session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
           {helpers === 0 ? null : <span className="phone-row-tag">{helpers === 1 ? 'a helper running' : `${helpers} helpers running`}</span>}
           {script === undefined ? null : <span className="phone-row-tag">{script}</span>}
           {queued === 0 ? null : <span className="phone-row-tag">{queued} queued</span>}
@@ -841,7 +855,7 @@ function Row({
           if (held.way === 'side') settle(held.at, 0)
         }}
       >
-        <RowBody chat={chat} session={session} now={now} waiting={waiting} onAnswer={onAnswer} dayHeaded={column === 'done'} />
+        <RowBody chat={chat} session={session} now={now} waiting={waiting} onAnswer={onAnswer} />
       </div>
     </div>
   )
@@ -857,6 +871,7 @@ function Pressed({
   onAnswer,
   onMark,
   onFavorite,
+  onMove,
   onRename,
   onShortcut,
   onHide,
@@ -871,6 +886,7 @@ function Pressed({
   readonly onAnswer: (how: CardAnswer) => void
   readonly onMark: (status: SessionStatus | undefined) => void
   readonly onFavorite: () => void
+  readonly onMove: (to: 'top' | 'bottom') => void
   readonly onRename: () => void
   readonly onShortcut: () => void
   readonly onHide: () => void
@@ -939,19 +955,15 @@ function Pressed({
           No status
           {session.status === undefined ? <Icon name="check" size={16} /> : null}
         </button>
-        {columnOf(session) === 'progress' ? (
-          <>
-            <div className="gap" />
-            <button type="button" role="menuitem" onClick={() => pick(() => chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, [session.id], 'top') }))}>
-              Move to top
-              <Icon name="ahead" size={16} />
-            </button>
-            <button type="button" role="menuitem" onClick={() => pick(() => chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, [session.id], 'bottom') }))}>
-              Move to bottom
-              <Icon name="behind" size={16} />
-            </button>
-          </>
-        ) : null}
+        <div className="gap" />
+        <button type="button" role="menuitem" onClick={() => pick(() => onMove('top'))}>
+          Move to top
+          <Icon name="ahead" size={16} />
+        </button>
+        <button type="button" role="menuitem" onClick={() => pick(() => onMove('bottom'))}>
+          Move to bottom
+          <Icon name="behind" size={16} />
+        </button>
         <div className="gap" />
         <button type="button" role="menuitem" onClick={() => pick(onFavorite)}>
           {chat.settings.favorites.includes(session.id) ? 'Remove from favorites' : 'Add to favorites'}

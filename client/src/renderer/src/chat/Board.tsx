@@ -1,8 +1,8 @@
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
-import { assistantFor, ANYWHERE, BOARD_COLUMNS, columnShown, homeOf, letsGo, SESSION_STATUSES, shownProjects } from '../../../shared/api'
-import type { BoardColumn, ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
+import { assistantFor, ANYWHERE, BOARD_COLUMNS, columnOf, columnShown, goalMet, toggledColumns, homeOf, letsGo, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import type { ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
 import { landingIndex, movedOrder, ordered } from '../../../shared/order'
 import { isCodexProvider, llmProviderInfo, modelPreference, providerModel, selectableProviders } from '../../../shared/providers'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
@@ -46,16 +46,11 @@ import type { Chat } from './useChat'
  * conversation itself over the board.
  */
 
-/** What the Columns control says for each choice: the column's own name, or that every one stands. */
-const COLUMN_CHOICES: readonly { readonly value: BoardColumn; readonly label: string; readonly says: string }[] = [
-  { value: 'all', label: 'All columns', says: 'In progress, In review and Done side by side' },
-  ...BOARD_COLUMNS.map((one) => ({ value: one.column, label: one.title, says: `Only ${one.title}, across the whole board` })),
-]
-
 function Columns({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [anchor, setAnchor] = useState<DOMRect | undefined>()
-  const chosen = chat.settings.boardColumn
-  const label = COLUMN_CHOICES.find((one) => one.value === chosen)?.label ?? 'All columns'
+  const shown = BOARD_COLUMNS.filter((one) => columnShown(chat.settings.boardColumns, one.id))
+  const every = shown.length === BOARD_COLUMNS.length
+  const label = every ? 'All columns' : shown.map((one) => one.title).join(', ')
   return (
     <>
       <button
@@ -69,20 +64,20 @@ function Columns({ chat }: { readonly chat: Chat }): React.JSX.Element {
         onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}
       >
         <Icon name="sliders" />
-        {chosen === 'all' ? null : <span className="board-view-dot" />}
+        {every ? null : <span className="board-view-dot" />}
       </button>
       {anchor === undefined ? null : (
         <Menu
           anchor={anchor}
           title="Visible columns"
-          choices={COLUMN_CHOICES}
-          chosen={chosen}
+          choices={[
+            { value: 'all', label: 'All columns', says: `${BOARD_COLUMNS.map((one) => one.title).join(', ').replace(/, ([^,]*)$/, ' and $1')} side by side`, on: every },
+            ...BOARD_COLUMNS.map((one) => ({ value: one.id, label: one.title, says: `Show ${one.title}`, on: shown.includes(one) })),
+          ]}
           explained
           autoFocus
-          onPick={(value) => {
-            const choice = COLUMN_CHOICES.find((one) => one.value === value)
-            if (choice !== undefined) chat.change({ boardColumn: choice.value })
-          }}
+          stays
+          onPick={(value) => chat.change({ boardColumns: toggledColumns(chat.settings.boardColumns, value) })}
           onClose={() => setAnchor(undefined)}
         />
       )}
@@ -90,7 +85,7 @@ function Columns({ chat }: { readonly chat: Chat }): React.JSX.Element {
   )
 }
 
-/** Before which card of In progress the pointer is, counting the cards in the part kept in the person's order; among tiles, where in the row too. */
+/** Before which card of a column the pointer is, counting the cards in the part kept in the person's order; among tiles, where in the row too. */
 function landingAt(column: HTMLElement, x: number, y: number, tiled: boolean): number {
   const cards = [...column.querySelectorAll<HTMLElement>('[data-kept] [data-card]')]
   return landingIndex(cards.map((card) => card.getBoundingClientRect()), x, y, tiled)
@@ -252,7 +247,7 @@ export function Board({
   // The cards being dragged, and the column the pointer is over.
   const held = useRef<readonly string[]>([])
   const [over, setOver] = useState<string | undefined>()
-  // A day in Done folded away, by its heading, for as long as the window is open.
+  // A group of In progress or a day of Done folded away, by its heading, for as long as the window is open.
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set())
   const fold = (heading: string): void =>
     setFolded((was) => {
@@ -273,18 +268,18 @@ export function Board({
     () =>
       BOARD_COLUMNS.map((column) => ({
         ...column,
-        // Blocked stands in the first column: it is work that is not over, and its
+        // Blocked stands in In progress: it is work that is not over, and its
         // tag on the card says what it is waiting on.
         rows: ordered(
           chat.sessions
-            .filter((one) => (column.status === undefined ? one.status !== 'review' && one.status !== 'done' : one.status === column.status))
+            .filter((one) => columnOf(one.status).id === column.id)
             .sort((one, other) => other.at - one.at),
-          column.status === undefined ? chat.settings.progressOrder : [],
+          column.order === 'lineup' ? chat.settings.progressOrder : (chat.settings.columnOrders[column.id] ?? []),
         ),
       })),
-    [chat.sessions, chat.settings.progressOrder],
+    [chat.sessions, chat.settings.progressOrder, chat.settings.columnOrders],
   )
-  const columns = useMemo(() => all.filter((one) => columnShown(chat.settings.boardColumn, one.column)), [all, chat.settings.boardColumn])
+  const columns = useMemo(() => all.filter((one) => columnShown(chat.settings.boardColumns, one.id)), [all, chat.settings.boardColumns])
   // One column with the whole board to itself, or the strip above a conversation: the cards go side by side as tiles rather than one under another at the full width.
   const tiled = columns.length < all.length || (chat.settings.conversationPlace === 'below' && chat.shown.kind === 'session')
   const startedLines = useMemo(() => {
@@ -295,15 +290,20 @@ export function Board({
     }
     return lines
   }, [chat.sessions])
-  const progress = all[0]?.rows ?? []
+  const progress = all.find((one) => one.order === 'lineup')?.rows ?? []
   // What needs the person is drawn on top of In progress; the rest keeps the order, which still holds every card and decides who takes a free slot.
   const needs = useNeedsYou(progress, chat.shown.kind === 'session' ? chat.shown.id : undefined)
   // What works now comes under it, out of the order while it works and back in its place once it stops.
   const busy = progress.filter((one) => !needs.includes(one) && one.state === 'working')
   const background = progress.filter((one) => !needs.includes(one) && one.state !== 'working' && working(one))
   const kept = progress.filter((one) => !needs.includes(one) && !busy.includes(one) && !background.includes(one))
+  const columnHolding = (id: string): (typeof all)[number] | undefined => all.find((column) => column.rows.some((session) => session.id === id))
+  // The cards of a column that keep the person's order, which is where a dragged card can land.
+  const keptOf = (column: (typeof all)[number]): readonly ChatSession[] =>
+    column.order === 'lineup' ? kept : column.byDay === true ? byDay(column.rows, now).flatMap((day) => (folded.has(day.heading) ? [] : day.rows)) : column.rows
   const groups = (column: (typeof columns)[number]): { readonly heading: string; readonly rows: readonly ChatSession[] }[] => {
-    if (column.status !== undefined) return byDay(column.rows, now, column.status === 'done')
+    if (column.byDay === true) return byDay(column.rows, now)
+    if (column.order === 'manual') return [{ heading: '', rows: column.rows }]
     if (needs.length === 0 && busy.length === 0 && background.length === 0) return [{ heading: '', rows: kept }]
     return [
       ...(needs.length === 0 ? [] : [{ heading: 'Needs you', rows: needs }]),
@@ -312,10 +312,11 @@ export function Board({
       { heading: 'In your order', rows: kept },
     ]
   }
-  // Where in In progress a dragged card would land. The order is who a free slot goes to first, and moving a card changes nothing else.
-  const [landing, setLanding] = useState<number | undefined>()
+  // Where a dragged card would land, in which column. In In progress the order is who a free slot goes to first, and moving a card changes nothing else.
+  const [landing, setLanding] = useState<{ readonly column: string; readonly at: number } | undefined>()
   // The card it would land before, worked out once rather than by each card's place in the order.
-  const landingId = landing === undefined ? undefined : kept[landing]?.id
+  const landingColumn = landing === undefined ? undefined : all.find((one) => one.id === landing.column)
+  const landingId = landing === undefined || landingColumn === undefined ? undefined : keptOf(landingColumn)[landing.at]?.id
 
   // The cards picked with Cmd or Shift, to be moved, hidden or deleted together. One gone from the board is not picked any more.
   const [picks, setPicks] = useState<ReadonlySet<string>>(new Set())
@@ -373,26 +374,27 @@ export function Board({
     return () => window.removeEventListener('keydown', key, true)
   }, [chosen, deleting])
 
-  const drop = (status: SessionStatus | undefined): void => {
+  const drop = (column: (typeof all)[number]): void => {
     const ids = held.current
-    const where = landing
+    const where = landing?.column === column.id ? landing.at : undefined
     held.current = []
     setOver(undefined)
     setLanding(undefined)
     for (const id of ids) {
       const was = chat.sessions.find((one) => one.id === id)?.status
-      if (was !== status) chat.mark(id, status)
+      if (columnOf(was).id !== column.id) chat.mark(id, column.status)
     }
-    if (status === undefined && where !== undefined) dropSessions(ids, where)
+    if (where !== undefined) place(column, ids, where)
   }
 
-  // Conversations dropped in In progress take that place among the others, before the card they were dropped above.
-  const dropSessions = (ids: readonly string[], where: number): void => {
-    const rest = progress.map((session) => session.id).filter((id) => !ids.includes(id))
-    const before = kept.slice(where).find((session) => !ids.includes(session.id))
+  // Conversations dropped in a column take that place among the others, before the card they were dropped above.
+  const place = (column: (typeof all)[number], ids: readonly string[], where: number): void => {
+    const rest = (column.byDay === true ? byDay(column.rows, now).flatMap((day) => day.rows) : column.rows).map((session) => session.id).filter((id) => !ids.includes(id))
+    const before = keptOf(column).slice(where).find((session) => !ids.includes(session.id))
     const at = before === undefined ? rest.length : rest.indexOf(before.id)
     const placed = [...rest.slice(0, at), ...ids, ...rest.slice(at)]
-    chat.change({ progressOrder: [...placed, ...chat.settings.progressOrder.filter((id) => !placed.includes(id))] })
+    if (column.order === 'lineup') chat.change({ progressOrder: [...placed, ...chat.settings.progressOrder.filter((id) => !placed.includes(id))] })
+    else chat.change({ columnOrders: { ...chat.settings.columnOrders, [column.id]: placed } })
   }
 
   const hide = (ids: readonly string[]): void => {
@@ -409,31 +411,27 @@ export function Board({
         {columns.map((column) => (
             <div
               key={column.title}
-              className={`board-column${over === column.title && column.status !== undefined ? ' taking' : ''}`}
+              className={`board-column${over === column.title && column.order === 'manual' ? ' taking' : ''}`}
               onDragOver={(event) => {
                 event.preventDefault()
                 event.dataTransfer.dropEffect = 'move'
                 setOver(column.title)
-                if (column.status !== undefined) {
-                  setLanding(undefined)
-                  return
-                }
-                setLanding(landingAt(event.currentTarget, event.clientX, event.clientY, tiled))
+                setLanding({ column: column.id, at: landingAt(event.currentTarget, event.clientX, event.clientY, tiled) })
               }}
               onDragLeave={(event) => {
                 if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
                 setOver((one) => (one === column.title ? undefined : one))
-                if (column.status === undefined) setLanding(undefined)
+                setLanding((one) => (one?.column === column.id ? undefined : one))
               }}
               onDrop={(event) => {
                 event.preventDefault()
-                drop(column.status)
+                drop(column)
               }}
             >
               <div className="board-column-head">
                 {column.title}
                 <span className="spacer" />
-                {column.status === undefined && chat.lineup.limit !== 0 ? (
+                {column.order === 'lineup' && chat.lineup.limit !== 0 ? (
                   <span className={`state-said working-count${chat.lineup.working > 0 ? ' said-working' : ''}`} title="Conversations working across this computer. Background work does not count against the limit.">
                     <span className="state-dot" />
                     {`${String(chat.lineup.working)} of ${String(chat.lineup.limit)} working`}
@@ -443,7 +441,7 @@ export function Board({
               </div>
               <div className="board-cards">
                 {groups(column).map((day) => (
-                  <div key={day.heading} className="board-day" {...(column.status === undefined && day.rows === kept ? { 'data-kept': '' } : {})}>
+                  <div key={day.heading} className="board-day" {...(column.byDay === true || day.rows === keptOf(column) ? { 'data-kept': '' } : {})}>
                     {day.heading === '' ? null : (
                       <button type="button" className="board-day-head" onClick={() => fold(day.heading)}>
                         <Icon name={folded.has(day.heading) ? 'right' : 'down'} size={10} />
@@ -454,7 +452,7 @@ export function Board({
                     )}
                     {(folded.has(day.heading) ? [] : day.rows).map((session) => (
                       <Fragment key={session.id}>
-                      {column.status === undefined && !tiled && landingId === session.id ? <div className="board-drop" /> : null}
+                      {landing?.column === column.id && !tiled && landingId === session.id ? <div className="board-drop" /> : null}
                       <BoardCard
                         chat={chat}
                         showProviders={chat.showProviders}
@@ -462,7 +460,7 @@ export function Board({
                         now={now}
                         renaming={renaming === session.id}
                         picked={picked.has(session.id)}
-                        landing={column.status === undefined && tiled && landingId === session.id}
+                        landing={landing?.column === column.id && tiled && landingId === session.id}
                         started={startedLines.get(session.id)}
                         onPress={(one, how) => latest.current.press(one, how)}
                         onDrag={(id) => (held.current = id === undefined ? [] : latest.current.targets(id))}
@@ -477,7 +475,7 @@ export function Board({
                     ))}
                   </div>
                 ))}
-                {column.status === undefined && landing === kept.length ? <div className="board-drop" /> : null}
+                {landing?.column === column.id && landing.at === keptOf(column).length ? <div className="board-drop" /> : null}
               </div>
             </div>
           ))}
@@ -518,7 +516,7 @@ export function Board({
                 on: targets(menu.id).every((id) => chat.everyone.some((session) => session.id === id && session.status === one.status)),
               })),
             },
-            ...(targets(menu.id).every((id) => progress.some((session) => session.id === id))
+            ...(targets(menu.id).every((id) => columnHolding(menu.id)?.rows.some((session) => session.id === id) === true)
               ? [
                   {
                     value: 'move',
@@ -565,9 +563,11 @@ export function Board({
               const all = ids.every((id) => chat.everyone.find((session) => session.id === id)?.status === status)
               for (const id of ids) chat.mark(id, all ? undefined : status)
             }
-            if (value === 'top' || value === 'bottom') {
-              const ids = progress.filter((session) => targets(menu.id).includes(session.id)).map((session) => session.id)
-              chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, ids, value) })
+            const column = columnHolding(menu.id)
+            if ((value === 'top' || value === 'bottom') && column !== undefined) {
+              const ids = column.rows.filter((session) => targets(menu.id).includes(session.id)).map((session) => session.id)
+              if (column.order === 'lineup') chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, ids, value) })
+              else chat.change({ columnOrders: { ...chat.settings.columnOrders, [column.id]: movedOrder(column.rows.map((session) => session.id), ids, value) } })
             }
             if (value === 'rename') setRenaming(menu.id)
             if (value === 'shortcut') {
@@ -659,6 +659,7 @@ function Card({
   const queued = session.queued?.length ?? 0
   // The line above already says it is working, so what it says it is doing does not say it again.
   const detail = stands?.tone === 'said-working' ? session.stands.replace(/^Working - /, '') : session.stands
+  const goal = session.goal?.condition ?? session.goalMet
   return (
     <div
       className={`board-card${starred ? ' starred' : ''}${open ? ' on' : ''}${picked ? ' picked' : ''}${landing ? ' landing' : ''}${session.state === 'asks' || session.state === 'unread' ? ` waits ${session.state}` : ''}`}
@@ -760,10 +761,10 @@ function Card({
           onClose={() => setListing(undefined)}
         />
       )}
-      {session.goal === undefined ? null : (
-        <div className="board-card-goal" title={session.goal.condition}>
-          <Icon name="goal" size={10} />
-          <span>{session.goal.condition}</span>
+      {goal === undefined ? null : (
+        <div className={`board-card-goal${goalMet(session) ? ' met' : ''}`} title={goalMet(session) ? `Goal reached: ${goal}` : goal}>
+          <Icon name={goalMet(session) ? 'done' : 'goal'} size={10} />
+          <span>{goalMet(session) ? (goal === '' ? 'Goal reached' : `Goal reached: ${goal}`) : goal}</span>
         </div>
       )}
       {detail === '' ? null : (
@@ -1077,7 +1078,24 @@ export function NewTask({
       setStartError(error.message)
     })
   }
-  const startHint = providerInfo.localOnly && !question && isRemote(root) ? `${providerInfo.name} supports local folders only` : chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when ${providerInfo.shortName} is done. ${MOD}+Enter starts it` : `${providerInfo.shortName} keeps working until this holds, then the card goes to In review`
+  // Put in To do with nothing sent: the words wait in its composer and the goal on its card. Pictures and a recording go only with a message sent now.
+  const plannable = !question && root !== '' && text.trim() !== '' && pictures.length === 0 && recorded === undefined && uploading === 0 && !(providerInfo.localOnly === true && isRemote(root))
+  const plan = (): void => {
+    if (!plannable || startingRef.current) return
+    chat.change({ newTaskRoot: root })
+    startingRef.current = true
+    setStarting(true)
+    onStarting(true)
+    setStartError(undefined)
+    void chat.planTask(root, text.trim(), goal.trim()).then(onClose, (error: Error) => {
+      startingRef.current = false
+      setStarting(false)
+      onStarting(false)
+      setStartError(error.message)
+    })
+  }
+  const planWhy = pictures.length > 0 || recorded !== undefined ? 'Pictures are sent at once; Start it, or plan without them' : 'Put it in To do without sending. Open it and send when it is time'
+  const startHint = providerInfo.localOnly && !question && isRemote(root) ? `${providerInfo.name} supports local folders only` : chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when ${providerInfo.shortName} is done. ${MOD}+Enter starts it` : `${providerInfo.shortName} keeps working until this holds, then the card shows Goal reached`
 
   if (ON_PHONE) {
     return (
@@ -1094,6 +1112,7 @@ export function NewTask({
         onPictures={take}
         onDrop={(at) => setPictures((held) => held.filter((_one, index) => index !== at))}
         onStart={start}
+        onPlan={plannable ? plan : undefined}
         onClose={onClose}
         starting={starting}
         startError={startError}
@@ -1271,6 +1290,11 @@ export function NewTask({
         <button type="button" className="quiet" disabled={starting} onClick={onClose}>
           Cancel
         </button>
+        {question ? null : (
+          <button type="button" className="quiet" disabled={starting || !plannable} title={planWhy} onClick={plan}>
+            Plan
+          </button>
+        )}
         <button
           type="button"
           className="primary"
@@ -1299,6 +1323,7 @@ function PhoneNewTask({
   onPictures,
   onDrop,
   onStart,
+  onPlan,
   onClose,
   starting,
   startError,
@@ -1328,6 +1353,8 @@ function PhoneNewTask({
   readonly onPictures: (files: readonly File[]) => void
   readonly onDrop: (at: number) => void
   readonly onStart: () => void
+  /** Put it in To do instead of starting it; absent while it cannot be. */
+  readonly onPlan: (() => void) | undefined
   readonly onClose: () => void
   readonly starting: boolean
   readonly startError: string | undefined
@@ -1437,7 +1464,13 @@ function PhoneNewTask({
                 </label>
               </div>
               <div className="phone-task-note">
-                {goal.trim() === '' ? `Without a goal, it stops when ${providerInfo.shortName} is done.` : `${providerInfo.shortName} keeps working until this holds, then the card goes to In review.`}
+                {goal.trim() === '' ? `Without a goal, it stops when ${providerInfo.shortName} is done.` : `${providerInfo.shortName} keeps working until this holds, then the card shows Goal reached.`}
+              </div>
+              <div className="phone-task-group">
+                <button type="button" className="phone-task-cell" disabled={onPlan === undefined || starting} onClick={onPlan}>
+                  Plan in To do
+                  <span className="phone-task-selected">Nothing is sent</span>
+                </button>
               </div>
             </>
           )}

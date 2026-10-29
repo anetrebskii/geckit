@@ -1,14 +1,15 @@
+import { inProgress as onBoard } from './api'
 import type { ChatSession, SessionImage } from './api'
 
-/** What the gecko shows: the floating panel and the tray follow the same three, and a hop on review comes on top. */
+/** What the gecko shows: the floating panel and the tray follow the same three, and a hop on a goal reached comes on top. */
 export type GeckoPose = 'asleep' | 'working' | 'waiting'
 
 export interface GeckoState {
   readonly pose: GeckoPose
   /** The conversations waiting for the person, the one that has waited longest first. */
   readonly waiting: readonly string[]
-  /** A card has just reached In review, with nothing waiting: the gecko hops once. */
-  readonly review: boolean
+  /** A card's goal has just been reached, with nothing waiting: the gecko hops once. */
+  readonly reached: boolean
 }
 
 /** What the floating panel is told: its pose, and how many wait for the count. */
@@ -17,10 +18,10 @@ export interface GeckoView {
   readonly count: number
 }
 
-type Counted = Pick<ChatSession, 'id' | 'state' | 'at' | 'status' | 'waits' | 'runs' | 'typing' | 'tasks' | 'question' | 'manager'>
+type Counted = Pick<ChatSession, 'id' | 'state' | 'at' | 'status' | 'goalMet' | 'waits' | 'runs' | 'typing' | 'tasks' | 'question' | 'manager'>
 
 /** On the board's In progress, as the board counts it: a general question and the manager's own are on no board. */
-const inProgress = (one: Counted): boolean => one.question !== true && one.manager !== true && one.status !== 'review' && one.status !== 'done'
+const inProgress = (one: Counted): boolean => one.question !== true && one.manager !== true && onBoard(one.status)
 
 /** Its turn is over but a helper it started still runs, which wakes it again: not waiting yet, as on the board. */
 const onHelpers = (one: Counted): boolean =>
@@ -33,14 +34,14 @@ function waitsForYou(one: Counted): boolean {
   return one.state === 'asks' || one.state === 'unread'
 }
 
-/** The one state of every conversation listed, with `before` the list as it was, so a card arriving in In review is seen. Working wins: while one works it types, and what waits shows only in its count. */
+/** The one state of every conversation listed, with `before` the list as it was, so a goal just reached is seen. Working wins: while one works it types, and what waits shows only in its count. */
 export function geckoState(now: readonly Counted[], before: readonly Counted[] = []): GeckoState {
   const counted = now.filter(inProgress)
   const waiting = counted.filter(waitsForYou).sort((one, other) => one.at - other.at).map((one) => one.id)
-  const was = new Map(before.map((one) => [one.id, one.status]))
-  const review = waiting.length === 0 && now.some((one) => one.status === 'review' && was.has(one.id) && was.get(one.id) !== 'review')
+  const was = new Map(before.map((one) => [one.id, one.goalMet]))
+  const reached = waiting.length === 0 && now.some((one) => one.goalMet !== undefined && was.has(one.id) && was.get(one.id) !== one.goalMet)
   const pose = counted.some((one) => one.state === 'working') ? 'working' : waiting.length > 0 ? 'waiting' : 'asleep'
-  return { pose, waiting, review }
+  return { pose, waiting, reached }
 }
 
 /** Files dropped on the gecko, or words said to it, for a new task or a conversation: the pictures to go with the message, the paths of the rest for its words, and what was said. */
@@ -55,7 +56,7 @@ export type GeckoShown = 'asleep' | 'working' | 'waiting' | 'done' | 'look' | 'c
 
 export interface GeckoNow {
   readonly pose: GeckoPose
-  /** A card reached In review since it last dozed. */
+  /** A card's goal was reached since it last dozed. */
   readonly done: boolean
   /** Left alone long enough, waiting or done, it has fallen asleep. */
   readonly dozing: boolean

@@ -59,7 +59,7 @@ export function ago(at: number, now: number, dayHeaded = false): string {
   return date(at, now)
 }
 
-/** The day a conversation last changed, as a heading: Today, Yesterday, then the date itself. */
+/** The day a card came into its column, as a heading: Today, Yesterday, then the date itself. */
 function dayOf(at: number, today: string, yesterday: string, year: number): string {
   const said = new Date(at)
   const day = said.toDateString()
@@ -68,22 +68,16 @@ function dayOf(at: number, today: string, yesterday: string, year: number): stri
   return (said.getFullYear() === year ? DAY_HEAD : DAY_HEAD_YEAR).format(said)
 }
 
-/** The cards under the day they were last touched, the newest day first, or all of them under nothing. */
-export function byDay(
-  rows: readonly ChatSession[],
-  now: number,
-  wanted: boolean,
-): { readonly heading: string; readonly rows: readonly ChatSession[] }[] {
-  if (!wanted) return [{ heading: '', rows }]
+/** The cards under the day each came into its column, the newest day first, each day keeping the order they were given in. */
+export function byDay(rows: readonly ChatSession[], now: number): { readonly heading: string; readonly rows: readonly ChatSession[] }[] {
   const today = new Date(now).toDateString()
   const yesterday = new Date(now - DAY).toDateString()
   const year = new Date(now).getFullYear()
-  const days: { heading: string; rows: ChatSession[] }[] = []
+  const start = (at: number): number => new Date(at).setHours(0, 0, 0, 0)
+  const days = new Map<number, ChatSession[]>()
   for (const session of rows) {
-    const heading = dayOf(session.at, today, yesterday, year)
-    const last = days.at(-1)
-    if (last?.heading === heading) last.rows.push(session)
-    else days.push({ heading, rows: [session] })
+    const day = start(session.since ?? session.at)
+    days.set(day, [...(days.get(day) ?? []), session])
   }
-  return days
+  return [...days].sort(([one], [other]) => other - one).map(([day, cards]) => ({ heading: dayOf(day, today, yesterday, year), rows: cards }))
 }

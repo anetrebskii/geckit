@@ -252,7 +252,7 @@ export function Gecko(): React.JSX.Element | null {
     return () => offs.forEach((off) => off())
   }, [stir])
 
-  // A hop once a card reaches In review, then the happy look; not while something else is going on, and not saved for later.
+  // A hop once a card's goal is reached, then the happy look; not while something else is going on, and not saved for later.
   useEffect(
     () =>
       window.geckit.gecko.onHop(() => {

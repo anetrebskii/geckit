@@ -9,6 +9,7 @@ import type {
   Folders,
   ChatFound,
   ChatSession,
+  PreparedConversationDraft,
   ClaudeTransport,
   ClaudeAccount,
   ClaudeModel,
@@ -173,6 +174,10 @@ const geckit = {
     /** Nothing for the project is every conversation, in every project offered. */
     list: (root: string | undefined): Promise<ChatSession[]> => ipcRenderer.invoke('chat:list', root),
     items: (id: string): Promise<SessionItem[]> => ipcRenderer.invoke('chat:items', id),
+    /** A new task put in To do, nothing sent: its id. */
+    schedule: (message: SessionMessage): Promise<string> => ipcRenderer.invoke('chat:schedule', message),
+    preparedDraft: (id: string): Promise<string | undefined> => ipcRenderer.invoke('chat:preparedDraft', id),
+    savePreparedDraft: (id: string, change: PreparedConversationDraft): Promise<void> => ipcRenderer.invoke('chat:savePreparedDraft', id, change),
     waiting: (id: string): Promise<SessionItem | undefined> => ipcRenderer.invoke('chat:waiting', id),
     /** What is before a line of a conversation; the phone is sent a conversation's end first, this window all of it. */
     before: async (id: string, before: string): Promise<Piece> =>
@@ -386,7 +391,7 @@ const geckit = {
   gecko: {
     state: (): Promise<GeckoView> => ipcRenderer.invoke('gecko:state'),
     onState: (said: (view: GeckoView) => void): (() => void) => listen('gecko:state', said),
-    /** A card has just reached In review: one hop. */
+    /** A card's goal has just been reached: one hop. */
     onHop: (said: () => void): (() => void) => listen('gecko:hop', said),
     /** Where the cursor is on the screen, told only when it moves, for the eyes to follow. */
     onCursor: (said: (at: { x: number; y: number }) => void): (() => void) => listen('gecko:cursor', said),

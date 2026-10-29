@@ -126,7 +126,7 @@ function About(): React.JSX.Element {
   return (
     <>
       <div className="welcome-art board-art" aria-hidden="true">
-        {['In progress', 'In review', 'Done'].map((column) => (
+        {['To do', 'In progress', 'Done'].map((column) => (
           <div key={column} className="art-column">
             <span>{column}</span>
             <i />
@@ -141,7 +141,7 @@ function About(): React.JSX.Element {
       </div>
       <h1>Welcome to GeckIt</h1>
       <p>
-        Claude Code or Codex, on a board. Each conversation is a card that moves from In progress to In review to Done, and runs on your own plan.
+        Claude Code or Codex, on a board. Each conversation is a card that moves from To do to In progress to Done, and runs on your own plan.
       </p>
       <ul className="welcome-list">
         <li>

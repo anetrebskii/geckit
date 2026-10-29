@@ -1100,13 +1100,13 @@ describe('provider routing', () => {
   it('keeps migrated visibility and user changes while hiding external Codex conversations', async () => {
     const { codex } = setup()
     const notes = memoryNotes()
-    notes.set('visible', { here: true, title: 'My task', status: 'review', model: 'sonnet' })
+    notes.set('visible', { here: true, title: 'My task', status: 'todo', model: 'sonnet' })
     notes.set('hidden', { here: true, hidden: true })
     notes.set('viewed', { seen: 100 })
     codex.list = async () => ['visible', 'hidden', 'external', 'imported', 'viewed'].map((id) => ({ id: `codex:${id}`, root: ROOT, title: id, stands: '', at: Date.now(), driven: true, ...(id === 'external' ? {} : { importedFrom: id }) }))
     const sessions = new Sessions({ codex, notes, changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined, there: async () => true, disk: { list: async () => [], read: async () => undefined, has: async () => false, every: async () => [] } })
     expect((await sessions.list([ROOT])).map((one) => one.id)).toEqual(['codex:visible'])
-    expect(notes.all()['codex:visible']).toMatchObject({ shown: true, title: 'My task', status: 'review' })
+    expect(notes.all()['codex:visible']).toMatchObject({ shown: true, title: 'My task', status: 'todo' })
     expect(notes.all()['codex:visible']).not.toHaveProperty('model')
     expect(notes.all()['codex:imported']).toMatchObject({ here: false, shown: false })
     expect(notes.all()['codex:viewed']).toMatchObject({ seen: 100, here: false, shown: false })
@@ -1217,7 +1217,7 @@ describe('provider routing', () => {
     sessions.dispose()
   })
 
-  it('attaches a native goal before the first turn and moves a completed goal to review', async () => {
+  it('attaches a native goal before the first turn and shows a completed goal on the card', async () => {
     const { server, codex } = setup()
     const notes = memoryNotes()
     const rows: ChatSession[][] = []
@@ -1249,10 +1249,12 @@ describe('provider routing', () => {
     expect(rows.at(-1)?.find((one) => one.id === id)?.state).toBe('working')
     server.complete(id.slice(6))
     await tick()
-    expect(rows.at(-1)?.find((one) => one.id === id)).toMatchObject({ status: 'review' })
+    expect(rows.at(-1)?.find((one) => one.id === id)).toMatchObject({ goalMet: 'The regression test passes' })
+    expect(rows.at(-1)?.find((one) => one.id === id)?.status).toBeUndefined()
     expect(rows.at(-1)?.find((one) => one.id === id)?.goal).toBeUndefined()
     await sessions.send({ session: id, root: ROOT, mode: 'auto', text: '/goal A new outcome is verified' })
     expect(rows.at(-1)?.find((one) => one.id === id)?.status).toBeUndefined()
+    expect(rows.at(-1)?.find((one) => one.id === id)?.goalMet).toBeUndefined()
     expect(rows.at(-1)?.find((one) => one.id === id)?.goal?.condition).toBe('A new outcome is verified')
     sessions.dispose()
   })
@@ -1263,7 +1265,7 @@ describe('provider routing', () => {
     notes.set('codex:terminal', { shown: true, goal: { condition: 'Tests pass', checks: 0 } })
     server.goals.set('terminal', { threadId: 'terminal', objective: 'Tests pass', status: 'complete', tokenBudget: null, tokensUsed: 1, timeUsedSeconds: 1, createdAt: 100, updatedAt: 200 })
     const sessions = new Sessions({ codex, notes, changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
-    expect((await sessions.list([ROOT])).find((one) => one.id === 'codex:terminal')).toMatchObject({ status: 'review' })
+    expect((await sessions.list([ROOT])).find((one) => one.id === 'codex:terminal')).toMatchObject({ goalMet: 'Tests pass' })
     expect(notes.all()['codex:terminal']?.goal).toBeUndefined()
     sessions.dispose()
   })

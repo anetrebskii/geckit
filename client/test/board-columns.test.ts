@@ -1,25 +1,44 @@
 import { describe, expect, it } from 'vitest'
 
-import { BOARD_COLUMNS, columnShown } from '../src/shared/api'
+import { BOARD_COLUMNS, columnOf, columnShown, inProgress, toggledColumns } from '../src/shared/api'
+import type { SessionStatus } from '../src/shared/api'
 import { landingIndex } from '../src/shared/order'
 import type { Box } from '../src/shared/order'
 
 describe('the columns of the board', () => {
-  it('stand in their order, In progress holding what carries no status', () => {
-    expect(BOARD_COLUMNS.map((one) => one.column)).toEqual(['progress', 'review', 'done'])
-    expect(BOARD_COLUMNS.map((one) => one.status)).toEqual([undefined, 'review', 'done'])
+  it('stand in their order, In progress holding what carries no status and ordered for the queue', () => {
+    expect(BOARD_COLUMNS.map((one) => one.id)).toEqual(['todo', 'progress', 'done'])
+    expect(BOARD_COLUMNS.map((one) => one.status)).toEqual(['todo', undefined, 'done'])
+    expect(BOARD_COLUMNS.map((one) => one.order)).toEqual(['manual', 'lineup', 'manual'])
+    expect(BOARD_COLUMNS.map((one) => one.byDay === true)).toEqual([false, false, true])
   })
 
-  it('are all shown, or one on its own', () => {
-    for (const one of BOARD_COLUMNS) expect(columnShown('all', one.column)).toBe(true)
-    expect(columnShown('review', 'review')).toBe(true)
-    expect(columnShown('review', 'progress')).toBe(false)
-    expect(columnShown('done', 'review')).toBe(false)
+  it('take a card by its status, blocked and what an earlier build kept as In review in In progress', () => {
+    expect(columnOf('todo').id).toBe('todo')
+    expect(columnOf('done').id).toBe('done')
+    expect(columnOf('blocked').id).toBe('progress')
+    expect(columnOf(undefined).id).toBe('progress')
+    expect(columnOf('review' as SessionStatus).id).toBe('progress')
+    expect(inProgress('todo')).toBe(false)
+    expect(inProgress('blocked')).toBe(true)
   })
 
-  it('are all shown under a choice no column answers to, rather than none', () => {
-    const unknown = 'blocked' as Parameters<typeof columnShown>[0]
-    for (const one of BOARD_COLUMNS) expect(columnShown(unknown, one.column)).toBe(true)
+  it('are all shown, or the ones ticked', () => {
+    for (const one of BOARD_COLUMNS) expect(columnShown([], one.id)).toBe(true)
+    expect(columnShown(['todo', 'done'], 'todo')).toBe(true)
+    expect(columnShown(['todo', 'done'], 'progress')).toBe(false)
+  })
+
+  it('are all shown when nothing ticked is a column, rather than none', () => {
+    for (const one of BOARD_COLUMNS) expect(columnShown(['review'], one.id)).toBe(true)
+  })
+
+  it('are ticked on and off one at a time, every one or none being All columns', () => {
+    expect(toggledColumns([], 'todo')).toEqual(['progress', 'done'])
+    expect(toggledColumns(['progress', 'done'], 'todo')).toEqual([])
+    expect(toggledColumns(['done'], 'todo')).toEqual(['todo', 'done'])
+    expect(toggledColumns(['done'], 'done')).toEqual([])
+    expect(toggledColumns(['todo'], 'all')).toEqual([])
   })
 })
 

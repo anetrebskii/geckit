@@ -17,7 +17,7 @@ Both come from Anton, who works with many conversations at once on Windows and k
 
 | Surface | What appears | When seen |
 |---|---|---|
-| Top bar, existing | View options, a compact icon grouped with Board/List; opens All columns, In progress, In review or Done directly | On the desktop board, not in the list |
+| Top bar, existing | View options, a compact icon grouped with Board/List; opens All columns or any set of To do, In progress and Done (since 2026-10-29, `board-columns.md`) | On the desktop board, not in the list |
 | The board, existing | The columns chosen, each the same width; one on its own takes the whole board, its cards as tiles side by side, as many to a row as fit | When one column is chosen |
 | An open conversation's head, existing | A button beside Back to the board: open conversations below the board, or over it again | When a conversation is open from the board |
 | The window, new | With conversations below the board: the board as a strip across the top, the conversation under it, the strip's lower edge dragged to size | When a conversation is open and Below is chosen |
@@ -87,9 +87,9 @@ The choices are kept in settings (`boardColumn`, `conversationPlace`, `boardHeig
 | State | Text |
 |---|---|
 | Columns control, accessible name | "View options" |
-| Columns control, hover/focus tooltip | "View options: All columns", "View options: In progress", "View options: In review", "View options: Done" |
-| Columns control, choices | "All columns", "In progress", "In review", "Done" |
-| Columns control, what each says | "In progress, In review and Done side by side"; "Only In progress, across the whole board", and so for the others |
+| Columns control, hover/focus tooltip | "View options: All columns", "View options: In progress", "View options: To do", "View options: Done" |
+| Columns control, choices | "All columns", "To do", "In progress", "Done" |
+| Columns control, what each says | "To do, In progress and Done side by side"; "Only In progress, across the whole board", and so for the others |
 | Head button, over | "Open conversations below the board: the board stays as a strip across the top, as tall as you drag it" |
 | Head button, below | "Open conversations over the board: a popup, the board dimmed behind it" |
 | Head button, for a screen reader | "Open conversations below the board" / "Open conversations over the board" |
@@ -112,7 +112,7 @@ The choices are kept in settings (`boardColumn`, `conversationPlace`, `boardHeig
 | Not done | Why |
 |---|---|
 | A two-part switch Over/Below in the head, as Board/List in the bar | The head is one row with the title, the project, its tags and a row of buttons, and the place of a conversation is seen the moment it opens; the one button says where it would go and the tooltip says what that means |
-| Several columns picked at once, In progress and In review say | One column on its own is the case that was missing; two of three is nearly all three |
+| Several columns picked at once | Reversed on 2026-10-29: Alex asked for one or several columns to be shown, see `board-columns.md` |
 | The strip's height per column or per project | One height, dragged when it is wrong |
 | Remembering Below per conversation | The place is how the window is used, not a fact about a conversation |
 | Columns in the Settings dialog | It is changed often, with the board in view; Settings is for what is set once |

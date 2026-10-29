@@ -340,6 +340,132 @@ async function started(built: Built, mode: SessionMode = 'manual'): Promise<stri
   return id
 }
 
+describe('prepared conversation copies', () => {
+  it('lists and reopens a prepared Codex copy without creating, reading, holding, queuing or starting work', async () => {
+    const notes = memoryNotes()
+    const create = vi.fn<NonNullable<SessionsDeps['codex']>['create']>()
+    const read = vi.fn<NonNullable<SessionsDeps['codex']>['read']>()
+    const goal = vi.fn<NonNullable<SessionsDeps['codex']>['goal']>()
+    const hold = vi.fn<NonNullable<SessionsDeps['codex']>['hold']>()
+    const remove = vi.fn<NonNullable<SessionsDeps['codex']>['delete']>()
+    const rename = vi.fn<NonNullable<SessionsDeps['codex']>['rename']>()
+    const codex = fakeCodex({ create, read, goal, hold, delete: remove, rename })
+    const first = build({ notes, codex })
+    const id = first.sessions.prepare({ provider: 'codex', root: ROOT, mode: 'plan', model: 'target', text: 'Overview and /export.md' })
+    expect(id).toMatch(/^codex:copy-/)
+    expect(first.sessions.preparedDraft(id)).toBe('Overview and /export.md')
+    const rows = first.rows.length
+    first.sessions.savePreparedDraft(id, { text: '' })
+    expect(first.rows).toHaveLength(rows)
+    first.sessions.savePreparedDraft(id, { model: 'edited-model', reasoning: 'high' })
+    first.sessions.dispose()
+    const restored = build({ notes, codex })
+    expect(await restored.sessions.list([ROOT])).toMatchObject([{ id, prepared: true, mode: 'plan', chosen: 'edited-model', reasoning: 'high', stands: 'Ready to send' }])
+    expect(restored.sessions.preparedDraft(id)).toBe('')
+    expect(await restored.sessions.items(id)).toEqual([])
+    expect(await restored.sessions.links(id)).toEqual([])
+    restored.sessions.watching(id)
+    restored.sessions.rename(id, 'My copy')
+    await restored.sessions.resumeQueues()
+    expect(notes.all()[id]?.queued).toBeUndefined()
+    expect(create).not.toHaveBeenCalled()
+    expect(read).not.toHaveBeenCalled()
+    expect(goal).not.toHaveBeenCalled()
+    expect(hold).not.toHaveBeenCalled()
+    expect(rename).not.toHaveBeenCalled()
+    expect(await restored.sessions.remove([id])).toEqual([id])
+    expect(remove).not.toHaveBeenCalled()
+    restored.sessions.dispose()
+    const deleted = build({ notes, codex })
+    expect(await deleted.sessions.list([ROOT])).toEqual([])
+    deleted.sessions.dispose()
+  })
+
+  it('sends edited text once into a new real conversation and preserves source draft metadata', async () => {
+    const notes = memoryNotes()
+    notes.set('source', { title: 'Original', goal: { condition: 'Original goal', checks: 1 } })
+    const source = JSON.stringify(notes.all().source)
+    const built = build({ notes })
+    const id = built.sessions.prepare({ root: ROOT, mode: 'manual', model: 'target', text: 'Full prepared overview' })
+    built.sessions.savePreparedDraft(id, { text: 'Edited context and /export.md', model: 'edited' })
+    expect(built.fake.made).toEqual([])
+    expect(built.fake.sent).toEqual([])
+    const real = await built.sessions.send({ session: id, root: ROOT, mode: 'manual', model: 'edited', text: 'Edited context and /export.md' })
+    expect(real).not.toBe(id)
+    expect(built.fake.made).toHaveLength(1)
+    expect(built.fake.made[0]).toMatchObject({ id: real, resume: false, model: 'edited' })
+    expect(built.fake.sent).toEqual([{ text: 'Edited context and /export.md' }])
+    expect(notes.all()[id]?.hidden).toBe(true)
+    expect(notes.all()[id]?.prepared).toBeUndefined()
+    await expect(built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Stale second send' })).rejects.toThrow('already sent')
+    expect(built.fake.sent).toHaveLength(1)
+    expect(JSON.stringify(notes.all().source)).toBe(source)
+    expect((await built.sessions.list([ROOT])).some((one) => one.id === id)).toBe(false)
+    built.sessions.dispose()
+  })
+
+  it('plans a task in To do with nothing sent, and its first message starts it in progress with its goal', async () => {
+    const notes = memoryNotes()
+    const built = build({ notes })
+    const id = built.sessions.schedule({ root: ROOT, mode: 'manual', text: 'Fix the spinner', goal: 'the spinner stops' })
+    expect(built.fake.made).toEqual([])
+    expect((await built.sessions.list([ROOT])).find((one) => one.id === id)).toMatchObject({ status: 'todo', prepared: true, goal: { condition: 'the spinner stops', checks: 0 }, stands: 'Planned' })
+    expect(built.sessions.preparedDraft(id)).toBe('Fix the spinner')
+    const real = await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Fix the spinner' })
+    expect(real).not.toBe(id)
+    expect(of(built.rows, real)?.status).toBeUndefined()
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(built.fake.sent).toEqual([{ text: 'Fix the spinner' }, { text: '/goal the spinner stops' }]))
+    built.sessions.dispose()
+  })
+
+  it('keeps the draft after provider creation failure and prevents concurrent first sends', async () => {
+    let finish: ((id: string) => void) | undefined
+    const create = vi.fn<NonNullable<SessionsDeps['codex']>['create']>(() => new Promise((resolve) => { finish = resolve }))
+    const held = fakeClaude()
+    const built = build({ codex: fakeCodex({ create, hold: held.claude }) })
+    const id = built.sessions.prepare({ provider: 'codex', root: ROOT, mode: 'manual', text: 'Keep draft' })
+    const first = built.sessions.send({ session: id, provider: 'codex', root: ROOT, mode: 'manual', text: 'Keep draft' })
+    await expect(built.sessions.send({ session: id, provider: 'codex', root: ROOT, mode: 'manual', text: 'Keep draft' })).rejects.toThrow('already being sent')
+    finish?.('codex:real')
+    expect(await first).toBe('codex:real')
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(held.fake.sent).toEqual([{ text: 'Keep draft' }])
+    built.sessions.dispose()
+    const failed = build({ codex: fakeCodex({ create: async () => { throw new Error('Offline') } }) })
+    const copy = failed.sessions.prepare({ provider: 'codex', root: ROOT, mode: 'manual', text: 'Recover me' })
+    await expect(failed.sessions.send({ session: copy, provider: 'codex', root: ROOT, mode: 'manual', text: 'Recover me' })).rejects.toThrow('Offline')
+    expect(failed.sessions.preparedDraft(copy)).toBe('Recover me')
+    expect(await failed.sessions.list([ROOT])).toMatchObject([{ id: copy, prepared: true }])
+    failed.sessions.dispose()
+  })
+
+  it('retries a guarded first send with a real Codex ID and no duplicate context', async () => {
+    const notes = memoryNotes()
+    let allowed = false
+    const held = fakeClaude()
+    const create = vi.fn<NonNullable<SessionsDeps['codex']>['create']>(async () => 'codex:real-copy')
+    const built = build({ notes, codex: fakeCodex({ create, hold: held.claude }), beforeSend: () => { if (!allowed) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    const id = built.sessions.prepare({ provider: 'codex', root: ROOT, mode: 'manual', model: 'target', text: 'Draft with /export.md' })
+    expect(await built.sessions.send({ session: id, provider: 'codex', root: ROOT, mode: 'manual', model: 'target', text: 'Edited /export.md' })).toBe(id)
+    expect(create).not.toHaveBeenCalled()
+    expect(notes.all()[id]?.heldOperation?.kind).toBe('message')
+    expect(built.sessions.preparedDraft(id)).toBe('Edited /export.md')
+    built.sessions.dispose()
+    allowed = true
+    const restarted = build({ notes, codex: fakeCodex({ create, hold: held.claude }), beforeSend: () => { if (!allowed) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })
+    expect(await restarted.sessions.list([ROOT])).toMatchObject([{ id, prepared: true, state: 'failed', stands: 'Not sent' }])
+    expect(create).not.toHaveBeenCalled()
+    expect(await restarted.sessions.retry(id)).toBe('codex:real-copy')
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(held.fake.made[0]).toMatchObject({ id: 'codex:real-copy', resume: false })
+    expect(held.fake.sent).toEqual([{ text: 'Edited /export.md' }])
+    expect(notes.all()[id]?.hidden).toBe(true)
+    expect(notes.all()[id]?.prepared).toBeUndefined()
+    restarted.sessions.dispose()
+  })
+})
+
 describe('holding a conversation', () => {
   it('names an external provider when it fails without native goals', async () => {
     const held = fakeClaude()
@@ -752,7 +878,7 @@ describe('a goal', () => {
   const met: GoalRead['ended'] = { kind: 'note', id: '', note: 'goal', text: `Goal met: ${condition}`, detail: 'All 12 pass.' }
 
   it.each([
-    { name: 'met', read: { ended: met, met: true }, status: 'review' },
+    { name: 'met', read: { ended: met, met: true }, status: undefined },
     { name: 'given up', read: { ended: met, met: false }, status: 'blocked' },
     { name: 'cleared in the terminal', read: {}, status: undefined },
   ] satisfies readonly { name: string; read: GoalRead; status: ChatSession['status'] }[])(
@@ -863,9 +989,10 @@ describe('a goal', () => {
       await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: `/goal ${condition}` })
       built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
       await vi.waitFor(() => expect(of(built.rows, id)?.goal).toBeUndefined())
-      return of(built.rows, id)?.status
+      return of(built.rows, id)?.status ?? of(built.rows, id)?.goalMet
     }
-    expect(await ended({ ended: met, met: true })).toBe('review')
+    // Met, the card stays where it is and says which goal held.
+    expect(await ended({ ended: met, met: true })).toBe(condition)
     expect(await ended({ ended: met })).toBe('blocked')
   })
 
@@ -885,7 +1012,8 @@ describe('a goal', () => {
 
     read = { ended: met, met: true }
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-    await vi.waitFor(() => expect(of(built.rows, id)?.status).toBe('review'))
+    await vi.waitFor(() => expect(of(built.rows, id)?.goalMet).toBe(condition))
+    expect(of(built.rows, id)?.status).toBeUndefined()
   })
 
   it('leaves a mark made by hand alone, since that one says what the person decided', async () => {
@@ -2238,7 +2366,7 @@ describe('marking a conversation', () => {
       expect(fake.sent).toEqual([{ text: 'First task' }])
       expect(built.fake.made).toEqual([])
       fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-      built.sessions.mark(id, 'review')
+      built.sessions.mark(id, 'todo')
       await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
       fake.hear({ signals: [{ kind: 'goal', goal: undefined, status: 'complete' }] })
       expect(of(built.rows, id)?.state).toBe('working')
@@ -2255,8 +2383,10 @@ describe('marking a conversation', () => {
       fake.hear({ signals: [{ kind: 'goal', goal: status === 'complete' ? undefined : goal, status }] })
       expect(of(built.rows, id)?.state).toBe('working')
       expect(of(built.rows, id)?.status).toBeUndefined()
+      expect(of(built.rows, id)?.goalMet).toBeUndefined()
       fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-      expect(of(built.rows, id)?.status).toBe(status === 'complete' ? 'review' : 'blocked')
+      expect(of(built.rows, id)?.status).toBe(status === 'complete' ? undefined : 'blocked')
+      expect(of(built.rows, id)?.goalMet).toBe(status === 'complete' ? 'Finish it' : undefined)
     })
 
     it('leaves an approval waiting in progress until genuine goal completion and turn end', async () => {
@@ -2267,7 +2397,8 @@ describe('marking a conversation', () => {
       expect(of(built.rows, id)?.state).toBe('asks')
       expect(of(built.rows, id)?.status).toBeUndefined()
       fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-      expect(of(built.rows, id)?.status).toBe('review')
+      expect(of(built.rows, id)?.status).toBeUndefined()
+      expect(of(built.rows, id)?.goalMet).toBe('Finish it')
     })
 
     it('keeps a queued followup in progress when the preceding goal completes', async () => {
@@ -2303,7 +2434,7 @@ describe('marking a conversation', () => {
   it('keeps a queued Claude followup in progress when its prior goal completes', async () => {
     const built = build({ disk: { list: async () => [], read: async () => undefined, has: async () => false, goal: async () => ({ met: true, ended: { kind: 'note', id: '', note: 'goal', text: 'Goal met: Finish it' } }) } })
     const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: '/goal Finish it' })
-    built.sessions.mark(id, 'review')
+    built.sessions.mark(id, 'todo')
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     await Promise.resolve()
@@ -2331,14 +2462,14 @@ describe('marking a conversation', () => {
     const built = build({ plugins: [provider], transport: () => 'tmux', limit: () => limit })
     const id = await built.sessions.send({ provider: providerId, root: ROOT, mode: 'manual', text: 'First task' })
     held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-    built.sessions.mark(id, 'review')
+    built.sessions.mark(id, 'todo')
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Immediate followup' })
     expect(of(built.rows, id)).toMatchObject({ state: 'working' })
     expect(of(built.rows, id)?.status).toBeUndefined()
     expect(held.fake.sent.map((sent) => sent.text)).toEqual(['First task', 'Immediate followup'])
     expect(built.fake.made).toEqual([])
     held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-    built.sessions.mark(id, 'review')
+    built.sessions.mark(id, 'todo')
     limit = 1
     await built.sessions.send({ provider: providerId, root: ROOT, mode: 'manual', text: 'Occupy the slot' })
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Queued followup' })
@@ -2354,7 +2485,7 @@ describe('marking a conversation', () => {
     const id = await built.sessions.send({ provider, root: ROOT, mode: 'manual', text: 'First task' })
     const fake = provider === 'codex' ? codex.fake : built.fake
     fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-    built.sessions.mark(id, 'review')
+    built.sessions.mark(id, 'todo')
 
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
 
@@ -2372,7 +2503,7 @@ describe('marking a conversation', () => {
       const built = build({ codex: codex.codex })
       await built.sessions.send({ provider: 'codex', root: ROOT, mode: 'manual', text: 'First task' })
       codex.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-      built.sessions.mark(id, 'review')
+      built.sessions.mark(id, 'todo')
       await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
       codex.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
       await vi.advanceTimersByTimeAsync(11 * 60_000)
@@ -2391,7 +2522,7 @@ describe('marking a conversation', () => {
     const id = await built.sessions.send({ provider, root: ROOT, mode: 'manual', text: 'First task' })
     const fake = provider === 'codex' ? codex.fake : built.fake
     fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-    built.sessions.mark(id, 'review')
+    built.sessions.mark(id, 'todo')
     limit = 1
     await built.sessions.send({ root: ROOT, mode: 'manual', text: 'Occupy the slot' })
 
@@ -2406,7 +2537,7 @@ describe('marking a conversation', () => {
   it('keeps a resumed Codex conversation in progress when an older list goal read completes', async () => {
     const id = 'codex:reviewed'
     const notes = memoryNotes()
-    notes.set(id, { here: true, status: 'review', goal: { condition: 'Finish it', checks: 0 } })
+    notes.set(id, { here: true, status: 'todo', goal: { condition: 'Finish it', checks: 0 } })
     let finish: ((goal: Awaited<ReturnType<NonNullable<SessionsDeps['codex']>['goal']>>) => void) | undefined
     const goal = vi.fn<NonNullable<SessionsDeps['codex']>['goal']>(() => new Promise((resolve) => { finish = resolve }))
     const codex = heldCodex(id, { goal })
@@ -2426,7 +2557,7 @@ describe('marking a conversation', () => {
     const built = build({ disk: { list: async () => [], read: async () => undefined, has: async () => false, goal } })
     const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: '/goal Finish it' })
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-    built.sessions.mark(id, 'review')
+    built.sessions.mark(id, 'todo')
     await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'One more thing' })
     finish?.({ met: true, ended: { kind: 'note', id: '', note: 'goal', text: 'Goal met: Finish it' } })
     await Promise.resolve()
@@ -2442,8 +2573,8 @@ describe('marking a conversation', () => {
     built.fake.hear({ signals: [{ kind: 'started', session: id, key: false }] })
     expect(of(built.rows, id)?.work).toMatchObject({ label: '#3908', says: 'twins-ai/Twins-AI pull request 3908' })
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-    built.sessions.mark(id, 'review')
-    expect(of(built.rows, id)?.status).toBe('review')
+    built.sessions.mark(id, 'todo')
+    expect(of(built.rows, id)?.status).toBe('todo')
     built.sessions.mark(id, undefined)
     expect(of(built.rows, id)?.status).toBeUndefined()
     built.sessions.mark(id, 'done')
@@ -2639,20 +2770,20 @@ describe('the moves between columns', () => {
     expect(first).toEqual({ title: 'Fix it', created: 1, moves: [{ status: 'progress', at: 1 }] })
     const renamed = withMoves(first, { title: 'Fix the spinner' }, 2)
     expect(renamed.moves).toEqual([{ status: 'progress', at: 1 }])
-    const review = withMoves(renamed, { title: 'Fix the spinner', status: 'review' }, 3)
-    const back = withMoves(review, { title: 'Fix the spinner' }, 4)
+    const todo = withMoves(renamed, { title: 'Fix the spinner', status: 'todo' }, 3)
+    const back = withMoves(todo, { title: 'Fix the spinner' }, 4)
     const done = withMoves(back, { title: 'Fix the spinner', status: 'done' }, 5)
     expect(done.created).toBe(1)
     expect(done.moves).toEqual([
       { status: 'progress', at: 1 },
-      { status: 'review', at: 3 },
+      { status: 'todo', at: 3 },
       { status: 'progress', at: 4 },
       { status: 'done', at: 5 },
     ])
   })
 
   it('starts the record for a note written before there was one', () => {
-    expect(withMoves({ status: 'review' }, { status: 'done' }, 7)).toEqual({ status: 'done', moves: [{ status: 'done', at: 7 }] })
+    expect(withMoves({ status: 'todo' }, { status: 'done' }, 7)).toEqual({ status: 'done', moves: [{ status: 'done', at: 7 }] })
   })
 })
 

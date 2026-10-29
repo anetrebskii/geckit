@@ -160,6 +160,8 @@ export interface Chat {
   ask: (text: string, images?: readonly SessionImage[]) => Promise<void>
   /** A new conversation from the board's form: the work goes first, then the goal. */
   startTask: (root: string, text: string, goal: string, images?: readonly SessionImage[]) => Promise<void>
+  /** A new task put in To do, nothing sent: the words wait in its composer and the goal goes with its first message. */
+  planTask: (root: string, text: string, goal: string) => Promise<void>
   /** Words sent to the open conversation as they are, the field left alone: `/compact`, `/goal clear`. */
   say: (text: string) => void
   answer: (card: string, answer: CardAnswer | string) => void
@@ -188,7 +190,7 @@ export interface Chat {
   readonly compacting: 'typed' | 'clicked' | undefined
   setCompacting: (from: 'typed' | 'clicked' | undefined) => void
   rename: (id: string, title: string) => void
-  /** In review, blocked or done; nothing takes the mark off. */
+  /** To do, blocked or done; a message sent takes the mark off. */
   mark: (id: string, status: SessionStatus | undefined) => void
   hide: (id: string) => void
   /** Lets go of the process holding a quiet conversation. The next message takes it up again from the tool's own file. */
@@ -441,6 +443,9 @@ export function useChat(): Chat {
   const managerIds = useRef(new Set<string>())
   useEffect(() => { if (manager?.session !== undefined) managerIds.current.add(manager.session.id) }, [manager?.session])
 
+  const draftEdits = useRef(new Map<string, number>())
+  const persistedDrafts = useRef(new Map<string, string>())
+
   const open = useCallback((next: Shown): void => {
     if (next.kind === 'session' && managerIds.current.has(next.id)) return
     const before = shownRef.current
@@ -462,6 +467,15 @@ export function useChat(): Chat {
     const loading = { shown: next, updates }
     loadingItems.current = loading
     window.geckit.chat.watching(next.id)
+    persistedDrafts.current.delete(next.id)
+    const revision = draftEdits.current.get(next.id)
+    void window.geckit.chat.preparedDraft(next.id).then((text) => {
+      if (text === undefined || shownRef.current !== next) return
+      persistedDrafts.current.set(next.id, text)
+      setDrafts((all) => ({ ...all, [next.id]: draftEdits.current.get(next.id) === revision ? text : all[next.id] ?? '' }))
+    }).catch((error: Error) => {
+      if (shownRef.current === next) setTrouble(error.message)
+    })
     void window.geckit.chat.items(next.id).then((read) => {
       if (shownRef.current !== next) return
       // Live changes received after this snapshot was requested take precedence.
@@ -560,15 +574,28 @@ export function useChat(): Chat {
   // What Send needs, kept where a callback can read it without being made
   // again: a callback made again on every keystroke draws the whole
   // conversation again with it.
-  const held = useRef({ drafts, pictures, mode, model, provider, reasoning, settings })
+  const held = useRef({ drafts, pictures, mode, model, provider, reasoning, settings, prepared: session?.prepared === true })
   useEffect(() => {
-    held.current = { drafts, pictures, mode, model, provider, reasoning, settings }
-  }, [drafts, pictures, mode, model, provider, reasoning, settings])
+    held.current = { drafts, pictures, mode, model, provider, reasoning, settings, prepared: session?.prepared === true }
+  }, [drafts, pictures, mode, model, provider, reasoning, settings, session?.prepared])
 
   const setDraft = useCallback(
-    (text: string) => setDrafts((held) => ({ ...held, [keyOf(shownRef.current)]: text })),
+    (text: string) => {
+      const shown = shownRef.current
+      const id = keyOf(shown)
+      draftEdits.current.set(id, (draftEdits.current.get(id) ?? 0) + 1)
+      setDrafts((held) => ({ ...held, [id]: text }))
+    },
     [],
   )
+
+  useEffect(() => {
+    const id = session?.prepared === true ? session.id : undefined
+    const text = id === undefined ? undefined : drafts[id]
+    if (id === undefined || text === undefined || !persistedDrafts.current.has(id) || persistedDrafts.current.get(id) === text || pendingSends.has(id)) return
+    persistedDrafts.current.set(id, text)
+    void window.geckit.chat.savePreparedDraft(id, { text }).catch((error: Error) => setTrouble(error.message))
+  }, [drafts, session?.prepared, session?.id, pendingSends])
 
   // A turn that ended by itself, on an error or the plan's limit, is not one to send the next message into: it comes back to the field, ahead of what is typed there. The ones behind it keep their place in the queue, each its own message still. After Stop the queue carries on by itself, so nothing is taken out of it here.
   const taken = useRef(new Set<string>())
@@ -596,6 +623,7 @@ export function useChat(): Chat {
 
   // A path typed into the field, once known: quoted if it has a space in it, added after what is already there.
   const addPath = (key: string, path: string): void => {
+    draftEdits.current.set(key, (draftEdits.current.get(key) ?? 0) + 1)
     const quoted = path.includes(' ') ? `"${path}"` : path
     setDrafts((held) => {
       const now = held[key] ?? ''
@@ -685,6 +713,7 @@ export function useChat(): Chat {
       const key = keyOf(shownRef.current)
       if (pendingSendsRef.current.has(key)) return
       const now = held.current
+      if (now.prepared && !persistedDrafts.current.has(key)) return
       const original = again === undefined ? undefined : itemsRef.current.find((item): item is Extract<SessionItem, { kind: 'mine' }> => item.kind === 'mine' && item.id === again)
       if (again !== undefined && original === undefined) return
       const fromDraft = again === undefined && said === undefined
@@ -695,7 +724,7 @@ export function useChat(): Chat {
       if (fromDraft && (uploadsRef.current[key] ?? 0) > 0) return
       if (where === undefined || (text.trim() === '' && carried.length === 0)) return
       // A message that starts with ! is a command for the project folder, as in the terminal.
-      const command = again === undefined && said === undefined && text.trim().startsWith('!') ? text.trim().slice(1).trim() : undefined
+      const command = again === undefined && said === undefined && !now.prepared && text.trim().startsWith('!') ? text.trim().slice(1).trim() : undefined
       if (command !== undefined) {
         if (command === '') return
         setDraft('')
@@ -707,7 +736,7 @@ export function useChat(): Chat {
             open({ kind: 'session', id })
           })
           .catch((error: Error) => {
-            setDrafts((all) => ({ ...all, [key]: text }))
+            setDrafts((all) => ({ ...all, [key]: all[key] === '' || all[key] === undefined ? text : all[key] }))
             setTrouble(error.message)
           })
         return
@@ -718,7 +747,7 @@ export function useChat(): Chat {
       }
       setTrouble('')
       const into = shownRef.current
-      const submission = now.settings.vpnIpCheck ? (into.kind === 'session' ? into.id : `${now.provider === 'claude' ? '' : `${now.provider}:`}pending-${crypto.randomUUID()}`) : undefined
+      const submission = now.settings.vpnIpCheck || now.prepared ? (into.kind === 'session' ? into.id : `${now.provider === 'claude' ? '' : `${now.provider}:`}pending-${crypto.randomUUID()}`) : undefined
       if (submission !== undefined) {
         pendingSendsRef.current.set(key, submission)
         setPendingSends((all) => new Map(all).set(key, submission))
@@ -748,7 +777,7 @@ export function useChat(): Chat {
           },
           (error: Error) => {
             if (fromDraft) {
-              setDrafts((all) => ({ ...all, [key]: text }))
+              setDrafts((all) => ({ ...all, [key]: all[key] === '' || all[key] === undefined ? text : all[key] }))
               setPictures((all) => ({ ...all, [key]: carried }))
             }
             setTrouble(error.message)
@@ -819,6 +848,15 @@ export function useChat(): Chat {
     },
     [open],
   )
+
+  const planTask = useCallback((root: string, text: string, goal: string) => {
+    const now = held.current
+    const provider = assistantFor(now.settings, root)
+    const chosen = providerModel(now.settings, provider)
+    return window.geckit.chat
+      .schedule({ root, provider, ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...(chosen === '' ? {} : { model: chosen }), ...(goal === '' ? {} : { goal }) })
+      .then(() => undefined)
+  }, [])
 
   const showEarlier = useCallback(() => {
     const now = shownRef.current
@@ -1013,6 +1051,7 @@ export function useChat(): Chat {
       if (shownRef.current.kind === 'session') {
         const id = shownRef.current.id
         setNextChoices((all) => new Map(all).set(id, { ...all.get(id), reasoning: next }))
+        if (session?.prepared === true) void window.geckit.chat.savePreparedDraft(id, { reasoning: next }).catch((error: Error) => setTrouble(error.message))
       }
     },
     model,
@@ -1057,6 +1096,7 @@ export function useChat(): Chat {
       if (shownRef.current.kind === 'session') {
         const id = shownRef.current.id
         setNextChoices((all) => new Map(all).set(id, { ...all.get(id), model: next, ...(isCodexProvider(provider) ? { reasoning: '' } : {}) }))
+        if (session?.prepared === true) void window.geckit.chat.savePreparedDraft(id, { model: next, ...(isCodexProvider(provider) ? { reasoning: '' } : {}) }).catch((error: Error) => setTrouble(error.message))
       }
     },
     setProvider: (next) => {
@@ -1077,6 +1117,7 @@ export function useChat(): Chat {
     send,
     ask,
     startTask,
+    planTask,
     say: (text: string) => {
       const where = rootRef.current
       if (where === undefined || shownRef.current.kind !== 'session') return

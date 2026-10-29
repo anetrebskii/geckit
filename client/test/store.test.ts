@@ -6,6 +6,8 @@ import { expect, it, vi } from 'vitest'
 
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { CalendarRecurrence, Settings, Shortcut } from '../src/shared/api'
+import { Sessions } from '../src/main/sessions'
+import { llmProvider } from '../src/main/sessions/provider'
 import { VpnSessionMonitor } from '../src/main/sessions/vpn-monitor'
 import { isDue } from '../src/shared/schedule'
 
@@ -45,6 +47,35 @@ it('updates open windows when settings.json is replaced outside GeckIt', async (
     expect(changed).toHaveLength(2)
   } finally {
     stop()
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
+it('reads a column chosen by an earlier build as that column ticked, and In review as every column', () => {
+  loadVpnSettings({ boardColumn: 'done' } as Partial<Settings>)
+  try {
+    expect(getSettings().boardColumns).toEqual(['done'])
+    expect(getSettings()).not.toHaveProperty('boardColumn')
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+  loadVpnSettings({ boardColumn: 'review' } as Partial<Settings>)
+  try {
+    expect(getSettings().boardColumns).toEqual([])
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
+it('reads a card an earlier build put in In review as In progress', async () => {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-review-notes-'))
+  try {
+    writeFileSync(join(state.folder, 'sessions.json'), JSON.stringify({ a: { title: 'Was in review', status: 'review', moves: [{ status: 'review', at: 1 }] }, b: { status: 'done' } }))
+    const { notesStore } = await import('../src/main/store')
+    const notes = notesStore().all()
+    expect(notes['a']).toEqual({ title: 'Was in review', moves: [{ status: 'review', at: 1 }] })
+    expect(notes['b']).toEqual({ status: 'done' })
+  } finally {
     rmSync(state.folder, { recursive: true, force: true })
   }
 })
@@ -278,5 +309,83 @@ it('loads legacy builtin model settings and persists independent model choices a
     expect(providerModel(restarted.getSettings(), 'plugin:opencode-ollama')).toBe('ollama/qwen3:8b')
   } finally {
     rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
+it('persists prepared copies and edited empty drafts through real Notes reloads without provider work', async () => {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-prepared-copy-'))
+  const { notesStore } = await import('../src/main/store')
+  const provider = {
+    ...llmProvider({}, 'claude'),
+    id: 'plugin:prepared' as const,
+    family: 'plugin:prepared' as const,
+    available: true,
+    nativeGoals: true,
+    list: async () => [],
+    create: vi.fn(async () => 'plugin:prepared:real'),
+    read: vi.fn(async () => undefined),
+    goal: vi.fn(async () => undefined),
+    hold: vi.fn<ReturnType<typeof llmProvider>['hold']>(),
+    delete: vi.fn(async () => false),
+  }
+  const make = (notes: ReturnType<typeof notesStore>): Sessions => new Sessions({
+    notes, plugins: [provider], changed: () => undefined, items: () => undefined,
+    account: () => undefined, notify: () => undefined,
+    disk: { list: async () => [], read: async () => undefined, has: async () => false },
+    usage: async () => ({ windows: new Map() }),
+  })
+  vi.useFakeTimers()
+  try {
+    const original = notesStore()
+    const first = make(original)
+    const id = first.prepare({ provider: 'plugin:prepared', root: '/work/copy', mode: 'plan', model: 'initial', text: 'Overview and /saved.md' })
+    expect(readFileSync(join(state.folder, 'sessions.json'), 'utf8')).toContain('Overview and /saved.md')
+    first.savePreparedDraft(id, { text: '', model: 'edited', reasoning: 'high' })
+    await vi.advanceTimersByTimeAsync(250)
+    first.dispose()
+    const reread = notesStore()
+    expect(reread).not.toBe(original)
+    expect(reread.all()[id]).toMatchObject({ prepared: { text: '' }, model: 'edited', reasoning: 'high', unborn: '/work/copy' })
+    const restarted = make(reread)
+    expect(await restarted.list(['/work/copy'])).toMatchObject([{ id, prepared: true, chosen: 'edited', reasoning: 'high', mode: 'plan' }])
+    expect(restarted.preparedDraft(id)).toBe('')
+    expect(await restarted.items(id)).toEqual([])
+    restarted.watching(id)
+    await restarted.resumeQueues()
+    expect(provider.create).not.toHaveBeenCalled()
+    expect(provider.read).not.toHaveBeenCalled()
+    expect(provider.goal).not.toHaveBeenCalled()
+    expect(provider.hold).not.toHaveBeenCalled()
+    expect(reread.all()[id]?.queued).toBeUndefined()
+    expect(await restarted.remove([id])).toEqual([id])
+    expect(provider.delete).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(250)
+    restarted.dispose()
+    const deleted = make(notesStore())
+    expect(await deleted.list(['/work/copy'])).toEqual([])
+    deleted.dispose()
+  } finally {
+    vi.useRealTimers()
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
+it('does not publish a prepared copy if its initial Notes write fails', async () => {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-prepared-failure-'))
+  const { notesStore } = await import('../src/main/store')
+  const originalFolder = state.folder
+  const notes = notesStore()
+  const changed = vi.fn()
+  const sessions = new Sessions({ notes, changed, items: () => undefined, account: () => undefined, notify: () => undefined })
+  try {
+    writeFileSync(join(originalFolder, 'not-a-directory'), '')
+    state.folder = join(originalFolder, 'not-a-directory')
+    expect(() => sessions.prepare({ root: '/work', mode: 'manual', text: 'Keep this only if saved' })).toThrow()
+    expect(notes.all()).toEqual({})
+    expect(changed).not.toHaveBeenCalled()
+  } finally {
+    sessions.dispose()
+    state.folder = originalFolder
+    rmSync(originalFolder, { recursive: true, force: true })
   }
 })

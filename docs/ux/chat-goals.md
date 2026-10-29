@@ -53,7 +53,7 @@ stateDiagram-v2
 | Editing | Press Save with nonempty text and the session accepts | Goal active | Updated goal text |
 | Editing | Press Clear goal and the session accepts | No goal | "Goal" |
 | Editing | Press Cancel, Escape, or outside | Previous state | No change to the goal or message draft |
-| Goal active | Codex or Claude completes the goal, automatically | No goal | Goal control returns to "Goal"; card moves to In review unless moved by hand |
+| Goal active | Codex or Claude completes the goal, automatically | No goal | Goal control returns to "Goal"; card shows "Goal reached" and stays in its column (since 2026-10-29, `board-columns.md`) |
 | Editing | Session rejects Save or Clear | Previous state | Existing goal and chat error |
 
 ## 5. What stays quiet

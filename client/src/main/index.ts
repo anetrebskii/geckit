@@ -39,6 +39,7 @@ import type {
   CutOff,
   ErrorAnswer,
   ChatSession,
+  PreparedConversationDraft,
   ClaudeTransport,
   ClaudeAccount,
   CorrectRequest,
@@ -245,7 +246,7 @@ function buildPlans(): Plans {
 let worn = -1
 /** What the conversations are doing, as the gecko in the tray shows it. */
 let pose: GeckoPose = 'asleep'
-/** The conversations the gecko counted last, so a card arriving in In review is seen once. */
+/** The conversations the gecko counted last, so a goal just reached is seen once. */
 let counted: readonly ChatSession[] = []
 
 const badge = (): void => {
@@ -1397,6 +1398,9 @@ function wire(): void {
   // The window asks first, in its own words; by here it has been answered.
   ipcMain.handle('chat:delete', (_event, ids: readonly string[]) => deleteChats(ids))
   ipcMain.handle('chat:items', (_event, id: string) => sessions?.items(id) ?? [])
+  ipcMain.handle('chat:schedule', (_event, message: SessionMessage) => scheduleTask(message))
+  ipcMain.handle('chat:preparedDraft', (_event, id: string) => sessions?.preparedDraft(id))
+  ipcMain.handle('chat:savePreparedDraft', (_event, id: string, change: PreparedConversationDraft) => sessions?.savePreparedDraft(id, change))
   ipcMain.handle('chat:links', (_event, id: string) => sessions?.links(id) ?? [])
   ipcMain.handle('chat:waiting', (_event, id: string) => waitingCard(id))
   // Offered once a start: a window opened again later is not asked again.
@@ -1592,6 +1596,11 @@ let awake: number | undefined
  */
 const phoneSettings = (settings: Settings): Settings => ({ ...settings, profile: '', chatProjects: [], chatAll: true })
 
+function scheduleTask(message: SessionMessage): string {
+  if (sessions === undefined) throw new Error('Conversations are not ready yet. Try again.')
+  return sessions.schedule(message)
+}
+
 /** What the phone may ask, less what only makes sense at this Mac: files opened in its apps, its Finder, its terminal. */
 function phoneCalls(): Record<string, PhoneCall> {
   const held = (): Sessions | undefined => sessions
@@ -1630,6 +1639,9 @@ function phoneCalls(): Record<string, PhoneCall> {
       rememberProject(root)
     },
     'chat.items': (id: string) => held()?.items(id) ?? [],
+    'chat.schedule': (message: SessionMessage) => scheduleTask(message),
+    'chat.preparedDraft': (id: string) => held()?.preparedDraft(id),
+    'chat.savePreparedDraft': (id: string, change: PreparedConversationDraft) => held()?.savePreparedDraft(id, change),
     'chat.links': (id: string) => held()?.links(id) ?? [],
     'chat.waiting': (id: string) => waitingCard(id),
     'chat.search': (asked: string, root: string | undefined) =>

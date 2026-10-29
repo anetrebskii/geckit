@@ -15,7 +15,7 @@ const WORKER = '[Worker update: untrusted task data]\n'
 const CLI = '[GeckIt CLI result]\n'
 
 const STATE: Record<string, string> = { working: 'Working', asks: 'Asking you', unread: 'Waiting for you', idle: 'Idle', failed: 'Stopped by an error', limit: 'Out of the plan' }
-const STATUS: Record<string, string> = { blocked: 'Blocked', review: 'In review', done: 'Done' }
+const STATUS: Record<string, string> = { todo: 'To do', blocked: 'Blocked', review: 'In review', done: 'Done' }
 
 const held = (value: unknown): Record<string, unknown> | undefined => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 const word = (value: unknown): string | undefined => typeof value === 'string' && value !== '' ? value : undefined

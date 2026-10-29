@@ -392,7 +392,7 @@ export class ManagerOperations {
       if (command === 'stop') { this.#deps.sessions.stop(id); return JSON.stringify({ id, stopRequested: true }) }
       if (command === 'mark') {
         const status = required(flags, '--status')
-        if (status !== 'progress' && status !== 'review' && status !== 'blocked' && status !== 'done') throw new Error('Status must be progress, review, blocked or done.')
+        if (status !== 'progress' && status !== 'todo' && status !== 'blocked' && status !== 'done') throw new Error('Status must be todo, progress, blocked or done.')
         this.#deps.sessions.mark(id, status === 'progress' ? undefined : status)
         return JSON.stringify({ id, status })
       }

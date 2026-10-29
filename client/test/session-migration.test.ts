@@ -16,7 +16,7 @@ const CHILD = '22222222-2222-4222-8222-222222222222'
 const TARGET = 'codex:019f0000-0000-7000-8000-000000000001'
 const CHILD_TARGET = 'codex:019f0000-0000-7000-8000-000000000002'
 const IMPORTS: SessionImport[] = [{ source: SOURCE, target: TARGET }, { source: CHILD, target: CHILD_TARGET }]
-const NOTE: SessionNote = { title: 'Finished work', renamed: true, mode: 'manual', here: true, unread: false, shown: true, hidden: false, status: 'done', created: 100, seen: 300, moves: [{ status: 'progress', at: 100 }, { status: 'review', at: 200 }, { status: 'done', at: 300 }] }
+const NOTE: SessionNote = { title: 'Finished work', renamed: true, mode: 'manual', here: true, unread: false, shown: true, hidden: false, status: 'done', created: 100, seen: 300, moves: [{ status: 'progress', at: 100 }, { status: 'todo', at: 200 }, { status: 'done', at: 300 }] }
 const folders: string[] = []
 
 function fixture(notes: Readonly<Record<string, SessionNote>>, settings: Partial<Settings> = {}): { folder: string; manifest: string } {
@@ -51,7 +51,7 @@ describe('Claude conversation metadata imported into Codex', () => {
   })
 
   it('keeps changes already made to the Codex conversation and its chosen model', () => {
-    const target: SessionNote = { title: 'Codex title', status: 'review', model: 'gpt-6.1-sol', reasoning: 'high', moves: [{ status: 'review', at: 500 }] }
+    const target: SessionNote = { title: 'Codex title', status: 'todo', model: 'gpt-6.1-sol', reasoning: 'high', moves: [{ status: 'todo', at: 500 }] }
     const result = sessionMigration({ [SOURCE]: NOTE, [TARGET]: target }, {}, IMPORTS)
     expect(result.notes[TARGET]).toMatchObject({ ...target, created: 100, importedFrom: SOURCE, importedMetadata: 1 })
   })
@@ -70,9 +70,9 @@ describe('Claude conversation metadata imported into Codex', () => {
   })
 
   it('repairs the shallow importer history and removes its synthetic move at import time', () => {
-    const target: SessionNote = { ...(NOTE.title === undefined ? {} : { title: NOTE.title }), importedFrom: SOURCE, created: 1000, status: 'review', moves: [{ status: 'done', at: 1000 }, { status: 'review', at: 1100 }] }
+    const target: SessionNote = { ...(NOTE.title === undefined ? {} : { title: NOTE.title }), importedFrom: SOURCE, created: 1000, status: 'todo', moves: [{ status: 'done', at: 1000 }, { status: 'todo', at: 1100 }] }
     const result = sessionMigration({ [SOURCE]: NOTE, [TARGET]: target }, {}, IMPORTS)
-    expect(result.notes[TARGET]).toMatchObject({ created: 100, status: 'review', moves: [...(NOTE.moves ?? []), { status: 'review', at: 1100 }] })
+    expect(result.notes[TARGET]).toMatchObject({ created: 100, status: 'todo', moves: [...(NOTE.moves ?? []), { status: 'todo', at: 1100 }] })
   })
 
   it('does not restore an old Done status when a migrated conversation was moved back to In progress', () => {
@@ -87,10 +87,10 @@ describe('Claude conversation metadata imported into Codex', () => {
 
   it('does not use the old importer timestamp as an unknown creation or completion date', () => {
     const source: SessionNote = { title: 'Old work', status: 'done' }
-    const target: SessionNote = { ...source, importedFrom: SOURCE, created: 1000, moves: [{ status: 'done', at: 1000 }, { status: 'review', at: 1100 }], status: 'review' }
+    const target: SessionNote = { ...source, importedFrom: SOURCE, created: 1000, moves: [{ status: 'done', at: 1000 }, { status: 'todo', at: 1100 }], status: 'todo' }
     const result = sessionMigration({ [SOURCE]: source, [TARGET]: target }, {}, IMPORTS)
     expect(result.notes[TARGET]?.created).toBeUndefined()
-    expect(result.notes[TARGET]?.moves).toEqual([{ status: 'review', at: 1100 }])
+    expect(result.notes[TARGET]?.moves).toEqual([{ status: 'todo', at: 1100 }])
   })
 
   it('preserves later favorites and ordering after the app adds original Claude IDs back to its board', () => {
@@ -141,7 +141,7 @@ describe('Claude conversation metadata imported into Codex', () => {
   })
 
   it('migrates the running app snapshot rather than stale disk data and replaces its cached notes', () => {
-    const { folder, manifest } = fixture({ [SOURCE]: { status: 'review' } })
+    const { folder, manifest } = fixture({ [SOURCE]: { status: 'todo' } })
     const notes = memoryNotes()
     notes.set(SOURCE, NOTE)
     let settings: Partial<Settings> = { ...DEFAULT_SETTINGS, favorites: [SOURCE] }

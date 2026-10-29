@@ -336,7 +336,7 @@ function Editor({
         <span className="shortcut-next">
           {(draft.goal ?? '').trim() === ''
             ? `No goal: the run stops when ${isCodexProvider(provider) ? 'Codex' : 'Claude'} is done, and the card stays In progress.`
-            : `${isCodexProvider(provider) ? 'Codex' : 'Claude'} keeps working until this holds, then the card goes to In review.`}
+            : `${isCodexProvider(provider) ? 'Codex' : 'Claude'} keeps working until this holds, then the card shows Goal reached.`}
         </span>
       </div>
 

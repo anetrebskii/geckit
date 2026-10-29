@@ -1,4 +1,5 @@
 import type { ChatSession } from '../shared/api'
+import { inProgress } from '../shared/api'
 import { ordered } from '../shared/order'
 
 /**
@@ -11,10 +12,6 @@ import { ordered } from '../shared/order'
 export type Standing = Pick<ChatSession, 'id' | 'state' | 'status' | 'at' | 'question'> & {
   /** Has queued messages that are its own to send, with no turn running. */
   readonly waiting: boolean
-}
-
-export function inProgress(status: ChatSession['status']): boolean {
-  return status !== 'review' && status !== 'done'
 }
 
 /** How many slots are taken: one for each conversation working. A general question takes none. */

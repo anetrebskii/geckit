@@ -35,9 +35,9 @@ Working in terminal tabs, it is easy to miss a conversation that is waiting for 
   <img src="docs/screenshots/board-light.png" alt="The board: Claude Code conversations from three projects as cards in In progress, In review and Done">
 </picture>
 
-- Three columns: In progress, In review, Done. A card is dragged from one to the next, and Done is grouped by the day. A Columns control in the top bar shows one of them on its own across the whole board.
+- Three columns: To do, In progress, Done. A card is dragged from one to the next, and To do is ordered by hand, and Done is grouped by the day a card was closed. View options in the top bar shows any of them, one or several.
 - A card shows its project, whether the assistant is working or waiting for you, its goal and links from the conversation.
-- New task starts a conversation in a project, with an optional goal. The assistant keeps working until the goal holds, then the card moves to In review by itself.
+- New task starts a conversation in a project, with an optional goal, or plans it in To do without sending. The assistant keeps working until the goal holds, then the card shows Goal reached and stays where it is.
 - All projects on one board, or one project at a time with Cmd+K.
 - Cmd+click or Shift+click picks several cards, and they are moved, hidden or deleted together. Hidden conversations are behind their own button in the top bar.
 - A conversation keeps its process for ten minutes after it answers; the card's menu lets it go sooner, and the next message takes it up again from its file.

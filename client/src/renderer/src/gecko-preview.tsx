@@ -35,7 +35,7 @@ const poses = [
   { key: 'asleep', name: 'Asleep', says: 'nothing working, nothing waiting' },
   { key: 'working', name: 'Working', says: 'at least one working' },
   { key: 'waiting', name: 'Waiting', says: '2 waiting for you' },
-  { key: 'review', name: 'Moved to review', says: 'a card just went to In review' },
+  { key: 'review', name: 'Goal reached', says: "a card's goal was just reached" },
 ] as const
 const trays = ['asleep', 'working', 'waiting'] as const
 
@@ -48,7 +48,7 @@ const chat: Chat = {
   mode: 'auto', transport: 'stream', provider: 'claude', showProviders: true, reasoning: '', setReasoning: noop, model: '', working: true, focusSeed: 0, chosen: [session.root],
   setScope: noop, alsoScope: noop, choose: noop, setRoot: noop, addProject: noop, forgetProject: noop, open: noop, show: noop, goTo: noop, dismiss: noop, startNew: noop,
   setDraft: noop, addFiles: noop, dropPicture: noop, setMode: noop, setModel: noop, setProvider: noop, askModels: noop,
-  send: noop, ask: async () => undefined, startTask: async () => undefined, say: noop, answer: noop, stop: noop,
+  send: noop, ask: async () => undefined, startTask: async () => undefined, planTask: async () => undefined, say: noop, answer: noop, stop: noop,
   unqueue: noop, injectQueued: async () => undefined, requeue: noop, reorderQueued: noop,
   delegate: noop, stopShell: noop, typeShell: noop, toBackground: noop, stopTask: noop, clearTask: noop, tasksShown: false, showTasks: noop, compacting: undefined, setCompacting: noop,
   rename: noop, mark: noop, hide: noop, keep: noop, remove: noop, terminal: noop, copyTerminal: async () => false, letGo: noop, refresh: noop,
@@ -65,7 +65,7 @@ const built: readonly { readonly key: string; readonly name: string; readonly sa
   { key: 'look-left', name: 'Eyes on the cursor', says: 'down and to the left', pose: 'waiting', shown: 'waiting', count: 1, look: [{ x: -12, y: 10 }, { x: -12, y: 10 }] },
   { key: 'pet', name: 'Hovered', says: 'the head bends, pre-drawn', pose: 'waiting', shown: 'waiting', count: 1, petting: true, tilt: 7 },
   { key: 'dozing', name: 'Dozed off', says: '5 min left alone; the count stays', pose: 'waiting', shown: 'asleep', count: 2 },
-  { key: 'hop', name: 'Moved to review', says: 'the happy hop', pose: 'asleep', shown: 'asleep', hopping: true },
+  { key: 'hop', name: 'Goal reached', says: 'the happy hop', pose: 'asleep', shown: 'asleep', hopping: true },
   { key: 'done', name: 'After the hop', says: 'until it dozes', pose: 'asleep', shown: 'done' },
   { key: 'look', name: 'Menu open', says: 'eyes on the item in focus', pose: 'working', shown: 'look', look: [{ x: 14, y: -6 }, { x: 14, y: -6 }] },
   { key: 'catch', name: 'Files over it', says: 'hands up, eyes on the file', pose: 'working', shown: 'catch', look: [{ x: 4, y: -15 }, { x: 4, y: -15 }] },

@@ -13,10 +13,10 @@ describe('the order of In progress', () => {
     expect(keptOrder(['a', 'b'], all)).toEqual(['d', 'c', 'a', 'b'])
   })
 
-  it('takes out one gone to review or done, and keeps one it does not see', () => {
+  it('takes out one gone to To do or Done, and keeps one it does not see', () => {
     const all = [
       { id: 'a', at: 1 },
-      { id: 'b', at: 2, status: 'review' as const },
+      { id: 'b', at: 2, status: 'todo' as const },
     ]
     expect(keptOrder(['x', 'b', 'a'], all)).toEqual(['x', 'a'])
   })

@@ -847,7 +847,7 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
-/* What stands in a project, beside what waits in it: the board's In progress and In review. */
+/* What stands in a project, beside what waits in it: the board's In progress and To do. */
 .project-count {
   display: flex;
   flex-shrink: 0;
@@ -860,10 +860,6 @@ textarea {
   background: var(--bg-sunken);
   border-radius: 9px;
   font-variant-numeric: tabular-nums;
-}
-
-.project-count.review {
-  color: var(--text);
 }
 
 .waits-count.asks {
@@ -2836,12 +2832,6 @@ button.tag:hover {
   border-color: var(--border-strong);
 }
 
-.tag.review {
-  color: var(--warning-text);
-  background: var(--warning-bg);
-  border-color: transparent;
-}
-
 .tag.blocked {
   color: var(--danger);
   border-color: currentColor;
@@ -2853,10 +2843,6 @@ button.tag:hover {
 
 .row .foot .tag + .tag {
   margin-left: -4px;
-}
-
-.picker.marked.review {
-  color: var(--warning-text);
 }
 
 .picker.marked.blocked {
@@ -3795,14 +3781,6 @@ button.request-open:hover .request-title {
   font-size: 12px;
   color: var(--text-dim);
   border-top: 1px solid var(--border);
-}
-
-.state-said.said-review {
-  color: var(--review-solid);
-}
-
-.state-said.said-review .state-dot {
-  background: var(--review-solid);
 }
 
 .state-said.said-done {
@@ -6714,6 +6692,10 @@ html.framed .board-head {
   color: var(--accent);
 }
 
+.board-card-goal.met {
+  color: var(--success-text);
+}
+
 /* What is happening in it: Claude working, waiting for you, what runs in the background. */
 .board-card-state {
   display: flex;
@@ -7410,7 +7392,7 @@ html.phone button:active:not(:disabled) {
   transition: width var(--settle) var(--ease);
 }
 
-.phone-action.review {
+.phone-action.todo {
   background: var(--review-solid);
 }
 
@@ -7586,6 +7568,10 @@ html.phone button:active:not(:disabled) {
   font-size: 12px;
   background: var(--fill);
   border-radius: 4px;
+}
+
+.phone-row-tag.met {
+  color: var(--success-text);
 }
 
 .phone-row-tag.blocked {

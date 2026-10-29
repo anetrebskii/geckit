@@ -52,7 +52,7 @@ function Preview(): React.JSX.Element {
     setScope: noop, alsoScope: noop, choose: noop, setRoot: noop, addProject: noop, forgetProject: noop, open: noop, show: noop, goTo: noop, dismiss: noop, startNew: noop,
     setDraft, addFiles: noop, dropPicture: noop, setMode, setModel, setProvider: noop, askModels: noop,
     send: () => { if (draft.trim() === '') return; setQueued((rows) => [...rows, { id: `queued:${String(Date.now())}`, text: draft, images: 0 }]); setDraft('') },
-    ask: async () => undefined, startTask: async () => undefined, say: noop, answer: noop, stop: noop,
+    ask: async () => undefined, startTask: async () => undefined, planTask: async () => undefined, say: noop, answer: noop, stop: noop,
     unqueue: (id) => setQueued((rows) => rows.filter((row) => row.id !== id)),
     injectQueued: async (id) => {
       const selected = shownQueue.find((row) => row.id === id)

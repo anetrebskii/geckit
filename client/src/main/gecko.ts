@@ -12,7 +12,7 @@ import { closeGecko, closeRing, geckoWindow, keepGecko, openChat, openRing, reve
 
 /** The floating gecko: its window while it is switched on and the screen is not locked, what it is told, its menu and what each choice does, and the files dropped on it. */
 
-let state: GeckoState = { pose: 'asleep', waiting: [], review: false }
+let state: GeckoState = { pose: 'asleep', waiting: [], reached: false }
 /** The waiting one the menu opened last, so the next time it opens the next. */
 let opened: string | undefined
 let locked = false
@@ -28,7 +28,7 @@ export function tellGecko(next: GeckoState): void {
   const window = shownGecko()
   if (window === undefined) return
   if (was.pose !== next.pose || was.count !== next.waiting.length) window.webContents.send('gecko:state', view())
-  if (next.review) window.webContents.send('gecko:hop')
+  if (next.reached) window.webContents.send('gecko:hop')
 }
 
 let polling: ReturnType<typeof setTimeout> | undefined

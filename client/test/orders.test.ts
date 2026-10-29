@@ -46,8 +46,8 @@ describe('reading what the model answered', () => {
   })
 
   it('reads one wrapped in a fence, or with a word in front of it', () => {
-    const fenced = '```json\n[{"do":"mark","chat":"a1","status":"review"}]\n```'
-    expect(ordersOf(fenced)).toEqual([{ do: 'mark', chat: 'a1', status: 'review' }])
+    const fenced = '```json\n[{"do":"mark","chat":"a1","status":"todo"}]\n```'
+    expect(ordersOf(fenced)).toEqual([{ do: 'mark', chat: 'a1', status: 'todo' }])
     expect(ordersOf('Sure, here you go: [{"do":"open","chat":"a1"}]')).toEqual([{ do: 'open', chat: 'a1' }])
   })
 
@@ -72,7 +72,7 @@ describe('carrying the orders out', () => {
       [
         { do: 'start', project: 'radar63', text: 'add a push when a drone is near' },
         { do: 'say', chat: 'b2', text: 'yes, go ahead' },
-        { do: 'mark', chat: 'a1', status: 'review' },
+        { do: 'mark', chat: 'a1', status: 'todo' },
       ],
       PROJECTS,
       CHATS,
@@ -81,12 +81,12 @@ describe('carrying the orders out', () => {
     expect(did).toEqual([
       'start /work/radar63 add a push when a drone is near',
       'say b2 yes, go ahead',
-      'mark a1 review',
+      'mark a1 todo',
     ])
     expect(done).toEqual([
       'Started in radar63: add a push when a drone is near',
       'Said in Phone edit looks weird: yes, go ahead',
-      'Marked Radar push notifications as review',
+      'Marked Radar push notifications as To do',
     ])
   })
 
@@ -133,7 +133,7 @@ describe('what it says it will do, before anything is done', () => {
           goal: 'a push arrives on the phone',
         },
         { do: 'say', chat: 'b2', text: 'yes, go ahead' },
-        { do: 'mark', chat: 'a1', status: 'review' },
+        { do: 'mark', chat: 'a1', status: 'todo' },
       ],
       PROJECTS,
       CHATS,
@@ -148,7 +148,7 @@ describe('what it says it will do, before anything is done', () => {
         goal: 'a push arrives on the phone',
       },
       { icon: 'chat', head: 'Say in Phone edit looks weird', text: 'yes, go ahead' },
-      { icon: 'eye', head: 'Mark Radar push notifications as review' },
+      { icon: 'todo', head: 'Mark Radar push notifications as To do' },
     ])
   })
 

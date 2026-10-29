@@ -169,7 +169,7 @@ export function Views({ chat }: { chat: Chat }): React.JSX.Element {
   )
 }
 
-export const STATUS_ICONS: Record<SessionStatus, string> = { review: 'eye', blocked: 'blocked', done: 'done' }
+export const STATUS_ICONS: Record<SessionStatus, string> = { todo: 'todo', blocked: 'blocked', done: 'done' }
 
 /**
  * One conversation in the list.
