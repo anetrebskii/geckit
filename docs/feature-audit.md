@@ -10,6 +10,19 @@ GeckIt gives a person one place to supervise work across AI conversations, proje
 
 ## Product feature list
 
+### Conversation export and continuation - 2026-10-29
+
+Implemented on local branch `feat/conversation-export`, not released. User approved the Markdown-export and new-chat workflow with "Супер. Сделай это", then requested "Следом, сделай возможность копирования без отправки сообщения в чат".
+
+- Portable formatter: `client/src/shared/conversation-export.ts`; complete available normalized items, safe Markdown fences, metadata, deterministic overview and image bytes/references. Upstream compaction or shortening is explicitly qualified.
+- Persistence and provider-neutral continuation: `client/src/main/conversation-export.ts`; private app-owned UTF-8 files, existing SSH upload, enabled/host-compatible target validation and existing guarded session send. Historical tools/goals are not replayed or activated.
+- Source read: `Sessions.snapshot` in `client/src/main/sessions/index.ts`; reads full main-side history, independent of phone pagination.
+- Prepared copy: `Sessions.prepare`, `preparedDraft` and `savePreparedDraft` persist an app-owned dormant card and editable initial prompt with target settings. Copying does not create a provider thread, start/send a turn or enqueue runnable work. Reopening restores the saved draft; explicit Send enters normal guarded sending. The independent Create and send action retains immediate continuation.
+- Desktop and phone entries/dialog: `Chat.tsx`, `Composer.tsx`, `PhoneNav.tsx`, `ConversationTransfer.tsx`; desktop entry is a branch icon beside microphone/Send, phone entry stays in the conversation menu. Main IPC, preload and phone allowlist expose the same contract.
+- Evidence: `client/test/conversation-export.test.ts`, snapshot/prepared-copy lifecycle and guarded-send regressions in `sessions.test.ts`, real Notes disk-reload/write-failure tests in `store.test.ts`, and phone bridge regression. Full suite: 1397 tests pass; typecheck/lint and desktop/phone builds pass.
+- Real local builtin Codex check: preparation and actual Notes reopen made zero native launches/creates/sends; one explicit Send with `gpt-6.1-sol` read the Markdown file and returned the exact canary absent from the inline prompt. Its actual native history was exported into a second persistent unsent copy with no further inference. Disposable harness and result are recorded in [verification](../specs/017-conversation-export/verification.md); no production settings or active app were changed.
+- Browser fixture uses actual Chat/preload/styles with synthetic Electron boundaries: `client/test/browser/conversation-export/README.md`. After initial browser restrictions, native Safari reviewed actual renderer desktop/phone light/dark layout, keyboard/focus, text scrolling, export error/retry, loading/pending lock, no-send copy, reload persistence and explicit Send with synthetic boundaries. Mandatory review remains partial: prototype phone, unavailable catalog, creation/send failure/retry and backdrop checks were blocked when the Safari window disappeared (`cgWindowNotFound`). Physical phone, other live providers and live SSH transfer remain unverified; no SSH hosts are configured and the host/test-folder question is pending. See [verification](../specs/017-conversation-export/verification.md).
+
 These are product workflows, rather than individual model capabilities. "Site" means the workflow is described on the live website. "Code" means it appears in the inspected source but is absent or only briefly mentioned on the homepage; it does not establish release availability.
 
 | GeckIt feature | What it gives the person | Evidence |

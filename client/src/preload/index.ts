@@ -9,7 +9,9 @@ import type {
   Folders,
   ChatFound,
   ChatSession,
+  ConversationContinuation,
   PreparedConversationDraft,
+  ConversationExport,
   ClaudeTransport,
   ClaudeAccount,
   ClaudeModel,
@@ -174,6 +176,9 @@ const geckit = {
     /** Nothing for the project is every conversation, in every project offered. */
     list: (root: string | undefined): Promise<ChatSession[]> => ipcRenderer.invoke('chat:list', root),
     items: (id: string): Promise<SessionItem[]> => ipcRenderer.invoke('chat:items', id),
+    exportConversation: (id: string): Promise<ConversationExport> => ipcRenderer.invoke('chat:exportConversation', id),
+    continueConversation: (request: ConversationContinuation): Promise<string> => ipcRenderer.invoke('chat:continueConversation', request),
+    copyConversation: (request: ConversationContinuation): Promise<string> => ipcRenderer.invoke('chat:copyConversation', request),
     /** A new task put in To do, nothing sent: its id. */
     schedule: (message: SessionMessage): Promise<string> => ipcRenderer.invoke('chat:schedule', message),
     preparedDraft: (id: string): Promise<string | undefined> => ipcRenderer.invoke('chat:preparedDraft', id),

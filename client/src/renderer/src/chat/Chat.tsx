@@ -18,6 +18,7 @@ import { EdgeInfo, PhoneNav } from './PhoneNav'
 import { Screen } from './Screen'
 import { FileView } from './FileView'
 import { Composer } from './Composer'
+import { ConversationTransfer } from './ConversationTransfer'
 import { NameField } from './NameField'
 import { projectColor } from '../../../shared/project-color'
 import { hostOf, isRemote } from '../../../shared/hosts'
@@ -96,6 +97,7 @@ export function Chat(): React.JSX.Element {
   const [naming, setNaming] = useState<string | undefined>()
   // Asking whether to leave this conversation for a new one about something else.
   const [clearing, setClearing] = useState(false)
+  const [transferring, setTransferring] = useState<ChatSession>()
   // The conversation whose terminal command was just copied, for the check that says so.
   const [copied, setCopied] = useState<string | undefined>()
   // The board's New task form is open.
@@ -316,6 +318,7 @@ export function Chat(): React.JSX.Element {
     }
 
     const key = (event: KeyboardEvent): void => {
+      if (transferring !== undefined) return
       if (clearing || chat.compacting !== undefined) {
         if (event.key === 'Escape') {
           event.preventDefault()
@@ -454,7 +457,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys, managing, clearing, making, asking, formStarting, cut])
+  }, [chat, switching, setting, keys, managing, clearing, transferring, making, asking, formStarting, cut])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -885,7 +888,7 @@ export function Chat(): React.JSX.Element {
           </Files>
         )}
 
-        <Composer chat={chat} />
+        <Composer chat={chat} onContinue={() => setTransferring(chat.session)} />
         {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
       </div>
 
@@ -968,6 +971,10 @@ export function Chat(): React.JSX.Element {
           </div>
         </div>
       ) : null}
+      {transferring === undefined ? null : <ConversationTransfer chat={chat} session={transferring} onClose={() => setTransferring(undefined)} onFile={(path) => {
+        if (ON_PHONE) { setTransferring(undefined); setViewing({ root: '', path }) }
+        else window.geckit.chat.openFile('', path)
+      }} />}
       {clearing && chat.session !== undefined ? (
         <div className="dialog-scrim" onMouseDown={() => setClearing(false)}>
           <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>

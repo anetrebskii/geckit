@@ -11,6 +11,8 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { DeleteSheet, HideSheet, Rename } from './PhoneBoard'
 import { contextLine, PhoneInfo } from './PhoneInfo'
+import { ConversationTransfer } from './ConversationTransfer'
+import { FileView } from './FileView'
 import { HostDot } from './HostParts'
 import { projectLabel } from './project'
 import { startedCount } from './started'
@@ -43,6 +45,8 @@ export function PhoneNav({
   const [deleting, setDeleting] = useState(false)
   const [hiding, setHiding] = useState(false)
   const [atStarted, setAtStarted] = useState(false)
+  const [transferring, setTransferring] = useState(false)
+  const [exportPath, setExportPath] = useState<string>()
   const nav = useRef<HTMLDivElement>(null)
   // Back from a conversation is the board, as its own back button is.
   useBack(() => chat.open({ kind: 'new' }), nav)
@@ -112,6 +116,7 @@ export function PhoneNav({
               ? []
               : [{ value: 'links', label: 'Links', says: `${String(links.length)} in this conversation`, icon: 'link' }]),
             { value: 'find', label: 'Find in conversation', icon: 'search' },
+            { value: 'transfer', label: 'Continue with another model', icon: 'branch' },
             { value: 'info', label: 'Conversation', says: isCodexProvider(chat.provider) ? 'Context, the plan and Clear' : 'Context, cost, the plan, Compact and Clear' },
             { value: 'rename', label: 'Rename', icon: 'pencil' },
             ...(chat.working ? [{ value: 'stop', label: 'Stop', says: `Interrupts ${isCodexProvider(chat.provider) ? 'Codex' : 'Claude'}; the conversation stays`, icon: 'stop' }] : []),
@@ -121,6 +126,7 @@ export function PhoneNav({
           onPick={(value) => {
             if (value === 'links') setListing(true)
             else if (value === 'find') onFind()
+            else if (value === 'transfer') setTransferring(true)
             else if (value === 'info') onInfo(true)
             else if (value === 'rename') setRenaming(true)
             else if (value === 'stop') chat.stop()
@@ -158,6 +164,8 @@ export function PhoneNav({
         />
       ) : null}
       {hiding && session !== undefined ? <HideSheet session={session} chat={chat} onClose={() => setHiding(false)} /> : null}
+      {transferring && session !== undefined ? <ConversationTransfer chat={chat} session={session} onClose={() => setTransferring(false)} onFile={(path) => { setTransferring(false); setExportPath(path) }} /> : null}
+      {exportPath === undefined ? null : <FileView root="" path={exportPath} onClose={() => setExportPath(undefined)} />}
       {deleting && session !== undefined ? <DeleteSheet session={session} chat={chat} onClose={() => setDeleting(false)} /> : null}
       {renaming && session !== undefined ? <Rename session={session} chat={chat} onClose={() => setRenaming(false)} /> : null}
     </div>

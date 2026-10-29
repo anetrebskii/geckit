@@ -45,6 +45,11 @@ function macWith(
         return answer(message.id, mac)
       }
       if (message.name === 'chat.items') return answer(message.id, all)
+      if (message.name === 'chat.exportConversation') return answer(message.id, { path: '/host/export.md', at: 1_000, count: all.length })
+      if (message.name === 'chat.continueConversation') return answer(message.id, 'codex:continued')
+      if (message.name === 'chat.copyConversation') return answer(message.id, 'codex:copy-test')
+      if (message.name === 'chat.preparedDraft') return answer(message.id, 'Prepared overview')
+      if (message.name === 'chat.savePreparedDraft') return answer(message.id, undefined)
       if (message.name === 'chat.steps') return answer(message.id, all.filter((one) => (second as string[]).includes(one.id)))
       if (message.name === 'chat.turns') {
         const folded = pendingLast(collapse(all))
@@ -102,6 +107,25 @@ describe('the phone over the link', () => {
     const both = await window.geckit.settings.set({ chatMode: 'plan', theme: 'system' })
     expect(both).toMatchObject({ chatMode: 'plan', theme: 'system', profile: 'f' })
     expect(asked.filter((one) => one === 'settings.set')).toEqual(['settings.set'])
+  })
+
+  it('exports full host history and relays continuation choices independently of the phone transcript', async () => {
+    const mac = macWith(Array.from({ length: 300 }, (_, index) => theirs(String(index))))
+    install(mac.link)
+    mac.calls.length = 0
+    expect(await window.geckit.chat.exportConversation('source')).toEqual({ path: '/host/export.md', at: 1_000, count: 300 })
+    const request = { source: 'source', provider: 'codex', model: 'gpt-target', text: 'Continue' } as const
+    expect(await window.geckit.chat.continueConversation(request)).toBe('codex:continued')
+    expect(await window.geckit.chat.copyConversation(request)).toBe('codex:copy-test')
+    expect(await window.geckit.chat.preparedDraft('codex:copy-test')).toBe('Prepared overview')
+    await window.geckit.chat.savePreparedDraft('codex:copy-test', { text: '', model: 'edited' })
+    expect(mac.calls.map(({ name, args }) => ({ name, args }))).toEqual([
+      { name: 'chat.exportConversation', args: ['source'] },
+      { name: 'chat.continueConversation', args: [request] },
+      { name: 'chat.copyConversation', args: [request] },
+      { name: 'chat.preparedDraft', args: ['codex:copy-test'] },
+      { name: 'chat.savePreparedDraft', args: ['codex:copy-test', { text: '', model: 'edited' }] },
+    ])
   })
 
   it('carries Codex account, model, reasoning and resumed conversation requests to the host', async () => {

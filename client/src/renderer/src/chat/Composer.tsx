@@ -157,7 +157,7 @@ function GoalEditor({ condition, onSave, onClear, onClose }: {
  * Whose plan is about to answer is said here and not in a settings page,
  * because here is where the question is asked.
  */
-export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
+export function Composer({ chat, onContinue }: { readonly chat: Chat; readonly onContinue?: () => void }): React.JSX.Element {
   const providerInfo = llmProviderInfo(chat.provider, chat.transport, chat.settings.providerPlugins)
   const providers = selectableProviders(chat.settings)
   const assistant = providerInfo.shortName
@@ -1162,6 +1162,20 @@ export function Composer({ chat }: { readonly chat: Chat }): React.JSX.Element {
               {host === undefined ? null : <HostDot state={host.state} />}
               {away}
             </span>
+          )}
+          {ON_PHONE || chat.session === undefined || onContinue === undefined ? null : (
+            <button
+              type="button"
+              className="icon-button"
+              title="Continue with another model"
+              aria-label="Continue with another model"
+              onClick={(event) => {
+                event.currentTarget.focus()
+                onContinue()
+              }}
+            >
+              <Icon name="branch" size={15} />
+            </button>
           )}
           {ON_PHONE || shownAway !== undefined ? null : (
             <button

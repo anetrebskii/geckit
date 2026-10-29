@@ -340,6 +340,43 @@ async function started(built: Built, mode: SessionMode = 'manual'): Promise<stri
   return id
 }
 
+describe('conversation snapshots', () => {
+  it('captures complete active history without changing source work, queue or goal', async () => {
+    const notes = memoryNotes()
+    const built = build({ notes })
+    const id = await started(built)
+    const entries: SessionItem[] = Array.from({ length: 300 }, (_, index) => ({ kind: 'theirs', id: `entry-${String(index)}`, text: `Complete output ${String(index)}` }))
+    built.fake.hear({ items: entries })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Keep this queued' })
+    notes.set(id, { ...notes.all()[id], goal: { condition: 'Keep the original goal', checks: 0 } })
+    const before = JSON.stringify(notes.all()[id])
+    const snapshot = await built.sessions.snapshot(id)
+    expect(snapshot.at).toBe(1_000)
+    expect(snapshot.items.filter((item) => item.kind === 'theirs')).toMatchObject(entries)
+    expect(snapshot.items.length).toBeGreaterThanOrEqual(300)
+    expect(snapshot.session).toMatchObject({ id, state: 'working', goal: { condition: 'Keep the original goal' }, queued: [{ text: 'Keep this queued' }] })
+    expect(JSON.stringify(notes.all()[id])).toBe(before)
+    expect(built.fake.sent).toHaveLength(1)
+    expect(built.fake.stopped).toBe(0)
+    expect(built.fake.ended).toBe(0)
+  })
+
+  it('refuses a missing source instead of exporting an empty file', async () => {
+    const built = build()
+    await expect(built.sessions.snapshot('missing')).rejects.toThrow('no longer available')
+  })
+
+  it('reads complete saved history from the provider and rejects an empty history', async () => {
+    const entries: SessionItem[] = Array.from({ length: 250 }, (_, index) => ({ kind: 'theirs', id: `saved-${String(index)}`, text: `Saved output ${String(index)}` }))
+    const built = build({ disk: { list: async () => [{ id: 'saved', title: 'Saved chat', stands: '', at: 1_000, driven: false }], read: async () => ({ items: entries, tasks: [] }), has: async () => true } })
+    await built.sessions.list([ROOT])
+    expect((await built.sessions.snapshot('saved')).items).toEqual(entries)
+    const empty = build({ disk: { list: async () => [{ id: 'empty', title: 'Empty chat', stands: '', at: 1_000, driven: false }], read: async () => ({ items: [], tasks: [] }), has: async () => true } })
+    await empty.sessions.list([ROOT])
+    await expect(empty.sessions.snapshot('empty')).rejects.toThrow('no available history')
+  })
+})
+
 describe('prepared conversation copies', () => {
   it('lists and reopens a prepared Codex copy without creating, reading, holding, queuing or starting work', async () => {
     const notes = memoryNotes()

@@ -17,6 +17,7 @@ import type {
   ChatFound,
   ChatSession,
   PreparedConversationDraft,
+  ConversationSnapshot,
   Lineup,
   HiddenChat,
   HiddenFolder,
@@ -1448,6 +1449,14 @@ export class Sessions {
       if ('reasoning' in change) live.reasoning = change.reasoning
     }
     if ('model' in change || 'reasoning' in change) this.#changed()
+  }
+
+  async snapshot(id: string): Promise<ConversationSnapshot> {
+    const items = await this.items(id)
+    const session = this.#listed().find((one) => one.id === id)
+    if (session === undefined) throw new Error('This conversation is no longer available.')
+    if (items.length === 0) throw new Error('This conversation has no available history to export.')
+    return { session, items, at: this.#now() }
   }
 
   async inspectManager(id: string): Promise<SessionItem[]> {

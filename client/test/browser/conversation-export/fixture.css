@@ -1,0 +1,10 @@
+#root { height: calc(100% - 36px); }
+#fixture { position: fixed; inset-inline: 0; bottom: 0; z-index: 9999; padding: 8px 12px; border-top: 1px solid var(--border); background: var(--bg-sunken); color: var(--text); font: 12px var(--font-ui); }
+#fixture details[open] { max-height: 38vh; overflow: auto; }
+#fixture summary { cursor: pointer; }
+#fixture p { margin-block: 8px; }
+.fixture-controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.fixture-controls label { display: inline-flex; gap: 4px; align-items: center; }
+#fixture button { padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text); font: inherit; }
+#fixture button:focus-visible, #fixture summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#evidence { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; margin-block-end: 0; }

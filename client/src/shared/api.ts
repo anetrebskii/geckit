@@ -552,6 +552,19 @@ export interface SessionMessage {
   readonly question?: boolean
 }
 
+export interface ConversationSnapshot extends Pick<ChatSession, 'at'> {
+  readonly session: ChatSession
+  readonly items: readonly SessionItem[]
+}
+
+export type ConversationExport = Extract<Uploaded, { readonly path: string }> & Pick<ConversationSnapshot, 'at'> & {
+  readonly count: number
+}
+
+export type ConversationContinuation = Required<Pick<SessionMessage, 'provider'>> & Pick<SessionMessage, 'model' | 'reasoning' | 'text'> & {
+  readonly source: ChatSession['id']
+}
+
 export type PreparedConversationDraft = Partial<Pick<SessionMessage, 'text' | 'model' | 'reasoning'>>
 
 /** A command typed after `!` in the composer. */

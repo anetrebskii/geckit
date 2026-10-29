@@ -39,7 +39,9 @@ import type {
   CutOff,
   ErrorAnswer,
   ChatSession,
+  ConversationContinuation,
   PreparedConversationDraft,
+  ConversationExport,
   ClaudeTransport,
   ClaudeAccount,
   CorrectRequest,
@@ -63,6 +65,7 @@ import type {
   SessionImage,
 } from '../shared/api'
 import track from './analytics'
+import { continueConversation, prepareConversation, writeConversationExport } from './conversation-export'
 import { checkVpnIp } from './vpn-ip'
 import { control } from './control'
 import { correct, stopCorrecting } from './correct'
@@ -1398,6 +1401,9 @@ function wire(): void {
   // The window asks first, in its own words; by here it has been answered.
   ipcMain.handle('chat:delete', (_event, ids: readonly string[]) => deleteChats(ids))
   ipcMain.handle('chat:items', (_event, id: string) => sessions?.items(id) ?? [])
+  ipcMain.handle('chat:exportConversation', (_event, id: string) => exportChatConversation(id))
+  ipcMain.handle('chat:continueConversation', (_event, request: ConversationContinuation) => continueChatConversation(request))
+  ipcMain.handle('chat:copyConversation', (_event, request: ConversationContinuation) => continueChatConversation(request, true))
   ipcMain.handle('chat:schedule', (_event, message: SessionMessage) => scheduleTask(message))
   ipcMain.handle('chat:preparedDraft', (_event, id: string) => sessions?.preparedDraft(id))
   ipcMain.handle('chat:savePreparedDraft', (_event, id: string, change: PreparedConversationDraft) => sessions?.savePreparedDraft(id, change))
@@ -1596,9 +1602,28 @@ let awake: number | undefined
  */
 const phoneSettings = (settings: Settings): Settings => ({ ...settings, profile: '', chatProjects: [], chatAll: true })
 
+async function exportChatConversation(id: string): Promise<ConversationExport> {
+  const held = sessions
+  if (held === undefined) throw new Error('Conversations are not ready yet. Try again.')
+  return writeConversationExport(await held.snapshot(id), join(app.getPath('userData'), 'conversation-exports'))
+}
+
 function scheduleTask(message: SessionMessage): string {
   if (sessions === undefined) throw new Error('Conversations are not ready yet. Try again.')
   return sessions.schedule(message)
+}
+
+async function continueChatConversation(request: ConversationContinuation, copy = false): Promise<string> {
+  const held = sessions
+  if (held === undefined) throw new Error('Conversations are not ready yet. Try again.')
+  const deps = {
+    directory: join(app.getPath('userData'), 'conversation-exports'),
+    settings: getSettings,
+    snapshot: (id: string) => held.snapshot(id),
+    send: (message: SessionMessage) => held.send(message),
+    upload: (root: string, path: string) => routes === undefined ? Promise.resolve({ problem: 'Hosts are not ready yet. Try again.' }) : hostUpload(routes, root, path),
+  }
+  return copy ? held.prepare(await prepareConversation(request, deps)) : continueConversation(request, deps)
 }
 
 /** What the phone may ask, less what only makes sense at this Mac: files opened in its apps, its Finder, its terminal. */
@@ -1639,6 +1664,9 @@ function phoneCalls(): Record<string, PhoneCall> {
       rememberProject(root)
     },
     'chat.items': (id: string) => held()?.items(id) ?? [],
+    'chat.exportConversation': (id: string) => exportChatConversation(id),
+    'chat.continueConversation': (request: ConversationContinuation) => continueChatConversation(request),
+    'chat.copyConversation': (request: ConversationContinuation) => continueChatConversation(request, true),
     'chat.schedule': (message: SessionMessage) => scheduleTask(message),
     'chat.preparedDraft': (id: string) => held()?.preparedDraft(id),
     'chat.savePreparedDraft': (id: string, change: PreparedConversationDraft) => held()?.savePreparedDraft(id, change),

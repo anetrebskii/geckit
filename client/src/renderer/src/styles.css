@@ -1520,6 +1520,97 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
   gap: 8px;
 }
 
+.dialog.conversation-transfer {
+  width: min(480px, 92vw);
+}
+
+.conversation-transfer > .new-task-label,
+.conversation-transfer > .new-task-models {
+  margin-block: 16px;
+}
+
+.conversation-transfer .new-task-where {
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+
+.conversation-transfer .new-task-text {
+  min-block-size: 64px;
+  max-block-size: 200px;
+}
+
+.conversation-transfer :is(.new-task-where, .new-task-text):focus {
+  border-color: var(--border);
+}
+
+.conversation-transfer .transfer-problem {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.transfer-export {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-block: 12px;
+}
+
+.transfer-export > button {
+  flex-shrink: 0;
+}
+
+.transfer-export > span {
+  min-inline-size: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.conversation-transfer .transfer-utilities {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.conversation-transfer .transfer-utilities > button {
+  padding-block: 6px;
+  color: var(--text-dim);
+  border-radius: var(--radius);
+}
+
+.conversation-transfer .transfer-utilities > button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.conversation-transfer .dialog-actions {
+  flex-wrap: nowrap;
+  margin-block-start: 12px;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--border);
+  white-space: normal;
+}
+
+.conversation-transfer .dialog-actions > .quiet {
+  flex-shrink: 0;
+}
+
+.conversation-transfer .dialog-actions > .primary {
+  min-inline-size: 0;
+}
+
+.conversation-transfer :is(button, select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .conversation-transfer .new-task-models {
+    flex-direction: column;
+  }
+}
+
 /* Hidden conversations: the folders scroll between the title and Close. */
 .dialog.hidden-dialog {
   display: flex;
