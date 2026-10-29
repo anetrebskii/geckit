@@ -12368,20 +12368,20 @@ button.manager-step-head:hover > svg {
 /* The waiting count on its corner, from one: it stays while the gecko dozes. */
 .gk-badge {
   position: absolute;
-  top: 3%;
-  right: 3%;
+  top: round(3cqh, 1px);
+  right: round(3cqw, 1px);
   box-sizing: border-box;
-  min-width: max(16px, 12.5cqmin);
-  height: max(16px, 12.5cqmin);
-  padding: 0 max(4px, 3.3cqmin);
-  border-radius: max(8px, 6.25cqmin);
+  min-width: round(max(16px, 12.5cqmin), 2px);
+  height: round(max(16px, 12.5cqmin), 2px);
+  padding: 0 round(max(4px, 3.3cqmin), 1px);
+  border-radius: 999px;
   color: #fff;
   background: #f08c1e;
-  box-shadow: 0 0 0 max(1.5px, 1cqmin) #fff;
+  box-shadow: 0 0 0 round(max(2px, 1cqmin), 1px) #fff;
   font-size: max(10px, 6.7cqmin);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  line-height: max(16px, 12.5cqmin);
+  line-height: round(max(16px, 12.5cqmin), 2px);
   text-align: center;
   animation: gk-pop 350ms var(--gk-spring);
 }
