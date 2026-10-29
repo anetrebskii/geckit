@@ -106,6 +106,7 @@ stateDiagram-v2
 
 ## 8. Edge cases
 
+- **Typing or streamed conversation text:** the board keeps its existing cards until board data changes; opening cards, their menus, selection, drag ordering and Save as a shortcut continue to use current state. Incoming session snapshots with no changed rows leave the displayed lists in place.
 - **An In review card from an earlier build:** read as In progress. The move it made stays in its history.
 - **A view saved by an earlier build** (In review, or one column): In review shows every column; one column becomes that column ticked.
 - **Planned with pictures:** Plan keeps the text and the goal only, so it is turned off while pictures or a recording are attached, with the tooltip "Pictures are sent at once; Start it, or plan without them".

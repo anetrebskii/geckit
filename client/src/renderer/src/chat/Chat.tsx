@@ -82,6 +82,7 @@ export function Chat(): React.JSX.Element {
   const [seek, setSeek] = useState<Seek | undefined>()
   // Finding in the conversation shown, asked for at a moment; another conversation opened puts the field away.
   const [finding, setFinding] = useState<{ readonly id: string; readonly at: number } | undefined>()
+  const closeFind = useCallback(() => setFinding(undefined), [])
   const find = (): void => {
     if (chat.shown.kind === 'session') setFinding({ id: chat.shown.id, at: Date.now() })
   }
@@ -882,7 +883,7 @@ export function Chat(): React.JSX.Element {
               onEarlier={chat.showEarlier}
               onSteps={chat.loadSteps}
               find={finding?.id === chat.itemsFor ? finding.at : undefined}
-              onFindClose={() => setFinding(undefined)}
+              onFindClose={closeFind}
             />
             </RequestChat>
           </Files>

@@ -330,7 +330,7 @@ export function From({
   session,
   className,
 }: {
-  readonly chat: Chat
+  readonly chat: Pick<Chat, 'sessions' | 'goTo'>
   readonly session: ChatSession
   readonly className: string
 }): React.JSX.Element | null {
@@ -371,7 +371,7 @@ export function StartedMenu({
   anchor,
   onClose,
 }: {
-  readonly chat: Chat
+  readonly chat: Pick<Chat, 'sessions' | 'settings' | 'goTo'>
   readonly id: string
   readonly anchor: DOMRect
   readonly onClose: () => void

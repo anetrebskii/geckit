@@ -1,5 +1,5 @@
 import { ProviderIcon } from './ProviderIcon'
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { assistantFor, ANYWHERE, BOARD_COLUMNS, columnOf, columnShown, goalMet, toggledColumns, homeOf, letsGo, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
@@ -232,14 +232,48 @@ export function TopBar({
   )
 }
 
-export function Board({
+type BoardChat = Pick<Chat, 'sessions' | 'everyone' | 'settings' | 'hosts' | 'lineup' | 'shown' | 'showProviders' | 'show' | 'goTo' | 'change' | 'rename' | 'hide' | 'mark' | 'terminal' | 'copyTerminal' | 'letGo' | 'remove'>
+
+interface BoardProps {
+  readonly chat: BoardChat
+  readonly onShortcutFrom: (session: ChatSession) => void
+}
+
+export function Board({ chat, onShortcutFrom }: BoardProps): React.JSX.Element {
+  const latest = useRef({ chat, onShortcutFrom })
+  useEffect(() => {
+    latest.current = { chat, onShortcutFrom }
+  })
+  const actions = useMemo<Pick<BoardChat, 'show' | 'goTo' | 'change' | 'rename' | 'hide' | 'mark' | 'terminal' | 'copyTerminal' | 'letGo' | 'remove'>>(() => ({
+    show: (session) => latest.current.chat.show(session),
+    goTo: (id) => latest.current.chat.goTo(id),
+    change: (change) => latest.current.chat.change(change),
+    rename: (id, name) => latest.current.chat.rename(id, name),
+    hide: (id) => latest.current.chat.hide(id),
+    mark: (id, status) => latest.current.chat.mark(id, status),
+    terminal: (id) => latest.current.chat.terminal(id),
+    copyTerminal: (id) => latest.current.chat.copyTerminal(id),
+    letGo: (id) => latest.current.chat.letGo(id),
+    remove: (ids) => latest.current.chat.remove(ids),
+  }), [])
+  const view = useMemo<BoardChat>(() => ({
+    sessions: chat.sessions,
+    everyone: chat.everyone,
+    settings: chat.settings,
+    hosts: chat.hosts,
+    lineup: chat.lineup,
+    shown: chat.shown,
+    showProviders: chat.showProviders,
+    ...actions,
+  }), [chat.sessions, chat.everyone, chat.settings, chat.hosts, chat.lineup, chat.shown, chat.showProviders, actions])
+  const shortcutFrom = useCallback((session: ChatSession) => latest.current.onShortcutFrom(session), [])
+  return <BoardView chat={view} onShortcutFrom={shortcutFrom} />
+}
+
+const BoardView = memo(function BoardView({
   chat,
   onShortcutFrom,
-}: {
-  readonly chat: Chat
-  /** A new shortcut from this conversation, as the list's own menu makes one. */
-  readonly onShortcutFrom: (session: ChatSession) => void
-}): React.JSX.Element {
+}: BoardProps): React.JSX.Element {
   // The card the menu is open on, the one being renamed, and the ones being deleted.
   const [menu, setMenu] = useState<{ readonly id: string; readonly at: DOMRect } | undefined>()
   const [renaming, setRenaming] = useState<string | undefined>()
@@ -604,7 +638,7 @@ export function Board({
       )}
     </div>
   )
-}
+})
 
 function Card({
   showProviders,
@@ -622,7 +656,7 @@ function Card({
   onStopRenaming,
 }: {
   readonly showProviders: boolean
-  readonly chat: Chat
+  readonly chat: BoardChat
   readonly session: ChatSession
   readonly now: number
   readonly renaming: boolean
@@ -800,7 +834,7 @@ function Card({
   )
 }
 
-const opened = (chat: Chat, session: ChatSession): boolean => chat.shown.kind === 'session' && chat.shown.id === session.id
+const opened = (chat: Pick<Chat, 'shown'>, session: ChatSession): boolean => chat.shown.kind === 'session' && chat.shown.id === session.id
 
 // Typing, and every line streaming into an open conversation, change `chat` without changing anything a card shows.
 const BoardCard = memo(

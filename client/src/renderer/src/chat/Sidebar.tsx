@@ -57,7 +57,9 @@ function gather(
   const groups = new Map<string, ChatSession[]>()
   for (const session of sessions) {
     const where = by === 'project' ? projectLabel(homeOf(session)) : when(session.at, now)
-    groups.set(where, [...(groups.get(where) ?? []), session])
+    const rows = groups.get(where)
+    if (rows === undefined) groups.set(where, [session])
+    else rows.push(session)
   }
   return [...groups.entries()]
 }

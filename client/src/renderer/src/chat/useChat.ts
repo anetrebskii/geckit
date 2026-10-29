@@ -222,6 +222,10 @@ function sameAsBefore(all: readonly ChatSession[]): ChatSession[] {
   return kept
 }
 
+function sameList(held: readonly ChatSession[], next: readonly ChatSession[]): readonly ChatSession[] {
+  return held.length === next.length && held.every((one, index) => one === next[index]) ? held : next
+}
+
 export function useChat(): Chat {
   const [settings, change] = useSettings()
   const manager = useManager()
@@ -289,7 +293,7 @@ export function useChat(): Chat {
   }, [picked, settings])
   // One project is a scope the rest of the window understands; several are every project, narrowed.
   const scope = chosen.length === 1 ? (chosen[0] ?? ALL) : ALL
-  const enabled = assistantsIn(settings)
+  const enabled = useMemo(() => assistantsIn({ chatProviders: settings.chatProviders }), [settings.chatProviders])
   const sessions = useMemo(() => storedSessions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedSessions, enabled])
   const everyone = useMemo(() => storedEveryone.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedEveryone, enabled])
   const questions = useMemo(() => storedQuestions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedQuestions, enabled])
@@ -322,10 +326,10 @@ export function useChat(): Chat {
     const one = chosenRef.current.length === 1 ? chosenRef.current[0] : undefined
     void window.geckit.chat.list(one).then((listed) => {
       const all = sameAsBefore(listed)
-      setSessions(all.filter(within))
+      setSessions((held) => sameList(held, all.filter(within)))
       setListed(true)
       // Asked for every project, this is every project: the counts are made from the same answer.
-      if (one === undefined) setEveryone(all.filter((session) => session.question !== true))
+      if (one === undefined) setEveryone((held) => sameList(held, all.filter((session) => session.question !== true)))
     })
   }, [])
 
@@ -386,15 +390,18 @@ export function useChat(): Chat {
   }, [setPlans])
 
   useEffect(() => {
-    void window.geckit.chat.list(undefined).then((all) => setEveryone(sameAsBefore(all).filter((one) => one.question !== true)))
+    void window.geckit.chat.list(undefined).then((all) => {
+      const listed = sameAsBefore(all).filter((one) => one.question !== true)
+      setEveryone((held) => sameList(held, listed))
+    })
     let asked = new Set<string>()
     return window.geckit.chat.onSessions((sent) => {
       const all = sameAsBefore(sent)
-      setSessions(all.filter(within))
+      setSessions((held) => sameList(held, all.filter(within)))
       setListed(true)
-      setEveryone(all.filter((one) => one.question !== true))
+      setEveryone((held) => sameList(held, all.filter((one) => one.question !== true)))
       const now = all.filter((one) => one.question === true)
-      setQuestions(now)
+      setQuestions((held) => sameList(held, now))
       // A question deleted, by hand or a day after its last answer, is gone, and so is its view.
       const shownNow = shownRef.current
       if (shownNow.kind === 'session' && asked.has(shownNow.id) && !now.some((one) => one.id === shownNow.id)) {
@@ -406,9 +413,10 @@ export function useChat(): Chat {
       }
       asked = new Set(now.map((one) => one.id))
       // A question answered anywhere, here or in a terminal, has nothing left to say.
-      setNotices((held) =>
-        held.filter((notice) => !notice.asks || all.some((one) => one.id === notice.session && one.state === 'asks')),
-      )
+      setNotices((held) => {
+        const kept = held.filter((notice) => !notice.asks || all.some((one) => one.id === notice.session && one.state === 'asks'))
+        return kept.length === held.length ? held : kept
+      })
     })
   }, [])
 
