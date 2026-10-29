@@ -552,7 +552,7 @@ function standing(session: ChatSession): { readonly tone: string; readonly words
 /** What a swipe each way does in a column, the way into another column. */
 function swipes(column: Column): { readonly lead: { status: SessionStatus | undefined; label: string; tone: string }; readonly trail: { status: SessionStatus | undefined; label: string; tone: string } } {
   if (column === 'todo') return { lead: { status: undefined, label: 'In progress', tone: 'back' }, trail: { status: 'done', label: 'Done', tone: 'done' } }
-  if (column === 'done') return { lead: { status: undefined, label: 'In progress', tone: 'back' }, trail: { status: 'todo', label: 'To do', tone: 'todo' } }
+  if (column === 'done' || column === 'archived') return { lead: { status: undefined, label: 'In progress', tone: 'back' }, trail: { status: 'todo', label: 'To do', tone: 'todo' } }
   return { lead: { status: 'todo', label: 'To do', tone: 'todo' }, trail: { status: 'done', label: 'Done', tone: 'done' } }
 }
 

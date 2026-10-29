@@ -147,7 +147,7 @@ async function history(row: Row): Promise<{ readonly status: string; readonly at
 
 /** What a row is doing, in one word, from GeckIt's mark where it has one. */
 // What an earlier build kept as In review is In progress now.
-const standing = (row: Row): string => (row.status === 'todo' || row.status === 'blocked' || row.status === 'done' ? row.status : 'in progress')
+const standing = (row: Row): string => (row.status === 'todo' || row.status === 'blocked' || row.status === 'done' || row.status === 'archived' ? row.status : 'in progress')
 
 function table(found: readonly Row[]): string {
   if (found.length === 0) return 'Nothing.'
@@ -160,7 +160,7 @@ function table(found: readonly Row[]): string {
 
 const HELP = `geckit - what GeckIt holds, read from a command line.
 
-  geckit sessions [--today] [--since 2d] [--project <name>] [--provider claude|codex] [--status todo|blocked|done] [--favorites] [--json]
+  geckit sessions [--today] [--since 2d] [--project <name>] [--provider claude|codex] [--status todo|blocked|done|archived] [--favorites] [--json]
       The conversations, the newest first: a * for a favorite, id, when it last changed, project, how it stands, title.
       --favorites keeps only the favorites.
       --today is since midnight. --since takes 2d, 36h or 90m; one moved between columns in that time counts too.

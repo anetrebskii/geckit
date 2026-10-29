@@ -7,10 +7,10 @@ import type { Box } from '../src/shared/order'
 
 describe('the columns of the board', () => {
   it('stand in their order, In progress holding what carries no status and ordered for the queue', () => {
-    expect(BOARD_COLUMNS.map((one) => one.id)).toEqual(['todo', 'progress', 'done'])
-    expect(BOARD_COLUMNS.map((one) => one.status)).toEqual(['todo', undefined, 'done'])
-    expect(BOARD_COLUMNS.map((one) => one.order)).toEqual(['manual', 'lineup', 'manual'])
-    expect(BOARD_COLUMNS.map((one) => one.byDay === true)).toEqual([false, false, true])
+    expect(BOARD_COLUMNS.map((one) => one.id)).toEqual(['todo', 'progress', 'done', 'archived'])
+    expect(BOARD_COLUMNS.map((one) => one.status)).toEqual(['todo', undefined, 'done', 'archived'])
+    expect(BOARD_COLUMNS.map((one) => one.order)).toEqual(['manual', 'lineup', 'manual', 'manual'])
+    expect(BOARD_COLUMNS.map((one) => one.byDay === true)).toEqual([false, false, true, true])
   })
 
   it('take a card by its status, blocked and what an earlier build kept as In review in In progress', () => {
@@ -34,8 +34,8 @@ describe('the columns of the board', () => {
   })
 
   it('are ticked on and off one at a time, every one or none being All columns', () => {
-    expect(toggledColumns([], 'todo')).toEqual(['progress', 'done'])
-    expect(toggledColumns(['progress', 'done'], 'todo')).toEqual([])
+    expect(toggledColumns([], 'todo')).toEqual(['progress', 'done', 'archived'])
+    expect(toggledColumns(['progress', 'done', 'archived'], 'todo')).toEqual([])
     expect(toggledColumns(['done'], 'todo')).toEqual(['todo', 'done'])
     expect(toggledColumns(['done'], 'done')).toEqual([])
     expect(toggledColumns(['todo'], 'all')).toEqual([])

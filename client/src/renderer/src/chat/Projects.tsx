@@ -179,7 +179,7 @@ function Menu({
 
   const work = new Map<string, Work>()
   for (const one of single === undefined ? chat.everyone : []) {
-    if (one.status === 'done') continue
+    if (one.status === 'done' || one.status === 'archived') continue
     const held = work.get(homeOf(one)) ?? { progress: 0, todo: 0 }
     work.set(homeOf(one), one.status === 'todo' ? { ...held, todo: held.todo + 1 } : { ...held, progress: held.progress + 1 })
   }

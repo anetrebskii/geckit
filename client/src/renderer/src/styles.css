@@ -2928,7 +2928,8 @@ button.tag:hover {
   border-color: currentColor;
 }
 
-.tag.done {
+.tag.done,
+.tag.archived {
   color: var(--text-faint);
 }
 

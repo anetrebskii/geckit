@@ -427,12 +427,13 @@ export function letsGo(session: Pick<ChatSession, 'held' | 'state' | 'remote' | 
   return session.held === true && session.state !== 'working' && session.state !== 'asks' && session.remote === undefined && !session.tasks?.some((task) => task.status === 'running')
 }
 
-export type SessionStatus = 'todo' | 'blocked' | 'done'
+export type SessionStatus = 'todo' | 'blocked' | 'done' | 'archived'
 
 export const SESSION_STATUSES: readonly { readonly status: SessionStatus; readonly label: string; readonly why: string }[] = [
   { status: 'todo', label: 'To do', why: 'Planned and not started; a message to it moves it to In progress' },
   { status: 'blocked', label: 'Blocked', why: 'Waiting on something outside it' },
   { status: 'done', label: 'Done', why: 'Moved out of the list into Done at the bottom' },
+  { status: 'archived', label: 'Archived', why: 'Not going on with it; kept rather than deleted' },
 ]
 
 /** Whether the card says its goal was reached: the goal that held is the one it has, or it has none since. */
@@ -947,6 +948,7 @@ export const BOARD_COLUMNS: readonly BoardColumn[] = [
   { id: 'todo', title: 'To do', status: 'todo', order: 'manual', empty: 'Nothing planned.' },
   PROGRESS,
   { id: 'done', title: 'Done', status: 'done', order: 'manual', byDay: true, empty: 'Nothing done yet.' },
+  { id: 'archived', title: 'Archived', status: 'archived', order: 'manual', byDay: true, empty: 'Nothing archived.' },
 ]
 
 /** The column a card stands in. A status no column carries, blocked or one an earlier build kept, is In progress. */

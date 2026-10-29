@@ -53,7 +53,7 @@ describe('reading what the model answered', () => {
 
   it('leaves out what this application does not do, and keeps the rest', () => {
     const said =
-      '[{"do":"rename","chat":"a1","title":"Radar"},{"do":"mark","chat":"a1","status":"archived"},{"do":"start","project":"radar63","text":"look at the map"},{"do":"say","chat":"b2"}]'
+      '[{"do":"rename","chat":"a1","title":"Radar"},{"do":"mark","chat":"a1","status":"parked"},{"do":"start","project":"radar63","text":"look at the map"},{"do":"say","chat":"b2"}]'
     expect(ordersOf(said)).toEqual([{ do: 'start', project: 'radar63', text: 'look at the map', goal: 'Done: look at the map' }])
   })
 

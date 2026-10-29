@@ -49,7 +49,7 @@ export const MANAGER_CAPABILITIES = {
     'sessions retry --id <managed-worker-id> (same deliberate Try again as GeckIt; rechecks VPN)',
     'sessions steer --id <managed-worker-id> --text <correction> (active native runtime only; never queues or restarts)',
     'sessions stop --id <managed-worker-id>',
-    'sessions mark --id <managed-worker-id> --status progress|review|blocked|done (done needs confirmation)',
+    'sessions mark --id <managed-worker-id> --status progress|review|blocked|done|archived (done needs confirmation)',
     'sessions attach --id <unrelated-worker-id> (user confirmation)',
     'sessions answer --id <managed-worker-id> --card <current-question-id> --text <answer> (user confirmation; questions only)',
     'settings show',
@@ -392,7 +392,7 @@ export class ManagerOperations {
       if (command === 'stop') { this.#deps.sessions.stop(id); return JSON.stringify({ id, stopRequested: true }) }
       if (command === 'mark') {
         const status = required(flags, '--status')
-        if (status !== 'progress' && status !== 'todo' && status !== 'blocked' && status !== 'done') throw new Error('Status must be todo, progress, blocked or done.')
+        if (status !== 'progress' && status !== 'todo' && status !== 'blocked' && status !== 'done' && status !== 'archived') throw new Error('Status must be todo, progress, blocked, done or archived.')
         this.#deps.sessions.mark(id, status === 'progress' ? undefined : status)
         return JSON.stringify({ id, status })
       }

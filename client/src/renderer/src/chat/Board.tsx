@@ -346,6 +346,7 @@ export function Board({
   }
   // What the menu of a picked card does, it does to every picked one.
   const targets = (id: string): readonly string[] => (picked.has(id) ? [...picked] : [id])
+  const archivedAll = (id: string): boolean => targets(id).every((one) => chat.everyone.some((session) => session.id === one && session.status === 'archived'))
   // A card is drawn again only when what it shows changes, so what it calls is read from here at the time.
   const latest = useRef({ press, targets })
   useEffect(() => {
@@ -531,6 +532,7 @@ export function Board({
               : []),
             ...(picked.has(menu.id) && picked.size > 1
               ? [
+                  { value: 'status:archived', label: archivedAll(menu.id) ? `Unarchive ${String(picked.size)}` : `Archive ${String(picked.size)}`, icon: 'archived' },
                   { value: 'hide', label: `Hide ${String(picked.size)} from this list`, icon: 'hidden' },
                   { value: 'delete', label: `Delete ${String(picked.size)}`, danger: true, icon: 'trash' },
                 ]
@@ -549,6 +551,7 @@ export function Board({
                   ...(chat.everyone.some((session) => session.id === menu.id && letsGo(session))
                     ? [{ value: 'letgo', label: 'Let the process go', says: 'Frees its memory; the next message reads its file', icon: 'stop' }]
                     : []),
+                  { value: 'status:archived', label: archivedAll(menu.id) ? 'Unarchive' : 'Archive', icon: 'archived' },
                   { value: 'hide', label: 'Hide from this list', icon: 'hidden' },
                   { value: 'delete', label: 'Delete', danger: true, icon: 'trash' },
                 ]),

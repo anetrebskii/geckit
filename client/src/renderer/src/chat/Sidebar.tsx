@@ -31,6 +31,9 @@ const FAVORITES = 'Favorites'
 /** Marked done: out of the way at the bottom, folded until its heading is pressed. */
 const DONE = 'Done'
 
+/** Marked archived: kept, below Done and folded the same way. */
+const ARCHIVED = 'Archived'
+
 function when(at: number, now: number): string {
   const days = Math.floor((now - at) / DAY)
   if (days < 1 && new Date(at).toDateString() === new Date(now).toDateString()) return 'Today'
@@ -85,14 +88,16 @@ function arrange(
   const favorite = new Set(kept.map((one) => one.id))
   const rest = sessions.filter((one) => !favorite.has(one.id))
   const done = rest.filter((one) => one.status === 'done')
+  const archived = rest.filter((one) => one.status === 'archived')
   return [
     ...(kept.length === 0 ? [] : [[FAVORITES, kept] as const]),
     ...gather(
-      rest.filter((one) => one.status !== 'done'),
+      rest.filter((one) => one.status !== 'done' && one.status !== 'archived'),
       by,
       now,
     ),
     ...(done.length === 0 ? [] : [[DONE, done] as const]),
+    ...(archived.length === 0 ? [] : [[ARCHIVED, archived] as const]),
   ]
 }
 
@@ -169,7 +174,7 @@ export function Views({ chat }: { chat: Chat }): React.JSX.Element {
   )
 }
 
-export const STATUS_ICONS: Record<SessionStatus, string> = { todo: 'todo', blocked: 'blocked', done: 'done' }
+export const STATUS_ICONS: Record<SessionStatus, string> = { todo: 'todo', blocked: 'blocked', done: 'done', archived: 'archived' }
 
 /**
  * One conversation in the list.
@@ -416,7 +421,7 @@ const Rows = memo(function Rows({
             >
               <button type="button" className="group" onClick={() => onFold(where)}>
                 <Icon name={folded.has(where) ? 'right' : 'down'} size={10} />
-                {by === 'project' && rows[0] !== undefined && where !== FAVORITES && where !== DONE ? (
+                {by === 'project' && rows[0] !== undefined && where !== FAVORITES && where !== DONE && where !== ARCHIVED ? (
                   <span className="tinted" style={tint(projectColor(homeOf(rows[0]), colors))}>{where}</span>
                 ) : (
                   where
@@ -440,7 +445,7 @@ const Rows = memo(function Rows({
                 picked={picked.has(session.id)}
                 place={places.get(session.id)}
                 where={
-                  where === DONE || (scope === ALL && (by === 'time' || where === FAVORITES))
+                  where === DONE || where === ARCHIVED || (scope === ALL && (by === 'time' || where === FAVORITES))
                     ? projectLabel(homeOf(session))
                     : undefined
                 }
@@ -485,7 +490,7 @@ export function Sidebar({
   const [grouping, setGrouping] = useState<DOMRect | undefined>()
   // A folder worked in every day has hundreds of conversations, and the next
   // folder is below all of them until its heading is pressed.
-  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set([DONE]))
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set([DONE, ARCHIVED]))
   const [renaming, setRenaming] = useState<string | undefined>()
   const [now, setNow] = useState(() => Date.now())
 
@@ -774,6 +779,11 @@ export function Sidebar({
             ...(chat.everyone.some((session) => session.id === menu.id && letsGo(session))
               ? [{ value: 'letgo', label: 'Let the process go', says: 'Frees its memory; the next message reads its file', icon: 'stop' }]
               : []),
+            {
+              value: 'status:archived',
+              label: chat.everyone.some((session) => session.id === menu.id && session.status === 'archived') ? 'Unarchive' : 'Archive',
+              icon: 'archived',
+            },
             { value: 'hide', label: 'Hide from this list', icon: 'hidden' },
             { value: 'delete', label: 'Delete', danger: true, icon: 'trash' },
           ]}

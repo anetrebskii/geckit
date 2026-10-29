@@ -30,9 +30,9 @@ export interface Told {
   readonly state: string
 }
 
-const STATUSES = new Set(['todo', 'blocked', 'done'])
+const STATUSES = new Set(['todo', 'blocked', 'done', 'archived'])
 
-const MARKS: Record<SessionStatus, string> = { todo: 'todo', blocked: 'blocked', done: 'done' }
+const MARKS: Record<SessionStatus, string> = { todo: 'todo', blocked: 'blocked', done: 'done', archived: 'archived' }
 
 const said = (status: SessionStatus): string => SESSION_STATUSES.find((one) => one.status === status)?.label ?? status
 
@@ -115,7 +115,7 @@ export const ORDERS = [
   '{"do":"start","project":"<a project from the list>","text":"<what to ask it to do>","goal":"<what has to be true for this to be finished>"}',
   '{"do":"say","chat":"<an id from the list>","text":"<what to say in that conversation>"}',
   '{"do":"stop","chat":"<an id>"}',
-  '{"do":"mark","chat":"<an id>","status":"todo"|"blocked"|"done"}',
+  '{"do":"mark","chat":"<an id>","status":"todo"|"blocked"|"done"|"archived"}',
   '{"do":"open","chat":"<an id>"}',
   '{"do":"delete","chat":"<an id>"}',
   'Rules:',
