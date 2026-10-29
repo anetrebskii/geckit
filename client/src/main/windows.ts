@@ -304,6 +304,7 @@ export function geckoWindow(): BrowserWindow {
     acceptFirstMouse: true,
     alwaysOnTop: true,
     transparent: true,
+    roundedCorners: false,
     hasShadow: false,
     backgroundColor: '#00000000',
     // A panel, so a press does not bring GeckIt's other windows forward.
