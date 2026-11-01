@@ -582,6 +582,19 @@ describe('holding a conversation', () => {
     expect(terminal.fake.sent).toEqual([{ text: 'Use tmux' }])
   })
 
+  it('finds a Claude tmux conversation by the Claude session id its commands carry, whatever instructions it keeps', async () => {
+    const terminal = fakeClaude()
+    const provider: LlmProvider = {
+      ...llmProvider({ claude: terminal.claude }, 'claude'),
+      id: 'plugin:claude-tmux', family: 'plugin:claude-tmux', name: 'Claude Code tmux', instructions: 'own',
+      create: async () => 'plugin:claude-tmux:3bf458e7',
+    }
+    const built = build({ plugins: [provider] })
+    const id = await built.sessions.send({ provider: 'plugin:claude-tmux', root: ROOT, mode: 'manual', text: 'Use tmux' })
+    expect(built.sessions.requestOrigin('3bf458e7')).toBe(id)
+    expect(built.sessions.requestOrigin('codex:3bf458e7')).toBe('codex:3bf458e7')
+  })
+
   it('moves a running Claude Code into auto without starting it again, and hands back what was waiting', async () => {
     const built = build()
     const id = await started(built, 'manual')
