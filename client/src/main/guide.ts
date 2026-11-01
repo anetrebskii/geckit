@@ -49,6 +49,8 @@ Use \`${said} employees list\`, \`${said} employees show <employee-id>\` and \`$
 
 Use \`${said} employees tasks <employee-id>\` and \`${said} employees shortcuts [<employee-id>|none]\` to read an employee's tasks and shortcuts. Changes to the team (create, edit, archive, restore, assign, Manager's instructions and portrait with \`${said} employees manager edit\`, and shortcut add, edit, pause, resume, remove, give or run) run from a conversation are shown to the person as a card and wait for Allow; a decline is printed as an error. Run \`${said} help\` for their options.
 
+In the authenticated Manager interface, run capabilities for supported operations. Manager preference and name writes require the existing host-bound user confirmation. Manager can read settings manager and employees show, then use settings manager-edit --instructions <text> --expected-instructions <last-read-text> or employees rename --id <employee-id> --name <name> --expected-name <last-read-name>. Preserve existing instructions when adding a rule. A conflict requires a fresh read and merge; after any write or uncertain response, read again before claiming it saved. These commands change user preferences and names only, not Manager rules, roles, memory or assignments. New workers can use sessions start --model with a model ID from providers models for the selected provider; unavailable models are rejected without substitution. Existing workers keep their provider and model.
+
 The current catalog (archived employees remain readable for existing assignments) is:
 
 \`\`\`json

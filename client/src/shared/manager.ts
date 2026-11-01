@@ -11,6 +11,8 @@ export type ManagerConfig = Required<Pick<SessionMessage, 'provider'>> & Pick<Se
   readonly intake?: ManagerIntakeConfig
 }
 
+export type ManagerInstructionsResult = Pick<ManagerConfig, 'instructions'> & { readonly guideError?: string }
+
 export type ManagerActivity = Pick<SessionItem, 'id'> & {
   readonly at: number
   readonly command: readonly string[]

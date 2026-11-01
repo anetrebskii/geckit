@@ -1134,7 +1134,7 @@ async function buildManager(started: Sessions): Promise<void> {
   const directory = app.getPath('userData')
   const attachments = new TelegramAttachments(directory)
   const sources = new Map<string, VoiceMemosSource>()
-  const coordinator: Manager = new Manager({ directory, attachments, intake: {
+  const coordinator: Manager = new Manager({ directory, syncInstructions: keepManagerGuide, attachments, intake: {
     pairing: () => { const state = telegram?.view(); return state?.state === 'connected' && state.account !== undefined && state.bot !== undefined ? `${String(state.bot.id)}:${String(state.account.id)}:${String(state.account.chatId)}` : undefined },
     adapters: () => (view.config.intake ?? DEFAULT_MANAGER_INTAKE).sources.filter((source) => source.enabled).map((source) => { const key = JSON.stringify(source); let adapter = sources.get(key); if (adapter === undefined) { adapter = new VoiceMemosSource(source, { transcribe: transcribeInstalledFile, transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }); sources.set(key, adapter) }; return adapter }),
     classify: (text) => classifyIntake(text, { config: () => view.config, settings: getSettings, check: () => checkVpnIp(getSettings), correct }),

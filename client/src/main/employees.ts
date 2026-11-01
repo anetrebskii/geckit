@@ -184,6 +184,17 @@ export class Employees {
     })
   }
 
+  rename(id: Employee['id'], name: Employee['name'], expected: Employee['name'], authorized: () => boolean = () => true): Promise<EmployeesView> {
+    return this.#serial(async () => {
+      if (!authorized()) throw new Error('The originating Manager session is no longer authorized.')
+      if (name.trim() === '') throw new Error('Enter a name')
+      const before = this.get(id)
+      if (before.name !== expected) throw new Error('Employee name changed. Read employees show and merge before retrying.')
+      this.#write(this.#employees.map((one) => one.id === id ? { ...one, name: name.trim(), revision: one.revision + 1 } : one))
+      return this.#sync()
+    })
+  }
+
   archive(id: Employee['id'], revision: Employee['revision'], archived = true): Promise<EmployeesView> {
     return this.#serial(async () => {
       const before = this.get(id)

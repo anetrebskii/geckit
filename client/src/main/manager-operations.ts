@@ -8,6 +8,7 @@ import type { ChatSession, SessionMessage, SessionProvider, Settings } from '../
 import { isRemote } from '../shared/hosts'
 import { isCodexProvider, llmProviderInfo, providerModel } from '../shared/providers'
 import { managerProjects } from '../shared/manager'
+import type { ManagerConfig, ManagerInstructionsResult } from '../shared/manager'
 import { withColors } from '../shared/project-color'
 import { requestedProvider } from '../cli/start'
 import { telegramFilename, telegramImage } from './telegram-attachments'
@@ -15,7 +16,11 @@ import type { TelegramAttachments, TelegramFileSender } from './telegram-attachm
 import type { NotesStore, Sessions } from './sessions'
 
 interface OperationDeps {
-  readonly employees?: Pick<Employees, 'command' | 'active'>
+  readonly instructions?: {
+    readonly read: () => ManagerConfig['instructions']
+    readonly write: (instructions: ManagerConfig['instructions'], expected: ManagerConfig['instructions']) => Promise<ManagerInstructionsResult>
+  }
+  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get'>
   readonly attachments?: TelegramAttachments
   readonly telegramFile?: () => TelegramFileSender
   readonly sessions: Sessions
@@ -44,13 +49,14 @@ export const MANAGER_CAPABILITIES = {
     'files mkdir --project <project> --path <relative-path>',
     'files move --project <project> --path <relative-path> --to <relative-path>',
     'files remove --project <project> --path <relative-path> (user confirmation; files or empty directories)',
+    'employees rename --id <employee-id> --name <name> --expected-name <last-read-name> (user confirmation)',
     'employees list',
     'employees show <employee-id>',
     'employees memory <employee-id> [--cursor <next>]',
     'sessions assign --id <managed-worker-id> --employee <active-employee-id|none>',
     'sessions list [--managed]',
     'sessions show --id <full-session-id> [--last <1-30>]',
-    'sessions start --project <project> --text <self-contained-assignment> --goal <completion-condition> [--title <title>] [--provider <enabled-provider-id>] [--employee <active-employee-id>]',
+    'sessions start --project <project> --text <self-contained-assignment> --goal <completion-condition> [--title <title>] [--provider <enabled-provider-id>] [--employee <active-employee-id>] [--model <available-model-id>]',
     'sessions send --id <managed-worker-id> --text <follow-up> (ordinary queue semantics; host receipt, not model consumption)',
     'sessions retry --id <managed-worker-id> (same deliberate Try again as GeckIt; rechecks VPN)',
     'sessions steer --id <managed-worker-id> --text <correction> (active native runtime only; never queues or restarts)',
@@ -59,6 +65,8 @@ export const MANAGER_CAPABILITIES = {
     'sessions attach --id <unrelated-worker-id> (user confirmation)',
     'sessions answer --id <managed-worker-id> --card <current-question-id> --text <answer> (user confirmation; questions only)',
     'settings show',
+    'settings manager',
+    'settings manager-edit --instructions <text> --expected-instructions <last-read-text> (user confirmation; empty text clears; read settings manager afterwards)',
     'attachments send --attachment <retained-attachment-id> --id <managed-local-worker-id> --text <instruction> (explicit permanent project input copy; retained until user/project cleanup)',
     'telegram send-file --id <managed-local-worker-id> --path <project-relative-deliverable> [--caption <caption>] [--as document|photo] (explicit selected artifact only; default document; worker requests via result containing exact path)',
   ],
@@ -86,7 +94,7 @@ const SHAPES: readonly CommandShape[] = [
   ...['list', 'read', 'write', 'mkdir', 'move', 'remove'].map((command) => ({ domain: 'files', command, flags: ['--project', '--path', ...(command === 'write' ? ['--text'] : []), ...(command === 'move' ? ['--to'] : [])] })),
   { domain: 'sessions', command: 'list', flags: ['--managed'] },
   { domain: 'sessions', command: 'show', flags: ['--id', '--last'] },
-  { domain: 'sessions', command: 'start', flags: ['--project', '--text', '--goal', '--title', '--provider', '--employee'] },
+  { domain: 'sessions', command: 'start', flags: ['--project', '--text', '--goal', '--title', '--provider', '--employee', '--model'] },
   { domain: 'sessions', command: 'assign', flags: ['--id', '--employee'] },
   { domain: 'sessions', command: 'send', flags: ['--id', '--text'] },
   { domain: 'sessions', command: 'retry', flags: ['--id'] },
@@ -95,6 +103,9 @@ const SHAPES: readonly CommandShape[] = [
   { domain: 'sessions', command: 'mark', flags: ['--id', '--status'] },
   { domain: 'sessions', command: 'attach', flags: ['--id'] },
   { domain: 'sessions', command: 'answer', flags: ['--id', '--card', '--text'] },
+  { domain: 'employees', command: 'rename', flags: ['--id', '--name', '--expected-name'] },
+  { domain: 'settings', command: 'manager', flags: [] },
+  { domain: 'settings', command: 'manager-edit', flags: ['--instructions', '--expected-instructions'] },
   { domain: 'settings', command: 'show', flags: [] },
   { domain: 'attachments', command: 'send', flags: ['--attachment', '--id', '--text'] },
   { domain: 'telegram', command: 'send-file', flags: ['--id', '--path', '--caption', '--as'] },
@@ -102,7 +113,7 @@ const SHAPES: readonly CommandShape[] = [
 
 export function managerReadOnly(args: readonly string[]): boolean {
   const [domain, command] = args
-  return domain === 'employees' && ['list', 'show', 'memory', 'current'].includes(command ?? '') || domain === 'capabilities' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && command === 'show'
+  return domain === 'employees' && ['list', 'show', 'memory', 'current'].includes(command ?? '') || domain === 'capabilities' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'manager')
 }
 
 const values = (args: readonly string[]): Map<string, string> => {
@@ -182,6 +193,7 @@ export class ManagerOperations {
 
   confirmation(args: readonly string[], policy: 'automatic' | 'approve'): string | undefined {
     const [domain, command] = args
+    if (domain === 'employees' && command === 'rename' || domain === 'settings' && command === 'manager-edit') return `Change these user preferences? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'start' && policy === 'approve') return `Start this worker? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'attach' && !this.#deps.managed(required(values(args), '--id'))) return `Allow Manager to coordinate this existing conversation? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'answer') return `Send this answer to the worker's question? ${JSON.stringify(args)}`
@@ -216,7 +228,8 @@ export class ManagerOperations {
 
   async run(args: readonly string[], operation: string): Promise<string> {
     const [domain, command] = args
-    if (domain === 'employees') {
+    if (this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
+    if (domain === 'employees' && command !== 'rename') {
       if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.')
       return this.#deps.employees.command(args.slice(1), this.#deps.managerSession(), true)
     }
@@ -226,6 +239,25 @@ export class ManagerOperations {
     }
     const flags = values(args)
     const settings = this.#deps.settings()
+    if (domain === 'employees' && command === 'rename') {
+      const employees = this.#deps.employees
+      if (employees === undefined) throw new Error('Employees are not ready yet.')
+      const id = required(flags, '--id')
+      const expected = flags.get('--expected-name')
+      if (expected === undefined) throw new Error('Missing --expected-name. Read employees show first.')
+      const session = this.#deps.managerSession()
+      const view = await employees.rename(id, required(flags, '--name'), expected, () => session !== undefined && session === this.#deps.managerSession() && this.#deps.authorized?.() !== false)
+      return JSON.stringify({ employee: employees.get(id), ...(view.error === undefined ? {} : { guideError: view.error }) })
+    }
+    if (domain === 'settings' && (command === 'manager' || command === 'manager-edit')) {
+      const instructions = this.#deps.instructions
+      if (instructions === undefined) throw new Error('Manager instructions are not ready yet.')
+      if (command === 'manager') return JSON.stringify({ instructions: instructions.read() })
+      const text = flags.get('--instructions')
+      const expected = flags.get('--expected-instructions')
+      if (text === undefined || expected === undefined) throw new Error('Supply --instructions and --expected-instructions. Read settings manager first.')
+      return JSON.stringify(await instructions.write(text, expected))
+    }
     if (domain === 'providers') {
       if (command === 'list') return JSON.stringify(settings.chatProviders.map((provider) => ({ ...llmProviderInfo(provider, 'stream', settings.providerPlugins), enabled: true })))
       if (command === 'models') {
@@ -373,12 +405,20 @@ export class ManagerOperations {
         if (employeeId !== undefined) { if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.'); this.#deps.employees.active(employeeId) }
         const text = required(flags, '--text')
         const goal = required(flags, '--goal')
-        const model = providerModel(settings, resolved.provider)
+        const model = flags.has('--model') ? required(flags, '--model') : providerModel(settings, resolved.provider)
+        if (flags.has('--model')) {
+          const session = this.#deps.managerSession()
+          const models = await this.#deps.sessions.models(root, resolved.provider)
+          if (!models?.some((one) => one.value === model && one.disabled !== true)) throw new Error('That model is unavailable for the selected provider. Run providers models; no replacement was selected.')
+          const current = this.#deps.settings()
+          if (session !== this.#deps.managerSession() || this.#deps.authorized?.() === false || !managerProjects(current).includes(root) || managerProvider(current, root, provider).provider !== resolved.provider) throw new Error('The Manager, project or provider changed while validating the model. Read current state before retrying.')
+          if (employeeId !== undefined) this.#deps.employees?.active(employeeId)
+        }
         const message: SessionMessage = { root, ...(employeeId === undefined ? {} : { employeeId }), provider: resolved.provider, mode: settings.chatMode, text, goal, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
         const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, this.#deps.managerSession())
         if (flags.has('--title')) this.#deps.sessions.rename(id, required(flags, '--title'))
         const worker = await this.#worker(id)
-        return JSON.stringify({ id, provider: resolved.provider, providerReason: resolved.reason, employeeId: worker.employeeId, state: worker.waits === true || (worker.queued?.length ?? 0) > 0 ? 'queued' : worker.state, goal })
+        return JSON.stringify({ id, provider: resolved.provider, providerReason: resolved.reason, model, modelReason: flags.has('--model') ? 'task' : 'default', employeeId: worker.employeeId, state: worker.waits === true || (worker.queued?.length ?? 0) > 0 ? 'queued' : worker.state, goal })
       }
       const id = required(flags, '--id')
       const worker = await this.#worker(id, command === 'attach' || command === 'show')
