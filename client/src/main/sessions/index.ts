@@ -1232,7 +1232,7 @@ export class Sessions {
     const thread = codex ? session.slice('codex:'.length) : session
     const running = [...this.#live.values()].filter((live) =>
       live.driver !== undefined && (live.state === 'working' || live.state === 'asks') &&
-      (live.id === session || live.id.startsWith('plugin:') && live.id.endsWith(`:${thread}`) && (codex ? this.#for(live).runtime === 'codex' : this.#for(live).instructions === 'claude')),
+      (live.id === session || live.id.startsWith('plugin:') && live.id.endsWith(`:${thread}`) && (this.#for(live).runtime === 'codex') === codex),
     )
     if (running.length > 1) throw new Error(`More than one active conversation uses this ${codex ? 'Codex thread' : 'Claude session'}. Give the provider-qualified parent ID.`)
     return running[0]?.id ?? session
