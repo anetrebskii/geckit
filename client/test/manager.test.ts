@@ -1,3 +1,4 @@
+import { Employees } from '../src/main/employees'
 import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -59,7 +60,7 @@ function library() {
   return { provider, create, made, sent, finish: (id: string, text = 'Coordinated') => hearing.get(id)?.({ items: [{ kind: 'theirs', id: `reply:${String(sent.length)}`, text }], gone: [], signals: [{ kind: 'ended', how: 'done' }] }) }
 }
 
-async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Driver['inject'], intake?: ManagerDeps['intake']) {
+async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Driver['inject'], intake?: ManagerDeps['intake'], employees?: ManagerDeps['employees']) {
   const directory = await mkdtemp(join(tmpdir(), 'geckit-manager-'))
   const root = join(directory, 'project')
   await mkdir(root)
@@ -92,7 +93,7 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
     limit: () => limit,
     ...over,
   })
-  const deps: ManagerDeps = { directory, sessions, notes, ...(intake === undefined ? {} : { intake }), settings: () => settings, saveSettings: (change) => settings = { ...settings, ...change }, cli: async (args, context) => {
+  const deps: ManagerDeps = { directory, sessions, notes, ...(employees === undefined ? {} : { employees }), ...(intake === undefined ? {} : { intake }), settings: () => settings, saveSettings: (change) => settings = { ...settings, ...change }, cli: async (args, context) => {
     cli.push({ args, context })
     if (callCli !== undefined) return callCli(args, context)
     const result = await current.manager?.command({ action: 'manage', args, session: context.session, token: context.token, operation: context.operation })
@@ -1895,4 +1896,37 @@ it('checks the stored legacy Voice Memos location without taking a new baseline 
   expect(f.manager.voiceMemosDirectory()).toBe('/legacy/recordings')
   expect((await f.manager.view()).config.intake?.sources).toEqual([source])
   expect(f.sent).toHaveLength(0)
+})
+
+
+describe('authenticated employee Manager operations', () => {
+  it('rejects forged assignment token and mismatched operation, then delegates with the approved employee', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'geckit-manager-employees-'))
+    cleanups.push(() => rm(directory, { recursive: true, force: true }))
+    const employees = new Employees({ directory, sync: async () => undefined, assignment: () => undefined, sources: async () => [], items: async () => [] })
+    const employee = (await employees.save({ name: 'Tatiana', role: 'Promotion', description: '', avatar: 'employee-01' })).employees[0]
+    if (employee === undefined) throw new Error('Missing employee fixture')
+    const f = await fixture(0, { validateEmployee: (id) => { employees.active(id) } }, undefined, undefined, employees)
+    await f.manager.configure({ enabled: true })
+    const session = await f.manager.send('Make the next reel')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    let authenticated = false
+    f.setCli(async (args, context) => {
+      const spoof = await f.manager.command({ action: 'manage', args: ['sessions', 'assign', '--id', 'worker', '--employee', employee.id], session: context.session, token: 'forged', operation: context.operation })
+      expect(spoof).toMatchObject({ ok: false, error: expect.stringContaining('not authorized') })
+      const mismatched = await f.manager.command({ action: 'manage', args: ['employees', 'archive', employee.id], session: context.session, token: context.token, operation: context.operation })
+      expect(mismatched).toMatchObject({ ok: false, error: expect.stringContaining('no longer active') })
+      const answer = await f.manager.command({ action: 'manage', args, session: context.session, token: context.token, operation: context.operation })
+      if (!answer.ok) throw new Error(answer.error)
+      authenticated = true
+      return answer.result
+    })
+    f.finish(session, f.command('assigned-worker', ['sessions', 'start', '--project', f.root, '--text', 'Create the reel', '--goal', 'The reel exists', '--employee', employee.id]))
+    await vi.waitFor(async () => expect((await f.manager.view()).activity[0]).toMatchObject({ state: 'done' }))
+    expect(authenticated).toBe(true)
+    const worker = Object.entries(f.notes.all()).find(([, note]) => note.managerOwner === 'manager')
+    expect(worker?.[1].employeeId).toBe(employee.id)
+    expect(employees.get(employee.id).archived).toBe(false)
+    expect(f.sent.find((one) => one.id === worker?.[0])?.text).toBe('Create the reel')
+  })
 })

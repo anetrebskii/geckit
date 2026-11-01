@@ -1,3 +1,4 @@
+import type { Employees } from './employees'
 import { execFile } from 'node:child_process'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -81,6 +82,7 @@ export function runManagerCli(executable: string, script: string, args: readonly
 }
 
 export interface ManagerDeps {
+  readonly employees?: Pick<Employees, 'command' | 'active'>
   readonly directory: string
   readonly intake?: Pick<ManagerIntakeDeps, 'adapters' | 'classify' | 'pairing' | 'now'>
   readonly attachments?: TelegramAttachments
@@ -241,7 +243,7 @@ export class Manager {
   }
 
   #assertEnabled(): void {
-    if (!this.#record.config.enabled) throw new Error('Manager is disabled. Enable it in Manager settings.')
+    if (!this.#record.config.enabled) throw new Error('Manager is disabled. Enable it in Team, Manager.')
     if (!this.#deps.settings().chatProviders.includes(this.#record.config.provider)) throw new Error('The Manager assistant is disabled. Open Assistants to restore it.')
   }
 
@@ -271,6 +273,8 @@ export class Manager {
     this.#opening = { generation, result }
     return result
   }
+
+  instructions(): string { return this.#record.config.instructions }
 
   #instructions(): string { return `${MANAGER_INSTRUCTIONS}\nUser preferences for coordination:\n${this.#record.config.instructions}` }
 

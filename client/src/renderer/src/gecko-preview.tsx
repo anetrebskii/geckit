@@ -41,6 +41,7 @@ const trays = ['asleep', 'working', 'waiting'] as const
 
 const session: ChatSession = { id: 'claude:preview', root: '/work/trailmap', title: 'Trail difficulty ratings', stands: 'Working', state: 'working', at: Date.now(), here: true, mode: 'auto', queued: [] }
 const chat: Chat = {
+    employees: [], employeesById: new Map(),
   settings: { ...DEFAULT_SETTINGS, chatView: 'board', phrases: [] }, hosts: [], prompts: [], lineup: { working: 1, limit: 6 }, full: false, change: noop,
   root: session.root, scope: session.root, sessions: [session], listed: true, everyone: [session], questions: [], waiting: [], notices: [], shown: { kind: 'new' }, session: undefined,
   items: [], itemsFor: '', earlier: 0, showEarlier: noop, loadSteps: noop, draft: '', pictures: [], trouble: '', checkingIp: false, retrying: false, retry: noop, uploading: false,
@@ -159,7 +160,7 @@ function Bar({ src, label }: { readonly src: string; readonly label: string }): 
   const [spot, setSpot] = useState<Element | null>(null)
   useLayoutEffect(() => setSpot(held.current?.querySelector('.board-head > .spacer') ?? null), [])
   return <div ref={held} className="gecko-bar">
-    <TopBar chat={chat} onNew={noop} onAsk={noop} onSeek={noop} onSettings={noop} onKeys={noop} onShortcuts={noop} />
+    <TopBar chat={chat} onNew={noop} onAsk={noop} onSeek={noop} onSettings={noop} onShortcuts={noop} />
     {spot === null ? null : createPortal(<span className="gecko-spot"><img src={src} alt={label} /></span>, spot)}
   </div>
 }

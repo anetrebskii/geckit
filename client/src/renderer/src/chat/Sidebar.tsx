@@ -1,3 +1,5 @@
+import { EmployeeBadge } from '../employees/Employees'
+import type { Employee } from '../../../shared/employees'
 import { ProviderIcon } from './ProviderIcon'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
@@ -187,6 +189,7 @@ export const STATUS_ICONS: Record<SessionStatus, string> = { todo: 'todo', block
  */
 const Row = memo(function Row({
   showProviders,
+  employee,
   session,
   on,
   picking,
@@ -207,6 +210,7 @@ const Row = memo(function Row({
   onLand,
 }: {
   readonly showProviders: boolean
+  readonly employee: Employee | undefined
   readonly session: ChatSession
   readonly on: boolean
   /** Rows are being picked to be deleted together, and a press picks rather than opens. */
@@ -308,6 +312,7 @@ const Row = memo(function Row({
           </span>
         )}
         <span className="foot">
+          <EmployeeBadge employee={employee} />
           <Tags session={session} />
           <span className="stands">
             {where === undefined ? null : (
@@ -338,6 +343,7 @@ const Row = memo(function Row({
 /** The whole list, drawn again only when the list itself changes. */
 const Rows = memo(function Rows({
   showProviders,
+  employees,
   groups,
   places,
   by,
@@ -360,6 +366,7 @@ const Rows = memo(function Rows({
   onOver,
   onLand,
 }: {
+  readonly employees: ReadonlyMap<Employee['id'], Employee>
   readonly showProviders: boolean
   readonly groups: readonly Group[]
   readonly places: ReadonlyMap<string, number>
@@ -441,6 +448,7 @@ const Rows = memo(function Rows({
               <Row
                 key={session.id}
                 showProviders={showProviders}
+                employee={employees.get(session.employeeId ?? '')}
                 session={session}
                 on={!picking && session.id === shownId}
                 picking={picking}
@@ -701,13 +709,14 @@ export function Sidebar({
 
       <Rows
         showProviders={chat.showProviders}
+        employees={chat.employeesById}
         groups={groups}
         places={places}
         by={by}
         now={now}
         scope={chat.scope}
         colors={chat.settings}
-        empty={chat.root === undefined ? 'Add a folder to start.' : undefined}
+        empty={chat.root === undefined ? 'Add a folder to start.' : chat.settings.employeeFilter !== '' && chat.sessions.length === 0 ? 'No tasks match these filters' : undefined}
         shownId={shownId}
         folded={folded}
         renaming={renaming}

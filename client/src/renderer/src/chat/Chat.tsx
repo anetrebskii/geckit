@@ -41,6 +41,8 @@ import { Transcript } from './Transcript'
 import { Welcome } from './Welcome'
 import { ON_PHONE } from '../on-phone'
 import { Consent } from '../ui/Consent'
+import { EmployeeAssignment, TEAM_EVENT } from '../employees/Employees'
+import { Team } from '../employees/Team'
 import { useChat } from './useChat'
 
 interface Recently {
@@ -74,7 +76,14 @@ export function Chat(): React.JSX.Element {
   const [setting, setSetting] = useState<Section>()
   const [keys, setKeys] = useState(false)
   // The shortcuts dialog and what it opened on; `at` makes a second ask from the tray open it afresh.
-  const [managing, setManaging] = useState<{ readonly edit: string | ShortcutDraft; readonly at: number } | undefined>()
+  const [managing, setManaging] = useState<{ readonly edit: string | ShortcutDraft; readonly at: number; readonly only?: true } | undefined>()
+  const [team, setTeam] = useState<{ readonly first?: string } | undefined>()
+  const openTeam = useCallback((first?: string) => { setSetting(undefined); setTeam({ ...(first === undefined ? {} : { first }) }) }, [])
+  useEffect(() => {
+    const open = (event: Event): void => openTeam((event as CustomEvent<string | undefined>).detail)
+    window.addEventListener(TEAM_EVENT, open)
+    return () => window.removeEventListener(TEAM_EVENT, open)
+  }, [openTeam])
   // Held alone for a moment, the command key shows which number opens which conversation.
   const [holding, setHolding] = useState(false)
   // The conversations in the order the sidebar draws them, which is what Cmd+1 and Ctrl+Tab go by.
@@ -157,7 +166,7 @@ export function Chat(): React.JSX.Element {
   const closeSettings = useCallback(() => {
     setSetting(undefined)
   }, [])
-  const managerSettings = useCallback(() => setSetting('manager'), [])
+  const managerSettings = useCallback(() => openTeam('manager'), [openTeam])
   const closeKeys = useCallback(() => setKeys(false), [])
   const closeShortcuts = useCallback(() => setManaging(undefined), [])
   const shortcutFrom = useCallback(
@@ -319,7 +328,7 @@ export function Chat(): React.JSX.Element {
     }
 
     const key = (event: KeyboardEvent): void => {
-      if (transferring !== undefined) return
+      if (transferring !== undefined || setting) return
       if (clearing || chat.compacting !== undefined) {
         if (event.key === 'Escape') {
           event.preventDefault()
@@ -335,7 +344,7 @@ export function Chat(): React.JSX.Element {
         }
         return
       }
-      if (switching || setting || keys || managing !== undefined || cut !== undefined) return
+      if (switching || keys || managing !== undefined || cut !== undefined || team !== undefined) return
       const now = recentRef.current
       if (now !== undefined && event.key === 'Escape') {
         event.preventDefault()
@@ -458,7 +467,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys, managing, clearing, transferring, making, asking, formStarting, cut])
+  }, [chat, switching, setting, keys, managing, clearing, transferring, making, asking, formStarting, cut, team])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -518,8 +527,9 @@ export function Chat(): React.JSX.Element {
           onAsk={() => setAsking(true)}
           onSeek={setSeek}
           onSettings={() => setSetting('general')}
-          onKeys={openKeys}
           onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
+          onTeam={() => team === undefined ? openTeam() : setTeam(undefined)}
+          teamOn={team !== undefined}
         />
       )}
       {board && ON_PHONE ? (
@@ -546,9 +556,10 @@ export function Chat(): React.JSX.Element {
       {making ? (
         <>
           <div className="talk-scrim form-scrim" onMouseDown={formStarting ? undefined : closeForm} />
-          <NewTask chat={chat} record={recordFirst} seed={seed} seedPaths={seedPaths} seedText={seedText} given={clearedIn} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
+          <NewTask onEmployees={() => openTeam()} chat={chat} record={recordFirst} seed={seed} seedPaths={seedPaths} seedText={seedText} given={clearedIn} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
         </>
       ) : null}
+      {team === undefined || ON_PHONE ? null : <Team chat={chat} first={team.first} onClose={() => setTeam(undefined)} onOpen={(id) => { setTeam(undefined); chat.open({ kind: 'session', id }) }} onShortcut={(edit) => setManaging({ edit, at: Date.now(), only: true })} />}
       {cut === undefined ? null : <CutOffDialog list={cut} onClose={() => setCut(undefined)} />}
       {asking ? (
         <>
@@ -659,6 +670,7 @@ export function Chat(): React.JSX.Element {
                 </span>
                 {host === undefined ? null : <HostChip host={host} onTerminal={() => window.geckit.hosts.terminal(host.id)} />}
                 <Tags session={chat.session} marked={false} />
+                <EmployeeAssignment key={chat.session.id} chat={chat} onManage={openTeam} />
               </>
             ) : chat.root === undefined ? null : (
               <Picker
@@ -943,7 +955,7 @@ export function Chat(): React.JSX.Element {
       {keys ? <ShortcutsDialog onClose={closeKeys} /> : null}
       {chat.settings.welcomed || ON_PHONE ? null : <Welcome chat={chat} />}
       {managing === undefined ? null : (
-        <ShortcutList key={managing.at} chat={chat} start={managing.edit} onClose={closeShortcuts} />
+        <ShortcutList key={managing.at} chat={chat} start={managing.edit} only={managing.only === true} onTeam={() => { setManaging(undefined); openTeam() }} onClose={closeShortcuts} />
       )}
       {chat.compacting !== undefined && chat.session !== undefined ? (
         <div className="dialog-scrim" onMouseDown={() => chat.setCompacting(undefined)}>

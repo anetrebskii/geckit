@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 
+import { EmployeeAssignment } from '../employees/Employees'
 import { homeOf, SESSION_STATUSES } from '../../../shared/api'
 import { isCodexProvider } from '../../../shared/providers'
 import type { SessionStatus } from '../../../shared/api'
@@ -103,6 +104,7 @@ export function PhoneNav({
           </button>
         )}
       </span>
+      {session === undefined ? null : <div className="phone-employee"><EmployeeAssignment key={session.id} chat={chat} /></div>}
       {more && session !== undefined ? (
         <Menu
           anchor={new DOMRect()}

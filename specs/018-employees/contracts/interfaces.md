@@ -1,0 +1,11 @@
+# Interfaces
+
+Canonical types: `client/src/shared/employees.ts` and existing `api.ts`; do not duplicate types here in code.
+
+- `geckit.employees`: list(), save(EmployeeDraft), archive(id, revision), restore(id, revision), retryInstructions(), memory(id, cursor?), on(listener). Mutations return current EmployeesView and reject failed catalog writes or stale revisions; guide failures appear separately in the view.
+- `geckit.chat.assignEmployee(sessionId, employeeId | null)`: save assignment without sending a message or starting/restarting a provider. New-session input carries optional employeeId and validates active catalog membership before dispatch.
+- Existing phone allowlist exposes read-only catalog/memory and assignment, plus employee updates over existing event transport; catalog editing remains desktop UI.
+- Ordinary worker CLI advertises read-only employees list/show/current/memory commands, binds current-session lookup through existing requestingSession identity, validates IDs/cursors and returns source/availability/continuation. It never mutates catalog or assignments.
+- Authenticated Manager capabilities advertise employee reads and employee assignment/create forms. The host validates current ownership, project access and active employee state, preserves existing delegation approval and provider routing, and records operation receipt before reporting success.
+- Generated global guide advertises current catalog and instructions to check assignment and request memory, preserving user-authored config. Development source global-guide writes remain disabled: Claude and Codex use separate guides in this copy's app data. Codex thread start/resume/fork carries a generic pointer merged with effective project developer instructions; disabling restores those instructions. Role and history remain requested through GeckIt rather than appended to task text.
+- Worker memory pages bound message text, source count and item count with resumable source/message/character cursors. Image bodies are omitted with `attachmentsOmitted`. Manager serializes below 20,000 characters, bounds display metadata with `metadataTruncated`, and preserves exact IDs/cursors; role details remain available through employee show.

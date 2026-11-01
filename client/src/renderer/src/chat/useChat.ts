@@ -1,4 +1,7 @@
 import { readAccount } from './accounts'
+import { matchesEmployee } from '../employees/Employees'
+import { useEmployees } from '../employees/useEmployees'
+import type { Employee } from '../../../shared/employees'
 import { useManager } from './useManager'
 import { MANAGER_CHAT_GUIDANCE } from '../../../shared/manager'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -65,6 +68,8 @@ function keptDrafts(): Record<string, string> {
 const keyOf = (shown: Shown): string => (shown.kind === 'new' ? NEW : shown.id)
 
 export interface Chat {
+  readonly employees: readonly Employee[]
+  readonly employeesById: ReadonlyMap<Employee['id'], Employee>
   readonly settings: Settings
   /** Other computers conversations run on, and how each stands. */
   readonly hosts: readonly HostView[]
@@ -159,9 +164,9 @@ export interface Chat {
   /** A general question, in no project, which the board and the list never show. */
   ask: (text: string, images?: readonly SessionImage[]) => Promise<void>
   /** A new conversation from the board's form: the work goes first, then the goal. */
-  startTask: (root: string, text: string, goal: string, images?: readonly SessionImage[]) => Promise<void>
+  startTask: (root: string, text: string, goal: string, images?: readonly SessionImage[], employeeId?: Employee['id']) => Promise<void>
   /** A new task put in To do, nothing sent: the words wait in its composer and the goal goes with its first message. */
-  planTask: (root: string, text: string, goal: string) => Promise<void>
+  planTask: (root: string, text: string, goal: string, employeeId?: Employee['id']) => Promise<void>
   /** Words sent to the open conversation as they are, the field left alone: `/compact`, `/goal clear`. */
   say: (text: string) => void
   answer: (card: string, answer: CardAnswer | string) => void
@@ -228,6 +233,7 @@ function sameList(held: readonly ChatSession[], next: readonly ChatSession[]): r
 
 export function useChat(): Chat {
   const [settings, change] = useSettings()
+  const employees = useEmployees()
   const manager = useManager()
   const { hosts, prompts } = useHosts()
   const [lineup, setLineup] = useState<Lineup>({ working: 0, limit: 0 })
@@ -295,6 +301,7 @@ export function useChat(): Chat {
   const scope = chosen.length === 1 ? (chosen[0] ?? ALL) : ALL
   const enabled = useMemo(() => assistantsIn({ chatProviders: settings.chatProviders }), [settings.chatProviders])
   const sessions = useMemo(() => storedSessions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedSessions, enabled])
+  const visibleSessions = useMemo(() => sessions.filter((one) => matchesEmployee(one, settings.employeeFilter)), [sessions, settings.employeeFilter])
   const everyone = useMemo(() => storedEveryone.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedEveryone, enabled])
   const questions = useMemo(() => storedQuestions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedQuestions, enabled])
   const visibleNotices = useMemo(() => notices.filter((one) => enabled.includes(providerOf(one.session))), [notices, enabled])
@@ -842,13 +849,18 @@ export function useChat(): Chat {
   )
 
   const startTask = useCallback(
-    (root: string, text: string, goal: string, images: readonly SessionImage[] = []) => {
+    (root: string, text: string, goal: string, images: readonly SessionImage[] = [], employeeId?: Employee['id']) => {
       const now = held.current
       const provider = assistantFor(now.settings, root)
       const chosen = providerModel(now.settings, provider)
       const model = chosen === '' ? {} : { model: chosen }
       const carried = images.length === 0 ? {} : { images }
-      return window.geckit.chat.send({ root, provider, ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(isCodexProvider(provider) && goal.trim() !== '' ? { goal: goal.trim() } : {}) }).then((id) => {
+      return window.geckit.chat.send({ root, provider, ...(employeeId === undefined ? {} : { employeeId }), ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(isCodexProvider(provider) && goal.trim() !== '' ? { goal: goal.trim() } : {}) }).then((id) => {
+        if (chosenRef.current.length > 0 && !chosenRef.current.includes(root)) {
+          const next = [...chosenRef.current, root]
+          chosenRef.current = next
+          setPicked(next)
+        }
         open({ kind: 'session', id })
         if (isCodexProvider(provider) || goal.trim() === '') return
         void window.geckit.chat.send({ session: id, root, mode: now.mode, text: `/goal ${goal.trim()}`, ...model })
@@ -857,12 +869,12 @@ export function useChat(): Chat {
     [open],
   )
 
-  const planTask = useCallback((root: string, text: string, goal: string) => {
+  const planTask = useCallback((root: string, text: string, goal: string, employeeId?: Employee['id']) => {
     const now = held.current
     const provider = assistantFor(now.settings, root)
     const chosen = providerModel(now.settings, provider)
     return window.geckit.chat
-      .schedule({ root, provider, ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...(chosen === '' ? {} : { model: chosen }), ...(goal === '' ? {} : { goal }) })
+      .schedule({ root, provider, ...(employeeId === undefined ? {} : { employeeId }), ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...(chosen === '' ? {} : { model: chosen }), ...(goal === '' ? {} : { goal }) })
       .then(() => undefined)
   }, [])
 
@@ -1016,6 +1028,8 @@ export function useChat(): Chat {
   const startNew = useCallback(() => open({ kind: 'new' }), [open])
 
   return {
+    employees: employees.view.employees,
+    employeesById: employees.byId,
     settings,
     hosts,
     prompts,
@@ -1024,7 +1038,7 @@ export function useChat(): Chat {
     change,
     root,
     scope,
-    sessions,
+    sessions: visibleSessions,
     listed,
     earlier: shown.kind === 'session' && earlier.id === shown.id ? earlier.left : 0,
     showEarlier,

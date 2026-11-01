@@ -56,15 +56,18 @@ export type CodexItem =
 export interface ThreadOptions {
   cwd: string
   model?: string
+  developerInstructions?: string
   modelProvider: 'openai'
   approvalPolicy: 'untrusted' | 'on-request'
   approvalsReviewer: 'user' | 'auto_review'
   sandbox: 'read-only' | 'workspace-write'
 }
 
-export function codexOptions(root: string, mode: SessionMode, model?: string): ThreadOptions {
+export function codexOptions(root: string, mode: SessionMode, model?: string, sourceInstructions = true): ThreadOptions {
+  const guide = sourceInstructions ? process.env['GECKIT_SOURCE_CODEX_GUIDE'] : undefined
   return {
     cwd: root,
+    ...(guide === undefined ? {} : { developerInstructions: guide === '' ? '' : `Read ${JSON.stringify(guide)} for this copy's current GeckIt instructions and employee lookup rules.` }),
     ...(model === undefined ? {} : { model }),
     modelProvider: 'openai',
     approvalPolicy: mode === 'manual' ? 'untrusted' : 'on-request',
@@ -76,6 +79,7 @@ export function codexOptions(root: string, mode: SessionMode, model?: string): T
 export interface RpcParams {
   initialize: { clientInfo: { name: string; title: string; version: string }; capabilities: { experimentalApi: boolean } }
   'account/read': { refreshToken: boolean }
+  'config/read': Pick<ThreadOptions, 'cwd'> & { includeLayers: boolean }
   'account/rateLimits/read': Record<string, never>
   'model/list': { cursor?: string | null }
   'thread/start': ThreadOptions & { ephemeral?: boolean; baseInstructions?: string; config?: { web_search: 'disabled'; features: { shell_tool: false; unified_exec: false } } }
@@ -98,6 +102,7 @@ export interface RpcParams {
 
 export interface RpcResults {
   initialize: { userAgent: string }
+  'config/read': { config: { developer_instructions?: string | null } }
   'account/read': { account: { type: 'chatgpt'; email: string | null; planType: string } | { type: 'apiKey' | 'amazonBedrock' } | null }
   'account/rateLimits/read': { rateLimits: CodexRateLimit; rateLimitsByLimitId?: Record<string, CodexRateLimit> | null }
   'model/list': { data: { model: string; displayName: string; description: string; hidden: boolean; supportedReasoningEfforts?: { reasoningEffort: ReasoningEffort; description: string }[]; defaultReasoningEffort?: ReasoningEffort; isDefault?: boolean }[]; nextCursor: string | null }

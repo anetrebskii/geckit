@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Employee renderer viewport</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; background: #777; color: #fff; font: 13px system-ui; }
+nav { height: 44px; display: flex; align-items: center; gap: 12px; padding: 6px 12px; }
+a { color: inherit; }
+#stage { position: relative; margin: auto; }
+iframe { position: absolute; inset: 0 auto auto 0; border: 0; transform-origin: top left; background: white; }
+</style></head>
+<body><nav><strong id="size"></strong><a href="?width=1440&height=900">1440 × 900</a><a href="?width=1024&height=768">1024 × 768</a><a href="?width=390&height=844&phone=1">390 × 844 phone</a><span>Actual renderer in fixed viewport · synthetic IPC</span></nav><div id="stage"><iframe title="Employee renderer"></iframe></div>
+<script type="module">
+const params = new URLSearchParams(location.search)
+const width = Number(params.get('width')) || 1440
+const height = Number(params.get('height')) || 900
+const stage = document.getElementById('stage')
+const frame = document.querySelector('iframe')
+document.getElementById('size').textContent = `${width} × ${height}`
+frame.width = String(width)
+frame.height = String(height)
+params.delete('width')
+params.delete('height')
+frame.src = `/test/browser/employees/index.html?${params}`
+const fit = () => {
+  const scale = Math.min(1, innerWidth / width, (innerHeight - 44) / height)
+  stage.style.width = `${width * scale}px`
+  stage.style.height = `${height * scale}px`
+  frame.style.transform = `scale(${scale})`
+}
+addEventListener('resize', fit)
+fit()
+</script></body></html>

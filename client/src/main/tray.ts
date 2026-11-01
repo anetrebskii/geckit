@@ -14,6 +14,7 @@ import waiting2x from '../../assets/trayWaitingTemplate@2x.png?asset'
 import working from '../../assets/trayWorkingTemplate.png?asset'
 import working2x from '../../assets/trayWorkingTemplate@2x.png?asset'
 import { assistantsIn, shownProjects } from '../shared/api'
+import type { Employee } from '../shared/employees'
 import type { GeckoPose } from '../shared/gecko'
 import { isRemote } from '../shared/hosts'
 import { llmProviderInfo } from '../shared/providers'
@@ -27,6 +28,7 @@ export interface TrayDeps {
   readonly manage: (edit: string) => void
   readonly run: (id: string) => void
   readonly busy: (id: string) => boolean
+  readonly employees: () => readonly Employee[]
   readonly record: () => void
   /** What the conversations are doing, which the gecko in the tray shows. */
   readonly pose: () => GeckoPose
@@ -116,7 +118,15 @@ export function drawTray(): void {
             : `next ${describeTime(next, now).replace(/^[A-Z]/, (first) => first.toLowerCase())}`
       return { one, available, says: !available ? `${basename(one.root)}, assistant unavailable` : when === undefined ? basename(one.root) : `${basename(one.root)}, ${when}` }
     })
-  const key = JSON.stringify([settings.showGecko, rows.map(({ one, available, says }) => [one.id, one.name, available, says])])
+  const team = new Map(deps.employees().map((one) => [one.id, one]))
+  const owner = (one: (typeof rows)[number]['one']): Employee | undefined => (one.employeeId === undefined ? undefined : team.get(one.employeeId))
+  const groups = [...team.values()].flatMap((employee) => {
+    const own = rows.filter(({ one }) => one.employeeId === employee.id)
+    return own.length === 0 ? [] : [{ title: employee.archived ? `${employee.name} (archived)` : employee.name, archived: employee.archived, rows: own }]
+  })
+  const loose = rows.filter(({ one }) => owner(one) === undefined)
+  const grouped = groups.length === 0 ? [{ title: 'Shortcuts', archived: false, rows: loose }] : [...groups, ...(loose.length === 0 ? [] : [{ title: 'No employee', archived: false, rows: loose }])]
+  const key = JSON.stringify([settings.showGecko, grouped.map(({ title, rows: list }) => [title, list.map(({ one, available, says }) => [one.id, one.name, available, says])])])
   if (key === drawn) return
   drawn = key
 
@@ -128,17 +138,19 @@ export function drawTray(): void {
     // The gecko comes back from here, without opening Settings.
     { label: settings.showGecko ? 'Hide the Gecko' : 'Show the Gecko', click: () => setSettings({ showGecko: !getSettings().showGecko }) },
     { type: 'separator' },
-    { label: 'Shortcuts', enabled: false },
-    ...rows.map(
-      ({ one, available, says }): MenuItemConstructorOptions => ({
-        // A second line is a Mac's only.
-        label: mac ? one.name : `${one.name} (${says})`,
-        ...(mac ? { sublabel: says } : {}),
-        toolTip: one.prompt,
-        enabled: available,
-        click: () => deps?.run(one.id),
-      }),
-    ),
+    ...grouped.flatMap(({ title, archived, rows: list }): MenuItemConstructorOptions[] => [
+      { label: title, enabled: false },
+      ...list.map(
+        ({ one, available, says }): MenuItemConstructorOptions => ({
+          // A second line is a Mac's only.
+          label: mac ? one.name : `${one.name} (${says})`,
+          ...(mac ? { sublabel: archived ? 'paused while archived' : says } : {}),
+          toolTip: one.prompt,
+          enabled: available && !archived,
+          click: () => deps?.run(one.id),
+        }),
+      ),
+    ]),
     { label: 'New Shortcut...', click: () => deps?.manage('new') },
     ...(rows.length === 0 ? [] : [{ label: 'Manage Shortcuts...', click: () => deps?.manage('list') }]),
     { type: 'separator' },

@@ -4,7 +4,8 @@ import type { Link } from '../src/renderer/src/link'
 import type { Installed } from '../src/renderer/src/phone'
 import type { LinkMessage, Piece } from '../src/shared/pairing'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
-import type { SessionItem, SessionItems, Settings } from '../src/shared/api'
+import type { ChatSession, SessionItem, SessionItems, Settings } from '../src/shared/api'
+import type { Employee, EmployeesView } from '../src/shared/employees'
 import { collapse, isPending, pendingLast } from '../src/shared/steps'
 
 const cache = vi.hoisted(() => new Map<string, string>())
@@ -25,6 +26,7 @@ const theirs = (id: string): SessionItem => ({ kind: 'theirs', id, text: id })
 function macWith(
   all: SessionItem[],
   old = false,
+  team?: { readonly employees?: EmployeesView; readonly rows: readonly ChatSession[] },
 ): { readonly link: Link; readonly asked: string[]; readonly calls: Extract<LinkMessage, { t: 'call' }>[]; readonly tell: (value: SessionItems) => void } {
   const hearers: ((message: LinkMessage) => void)[] = []
   const asked: string[] = []
@@ -40,6 +42,8 @@ function macWith(
       const [, second, third] = message.args as [string, unknown, unknown]
       if (old && (message.name === 'chat.turns' || message.name === 'chat.turnsBefore' || message.name === 'chat.steps')) return answer(message.id, undefined, `No such call: ${message.name}`)
       if (message.name === 'settings.get') return answer(message.id, mac)
+      if (team !== undefined && message.name === 'chat.list') return answer(message.id, team.rows)
+      if (team !== undefined && message.name === 'employees.list') return team.employees === undefined ? answer(message.id, undefined, 'No such call: employees.list') : answer(message.id, team.employees)
       if (message.name === 'settings.set') {
         mac = { ...mac, ...(second === undefined ? (message.args[0] as Partial<Settings>) : {}) }
         return answer(message.id, mac)
@@ -292,5 +296,30 @@ describe('the phone over the link', () => {
     swap(macWith(all).link)
     await new Promise((done) => setTimeout(done, 5))
     expect([...page.keys()]).toEqual(['m1', 't1'])
+  })
+
+  it('reads the employees again on a new link, so an assignment made while they failed to load is shown', async () => {
+    const denys: Employee = { id: 'fa39e13d', name: 'Denys', role: 'Realtor', description: '', avatar: 'employee-02', archived: false, revision: 2 }
+    const kate: Employee = { ...denys, id: 'db395d88', name: 'Kate', role: 'SMM', avatar: 'employee-11', revision: 3 }
+    const row = (employeeId?: ChatSession['employeeId']): ChatSession => ({ id: 'plugin:claude-tmux:3bf458e7', root: '/f', title: 'Bank', at: 1, state: 'idle', stands: '', here: true, mode: 'auto', ...(employeeId === undefined ? {} : { employeeId }) })
+    const { swap } = install(macWith([], false, { rows: [row('fa39e13d')] }).link)
+    await expect(window.geckit.employees.list()).rejects.toThrow('employees.list')
+    const employees: EmployeesView[] = []
+    const rows: (readonly ChatSession[])[] = []
+    window.geckit.employees.on((view) => employees.push(view))
+    window.geckit.chat.onSessions((all) => rows.push(all))
+
+    swap(macWith([], false, { employees: { employees: [denys, kate] }, rows: [row('fa39e13d')] }).link)
+    await new Promise((done) => setTimeout(done, 5))
+    expect(employees.at(-1)?.employees.map((one) => one.name)).toEqual(['Denys', 'Kate'])
+    expect(rows.at(-1)?.[0]?.employeeId).toBe('fa39e13d')
+
+    swap(macWith([], false, { employees: { employees: [denys, kate] }, rows: [row('db395d88')] }).link)
+    await new Promise((done) => setTimeout(done, 5))
+    expect(rows.at(-1)?.[0]?.employeeId).toBe('db395d88')
+
+    swap(macWith([], false, { employees: { employees: [denys, kate] }, rows: [row()] }).link)
+    await new Promise((done) => setTimeout(done, 5))
+    expect(rows.at(-1)?.[0]?.employeeId).toBeUndefined()
   })
 })

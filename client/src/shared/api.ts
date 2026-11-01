@@ -4,6 +4,7 @@ import type { HostConfig } from './hosts'
 import type { LlmProviderInfo } from './providers'
 import { llmProviderInfo } from './providers'
 import type { ProjectAssistant } from './manager'
+import type { Employee } from './employees'
 
 /**
  * The contract between the main process and the windows.
@@ -160,6 +161,14 @@ export type SessionItem =
       readonly tasks: readonly RequestTask[]
       readonly answer?: RequestAnswer
     }
+  /** Changes to the team asked for with `geckit employees`, applied only once the person allows them. */
+  | {
+      readonly kind: 'team-request'
+      readonly id: string
+      /** Each change in plain words: "Add shortcut \"Check lots\" to Realtor". */
+      readonly lines: readonly string[]
+      readonly answer?: TeamAnswer
+    }
   /** A run of steps as one line, sent to the phone in place of the steps, which it asks for when the line is opened. */
   | {
       readonly kind: 'steps'
@@ -196,6 +205,19 @@ export interface RequestChoice {
   readonly start: readonly boolean[]
   readonly notes: readonly string[]
   readonly reply?: string
+  readonly where: 'mac' | 'phone'
+}
+
+export interface TeamAnswer {
+  readonly how: 'allowed' | 'declined' | 'withdrawn'
+  readonly where?: 'mac' | 'phone'
+  readonly note?: string
+}
+
+/** What the person decided about a change to the team. */
+export interface TeamChoice {
+  readonly allow: boolean
+  readonly note?: string
   readonly where: 'mac' | 'phone'
 }
 
@@ -334,6 +356,7 @@ export interface SessionNotice {
 
 /** One row in the sidebar. */
 export interface ChatSession {
+  readonly employeeId?: Employee['id']
   readonly prepared?: true
   readonly retryNotice?: string
   readonly delivery?: SessionDeliveryReceipt
@@ -534,6 +557,7 @@ export interface ChatFound {
 
 /** What is sent when Send is pressed. */
 export interface SessionMessage {
+  readonly employeeId?: Employee['id']
   readonly submission?: string
   readonly provider?: SessionProvider
   readonly reasoning?: ReasoningEffort | ''
@@ -1038,6 +1062,7 @@ export interface PhoneView {
 }
 
 export interface Settings {
+  readonly employeeFilter: string
   readonly theme: Theme
   readonly vpnIpCheck: boolean
   readonly vpnAllowedIps: readonly string[]
@@ -1104,6 +1129,8 @@ export interface Settings {
   readonly analytics: boolean
   /** The question about counting was answered, either way. */
   readonly analyticsAsked: boolean
+  /** The portrait Manager wears in Team; empty shows its initial. */
+  readonly managerAvatar: string
   /** Errors go to Sentry, redacted. Off until the error card is answered Send, or it is turned on in Settings. */
   readonly sendErrors: boolean
   /** The gecko floating on the desktop and in the tray, showing what the conversations are doing. Off, the tray has its plain icon. */
@@ -1138,6 +1165,7 @@ export interface Settings {
   readonly shortcuts: readonly Shortcut[]
   readonly calendarTimeZone?: string
   readonly calendarRecurrenceVersion?: 1
+  readonly cronStartWindowVersion?: 1
   /** What is written often, offered after ; in the message field. */
   readonly phrases: readonly string[]
   /** Other computers conversations run on, reached over SSH. Never a password: those are in the system's credential store. */
@@ -1155,8 +1183,11 @@ export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'>
   readonly mode: SessionMode
   /** The model the conversation is handed. Nothing is Default. */
   readonly model?: string
+  /** The employee who owns it: each run starts a conversation assigned to them, and their archive pauses the timetable. */
+  readonly employeeId?: Employee['id']
   /** When it also runs by itself, as cron writes it: minute, hour, day of the month, month, day of the week. Nothing is by hand only. */
   readonly cron?: string
+  readonly startWindowMinutes?: number
   readonly recurrence?: CalendarRecurrence
   /** False pauses the timetable and keeps it. */
   readonly on: boolean
@@ -1220,6 +1251,7 @@ export function shownProjects(settings: Pick<Settings, 'projects' | 'profiles' |
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  employeeFilter: '',
   theme: 'system',
   vpnIpCheck: false,
   vpnAllowedIps: [],
@@ -1262,6 +1294,7 @@ export const DEFAULT_SETTINGS: Settings = {
   client: '',
   analytics: false,
   analyticsAsked: false,
+  managerAvatar: '',
   sendErrors: false,
   showGecko: true,
   autoUpdate: true,

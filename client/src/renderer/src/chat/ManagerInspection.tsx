@@ -85,7 +85,7 @@ export function ManagerInspection({ view, settings, onClose, onSettings }: { rea
       {view.state !== 'working' || view.session?.state !== 'working' || view.session.retryNotice === undefined ? null : <p className="manager-retry" role="status">{view.session.retryNotice}</p>}
     </div>
     {id === undefined
-      ? <div className="manager-inspection-empty"><Icon name="terminal" size={20} /><p>No Manager session yet.</p><p className="manager-inspection-hint">Set one up, then send it a task in Telegram.</p><button type="button" className="primary" onClick={onSettings}>Manager settings</button></div>
+      ? <div className="manager-inspection-empty"><Icon name="terminal" size={20} /><p>No Manager session yet.</p><p className="manager-inspection-hint">Set one up, then send it a task in Telegram.</p><button type="button" className="primary" onClick={onSettings}>Open Manager in Team</button></div>
       : error !== '' ? <div className="manager-inspection-empty"><Icon name="blocked" size={20} /><p className="manager-error" role="alert">Could not load the Manager session.</p><p className="manager-inspection-hint">{error}</p><button type="button" className="quiet" onClick={() => setRetry((value) => value + 1)}>Try again</button></div>
       : read?.id !== id || read.attempt !== retry ? <div className="manager-inspection-empty" role="status"><Icon name="spinner" size={20} /><p>Loading the Manager session...</p></div>
       : read.items.length === 0 ? <div className="manager-inspection-empty"><Icon name="chat" size={20} /><p>No activity yet.</p><p className="manager-inspection-hint">Send a task in Telegram and it shows up here.</p></div>

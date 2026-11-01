@@ -17,7 +17,7 @@ import { useBack } from '../phone-back'
 
 export interface Choice {
   readonly value: string
-  readonly label: string
+  readonly label: React.ReactNode
   readonly says?: string
   readonly danger?: boolean
   /** Checked whatever is chosen, for a menu of things each on or off. */
@@ -42,6 +42,7 @@ export function Menu({
   onPick,
   onClose,
   children,
+  search,
 }: {
   readonly anchor: DOMRect
   readonly choices: readonly Choice[]
@@ -58,6 +59,7 @@ export function Menu({
   readonly onClose: () => void
   /** Rows of its own drawn after the choices, for a list whose rows say more than a name. */
   readonly children?: React.ReactNode
+  readonly search?: { readonly value: string; readonly placeholder: string; readonly onChange: (value: string) => void }
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
   const opener = useRef(document.activeElement)
@@ -97,7 +99,7 @@ export function Menu({
     const first = node?.querySelector<HTMLButtonElement>('.menu-item:not(:disabled)')
     if (first === null || first === undefined) return
     const selected = node?.querySelector<HTMLButtonElement>('.menu-item.on:not(:disabled)')
-    const target = selected ?? first
+    const target = node?.querySelector<HTMLInputElement>('.menu-search') ?? selected ?? first
     target.focus()
     focused.current = true
   }, [autoFocus, at])
@@ -129,6 +131,7 @@ export function Menu({
     return (
       <Sheet {...(title === undefined ? {} : { title })} onClose={onClose}>
         <div className="sheet-list" role="menu">
+          {search === undefined ? null : <input className="menu-search" aria-label={search.placeholder} placeholder={search.placeholder} value={search.value} onChange={(event) => search.onChange(event.target.value)} />}
           {choices.flatMap((choice) => choice.choices ?? [choice]).map((choice) => (
             <button
               key={choice.value}
@@ -171,6 +174,7 @@ export function Menu({
         }}
       >
         {title === undefined ? null : <div className="menu-title">{title}</div>}
+        {search === undefined ? null : <input className="menu-search" aria-label={search.placeholder} placeholder={search.placeholder} value={search.value} onChange={(event) => search.onChange(event.target.value)} />}
         {choices.map((choice) => (
           <button
             key={choice.value}

@@ -555,7 +555,7 @@ export function Projects({ chat, single, disabled = false }: { readonly chat: Ch
       <button
         ref={button}
         type="button"
-        className={single === undefined ? 'project no-drag' : 'project no-drag new-task-folder'}
+        className={single === undefined ? `project no-drag${chat.chosen.length === 0 ? ' idle' : ''}` : 'project no-drag new-task-folder'}
         disabled={disabled}
         aria-label={single === undefined ? undefined : 'Folder'}
         title={single === undefined ? `Switch folder (${MOD}+K)` : single.root === undefined || single.root === '' ? 'Choose a folder' : rootLabel(single.root)}

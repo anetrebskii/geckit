@@ -1,3 +1,4 @@
+import { matchesEmployee } from '../employees/Employees'
 import { ProviderIcon } from './ProviderIcon'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -130,7 +131,7 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
   const front = chat.shown.kind === 'session' ? chat.shown.id : undefined
   // Worked out again only when the list or what is asked changes, not each time a row is pointed at.
   return useMemo(() => {
-    const all = within === undefined ? every : every.filter((one) => homeOf(one) === within)
+    const all = every.filter((one) => matchesEmployee(one, chat.settings.employeeFilter) && (within === undefined || homeOf(one) === within))
 
     const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
     const byId = new Map(all.map((one) => [one.id, one]))
@@ -162,7 +163,7 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
       ...bySaid.map((row, index) => (index === 0 && byName.length > 0 ? { ...row, heads: true } : row)),
     ].slice(0, MOST)
     return { found, words }
-  }, [every, within, asked, hits, front])
+  }, [every, within, asked, hits, front, chat.settings.employeeFilter])
 }
 
 /** The rows themselves, the same under the field in the board as inside the Cmd+P panel. */

@@ -24,6 +24,7 @@ import type {
   PhoneView,
   PlanUsage,
   RequestChoice,
+  TeamChoice,
   Shortcut,
   ShortcutDraft,
   SessionImage,
@@ -55,6 +56,7 @@ import type { Pairing, Piece } from '../shared/pairing'
 import type { VoiceMemosConnection } from '../shared/manager-intake'
 import type { ManagerApi, ManagerConfig, ManagerView } from '../shared/manager'
 import type { TelegramAction, TelegramApi, TelegramView } from '../shared/telegram'
+import type { EmployeeDraft, EmployeeMemory, EmployeesApi, EmployeesView } from '../shared/employees'
 
 /**
  * Everything a window may ask the main process, and nothing else.
@@ -81,6 +83,16 @@ const geckit = {
 
   /** Where a dropped file is, which the file itself no longer says. */
   pathFor: (file: File): string => webUtils.getPathForFile(file),
+
+  employees: {
+    list: (): Promise<EmployeesView> => ipcRenderer.invoke('employees:list'),
+    save: (draft: EmployeeDraft): Promise<EmployeesView> => ipcRenderer.invoke('employees:save', draft),
+    archive: (id: string, revision: number): Promise<EmployeesView> => ipcRenderer.invoke('employees:archive', id, revision),
+    restore: (id: string, revision: number): Promise<EmployeesView> => ipcRenderer.invoke('employees:restore', id, revision),
+    retryInstructions: (): Promise<EmployeesView> => ipcRenderer.invoke('employees:retryInstructions'),
+    memory: (id: string, cursor?: string): Promise<EmployeeMemory> => ipcRenderer.invoke('employees:memory', id, cursor),
+    on: (said: (view: EmployeesView) => void): (() => void) => listen('employees:changed', said),
+  } satisfies EmployeesApi,
 
   manager: {
     voiceMemos: (action?: 'privacy'): Promise<VoiceMemosConnection> => ipcRenderer.invoke('manager:voice-memos', action),
@@ -219,6 +231,8 @@ const geckit = {
     /** Answers a request from `geckit start`: the ticked tasks start, the rest are refused. */
     answerRequest: (request: string, choice: RequestChoice): Promise<void> => ipcRenderer.invoke('chat:answerRequest', request, choice),
     startAll: (request: string, where: 'mac' | 'phone'): Promise<void> => ipcRenderer.invoke('chat:startAll', request, where),
+    /** Answers a change to the team asked for with `geckit employees`. */
+    answerTeamRequest: (request: string, choice: TeamChoice): Promise<void> => ipcRenderer.invoke('chat:answerTeamRequest', request, choice),
     stop: (id: string): void => ipcRenderer.send('chat:stop', id),
     /** Takes a message out of the queue before it goes, and gives it back. */
     unqueue: (id: string, queued: string): Promise<SessionMessage | undefined> => ipcRenderer.invoke('chat:unqueue', id, queued),
@@ -235,6 +249,7 @@ const geckit = {
     /** How a session may act, chosen under the field: it holds from now, not from the next message. */
     mode: (id: string, mode: SessionMode): void => ipcRenderer.send('chat:mode', id, mode),
     transport: (id: string, transport: ClaudeTransport): void => ipcRenderer.send('chat:transport', id, transport),
+    assignEmployee: (id: string, employeeId: string | null): Promise<void> => ipcRenderer.invoke('chat:assignEmployee', id, employeeId),
     rename: (id: string, title: string): void => ipcRenderer.send('chat:rename', id, title),
     mark: (id: string, status: SessionStatus | undefined): void => ipcRenderer.send('chat:mark', id, status ?? null),
     hide: (id: string): void => ipcRenderer.send('chat:hide', id),

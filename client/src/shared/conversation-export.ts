@@ -47,6 +47,7 @@ function entry(item: SessionItem, index: number): string {
     }
     case 'card':
     case 'request':
+    case 'team-request':
     case 'wrote':
       return [heading, block(JSON.stringify(item, null, 2), 'json')].join('\n\n')
   }

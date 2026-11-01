@@ -44,6 +44,7 @@ function Preview(): React.JSX.Element {
     queued: shownQueue, ...(scenario === 'unsupported' || scenario === 'idle' || scenario === 'approval' ? {} : { canInject: true }), ...(injecting === undefined ? {} : { injecting }),
   }
   const chat: Chat = {
+    employees: [], employeesById: new Map(),
     settings: { ...DEFAULT_SETTINGS, phrases: [] }, hosts: [], prompts: [], lineup: { working: 1, limit: 6 }, full: false, change: noop,
     root: session.root, scope: session.root, sessions: [session], listed: true, everyone: [session], questions: [], waiting: [], notices: [], shown: { kind: 'session', id: session.id }, session,
     items, itemsFor: session.id, earlier: 0, showEarlier: noop, loadSteps: noop, draft, pictures: [], trouble, checkingIp: false, retrying: false, retry: noop, uploading: false,

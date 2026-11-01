@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CalendarRecurrence, Settings, Shortcut } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
+import { nextTimed } from '../src/shared/schedule'
 
 const held = vi.hoisted(() => ({ shortcuts: [] as Shortcut[], chatProviders: ['claude', 'codex'] as Settings['chatProviders'], writeFails: false }))
 
@@ -237,5 +238,55 @@ describe('the shortcuts', () => {
     expect(await runShortcut('m', 'hand')).toBeUndefined()
     expect(start).not.toHaveBeenCalled()
     expect(held.shortcuts).toEqual(before)
+  })
+
+  it('runs a chosen window once across polling and manual starts, then catches up once after downtime', async () => {
+    const window: Shortcut = { ...morning, id: 'window-a', since: at('2026-09-22T08:59'), startWindowMinutes: 60 }
+    held.shortcuts = [window]
+    const chosen = nextTimed(window, window.since) ?? 0
+    expect(chosen).toBeGreaterThan(at('2026-09-22T09:01'))
+    startShortcuts({ start, rename, busy: () => busy })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(start).not.toHaveBeenCalled()
+    await runShortcut(window.id, 'hand')
+    expect(held.shortcuts[0]?.since).toBe(window.since)
+    vi.setSystemTime(chosen - 21_000)
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(start).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(start).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(start).toHaveBeenCalledTimes(2)
+    vi.setSystemTime(at('2026-09-28T12:00'))
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(start).toHaveBeenCalledTimes(3)
+  })
+
+  it('preserves pending windows for unrelated edits and resets progress for window or schedule changes and resume', () => {
+    const window: Shortcut = { ...morning, startWindowMinutes: 60 }
+    held.shortcuts = [window]
+    const chosen = nextTimed(window, Date.now())
+    const renamed = saveShortcut({ ...window, name: 'Changed name', prompt: 'Changed prompt' })
+    expect(renamed.since).toBe(window.since)
+    expect(nextTimed(renamed, Date.now())).toBe(chosen)
+    expect(saveShortcut({ ...renamed, startWindowMinutes: 30 }).since).toBe(Date.now())
+    vi.setSystemTime(at('2026-09-22T10:00'))
+    expect(saveShortcut({ ...renamed, cron: '0 11 * * *', startWindowMinutes: 30 }).since).toBe(Date.now())
+    const paused = saveShortcut({ ...morning, startWindowMinutes: 30, on: false })
+    vi.setSystemTime(at('2026-09-22T12:00'))
+    expect(saveShortcut({ ...paused, on: true }).since).toBe(Date.now())
+  })
+
+  it('rejects invalid incoming windows and skips malformed persisted windows alongside valid schedules', async () => {
+    for (const startWindowMinutes of [0, -1, 1.5, 1441, Number.NaN]) expect(() => saveShortcut({ ...morning, startWindowMinutes })).toThrow('whole number')
+    const { cron: _cron, ...manual } = morning
+    expect(() => saveShortcut({ ...manual, startWindowMinutes: 30 })).toThrow('CRON timetable')
+    expect(() => saveShortcut({ ...manual, recurrence: custom, startWindowMinutes: 30 })).toThrow('CRON timetable')
+    held.shortcuts = [{ ...morning, id: 'invalid', startWindowMinutes: 0 }, morning]
+    startShortcuts({ start, rename, busy: () => busy })
+    await vi.waitFor(() => expect(rename).toHaveBeenCalled())
+    expect(start).toHaveBeenCalledTimes(1)
+    expect(held.shortcuts[0]?.lastRun).toBeUndefined()
+    expect(held.shortcuts[1]?.lastSession).toBe('session-1')
   })
 })

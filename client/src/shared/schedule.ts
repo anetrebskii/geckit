@@ -1,5 +1,5 @@
 import type { Shortcut } from './api'
-import { calendarDate, nextRecurrence, recurrenceEnded } from './recurrence'
+import { atTime, calendarDate, civil, localCalendarZone, nextRecurrence, recurrenceEnded } from './recurrence'
 
 /** The five fields of a cron line, and the values each may hold; a weekday of 7 is Sunday, as 0 is. */
 const FIELDS = [
@@ -38,13 +38,19 @@ function field(text: string, { min, max }: { readonly min: number; readonly max:
   return values
 }
 
+const timetables = new Map<string, Timetable | undefined>()
+
 function timetable(cron: string): Timetable | undefined {
+  if (timetables.has(cron)) return timetables.get(cron)
   const parts = cron.trim().split(/\s+/)
   if (parts.length !== 5) return undefined
   const [minutes, hours, days, months, weekdays] = parts.map((part, at) => field(part, FIELDS[at] ?? FIELDS[0]))
   if (minutes === undefined || hours === undefined || days === undefined || months === undefined || weekdays === undefined) return undefined
   if (weekdays.has(7)) weekdays.add(0)
-  return { minutes, hours, days, months, weekdays, anyDay: parts[2] === '*', anyWeekday: parts[4] === '*' }
+  const table = { minutes, hours, days, months, weekdays, anyDay: parts[2] === '*', anyWeekday: parts[4] === '*' }
+  if (timetables.size >= 64) timetables.clear()
+  timetables.set(cron, table)
+  return table
 }
 
 export function isCron(cron: string): boolean {
@@ -52,9 +58,9 @@ export function isCron(cron: string): boolean {
 }
 
 /** Cron's own rule: with both the day of the month and the day of the week given, either will do. */
-function onDay(table: Timetable, at: Date): boolean {
-  const day = table.days.has(at.getDate())
-  const weekday = table.weekdays.has(at.getDay())
+function onDay(table: Timetable, at: Date, utc = false): boolean {
+  const day = table.days.has(utc ? at.getUTCDate() : at.getDate())
+  const weekday = table.weekdays.has(utc ? at.getUTCDay() : at.getDay())
   if (!table.anyDay && !table.anyWeekday) return day || weekday
   return day && weekday
 }
@@ -62,10 +68,80 @@ function onDay(table: Timetable, at: Date): boolean {
 /** Far enough for the 29th of February. */
 const LOOK_AHEAD = 5 * 366 * 24 * 60 * 60_000
 
-/** The first minute after `after` the timetable names, in local time, or nothing for a line cron would not take or a date that never comes. */
-export function nextRun(cron: string, after: number): number | undefined {
+export function startWindowError(shortcut: Pick<Shortcut, 'cron' | 'recurrence' | 'startWindowMinutes'>): string | undefined {
+  const minutes = shortcut.startWindowMinutes
+  if (minutes === undefined) return undefined
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) return 'Enter a whole number from 1 to 1,440.'
+  if (typeof shortcut.cron !== 'string' || shortcut.recurrence !== undefined || !isCron(shortcut.cron)) return 'Choose a CRON timetable for a start window.'
+  return undefined
+}
+
+function selectedStart(shortcut: Pick<Shortcut, 'id' | 'startWindowMinutes'>, anchor: number, following: number | undefined): number {
+  let hash = 2166136261
+  for (const character of `${shortcut.id}:${String(anchor)}`) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619)
+  hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b)
+  hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35)
+  hash = (hash ^ (hash >>> 16)) >>> 0
+  const minutes = Math.min(shortcut.startWindowMinutes ?? 0, following === undefined ? 1440 : Math.max(0, Math.ceil((following - anchor) / 60_000) - 1))
+  return anchor + Math.floor((hash / 4294967296) * (minutes + 1)) * 60_000
+}
+
+function pendingAnchor(cron: string, after: number, since: number, minutes: number, zone?: string): number | undefined {
   const table = timetable(cron)
   if (table === undefined) return undefined
+  const earliest = Math.max(since + 1, after - minutes * 60_000)
+  if (earliest > after) return undefined
+  if (zone !== undefined && zone !== localCalendarZone()) {
+    const nowWall = civil(after, zone).getTime()
+    const earliestWall = civil(earliest, zone).getTime()
+    const wall = new Date(Math.max(nowWall, after + earliestWall - earliest))
+    wall.setUTCSeconds(0, 0)
+    const end = Math.min(nowWall, earliestWall) - 60_000
+    for (; wall.getTime() >= end; wall.setUTCMinutes(wall.getUTCMinutes() - 1)) {
+      if (!table.months.has(wall.getUTCMonth() + 1) || !onDay(table, wall, true) || !table.hours.has(wall.getUTCHours()) || !table.minutes.has(wall.getUTCMinutes())) continue
+      const candidate = atTime(wall, `${String(wall.getUTCHours()).padStart(2, '0')}:${String(wall.getUTCMinutes()).padStart(2, '0')}`, zone)
+      if (candidate !== undefined && candidate <= after) return candidate >= earliest ? candidate : undefined
+    }
+    return undefined
+  }
+  // Only the latest raw occurrence can still be pending because windows end before the next one.
+  for (let time = Math.floor(after / 60_000) * 60_000; time >= earliest; time -= 60_000) {
+    const at = new Date(time)
+    if (!table.months.has(at.getMonth() + 1) || !onDay(table, at) || !table.hours.has(at.getHours()) || !table.minutes.has(at.getMinutes())) continue
+    at.setHours(at.getHours(), at.getMinutes(), 0, 0)
+    if (at.getTime() === time) return time
+  }
+  return undefined
+}
+
+/** The first minute after `after` the timetable names, in local time, or nothing for a line cron would not take or a date that never comes. */
+export function nextRun(cron: string, after: number, zone?: string): number | undefined {
+  const table = timetable(cron)
+  if (table === undefined) return undefined
+  if (zone !== undefined && zone !== localCalendarZone()) {
+    const at = civil(after, zone)
+    at.setUTCSeconds(0, 0)
+    at.setUTCMinutes(at.getUTCMinutes() + 1)
+    const end = at.getTime() + LOOK_AHEAD
+    while (at.getTime() <= end) {
+      if (!table.months.has(at.getUTCMonth() + 1)) {
+        at.setUTCMonth(at.getUTCMonth() + 1, 1)
+        at.setUTCHours(0, 0, 0, 0)
+      } else if (!onDay(table, at, true)) {
+        at.setUTCDate(at.getUTCDate() + 1)
+        at.setUTCHours(0, 0, 0, 0)
+      } else if (!table.hours.has(at.getUTCHours())) {
+        at.setUTCHours(at.getUTCHours() + 1, 0, 0, 0)
+      } else if (!table.minutes.has(at.getUTCMinutes())) {
+        at.setUTCMinutes(at.getUTCMinutes() + 1, 0, 0)
+      } else {
+        const candidate = atTime(at, `${String(at.getUTCHours()).padStart(2, '0')}:${String(at.getUTCMinutes()).padStart(2, '0')}`, zone)
+        if (candidate !== undefined && candidate > after) return candidate
+        at.setUTCMinutes(at.getUTCMinutes() + 1)
+      }
+    }
+    return undefined
+  }
   const at = new Date(after)
   at.setSeconds(0, 0)
   at.setMinutes(at.getMinutes() + 1)
@@ -88,10 +164,24 @@ export function nextRun(cron: string, after: number): number | undefined {
 }
 
 /** When a shortcut next runs by itself, or nothing for one run by hand or paused. */
-export function nextTimed(shortcut: Shortcut, after: number, zone?: string): number | undefined {
-  if (!shortcut.on) return undefined
+export function nextTimed(shortcut: Pick<Shortcut, 'id' | 'on' | 'since' | 'cron' | 'recurrence' | 'startWindowMinutes'>, after: number, zone?: string): number | undefined {
+  if (!shortcut.on || startWindowError(shortcut) !== undefined) return undefined
   if (shortcut.recurrence !== undefined) return shortcut.cron === undefined ? nextRecurrence(shortcut.recurrence, Math.max(shortcut.since, after), zone) : undefined
-  return shortcut.cron !== undefined ? nextRun(shortcut.cron, Math.max(shortcut.since, after)) : undefined
+  if (shortcut.cron === undefined) return undefined
+  if (shortcut.startWindowMinutes !== undefined) {
+    const pending = pendingAnchor(shortcut.cron, after, shortcut.since, shortcut.startWindowMinutes, zone)
+    if (pending !== undefined) {
+      const chosen = selectedStart(shortcut, pending, nextRun(shortcut.cron, pending, zone))
+      if (chosen > after) return chosen
+    }
+  }
+  const cronZone = shortcut.startWindowMinutes === undefined ? undefined : zone
+  const anchor = nextRun(shortcut.cron, Math.max(shortcut.since, after), cronZone)
+  return anchor === undefined || shortcut.startWindowMinutes === undefined ? anchor : selectedStart(shortcut, anchor, nextRun(shortcut.cron, anchor, cronZone))
+}
+
+export function describeStartWindow(shortcut: Pick<Shortcut, 'startWindowMinutes'>): string {
+  return shortcut.startWindowMinutes === undefined ? '' : `Random start within ${String(shortcut.startWindowMinutes)} minutes`
 }
 
 /** A run missed while the machine slept or the app was closed is one run once it is back, as launchd does it. */

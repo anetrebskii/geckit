@@ -1,3 +1,5 @@
+import { EmployeeCardAssign, EmployeeFilter, EmployeeSelect, TeamButton } from '../employees/Employees'
+import type { Employee } from '../../../shared/employees'
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -16,7 +18,6 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
-import { HiddenChats } from './HiddenChats'
 import { NameField } from './NameField'
 import { PhoneProject } from './PhoneProject'
 import { PhoneRecord } from './PhoneRecord'
@@ -98,8 +99,9 @@ export function TopBar({
   onAsk,
   onSeek,
   onSettings,
-  onKeys,
   onShortcuts,
+  onTeam,
+  teamOn = false,
 }: {
   readonly chat: Chat
   readonly onNew: () => void
@@ -107,12 +109,12 @@ export function TopBar({
   /** A conversation opened on something said in it, marked there as the Cmd+P panel marks it. */
   readonly onSeek: (seek: Seek) => void
   readonly onSettings: () => void
-  readonly onKeys: () => void
   readonly onShortcuts: () => void
+  readonly onTeam?: (() => void) | undefined
+  readonly teamOn?: boolean
 }): React.JSX.Element {
   const [asked, setAsked] = useState<DOMRect | undefined>()
   const [ways, setWays] = useState<DOMRect | undefined>()
-  const [hidden, setHidden] = useState(false)
   return (
     <div className="board-head drag">
       <div className="board-views no-drag" role="group" aria-label="View controls">
@@ -120,6 +122,7 @@ export function TopBar({
         {chat.settings.chatView === 'board' && !ON_PHONE ? <Columns chat={chat} /> : null}
       </div>
       <Projects chat={chat} />
+      <EmployeeFilter chat={chat} />
       <BoardSearch chat={chat} onSeek={onSeek} />
       <button
         type="button"
@@ -130,24 +133,7 @@ export function TopBar({
       >
         <Icon name="bolt" />
       </button>
-      <button
-        type="button"
-        className="icon-button no-drag"
-        aria-label="Keyboard shortcuts"
-        title={`Keyboard shortcuts (${MOD}+/)`}
-        onClick={onKeys}
-      >
-        <Icon name="keyboard" />
-      </button>
-      <button
-        type="button"
-        className="icon-button no-drag"
-        aria-label="Hidden conversations"
-        title="Hidden conversations: kept by Claude Code and not on the board"
-        onClick={() => setHidden(true)}
-      >
-        <Icon name="hidden" />
-      </button>
+      {onTeam === undefined ? null : <TeamButton chat={chat} on={teamOn} onTeam={onTeam} />}
       {chat.settings.showGecko || ON_PHONE ? null : (
         <button type="button" className="icon-button no-drag" aria-label="Show the gecko" title="Show the gecko" onClick={() => chat.change({ showGecko: true })}>
           <img className="gecko-glyph" src={geckoGlyph} alt="" />
@@ -227,12 +213,11 @@ export function TopBar({
           onClose={() => setWays(undefined)}
         />
       )}
-      {hidden ? <HiddenChats chat={chat} onClose={() => setHidden(false)} /> : null}
     </div>
   )
 }
 
-type BoardChat = Pick<Chat, 'sessions' | 'everyone' | 'settings' | 'hosts' | 'lineup' | 'shown' | 'showProviders' | 'show' | 'goTo' | 'change' | 'rename' | 'hide' | 'mark' | 'terminal' | 'copyTerminal' | 'letGo' | 'remove'>
+type BoardChat = Pick<Chat, 'employees' | 'refresh' | 'employeesById' | 'sessions' | 'everyone' | 'settings' | 'hosts' | 'lineup' | 'shown' | 'showProviders' | 'show' | 'goTo' | 'change' | 'rename' | 'hide' | 'mark' | 'terminal' | 'copyTerminal' | 'letGo' | 'remove'>
 
 interface BoardProps {
   readonly chat: BoardChat
@@ -244,7 +229,8 @@ export function Board({ chat, onShortcutFrom }: BoardProps): React.JSX.Element {
   useEffect(() => {
     latest.current = { chat, onShortcutFrom }
   })
-  const actions = useMemo<Pick<BoardChat, 'show' | 'goTo' | 'change' | 'rename' | 'hide' | 'mark' | 'terminal' | 'copyTerminal' | 'letGo' | 'remove'>>(() => ({
+  const actions = useMemo<Pick<BoardChat, 'refresh' | 'show' | 'goTo' | 'change' | 'rename' | 'hide' | 'mark' | 'terminal' | 'copyTerminal' | 'letGo' | 'remove'>>(() => ({
+    refresh: () => latest.current.chat.refresh(),
     show: (session) => latest.current.chat.show(session),
     goTo: (id) => latest.current.chat.goTo(id),
     change: (change) => latest.current.chat.change(change),
@@ -257,6 +243,8 @@ export function Board({ chat, onShortcutFrom }: BoardProps): React.JSX.Element {
     remove: (ids) => latest.current.chat.remove(ids),
   }), [])
   const view = useMemo<BoardChat>(() => ({
+    employees: chat.employees,
+    employeesById: chat.employeesById,
     sessions: chat.sessions,
     everyone: chat.everyone,
     settings: chat.settings,
@@ -265,7 +253,7 @@ export function Board({ chat, onShortcutFrom }: BoardProps): React.JSX.Element {
     shown: chat.shown,
     showProviders: chat.showProviders,
     ...actions,
-  }), [chat.sessions, chat.everyone, chat.settings, chat.hosts, chat.lineup, chat.shown, chat.showProviders, actions])
+  }), [chat.employees, chat.employeesById, chat.sessions, chat.everyone, chat.settings, chat.hosts, chat.lineup, chat.shown, chat.showProviders, actions])
   const shortcutFrom = useCallback((session: ChatSession) => latest.current.onShortcutFrom(session), [])
   return <BoardView chat={view} onShortcutFrom={shortcutFrom} />
 }
@@ -442,6 +430,7 @@ const BoardView = memo(function BoardView({
       {emptyProfile(chat.settings) === undefined ? null : (
         <div className="board-empty">No folders in {emptyProfile(chat.settings)}. Tick some in Settings, Profiles.</div>
       )}
+      {chat.settings.employeeFilter !== '' && chat.sessions.length === 0 ? <div className="board-empty">No tasks match these filters <button type="button" className="quiet" onClick={() => chat.change({ employeeFilter: '' })}>Clear employee filter</button></div> : null}
       <div className="board-columns">
         {columns.map((column) => (
             <div
@@ -830,6 +819,7 @@ function Card({
         </span>
       )}
       {showProviders ? <ProviderIcon id={session.id} transport={session.transport} /> : null}
+      {session.question === true || session.manager === true ? null : <EmployeeCardAssign chat={chat} session={session} />}
     </div>
   )
 }
@@ -850,6 +840,8 @@ const BoardCard = memo(
     (was.chat.settings === now.chat.settings ||
       (was.chat.settings.favorites.includes(was.session.id) === now.chat.settings.favorites.includes(now.session.id) &&
         projectColor(homeOf(was.session), was.chat.settings) === projectColor(homeOf(now.session), now.chat.settings))) &&
+    was.chat.employees === now.chat.employees &&
+    was.chat.employeesById.get(was.session.employeeId ?? '') === now.chat.employeesById.get(now.session.employeeId ?? '') &&
     was.chat.hosts === now.chat.hosts &&
     was.started === now.started,
 )
@@ -865,6 +857,7 @@ interface KeptTask {
   readonly root: string
   readonly text: string
   readonly goal: string
+  readonly employeeId?: Employee['id']
 }
 
 const keptKey = (question: boolean): string => (question ? 'newQuestion' : 'newTask')
@@ -900,6 +893,7 @@ export function NewTask({
   given,
   onSwitch,
   onStarting,
+  onEmployees,
 }: {
   readonly chat: Chat
   readonly onClose: () => void
@@ -918,6 +912,7 @@ export function NewTask({
   /** Turned from a task into a question or back, with the pictures carried over; what is written goes over through what the other form keeps. */
   readonly onSwitch?: ((pictures: readonly SessionImage[]) => void) | undefined
   readonly onStarting: (starting: boolean) => void
+  readonly onEmployees?: (() => void) | undefined
 }): React.JSX.Element {
   const [kept] = useState(() => keptTask(question))
   const [root, setRoot] = useState(() => {
@@ -988,11 +983,18 @@ export function NewTask({
     return said === '' ? was : was.trim() === '' ? said : `${was.trimEnd()}\n${said}`
   })
   const [goal, setGoal] = useState(kept?.goal ?? '')
-  useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal })), [question, root, text, goal])
+  const [goalOpen, setGoalOpen] = useState(false)
+  const goalField = useRef<HTMLInputElement>(null)
+  const [employeeId, setEmployeeId] = useState(kept?.employeeId ?? '')
+  const chosenEmployee = chat.employeesById.get(employeeId)
+  const unavailableEmployee = employeeId !== '' && (chosenEmployee === undefined || chosenEmployee.archived)
+
+  useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal, employeeId })), [question, root, text, goal, employeeId])
   // Closed on purpose, it is let go of; a restart does not unmount it, so what was written stays for the next start.
   useEffect(() => () => localStorage.removeItem(keptKey(question)), [question])
   const [pictures, setPictures] = useState<readonly SessionImage[]>(seed)
   const [starting, setStarting] = useState(false)
+  const employeeChoice = <div className={ON_PHONE ? 'phone-task-group' : 'new-task-label'}><div className={ON_PHONE ? 'phone-task-cell' : 'employee-task-field'}><span>Employee</span><EmployeeSelect employees={chat.employees} value={employeeId} onPick={setEmployeeId} disabled={starting} onManage={onEmployees} /></div>{unavailableEmployee ? <p className="employee-alert" role="alert">Choose an active employee or None.</p> : null}</div>
   const startingRef = useRef(false)
   const [startError, setStartError] = useState<string | undefined>()
   const [over, setOver] = useState(false)
@@ -1098,7 +1100,7 @@ export function NewTask({
   }
 
   const start = (): void => {
-    if ((root === '' && !question) || !ready || startingRef.current) return
+    if ((root === '' && !question) || (!question && unavailableEmployee) || !ready || startingRef.current) return
     if (!question) chat.change({ newTaskRoot: root })
     // What the frames are and where the video is goes under the words, for Claude rather than for the form; on a host the video is not there, so only the frames are said.
     const note = recorded === undefined ? '' : recordedNote(recorded.seconds, frames, recorded.videos.join(' and ') || undefined, !question && isRemote(root))
@@ -1108,7 +1110,7 @@ export function NewTask({
     setStarting(true)
     onStarting(true)
     setStartError(undefined)
-    void (question ? chat.ask(said, sent) : chat.startTask(root, said, goal.trim(), sent)).then(onClose, (error: Error) => {
+    void (question ? chat.ask(said, sent) : chat.startTask(root, said, goal.trim(), sent, employeeId || undefined)).then(onClose, (error: Error) => {
       startingRef.current = false
       setStarting(false)
       onStarting(false)
@@ -1116,7 +1118,7 @@ export function NewTask({
     })
   }
   // Put in To do with nothing sent: the words wait in its composer and the goal on its card. Pictures and a recording go only with a message sent now.
-  const plannable = !question && root !== '' && text.trim() !== '' && pictures.length === 0 && recorded === undefined && uploading === 0 && !(providerInfo.localOnly === true && isRemote(root))
+  const plannable = !question && !unavailableEmployee && root !== '' && text.trim() !== '' && pictures.length === 0 && recorded === undefined && uploading === 0 && !(providerInfo.localOnly === true && isRemote(root))
   const plan = (): void => {
     if (!plannable || startingRef.current) return
     chat.change({ newTaskRoot: root })
@@ -1124,7 +1126,7 @@ export function NewTask({
     setStarting(true)
     onStarting(true)
     setStartError(undefined)
-    void chat.planTask(root, text.trim(), goal.trim()).then(onClose, (error: Error) => {
+    void chat.planTask(root, text.trim(), goal.trim(), employeeId || undefined).then(onClose, (error: Error) => {
       startingRef.current = false
       setStarting(false)
       onStarting(false)
@@ -1132,7 +1134,7 @@ export function NewTask({
     })
   }
   const planWhy = pictures.length > 0 || recorded !== undefined ? 'Pictures are sent at once; Start it, or plan without them' : 'Put it in To do without sending. Open it and send when it is time'
-  const startHint = providerInfo.localOnly && !question && isRemote(root) ? `${providerInfo.name} supports local folders only` : chat.full && !question ? queueWhy(chat.lineup) : question ? `Not on the board. It is deleted a day after the last answer. ${MOD}+Enter asks` : goal.trim() === '' ? `No goal: it stops when ${providerInfo.shortName} is done. ${MOD}+Enter starts it` : `${providerInfo.shortName} keeps working until this holds, then the card shows Goal reached`
+  const startHint = providerInfo.localOnly && !question && isRemote(root) ? `${providerInfo.name} supports local folders only` : chat.full && !question ? queueWhy(chat.lineup) : question ? 'Deleted a day after the last answer' : goal.trim() === '' ? `No goal: it stops when ${providerInfo.shortName} is done` : `${providerInfo.shortName} keeps working until this holds, then the card shows Goal reached`
 
   if (ON_PHONE) {
     return (
@@ -1158,172 +1160,169 @@ export function NewTask({
         recorded={recorded === undefined ? undefined : { seconds: recorded.seconds, video: recorded.videos.length > 0 }}
         onUnrecord={() => setRecorded(undefined)}
         copying={copying}
-        modelChoices={modelChoices}
+        modelChoices={<>{question ? null : employeeChoice}{modelChoices}</>}
       />
     )
   }
 
 
+  const pending = pictures.length === 0 && frames.length === 0 ? null : (
+    <div className="pending">
+      {frames.map((one) => (
+        <span key={`frame:${String(one.at)}:${one.image.data.slice(-16)}`} className="pending-one">
+          <img src={`data:${one.image.media};base64,${one.image.data}`} alt="" onClick={() => setLooking(`data:${one.image.media};base64,${one.image.data}`)} title={`At ${clock(one.at)} in the recording`} />
+          <button type="button" className="icon-button" aria-label="Take this frame off" title="Take this frame off" onClick={() => setRecorded((was) => (was === undefined ? was : { ...was, frames: was.frames.filter((kept) => kept !== one) }))}>
+            <Icon name="close" size={11} />
+          </button>
+        </span>
+      ))}
+      {pictures.map((one, at) => (
+        <span key={`${String(at)}:${one.data.slice(0, 16)}`} className="pending-one">
+          <img src={`data:${one.media};base64,${one.data}`} alt="" onClick={() => setLooking(`data:${one.media};base64,${one.data}`)} />
+          <button type="button" className="icon-button" aria-label="Take this picture off" title="Take this picture off" onClick={() => setPictures((held) => held.filter((_one, index) => index !== at))}>
+            <Icon name="close" size={11} />
+          </button>
+        </span>
+      ))}
+      {looking === undefined ? null : <Preview src={looking} onClose={() => setLooking(undefined)} />}
+    </div>
+  )
+
   return (
     <div
-      className="new-task"
+      className={`new-task${question ? ' asking' : ''}`}
+      role="dialog"
+      aria-label={question ? 'Ask a question' : 'New task'}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return
         event.preventDefault()
         start()
       }}
     >
-      {onSwitch === undefined ? (
-        <div className="new-task-head">{question ? 'Ask a question' : 'New task'}</div>
-      ) : (
-        <div className="new-task-head new-task-kinds">
-          {[false, true].map((kind) => (
-            <button
-              key={String(kind)}
-              type="button"
-              className={`tab${kind === question ? ' on' : ''}`}
-              disabled={starting}
-              onClick={() => {
-                if (kind === question) return
-                localStorage.setItem(keptKey(kind), JSON.stringify({ root, text, goal }))
-                onSwitch(pictures)
+      <header className="new-task-top">
+        {onSwitch === undefined ? (
+          <h2 className="new-task-head">{question ? 'Ask a question' : 'New task'}</h2>
+        ) : (
+          <div className="views new-task-kinds" role="radiogroup" aria-label="Kind">
+            {[false, true].map((kind) => (
+              <button
+                key={String(kind)}
+                type="button"
+                role="radio"
+                aria-checked={kind === question}
+                className={kind === question ? 'on' : ''}
+                disabled={starting}
+                onClick={() => {
+                  if (kind === question) return
+                  localStorage.setItem(keptKey(kind), JSON.stringify({ root, text, goal }))
+                  onSwitch(pictures)
+                }}
+              >
+                <Icon name={kind ? 'chat' : 'compose'} size={12} />
+                {kind ? 'Ask a question' : 'New task'}
+              </button>
+            ))}
+          </div>
+        )}
+        <span className="new-task-sub">{question ? 'Not about a folder, and not on the board' : 'A card on the board, worked on in its folder'}</span>
+      </header>
+      <div className="new-task-body">
+        <div className="new-task-main">
+          <div className={`new-task-compose${over ? ' taking' : ''}`}>
+            <textarea
+              ref={field}
+              className="new-task-text"
+              aria-label={question ? 'Question' : 'What to do'}
+              rows={7}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              placeholder={question ? 'Ask anything. Paste a picture, drop a file, or record the screen' : `What should ${providerInfo.shortName} do? Paste a picture, drop a file, or record the screen`}
+              onPaste={(event) => {
+                const files = [...event.clipboardData.files]
+                if (files.length === 0) return
+                event.preventDefault()
+                take(files)
               }}
-            >
-              {kind ? 'Ask a question' : 'New task'}
+              onDragOver={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                setOver(true)
+              }}
+              onDragLeave={() => setOver(false)}
+              onDrop={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                setOver(false)
+                take([...event.dataTransfer.files])
+              }}
+            />
+            {pending}
+            {recorded === undefined ? null : (
+              <div className="new-task-recorded">
+                <Icon name="display" size={12} />
+                <span>From a {clock(recorded.seconds)} recording. Claude gets the video too.</span>
+                <button type="button" className="icon-button" aria-label="Take the recording off" title="Take the recording off" onClick={() => setRecorded(undefined)}>
+                  <Icon name="close" size={11} />
+                </button>
+              </div>
+            )}
+            <div className="new-task-ways">
+              <button type="button" className="quiet" title={`Show what you mean and talk; the words and frames come back into this form (${said(ANYWHERE.record)})`} onClick={() => window.geckit.voice.record()}>
+                <Icon name="display" size={13} />
+                Record the screen
+              </button>
+              <button
+                type="button"
+                className="quiet"
+                title={`Say it instead of typing it (${said(ANYWHERE.dictate)})`}
+                onClick={() => {
+                  field.current?.focus()
+                  window.geckit.voice.dictate()
+                }}
+              >
+                <Icon name="mic" size={13} />
+                Dictate
+              </button>
+            </div>
+          </div>
+          {copying === undefined ? null : <p className={copying.failed ? 'error' : 'new-task-why'}>{copying.text}</p>}
+          {question ? null : goalOpen || goal !== '' ? (
+            <label className="new-task-label new-task-goal-field">
+              Goal
+              <input
+                ref={goalField}
+                className="new-task-goal"
+                value={goal}
+                onChange={(event) => setGoal(event.target.value)}
+                onBlur={() => { if (goal.trim() === '') setGoalOpen(false) }}
+                placeholder="When it is done, as a condition"
+              />
+            </label>
+          ) : (
+            <button type="button" className="shortcut-add-goal" onClick={() => { setGoalOpen(true); requestAnimationFrame(() => goalField.current?.focus()) }}>
+              <Icon name="plus" size={11} />Add a goal<span>it keeps working until this holds</span>
             </button>
-          ))}
+          )}
         </div>
-      )}
-      {question ? null : (
-        <div className="new-task-label">
-          Folder
-          <Projects chat={chat} single={{ root, onPick: pickRoot }} disabled={starting} />
-        </div>
-      )}
-      {!chat.showProviders ? null : <label className="new-task-label">
-        Assistant
-        <select className="new-task-where" value={provider} onChange={(event) => chat.change({ chatProvider: event.target.value as SessionProvider })}>
-          {selectableProviders(chat.settings).map((one) => <option key={one.id} value={one.family} disabled={!question && isRemote(root) && one.localOnly === true}>{one.name}</option>)}
-        </select>
-      </label>}
-      {modelChoices}
-      <label className="new-task-label">
-        {question ? 'Question' : 'What to do'}
-        <textarea
-          ref={field}
-          className={`new-task-text${over ? ' taking' : ''}`}
-          rows={5}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={question ? 'Anything, not about a folder. Paste a picture, drop a file, or record the screen' : `Ask ${providerInfo.name}. Paste a picture, drop a file, or record the screen`}
-          onPaste={(event) => {
-            const files = [...event.clipboardData.files]
-            if (files.length === 0) return
-            event.preventDefault()
-            take(files)
-          }}
-          onDragOver={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            setOver(true)
-          }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            setOver(false)
-            take([...event.dataTransfer.files])
-          }}
-        />
-      </label>
-      <div className="new-task-ways">
-        <button
-          type="button"
-          className="quiet"
-          title={`Show what you mean and talk; the words and frames come back into this form (${said(ANYWHERE.record)})`}
-          onClick={() => window.geckit.voice.record()}
-        >
-          <Icon name="display" size={13} />
-          Record the screen
-        </button>
-        <button
-          type="button"
-          className="quiet"
-          title={`Say it instead of typing it (${said(ANYWHERE.dictate)})`}
-          onClick={() => {
-            field.current?.focus()
-            window.geckit.voice.dictate()
-          }}
-        >
-          <Icon name="mic" size={13} />
-          Dictate
-        </button>
+        <aside className="new-task-side" aria-label="Settings">
+          {question ? null : (
+            <div className="new-task-label">
+              Folder
+              <Projects chat={chat} single={{ root, onPick: pickRoot }} disabled={starting} />
+            </div>
+          )}
+          {question ? null : employeeChoice}
+          {!chat.showProviders ? null : <label className="new-task-label">
+            Assistant
+            <select className="new-task-where" value={provider} onChange={(event) => chat.change({ chatProvider: event.target.value as SessionProvider })}>
+              {selectableProviders(chat.settings).map((one) => <option key={one.id} value={one.family} disabled={!question && isRemote(root) && one.localOnly === true}>{one.name}</option>)}
+            </select>
+          </label>}
+          {modelChoices}
+        </aside>
       </div>
-      {copying === undefined ? null : <p className={copying.failed ? 'error' : 'new-task-why'}>{copying.text}</p>}
-      {pictures.length === 0 && frames.length === 0 ? null : (
-        <div className="pending">
-          {frames.map((one) => (
-            <span key={`frame:${String(one.at)}:${one.image.data.slice(-16)}`} className="pending-one">
-              <img src={`data:${one.image.media};base64,${one.image.data}`} alt="" onClick={() => setLooking(`data:${one.image.media};base64,${one.image.data}`)} title={`At ${clock(one.at)} in the recording`} />
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Take this frame off"
-                title="Take this frame off"
-                onClick={() =>
-                  setRecorded((was) => (was === undefined ? was : { ...was, frames: was.frames.filter((kept) => kept !== one) }))
-                }
-              >
-                <Icon name="close" size={11} />
-              </button>
-            </span>
-          ))}
-          {pictures.map((one, at) => (
-            <span key={`${String(at)}:${one.data.slice(0, 16)}`} className="pending-one">
-              <img src={`data:${one.media};base64,${one.data}`} alt="" onClick={() => setLooking(`data:${one.media};base64,${one.data}`)} />
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Take this picture off"
-                title="Take this picture off"
-                onClick={() => setPictures((held) => held.filter((_one, index) => index !== at))}
-              >
-                <Icon name="close" size={11} />
-              </button>
-            </span>
-          ))}
-          {looking === undefined ? null : <Preview src={looking} onClose={() => setLooking(undefined)} />}
-        </div>
-      )}
-      {recorded === undefined ? null : (
-        <div className="new-task-recorded">
-          <Icon name="display" size={12} />
-          <span>From a {clock(recorded.seconds)} recording. Claude gets the video too.</span>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="Take the recording off"
-            title="Take the recording off"
-            onClick={() => setRecorded(undefined)}
-          >
-            <Icon name="close" size={11} />
-          </button>
-        </div>
-      )}
-      {question ? null : (
-        <label className="new-task-label">
-          Goal
-          <input
-            className="new-task-goal"
-            value={goal}
-            onChange={(event) => setGoal(event.target.value)}
-            placeholder="When it is done, as a condition. Leave empty for none"
-          />
-        </label>
-      )}
       <div className="new-task-foot">
         <span className={`new-task-why${startError === undefined ? '' : ' trouble'}`} role={startError === undefined ? 'status' : 'alert'}>{startError ?? (starting ? `Starting ${providerInfo.name}...` : startHint)}</span>
-        <span className="spacer" />
         <button type="button" className="quiet" disabled={starting} onClick={onClose}>
           Cancel
         </button>
@@ -1339,9 +1338,9 @@ export function NewTask({
           onClick={start}
         >
           {starting ? 'Starting...' : chat.full && !question ? 'Queue' : question ? 'Ask' : 'Start'}
+          <kbd>{MOD}+Enter</kbd>
         </button>
       </div>
-
     </div>
   )
 }

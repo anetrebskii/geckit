@@ -9,6 +9,7 @@ import { ElicitationForm } from './Elicitation'
 import { ManagerSaid } from './ManagerSaid'
 import { managerSaid } from './manager-said'
 import { Request } from './Request'
+import { TeamRequest } from './TeamRequest'
 import { Files, opensTitle, Prose } from './Prose'
 import type { FileHow } from './Prose'
 import { richOf, richSelection } from './rich'
@@ -172,7 +173,7 @@ function Card({
     {card.detail === undefined ? null : <Code detail>{card.detail}</Code>}
     {card.elicitation === undefined ? null : <><p>{card.elicitation.message}</p>{card.elicitation.url === undefined ? null : <Code detail>{card.elicitation.url}</Code>}{card.elicitation.fields.map((field) => <p key={field.name}>{field.label}{field.required ? ' (required)' : ''}{field.description === undefined ? '' : ` - ${field.description}`}</p>)}</>}
     {card.choices === undefined ? null : <ul>{card.choices.map((choice) => <li key={choice}>{choice}</li>)}</ul>}
-    <p>Answer this request in Telegram. For unsupported requests, open Manager settings.</p>
+    <p>Answer this request in Telegram. For unsupported requests, open Manager in Team.</p>
   </div>
   if (card.kind === 'elicitation' && card.elicitation !== undefined) return <div className="card elicitation">
     <div className="card-title">{card.title}</div>
@@ -404,6 +405,8 @@ const Turn = memo(function Turn({
         <Card readOnly={readOnly} item={item} onAnswer={onAnswer} />
       ) : item.kind === 'request' ? (
         readOnly && item.answer === undefined ? <div className="card request"><div className="card-title">Requested conversations</div>{item.tasks.map((task, index) => <details key={index}><summary>{task.title} - {task.project}</summary><p>{task.text}</p>{task.goal === undefined ? null : <p>{task.goal}</p>}</details>)}<p>Review requests in Telegram.</p></div> : <Request item={item} />
+      ) : item.kind === 'team-request' ? (
+        <TeamRequest item={item} readOnly={readOnly} />
       ) : item.kind === 'shell' ? (
         <Shell readOnly={readOnly} item={item} onStop={onStopShell} onType={onTypeShell} />
       ) : item.kind === 'wrote' ? (
@@ -710,7 +713,7 @@ export const Transcript = memo(function Transcript({
 
   const reach = Math.max(page, sought < 0 ? 0 : items.length - sought + 20, hit === undefined ? 0 : items.length - hit + 20)
   // Pending cards and requests stay at the end until answered, then return to where they were asked.
-  const waiting = items.filter((item) => (item.kind === 'request' && item.answer === undefined) || (item.kind === 'card' && item.card.answered === undefined))
+  const waiting = items.filter((item) => ((item.kind === 'request' || item.kind === 'team-request') && item.answer === undefined) || (item.kind === 'card' && item.card.answered === undefined))
   const inOrder = waiting.length === 0 ? items : items.filter((item) => !waiting.includes(item))
   const shown = inOrder.length > reach ? inOrder.slice(inOrder.length - reach) : inOrder
   const current = useMemo(() => {

@@ -1,5 +1,10 @@
 import './local-data'
 
+import { managerProjects } from '../shared/manager'
+import { Employees } from './employees'
+import { setGuideEmployees, setGuideManager, syncEmployeeGuides } from './guide'
+import type { EmployeeDraft } from '../shared/employees'
+
 import { exec, execFile } from 'node:child_process'
 import { stat, writeFile } from 'node:fs/promises'
 import type { Server } from 'node:net'
@@ -34,6 +39,7 @@ import type {
   Answered,
   CardAnswer,
   RequestChoice,
+  TeamChoice,
   Lineup,
   ChatFound,
   CutOff,
@@ -137,7 +143,7 @@ import { hostOf, isRemote, machineName } from '../shared/hosts'
 import { keptOrder } from '../shared/order'
 import type { HostAnswer, HostDraft } from '../shared/hosts'
 import { searchClaude } from './sessions/search'
-import { removeShortcut, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
+import { removeShortcut, resumeOwned, runShortcut, saveShortcut, startShortcuts } from './shortcuts'
 import { forgetProject, forgetRoots, getSettings, notesStore, onSettings, rememberProject, setSettings } from './store'
 import { transcribe } from './transcribe'
 import { fetchSpeechModel, installedSpeechModel, onSpeechModel, speechModel, whisperCli } from './whisper'
@@ -199,6 +205,43 @@ const shares = new Shares({
 let providerUpdateCheck: Promise<PluginUpdateResult> | undefined
 let providerUpdateTimer: NodeJS.Timeout | undefined
 const conversationNotes = notesStore()
+const employees = new Employees({
+  directory: app.getPath('userData'),
+  sync: (catalog) => syncEmployeeGuides(getSettings(), catalog),
+  changed: (view) => {
+    tell('employees:changed', view)
+    drawTray()
+  },
+  assignment: (id) => sessions?.employeeAssignment(id),
+  sources: (id) => sessions?.employeeSources(id, managerProjects(getSettings())) ?? Promise.resolve([]),
+  items: (source) => sessions?.employeeItems(source) ?? Promise.resolve(undefined),
+  restored: (id) => resumeOwned(id),
+  team: {
+    settings: getSettings,
+    project: (name) => {
+      const projects = getSettings().projects
+      const root = projects.find((one) => projectSaid(one, hostNamed) === name)
+      if (root === undefined) throw new Error(`No folder called ${name}. There are: ${projects.map((one) => projectSaid(one, hostNamed)).join(', ')}`)
+      return root
+    },
+    projectName: (root) => projectSaid(root, hostNamed),
+    saveShortcut,
+    removeShortcut,
+    runShortcut: (id) => runShortcut(id, 'hand'),
+    assign: (id, employeeId) => {
+      if (sessions === undefined) throw new Error('Conversations are not ready yet. Try again.')
+      sessions.assignEmployee(id, employeeId)
+    },
+    title: (id) => conversationNotes.all()[id]?.title,
+    ask: (id, lines, gone) => sessions === undefined ? Promise.reject(new Error('GeckIt is not ready yet.')) : sessions.teamRequest(id, lines, gone),
+    manager: () => ({ instructions: manager?.instructions() ?? '', avatar: getSettings().managerAvatar }),
+    setManager: async ({ instructions, avatar }) => {
+      if (instructions !== undefined) await configureManager({ instructions })
+      if (avatar !== undefined) setSettings({ managerAvatar: avatar })
+    },
+  },
+})
+setGuideEmployees(employees.list().employees)
 let lineup: Lineup = { working: 0, limit: 0 }
 let routes: Routes | undefined
 /** Every place's plan: this computer's, and each host that has a project on it. Built once, over `sessions` and `routes` however they stand when it is asked. */
@@ -381,6 +424,7 @@ async function build(held: Routes): Promise<Sessions> {
     codex: new CodexSessions(undefined, (account) => tellChats('chat:accountChanged', account)),
     transport: () => getSettings().chatTransport,
     notes: conversationNotes,
+    validateEmployee: (id) => { employees.active(id) },
     commands: keepCommands,
     beforeSend: () => getSettings().vpnIpCheck ? checkVpnIp(getSettings) : undefined,
     vpnMonitor: () => {
@@ -806,6 +850,10 @@ async function readSaid(said: string): Promise<Answered> {
 
 async function cliAsked(ask: CliAsked, gone: AbortSignal): Promise<CliAnswered> {
   if (!('action' in ask)) return startAsked(ask, gone)
+  if (ask.action === 'employees') {
+    try { return { ok: true, result: await employees.command(ask.args, ask.session, false, gone) } }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Employee lookup failed.' } }
+  }
   if (ask.action === 'manage') return manager === undefined ? { ok: false, error: 'Manager is not ready yet.' } : manager.command(ask)
   if (ask.action !== 'migrate-codex' || typeof ask.imports !== 'string' || typeof ask.dryRun !== 'boolean') return { ok: false, error: 'That was not a migration request GeckIt reads.' }
   const report = migrateCodexMetadata(app.getPath('userData'), ask.imports, ask.dryRun, { notes: conversationNotes, settings: getSettings(), saveSettings: setSettings })
@@ -1067,7 +1115,15 @@ function requireTelegram(): ManagerTelegram {
 }
 
 async function configureManager(change: Partial<ManagerConfig>): Promise<ManagerView> {
-  return configureManagerAccess(requireManager(), requireTelegram(), change)
+  const view = await configureManagerAccess(requireManager(), requireTelegram(), change)
+  if (change.instructions !== undefined) await keepManagerGuide(view.config.instructions)
+  return view
+}
+
+/** Manager's instructions are written into GECKIT.md beside the employees, as they are into its own session. */
+async function keepManagerGuide(instructions: string): Promise<void> {
+  setGuideManager(instructions)
+  await syncEmployeeGuides(getSettings())
 }
 
 function telegramAction(action: TelegramAction): Promise<TelegramView> {
@@ -1082,8 +1138,9 @@ async function buildManager(started: Sessions): Promise<void> {
     pairing: () => { const state = telegram?.view(); return state?.state === 'connected' && state.account !== undefined && state.bot !== undefined ? `${String(state.bot.id)}:${String(state.account.id)}:${String(state.account.chatId)}` : undefined },
     adapters: () => (view.config.intake ?? DEFAULT_MANAGER_INTAKE).sources.filter((source) => source.enabled).map((source) => { const key = JSON.stringify(source); let adapter = sources.get(key); if (adapter === undefined) { adapter = new VoiceMemosSource(source, { transcribe: transcribeInstalledFile, transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }); sources.set(key, adapter) }; return adapter }),
     classify: (text) => classifyIntake(text, { config: () => view.config, settings: getSettings, check: () => checkVpnIp(getSettings), correct }),
-  }, telegramFile: () => requireTelegram().fileSender(), sessions: started, notes: conversationNotes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, join(app.getAppPath(), 'out', 'main', 'cli.js'), args, context) })
+  }, employees, telegramFile: () => requireTelegram().fileSender(), sessions: started, notes: conversationNotes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, join(app.getAppPath(), 'out', 'main', 'cli.js'), args, context) })
   manager = coordinator
+  if (coordinator.instructions().trim() !== '') void keepManagerGuide(coordinator.instructions()).catch((error: unknown) => { log.warn('Could not write Manager instructions', error) })
   let view: ManagerView = await coordinator.view()
   const decisions = new Map<string, string>()
   let deliveryChannel = ''
@@ -1186,6 +1243,16 @@ function wireHosts(): void {
 }
 
 function wire(): void {
+  ipcMain.handle('employees:list', () => employees.list())
+  ipcMain.handle('employees:save', (_event, draft: EmployeeDraft) => employees.save(draft))
+  ipcMain.handle('employees:archive', (_event, id: string, revision: number) => employees.archive(id, revision))
+  ipcMain.handle('employees:restore', (_event, id: string, revision: number) => employees.archive(id, revision, false))
+  ipcMain.handle('employees:retryInstructions', () => employees.retryInstructions())
+  ipcMain.handle('employees:memory', (_event, id: string, cursor?: string) => employees.memory(id, cursor))
+  ipcMain.handle('chat:assignEmployee', (_event, id: string, employeeId: string | null) => {
+    if (sessions === undefined) throw new Error('Conversations are not ready yet. Try again.')
+    sessions.assignEmployee(id, employeeId)
+  })
   ipcMain.handle('manager:inspect', (event, id: string) => {
     if (event.sender !== shownChat()?.webContents) throw new Error('Inspect Manager from the Desktop chat window.')
     return requireManager().inspect(id)
@@ -1428,6 +1495,7 @@ function wire(): void {
   )
   ipcMain.handle('chat:answerRequest', (_event, request: string, choice: RequestChoice) => sessions?.answerRequest(request, choice))
   ipcMain.handle('chat:startAll', (_event, request: string, where: 'mac' | 'phone') => sessions?.startAll(request, where))
+  ipcMain.handle('chat:answerTeamRequest', (_event, request: string, choice: TeamChoice) => sessions?.answerTeamRequest(request, choice))
   ipcMain.on('chat:stop', (_event, id: string) => sessions?.stop(id))
   ipcMain.handle('lineup:state', () => lineup)
   ipcMain.handle('chat:unqueue', (_event, id: string, queued: string) => sessions?.unqueue(id, queued))
@@ -1640,6 +1708,13 @@ function phoneCalls(): Record<string, PhoneCall> {
     'manager.restart': () => requireManager().restart(),
     'telegram.view': () => phoneTelegramView(requireTelegram().view()),
     'telegram.action': (action: TelegramAction) => telegramActionAccess(requireManager(), requireTelegram(), action, false),
+    'employees.list': () => employees.list(),
+    'employees.memory': (id: string, cursor?: string) => employees.memory(id, cursor),
+    'employees.save': (draft: EmployeeDraft) => employees.save(draft),
+    'employees.archive': (id: string, revision: number) => employees.archive(id, revision),
+    'employees.restore': (id: string, revision: number) => employees.archive(id, revision, false),
+    'employees.retryInstructions': () => employees.retryInstructions(),
+    'chat.assignEmployee': (id: string, employeeId: string | null) => { if (sessions === undefined) throw new Error('Conversations are not ready yet. Try again.'); sessions.assignEmployee(id, employeeId) },
     'settings.get': () => phoneSettings(getSettings()),
     'settings.set': (change: Partial<Settings>) => setSettings(change),
     'update.view': () => updateView(),
@@ -1686,6 +1761,7 @@ function phoneCalls(): Record<string, PhoneCall> {
     'chat.answer': (id: string, card: string, answer: CardAnswer | string) => held()?.answer(id, card, answer),
     'chat.answerRequest': (request: string, choice: RequestChoice) => held()?.answerRequest(request, choice),
     'chat.startAll': (request: string, where: 'mac' | 'phone') => held()?.startAll(request, where),
+    'chat.answerTeamRequest': (request: string, choice: TeamChoice) => held()?.answerTeamRequest(request, choice),
     'chat.stop': (id: string) => held()?.stop(id),
     'lineup.state': () => lineup,
     'chat.unqueue': (id: string, queued: string) => held()?.unqueue(id, queued),
@@ -1822,6 +1898,7 @@ if (!app.requestSingleInstanceLock()) {
     routes = held
     const started = await build(held)
     sessions = started
+    if (!app.isPackaged && employees.list().employees.length > 0) await employees.retryInstructions()
     await buildManager(started)
     // A Chat window opened later wears the count too, from when it is shown: before that it has no button in the taskbar to wear it on, and when it is created it is not yet the one `shownChat` knows. Every window says so when shown; only the Chat window is drawn on.
     app.on('browser-window-created', (_event, window) => {
@@ -1851,6 +1928,7 @@ if (!app.requestSingleInstanceLock()) {
       start: (message) => started.send(message),
       rename: (id, title) => started.rename(id, title),
       busy: (id) => started.busy(id),
+      employee: (id) => employees.list().employees.find((one) => one.id === id),
     })
     startTray({
       openChat,
@@ -1869,6 +1947,7 @@ if (!app.requestSingleInstanceLock()) {
           if (session !== undefined) openChat(session)
         }),
       busy: (id) => started.busy(id),
+      employees: () => employees.list().employees,
       record: recordScreen,
       pose: () => pose,
     })

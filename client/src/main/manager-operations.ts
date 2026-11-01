@@ -1,3 +1,4 @@
+import type { Employees } from './employees'
 import { constants } from 'node:fs'
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, normalize, relative, resolve, sep } from 'node:path'
@@ -14,6 +15,7 @@ import type { TelegramAttachments, TelegramFileSender } from './telegram-attachm
 import type { NotesStore, Sessions } from './sessions'
 
 interface OperationDeps {
+  readonly employees?: Pick<Employees, 'command' | 'active'>
   readonly attachments?: TelegramAttachments
   readonly telegramFile?: () => TelegramFileSender
   readonly sessions: Sessions
@@ -42,9 +44,13 @@ export const MANAGER_CAPABILITIES = {
     'files mkdir --project <project> --path <relative-path>',
     'files move --project <project> --path <relative-path> --to <relative-path>',
     'files remove --project <project> --path <relative-path> (user confirmation; files or empty directories)',
+    'employees list',
+    'employees show <employee-id>',
+    'employees memory <employee-id> [--cursor <next>]',
+    'sessions assign --id <managed-worker-id> --employee <active-employee-id|none>',
     'sessions list [--managed]',
     'sessions show --id <full-session-id> [--last <1-30>]',
-    'sessions start --project <project> --text <self-contained-assignment> --goal <completion-condition> [--title <title>] [--provider <enabled-provider-id>]',
+    'sessions start --project <project> --text <self-contained-assignment> --goal <completion-condition> [--title <title>] [--provider <enabled-provider-id>] [--employee <active-employee-id>]',
     'sessions send --id <managed-worker-id> --text <follow-up> (ordinary queue semantics; host receipt, not model consumption)',
     'sessions retry --id <managed-worker-id> (same deliberate Try again as GeckIt; rechecks VPN)',
     'sessions steer --id <managed-worker-id> --text <correction> (active native runtime only; never queues or restarts)',
@@ -80,7 +86,8 @@ const SHAPES: readonly CommandShape[] = [
   ...['list', 'read', 'write', 'mkdir', 'move', 'remove'].map((command) => ({ domain: 'files', command, flags: ['--project', '--path', ...(command === 'write' ? ['--text'] : []), ...(command === 'move' ? ['--to'] : [])] })),
   { domain: 'sessions', command: 'list', flags: ['--managed'] },
   { domain: 'sessions', command: 'show', flags: ['--id', '--last'] },
-  { domain: 'sessions', command: 'start', flags: ['--project', '--text', '--goal', '--title', '--provider'] },
+  { domain: 'sessions', command: 'start', flags: ['--project', '--text', '--goal', '--title', '--provider', '--employee'] },
+  { domain: 'sessions', command: 'assign', flags: ['--id', '--employee'] },
   { domain: 'sessions', command: 'send', flags: ['--id', '--text'] },
   { domain: 'sessions', command: 'retry', flags: ['--id'] },
   { domain: 'sessions', command: 'steer', flags: ['--id', '--text'] },
@@ -95,7 +102,7 @@ const SHAPES: readonly CommandShape[] = [
 
 export function managerReadOnly(args: readonly string[]): boolean {
   const [domain, command] = args
-  return domain === 'capabilities' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && command === 'show'
+  return domain === 'employees' && ['list', 'show', 'memory', 'current'].includes(command ?? '') || domain === 'capabilities' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && command === 'show'
 }
 
 const values = (args: readonly string[]): Map<string, string> => {
@@ -209,6 +216,10 @@ export class ManagerOperations {
 
   async run(args: readonly string[], operation: string): Promise<string> {
     const [domain, command] = args
+    if (domain === 'employees') {
+      if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.')
+      return this.#deps.employees.command(args.slice(1), this.#deps.managerSession(), true)
+    }
     if (domain === 'capabilities') {
       if (args.length !== 1) throw new Error('capabilities takes no arguments.')
       return JSON.stringify(MANAGER_CAPABILITIES)
@@ -350,7 +361,7 @@ export class ManagerOperations {
     if (domain === 'sessions') {
       if (command === 'list') {
         const all = (await this.#deps.sessions.list(managerProjects(settings))).filter((one) => one.question !== true && (!flags.has('--managed') || this.#deps.managed(one.id)))
-        return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, delivery: one.delivery, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0 })))
+        return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0 })))
       }
       if (command === 'start') {
         const root = this.#project(required(flags, '--project'))
@@ -358,17 +369,25 @@ export class ManagerOperations {
         const provider = explicit === undefined ? undefined : requestedProvider(explicit)
         if (explicit !== undefined && provider === undefined) throw new Error('Use a provider ID from providers list.')
         const resolved = managerProvider(settings, root, provider)
+        const employeeId = flags.get('--employee')
+        if (employeeId !== undefined) { if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.'); this.#deps.employees.active(employeeId) }
         const text = required(flags, '--text')
         const goal = required(flags, '--goal')
         const model = providerModel(settings, resolved.provider)
-        const message: SessionMessage = { root, provider: resolved.provider, mode: settings.chatMode, text, goal, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
+        const message: SessionMessage = { root, ...(employeeId === undefined ? {} : { employeeId }), provider: resolved.provider, mode: settings.chatMode, text, goal, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
         const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, this.#deps.managerSession())
         if (flags.has('--title')) this.#deps.sessions.rename(id, required(flags, '--title'))
         const worker = await this.#worker(id)
-        return JSON.stringify({ id, provider: resolved.provider, providerReason: resolved.reason, state: worker.waits === true || (worker.queued?.length ?? 0) > 0 ? 'queued' : worker.state, goal })
+        return JSON.stringify({ id, provider: resolved.provider, providerReason: resolved.reason, employeeId: worker.employeeId, state: worker.waits === true || (worker.queued?.length ?? 0) > 0 ? 'queued' : worker.state, goal })
       }
       const id = required(flags, '--id')
       const worker = await this.#worker(id, command === 'attach' || command === 'show')
+      if (command === 'assign') {
+        const choice = required(flags, '--employee')
+        if (choice !== 'none') { if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.'); this.#deps.employees.active(choice) }
+        this.#deps.sessions.assignEmployee(id, choice === 'none' ? null : choice)
+        return JSON.stringify({ id, employeeId: choice === 'none' ? null : choice })
+      }
       if (command === 'attach') {
         if (this.#deps.managed(id)) return JSON.stringify({ id, attached: false, alreadyManaged: true })
         const note = this.#deps.notes.all()[id] ?? {}
@@ -378,7 +397,7 @@ export class ManagerOperations {
       if (command === 'show') {
         const count = Number(flags.get('--last') ?? 10)
         if (!Number.isInteger(count) || count < 1 || count > 30) throw new Error('--last must be an integer from 1 to 30.')
-        return JSON.stringify({ observedAt: Date.now(), id, state: worker.state, delivery: worker.delivery, canInject: worker.canInject === true, items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
+        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, state: worker.state, delivery: worker.delivery, canInject: worker.canInject === true, items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
       }
       if (command === 'retry' || command === 'steer') {
         if (!settings.chatProviders.includes(providerOf(id))) throw new Error('This worker provider is disabled. No replacement was selected.')

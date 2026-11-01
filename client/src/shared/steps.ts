@@ -1,7 +1,7 @@
 import type { SessionImage, SessionItem } from './api'
 
 export const isPending = (item: SessionItem): boolean =>
-  (item.kind === 'card' && item.card.answered === undefined) || (item.kind === 'request' && item.answer === undefined)
+  (item.kind === 'card' && item.card.answered === undefined) || ((item.kind === 'request' || item.kind === 'team-request') && item.answer === undefined)
 
 export function pendingLast(items: readonly SessionItem[]): SessionItem[] {
   return [...items.filter((item) => !isPending(item)), ...items.filter(isPending)]

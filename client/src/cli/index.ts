@@ -1,3 +1,4 @@
+import { readEmployees } from './employees'
 import { APP_BUILD_GUIDE, PROVIDER_BUILD_GUIDE } from '../shared/provider-build-guide'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { connect } from 'node:net'
@@ -186,6 +187,33 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
       Preserves status, creation and move dates, titles, visibility and links. Moves favorites and board order to Codex.
       Existing Codex metadata is kept. --dry-run previews changes; applying saves a backup before writing.
 
+  geckit employees list|current|show <employee-id>|memory <employee-id> [--cursor <next>]
+      Read employee roles, current assignment and available assigned conversation history from the running app.
+      A next cursor continues history, including long messages; unavailable sources are named explicitly.
+
+  geckit employees tasks <employee-id> [--json]
+  geckit employees shortcuts [<employee-id>|none] [--json]
+      An employee's conversations and how each stands; the shortcuts of one employee, of none, or all of them.
+
+  geckit employees create --name <name> [--role <role>] [--description <text>|--description-file <file>] [--avatar <1-12>]
+  geckit employees edit <employee-id> [--name <name>] [--role <role>] [--description <text>|--description-file <file>] [--avatar <1-12>]
+  geckit employees archive|restore <employee-id>
+  geckit employees assign <session-id> <employee-id|none>
+  geckit employees manager [--json]
+  geckit employees manager edit [--instructions <text>|--instructions-file <file>] [--avatar <1-12>]
+  geckit employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>)
+      [--goal <text>] [--every <when>|--cron "<expr>"] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan]
+  geckit employees shortcut edit <shortcut-id> [the same options as add; --every none makes it by hand only]
+  geckit employees shortcut pause|resume|remove|run <shortcut-id>
+  geckit employees shortcut give <shortcut-id> <employee-id|none>
+      Change the team. <when> is "hour", "hour 15", "day 9:00", "weekdays 9:00" or "week monday 9:00".
+      --project names a folder as geckit start does. An employee or shortcut may be named by its id or its exact name.
+      Archiving pauses an employee's timetables until it is restored; nothing missed meanwhile is run.
+      Manager's instructions are written into GECKIT.md for the Manager session; --instructions "" clears them.
+      --goal "" removes a goal; --reasoning (Codex only) takes default, none, minimal, low, medium, high, xhigh, max or ultra.
+      Run from a Claude Code or Codex conversation, the change is shown there and waits for the person's Allow;
+      from a terminal it is made at once. Prints a line for what changed.
+
   geckit instructions [providers|app]
       Build instructions for AI agents. Includes plugin contract, independent Codex example and verification steps.
       providers is the default; app explains desktop and phone builds.
@@ -194,7 +222,7 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
   sessions, settings, attachments and telegram through the running app's authenticated CLI interface.
   Run capabilities in Manager for supported operations and named limitations.
 
-Outside Manager, only start and migrate-codex write anything.
+Outside Manager, only start, migrate-codex and the employees changes write anything.
 Authenticated Manager commands can make the changes advertised by capabilities.`
 
 async function sessions(args: readonly string[]): Promise<string> {
@@ -334,6 +362,7 @@ export async function run(args: readonly string[]): Promise<string> {
   try {
     if (managerCommand(args)) return (await manage(args, data())).said
     const [what, ...rest] = args
+    if (what === 'employees') return (await readEmployees(rest, data())).said
     if (what === 'instructions') {
       if (rest[0] === undefined || rest[0] === 'providers') return PROVIDER_BUILD_GUIDE
       if (rest[0] === 'app') return APP_BUILD_GUIDE
@@ -354,6 +383,10 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(
   const [what, ...rest] = process.argv.slice(2)
   if (managerCommand(process.argv.slice(2))) {
     const answer = await manage(process.argv.slice(2), data())
+    process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.ok ? 0 : 1
+  } else if (what === 'employees') {
+    const answer = await readEmployees(rest, data())
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
   } else if (what === 'start') {

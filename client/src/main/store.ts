@@ -12,6 +12,7 @@ import type { CrashRecord } from '../shared/reporting'
 import { withColors } from '../shared/project-color'
 import { validateVpnIps, VPN_IP_CONFIGURATION_ERROR } from '../shared/vpn-ip'
 import { localCalendarZone, recurrenceError } from '../shared/recurrence'
+import { startWindowError } from '../shared/schedule'
 import { carriedOver } from './carry-over'
 import { withMoves } from './sessions'
 import type { NotesStore, SessionNote } from './sessions'
@@ -74,6 +75,7 @@ export function getSettings(): Settings {
       vpnStopOnFailure: _legacyVpnStop,
       calendarTimeZone: _storedZone,
       calendarRecurrenceVersion: _storedRecurrenceVersion,
+      cronStartWindowVersion: _storedWindowVersion,
       boardColumn: _boardColumn,
       ...found
     } = (read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }) as Settings & Readonly<Record<string, unknown>>
@@ -86,6 +88,7 @@ export function getSettings(): Settings {
       chatTransport: found.chatTransport === 'tmux' ? 'tmux' : 'stream',
       providerPlugins: found.providerPlugins ?? [],
       projectAssistants: found.projectAssistants ?? [],
+      employeeFilter: typeof found.employeeFilter === 'string' ? found.employeeFilter : '',
       providerAutoUpdate: found.providerAutoUpdate ?? true,
       providerUpdatesReady: found.providerUpdatesReady ?? [],
       providerRemovalPending: found.providerRemovalPending ?? false,
@@ -108,8 +111,8 @@ export function getSettings(): Settings {
     }
   }
   const calendarTimeZone = localCalendarZone()
-  if (settings.calendarTimeZone !== calendarTimeZone || settings.calendarRecurrenceVersion !== 1) {
-    settings = { ...settings, calendarTimeZone, calendarRecurrenceVersion: 1 }
+  if (settings.calendarTimeZone !== calendarTimeZone || settings.calendarRecurrenceVersion !== 1 || settings.cronStartWindowVersion !== 1) {
+    settings = { ...settings, calendarTimeZone, calendarRecurrenceVersion: 1, cronStartWindowVersion: 1 }
     if (!loaded) for (const watcher of watchers) watcher(settings)
   }
   return settings
@@ -121,10 +124,15 @@ export function setSettings(change: Partial<Settings>): Settings {
   Reflect.deleteProperty(validated, 'vpnStopOnFailure')
   Reflect.deleteProperty(validated, 'calendarTimeZone')
   Reflect.deleteProperty(validated, 'calendarRecurrenceVersion')
+  Reflect.deleteProperty(validated, 'cronStartWindowVersion')
   if (change.shortcuts !== undefined) {
     for (const shortcut of change.shortcuts) {
-      if (shortcut.recurrence === undefined) continue
       const before = current.shortcuts.find((one) => one.id === shortcut.id)
+      if (before === undefined || before.cron !== shortcut.cron || before.startWindowMinutes !== shortcut.startWindowMinutes || !isDeepStrictEqual(before.recurrence, shortcut.recurrence)) {
+        const error = startWindowError(shortcut)
+        if (error !== undefined) throw new Error(error)
+      }
+      if (shortcut.recurrence === undefined) continue
       if (before !== undefined && before.cron === shortcut.cron && isDeepStrictEqual(before.recurrence, shortcut.recurrence)) continue
       if (shortcut.cron !== undefined) throw new Error('Choose one timetable.')
       const error = recurrenceError(shortcut.recurrence, current.calendarTimeZone)
@@ -141,7 +149,7 @@ export function setSettings(change: Partial<Settings>): Settings {
     validated = { ...validated, vpnAllowedIps: allowed.ips }
   }
   const next = { ...current, ...validated }
-  const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, ...persisted } = next
+  const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, cronStartWindowVersion: _windowVersion, ...persisted } = next
   if (vpnChange || change.shortcuts !== undefined || change.projects !== undefined || change.projectAssistants !== undefined) {
     const path = join(folder(), SETTINGS)
     writeFileSync(`${path}.new`, JSON.stringify(persisted, undefined, 2))
@@ -155,8 +163,8 @@ export function setSettings(change: Partial<Settings>): Settings {
 const reloadSettings = (): void => {
   const found = read(SETTINGS, DEFAULT_SETTINGS)
   if (found === undefined) return
-  const { calendarTimeZone: _foundZone, calendarRecurrenceVersion: _foundRecurrenceVersion, ...disk } = found
-  const { calendarTimeZone: _currentZone, calendarRecurrenceVersion: _currentRecurrenceVersion, ...current } = getSettings()
+  const { calendarTimeZone: _foundZone, calendarRecurrenceVersion: _foundRecurrenceVersion, cronStartWindowVersion: _foundWindowVersion, ...disk } = found
+  const { calendarTimeZone: _currentZone, calendarRecurrenceVersion: _currentRecurrenceVersion, cronStartWindowVersion: _currentWindowVersion, ...current } = getSettings()
   if (isDeepStrictEqual(disk, current)) return
   settings = undefined
   const changed = getSettings()
@@ -233,7 +241,7 @@ export function notesStore(): NotesStore {
     set: (id, note) => {
       const next = { ...notes, [id]: withMoves(notes[id], note, Date.now()) }
       clearTimeout(soon)
-      if (note.managerPrompt !== undefined || note.managerOwner !== undefined || (note.prepared !== undefined && notes[id] === undefined)) {
+      if (note.employeeId !== notes[id]?.employeeId || note.employeeRoot !== notes[id]?.employeeRoot || note.managerPrompt !== undefined || note.managerOwner !== undefined || (note.prepared !== undefined && notes[id] === undefined)) {
         const path = join(folder(), NOTES)
         writeFileSync(`${path}.new`, JSON.stringify(next, undefined, 2))
         renameSync(`${path}.new`, path)

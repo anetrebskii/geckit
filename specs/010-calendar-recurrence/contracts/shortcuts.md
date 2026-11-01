@@ -9,3 +9,9 @@ Settings.calendarRecurrenceVersion?: 1 is runtime metadata owned by main. Curren
 Settings broadcasts carry validated shortcuts plus runtime-derived calendarTimeZone for phone preview. Main never trusts renderer-provided since/lastRun/lastSession or calendarTimeZone. Existing shortcuts.run remains a manual launch independent of recurrence/end limits.
 
 A custom recurrence dialog returns a complete validated rule into caller draft on Done; Cancel returns no change. Outer Save owns persistence. Both desktop and phone use identical rule evaluation and scheduling computer's zone.
+
+## CRON start-window extension (2026-11-01)
+
+The existing draft/save contract also carries optional `startWindowMinutes` (integer 1–1,440, CRON only). Main rejects malformed or incompatible drafts; invalid persisted windows do not execute. Main retains scheduler-owned progress on unrelated saves and resets it when the window changes. Manual runs do not consume the chosen scheduled occurrence.
+
+`Settings.cronStartWindowVersion?: 1` advertises runtime support and is never a writable or persisted preference. Window saves require version 1 before IPC. The returned window must equal the requested value, including removal, before the editor acknowledges success. Older hosts can continue saving exact schedules. No new IPC method is needed.

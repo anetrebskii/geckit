@@ -49,4 +49,20 @@ describe('shortcut save acknowledgment', () => {
     expect((await saveShortcut({ save }, {}, { ...manual, cron: '0 9 * * 1-5' })).cron).toBe('0 9 * * 1-5')
     expect(save).toHaveBeenCalledTimes(2)
   })
+
+  it('refuses windows before calling an older host, checks acknowledgment and accepts a supported save', async () => {
+    const { recurrence: _recurrence, ...manual } = draft
+    const window: ShortcutDraft = { ...manual, cron: '0 9 * * *', startWindowMinutes: 60 }
+    const save = vi.fn<Geckit['shortcuts']['save']>(async (next) => ({ ...next, id: 'review', since: 1 }))
+    await expect(saveShortcut({ save }, {}, window)).rejects.toThrow('does not support random start windows')
+    expect(save).not.toHaveBeenCalled()
+    expect((await saveShortcut({ save }, { cronStartWindowVersion: 1 }, window)).startWindowMinutes).toBe(60)
+    save.mockImplementationOnce(async (next) => {
+      const { startWindowMinutes: _minutes, ...stripped } = next
+      return { ...stripped, id: 'review', since: 1 }
+    })
+    await expect(saveShortcut({ save }, { cronStartWindowVersion: 1 }, window)).rejects.toThrow('did not save this start window')
+    save.mockImplementationOnce(async (next) => ({ ...next, id: 'review', since: 1, startWindowMinutes: 30 }))
+    await expect(saveShortcut({ save }, { cronStartWindowVersion: 1 }, window)).rejects.toThrow('did not save this start window')
+  })
 })

@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { ChatSession, ShortcutDraft } from '../../../shared/api'
 import { phoneCalls } from '../phone-calls'
 import { tap } from '../tap'
+import { TEAM_EVENT } from '../employees/Employees'
 import { Icon } from '../ui/Icon'
 import { PhoneBoard } from './PhoneBoard'
 import { PhoneQuestions } from './PhoneQuestions'
@@ -58,6 +59,14 @@ export function PhoneHome({
     localStorage.setItem('phoneTab', next)
   }
   const edit = (draft: ShortcutDraft): void => setEditing({ draft, at: Date.now() })
+  useEffect(() => {
+    const open = (): void => {
+      setTab('settings')
+      localStorage.setItem('phoneTab', 'settings')
+    }
+    window.addEventListener(TEAM_EVENT, open)
+    return () => window.removeEventListener(TEAM_EVENT, open)
+  }, [])
 
   // A shortcut made from a conversation starts with what was asked in it first, as the Mac's menu makes one.
   const shortcutFrom = (session: ChatSession): void =>

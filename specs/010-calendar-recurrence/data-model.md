@@ -17,3 +17,9 @@ Optional Settings.calendarRecurrenceVersion: 1 advertises support from the runni
 ## Validation/state
 
 Rules validate date/time, interval, weekday selection, pattern and exclusive end condition. Finite rules have at least one eligible occurrence. Expired rules remain editable and manually runnable. Count endpoints derive from scheduled occurrences, never from stored execution counters.
+
+## CRON start window (2026-11-01)
+
+`Shortcut.startWindowMinutes?: number` is an optional whole number from 1 to 1,440, valid only with CRON and without CalendarRecurrence. Absence preserves exact scheduling. ShortcutDraft inherits the field. The same per-occurrence minute is derived from the shortcut's random UUID and original CRON occurrence instant, so the chosen minute requires no extra persisted execution state. The window stops before the next original occurrence. Unrelated edits preserve `since`; window edits and resume reset future scheduling, as schedule edits already do.
+
+`Settings.cronStartWindowVersion?: 1` is main-derived runtime support metadata. Ignore writes and omit it from persistence and reload equality, like `calendarRecurrenceVersion`. Both editors refuse unsupported hosts before sending a window and verify the returned window after Save.

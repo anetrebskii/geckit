@@ -1,3 +1,4 @@
+import type { EmployeesCliAnswered, EmployeesCliAsked } from '../shared/employees'
 import { rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import type { Server } from 'node:net'
@@ -28,8 +29,8 @@ export interface StartAsked {
 
 export type StartAnswered = { readonly ok: false; readonly error: string } | ({ readonly ok: true } & RequestAnswered)
 
-export type CliAsked = StartAsked | MigrationAsked | ManagerCliAsked
-export type CliAnswered = StartAnswered | MigrationAnswered | ManagerCliAnswered
+export type CliAsked = StartAsked | MigrationAsked | ManagerCliAsked | EmployeesCliAsked
+export type CliAnswered = StartAnswered | MigrationAnswered | ManagerCliAnswered | EmployeesCliAnswered
 
 export const askedPath = (): string => askedEndpoint(app.getPath('userData'))
 

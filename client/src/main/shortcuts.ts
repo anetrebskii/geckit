@@ -5,10 +5,11 @@ import { powerMonitor } from 'electron'
 import log from 'electron-log'
 
 import type { SessionMessage, Shortcut, ShortcutDraft } from '../shared/api'
+import type { Employee } from '../shared/employees'
 import { assistantsIn } from '../shared/api'
 import { isRemote } from '../shared/hosts'
 import { isCodexProvider, llmProviderInfo } from '../shared/providers'
-import { isDue } from '../shared/schedule'
+import { isDue, startWindowError } from '../shared/schedule'
 import { recurrenceError } from '../shared/recurrence'
 import { getSettings, setSettings } from './store'
 
@@ -19,6 +20,8 @@ export interface ShortcutDeps {
   readonly start: (message: SessionMessage) => Promise<string>
   readonly rename: (id: string, title: string) => void
   readonly busy: (id: string) => boolean
+  /** The employee a shortcut belongs to, or nothing where there is none by that id. */
+  readonly employee?: (id: Employee['id']) => Employee | undefined
 }
 
 let deps: ShortcutDeps | undefined
@@ -27,10 +30,19 @@ const put = (id: string, change: Partial<Shortcut>): void => {
   setSettings({ shortcuts: getSettings().shortcuts.map((one) => (one.id === id ? { ...one, ...change } : one)) })
 }
 
+const ownerArchived = (one: Shortcut): boolean => one.employeeId !== undefined && deps?.employee?.(one.employeeId)?.archived === true
+
+/** An employee restored: their timetables count from now, so what was missed while archived is not caught up. */
+export function resumeOwned(employeeId: Employee['id']): void {
+  const now = Date.now()
+  const all = getSettings().shortcuts
+  if (all.some((one) => one.employeeId === employeeId)) setSettings({ shortcuts: all.map((one) => (one.employeeId === employeeId ? { ...one, since: now } : one)) })
+}
+
 function look(): void {
   const now = Date.now()
   for (const one of getSettings().shortcuts) {
-    if (!isDue(one, now)) continue
+    if (ownerArchived(one) || !isDue(one, now)) continue
     try {
       // The last run still going is left to finish, and this one is let go rather than piled up behind it.
       if (one.lastSession !== undefined && deps?.busy(one.lastSession) === true) {
@@ -57,6 +69,12 @@ export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise
   const settings = getSettings()
   const one = settings.shortcuts.find((shortcut) => shortcut.id === id)
   if (one === undefined || deps === undefined) return undefined
+  if (ownerArchived(one)) {
+    log.info(`Shortcut "${one.name}" did not run: its employee is archived`)
+    return undefined
+  }
+  if (by === 'hand' && one.lastSession !== undefined && deps.busy(one.lastSession)) return one.lastSession
+  const owner = one.employeeId === undefined ? undefined : deps.employee?.(one.employeeId)
   const provider = one.provider ?? 'claude'
   if (!assistantsIn(settings).includes(provider) || (llmProviderInfo(provider, 'stream', settings.providerPlugins).localOnly === true && isRemote(one.root))) return undefined
   const now = Date.now()
@@ -68,6 +86,7 @@ export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise
       mode: one.mode,
       text: one.prompt,
       provider,
+      ...(owner === undefined ? {} : { employeeId: owner.id }),
       ...(isCodexProvider(provider) && one.goal ? { goal: one.goal } : {}),
       ...(one.model === undefined ? {} : { model: one.model }),
       ...(!isCodexProvider(provider) || one.reasoning === undefined ? {} : { reasoning: one.reasoning }),
@@ -89,13 +108,19 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
   const all = getSettings().shortcuts
   const was = all.find((one) => one.id === draft.id)
   if (draft.id !== undefined && was === undefined) throw new Error('This shortcut was deleted.')
+  if (draft.employeeId !== undefined && draft.employeeId !== was?.employeeId) {
+    const owner = deps?.employee?.(draft.employeeId)
+    if (owner === undefined || owner.archived) throw new Error('Choose an active employee or None.')
+  }
   if (draft.recurrence !== undefined) {
     if (draft.cron !== undefined) throw new Error('Choose one timetable.')
     const error = recurrenceError(draft.recurrence)
     if (error !== undefined) throw new Error(error)
   }
+  const windowError = startWindowError(draft)
+  if (windowError !== undefined) throw new Error(windowError)
   // A new time, or one turned back on, counts from now: a run it would have had before is not owed.
-  const since = was === undefined || was.cron !== draft.cron || !isDeepStrictEqual(was.recurrence, draft.recurrence) || (!was.on && draft.on) ? now : was.since
+  const since = was === undefined || was.cron !== draft.cron || was.startWindowMinutes !== draft.startWindowMinutes || !isDeepStrictEqual(was.recurrence, draft.recurrence) || (!was.on && draft.on) ? now : was.since
   const saved: Shortcut = {
     id: was?.id ?? randomUUID(),
     name: draft.name,
@@ -106,7 +131,9 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
     ...(draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
     mode: draft.mode,
     ...(draft.model === undefined || draft.model === '' ? {} : { model: draft.model }),
+    ...(draft.employeeId === undefined ? {} : { employeeId: draft.employeeId }),
     ...(draft.cron === undefined || draft.cron.trim() === '' ? {} : { cron: draft.cron.trim() }),
+    ...(draft.startWindowMinutes === undefined ? {} : { startWindowMinutes: draft.startWindowMinutes }),
     ...(draft.recurrence === undefined ? {} : { recurrence: draft.recurrence }),
     on: draft.on,
     since,

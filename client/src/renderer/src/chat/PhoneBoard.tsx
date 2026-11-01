@@ -1,3 +1,4 @@
+import { AssignSheet, EmployeeAvatar, EmployeeFilter } from '../employees/Employees'
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -85,6 +86,7 @@ export function PhoneBoard({
   const [renaming, setRenaming] = useState<ChatSession | undefined>()
   const [deleting, setDeleting] = useState<ChatSession | undefined>()
   const [hiding, setHiding] = useState<ChatSession | undefined>()
+  const [assigning, setAssigning] = useState<ChatSession | undefined>()
   // The row whose actions are showing; a touch anywhere else puts it back.
   const [open, setOpen] = useState<string | undefined>()
   const [unfolded, setUnfolded] = useState(false)
@@ -305,10 +307,13 @@ export function PhoneBoard({
       <div className="phone-top">
         <div className="phone-title-row">
           <h1 className="phone-large">Tasks</h1>
-          <ScopeButton chat={chat} onPress={() => setScoping(true)} />
+          <span className="phone-title-tools">
+            <EmployeeFilter chat={chat} compact />
+            <ScopeButton chat={chat} onPress={() => setScoping(true)} />
+          </span>
         </div>
         <div className={`phone-seg-bar${scrolled ? ' scrolled' : ''}`}>
-          <div className="phone-seg" role="tablist" style={{ '--at': BOARD_COLUMNS.findIndex((one) => one.id === shown) } as React.CSSProperties}>
+          <div className="phone-seg phone-board-seg" role="tablist" style={{ '--at': BOARD_COLUMNS.findIndex((one) => one.id === shown), '--count': BOARD_COLUMNS.length } as React.CSSProperties}>
             <span className="phone-seg-thumb" />
             {BOARD_COLUMNS.map((one) => (
               <button
@@ -349,7 +354,7 @@ export function PhoneBoard({
         ) : rows.length === 0 ? (
           <div className="phone-empty">
             {emptyProfile(chat.settings) === undefined
-              ? column.empty
+              ? chat.settings.employeeFilter !== '' ? 'No tasks match these filters' : column.empty
               : `No folders in ${emptyProfile(chat.settings) ?? ''}. Tick some in Settings, Profiles.`}
           </div>
         ) : null}
@@ -480,6 +485,7 @@ export function PhoneBoard({
           onFavorite={() => favorite(pressed.session)}
           onMove={(to) => move(pressed.session, to)}
           onRename={() => setRenaming(pressed.session)}
+          onEmployee={pressed.session.question === true || pressed.session.manager === true ? undefined : () => setAssigning(pressed.session)}
           onShortcut={() => onShortcut(pressed.session)}
           onHide={() => setHiding(pressed.session)}
           onDelete={() => setDeleting(pressed.session)}
@@ -508,6 +514,7 @@ export function PhoneBoard({
       )}
       {deleting === undefined ? null : <DeleteSheet session={deleting} chat={chat} onClose={() => setDeleting(undefined)} />}
       {hiding === undefined ? null : <HideSheet session={hiding} chat={chat} onClose={() => setHiding(undefined)} />}
+      {assigning === undefined ? null : <AssignSheet chat={chat} session={chat.everyone.find((one) => one.id === assigning.id) ?? assigning} onClose={() => setAssigning(undefined)} />}
       {renaming === undefined ? null : <Rename session={renaming} chat={chat} onClose={() => setRenaming(undefined)} />}
       {ways ? (
         <Ways
@@ -579,6 +586,7 @@ export function RowBody({
   const away = session.state === 'working' ? awayLine(session) : undefined
   const parent = session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent)
   const started = startedLine(chat.sessions, session.id)
+  const employee = session.question === true || session.manager === true ? undefined : chat.employeesById.get(session.employeeId ?? '')
   return (
     <>
       <span className={`phone-dot ${away === undefined ? stands.tone : 'away'}`} />
@@ -602,6 +610,7 @@ export function RowBody({
           <span style={{ color: `var(--project-${String(projectColor(homeOf(session), chat.settings))})`, fontWeight: 600 }}>
             {projectLabel(homeOf(session))}
           </span>
+          {employee === undefined ? null : <span className="phone-row-employee"><EmployeeAvatar employee={employee} />{employee.name.split(/\s+/)[0]}</span>}
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
           {goalMet(session) ? <span className="phone-row-tag met">Goal reached</span> : session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
           {helpers === 0 ? null : <span className="phone-row-tag">{helpers === 1 ? 'a helper running' : `${helpers} helpers running`}</span>}
@@ -639,6 +648,7 @@ const PhoneRow = memo(
   (was, now) =>
     was.chat.showProviders === now.chat.showProviders &&
     was.session === now.session &&
+    was.chat.employeesById.get(was.session.employeeId ?? '') === now.chat.employeesById.get(now.session.employeeId ?? '') &&
     was.now === now.now &&
     was.column === now.column &&
     was.open === now.open &&
@@ -873,6 +883,7 @@ function Pressed({
   onFavorite,
   onMove,
   onRename,
+  onEmployee,
   onShortcut,
   onHide,
   onDelete,
@@ -888,6 +899,7 @@ function Pressed({
   readonly onFavorite: () => void
   readonly onMove: (to: 'top' | 'bottom') => void
   readonly onRename: () => void
+  readonly onEmployee?: (() => void) | undefined
   readonly onShortcut: () => void
   readonly onHide: () => void
   readonly onDelete: () => void
@@ -915,7 +927,6 @@ function Pressed({
   }
   const permission = session.state === 'asks' && waiting?.card.kind === 'permission'
   const is = (status: SessionStatus | undefined): boolean => session.status === status
-  const starredOne = chat.settings.favorites.includes(session.id)
 
   return createPortal(
     <>
@@ -973,19 +984,12 @@ function Pressed({
           Rename
           <Icon name="pencil" size={16} />
         </button>
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() =>
-            pick(() => {
-              const favorites = chat.settings.favorites
-              chat.change({ favorites: starredOne ? favorites.filter((id) => id !== session.id) : [...favorites, session.id] })
-            })
-          }
-        >
-          {starredOne ? 'Remove from favorites' : 'Add to favorites'}
-          <Icon name="star" size={16} />
-        </button>
+        {onEmployee === undefined ? null : (
+          <button type="button" role="menuitem" onClick={() => pick(onEmployee)}>
+            {session.employeeId === undefined ? 'Assign employee...' : 'Change employee...'}
+            <Icon name="plus" size={16} />
+          </button>
+        )}
         <button type="button" role="menuitem" onClick={() => pick(onShortcut)}>
           Make a shortcut
           <Icon name="bolt" size={16} />

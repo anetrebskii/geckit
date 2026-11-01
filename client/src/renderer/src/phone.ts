@@ -10,6 +10,7 @@ import type { EventName } from '../../shared/counting'
 import { OWN } from './phone-calls'
 import { phoneErrors } from './phone-errors'
 import type { PhoneCalls } from './phone-calls'
+import type { EmployeesView } from '../../shared/employees'
 import { keep, readKept } from './kept'
 import { showLocal } from './local-page'
 import type { Link } from './link'
@@ -443,6 +444,15 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     home: boot.home,
     copy: (text) => void navigator.clipboard.writeText(text),
     pathFor: () => '',
+    employees: {
+      list: () => call('employees.list'),
+      save: (draft) => call('employees.save', draft),
+      archive: (id, revision) => call('employees.archive', id, revision),
+      restore: (id, revision) => call('employees.restore', id, revision),
+      retryInstructions: () => call('employees.retryInstructions'),
+      memory: (id, cursor) => call('employees.memory', id, cursor),
+      on: (said) => listen('employees:changed', said),
+    },
     manager: {
       voiceMemos: async () => ({ state: 'unsupported', detail: 'Connect Voice Memos on the computer.' }),
       view: () => call('manager.view'),
@@ -614,6 +624,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       answer: (id, card, answer) => send('chat.answer', id, card, answer),
       answerRequest: (request, choice) => call('chat.answerRequest', request, choice),
       startAll: (request, where) => call('chat.startAll', request, where),
+      answerTeamRequest: (request, choice) => call('chat.answerTeamRequest', request, choice),
       stop: (id) => send('chat.stop', id),
       unqueue: (id, queued) => call('chat.unqueue', id, queued),
       injectQueued: (id, queued) => call('chat.injectQueued', id, queued),
@@ -624,6 +635,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       delegate: (id, queued, history) => call('chat.delegate', id, queued, history),
       mode: (id, mode) => send('chat.mode', id, mode),
       transport: (id, transport) => send('chat.transport', id, transport),
+      assignEmployee: (id, employeeId) => call('chat.assignEmployee', id, employeeId),
       rename: (id, title) => send('chat.rename', id, title),
       mark: (id, status) => send('chat.mark', id, status),
       hide: (id) => send('chat.hide', id),
@@ -818,11 +830,12 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     can(next)
     if (opened !== undefined) send('chat.watching', opened)
     for (const later of held.splice(0)) later()
-    // Told again as if the Mac had told it: the list, the plan, the count working, the settings, and the end of the conversation on screen.
+    // Told again as if the Mac had told it: the list, the employees, the plan, the count working, the settings, and the end of the conversation on screen.
     void call<ChatSession[]>('chat.list', undefined).then((all) => {
       settled.add('list')
       told('chat:sessions', all)
     })
+    void call<EmployeesView>('employees.list').then((view) => told('employees:changed', view)).catch(() => undefined)
     void call('chat.plan').then((plan) => told('chat:plan', plan))
     void call('lineup.state').then((lineup) => told('lineup:changed', lineup))
     void call<Settings>('settings.get').then((settings) => {

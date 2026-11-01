@@ -28,7 +28,7 @@ export function localCalendarZone(): string {
   return currentZone
 }
 
-function civil(at: number, zone: string): Date {
+export function civil(at: number, zone: string): Date {
   const parts = formatter(zone).formatToParts(at)
   const value = (key: Intl.DateTimeFormatPartTypes): number => Number(parts.find((one) => one.type === key)?.value)
   const date = new Date(0)
@@ -47,7 +47,7 @@ function dateOf(text: string): Date | undefined {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === text ? date : undefined
 }
 
-function atTime(date: Date, time: string, zone: string): number | undefined {
+export function atTime(date: Date, time: string, zone: string): number | undefined {
   const [hour = 0, minute = 0] = time.split(':').map(Number)
   const wanted = new Date(date)
   wanted.setUTCHours(hour, minute, 0, 0)

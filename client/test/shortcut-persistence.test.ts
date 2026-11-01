@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { CalendarRecurrence, Settings, ShortcutDraft } from '../src/shared/api'
 import { sameRecurrence } from '../src/shared/recurrence'
 import { saveShortcut as checkedSave } from '../src/shared/shortcut-save'
+import { isDue, nextTimed } from '../src/shared/schedule'
 
 const state = vi.hoisted(() => ({ folder: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => state.folder }, powerMonitor: { on: vi.fn() } }))
@@ -45,5 +46,42 @@ it('acknowledges and persists custom recurrence through the actual main save and
     const reloaded = await import('../src/main/store')
     expect(reloaded.getSettings().shortcuts).toEqual([edited])
     expect(reloaded.getSettings().calendarRecurrenceVersion).toBe(1)
+  } finally { rmSync(state.folder, { recursive: true, force: true }) }
+})
+
+it('persists the chosen CRON window and progress through settings reloads and protects support metadata', async () => {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-window-save-'))
+  const path = join(state.folder, 'settings.json')
+  writeFileSync(path, JSON.stringify({ ...DEFAULT_SETTINGS, phoneKey: 'fixture' }))
+  vi.resetModules()
+  try {
+    const store = await import('../src/main/store')
+    const main = await import('../src/main/shortcuts')
+    const draft: ShortcutDraft = { name: 'Window review', root: '/fixture', prompt: 'Review pull requests', mode: 'auto', on: true, cron: '0 9 * * *', startWindowMinutes: 60 }
+    const saved = await checkedSave({ save: async (next) => main.saveShortcut(next) }, store.getSettings(), draft)
+    const chosen = nextTimed(saved, saved.since)
+    const disk = JSON.parse(readFileSync(path, 'utf8')) as Settings
+    expect(disk.shortcuts).toEqual([saved])
+    expect(disk.cronStartWindowVersion).toBeUndefined()
+    expect(store.getSettings().cronStartWindowVersion).toBe(1)
+    const falseSupport: Partial<Settings> = {}
+    Object.defineProperty(falseSupport, 'cronStartWindowVersion', { value: 0, enumerable: true })
+    expect(store.setSettings(falseSupport).cronStartWindowVersion).toBe(1)
+    expect(() => store.setSettings({ shortcuts: [{ ...saved, startWindowMinutes: 0 }] })).toThrow('whole number')
+    expect(store.getSettings().shortcuts).toEqual([saved])
+
+    vi.resetModules()
+    const reloaded = await import('../src/main/store')
+    const restored = reloaded.getSettings().shortcuts[0]
+    expect(restored).toEqual(saved)
+    expect(reloaded.getSettings().cronStartWindowVersion).toBe(1)
+    expect(restored === undefined ? undefined : nextTimed(restored, restored.since)).toBe(chosen)
+
+    writeFileSync(path, JSON.stringify({ ...disk, shortcuts: [{ ...saved, startWindowMinutes: null }, saved] }))
+    vi.resetModules()
+    const malformed = await import('../src/main/store')
+    const invalid = malformed.getSettings().shortcuts[0]
+    expect(invalid === undefined ? true : isDue(invalid, (chosen ?? 0) + 86_400_000)).toBe(false)
+    expect(malformed.getSettings().shortcuts[1]).toEqual(saved)
   } finally { rmSync(state.folder, { recursive: true, force: true }) }
 })

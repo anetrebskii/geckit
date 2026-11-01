@@ -5378,36 +5378,297 @@ html.phone .queued-one .icon-button.queue-inject {
 /* Saved prompts, run by hand or on a timetable. */
 
 .dialog.shortcut-list {
-  width: min(580px, 92vw);
+  width: min(680px, 92vw);
+  max-height: 84vh;
+}
+
+.shortcut-list-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.shortcut-list-head h2 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+}
+
+.shortcut-find {
+  inline-size: 180px;
+}
+
+.shortcut-new {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.shortcut-list-about {
+  margin: 6px 0 14px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* One card per group, rows split by hairlines, so the list reads as a list rather than a page of rules. */
+.shortcut-rows {
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+/* The editor: the prompt is the shortcut, so it takes the room; everything about where and when it runs is a narrow column beside it. */
+.dialog.shortcut-list:has(> .shortcut-editor) {
+  width: min(820px, 94vw);
+  max-height: 90vh;
+}
+
+.shortcut-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.shortcut-editor-head {
+  display: grid;
+  gap: 2px;
+}
+
+.shortcut-kicker {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.shortcut-editor input.shortcut-title {
+  width: 100%;
+  margin: 0 -8px;
+  padding: 4px 8px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+
+.shortcut-editor input.shortcut-title:hover {
+  border-color: var(--border);
+}
+
+.shortcut-editor input.shortcut-title:focus {
+  background: var(--field);
+  border-color: var(--accent);
+}
+
+.shortcut-editor-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 20px;
+  min-height: 0;
+}
+
+.shortcut-editor-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.shortcut-label {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.shortcut-editor-main textarea {
+  flex: 1;
+  min-height: clamp(120px, 24vh, 240px);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.shortcut-goal {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.shortcut-add-goal {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 4px 8px 4px 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+  border-radius: var(--radius);
+}
+
+.shortcut-add-goal span {
+  color: var(--text-faint);
+}
+
+.shortcut-add-goal:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.shortcut-editor-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.shortcut-setting {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.shortcut-setting > span {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.shortcut-setting > .select {
+  width: 100%;
+  min-width: 0;
+}
+
+.shortcut-editor-side > .shortcut-next {
+  margin: -2px 0 2px 78px;
+}
+
+.shortcut-when-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.shortcut-runs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.shortcut-runs button {
+  padding: 0 8px;
+}
+
+.shortcut-when-block .shortcut-repeat > .select {
+  flex: 1;
+  min-width: 0;
+}
+
+.shortcut-when-block .shortcut-cron {
+  width: 100%;
+}
+
+.shortcut-when-block > label.check.shortcut-on {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.shortcut-summary {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+}
+
+@media (max-width: 700px) {
+  .shortcut-editor-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shortcut-editor-main textarea {
+    min-height: 140px;
+  }
 }
 
 .shortcut-empty {
-  padding: 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  padding: 28px 16px;
   color: var(--text-faint);
-  border-top: 1px solid var(--border);
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.shortcut-empty strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.shortcut-empty .primary {
+  margin-top: 6px;
 }
 
 .shortcut-row {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
-  padding: 8px 0;
+  padding: 8px 10px 8px 12px;
+}
+
+.shortcut-row + .shortcut-row {
   border-top: 1px solid var(--border);
+}
+
+.shortcut-row:hover {
+  background: var(--bg-hover);
+}
+
+/* The folder's colour, and whether it runs by itself or waits for a hand. */
+.shortcut-mark {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  border-radius: 8px;
 }
 
 .shortcut-text {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
-  padding: 3px 6px;
+  padding: 0;
   text-align: left;
-  border-radius: 5px;
 }
 
-.shortcut-text:hover {
-  background: var(--bg-hover);
+.shortcut-title-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
 }
 
 .shortcut-name {
@@ -5417,12 +5678,39 @@ html.phone .queued-one .icon-button.queue-inject {
   white-space: nowrap;
 }
 
+.shortcut-chip {
+  flex-shrink: 1;
+  min-width: 0;
+  max-inline-size: 240px;
+  overflow: hidden;
+  padding: 1px 7px;
+  color: var(--accent);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+
+.shortcut-chip.paused {
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+}
+
 .shortcut-when {
   overflow: hidden;
   font-size: 12px;
   color: var(--text-dim);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.shortcut-when .live {
+  color: var(--accent);
+}
+
+.shortcut-when .trouble {
+  color: var(--danger);
 }
 
 .shortcut-prompt {
@@ -5437,11 +5725,35 @@ html.phone .queued-one .icon-button.queue-inject {
   content: ' \00b7\00a0';
 }
 
-.shortcut-row .quiet,
-.shortcut-row .primary {
+.shortcut-actions {
+  display: flex;
   flex-shrink: 0;
-  padding: 4px 12px;
+  gap: 4px;
+  align-items: center;
+}
+
+.shortcut-actions .icon-button {
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity var(--quick) var(--ease);
+}
+
+.shortcut-row:hover .shortcut-actions .icon-button,
+.shortcut-actions .icon-button:focus-visible {
+  opacity: 1;
+}
+
+.shortcut-run {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 4px 11px;
   font-size: 12px;
+}
+
+.shortcut-row:hover .shortcut-run:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .shortcut-repeat {
@@ -6382,6 +6694,40 @@ html.framed .board-head {
   flex: 0 1 240px;
 }
 
+.employee-filter > .picker.on {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+/* Most of the time nothing is filtered: then the folder and employee pickers are quiet words, and only a filter that is on stands out. */
+.board-head .project.idle {
+  flex: none;
+  width: auto;
+  padding: 0 8px;
+  color: var(--text-dim);
+  background: none;
+  border-color: transparent;
+}
+
+.board-head .project.idle:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.board-head .project.idle .name {
+  font-weight: 400;
+}
+
+.board-head .project.idle .keys,
+.board-head .project.idle .spacer {
+  display: none;
+}
+
+.board-head .project:not(.idle) {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
 /* The search says it is there rather than waiting behind a key: the Cmd+P field itself, in the head, its rows under it. */
 .board-search {
   position: relative;
@@ -6390,13 +6736,23 @@ html.framed .board-head {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  max-width: 520px;
+  max-width: 220px;
   height: 28px;
   padding: 0 10px;
   color: var(--text-faint);
   background: var(--bg-sunken);
   border: 1px solid var(--border);
   border-radius: 7px;
+  transition: max-width var(--settle) var(--ease);
+}
+
+.board-search.open,
+.board-search:focus-within {
+  max-width: 520px;
+}
+
+.board-search:not(:hover, :focus-within) .keys {
+  display: none;
 }
 
 .board-search:hover {
@@ -6655,8 +7011,16 @@ html.framed .board-head {
   bottom: 9px;
 }
 
-.board-card:has(> .provider-icon) > :nth-last-child(2) {
+.board-card:has(> .provider-icon):not(:has(> .employee-card-slot)) > :nth-last-child(2) {
   padding-right: 20px;
+}
+
+.board-card:has(> .employee-card-slot) > .provider-icon {
+  inset-block-end: 11px;
+}
+
+.board-card:has(> .employee-card-slot > .employee-card-avatar:not(.blank)) > .provider-icon {
+  inset-inline-end: 36px;
 }
 
 /* A favorite, the same ones the sidebar groups at its top. */
@@ -6867,19 +7231,19 @@ html.framed .board-head {
   background: var(--danger);
 }
 
-/* The New task form the board opens, over the same dimming as a conversation. */
+/* The New task form the board opens, over the same dimming as a conversation: what to do on the left, where and who on the right. */
 .new-task {
   position: absolute;
-  top: 80px;
+  top: 72px;
   left: 50%;
   z-index: 8;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  width: min(520px, calc(100% - 80px));
+  gap: 14px;
+  width: min(820px, calc(100% - 80px));
   max-height: calc(100% - 96px);
   overflow-y: auto;
-  padding: 16px 18px 14px;
+  padding: 16px 20px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -6887,15 +7251,140 @@ html.framed .board-head {
   transform: translateX(-50%);
 }
 
+.new-task-top {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .new-task-head {
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
 }
 
-.new-task-kinds {
+.new-task-kinds button {
+  height: 26px;
+  padding: 0 11px 0 9px;
+  font-size: 13px;
+}
+
+.new-task-sub {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.new-task-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 248px;
+  gap: 18px;
+  min-height: 0;
+}
+
+.new-task-main {
   display: flex;
-  gap: 2px;
-  margin-left: -10px;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* One surface for the words, the pictures and the ways to fill it, lit as one when focused. */
+.new-task-compose {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--quick) var(--ease), background-color var(--quick) var(--ease);
+}
+
+.new-task-compose:focus-within {
+  border-color: var(--accent);
+}
+
+.new-task-compose.taking {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.new-task-compose > .new-task-text {
+  flex: 1;
+  min-height: clamp(150px, 26vh, 280px);
+  padding: 12px 14px 6px;
+  font-size: 14px;
+  line-height: 1.5;
+  background: none;
+  border: 0;
+  resize: none;
+}
+
+.new-task-compose > .pending {
+  margin: 0;
+  padding: 4px 12px;
+}
+
+.new-task-compose > .new-task-recorded {
+  margin: 0;
+  padding: 2px 14px 4px;
+}
+
+.new-task-compose > .new-task-ways {
+  margin: 0;
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--border);
+}
+
+.new-task-compose > .new-task-ways .quiet {
+  color: var(--text-dim);
+  border-color: transparent;
+}
+
+.new-task-compose > .new-task-ways .quiet:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.new-task-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.new-task-side .new-task-models {
+  flex-direction: column;
+}
+
+.new-task-side .new-task-where {
+  width: 100%;
+  min-width: 0;
+}
+
+.new-task-goal-field {
+  margin-top: 2px;
+}
+
+.new-task-foot kbd {
+  margin-left: 8px;
+  font: inherit;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+@media (width <= 760px) {
+  .new-task-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .new-task-sub {
+    display: none;
+  }
 }
 
 .new-task-label {
@@ -6960,16 +7449,6 @@ html.framed .board-head {
 .new-task-text {
   resize: vertical;
   line-height: 1.45;
-}
-
-/* A file is over the field and would be taken. */
-.new-task-text.taking {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-
-.new-task .pending {
-  margin-top: -4px;
 }
 
 .new-task-where:focus,
@@ -7176,9 +7655,44 @@ html.phone button:active:not(:disabled) {
   margin: 0;
 }
 
+.phone-title-tools {
+  display: flex;
+  flex-shrink: 1;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.phone-title-row .phone-scope.employee-chip {
+  flex-shrink: 0;
+  gap: 6px;
+  max-width: 132px;
+  padding-inline: 8px 10px;
+}
+
+.phone-title-row .phone-scope.employee-chip:not(.on) {
+  color: var(--text-dim);
+}
+
+.employee-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.employee-chip-stack {
+  display: inline-flex;
+}
+
+.employee-chip-stack > .employee-avatar + .employee-avatar {
+  margin-inline-start: -7px;
+  box-shadow: 0 0 0 2px var(--ground);
+}
+
 .phone-title-row .phone-scope {
   min-width: 0;
-  max-width: 55%;
+  max-width: 100%;
   margin-top: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -7244,7 +7758,7 @@ html.phone button:active:not(:disabled) {
   border-radius: 22px;
 }
 
-/* The segmented control: the thumb slides under the chosen third. */
+/* The segmented control: equal parts, as many as `--count` says, and the thumb slides under the chosen one. */
 .phone-seg {
   position: relative;
   display: flex;
@@ -7257,9 +7771,13 @@ html.phone button:active:not(:disabled) {
 .phone-seg button {
   position: relative;
   z-index: 1;
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   height: 30px;
+  padding: 0 4px;
+  overflow: hidden;
   font-size: 13px;
+  text-overflow: ellipsis;
   font-weight: 500;
   white-space: nowrap;
   border-radius: 7px;
@@ -7270,7 +7788,7 @@ html.phone button:active:not(:disabled) {
 }
 
 .phone-seg .n {
-  margin-inline-start: 4px;
+  margin-inline-start: 3px;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
   color: var(--text-faint);
@@ -7280,7 +7798,7 @@ html.phone button:active:not(:disabled) {
   position: absolute;
   inset-block: 2px;
   left: 2px;
-  width: calc((100% - 4px) / 3);
+  width: calc((100% - 4px) / var(--count, 3));
   background: var(--bg-raised);
   border-radius: 7px;
   box-shadow: 0 0 0 0.5px var(--separator), 0 3px 8px var(--fill-strong);
@@ -7648,6 +8166,18 @@ html.phone button:active:not(:disabled) {
   margin-top: 5px;
   font-size: 13px;
   color: var(--text-faint);
+}
+
+.phone-row-employee {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  color: var(--text-dim);
+}
+
+.phone-row-employee > .employee-avatar {
+  inline-size: 18px;
+  block-size: 18px;
 }
 
 .phone-row-meta > .provider-icon {
@@ -12770,4 +13300,1459 @@ button.manager-step-head:hover > svg {
   .gk-disc {
     transition: none;
   }
+}
+
+.employee-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: 20px;
+  block-size: 20px;
+  overflow: hidden;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border-radius: 50%;
+  font-size: 9px;
+}
+
+.employee-avatar img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.employee-avatar.large {
+  inline-size: 44px;
+  block-size: 44px;
+  font-size: 15px;
+}
+
+.employee-avatar.medium {
+  inline-size: 28px;
+  block-size: 28px;
+  font-size: 11px;
+}
+
+.employee-avatar.hero {
+  inline-size: 64px;
+  block-size: 64px;
+  font-size: 22px;
+}
+
+.employee-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-inline-size: 0;
+  max-inline-size: 160px;
+  color: var(--text-dim);
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+.employee-words {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.employee-words > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-badge small {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-select {
+  max-inline-size: 190px;
+  min-block-size: 28px;
+}
+
+/* The face on a card is the menu that changes who works on it; an unassigned card shows a blank only under the pointer. */
+.employee-card-slot {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-self: flex-end;
+}
+
+.employee-card-slot:has(> .blank) {
+  position: absolute;
+  inset-inline-end: 30px;
+  inset-block-end: 6px;
+}
+
+/* On a board card the face sits in the last line's corner, beside the assistant's mark, instead of taking a line of its own. */
+.board-card > .employee-card-slot {
+  position: absolute;
+  inset-inline-end: 9px;
+  inset-block-end: 7px;
+}
+
+.board-card > .employee-card-slot:has(> .blank) {
+  inset-inline-end: 30px;
+}
+
+.board-card:has(> .employee-card-slot):not(:has(> .provider-icon)) > :nth-last-child(2) {
+  padding-inline-end: 28px;
+}
+
+.board-card:has(> .employee-card-slot):has(> .provider-icon) > :nth-last-child(3) {
+  padding-inline-end: 50px;
+}
+
+.employee-card-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 20px;
+  block-size: 20px;
+  padding: 0;
+  color: var(--text-faint);
+  background: var(--bg-raised);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--bg-raised), 0 0 0 2.5px var(--border);
+  transition: box-shadow var(--quick) var(--ease), opacity var(--quick) var(--ease);
+}
+
+.employee-card-avatar:hover:not(:disabled),
+.employee-card-avatar.open {
+  box-shadow: 0 0 0 1.5px var(--bg-raised), 0 0 0 3px var(--accent);
+}
+
+.employee-card-avatar.blank {
+  border: 1px dashed var(--border-strong);
+  box-shadow: none;
+  opacity: 0;
+}
+
+.board-card:hover .employee-card-avatar.blank,
+.employee-card-avatar.blank:focus-visible,
+.employee-card-avatar.blank.open {
+  opacity: 1;
+}
+
+.employee-card-avatar.blank:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+
+.employee-card-alert {
+  position: absolute;
+  z-index: 2;
+  inset-block-end: calc(100% + 4px);
+  inset-inline-end: 0;
+  inline-size: 200px;
+  padding: 6px 8px;
+  color: var(--danger);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: 11px;
+}
+
+/* The one who works on an open conversation, and the menu that changes it. */
+.employee-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  max-inline-size: 260px;
+  padding: 2px 8px 2px 2px;
+  color: var(--text-dim);
+  border-radius: 13px;
+  font-size: 12px;
+}
+
+.employee-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-chip small {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-chip:hover:not(:disabled),
+.employee-chip.open {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.employee-chip.none {
+  padding-inline-start: 3px;
+  color: var(--text-faint);
+}
+
+.employee-chip-blank {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: 18px;
+  block-size: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 50%;
+}
+
+/* Team in the top bar: the first faces of the team, and the page it opens. */
+.team-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 4px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  font-size: 12px;
+}
+
+.team-button:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.team-button.on {
+  color: var(--text);
+  background: var(--bg-active);
+  border-color: transparent;
+}
+
+.team-faces {
+  display: inline-flex;
+}
+
+.team-faces .employee-avatar {
+  box-shadow: 0 0 0 1.5px var(--bg);
+}
+
+.team-faces .employee-avatar + .employee-avatar {
+  margin-inline-start: -6px;
+}
+
+.team-page {
+  position: absolute;
+  inset: var(--bar, 0px) 0 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  background: var(--bg);
+  animation: fade var(--quick) var(--ease) both;
+}
+
+.team-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--border);
+}
+
+.team-bar h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.team-alert {
+  margin: 8px 12px 0;
+}
+
+.team-split {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 236px minmax(0, 1fr);
+  min-block-size: 0;
+}
+
+.team-split > .employee-roster {
+  padding: 10px;
+}
+
+.team-main {
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+.team-main > .employee-welcome {
+  margin: 60px auto;
+  max-inline-size: 360px;
+}
+
+.team-inner {
+  display: grid;
+  gap: 22px;
+  max-inline-size: 760px;
+  margin: 0 auto;
+  padding: 22px 28px 40px;
+}
+
+.team-choose {
+  margin: 60px 0;
+  text-align: center;
+}
+
+.team-section {
+  display: grid;
+  gap: 10px;
+}
+
+.team-section > .employee-section-head > span {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+
+.team-section > .employee-section-head h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.team-hero-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.team-hero-actions > .quiet,
+.team-section .employee-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.team-name-fields {
+  flex: 1;
+  grid-template-columns: 1fr 1fr;
+}
+
+.team-roster-rule {
+  flex: none;
+  margin: 6px 4px 2px;
+  border-block-start: 1px solid var(--border);
+}
+
+.team-live {
+  flex: none;
+  inline-size: 7px;
+  block-size: 7px;
+  background: var(--done-solid);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--bg-sunken);
+}
+
+.team-none-face {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: 64px;
+  block-size: 64px;
+  color: var(--text-faint);
+  border: 1px dashed var(--border-strong);
+  border-radius: 50%;
+}
+
+.team-none-face.small {
+  inline-size: 28px;
+  block-size: 28px;
+}
+
+/* A shortcut of an employee: what it does, when, and running it or its timetable at a glance. */
+.team-box {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.team-box > * + * {
+  border-block-start: 1px solid var(--border);
+}
+
+.team-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+}
+
+.team-shortcut:hover {
+  background: var(--bg-hover);
+}
+
+.team-shortcut-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: 28px;
+  block-size: 28px;
+  color: var(--text-dim);
+  background: var(--fill);
+  border-radius: 8px;
+}
+
+.team-shortcut.timed .team-shortcut-icon {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.team-shortcut-words {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-inline-size: 0;
+  padding: 0;
+  color: inherit;
+  text-align: start;
+}
+
+.team-shortcut-words strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-shortcut-words > span:not(.employee-alert) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.team-running {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  color: var(--success-text);
+  border-radius: var(--radius);
+  font-size: 11px;
+}
+
+.team-running::before {
+  inline-size: 6px;
+  block-size: 6px;
+  background: var(--done-solid);
+  border-radius: 50%;
+  content: '';
+  animation: team-blink 1.2s var(--ease) infinite;
+}
+
+.team-running:hover {
+  background: var(--bg-hover);
+}
+
+@keyframes team-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.team-give,
+.team-run {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+
+.team-switch {
+  position: relative;
+  flex: none;
+  inline-size: 28px;
+  block-size: 16px;
+  padding: 0;
+  background: var(--fill-strong);
+  border-radius: 8px;
+  transition: background-color var(--quick) var(--ease);
+}
+
+.team-switch::after {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  inline-size: 12px;
+  block-size: 12px;
+  background: var(--bg-raised);
+  border-radius: 50%;
+  box-shadow: var(--shadow);
+  content: '';
+  transition: transform var(--quick) var(--ease);
+}
+
+.team-switch.on {
+  background: var(--accent);
+}
+
+.team-switch.on::after {
+  transform: translateX(12px);
+}
+
+.team-switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.team-switch-slot {
+  flex: none;
+  inline-size: 28px;
+}
+
+/* Shortcuts grouped under the employee each belongs to. */
+.shortcut-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 2px 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.shortcut-group:first-child,
+.shortcut-list-about + .shortcut-group {
+  margin-block-start: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-running::before {
+    animation: none;
+  }
+}
+
+.employee-filter,
+.employee-assignment {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.employee-assignment {
+  position: relative;
+}
+
+.employee-assignment > .employee-alert {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 100%;
+  inset-inline-start: 0;
+  inline-size: 220px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.employee-task-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.menu-search,
+.employee-search {
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+}
+
+.menu .menu-search {
+  inline-size: calc(100% - 12px);
+  margin: 4px 6px 6px;
+}
+
+.menu-item .employee-badge,
+.sheet-option .employee-badge {
+  max-inline-size: 260px;
+}
+
+/* Team: who is on the team down the left, the one chosen on the right. */
+.employee-section-head,
+.employee-form footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.employee-section-head {
+  justify-content: space-between;
+}
+
+.employee-section-head > span {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.employee-section-head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.employee-new {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+
+.dialog .employee-note,
+.employee-note {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.dialog .employee-alert,
+.employee-alert {
+  margin: 0;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.employee-welcome {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.employee-welcome strong {
+  margin-block-start: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.employee-welcome .employee-note {
+  max-inline-size: 320px;
+}
+
+.employee-welcome .primary {
+  margin-block-start: 6px;
+}
+
+.employee-stack {
+  display: flex;
+}
+
+.employee-stack .employee-avatar {
+  box-shadow: 0 0 0 2px var(--bg-raised);
+}
+
+.employee-stack .employee-avatar + .employee-avatar {
+  margin-inline-start: -8px;
+}
+
+.employee-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-block-size: 0;
+  padding: 8px;
+  background: var(--bg-sunken);
+  border-inline-end: 1px solid var(--border);
+}
+
+.employee-roster > .check {
+  padding: 4px 6px 0;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.employee-find {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  color: var(--text-faint);
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.employee-find:focus-within {
+  border-color: var(--border-strong);
+}
+
+.employee-find input {
+  flex: 1;
+  min-inline-size: 0;
+  padding: 6px 0;
+  color: var(--text);
+  background: none;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+}
+
+.employee-settings-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+.employee-settings-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  padding: 6px;
+  text-align: start;
+  border-radius: var(--radius);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 40px;
+}
+
+.employee-settings-row:hover:not(:disabled, .on) {
+  background: var(--bg-hover);
+}
+
+.employee-settings-row.on {
+  background: var(--bg-active);
+}
+
+.employee-settings-row.archived .employee-avatar {
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+
+.employee-settings-row.new .employee-avatar {
+  opacity: 0.7;
+}
+
+.employee-row-words {
+  display: grid;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.employee-row-words strong,
+.employee-row-words small,
+.employee-task-words strong,
+.employee-task-words > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-row-words strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.employee-row-words small {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.employee-count {
+  flex: none;
+  min-inline-size: 18px;
+  padding: 1px 5px;
+  color: var(--text-dim);
+  background: var(--fill);
+  border-radius: 9px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.employee-none {
+  padding: 8px 6px;
+}
+
+.employee-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px 0;
+}
+
+.employee-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.employee-form input,
+.employee-form textarea {
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: 7px 9px;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.employee-form textarea {
+  min-block-size: 110px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.employee-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.employee-form footer {
+  position: sticky;
+  inset-block-end: 0;
+  flex-wrap: wrap;
+  margin-block-start: auto;
+  margin-inline: -16px;
+  padding: 10px 16px;
+  background: var(--bg-raised);
+  border-block-start: 1px solid var(--border);
+}
+
+/* The face of an employee, in Settings and on its card alike. */
+.employee-profile,
+.employee-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.employee-hero-words {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-inline-size: 0;
+}
+
+.employee-hero-words h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-hero-role {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.employee-pill {
+  padding: 1px 6px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 10px;
+}
+
+.employee-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.employee-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--success-text);
+}
+
+.employee-live::before {
+  inline-size: 6px;
+  block-size: 6px;
+  background: var(--done-solid);
+  border-radius: 50%;
+  content: '';
+}
+
+.employee-portrait {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.employee-portrait .employee-avatar {
+  transition: box-shadow var(--quick) var(--ease);
+}
+
+.employee-portrait:hover .employee-avatar,
+.employee-portrait.on .employee-avatar {
+  box-shadow: 0 0 0 2px var(--bg-raised), 0 0 0 4px var(--accent);
+}
+
+.employee-portrait-edit {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 20px;
+  block-size: 20px;
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+}
+
+.employee-avatar-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius-lg);
+  animation: lift var(--settle) var(--ease) both;
+}
+
+.employee-avatar-options button {
+  display: flex;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.employee-avatar-options button .employee-avatar {
+  transition: box-shadow var(--quick) var(--ease);
+}
+
+.employee-avatar-options button:hover .employee-avatar {
+  box-shadow: 0 0 0 2px var(--bg-sunken), 0 0 0 3px var(--border-strong);
+}
+
+.employee-avatar-options button.on .employee-avatar {
+  box-shadow: 0 0 0 2px var(--bg-sunken), 0 0 0 4px var(--accent);
+}
+
+.employee-avatar-options .employee-avatar {
+  inline-size: 36px;
+  block-size: 36px;
+}
+
+.employee-discard {
+  z-index: 100;
+}
+
+/* The card: who, what they do, what they are working on, and what they can recall. */
+.employee-detail {
+  inline-size: min(620px, 92vw);
+  padding: 0;
+}
+
+.employee-detail-content {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.employee-hero {
+  align-items: flex-start;
+}
+
+.employee-hero .employee-hero-words {
+  padding-block-start: 6px;
+}
+
+.employee-close {
+  flex: none;
+  margin: -6px -8px 0 0;
+}
+
+.dialog .employee-description,
+.employee-description {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dialog .employee-empty,
+.employee-empty {
+  margin: 0;
+  padding: 14px;
+  color: var(--text-faint);
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+}
+
+.employee-tasks,
+.employee-memory {
+  display: grid;
+  gap: 10px;
+}
+
+.employee-section-head .employee-count {
+  margin-inline-end: auto;
+}
+
+.employee-segments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.employee-segments button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 11px;
+}
+
+.employee-segments button span {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.employee-segments button:hover:not(.on) {
+  background: var(--bg-hover);
+}
+
+.employee-segments button.on {
+  color: var(--text);
+  background: var(--bg-active);
+  border-color: transparent;
+}
+
+.employee-task-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.employee-task-list li {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 46px;
+}
+
+.employee-task-list li + li {
+  border-block-start: 1px solid var(--border);
+}
+
+.employee-task {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  inline-size: 100%;
+  padding: 8px 10px;
+  color: var(--text);
+  text-align: start;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 46px;
+}
+
+button.employee-task > svg:last-child {
+  flex: none;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity var(--quick) var(--ease);
+}
+
+button.employee-task:hover {
+  background: var(--bg-hover);
+}
+
+button.employee-task:hover > svg:last-child,
+button.employee-task:focus-visible > svg:last-child {
+  opacity: 1;
+}
+
+.employee-task-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: 24px;
+  block-size: 24px;
+  color: var(--text-faint);
+  background: var(--fill);
+  border-radius: 50%;
+}
+
+.employee-task-icon.progress {
+  color: var(--unread);
+}
+
+.employee-task-icon.done {
+  color: var(--success-text);
+  background: var(--accent-soft);
+}
+
+.employee-task-icon.working {
+  color: var(--success-text);
+  background: var(--accent-soft);
+}
+
+.employee-task-words {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.employee-task-words strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.employee-task-words > span {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.employee-task-time {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .employee-avatar-options {
+    animation: none;
+  }
+}
+
+.employee-source {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 60px;
+}
+
+.employee-source summary {
+  padding: 10px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.employee-source summary span {
+  display: block;
+  margin-block-start: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.employee-source-path {
+  padding-inline: 10px;
+  color: var(--text-faint);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.employee-source-message {
+  padding: 10px;
+  border-block-start: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.employee-source-message.mine {
+  background: var(--bubble);
+}
+
+.employee-source-message strong {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.employee-source-message p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+html.phone .employee-filter {
+  margin-inline: 16px;
+  margin-block-end: 8px;
+}
+
+html.phone .employee-select {
+  min-block-size: 38px;
+  font-size: 14px;
+}
+
+html.phone .phone-row-text > .employee-card-slot:has(> .blank) {
+  display: none;
+}
+
+html.phone .phone-row-text > .employee-card-slot {
+  display: flex;
+  margin-inline-start: auto;
+  margin-block-start: 5px;
+}
+
+html.phone .phone-employee {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: center;
+  min-inline-size: 0;
+  padding-block-end: 4px;
+}
+
+html.phone .employee-detail-content {
+  padding: 16px;
+}
+
+html.phone .employee-hero-words h2 {
+  font-size: 20px;
+}
+
+html.phone .employee-hero-role,
+html.phone .employee-summary,
+html.phone .employee-task-words > span,
+html.phone .employee-task-time,
+html.phone .employee-segments button,
+html.phone .employee-empty {
+  font-size: 13px;
+}
+
+html.phone .employee-section-head h3 {
+  font-size: 15px;
+}
+
+html.phone .employee-task-words strong {
+  font-size: 15px;
+}
+
+html.phone .employee-task {
+  min-block-size: 56px;
+  padding-inline: 12px;
+}
+
+html.phone .employee-task-list {
+  background: var(--bg-raised);
+  border-color: var(--separator);
+  border-radius: var(--radius-lg);
+}
+
+html.phone .employee-segments button {
+  padding: 5px 12px;
+  border-radius: 15px;
+}
+
+html.phone .employee-source summary,
+html.phone .employee-description,
+html.phone .employee-source-message {
+  font-size: 14px;
+}
+
+html.phone .employee-search {
+  margin-block: 8px;
+  font-size: 16px;
+}
+
+html.phone .phone-page > .phone-list > .employee-search {
+  inline-size: calc(100% - 32px);
+  margin-inline: 16px;
+}
+
+/* A change to the team asked for with geckit employees */
+.team-request-lines {
+  margin: 0;
+  padding: 10px 14px 10px 32px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* Team on the phone: Settings > Team, a page per employee, and the sheet that edits one. */
+.phone-group.phone-team-group {
+  margin-block-start: 18px;
+}
+
+html.phone .phone-team-alert {
+  margin-block-end: 12px;
+}
+
+.phone-team-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-inline-size: 0;
+}
+
+.phone-team-person > span:last-child {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.phone-team-person b {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-team-person small {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-team-person.archived .employee-avatar {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+html.phone .phone-cell-value .employee-count {
+  min-inline-size: 22px;
+  font-size: 13px;
+}
+
+html.phone .phone-cell-value .team-live {
+  margin-inline-end: 8px;
+  box-shadow: none;
+}
+
+.phone-team-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 4px 16px 0;
+}
+
+.phone-team-hero-words {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+html.phone .phone-team-hero .employee-hero-role {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 15px;
+}
+
+.phone-team-block {
+  margin: 18px 16px 0;
+}
+
+.phone-team-block > .employee-description {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  border-radius: 12px;
+  white-space: pre-wrap;
+}
+
+.phone-team-portraits {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+
+.phone-team-portraits button {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.phone-team-portraits button .employee-avatar {
+  inline-size: 100%;
+  block-size: 100%;
+  box-shadow: 0 0 0 2px var(--bg);
+  transition: box-shadow var(--quick) var(--ease);
+}
+
+.phone-team-portraits button.on .employee-avatar {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+html.phone .phone-team-block .employee-section-head {
+  padding-inline: 16px;
+}
+
+html.phone .phone-team-block .employee-section-head h3 {
+  color: var(--text-faint);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Four columns on a 390-point screen: a little smaller, so "In progress 19" still fits its quarter. */
+.phone-board-seg button {
+  font-size: 12px;
 }

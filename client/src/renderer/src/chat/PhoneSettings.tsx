@@ -4,6 +4,8 @@ import { assistantsIn, providerOf, SESSION_MODES, shownProjects } from '../../..
 import type { Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, SessionProvider, ShortcutDraft, Theme } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { independentProviderInfo, llmProviderInfo } from '../../../shared/providers'
+import { TEAM_EVENT } from '../employees/Employees'
+import { PhoneTeam } from '../employees/PhoneTeam'
 import { ear, setEar, voice } from '../dictate'
 import type { Ear } from '../dictate'
 import { macs } from '../macs'
@@ -32,6 +34,7 @@ import type { Chat } from './useChat'
 
 type Where =
   | { readonly page: 'root' }
+  | { readonly page: 'employees'; readonly first?: string }
   | { readonly page: 'profiles' }
   | { readonly page: 'profile'; readonly id: string }
   | { readonly page: 'projects' }
@@ -57,6 +60,14 @@ export function PhoneSettings({
   const where = trail[trail.length - 1] ?? { page: 'root' }
   const go = (next: Where): void => setTrail([...trail, next])
   const back = (): void => setTrail(trail.slice(0, -1))
+  useEffect(() => {
+    const open = (event: Event): void => {
+      const first = (event as CustomEvent<string | undefined>).detail
+      setTrail([{ page: 'root' }, { page: 'employees', ...(first === undefined ? {} : { first }) }])
+    }
+    window.addEventListener(TEAM_EVENT, open)
+    return () => window.removeEventListener(TEAM_EVENT, open)
+  }, [])
   const before = (): string => {
     const one = trail[trail.length - 2]
     return one === undefined || one.page === 'root'
@@ -68,6 +79,7 @@ export function PhoneSettings({
           : 'Back'
   }
 
+  if (where.page === 'employees') return <PhoneTeam key={where.first ?? 'list'} chat={chat} back={before()} first={where.first} onBack={back} onEdit={onEdit} />
   if (where.page === 'profiles') return <Profiles chat={chat} back={before()} onBack={back} onOpen={(id) => go({ page: 'profile', id })} />
   if (where.page === 'profile') return <Profile chat={chat} id={where.id} back={before()} onBack={back} />
   if (where.page === 'projects') return <Projects chat={chat} back={before()} onBack={back} />
@@ -161,6 +173,7 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
 
       <div className="phone-head">Board</div>
       <div className="phone-group">
+        <Cell label="Team" value={String(chat.employees.filter((one) => !one.archived).length)} onPress={() => go({ page: 'employees' })} />
         <Cell label="Profiles" value={profile?.name ?? 'All folders'} onPress={() => go({ page: 'profiles' })} />
         <Cell label="Folders" value={String(settings.projects.length)} onPress={() => go({ page: 'projects' })} />
         <Cell label="Hidden conversations" onPress={() => go({ page: 'hidden' })} />

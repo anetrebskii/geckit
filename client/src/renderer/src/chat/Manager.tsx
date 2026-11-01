@@ -17,7 +17,7 @@ const ORDER: readonly ManagerStepName[] = ['assistant', 'delegation', 'telegram'
 const LOCKED: Record<ManagerStepName, string> = { assistant: '', delegation: 'Choose the assistant first.', telegram: 'Decide how work starts first.', enable: 'Connect Telegram first.' }
 const PROJECTS = 'All projects, current and future, across every profile.'
 
-export function ManagerSettings({ settings }: { readonly settings: Settings }): React.JSX.Element {
+export function ManagerSettings({ settings, embedded = false }: { readonly settings: Settings; readonly embedded?: boolean }): React.JSX.Element {
   const view = useManager()
   const [telegram, setTelegram] = useTelegram()
   const initialProvider = useRef(view?.config.provider ?? 'claude')
@@ -99,8 +99,7 @@ export function ManagerSettings({ settings }: { readonly settings: Settings }): 
   const reopen = (step: ManagerStepName) => () => { setError(''); setOpened(step) }
   const done = <button type="button" className="quiet" onClick={() => setOpened(undefined)}>Done</button>
   return <section className="manager-settings">
-    <h3>Manager</h3>
-    <p>Manage GeckIt from Telegram. The manager delegates work to separate sessions and brings back results.</p>
+    {embedded ? null : <><h3>Manager</h3><p>Manage GeckIt from Telegram. The manager delegates work to separate sessions and brings back results.</p></>}
     {enabled || view.session === undefined ? null : <p role="status">Manager disabled. History is kept.</p>}
     <ManagerFlow step={focus} delegation={delegation} />
     <ol className="manager-steps">

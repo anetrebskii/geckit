@@ -78,6 +78,7 @@ function Preview(): React.JSX.Element {
     }, 1500)
   }
   const chat: Chat = {
+    employees: [], employeesById: new Map(),
     settings: { ...DEFAULT_SETTINGS, phrases: [], chatView: 'list', vpnIpCheck: true, vpnAllowedIps: ['8.8.8.8'] }, hosts: [], prompts: [], lineup: { working: scenario === 'queued-retry' ? 1 : 0, limit: 6 }, full: false, change: noop,
     root: session.root, scope: session.root, sessions: [session], listed: true, everyone: [session], questions: [], waiting: [], notices: [], shown: { kind: 'session', id: session.id }, session,
     items, itemsFor: session.id, earlier: 0, showEarlier: noop, loadSteps: noop, draft, pictures, trouble: '', checkingIp, retrying, retry, uploading: false,

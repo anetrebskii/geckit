@@ -1,3 +1,4 @@
+import type { Employee, EmployeeConversation } from '../../shared/employees'
 import { createHash, randomUUID } from 'node:crypto'
 import { managerContext, managerHistoryItem, managerVisibleItem } from '../manager-protocol'
 import { MANAGER_CHAT_GUIDANCE } from '../../shared/manager'
@@ -30,6 +31,8 @@ import type {
   PlanUsage,
   ReasoningEffort,
   RequestChoice,
+  TeamAnswer,
+  TeamChoice,
   RequestTask,
   SessionGoal,
   SessionImage,
@@ -98,6 +101,8 @@ import {
  */
 
 export interface SessionNote {
+  readonly employeeId?: Employee['id']
+  readonly employeeRoot?: ChatSession['root']
   readonly prepared?: Pick<SessionMessage, 'text'>
   readonly preparedDestination?: ChatSession['id']
   readonly delivery?: SessionDeliveryReceipt
@@ -221,6 +226,7 @@ interface Row extends Pick<SessionSpend, 'window' | 'cost' | 'currency' | 'costK
 export type { SessionNotice } from '../../shared/api'
 
 export interface SessionsDeps {
+  readonly validateEmployee?: (id: Employee['id']) => void
   readonly beforeSend?: () => Promise<void> | void
   readonly vpnMonitor?: () => string | undefined
   readonly codex?: Pick<CodexSessions, 'account' | 'models' | 'create' | 'list' | 'read' | 'turns' | 'search' | 'delete' | 'rename' | 'hold' | 'dispose' | 'goal' | 'setGoal' | 'clearGoal' | 'correct'> & Partial<Pick<CodexSessions, 'pauseGoal' | 'resumeGoal'>>
@@ -531,6 +537,8 @@ export class Sessions {
   /** Requests from `geckit start` waiting for an answer, by the item showing them. */
   readonly #requests = new Map<string, Pending>()
   readonly #answering = new Set<string>()
+  /** Changes to the team asked for with `geckit employees`, by the item showing them; kept only in memory. */
+  readonly #teamRequests = new Map<string, { readonly session: string; readonly answered: (answer: TeamAnswer | undefined) => void }>()
   /** The cards of requests made by a program rather than a conversation (`requestFromApp`). */
   readonly #holders = new Set<string>()
   readonly #rows = new Map<string, Row>()
@@ -697,10 +705,11 @@ export class Sessions {
   async startManaged(message: SessionMessage, owner: string, operation: string, parent = owner): Promise<string> {
     const found = Object.entries(this.#deps.notes.all()).find(([, note]) => note.managerOwner === owner && note.managerOperation === operation)
     if (found !== undefined) return found[0]
+    if (message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
     const provider = message.provider ?? 'claude'
     const id = await this.#provider(provider).create({ root: message.root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }) })
     this.#fresh(id, message.root, firstLine(message.text, 80), message.mode)
-    this.#note(id, { here: true, parent, managerOwner: owner, managerOperation: operation, unborn: message.root, title: firstLine(message.text, 80) })
+    this.#note(id, { here: true, parent, managerOwner: owner, managerOperation: operation, ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), unborn: message.root, title: firstLine(message.text, 80) })
     return this.send({ ...message, session: id })
   }
 
@@ -1013,10 +1022,12 @@ export class Sessions {
       const work = row?.work ?? (first?.kind === 'mine' ? workItem(first.text) : undefined)
       const queued = live?.queued ?? note?.queued ?? []
       const asking = this.#asking(id)
+      const teamAsking = [...this.#teamRequests.values()].some((pending) => pending.session === id)
       const goal = live?.goal ?? note?.goal
       const moved = note?.moves?.at(-1)
       sessions.push({
         id,
+        ...(note?.employeeId === undefined ? {} : { employeeId: note.employeeId }),
         ...(note?.prepared === undefined ? {} : { prepared: true as const }),
         ...(live?.state !== 'working' || live.retryNotice === undefined ? {} : { retryNotice: live.retryNotice }),
         ...(note?.delivery === undefined ? {} : { delivery: note.delivery }),
@@ -1029,6 +1040,8 @@ export class Sessions {
         stands:
           (asking !== undefined
             ? `Wants to start ${conversations(asking)}`
+            : teamAsking
+            ? 'Wants to change the team'
             : quiet
             ? runs !== undefined
               ? live?.typing === runs.id
@@ -1038,7 +1051,7 @@ export class Sessions {
                 ? 'Stopped when GeckIt closed'
                 : live?.stands || row?.stands
             : live.stands) ?? '',
-        state: asking !== undefined ? 'asks' : quiet && note?.unread === true ? 'unread' : (live?.state ?? 'idle'),
+        state: asking !== undefined || teamAsking ? 'asks' : quiet && note?.unread === true ? 'unread' : (live?.state ?? 'idle'),
         at: Math.max(live?.at ?? 0, row?.at ?? 0),
         here: note?.here === true,
         mode: live?.mode ?? sessionMode(note?.mode),
@@ -1290,6 +1303,50 @@ export class Sessions {
     })
   }
 
+  /** Claude asks, with `geckit employees`, to change the team: the card waits in the conversation that asked, and nothing changes until the person allows it. */
+  teamRequest(session: string, lines: readonly string[], gone: AbortSignal): Promise<TeamAnswer | undefined> {
+    session = this.requestOrigin(session)
+    const live = this.#live.get(session) ?? this.#adopt(session)
+    if (live === undefined) return Promise.reject(new Error('GeckIt does not show this conversation, so it cannot ask the person here. Run the command in a terminal.'))
+    const item: SessionItem = { kind: 'team-request', id: `team:${randomUUID()}`, lines }
+    live.kept.push({ after: [...live.items.keys()].at(-1), item })
+    live.items.set(item.id, item)
+    live.at = this.#now()
+    return new Promise((answered) => {
+      this.#teamRequests.set(item.id, { session: live.id, answered })
+      gone.addEventListener('abort', () => this.answerTeamRequest(item.id, undefined))
+      this.#tellItems({ id: live.id, items: [item] })
+      this.#changed()
+      if (this.#watching === live.id) return
+      this.#deps.notify({
+        session: live.id,
+        title: 'Wants to change the team',
+        subtitle: this.#deps.notes.all()[live.id]?.title ?? live.title,
+        body: lines.join('\n'),
+        asks: true,
+      })
+    })
+  }
+
+  /** The person's answer to a change to the team, or nothing where the command stopped waiting first. */
+  answerTeamRequest(request: string, choice: TeamChoice | undefined): void {
+    const pending = this.#teamRequests.get(request)
+    if (pending === undefined) return
+    this.#teamRequests.delete(request)
+    const note = choice?.note?.trim() || undefined
+    const answer: TeamAnswer = choice === undefined ? { how: 'withdrawn' } : { how: choice.allow ? 'allowed' : 'declined', where: choice.where, ...(note === undefined ? {} : { note }) }
+    const live = this.#live.get(pending.session)
+    const item = live?.items.get(request)
+    if (live !== undefined && item?.kind === 'team-request') {
+      const answered: SessionItem = { ...item, answer }
+      live.items.set(request, answered)
+      live.kept = live.kept.map((one) => (one.item.id === request ? { ...one, item: answered } : one))
+      this.#tellItems({ id: live.id, items: [answered] })
+    }
+    this.#changed()
+    pending.answered(choice === undefined ? undefined : answer)
+  }
+
   /** A program's request card, answered or withdrawn: it goes from the board, and nothing of it is written down. */
   #dropHolder(id: string): void {
     this.#holders.delete(id)
@@ -1406,13 +1463,14 @@ export class Sessions {
   }
 
   prepare(message: SessionMessage): string {
+    if (message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
     const provider = message.provider ?? 'claude'
     const backend = this.#provider(provider)
     if (!backend.available) throw new Error(`${backend.name} is unavailable. Choose another assistant.`)
     if (backend.localOnly && isRemote(message.root)) throw new Error(`${backend.name} is available for local folders.`)
     const id = `${provider === 'claude' ? '' : `${provider}:`}copy-${randomUUID()}`
     const title = firstLine(message.text, 80)
-    const note: SessionNote = { prepared: { text: message.text }, unborn: message.root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }), ...(message.reasoning === undefined ? {} : { reasoning: message.reasoning }), title, here: true, created: this.#now() }
+    const note: SessionNote = { ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), prepared: { text: message.text }, unborn: message.root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }), ...(message.reasoning === undefined ? {} : { reasoning: message.reasoning }), title, here: true, created: this.#now() }
     this.#deps.notes.set(id, note)
     const live = this.#fresh(id, message.root, title, message.mode)
     live.chosen = message.model
@@ -1449,6 +1507,45 @@ export class Sessions {
       if ('reasoning' in change) live.reasoning = change.reasoning
     }
     if ('model' in change || 'reasoning' in change) this.#changed()
+  }
+
+  assignEmployee(id: ChatSession['id'], employeeId: Employee['id'] | null): void {
+    this.#ordinary(id)
+    const row = this.#rows.get(id)
+    const live = this.#live.get(id)
+    const note = this.#deps.notes.all()[id]
+    const root = live?.root ?? row?.root ?? note?.employeeRoot ?? note?.unborn
+    if (root === undefined) throw new Error('This conversation is no longer available.')
+    if (employeeId !== null) this.#deps.validateEmployee?.(employeeId)
+    const { employeeId: _employee, employeeRoot: _root, ...kept } = note ?? {}
+    this.#deps.notes.set(id, { ...kept, ...(employeeId === null ? {} : { employeeId, employeeRoot: root }) })
+    this.#changed()
+  }
+
+  employeeAssignment(id: ChatSession['id']): Employee['id'] | undefined {
+    return this.#deps.notes.all()[this.requestOrigin(id)]?.employeeId
+  }
+
+  async employeeSources(id: Employee['id'], roots: readonly string[]): Promise<Omit<EmployeeConversation, 'items'>[]> {
+    const providers = [this.#providers.stream, this.#providers.codex, ...this.#providers.plugins.values()]
+    const found = await Promise.all(providers.map((provider) => provider.list(roots).catch(() => [])))
+    const rows = new Map<string, Row>(found.flat().map((row) => [row.id, row]))
+    const sources: Omit<EmployeeConversation, 'items'>[] = []
+    for (const [sessionId, note] of Object.entries(this.#deps.notes.all())) {
+      if (note.employeeId !== id || this.isManager(sessionId) || note.preparedDestination !== undefined || !this.#keptHistory(sessionId)) continue
+      const row = rows.get(sessionId) ?? this.#rows.get(sessionId)
+      const live = this.#live.get(sessionId)
+      const root = live?.root ?? row?.root ?? note.employeeRoot ?? note.unborn
+      const allowed = root !== undefined && roots.some((registered) => registered === (row?.project ?? root) || root.startsWith(`${registered}/`))
+      sources.push({ session: { id: sessionId, root: root ?? '', title: note.title ?? live?.title ?? row?.title ?? sessionId, at: live?.at ?? row?.at ?? note.created ?? 0, provider: providerOf(sessionId), ...(note.status === undefined ? {} : { status: note.status }) }, hidden: note.hidden === true, ...(!allowed ? { unavailable: 'This conversation is outside the registered projects.' } : {}) })
+    }
+    return sources.sort((one, other) => other.session.at - one.session.at || one.session.id.localeCompare(other.session.id))
+  }
+
+  async employeeItems(source: EmployeeConversation['session']): Promise<readonly SessionItem[] | undefined> {
+    const live = this.#live.get(source.id)
+    if (live?.driver !== undefined || this.#deps.notes.all()[source.id]?.unborn !== undefined) return [...(live?.items.values() ?? [])]
+    return (await this.#provider(providerOf(source.id)).read(source.root, source.id))?.items
   }
 
   async snapshot(id: string): Promise<ConversationSnapshot> {
@@ -1836,7 +1933,7 @@ export class Sessions {
           if (next !== id && operation.delegateFrom === undefined && destination?.heldOperation === undefined && generation === live.guardGeneration) {
             if (destination !== undefined && live.queued.length > 0) this.#queue(destination, live.queued.map((one) => ({ ...one, message: { ...one.message, session: next } })))
             this.#live.delete(id)
-            this.#note(id, { hidden: true })
+            this.#note(id, { hidden: true, preparedDestination: next })
           }
           if (destination?.heldOperation === undefined) {
             const source = operation.delegateFrom === undefined ? live : this.#live.get(operation.delegateFrom)
@@ -1895,6 +1992,7 @@ export class Sessions {
 
   /** `go` is a message that is part of a turn already given its slot, so the limit never holds it. */
   async send(message: SessionMessage, go = false, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt, delivery?: DeliveryAttempt): Promise<string> {
+    if (message.session === undefined && guardSource === undefined && message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
     if (message.session !== undefined && this.#deps.notes.all()[message.session]?.preparedDestination !== undefined) throw new Error('This copy was already sent. Open its new conversation before sending again.')
     if (message.session !== undefined && this.#deps.notes.all()[message.session]?.prepared !== undefined) {
       const id = message.session
@@ -1906,7 +2004,8 @@ export class Sessions {
       const provider = message.provider ?? providerOf(id)
       this.#preparedSending.add(id)
       try {
-        const sent = await this.send({ ...first, ...(goal !== undefined && isCodexProvider(provider) ? { goal } : {}) }, go, id, queued, delegateFrom, guardAttempt, delivery)
+        const employeeId = this.#deps.notes.all()[id]?.employeeId
+        const sent = await this.send({ ...first, ...(employeeId === undefined ? {} : { employeeId }), ...(goal !== undefined && isCodexProvider(provider) ? { goal } : {}) }, go, id, queued, delegateFrom, guardAttempt, delivery)
         if (goal !== undefined && !isCodexProvider(provider)) await this.send({ session: sent, root: message.root, mode: message.mode, text: `/goal ${goal}`, ...(message.model === undefined ? {} : { model: message.model }) })
         return sent
       } finally { this.#preparedSending.delete(id) }
@@ -1939,12 +2038,19 @@ export class Sessions {
       return target.id
     }
     if (target?.checkingIp === true) throw new Error('Not sent: another public IP check is in progress. Try again when it finishes.')
+    if (message.session === undefined && guardSource !== undefined) {
+      const { employeeId: _employee, ...request } = message
+      const employeeId = this.#deps.notes.all()[guardSource]?.employeeId
+      message = { ...request, ...(employeeId === undefined ? {} : { employeeId }) }
+      if (employeeId !== undefined) this.#deps.validateEmployee?.(employeeId)
+    }
     const operation: Extract<HeldOperation, { kind: 'message' }> = { kind: 'message', message, go, queued, delegateFrom }
     const provisional = message.session === undefined && guardSource === undefined && this.#deps.beforeSend !== undefined
     if (target === undefined && provisional) {
       const provider = message.provider ?? 'claude'
       const id = message.submission ?? `${provider === 'claude' ? '' : `${provider}:`}pending-${randomUUID()}`
       target = this.#fresh(id, message.question === true ? homedir() : message.root, firstLine(message.text, 80), message.mode, message.question === true)
+      if (message.employeeId !== undefined) this.#note(id, { employeeId: message.employeeId, employeeRoot: target.root })
     }
     const attempt: GuardAttempt | undefined = guardAttempt ?? (target === undefined ? undefined : { live: target, guardGeneration: target.guardGeneration, deadline: Date.now() + 10_000 })
     try {
@@ -1963,7 +2069,7 @@ export class Sessions {
       }
       if (provisional && target !== undefined && id !== target.id) {
         this.#live.delete(target.id)
-        this.#note(target.id, { hidden: true })
+        this.#note(target.id, { hidden: true, preparedDestination: id })
         this.#changed()
       }
       return id
@@ -1998,6 +2104,7 @@ export class Sessions {
 
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
+      if (message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
       const root = message.question === true ? homedir() : message.root
       const provider = message.session === undefined ? message.provider ?? 'claude' : providerOf(message.session)
       const transport: ClaudeTransport = 'stream'
@@ -2018,6 +2125,7 @@ export class Sessions {
         live.begun = true
         await this.#reread(live)
       }
+      if (message.employeeId !== undefined) this.#note(id, { employeeId: message.employeeId, employeeRoot: root })
       if (live.question) this.#keepNote(live)
     } else {
       await this.#applyPendingProvider(live)

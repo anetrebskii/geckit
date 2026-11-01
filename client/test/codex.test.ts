@@ -49,6 +49,7 @@ class Server extends EventEmitter implements Held {
   steerError: string | undefined
   effort: ReasoningEffort = 'high'
   model = 'first'
+  developerInstructions: string | null = null
   resolvedModel: string | undefined
   correctionEfforts: readonly ReasoningEffort[] = ['medium', 'low', 'high']
   next = 0
@@ -65,6 +66,7 @@ class Server extends EventEmitter implements Held {
     const id = request.id ?? 0
     switch (request.method) {
       case 'initialize': this.reply(id, { userAgent: 'geckit/0.159.3' }); return
+      case 'config/read': this.reply(id, { config: { developer_instructions: this.developerInstructions } }); return
       case 'account/read': this.reply(id, { account: this.account === 'chatgpt' ? { type: 'chatgpt', planType: 'plus' } : this.account === null ? null : { type: this.account } }); return
       case 'account/rateLimits/read': this.reply(id, { rateLimits: { limitId: 'codex', limitName: null, primary: { usedPercent: 32, windowDurationMins: 10080, resetsAt: 2000000000 }, secondary: null } }); return
       case 'model/list': this.reply(id, request.params?.cursor === 'next' ? { data: [{ model: 'second', displayName: 'Second', description: 'Another model', hidden: false, supportedReasoningEfforts: this.correctionEfforts.map((reasoningEffort) => ({ reasoningEffort, description: reasoningEffort })) }], nextCursor: null } : { data: [{ model: 'first', displayName: 'First', description: 'First model', hidden: false, defaultReasoningEffort: 'low' }, { model: 'hidden', hidden: true }], nextCursor: 'next' }); return
@@ -343,6 +345,85 @@ describe('conversation Computer Use access', () => {
 })
 
 describe('Codex app-server', () => {
+  it('passes only a common source guide pointer to new, cloned and resumed threads while preserving user input', async () => {
+    vi.stubEnv('GECKIT_SOURCE_CODEX_GUIDE', '/isolated/source data/GECKIT-CODEX.md')
+    const { server, codex, heard } = setup()
+    try {
+      const original = await codex.create(ROOT, 'auto', 'first')
+      await codex.create(ROOT, 'manual', 'second', { from: original, at: 'last-turn' })
+      const driver = codex.hold({ id: 'codex:existing', root: ROOT, resume: true, mode: 'auto' }, (one) => heard.push(one), () => undefined)
+      await tick()
+      const threads = server.requests.filter((one) => one.method === 'thread/start' || one.method === 'thread/fork' || one.method === 'thread/resume')
+      expect(threads.map((one) => one.method)).toEqual(['thread/start', 'thread/fork', 'thread/resume'])
+      for (const request of threads) expect(request.params?.developerInstructions).toBe('Read "/isolated/source data/GECKIT-CODEX.md" for this copy\'s current GeckIt instructions and employee lookup rules.')
+      expect(server.requests.some((one) => one.method === 'turn/start')).toBe(false)
+      driver.send('Create an Instagram reel')
+      await tick()
+      expect(server.requests.find((one) => one.method === 'turn/start')?.params?.input).toEqual([{ type: 'text', text: 'Create an Instagram reel', text_elements: [] }])
+      await driver.end()
+    } finally { vi.unstubAllEnvs() }
+  })
+
+  it('explicitly clears the stored source guide when resuming or cloning after instructions are disabled', async () => {
+    vi.stubEnv('GECKIT_SOURCE_CODEX_GUIDE', '/isolated/source/GECKIT-CODEX.md')
+    const { server, codex, heard } = setup()
+    try {
+      const original = await codex.create(ROOT, 'auto')
+      expect(server.requests.find((one) => one.method === 'thread/start')?.params?.developerInstructions).toContain('GECKIT-CODEX.md')
+      vi.stubEnv('GECKIT_SOURCE_CODEX_GUIDE', '')
+      const driver = codex.hold({ id: 'codex:existing', root: ROOT, resume: true, mode: 'auto' }, (one) => heard.push(one), () => undefined)
+      await tick()
+      await codex.create(ROOT, 'auto', undefined, { from: original })
+      await codex.create(ROOT, 'auto')
+      for (const method of ['thread/resume', 'thread/fork', 'thread/start']) expect(server.requests.findLast((one) => one.method === method)?.params?.developerInstructions).toBe('')
+      expect(server.requests.some((one) => one.method === 'turn/start')).toBe(false)
+      expect(codexOptions(ROOT, 'plan', undefined, false).developerInstructions).toBeUndefined()
+      await driver.end()
+      vi.stubEnv('GECKIT_SOURCE_CODEX_GUIDE', undefined)
+      expect(codexOptions(ROOT, 'auto').developerInstructions).toBeUndefined()
+    } finally { vi.unstubAllEnvs() }
+  })
+
+  it('preserves effective project developer instructions while enabling and disabling the source guide', async () => {
+    vi.stubEnv('GECKIT_SOURCE_CODEX_GUIDE', '/isolated/source/GECKIT-CODEX.md')
+    const { server, codex, heard } = setup()
+    server.developerInstructions = 'Keep the configured project developer instructions.'
+    try {
+      const original = await codex.create(ROOT, 'auto')
+      const started = server.requests.find((one) => one.method === 'thread/start')?.params?.developerInstructions
+      expect(started).toBe(`${server.developerInstructions}\n\nRead "/isolated/source/GECKIT-CODEX.md" for this copy's current GeckIt instructions and employee lookup rules.`)
+      vi.stubEnv('GECKIT_SOURCE_CODEX_GUIDE', '')
+      const driver = codex.hold({ id: 'codex:existing', root: ROOT, resume: true, mode: 'auto' }, (one) => heard.push(one), () => undefined)
+      await tick()
+      await codex.create(ROOT, 'auto', undefined, { from: original })
+      for (const method of ['thread/resume', 'thread/fork']) expect(server.requests.findLast((one) => one.method === method)?.params?.developerInstructions).toBe(server.developerInstructions)
+      const reads = server.requests.filter((one) => one.method === 'config/read')
+      expect(reads).toHaveLength(3)
+      for (const request of reads) expect(request.params).toEqual({ cwd: ROOT, includeLayers: false })
+      expect(server.requests.some((one) => one.method === 'turn/start')).toBe(false)
+      await driver.end()
+      vi.stubEnv('GECKIT_SOURCE_CODEX_GUIDE', undefined)
+      const before = reads.length
+      await codex.create(ROOT, 'auto')
+      expect(server.requests.filter((one) => one.method === 'config/read')).toHaveLength(before)
+      expect(server.requests.findLast((one) => one.method === 'thread/start')?.params?.developerInstructions).toBeUndefined()
+    } finally { vi.unstubAllEnvs() }
+  })
+
+  it('excludes the source guide from the tool-disabled ephemeral text editor', async () => {
+    vi.stubEnv('GECKIT_SOURCE_CODEX_GUIDE', '/isolated/source/GECKIT-CODEX.md')
+    const { server, codex } = setup()
+    try {
+      const answer = codex.correct('teh cat', 'Fix spelling.', 'first')
+      await tick()
+      expect(server.requests.find((one) => one.method === 'thread/start')?.params?.developerInstructions).toBeUndefined()
+      expect(server.requests.find((one) => one.method === 'turn/start')?.params?.input).toEqual([{ type: 'text', text: 'Fix spelling.\n\nteh cat', text_elements: [] }])
+      server.event({ method: 'item/completed', params: { threadId: 'thread-1', item: { type: 'agentMessage', id: 'answer', text: 'the cat', phase: 'final_answer' } } })
+      server.complete('thread-1')
+      expect(await answer).toEqual({ ok: true, text: 'the cat' })
+    } finally { vi.unstubAllEnvs() }
+  })
+
   it('pauses a native goal as control without starting or resuming a model turn', async () => {
     const { server, codex } = setup()
     await codex.setGoal('codex:terminal', 'Tests pass')

@@ -7,6 +7,14 @@
 
 Extend existing shortcut schedules on desktop and phone with the Custom recurrence interaction supplied by Alex. Covers US1-US3 and FR-001 through FR-012. Entry points remain the existing desktop Runs by itself picker and phone Repeats menu. Google integration and scheduling while GeckIt is closed are outside scope.
 
+### CRON start-window extension, 2026-11-01
+
+Alex requested random start times inside a configurable range and instructed "Реализуй" after the duration-window proposal. The approved handoff is [CRON start window](../../docs/ux/cron-start-window.md). Add an optional duration after each named/raw CRON occurrence in the existing desktop and phone editors; Custom calendar recurrence keeps exact timing. Use the existing editor layout/prototype linked below, inserting controls in its schedule group. The real-component `recurrence-preview.html?cron` harness is the interactive extension review surface.
+
+The chosen minute must be stable for an occurrence across reads, unrelated edits and restart, vary across occurrences, and precede the next raw CRON occurrence. Old schedules remain exact. Host validation, runtime support metadata, save acknowledgment and main-owned progress follow the existing recurrence boundary. Verification must cover bounds, pending delayed occurrences, catch-up, busy/manual behavior, persistence, old-host refusal, editor cancellation/validation/save/reopen and desktop/phone light/dark review. Do not restart active GeckIt conversations to load backend changes.
+
+Implementation is present; the extension's completed checks and remaining browser acceptance are recorded separately in [CRON start-window verification](cron-start-window-verification.md). Earlier recurrence review evidence below does not verify the new controls.
+
 ## Artifacts
 
 - UX document: [calendar-recurrence.md](../../docs/ux/calendar-recurrence.md)
