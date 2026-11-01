@@ -60,7 +60,7 @@ function library() {
   return { provider, create, made, sent, finish: (id: string, text = 'Coordinated') => hearing.get(id)?.({ items: [{ kind: 'theirs', id: `reply:${String(sent.length)}`, text }], gone: [], signals: [{ kind: 'ended', how: 'done' }] }) }
 }
 
-async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Driver['inject'], intake?: ManagerDeps['intake'], employees?: ManagerDeps['employees']) {
+async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Driver['inject'], intake?: ManagerDeps['intake'], employees?: ManagerDeps['employees'], syncInstructions?: ManagerDeps['syncInstructions']) {
   const directory = await mkdtemp(join(tmpdir(), 'geckit-manager-'))
   const root = join(directory, 'project')
   await mkdir(root)
@@ -93,7 +93,7 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
     limit: () => limit,
     ...over,
   })
-  const deps: ManagerDeps = { directory, sessions, notes, ...(employees === undefined ? {} : { employees }), ...(intake === undefined ? {} : { intake }), settings: () => settings, saveSettings: (change) => settings = { ...settings, ...change }, cli: async (args, context) => {
+  const deps: ManagerDeps = { directory, sessions, notes, ...(syncInstructions === undefined ? {} : { syncInstructions }), ...(employees === undefined ? {} : { employees }), ...(intake === undefined ? {} : { intake }), settings: () => settings, saveSettings: (change) => settings = { ...settings, ...change }, cli: async (args, context) => {
     cli.push({ args, context })
     if (callCli !== undefined) return callCli(args, context)
     const result = await current.manager?.command({ action: 'manage', args, session: context.session, token: context.token, operation: context.operation })
@@ -1693,6 +1693,7 @@ describe('Manager explicit Telegram file operations', () => {
     const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => manager, authorized: () => authorized, telegramFile: () => { authorized = false; return sent } })
     await expect(operations.run(['telegram', 'send-file', '--id', worker, '--path', 'report.txt'], 'revoked')).rejects.toThrow('no longer authorized')
     expect(sent).not.toHaveBeenCalled()
+    authorized = true
     f.set({ projects: [], profiles: [] })
     await expect(operations.run(['telegram', 'send-file', '--id', worker, '--path', 'report.txt'], 'unregistered')).rejects.toThrow('registered')
   })
@@ -1928,5 +1929,155 @@ describe('authenticated employee Manager operations', () => {
     expect(worker?.[1].employeeId).toBe(employee.id)
     expect(employees.get(employee.id).archived).toBe(false)
     expect(f.sent.find((one) => one.id === worker?.[0])?.text).toBe('Create the reel')
+  })
+})
+
+describe('Manager CLI preferences and explicit new-worker models', () => {
+  const operationsFor = (f: Awaited<ReturnType<typeof fixture>>, employees?: ManagerDeps['employees']): ManagerOperations => new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => 'manager', ...(employees === undefined ? {} : { employees }) })
+
+  async function execute(f: Awaited<ReturnType<typeof fixture>>, session: string, id: string, args: readonly string[]): Promise<ManagerActivity> {
+    const count = f.sent.length
+    f.finish(session, f.command(id, args))
+    await vi.waitFor(async () => { const view = await f.manager.view(); expect(f.sent.length > count || view.decisions.length > 0).toBe(true) })
+    const decision = (await f.manager.view()).decisions[0]
+    if (decision !== undefined) await f.manager.answer(decision.id, 'allow')
+    await vi.waitFor(() => expect(f.sent.length).toBeGreaterThan(count))
+    const activity = (await f.manager.view()).activity.find((one) => one.id === id)
+    if (activity === undefined) throw new Error('Missing command receipt')
+    return activity
+  }
+
+  it('uses authenticated CLI dispatch, preserves config and supplies durable instructions to subsequent real session context', async () => {
+    const f = await fixture()
+    const original = 'Keep original instructions.\n'
+    const updated = `${original}Use Sol for code outside TwinsAI.`
+    await f.manager.configure({ enabled: true, instructions: original, delegation: 'automatic' })
+    const session = await f.manager.send('Update preferences')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    const server = createServer((socket) => {
+      let input = ''
+      socket.setEncoding('utf8')
+      socket.on('data', (part: string) => {
+        input += part
+        if (!input.endsWith('\n')) return
+        const asked = JSON.parse(input) as ManagerCliAsked
+        void f.manager.command(asked).then((answer) => socket.end(JSON.stringify(answer)))
+      })
+    })
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(askedEndpoint(f.directory), resolve) })
+    cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())))
+    f.setCli(async (args, context) => {
+      expect(await f.manager.command({ action: 'manage', args, ...context, token: 'forged' })).toMatchObject({ ok: false })
+      expect(await f.manager.command({ action: 'manage', args: ['settings', 'manager-edit', '--instructions', 'forged', '--expected-instructions', original], ...context, operation: 'inactive' })).toMatchObject({ ok: false })
+      const reply = await manage(args, f.directory, { GECKIT_MANAGER_SESSION: context.session, GECKIT_MANAGER_TOKEN: context.token, GECKIT_MANAGER_OPERATION: context.operation })
+      if (!reply.ok) throw new Error(reply.said)
+      return reply.said
+    })
+    expect(await execute(f, session, 'read-preferences', ['settings', 'manager'])).toMatchObject({ state: 'done', result: JSON.stringify({ instructions: original }) })
+    const before = (await f.manager.view()).config
+    expect(await execute(f, session, 'save-preferences', ['settings', 'manager-edit', '--instructions', updated, '--expected-instructions', original])).toMatchObject({ state: 'done', result: JSON.stringify({ instructions: updated }) })
+    expect((await f.manager.view()).config).toEqual({ ...before, instructions: updated })
+    expect(f.sent.at(-1)?.input).toContain(`User preferences for coordination:\n${updated}`)
+    expect(f.sent.at(-1)?.input).toContain(MANAGER_INSTRUCTIONS)
+    expect(await execute(f, session, 'stale-preferences', ['settings', 'manager-edit', '--instructions', 'stale', '--expected-instructions', original])).toMatchObject({ state: 'failed', result: expect.stringContaining('changed') })
+    expect(await execute(f, session, 'readback-preferences', ['settings', 'manager'])).toMatchObject({ state: 'done', result: JSON.stringify({ instructions: updated }) })
+    expect(await execute(f, session, 'reject-config-field', ['settings', 'manager-edit', '--instructions', 'x', '--expected-instructions', updated, '--provider', 'codex'])).toMatchObject({ state: 'failed', result: expect.stringContaining('Unsupported flag') })
+    f.finish(session, 'Finished')
+    await vi.waitFor(() => expect(f.sessions.busy(session)).toBe(false))
+    const restored = f.reload()
+    expect(restored.instructions()).toBe(updated)
+    expect((await restored.view()).config).toEqual({ ...before, instructions: updated })
+    await restored.send('After reload')
+    await vi.waitFor(() => expect(f.sent.at(-1)?.input).toContain('GeckIt restarted'))
+    f.finish(session, 'Reconciled')
+    await vi.waitFor(() => expect(f.sent.at(-1)?.input).toContain('After reload'))
+    expect(f.sent.at(-1)?.input).toContain(updated)
+    expect(f.sent.at(-1)?.input).toContain(MANAGER_INSTRUCTIONS)
+  })
+
+  it('clears only user instructions and reports a guide sync failure without losing the durable write', async () => {
+    const sync = vi.fn(async () => { throw new Error('Guide unavailable') })
+    const f = await fixture(0, {}, undefined, undefined, undefined, sync)
+    await f.manager.configure({ enabled: true, instructions: 'Before' })
+    const session = await f.manager.send('Clear instructions')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    expect(await execute(f, session, 'clear-preferences', ['settings', 'manager-edit', '--instructions', '', '--expected-instructions', 'Before'])).toMatchObject({ state: 'done', result: JSON.stringify({ instructions: '', guideError: 'Guide unavailable' }) })
+    expect(sync).toHaveBeenCalledWith('')
+    expect(await execute(f, session, 'read-empty-preferences', ['settings', 'manager'])).toMatchObject({ state: 'done', result: JSON.stringify({ instructions: '' }) })
+    expect(f.sent.at(-1)?.input).toContain(MANAGER_INSTRUCTIONS)
+    expect((JSON.parse(await readFile(join(f.directory, 'manager.json'), 'utf8')) as Pick<ManagerView, 'config'>).config.instructions).toBe('')
+  })
+
+  it('renames by stable ID, keeps concurrent role/memory/assignment data and rejects stale names, IDs and unsupported fields', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'geckit-rename-'))
+    cleanups.push(() => rm(directory, { recursive: true, force: true }))
+    const sync = vi.fn(async () => undefined)
+    const assignment = { employeeId: '' }
+    const deps = { directory, sync, assignment: () => assignment.employeeId, sources: async () => [], items: async () => [] }
+    const employees = new Employees(deps)
+    const original = (await employees.save({ name: 'Engineer', role: 'Engineer', description: 'Keep role guidance and memory sources', avatar: 'employee-03' })).employees[0]
+    if (original === undefined) throw new Error('Missing fixture employee')
+    assignment.employeeId = original.id
+    const f = await fixture(0, {}, undefined, undefined, employees)
+    const ops = operationsFor(f, employees)
+    const edit = employees.save({ ...original, role: 'Concurrent new role' })
+    const rename = ops.run(['employees', 'rename', '--id', original.id, '--name', 'Максим', '--expected-name', original.name], 'rename')
+    await edit
+    expect(JSON.parse(await rename)).toMatchObject({ employee: { ...original, name: 'Максим', role: 'Concurrent new role', revision: 3 } })
+    expect(new Employees(deps).get(original.id)).toEqual(employees.get(original.id))
+    expect(JSON.parse(await employees.command(['current'], 'worker'))).toHaveProperty('employee')
+    const attempts = await Promise.allSettled([
+      ops.run(['employees', 'rename', '--id', original.id, '--name', 'A', '--expected-name', 'Максим'], 'a'),
+      ops.run(['employees', 'rename', '--id', original.id, '--name', 'B', '--expected-name', 'Максим'], 'b'),
+    ])
+    expect(attempts.map((one) => one.status)).toEqual(['fulfilled', 'rejected'])
+    await expect(ops.run(['employees', 'rename', '--id', 'missing', '--name', 'C', '--expected-name', 'A'], 'missing')).rejects.toThrow('no longer available')
+    await expect(ops.run(['employees', 'rename', '--id', original.id, '--name', 'C', '--expected-name', 'A', '--role', 'Oops'], 'field')).rejects.toThrow('Unsupported flag')
+    await expect(ops.run(['employees', 'rename', '--id', original.id, '--name', ' ', '--expected-name', 'A'], 'empty')).rejects.toThrow('Missing --name')
+    await expect(ops.run(['employees', 'rename', '--id', original.id, '--name', 'C', '--name', 'D', '--expected-name', 'A'], 'duplicate')).rejects.toThrow('Repeated argument')
+    expect(employees.get(original.id)).toMatchObject({ ...original, name: 'A', role: 'Concurrent new role', revision: 4 })
+  })
+
+  it('rechecks authority after model lookup and before a queued rename', async () => {
+    const plugin = library()
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const lookup = vi.fn(async () => { await gate; return [{ value: 'library-model', name: 'Library model' }] })
+    const provider: LlmProvider = { ...plugin.provider, models: lookup }
+    const f = await fixture(0, { plugins: [provider] })
+    f.set({ chatProviders: ['plugin:manager-test'], chatProvider: 'plugin:manager-test', providerPlugins: [provider] })
+    let authorized = true
+    const ops = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => 'manager', authorized: () => authorized })
+    const pending = ops.run(['sessions', 'start', '--project', f.root, '--text', 'Work', '--goal', 'Verified', '--model', 'library-model'], 'revoked-model')
+    await vi.waitFor(() => expect(lookup).toHaveBeenCalled())
+    authorized = false
+    release?.()
+    await expect(pending).rejects.toThrow('changed while validating')
+    expect(plugin.create).not.toHaveBeenCalled()
+    const directory = await mkdtemp(join(tmpdir(), 'geckit-revoked-rename-'))
+    cleanups.push(() => rm(directory, { recursive: true, force: true }))
+    const employees = new Employees({ directory, sync: async () => undefined, assignment: () => undefined, sources: async () => [], items: async () => [] })
+    const employee = (await employees.save({ name: 'Before', role: 'Keep', description: 'Keep', avatar: 'employee-01' })).employees[0]
+    if (employee === undefined) throw new Error('Missing fixture employee')
+    await expect(employees.rename(employee.id, 'After', 'Before', () => authorized)).rejects.toThrow('no longer authorized')
+    expect(employees.get(employee.id)).toEqual(employee)
+  })
+
+  it('validates explicit models before creation, reports selection and preserves existing workers', async () => {
+    const f = await fixture()
+    const ops = operationsFor(f)
+    const first = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Existing', model: 'sonnet' }, 'manager', 'existing')
+    const note = f.notes.all()[first]
+    const start = ['sessions', 'start', '--project', f.root, '--text', 'New work', '--goal', 'Verified']
+    for (const model of ['missing', 'gpt-6.1-sol', '']) await expect(ops.run([...start, '--model', model], `bad-${model}`)).rejects.toThrow()
+    expect(f.made).toHaveLength(1)
+    expect(JSON.parse(await ops.run([...start, '--model', 'sonnet'], 'selected'))).toMatchObject({ provider: 'claude', model: 'sonnet', modelReason: 'task' })
+    expect(f.notes.all()[first]).toEqual(note)
+    expect(f.made.at(-1)?.model).toBe('sonnet')
+    expect(managerReadOnly(['settings', 'manager'])).toBe(true)
+    expect(managerReadOnly(['settings', 'manager-edit'])).toBe(false)
+    expect(managerReadOnly(['employees', 'rename'])).toBe(false)
+    const capabilities: object = JSON.parse(await ops.run(['capabilities'], 'caps')) as object
+    expect(capabilities).toHaveProperty('commands', expect.arrayContaining([expect.stringContaining('employees rename'), expect.stringContaining('settings manager-edit'), expect.stringContaining('--model')]))
   })
 })

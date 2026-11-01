@@ -1,3 +1,4 @@
+import type { ManagerInstructionsResult } from '../shared/manager'
 import type { Employees } from './employees'
 import { execFile } from 'node:child_process'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
@@ -82,7 +83,8 @@ export function runManagerCli(executable: string, script: string, args: readonly
 }
 
 export interface ManagerDeps {
-  readonly employees?: Pick<Employees, 'command' | 'active'>
+  readonly syncInstructions?: (instructions: ManagerConfig['instructions']) => Promise<void>
+  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get'>
   readonly directory: string
   readonly intake?: Pick<ManagerIntakeDeps, 'adapters' | 'classify' | 'pairing' | 'now'>
   readonly attachments?: TelegramAttachments
@@ -141,7 +143,7 @@ export class Manager {
     this.#scheduleIntake()
     this.#pinAttachments()
     this.#attachments.cleanup()
-    this.#operations = new ManagerOperations({ ...deps, attachments: this.#attachments, authorized: () => this.#record.config.enabled && !this.#record.paused && !this.#stopped, owner: 'manager', managed: (id) => this.manages(id), managerSession: () => this.#record.sessionId })
+    this.#operations = new ManagerOperations({ ...deps, instructions: { read: () => this.instructions(), write: (text, expected) => this.#editInstructions(text, expected) }, attachments: this.#attachments, authorized: () => this.#record.config.enabled && !this.#record.paused && !this.#stopped, owner: 'manager', managed: (id) => this.manages(id), managerSession: () => this.#record.sessionId })
     deps.sessions.managerItems((items) => {
       if (items.id !== this.#record.sessionId) return
       for (const listener of this.#itemListeners) listener(items)
@@ -275,6 +277,15 @@ export class Manager {
   }
 
   instructions(): string { return this.#record.config.instructions }
+
+  async #editInstructions(instructions: ManagerConfig['instructions'], expected: ManagerConfig['instructions']): Promise<ManagerInstructionsResult> {
+    if (this.#record.config.instructions !== expected) throw new Error('Manager instructions changed. Read settings manager and merge before retrying.')
+    this.#configurationRevision++
+    this.#save({ config: { ...this.#record.config, instructions } })
+    try { await this.#deps.syncInstructions?.(instructions) }
+    catch (error) { return { instructions: this.instructions(), guideError: error instanceof Error ? error.message : 'Instructions saved; guide synchronization failed.' } }
+    return { instructions: this.instructions() }
+  }
 
   #instructions(): string { return `${MANAGER_INSTRUCTIONS}\nUser preferences for coordination:\n${this.#record.config.instructions}` }
 
