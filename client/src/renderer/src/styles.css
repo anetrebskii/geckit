@@ -792,6 +792,24 @@ textarea {
   text-overflow: ellipsis;
 }
 
+/* Narrow as the field it opens from, so the name and the path each get a line of their own and wrap whole. */
+.projects.single .project-row .lines {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+}
+
+.projects.single .project-row .name,
+.projects.single .project-row .says {
+  max-width: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.projects.single .project-row .says {
+  font-size: 11px;
+}
+
 .project-row .forget {
   opacity: 0;
 }
