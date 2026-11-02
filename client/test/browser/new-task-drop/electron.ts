@@ -2,6 +2,7 @@ import type { Geckit } from '../../../src/preload'
 import { DEFAULT_SETTINGS } from '../../../src/shared/api'
 import type { ChatSession, Settings } from '../../../src/shared/api'
 import type { Json } from '../../../src/shared/elicitation'
+import type { EmployeesView } from '../../../src/shared/employees'
 import type { ManagerView } from '../../../src/shared/manager'
 import { DEFAULT_MANAGER_CONFIG } from '../../../src/shared/manager'
 
@@ -13,7 +14,12 @@ let settings: Settings = { ...DEFAULT_SETTINGS, projects: [project], chatProject
 export const contextBridge = { exposeInMainWorld: (_name: string, api: Geckit): void => { Object.defineProperty(window, 'geckit', { value: api }) } }
 export const webUtils = { getPathForFile: (file: File): string => { fixture.paths++; return `C:\\Fixtures\\${file.name}` } }
 export const ipcRenderer = {
-  invoke: async (channel: string, change?: Partial<Settings>): Promise<Settings | readonly ChatSession[] | ManagerView | Json | undefined> => {
+  invoke: async (channel: string, change?: Partial<Settings>): Promise<Settings | readonly ChatSession[] | ManagerView | EmployeesView | Json | undefined> => {
+    if (channel === 'employees:list') return { employees: new URLSearchParams(location.search).has('employees') ? [
+      { id: 'fixture-kate', name: 'Kate', role: 'SMM', description: '', avatar: '', archived: false, revision: 1 },
+      { id: 'fixture-engineer', name: 'Alexandra Montgomery Software Engineer', role: 'Engineering', description: '', avatar: '', archived: false, revision: 1 },
+      { id: 'fixture-archived', name: 'Archived employee', role: 'Former teammate', description: '', avatar: '', archived: true, revision: 1 },
+    ] : [] }
     if (channel === 'settings:get') return settings
     if (channel === 'settings:set') { settings = { ...settings, ...change }; return settings }
     if (channel === 'chat:list') return [session]

@@ -994,7 +994,7 @@ export function NewTask({
   useEffect(() => () => localStorage.removeItem(keptKey(question)), [question])
   const [pictures, setPictures] = useState<readonly SessionImage[]>(seed)
   const [starting, setStarting] = useState(false)
-  const employeeChoice = <div className={ON_PHONE ? 'phone-task-group' : 'new-task-label'}><div className={ON_PHONE ? 'phone-task-cell' : 'employee-task-field'}><span>Employee</span><EmployeeSelect employees={chat.employees} value={employeeId} onPick={setEmployeeId} disabled={starting} onManage={onEmployees} /></div>{unavailableEmployee ? <p className="employee-alert" role="alert">Choose an active employee or None.</p> : null}</div>
+  const employeeChoice = <div className={ON_PHONE ? 'phone-task-group' : 'new-task-label'}><div className={ON_PHONE ? 'phone-task-cell' : 'new-task-label'}><span>Employee</span><EmployeeSelect className={ON_PHONE ? 'picker employee-select' : 'select employee-select'} employees={chat.employees} value={employeeId} onPick={setEmployeeId} disabled={starting} onManage={onEmployees} /></div>{unavailableEmployee ? <p className="employee-alert" role="alert">Choose an active employee or None.</p> : null}</div>
   const startingRef = useRef(false)
   const [startError, setStartError] = useState<string | undefined>()
   const [over, setOver] = useState(false)

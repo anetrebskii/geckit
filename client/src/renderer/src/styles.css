@@ -7294,6 +7294,7 @@ html.framed .board-head {
 
 .new-task-body {
   display: grid;
+  flex-shrink: 0;
   grid-template-columns: minmax(0, 1fr) 248px;
   gap: 18px;
   min-height: 0;
@@ -7382,6 +7383,10 @@ html.framed .board-head {
 .new-task-side .new-task-where {
   width: 100%;
   min-width: 0;
+}
+
+.new-task-side .employee-select {
+  max-inline-size: none;
 }
 
 .new-task-goal-field {

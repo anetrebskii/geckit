@@ -19,3 +19,5 @@ Fixture typecheck:
 ```sh
 node node_modules/typescript/bin/tsc --noEmit -p test/browser/new-task-drop/tsconfig.json
 ```
+
+Add `?employees=1` for synthetic active, long-name and archived employee choices in the real New task selector. Check pointer and keyboard selection, None, search, Escape/focus restoration and light/dark rendering at desktop and narrow viewport sizes. Native employee assignment and task creation remain mocked.
