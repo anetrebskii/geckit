@@ -50,7 +50,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
   const name = useRef<HTMLInputElement>(null)
   const employees = view.employees.filter((one) => (archived || !one.archived || one.id === selected) && `${one.name} ${one.role}`.toLowerCase().includes(search.toLowerCase()))
   const owned = new Set(view.employees.map((one) => one.id))
-  const orphans = chat.settings.shortcuts.filter((one) => one.employeeId === undefined || !owned.has(one.employeeId))
+  const orphans = chat.settings.shortcuts.filter((one) => one.target !== 'manager' && (one.employeeId === undefined || !owned.has(one.employeeId)))
   const shownId = selected ?? (draft === undefined ? employees.find((one) => !one.archived)?.id ?? employees[0]?.id : undefined)
   const current = shownId === 'none' || shownId === 'manager' ? undefined : view.employees.find((one) => one.id === shownId)
   const editing = draft !== undefined
@@ -153,7 +153,12 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
   const scheduledCount = shortcuts.filter((one) => one.on && (one.cron !== undefined || one.recurrence !== undefined)).length
 
   const page = (): React.ReactNode => {
-    if (shownId === 'manager' && draft === undefined) return <ManagerPage settings={chat.settings} change={chat.change} view={manager} />
+    if (shownId === 'manager' && draft === undefined) return <ManagerPage settings={chat.settings} change={chat.change} view={manager}>
+      <section className="team-section" aria-label="Shortcuts"><div className="employee-section-head"><h3>Shortcuts</h3><button type="button" className="quiet" onClick={() => onShortcut({ name: '', root: chat.settings.projects[0] ?? '', prompt: '', mode: 'auto', on: true, target: 'manager' })}><Icon name="plus" size={11} />New shortcut</button></div>
+        <p className="employee-note">Run recurring Manager requests from Shortcuts.</p>
+        <div className="team-box">{chat.settings.shortcuts.filter((one) => one.target === 'manager').map((one) => <EmployeeShortcut key={one.id} shortcut={one} chat={chat} archived={false} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>
+      </section>
+    </ManagerPage>
     if (shownId === 'none' && draft === undefined) return <>
       <header className="employee-profile">
         <span className="team-none-face"><Icon name="bolt" size={22} /></span>

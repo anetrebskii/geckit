@@ -65,4 +65,14 @@ describe('shortcut save acknowledgment', () => {
     save.mockImplementationOnce(async (next) => ({ ...next, id: 'review', since: 1, startWindowMinutes: 30 }))
     await expect(saveShortcut({ save }, { cronStartWindowVersion: 1 }, window)).rejects.toThrow('did not save this start window')
   })
+  it('rejects old hosts or acknowledgments that drop a Manager target', async () => {
+    const manager: ShortcutDraft = { name: 'Recordings', root: '/fixture', prompt: 'Check recordings', mode: 'auto', on: true, target: 'manager' }
+    const save = vi.fn<Geckit['shortcuts']['save']>(async (next) => ({ ...next, id: 'manager', since: 1 }))
+    await expect(saveShortcut({ save }, {}, manager)).rejects.toThrow('does not support Manager shortcuts')
+    expect(save).not.toHaveBeenCalled()
+    expect((await saveShortcut({ save }, { managerShortcutsVersion: 1 }, manager)).target).toBe('manager')
+    save.mockImplementationOnce(async (next) => { const { target: _target, ...legacy } = next; return { ...legacy, id: 'manager', since: 1 } })
+    await expect(saveShortcut({ save }, { managerShortcutsVersion: 1 }, manager)).rejects.toThrow('did not save this shortcut target')
+  })
+
 })

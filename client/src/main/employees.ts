@@ -88,7 +88,7 @@ function options(args: readonly string[], allowed: readonly string[]): { readonl
   return { words, flags }
 }
 
-const SHORTCUT_FLAGS = ['--name', '--project', '--prompt', '--goal', '--every', '--cron', '--provider', '--model', '--reasoning', '--mode']
+const SHORTCUT_FLAGS = ['--target', '--name', '--project', '--prompt', '--goal', '--every', '--cron', '--provider', '--model', '--reasoning', '--mode']
 const quoted = (text: string): string => `"${text}"`
 const brief = (text: string): string => (text.length > 200 ? `${text.slice(0, 199)}...` : text).replace(/\s+/g, ' ')
 const scheduled = (one: Shortcut): boolean => one.on && (one.cron !== undefined || one.recurrence !== undefined)
@@ -280,10 +280,10 @@ export class Employees {
 
   #shortcuts(team: TeamDeps, owner: Employee['id'] | null | undefined, json: boolean): string {
     const now = Date.now()
-    const list = team.settings().shortcuts.filter((one) => owner === undefined || (owner === null ? one.employeeId === undefined : one.employeeId === owner))
+    const list = team.settings().shortcuts.filter((one) => owner === undefined || (owner === null ? one.target !== 'manager' && one.employeeId === undefined : one.employeeId === owner))
     if (json) return JSON.stringify(list.map((one) => { const next = nextTimed(one, now); return { ...one, project: team.projectName(one.root), ...(next === undefined || this.#shortcutWhen(one).endsWith('archived') ? {} : { next: new Date(next).toISOString() }) } }))
     if (list.length === 0) return 'No shortcuts.'
-    return list.map((one) => `${one.name}  ·  ${this.#shortcutWhen(one)}  ·  ${team.projectName(one.root)}  ·  ${this.#owner(one.employeeId)}  ·  ${one.id}`).join('\n')
+    return list.map((one) => `${one.name}  ·  ${this.#shortcutWhen(one)}  ·  ${team.projectName(one.root)}  ·  ${one.target === 'manager' ? 'Manager' : this.#owner(one.employeeId)}  ·  ${one.id}`).join('\n')
   }
 
   #change(team: TeamDeps, command: string, args: readonly string[]): Change {
@@ -383,8 +383,13 @@ export class Employees {
     const [action, said, ...rest] = args
     if (action === 'add' || action === 'edit') {
       const { words, flags } = options(rest, SHORTCUT_FLAGS)
-      if (words.length !== 0 || said === undefined) throw new Error(action === 'add' ? 'Use employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>) [--goal <text>] [--every <when>|--cron <expr>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan].' : 'Use employees shortcut edit <shortcut-id> with any of --name, --project, --prompt, --prompt-file, --goal, --every, --cron, --provider, --model, --reasoning, --mode.')
+      if (words.length !== 0 || said === undefined) throw new Error(action === 'add' ? 'Use employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>) [--target manager|task] [--goal <text>] [--every <when>|--cron <expr>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan].' : 'Use employees shortcut edit <shortcut-id> with any of --target, --name, --project, --prompt, --prompt-file, --goal, --every, --cron, --provider, --model, --reasoning, --mode.')
       const was = action === 'edit' ? this.#shortcut(team, said) : undefined
+      const target = flags.get('--target')
+      if (target !== undefined && target !== 'manager' && target !== 'task') throw new Error('Use --target manager or task.')
+      const manager = target === 'manager' || target === undefined && was?.target === 'manager'
+      if (manager && action === 'add' && said !== 'none') throw new Error('Use none with --target manager; Manager is not an employee.')
+      if (manager && ['--provider', '--model', '--reasoning', '--mode', '--goal'].some((flag) => flags.has(flag))) throw new Error('Manager uses its configured assistant, model and approvals.')
       const owner = action === 'add' && said !== 'none' ? this.#employee(said) : undefined
       if (owner?.archived === true) throw new Error('Choose an active employee or None.')
       const name = flags.get('--name')?.trim()
@@ -410,13 +415,14 @@ export class Employees {
       const root = project === undefined ? was?.root : team.project(project)
       if (reasoning !== undefined && !isCodexProvider(provider ?? was?.provider ?? assistantFor(team.settings(), root))) throw new Error('--reasoning is for Codex shortcuts only. Claude Code takes its effort from the model.')
       if (action === 'add' && (name === undefined || root === undefined || prompt === undefined)) throw new Error('A shortcut needs --name, --project and --prompt or --prompt-file.')
-      if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --name, --project, --prompt, --goal, --every, --cron, --provider, --model, --reasoning or --mode.')
+      if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --target, --name, --project, --prompt, --goal, --every, --cron, --provider, --model, --reasoning or --mode.')
       const where = root === undefined ? '' : team.projectName(root)
       const when = timed === undefined ? undefined : timed === '' ? 'By hand' : describeCron(timed)
       const title = name ?? was?.name ?? ''
       const lines = was === undefined
         ? [`Add shortcut ${quoted(title)} ${owner === undefined ? 'with no employee' : `to ${owner.name}`}`, `${when ?? 'By hand'} in ${where}`, `Prompt: ${brief(prompt ?? '')}`, ...(goal === undefined || goal === '' ? [] : [`Goal: ${brief(goal)}`]), ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
         : [`Change shortcut ${quoted(was.name)}${name === undefined || name === was.name ? '' : `: name to ${quoted(name)}`}`, ...(when === undefined && project === undefined ? [] : [`${when ?? this.#shortcutWhen(was)} in ${where}`]), ...(prompt === undefined ? [] : [`Prompt: ${brief(prompt)}`]), ...(goal === undefined ? [] : [goal === '' ? 'Goal: none' : `Goal: ${brief(goal)}`]), ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
+      if (target !== undefined) lines.push(`Target: ${manager ? 'Manager' : 'New task'}`)
       return {
         lines,
         apply: async () => {
@@ -427,8 +433,11 @@ export class Employees {
           const timedBase = timed === undefined ? kept : timed === '' ? { ...untimed, on: false } : { ...untimed, cron: timed, on: true }
           const { goal: _goal, ...ungoaled } = timedBase
           const base = goal === undefined ? timedBase : goal === '' ? ungoaled : { ...ungoaled, goal }
+          const { target: _target, ...taskBase } = base
+          const { employeeId: _employee, ...unassigned } = taskBase
+          const selectedBase = manager ? { ...unassigned, target: 'manager' as const } : target === 'task' ? taskBase : base
           const saved = team.saveShortcut({
-            ...base,
+            ...selectedBase,
             ...(current === undefined ? {} : { id: current.id }),
             ...(name === undefined ? {} : { name }),
             ...(root === undefined ? {} : { root }),
@@ -474,7 +483,7 @@ export class Employees {
       return {
         lines: [owner === undefined ? `Take shortcut ${quoted(one.name)} from ${this.#owner(one.employeeId)}, leaving it with no employee` : `Give shortcut ${quoted(one.name)} to ${owner.name}`],
         apply: async () => {
-          const { since: _since, lastRun: _lastRun, lastSession: _lastSession, employeeId: _employeeId, ...draft } = this.#shortcut(team, one.id)
+          const { since: _since, lastRun: _lastRun, lastSession: _lastSession, employeeId: _employeeId, target: _target, ...draft } = this.#shortcut(team, one.id)
           team.saveShortcut({ ...draft, ...(owner === undefined ? {} : { employeeId: owner.id }) })
           return owner === undefined ? `Shortcut ${quoted(one.name)} has no employee now.` : `Gave shortcut ${quoted(one.name)} to ${owner.name}.`
         },

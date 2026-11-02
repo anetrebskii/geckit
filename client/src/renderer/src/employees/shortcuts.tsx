@@ -7,7 +7,7 @@ import { saveShortcut } from '../../../shared/shortcut-save'
 import { Icon } from '../ui/Icon'
 import { projectLabel, tint } from '../chat/project'
 
-export type ShortcutRowChat = { readonly settings: Pick<Settings, 'calendarTimeZone' | 'calendarRecurrenceVersion' | 'projectColors'>; readonly everyone: readonly ChatSession[] }
+export type ShortcutRowChat = { readonly settings: Pick<Settings, 'calendarTimeZone' | 'calendarRecurrenceVersion' | 'cronStartWindowVersion' | 'managerShortcutsVersion' | 'projectColors'>; readonly everyone: readonly ChatSession[] }
 
 export const shortcutDraft = ({ since: _since, lastRun: _lastRun, lastSession: _lastSession, ...draft }: Shortcut): ShortcutDraft => draft
 
@@ -61,7 +61,7 @@ export const EmployeeShortcut = memo(function EmployeeShortcut({ shortcut, chat,
     {onEdit === undefined ? <span className="team-shortcut-words">{words}</span> : <button type="button" className="team-shortcut-words" title="Edit shortcut" onClick={() => onEdit(shortcut.id)}>{words}</button>}
     {running && shortcut.lastSession !== undefined ? <button type="button" className="team-running" onClick={() => { if (shortcut.lastSession !== undefined) onOpen?.(shortcut.lastSession) }}>Running</button> : null}
     {onGive === undefined ? null : <button type="button" className="quiet team-give" onClick={(event) => onGive(event.currentTarget.getBoundingClientRect(), shortcut.id)}>Give to...<Icon name="down" size={10} /></button>}
-    <button type="button" className="quiet team-run" disabled={busy || running || archived} title="Start a new task with this prompt" onClick={run}><Icon name="send" size={10} />Run</button>
+    <button type="button" className="quiet team-run" disabled={busy || running || archived} title={shortcut.target === 'manager' ? 'Send this prompt to Manager' : 'Start a new task with this prompt'} onClick={run}><Icon name="send" size={10} />Run</button>
     {timed ? <button type="button" className={`team-switch${shortcut.on && !archived ? ' on' : ''}`} role="switch" aria-checked={shortcut.on && !archived} aria-label={`Timetable for ${shortcut.name}`} disabled={archived} onClick={toggle} /> : <span className="team-switch-slot" />}
   </div>
 })

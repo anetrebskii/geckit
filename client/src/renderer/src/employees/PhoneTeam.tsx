@@ -41,7 +41,7 @@ export function PhoneTeam({ chat, back, first, onBack, onEdit }: {
   const [archived, setArchived] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const owned = new Set(view.employees.map((one) => one.id))
-  const orphans = chat.settings.shortcuts.filter((one) => one.employeeId === undefined || !owned.has(one.employeeId))
+  const orphans = chat.settings.shortcuts.filter((one) => one.target !== 'manager' && (one.employeeId === undefined || !owned.has(one.employeeId)))
   const found = view.employees.filter((one) => (archived || !one.archived) && `${one.name} ${one.role}`.toLowerCase().includes(search.trim().toLowerCase()))
   const current = shown === undefined || shown === 'none' || shown === 'manager' ? undefined : view.employees.find((one) => one.id === shown)
   const known = useRef<readonly Employee[]>([])
@@ -54,7 +54,11 @@ export function PhoneTeam({ chat, back, first, onBack, onEdit }: {
   const sheet = editing === undefined ? null : <EmployeeSheet given={editing} current={editing.id === undefined ? undefined : view.employees.find((one) => one.id === editing.id)} onClose={() => setEditing(undefined)} onSaved={(next, saved) => { take(next); const id = savedEmployeeId(saved, known.current, next.employees); if (id !== undefined) setShown(id); setEditing(undefined) }} />
   const alert = view.error === undefined ? null : <div className="phone-group phone-team-alert"><Cell label={view.error.trim() || 'Employee saved. Assistant instructions could not be updated.'} danger /><Cell label={retrying ? 'Retrying...' : 'Retry'} accent onPress={retry} /></div>
 
-  if (shown === 'manager') return <PhoneManager settings={chat.settings} change={chat.change} view={manager} onBack={() => setShown(undefined)} />
+  if (shown === 'manager') return <PhoneManager settings={chat.settings} change={chat.change} view={manager} onBack={() => setShown(undefined)}>
+    <div className="phone-head">Shortcuts</div>
+    <PhoneShortcutRows shortcuts={chat.settings.shortcuts.filter((one) => one.target === 'manager')} chat={chat} archived={false} onEdit={onEdit} />
+    <div className="phone-group"><Cell label="New shortcut" accent onPress={() => onEdit({ name: '', root: chat.settings.projects[0] ?? '', prompt: '', mode: 'auto', on: true, target: 'manager' })} /></div>
+  </PhoneManager>
 
   if (shown === 'none') return <Page title="No employee" back="Team" onBack={() => setShown(undefined)}>
     <div className="phone-note">Shortcuts nobody owns. Open one and choose Employee to give it to someone; its runs then start assigned.</div>

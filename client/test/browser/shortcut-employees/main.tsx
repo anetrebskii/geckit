@@ -19,7 +19,9 @@ const employees: Employee[] = [
   { id: 'long', name: 'Alexandra A Very Long Employee Name That Must Remain Readable', role: 'Editor', description: '', avatar: 'employee-04', archived: false, revision: 1 },
 ]
 const base: Pick<Shortcut, 'root' | 'mode' | 'on' | 'since' | 'provider'> = { root: project, mode: 'auto', on: true, since: Date.now(), provider: 'claude' }
-let settings: ShortcutChat['settings'] = { ...DEFAULT_SETTINGS, projects: [project], chatProviders: ['claude'], calendarRecurrenceVersion: 1, cronStartWindowVersion: 1, shortcuts: [
+let settings: ShortcutChat['settings'] = { ...DEFAULT_SETTINGS, projects: [project], chatProviders: ['claude'], calendarRecurrenceVersion: 1, cronStartWindowVersion: 1, managerShortcutsVersion: 1, shortcuts: [
+  { ...base, target: 'manager', id: 'manager-manual', name: 'Check recordings with Manager', prompt: 'Check new recordings and create tasks; preserve recordings and avoid duplicate tasks.' },
+  { ...base, target: 'manager', id: 'manager-paused', name: 'Paused Manager cron', prompt: 'Check recordings and create tasks.', cron: '0 9 * * 1-5', on: false },
   { ...base, id: 'review', name: 'Review pending pull requests', prompt: 'Review pending pull requests and report actionable findings.', employeeId: 'engineer' },
   { ...base, id: 'writing', name: 'Prepare product update', prompt: 'Write a product update using the approved feature list.', employeeId: 'writer' },
   { ...base, id: 'archived', name: 'Archived research timetable', prompt: 'Summarize the research queue.', employeeId: 'archived', cron: '0 9 * * 1-5' },
@@ -43,7 +45,7 @@ const shortcuts: Geckit['shortcuts'] = {
     return saved
   },
   remove: (id) => { fixture.removed.push(id); settings = { ...settings, shortcuts: settings.shortcuts.filter((one) => one.id !== id) }; publish() },
-  run: async (id) => { fixture.runs.push(id); publish(); return undefined },
+  run: async (id) => { fixture.runs.push(id); publish(); return settings.shortcuts.find((one) => one.id === id)?.target === 'manager' ? 'fixture-manager-session' : undefined },
   onManage: () => () => undefined,
 }
 const chatNative: Pick<Geckit['chat'], 'models'> = { models: async () => [{ value: 'sonnet', name: 'Sonnet', isDefault: true }] }

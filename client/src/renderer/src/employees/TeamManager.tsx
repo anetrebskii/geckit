@@ -10,8 +10,8 @@ import { EmployeeAvatar } from './Employees'
 
 type Change = (change: Partial<Settings>) => void
 
-export const MANAGER_ROLE = 'Runs GeckIt for you from Telegram'
-const DOES = 'You write to it in Telegram. It starts conversations here, follows them and brings back the results. It never works itself; employees and their shortcuts do the work.'
+export const MANAGER_ROLE = 'Coordinates work from Telegram and shortcuts'
+const DOES = 'Send a request in Telegram or run a Manager shortcut. It starts conversations here, follows them and brings back the results. Employees do the work.'
 
 export const managerFace = (settings: Pick<Settings, 'managerAvatar'>): { readonly name: string; readonly avatar: string } => ({ name: 'Manager', avatar: settings.managerAvatar })
 
@@ -42,7 +42,7 @@ function Portraits({ settings, change, onPicked }: { readonly settings: Settings
   return <>{EMPLOYEE_AVATARS.map((one, index) => <button key={one.id} type="button" className={settings.managerAvatar === one.id ? 'on' : ''} aria-label={`Portrait ${index + 1}`} aria-pressed={settings.managerAvatar === one.id} onClick={() => { change({ managerAvatar: one.id }); onPicked?.() }}><EmployeeAvatar employee={{ name: 'Manager', avatar: one.id }} size="medium" /></button>)}</>
 }
 
-export function ManagerPage({ settings, change, view }: { readonly settings: Settings; readonly change: Change; readonly view: ManagerView | undefined }): React.JSX.Element {
+export function ManagerPage({ settings, change, view, children }: { readonly settings: Settings; readonly change: Change; readonly view: ManagerView | undefined; readonly children?: React.ReactNode }): React.JSX.Element {
   const [avatars, setAvatars] = useState(false)
   const stand = managerStand(view)
   return <>
@@ -61,8 +61,9 @@ export function ManagerPage({ settings, change, view }: { readonly settings: Set
       <p className="employee-description">{DOES}</p>
     </section>
     <ManagerInstructions view={view} />
+    {children}
     <section className="team-section" aria-label="Setup">
-      <div className="employee-section-head"><span><h3>Setup</h3><p className="employee-note">Manager is always part of the team. Turn it on when you want to give work from Telegram.</p></span></div>
+      <div className="employee-section-head"><span><h3>Setup</h3><p className="employee-note">Manager is always part of the team. Turn it on to give work from Telegram or Manager shortcuts.</p></span></div>
       <ManagerSettings settings={settings} embedded />
     </section>
   </>
@@ -81,7 +82,7 @@ export function usePhoneManager(): ManagerView | undefined {
   return view
 }
 
-export function PhoneManager({ settings, change, view, onBack }: { readonly settings: Settings; readonly change: Change; readonly view: ManagerView | undefined; readonly onBack: () => void }): React.JSX.Element {
+export function PhoneManager({ settings, change, view, onBack, children }: { readonly settings: Settings; readonly change: Change; readonly view: ManagerView | undefined; readonly onBack: () => void; readonly children?: React.ReactNode }): React.JSX.Element {
   const stand = managerStand(view)
   return <Page title="Manager" back="Team" onBack={onBack}>
     <header className="phone-team-hero">
@@ -92,6 +93,7 @@ export function PhoneManager({ settings, change, view, onBack }: { readonly sett
     <div className="phone-team-block"><p className="employee-description">{DOES}</p></div>
     <div className="phone-head">Instructions</div>
     <div className="phone-team-block"><p className="employee-description">{view?.config.instructions.trim() || 'No instructions'}</p></div>
+    {children}
     <div className="phone-head">Avatar</div>
     <div className="phone-team-block"><div className="phone-team-portraits" role="group" aria-label="Choose avatar"><Portraits settings={settings} change={change} /></div></div>
     <div className="phone-note">Set up and change Manager on your computer.</div>

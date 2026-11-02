@@ -76,6 +76,7 @@ export function getSettings(): Settings {
       calendarTimeZone: _storedZone,
       calendarRecurrenceVersion: _storedRecurrenceVersion,
       cronStartWindowVersion: _storedWindowVersion,
+      managerShortcutsVersion: _storedManagerVersion,
       boardColumn: _boardColumn,
       ...found
     } = (read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }) as Settings & Readonly<Record<string, unknown>>
@@ -111,8 +112,8 @@ export function getSettings(): Settings {
     }
   }
   const calendarTimeZone = localCalendarZone()
-  if (settings.calendarTimeZone !== calendarTimeZone || settings.calendarRecurrenceVersion !== 1 || settings.cronStartWindowVersion !== 1) {
-    settings = { ...settings, calendarTimeZone, calendarRecurrenceVersion: 1, cronStartWindowVersion: 1 }
+  if (settings.calendarTimeZone !== calendarTimeZone || settings.calendarRecurrenceVersion !== 1 || settings.cronStartWindowVersion !== 1 || settings.managerShortcutsVersion !== 1) {
+    settings = { ...settings, calendarTimeZone, calendarRecurrenceVersion: 1, cronStartWindowVersion: 1, managerShortcutsVersion: 1 }
     if (!loaded) for (const watcher of watchers) watcher(settings)
   }
   return settings
@@ -125,6 +126,7 @@ export function setSettings(change: Partial<Settings>): Settings {
   Reflect.deleteProperty(validated, 'calendarTimeZone')
   Reflect.deleteProperty(validated, 'calendarRecurrenceVersion')
   Reflect.deleteProperty(validated, 'cronStartWindowVersion')
+  Reflect.deleteProperty(validated, 'managerShortcutsVersion')
   if (change.shortcuts !== undefined) {
     for (const shortcut of change.shortcuts) {
       const before = current.shortcuts.find((one) => one.id === shortcut.id)
@@ -149,7 +151,7 @@ export function setSettings(change: Partial<Settings>): Settings {
     validated = { ...validated, vpnAllowedIps: allowed.ips }
   }
   const next = { ...current, ...validated }
-  const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, cronStartWindowVersion: _windowVersion, ...persisted } = next
+  const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, cronStartWindowVersion: _windowVersion, managerShortcutsVersion: _managerVersion, ...persisted } = next
   if (vpnChange || change.shortcuts !== undefined || change.projects !== undefined || change.projectAssistants !== undefined) {
     const path = join(folder(), SETTINGS)
     writeFileSync(`${path}.new`, JSON.stringify(persisted, undefined, 2))
@@ -163,8 +165,8 @@ export function setSettings(change: Partial<Settings>): Settings {
 const reloadSettings = (): void => {
   const found = read(SETTINGS, DEFAULT_SETTINGS)
   if (found === undefined) return
-  const { calendarTimeZone: _foundZone, calendarRecurrenceVersion: _foundRecurrenceVersion, cronStartWindowVersion: _foundWindowVersion, ...disk } = found
-  const { calendarTimeZone: _currentZone, calendarRecurrenceVersion: _currentRecurrenceVersion, cronStartWindowVersion: _currentWindowVersion, ...current } = getSettings()
+  const { calendarTimeZone: _foundZone, calendarRecurrenceVersion: _foundRecurrenceVersion, cronStartWindowVersion: _foundWindowVersion, managerShortcutsVersion: _foundManagerVersion, ...disk } = found
+  const { calendarTimeZone: _currentZone, calendarRecurrenceVersion: _currentRecurrenceVersion, cronStartWindowVersion: _currentWindowVersion, managerShortcutsVersion: _currentManagerVersion, ...current } = getSettings()
   if (isDeepStrictEqual(disk, current)) return
   settings = undefined
   const changed = getSettings()

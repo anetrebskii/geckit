@@ -1,9 +1,16 @@
-# Manager task sources renderer fixture
+# Manager Team renderer fixture
 
-Run from `client`: `npx vite --config test/browser/manager-sources/vite.config.ts`.
-Open `http://127.0.0.1:5198/test/browser/manager-sources/`.
+Run from `client/`: `npx vite --config test/browser/manager-sources/vite.config.ts`.
+Open `http://127.0.0.1:5198/test/browser/manager-sources/`. The existing shortcut fixture server also serves the same route on port 5202.
 
-The actual SettingsDialog, ManagerSettings, ManagerSources and product stylesheet render in the browser. Only the native API boundary is replaced. No host, recording, credentials, provider or Telegram network is accessed.
+Renders actual Team → Manager, ManagerSettings, Manager shortcut rows, ShortcutList and the phone equivalents with the product stylesheet. Only native APIs are replaced. No provider, host, recording, user settings or Telegram network is accessed.
 
-Query parameters: `state=empty|configured|blocked|pending|access|missing|unsupported|transcription|multiple`, `theme=light|dark`, and `zone=<saved time zone>` for any state but `empty`.
-The fixture exposes `window.sourceFixture.saves` for observable configure receipts; `checks`/`privacyCalls` record read-only native calls, `connection` configures their result, and `checkDelay` allows lifecycle checks; `failSave=true` simulates a persistence failure and `failCheck=true` a connection failure. Done closes Settings and Open Settings reopens it, so a delayed probe can be checked across unmount. Initial rendering and editing do not write settings. Save records only the intake configuration. This is browser fixture evidence, not native Voice Memos/iCloud, classifier or Telegram verification.
+Use `theme=light|dark`, `preview=phone` for a 390px iframe, or `phone=1` for the phone renderer directly. Existing `state=configured|blocked|pending|multiple` parameters supply legacy Voice Memos settings to confirm they stay absent from Manager UI. The default has no legacy configuration.
+
+Manager has one manual shortcut and one paused CRON shortcut. New shortcut and row editing use the real editor handlers. Save updates synthetic settings; Run records the request and returns a synthetic Manager session ID. `window.sourceFixture.shortcutSaves`, `runs` and `navigations` expose receipts; `failSave=true` tests persistence failure. `saves` records Manager configuration writes; `checks` and `privacyCalls` should remain zero because the retired source UI is absent.
+
+These receipts verify rendering and handler behavior, not disk persistence, actual scheduling, provider compliance, Voice Memos/iCloud access or device integration.
+
+```sh
+npx tsc --noEmit -p test/browser/manager-sources/tsconfig.json
+```

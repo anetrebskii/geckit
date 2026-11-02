@@ -146,6 +146,26 @@ describe('team changes from a terminal', () => {
     expect(held.shortcuts).toEqual([])
   })
 
+  it('adds and edits explicit Manager targets without enabling or inventing a timetable', async () => {
+    const f = team()
+    await f.employees.command(['shortcut', 'add', 'none', '--target', 'manager', '--name', 'Recordings', '--project', 'samara', '--prompt', 'Check recordings and create tasks'])
+    const one = held.shortcuts[0]
+    expect(one).toMatchObject({ target: 'manager', on: false })
+    expect(one?.cron).toBeUndefined()
+    expect(one?.employeeId).toBeUndefined()
+    expect(await f.employees.command(['shortcuts'])).toContain('Manager')
+    expect(await f.employees.command(['shortcuts', 'none'])).toBe('No shortcuts.')
+    expect(JSON.parse(await f.employees.command(['shortcuts', '--json']))).toMatchObject([{ target: 'manager' }])
+    await f.employees.command(['shortcut', 'edit', one?.id ?? '', '--cron', '0 9 * * *'])
+    expect(held.shortcuts[0]).toMatchObject({ target: 'manager', cron: '0 9 * * *', on: true })
+    await f.employees.command(['shortcut', 'pause', one?.id ?? ''])
+    await f.employees.command(['shortcut', 'edit', one?.id ?? '', '--prompt', 'Check recordings safely'])
+    expect(held.shortcuts[0]).toMatchObject({ target: 'manager', cron: '0 9 * * *', on: false })
+    await f.employees.command(['shortcut', 'edit', one?.id ?? '', '--target', 'task'])
+    expect(held.shortcuts[0]?.target).toBeUndefined()
+    expect(held.shortcuts[0]?.on).toBe(false)
+  })
+
   it('picks portraits, shortcut goals and reasoning, and sets Manager', async () => {
     const f = team()
     await f.employees.command(['create', '--name', 'Realtor', '--avatar', '7'])

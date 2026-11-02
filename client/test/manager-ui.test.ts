@@ -70,6 +70,8 @@ describe('Manager assistant availability', () => {
     expect(markup).not.toContain('Session info')
     expect(markup).not.toContain('Internal decision')
     expect(markup).not.toContain('manager-composer')
+    expect(markup).not.toContain('Voice Memos')
+    expect(markup).not.toContain('Automatic task sources')
     expect(markup).not.toContain(worker.title)
     hook.mockRestore()
   })

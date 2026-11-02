@@ -1,12 +1,20 @@
-import { createElement, useState } from 'react'
+import { createElement, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { DEFAULT_SETTINGS } from '../../../src/shared/api'
+import type { Settings, Shortcut, ShortcutDraft } from '../../../src/shared/api'
+import type { Geckit } from '../../../src/preload'
+import type { Employee, EmployeesApi, EmployeesView } from '../../../src/shared/employees'
+import type { ShortcutChat } from '../../../src/renderer/src/chat/ShortcutList'
+import type { TeamChat } from '../../../src/renderer/src/employees/Team'
 import { DEFAULT_MANAGER_CONFIG } from '../../../src/shared/manager'
 import type { ManagerApi, ManagerConfig, ManagerView } from '../../../src/shared/manager'
 import { DEFAULT_MANAGER_INTAKE } from '../../../src/shared/manager-intake'
 import type { VoiceMemosConnection } from '../../../src/shared/manager-intake'
 import type { TelegramApi, TelegramView } from '../../../src/shared/telegram'
 import '../../../src/renderer/src/styles.css'
+import '../../../src/renderer/src/chat/phone-home.css'
+import '../shortcut-employees/fixture.css'
+import './fixture.css'
 
 const params = new URLSearchParams(location.search)
 const variant = params.get('state') ?? 'empty'
@@ -18,7 +26,7 @@ let view: ManagerView = {
 }
 const listeners = new Set<Parameters<ManagerApi['on']>[0]>()
 const initialConnection: VoiceMemosConnection = { state: variant === 'blocked' || variant === 'access' ? 'access' : variant === 'missing' ? 'missing' : variant === 'unsupported' ? 'unsupported' : 'connected', detail: variant === 'unsupported' ? 'Voice Memos is available on macOS.' : 'Read-only connection check completed.', transcription: { ready: variant !== 'transcription', detail: variant === 'transcription' ? 'Local transcription is not ready.' : 'Local transcription is ready.' } }
-const fixture = { saves: [] as Partial<ManagerConfig>[], failSave: false, failCheck: false, connection: initialConnection, checkDelay: 0, checks: 0, privacyCalls: 0 }
+const fixture = { saves: [] as Partial<ManagerConfig>[], failSave: false, failCheck: false, connection: initialConnection, checkDelay: 0, checks: 0, privacyCalls: 0, shortcutSaves: [] as ShortcutDraft[], runs: [] as string[], navigations: [] as string[] }
 Object.defineProperty(window, 'sourceFixture', { value: fixture })
 const manager: ManagerApi = {
   view: async () => view,
@@ -37,14 +45,59 @@ const manager: ManagerApi = {
 }
 const telegramView: TelegramView = { state: 'connected', pendingLate: 0, bot: { id: 1, username: 'fixture_bot' }, account: { id: 2, chatId: 3, name: 'Fixture account' } }
 const telegram: TelegramApi = { view: async () => telegramView, on: () => () => undefined, action: async () => { throw new Error('Fixture never changes Telegram pairing') } }
-Object.defineProperty(window, 'geckit', { value: { platform: 'darwin', manager, telegram, chat: { models: async () => [] } } })
+const phone = params.get('phone') === '1'
+const project = '/fixture/GeckIt'
+const employee: Employee = { id: 'engineer', name: 'Максим', role: 'Engineer', description: 'Builds and verifies changes.', avatar: 'employee-03', archived: false, revision: 1 }
+const employeesView: EmployeesView = { employees: [employee] }
+const employees: EmployeesApi = { list: async () => employeesView, save: async () => { throw new Error('Fixture does not edit employees') }, archive: async () => employeesView, restore: async () => employeesView, retryInstructions: async () => employeesView, memory: async () => ({ employee, conversations: [], availability: 'complete' }), on: () => () => undefined }
+const settings: Settings = { ...DEFAULT_SETTINGS, projects: [project], chatProviders: ['codex'], chatProvider: 'codex', managerShortcutsVersion: 1, calendarRecurrenceVersion: 1, cronStartWindowVersion: 1, shortcuts: [
+  { id: 'manager-recordings', name: 'Check recordings with Manager', root: project, prompt: 'Check recordings and create tasks without duplicates. Preserve recordings.', target: 'manager', mode: 'auto', on: true, since: Date.now() },
+  { id: 'manager-paused', name: 'Paused Manager cron', root: project, prompt: 'Check new recordings and create tasks.', target: 'manager', mode: 'auto', on: false, cron: '0 9 * * 1-5', since: Date.now() },
+] }
+const settingsListeners = new Set<(change: Partial<Settings>) => void>()
+const shortcuts: Geckit['shortcuts'] = {
+  save: async (draft) => {
+    if (fixture.failSave) throw new Error('Fixture save failed')
+    fixture.shortcutSaves.push(draft)
+    const old = settings.shortcuts.find((one) => one.id === draft.id)
+    const saved: Shortcut = { ...draft, id: draft.id ?? `fixture-shortcut-${fixture.shortcutSaves.length}`, since: old?.since ?? Date.now() }
+    const next = old === undefined ? [...settings.shortcuts, saved] : settings.shortcuts.map((one) => one.id === saved.id ? saved : one)
+    Object.assign(settings, { shortcuts: next }); settingsListeners.forEach((listener) => listener({ shortcuts: next })); return saved
+  },
+  remove: (id) => { const next = settings.shortcuts.filter((one) => one.id !== id); Object.assign(settings, { shortcuts: next }); settingsListeners.forEach((listener) => listener({ shortcuts: next })) },
+  run: async (id) => { fixture.runs.push(id); return 'fixture-manager-session' },
+  onManage: () => () => undefined,
+}
+const native: Pick<Geckit, 'platform' | 'manager' | 'telegram' | 'employees' | 'shortcuts'> & { readonly chat: Pick<Geckit['chat'], 'models'> } = { platform: 'darwin', manager, telegram, employees, shortcuts, chat: { models: async () => [] } }
+Object.defineProperty(window, 'geckit', { value: native })
 document.documentElement.dataset['theme'] = params.get('theme') === 'dark' ? 'dark' : 'light'
 document.documentElement.classList.add('framed')
-const { SettingsDialog } = await import('../../../src/renderer/src/ui/SettingsDialog')
+if (phone) document.documentElement.classList.add('phone')
+const { Team } = await import('../../../src/renderer/src/employees/Team')
+const { PhoneTeam } = await import('../../../src/renderer/src/employees/PhoneTeam')
+const { ShortcutList } = await import('../../../src/renderer/src/chat/ShortcutList')
+const { ShortcutSheet } = await import('../../../src/renderer/src/chat/PhoneShortcuts')
 const root = document.getElementById('root')
 if (root === null) throw new Error('Missing renderer root')
 function FixtureApp(): React.JSX.Element {
+  const [current, setCurrent] = useState(settings)
   const [open, setOpen] = useState(true)
-  return open ? createElement(SettingsDialog, { settings: DEFAULT_SETTINGS, first: 'manager', change: () => undefined, onClose: () => setOpen(false), onShortcuts: () => undefined }) : createElement('button', { type: 'button', onClick: () => setOpen(true) }, 'Open Settings')
+  const [editing, setEditing] = useState<Shortcut['id'] | ShortcutDraft>()
+  const change = (next: Partial<Settings>): void => { Object.assign(settings, next); setCurrent((held) => ({ ...held, ...next })) }
+  useEffect(() => {
+    const listener = (next: Partial<Settings>): void => setCurrent((held) => ({ ...held, ...next }))
+    settingsListeners.add(listener)
+    return () => { settingsListeners.delete(listener) }
+  }, [])
+  const chat: ShortcutChat & TeamChat = { settings: current, everyone: [], employees: employeesView.employees, root: project, goTo: (id) => { fixture.navigations.push(id) }, change }
+  const theme = document.documentElement.dataset['theme'] ?? 'light'
+  const phoneDraft = typeof editing === 'string' ? current.shortcuts.find((one) => one.id === editing) : editing
+  const preview = params.get('preview') === 'phone'
+  const content = !open ? <button type="button" className="quiet" onClick={() => setOpen(true)}>Open Team</button> : phone ? <div className="phone-home"><PhoneTeam chat={chat} first="manager" back="Tasks" onBack={() => setOpen(false)} onEdit={setEditing} />{phoneDraft === undefined ? null : <ShortcutSheet key={phoneDraft.id ?? 'new'} chat={chat} given={phoneDraft} onClose={() => setEditing(undefined)} />}</div> : <><Team chat={chat} first="manager" onClose={() => setOpen(false)} onOpen={chat.goTo} onShortcut={setEditing} />{editing === undefined ? null : <ShortcutList chat={chat} start={editing} only onClose={() => setEditing(undefined)} />}</>
+  if (phone) return content
+  return <>
+    <nav className="shortcut-fixture-controls" aria-label="Fixture preview"><a href={`?theme=${theme}`}>Desktop</a><a href={`?preview=phone&theme=${theme}`}>Phone 390px</a><a href={`?${preview ? 'preview=phone&' : ''}theme=light`}>Light</a><a href={`?${preview ? 'preview=phone&' : ''}theme=dark`}>Dark</a></nav>
+    {preview ? <iframe className="shortcut-fixture-phone" title="390px Manager preview" src={`?phone=1&theme=${theme}`} /> : content}
+  </>
 }
 createRoot(root).render(createElement(FixtureApp))

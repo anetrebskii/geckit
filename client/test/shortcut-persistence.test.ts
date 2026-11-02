@@ -85,3 +85,27 @@ it('persists the chosen CRON window and progress through settings reloads and pr
     expect(malformed.getSettings().shortcuts[1]).toEqual(saved)
   } finally { rmSync(state.folder, { recursive: true, force: true }) }
 })
+
+
+it('preserves a Manager target and explicit paused timetable through disk reload without adding one to manual shortcuts', async () => {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-manager-shortcut-save-'))
+  const path = join(state.folder, 'settings.json')
+  writeFileSync(path, JSON.stringify({ ...DEFAULT_SETTINGS, phoneKey: 'fixture' }))
+  vi.resetModules()
+  try {
+    const store = await import('../src/main/store')
+    const main = await import('../src/main/shortcuts')
+    const manual = await checkedSave({ save: async (draft) => main.saveShortcut(draft) }, store.getSettings(), { name: 'Recordings', root: '/fixture', prompt: 'Check recordings and create tasks', mode: 'auto', on: true, target: 'manager' })
+    expect(manual.cron).toBeUndefined()
+    expect(manual.recurrence).toBeUndefined()
+    const paused = await checkedSave({ save: async (draft) => main.saveShortcut(draft) }, store.getSettings(), { ...manual, cron: '0 10 * * *', on: false })
+    expect(paused).toMatchObject({ target: 'manager', cron: '0 10 * * *', on: false })
+    const disk = JSON.parse(readFileSync(path, 'utf8')) as Settings
+    expect(disk.shortcuts).toEqual([paused])
+    expect(disk.managerShortcutsVersion).toBeUndefined()
+    vi.resetModules()
+    const restored = await import('../src/main/store')
+    expect(restored.getSettings().shortcuts).toEqual([paused])
+    expect(restored.getSettings().managerShortcutsVersion).toBe(1)
+  } finally { rmSync(state.folder, { recursive: true, force: true }) }
+})

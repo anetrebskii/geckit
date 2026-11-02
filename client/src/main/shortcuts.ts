@@ -18,6 +18,7 @@ const LOOK_EVERY = 20_000
 
 export interface ShortcutDeps {
   readonly start: (message: SessionMessage) => Promise<string>
+  readonly manager?: (shortcut: Shortcut, request: string) => Promise<string>
   readonly rename: (id: string, title: string) => void
   readonly busy: (id: string) => boolean
   /** The employee a shortcut belongs to, or nothing where there is none by that id. */
@@ -30,7 +31,7 @@ const put = (id: string, change: Partial<Shortcut>): void => {
   setSettings({ shortcuts: getSettings().shortcuts.map((one) => (one.id === id ? { ...one, ...change } : one)) })
 }
 
-const ownerArchived = (one: Shortcut): boolean => one.employeeId !== undefined && deps?.employee?.(one.employeeId)?.archived === true
+const ownerArchived = (one: Shortcut): boolean => one.target !== 'manager' && one.employeeId !== undefined && deps?.employee?.(one.employeeId)?.archived === true
 
 /** An employee restored: their timetables count from now, so what was missed while archived is not caught up. */
 export function resumeOwned(employeeId: Employee['id']): void {
@@ -65,7 +66,18 @@ export function startShortcuts(given: ShortcutDeps): void {
 }
 
 /** The conversation it started, or nothing where it could not. */
-export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise<string | undefined> {
+const running = new Map<Shortcut['id'], Promise<string | undefined>>()
+
+export function runShortcut(id: string, by: 'hand' | 'timetable'): Promise<string | undefined> {
+  if (getSettings().shortcuts.find((one) => one.id === id)?.target !== 'manager') return startShortcut(id, by)
+  const pending = running.get(id)
+  if (pending !== undefined) return pending
+  const result = startShortcut(id, by).finally(() => { if (running.get(id) === result) running.delete(id) })
+  running.set(id, result)
+  return result
+}
+
+async function startShortcut(id: string, by: 'hand' | 'timetable'): Promise<string | undefined> {
   const settings = getSettings()
   const one = settings.shortcuts.find((shortcut) => shortcut.id === id)
   if (one === undefined || deps === undefined) return undefined
@@ -76,11 +88,17 @@ export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise
   if (by === 'hand' && one.lastSession !== undefined && deps.busy(one.lastSession)) return one.lastSession
   const owner = one.employeeId === undefined ? undefined : deps.employee?.(one.employeeId)
   const provider = one.provider ?? 'claude'
-  if (!assistantsIn(settings).includes(provider) || (llmProviderInfo(provider, 'stream', settings.providerPlugins).localOnly === true && isRemote(one.root))) return undefined
+  if (one.target !== 'manager' && (!assistantsIn(settings).includes(provider) || (llmProviderInfo(provider, 'stream', settings.providerPlugins).localOnly === true && isRemote(one.root)))) return undefined
+  if (one.target === 'manager' && deps.manager === undefined) return undefined
   const now = Date.now()
   // Counted before the conversation starts, so the next look does not start it again; a run by hand leaves the timetable where it was.
   try {
     put(id, { lastRun: now, ...(by === 'timetable' ? { since: now } : {}) })
+    if (one.target === 'manager') {
+      const session = await deps.manager?.(one, `shortcut:${one.id}:${randomUUID()}`)
+      if (session !== undefined && getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) put(id, { lastSession: session })
+      return session
+    }
     const session = await deps.start({
       root: one.root,
       mode: one.mode,
@@ -92,7 +110,7 @@ export async function runShortcut(id: string, by: 'hand' | 'timetable'): Promise
       ...(!isCodexProvider(provider) || one.reasoning === undefined ? {} : { reasoning: one.reasoning }),
     })
     deps.rename(session, one.name)
-    put(id, { lastSession: session })
+    if (getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) put(id, { lastSession: session })
     if (provider === 'claude' && one.goal !== undefined && one.goal !== '') {
       await deps.start({ session, root: one.root, mode: one.mode, text: `/goal ${one.goal}` })
     }
@@ -108,6 +126,8 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
   const all = getSettings().shortcuts
   const was = all.find((one) => one.id === draft.id)
   if (draft.id !== undefined && was === undefined) throw new Error('This shortcut was deleted.')
+  if (draft.target !== undefined && draft.target !== 'manager') throw new Error('Choose a valid shortcut target.')
+  if (draft.target === 'manager' && draft.employeeId !== undefined) throw new Error('Manager shortcuts cannot be assigned to an employee.')
   if (draft.employeeId !== undefined && draft.employeeId !== was?.employeeId) {
     const owner = deps?.employee?.(draft.employeeId)
     if (owner === undefined || owner.archived) throw new Error('Choose an active employee or None.')
@@ -122,15 +142,16 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
   // A new time, or one turned back on, counts from now: a run it would have had before is not owed.
   const since = was === undefined || was.cron !== draft.cron || was.startWindowMinutes !== draft.startWindowMinutes || !isDeepStrictEqual(was.recurrence, draft.recurrence) || (!was.on && draft.on) ? now : was.since
   const saved: Shortcut = {
+    ...(draft.target === undefined ? {} : { target: draft.target }),
     id: was?.id ?? randomUUID(),
     name: draft.name,
     root: draft.root,
     prompt: draft.prompt,
-    provider: draft.provider ?? 'claude',
-    ...(!isCodexProvider(draft.provider ?? 'claude') || draft.reasoning === undefined ? {} : { reasoning: draft.reasoning }),
-    ...(draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
+    ...(draft.target === 'manager' ? {} : { provider: draft.provider ?? 'claude' }),
+    ...(draft.target === 'manager' || !isCodexProvider(draft.provider ?? 'claude') || draft.reasoning === undefined ? {} : { reasoning: draft.reasoning }),
+    ...(draft.target === 'manager' || draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
     mode: draft.mode,
-    ...(draft.model === undefined || draft.model === '' ? {} : { model: draft.model }),
+    ...(draft.target === 'manager' || draft.model === undefined || draft.model === '' ? {} : { model: draft.model }),
     ...(draft.employeeId === undefined ? {} : { employeeId: draft.employeeId }),
     ...(draft.cron === undefined || draft.cron.trim() === '' ? {} : { cron: draft.cron.trim() }),
     ...(draft.startWindowMinutes === undefined ? {} : { startWindowMinutes: draft.startWindowMinutes }),
@@ -138,7 +159,7 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
     on: draft.on,
     since,
     ...(was?.lastRun === undefined ? {} : { lastRun: was.lastRun }),
-    ...(was?.lastSession === undefined ? {} : { lastSession: was.lastSession }),
+    ...(was?.lastSession === undefined || was.target !== draft.target ? {} : { lastSession: was.lastSession }),
   }
   setSettings({ shortcuts: was === undefined ? [...all, saved] : all.map((one) => (one.id === was.id ? saved : one)) })
   return saved

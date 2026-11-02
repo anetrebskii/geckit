@@ -1166,14 +1166,16 @@ export interface Settings {
   readonly calendarTimeZone?: string
   readonly calendarRecurrenceVersion?: 1
   readonly cronStartWindowVersion?: 1
+  readonly managerShortcutsVersion?: 1
   /** What is written often, offered after ; in the message field. */
   readonly phrases: readonly string[]
   /** Other computers conversations run on, reached over SSH. Never a password: those are in the system's credential store. */
   readonly hosts: readonly HostConfig[]
 }
 
-/** A saved prompt, run by hand or on a timetable, each time as a new conversation in its project. */
+/** A saved prompt sent to Manager or started as a new conversation, by hand or on a timetable. */
 export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'> {
+  readonly target?: 'manager'
   readonly id: string
   readonly name: string
   readonly root: string

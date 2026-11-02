@@ -289,4 +289,73 @@ describe('the shortcuts', () => {
     expect(held.shortcuts[0]?.lastRun).toBeUndefined()
     expect(held.shortcuts[1]?.lastSession).toBe('session-1')
   })
+  it('persists Manager targets and uses its real routing dependency for hand and cron runs', async () => {
+    const manager = vi.fn(async () => 'manager-session')
+    held.shortcuts = [{ ...morning, cron: '0 9 * * *', since: at('2026-09-22T08:00'), target: 'manager', provider: 'codex', model: 'unused', reasoning: 'high', goal: 'unused' }]
+    held.chatProviders = []
+    const saved = saveShortcut(held.shortcuts[0] ?? morning)
+    expect(saved).toMatchObject({ target: 'manager', cron: '0 9 * * *' })
+    expect(saved.provider).toBeUndefined()
+    expect(saved.model).toBeUndefined()
+    expect(saved.reasoning).toBeUndefined()
+    expect(saved.goal).toBeUndefined()
+    startShortcuts({ start, rename, busy: () => false, manager })
+    await vi.waitFor(() => expect(manager).toHaveBeenCalledTimes(1))
+    expect(start).not.toHaveBeenCalled()
+    expect(rename).not.toHaveBeenCalled()
+    expect(held.shortcuts[0]?.lastSession).toBe('manager-session')
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(manager).toHaveBeenCalledTimes(1)
+    expect(await runShortcut('m', 'hand')).toBe('manager-session')
+    expect(manager).toHaveBeenCalledTimes(2)
+  })
+
+  it('shares concurrent Manager runs, never invents a timetable, and never resurrects deleted shortcuts', async () => {
+    let admit: ((id: string) => void) | undefined
+    const manager = vi.fn(() => new Promise<string>((resolve) => { admit = resolve }))
+    const { cron: _cron, ...manual } = morning
+    held.shortcuts = [{ ...manual, target: 'manager' }]
+    startShortcuts({ start, rename, busy: () => false, manager })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(manager).not.toHaveBeenCalled()
+    const first = runShortcut('m', 'hand')
+    const second = runShortcut('m', 'hand')
+    expect(first).toBe(second)
+    expect(manager).toHaveBeenCalledTimes(1)
+    expect(held.shortcuts[0]?.cron).toBeUndefined()
+    held.shortcuts = []
+    admit?.('manager-session')
+    expect(await first).toBe('manager-session')
+    expect(held.shortcuts).toEqual([])
+  })
+
+  it('does not fall back to worker execution when Manager admission fails or is unsupported', async () => {
+    held.shortcuts = [{ ...morning, target: 'manager' }]
+    startShortcuts({ start, rename, busy: () => false })
+    expect(await runShortcut('m', 'hand')).toBeUndefined()
+    expect(start).not.toHaveBeenCalled()
+    const manager = vi.fn(async (): Promise<string> => { throw new Error('Manager is disabled') })
+    startShortcuts({ start, rename, busy: () => false, manager })
+    expect(await runShortcut('m', 'hand')).toBeUndefined()
+    expect(start).not.toHaveBeenCalled()
+    expect(held.shortcuts[0]?.lastSession).toBeUndefined()
+  })
+
+  it('clears the old target session and ignores late receipts after a target edit', async () => {
+    let admit: ((id: string) => void) | undefined
+    const manager = vi.fn(() => new Promise<string>((resolve) => { admit = resolve }))
+    const { cron: _cron, ...manual } = morning
+    held.shortcuts = [{ ...manual, lastSession: 'old-worker' }]
+    const changed = saveShortcut({ ...manual, target: 'manager' })
+    expect(changed.lastSession).toBeUndefined()
+    startShortcuts({ start, rename, busy: () => true, manager })
+    const pending = runShortcut('m', 'hand')
+    expect(manager).toHaveBeenCalledTimes(1)
+    saveShortcut(manual)
+    admit?.('manager-session')
+    expect(await pending).toBe('manager-session')
+    expect(held.shortcuts[0]?.target).toBeUndefined()
+    expect(held.shortcuts[0]?.lastSession).toBeUndefined()
+  })
+
 })

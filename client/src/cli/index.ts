@@ -201,7 +201,7 @@ const HELP = `geckit - what GeckIt holds, read from a command line.
   geckit employees assign <session-id> <employee-id|none>
   geckit employees manager [--json]
   geckit employees manager edit [--instructions <text>|--instructions-file <file>] [--avatar <1-12>]
-  geckit employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>)
+  geckit employees shortcut add <employee-id|none> [--target manager|task] --name <name> --project <name> (--prompt <text>|--prompt-file <file>)
       [--goal <text>] [--every <when>|--cron "<expr>"] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan]
   geckit employees shortcut edit <shortcut-id> [the same options as add; --every none makes it by hand only]
   geckit employees shortcut pause|resume|remove|run <shortcut-id>

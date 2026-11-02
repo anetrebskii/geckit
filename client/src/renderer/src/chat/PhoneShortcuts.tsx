@@ -51,6 +51,7 @@ export function PhoneShortcuts({
 }): React.JSX.Element {
   const [now, setNow] = useState(Date.now)
   const [running, setRunning] = useState<string | undefined>()
+  const [runError, setRunError] = useState('')
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 20_000)
     return () => clearInterval(tick)
@@ -63,11 +64,14 @@ export function PhoneShortcuts({
   const run = (one: Shortcut): void => {
     tap('light')
     setRunning(one.id)
+    setRunError('')
     void window.geckit.shortcuts
       .run(one.id)
       .then((session) => {
         if (session !== undefined) chat.goTo(session)
+        else setRunError(one.target === 'manager' ? 'Could not run. Check Manager in Team.' : 'Could not run. Check the assistant and folder.')
       })
+      .catch(() => setRunError(one.target === 'manager' ? 'Could not run. Check Manager in Team.' : 'Could not run. Check the assistant and folder.'))
       .finally(() => setRunning(undefined))
   }
 
@@ -99,7 +103,7 @@ export function PhoneShortcuts({
                 <span className="phone-row-title">{one.name}</span>
                 <span className="phone-shortcut-when">
                   <b style={{ color: `var(--project-${String(projectColor(one.root, chat.settings))})` }}>{projectLabel(one.root)}</b>
-                  {one.employeeId === undefined ? null : <> · {employee !== undefined ? <EmployeeBadge employee={employee} /> : 'Employee unavailable'} ·</>}
+                  {one.target === 'manager' ? ' · Manager ·' : one.employeeId === undefined ? null : <> · {employee !== undefined ? <EmployeeBadge employee={employee} /> : 'Employee unavailable'} ·</>}
                   {' '}
                   {when(one, chat, now, employee?.archived === true)}
                 </span>
@@ -125,6 +129,7 @@ export function PhoneShortcuts({
           })}
         </div>
       )}
+      {runError === '' ? null : <p className="recurrence-error" role="alert">{runError}</p>}
       <div className="phone-note">Timetables run on the host while GeckIt is open there.</div>
     </Page>
   )
@@ -135,6 +140,7 @@ const MODE_LABEL = (mode: SessionMode): string => SESSION_MODES.find((one) => on
 /** One shortcut, new or kept, with every field the Mac's editor has. */
 export function ShortcutSheet({ chat, given, onClose }: { readonly chat: ShortcutChat; readonly given: ShortcutDraft; readonly onClose: () => void }): React.JSX.Element {
   const [draft, setDraft] = useState<ShortcutDraft>(given)
+  const manager = draft.target === 'manager'
   const [windowMinutes, setWindowMinutes] = useState(() => String(given.startWindowMinutes ?? 30))
   const [repeats, setRepeats] = useState<Repeats>(() => given.recurrence !== undefined ? 'custom' : given.cron === undefined ? 'never' : whenOf(given.cron).kind)
   const [custom, setCustom] = useState(false)
@@ -143,7 +149,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
   const [failedDraft, setFailedDraft] = useState<ShortcutDraft>()
   const saveError = failedDraft === draft
   const [now] = useState(() => Date.now())
-  const [picking, setPicking] = useState<'project' | 'mode' | 'employee' | 'repeats' | 'weekday' | 'delete' | undefined>()
+  const [picking, setPicking] = useState<'target' | 'project' | 'mode' | 'employee' | 'repeats' | 'weekday' | 'delete' | undefined>()
   const change = (next: Partial<ShortcutDraft>): void => setDraft({ ...draft, ...next })
   const cron = draft.cron ?? FIRST_CRON
   const shape: When = repeats === 'cron' ? { kind: 'cron', cron } : turned(whenOf(cron), repeats === 'never' || repeats === 'custom' ? 'weekdays' : repeats)
@@ -190,7 +196,8 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
         <div className="phone-task-label">Name</div>
         <input className="phone-task-goal" value={draft.name} placeholder={name === '' ? 'Morning check' : name} onChange={(event) => change({ name: event.target.value })} />
         <div className="phone-task-label">Prompt</div>
-        <textarea className="phone-task-text" value={draft.prompt} placeholder="What Claude is asked each time" onChange={(event) => change({ prompt: event.target.value })} />
+        <textarea className="phone-task-text" value={draft.prompt} placeholder="What to ask each time" onChange={(event) => change({ prompt: event.target.value })} />
+        {manager ? null : <>
         <div className="phone-task-label">Goal</div>
         <input
           className="phone-task-goal"
@@ -201,10 +208,12 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
             setDraft(event.target.value === '' ? rest : { ...rest, goal: event.target.value })
           }}
         />
+        </>}
         <div className="phone-group phone-form-group">
+          <Cell label="Target" value={manager ? 'Manager' : 'New task'} onPress={() => setPicking('target')} />
           <Cell label="Folder" value={draft.root === '' ? 'None' : projectLabel(draft.root)} onPress={() => setPicking('project')} />
-          <Cell label="Mode" value={MODE_LABEL(draft.mode)} onPress={() => setPicking('mode')} />
-          {chat.employees.length === 0 && draft.employeeId === undefined ? null : <Cell label="Employee" value={owner?.name ?? 'None'} says={owner === undefined ? 'Runs start unassigned' : owner.archived ? 'Paused while archived' : 'Runs start assigned to them'} onPress={() => setPicking('employee')} />}
+          {manager ? null : <Cell label="Mode" value={MODE_LABEL(draft.mode)} onPress={() => setPicking('mode')} />}
+          {manager || chat.employees.length === 0 && draft.employeeId === undefined ? null : <Cell label="Employee" value={owner?.name ?? 'None'} says={owner === undefined ? 'Runs start unassigned' : owner.archived ? 'Paused while archived' : 'Runs start assigned to them'} onPress={() => setPicking('employee')} />}
         </div>
         <div className="phone-group phone-form-group">
           <Cell label="Repeats" value={REPEATS.find((one) => one.value === repeats)?.label} onPress={() => { trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setPicking('repeats') }} />
@@ -250,6 +259,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
             </Cell>
           )}
         </div>
+        {manager ? <p className="phone-note">Sends this prompt to Manager with {draft.root === '' ? 'the folder you choose' : projectLabel(draft.root)} as context. Manager uses its configured assistant and approvals.</p> : null}
         {saveError ? <p className="recurrence-error" role="alert">Couldn't save the shortcut. Try again.</p> : null}
         {kept === undefined ? null : (
           <div className="phone-group phone-form-group">
@@ -267,7 +277,10 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
           </div>
         )}
       </FullSheet>
-      {picking === 'project' ? (
+      {picking === 'target' ? <Menu anchor={new DOMRect()} title="Target" chosen={manager ? 'manager' : 'task'} choices={[{ value: 'task', label: 'New task' }, { value: 'manager', label: 'Manager' }]} onPick={(value) => {
+        const { target: _target, employeeId: _employee, provider: _provider, model: _model, reasoning: _reasoning, goal: _goal, ...rest } = draft
+        setDraft(value === 'manager' ? { ...rest, target: 'manager' } : rest)
+      }} onClose={() => setPicking(undefined)} /> : picking === 'project' ? (
         <Menu
           anchor={new DOMRect()}
           title="Runs in"

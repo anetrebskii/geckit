@@ -1,0 +1,3 @@
+html:not(.phone) {
+  --bar: 40px;
+}

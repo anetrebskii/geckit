@@ -23,7 +23,7 @@ import type { ClaudeOptions } from '../src/main/sessions/claude'
 import { claudeArgs } from '../src/main/sessions/claude'
 import type { Driver, Heard } from '../src/main/sessions/heard'
 import { DEFAULT_MANAGER_INTAKE } from '../src/shared/manager-intake'
-import type { SourceItem, TaskSource } from '../src/shared/manager-intake'
+import type { TaskSource } from '../src/shared/manager-intake'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { SessionItems, Settings } from '../src/shared/api'
 import { VPN_IP_CONFIGURATION_ERROR, VPN_IP_UNAVAILABLE_ERROR, vpnIpMismatchError, vpnIpPausedError } from '../src/shared/vpn-ip'
@@ -1839,98 +1839,58 @@ describe('retry and steer command bridge', () => {
 })
 
 
-describe('Manager source intake through the production decision boundary', () => {
-  it('classifies without delegation, confirms one durable task and returns the updated view', async () => {
-    const now = Date.parse('2026-10-25T12:00:00Z')
-    let items: SourceItem[] = []
-    let paired: string | undefined = 'bot:user:chat'
-    const adapter: TaskSource = { id: 'memos', capabilities: { audio: true, transcript: false }, status: async () => ({ state: 'ready' }), list: async () => ({ items, cursor: String(items.length) }), read: async () => ({ transcript: 'Build the thing, but which project?' }) }
-    const classify = vi.fn<NonNullable<ManagerDeps['intake']>['classify']>(async () => ({ suggestion: 'task', summary: 'Build the thing' }))
-    const f = await fixture(0, {}, undefined, { now: () => now, adapters: () => [adapter], pairing: () => paired, classify })
-    await f.manager.configure({ enabled: true, intake: { ...DEFAULT_MANAGER_INTAKE, enabled: true, windows: [{ days: [0], start: '00:00', end: '23:59' }], sources: [{ id: 'memos', kind: 'voice-memos', enabled: true, directory: '/fixture' }] } })
-    await f.manager.tickIntake()
-    items = [{ id: 'recording', revision: '1', title: 'An idea', createdAt: now + 1, location: 'fixture' }]
-    await f.manager.tickIntake()
-    expect(classify).toHaveBeenCalledTimes(1)
-    expect(f.sent).toHaveLength(0)
-    const decision = (await f.manager.view()).decisions.find((one) => one.kind === 'intake')
-    expect(decision).toBeDefined()
-    paired = 'foreign'
-    expect((await f.manager.answer(decision?.id ?? '', 'task')).answer).toContain('no longer pending')
-    expect(f.sent).toHaveLength(0)
-    paired = 'bot:user:chat'
-    const accepted = await f.manager.answer(decision?.id ?? '', 'task')
-    expect(accepted.answer).toBe('Task accepted by Manager.')
-    expect(accepted.decisions.some((one) => one.id === decision?.id)).toBe(false)
-    expect(accepted.intake?.items[0]?.state).toBe('claimed')
+describe('Manager shortcuts and retired source intake', () => {
+  it('sends the saved prompt to the actual Manager and coordinates a real worker operation', async () => {
+    const f = await fixture()
+    const shortcut = { id: 'recordings', name: 'Check recordings', root: f.root, prompt: 'Check new recordings and create tasks without duplicates.' }
+    await expect(f.manager.runShortcut(shortcut, 'shortcut:recordings:off')).rejects.toThrow('disabled')
+    await f.manager.configure({ enabled: true })
+    const session = await f.manager.runShortcut(shortcut, 'shortcut:recordings:first')
     await vi.waitFor(() => expect(f.sent).toHaveLength(1))
-    expect(f.sent[0]?.text).toContain('No project has been selected')
-    expect(f.cli).toEqual([])
-    expect((await f.manager.answer(decision?.id ?? '', 'task')).answer).toContain('no longer pending')
+    expect(f.manager.owns(session)).toBe(true)
+    expect(f.sent[0]?.text).toContain(shortcut.prompt)
+    expect(f.sent[0]?.text).toContain(f.root)
+    expect(f.sent[0]?.input).toContain(MANAGER_INSTRUCTIONS)
+    expect(await f.manager.runShortcut(shortcut, 'shortcut:recordings:duplicate')).toBe(session)
+    expect(f.sent).toHaveLength(1)
+    f.finish(session, f.command('recording-worker', ['sessions', 'start', '--project', f.root, '--text', 'Inspect recordings and create tasks without duplicates.', '--goal', 'Recording tasks are created once and sources preserved']))
+    await vi.waitFor(() => expect(f.made).toHaveLength(2))
+    expect(f.notes.all()[f.made[1]?.id ?? '']?.managerOwner).toBe('manager')
+    expect(f.cli).toHaveLength(1)
+    const record = JSON.parse(await readFile(join(f.directory, 'manager.json'), 'utf8')) as { readonly inbox: readonly { readonly id: string }[] }
+    expect(record.inbox.filter((message) => message.id.startsWith('shortcut:recordings:'))).toHaveLength(1)
+    await f.manager.pause()
+    await expect(f.manager.runShortcut(shortcut, 'shortcut:recordings:paused')).rejects.toThrow('unavailable')
+  })
+
+  it('retires old enabled intake and pending handoffs while preserving history and recordings', async () => {
+    const list = vi.fn<TaskSource['list']>(async () => ({ items: [], cursor: 'baseline' }))
+    const adapter: TaskSource = { id: 'memos', capabilities: { audio: true, transcript: false }, status: async () => ({ state: 'ready' }), list, read: async () => ({ transcript: '' }) }
+    const classify = vi.fn<NonNullable<ManagerDeps['intake']>['classify']>(async () => ({ suggestion: 'task', summary: 'Old recording' }))
+    const f = await fixture(0, {}, undefined, { pairing: () => 'paired', adapters: () => [adapter], classify })
+    const history = JSON.stringify({ sources: [{ id: 'memos', baseline: ['old'] }], items: [{ id: 'pending', state: 'claiming' }] })
+    await writeFile(join(f.directory, 'manager-intake.json'), history)
+    await writeFile(join(f.directory, 'recording.m4a'), 'original recording')
+    const config = { ...DEFAULT_MANAGER_INTAKE, enabled: true, timeZone: 'invalid/legacy-zone', sources: [{ id: 'memos', kind: 'voice-memos' as const, enabled: true, directory: '/legacy/recordings' }] }
+    await writeFile(join(f.directory, 'manager.json'), JSON.stringify({ config: { enabled: false, provider: 'claude', chatModel: '', instructions: 'Keep my preferences', delegation: 'automatic', intake: config }, inbox: [{ id: 'intake-task:pending', text: 'Old pending intake', source: 'event', at: 1, state: 'queued' }] }))
     const restored = f.reload()
     await restored.tickIntake()
-    const record = JSON.parse(await readFile(join(f.directory, 'manager.json'), 'utf8')) as { readonly inbox: readonly { readonly id: string }[] }
-    expect(record.inbox.filter((one) => one.id.startsWith('intake-task:'))).toHaveLength(1)
-    expect(f.sent.filter((one) => one.text.includes('[User confirmed this source item'))).toHaveLength(1)
+    const view = await restored.view()
+    expect(view.config.intake).toEqual({ ...config, enabled: false })
+    expect(view.config.instructions).toBe('Keep my preferences')
+    expect(view.intake).toBeUndefined()
+    expect(view.queued).toBe(0)
+    expect(list).not.toHaveBeenCalled()
+    expect(classify).not.toHaveBeenCalled()
+    expect(await readFile(join(f.directory, 'manager-intake.json'), 'utf8')).toBe(history)
+    expect(await readFile(join(f.directory, 'recording.m4a'), 'utf8')).toBe('original recording')
+    expect(restored.voiceMemosDirectory()).toBe('/legacy/recordings')
+    await expect(restored.configure({ intake: config })).rejects.toThrow('removed')
+    await restored.configure({ enabled: true })
+    expect((await restored.answer('intake:pending', 'task')).answer).toContain('no longer pending')
+    const record = JSON.parse(await readFile(join(f.directory, 'manager.json'), 'utf8')) as { readonly inbox: readonly { readonly id: string; readonly completed: boolean }[] }
+    expect(record.inbox).toContainEqual(expect.objectContaining({ id: 'intake-task:pending', completed: true }))
   })
-})
-
-it('stops the scheduled source loop on Manager disposal without a remaining intake callback', async () => {
-  vi.useFakeTimers()
-  const list = vi.fn<TaskSource['list']>(async () => ({ items: [], cursor: 'baseline' }))
-  const adapter: TaskSource = { id: 'memos', capabilities: { audio: true, transcript: false }, status: async () => ({ state: 'ready' }), list, read: async () => ({ transcript: '' }) }
-  const f = await fixture(0, {}, undefined, { now: () => Date.parse('2026-10-25T12:00:00Z'), pairing: () => 'paired', adapters: () => [adapter], classify: async () => ({ suggestion: 'ignore', summary: 'No action' }) })
-  await f.manager.configure({ enabled: true, intake: { ...DEFAULT_MANAGER_INTAKE, enabled: true, windows: [{ days: [0], start: '00:00', end: '23:59' }], sources: [{ id: 'memos', kind: 'voice-memos', enabled: true, directory: '/fixture' }] } })
-  await f.manager.tickIntake()
-  const calls = list.mock.calls.length
-  f.manager.dispose()
-  await vi.advanceTimersByTimeAsync(180_000)
-  expect(list).toHaveBeenCalledTimes(calls)
-})
-
-it('keeps manual Manager delivery available when automatic intake cannot persist state', async () => {
-  const adapter: TaskSource = { id: 'memos', capabilities: { audio: true, transcript: false }, status: async () => ({ state: 'ready' }), list: async () => ({ items: [], cursor: 'baseline' }), read: async () => ({ transcript: '' }) }
-  const classify = vi.fn<NonNullable<ManagerDeps['intake']>['classify']>(async () => ({ suggestion: 'ignore', summary: 'No action' }))
-  const f = await fixture(0, {}, undefined, { now: () => Date.parse('2026-10-25T12:00:00Z'), pairing: () => 'paired', adapters: () => [adapter], classify })
-  await mkdir(join(f.directory, 'manager-intake.json.new'))
-  await expect(f.manager.configure({ enabled: true, intake: { ...DEFAULT_MANAGER_INTAKE, enabled: true, windows: [{ days: [0], start: '00:00', end: '23:59' }], sources: [{ id: 'memos', kind: 'voice-memos', enabled: true, directory: '/fixture' }] } })).rejects.toThrow('state could not be saved')
-  await expect(f.manager.tickIntake()).resolves.toBeUndefined()
-  const view = await f.manager.view()
-  expect(view.intake?.state).toBe('blocked'); expect(view.state).toBe('idle'); expect(view.error).toBeUndefined()
-  await f.manager.send('Manual work continues', 'telegram')
-  await vi.waitFor(() => expect(f.sent).toHaveLength(1))
-  expect(f.sent[0]?.text).toContain('Manual work continues'); expect(classify).not.toHaveBeenCalled()
-})
-
-it('keeps manual Manager delivery available with an invalid persisted intake timezone', async () => {
-  const list = vi.fn<TaskSource['list']>(async () => ({ items: [], cursor: 'baseline' }))
-  const adapter: TaskSource = { id: 'memos', capabilities: { audio: true, transcript: false }, status: async () => ({ state: 'ready' }), list, read: async () => ({ transcript: '' }) }
-  const f = await fixture(0, {}, undefined, { pairing: () => 'paired', adapters: () => [adapter], classify: async () => ({ suggestion: 'ignore', summary: 'No action' }) })
-  await f.manager.configure({ enabled: true })
-  const path = join(f.directory, 'manager.json')
-  const stored = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
-  await writeFile(path, JSON.stringify({ ...stored, config: { ...stored.config, intake: { ...DEFAULT_MANAGER_INTAKE, enabled: true, timeZone: 'invalid/timezone', sources: [{ id: 'memos', kind: 'voice-memos', enabled: true, directory: '/fixture' }] } } }))
-  const restored = f.reload()
-  await expect(restored.tickIntake()).resolves.toBeUndefined()
-  const view = await restored.view()
-  expect(view.intake).toMatchObject({ state: 'blocked', detail: 'Choose a valid IANA timezone.' })
-  expect(view.error).toBeUndefined(); expect(view.decisions.filter((one) => one.kind === 'intake')).toEqual([])
-  const session = await restored.send('Manual work with invalid source settings', 'telegram')
-  await vi.waitFor(() => expect(f.sent.length).toBeGreaterThan(0))
-  f.finish(session, 'Restart reconciliation complete.')
-  await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('Manual work with invalid source settings'))).toBe(true))
-  expect(list).not.toHaveBeenCalled()
-  expect((JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>).config.intake?.timeZone).toBe('invalid/timezone')
-})
-
-it('checks the stored legacy Voice Memos location without taking a new baseline or changing source identity', async () => {
-  const f = await fixture()
-  expect(f.manager.voiceMemosDirectory()).toBeUndefined()
-  const source = { id: 'legacy-memos', kind: 'voice-memos' as const, enabled: false, directory: '/legacy/recordings' }
-  await f.manager.configure({ intake: { ...DEFAULT_MANAGER_INTAKE, sources: [source] } })
-  expect(f.manager.voiceMemosDirectory()).toBe('/legacy/recordings')
-  expect((await f.manager.view()).config.intake?.sources).toEqual([source])
-  expect(f.sent).toHaveLength(0)
 })
 
 

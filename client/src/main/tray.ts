@@ -108,7 +108,7 @@ export function drawTray(): void {
     .shortcuts.filter((one) => shown.includes(one.root))
     .map((one) => {
       const provider = one.provider ?? 'claude'
-      const available = assistantsIn(settings).includes(provider) && (llmProviderInfo(provider, 'stream', settings.providerPlugins).localOnly !== true || !isRemote(one.root))
+      const available = one.target === 'manager' || assistantsIn(settings).includes(provider) && (llmProviderInfo(provider, 'stream', settings.providerPlugins).localOnly !== true || !isRemote(one.root))
       const next = nextTimed(one, now)
       const when =
         one.lastSession !== undefined && deps?.busy(one.lastSession) === true
@@ -124,7 +124,9 @@ export function drawTray(): void {
     const own = rows.filter(({ one }) => one.employeeId === employee.id)
     return own.length === 0 ? [] : [{ title: employee.archived ? `${employee.name} (archived)` : employee.name, archived: employee.archived, rows: own }]
   })
-  const loose = rows.filter(({ one }) => owner(one) === undefined)
+  const managerRows = rows.filter(({ one }) => one.target === 'manager')
+  if (managerRows.length > 0) groups.unshift({ title: 'Manager', archived: false, rows: managerRows })
+  const loose = rows.filter(({ one }) => one.target !== 'manager' && owner(one) === undefined)
   const grouped = groups.length === 0 ? [{ title: 'Shortcuts', archived: false, rows: loose }] : [...groups, ...(loose.length === 0 ? [] : [{ title: 'No employee', archived: false, rows: loose }])]
   const key = JSON.stringify([settings.showGecko, grouped.map(({ title, rows: list }) => [title, list.map(({ one, available, says }) => [one.id, one.name, available, says])])])
   if (key === drawn) return

@@ -1925,6 +1925,10 @@ if (!app.requestSingleInstanceLock()) {
     // The conversations are what this is opened for; correcting and dictating are a shortcut away.
     openChat()
     startShortcuts({
+      manager: async (shortcut, request) => {
+        if (manager === undefined) throw new Error('Manager is unavailable.')
+        return manager.runShortcut(shortcut, request)
+      },
       start: (message) => started.send(message),
       rename: (id, title) => started.rename(id, title),
       busy: (id) => started.busy(id),

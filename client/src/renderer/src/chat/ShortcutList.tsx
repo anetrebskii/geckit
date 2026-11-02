@@ -64,8 +64,9 @@ function shortcutGroups(chat: Pick<ShortcutChat, 'employees'>, shortcuts: readon
     .map((employee) => ({ key: employee.id, employee, list: shortcuts.filter((one) => one.employeeId === employee.id) }))
     .filter((group) => group.list.length > 0)
   const owned = new Set(chat.employees.map((one) => one.id))
-  const rest = shortcuts.filter((one) => one.employeeId === undefined || !owned.has(one.employeeId))
-  return rest.length === 0 ? groups : [...groups, { key: 'none', employee: null, list: rest }]
+  const rest = shortcuts.filter((one) => one.target !== 'manager' && (one.employeeId === undefined || !owned.has(one.employeeId)))
+  const managers = shortcuts.filter((one) => one.target === 'manager')
+  return [...(managers.length === 0 ? [] : [{ key: 'manager', employee: null, list: managers }]), ...groups, ...(rest.length === 0 ? [] : [{ key: 'none', employee: null, list: rest }])]
 }
 
 export function ShortcutList({
@@ -104,6 +105,8 @@ export function ShortcutList({
   )
   // "Next today at 9:00" goes on being true for a minute at most.
   const [search, setSearch] = useState('')
+  const [runError, setRunError] = useState('')
+  const [runningId, setRunningId] = useState<string>()
   const found = shortcuts.filter((one) => `${one.name} ${one.prompt} ${projectLabel(one.root)}`.toLowerCase().includes(search.trim().toLowerCase()))
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
@@ -120,10 +123,13 @@ export function ShortcutList({
   }, [onClose])
 
   const run = (one: Shortcut): void => {
-    onClose()
+    setRunningId(one.id)
+    setRunError('')
     void window.geckit.shortcuts.run(one.id).then((session) => {
-      if (session !== undefined) chat.goTo(session)
-    })
+      if (session === undefined) { setRunError(one.target === 'manager' ? 'Could not run. Check Manager in Team.' : 'Could not run. Check the assistant and folder.'); return }
+      chat.goTo(session)
+      onClose()
+    }).catch(() => setRunError(one.target === 'manager' ? 'Could not run. Check Manager in Team.' : 'Could not run. Check the assistant and folder.')).finally(() => setRunningId(undefined))
   }
 
   return (
@@ -137,18 +143,18 @@ export function ShortcutList({
               {shortcuts.length > 5 ? <label className="employee-find shortcut-find"><Icon name="search" size={11} /><input type="search" aria-label="Search shortcuts" placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} /></label> : null}
               <button type="button" className="primary shortcut-new" onClick={() => setEditing(blank())}><Icon name="plus" size={11} />New shortcut</button>
             </header>
-            <p className="shortcut-list-about">Saved prompts. Each run starts a new conversation in its folder: by hand here or from the gecko in the menu bar, or on a timetable while GeckIt is open.</p>
+            <p className="shortcut-list-about">Saved prompts for a new task or Manager: by hand here or from the gecko in the menu bar, or on a timetable while GeckIt is open.</p>
             {shortcuts.length === 0 ? <div className="shortcut-empty"><Icon name="bolt" size={18} /><strong>No shortcuts yet</strong><span>Save a prompt you send often, like a daily plan or a code review.</span><button type="button" className="primary" onClick={() => setEditing(blank())}>New shortcut</button></div> : null}
             {shortcuts.length > 0 && found.length === 0 ? <div className="shortcut-empty"><span>No shortcuts match.</span></div> : null}
             {shortcutGroups(chat, found).map(({ key, employee, list }) => <Fragment key={key}>
-            {employee === null && list.length === found.length ? null : <div className="shortcut-group">{employee === null ? null : <EmployeeAvatar employee={employee} />}{employee === null ? list.some((one) => one.employeeId !== undefined) ? 'Other shortcuts' : 'No employee' : employee.name}{employee?.archived === true ? <small>Archived, timetables paused</small> : null}</div>}
+            {key !== 'manager' && employee === null && list.length === found.length ? null : <div className="shortcut-group">{employee === null ? null : <EmployeeAvatar employee={employee} />}{key === 'manager' ? 'Manager' : employee === null ? list.some((one) => one.employeeId !== undefined) ? 'Other shortcuts' : 'No employee' : employee.name}{employee?.archived === true ? <small>Archived, timetables paused</small> : null}</div>}
             <div className="shortcut-rows">
             {list.map((one) => {
               const next = nextTimed(one, now, chat.settings.calendarTimeZone)
               const running = busy(chat, one.lastSession)
               const provider = one.provider ?? 'claude'
               const info = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
-              const available = assistantsIn(chat.settings).includes(provider) && (info.localOnly !== true || !isRemote(one.root))
+              const available = one.target === 'manager' || assistantsIn(chat.settings).includes(provider) && (info.localOnly !== true || !isRemote(one.root))
               const timed = one.recurrence !== undefined || one.cron !== undefined
               const timetable = one.recurrence !== undefined ? describeRecurrence(one.recurrence) : one.cron === undefined ? '' : [describeCron(one.cron), describeStartWindow(one)].filter(Boolean).join(' · ')
               const paused = timed && (!one.on || employee?.archived === true)
@@ -163,7 +169,7 @@ export function ShortcutList({
                     <span className="shortcut-when">
                       <span className="tinted" style={tint(projectColor(one.root, chat.settings))}>{projectLabel(one.root)}</span>
                       {one.employeeId === undefined ? null : <span>{employee === null ? 'Employee unavailable' : <EmployeeBadge employee={employee} />}</span>}
-                      <span>{info.name}</span>
+                      <span>{one.target === 'manager' ? 'Manager' : info.name}</span>
                       {available ? null : <span className="trouble">Assistant unavailable</span>}
                       {one.recurrence !== undefined && one.on && next === undefined ? <span>Timetable ended</span> : null}
                       {running ? (
@@ -182,7 +188,7 @@ export function ShortcutList({
                         type="button"
                         className="icon-button"
                         aria-label="Open the last run"
-                        title="Open the conversation the last run started"
+                        title={one.target === 'manager' ? 'Open Manager' : 'Open the conversation the last run started'}
                         onClick={() => {
                           if (one.lastSession !== undefined) chat.goTo(one.lastSession)
                           onClose()
@@ -191,7 +197,7 @@ export function ShortcutList({
                         <Icon name="right" size={13} />
                       </button>
                     )}
-                    <button type="button" className="quiet shortcut-run" title="Start a new conversation with this prompt" disabled={!available || employee?.archived === true} onClick={() => run(one)}>
+                    <button type="button" className="quiet shortcut-run" title={one.target === 'manager' ? 'Send this prompt to Manager' : 'Start a new conversation with this prompt'} disabled={runningId === one.id || !available || employee?.archived === true} onClick={() => run(one)}>
                       <Icon name="send" size={11} />Run
                     </button>
                   </span>
@@ -200,6 +206,7 @@ export function ShortcutList({
             })}
             </div>
             </Fragment>)}
+            {runError === '' ? null : <p className="shortcut-next wrong" role="alert">{runError}</p>}
             <div className="dialog-actions">
               {onTeam === undefined ? null : <button type="button" className="quiet" onClick={onTeam}>Manage in Team</button>}
               <span className="spacer" />
@@ -229,6 +236,7 @@ function Editor({
 }): React.JSX.Element {
   const [draft, setDraft] = useState<ShortcutDraft>(given)
   const [windowMinutes, setWindowMinutes] = useState(() => String(given.startWindowMinutes ?? 30))
+  const manager = draft.target === 'manager'
   const provider = draft.provider ?? 'claude'
   const enabled = assistantsIn(chat.settings)
   const info = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
@@ -236,7 +244,7 @@ function Editor({
   const assistant = info.name
   const [askedModels, setAskedModels] = useState<{ readonly provider: SessionProvider; readonly root: string; readonly said: ModelsSaid }>()
   useEffect(() => {
-    if (!available) return
+    if (manager || !available) return
     let current = true
     void window.geckit.chat.models(draft.root || undefined, provider).then((said) => {
       if (current) setAskedModels({ provider, root: draft.root, said: said ?? 'unsaid' })
@@ -244,7 +252,7 @@ function Editor({
       if (current) setAskedModels({ provider, root: draft.root, said: 'unsaid' })
     })
     return () => { current = false }
-  }, [draft.root, provider, available])
+  }, [draft.root, provider, available, manager])
   const modelsSaid = available && askedModels?.provider === provider && askedModels.root === draft.root ? askedModels.said : 'unasked'
   const catalog: readonly ClaudeModel[] | undefined = Array.isArray(modelsSaid) ? modelsSaid : undefined
   // Kept apart from the line itself, so a cron being typed that happens to spell "every day" stays a cron line.
@@ -296,7 +304,7 @@ function Editor({
     if (!ready) return
     setSaving(true)
     setFailedDraft(undefined)
-    void saveShortcut(window.geckit.shortcuts, chat.settings, { ...draft, provider, ...(!isCodexProvider(provider) ? {} : { reasoning }), name, prompt: draft.prompt.trim() }).then(onDone).catch(() => setFailedDraft(draft)).finally(() => setSaving(false))
+    void saveShortcut(window.geckit.shortcuts, chat.settings, { ...draft, ...(manager ? {} : { provider }), ...(manager || !isCodexProvider(provider) ? {} : { reasoning }), name, prompt: draft.prompt.trim() }).then(onDone).catch(() => setFailedDraft(draft)).finally(() => setSaving(false))
   }
 
   const pickRepeats = (picked: Repeats): void => {
@@ -316,7 +324,7 @@ function Editor({
   const owner = draft.employeeId === undefined ? undefined : chat.employees.find((one) => one.id === draft.employeeId)
   const agent = isCodexProvider(provider) ? 'Codex' : 'Claude'
   const summary = [
-    `Each run starts a new task in ${draft.root === '' ? 'the folder you choose' : projectLabel(draft.root)}${owner === undefined ? '' : `, assigned to ${owner.name}`}, with ${assistant}.`,
+    manager ? `Sends this prompt to Manager with ${draft.root === '' ? 'the folder you choose' : projectLabel(draft.root)} as context. Manager uses its configured assistant and approvals.` : `Each run starts a new task in ${draft.root === '' ? 'the folder you choose' : projectLabel(draft.root)}${owner === undefined ? '' : `, assigned to ${owner.name}`}, with ${assistant}.`,
     !scheduled ? 'It runs when you start it.' : draft.recurrence !== undefined ? ruleError === undefined ? next === undefined ? 'Its timetable has ended.' : draft.on ? `Next run ${describeTime(next, now, zone)}.` : 'Its timetable is paused.' : '' : next === undefined ? '' : !draft.on ? 'Its timetable is paused.' : draft.startWindowMinutes !== undefined && kept === undefined ? `${describeStartWindow(draft)}.` : `Next run ${describeTime(next, now, draft.startWindowMinutes === undefined ? undefined : zone)}.`,
   ].filter((one) => one !== '').join(' ')
 
@@ -361,7 +369,7 @@ function Editor({
             placeholder="Look through the pull requests waiting for my review and tell me which ones need me first."
             onChange={(event) => change({ prompt: event.target.value })}
           />
-          {goalOpen ? (
+          {manager ? null : goalOpen ? (
             <div className="shortcut-goal">
               <label htmlFor="shortcut-goal" className="shortcut-label">Goal</label>
               <input
@@ -387,6 +395,14 @@ function Editor({
 
         <aside className="shortcut-editor-side" aria-label="Settings">
           <div className="shortcut-setting">
+            <span>Target</span>
+            <Picker label={manager ? 'Manager' : 'New task'} chosen={manager ? 'manager' : 'task'} choices={[{ value: 'task', label: 'New task' }, { value: 'manager', label: 'Manager' }]} className="select" onPick={(value) => {
+              const { target: _target, employeeId: _employee, provider: _provider, model: _model, reasoning: _reasoning, goal: _goal, ...rest } = draft
+              setFailedDraft(undefined)
+              setDraft(value === 'manager' ? { ...rest, target: 'manager' } : rest)
+            }} />
+          </div>
+          <div className="shortcut-setting">
             <span>Folder</span>
             <Picker
               label={draft.root === '' ? 'Choose a folder' : projectLabel(draft.root)}
@@ -397,6 +413,7 @@ function Editor({
               onPick={(root) => change({ root })}
             />
           </div>
+          {manager ? null : <>
           <div className="shortcut-setting">
             <span>Employee</span>
             <EmployeeSelect
@@ -462,6 +479,7 @@ function Editor({
             />
           </div>
           {scheduled && draft.mode === 'manual' ? <span className="shortcut-next">Manual stops at the first question and waits for you.</span> : null}
+          </>}
 
           <div className="shortcut-when-block">
             <div className="views shortcut-runs" role="radiogroup" aria-label="Runs">

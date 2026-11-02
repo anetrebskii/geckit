@@ -6,6 +6,8 @@ created: 2026-10-25
 ---
 # UX: Manager task sources
 
+> Superseded in the working tree on 2026-11-02: [Manager shortcuts](manager-shortcuts.md) replace this automatic Voice Memos integration. Its UI, polling, retries and pending automatic handoffs are retired. Recording files, intake history, baselines and notes are retained. No replacement schedule is created. The design below is historical.
+
 ## 1. Purpose and path
 Record an idea on iPhone and review what to do with it in paired Telegram. Settings > Manager keeps manual coordination unchanged and adds a separate automatic intake section. First connect Apple Voice Memos without entering any technical parameters, then choose working time and explicitly enable automatic intake. Initial enumeration establishes a baseline only. Save stores configuration; automatic processing waits for enabled intake, connected Manager and paired Telegram, and current working hours. Connect and Check again only inspect local access and transcription readiness. GeckIt must remain open. Returning shows saved settings, source readiness and recent outcomes. iCloud sync, local transcription, a compatible Manager and Telegram pairing are prerequisites, not assumed successes.
 
