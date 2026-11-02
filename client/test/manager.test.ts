@@ -954,6 +954,40 @@ describe('Manager session inspection', () => {
 })
 
 describe('Manager session', () => {
+  it('delivers built-in task separation policy on initial, continuation, follow-up and restored turns without saved preferences', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true, instructions: '' })
+    const id = await f.manager.send('Coordinate the first task', 'telegram')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    f.finish(id, f.command('inspect-task', ['sessions', 'list']))
+    await vi.waitFor(() => expect(f.sent).toHaveLength(2))
+    expect(f.sent[1]?.text).toContain('[GeckIt CLI result]')
+    f.finish(id, 'First task coordinated.')
+    await vi.waitFor(() => expect(f.sessions.busy(id)).toBe(false))
+    await f.manager.send('Coordinate another task', 'telegram')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(3))
+    expect(f.sent[2]?.text).toContain('Coordinate another task')
+    f.finish(id, 'Another task coordinated.')
+    await vi.waitFor(() => expect(f.sessions.busy(id)).toBe(false))
+    const restored = f.reload()
+    await restored.send('Coordinate after reload', 'telegram')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(4))
+    expect(f.sent[3]?.text).toContain('GeckIt restarted')
+    f.finish(id, 'Reconciled existing work.')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(5))
+    expect(f.sent[4]?.text).toContain('Coordinate after reload')
+    expect(restored.instructions()).toBe('')
+    expect(f.sent[0]?.input).toMatch(/read sessions show.*latest user request and recent responses.*only for the same task/)
+    expect(f.sent[0]?.input).toMatch(/matching project, employee, topic or keywords alone is insufficient.*independent task or an unclear relationship, start a new session/)
+    expect(f.sent[0]?.input).toMatch(/same employee keeps their identity and source memory across separate task sessions/)
+    expect(f.sent[0]?.input).toMatch(/Honor the user's explicit direction to continue a specific session/)
+    expect(f.sent[0]?.input).not.toContain('Use ordinary Send for separate later work.')
+    for (const turn of f.sent) {
+      expect(turn.id).toBe(id)
+      expect(turn.input).toContain(MANAGER_INSTRUCTIONS)
+    }
+  })
+
   it('retains the normal Claude runtime and permissions without stripping tools or customization', () => {
     const args = claudeArgs({ id: 'session', mode: 'manual', resume: false, managerPrompt: 'Only GeckIt CLI' })
     expect(args).toEqual(expect.arrayContaining(['--chrome', '--permission-mode', 'manual']))

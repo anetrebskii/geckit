@@ -1,0 +1,54 @@
+.shortcut-fixture-controls,
+.shortcut-fixture-evidence {
+  position: fixed;
+  inset-inline: 0;
+  z-index: 9999;
+  padding: 8px 12px;
+  color: var(--text);
+  background: var(--bg);
+  font-size: 12px;
+}
+
+.shortcut-fixture-controls {
+  inset-block-start: 0;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  border-block-end: 1px solid var(--border);
+}
+
+.shortcut-fixture-controls label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.shortcut-fixture-controls a {
+  color: var(--accent);
+}
+
+.shortcut-fixture-controls a:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.shortcut-fixture-evidence {
+  inset-block-end: 0;
+  max-block-size: 30%;
+  overflow: auto;
+  border-block-start: 1px solid var(--border);
+}
+
+.shortcut-fixture-evidence pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.shortcut-fixture-phone {
+  display: block;
+  inline-size: 390px;
+  max-inline-size: 100%;
+  block-size: calc(100% - 96px);
+  margin: 48px auto;
+  border: 1px solid var(--border);
+  background: var(--ground);
+}

@@ -10,6 +10,7 @@ import { saveShortcut } from '../../../shared/shortcut-save'
 import { CustomRecurrence } from './CustomRecurrence'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
+import { EmployeeBadge } from '../employees/Employees'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { Cell, FullSheet, Page, Switch } from './PhoneKit'
@@ -27,9 +28,10 @@ const busy = (chat: ShortcutChat, session: string | undefined): boolean =>
 const lowered = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`
 
 /** What the row says under the name: when it runs next, that it is paused, or that it runs by hand. */
-function when(one: Shortcut, chat: ShortcutChat, now: number): string {
+function when(one: Shortcut, chat: ShortcutChat, now: number, archived: boolean): string {
   if (busy(chat, one.lastSession)) return 'Running now'
   if (one.cron === undefined && one.recurrence === undefined) return one.lastRun === undefined ? 'By hand' : `By hand, last ${describeTime(one.lastRun, now)}`
+  if (archived) return 'Paused while archived'
   if (!one.on) return 'Timetable paused'
   const next = nextTimed(one, now, chat.settings.calendarTimeZone)
   const summary = one.recurrence !== undefined ? describeRecurrence(one.recurrence) : [describeCron(one.cron ?? ''), describeStartWindow(one)].filter(Boolean).join(', ')
@@ -53,6 +55,7 @@ export function PhoneShortcuts({
     const tick = setInterval(() => setNow(Date.now()), 20_000)
     return () => clearInterval(tick)
   }, [])
+  const employees = useMemo(() => new Map(chat.employees.map((employee) => [employee.id, employee])), [chat.employees])
   const shown = shownProjects(chat.settings)
   const shortcuts = chat.settings.shortcuts.filter((one) => shown.includes(one.root))
   const blank = (): ShortcutDraft => ({ name: '', root: chat.root ?? shown[0] ?? '', prompt: '', mode: 'auto', on: true })
@@ -88,19 +91,22 @@ export function PhoneShortcuts({
         </div>
       ) : (
         <div className="phone-group phone-shortcuts">
-          {shortcuts.map((one) => (
+          {shortcuts.map((one) => {
+            const employee = one.employeeId === undefined ? undefined : employees.get(one.employeeId)
+            return (
             <div key={one.id} className="phone-shortcut">
               <button type="button" className="phone-shortcut-text" onClick={() => onEdit(one)}>
                 <span className="phone-row-title">{one.name}</span>
                 <span className="phone-shortcut-when">
                   <b style={{ color: `var(--project-${String(projectColor(one.root, chat.settings))})` }}>{projectLabel(one.root)}</b>
+                  {one.employeeId === undefined ? null : <> · {employee !== undefined ? <EmployeeBadge employee={employee} /> : 'Employee unavailable'} ·</>}
                   {' '}
-                  {when(one, chat, now)}
+                  {when(one, chat, now, employee?.archived === true)}
                 </span>
                 <span className="phone-row-said">{one.prompt}</span>
               </button>
               <div className="phone-shortcut-side">
-                <button type="button" className="phone-pill" disabled={running === one.id} onClick={() => run(one)}>
+                <button type="button" className="phone-pill" disabled={running === one.id || employee?.archived === true} onClick={() => run(one)}>
                   {running === one.id ? <Icon name="spinner" size={14} /> : 'Run'}
                 </button>
                 {one.cron === undefined && one.recurrence === undefined ? null : (
@@ -115,7 +121,8 @@ export function PhoneShortcuts({
                 )}
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
       <div className="phone-note">Timetables run on the host while GeckIt is open there.</div>

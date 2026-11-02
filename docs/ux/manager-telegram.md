@@ -308,6 +308,23 @@ Bot command menu: `/start` explains pairing status, `/help` lists text/task/deci
 - **Phone:** Existing conversation navigation, Back and keyboard behavior apply. Settings is a summary page with pause/resume and computer setup guidance, not a token form. Manager is visible only for a paired feature-capable host; older hosts keep their existing screens.
 - **Links:** External result URLs may open from Telegram. A local-only task/permission says "Open GeckIt on your computer or paired phone." Do not promise Telegram will launch a custom GeckIt URL on every platform.
 
+### Worker task identity - 2026-11-02
+
+Alex requested this as built-in GeckIt behavior for every installation. Each worker conversation represents one task; the assigned employee retains their identity and source memory across separate task conversations.
+
+Before sending a new instruction to an existing worker, Manager reads `sessions show` and compares the new instruction with the latest user request and recent responses. It continues that worker only for a clarification, correction or next step toward the same task outcome. A shared project, employee, topic or keyword does not establish task continuity. An independent task or unclear relationship starts a new conversation with a suitable employee. An explicit user instruction to continue a specific conversation takes precedence.
+
+| From | Event | To | What the user sees |
+| --- | --- | --- | --- |
+| New request | Manager reads the candidate's latest request and confirms the same task, automatically | Existing worker | Existing task receives the follow-up; current delivery receipts remain authoritative |
+| New request | The latest request concerns another task, or the relationship is unclear, automatically | New worker | A separate task card, or the existing new-session approval when that policy is enabled |
+| New request | User explicitly names a conversation to continue | Named worker | Requested continuation, subject to current availability and permissions |
+| Candidate unavailable | History cannot be read | New worker | A separate task; Manager does not infer continuity from a title or employee alone |
+
+The comparison stays silent; there is no new setting, threshold, notification or layout. Existing new-worker approvals, provider selection, queueing, retry and steering behavior still apply. Ordinary Send is for a later step of the same task, not unrelated work. Repeating a dispatched operation retains existing operation-ID reconciliation.
+
+This revises unrestricted worker reuse: keeping an employee's identity does not require putting unrelated tasks in one transcript. The rule ships in Manager's built-in instructions and is composed into initial and subsequent turns even with empty user preferences. It is model guidance, not a host-side semantic validator or a guarantee that every model judges task similarity correctly. Verification checks delivery of the rule to the runtime with a substituted provider; live model routing is separate acceptance evidence.
+
 ### Provider selection for a project
 
 Draft routing rule added on 2026-10-17. A project is not permanently owned by one provider: its saved preference chooses new workers. The manager's own assistant/model is independent. Existing workers keep their provider, even after a preference changes.

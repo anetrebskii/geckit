@@ -16,7 +16,7 @@ import { MOD } from '../ui/Shortcuts'
 import { projectColor } from '../../../shared/project-color'
 import { homePath, projectLabel, tint } from './project'
 import type { Chat } from './useChat'
-import { EmployeeAvatar, EmployeeSelect } from '../employees/Employees'
+import { EmployeeAvatar, EmployeeBadge, EmployeeSelect } from '../employees/Employees'
 
 export type ShortcutChat = Pick<Chat, 'settings' | 'root' | 'everyone' | 'goTo' | 'employees'>
 
@@ -141,7 +141,7 @@ export function ShortcutList({
             {shortcuts.length === 0 ? <div className="shortcut-empty"><Icon name="bolt" size={18} /><strong>No shortcuts yet</strong><span>Save a prompt you send often, like a daily plan or a code review.</span><button type="button" className="primary" onClick={() => setEditing(blank())}>New shortcut</button></div> : null}
             {shortcuts.length > 0 && found.length === 0 ? <div className="shortcut-empty"><span>No shortcuts match.</span></div> : null}
             {shortcutGroups(chat, found).map(({ key, employee, list }) => <Fragment key={key}>
-            {employee === null && list.length === found.length ? null : <div className="shortcut-group">{employee === null ? null : <EmployeeAvatar employee={employee} />}{employee === null ? 'No employee' : employee.name}{employee?.archived === true ? <small>Archived, timetables paused</small> : null}</div>}
+            {employee === null && list.length === found.length ? null : <div className="shortcut-group">{employee === null ? null : <EmployeeAvatar employee={employee} />}{employee === null ? list.some((one) => one.employeeId !== undefined) ? 'Other shortcuts' : 'No employee' : employee.name}{employee?.archived === true ? <small>Archived, timetables paused</small> : null}</div>}
             <div className="shortcut-rows">
             {list.map((one) => {
               const next = nextTimed(one, now, chat.settings.calendarTimeZone)
@@ -162,6 +162,7 @@ export function ShortcutList({
                     </span>
                     <span className="shortcut-when">
                       <span className="tinted" style={tint(projectColor(one.root, chat.settings))}>{projectLabel(one.root)}</span>
+                      {one.employeeId === undefined ? null : <span>{employee === null ? 'Employee unavailable' : <EmployeeBadge employee={employee} />}</span>}
                       <span>{info.name}</span>
                       {available ? null : <span className="trouble">Assistant unavailable</span>}
                       {one.recurrence !== undefined && one.on && next === undefined ? <span>Timetable ended</span> : null}
