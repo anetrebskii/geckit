@@ -13638,6 +13638,16 @@ button.manager-step-head:hover > svg {
   gap: 5px;
 }
 
+.employee-form.team-about {
+  padding: 0;
+}
+
+.employee-form.team-about footer {
+  margin-inline: 0;
+  padding-inline: 0;
+  background: var(--bg);
+}
+
 .team-name-fields {
   flex: 1;
   grid-template-columns: 1fr 1fr;
@@ -14112,7 +14122,8 @@ button.manager-step-head:hover > svg {
   padding: 16px 16px 0;
 }
 
-.employee-form label {
+.employee-form label,
+.employee-fields label {
   display: grid;
   gap: 5px;
   color: var(--text-dim);
@@ -14121,6 +14132,7 @@ button.manager-step-head:hover > svg {
 }
 
 .employee-form input,
+.employee-fields input,
 .employee-form textarea {
   inline-size: 100%;
   min-inline-size: 0;
