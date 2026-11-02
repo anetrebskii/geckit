@@ -44,6 +44,7 @@ export const fixture = {
   queueAdds: 0,
   destinations: [] as ChatSession[],
   modelRequests: [] as ModelRequest[],
+  readRequests: [] as ChatSession['id'][],
   openedFiles: [] as FileRequest[],
   sends: [] as BoundarySend[],
   unexpectedCalls: [] as string[],
@@ -51,10 +52,13 @@ export const fixture = {
   failCreate: false,
   failCopy: false,
   failModels: false,
+  failReads: false,
   holdActions: false,
   holdModels: false,
+  holdReads: false,
   pendingActions: 0,
   pendingModels: 0,
+  pendingReads: 0,
   subscriptions: new Map<string, Set<FixtureListener>>(),
 }
 
@@ -66,6 +70,7 @@ let settings: Settings = {
 }
 const actionWaiters = new Set<() => void>()
 const modelWaiters = new Set<() => void>()
+const readWaiters = new Set<() => void>()
 const destinationContexts = new Map<ChatSession['id'], DestinationContext>()
 const STORAGE = 'conversation-export-fixture'
 type StoredFixture = Pick<typeof fixture, 'exports' | 'exportRequests' | 'continuations' | 'copies' | 'prepared' | 'savedDrafts' | 'messageSends' | 'providerCreates' | 'providerSends' | 'queueAdds' | 'destinations'> & {
@@ -98,10 +103,13 @@ const emit = (channel: string, value: FixtureEventValue): void => {
 export function releasePending(): void {
   fixture.holdActions = false
   fixture.holdModels = false
+  fixture.holdReads = false
   for (const release of actionWaiters) release()
   for (const release of modelWaiters) release()
+  for (const release of readWaiters) release()
   actionWaiters.clear()
   modelWaiters.clear()
+  readWaiters.clear()
 }
 const waitForActions = async (): Promise<void> => {
   if (!fixture.holdActions) return
@@ -149,8 +157,16 @@ export const ipcRenderer = {
     if (channel === 'manager:view') return { config: DEFAULT_MANAGER_CONFIG, queued: 0, state: 'off', workers: [], activity: [], providers: [], decisions: [] }
     if (channel === 'chat:models') return models(typeof first === 'string' ? first : undefined, second === 'codex' ? 'codex' : 'claude')
     if (channel === 'chat:items') {
+      if (typeof first !== 'string') throw new Error('Fixture history read requires a session id.')
+      fixture.readRequests.push(first)
+      if (fixture.holdReads) {
+        fixture.pendingReads++
+        await new Promise<void>((resolve) => readWaiters.add(resolve))
+        fixture.pendingReads--
+      }
+      if (fixture.failReads) throw new Error('Fixture history read failed: assistant is temporarily unavailable.')
       if (first === source.id) return sourceItems
-      const context = typeof first === 'string' ? destinationContexts.get(first) : undefined
+      const context = destinationContexts.get(first)
       return context === undefined ? [] : [{ kind: 'mine', id: `${String(first)}-context`, text: `Continue from the exported conversation.\n\nExport: ${context.exported.path}\n\n${context.request.text ?? ''}` }, { kind: 'theirs', id: `${String(first)}-ready`, text: 'Synthetic destination accepted. No provider was called.' }]
     }
     if (channel === 'chat:preparedDraft') return fixture.prepared.find((one) => one.session.id === first)?.text

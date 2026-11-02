@@ -329,7 +329,7 @@ export function useChat(): Chat {
   const within = (one: ChatSession): boolean =>
     one.question !== true && (chosenRef.current.length === 0 || chosenRef.current.includes(homeOf(one)))
 
-  const refresh = useCallback(() => {
+  const refreshList = useCallback(() => {
     const one = chosenRef.current.length === 1 ? chosenRef.current[0] : undefined
     void window.geckit.chat.list(one).then((listed) => {
       const all = sameAsBefore(listed)
@@ -341,7 +341,7 @@ export function useChat(): Chat {
   }, [])
 
   // Another profile changes what the list may hold, with the scope itself unmoved.
-  useEffect(refresh, [refresh, scope, chosen.join('\n'), shownProjects(settings).join('\n')])
+  useEffect(refreshList, [refreshList, scope, chosen.join('\n'), shownProjects(settings).join('\n')])
 
   // Asked until it is answered: a phone that opened while the host was starting, or while the link was down, would otherwise never know who is signed in.
   useEffect(() => {
@@ -466,6 +466,7 @@ export function useChat(): Chat {
     const before = shownRef.current
     shownRef.current = next
     loadingItems.current = undefined
+    setTrouble('')
     setShown(next)
     setFocusSeed((seed) => seed + 1)
     if (next.kind === 'new') {
@@ -498,7 +499,13 @@ export function useChat(): Chat {
       loadingItems.current = undefined
       setItemsFor(next.id)
     }).catch((error: Error) => {
-      if (!error.message.endsWith(MANAGER_CHAT_GUIDANCE)) throw error
+      if (!error.message.endsWith(MANAGER_CHAT_GUIDANCE)) {
+        if (shownRef.current !== next) return
+        loadingItems.current = undefined
+        setItemsFor(next.id)
+        setTrouble(error.message)
+        return
+      }
       managerIds.current.add(next.id)
       if (shownRef.current !== next) return
       shownRef.current = { kind: 'new' }
@@ -509,6 +516,12 @@ export function useChat(): Chat {
       window.geckit.chat.watching(undefined)
     })
   }, [])
+
+  const refresh = useCallback(() => {
+    refreshList()
+    const current = shownRef.current
+    if (current.kind === 'session') open({ ...current })
+  }, [open, refreshList])
 
   const currentManager = manager?.session?.id
   const previousManager = useRef<string | undefined>(undefined)

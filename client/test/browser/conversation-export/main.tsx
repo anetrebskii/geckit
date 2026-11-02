@@ -16,7 +16,7 @@ const root = document.getElementById('root')
 const toolbar = document.getElementById('fixture')
 if (root === null || toolbar === null) throw new Error('Fixture elements are missing.')
 createRoot(root).render(createElement(Chat))
-toolbar.innerHTML = `<details><summary>Fixture evidence and controls</summary><p>Synthetic Electron boundary. No real provider requests or native disk writes.</p><div class="fixture-controls"><label><input id="fail-export" type="checkbox"> Fail export</label><label><input id="fail-copy" type="checkbox"> Fail copy</label><label><input id="fail-create" type="checkbox"> Fail creation/send</label><label><input id="fail-models" type="checkbox"> Unavailable model catalog</label><label><input id="hold-actions" type="checkbox"> Hold export/copy/create</label><label><input id="hold-models" type="checkbox"> Hold model loading</label><button id="release" type="button">Release pending</button><button id="theme" type="button">Toggle theme</button><button id="reset" type="button">Reset fixture</button></div><pre id="evidence" aria-live="off"></pre></details>`
+toolbar.innerHTML = `<details><summary>Fixture evidence and controls</summary><p>Synthetic Electron boundary. No real provider requests or native disk writes.</p><div class="fixture-controls"><label><input id="fail-export" type="checkbox"> Fail export</label><label><input id="fail-copy" type="checkbox"> Fail copy</label><label><input id="fail-create" type="checkbox"> Fail creation/send</label><label><input id="fail-models" type="checkbox"> Unavailable model catalog</label><label><input id="fail-reads" type="checkbox"> Fail history loading</label><label><input id="hold-actions" type="checkbox"> Hold export/copy/create</label><label><input id="hold-models" type="checkbox"> Hold model loading</label><label><input id="hold-reads" type="checkbox"> Hold history loading</label><button id="release" type="button">Release pending</button><button id="theme" type="button">Toggle theme</button><button id="reset" type="button">Reset fixture</button></div><pre id="evidence" aria-live="off"></pre></details>`
 const evidence = toolbar.querySelector('#evidence')
 type FixtureDrafts = Partial<{ readonly [id in ChatSession['id']]: SessionMessage['text'] }>
 const sourceDraftNow = (): string | undefined => {
@@ -32,13 +32,14 @@ const renderEvidence = (): void => {
     simulatedProviderCreates: fixture.providerCreates, simulatedProviderSends: fixture.providerSends, simulatedQueueAdds: fixture.queueAdds,
     sourceMessageRequests: fixture.messageSends.filter((message) => message.session === source.id),
     destinations: fixture.destinations, openedFiles: fixture.openedFiles,
-    pendingActions: fixture.pendingActions, pendingModels: fixture.pendingModels,
+    pendingActions: fixture.pendingActions, pendingModels: fixture.pendingModels, pendingReads: fixture.pendingReads,
     sourcePreserved: JSON.stringify(source) === originalSource,
     sourceTranscriptPreserved: JSON.stringify(sourceItems) === originalItems,
     sourceDraftPreserved: sourceDraftNow() === sourceDraft,
     sourceDraft: sourceDraftNow(), sourceGoal: source.goal, sourceQueue: source.queued,
     realProviderCalls: 0, unexpectedCalls: fixture.unexpectedCalls,
     modelRequests: fixture.modelRequests,
+    historyReadRequests: fixture.readRequests,
     lastBoundarySends: fixture.sends.slice(-8),
   }, null, 2)
 }
@@ -51,11 +52,13 @@ toggle('#fail-export', (checked) => { fixture.failExport = checked })
 toggle('#fail-copy', (checked) => { fixture.failCopy = checked })
 toggle('#fail-create', (checked) => { fixture.failCreate = checked })
 toggle('#fail-models', (checked) => { fixture.failModels = checked })
+toggle('#fail-reads', (checked) => { fixture.failReads = checked })
 toggle('#hold-actions', (checked) => { fixture.holdActions = checked })
 toggle('#hold-models', (checked) => { fixture.holdModels = checked })
+toggle('#hold-reads', (checked) => { fixture.holdReads = checked })
 toolbar.querySelector('#release')?.addEventListener('click', () => {
   releasePending()
-  for (const id of ['#hold-actions', '#hold-models']) {
+  for (const id of ['#hold-actions', '#hold-models', '#hold-reads']) {
     const control = toolbar.querySelector<HTMLInputElement>(id)
     if (control !== null) control.checked = false
   }

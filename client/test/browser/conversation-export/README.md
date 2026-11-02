@@ -24,6 +24,13 @@ Exercise these paths using normal UI interactions:
 - **Fail export**, **Fail copy** or **Fail creation/send** before submitting. Verify visible failure and retained choices, turn failure off and retry. Export/copy failure must not create or send to a provider; creation failure after export does not mean a destination exists. A failed explicit send keeps the prepared draft available.
 - Cancel/Escape/backdrop, focus entry/trap/restoration, multiline next instruction, phone scrolling and keyboard navigation. The source composer starts with an unsent draft, a queued message and a goal so preservation remains visible.
 
+History loading regressions use the same actual `Chat` and `useChat` renderer:
+
+- Enable **Fail history loading**, then open **Source conversation**. The skeleton must disappear and the existing composer trouble surface must show `Fixture history read failed: assistant is temporarily unavailable.`. The source draft remains editable. Before the fix this left a permanent skeleton and an unhandled rejection.
+- Disable **Fail history loading** and press the conversation header **Refresh** (or Cmd+R). `historyReadRequests` must record another `fixture-source`, the trouble must clear, and the source transcript must appear. Before the fix Refresh only reloaded the conversation list.
+- Enable **Hold history loading** and press **Refresh**. With the read pending, switch to **New conversation**, enable **Fail history loading**, then **Release pending**. The stale failure must not show trouble in the new conversation. Repeat with failure disabled; a stale success must not replace the new conversation.
+- Hold a read, press **Refresh** again, then release. Both reads may finish, but only the newest request can settle the displayed conversation. Repeat failed loading and recovery in both themes; confirm keyboard focus and the unsent draft remain usable.
+
 Fixture typecheck:
 
 ```sh
