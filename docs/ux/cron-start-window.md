@@ -156,3 +156,9 @@ Alex instructed "Реализуй" on 2026-11-01 after receiving the duration-wi
 | Desktop/phone behavior and save acknowledgment | Sections 2, 4, 8 |
 
 This extends [calendar recurrence](calendar-recurrence.md). No new calendar rule or provider behavior is introduced.
+
+## CLI configuration (2026-11-02)
+
+Alex requested CLI configuration before setting up Kate's schedules. `employees shortcut add|edit --start-window-minutes <N|none>` uses the same CRON window as the editor. N is a whole number from 1 to 1,440; `none` restores exact timing. Omitting the option preserves the saved window. `--every none` removes both timetable and window. A positive window without a CRON timetable is rejected before asking for approval.
+
+The existing conversation approval remains required. Its summary includes "Random start within {N} minutes" or "Start window: none". Declining leaves the shortcut unchanged. `employees shortcuts` prints the saved window; JSON includes `startWindowMinutes` and the next selected start. Save is confirmed only after the application acknowledges and readback matches. No renderer layout changes are introduced.

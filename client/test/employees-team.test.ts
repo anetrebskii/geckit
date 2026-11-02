@@ -166,6 +166,40 @@ describe('team changes from a terminal', () => {
     expect(held.shortcuts[0]?.on).toBe(false)
   })
 
+  it('configures and clears start windows through approved CLI changes', async () => {
+    const f = team()
+    await f.employees.command(['shortcut', 'add', 'none', '--name', 'Window', '--project', 'samara', '--prompt', 'Check', '--cron', '0 10 * * *', '--start-window-minutes', '120', '--mode', 'auto'], 'chat-1')
+    const id = held.shortcuts[0]?.id ?? ''
+    expect(held.shortcuts[0]).toMatchObject({ startWindowMinutes: 120, cron: '0 10 * * *', on: true, mode: 'auto' })
+    expect(f.asked[0]).toContain('Random start within 120 minutes')
+    expect(await f.employees.command(['shortcuts'])).toContain('Random start within 120 minutes')
+    expect(JSON.parse(await f.employees.command(['shortcuts', '--json']))).toMatchObject([{ id, startWindowMinutes: 120, next: expect.any(String) }])
+    await f.employees.command(['shortcut', 'edit', id, '--prompt', 'Again'])
+    expect(held.shortcuts[0]?.startWindowMinutes).toBe(120)
+    await f.employees.command(['shortcut', 'edit', id, '--every', 'day 11:00'])
+    expect(held.shortcuts[0]).toMatchObject({ startWindowMinutes: 120, cron: '0 11 * * *' })
+    await f.employees.command(['shortcut', 'edit', id, '--start-window-minutes', 'none'], 'chat-1')
+    expect(f.asked.at(-1)).toContain('Start window: none')
+    expect(held.shortcuts[0]?.startWindowMinutes).toBeUndefined()
+    await f.employees.command(['shortcut', 'edit', id, '--start-window-minutes', '1440'])
+    await f.employees.command(['shortcut', 'edit', id, '--every', 'none'])
+    expect(held.shortcuts[0]).toMatchObject({ on: false })
+    expect(held.shortcuts[0]?.startWindowMinutes).toBeUndefined()
+    expect(held.shortcuts[0]?.cron).toBeUndefined()
+  })
+
+  it('rejects invalid windows before approval and keeps declined windows unchanged', async () => {
+    const f = team(async () => ({ how: 'declined' }))
+    await f.employees.command(['shortcut', 'add', 'none', '--name', 'Window', '--project', 'samara', '--prompt', 'Check', '--cron', '0 10 * * *', '--start-window-minutes', '1'])
+    for (const invalid of ['0', '1441', '2.5', '-1', '', 'NaN', '1e2']) {
+      await expect(f.employees.command(['shortcut', 'edit', 'Window', '--start-window-minutes', invalid], 'chat-1')).rejects.toThrow('whole number')
+    }
+    await expect(f.employees.command(['shortcut', 'edit', 'Window', '--every', 'none', '--start-window-minutes', '10'], 'chat-1')).rejects.toThrow('CRON timetable')
+    expect(f.asked).toHaveLength(0)
+    await expect(f.employees.command(['shortcut', 'edit', 'Window', '--start-window-minutes', '60'], 'chat-1')).rejects.toThrow('Declined')
+    expect(held.shortcuts[0]?.startWindowMinutes).toBe(1)
+  })
+
   it('picks portraits, shortcut goals and reasoning, and sets Manager', async () => {
     const f = team()
     await f.employees.command(['create', '--name', 'Realtor', '--avatar', '7'])

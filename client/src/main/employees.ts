@@ -7,7 +7,7 @@ import type { ChatSession, ReasoningEffort, SessionItem, SessionMode, Settings, 
 import { assistantFor, assistantsIn } from '../shared/api'
 import { requestedProvider } from '../cli/start'
 import { isCodexProvider } from '../shared/providers'
-import { cronOf, describeCron, isCron, nextTimed, WEEKDAYS } from '../shared/schedule'
+import { cronOf, describeCron, describeStartWindow, isCron, nextTimed, startWindowError, WEEKDAYS } from '../shared/schedule'
 
 /** What the write commands of `geckit employees` reach beyond the catalog. */
 export interface TeamDeps {
@@ -88,7 +88,7 @@ function options(args: readonly string[], allowed: readonly string[]): { readonl
   return { words, flags }
 }
 
-const SHORTCUT_FLAGS = ['--target', '--name', '--project', '--prompt', '--goal', '--every', '--cron', '--provider', '--model', '--reasoning', '--mode']
+const SHORTCUT_FLAGS = ['--target', '--name', '--project', '--prompt', '--goal', '--every', '--cron', '--start-window-minutes', '--provider', '--model', '--reasoning', '--mode']
 const quoted = (text: string): string => `"${text}"`
 const brief = (text: string): string => (text.length > 200 ? `${text.slice(0, 199)}...` : text).replace(/\s+/g, ' ')
 const scheduled = (one: Shortcut): boolean => one.on && (one.cron !== undefined || one.recurrence !== undefined)
@@ -272,7 +272,7 @@ export class Employees {
   }
 
   #shortcutWhen(one: Shortcut): string {
-    const when = one.cron !== undefined ? describeCron(one.cron) : one.recurrence !== undefined ? 'Custom recurrence' : 'By hand'
+    const when = one.cron !== undefined ? [describeCron(one.cron), describeStartWindow(one)].filter(Boolean).join(' · ') : one.recurrence !== undefined ? 'Custom recurrence' : 'By hand'
     if (one.cron === undefined && one.recurrence === undefined) return when
     if (one.employeeId !== undefined && this.#employees.find((employee) => employee.id === one.employeeId)?.archived === true) return `${when} · Paused while archived`
     return one.on ? when : `${when} · Paused`
@@ -383,7 +383,7 @@ export class Employees {
     const [action, said, ...rest] = args
     if (action === 'add' || action === 'edit') {
       const { words, flags } = options(rest, SHORTCUT_FLAGS)
-      if (words.length !== 0 || said === undefined) throw new Error(action === 'add' ? 'Use employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>) [--target manager|task] [--goal <text>] [--every <when>|--cron <expr>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan].' : 'Use employees shortcut edit <shortcut-id> with any of --target, --name, --project, --prompt, --prompt-file, --goal, --every, --cron, --provider, --model, --reasoning, --mode.')
+      if (words.length !== 0 || said === undefined) throw new Error(action === 'add' ? 'Use employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>) [--target manager|task] [--goal <text>] [--every <when>|--cron <expr>] [--start-window-minutes <N|none>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan].' : 'Use employees shortcut edit <shortcut-id> with any of --target, --name, --project, --prompt, --prompt-file, --goal, --every, --cron, --start-window-minutes, --provider, --model, --reasoning, --mode.')
       const was = action === 'edit' ? this.#shortcut(team, said) : undefined
       const target = flags.get('--target')
       if (target !== undefined && target !== 'manager' && target !== 'task') throw new Error('Use --target manager or task.')
@@ -402,6 +402,15 @@ export class Employees {
       const cronSaid = flags.get('--cron')?.trim()
       if (cronSaid !== undefined && !isCron(cronSaid)) throw new Error(`${cronSaid} is not a cron line: minute, hour, day of the month, month, day of the week.`)
       const timed = every === undefined ? cronSaid : every.trim().toLowerCase() === 'none' ? '' : everyCron(every)
+      const windowSaid = flags.get('--start-window-minutes')?.trim().toLowerCase()
+      if (windowSaid !== undefined && windowSaid !== 'none' && !/^\d+$/.test(windowSaid)) throw new Error('Enter a whole number from 1 to 1,440, or none.')
+      const windowMinutes = windowSaid === undefined || windowSaid === 'none' ? undefined : Number(windowSaid)
+      const selectedWindow = windowSaid === undefined ? timed === '' ? undefined : was?.startWindowMinutes : windowMinutes
+      const window: Pick<Shortcut, 'startWindowMinutes'> = selectedWindow === undefined ? {} : { startWindowMinutes: selectedWindow }
+      const cron = timed === undefined ? was?.cron : timed || undefined
+      const recurrence = timed === undefined ? was?.recurrence : undefined
+      const windowError = startWindowError({ ...window, ...(cron === undefined ? {} : { cron }), ...(recurrence === undefined ? {} : { recurrence }) })
+      if (windowError !== undefined) throw new Error(windowError)
       const providerSaid = flags.get('--provider')
       const provider = providerSaid === undefined ? undefined : requestedProvider(providerSaid)
       if (providerSaid !== undefined && (provider === undefined || !assistantsIn(team.settings()).includes(provider))) throw new Error(`Assistant ${providerSaid} is not enabled. There are: ${assistantsIn(team.settings()).join(', ')}`)
@@ -415,7 +424,7 @@ export class Employees {
       const root = project === undefined ? was?.root : team.project(project)
       if (reasoning !== undefined && !isCodexProvider(provider ?? was?.provider ?? assistantFor(team.settings(), root))) throw new Error('--reasoning is for Codex shortcuts only. Claude Code takes its effort from the model.')
       if (action === 'add' && (name === undefined || root === undefined || prompt === undefined)) throw new Error('A shortcut needs --name, --project and --prompt or --prompt-file.')
-      if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --target, --name, --project, --prompt, --goal, --every, --cron, --provider, --model, --reasoning or --mode.')
+      if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --target, --name, --project, --prompt, --goal, --every, --cron, --start-window-minutes, --provider, --model, --reasoning or --mode.')
       const where = root === undefined ? '' : team.projectName(root)
       const when = timed === undefined ? undefined : timed === '' ? 'By hand' : describeCron(timed)
       const title = name ?? was?.name ?? ''
@@ -423,16 +432,19 @@ export class Employees {
         ? [`Add shortcut ${quoted(title)} ${owner === undefined ? 'with no employee' : `to ${owner.name}`}`, `${when ?? 'By hand'} in ${where}`, `Prompt: ${brief(prompt ?? '')}`, ...(goal === undefined || goal === '' ? [] : [`Goal: ${brief(goal)}`]), ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
         : [`Change shortcut ${quoted(was.name)}${name === undefined || name === was.name ? '' : `: name to ${quoted(name)}`}`, ...(when === undefined && project === undefined ? [] : [`${when ?? this.#shortcutWhen(was)} in ${where}`]), ...(prompt === undefined ? [] : [`Prompt: ${brief(prompt)}`]), ...(goal === undefined ? [] : [goal === '' ? 'Goal: none' : `Goal: ${brief(goal)}`]), ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
       if (target !== undefined) lines.push(`Target: ${manager ? 'Manager' : 'New task'}`)
+      if (windowSaid !== undefined || timed !== undefined && window.startWindowMinutes !== undefined) lines.push(window.startWindowMinutes === undefined ? 'Start window: none' : describeStartWindow(window))
       return {
         lines,
         apply: async () => {
           const settings = team.settings()
           const current = was === undefined ? undefined : this.#shortcut(team, was.id)
           const { id: _id, since: _since, lastRun: _lastRun, lastSession: _lastSession, ...kept } = current ?? { id: '', since: 0, name: title, root: root ?? '', prompt: prompt ?? '', mode: settings.chatMode, on: false, provider: assistantFor(settings, root) }
-          const { cron: _cron, recurrence: _recurrence, ...untimed } = kept
-          const timedBase = timed === undefined ? kept : timed === '' ? { ...untimed, on: false } : { ...untimed, cron: timed, on: true }
-          const { goal: _goal, ...ungoaled } = timedBase
-          const base = goal === undefined ? timedBase : goal === '' ? ungoaled : { ...ungoaled, goal }
+          const { cron: _cron, recurrence: _recurrence, startWindowMinutes: _window, ...untimed } = kept
+          const timedBase = timed === undefined ? kept : timed === '' ? { ...untimed, on: false } : { ...untimed, cron: timed, on: true, ...(kept.startWindowMinutes === undefined ? {} : { startWindowMinutes: kept.startWindowMinutes }) }
+          const { startWindowMinutes: _startWindow, ...exactBase } = timedBase
+          const windowBase = windowSaid === undefined ? timedBase : windowMinutes === undefined ? exactBase : { ...exactBase, startWindowMinutes: windowMinutes }
+          const { goal: _goal, ...ungoaled } = windowBase
+          const base = goal === undefined ? windowBase : goal === '' ? ungoaled : { ...ungoaled, goal }
           const { target: _target, ...taskBase } = base
           const { employeeId: _employee, ...unassigned } = taskBase
           const selectedBase = manager ? { ...unassigned, target: 'manager' as const } : target === 'task' ? taskBase : base
