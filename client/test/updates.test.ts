@@ -106,3 +106,53 @@ describe('following a channel', () => {
     expect(feed.downloaded).toBe(3)
   })
 })
+
+describe('restarting with an independent service', () => {
+  async function ready(beforeRestart: () => Promise<void>, running: () => readonly string[] = () => []) {
+    vi.resetModules()
+    const updates = await import('../src/main/updates')
+    const { default: updater } = await import('electron-updater')
+    vi.mocked(updater.autoUpdater.quitAndInstall).mockClear()
+    feed.version = '1.6.0'
+    updates.startUpdates({ changed: () => undefined, channel: 'stable', running, wanted: () => false, beforeRestart })
+    await updates.checkForUpdates()
+    expect(updates.updateView().state).toBe('ready')
+    return { updates, updater: updater.autoUpdater }
+  }
+
+  it('awaits service shutdown before installation and prevents plain Quit from bypassing it', async () => {
+    let release: () => void = () => undefined
+    const stopped = new Promise<void>((resolve) => { release = resolve })
+    const beforeRestart = vi.fn(() => stopped)
+    const { updates, updater } = await ready(beforeRestart)
+    expect(updater.autoInstallOnAppQuit).toBe(false)
+    updates.restartToUpdate()
+    updates.restartToUpdate()
+    expect(beforeRestart).toHaveBeenCalledTimes(1)
+    expect(updater.quitAndInstall).not.toHaveBeenCalled()
+    release()
+    await vi.waitFor(() => expect(updater.quitAndInstall).toHaveBeenCalledExactlyOnceWith(true, true))
+  })
+
+  it('leaves desktop open with an error when the service refuses shutdown', async () => {
+    const { updates, updater } = await ready(async () => { throw new Error('A conversation is still working.') })
+    updates.restartToUpdate()
+    await vi.waitFor(() => expect(updates.updateView()).toMatchObject({ state: 'failed', message: 'Could not restart to update: A conversation is still working.', waitingFor: [] }))
+    expect(updater.quitAndInstall).not.toHaveBeenCalled()
+  })
+
+  it('waits for working conversations before asking the service to stop', async () => {
+    let working = ['Task in progress']
+    const beforeRestart = vi.fn(async () => undefined)
+    const { updates, updater } = await ready(beforeRestart, () => working)
+    updates.restartToUpdate()
+    expect(updates.updateView()).toMatchObject({ state: 'waiting', waitingFor: ['Task in progress'] })
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(beforeRestart).not.toHaveBeenCalled()
+    expect(updater.quitAndInstall).not.toHaveBeenCalled()
+    working = []
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(beforeRestart).toHaveBeenCalledTimes(1)
+    expect(updater.quitAndInstall).toHaveBeenCalledExactlyOnceWith(true, true)
+  })
+})

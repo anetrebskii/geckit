@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { afterEach, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ app: { getPath: () => process.env['GECKIT_PLUGIN_TEST_HOME'] }, shell: { trashItem: async (path: string) => (await import('node:fs/promises')).rm(path, { recursive: true, force: true }) } }))
+vi.mock('../src/core/platform', () => ({ dataDirectory: () => process.env['GECKIT_PLUGIN_TEST_HOME'], corePlatform: () => ({ trash: async (path: string) => (await import('node:fs/promises')).rm(path, { recursive: true, force: true }) }) }))
 
 import { installPlugin, installedPlugins, loadPlugin, uninstallPlugin, updateInstalledPlugins } from '../src/main/sessions/plugins'
 import { flushPluginLogs } from '../src/main/sessions/plugin-logs'

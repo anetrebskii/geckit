@@ -10,8 +10,8 @@ import { Employees } from '../src/main/employees'
 import { memoryNotes, Sessions } from '../src/main/sessions'
 import type { Employee } from '../src/shared/employees'
 
-const mode = vi.hoisted(() => ({ packaged: true, folder: '' }))
-vi.mock('electron', () => ({ app: { get isPackaged() { return mode.packaged }, getPath: () => mode.folder, getAppPath: () => mode.folder } }))
+const mode = vi.hoisted(() => ({ packaged: true, headless: false, folder: '' }))
+vi.mock('../src/core/platform', () => ({ dataDirectory: () => mode.folder, corePlatform: () => ({ headless: mode.headless, source: () => !mode.packaged, launcher: () => ({ executable: process.execPath, script: join(mode.folder, 'out', 'main', 'cli.js') }) }) }))
 
 const originals = { home: process.env['HOME'], profile: process.env['USERPROFILE'], claude: process.env['CLAUDE_CONFIG_DIR'], codex: process.env['CODEX_HOME'], cli: process.env['GECKIT_SOURCE_CLI'], sourceGuide: process.env['GECKIT_SOURCE_GUIDE'], sourceCodexGuide: process.env['GECKIT_SOURCE_CODEX_GUIDE'] }
 let folder = ''
@@ -22,6 +22,7 @@ beforeEach(() => {
   folder = mkdtempSync(join(tmpdir(), 'geckit-employee-guide-'))
   mode.folder = folder
   mode.packaged = true
+  mode.headless = false
   delete process.env['GECKIT_SOURCE_GUIDE']
   delete process.env['GECKIT_SOURCE_CODEX_GUIDE']
   delete process.env['GECKIT_SOURCE_CLI']
@@ -173,4 +174,18 @@ describe('employee managed instructions in isolated provider configs', () => {
     expect(existsSync(join(folder, 'GECKIT.md'))).toBe(false)
     expect(existsSync(join(folder, 'GECKIT-CODEX.md'))).toBe(false)
   })
+})
+
+
+it('writes service instructions without a desktop workflow in headless mode', async () => {
+  mode.packaged = false
+  mode.headless = true
+  await keepGuide(true, {}, [employee], true)
+  await keepCodexGuide(true, [employee], true)
+  for (const name of ['GECKIT.md', 'GECKIT-CODEX.md']) {
+    const guide = readFileSync(join(folder, name), 'utf8')
+    expect(guide).toContain('headless GeckIt service')
+    expect(guide).toContain('explicit answer')
+    expect(guide).not.toContain('Each conversation is a card')
+  }
 })

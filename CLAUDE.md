@@ -43,7 +43,7 @@ From `mobile/` (needs `client/node_modules`): `npm run build` into `www/`, `npm 
 - **Chat** (`renderer/chat.html`): its own resizable window, sidebar plus transcript plus composer.
 - **Voice** (`renderer/voice.html`): the frameless capsule the dictation shortcut opens.
 
-`main/windows.ts` owns all three and remembers their bounds. `main/index.ts` holds every IPC handler and the two global shortcuts: `Cmd/Ctrl+C+D` picks up the selection and fills Correct, `Cmd/Ctrl+Alt+V` opens the dictation capsule and pastes back what it heard.
+`main/windows.ts` owns all three and remembers their bounds. `main/index.ts` is the native desktop adapter: it connects through `main/service-client.ts` to the independent service, forwards core IPC and consumes snapshots/events. `core/runtime.ts` and `core/application.ts` own sessions, Manager, employees, settings and scheduling. Desktop starts the service when absent; closing desktop leaves accepted work running. See `docs/headless-service.md`. Native desktop owns the global shortcuts: `Cmd/Ctrl+C+D` picks up the selection and fills Correct, `Cmd/Ctrl+Alt+V` opens the dictation capsule and pastes back what it heard.
 
 ### Sessions
 
@@ -62,7 +62,7 @@ From `mobile/` (needs `client/node_modules`): `npm run build` into `www/`, `npm 
 
 A conversation can run on another computer reached over SSH, a host; this computer is called Local, the same on every system. A project on a host has a root of the form `ssh://<host id><path>`, so everything keyed by a root (lists, colours, profiles, favourites) works unchanged, and the places that reach the outside world ask `main/hosts/route.ts` whether a root is local or on a host.
 
-- `hosts/ssh.ts` starts the person's own `ssh` (their config, agent and jump hosts hold), sharing one connection per host through ControlMaster except on Windows. `hosts/askpass.ts` makes ssh ask GeckIt instead of a terminal (`SSH_ASKPASS` running GeckIt's own binary as Node, a socket with a token), and `hosts/hosts.ts` turns each question into a card: a password, a passphrase, a code, trust in a key. A remembered password is encrypted with `safeStorage` in `hosts/secrets.json`, never in the settings.
+- `hosts/ssh.ts` starts the person's own `ssh` (their config, agent and jump hosts hold), sharing one connection per host through ControlMaster except on Windows. `hosts/askpass.ts` makes ssh ask GeckIt instead of a terminal (`SSH_ASKPASS` running GeckIt's own binary as Node, a socket with a token), and `hosts/hosts.ts` turns each question into a card: a password, a passphrase, a code, trust in a key. A remembered password is encrypted by the Node vault in `hosts/secrets.json`, never in the settings; desktop migrates legacy `safeStorage` ciphertext through authenticated service RPC.
 - `hosts/run-script.ts` holds every script run on a host. `claude` there is started apart from the connection (a FIFO in, a file out, its own session, `env -u` the off-plan variables), and `hosts/run.ts` reads the file from the byte it reached, so a dropped connection, a closed lid or GeckIt quitting lose nothing; `hosts/runs.json` has the runs picked up again at the next start (`Sessions.reattach`). A run nobody looked at and that said nothing for 12 h is stopped by its reaper.
 - `hosts/disk.ts` lists a host's conversation files by the two ends of each changed file, and keeps a copy of each opened one here, adding only what grew, so `sessions/disk.ts` reads them unchanged.
 - `hosts/forward.ts` carries a `localhost` link said in a conversation on a host to this computer over ssh.
@@ -86,7 +86,7 @@ On Android the same plugins are Java in `mobile/android/app/src/main/java/com/an
 
 ### Settings
 
-A JSON file in `app.getPath('userData')`, owned by the main process (`main/store.ts`), read and written over IPC and broadcast to every window. Not `localStorage`: three windows and main need the same values.
+A JSON file in the selected service data directory, owned by the independent service (`main/store.ts` in its runtime). Desktop forwards settings commands over authenticated local RPC and keeps an authoritative snapshot for native adapters. Updates reach every window and CLI reads the same state. No core settings are stored in renderer localStorage.
 
 ### Counting and errors
 

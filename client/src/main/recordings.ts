@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { app } from 'electron'
+import { dataDirectory } from '../core/platform'
 
 /**
  * The videos of screen recordings, kept so Claude can take more frames from one.
@@ -12,7 +12,7 @@ import { app } from 'electron'
 
 const WEEK = 7 * 24 * 60 * 60 * 1000
 
-const folder = (): string => join(app.getPath('userData'), 'recordings')
+const folder = (): string => join(dataDirectory(), 'recordings')
 
 /**
  * The video being recorded, written a second at a time as it comes, so a

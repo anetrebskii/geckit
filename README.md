@@ -201,13 +201,55 @@ The rules for apps built on Claude Code are on the [Legal and compliance](https:
 
 ## Build from source
 
-Node 22 or later.
+Node 22 or later. The service/desktop separation is currently available in the working checkout; it has not been published in a release yet.
+
+### Desktop
+
+Quit an older GeckIt copy using the same data directory before the first start of this build. From the repository root:
 
 ```bash
 cd client
-npm install
+npm ci
+npm run build
+npm start
+```
+
+The build includes the headless service. Desktop starts it when absent and reconnects when it is already running. Closing desktop leaves tasks and schedules running in the service. Source builds use their own `geckit-local` data directory by default.
+
+For development with hot reload, run:
+
+```bash
 npm run dev
 ```
+
+To create a desktop installer for the current platform, run `npm run package` from `client/`. Artifacts are written to `client/release/build/`; the command does not publish them.
+
+### Headless service and CLI
+
+Build from the repository root:
+
+```bash
+cd client
+npm ci
+npm run build:service
+```
+
+Copy the entire `client/out/service/` directory to a machine with Node 22 or later. No Electron, display server or runtime npm installation is required. Install and sign in to the provider CLI separately as the user running the service.
+
+For example, after placing the bundle in `/opt/geckit/service/` and creating a private data directory writable by that user:
+
+```bash
+node /opt/geckit/service/service.js --data /var/lib/geckit
+```
+
+In another terminal under the same OS account:
+
+```bash
+GECKIT_DATA=/var/lib/geckit node /opt/geckit/service/cli.js service status
+GECKIT_DATA=/var/lib/geckit node /opt/geckit/service/cli.js service help
+```
+
+Use an OS service manager to keep the process running after logout. See [the installation and operating guide](docs/headless-service.md) for desktop data selection, CLI commands, secret storage, stopping/updating the service and a Linux systemd example. Desktop and CLI connect locally under the same OS account; connecting desktop across the network to a VM is not implemented.
 
 ## License
 

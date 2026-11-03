@@ -2,7 +2,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import { app } from 'electron'
+import { corePlatform, dataDirectory } from '../core/platform'
 
 import { forwardSlashes } from '../cli/endpoint'
 import type { Employee } from '../shared/employees'
@@ -75,7 +75,7 @@ const where = (): string => process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), 
 const codexWhere = (): string => process.env['CODEX_HOME'] ?? join(homedir(), '.codex')
 
 /** Run from the source rather than installed; outside Electron, as in the tests, it is taken as installed. */
-const fromSource = (): boolean => (app as typeof app | undefined)?.isPackaged === false
+const fromSource = (): boolean => corePlatform().source()
 
 /**
  * Where the command is written, and what it is called from a shell. Run from
@@ -83,7 +83,7 @@ const fromSource = (): boolean => (app as typeof app | undefined)?.isPackaged ==
  * Windows too: every shell there reads them, and a backslash in a line of
  * GECKIT.md would be read as an escape by the one Claude Code runs.
  */
-export const cliPath = (): string => forwardSlashes(join(homedir(), '.geckit', 'bin', fromSource() ? 'geckit-local' : 'geckit'))
+export const cliPath = (): string => forwardSlashes(corePlatform().command?.() ?? join(homedir(), '.geckit', 'bin', fromSource() ? 'geckit-local' : 'geckit'))
 
 /**
  * The command, as lines that run the application's own Node on the script
@@ -96,10 +96,11 @@ export const cliPath = (): string => forwardSlashes(join(homedir(), '.geckit', '
  * expands itself; `setlocal` keeps the variables out of the shell it ran in.
  */
 export function launchers(execPath: string, script: string, data: string, platform: NodeJS.Platform = process.platform, home: string = homedir()): { readonly sh: string; readonly cmd?: string } {
+  const forSh = (path: string): string => `"${(platform === 'win32' ? forwardSlashes(path) : path).replace(/(["\\$`])/g, '\\$1')}"`
   const sh = [
     '#!/bin/sh',
     '# Written by GeckIt when it starts. Anything changed here is written over.',
-    `GECKIT_DATA=${JSON.stringify(forwardSlashes(data))} ELECTRON_RUN_AS_NODE=1 exec ${JSON.stringify(forwardSlashes(execPath))} ${JSON.stringify(forwardSlashes(script))} "$@"`,
+    `GECKIT_DATA=${forSh(data)} ELECTRON_RUN_AS_NODE=1 exec ${forSh(execPath)} ${forSh(script)} "$@"`,
     '',
   ].join('\n')
   if (platform !== 'win32') return { sh }
@@ -123,9 +124,9 @@ export function launchers(execPath: string, script: string, data: string, platfo
 
 /** Writes the command where `cliPath` says, and the `.cmd` beside it on Windows; false when it could not be, or outside Electron. */
 async function writeLaunchers(command: string): Promise<boolean> {
-  const electron = app as typeof app | undefined
-  if (electron === undefined) return false
-  const made = launchers(process.execPath, join(electron.getAppPath(), 'out', 'main', 'cli.js'), electron.getPath('userData'))
+  const launcher = corePlatform().launcher?.()
+  if (launcher === undefined) return false
+  const made = launchers(launcher.executable, launcher.script, dataDirectory())
   try {
     await mkdir(join(command, '..'), { recursive: true })
     await writeFile(command, made.sh)
@@ -244,6 +245,18 @@ Every web address written in a conversation is collected on its card, newest fir
 Commands, watches and helpers you leave running are listed on the card while they run, and stay there once they end until the person clears them. Nothing is hidden, so say what you have started and what it is waiting for.
 `
 
+const HEADLESS_GUIDE = `# Working in GeckIt
+
+This conversation runs in a headless GeckIt service. GeckIt rewrites this file; keep project instructions in CLAUDE.md beside it.
+
+The person supervises work through a separate operator CLI. There is no desktop window. Report what finished, what remains and what needs their answer, including links to produced results. Background commands and pending approvals remain visible through the service.
+
+Use the conversation commands below to request new tasks or team changes. They wait for the person's explicit answer. Do not use operator commands or credentials, or clear session identity variables to bypass that confirmation.
+
+The person's goal describes when this task is complete. Follow the host's goal instructions and report evidence or a concrete blocker. A restart never grants pending permission.
+`
+const currentGuide = (): string => corePlatform().headless === true ? HEADLESS_GUIDE : GUIDE
+
 /** The names given in GeckIt to the Chromes the extension calls Browser 1, Browser 2, or nothing while none is named. */
 export const BROWSERS = (names: Readonly<Record<string, string>>): string => {
   const named = Object.entries(names).filter(([, name]) => name.trim() !== '')
@@ -271,7 +284,7 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
   const linked = was.split('\n').some((line) => line.trim() === IMPORT)
   // Source uses its own guide and command while preserving the installed global files.
   if (fromSource()) {
-    const localGuide = join(app.getPath('userData'), 'GECKIT.md')
+    const localGuide = join(dataDirectory(), 'GECKIT.md')
     if (!wanted) {
       await rm(localGuide, { force: true }).catch(() => undefined)
       delete process.env['GECKIT_SOURCE_GUIDE']
@@ -283,7 +296,7 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
     }
     if (await writeLaunchers(command)) {
       process.env['GECKIT_SOURCE_CLI'] = command
-      await guideWrite(localGuide, `${GUIDE}${BROWSERS(browsers)}${COMMAND(command)}${EMPLOYEES(employees, command)}${MANAGER()}`, strict)
+      await guideWrite(localGuide, `${currentGuide()}${BROWSERS(browsers)}${COMMAND(command)}${EMPLOYEES(employees, command)}${MANAGER()}`, strict)
       process.env['GECKIT_SOURCE_GUIDE'] = localGuide
     } else if (strict) throw new Error('The source GeckIt command could not be updated.')
     return
@@ -304,7 +317,7 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
   await mkdir(folder, { recursive: true }).catch(() => undefined)
   const told = await writeLaunchers(command)
   if (strict && !told) throw new Error('The GeckIt command could not be updated.')
-  await guideWrite(guide, `${GUIDE}${BROWSERS(browsers)}${told ? COMMAND(command) + EMPLOYEES(employees, command) : ''}${MANAGER()}`, strict)
+  await guideWrite(guide, `${currentGuide()}${BROWSERS(browsers)}${told ? COMMAND(command) + EMPLOYEES(employees, command) : ''}${MANAGER()}`, strict)
   if (linked) return
   const next = was.trim() === '' ? `${IMPORT}\n` : `${was.replace(/\s*$/, '')}\n\n${IMPORT}\n`
   await guideWrite(claude, next, strict)
@@ -314,7 +327,7 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
 export async function keepCodexGuide(wanted: boolean, employees: readonly Employee[] = guideEmployees, strict = false): Promise<void> {
   if (fromSource()) {
     const command = cliPath()
-    const localGuide = join(app.getPath('userData'), 'GECKIT-CODEX.md')
+    const localGuide = join(dataDirectory(), 'GECKIT-CODEX.md')
     if (!wanted) {
       await rm(localGuide, { force: true }).catch(() => undefined)
       process.env['GECKIT_SOURCE_CODEX_GUIDE'] = ''
@@ -357,5 +370,5 @@ const codexGuide = (employees: readonly Employee[]): string => {
     .replaceAll('Claude Code', 'Codex')
     .replaceAll('Claude', 'Codex')
     .replace('Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. ', '')
-  return GUIDE.replace('CLAUDE.md beside it.', 'AGENTS.md beside it.') + command + EMPLOYEES(employees, process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()) + MANAGER()
+  return currentGuide().replace('CLAUDE.md beside it.', 'AGENTS.md beside it.') + command + EMPLOYEES(employees, process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()) + MANAGER()
 }

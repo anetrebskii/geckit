@@ -1,7 +1,4 @@
 import { execFile, spawn } from 'node:child_process'
-import { stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { resolve } from 'node:path'
 
 import { dialog, Menu, shell } from 'electron'
 import type { BrowserWindow, MenuItemConstructorOptions } from 'electron'
@@ -10,18 +7,10 @@ import log from 'electron-log'
 import { appName, kindOf, ruleFor, withRule } from '../shared/api'
 import type { OpenRule } from '../shared/api'
 import { getSettings, setSettings } from './store'
+import { fileAt } from './file-at'
+export { fileAt, isThere } from './file-at'
 
 /** Where a path said in a conversation is: in the project, or in the home folder when it starts with ~. */
-export const fileAt = (root: string, path: string): string =>
-  path === '~' || path.startsWith('~/') ? resolve(homedir(), path.slice(2)) : resolve(root, path)
-
-/** Whether it is there, as a file or a folder. */
-export const isThere = (root: string, path: string): Promise<boolean> =>
-  stat(fileAt(root, path)).then(
-    () => true,
-    () => false,
-  )
-
 /**
  * A file pressed in a conversation, opened in the application chosen for its
  * kind. Without a rule it goes to whatever the system opens it with, and a

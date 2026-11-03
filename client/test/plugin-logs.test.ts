@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
+vi.mock('../src/core/platform', () => ({ dataDirectory: () => process.env['GECKIT_PLUGIN_LOG_TEST_HOME'] }))
 vi.mock('electron', () => ({ app: { getPath: () => process.env['GECKIT_PLUGIN_LOG_TEST_HOME'] } }))
 
 import type { PluginLogFields } from '../src/main/sessions/plugin-api'

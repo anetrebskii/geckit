@@ -304,7 +304,7 @@ export function useChat(): Chat {
   const visibleSessions = useMemo(() => sessions.filter((one) => matchesEmployee(one, settings.employeeFilter)), [sessions, settings.employeeFilter])
   const everyone = useMemo(() => storedEveryone.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedEveryone, enabled])
   const questions = useMemo(() => storedQuestions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedQuestions, enabled])
-  const visibleNotices = useMemo(() => notices.filter((one) => enabled.includes(providerOf(one.session))), [notices, enabled])
+  const visibleNotices = useMemo(() => notices.filter((one) => one.session === '' || enabled.includes(providerOf(one.session))), [notices, enabled])
   const provider = shown.kind === 'session' ? providerOf(shown.id) : assistantFor(settings, scope === ALL ? started ?? shownProjects(settings)[0] ?? '' : scope)
 
   const shownRef = useRef(shown)
@@ -430,8 +430,8 @@ export function useChat(): Chat {
   useEffect(
     () =>
       window.geckit.chat.onNotice((notice) => {
-        setNotices((held) => [...held.filter((one) => one.session !== notice.session), notice])
-        if (!notice.asks) setTimeout(() => setNotices((held) => held.filter((one) => one !== notice)), NOTICE_FOR)
+        setNotices((held) => notice.title === '' ? held.filter((one) => one.session !== notice.session) : [...held.filter((one) => one.session !== notice.session), notice])
+        if (notice.title !== '' && notice.session !== '' && !notice.asks) setTimeout(() => setNotices((held) => held.filter((one) => one !== notice)), NOTICE_FOR)
       }),
     [],
   )

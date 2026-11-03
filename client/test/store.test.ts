@@ -12,6 +12,7 @@ import { VpnSessionMonitor } from '../src/main/sessions/vpn-monitor'
 import { isDue } from '../src/shared/schedule'
 
 const state = vi.hoisted(() => ({ folder: '' }))
+vi.mock('../src/core/platform', () => ({ dataDirectory: () => state.folder }))
 vi.mock('electron', () => ({ app: { getPath: () => state.folder } }))
 
 const { getSettings, onSettings, setSettings } = await import('../src/main/store')

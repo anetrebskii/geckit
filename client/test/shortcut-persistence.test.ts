@@ -11,6 +11,7 @@ import { saveShortcut as checkedSave } from '../src/shared/shortcut-save'
 import { isDue, nextTimed } from '../src/shared/schedule'
 
 const state = vi.hoisted(() => ({ folder: '' }))
+vi.mock('../src/core/platform', () => ({ dataDirectory: () => state.folder }))
 vi.mock('electron', () => ({ app: { getPath: () => state.folder }, powerMonitor: { on: vi.fn() } }))
 vi.mock('electron-log', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 

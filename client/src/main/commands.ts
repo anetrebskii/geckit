@@ -1,7 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { app } from 'electron'
+import { dataDirectory } from '../core/platform'
 
 import { isRemote } from '../shared/hosts'
 
@@ -26,7 +26,7 @@ interface Kept {
 let kept: Kept | undefined
 
 const path = (): string => {
-  const folder = app.getPath('userData')
+  const folder = dataDirectory()
   mkdirSync(folder, { recursive: true })
   return join(folder, FILE)
 }

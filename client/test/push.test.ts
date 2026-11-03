@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { newKey, roomOf, unseal } from '../src/shared/pairing'
 
 const folder = mkdtempSync(join(tmpdir(), 'geckit-push-'))
-vi.mock('electron', () => ({ app: { getPath: () => folder } }))
+vi.mock('../src/core/platform', () => ({ dataDirectory: () => folder }))
 vi.mock('electron-log', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 
 const { boxFor, keepToken, pushTo } = await import('../src/main/push')

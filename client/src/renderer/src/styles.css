@@ -1998,8 +1998,12 @@ html.framed .topbar {
   animation: pop var(--settle) var(--ease) both;
 }
 
-.notice:hover {
+.notice:not(.global):hover {
   border-color: var(--border-strong);
+}
+
+.notice.global {
+  cursor: default;
 }
 
 .notice .state {
@@ -2013,6 +2017,10 @@ html.framed .topbar {
 
 .notice.asks .state {
   background: var(--warning-text);
+}
+
+.notice.global .state {
+  background: var(--text-faint);
 }
 
 .notice .lines {

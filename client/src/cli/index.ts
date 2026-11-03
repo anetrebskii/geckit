@@ -1,9 +1,10 @@
+import { defaultDataDirectory } from '../core/platform'
+import { service } from './service'
 import { readEmployees } from './employees'
 import { APP_BUILD_GUIDE, PROVIDER_BUILD_GUIDE } from '../shared/provider-build-guide'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { connect } from 'node:net'
-import { homedir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { providerOf } from '../shared/api'
@@ -35,13 +36,7 @@ const effectiveRoot = (row: Row): string => (row.below === undefined ? row.root 
 let codex: CodexSessions | undefined
 const codexClient = (): CodexSessions => codex ??= new CodexSessions()
 
-const data = (): string => {
-  const said = process.env['GECKIT_DATA']
-  if (said !== undefined && said !== '') return said
-  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', 'geckit')
-  if (process.platform === 'win32') return join(process.env['APPDATA'] ?? homedir(), 'geckit')
-  return join(process.env['XDG_CONFIG_HOME'] ?? join(homedir(), '.config'), 'geckit')
-}
+const data = defaultDataDirectory
 
 function kept<T>(name: string, fallback: T): T {
   try {
@@ -159,7 +154,7 @@ function table(found: readonly Row[]): string {
     .join('\n')
 }
 
-const HELP = `geckit - what GeckIt holds, read from a command line.
+const HELP = `geckit service - control a running headless service (run service help for commands).\n\ngeckit - what GeckIt holds, read from a command line.
 
   geckit sessions [--today] [--since 2d] [--project <name>] [--provider claude|codex] [--status todo|blocked|done|archived] [--favorites] [--json]
       The conversations, the newest first: a * for a favorite, id, when it last changed, project, how it stands, title.
@@ -363,6 +358,7 @@ export async function run(args: readonly string[]): Promise<string> {
   try {
     if (managerCommand(args)) return (await manage(args, data())).said
     const [what, ...rest] = args
+    if (what === 'service') return (await service(rest, data())).said
     if (what === 'employees') return (await readEmployees(rest, data())).said
     if (what === 'instructions') {
       if (rest[0] === undefined || rest[0] === 'providers') return PROVIDER_BUILD_GUIDE
@@ -380,10 +376,14 @@ export async function run(args: readonly string[]): Promise<string> {
   }
 }
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [what, ...rest] = process.argv.slice(2)
   if (managerCommand(process.argv.slice(2))) {
     const answer = await manage(process.argv.slice(2), data())
+    process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.ok ? 0 : 1
+  } else if (what === 'service') {
+    const answer = await service(rest, data())
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
   } else if (what === 'employees') {

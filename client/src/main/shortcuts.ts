@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 
-import { powerMonitor } from 'electron'
 import log from 'electron-log'
 
 import type { SessionMessage, Shortcut, ShortcutDraft } from '../shared/api'
@@ -58,11 +57,22 @@ function look(): void {
   }
 }
 
-export function startShortcuts(given: ShortcutDeps): void {
+let stopSchedule: (() => void) | undefined
+
+export function startShortcuts(given: ShortcutDeps, resume?: (look: () => void) => () => void): () => void {
+  stopSchedule?.()
   deps = given
-  setInterval(look, LOOK_EVERY)
-  powerMonitor.on('resume', look)
+  const timer = setInterval(look, LOOK_EVERY)
+  const stopResume = resume?.(look)
+  const stop = (): void => {
+    clearInterval(timer)
+    stopResume?.()
+    if (deps === given) deps = undefined
+    if (stopSchedule === stop) stopSchedule = undefined
+  }
+  stopSchedule = stop
   look()
+  return stop
 }
 
 /** The conversation it started, or nothing where it could not. */

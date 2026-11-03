@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, watch, writeFileSync } from 'node:
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 
-import { app } from 'electron'
+import { dataDirectory } from '../core/platform'
 
 import { DEFAULT_SETTINGS, sessionMode } from '../shared/api'
 import { newKey } from '../shared/pairing'
@@ -26,7 +26,7 @@ import type { NotesStore, SessionNote } from './sessions'
  */
 
 const folder = (): string => {
-  const path = app.getPath('userData')
+  const path = dataDirectory()
   mkdirSync(path, { recursive: true })
   return path
 }
@@ -55,10 +55,18 @@ const NOTES = 'sessions.json'
 const ERRORS = 'errors.json'
 
 let settings: Settings | undefined
+interface SettingsClient {
+  get(): Settings
+  set(change: Partial<Settings>): Settings
+  on(watcher: (settings: Settings) => void): () => void
+}
+let client: SettingsClient | undefined
+export function configureSettingsClient(next: SettingsClient): void { client = next }
 let settingsWatcher: ReturnType<typeof watch> | undefined
 const watchers = new Set<(settings: Settings) => void>()
 
 export function getSettings(): Settings {
+  if (client !== undefined) return client.get()
   const loaded = settings === undefined
   // No file yet means a first run, and the old build's keys are worth keeping.
   if (settings === undefined) {
@@ -120,6 +128,7 @@ export function getSettings(): Settings {
 }
 
 export function setSettings(change: Partial<Settings>): Settings {
+  if (client !== undefined) return client.set(change)
   const current = getSettings()
   let validated = { ...change }
   Reflect.deleteProperty(validated, 'vpnStopOnFailure')
@@ -175,6 +184,7 @@ const reloadSettings = (): void => {
 
 /** Told whenever anything changes, so a second window is never out of date. */
 export function onSettings(watcher: (settings: Settings) => void): () => void {
+  if (client !== undefined) return client.on(watcher)
   getSettings()
   watchers.add(watcher)
   if (watchers.size === 1) {

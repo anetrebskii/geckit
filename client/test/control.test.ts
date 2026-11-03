@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const native = vi.hoisted(() => ({ folder: '', spawn: vi.fn(), trusted: vi.fn(() => true) }))
 vi.mock('node:child_process', () => ({ spawn: native.spawn }))
 vi.mock('electron-log', () => ({ default: { warn: vi.fn() } }))
+vi.mock('../src/core/platform', () => ({ dataDirectory: () => native.folder }))
 vi.mock('electron', () => ({
   app: { getPath: () => native.folder },
   systemPreferences: { isTrustedAccessibilityClient: native.trusted },

@@ -342,8 +342,9 @@ export type SessionDeliveryReceipt = Pick<ChatSession, 'id'> & {
 /** Something a conversation wants the person to know, and where the window is not showing it. */
 export interface SessionNotice {
   readonly delivery?: SessionDeliveryReceipt
+  /** Empty for a global notice, which stays visible until dismissed or cleared. */
   readonly session: string
-  /** What happened, and in which project: "Finished - geckit". */
+  /** What happened, and in which project; empty clears the notice for this session. */
   readonly title: string
   /** The conversation. */
   readonly subtitle: string
@@ -1041,7 +1042,7 @@ export function updateText(update: UpdateView): string {
     case 'downloading':
       return `Downloading GeckIt ${update.offered}, ${String(update.percent)}%`
     case 'ready':
-      return `GeckIt ${update.offered} is ready. It installs when the app restarts.`
+      return `GeckIt ${update.offered} is ready. Restart to install.`
     case 'waiting':
       return update.waitingFor.length === 1
         ? `Restarts when ${update.waitingFor[0] ?? ''} finishes.`

@@ -11,6 +11,7 @@ import { managerProjects } from '../src/shared/manager'
 import type { SessionNote } from '../src/main/sessions'
 
 const location = vi.hoisted(() => ({ folder: '' }))
+vi.mock('../src/core/platform', () => ({ dataDirectory: () => location.folder }))
 vi.mock('electron', () => ({ app: { getPath: () => location.folder } }))
 vi.mock('node:fs', async () => {
   const actual = await vi.importActual<typeof FileSystem>('node:fs')

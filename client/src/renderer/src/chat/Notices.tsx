@@ -24,12 +24,12 @@ export function Notices({ chat }: { readonly chat: Chat }): React.JSX.Element | 
       {chat.notices.map((notice) => (
         <div
           key={notice.session}
-          className={`notice${notice.asks ? ' asks' : ''}`}
-          role="button"
-          tabIndex={0}
-          onClick={() => chat.goTo(notice.session)}
+          className={`notice${notice.asks ? ' asks' : ''}${notice.session === '' ? ' global' : ''}`}
+          role={notice.session === '' ? undefined : 'button'}
+          tabIndex={notice.session === '' ? undefined : 0}
+          onClick={() => { if (notice.session !== '') chat.goTo(notice.session) }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') chat.goTo(notice.session)
+            if (event.key === 'Enter' && notice.session !== '') chat.goTo(notice.session)
           }}
         >
           <span className="state" />
@@ -139,17 +139,17 @@ function Banner({ chat, notice }: { readonly chat: Chat; readonly notice: Sessio
   return (
     <div
       ref={ref}
-      className={`notice banner ${tone}${leaving ? ' leaving' : ''}`}
-      role="button"
-      tabIndex={0}
+      className={`notice banner ${tone}${leaving ? ' leaving' : ''}${notice.session === '' ? ' global' : ''}`}
+      role={notice.session === '' ? undefined : 'button'}
+      tabIndex={notice.session === '' ? undefined : 0}
       onTransitionEnd={() => {
         if (leaving) chat.dismiss(notice.session)
       }}
       onClick={() => {
-        if (!moved.current) chat.goTo(notice.session)
+        if (!moved.current && notice.session !== '') chat.goTo(notice.session)
       }}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') chat.goTo(notice.session)
+        if (event.key === 'Enter' && notice.session !== '') chat.goTo(notice.session)
       }}
     >
       <span className="banner-icon" style={color === undefined ? undefined : { background: color }}>
@@ -166,6 +166,11 @@ function Banner({ chat, notice }: { readonly chat: Chat; readonly notice: Sessio
         {notice.subtitle === '' ? null : <span className="title">{notice.subtitle}</span>}
         <span className="body">{notice.body}</span>
       </span>
+      {notice.session === '' ? (
+        <button type="button" className="icon-button" aria-label="Dismiss" onClick={() => chat.dismiss(notice.session)}>
+          <Icon name="close" size={12} />
+        </button>
+      ) : null}
     </div>
   )
 }

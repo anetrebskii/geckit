@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -128,6 +129,15 @@ describe('what Claude Code is told about GeckIt', () => {
     const elsewhere = launchers('D:\\Tools\\100%\\GeckIt.exe', 'D:\\Tools\\100%\\resources\\app.asar\\out\\main\\cli.js', 'C:\\Users\\antonia\\AppData\\Roaming\\geckit', 'win32', 'C:\\Users\\anton\\')
     expect(elsewhere.cmd).toContain('set "GECKIT_DATA=C:\\Users\\antonia\\AppData\\Roaming\\geckit"')
     expect(elsewhere.cmd).toContain('"D:\\Tools\\100%%\\GeckIt.exe" "D:\\Tools\\100%%\\resources\\app.asar\\out\\main\\cli.js" %*')
+  })
+
+  it.skipIf(process.platform === 'win32')('keeps shell metacharacters literal in service launcher paths', async () => {
+    const script = join(folder, 'cli with spaces.mjs')
+    const command = join(folder, 'geckit')
+    const data = join(folder, 'literal$(printf wrong)`printf wrong`"\\path')
+    await writeFile(script, 'process.stdout.write(JSON.stringify(process.env.GECKIT_DATA))')
+    await writeFile(command, launchers(process.execPath, script, data).sh)
+    expect(JSON.parse(execFileSync('/bin/sh', [command], { encoding: 'utf8' }))).toBe(data)
   })
 
   it('on Windows tells Codex the .cmd and a batch from a file instead of a heredoc', async () => {

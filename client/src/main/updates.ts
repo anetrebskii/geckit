@@ -34,6 +34,8 @@ let changed: (view: UpdateView) => void = () => undefined
 let running: () => readonly string[] = () => []
 let round = 0
 let started = false
+let beforeRestart: (() => Promise<void>) | undefined
+let restarting = false
 
 export const updateView = (): UpdateView => view
 
@@ -100,7 +102,7 @@ export function restartToUpdate(): void {
   if (view.state !== 'ready') return
   const now = running()
   if (now.length === 0) {
-    autoUpdater.quitAndInstall(true, true)
+    void installUpdate()
     return
   }
   tell({ state: 'waiting', waitingFor: now })
@@ -111,8 +113,19 @@ export function restartToUpdate(): void {
       return
     }
     clearInterval(timer)
-    autoUpdater.quitAndInstall(true, true)
+    void installUpdate()
   }, 2000)
+}
+
+async function installUpdate(): Promise<void> {
+  if (restarting) return
+  restarting = true
+  try {
+    await beforeRestart?.()
+    autoUpdater.quitAndInstall(true, true)
+  } catch (error) {
+    tell({ state: 'failed', message: `Could not restart to update: ${error instanceof Error ? error.message : String(error)}`, waitingFor: [] })
+  } finally { restarting = false }
 }
 
 /** Read this channel from now on, and look at once, because the person is looking at the menu they changed it in. */
@@ -134,14 +147,16 @@ export function startUpdates(hooks: {
   /** The conversations a restart would stop, by name. */
   readonly running: () => readonly string[]
   readonly wanted: () => boolean
+  readonly beforeRestart?: () => Promise<void>
 }): void {
   ;({ changed, running } = hooks)
+  beforeRestart = hooks.beforeRestart
   view = { ...view, channel: hooks.channel }
   started = true
   if (view.state === 'off') return
   autoUpdater.allowPrerelease = hooks.channel === 'dev'
   autoUpdater.autoDownload = false
-  autoUpdater.autoInstallOnAppQuit = SIGNED
+  autoUpdater.autoInstallOnAppQuit = beforeRestart === undefined && SIGNED
   autoUpdater.logger = null
   // Every failure is caught where it is asked for; without a listener the emitter throws it again.
   autoUpdater.on('error', () => undefined)

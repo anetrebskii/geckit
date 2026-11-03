@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { app } from 'electron'
+import { dataDirectory } from '../core/platform'
 import log from 'electron-log'
 
 import type { SessionNotice } from '../shared/api'
@@ -40,7 +40,7 @@ interface Kept {
   readonly tokens: readonly string[]
 }
 
-const file = (): string => join(app.getPath('userData'), 'push.json')
+const file = (): string => join(dataDirectory(), 'push.json')
 
 function kept(key: string): readonly string[] {
   try {

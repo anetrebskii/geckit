@@ -2637,9 +2637,9 @@ export class Sessions {
     return this.#answer(id, card, answer, fingerprint, current)
   }
 
-  async answer(id: string, card: string, answer: CardAnswer | string): Promise<void> {
+  async answer(id: string, card: string, answer: CardAnswer | string): Promise<boolean> {
     this.#ordinary(id)
-    await this.#answer(id, card, answer)
+    return this.#answer(id, card, answer)
   }
 
   async #answer(id: string, card: string, answer: CardAnswer | string, expected?: string, current: () => boolean = () => true): Promise<boolean> {
@@ -3336,6 +3336,8 @@ export class Sessions {
 
   /** Everything is going. Every process goes with it, and the conversations stay where the tool keeps them. */
   dispose(): void {
+    this.#glancing?.()
+    this.#glancing = undefined
     this.#vpnMonitor?.dispose()
     clearInterval(this.#goalWatch)
     for (const live of this.#live.values()) {

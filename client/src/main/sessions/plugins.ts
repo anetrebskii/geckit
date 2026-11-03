@@ -4,7 +4,7 @@ import { cp, mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:f
 import { basename, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { app, shell } from 'electron'
+import { corePlatform, dataDirectory } from '../../core/platform'
 
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from '../../shared/providers'
 import { independentProviderInfo } from '../../shared/providers'
@@ -32,7 +32,7 @@ export interface LoadedPlugin {
   readonly path: string
 }
 
-const folder = (): string => join(app.getPath('userData'), 'provider-plugins')
+const folder = (): string => join(dataDirectory(), 'provider-plugins')
 const active = new Map<SessionProvider, LlmProvider>()
 const removedUntilRestart = new Set<string>()
 let loadFailures: readonly ProviderPluginFailure[] = []
@@ -357,6 +357,12 @@ export async function reinstallFailedPlugin(id: string): Promise<LoadedPlugin> {
   }
 }
 
+const trash = (path: string): Promise<void> => {
+  const remove = corePlatform().trash
+  if (remove === undefined) return Promise.reject(new Error('Library removal requires the desktop trash integration.'))
+  return remove(path)
+}
+
 export async function uninstallPlugin(id: string): Promise<LlmProviderInfo> {
   if (!pluginId(id)) throw new Error('Invalid provider ID.')
   const destination = await libraryPath(id)
@@ -364,7 +370,7 @@ export async function uninstallPlugin(id: string): Promise<LlmProviderInfo> {
   const manifest = await manifestAt(destination)
   if (independentProviderInfo(manifest.provider).id !== id && manifest.provider.id !== id) throw new Error('Installed provider ID does not match.')
   removedUntilRestart.add(destination)
-  try { await shell.trashItem(destination) }
+  try { await trash(destination) }
   catch (error) { removedUntilRestart.delete(destination); throw error }
   await rm(join(folder(), `.ready-${name}`), { recursive: true, force: true }).catch(() => undefined)
   if (name !== id.replaceAll(':', '-')) await rm(join(folder(), `.ready-${id.replaceAll(':', '-')}`), { recursive: true, force: true }).catch(() => undefined)

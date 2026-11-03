@@ -1,7 +1,7 @@
 import { appendFile, mkdir, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import { app } from 'electron'
+import { dataDirectory } from '../../core/platform'
 
 import type { LlmProviderInfo } from '../../shared/providers'
 import { redact } from '../../shared/reporting'
@@ -56,7 +56,7 @@ export function pluginLogger(info: Pick<LlmProviderInfo, 'id'>, scope: PluginLog
   const id = info.id === 'claude-tmux' ? 'plugin:claude-tmux' : info.id
   let path = ''
   try {
-    if (/^plugin:[a-z][a-z0-9-]*$/.test(id)) path = join(app.getPath('userData'), 'provider-logs', `${id.replaceAll(':', '-')}.jsonl`)
+    if (/^plugin:[a-z][a-z0-9-]*$/.test(id)) path = join(dataDirectory(), 'provider-logs', `${id.replaceAll(':', '-')}.jsonl`)
   } catch { /* Diagnostics cannot prevent a library from loading. */ }
   return {
     path,

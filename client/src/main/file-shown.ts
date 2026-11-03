@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname, extname, resolve } from 'node:path'
 
 import type { FileShown } from '../shared/api'
-import { fileAt } from './open-with'
+import { fileAt } from './file-at'
 
 const MEDIA: Record<string, string> = {
   '.png': 'image/png',

@@ -20,14 +20,16 @@
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "node scripts/dev-bundle.js",
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "dev": "npm run build:service && electron-vite dev",
+    "build": "npm run build:service && electron-vite build",
     "start": "electron-vite preview",
-    "package": "electron-vite build && electron-builder --publish never",
+    "package": "npm run build && electron-builder --publish never",
     "lint": "eslint src test",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.viewer.json && tsc --noEmit -p tsconfig.sw.json",
-    "viewer": "vite build --config viewer.vite.config.ts"
+    "viewer": "vite build --config viewer.vite.config.ts",
+    "build:service": "vite build --config service.vite.config.ts",
+    "service": "node out/service/service.js"
   },
   "dependencies": {
     "@sentry/browser": "^10.75.0",

@@ -5,7 +5,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream } from 'node:stream/web'
 
-import { app, net } from 'electron'
+import { corePlatform, dataDirectory } from '../core/platform'
 
 import type { SpeechModel } from '../shared/api'
 
@@ -32,12 +32,13 @@ const OS: Readonly<Partial<Record<NodeJS.Platform, string>>> = { darwin: 'mac', 
 /** The copy packed into the app; from the source, the one scripts/whisper.sh built, or else whatever the PATH has. */
 export function whisperCli(): string {
   const exe = process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli'
-  if (app.isPackaged) return join(process.resourcesPath, 'whisper', exe)
-  const built = join(app.getAppPath(), 'whisper', 'bin', `${OS[process.platform] ?? process.platform}-${process.arch}`, exe)
+  const configured = corePlatform().whisper?.() ?? process.env['GECKIT_WHISPER_CLI']
+  if (configured !== undefined) return configured
+  const built = join(process.cwd(), 'whisper', 'bin', `${OS[process.platform] ?? process.platform}-${process.arch}`, exe)
   return existsSync(built) ? built : exe
 }
 
-const folder = (): string => join(app.getPath('userData'), 'whisper')
+const folder = (): string => join(dataDirectory(), 'whisper')
 const modelPath = (): string => join(folder(), NAME)
 const partPath = (): string => `${modelPath()}.part`
 
@@ -92,7 +93,7 @@ async function download(): Promise<void> {
     const stop = new AbortController()
     let quiet = setTimeout(() => stop.abort(), STALLED)
     try {
-      const response = await net.fetch(FROM, {
+      const response = await fetch(FROM, {
         headers: received > 0 ? { Range: `bytes=${String(received)}-` } : {},
         signal: stop.signal,
       })

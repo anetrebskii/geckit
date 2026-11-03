@@ -1,7 +1,9 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
-import { app } from 'electron'
+import { app, shell } from 'electron'
+
+import { configureCorePlatform } from '../core/platform'
 
 /**
  * Run from the source, GeckIt keeps a folder of its own, so it can run beside
@@ -12,10 +14,14 @@ import { app } from 'electron'
  *
  * Imported before anything else, so nothing reads the folder before it is moved.
  */
-if (!app.isPackaged) {
+if (process.env['GECKIT_DATA']) {
+  const directory = resolve(process.env['GECKIT_DATA'])
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  app.setPath('userData', directory)
+} else if (!app.isPackaged) {
   const installed = app.getPath('userData')
   const local = join(app.getPath('appData'), 'geckit-local')
-  if (!existsSync(join(local, 'settings.json'))) {
+  if (!existsSync(join(local, 'settings.json')) && !existsSync(join(local, 'service-owner.json'))) {
     mkdirSync(local, { recursive: true })
     if (existsSync(join(installed, 'sessions.json'))) copyFileSync(join(installed, 'sessions.json'), join(local, 'sessions.json'))
     try {
@@ -28,3 +34,10 @@ if (!app.isPackaged) {
   app.setPath('userData', local)
 }
 
+
+configureCorePlatform({
+  directory: () => app.getPath('userData'),
+  source: () => !app.isPackaged,
+  launcher: () => ({ executable: process.execPath, script: join(app.getAppPath(), 'out', 'main', 'cli.js') }),
+  trash: (path) => shell.trashItem(path),
+})

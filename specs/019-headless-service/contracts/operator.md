@@ -1,0 +1,9 @@
+# Local operator contract
+
+One JSON request and response per private local connection. Requests select an enumerated operation; unrecognized operations fail closed. Results use existing domain types. No arbitrary object/method invocation. Operator requests require the service's local operator credential, kept in a mode-0600 file and omitted from child provider environments. Existing agent/Manager request protocol remains separate and retains its original checks. Clients do not hold task lifetime. CLI sends no automatic retries after uncertain mutation delivery.
+
+Operations: status; settings get/set; projects list/add; sessions list/start/items/send/stop/retry/pending/answer; Manager view/configure/send/pause/resume/answer; employees list/show/memory/create/edit/archive/restore/assign/tasks/shortcuts/shortcut (existing flags); shutdown. Native answers name both session and card; task proposals require an explicit start/note entry per task. The operator CLI is for one trusted OS account, not multiuser isolation.
+
+## Desktop and full core RPC
+
+`core/rpc.ts` carries typed named requests, results and events over a separate authenticated local endpoint. Versioned hello precedes bootstrap; four-byte length framing and Node serialization preserve bytes and undefined. Frames are bounded to 64 MiB and authentication to five seconds. Object prototype properties are never callable. Disconnect rejects outstanding requests without replay. `service/application.ts` adds desktop hello, verified secret migration, native request completion and idle-only update shutdown; `core/application.ts` defines core application methods. CLI `service methods` and `service call` expose core named methods only. Phone continues to use its existing explicit desktop allowlist and sanitized settings/Telegram views.

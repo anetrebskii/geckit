@@ -3,7 +3,7 @@ import { rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import type { Server } from 'node:net'
 
-import { app } from 'electron'
+import { dataDirectory } from '../core/platform'
 import log from 'electron-log'
 
 import type { RequestAnswered } from './sessions'
@@ -32,7 +32,7 @@ export type StartAnswered = { readonly ok: false; readonly error: string } | ({ 
 export type CliAsked = StartAsked | MigrationAsked | ManagerCliAsked | EmployeesCliAsked
 export type CliAnswered = StartAnswered | MigrationAnswered | ManagerCliAnswered | EmployeesCliAnswered
 
-export const askedPath = (): string => askedEndpoint(app.getPath('userData'))
+export const askedPath = (): string => askedEndpoint(dataDirectory())
 
 /** A socket file left by a run that ended badly would keep the next one from listening; a pipe leaves nothing. */
 const forget = (path: string): void => {
@@ -41,7 +41,6 @@ const forget = (path: string): void => {
 
 export function listenAsked(answer: (asked: CliAsked, gone: AbortSignal) => Promise<CliAnswered>): Server {
   const path = askedPath()
-  forget(path)
   const server = createServer((socket) => {
     const gone = new AbortController()
     socket.on('close', () => gone.abort())

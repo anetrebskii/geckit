@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionNote } from '../src/main/sessions'
 
 const location = vi.hoisted(() => ({ folder: '' }))
+vi.mock('../src/core/platform', () => ({ dataDirectory: () => location.folder }))
 vi.mock('electron', () => ({ app: { getPath: () => location.folder } }))
 beforeEach(() => { location.folder = mkdtempSync(join(tmpdir(), 'geckit-employee-store-')); vi.resetModules() })
 afterEach(() => rmSync(location.folder, { recursive: true, force: true }))

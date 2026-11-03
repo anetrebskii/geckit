@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
-import { safeStorage } from 'electron'
+import type { VaultStorage } from '../../core/vault'
 
 /**
  * Passwords the person asked GeckIt to remember, and nothing else.
@@ -19,7 +19,7 @@ export interface Secrets {
   has(host: string): boolean
 }
 
-export function secretsAt(path: string): Secrets {
+export function secretsAt(path: string, storage: VaultStorage): Secrets {
   let kept: Record<string, string> = {}
   try {
     kept = JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>
@@ -37,7 +37,7 @@ export function secretsAt(path: string): Secrets {
   }
   const can = (): boolean => {
     try {
-      return safeStorage.isEncryptionAvailable()
+      return storage.isEncryptionAvailable()
     } catch {
       return false
     }
@@ -48,14 +48,14 @@ export function secretsAt(path: string): Secrets {
       const sealed = kept[host]
       if (sealed === undefined || !can()) return undefined
       try {
-        return safeStorage.decryptString(Buffer.from(sealed, 'base64'))
+        return storage.decryptString(Buffer.from(sealed, 'base64'))
       } catch {
         return undefined
       }
     },
     set(host, password) {
       if (!can()) return
-      kept = { ...kept, [host]: safeStorage.encryptString(password).toString('base64') }
+      kept = { ...kept, [host]: storage.encryptString(password).toString('base64') }
       write()
     },
     forget(host) {

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const data = vi.hoisted(() => ({ folder: '' }))
+vi.mock('../src/core/platform', () => ({ dataDirectory: () => data.folder }))
 vi.mock('electron', () => ({ app: { getPath: () => data.folder } }))
 
 beforeEach(() => {

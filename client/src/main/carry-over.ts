@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { app } from 'electron'
+import { dataDirectory } from '../core/platform'
 
 import type { Settings } from '../shared/api'
 
@@ -47,7 +47,7 @@ function object(text: string, from: number): string | undefined {
 }
 
 function oldSettings(): Record<string, unknown> | undefined {
-  const where = join(app.getPath('userData'), 'Local Storage', 'leveldb')
+  const where = join(dataDirectory(), 'Local Storage', 'leveldb')
   let text = ''
   try {
     for (const name of readdirSync(where)) {
