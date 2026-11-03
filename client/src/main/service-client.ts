@@ -146,7 +146,7 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
       const token = existsSync(tokenFile)
       const owner = existsSync(ownerFile)
       const legacy = endpointOnDisk() && existsSync(askedEndpoint(options.directory))
-      if (legacy && !control && !token) throw new Error('This data directory is owned by a GeckIt version without service control. Quit that instance before starting desktop. No socket was removed.')
+      if (legacy && !control && !token) throw new Error('This data directory is owned by a GeckIt version without service control. Quit that instance before starting desktop. No socket was removed.', { cause: error })
       if (!launched && !control && !token && !owner) launch()
       await new Promise<void>((resolve) => setTimeout(resolve, STARTUP_RETRY))
     }

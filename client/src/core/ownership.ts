@@ -11,7 +11,7 @@ export function ownDataDirectory(directory: string): () => void {
   let file: number
   try { file = openSync(path, 'wx', 0o600) }
   catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'EEXIST') throw new Error('GeckIt is already running for this data directory. If its process crashed, verify it has stopped before removing service-owner.json and geckit.sock.')
+    if (error instanceof Error && 'code' in error && error.code === 'EEXIST') throw new Error('GeckIt is already running for this data directory. If its process crashed, verify it has stopped before removing service-owner.json and geckit.sock.', { cause: error })
     throw error
   }
   try {
