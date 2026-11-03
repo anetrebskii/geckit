@@ -13,6 +13,7 @@ import { managerContext, MANAGER_INSTRUCTIONS } from '../src/main/manager-protoc
 import type { Held } from '../src/main/sessions/claude'
 import { CodexSessions } from '../src/main/sessions/codex'
 import { codexOptions } from '../src/main/sessions/codex-protocol'
+import { chromeOptions, CHROME_INSTRUCTIONS } from '../src/main/sessions/codex-browser'
 import type { CodexEvent, CodexGoal, CodexInput, CodexTurn, Json, RpcId, ThreadOptions } from '../src/main/sessions/codex-protocol'
 import { codexEnvironment } from '../src/main/sessions/codex-rpc'
 import type { Heard } from '../src/main/sessions/heard'
@@ -128,9 +129,9 @@ class Server extends EventEmitter implements Held {
 }
 
 const providers: CodexSessions[] = []
-function setup(): { server: Server; codex: CodexSessions; heard: Heard[] } {
+function setup(browserDirectory?: string): { server: Server; codex: CodexSessions; heard: Heard[] } {
   const server = new Server()
-  const codex = new CodexSessions(() => server)
+  const codex = new CodexSessions(() => server, undefined, browserDirectory)
   providers.push(codex)
   return { server, codex, heard: [] }
 }
@@ -345,6 +346,31 @@ describe('conversation Computer Use access', () => {
 })
 
 describe('Codex app-server', () => {
+  it('supplies bundled Chrome on start, fork and resume while retaining project instructions', async () => {
+    const { server, codex, heard } = setup('/installed/service')
+    server.developerInstructions = 'Keep project instructions.'
+    const original = await codex.create(ROOT, 'auto')
+    await codex.create(ROOT, 'manual', undefined, { from: original })
+    const driver = codex.hold({ id: 'codex:existing', root: ROOT, resume: true, mode: 'auto' }, (one) => heard.push(one), () => undefined)
+    await tick()
+    const threads = server.requests.filter((one) => ['thread/start', 'thread/fork', 'thread/resume'].includes(one.method ?? ''))
+    expect(threads.map((one) => one.method)).toEqual(['thread/start', 'thread/fork', 'thread/resume'])
+    for (const request of threads) {
+      expect(request.params?.config).toEqual(chromeOptions('/installed/service').config)
+      expect(request.params?.developerInstructions).toContain(server.developerInstructions)
+      expect(request.params?.developerInstructions).toContain(CHROME_INSTRUCTIONS)
+    }
+    await driver.end()
+    const correction = codex.correct('teh cat', 'Fix spelling.', 'first')
+    await tick()
+    const editor = server.requests.findLast((one) => one.method === 'thread/start')
+    expect(editor?.params?.config?.mcp_servers).toBeUndefined()
+    expect(editor?.params?.developerInstructions).toBeUndefined()
+    server.event({ method: 'item/completed', params: { threadId: 'thread-3', item: { type: 'agentMessage', id: 'answer', text: 'the cat', phase: 'final_answer' } } })
+    server.complete('thread-3')
+    await correction
+  })
+
   it('passes only a common source guide pointer to new, cloned and resumed threads while preserving user input', async () => {
     vi.stubEnv('GECKIT_SOURCE_CODEX_GUIDE', '/isolated/source data/GECKIT-CODEX.md')
     const { server, codex, heard } = setup()

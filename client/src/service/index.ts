@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   try {
     const security = serviceSecurity(directory)
     delete process.env['GECKIT_VAULT_KEY']
-    runtime = await createRuntime(script, { vault: security.vault, secrets: security.secrets })
+    runtime = await createRuntime(script, { browserDirectory: import.meta.dirname, vault: security.vault, secrets: security.secrets })
     rmSync(tokenPath, { force: true })
     writeFileSync(tokenPath, token, { mode: 0o600, flag: 'wx' })
     listener = serveLocal(directory, serviceHandler(runtime, token, shutdown))

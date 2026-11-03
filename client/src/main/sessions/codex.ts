@@ -11,6 +11,7 @@ import type { Driver, Heard, Signal } from './heard'
 import { askId } from './heard'
 import { codexHistory, codexItem } from './codex-read'
 import { codexOptions } from './codex-protocol'
+import { chromeOptions } from './codex-browser'
 import type { ApprovalEvent, CodexEvent, CodexGoal, CodexInput, CodexItem, CodexTurn, RpcId, RpcParams, RpcResults } from './codex-protocol'
 import { CodexRpc, launchCodex } from './codex-rpc'
 import { firstLine } from './wording'
@@ -34,6 +35,7 @@ interface Asked {
 }
 
 export class CodexSessions {
+  readonly #browser: ReturnType<typeof chromeOptions> | undefined
   readonly #launch: () => Held
   readonly #changed: ((account: ClaudeAccount) => void) | undefined
   #account: ClaudeAccount | undefined
@@ -44,16 +46,17 @@ export class CodexSessions {
   readonly #files = new Map<string, { id: string; root: string; path: string }>()
   #corrections: Promise<Answered | undefined> = Promise.resolve(undefined)
 
-  constructor(launch: () => Held = launchCodex, changed?: (account: ClaudeAccount) => void) {
+  constructor(launch: () => Held = launchCodex, changed?: (account: ClaudeAccount) => void, browserDirectory?: string) {
+    this.#browser = browserDirectory === undefined ? undefined : chromeOptions(browserDirectory)
     this.#launch = launch
     this.#changed = changed
   }
 
   async #options(rpc: CodexRpc, root: string, mode: SessionMode, model?: string): Promise<ReturnType<typeof codexOptions>> {
     const options = codexOptions(root, mode, model)
-    if (process.env['GECKIT_SOURCE_CODEX_GUIDE'] === undefined) return options
+    if (process.env['GECKIT_SOURCE_CODEX_GUIDE'] === undefined && this.#browser === undefined) return options
     const { config } = await rpc.request('config/read', { cwd: root, includeLayers: false })
-    return { ...options, developerInstructions: [config.developer_instructions ?? '', options.developerInstructions ?? ''].filter((part) => part !== '').join('\n\n') }
+    return { ...options, ...this.#browser, developerInstructions: [config.developer_instructions ?? '', options.developerInstructions ?? '', this.#browser?.developerInstructions ?? ''].filter((part) => part !== '').join('\n\n') }
   }
 
   async #connection(): Promise<CodexRpc> {

@@ -1,5 +1,6 @@
-import { resolve } from 'node:path'
-import { isBuiltin } from 'node:module'
+import { dirname, resolve } from 'node:path'
+import { isBuiltin, createRequire } from 'node:module'
+import { cpSync } from 'node:fs'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
@@ -8,6 +9,10 @@ export default defineConfig({
   plugins: [{
     name: 'no-electron-runtime',
     resolveId(id) { if (id === 'electron' || id.startsWith('electron/')) throw new Error(`Headless runtime must not import ${id}.`) },
+    closeBundle() {
+      const entry = createRequire(import.meta.url).resolve('chrome-devtools-mcp')
+      cpSync(resolve(dirname(entry), '../..'), resolve(import.meta.dirname, 'out/service/browser'), { recursive: true })
+    },
     generateBundle(_options, bundle) {
       for (const entry of Object.values(bundle)) {
         if (entry.type !== 'chunk') continue
@@ -15,7 +20,7 @@ export default defineConfig({
           if (!isBuiltin(dependency) && bundle[dependency] === undefined) throw new Error(`Unexpected headless runtime dependency: ${dependency}`)
         }
       }
-      this.emitFile({ type: 'asset', fileName: 'package.json', source: JSON.stringify({ name: 'geckit-headless', private: true, type: 'module', engines: { node: '>=22' }, scripts: { start: 'node service.js' } }, undefined, 2) })
+      this.emitFile({ type: 'asset', fileName: 'package.json', source: JSON.stringify({ name: 'geckit-headless', private: true, type: 'module', engines: { node: '>=22.12.0' }, scripts: { start: 'node service.js' } }, undefined, 2) })
     },
   }],
   build: {

@@ -40,6 +40,7 @@ import { dataDirectory } from './platform'
 import { createCoreSessions } from './sessions'
 
 export interface RuntimeOptions {
+  readonly browserDirectory?: string
   readonly vault?: TelegramVault
   readonly secrets?: HostsDeps['secrets']
 }
@@ -182,7 +183,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         if (notice.asks && manager?.manages(notice.session) === true && sessions?.pendingForManager(notice.session).length === 0) void telegram?.notify(`${notice.title}\n${notice.body}\n\nOpen the worker in GeckIt to review this request.`).catch(() => undefined)
         events.emit('chat:notice', notice)
       },
-    })
+    }, options.browserDirectory)
     const started = sessions
     const syncInstructions = async (instructions: string): Promise<void> => { setGuideManager(instructions); await syncEmployeeGuides(getSettings()) }
     const attachments = new TelegramAttachments(directory)
