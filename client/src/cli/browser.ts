@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { findModelServer, findModelState, findModelUsable, pickRefs } from './find-model'
+import { downloading, TEST_PREFIX, testBrowsersState, testLog, testName, validTestName } from './testing'
 import type { BrowserBridgeState } from '../shared/api'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -31,7 +32,7 @@ let bridgeOn = false
 export const browserBridgeOn = (): boolean => bridgeOn
 export const setBrowserBridgeOn = (on: boolean): void => { bridgeOn = on }
 
-interface Reply { readonly ok: boolean; readonly result?: unknown; readonly error?: string }
+export interface Reply { readonly ok: boolean; readonly result?: unknown; readonly error?: string }
 
 /** One Chrome profile with the extension: each starts its own host, which says here who it is and which tabs are its own. */
 interface Profile { readonly pid: number; readonly label: string; readonly tabs: readonly number[]; readonly focused: number; readonly t: number }
@@ -78,13 +79,61 @@ export function removeBrowserBridge(platform: NodeJS.Platform = process.platform
 const fresh = (folder: string): boolean => { try { return Date.now() - statSync(join(folder, 'alive')).mtimeMs <= 15_000 } catch { return false } }
 
 export function browserBridgeState(): BrowserBridgeState {
-  return { supported: process.platform !== 'win32', connected: fresh(browserFolder()), folder: extensionFolder(), modelServer: findModelServer(), model: findModelState() }
+  return { supported: process.platform !== 'win32', connected: fresh(browserFolder()), folder: extensionFolder(), modelServer: findModelServer(), model: findModelState(), testing: testBrowsersState() }
+}
+
+/** Takes each request left in the folder for this program, once, and leaves its answer beside it; returns the look to run whenever the folder changes. */
+export function serveAsks(folder: string, mine: (to: number | undefined) => boolean, handle: (request: object) => Promise<Reply>): () => void {
+  const taken = new Set<string>()
+  const answer = (name: string, reply: Reply): void => {
+    const file = join(folder, `${name}.told`)
+    writeFileSync(`${file}.part`, JSON.stringify(reply))
+    renameSync(`${file}.part`, file)
+    taken.delete(name)
+  }
+  return () => {
+    let files: string[]
+    try { files = readdirSync(folder) } catch { return }
+    for (const file of files) {
+      if (!file.endsWith('.ask')) continue
+      const name = file.slice(0, -4)
+      const to = /\.(\d+)$/.exec(name)?.[1]
+      if (!mine(to === undefined ? undefined : Number(to))) continue
+      if (taken.has(name)) continue
+      taken.add(name)
+      let request: object
+      let text: string
+      try { text = readFileSync(join(folder, file), 'utf8') } catch { taken.delete(name); continue }
+      rmSync(join(folder, file), { force: true })
+      try { request = JSON.parse(text) as object } catch { answer(name, { ok: false, error: 'That was not a request.' }); continue }
+      void handle(request).then((reply) => answer(name, reply), (error: Error) => answer(name, { ok: false, error: error.message }))
+    }
+  }
+}
+
+/** find: the lines of read that match a description, picked by the local model, or by words until it is here. */
+export async function findIn(send: (request: { readonly cmd: string; readonly tab?: number; readonly find?: string }) => Promise<Reply>, tab: number | undefined, query: string): Promise<Reply> {
+  const read = await send({ cmd: 'read', ...(tab === undefined ? {} : { tab }), find: query })
+  if (!read.ok) return read
+  const page = read.result as { readonly title: string; readonly url: string; readonly lines: readonly string[] }
+  const byWords = (note: string): Reply => {
+    const words = query.toLowerCase().split(/\s+/).filter((one) => one !== '')
+    return { ok: true, result: { ...page, lines: page.lines.filter((line) => words.every((one) => line.toLowerCase().includes(one))), note } }
+  }
+  if (!findModelUsable()) {
+    const state = findModelState()
+    return byWords(!findModelServer() ? 'Matched by words: the find model is not part of this GeckIt.' : `Matched by words: the find model is not downloaded yet, ${Math.round((state.received / state.total) * 100)}%.`)
+  }
+  try {
+    const refs = await pickRefs(query, page.lines)
+    const lines = refs.flatMap((ref) => page.lines.filter((line) => line.startsWith(`[${ref}] `)))
+    return { ok: true, result: { ...page, lines } }
+  } catch (error) { return byWords(`Matched by words: ${error instanceof Error ? error.message : String(error)}`) }
 }
 
 /** The program Chrome starts for the extension: carries each request left in the folder to the extension and its answer back. */
 export function browserHost(folder: string = browserFolder()): void {
   const waiting = new Map<number, (reply: Reply) => void>()
-  const taken = new Set<string>()
   let next = 1
   let held = Buffer.alloc(0)
   mkdirSync(folder, { recursive: true, mode: 0o700 })
@@ -95,12 +144,6 @@ export function browserHost(folder: string = browserFolder()): void {
     me = { ...me, t: Date.now() }
     writeFileSync(`${card}.part`, JSON.stringify(me))
     renameSync(`${card}.part`, card)
-  }
-  const answer = (name: string, reply: Reply): void => {
-    const file = join(folder, `${name}.told`)
-    writeFileSync(`${file}.part`, JSON.stringify(reply))
-    renameSync(`${file}.part`, file)
-    taken.delete(name)
   }
   const tell = (message: object): void => {
     const body = Buffer.from(JSON.stringify(message))
@@ -122,47 +165,16 @@ export function browserHost(folder: string = browserFolder()): void {
     }
   })
   process.stdin.on('end', () => { rmSync(join(folder, 'alive'), { force: true }); rmSync(card, { force: true }); process.exit(0) })
-  const pick = (): void => {
-    for (const file of readdirSync(folder)) {
-      if (!file.endsWith('.ask')) continue
-      const name = file.slice(0, -4)
-      const to = /\.(\d+)$/.exec(name)?.[1]
-      if (to !== undefined && Number(to) !== process.pid) continue
-      if (taken.has(name)) continue
-      taken.add(name)
-      let request: object
-      let text: string
-      try { text = readFileSync(join(folder, file), 'utf8') } catch { continue }
-      rmSync(join(folder, file), { force: true })
-      try { request = JSON.parse(text) as object } catch { answer(name, { ok: false, error: 'That was not a request.' }); continue }
-      const asked = request as { readonly cmd?: string; readonly tab?: number; readonly query?: string }
-      void (asked.cmd === 'find' ? find(asked.tab, asked.query ?? '') : extension(request)).then((reply) => answer(name, reply), (error: Error) => answer(name, { ok: false, error: error.message }))
-    }
-  }
+  const pick = serveAsks(folder, (to) => to === undefined || to === process.pid, (request) => {
+    const asked = request as { readonly cmd?: string; readonly tab?: number; readonly query?: string }
+    return asked.cmd === 'find' ? findIn(extension, asked.tab, asked.query ?? '') : extension(request)
+  })
   const extension = (request: object): Promise<Reply> => new Promise((done) => {
     const id = next++
     const timer = setTimeout(() => { if (waiting.delete(id)) done({ ok: false, error: 'Chrome did not answer within 60 seconds.' }) }, 60_000)
     waiting.set(id, (reply) => { clearTimeout(timer); done(reply) })
     tell({ ...request, id })
   })
-  const find = async (tab: number | undefined, query: string): Promise<Reply> => {
-    const read = await extension({ cmd: 'read', tab, find: query })
-    if (!read.ok) return read
-    const page = read.result as { readonly title: string; readonly url: string; readonly lines: readonly string[] }
-    const byWords = (note: string): Reply => {
-      const words = query.toLowerCase().split(/\s+/).filter((one) => one !== '')
-      return { ok: true, result: { ...page, lines: page.lines.filter((line) => words.every((one) => line.toLowerCase().includes(one))), note } }
-    }
-    if (!findModelUsable()) {
-      const state = findModelState()
-      return byWords(!findModelServer() ? 'Matched by words: the find model is not part of this GeckIt.' : `Matched by words: the find model is not downloaded yet, ${Math.round((state.received / state.total) * 100)}%.`)
-    }
-    try {
-      const refs = await pickRefs(query, page.lines)
-      const lines = refs.flatMap((ref) => page.lines.filter((line) => line.startsWith(`[${ref}] `)))
-      return { ok: true, result: { ...page, lines } }
-    } catch (error) { return byWords(`Matched by words: ${error instanceof Error ? error.message : String(error)}`) }
-  }
   const beat = (): void => {
     if (!existsSync(wrapperPath())) { rmSync(join(folder, 'alive'), { force: true }); rmSync(card, { force: true }); process.exit(0) }
     writeFileSync(join(folder, 'alive'), String(process.pid))
@@ -180,6 +192,48 @@ export function browserHost(folder: string = browserFolder()): void {
   watch(folder, pick)
   setInterval(pick, 1_000)
   pick()
+}
+
+const percent = (part: number, whole: number): number => whole === 0 ? 0 : Math.round((part / whole) * 100)
+
+/** Starts a test browser through the GeckIt service, which runs outside any conversation's sandbox, making its profile if it is new. */
+async function startTest(name: string, folder: string = browserFolder()): Promise<{ readonly ok: boolean; readonly said: string }> {
+  if (!validTestName(name)) return { ok: false, said: 'Name the test profile test:<name>, with lowercase letters, digits and hyphens, such as test:store.' }
+  const label = `${TEST_PREFIX}${name}`
+  if (profiles(folder).some((one) => one.label === label)) return { ok: true, said: `${label} is already open.` }
+  if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, said: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Integrations.' }
+  const launch = join(folder, `${randomUUID()}.launch`)
+  try {
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(`${launch}.part`, JSON.stringify({ name }))
+    renameSync(`${launch}.part`, launch)
+  } catch { return { ok: false, said: `This sandbox may not write to ${folder}. GeckIt's own conversations may; elsewhere ask the person to allow writing there.` } }
+  for (let waited = 0; waited < 60_000; waited += 500) {
+    await new Promise((done) => setTimeout(done, 500))
+    if (profiles(folder).some((one) => one.label === label)) return { ok: true, said: `${label} is open. Give --profile ${label} to open, and its tab ids to the rest.` }
+    if (waited >= 5_000 && existsSync(launch)) { rmSync(launch, { force: true }); return { ok: false, said: 'GeckIt is not running, and it is GeckIt that starts test browsers. Ask the person to open GeckIt.' } }
+    const fetching = downloading()
+    if (fetching?.error !== undefined) return { ok: false, said: `Chrome for Testing did not download: ${fetching.error}.` }
+  }
+  const fetching = downloading()
+  if (fetching !== undefined) return { ok: true, said: `Downloading Chrome for Testing, ${percent(fetching.received, fetching.total)}%. ${label} opens by itself when it is done; geckit browser profiles says when.` }
+  let log: string
+  try { log = readFileSync(testLog(name), 'utf8').trim().split('\n').at(-1) ?? '' } catch { log = '' }
+  return { ok: false, said: `${label} did not start within a minute${log === '' ? '.' : `: ${log}`}` }
+}
+
+/** Closes a test browser; its profile stays for next time. */
+export async function stopTest(name: string, folder: string = browserFolder()): Promise<{ readonly ok: boolean; readonly said: string }> {
+  const label = `${TEST_PREFIX}${name}`
+  const open = profiles(folder).find((one) => one.label === label)
+  if (open === undefined) return { ok: true, said: `${label} is not open.` }
+  const reply = await ask({ cmd: 'quit' }, folder, open.pid)
+  if (!reply.ok) return { ok: false, said: reply.error ?? 'It did not close.' }
+  for (let waited = 0; waited < 10_000; waited += 250) {
+    if (!profiles(folder).some((one) => one.label === label)) return { ok: true, said: `Closed ${label}. Its profile stays.` }
+    await new Promise((done) => setTimeout(done, 250))
+  }
+  return { ok: false, said: `${label} did not close within 10 seconds.` }
 }
 
 const NOT_CONNECTED = (): string => `The GeckIt Browser extension is not connected to Chrome. Ask the person to open chrome://extensions, turn on Developer mode, press Load unpacked and choose ${extensionFolder()}. If it is already there, Chrome may be closed.`
@@ -241,6 +295,9 @@ async function startProfile(named: string | undefined): Promise<{ readonly ok: b
   return { ok: false, said: `Opened ${profile.name}, but GeckIt Browser did not connect from it within 40 seconds.` }
 }
 
+/** Opens a test browser from Settings, the way a conversation's start does. */
+export function openTest(name: string): Promise<{ readonly ok: boolean; readonly said: string }> { return startTest(name) }
+
 function listProfiles(): string {
   const known = profiles()
   const last = [...known].sort((a, b) => b.focused - a.focused)[0]
@@ -251,13 +308,21 @@ function listProfiles(): string {
     const state = !one.extension ? 'no GeckIt Browser' : open !== undefined ? `open, ${open.tabs.length} tabs${open === last ? ', used last' : ''}` : known.length === 0 && fresh(browserFolder()) ? 'GeckIt Browser, an older one that does not say whether it is open: reload it in chrome://extensions' : 'GeckIt Browser, closed: start opens it'
     return `${label.padEnd(34)} ${one.name.padEnd(20)} ${state}`
   })
-  const unnamed = known.filter((host) => !chrome.some((one) => one.email === host.label)).map((host) => `${host.label.padEnd(34)} ${''.padEnd(20)} open, ${host.tabs.length} tabs${host === last ? ', used last' : ''}`)
-  return [...lines, ...unnamed].join('\n') || 'No Chrome profile found.'
+  const unnamed = known.filter((host) => testName(host.label) === undefined && !chrome.some((one) => one.email === host.label)).map((host) => `${host.label.padEnd(34)} ${''.padEnd(20)} open, ${host.tabs.length} tabs${host === last ? ', used last' : ''}`)
+  const testing = testBrowsersState()
+  const tests = testing.profiles.map((one) => {
+    const open = known.find((host) => host.label === `${TEST_PREFIX}${one.name}`)
+    return `${`${TEST_PREFIX}${one.name}`.padEnd(34)} ${'Chrome for Testing'.padEnd(20)} ${open !== undefined ? `open, ${open.tabs.length} tabs` : 'closed: start opens it'}`
+  })
+  return [...lines, ...unnamed, ...tests].join('\n') || 'No Chrome profile found.'
 }
 
 /** Which profile a request goes to: the one that owns its tab, the one asked for by name, or the one the person used last. */
 export function pickProfile(known: readonly Profile[], request: { readonly tab?: number }, named?: string): Profile | string {
   if (named !== undefined) {
+    const exact = known.find((one) => one.label.toLowerCase() === named.toLowerCase())
+    if (exact !== undefined) return exact
+    if (named.startsWith(TEST_PREFIX)) return `${named} is not open. Run geckit browser start ${named}.`
     const emails = chromeProfiles().filter((one) => matches(one, named)).map((one) => one.email)
     const match = known.filter((one) => one.label.toLowerCase().includes(named.toLowerCase()) || emails.includes(one.label))
     if (match.length === 1 && match[0] !== undefined) return match[0]
@@ -268,12 +333,13 @@ export function pickProfile(known: readonly Profile[], request: { readonly tab?:
     if (owner !== undefined) return owner
     if (known.length > 1) return `No tab ${request.tab} in any Chrome profile. Run geckit browser pages for the current ids.`
   }
-  return [...known].sort((a, b) => b.focused - a.focused)[0] ?? 'No Chrome profile is connected.'
+  const own = known.filter((one) => testName(one.label) === undefined)
+  return [...(own.length > 0 ? own : known)].sort((a, b) => b.focused - a.focused)[0] ?? 'No Chrome profile is connected.'
 }
 
 async function ask(request: object, folder: string = browserFolder(), to?: number): Promise<Reply> {
   if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Integrations.' }
-  if (!fresh(folder)) return { ok: false, error: NOT_CONNECTED() }
+  if (!fresh(folder) && profiles(folder).length === 0) return { ok: false, error: NOT_CONNECTED() }
   const name = to === undefined ? randomUUID() : `${randomUUID()}.${to}`
   const asked = join(folder, `${name}.ask`)
   try {
@@ -293,10 +359,13 @@ async function ask(request: object, folder: string = browserFolder(), to?: numbe
   return { ok: false, error: 'The GeckIt Browser bridge did not answer within 70 seconds.' }
 }
 
-export const BROWSER_HELP = `geckit browser: the person's own Chrome, through the GeckIt Browser extension.
+export const BROWSER_HELP = `geckit browser: the person's own Chrome, through the GeckIt Browser extension, and test browsers, Chrome for Testing driven by GeckIt.
 
-  profiles                      the Chrome profiles here: email, name, whether GeckIt Browser is in it and open, which was used last
+  profiles                      the Chrome profiles here: email, name, whether GeckIt Browser is in it and open, which was used last;
+                                then the test profiles, test:<name>
   start <profile>               open a window of a profile that has GeckIt Browser but is closed
+  start test:<name>             open a test browser with that profile, making it if new; its sign-ins stay for next time
+  stop test:<name>              close a test browser; its profile stays
   pages [--profile <name>]      tabs: id, title, url (* is the tab shown in its window), under each Chrome profile's email
   open <url> [--profile <name>] open in a new background tab and wait for it to load; the profile used last unless --profile
   go <tab> <url>                load a url in a tab
@@ -342,7 +411,8 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
   const [what, ...rest] = args
   if (what === undefined || what === 'help' || what === '--help') return { ok: true, said: BROWSER_HELP }
   if (what === 'profiles') return { ok: true, said: listProfiles() }
-  if (what === 'start') return startProfile(rest[0])
+  if (what === 'start') return rest[0]?.startsWith(TEST_PREFIX) === true ? startTest(rest[0].slice(TEST_PREFIX.length)) : startProfile(rest[0])
+  if (what === 'stop') return stopTest(rest[0]?.startsWith(TEST_PREFIX) === true ? rest[0].slice(TEST_PREFIX.length) : rest[0] ?? '')
   const words = rest.filter((one, at) => !(one.startsWith('--') || one === '-o') && !VALUED.includes(rest[at - 1] ?? ''))
   try {
     const request = (): object => {
@@ -419,7 +489,7 @@ interface Page { readonly title: string; readonly url: string }
 
 function shown(what: string, args: readonly string[], words: readonly string[], result: unknown): string {
   switch (what) {
-    case 'status': { const known = profiles(); return `Connected, extension ${(result as { version: string }).version}${known.length > 1 ? `, in ${known.length} Chrome profiles: ${known.map((one) => one.label).join(', ')}` : ''}.` }
+    case 'status': { const known = profiles(); const version = (result as { version: string }).version; return `Connected, ${version.startsWith('Chrome for Testing') ? version : `extension ${version}`}${known.length > 1 ? `, in ${known.length} Chrome profiles: ${known.map((one) => one.label).join(', ')}` : ''}.` }
     case 'pages': return (result as (Page & { id: number; active: boolean })[]).map((one) => `${one.active ? '*' : ' '} ${String(one.id).padEnd(10)} ${one.title.slice(0, 70)}  ${one.url}`).join('\n')
     case 'open': case 'go': { const page = result as Page & { id: number }; return `${page.id}  ${page.title}  ${page.url}` }
     case 'close': return 'Closed.'

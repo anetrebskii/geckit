@@ -514,10 +514,12 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     },
     transcribe: (request) => call('transcribe', request),
     browser: {
-      state: () => Promise.resolve({ supported: false, connected: false, folder: '', modelServer: false, model: { state: 'absent', received: 0, total: 0 } }),
+      state: () => Promise.resolve({ supported: false, connected: false, folder: '', modelServer: false, model: { state: 'absent', received: 0, total: 0 }, testing: { supported: false, profiles: [] } }),
       fetchModel: () => Promise.resolve(),
       deleteModel: () => Promise.resolve(),
       openFolder: () => Promise.resolve(),
+      openTest: () => Promise.resolve(),
+      deleteTest: () => Promise.resolve(),
     },
     speech: {
       model: () => call('speech.model'),

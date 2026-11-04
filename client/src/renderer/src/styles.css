@@ -1244,6 +1244,40 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
   margin-top: 4px;
 }
 
+/* Test browsers sit under the bridge's own status, set apart by a hairline rather than a box. */
+.test-browsers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.chrome-bridge .test-browsers .test-browsers-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.test-browsers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.test-browsers-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.test-browsers .danger {
+  color: var(--danger);
+}
+
 .chrome-bridge-folder code {
   flex: 1;
   min-width: 0;

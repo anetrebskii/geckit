@@ -166,6 +166,8 @@ const geckit = {
     state: (): Promise<BrowserBridgeState> => ipcRenderer.invoke('browser:state'),
     fetchModel: (): Promise<void> => ipcRenderer.invoke('browser:fetchModel'),
     deleteModel: (): Promise<void> => ipcRenderer.invoke('browser:deleteModel'),
+    openTest: (name: string): Promise<void> => ipcRenderer.invoke('browser:openTest', name),
+    deleteTest: (name: string): Promise<void> => ipcRenderer.invoke('browser:deleteTest', name),
     openFolder: (): Promise<void> => ipcRenderer.invoke('browser:openFolder'),
   },
 

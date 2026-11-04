@@ -22,7 +22,8 @@ import { localPort, withPort } from '../main/hosts/forward'
 import { keepToken, pushTo } from '../main/push'
 import type { SessionNotice } from '../shared/api'
 import { localFetch } from '../main/local-page'
-import { browserBridgeOn, browserBridgeState } from '../cli/browser'
+import { browserBridgeOn, browserBridgeState, openTest, stopTest } from '../cli/browser'
+import { deleteTestProfile } from '../cli/testing'
 import { deleteFindModel, fetchFindModel, findModelServer } from '../cli/find-model'
 import { localTranscriptionReadiness } from '../main/local-transcription'
 import { askOrders, carryOut, saying } from '../main/orders'
@@ -140,6 +141,8 @@ export function application(runtime: CoreRuntime) {
     'browser:state': () => browserBridgeState(),
     'browser:fetchModel': () => { if (browserBridgeOn() && findModelServer()) void fetchFindModel() },
     'browser:deleteModel': async () => { if (!browserBridgeOn()) await deleteFindModel() },
+    'browser:openTest': async (name: string) => { if (browserBridgeOn()) await openTest(name) },
+    'browser:deleteTest': async (name: string) => { await stopTest(name); deleteTestProfile(name) },
     'voice:video': () => startRecording(),
     'recording:start': (ext: string) => startRecording(ext),
     'recording:part': (part: string) => addToRecording(Buffer.from(part, 'base64')),

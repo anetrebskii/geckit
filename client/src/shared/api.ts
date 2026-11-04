@@ -826,6 +826,16 @@ export interface BrowserBridgeState {
   /** Whether this GeckIt carries llama-server, without which find matches words. */
   readonly modelServer: boolean
   readonly model: FindModelState
+  readonly testing: TestBrowsersState
+}
+
+/** Test browsers: Chrome for Testing driven by GeckIt, each profile kept by name. */
+export interface TestBrowsersState {
+  readonly supported: boolean
+  /** The Chrome for Testing a test browser starts, when there is one. */
+  readonly version?: string
+  readonly download?: { readonly received: number; readonly total: number; readonly error?: string }
+  readonly profiles: readonly { readonly name: string; readonly open: boolean }[]
 }
 
 /** The model dictation hears with on this computer, and how far its one download has come. */

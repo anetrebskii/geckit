@@ -7,6 +7,7 @@ import { corePlatform, dataDirectory } from '../core/platform'
 
 import { forwardSlashes } from '../cli/endpoint'
 import { browserBridgeOn, installBrowserBridge, removeBrowserBridge, setBrowserBridgeOn } from '../cli/browser'
+import { serveTestLaunches } from '../cli/testing'
 import { fetchFindModel, findModelServer } from '../cli/find-model'
 import type { Employee } from '../shared/employees'
 import type { Settings } from '../shared/api'
@@ -63,13 +64,16 @@ ${JSON.stringify(employees.map(({ id, name, role, description, archived }) => ({
 }
 
 /** Turns Chrome through GeckIt on or off: the extension and its native host, the download of the find model, and what the guides and Codex's sandbox say about it. */
+let stopLaunches: (() => void) | undefined
+
 export function keepBrowserBridge(on: boolean): void {
   setBrowserBridgeOn(on)
   try {
     keepBrowserSkills(on)
-    if (!on) { removeBrowserBridge(); return }
+    if (!on) { stopLaunches?.(); stopLaunches = undefined; removeBrowserBridge(); return }
     const launcher = corePlatform().launcher?.()
     if (launcher !== undefined) installBrowserBridge(launcher.executable, launcher.script)
+    if (launcher !== undefined && stopLaunches === undefined) stopLaunches = serveTestLaunches(launcher.executable, launcher.script)
     if (findModelServer()) void fetchFindModel()
   } catch { /* the bridge is worth having when it can be written and nothing when it cannot */ }
 }
@@ -411,6 +415,16 @@ const browserHow = (said: string): string => `## Where to work
 
 \`open <url> --profile <email or name>\` opens in that profile, and \`pages\` lists the tabs under each profile. A tab id stays in its profile, so commands on a tab need no \`--profile\`. \`start <profile>\` opens a window of a profile that has GeckIt Browser but is closed. A profile without GeckIt Browser cannot be used: say so and name the ones that can.
 
+## Test browsers
+
+A test browser is Chrome for Testing that GeckIt starts and drives itself, with a profile kept under a name, \`test:<name>\`, so whatever is signed in there stays for next time. Use one when:
+
+- the page is closed to extensions: the Chrome Web Store and its developer dashboard, \`chrome://\` pages, other extensions' pages, where a command in the person's Chrome fails;
+- the work should stay away from the person's own tabs and accounts: checking an app on localhost, trying a sign-up as a new user, a design check that must not touch their windows;
+- no Chrome profile has GeckIt Browser.
+
+Otherwise use the person's own Chrome: it has their accounts. \`start test:<name>\` opens a test browser, making the profile if it is new; name it for what it is for, such as \`test:store\`, and reuse the names \`profiles\` lists. Then \`open <url> --profile test:<name>\`, and its tab ids for the rest, as with any profile. A new profile is signed in to nothing: when the work needs an account, ask the person to sign in in that window, and do not type their password. \`stop test:<name>\` closes it when the work is done; the profile stays. The first start downloads Chrome for Testing, about 200 MB, and says so: run \`start\` again a minute later.
+
 ## Commands
 
 \`\`\`
@@ -435,7 +449,7 @@ export const BROWSER_SKILL = (command: string, name: string): string => {
   const said = command.includes(' ') ? `"${command}"` : command
   return `---
 name: ${name}
-description: Work in the person's own Chrome through GeckIt. Choose the Chrome profile, open pages, find and click, type, read text, take screenshots, check styles, dark and phone layouts, record animations. Use for any task on a website or in Chrome.
+description: Work in the person's own Chrome through GeckIt, or in a test browser GeckIt drives. Choose the Chrome profile or a test:<name> profile, open pages, find and click, type, read text, take screenshots, check styles, dark and phone layouts, record animations. Use for any task on a website or in Chrome.
 ---
 
 # Chrome through GeckIt

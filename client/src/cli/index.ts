@@ -20,6 +20,7 @@ import type { Answer } from './start'
 import { migrate } from './migrate'
 import { manage, managerCommand } from './manage'
 import { browser, browserHost } from './browser'
+import { testBrowser } from './testing'
 
 interface Row extends Found {
   readonly root: string
@@ -385,6 +386,8 @@ if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync
   const [what, ...rest] = process.argv.slice(2)
   if (what === 'browser-host') {
     browserHost()
+  } else if (what === 'browser-test') {
+    await testBrowser(rest[0] ?? '').catch((error: unknown) => { process.stdout.write(`${error instanceof Error ? error.message : String(error)}\n`); process.exit(1) })
   } else if (what === 'browser') {
     const answer = await browser(rest)
     process.stdout.write(`${answer.said}\n`)

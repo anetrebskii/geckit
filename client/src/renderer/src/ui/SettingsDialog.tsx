@@ -253,6 +253,53 @@ function Integrations({ settings, change }: Part): React.JSX.Element {
 
 const GB = (bytes: number): string => (bytes / 1e9).toFixed(1)
 
+/** Test browsers: Chrome for Testing that GeckIt starts and drives, each profile kept by name with its sign-ins. */
+function TestBrowsers({ testing }: { readonly testing: BrowserBridgeState['testing'] | undefined }): React.JSX.Element | null {
+  const [asking, setAsking] = useState<string>()
+  const [busy, setBusy] = useState<string>()
+  if (testing === undefined || !testing.supported) return null
+  const download = testing.download
+  const act = (name: string, run: () => Promise<void>): void => { setBusy(name); void run().finally(() => { setBusy(undefined); setAsking(undefined) }) }
+  return (
+    <div className="test-browsers">
+      <p className="test-browsers-title">Test browsers</p>
+      <p>Chrome for Testing, started and driven by GeckIt, for pages Chrome closes to extensions and for work away from your own tabs. Each profile keeps its sign-ins.</p>
+      {download?.error !== undefined ? <p>Chrome for Testing did not download: {download.error.replace(/\.$/, '')}.</p>
+        : download !== undefined ? (
+          <div>
+            <p>Downloading Chrome for Testing, {Math.round(download.received / 1e6)} of {Math.round(download.total / 1e6)} MB.</p>
+            <div className="progress"><span style={{ width: `${download.total === 0 ? 0 : Math.round((download.received / download.total) * 100)}%` }} /></div>
+          </div>
+        ) : testing.version === undefined ? <p>Chrome for Testing downloads the first time a test browser starts, about 200 MB.</p> : null}
+      {testing.profiles.length === 0 ? <p>None yet. A conversation makes one with geckit browser start test:&lt;name&gt;.</p> : (
+        <ul className="test-browsers-list">
+          {testing.profiles.map((one) => (
+            <li key={one.name} className="chrome-bridge-row">
+              {asking === one.name ? (
+                <>
+                  <span>Delete test:{one.name}? Its sign-ins and history go with it.</span>
+                  <span className="test-browsers-actions">
+                    <button type="button" className="quiet" onClick={() => setAsking(undefined)}>Cancel</button>
+                    <button type="button" className="quiet danger" disabled={busy === one.name} onClick={() => act(one.name, () => window.geckit.browser.deleteTest(one.name))}>Delete</button>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span><code>test:{one.name}</code> {one.open ? 'open' : 'closed'}</span>
+                  <span className="test-browsers-actions">
+                    {one.open ? null : <button type="button" className="quiet" disabled={busy === one.name} onClick={() => act(one.name, () => window.geckit.browser.openTest(one.name))}>{busy === one.name ? 'Opening' : 'Open'}</button>}
+                    <button type="button" className="quiet" onClick={() => setAsking(one.name)}>Delete</button>
+                  </span>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 /** Chrome through GeckIt: the switch, and under it only what is not ready yet. */
 function ChromeBridge({ settings, change }: Part): React.JSX.Element {
   const [state, setState] = useState<BrowserBridgeState>()
@@ -302,6 +349,7 @@ function ChromeBridge({ settings, change }: Part): React.JSX.Element {
                 <div className="progress"><span style={{ width: `${model.total === 0 ? 0 : Math.round((model.received / model.total) * 100)}%` }} /></div>
               </div>
             )}
+          <TestBrowsers testing={state.testing} />
         </div>
       ) : deleted ? (
         <div className="chrome-bridge-status" aria-live="polite"><p>Search model deleted.</p></div>
