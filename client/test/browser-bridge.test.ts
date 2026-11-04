@@ -19,7 +19,7 @@ describe('browser bridge install', () => {
     expect(readFileSync(host, 'utf8')).toContain('"/Applications/GeckIt.app/Contents/Resources/app.asar/out/main/cli.js" browser-host "$@"')
     expect(statSync(host).mode & 0o111).not.toBe(0)
     const described = JSON.parse(readFileSync(join(root, 'Library', 'Application Support', 'Google', 'Chrome', 'NativeMessagingHosts', 'org.geckit.browser.json'), 'utf8')) as { path: string; allowed_origins: string[] }
-    expect(described).toMatchObject({ path: host, allowed_origins: [`chrome-extension://${EXTENSION_ID}/`] })
+    expect(described).toMatchObject({ path: host, allowed_origins: [`chrome-extension://${EXTENSION_ID}/`, 'chrome-extension://mjllmbfhnbeihgghghnbbkfcpahljnkp/'] })
     expect(() => statSync(join(root, 'Library', 'Application Support', 'Chromium'))).toThrow()
   })
 

@@ -18,7 +18,7 @@ import icon128 from '../../extension/icons/128.png?inline'
 export const BROWSER_HOST = 'org.geckit.browser'
 export const EXTENSION_ID = 'ndoeihcbgkfaajhjeojbhmajkiojkjjp'
 /** Ids the Chrome Web Store gave the extension; an install from the store has one of these instead of the unpacked id. */
-export const STORE_EXTENSION_IDS: readonly string[] = []
+export const STORE_EXTENSION_IDS: readonly string[] = ['mjllmbfhnbeihgghghnbbkfcpahljnkp']
 
 const home = (): string => join(homedir(), '.geckit')
 export const extensionFolder = (): string => join(home(), 'chrome-extension')
