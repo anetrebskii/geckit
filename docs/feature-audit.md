@@ -2,6 +2,12 @@
 
 This is the supporting audit. The concise, user-approved feature list is [docs/features.md](features.md).
 
+## Chrome through GeckIt's own extension - 2026-11-04 (main, not released)
+
+Alex asked for Codex to work with Chrome without MCP, without an Allow prompt each time, with filtering as economical as Claude in Chrome, a local model for `find` (bundled llama.cpp chosen) and a visible cursor; he approved the list entry on 2026-11-04 ("Да") and kept Qwen3 4B over a smaller model for quality. It replaces the MCP-based Codex Chrome bundle of f9aabbc, which was reverted.
+
+Evidence: `client/extension/` (MV3, fixed id `ndoeihcbgkfaajhjeojbhmajkiojkjjp`, cursor overlay per [the cursor UX](ux/chrome-cursor.md)), `client/src/cli/browser.ts` (native host `org.geckit.browser`, folder bridge `~/.geckit/browser/` Codex may write to, `geckit browser` commands), `client/src/cli/find-model.ts` (llama-server with Qwen3 4B Instruct 2507 Q4, 2.5 GB, downloaded on first `find`, word matching until then), `client/scripts/llama.sh`, `BROWSER` in `client/src/main/guide.ts`, `writableRoots` in `client/src/main/sessions/codex.ts`. Checked in Chrome for Testing 131 with the extension loaded: a real `codex exec` in its sandbox and a real `claude -p` (Sonnet) each completed a Hacker News task correctly (open, find, type without submitting, click, text). Measured output: `find` 0.1-0.5 KB, `text` about 4 KB, `read` about 11 KB (200 lines). All 1,515 tests, typecheck and build passed. Not checked: Alex's own Chrome, the packaged app, Linux, the CI llama-server build. Windows is not supported (native hosts are found through the registry there). `find` sees elements and headings, not plain text such as HN points.
+
 ## Employees and conversation memory - 2026-11-01 (working tree)
 
 Alex explicitly requested named roles, human portraits, task assignment/filtering, requested access to earlier assigned chats, managed instruction updates and Manager delegation, then approved implementation with "делай". The feature-list entry covers this working-tree implementation only. Catalog editing is desktop; assignment/filtering/role and history inspection share desktop/phone contracts. Current assignment defines history membership. Per Alex's later correction, task cards show only the assigned employee portrait at bottom right, with identity in a tooltip and no assignment action; unassigned cards show no placeholder. Roles and transcripts are not automatically appended to task messages.
