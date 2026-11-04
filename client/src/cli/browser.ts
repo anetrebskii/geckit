@@ -104,7 +104,10 @@ export function browserHost(folder: string = browserFolder()): void {
       if (taken.has(name)) continue
       taken.add(name)
       let request: object
-      try { request = JSON.parse(readFileSync(join(folder, file), 'utf8')) as object } catch { answer(name, { ok: false, error: 'That was not a request.' }); continue } finally { rmSync(join(folder, file), { force: true }) }
+      let text: string
+      try { text = readFileSync(join(folder, file), 'utf8') } catch { continue }
+      rmSync(join(folder, file), { force: true })
+      try { request = JSON.parse(text) as object } catch { answer(name, { ok: false, error: 'That was not a request.' }); continue }
       const asked = request as { readonly cmd?: string; readonly tab?: number; readonly query?: string }
       void (asked.cmd === 'find' ? find(asked.tab, asked.query ?? '') : extension(request)).then((reply) => answer(name, reply), (error: Error) => answer(name, { ok: false, error: error.message }))
     }
@@ -185,7 +188,15 @@ export const BROWSER_HELP = `geckit browser: the person's own Chrome, through th
   key <tab> <key>               Enter, Tab, Escape, Backspace, arrows, PageDown or one character
   scroll <tab> [<ref>|up|down]  bring an element into view, or a screen down or up
   eval <tab> <js>               run JavaScript in the page, - reads it from stdin; prints the value as JSON
-  shot <tab> [-o <file>]        a PNG of what the tab shows; prints the file
+  shot <tab> [<ref>] [-o <file>] a PNG of what the tab shows, or of one element at full resolution; GeckIt's pointer is hidden unless --pointer
+  hover <tab> <ref>             move the mouse over an element, to see its hover state
+  style <tab> <ref>             the element's computed style, values every element has left out
+  view <tab> [--size <w>x<h>] [--phone] [--dark|--light] [--reduced-motion|--motion]
+                                emulate a window size, a colour scheme or reduced motion in this tab; --reset ends it
+  record <tab> [<ref>] [--click <ref>|--hover <ref>|--key <key>] [--for <ms>] [--slow <n>] [-o <folder>]
+                                frames of an animation: starts, does the action, keeps recording --for 1500 ms of page time;
+                                --slow 4 plays the page's animations four times slower; prints a sheet of up to 12 frames
+                                with their times, a GIF, and the folder of every frame; <ref> crops the sheet and GIF to it
   status                        whether the extension is connected`
 
 function tabOf(word: string | undefined): number {
@@ -199,6 +210,8 @@ function refOf(word: string | undefined): string {
   return word
 }
 
+const VALUED = ['--max', '-o', '--size', '--click', '--hover', '--key', '--for', '--slow']
+
 function option(args: readonly string[], name: string): string | undefined {
   const at = args.indexOf(name)
   return at < 0 ? undefined : args[at + 1]
@@ -207,7 +220,7 @@ function option(args: readonly string[], name: string): string | undefined {
 export async function browser(args: readonly string[]): Promise<{ readonly ok: boolean; readonly said: string }> {
   const [what, ...rest] = args
   if (what === undefined || what === 'help' || what === '--help') return { ok: true, said: BROWSER_HELP }
-  const words = rest.filter((one, at) => !(one.startsWith('--') || one === '-o') && !['--max', '-o'].includes(rest[at - 1] ?? ''))
+  const words = rest.filter((one, at) => !(one.startsWith('--') || one === '-o') && !VALUED.includes(rest[at - 1] ?? ''))
   try {
     const request = (): object => {
       switch (what) {
@@ -231,7 +244,34 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
           if (code.trim() === '') throw new Error('Give the JavaScript to run.')
           return { cmd: 'eval', tab: tabOf(words[0]), code }
         }
-        case 'shot': return { cmd: 'shot', tab: tabOf(words[0]) }
+        case 'shot': return { cmd: 'shot', tab: tabOf(words[0]), ...(words[1] === undefined ? {} : { ref: refOf(words[1]) }), pointer: rest.includes('--pointer') }
+        case 'hover': return { cmd: 'hover', tab: tabOf(words[0]), ref: refOf(words[1]) }
+        case 'style': return { cmd: 'style', tab: tabOf(words[0]), ref: refOf(words[1]) }
+        case 'view': {
+          if (rest.includes('--reset')) return { cmd: 'view', tab: tabOf(words[0]), reset: true }
+          const size = option(rest, '--size')
+          const measured = size === undefined ? undefined : /^(\d+)x(\d+)$/.exec(size)
+          if (size !== undefined && measured === null) throw new Error('Give the size as <width>x<height>, such as 1280x800.')
+          const set = {
+            ...(rest.includes('--phone') ? { width: 390, height: 844, phone: true } : {}),
+            ...(measured ? { width: Number(measured[1]), height: Number(measured[2]), phone: false } : {}),
+            ...(rest.includes('--dark') ? { scheme: 'dark' } : rest.includes('--light') ? { scheme: 'light' } : {}),
+            ...(rest.includes('--reduced-motion') ? { motion: 'reduce' } : rest.includes('--motion') ? { motion: 'no-preference' } : {}),
+          }
+          if (Object.keys(set).length === 0) throw new Error('Give what to emulate: --size, --phone, --dark, --light, --reduced-motion, --motion, or --reset.')
+          return { cmd: 'view', tab: tabOf(words[0]), set }
+        }
+        case 'record': {
+          const ms = Number(option(rest, '--for') ?? 1500)
+          const slow = Number(option(rest, '--slow') ?? 1)
+          if (!(ms > 0 && ms * slow <= 20_000)) throw new Error('Record from 1 ms up to 20 seconds of real time, --for times --slow.')
+          if (!(slow >= 1 && slow <= 20)) throw new Error('--slow takes 1 to 20.')
+          const click = option(rest, '--click')
+          const hover = option(rest, '--hover')
+          const key = option(rest, '--key')
+          const then = click !== undefined ? { cmd: 'click', ref: refOf(click) } : hover !== undefined ? { cmd: 'hover', ref: refOf(hover) } : key !== undefined ? { cmd: 'key', key } : undefined
+          return { cmd: 'record', tab: tabOf(words[0]), ms, slow, pointer: rest.includes('--pointer'), ...(words[1] === undefined ? {} : { ref: refOf(words[1]) }), ...(then === undefined ? {} : { then }) }
+        }
         default: throw new Error(`Unknown command ${what}.\n\n${BROWSER_HELP}`)
       }
     }
@@ -270,6 +310,28 @@ function shown(what: string, args: readonly string[], words: readonly string[], 
       const file = resolve(option(args, '-o') ?? join(tmpdir(), `geckit-tab-${words[0] ?? ''}-${Date.now()}.png`))
       writeFileSync(file, Buffer.from((result as { png: string }).png, 'base64'))
       return file
+    }
+    case 'hover': return `Hovering over ${(result as { hovered: string }).hovered}.`
+    case 'style': { const style = result as { name: string; lines: string[] }; return [style.name, ...style.lines].join('\n') }
+    case 'view': {
+      const view = result as { reset?: boolean; width: number; height: number; dark: boolean; still: boolean }
+      if (view.reset === true) return 'The tab shows itself as Chrome does again.'
+      return `The page sees ${view.width}x${view.height}, ${view.dark ? 'dark' : 'light'}, ${view.still ? 'reduced motion' : 'full motion'}, until view --reset. Chrome shows a debugging bar meanwhile.`
+    }
+    case 'record': {
+      const taken = result as { did: string; slow: number; frames: { ms: number; data: string }[]; sheet: string; gif: string; total: number }
+      const folder = resolve(option(args, '-o') ?? join(tmpdir(), `geckit-record-${words[0] ?? ''}-${Date.now()}`))
+      mkdirSync(join(folder, 'frames'), { recursive: true })
+      taken.frames.forEach((one, at) => writeFileSync(join(folder, 'frames', `${String(at).padStart(3, '0')}-${one.ms}ms.jpg`), Buffer.from(one.data, 'base64')))
+      writeFileSync(join(folder, 'sheet.png'), Buffer.from(taken.sheet, 'base64'))
+      writeFileSync(join(folder, 'animation.gif'), Buffer.from(taken.gif, 'base64'))
+      const last = taken.frames.at(-1)?.ms ?? 0
+      return [
+        `Recorded ${taken.total} frames over ${last} ms of page time${taken.slow === 1 ? '' : `, played ${taken.slow} times slower`}, about ${Math.round((taken.total * 1000) / Math.max(1, last * taken.slow))} a second of real time; ${taken.did === 'nothing' ? 'did nothing' : taken.did}.`,
+        `Sheet, ${Math.min(12, taken.frames.length)} frames with their times: ${join(folder, 'sheet.png')}`,
+        `GIF: ${join(folder, 'animation.gif')}`,
+        `Every frame: ${join(folder, 'frames')}`,
+      ].join('\n')
     }
     default: return JSON.stringify(result)
   }

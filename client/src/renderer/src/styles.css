@@ -977,6 +977,7 @@ textarea {
   min-height: 0;
   padding-right: 4px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .assistant-settings > .quiet {
@@ -1221,6 +1222,7 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-dim);
+  animation: pop var(--settle) var(--ease) both;
 }
 
 .chrome-bridge .chrome-bridge-status p {
