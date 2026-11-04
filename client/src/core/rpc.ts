@@ -171,7 +171,7 @@ export function connectRpc<Methods extends MethodsOf<Methods>, Events extends Me
     const closed = new Promise<void>((done) => { finish = done })
     const timer = setTimeout(() => socket.destroy(new Error('GeckIt service authentication timed out.')), HANDSHAKE_TIMEOUT)
     socket.once('connect', () => { send(socket, { kind: 'hello', version: VERSION, token }) })
-    socket.on('error', (error) => { failure = error })
+    socket.on('error', (error: NodeJS.ErrnoException) => { failure = accepted && error.code !== undefined ? new Error('GeckIt service disconnected.', { cause: error }) : error })
     socket.on('close', () => {
       clearTimeout(timer)
       if (!accepted) reject(failure)
