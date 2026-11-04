@@ -808,6 +808,26 @@ export interface TranscribeRequest {
   readonly language?: string
 }
 
+/** The small model behind `geckit browser find`, and how far its download has come. */
+export interface FindModelState {
+  readonly state: 'absent' | 'downloading' | 'ready' | 'failed'
+  /** bytes */
+  readonly received: number
+  readonly total: number
+  readonly error?: string
+}
+
+/** Chrome through GeckIt as Settings shows it: whether the extension answers, and the find model. */
+export interface BrowserBridgeState {
+  readonly supported: boolean
+  readonly connected: boolean
+  /** Where the person loads the extension from. */
+  readonly folder: string
+  /** Whether this GeckIt carries llama-server, without which find matches words. */
+  readonly modelServer: boolean
+  readonly model: FindModelState
+}
+
 /** The model dictation hears with on this computer, and how far its one download has come. */
 export interface SpeechModel {
   readonly state: 'absent' | 'downloading' | 'ready' | 'failed'
@@ -1144,6 +1164,8 @@ export interface Settings {
   /** False takes Codex's GECKIT.md and its instruction from the global AGENTS.md away. */
   readonly guideCodex: boolean
   readonly guidePlugins: Readonly<Record<string, boolean>>
+  /** Chrome through GeckIt: the extension's native host, the find model and the Chrome part of the guides. */
+  readonly chromeBridge: boolean
   /** Shortcuts in any application turned off here, as a copy run beside another GeckIt wants. */
   readonly anywhereOff: readonly Anywhere[]
   /** When the Chat window flashes in the taskbar for a notice, on Windows; the Mac bounces the Dock itself. */
@@ -1305,6 +1327,7 @@ export const DEFAULT_SETTINGS: Settings = {
   guideClaude: true,
   guideCodex: true,
   guidePlugins: {},
+  chromeBridge: false,
   anywhereOff: [],
   flashFor: 'asks',
   soundFor: 'never',

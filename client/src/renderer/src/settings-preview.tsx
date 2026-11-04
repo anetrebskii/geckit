@@ -24,6 +24,21 @@ registerProviderInfo(libraries)
 document.documentElement.dataset.theme = theme
 Object.assign(window.geckit, { chat: { getProviderPluginFailures: async (): Promise<readonly ProviderPluginFailure[]> => failedLibraries, account: async (provider: SessionProvider): Promise<ClaudeAccount> => ({ provider, here: true, signedIn: true, plan: provider === 'codex' ? 'Plus' : 'Max', program: { version: 'preview' }, usage: { quotas: [{ id: 'five-hour', name: '5h', part: 0.24 }, { id: 'week', name: 'Week', part: 0.63 }], measuredAt: Date.now() } }), onAccount: () => () => undefined } })
 
+const chrome = query.get('chrome') ?? 'waiting'
+let chromeConnected = chrome === 'connected'
+let chromeReceived = ['ready', 'kept', 'connected'].includes(chrome) ? 2_497_281_120 : 1_210_000_000
+let chromeModel = chrome === 'absent' ? false : true
+Object.assign(window.geckit, { browser: {
+  state: async () => {
+    if (chrome === 'downloading' || chrome === 'waiting') chromeReceived = Math.min(2_497_281_120, chromeReceived + 90_000_000)
+    const done = chromeReceived >= 2_497_281_120
+    return { supported: chrome !== 'windows', connected: chromeConnected, folder: '/Users/alex/.geckit/chrome-extension', modelServer: chrome !== 'noserver', model: !chromeModel ? { state: 'absent', received: 0, total: 2_497_281_120 } : chrome === 'failed' ? { state: 'failed', received: 640_000_000, total: 2_497_281_120, error: 'Model download answered 503' } : { state: done ? 'ready' : 'downloading', received: chromeReceived, total: 2_497_281_120 } }
+  },
+  fetchModel: async () => undefined,
+  deleteModel: async () => { chromeModel = false },
+  openFolder: async () => { setTimeout(() => { chromeConnected = true }, 3000) },
+} })
+
 const { SettingsDialog } = await import('./ui/SettingsDialog')
 const { PhoneVpnSettings } = await import('./ui/VpnIpSettings')
 const { Cell, Page } = await import('./chat/PhoneKit')
@@ -31,7 +46,7 @@ const { Cell, Page } = await import('./chat/PhoneKit')
 function Preview(): React.JSX.Element {
   const [open, setOpen] = useState(true)
   const trigger = useRef<HTMLButtonElement>(null)
-  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, theme, vpnIpCheck: query.has('vpnEnabled'), vpnAllowedIps: query.has('vpnLong') ? Array.from({ length: 64 }, (_one, index) => `8.8.4.${String(index + 1)}`) : query.has('vpnSaved') ? ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'] : DEFAULT_SETTINGS.vpnAllowedIps, providerPlugins: libraries, chatProviders: query.has('libraries') ? ['claude', 'codex', 'plugin:codex-mirror', 'plugin:kimi', 'plugin:claude-tmux'] : DEFAULT_SETTINGS.chatProviders, providerUpdatesReady: query.has('libraries') ? ['plugin:kimi'] : [] })
+  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, theme, chromeBridge: !['off', 'kept', 'windows'].includes(chrome), vpnIpCheck: query.has('vpnEnabled'), vpnAllowedIps: query.has('vpnLong') ? Array.from({ length: 64 }, (_one, index) => `8.8.4.${String(index + 1)}`) : query.has('vpnSaved') ? ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'] : DEFAULT_SETTINGS.vpnAllowedIps, providerPlugins: libraries, chatProviders: query.has('libraries') ? ['claude', 'codex', 'plugin:codex-mirror', 'plugin:kimi', 'plugin:claude-tmux'] : DEFAULT_SETTINGS.chatProviders, providerUpdatesReady: query.has('libraries') ? ['plugin:kimi'] : [] })
   const [failed, setFailed] = useState(failedLibraries)
   useEffect(() => {
     if (!open) trigger.current?.focus()

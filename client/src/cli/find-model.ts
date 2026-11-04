@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream } from 'node:stream/web'
+import type { FindModelState } from '../shared/api'
 
 const NAME = 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
 const FROM = `https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/${NAME}`
@@ -22,6 +23,7 @@ const partPath = (): string => `${modelPath()}.part`
 const sizeOf = (path: string): number => { try { return statSync(path).size } catch { return 0 } }
 
 let fetching: Promise<void> | undefined
+let failure: string | undefined
 
 async function sha256(path: string): Promise<string> {
   const hash = createHash('sha256')
@@ -30,8 +32,9 @@ async function sha256(path: string): Promise<string> {
 }
 
 /** Fetches the model once into ~/.geckit/models, picking up a broken download from the byte it reached, and names it only once its size and sha256 match. */
-function fetchModel(): Promise<void> {
+export function fetchFindModel(): Promise<void> {
   fetching ??= (async () => {
+    failure = undefined
     mkdirSync(folder(), { recursive: true })
     for (let attempt = 0; attempt < 5 && !existsSync(modelPath()); attempt++) {
       try {
@@ -42,17 +45,31 @@ function fetchModel(): Promise<void> {
           const appending = have > 0 && response.status === 206
           await pipeline(Readable.fromWeb(response.body as ReadableStream<Uint8Array>), createWriteStream(partPath(), { flags: appending ? 'a' : 'w' }))
         }
-        if (sizeOf(partPath()) !== SIZE || await sha256(partPath()) !== SHA256) { unlinkSync(partPath()); continue }
+        if (sizeOf(partPath()) !== SIZE || await sha256(partPath()) !== SHA256) { unlinkSync(partPath()); failure = 'the file did not match its checksum'; continue }
         renameSync(partPath(), modelPath())
-      } catch { await new Promise((done) => setTimeout(done, 3_000)) }
+      } catch (error) { failure = error instanceof Error ? error.message : String(error); await new Promise((done) => setTimeout(done, 3_000)) }
     }
+    if (existsSync(modelPath())) failure = undefined
   })().finally(() => { fetching = undefined })
   return fetching
 }
 
-export function findModelState(): { readonly ready: boolean; readonly received: number; readonly total: number } {
-  return existsSync(modelPath()) ? { ready: true, received: SIZE, total: SIZE } : { ready: false, received: sizeOf(partPath()), total: SIZE }
+export function findModelState(): FindModelState {
+  if (existsSync(modelPath())) return { state: 'ready', received: SIZE, total: SIZE }
+  const received = sizeOf(partPath())
+  if (fetching !== undefined) return { state: 'downloading', received, total: SIZE }
+  return failure === undefined ? { state: 'absent', received, total: SIZE } : { state: 'failed', received, total: SIZE, error: failure }
 }
+
+/** Takes the model and any part of it off this computer; a download under way finishes first. */
+export async function deleteFindModel(): Promise<void> {
+  await fetching
+  failure = undefined
+  for (const path of [modelPath(), partPath()]) { try { unlinkSync(path) } catch { /* already gone */ } }
+}
+
+/** Whether this GeckIt carries the program the model runs on. */
+export const findModelServer = (): boolean => process.env['GECKIT_LLAMA_SERVER'] !== undefined && existsSync(serverPath())
 
 const serverPath = (): string => process.env['GECKIT_LLAMA_SERVER'] ?? 'llama-server'
 
@@ -120,10 +137,5 @@ export async function pickRefs(query: string, lines: readonly string[]): Promise
   return Array.isArray(refs) ? refs.filter((one): one is number => Number.isInteger(one)) : []
 }
 
-/** Starts the model's download when it is missing and the server it runs on is here; false while it cannot be used yet. */
-export function findModelUsable(): boolean {
-  if (process.env['GECKIT_LLAMA_SERVER'] === undefined || !existsSync(serverPath())) return false
-  if (existsSync(modelPath())) return true
-  void fetchModel()
-  return false
-}
+/** Whether the model and the server it runs on are both here; GeckIt downloads the model when Chrome through GeckIt is turned on. */
+export const findModelUsable = (): boolean => findModelServer() && existsSync(modelPath())

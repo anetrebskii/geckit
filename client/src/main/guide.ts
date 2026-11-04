@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { corePlatform, dataDirectory } from '../core/platform'
 
 import { forwardSlashes } from '../cli/endpoint'
-import { installBrowserBridge } from '../cli/browser'
+import { browserBridgeOn, installBrowserBridge, removeBrowserBridge, setBrowserBridgeOn } from '../cli/browser'
+import { fetchFindModel, findModelServer } from '../cli/find-model'
 import type { Employee } from '../shared/employees'
 import type { Settings } from '../shared/api'
 
@@ -58,6 +59,17 @@ The current catalog (archived employees remain readable for existing assignments
 ${JSON.stringify(employees.map(({ id, name, role, description, archived }) => ({ id, name, role, description, archived })), undefined, 2)}
 \`\`\`
 `
+}
+
+/** Turns Chrome through GeckIt on or off: the extension and its native host, the download of the find model, and what the guides and Codex's sandbox say about it. */
+export function keepBrowserBridge(on: boolean): void {
+  setBrowserBridgeOn(on)
+  try {
+    if (!on) { removeBrowserBridge(); return }
+    const launcher = corePlatform().launcher?.()
+    if (launcher !== undefined) installBrowserBridge(launcher.executable, launcher.script)
+    if (findModelServer()) void fetchFindModel()
+  } catch { /* the bridge is worth having when it can be written and nothing when it cannot */ }
 }
 
 const guideWrite = async (file: string, content: string, strict: boolean): Promise<void> => {
@@ -133,7 +145,6 @@ async function writeLaunchers(command: string): Promise<boolean> {
     await writeFile(command, made.sh)
     await chmod(command, 0o755)
     if (made.cmd !== undefined) await writeFile(`${command}.cmd`, made.cmd)
-    try { installBrowserBridge(launcher.executable, launcher.script) } catch { /* the browser bridge is optional */ }
     return true
   } catch {
     return false
@@ -369,6 +380,7 @@ export async function keepCodexGuide(wanted: boolean, employees: readonly Employ
 
 /** How a Codex conversation uses the person's Chrome: GeckIt's own extension, reached through the command. */
 export const BROWSER = (command: string, claude = false): string => {
+  if (!browserBridgeOn()) return ''
   const said = command.includes(' ') ? `"${command}"` : command
   const which = claude
     ? 'Use it when Claude in Chrome is not connected, and to look for something on a long page, since `find` returns only the matching lines.'
