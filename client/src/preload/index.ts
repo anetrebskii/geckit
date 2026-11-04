@@ -39,6 +39,7 @@ import type {
   Settings,
   TaskOutput,
   SpeechModel,
+  BrowserBridgeState,
   TranscribeRequest,
   UpdateView,
   Recording,
@@ -158,6 +159,14 @@ const geckit = {
     model: (): Promise<SpeechModel> => ipcRenderer.invoke('speech:model'),
     fetch: (): void => ipcRenderer.send('speech:fetch'),
     onModel: (said: (model: SpeechModel) => void): (() => void) => listen('speech:model', said),
+  },
+
+  /** Chrome through GeckIt: whether the extension answers, the find model, and the folder Chrome loads the extension from. */
+  browser: {
+    state: (): Promise<BrowserBridgeState> => ipcRenderer.invoke('browser:state'),
+    fetchModel: (): Promise<void> => ipcRenderer.invoke('browser:fetchModel'),
+    deleteModel: (): Promise<void> => ipcRenderer.invoke('browser:deleteModel'),
+    openFolder: (): Promise<void> => ipcRenderer.invoke('browser:openFolder'),
   },
 
   chat: {

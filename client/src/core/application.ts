@@ -22,6 +22,8 @@ import { localPort, withPort } from '../main/hosts/forward'
 import { keepToken, pushTo } from '../main/push'
 import type { SessionNotice } from '../shared/api'
 import { localFetch } from '../main/local-page'
+import { browserBridgeOn, browserBridgeState } from '../cli/browser'
+import { deleteFindModel, fetchFindModel, findModelServer } from '../cli/find-model'
 import { localTranscriptionReadiness } from '../main/local-transcription'
 import { askOrders, carryOut, saying } from '../main/orders'
 import type { Order, Told } from '../main/orders'
@@ -135,6 +137,9 @@ export function application(runtime: CoreRuntime) {
     'transcribe': (request: TranscribeRequest) => transcribe(request),
     'speech:model': () => speechModel(),
     'speech:fetch': () => fetchSpeechModel(),
+    'browser:state': () => browserBridgeState(),
+    'browser:fetchModel': () => { if (browserBridgeOn() && findModelServer()) void fetchFindModel() },
+    'browser:deleteModel': async () => { if (!browserBridgeOn()) await deleteFindModel() },
     'voice:video': () => startRecording(),
     'recording:start': (ext: string) => startRecording(ext),
     'recording:part': (part: string) => addToRecording(Buffer.from(part, 'base64')),

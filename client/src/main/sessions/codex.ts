@@ -11,7 +11,7 @@ import type { Driver, Heard, Signal } from './heard'
 import { askId } from './heard'
 import { codexHistory, codexItem } from './codex-read'
 import { codexOptions } from './codex-protocol'
-import { browserFolder } from '../../cli/browser'
+import { browserBridgeOn, browserFolder } from '../../cli/browser'
 import type { ApprovalEvent, CodexEvent, CodexGoal, CodexInput, CodexItem, CodexTurn, RpcId, RpcParams, RpcResults } from './codex-protocol'
 import { CodexRpc, launchCodex } from './codex-rpc'
 import { firstLine } from './wording'
@@ -551,7 +551,7 @@ export class CodexSessions {
             ...(options.model === undefined ? {} : { model: options.model }),
             approvalPolicy: options.mode === 'manual' ? 'untrusted' : 'on-request',
             approvalsReviewer: options.mode === 'auto' ? 'auto_review' : 'user',
-            sandboxPolicy: options.mode === 'plan' ? { type: 'readOnly', networkAccess: false } : { type: 'workspaceWrite', writableRoots: [options.root, browserFolder()], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
+            sandboxPolicy: options.mode === 'plan' ? { type: 'readOnly', networkAccess: false } : { type: 'workspaceWrite', writableRoots: browserBridgeOn() ? [options.root, browserFolder()] : [options.root], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
           }
           const response = await rpc?.request('turn/start', params).catch(async (error: Error) => {
             if (isDraining(error.message)) this.#discardConnection(rpc)

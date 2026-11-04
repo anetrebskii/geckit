@@ -1208,6 +1208,48 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
   line-height: 1.5;
 }
 
+.chrome-bridge {
+  margin-top: 12px;
+}
+
+/* What is not ready yet under the switch, in line with its description. */
+.chrome-bridge-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 12px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.chrome-bridge .chrome-bridge-status p {
+  margin: 0;
+}
+
+.chrome-bridge-folder,
+.chrome-bridge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chrome-bridge-row {
+  justify-content: space-between;
+}
+
+.chrome-bridge-folder {
+  margin-top: 4px;
+}
+
+.chrome-bridge-folder code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .assistant-option:hover {
   background: var(--bg-hover);
 }
@@ -2074,7 +2116,8 @@ html.framed .topbar {
 
 .version .progress,
 .notice.update .progress,
-.speech-model .progress {
+.speech-model .progress,
+.chrome-bridge .progress {
   height: 4px;
   margin: 4px 0 2px;
   overflow: hidden;
@@ -2084,7 +2127,8 @@ html.framed .topbar {
 
 .version .progress > span,
 .notice.update .progress > span,
-.speech-model .progress > span {
+.speech-model .progress > span,
+.chrome-bridge .progress > span {
   display: block;
   height: 100%;
   background: var(--accent);

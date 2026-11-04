@@ -26,7 +26,8 @@ import type { PluginUpdateResult } from '../shared/providers'
 import { coreEvents } from './events'
 
 import { Employees } from '../main/employees'
-import { setGuideEmployees, setGuideManager, syncEmployeeGuides } from '../main/guide'
+import { keepBrowserBridge, setGuideEmployees, setGuideManager, syncEmployeeGuides } from '../main/guide'
+import { browserBridgeOn } from '../cli/browser'
 import { Manager, runManagerCli } from '../main/manager'
 import { projectSaid } from '../main/orders'
 import { removeShortcut, resumeOwned, runShortcut, saveShortcut, startShortcuts } from '../main/shortcuts'
@@ -254,16 +255,18 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     coordinator.onResponse((text, origin) => { void bridge.notify(text, undefined, origin).catch(() => undefined) })
 
     setGuideManager(coordinator.instructions())
+    keepBrowserBridge(getSettings().chromeBridge)
     await started.setAllInstructions(getSettings()).catch((error: Error) => { console.warn('Could not set provider instructions:', error.message) })
     plans = new Plans({ sessions: () => started, routes: () => routes, projects: () => getSettings().projects, changed: (places) => events.emit('chat:plans', places) })
     stopSpeech = onSpeechModel((model) => events.emit('speech:model', model))
-    const guideKey = (): string => { const settings = getSettings(); return JSON.stringify([settings.guideClaude, settings.guideCodex, settings.guidePlugins, settings.browserNames, settings.providerPlugins.map((one) => one.id)]) }
+    const guideKey = (): string => { const settings = getSettings(); return JSON.stringify([settings.chromeBridge, settings.guideClaude, settings.guideCodex, settings.guidePlugins, settings.browserNames, settings.providerPlugins.map((one) => one.id)]) }
     let guided = guideKey()
     stopSettings = onSettings((settings) => {
       events.emit('settings:changed', settings)
       const guide = guideKey()
       if (guide !== guided) {
         guided = guide
+        if (settings.chromeBridge !== browserBridgeOn()) keepBrowserBridge(settings.chromeBridge)
         guideWrites = guideWrites.then(() => started.setAllInstructions(settings)).catch((error: Error) => { console.error('Could not set provider instructions:', error.message) })
       }
       started.again()

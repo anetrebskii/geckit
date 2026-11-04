@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { findModelState, findModelUsable, pickRefs } from './find-model'
+import { findModelServer, findModelState, findModelUsable, pickRefs } from './find-model'
+import type { BrowserBridgeState } from '../shared/api'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
@@ -14,6 +15,12 @@ const home = (): string => join(homedir(), '.geckit')
 export const extensionFolder = (): string => join(home(), 'chrome-extension')
 /** Where a request is left for the extension and its answer is picked up: a folder rather than a socket, so a sandboxed conversation needs only leave to write there. */
 export const browserFolder = (): string => join(home(), 'browser')
+const wrapperPath = (root: string = homedir()): string => join(root, '.geckit', 'bin', 'geckit-browser-host')
+
+let bridgeOn = false
+/** Whether Chrome through GeckIt is turned on in this process: the guides and Codex's sandbox follow it. */
+export const browserBridgeOn = (): boolean => bridgeOn
+export const setBrowserBridgeOn = (on: boolean): void => { bridgeOn = on }
 
 interface Reply { readonly ok: boolean; readonly result?: unknown; readonly error?: string }
 
@@ -33,7 +40,7 @@ export function installBrowserBridge(executable: string, script: string, platfor
   writeFileSync(join(folder, 'manifest.json'), manifest)
   writeFileSync(join(folder, 'background.js'), background)
   const quoted = (path: string): string => `"${path.replace(/(["\\$`])/g, '\\$1')}"`
-  const wrapper = join(root, '.geckit', 'bin', 'geckit-browser-host')
+  const wrapper = wrapperPath(root)
   mkdirSync(dirname(wrapper), { recursive: true })
   writeFileSync(wrapper, ['#!/bin/sh', '# Written by GeckIt when it starts. Anything changed here is written over.', `${llama === undefined ? '' : `GECKIT_LLAMA_SERVER=${quoted(llama)} `}ELECTRON_RUN_AS_NODE=1 exec ${quoted(executable)} ${quoted(script)} browser-host "$@"`, ''].join('\n'))
   chmodSync(wrapper, 0o755)
@@ -44,6 +51,18 @@ export function installBrowserBridge(executable: string, script: string, platfor
       writeFileSync(join(one, `${BROWSER_HOST}.json`), described)
     } catch { continue }
   }
+}
+
+/** Takes away what lets Chrome start GeckIt for the extension; the extension's own files stay, since Chrome loads it from there until the person removes it. */
+export function removeBrowserBridge(platform: NodeJS.Platform = process.platform, root: string = homedir()): void {
+  for (const one of hostFolders(platform, root)) rmSync(join(one, `${BROWSER_HOST}.json`), { force: true })
+  rmSync(wrapperPath(root), { force: true })
+}
+
+const fresh = (folder: string): boolean => { try { return Date.now() - statSync(join(folder, 'alive')).mtimeMs <= 15_000 } catch { return false } }
+
+export function browserBridgeState(): BrowserBridgeState {
+  return { supported: process.platform !== 'win32', connected: fresh(browserFolder()), folder: extensionFolder(), modelServer: findModelServer(), model: findModelState() }
 }
 
 /** The program Chrome starts for the extension: carries each request left in the folder to the extension and its answer back. */
@@ -106,7 +125,7 @@ export function browserHost(folder: string = browserFolder()): void {
     }
     if (!findModelUsable()) {
       const state = findModelState()
-      return byWords(process.env['GECKIT_LLAMA_SERVER'] === undefined ? 'Matched by words: the find model is not part of this GeckIt.' : `Matched by words: the find model is downloading, ${Math.round((state.received / state.total) * 100)}%.`)
+      return byWords(!findModelServer() ? 'Matched by words: the find model is not part of this GeckIt.' : `Matched by words: the find model is not downloaded yet, ${Math.round((state.received / state.total) * 100)}%.`)
     }
     try {
       const refs = await pickRefs(query, page.lines)
@@ -115,6 +134,7 @@ export function browserHost(folder: string = browserFolder()): void {
     } catch (error) { return byWords(`Matched by words: ${error instanceof Error ? error.message : String(error)}`) }
   }
   const beat = (): void => {
+    if (!existsSync(wrapperPath())) { rmSync(join(folder, 'alive'), { force: true }); process.exit(0) }
     writeFileSync(join(folder, 'alive'), String(process.pid))
     for (const file of readdirSync(folder)) {
       if (file.endsWith('.told') && Date.now() - statSync(join(folder, file)).mtimeMs > 300_000) rmSync(join(folder, file), { force: true })
@@ -130,7 +150,8 @@ export function browserHost(folder: string = browserFolder()): void {
 const NOT_CONNECTED = (): string => `The GeckIt Browser extension is not connected to Chrome. Ask the person to open chrome://extensions, turn on Developer mode, press Load unpacked and choose ${extensionFolder()}. If it is already there, Chrome may be closed.`
 
 async function ask(request: object, folder: string = browserFolder()): Promise<Reply> {
-  try { if (Date.now() - statSync(join(folder, 'alive')).mtimeMs > 15_000) return { ok: false, error: NOT_CONNECTED() } } catch { return { ok: false, error: NOT_CONNECTED() } }
+  if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Assistants.' }
+  if (!fresh(folder)) return { ok: false, error: NOT_CONNECTED() }
   const name = randomUUID()
   const asked = join(folder, `${name}.ask`)
   try {

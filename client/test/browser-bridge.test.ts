@@ -1,8 +1,9 @@
-import { mkdtempSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { EXTENSION_ID, installBrowserBridge } from '../src/cli/browser'
+import { EXTENSION_ID, installBrowserBridge, removeBrowserBridge, setBrowserBridgeOn } from '../src/cli/browser'
+import { BROWSER } from '../src/main/guide'
 
 describe('browser bridge install', () => {
   it('writes the extension, the host program and Chrome\'s host manifest for the installed browsers only', () => {
@@ -17,5 +18,24 @@ describe('browser bridge install', () => {
     const described = JSON.parse(readFileSync(join(root, 'Library', 'Application Support', 'Google', 'Chrome', 'NativeMessagingHosts', 'org.geckit.browser.json'), 'utf8')) as { path: string; allowed_origins: string[] }
     expect(described).toMatchObject({ path: host, allowed_origins: [`chrome-extension://${EXTENSION_ID}/`] })
     expect(() => statSync(join(root, 'Library', 'Application Support', 'Chromium'))).toThrow()
+  })
+
+  it('turned off, takes away the host and its manifest and keeps the extension Chrome loads', () => {
+    const root = mkdtempSync(join(tmpdir(), 'geckit-bridge-'))
+    const chrome = join(root, 'Library', 'Application Support', 'Google', 'Chrome')
+    mkdirSync(chrome, { recursive: true })
+    installBrowserBridge('/bin/GeckIt', '/cli.js', 'darwin', root)
+    removeBrowserBridge('darwin', root)
+    expect(existsSync(join(chrome, 'NativeMessagingHosts', 'org.geckit.browser.json'))).toBe(false)
+    expect(existsSync(join(root, '.geckit', 'bin', 'geckit-browser-host'))).toBe(false)
+    expect(existsSync(join(root, '.geckit', 'chrome-extension', 'manifest.json'))).toBe(true)
+  })
+
+  it('tells the assistants about Chrome only while it is on', () => {
+    setBrowserBridgeOn(false)
+    expect(BROWSER('/bin/geckit')).toBe('')
+    setBrowserBridgeOn(true)
+    expect(BROWSER('/bin/geckit')).toContain('## Chrome through GeckIt')
+    setBrowserBridgeOn(false)
   })
 })
