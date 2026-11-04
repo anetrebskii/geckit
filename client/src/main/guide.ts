@@ -1,4 +1,5 @@
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -65,11 +66,30 @@ ${JSON.stringify(employees.map(({ id, name, role, description, archived }) => ({
 export function keepBrowserBridge(on: boolean): void {
   setBrowserBridgeOn(on)
   try {
+    keepBrowserSkills(on)
     if (!on) { removeBrowserBridge(); return }
     const launcher = corePlatform().launcher?.()
     if (launcher !== undefined) installBrowserBridge(launcher.executable, launcher.script)
     if (findModelServer()) void fetchFindModel()
   } catch { /* the bridge is worth having when it can be written and nothing when it cannot */ }
+}
+
+/** The browser skill: in GeckIt's own Claude plugin for its Claude sessions, and among Codex's skills for the installed GeckIt. */
+function keepBrowserSkills(on: boolean): void {
+  const plugin = browserPluginFolder()
+  const codex = join(codexWhere(), 'skills', 'geckit-browser')
+  if (!on) {
+    rmSync(plugin, { recursive: true, force: true })
+    if (!fromSource()) rmSync(codex, { recursive: true, force: true })
+    return
+  }
+  mkdirSync(join(plugin, '.claude-plugin'), { recursive: true })
+  writeFileSync(join(plugin, '.claude-plugin', 'plugin.json'), `${JSON.stringify({ name: 'geckit', version: '1.0.0', description: 'What GeckIt gives the Claude conversations it runs.' }, undefined, 2)}\n`)
+  mkdirSync(join(plugin, 'skills', 'browser'), { recursive: true })
+  writeFileSync(join(plugin, 'skills', 'browser', 'SKILL.md'), BROWSER_SKILL(cliPath(), 'browser'))
+  if (fromSource()) return
+  mkdirSync(codex, { recursive: true })
+  writeFileSync(join(codex, 'SKILL.md'), BROWSER_SKILL(cliPath(), 'geckit-browser'))
 }
 
 const guideWrite = async (file: string, content: string, strict: boolean): Promise<void> => {
@@ -378,17 +398,20 @@ export async function keepCodexGuide(wanted: boolean, employees: readonly Employ
   await guideWrite(agents, next, strict)
 }
 
-/** How a Codex conversation uses the person's Chrome: GeckIt's own extension, reached through the command. */
-export const BROWSER = (command: string, claude = false): string => {
-  if (!browserBridgeOn()) return ''
-  const said = command.includes(' ') ? `"${command}"` : command
-  const which = claude
-    ? 'Use it when Claude in Chrome is not connected, and to look for something on a long page, since `find` returns only the matching lines.'
-    : 'Use it for every task in Chrome. The ChatGPT browser (node_repl, the browser host, Computer Use on Chrome) does not exist here: do not try it and do not report it as missing.'
-  return `
-## Chrome through GeckIt
+/** The Claude plugin GeckIt hands its own local Claude sessions with --plugin-dir, holding the browser skill while Chrome through GeckIt is on. */
+export const browserPluginFolder = (): string => join(dataDirectory(), 'claude-plugin')
 
-The person's own Chrome, with the tabs and accounts they are signed in to, is also reached with \`${said} browser\`, through the GeckIt Browser extension. ${which}
+const browserHow = (said: string): string => `## Where to work
+
+\`${said} browser profiles\` lists the Chrome profiles on this computer: the account's email, the profile's name, whether GeckIt Browser is in it, whether it is open, and which one the person used last. Pick the profile before opening anything:
+
+- a site the task needs an account on: the profile signed in to that account, by its email, such as the profile with a company's email for that company's tools;
+- a page anyone can see: the profile used last;
+- two profiles that both fit, where the choice matters: ask the person.
+
+\`open <url> --profile <email or name>\` opens in that profile, and \`pages\` lists the tabs under each profile. A tab id stays in its profile, so commands on a tab need no \`--profile\`. \`start <profile>\` opens a window of a profile that has GeckIt Browser but is closed. A profile without GeckIt Browser cannot be used: say so and name the ones that can.
+
+## Commands
 
 \`\`\`
 ${said} browser pages
@@ -406,6 +429,34 @@ To check a design or an animation: \`shot <tab> <ref>\` is one element at full r
 
 Work in the tab the person named, and open a new background tab with \`open\` rather than taking over one of theirs. Do not post, send, buy or delete anything the person did not ask for. If the command says the extension is not connected, tell the person what it says and stop the browser part of the work.
 `
+
+/** The skill that holds how to work in Chrome, loaded only when a conversation needs it. */
+export const BROWSER_SKILL = (command: string, name: string): string => {
+  const said = command.includes(' ') ? `"${command}"` : command
+  return `---
+name: ${name}
+description: Work in the person's own Chrome through GeckIt. Choose the Chrome profile, open pages, find and click, type, read text, take screenshots, check styles, dark and phone layouts, record animations. Use for any task on a website or in Chrome.
+---
+
+# Chrome through GeckIt
+
+The person's own Chrome, with the tabs and accounts they are signed in to, is reached with \`${said} browser\`, through the GeckIt Browser extension.
+
+${browserHow(said)}`
+}
+
+/** What the main guide says while Chrome through GeckIt is on: the rule, and where the skill is, or the whole of it where no skill can be given. */
+export const BROWSER = (command: string, claude = false, inline = false): string => {
+  if (!browserBridgeOn()) return ''
+  const said = command.includes(' ') ? `"${command}"` : command
+  const other = claude
+    ? 'Do not use Claude in Chrome, Playwright or another browser tool for it unless the person names one.'
+    : 'The ChatGPT browser (node_repl, the browser host, Computer Use on Chrome) does not exist here: do not try it and do not report it as missing.'
+  const how = inline ? `\n${browserHow(said)}` : ` The \`${claude ? 'geckit:browser' : 'geckit-browser'}\` skill says how: load it before the first browser command.\n`
+  return `
+## Chrome through GeckIt
+
+The person turned on Chrome through GeckIt. Every task on a website or in Chrome goes through \`${said} browser\`, in the person's own Chrome profiles, through the GeckIt Browser extension. ${other}${how}`
 }
 
 const codexGuide = (employees: readonly Employee[]): string => {
@@ -413,5 +464,5 @@ const codexGuide = (employees: readonly Employee[]): string => {
     .replaceAll('Claude Code', 'Codex')
     .replaceAll('Claude', 'Codex')
     .replace('Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. ', '')
-  return currentGuide().replace('CLAUDE.md beside it.', 'AGENTS.md beside it.') + command + BROWSER(process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()) + EMPLOYEES(employees, process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()) + MANAGER()
+  return currentGuide().replace('CLAUDE.md beside it.', 'AGENTS.md beside it.') + command + BROWSER(process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath(), false, fromSource()) + EMPLOYEES(employees, process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()) + MANAGER()
 }

@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { spawn } from 'node:child_process'
 import { findModelServer, findModelState, findModelUsable, pickRefs } from './find-model'
 import type { BrowserBridgeState } from '../shared/api'
 import { homedir, tmpdir } from 'node:os'
@@ -196,10 +197,69 @@ export function profiles(folder: string = browserFolder()): Profile[] {
   })
 }
 
+/** A Chrome profile on this computer, as Chrome's own Local State lists it. */
+export interface ChromeProfile { readonly app: string; readonly folder: string; readonly dir: string; readonly name: string; readonly email: string; readonly extension: boolean }
+
+const CHROMES: readonly (readonly [string, string])[] = [['Google/Chrome', 'Google Chrome'], ['Google/Chrome Beta', 'Google Chrome Beta'], ['Google/Chrome Canary', 'Google Chrome Canary'], ['Chromium', 'Chromium']]
+const LINUX_CHROMES: readonly (readonly [string, string])[] = [['google-chrome', 'google-chrome'], ['google-chrome-beta', 'google-chrome-beta'], ['chromium', 'chromium']]
+
+export function chromeProfiles(platform: NodeJS.Platform = process.platform, root: string = homedir()): ChromeProfile[] {
+  const where = platform === 'darwin' ? CHROMES.map(([dir, app]) => [join(root, 'Library', 'Application Support', dir), app] as const)
+    : platform === 'linux' ? LINUX_CHROMES.map(([dir, app]) => [join(root, '.config', dir), app] as const) : []
+  return where.flatMap(([folder, app]) => {
+    let cache: Record<string, { name?: string; user_name?: string }>
+    try { cache = (JSON.parse(readFileSync(join(folder, 'Local State'), 'utf8')) as { profile: { info_cache: typeof cache } }).profile.info_cache } catch { return [] }
+    return Object.entries(cache).map(([dir, one]) => {
+      const has = ['Secure Preferences', 'Preferences'].some((file) => {
+        try { return [EXTENSION_ID, ...STORE_EXTENSION_IDS].some((id) => readFileSync(join(folder, dir, file), 'utf8').includes(`"${id}"`)) } catch { return false }
+      })
+      return { app, folder, dir, name: one.name ?? dir, email: one.user_name ?? '', extension: has }
+    })
+  })
+}
+
+const matches = (profile: ChromeProfile, named: string): boolean => [profile.email, profile.name, profile.dir].some((one) => one !== '' && one.toLowerCase().includes(named.toLowerCase()))
+
+/** Opens a window of a Chrome profile, so a profile that has the extension but is closed can be worked in. */
+async function startProfile(named: string | undefined): Promise<{ readonly ok: boolean; readonly said: string }> {
+  if (named === undefined) return { ok: false, said: 'Give the profile: its email or name from geckit browser profiles.' }
+  const found = chromeProfiles().filter((one) => matches(one, named))
+  const profile = found[0]
+  if (profile === undefined || found.length > 1) return { ok: false, said: `${found.length === 0 ? 'No' : 'More than one'} Chrome profile matches ${named}. Run geckit browser profiles.` }
+  if (!profile.extension) return { ok: false, said: `${profile.name} does not have GeckIt Browser. Ask the person to add it there: chrome://extensions, Developer mode, Load unpacked, ${extensionFolder()}.` }
+  const label = profile.email || profile.name
+  if (profiles().some((one) => one.label === label)) return { ok: true, said: `${label} is already open.` }
+  const child = process.platform === 'darwin'
+    ? spawn('open', ['-na', profile.app, '--args', `--profile-directory=${profile.dir}`], { detached: true, stdio: 'ignore' })
+    : spawn(profile.app, [`--profile-directory=${profile.dir}`], { detached: true, stdio: 'ignore' })
+  child.on('error', () => undefined)
+  child.unref()
+  for (let waited = 0; waited < 40_000; waited += 500) {
+    if (profiles().some((one) => one.label === label)) return { ok: true, said: `${label} is open and connected.` }
+    await new Promise((done) => setTimeout(done, 500))
+  }
+  return { ok: false, said: `Opened ${profile.name}, but GeckIt Browser did not connect from it within 40 seconds.` }
+}
+
+function listProfiles(): string {
+  const known = profiles()
+  const last = [...known].sort((a, b) => b.focused - a.focused)[0]
+  const chrome = chromeProfiles()
+  const lines = chrome.map((one) => {
+    const label = one.email || one.name
+    const open = known.find((host) => host.label === one.email && one.email !== '')
+    const state = !one.extension ? 'no GeckIt Browser' : open !== undefined ? `open, ${open.tabs.length} tabs${open === last ? ', used last' : ''}` : known.length === 0 && fresh(browserFolder()) ? 'GeckIt Browser, an older one that does not say whether it is open: reload it in chrome://extensions' : 'GeckIt Browser, closed: start opens it'
+    return `${label.padEnd(34)} ${one.name.padEnd(20)} ${state}`
+  })
+  const unnamed = known.filter((host) => !chrome.some((one) => one.email === host.label)).map((host) => `${host.label.padEnd(34)} ${''.padEnd(20)} open, ${host.tabs.length} tabs${host === last ? ', used last' : ''}`)
+  return [...lines, ...unnamed].join('\n') || 'No Chrome profile found.'
+}
+
 /** Which profile a request goes to: the one that owns its tab, the one asked for by name, or the one the person used last. */
 export function pickProfile(known: readonly Profile[], request: { readonly tab?: number }, named?: string): Profile | string {
   if (named !== undefined) {
-    const match = known.filter((one) => one.label.toLowerCase().includes(named.toLowerCase()))
+    const emails = chromeProfiles().filter((one) => matches(one, named)).map((one) => one.email)
+    const match = known.filter((one) => one.label.toLowerCase().includes(named.toLowerCase()) || emails.includes(one.label))
     if (match.length === 1 && match[0] !== undefined) return match[0]
     return `${match.length === 0 ? 'No' : 'More than one'} Chrome profile matches ${named}. Profiles: ${known.map((one) => one.label).join(', ')}.`
   }
@@ -235,6 +295,8 @@ async function ask(request: object, folder: string = browserFolder(), to?: numbe
 
 export const BROWSER_HELP = `geckit browser: the person's own Chrome, through the GeckIt Browser extension.
 
+  profiles                      the Chrome profiles here: email, name, whether GeckIt Browser is in it and open, which was used last
+  start <profile>               open a window of a profile that has GeckIt Browser but is closed
   pages [--profile <name>]      tabs: id, title, url (* is the tab shown in its window), under each Chrome profile's email
   open <url> [--profile <name>] open in a new background tab and wait for it to load; the profile used last unless --profile
   go <tab> <url>                load a url in a tab
@@ -279,6 +341,8 @@ function option(args: readonly string[], name: string): string | undefined {
 export async function browser(args: readonly string[]): Promise<{ readonly ok: boolean; readonly said: string }> {
   const [what, ...rest] = args
   if (what === undefined || what === 'help' || what === '--help') return { ok: true, said: BROWSER_HELP }
+  if (what === 'profiles') return { ok: true, said: listProfiles() }
+  if (what === 'start') return startProfile(rest[0])
   const words = rest.filter((one, at) => !(one.startsWith('--') || one === '-o') && !VALUED.includes(rest[at - 1] ?? ''))
   try {
     const request = (): object => {

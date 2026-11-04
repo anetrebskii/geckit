@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
@@ -10,6 +11,8 @@ import type { ClaudeRequest } from './claude-read'
 import { askId } from './heard'
 import type { Driver, Heard, Signal } from './heard'
 import { questionsFromClaude } from './wording'
+import { browserBridgeOn } from '../../cli/browser'
+import { browserPluginFolder } from '../guide'
 
 /**
  * One conversation with Claude Code, held by one process.
@@ -129,7 +132,7 @@ export function holdClaude(
   let over = false
   let last = ''
 
-  const args = claudeArgs(options)
+  const args = options.launch === undefined && browserBridgeOn() && existsSync(browserPluginFolder()) ? [...claudeArgs(options).filter((one) => one !== '--chrome'), '--plugin-dir', browserPluginFolder()] : claudeArgs(options)
   const child: Held =
     options.launch?.(args) ?? spawn(claudeCommand(), args, { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true })
   const closed = new Promise<void>((resolve) => {

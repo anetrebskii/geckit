@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { EXTENSION_ID, installBrowserBridge, removeBrowserBridge, setBrowserBridgeOn } from '../src/cli/browser'
-import { BROWSER } from '../src/main/guide'
+import { BROWSER, BROWSER_SKILL } from '../src/main/guide'
 
 describe('browser bridge install', () => {
   it('writes the extension, the host program and Chrome\'s host manifest for the installed browsers only', () => {
@@ -39,6 +39,15 @@ describe('browser bridge install', () => {
     expect(BROWSER('/bin/geckit')).toBe('')
     setBrowserBridgeOn(true)
     expect(BROWSER('/bin/geckit')).toContain('## Chrome through GeckIt')
+    expect(BROWSER('/bin/geckit', true)).toContain('`geckit:browser` skill')
+    expect(BROWSER('/bin/geckit', false, true)).toContain('browser profiles')
     setBrowserBridgeOn(false)
+  })
+
+  it('gives the skill its name, when to use it, and how to pick a profile', () => {
+    const skill = BROWSER_SKILL('/bin/geckit', 'geckit-browser')
+    expect(skill).toMatch(/^---\nname: geckit-browser\ndescription: .+\n---\n/)
+    expect(skill).toContain('/bin/geckit browser profiles')
+    expect(skill).toContain('--profile <email or name>')
   })
 })
