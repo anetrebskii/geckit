@@ -1,12 +1,37 @@
 {
   "manifest_version": 3,
   "name": "GeckIt Browser",
-  "version": "1.1.0",
-  "description": "Lets GeckIt conversations read and use the tabs of this Chrome profile.",
+  "version": "1.2.0",
+  "description": "Lets GeckIt conversations read, check and use your Chrome tabs. Click the icon to see which tabs they used and what they did.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq5/IRouI5hZUNcaawEmRFfSBEZJtHjiov5Y8K9zOlPMDObnOVauL2z8qd5CK5Ln/4BDvsCHjsPRXRV8N/kQzrKhsQPAF9Pl88kiBHas21yXFZ7mBU8oDtahBMpl9ZM2uO7i8TgpNaiNO/SPr0S/5SRpfTWsM1SI7pbkk65VeLRi6I+YCB8nEmAq+SnQC1z0FTTIfptAHCChCKKZlUX99l1m2Sm4VkNFowC1jzx2IGX1iiAtpEMsj7cWDT6zvWGodQHnAEOK3q61EY/h2fDgmHKv/aIKyoObjfH6ALp8XaqHc8bK6VZuvY2aK19nQkJMYnmNe/uk2wdL3WGtYMN6i7QIDAQAB",
   "minimum_chrome_version": "116",
-  "background": { "service_worker": "background.js" },
-  "permissions": ["tabs", "tabGroups", "scripting", "debugger", "nativeMessaging", "alarms"],
-  "action": { "default_title": "GeckIt Browser" },
-  "host_permissions": ["<all_urls>"]
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "scripting",
+    "debugger",
+    "nativeMessaging",
+    "alarms",
+    "storage"
+  ],
+  "action": {
+    "default_title": "GeckIt Browser",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
+  "host_permissions": [
+    "<all_urls>"
+  ]
 }

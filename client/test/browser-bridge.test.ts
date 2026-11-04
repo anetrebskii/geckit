@@ -12,6 +12,9 @@ describe('browser bridge install', () => {
     installBrowserBridge('/Applications/GeckIt.app/Contents/MacOS/GeckIt', '/Applications/GeckIt.app/Contents/Resources/app.asar/out/main/cli.js', 'darwin', root)
     const extension = JSON.parse(readFileSync(join(root, '.geckit', 'chrome-extension', 'manifest.json'), 'utf8')) as { permissions: string[] }
     expect(extension.permissions).toContain('nativeMessaging')
+    const named = readFileSync(join(root, '.geckit', 'chrome-extension', 'manifest.json'), 'utf8').match(/[\w/]+\.(png|html)/g) ?? []
+    for (const file of named) expect(statSync(join(root, '.geckit', 'chrome-extension', file)).size).toBeGreaterThan(0)
+    expect(readFileSync(join(root, '.geckit', 'chrome-extension', 'icons', '16.png')).subarray(1, 4).toString()).toBe('PNG')
     const host = join(root, '.geckit', 'bin', 'geckit-browser-host')
     expect(readFileSync(host, 'utf8')).toContain('"/Applications/GeckIt.app/Contents/Resources/app.asar/out/main/cli.js" browser-host "$@"')
     expect(statSync(host).mode & 0o111).not.toBe(0)

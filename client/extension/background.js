@@ -1,21 +1,77 @@
 const HOST = 'org.geckit.browser'
 
+const PAUSED = 'The person paused GeckIt in Chrome. Ask them to turn on Let GeckIt use Chrome in the GeckIt Browser button.'
+
+// What the toolbar panel shows, kept in session storage so it outlives the service worker but not Chrome.
+let state = { connected: false, busy: null, tabs: {}, views: {}, log: [] }
+const ready = chrome.storage.session.get('state').then((got) => { if (got.state) state = { ...state, ...got.state } }, () => undefined)
+let saving = Promise.resolve()
+
+function save(change) {
+  saving = saving.then(async () => { await ready; change(state); await chrome.storage.session.set({ state }) }).catch(() => undefined)
+  return saving
+}
+
 let port
 
 function connect() {
   if (port !== undefined) return
   try { port = chrome.runtime.connectNative(HOST) } catch { port = undefined; return }
+  const mine = port
+  setTimeout(() => { if (port === mine) void save((now) => { now.connected = true }) }, 1000)
   port.onMessage.addListener((request) => {
-    answer(request).then(
+    run(request).then(
       (result) => port?.postMessage({ id: request.id, ok: true, result }),
       (error) => port?.postMessage({ id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) }),
     )
   })
   port.onDisconnect.addListener(() => {
     void chrome.runtime.lastError
-    port = undefined
+    if (port === mine) port = undefined
+    void save((now) => { now.connected = false; now.busy = null })
   })
 }
+
+const detailOf = (request, result) => request.cmd === 'open' || request.cmd === 'go' ? hostOf(request.url)
+  : request.cmd === 'click' ? result?.clicked : request.cmd === 'hover' ? result?.hovered
+  : request.cmd === 'key' ? request.key : request.cmd === 'record' ? request.ms : request.cmd === 'view' && request.reset ? 'reset' : undefined
+
+function hostOf(url) {
+  try { return new URL(url).host || url } catch { return url }
+}
+
+async function run(request) {
+  if (request.cmd === 'ping') return answer(request)
+  const started = Date.now()
+  const asked = Number.isInteger(request.tab) ? await chrome.tabs.get(request.tab).catch(() => undefined) : undefined
+  const done = (result, error) => save((now) => {
+    const id = request.cmd === 'open' ? result?.id : asked?.id
+    const detail = detailOf(request, result)
+    now.busy = null
+    now.log = [{ t: started, cmd: request.cmd, tab: id, title: result?.title || asked?.title || '', detail, error }, ...now.log].slice(0, 30)
+    if (id === undefined || error === PAUSED) return
+    if (request.cmd === 'close' && error === undefined) { delete now.tabs[id]; delete now.views[id]; return }
+    now.tabs[id] = { t: started, cmd: request.cmd, detail, error, opened: request.cmd === 'open' || now.tabs[id]?.opened === true }
+  })
+  if ((await chrome.storage.local.get('paused')).paused === true) { await done(undefined, PAUSED); throw new Error(PAUSED) }
+  await save((now) => { now.busy = { t: started, cmd: request.cmd, tab: asked?.id, title: asked?.title ?? '', detail: detailOf(request) } })
+  try {
+    const result = await answer(request)
+    await done(result)
+    return result
+  } catch (error) {
+    await done(undefined, error instanceof Error ? error.message : String(error))
+    throw error
+  }
+}
+
+chrome.tabs.onRemoved.addListener((id) => { void save((now) => { delete now.tabs[id]; delete now.views[id] }) })
+
+chrome.runtime.onMessage.addListener((message, _sender, reply) => {
+  if (message?.reset === undefined) return false
+  answer({ cmd: 'view', tab: message.reset, reset: true }).then(() => reply({ ok: true }), (error) => reply({ ok: false, error: error.message }))
+  return true
+})
 
 chrome.alarms.create('connect', { periodInMinutes: 0.5 })
 chrome.alarms.onAlarm.addListener(connect)
@@ -39,7 +95,10 @@ async function inPage(id, func, ...args) {
 
 // Tabs the debugger stays attached to, because what view emulates lasts only while it does.
 const held = new Map()
-chrome.debugger.onDetach.addListener((source) => { held.delete(source.tabId) })
+chrome.debugger.onDetach.addListener((source) => {
+  held.delete(source.tabId)
+  void save((now) => { delete now.views[source.tabId] })
+})
 
 async function debug(id, steps, keep = false) {
   await tab(id)
@@ -167,9 +226,9 @@ async function answer(request) {
       return debug(id, async (send) => { await mouse(send, at, false); return { hovered: at.label } })
     }
     case 'type': await inPage(id, pagePointer, request.ref, 'type'); return inPage(id, pageType, request.ref, request.text)
-    case 'scroll': await inPage(id, pagePointer, request.ref, 'scroll'); return inPage(id, pageScroll, request.ref, request.by)
+    case 'scroll': await inPage(id, pagePointer, request.ref ?? null, 'scroll'); return inPage(id, pageScroll, request.ref ?? null, request.by)
     case 'key': {
-      await inPage(id, pagePointer, undefined, 'key')
+      await inPage(id, pagePointer, null, 'key')
       return debug(id, async (send) => ({ pressed: await press(send, request.key) }))
     }
     case 'eval': return debug(id, async (send) => {
@@ -201,6 +260,7 @@ async function answer(request) {
           held.delete(id)
           await chrome.debugger.detach({ tabId: id }).catch(() => undefined)
         }
+        await save((now) => { delete now.views[id] })
         return { reset: true }
       }
       const next = { ...(held.get(id) ?? {}), ...request.set }
@@ -208,6 +268,7 @@ async function answer(request) {
         if (next.width !== undefined) await send('Emulation.setDeviceMetricsOverride', { width: next.width, height: next.height, deviceScaleFactor: next.phone ? 3 : 0, mobile: next.phone === true })
         await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: next.scheme ?? '' }, { name: 'prefers-reduced-motion', value: next.motion ?? '' }] })
         held.set(id, next)
+        await save((now) => { now.views[id] = next })
         const size = await send('Runtime.evaluate', { expression: '[innerWidth, innerHeight, matchMedia("(prefers-color-scheme: dark)").matches, matchMedia("(prefers-reduced-motion: reduce)").matches]', returnByValue: true })
         const [width, height, dark, still] = size.result.value
         return { width, height, dark, still }
@@ -625,7 +686,7 @@ function pageType(ref, text) {
 }
 
 function pageScroll(ref, by) {
-  if (ref !== undefined) {
+  if (ref != null) {
     const find = (root) => {
       const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
       if (hit) return hit
@@ -675,7 +736,7 @@ async function pagePointer(ref, kind) {
   clearTimeout(overlay.timer)
   edge.classList.add('on')
   const rest = () => { overlay.timer = setTimeout(() => { edge.classList.remove('on'); pointer.classList.remove('on') }, REST) }
-  if (ref === undefined) { rest(); return {} }
+  if (ref == null) { rest(); return {} }
   const find = (where) => {
     const hit = where.querySelector(`[data-geckit-ref="${ref}"]`)
     if (hit) return hit

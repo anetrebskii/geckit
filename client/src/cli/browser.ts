@@ -7,6 +7,12 @@ import { dirname, join, resolve } from 'node:path'
 
 import background from '../../extension/background.js?raw'
 import manifest from '../../extension/manifest.json?raw'
+import popup from '../../extension/popup.html?raw'
+import popupScript from '../../extension/popup.js?raw'
+import icon16 from '../../extension/icons/16.png?inline'
+import icon32 from '../../extension/icons/32.png?inline'
+import icon48 from '../../extension/icons/48.png?inline'
+import icon128 from '../../extension/icons/128.png?inline'
 
 export const BROWSER_HOST = 'org.geckit.browser'
 export const EXTENSION_ID = 'ndoeihcbgkfaajhjeojbhmajkiojkjjp'
@@ -39,6 +45,10 @@ export function installBrowserBridge(executable: string, script: string, platfor
   mkdirSync(folder, { recursive: true })
   writeFileSync(join(folder, 'manifest.json'), manifest)
   writeFileSync(join(folder, 'background.js'), background)
+  writeFileSync(join(folder, 'popup.html'), popup)
+  writeFileSync(join(folder, 'popup.js'), popupScript)
+  mkdirSync(join(folder, 'icons'), { recursive: true })
+  for (const [size, data] of Object.entries({ 16: icon16, 32: icon32, 48: icon48, 128: icon128 })) writeFileSync(join(folder, 'icons', `${size}.png`), Buffer.from(data.slice(data.indexOf(',') + 1), 'base64'))
   const quoted = (path: string): string => `"${path.replace(/(["\\$`])/g, '\\$1')}"`
   const wrapper = wrapperPath(root)
   mkdirSync(dirname(wrapper), { recursive: true })
