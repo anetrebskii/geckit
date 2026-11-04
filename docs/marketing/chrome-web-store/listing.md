@@ -2,6 +2,12 @@
 
 What goes into each field of the Chrome Web Store Developer Dashboard. The package is `client/out/geckit-browser-<version>.zip` from `client/scripts/extension-store.sh`, which drops `key` from the manifest because the store refuses it. The store gives the item its own id; that id has to be added to `allowed_origins` of the native host (`STORE_EXTENSION_IDS` in `client/src/cli/browser.ts`) before a store install can reach GeckIt.
 
+## Status
+
+- Item id `mjllmbfhnbeihgghghnbbkfcpahljnkp`, in `STORE_EXTENSION_IDS` since 2e4f172. Publisher anetrebskii (aleks.netrebskiy@gmail.com). Dashboard: https://chrome.google.com/webstore/devconsole/f007196f-178b-4e16-ae41-a707601105aa/mjllmbfhnbeihgghghnbbkfcpahljnkp/edit
+- 2026-11-04: version 1.3.0 submitted for review, Unlisted, all regions, published automatically once it passes. The store warned of an in-depth review because of `<all_urls>`; it was kept, since a conversation works on whatever site the person asks about.
+- Every Web Store dashboard page is closed to extensions, GeckIt Browser included; it was filled through Chrome for Testing, which is what test browsers (`geckit browser start test:<name>`) now do.
+
 ## Store listing
 
 - **Name** (from the manifest): GeckIt Browser
