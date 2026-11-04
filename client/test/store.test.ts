@@ -390,3 +390,18 @@ it('does not publish a prepared copy if its initial Notes write fails', async ()
     rmSync(originalFolder, { recursive: true, force: true })
   }
 })
+
+it('turns Chrome through GeckIt on once for settings saved while it was off by default, then keeps what is chosen', () => {
+  const { chromeBridgeDefault: _marker, ...before } = DEFAULT_SETTINGS
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-chrome-settings-'))
+  writeFileSync(join(state.folder, 'settings.json'), JSON.stringify({ ...before, phoneKey: 'chrome-test', chromeBridge: false }))
+  onSettings(() => {})()
+  try {
+    expect(getSettings().chromeBridge).toBe(true)
+    setSettings({ chromeBridge: false })
+    loadVpnSettings(JSON.parse(readFileSync(join(state.folder, 'settings.json'), 'utf8')) as Partial<Settings>)
+    expect(getSettings().chromeBridge).toBe(false)
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})

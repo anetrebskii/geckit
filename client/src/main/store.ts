@@ -90,8 +90,11 @@ export function getSettings(): Settings {
     } = (read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }) as Settings & Readonly<Record<string, unknown>>
     // A build from before the welcome kept no answer, and anyone with a project has already set up.
     const welcomed = read<Partial<Settings>>(SETTINGS, {})?.welcomed
+    const chromeChosen = read<Partial<Settings>>(SETTINGS, {})?.chromeBridgeDefault === 1
     settings = {
       ...found,
+      chromeBridge: chromeChosen ? found.chromeBridge : true,
+      chromeBridgeDefault: 1,
       vpnIpCheck: found.vpnIpCheck !== false,
       vpnAllowedIps: validateVpnIps(found.vpnAllowedIps).ips,
       chatTransport: found.chatTransport === 'tmux' ? 'tmux' : 'stream',

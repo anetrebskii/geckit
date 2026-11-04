@@ -1166,6 +1166,8 @@ export interface Settings {
   readonly guidePlugins: Readonly<Record<string, boolean>>
   /** Chrome through GeckIt: the extension's native host, the find model and the Chrome part of the guides. */
   readonly chromeBridge: boolean
+  /** Set once Chrome through GeckIt became on by default, so settings saved before then are turned on once and kept as chosen after. */
+  readonly chromeBridgeDefault?: 1
   /** Shortcuts in any application turned off here, as a copy run beside another GeckIt wants. */
   readonly anywhereOff: readonly Anywhere[]
   /** When the Chat window flashes in the taskbar for a notice, on Windows; the Mac bounces the Dock itself. */
@@ -1327,7 +1329,8 @@ export const DEFAULT_SETTINGS: Settings = {
   guideClaude: true,
   guideCodex: true,
   guidePlugins: {},
-  chromeBridge: false,
+  chromeBridge: true,
+  chromeBridgeDefault: 1,
   anywhereOff: [],
   flashFor: 'asks',
   soundFor: 'never',
