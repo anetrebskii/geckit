@@ -163,3 +163,19 @@ Alex opens Manager inspection to find why queued Telegram work has stopped advan
 A provider wait takes precedence over unrelated worker questions or historical delivery reviews in the summary badge; those decisions stay available in Telegram. A retry is not a new approval and does not mark queued messages complete. Only notices for the active turn are accepted; stale notices must not affect a newer turn. No timeout or retry schedule is invented: Codex owns its backoff, and an ETA is omitted because its error notification does not provide one. The transient notice is not restored as current state after restart. No repeated Telegram notifications are sent. Existing layout, scrolling, keyboard and theme behavior are reused.
 
 Acceptance: a native 429 retry appears while the same turn remains busy, updates without redispatch, clears on real progress and every terminal path, ignores stale turns, and keeps genuine approvals and queued work intact. Review the actual inspection in both themes with a long native message and pending decisions. This fixes hidden retry state; it cannot remove the provider's rate limit.
+
+## Delayed CLI receipts after recovery
+
+A result arriving after recovery describes the operation that actually ran, rather than the time Alex first requested the work. `sessions list` and `sessions show` expose `observedAt` for their fresh read. A cached operation retains its original result and observation time; use a new operation ID for a new read. Neither a delayed read nor a worker notification establishes that a previous retry caused the current state.
+
+A completed host operation and delivery of its receipt to Manager are separate boundaries. If VPN verification holds that receipt, it remains in the durable inbox and is delivered through guarded recovery before later queued inbox entries. Retrying receipt delivery must not rerun the CLI command. A failed worker creation stays failed with its exact provider reason; a recovered receipt does not turn it into a started worker or invent a session ID. An interrupted mutation without a definitive receipt remains uncertain and requires read-only reconciliation.
+
+| From | Event | To | What Alex sees |
+| --- | --- | --- | --- |
+| Host command complete | VPN check blocks its receipt automatically | Receipt held | Existing VPN reason; command result remains saved |
+| Receipt held | Guarded revalidation passes automatically | Receipt delivered | Original result, without running the command again |
+| Receipt delivered | Manager consumes the result automatically | Next queued entry | Existing queue continues in order |
+| Worker creation failed | Receipt arrives after recovery | Failed | Original provider error; no success or worker identity claimed |
+| Read complete | Same operation ID is requested again | Cached read | Original observation time and existing cached-result notice |
+
+No new UI or notification is added. Genuine permission requirements and optional uncertain-upload review retain their existing behavior. Regression fixtures distinguish host operation execution, runtime receipt acceptance, model consumption and restart reconciliation; fixture success is not a live provider or VPN test.
