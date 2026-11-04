@@ -53,7 +53,7 @@ import type {
   WorkItem,
 } from '../../shared/api'
 import { providerOf, sessionMode } from '../../shared/api'
-import { VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError, vpnIpPausedError } from '../../shared/vpn-ip'
+import { VPN_IP_CANCELLED_ERROR, VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError, vpnIpPausedError } from '../../shared/vpn-ip'
 import { VpnSessionMonitor } from './vpn-monitor'
 import { HOOK_BLOCKED } from './claude-read'
 import { providerQuotas } from '../../shared/provider-usage'
@@ -2079,7 +2079,7 @@ export class Sessions {
         if (provisional && target !== undefined) { this.#live.delete(target.id); this.#changed() }
         throw error
       }
-      const text = cancelled ? 'Not sent: public IP check cancelled. Try again when you are ready.' : error.message
+      const text = cancelled ? VPN_IP_CANCELLED_ERROR : error.message
       if (target === undefined) {
         const provider = message.provider ?? (message.session === undefined ? 'claude' : providerOf(message.session))
         const id = `${provider === 'claude' ? '' : `${provider}:`}pending-${randomUUID()}`
@@ -2269,7 +2269,7 @@ export class Sessions {
         live.state = 'failed'
         this.#uncut(live.id)
         this.#finishDelivery(delivery, live.id, 'blocked', { reason: error instanceof Error ? error.message : String(error) })
-        this.#blocked(live, { kind: 'message', message: { ...message, session: live.id, again: mine.id }, go, queued, delegateFrom }, error instanceof GuardCancelled ? 'Not sent: public IP check cancelled. Try again when you are ready.' : error.message)
+        this.#blocked(live, { kind: 'message', message: { ...message, session: live.id, again: mine.id }, go, queued, delegateFrom }, error instanceof GuardCancelled ? VPN_IP_CANCELLED_ERROR : error.message)
         return live.id
       }
       this.#tellItems({ id: live.id, items: [mine], gone })
@@ -2286,7 +2286,7 @@ export class Sessions {
         live.state = 'failed'
         this.#uncut(live.id)
         this.#finishDelivery(delivery, live.id, 'blocked', { reason: error instanceof Error ? error.message : String(error) })
-        this.#blocked(live, { kind: 'message', message: { ...message, session: live.id, again: mine.id }, go, queued, delegateFrom }, error instanceof GuardCancelled ? 'Not sent: public IP check cancelled. Try again when you are ready.' : error instanceof Error ? error.message : String(error))
+        this.#blocked(live, { kind: 'message', message: { ...message, session: live.id, again: mine.id }, go, queued, delegateFrom }, error instanceof GuardCancelled ? VPN_IP_CANCELLED_ERROR : error instanceof Error ? error.message : String(error))
         this.#changed()
         return live.id
       }

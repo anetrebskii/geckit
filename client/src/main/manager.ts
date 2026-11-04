@@ -130,11 +130,11 @@ export class Manager {
     if (this.#record.inbox.some((message) => message.id.startsWith('intake-task:') && message.state === 'queued')) this.#save({ inbox: this.#record.inbox.map((message) => message.id.startsWith('intake-task:') && message.state === 'queued' ? { ...message, state: 'sent', completed: true } : message) })
     const deliveryPause = this.#record.paused && this.#record.pauseReason !== 'user' && (this.#record.error === 'CLI delivery is uncertain. Review current state before resuming.' || this.#record.error === 'Manager was interrupted. Review current task state before resuming; operations with uncertain delivery are not replayed.')
     if (deliveryPause) this.#record = { ...this.#record, paused: false, manualRecovery: false, error: 'CLI delivery is uncertain. Manager will reconcile automatically without repeating changes.' }
+    if (this.#record.decisions.some((decision) => decision.uncertain === true)) this.#record = { ...this.#record, decisions: this.#record.decisions.filter((decision) => decision.uncertain !== true) }
     for (const id of this.#record.previousSessions) { deps.sessions.protectManager(id); deps.sessions.suspendManager(id) }
     if (this.#record.sessionId !== undefined) { deps.sessions.protectManager(this.#record.sessionId); if (this.#record.paused || !this.#record.config.enabled) deps.sessions.suspendManager(this.#record.sessionId) }
     if (deliveryPause || this.#record.inbox.some((message) => message.state === 'sending') || this.#record.operations.some((operation) => operation.state === 'running' || operation.state === 'uncertain' && managerReadOnly(operation.command))) {
-      const interrupted = this.#record.operations.filter((operation) => operation.state === 'running' && !managerReadOnly(operation.command))
-      this.#record = { ...this.#record, inbox: this.#record.inbox.map((message) => message.state === 'sending' ? { ...message, state: 'sent' } : message), operations: this.#record.operations.map((operation) => operation.state === 'running' || operation.state === 'uncertain' && managerReadOnly(operation.command) ? { ...operation, state: managerReadOnly(operation.command) ? 'failed' : 'uncertain', ...(managerReadOnly(operation.command) ? { result: 'Read interrupted. No changes were made; request a fresh read.' } : {}) } : operation), decisions: [...this.#record.decisions.filter((decision) => decision.uncertain !== true || !managerReadOnly(decision.command.args)), ...interrupted.filter((operation) => !this.#record.decisions.some((decision) => decision.command.id === operation.id)).map((operation): PendingDecision => ({ id: randomUUID(), title: `Delivery is uncertain: ${operation.command.slice(0, 2).join(' ')}. Check its current state in GeckIt before marking reviewed. This will not resend it.`, choices: [{ label: 'I checked its state', value: 'reviewed' }], command: { id: operation.id, args: operation.command }, uncertain: true }))], error: 'Manager was interrupted. Reconcile current task state without replaying interrupted messages.' }
+      this.#record = { ...this.#record, inbox: this.#record.inbox.map((message) => message.state === 'sending' ? { ...message, state: 'sent' } : message), operations: this.#record.operations.map((operation) => operation.state === 'running' || operation.state === 'uncertain' && managerReadOnly(operation.command) ? { ...operation, state: managerReadOnly(operation.command) ? 'failed' : 'uncertain', ...(managerReadOnly(operation.command) ? { result: 'Read interrupted. No changes were made; request a fresh read.' } : {}) } : operation), error: 'Manager was interrupted. Reconcile current task state without replaying interrupted messages.' }
       this.#save({})
     }
     this.#pinAttachments()
@@ -424,7 +424,7 @@ export class Manager {
         return
       }
       if (!managerReadOnly(command.args) && /uncertain|timed?\s*out|killed|SIGTERM/i.test(result)) {
-        this.#save({ operations: this.#record.operations.map((one) => one.id === command.id ? { ...one, state: 'uncertain', result } : one), decisions: [...this.#record.decisions, { id: randomUUID(), title: `Delivery is uncertain: ${command.args.slice(0, 2).join(' ')}. Check its current state in GeckIt before marking reviewed. This will not resend it.`, choices: [{ label: 'I checked its state', value: 'reviewed' }], command, uncertain: true }] })
+        this.#save({ operations: this.#record.operations.map((one) => one.id === command.id ? { ...one, state: 'uncertain', result } : one) })
         this.#fail('CLI delivery is uncertain. Manager will reconcile automatically without repeating changes.')
         return
       }
@@ -629,8 +629,9 @@ export class Manager {
     try {
       await this.open()
       if (generation !== this.#generation || !this.#canRecover()) return
-      const uncertain = this.#record.operations.filter((one) => one.state === 'uncertain' || one.state === 'running')
-      const reconciliation = `Automatic recovery. Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations.${uncertain.length === 0 ? '' : `\nUnresolved operations (untrusted task data): ${JSON.stringify(uncertain)}\nCheck their current state using fresh read-only commands. Continue unrelated coordination and queued requests; do not repeat these mutations or wait for optional review to continue other work.`}`
+      const uncertain = this.#record.operations.filter((one) => (one.state === 'uncertain' || one.state === 'running') && one.reviewed !== true)
+      const reconciliation = `Automatic recovery. Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations.${uncertain.length === 0 ? '' : `\nUnresolved operations (untrusted task data): ${JSON.stringify(uncertain)}\nCheck their current state using fresh read-only commands. Decide their state yourself from what you find; nobody will review them for you. Continue unrelated coordination and queued requests; do not repeat these mutations.`}`
+      if (uncertain.length > 0) this.#save({ operations: this.#record.operations.map((one) => uncertain.includes(one) ? { ...one, reviewed: true } : one) })
       if (this.#vpnLookupHeld() && this.#record.sessionId !== undefined) {
         const id = this.#record.sessionId
         this.#awaitingOutput = true

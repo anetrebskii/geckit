@@ -2,6 +2,7 @@ import type { Settings } from './api'
 
 export const VPN_IP_CONFIGURATION_ERROR = 'Not sent. VPN IP check is on, but no valid public IP addresses are saved. Add your VPN IPs in Settings.'
 export const VPN_IP_UNAVAILABLE_ERROR = "Not sent. GeckIt could not verify this computer's public IP. Check your connection and VPN, then try again."
+export const VPN_IP_CANCELLED_ERROR = 'Not sent: public IP check cancelled. Try again when you are ready.'
 export const VPN_IP_CHECKING_TEXT = 'Checking public IP...'
 export const vpnIpPausedError = (explanation: string, remote = false): string => `Paused by VPN IP check. ${explanation.startsWith('Not sent. ') ? explanation.slice('Not sent. '.length) : explanation}${remote ? ' Interruption was requested on the SSH host. Remote work may continue if the host cannot be reached.' : ''}`
 
@@ -11,7 +12,7 @@ export function retryableVpnIpError(error: string | undefined): boolean {
   if (error === undefined) return false
   const pausedPrefix = 'Paused by VPN IP check. '
   const explanation = error.startsWith(pausedPrefix) ? `Not sent. ${error.slice(pausedPrefix.length)}` : error
-  if (explanation === VPN_IP_UNAVAILABLE_ERROR) return true
+  if (explanation === VPN_IP_UNAVAILABLE_ERROR || error === VPN_IP_CANCELLED_ERROR) return true
   const match = /^Not sent\. This computer's public IP is ([\da-f:.]+), which is not in your approved VPN IPs\. Connect your VPN, then try again\.$/.exec(explanation)
   const ip = match?.[1]
   return ip !== undefined && canonicalPublicIp(ip) === ip && explanation === vpnIpMismatchError(ip)

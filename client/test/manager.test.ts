@@ -278,7 +278,7 @@ describe('Manager CLI delivery recovery', () => {
     expect(f.cli).toHaveLength(1)
   })
 
-  it('keeps reviewed uploads uncertain across restart and rejects replays without blocking unrelated commands', async () => {
+  it('drops legacy review cards, keeps uploads uncertain across restart and rejects replays without blocking unrelated commands', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true })
     const id = await f.manager.open()
@@ -287,7 +287,7 @@ describe('Manager CLI delivery recovery', () => {
     const args = ['telegram', 'send-file', '--id', 'worker', '--path', 'report.txt']
     await writeFile(path, JSON.stringify({ ...stored, paused: true, pauseReason: 'user', operations: [{ id: 'uncertain-upload', at: 1, state: 'uncertain', command: args }], decisions: [{ id: 'review-upload', uncertain: true, command: { id: 'uncertain-upload', args }, title: 'Check state', choices: [{ label: 'I checked its state', value: 'reviewed' }] }] }))
     const restored = f.reload()
-    await expect(restored.answer('review-upload', 'reviewed')).resolves.toMatchObject({ state: 'paused', answer: expect.stringContaining('Delivery remains uncertain') })
+    expect((await restored.view()).decisions).toEqual([])
     await expect(restored.answer('review-upload', 'reviewed')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
     expect((await restored.view()).activity[0]?.state).toBe('uncertain')
     expect(f.cli).toHaveLength(0)
@@ -428,7 +428,8 @@ describe('Manager CLI delivery recovery', () => {
     expect(view.session?.id).toBe(id)
     expect(view.config.chatModel).toBe('sonnet')
     expect(view.workers.find((one) => one.id === worker)?.state).toBe('working')
-    expect(view.decisions).toHaveLength(kind === 'read' ? 0 : 1)
+    expect(view.decisions).toEqual([])
+    if (kind === 'mutation') expect(f.sent.at(-1)?.text).toContain('Decide their state yourself')
     expect(view.activity[0]?.state).toBe(kind === 'read' ? 'failed' : 'uncertain')
     f.finish(id, 'Reconciled without replay')
     await settle()
@@ -1074,21 +1075,6 @@ describe('Manager session', () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
-  it('reports a recorded uncertainty review even when a subsequent provider refresh would fail', async () => {
-    const f = await fixture()
-    await f.manager.configure({ enabled: true })
-    const path = join(f.directory, 'manager.json')
-    const stored = JSON.parse(await readFile(path, 'utf8')) as Pick<ManagerView, 'config'>
-    const args = ['telegram', 'send-file', '--id', 'worker', '--path', 'report.txt']
-    await writeFile(path, JSON.stringify({ ...stored, operations: [{ id: 'upload', at: 1, command: args, state: 'uncertain' }], decisions: [{ id: 'review', uncertain: true, command: { id: 'upload', args }, title: 'Check state', choices: [{ label: 'I checked its state', value: 'reviewed' }] }] }))
-    const restored = f.reload()
-    const rows = await f.sessions.allForManager([f.root])
-    const refresh = vi.spyOn(f.sessions, 'allForManager').mockResolvedValueOnce(rows).mockRejectedValue(new Error('Provider refresh unavailable'))
-    await expect(restored.answer('review', 'reviewed')).resolves.toMatchObject({ answer: expect.stringContaining('Review recorded'), decisions: [], activity: [{ id: 'upload', state: 'uncertain' }] })
-    expect(refresh).toHaveBeenCalledTimes(1)
-    expect(f.cli).toHaveLength(0)
-  })
-
   it('answers a current Manager permission through the Telegram decision without exposing its transcript', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true })
@@ -1501,7 +1487,7 @@ describe('Manager session', () => {
     const view = await recovered.view()
     expect(view.state).toBe('blocked')
     expect(view.activity[0]?.state).toBe('uncertain')
-    expect(view.decisions[0]?.choices).toEqual([{ label: 'I checked its state', value: 'reviewed' }])
+    expect(view.decisions).toEqual([])
     expect(f.cli).toHaveLength(0)
     expect(f.sent).toHaveLength(0)
   })
