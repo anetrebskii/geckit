@@ -16,6 +16,8 @@ import icon128 from '../../extension/icons/128.png?inline'
 
 export const BROWSER_HOST = 'org.geckit.browser'
 export const EXTENSION_ID = 'ndoeihcbgkfaajhjeojbhmajkiojkjjp'
+/** Ids the Chrome Web Store gave the extension; an install from the store has one of these instead of the unpacked id. */
+export const STORE_EXTENSION_IDS: readonly string[] = []
 
 const home = (): string => join(homedir(), '.geckit')
 export const extensionFolder = (): string => join(home(), 'chrome-extension')
@@ -29,6 +31,9 @@ export const browserBridgeOn = (): boolean => bridgeOn
 export const setBrowserBridgeOn = (on: boolean): void => { bridgeOn = on }
 
 interface Reply { readonly ok: boolean; readonly result?: unknown; readonly error?: string }
+
+/** One Chrome profile with the extension: each starts its own host, which says here who it is and which tabs are its own. */
+interface Profile { readonly pid: number; readonly label: string; readonly tabs: readonly number[]; readonly focused: number; readonly t: number }
 
 /** Chrome's own folders for native messaging hosts of the current user, for the browsers present here. */
 function hostFolders(platform: NodeJS.Platform, root: string): string[] {
@@ -54,7 +59,7 @@ export function installBrowserBridge(executable: string, script: string, platfor
   mkdirSync(dirname(wrapper), { recursive: true })
   writeFileSync(wrapper, ['#!/bin/sh', '# Written by GeckIt when it starts. Anything changed here is written over.', `${llama === undefined ? '' : `GECKIT_LLAMA_SERVER=${quoted(llama)} `}ELECTRON_RUN_AS_NODE=1 exec ${quoted(executable)} ${quoted(script)} browser-host "$@"`, ''].join('\n'))
   chmodSync(wrapper, 0o755)
-  const described = `${JSON.stringify({ name: BROWSER_HOST, description: 'GeckIt Browser', path: wrapper, type: 'stdio', allowed_origins: [`chrome-extension://${EXTENSION_ID}/`] }, undefined, 2)}\n`
+  const described = `${JSON.stringify({ name: BROWSER_HOST, description: 'GeckIt Browser', path: wrapper, type: 'stdio', allowed_origins: [EXTENSION_ID, ...STORE_EXTENSION_IDS].map((id) => `chrome-extension://${id}/`) }, undefined, 2)}\n`
   for (const one of hostFolders(platform, root)) {
     try {
       mkdirSync(one, { recursive: true })
@@ -82,6 +87,14 @@ export function browserHost(folder: string = browserFolder()): void {
   let next = 1
   let held = Buffer.alloc(0)
   mkdirSync(folder, { recursive: true, mode: 0o700 })
+  mkdirSync(join(folder, 'hosts'), { recursive: true })
+  const card = join(folder, 'hosts', `${process.pid}.json`)
+  let me: Profile = { pid: process.pid, label: '', tabs: [], focused: 0, t: 0 }
+  const say = (): void => {
+    me = { ...me, t: Date.now() }
+    writeFileSync(`${card}.part`, JSON.stringify(me))
+    renameSync(`${card}.part`, card)
+  }
   const answer = (name: string, reply: Reply): void => {
     const file = join(folder, `${name}.told`)
     writeFileSync(`${file}.part`, JSON.stringify(reply))
@@ -99,18 +112,21 @@ export function browserHost(folder: string = browserFolder()): void {
     while (held.length >= 4) {
       const size = held.readUInt32LE(0)
       if (held.length < 4 + size) break
-      const message = JSON.parse(held.subarray(4, 4 + size).toString('utf8')) as Reply & { readonly id: number }
+      const message = JSON.parse(held.subarray(4, 4 + size).toString('utf8')) as Reply & { readonly id: number; readonly event?: string; readonly label?: string; readonly tabs?: number[]; readonly focused?: number }
       held = held.subarray(4 + size)
+      if (message.event === 'profile') { me = { ...me, label: message.label || `profile ${process.pid}`, tabs: message.tabs ?? [], focused: message.focused ?? 0 }; say(); continue }
       const back = waiting.get(message.id)
       waiting.delete(message.id)
       back?.(message)
     }
   })
-  process.stdin.on('end', () => { rmSync(join(folder, 'alive'), { force: true }); process.exit(0) })
+  process.stdin.on('end', () => { rmSync(join(folder, 'alive'), { force: true }); rmSync(card, { force: true }); process.exit(0) })
   const pick = (): void => {
     for (const file of readdirSync(folder)) {
       if (!file.endsWith('.ask')) continue
       const name = file.slice(0, -4)
+      const to = /\.(\d+)$/.exec(name)?.[1]
+      if (to !== undefined && Number(to) !== process.pid) continue
       if (taken.has(name)) continue
       taken.add(name)
       let request: object
@@ -129,7 +145,7 @@ export function browserHost(folder: string = browserFolder()): void {
     tell({ ...request, id })
   })
   const find = async (tab: number | undefined, query: string): Promise<Reply> => {
-    const read = await extension({ cmd: 'read', tab })
+    const read = await extension({ cmd: 'read', tab, find: query })
     if (!read.ok) return read
     const page = read.result as { readonly title: string; readonly url: string; readonly lines: readonly string[] }
     const byWords = (note: string): Reply => {
@@ -147,12 +163,17 @@ export function browserHost(folder: string = browserFolder()): void {
     } catch (error) { return byWords(`Matched by words: ${error instanceof Error ? error.message : String(error)}`) }
   }
   const beat = (): void => {
-    if (!existsSync(wrapperPath())) { rmSync(join(folder, 'alive'), { force: true }); process.exit(0) }
+    if (!existsSync(wrapperPath())) { rmSync(join(folder, 'alive'), { force: true }); rmSync(card, { force: true }); process.exit(0) }
     writeFileSync(join(folder, 'alive'), String(process.pid))
+    if (me.label !== '') say()
     for (const file of readdirSync(folder)) {
       if (file.endsWith('.told') && Date.now() - statSync(join(folder, file)).mtimeMs > 300_000) rmSync(join(folder, file), { force: true })
     }
   }
+  void extension({ cmd: 'ping' }).then((reply) => {
+    const loaded = (reply.result as { version?: string } | undefined)?.version
+    if (reply.ok && loaded !== (JSON.parse(manifest) as { version: string }).version) tell({ id: next++, cmd: 'reload' })
+  })
   beat()
   setInterval(beat, 5_000)
   watch(folder, pick)
@@ -162,10 +183,38 @@ export function browserHost(folder: string = browserFolder()): void {
 
 const NOT_CONNECTED = (): string => `The GeckIt Browser extension is not connected to Chrome. Ask the person to open chrome://extensions, turn on Developer mode, press Load unpacked and choose ${extensionFolder()}. If it is already there, Chrome may be closed.`
 
-async function ask(request: object, folder: string = browserFolder()): Promise<Reply> {
+/** The profiles whose host said who it is within the last 15 s. */
+export function profiles(folder: string = browserFolder()): Profile[] {
+  const where = join(folder, 'hosts')
+  let files: string[]
+  try { files = readdirSync(where).filter((one) => one.endsWith('.json')) } catch { return [] }
+  return files.flatMap((one) => {
+    try {
+      const said = JSON.parse(readFileSync(join(where, one), 'utf8')) as Profile
+      return Date.now() - said.t <= 15_000 ? [said] : []
+    } catch { return [] }
+  })
+}
+
+/** Which profile a request goes to: the one that owns its tab, the one asked for by name, or the one the person used last. */
+export function pickProfile(known: readonly Profile[], request: { readonly tab?: number }, named?: string): Profile | string {
+  if (named !== undefined) {
+    const match = known.filter((one) => one.label.toLowerCase().includes(named.toLowerCase()))
+    if (match.length === 1 && match[0] !== undefined) return match[0]
+    return `${match.length === 0 ? 'No' : 'More than one'} Chrome profile matches ${named}. Profiles: ${known.map((one) => one.label).join(', ')}.`
+  }
+  if (request.tab !== undefined) {
+    const owner = known.find((one) => one.tabs.includes(request.tab as number))
+    if (owner !== undefined) return owner
+    if (known.length > 1) return `No tab ${request.tab} in any Chrome profile. Run geckit browser pages for the current ids.`
+  }
+  return [...known].sort((a, b) => b.focused - a.focused)[0] ?? 'No Chrome profile is connected.'
+}
+
+async function ask(request: object, folder: string = browserFolder(), to?: number): Promise<Reply> {
   if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Assistants.' }
   if (!fresh(folder)) return { ok: false, error: NOT_CONNECTED() }
-  const name = randomUUID()
+  const name = to === undefined ? randomUUID() : `${randomUUID()}.${to}`
   const asked = join(folder, `${name}.ask`)
   try {
     writeFileSync(`${asked}.part`, JSON.stringify(request))
@@ -186,8 +235,8 @@ async function ask(request: object, folder: string = browserFolder()): Promise<R
 
 export const BROWSER_HELP = `geckit browser: the person's own Chrome, through the GeckIt Browser extension.
 
-  pages                         tabs: id, title, url (* is the tab shown in its window)
-  open <url>                    open in a new background tab and wait for it to load
+  pages [--profile <name>]      tabs: id, title, url (* is the tab shown in its window), under each Chrome profile's email
+  open <url> [--profile <name>] open in a new background tab and wait for it to load; the profile used last unless --profile
   go <tab> <url>                load a url in a tab
   close <tab>
   text <tab> [--max <n>]        the page's main text, 6000 characters unless --max
@@ -220,7 +269,7 @@ function refOf(word: string | undefined): string {
   return word
 }
 
-const VALUED = ['--max', '-o', '--size', '--click', '--hover', '--key', '--for', '--slow']
+const VALUED = ['--max', '-o', '--size', '--click', '--hover', '--key', '--for', '--slow', '--profile']
 
 function option(args: readonly string[], name: string): string | undefined {
   const at = args.indexOf(name)
@@ -285,7 +334,18 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
         default: throw new Error(`Unknown command ${what}.\n\n${BROWSER_HELP}`)
       }
     }
-    const reply = await ask(request())
+    const asked = request() as { readonly cmd: string; readonly tab?: number }
+    const known = profiles()
+    const named = option(rest, '--profile')
+    if (asked.cmd === 'pages' && known.length > 1 && named === undefined) {
+      const replies = await Promise.all(known.map(async (one) => ({ one, reply: await ask(asked, browserFolder(), one.pid) })))
+      const failed = replies.find((one) => !one.reply.ok)
+      if (failed !== undefined) return { ok: false, said: `${failed.one.label}: ${failed.reply.error ?? 'Chrome refused.'}` }
+      return { ok: true, said: replies.map(({ one, reply }) => `${one.label}\n${shown(what, rest, words, reply.result)}`).join('\n\n') }
+    }
+    const target = known.length === 0 ? undefined : pickProfile(known, asked, named)
+    if (typeof target === 'string') return { ok: false, said: target }
+    const reply = await ask(asked, browserFolder(), target?.pid)
     if (!reply.ok) return { ok: false, said: reply.error ?? 'Chrome refused.' }
     return { ok: true, said: shown(what, rest, words, reply.result) }
   } catch (error) { return { ok: false, said: error instanceof Error ? error.message : String(error) } }
@@ -295,7 +355,7 @@ interface Page { readonly title: string; readonly url: string }
 
 function shown(what: string, args: readonly string[], words: readonly string[], result: unknown): string {
   switch (what) {
-    case 'status': return `Connected, extension ${(result as { version: string }).version}.`
+    case 'status': { const known = profiles(); return `Connected, extension ${(result as { version: string }).version}${known.length > 1 ? `, in ${known.length} Chrome profiles: ${known.map((one) => one.label).join(', ')}` : ''}.` }
     case 'pages': return (result as (Page & { id: number; active: boolean })[]).map((one) => `${one.active ? '*' : ' '} ${String(one.id).padEnd(10)} ${one.title.slice(0, 70)}  ${one.url}`).join('\n')
     case 'open': case 'go': { const page = result as Page & { id: number }; return `${page.id}  ${page.title}  ${page.url}` }
     case 'close': return 'Closed.'

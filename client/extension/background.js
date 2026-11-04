@@ -18,7 +18,7 @@ function connect() {
   if (port !== undefined) return
   try { port = chrome.runtime.connectNative(HOST) } catch { port = undefined; return }
   const mine = port
-  setTimeout(() => { if (port === mine) void save((now) => { now.connected = true }) }, 1000)
+  setTimeout(() => { if (port === mine) { void save((now) => { now.connected = true }); void announce() } }, 1000)
   port.onMessage.addListener((request) => {
     run(request).then(
       (result) => port?.postMessage({ id: request.id, ok: true, result }),
@@ -34,14 +34,14 @@ function connect() {
 
 const detailOf = (request, result) => request.cmd === 'open' || request.cmd === 'go' ? hostOf(request.url)
   : request.cmd === 'click' ? result?.clicked : request.cmd === 'hover' ? result?.hovered
-  : request.cmd === 'key' ? request.key : request.cmd === 'record' ? request.ms : request.cmd === 'view' && request.reset ? 'reset' : undefined
+  : request.cmd === 'read' ? request.find : request.cmd === 'key' ? request.key : request.cmd === 'record' ? request.ms : request.cmd === 'view' && request.reset ? 'reset' : undefined
 
 function hostOf(url) {
   try { return new URL(url).host || url } catch { return url }
 }
 
 async function run(request) {
-  if (request.cmd === 'ping') return answer(request)
+  if (request.cmd === 'ping' || request.cmd === 'reload') return answer(request)
   const started = Date.now()
   const asked = Number.isInteger(request.tab) ? await chrome.tabs.get(request.tab).catch(() => undefined) : undefined
   const done = (result, error) => save((now) => {
@@ -73,8 +73,21 @@ chrome.runtime.onMessage.addListener((message, _sender, reply) => {
   return true
 })
 
+// Which profile this is and which tabs are its own, so the host can tell GeckIt where each tab lives when several profiles have the extension.
+let focused = 0
+async function announce() {
+  if (port === undefined) return
+  const who = await chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }).catch(() => ({ email: '' }))
+  const tabs = (await chrome.tabs.query({})).map((one) => one.id)
+  if (focused === 0 && (await chrome.windows.getAll()).some((one) => one.focused)) focused = Date.now()
+  port?.postMessage({ event: 'profile', label: who.email, tabs, focused })
+}
+chrome.tabs.onCreated.addListener(() => void announce())
+chrome.tabs.onRemoved.addListener(() => void announce())
+chrome.windows.onFocusChanged.addListener((id) => { if (id !== chrome.windows.WINDOW_ID_NONE) { focused = Date.now(); void announce() } })
+
 chrome.alarms.create('connect', { periodInMinutes: 0.5 })
-chrome.alarms.onAlarm.addListener(connect)
+chrome.alarms.onAlarm.addListener(() => { connect(); void announce() })
 chrome.runtime.onStartup.addListener(connect)
 chrome.runtime.onInstalled.addListener(connect)
 connect()
@@ -196,6 +209,7 @@ async function answer(request) {
   if (Number.isInteger(id) && request.cmd !== 'close') await claim(id, false)
   switch (request.cmd) {
     case 'ping': return { version: chrome.runtime.getManifest().version }
+    case 'reload': setTimeout(() => chrome.runtime.reload(), 100); return {}
     case 'pages': return (await chrome.tabs.query({})).map((one) => ({ id: one.id, window: one.windowId, active: one.active, title: one.title ?? '', url: one.url ?? '' }))
     case 'open': {
       const made = await chrome.tabs.create({ url: request.url, active: false })

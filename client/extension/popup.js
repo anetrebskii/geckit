@@ -4,7 +4,7 @@ const quoted = (text) => (text ? ` "${text}"` : '')
 const DONE = {
   open: (d) => `Opened ${d ?? 'a tab'}`,
   go: (d) => `Went to ${d ?? 'a page'}`,
-  read: () => 'Read the page',
+  read: (d) => (d ? `Looked for "${d}"` : 'Read the page'),
   text: () => 'Read the text',
   click: (d) => `Clicked${quoted(d)}`,
   hover: (d) => `Hovered${quoted(d)}`,
@@ -22,7 +22,7 @@ const DONE = {
 const DOING = {
   open: (d) => `Opening ${d ?? 'a tab'}`,
   go: (d) => `Going to ${d ?? 'a page'}`,
-  read: () => 'Reading the page',
+  read: (d) => (d ? `Looking for "${d}"` : 'Reading the page'),
   text: () => 'Reading the text',
   click: () => 'Clicking',
   hover: () => 'Hovering',

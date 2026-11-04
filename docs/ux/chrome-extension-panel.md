@@ -84,7 +84,7 @@ stateDiagram-v2
 - Refused while paused, shown in Activity as "Refused: paused" and said to the conversation as: "The person paused GeckIt in Chrome. Ask them to turn on Let GeckIt use Chrome in the GeckIt Browser button."
 - Empty Tabs: "No tabs yet. Tabs GeckIt opens go into the green GeckIt group."
 - Empty Activity: "Nothing yet."
-- Activity rows: "Opened example.com", "Went to example.com", "Read the page", "Read the text", "Clicked "Sign in"", "Hovered "Menu"", "Typed into a field", "Scrolled", "Pressed Enter", "Ran a script", "Took a screenshot", "Read the style", "Changed the view", "Reset the view", "Recorded 1.5 s", "Closed the tab", "Listed tabs"; a failure: the same row and the reason under it.
+- Activity rows: "Opened example.com", "Went to example.com", "Read the page", "Looked for \"Sign in\"", "Read the text", "Clicked "Sign in"", "Hovered "Menu"", "Typed into a field", "Scrolled", "Pressed Enter", "Ran a script", "Took a screenshot", "Read the style", "Changed the view", "Reset the view", "Recorded 1.5 s", "Closed the tab", "Listed tabs"; a failure: the same row and the reason under it.
 
 ## Edge cases
 
