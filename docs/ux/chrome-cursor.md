@@ -21,3 +21,14 @@ When a conversation acts in a tab through `geckit browser`, the person watching 
 - With reduced motion asked for, the pointer appears at the element without travelling and the ring does not grow, it only fades.
 - A tab in the background is drawn the same way; the person sees the resting state if they switch to it within 3 s.
 - The overlay is drawn by the extension, not the conversation, so a page cannot fake it and a conversation cannot hide it.
+
+## Which tabs GeckIt works in
+
+| Where | What it shows | When |
+| --- | --- | --- |
+| Tab strip | A green tab group named "GeckIt", one per window | A tab GeckIt opened with `open`; Chrome removes the group when its last tab closes |
+| Toolbar icon of GeckIt Browser | A green dot, and the tooltip "GeckIt has worked in this tab" | While the person looks at any tab GeckIt has read or acted in, until the tab closes |
+
+- A tab the person opened is never moved into the group: it is theirs, and moving it would rearrange their window. The dot says GeckIt has been there.
+- The dot needs the extension pinned to the toolbar; the group needs nothing.
+- Marking a tab never fails a request: if Chrome refuses a group, the command still runs.

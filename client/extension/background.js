@@ -115,13 +115,32 @@ const KEYS = {
   Space: { code: 'Space', keyCode: 32, key: ' ', text: ' ' },
 }
 
+const GROUP = 'GeckIt'
+
+// Tabs GeckIt opens go into one green group per window; a tab the person opened stays where it is and gets a green dot on the toolbar icon instead.
+async function claim(id, opened) {
+  try {
+    await chrome.action.setBadgeText({ tabId: id, text: ' ' })
+    await chrome.action.setBadgeBackgroundColor({ tabId: id, color: '#1f8031' })
+    await chrome.action.setTitle({ tabId: id, title: 'GeckIt has worked in this tab' })
+    if (!opened) return
+    const target = await chrome.tabs.get(id)
+    const [group] = await chrome.tabGroups.query({ windowId: target.windowId, title: GROUP })
+    if (group !== undefined) { await chrome.tabs.group({ tabIds: id, groupId: group.id }); return }
+    const made = await chrome.tabs.group({ tabIds: id, createProperties: { windowId: target.windowId } })
+    await chrome.tabGroups.update(made, { title: GROUP, color: 'green', collapsed: false })
+  } catch { /* marking a tab is worth having, never worth failing the request over */ }
+}
+
 async function answer(request) {
   const id = request.tab
+  if (Number.isInteger(id) && request.cmd !== 'close') await claim(id, false)
   switch (request.cmd) {
     case 'ping': return { version: chrome.runtime.getManifest().version }
     case 'pages': return (await chrome.tabs.query({})).map((one) => ({ id: one.id, window: one.windowId, active: one.active, title: one.title ?? '', url: one.url ?? '' }))
     case 'open': {
       const made = await chrome.tabs.create({ url: request.url, active: false })
+      await claim(made.id, true)
       await loaded(made.id)
       const now = await chrome.tabs.get(made.id)
       return { id: now.id, title: now.title ?? '', url: now.url ?? '' }
