@@ -86,7 +86,7 @@ async function draw() {
   const hint = $('hint')
   hint.hidden = !paused && state.connected
   hint.className = paused ? 'hint paused-hint' : 'hint'
-  hint.textContent = paused ? 'GeckIt cannot read or use your tabs until you turn this back on.' : 'Turn on Chrome through GeckIt in GeckIt Settings > Assistants.'
+  hint.textContent = paused ? 'GeckIt cannot read or use your tabs until you turn this back on.' : 'Turn on Chrome through GeckIt in GeckIt Settings > Integrations.'
   $('allow').checked = !paused
   $('allow-note').textContent = paused ? 'Off: every request is refused.' : 'Conversations in GeckIt can read and use your tabs.'
 

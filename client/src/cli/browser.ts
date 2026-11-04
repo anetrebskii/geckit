@@ -272,7 +272,7 @@ export function pickProfile(known: readonly Profile[], request: { readonly tab?:
 }
 
 async function ask(request: object, folder: string = browserFolder(), to?: number): Promise<Reply> {
-  if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Assistants.' }
+  if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Integrations.' }
   if (!fresh(folder)) return { ok: false, error: NOT_CONNECTED() }
   const name = to === undefined ? randomUUID() : `${randomUUID()}.${to}`
   const asked = join(folder, `${name}.ask`)

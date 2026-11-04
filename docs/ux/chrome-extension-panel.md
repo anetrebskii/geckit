@@ -19,7 +19,7 @@ The person lets GeckIt work in their own Chrome, but until now the only sign of 
 | State | When | What the person sees | What to do |
 | --- | --- | --- | --- |
 | Connected | Chrome started GeckIt's host and it stayed up | "Connected to GeckIt", green dot | Nothing |
-| Not connected | Chrome could not start the host, or it quit | "Not connected", grey dot, and under it "Turn on Chrome through GeckIt in GeckIt Settings > Assistants." | Turn on the switch in GeckIt |
+| Not connected | Chrome could not start the host, or it quit | "Not connected", grey dot, and under it "Turn on Chrome through GeckIt in GeckIt Settings > Integrations." | Turn on the switch in GeckIt |
 | Paused | The person turned off "Let GeckIt use Chrome" | "Paused", amber dot; Now is gone | Turn the switch back on |
 | Working | A command is running | Now: "Clicking "Sign in"" and the tab title under it | Nothing; press it to go to the tab |
 | Idle | No command is running | Now is not shown | Nothing |
@@ -79,7 +79,7 @@ stateDiagram-v2
 ## Wording
 
 - Connected: "Connected to GeckIt"
-- Not connected: "Not connected" and "Turn on Chrome through GeckIt in GeckIt Settings > Assistants."
+- Not connected: "Not connected" and "Turn on Chrome through GeckIt in GeckIt Settings > Integrations."
 - Paused: "Paused" and "GeckIt cannot read or use your tabs until you turn this back on."
 - Refused while paused, shown in Activity as "Refused: paused" and said to the conversation as: "The person paused GeckIt in Chrome. Ask them to turn on Let GeckIt use Chrome in the GeckIt Browser button."
 - Empty Tabs: "No tabs yet. Tabs GeckIt opens go into the green GeckIt group."

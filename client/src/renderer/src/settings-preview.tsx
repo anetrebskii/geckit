@@ -97,7 +97,7 @@ function Preview(): React.JSX.Element {
   if (query.has('phone')) return open ? <PhoneVpnSettings settings={settings} save={save} back="Settings" onBack={() => setOpen(false)} /> : <Page title="Settings"><div className="phone-group"><Cell label="VPN IP check" value={settings.vpnIpCheck ? 'On' : 'Off'} onPress={() => setOpen(true)} /></div></Page>
   return <>
     <header className="board-head"><h1>GeckIt</h1><button ref={trigger} type="button" className="quiet" onClick={() => setOpen(true)}>Settings</button></header>
-    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : 'libraries'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
+    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : query.get('section') === 'integrations' ? 'integrations' : 'libraries'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
   </>
 }
 

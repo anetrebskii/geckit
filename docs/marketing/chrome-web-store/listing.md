@@ -23,7 +23,7 @@ What goes into each field of the Chrome Web Store Developer Dashboard. The packa
 
   Tabs GeckIt opens go into a green GeckIt tab group, and a pointer on the page shows where it clicks and types.
 
-  Needs the GeckIt app for macOS or Linux, with Chrome through GeckIt turned on in Settings > Assistants.
+  Needs the GeckIt app for macOS or Linux, with Chrome through GeckIt turned on in Settings > Integrations.
 
 - **Icon**: `client/extension/icons/128.png`
 - **Screenshot**: `screenshot-1280x800.png`

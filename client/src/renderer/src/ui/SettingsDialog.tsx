@@ -43,12 +43,13 @@ export const LANGUAGES = [
   'Japanese',
 ]
 
-export type Section = 'general' | 'vpn' | 'assistants' | 'libraries' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
+export type Section = 'general' | 'vpn' | 'assistants' | 'integrations' | 'libraries' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
   { value: 'vpn', label: 'VPN IP check' },
   { value: 'assistants', label: 'Assistants' },
+  { value: 'integrations', label: 'Integrations' },
   { value: 'libraries', label: 'Libraries' },
   { value: 'profiles', label: 'Profiles' },
   { value: 'hosts', label: 'Hosts' },
@@ -120,7 +121,7 @@ export function SettingsDialog({
         <h2>Settings</h2>
         <div className="settings-body">
           <nav ref={navigation} className="settings-nav" aria-label="Sections">
-            {SECTIONS.filter((one) => !onPhone || (one.value !== 'phone' && one.value !== 'libraries')).map((one) => (
+            {SECTIONS.filter((one) => !onPhone || (one.value !== 'phone' && one.value !== 'libraries' && one.value !== 'integrations')).map((one) => (
               <button
                 key={one.value}
                 type="button"
@@ -146,6 +147,7 @@ export function SettingsDialog({
             {section === 'profiles' ? <Profiles settings={settings} change={change} /> : null}
             {section === 'vpn' ? <VpnIpSettings settings={settings} /> : null}
             {section === 'assistants' ? <Assistants settings={settings} change={change} assistantChat={assistantChat} /> : null}
+            {section === 'integrations' ? <Integrations settings={settings} change={change} /> : null}
             {section === 'libraries' ? <Libraries settings={settings} change={change} /> : null}
             {section === 'hosts' ? <HostsSection /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
@@ -234,7 +236,16 @@ function Assistants({ settings, change, assistantChat }: Part & { readonly assis
         })}
       </div>
       <p className="assistant-settings-note" id="assistant-settings-note">Turning off an assistant hides its conversations and pauses its shortcuts.</p>
-      {document.documentElement.classList.contains('phone') ? null : <ChromeBridge settings={settings} change={change} />}
+    </section>
+  )
+}
+
+/** What GeckIt connects its assistants to outside itself; for now its own Chrome extension. */
+function Integrations({ settings, change }: Part): React.JSX.Element {
+  return (
+    <section className="assistant-settings" aria-labelledby="integration-settings-title">
+      <h3 id="integration-settings-title">Integrations</h3>
+      <ChromeBridge settings={settings} change={change} />
     </section>
   )
 }
@@ -266,7 +277,7 @@ function ChromeBridge({ settings, change }: Part): React.JSX.Element {
       <label className="assistant-option">
         <span className="assistant-option-copy">
           <span className="assistant-option-name"><Icon name="globe" size={14} /> Chrome through GeckIt</span>
-          <span className="assistant-option-description">{state?.supported === false ? 'Not on Windows yet.' : 'Codex and Claude work in your own Chrome, in the tabs you are signed in to, through the GeckIt Browser extension. Turning this off removes the bridge and the Chrome part of their instructions.'}</span>
+          <span className="assistant-option-description">{state?.supported === false ? 'Not on Windows yet.' : 'Codex and Claude work in your own Chrome, in the profiles and tabs you are signed in to, through the GeckIt Browser extension. On, their instructions say to use it for every Chrome task; off, that and the bridge are removed.'}</span>
         </span>
         <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Chrome through GeckIt" checked={on} disabled={state?.supported === false} onChange={(event) => change({ chromeBridge: event.target.checked })} />
       </label>
