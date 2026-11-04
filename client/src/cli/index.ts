@@ -19,6 +19,7 @@ import { answerLines, appNamed, requestingSession, tasksFrom } from './start'
 import type { Answer } from './start'
 import { migrate } from './migrate'
 import { manage, managerCommand } from './manage'
+import { browser, browserHost } from './browser'
 
 interface Row extends Found {
   readonly root: string
@@ -155,6 +156,9 @@ function table(found: readonly Row[]): string {
 }
 
 const HELP = `geckit service - control a running headless service (run service help for commands).\n\ngeckit - what GeckIt holds, read from a command line.
+
+  geckit browser <command>
+      The person's own Chrome through the GeckIt Browser extension: tabs, page text, clicks, typing, screenshots. geckit browser help lists the commands.
 
   geckit sessions [--today] [--since 2d] [--project <name>] [--provider claude|codex] [--status todo|blocked|done|archived] [--favorites] [--json]
       The conversations, the newest first: a * for a favorite, id, when it last changed, project, how it stands, title.
@@ -360,6 +364,7 @@ export async function run(args: readonly string[]): Promise<string> {
     const [what, ...rest] = args
     if (what === 'service') return (await service(rest, data())).said
     if (what === 'employees') return (await readEmployees(rest, data())).said
+    if (what === 'browser') return (await browser(rest)).said
     if (what === 'instructions') {
       if (rest[0] === undefined || rest[0] === 'providers') return PROVIDER_BUILD_GUIDE
       if (rest[0] === 'app') return APP_BUILD_GUIDE
@@ -378,7 +383,13 @@ export async function run(args: readonly string[]): Promise<string> {
 
 if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [what, ...rest] = process.argv.slice(2)
-  if (managerCommand(process.argv.slice(2))) {
+  if (what === 'browser-host') {
+    browserHost()
+  } else if (what === 'browser') {
+    const answer = await browser(rest)
+    process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.ok ? 0 : 1
+  } else if (managerCommand(process.argv.slice(2))) {
     const answer = await manage(process.argv.slice(2), data())
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1

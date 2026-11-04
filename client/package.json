@@ -50,7 +50,6 @@
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^5.2.0",
-    "chrome-devtools-mcp": "1.12.0",
     "electron": "^38.4.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
@@ -70,9 +69,6 @@
     "productName": "GeckIt",
     "appId": "org.anetrebskii.GeckIt",
     "asar": true,
-    "asarUnpack": [
-      "out/service/browser/**"
-    ],
     "files": [
       "out",
       "package.json"
@@ -133,6 +129,10 @@
       {
         "from": "whisper/bin/${os}-${arch}",
         "to": "whisper"
+      },
+      {
+        "from": "llama/bin/${os}-${arch}",
+        "to": "llama"
       }
     ],
     "publish": {

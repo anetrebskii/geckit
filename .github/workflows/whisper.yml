@@ -8,6 +8,7 @@ on:
       - main
     paths:
       - 'client/scripts/whisper.sh'
+      - 'client/scripts/llama.sh'
       - '.github/workflows/whisper.yml'
 
 jobs:
@@ -65,4 +66,40 @@ jobs:
         with:
           name: whisper-cli-${{ matrix.os }}-${{ matrix.arch }}
           path: client/whisper/bin/${{ matrix.os }}-${{ matrix.arch }}
+          if-no-files-found: error
+
+      # llama-server runs the small model behind geckit browser find. The Chrome bridge is not on Windows yet, so neither is it.
+      - id: llama
+        if: matrix.os != 'win'
+        run: echo "version=$(sed -n 's/^VERSION=//p' scripts/llama.sh)" >> "$GITHUB_OUTPUT"
+
+      - if: matrix.os != 'win'
+        uses: actions/cache@v6
+        with:
+          path: client/llama/bin/${{ matrix.os }}-${{ matrix.arch }}
+          key: llama-server-${{ matrix.os }}-${{ matrix.arch }}-${{ steps.llama.outputs.version }}-${{ hashFiles('client/scripts/llama.sh') }}
+
+      - name: Build llama-server
+        if: matrix.os != 'win'
+        env:
+          LLAMA_WORK: ${{ runner.temp }}/llama
+        run: |
+          if ls llama/bin/${{ matrix.os }}-${{ matrix.arch }}/llama-server > /dev/null 2>&1; then echo "From the cache"; else scripts/llama.sh ${{ matrix.os }} ${{ matrix.arch }}; fi
+
+      - name: Check llama-server
+        if: matrix.os != 'win'
+        run: |
+          bin=llama/bin/${{ matrix.os }}-${{ matrix.arch }}
+          ls -l "$bin"
+          case "${{ matrix.os }}-${{ matrix.arch }}" in
+            mac-x64) test "$(lipo -archs "$bin/llama-server")" = x86_64 ;;
+            mac-arm64) otool -L "$bin/llama-server"; "$bin/llama-server" --version ;;
+            linux-x64) ldd "$bin/llama-server"; "$bin/llama-server" --version ;;
+          esac
+
+      - if: matrix.os != 'win'
+        uses: actions/upload-artifact@v7
+        with:
+          name: llama-server-${{ matrix.os }}-${{ matrix.arch }}
+          path: client/llama/bin/${{ matrix.os }}-${{ matrix.arch }}
           if-no-files-found: error

@@ -53,7 +53,7 @@ npm ci
 npm run build:service
 ```
 
-Copy the **entire** `client/out/service/` directory to the target machine, including `assets/`, `browser/` and `package.json`. The bundle runs with Node 22.12 or newer and needs no `node_modules` directory. Provider libraries may have their own dependencies. Install and sign in to Claude Code, Codex or another supported provider separately, as the service's OS user. Provider/platform restrictions remain the same as desktop: builtin Codex is local; builtin remote execution uses Claude Code over SSH.
+Copy the **entire** `client/out/service/` directory to the target machine, including `assets/` and `package.json`. The bundle runs with Node 22 or newer and needs no `node_modules` directory. Provider libraries may have their own dependencies. Install and sign in to Claude Code, Codex or another supported provider separately, as the service's OS user. Provider/platform restrictions remain the same as desktop: builtin Codex is local; builtin remote execution uses Claude Code over SSH.
 
 ```sh
 node /opt/geckit/service/service.js --data /var/lib/geckit
@@ -152,7 +152,3 @@ Enable with `sudo systemctl enable --now geckit`; inspect with `journalctl -u ge
 ## Verification
 
 See [the verification record](../specs/019-headless-service/verification.md). Tests run real Node service/CLI processes from a copied standalone bundle and a child-process fixture provider. A built Electron acceptance test also verifies desktop/CLI state and events, task completion after desktop exits, and reattachment to the same service PID. The actual renderer was inspected against the real isolated service. Provider output is controlled by a child-process fixture; real model login/responses, live SSH/Telegram/phone connections and Linux service-manager installation remain unverified.
-
-## Codex and Chrome
-
-The working tree bundles the official Chrome DevTools MCP for ordinary local Codex conversations. No runtime npm/npx installation or manual Codex MCP configuration is needed. It uses Chrome on the **service machine**, with Chrome 144+ and remote debugging enabled at `chrome://inspect/#remote-debugging`. Chrome requires its own connection permission; that permission covers the connected profile's windows. AutoConnect uses Chrome's default profile, and GeckIt does not switch profiles. A service on a VM does not gain access to a laptop's Chrome through SSH. Text correction does not receive this integration. See [verification and current limits](../specs/020-codex-chrome/verification.md). This change is not released.

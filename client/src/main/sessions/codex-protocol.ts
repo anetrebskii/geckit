@@ -57,11 +57,6 @@ export interface ThreadOptions {
   cwd: string
   model?: string
   developerInstructions?: string
-  config?: {
-    mcp_servers?: { 'geckit-chrome': { command: string; args: string[]; env: { ELECTRON_RUN_AS_NODE: string; CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: string } } }
-    web_search?: 'disabled'
-    features?: { shell_tool: false; unified_exec: false }
-  }
   modelProvider: 'openai'
   approvalPolicy: 'untrusted' | 'on-request'
   approvalsReviewer: 'user' | 'auto_review'
@@ -87,7 +82,7 @@ export interface RpcParams {
   'config/read': Pick<ThreadOptions, 'cwd'> & { includeLayers: boolean }
   'account/rateLimits/read': Record<string, never>
   'model/list': { cursor?: string | null }
-  'thread/start': ThreadOptions & { ephemeral?: boolean; baseInstructions?: string }
+  'thread/start': ThreadOptions & { ephemeral?: boolean; baseInstructions?: string; config?: { web_search: 'disabled'; features: { shell_tool: false; unified_exec: false } } }
   'thread/resume': ThreadOptions & { threadId: string; excludeTurns: boolean }
   'thread/fork': ThreadOptions & { threadId: string; lastTurnId?: string; excludeTurns: boolean }
   'thread/list': { cwd: string[]; cursor?: string | null; limit: number; sortKey: 'updated_at'; sourceKinds: string[] }

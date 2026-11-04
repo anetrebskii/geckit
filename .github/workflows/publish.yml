@@ -104,9 +104,25 @@ jobs:
           name: whisper-cli-mac-arm64
           path: client/whisper/bin/mac-arm64
 
+      - name: Take llama-server
+        if: matrix.platform != 'win'
+        uses: actions/download-artifact@v8
+        with:
+          name: llama-server-${{ matrix.platform }}-x64
+          path: client/llama/bin/${{ matrix.platform }}-x64
+
+      - name: Take Apple Silicon llama-server
+        if: matrix.platform == 'mac'
+        uses: actions/download-artifact@v8
+        with:
+          name: llama-server-mac-arm64
+          path: client/llama/bin/mac-arm64
+
       - name: Install and build
         run: |
           chmod +x whisper/bin/*/whisper-cli*
+          mkdir -p llama/bin/${{ matrix.platform }}-x64
+          chmod +x llama/bin/*/llama-server* 2>/dev/null || true
           ls -lR whisper/bin
           npm ci
           npm run typecheck

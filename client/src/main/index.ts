@@ -880,6 +880,7 @@ else {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
         GECKIT_WHISPER_CLI: app.isPackaged ? join(process.resourcesPath, 'whisper', process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli') : join(app.getAppPath(), 'whisper', 'bin', `${process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : process.platform}-${process.arch}`, process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli'),
+        GECKIT_LLAMA_SERVER: app.isPackaged ? join(process.resourcesPath, 'llama', process.platform === 'win32' ? 'llama-server.exe' : 'llama-server') : join(app.getAppPath(), 'llama', 'bin', `${process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'win' : process.platform}-${process.arch}`, process.platform === 'win32' ? 'llama-server.exe' : 'llama-server'),
       },
       onEvent: coreEvent,
       onConnect: applySnapshot,

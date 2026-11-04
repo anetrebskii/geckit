@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { corePlatform, dataDirectory } from '../core/platform'
 
 import { forwardSlashes } from '../cli/endpoint'
+import { installBrowserBridge } from '../cli/browser'
 import type { Employee } from '../shared/employees'
 import type { Settings } from '../shared/api'
 
@@ -132,6 +133,7 @@ async function writeLaunchers(command: string): Promise<boolean> {
     await writeFile(command, made.sh)
     await chmod(command, 0o755)
     if (made.cmd !== undefined) await writeFile(`${command}.cmd`, made.cmd)
+    try { installBrowserBridge(launcher.executable, launcher.script) } catch { /* the browser bridge is optional */ }
     return true
   } catch {
     return false
@@ -296,7 +298,7 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
     }
     if (await writeLaunchers(command)) {
       process.env['GECKIT_SOURCE_CLI'] = command
-      await guideWrite(localGuide, `${currentGuide()}${BROWSERS(browsers)}${COMMAND(command)}${EMPLOYEES(employees, command)}${MANAGER()}`, strict)
+      await guideWrite(localGuide, `${currentGuide()}${BROWSERS(browsers)}${COMMAND(command)}${BROWSER(command, true)}${EMPLOYEES(employees, command)}${MANAGER()}`, strict)
       process.env['GECKIT_SOURCE_GUIDE'] = localGuide
     } else if (strict) throw new Error('The source GeckIt command could not be updated.')
     return
@@ -317,7 +319,7 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
   await mkdir(folder, { recursive: true }).catch(() => undefined)
   const told = await writeLaunchers(command)
   if (strict && !told) throw new Error('The GeckIt command could not be updated.')
-  await guideWrite(guide, `${currentGuide()}${BROWSERS(browsers)}${told ? COMMAND(command) + EMPLOYEES(employees, command) : ''}${MANAGER()}`, strict)
+  await guideWrite(guide, `${currentGuide()}${BROWSERS(browsers)}${told ? COMMAND(command) + BROWSER(command, true) + EMPLOYEES(employees, command) : ''}${MANAGER()}`, strict)
   if (linked) return
   const next = was.trim() === '' ? `${IMPORT}\n` : `${was.replace(/\s*$/, '')}\n\n${IMPORT}\n`
   await guideWrite(claude, next, strict)
@@ -365,10 +367,37 @@ export async function keepCodexGuide(wanted: boolean, employees: readonly Employ
   await guideWrite(agents, next, strict)
 }
 
+/** How a Codex conversation uses the person's Chrome: GeckIt's own extension, reached through the command. */
+export const BROWSER = (command: string, claude = false): string => {
+  const said = command.includes(' ') ? `"${command}"` : command
+  const which = claude
+    ? 'Use it when Claude in Chrome is not connected, and to look for something on a long page, since `find` returns only the matching lines.'
+    : 'Use it for every task in Chrome. The ChatGPT browser (node_repl, the browser host, Computer Use on Chrome) does not exist here: do not try it and do not report it as missing.'
+  return `
+## Chrome through GeckIt
+
+The person's own Chrome, with the tabs and accounts they are signed in to, is also reached with \`${said} browser\`, through the GeckIt Browser extension. ${which}
+
+\`\`\`
+${said} browser pages
+${said} browser find <tab> "the reply button under the second post"
+${said} browser read <tab>
+${said} browser click <tab> <ref>
+${said} browser type <tab> <ref> "text"
+${said} browser text <tab>
+${said} browser shot <tab>
+\`\`\`
+
+\`pages\` lists the tabs with their ids. \`find\` takes what you are looking for in words and returns only the matching lines, \`[ref] role "name"\`, picked by a small model on this computer: start with it, since it costs a few lines where a whole page costs hundreds. \`read\` lists all the headings and everything that can be clicked or typed into, with \`--- item N ---\` where the Nth post or card starts; use it when \`find\` did not get what you need. Run one command per call, nothing chained. \`text\` is the page's main text, \`shot\` saves a PNG and prints its path, open it only when what the page looks like matters. Refs stay the same until the page reloads; after a click that changes the page, read again. \`${said} browser help\` lists the rest: open, go, close, key, scroll, eval.
+
+Work in the tab the person named, and open a new background tab with \`open\` rather than taking over one of theirs. Do not post, send, buy or delete anything the person did not ask for. If the command says the extension is not connected, tell the person what it says and stop the browser part of the work.
+`
+}
+
 const codexGuide = (employees: readonly Employee[]): string => {
   const command = (process.platform === 'win32' ? COMMAND(`${cliPath()}.cmd`, 'file') : COMMAND(cliPath()))
     .replaceAll('Claude Code', 'Codex')
     .replaceAll('Claude', 'Codex')
     .replace('Run it in exactly this form, with the whole path and nothing chained before or after it: GeckIt lets that through without asking, and anything else stops at a permission card. ', '')
-  return currentGuide().replace('CLAUDE.md beside it.', 'AGENTS.md beside it.') + command + EMPLOYEES(employees, process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()) + MANAGER()
+  return currentGuide().replace('CLAUDE.md beside it.', 'AGENTS.md beside it.') + command + BROWSER(process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()) + EMPLOYEES(employees, process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()) + MANAGER()
 }

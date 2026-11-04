@@ -4,3 +4,4 @@ release
 *.tsbuildinfo
 .DS_Store
 whisper
+llama

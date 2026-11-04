@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { build } from 'esbuild'
-import { mkdtemp, rm, symlink, realpath } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, symlink, realpath } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -43,7 +43,7 @@ describe('read-only employee CLI over the native application socket', () => {
       expect(employees.get(assigned).archived).toBe(false)
       await symlink(join(process.cwd(), 'node_modules'), join(directory, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
       const script = join(directory, 'employee-cli.mjs')
-      await build({ entryPoints: [join(process.cwd(), 'src', 'cli', 'index.ts')], outfile: script, bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'silent' })
+      await build({ entryPoints: [join(process.cwd(), 'src', 'cli', 'index.ts')], outfile: script, bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'silent', plugins: [{ name: 'raw', setup: (on) => { on.onResolve({ filter: /\?raw$/ }, (asked) => ({ path: join(asked.resolveDir, asked.path.slice(0, -4)), namespace: 'raw' })); on.onLoad({ filter: /.*/, namespace: 'raw' }, async (file) => ({ contents: await readFile(file.path, 'utf8'), loader: 'text' })) } }] })
       const executableScript = await realpath(script)
       const execute = promisify(execFile)
       const env = { ...process.env, GECKIT_DATA: directory }

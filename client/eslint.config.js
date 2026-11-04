@@ -21,5 +21,6 @@ export default ts.config(
     // These boundaries replace provider/network errors with redacted messages.
     rules: { 'preserve-caught-error': 'off' },
   },
+  { files: ['extension/**/*.js'], languageOptions: { globals: { ...globals.serviceworker, ...globals.browser, chrome: 'readonly' } } },
   { ignores: ['out/', 'release/', 'node_modules/'] },
 )

@@ -43,10 +43,10 @@ function routedDisk(held: Routes): NonNullable<ConstructorParameters<typeof Sess
 }
 
 
-export async function createCoreSessions(held: Routes, callbacks: SessionsDeps, browserDirectory?: string): Promise<Sessions> {
+export async function createCoreSessions(held: Routes, callbacks: SessionsDeps): Promise<Sessions> {
   const deps: SessionsDeps = {
     ...callbacks,
-    codex: callbacks.codex ?? new CodexSessions(undefined, callbacks.account, browserDirectory),
+    codex: callbacks.codex ?? new CodexSessions(undefined, callbacks.account),
     notes: callbacks.notes,
     transport: () => getSettings().chatTransport,
     commands: keepCommands,
