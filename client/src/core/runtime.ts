@@ -11,6 +11,7 @@ import { VoiceMemosSource } from '../main/voice-memos'
 import { localTranscriptionReadiness } from '../main/local-transcription'
 import { transcribeInstalledFile } from '../main/transcribe'
 import { installedSpeechModel, onSpeechModel, whisperCli } from '../main/whisper'
+import { stopFindModelDownload } from '../cli/find-model'
 import { sweepRecordings } from '../main/recordings'
 import { TelegramAttachments } from '../main/telegram-attachments'
 import { ManagerTelegram } from '../main/telegram'
@@ -154,7 +155,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     sessions?.dispose()
     routes.forwards.dispose()
     routes.hosts.dispose()
-    await Promise.all([routes.runs.flush(), guideWrites])
+    await Promise.all([routes.runs.flush(), guideWrites, stopFindModelDownload()])
   }
   try {
     setGuideEmployees(employees.list().employees)

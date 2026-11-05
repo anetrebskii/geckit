@@ -7,6 +7,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { setTimeout as sleep } from 'node:timers/promises'
 import type { ReadableStream } from 'node:stream/web'
 import type { FindModelState } from '../shared/api'
 
@@ -23,6 +24,7 @@ const partPath = (): string => `${modelPath()}.part`
 const sizeOf = (path: string): number => { try { return statSync(path).size } catch { return 0 } }
 
 let fetching: Promise<void> | undefined
+let download: AbortController | undefined
 let failure: string | undefined
 
 async function sha256(path: string): Promise<string> {
@@ -33,25 +35,39 @@ async function sha256(path: string): Promise<string> {
 
 /** Fetches the model once into ~/.geckit/models, picking up a broken download from the byte it reached, and names it only once its size and sha256 match. */
 export function fetchFindModel(): Promise<void> {
-  fetching ??= (async () => {
+  if (fetching !== undefined) return fetching
+  const controller = new AbortController()
+  download = controller
+  fetching = (async () => {
     failure = undefined
     mkdirSync(folder(), { recursive: true })
     for (let attempt = 0; attempt < 5 && !existsSync(modelPath()); attempt++) {
+      if (controller.signal.aborted) break
       try {
         const have = sizeOf(partPath())
         if (have < SIZE) {
-          const response = await fetch(FROM, { headers: have > 0 ? { Range: `bytes=${have}-` } : {} })
+          const response = await fetch(FROM, { headers: have > 0 ? { Range: `bytes=${have}-` } : {}, signal: controller.signal })
           if (!response.ok || response.body === null) throw new Error(`Model download answered ${response.status}.`)
           const appending = have > 0 && response.status === 206
-          await pipeline(Readable.fromWeb(response.body as ReadableStream<Uint8Array>), createWriteStream(partPath(), { flags: appending ? 'a' : 'w' }))
+          await pipeline(Readable.fromWeb(response.body as ReadableStream<Uint8Array>), createWriteStream(partPath(), { flags: appending ? 'a' : 'w' }), { signal: controller.signal })
         }
         if (sizeOf(partPath()) !== SIZE || await sha256(partPath()) !== SHA256) { unlinkSync(partPath()); failure = 'the file did not match its checksum'; continue }
         renameSync(partPath(), modelPath())
-      } catch (error) { failure = error instanceof Error ? error.message : String(error); await new Promise((done) => setTimeout(done, 3_000)) }
+      } catch (error) {
+        if (controller.signal.aborted) break
+        failure = error instanceof Error ? error.message : String(error)
+        try { await sleep(3_000, undefined, { signal: controller.signal }) } catch { /* service is stopping */ }
+      }
     }
-    if (existsSync(modelPath())) failure = undefined
-  })().finally(() => { fetching = undefined })
+    if (existsSync(modelPath()) || controller.signal.aborted) failure = undefined
+  })().finally(() => { fetching = undefined; if (download === controller) download = undefined })
   return fetching
+}
+
+/** Ends a background download before the service exits. The partial file can be resumed later. */
+export async function stopFindModelDownload(): Promise<void> {
+  download?.abort()
+  await fetching
 }
 
 export function findModelState(): FindModelState {

@@ -36,7 +36,7 @@ async function eventually<T>(read: () => Promise<T>, check: (value: T) => boolea
 
 async function start(): Promise<void> {
   output = ''
-  running = spawn(process.execPath, [join(folder, 'service', 'service.js'), '--data', directory], { cwd: client, env, stdio: ['ignore', 'pipe', 'pipe'] })
+  running = spawn(process.execPath, ['--import', join(import.meta.dirname, 'fixtures', 'headless', 'stall-fetch.mjs'), join(folder, 'service', 'service.js'), '--data', directory], { cwd: client, env, stdio: ['ignore', 'pipe', 'pipe'] })
   running.stdout?.on('data', (part: Buffer) => { output += part.toString() })
   running.stderr?.on('data', (part: Buffer) => { output += part.toString() })
   await eventually(async () => output, (value) => value.includes('GeckIt service ready.'))
@@ -82,7 +82,7 @@ beforeAll(async () => {
   await cp(join(import.meta.dirname, 'fixtures', 'headless'), plugin, { recursive: true })
   await writeFile(join(plugin, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { id: 'plugin:fixture', family: 'plugin:fixture', name: 'Fixture', shortName: 'Fixture', icon: 'terminal', browser: 'none', loginCommand: '', planName: '' } }))
   await writeFile(join(directory, 'settings.json'), JSON.stringify({ chatProviders: ['plugin:fixture'], chatProvider: 'plugin:fixture', vpnIpCheck: false, guideClaude: false, guideCodex: false, workingAtOnce: 0 }))
-  env = { ...process.env, GECKIT_DATA: directory, GECKIT_VAULT_KEY: Buffer.alloc(32, 13).toString('base64'), HOME: join(folder, 'home'), CODEX_HOME: join(folder, 'codex'), CLAUDE_CONFIG_DIR: join(folder, 'claude') }
+  env = { ...process.env, GECKIT_DATA: directory, GECKIT_VAULT_KEY: Buffer.alloc(32, 13).toString('base64'), GECKIT_LLAMA_SERVER: process.execPath, HOME: join(folder, 'home'), CODEX_HOME: join(folder, 'codex'), CLAUDE_CONFIG_DIR: join(folder, 'claude') }
   for (const key of ['DISPLAY', 'CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID', 'GECKIT_MANAGER_SESSION', 'GECKIT_MANAGER_TOKEN', 'GECKIT_MANAGER_OPERATION', 'CLAUDECODE', 'GECKIT_SOURCE_CLI', 'GECKIT_SOURCE_GUIDE', 'GECKIT_SOURCE_CODEX_GUIDE']) delete env[key]
   await start()
   await cli('projects', 'add', project)
@@ -153,6 +153,7 @@ it('preserves program-request approval, settings and history through a clean res
   const id = await send('hang')
   await eventually(() => read<ChatSession[]>('sessions', 'list'), (all) => all.some((one) => one.id === id))
   const child = Number(await readFile(join(directory, 'fixture-child.pid'), 'utf8'))
+  expect((await stat(join(directory, 'find-model-fetch-started'))).isFile()).toBe(true)
   const exited = once(running!, 'exit')
   expect(await cli('shutdown')).toBe('GeckIt service stopped.')
   await exited
