@@ -1,0 +1,20 @@
+
+> geckit@1.0.0 test
+> vitest run --maxWorkers=2
+
+
+ RUN  v5.0.5 /private/tmp/geckit-agent-settings/client
+
+(node:39682) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:39845) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  121 passed | 1 skipped (122)
+      Tests  1640 passed | 1 skipped (1641)
+   Start at  22:32:52
+   Duration  37.55s (tests 96%, import 3%)
+
+    Isolate  122 workers spawned · ~70ms startup each (spawn + environment, per file)
+             at least ~4.20s faster with isolate: false — reuses workers across files instead of one per file
+

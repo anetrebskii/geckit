@@ -1,6 +1,7 @@
 import { defaultDataDirectory } from '../core/platform'
 import { readPreferences } from '../core/configuration'
 import { service } from './service'
+import { readSettings } from './settings'
 import { readEmployees } from './employees'
 import { APP_BUILD_GUIDE, PROVIDER_BUILD_GUIDE } from '../shared/provider-build-guide'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
@@ -188,6 +189,11 @@ const HELP = `geckit service - control a running headless service (run service h
       Preserves status, creation and move dates, titles, visibility and links. Moves favorites and board order to Codex.
       Existing Codex metadata is kept. --dry-run previews changes; applying saves a backup before writing.
 
+  geckit settings schema|show
+  geckit settings edit --patch <JSON-object> [--expected <JSON-object>]
+      Read or patch supported preferences without product confirmation. Schema lists fields and boundaries.
+      Arrays replace; maps merge entries. Read back after a write or uncertain response.
+
   geckit employees list|current|show <employee-id>|memory <employee-id> [--cursor <next>]
       Read employee roles, current assignment and available assigned conversation history from the running app.
       A next cursor continues history, including long messages; unavailable sources are named explicitly.
@@ -213,7 +219,8 @@ const HELP = `geckit service - control a running headless service (run service h
       Archiving pauses an employee's timetables until it is restored; nothing missed meanwhile is run.
       Manager's instructions are written into GECKIT.md for the Manager session; --instructions "" clears them.
       --goal "" removes a goal; --reasoning (Codex only) takes default, none, minimal, low, medium, high, xhigh, max or ultra.
-      Run from a Claude Code or Codex conversation, the change is shown there and waits for the person's Allow;
+      Settings (including Manager instructions/portrait) and shortcuts apply without product confirmation.
+      Other team changes from a conversation are shown there and wait for the person's Allow;
       from a terminal it is made at once. Prints a line for what changed.
 
   geckit instructions [providers|app]
@@ -224,7 +231,7 @@ const HELP = `geckit service - control a running headless service (run service h
   sessions, settings, attachments and telegram through the running app's authenticated CLI interface.
   Run capabilities in Manager for supported operations and named limitations.
 
-Outside Manager, only start, migrate-codex and the employees changes write anything.
+Outside Manager, start, migrate-codex, settings edit and the employees changes write.
 Authenticated Manager commands can make the changes advertised by capabilities.`
 
 async function sessions(args: readonly string[]): Promise<string> {
@@ -365,6 +372,7 @@ export async function run(args: readonly string[]): Promise<string> {
     if (managerCommand(args)) return (await manage(args, data())).said
     const [what, ...rest] = args
     if (what === 'service') return (await service(rest, data())).said
+    if (what === 'settings') return (await readSettings(rest, data())).said
     if (what === 'employees') return (await readEmployees(rest, data())).said
     if (what === 'browser') return (await browser(rest)).said
     if (what === 'instructions') {
@@ -399,6 +407,10 @@ if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync
     process.exitCode = answer.ok ? 0 : 1
   } else if (what === 'service') {
     const answer = await service(rest, data())
+    process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.ok ? 0 : 1
+  } else if (what === 'settings') {
+    const answer = await readSettings(rest, data())
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
   } else if (what === 'employees') {

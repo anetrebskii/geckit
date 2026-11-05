@@ -24,7 +24,7 @@ export function create() {
     create: async ({ root }) => { const id = `plugin:fixture:${randomUUID()}`; records.push({ id, root, title: 'Fixture', at: Date.now(), stands: '', driven: false, items: [] }); save(); return id },
     fork: async () => { throw new Error('Fixture does not fork') },
     has: async (_root, id) => records.some((one) => one.id === id),
-    read: async (_root, id) => { const record = records.find((one) => one.id === id); return record && { items: record.items, title: record.title } },
+    read: async (_root, id) => { const record = records.find((one) => one.id === id); return record && { items: record.items, title: record.title, tasks: [] } },
     links: async () => [], goal: async () => undefined, setGoal: async () => undefined,
     clearGoal: async () => undefined,
     hold: (options, hear, left) => {

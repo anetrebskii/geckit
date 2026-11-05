@@ -2122,6 +2122,7 @@ describe('Manager CLI preferences and explicit new-worker models', () => {
     f.finish(session, f.command(id, args))
     await vi.waitFor(async () => { const view = await f.manager.view(); expect(f.sent.length > count || view.decisions.length > 0).toBe(true) })
     const decision = (await f.manager.view()).decisions[0]
+    if (args[0] === 'settings') expect(decision).toBeUndefined()
     if (decision !== undefined) await f.manager.answer(decision.id, 'allow')
     await vi.waitFor(() => expect(f.sent.length).toBeGreaterThan(count))
     const activity = (await f.manager.view()).activity.find((one) => one.id === id)
@@ -2175,6 +2176,20 @@ describe('Manager CLI preferences and explicit new-worker models', () => {
     await vi.waitFor(() => expect(f.sent.at(-1)?.input).toContain('After reload'))
     expect(f.sent.at(-1)?.input).toContain(updated)
     expect(f.sent.at(-1)?.input).toContain(MANAGER_INSTRUCTIONS)
+  })
+
+  it('uses authenticated Manager operations for preference patches with no decision under approve delegation', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true, delegation: 'approve' })
+    const session = await f.manager.send('Set preferences')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    expect(await execute(f, session, 'preferences-schema', ['settings', 'schema'])).toMatchObject({ state: 'done', result: expect.stringContaining('workingAtOnce') })
+    expect(await execute(f, session, 'preferences-edit', ['settings', 'edit', '--patch', '{"theme":"dark","workingAtOnce":2}'])).toMatchObject({ state: 'done', result: expect.stringContaining('"saved":true') })
+    expect(f.settings()).toMatchObject({ theme: 'dark', workingAtOnce: 2 })
+    expect(await execute(f, session, 'preferences-readback', ['settings', 'show'])).toMatchObject({ state: 'done', result: expect.stringContaining('"theme":"dark"') })
+    expect(await execute(f, session, 'preferences-invalid', ['settings', 'edit', '--patch', '{"theme":"light","workingAtOnce":-1}'])).toMatchObject({ state: 'failed', result: expect.stringContaining('Invalid workingAtOnce') })
+    expect(f.settings().theme).toBe('dark')
+    expect((await f.manager.view()).decisions).toEqual([])
   })
 
   it('clears only user instructions and reports a guide sync failure without losing the durable write', async () => {

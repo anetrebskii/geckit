@@ -166,12 +166,12 @@ describe('team changes from a terminal', () => {
     expect(held.shortcuts[0]?.on).toBe(false)
   })
 
-  it('configures and clears start windows through approved CLI changes', async () => {
+  it('configures and clears start windows without product confirmation', async () => {
     const f = team()
     await f.employees.command(['shortcut', 'add', 'none', '--name', 'Window', '--project', 'samara', '--prompt', 'Check', '--cron', '0 10 * * *', '--start-window-minutes', '120', '--mode', 'auto'], 'chat-1')
     const id = held.shortcuts[0]?.id ?? ''
     expect(held.shortcuts[0]).toMatchObject({ startWindowMinutes: 120, cron: '0 10 * * *', on: true, mode: 'auto' })
-    expect(f.asked[0]).toContain('Random start within 120 minutes')
+    expect(f.asked).toEqual([])
     expect(await f.employees.command(['shortcuts'])).toContain('Random start within 120 minutes')
     expect(JSON.parse(await f.employees.command(['shortcuts', '--json']))).toMatchObject([{ id, startWindowMinutes: 120, next: expect.any(String) }])
     await f.employees.command(['shortcut', 'edit', id, '--prompt', 'Again'])
@@ -179,7 +179,7 @@ describe('team changes from a terminal', () => {
     await f.employees.command(['shortcut', 'edit', id, '--every', 'day 11:00'])
     expect(held.shortcuts[0]).toMatchObject({ startWindowMinutes: 120, cron: '0 11 * * *' })
     await f.employees.command(['shortcut', 'edit', id, '--start-window-minutes', 'none'], 'chat-1')
-    expect(f.asked.at(-1)).toContain('Start window: none')
+    expect(f.asked).toEqual([])
     expect(held.shortcuts[0]?.startWindowMinutes).toBeUndefined()
     await f.employees.command(['shortcut', 'edit', id, '--start-window-minutes', '1440'])
     await f.employees.command(['shortcut', 'edit', id, '--every', 'none'])
@@ -188,7 +188,7 @@ describe('team changes from a terminal', () => {
     expect(held.shortcuts[0]?.cron).toBeUndefined()
   })
 
-  it('rejects invalid windows before approval and keeps declined windows unchanged', async () => {
+  it('rejects invalid windows atomically and applies valid windows without approval', async () => {
     const f = team(async () => ({ how: 'declined' }))
     await f.employees.command(['shortcut', 'add', 'none', '--name', 'Window', '--project', 'samara', '--prompt', 'Check', '--cron', '0 10 * * *', '--start-window-minutes', '1'])
     for (const invalid of ['0', '1441', '2.5', '-1', '', 'NaN', '1e2']) {
@@ -196,8 +196,9 @@ describe('team changes from a terminal', () => {
     }
     await expect(f.employees.command(['shortcut', 'edit', 'Window', '--every', 'none', '--start-window-minutes', '10'], 'chat-1')).rejects.toThrow('CRON timetable')
     expect(f.asked).toHaveLength(0)
-    await expect(f.employees.command(['shortcut', 'edit', 'Window', '--start-window-minutes', '60'], 'chat-1')).rejects.toThrow('Declined')
-    expect(held.shortcuts[0]?.startWindowMinutes).toBe(1)
+    await expect(f.employees.command(['shortcut', 'edit', 'Window', '--start-window-minutes', '60'], 'chat-1')).resolves.toContain('Saved shortcut')
+    expect(held.shortcuts[0]?.startWindowMinutes).toBe(60)
+    expect(f.asked).toHaveLength(0)
   })
 
   it('picks portraits, shortcut goals and reasoning, and sets Manager', async () => {
@@ -245,13 +246,20 @@ describe('team changes from a terminal', () => {
 })
 
 describe('team changes from a conversation', () => {
-  it('waits for Allow and then applies, saying each change in plain words', async () => {
+  it('applies shortcuts and Manager preferences without asking, while retaining other team approvals', async () => {
     const f = team()
     const realtor = first((await f.employees.save(draft)).employees)
     expect(await f.employees.command(['shortcut', 'add', realtor.id, '--name', 'Check lots', '--project', 'samara', '--prompt', 'Check new lots', '--every', 'weekdays 10:00'], 'chat-1')).toMatch(/^Added shortcut/)
-    expect(f.asked[0]?.[0]).toBe('Add shortcut "Check lots" to Realtor')
-    expect(f.asked[0]?.[1]).toMatch(/^Every weekday at .+ in samara$/)
-    expect(f.asked[0]?.[2]).toBe('Prompt: Check new lots')
+    expect(f.asked).toEqual([])
+    await f.employees.command(['shortcut', 'edit', 'Check lots', '--prompt', 'New prompt'], 'manager', true)
+    await f.employees.command(['shortcut', 'pause', 'Check lots'], 'chat-1')
+    await f.employees.command(['shortcut', 'resume', 'Check lots'], 'manager', true)
+    await f.employees.command(['shortcut', 'give', 'Check lots', 'none'], 'chat-1')
+    await f.employees.command(['shortcut', 'run', 'Check lots'], 'chat-1')
+    expect(f.start).toHaveBeenCalledWith(expect.objectContaining({ text: 'New prompt' }))
+    await f.employees.command(['manager', 'edit', '--instructions', 'New rule'], 'chat-1')
+    expect(f.manager.instructions).toBe('New rule')
+    expect(f.asked).toEqual([])
     expect(held.shortcuts).toHaveLength(1)
   })
 

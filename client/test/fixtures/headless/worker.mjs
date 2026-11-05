@@ -10,6 +10,13 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   const request = JSON.parse(line)
   if (request.stop) { clearTimeout(timer); emit([], [{ kind: 'ended', how: 'stopped' }]); return }
   if (request.answer !== undefined) { finish(`approved:${request.answer}`); return }
+  if (request.text?.startsWith('[GeckIt internal Manager context v1]')) {
+    const text = request.text.split('[/GeckIt internal Manager context v1]\n\n').at(-1)
+    const marker = 'fixture-command:'
+    if (text.startsWith(marker)) finish(`\`\`\`geckit\n${text.slice(marker.length)}\n\`\`\``)
+    else finish('fixture:manager acknowledged')
+    return
+  }
   if (request.text === 'wait') { emit([], [{ kind: 'asks', ask: 'fixture-approval', wanted: { kind: 'command', command: 'fixture write' } }]); return }
   if (request.text === 'hang') return
   timer = setTimeout(() => finish(`fixture:${request.text}`), request.text === 'slow' ? 500 : 20)
