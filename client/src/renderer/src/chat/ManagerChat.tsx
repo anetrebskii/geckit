@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { SessionItem, SessionItems, Settings } from '../../../shared/api'
-import type { ManagerDecision, ManagerView } from '../../../shared/manager'
+import type { ManagerDecision, ManagerThread, ManagerView } from '../../../shared/manager'
+import { MANAGER_MAIN_THREAD } from '../../../shared/manager'
 import { llmProviderInfo } from '../../../shared/providers'
 import { updatedItems } from '../../../shared/transcript-items'
 import { ON_PHONE } from '../on-phone'
@@ -84,7 +85,50 @@ const History = memo(function History({ view, connected, onReady }: { readonly v
   return <div className="manager-history"><Files value={files}><Transcript at={id ?? 'manager'} items={items} readOnly={disabled} manager working={view.state === 'working'} onAnswer={answer} onAgain={noop} onFile={file} onStopShell={noop} onTypeShell={noop} onBackground={noop} onContinue={noop} onRetry={noop} tasks={undefined} onTasks={noop} footer={footer} /></Files></div>
 })
 
-export function ManagerChat({ view, settings, connected = true, onSettings }: { readonly view: ManagerView; readonly settings: Settings; readonly connected?: boolean; readonly onSettings?: (() => void) | undefined }): React.JSX.Element {
+/** What the window shows for one thread: its own session, requests, decisions and state, with Manager-wide off and paused kept. */
+export function threadView(view: ManagerView, thread: ManagerThread | undefined): ManagerView {
+  if (thread === undefined || thread.id === MANAGER_MAIN_THREAD && (view.threads ?? []).length === 0) return view
+  const main = thread.id === MANAGER_MAIN_THREAD
+  const { session: _session, error: _error, ...rest } = view
+  const session = main ? view.session : thread.conversation
+  const error = main ? view.error : thread.error
+  const state = view.state === 'off' || view.state === 'paused' || main && view.state === 'blocked' ? view.state : thread.state === 'failed' ? 'blocked' : thread.state === 'working' ? 'working' : 'idle'
+  return { ...rest, ...(session === undefined ? {} : { session }), ...(error === undefined ? {} : { error }), state, requests: (view.requests ?? []).filter((request) => request.session === thread.session), decisions: view.decisions.filter((decision) => (decision.thread ?? MANAGER_MAIN_THREAD) === thread.id) }
+}
+
+export function threadOrder(threads: readonly ManagerThread[]): readonly ManagerThread[] {
+  return threads.toSorted((a, b) => a.id === MANAGER_MAIN_THREAD ? -1 : b.id === MANAGER_MAIN_THREAD ? 1 : b.at - a.at)
+}
+
+const threadName = (thread: ManagerThread): string => thread.id === MANAGER_MAIN_THREAD ? 'GeckIt' : thread.title
+const threadFrom = (thread: ManagerThread): string => thread.id === MANAGER_MAIN_THREAD ? 'Manager chat' : [thread.place, thread.from].filter((part) => part !== undefined && part !== '').join(' · ')
+
+export function Threads({ threads, picked, workers, onPick }: { readonly threads: readonly ManagerThread[]; readonly picked: string; readonly workers: ManagerView['workers']; readonly onPick: (id: string) => void }): React.JSX.Element {
+  if (ON_PHONE) return <label className="manager-thread-menu"><span>Thread</span><select value={picked} onChange={(event) => onPick(event.target.value)}>{threads.map((thread) => <option key={thread.id} value={thread.id}>{thread.id === MANAGER_MAIN_THREAD ? 'GeckIt' : `${threadFrom(thread)} · ${thread.title}`}</option>)}</select></label>
+  return <nav className="manager-threads" aria-label="Manager threads">{threads.map((thread) => {
+    const working = workers.filter((one) => one.state === 'working' && (thread.owns.includes(one.id) || thread.follows.includes(one.id))).length
+    return <button key={thread.id} type="button" className="manager-thread" aria-current={thread.id === picked ? 'true' : undefined} onClick={() => onPick(thread.id)}>
+      <span className="manager-thread-text"><strong>{threadName(thread)}</strong><span>{threadFrom(thread)}</span></span>
+      {thread.state === 'idle' ? null : <span className="manager-thread-dot" data-state={thread.state} aria-label={thread.state === 'asks' ? 'Needs your answer' : thread.state === 'failed' ? 'Stopped' : 'Working'} />}
+      {working === 0 ? null : <span className="manager-thread-count" aria-label={`${String(working)} working`}>{working}</span>}
+    </button>
+  })}</nav>
+}
+
+function Work({ thread, workers, onOpen }: { readonly thread: ManagerThread; readonly workers: ManagerView['workers']; readonly onOpen?: ((id: string) => void) | undefined }): React.JSX.Element | null {
+  const owns = workers.filter((one) => thread.owns.includes(one.id))
+  const follows = workers.filter((one) => thread.follows.includes(one.id))
+  if (owns.length === 0 && follows.length === 0) return null
+  const list = (title: string, rows: ManagerView['workers']): React.JSX.Element | null => rows.length === 0 ? null : <div className="manager-work-list"><h4>{title}</h4>{rows.map((one) => <button key={one.id} type="button" className="manager-work-row" disabled={onOpen === undefined} title="Open this conversation" onClick={() => onOpen?.(one.id)}><span className="manager-thread-dot" data-state={one.state === 'asks' ? 'asks' : one.state === 'failed' ? 'failed' : one.state === 'working' ? 'working' : 'idle'} aria-hidden="true" /><span>{one.title}</span></button>)}</div>
+  return <details className="manager-work" open><summary>Work <span>{owns.length + follows.length}</span></summary>{list('Started here', owns)}{list('Following', follows)}</details>
+}
+
+export function ManagerChat({ view: all, settings, connected = true, onSettings, onOpen }: { readonly view: ManagerView; readonly settings: Settings; readonly connected?: boolean; readonly onSettings?: (() => void) | undefined; readonly onOpen?: ((id: string) => void) | undefined }): React.JSX.Element {
+  const threads = useMemo(() => threadOrder(all.threads ?? []), [all.threads])
+  const [picked, setPicked] = useState(MANAGER_MAIN_THREAD)
+  const thread = threads.find((one) => one.id === picked) ?? threads[0]
+  const view = useMemo(() => threadView(all, thread), [all, thread])
+  const channel = thread !== undefined && thread.id !== MANAGER_MAIN_THREAD
   const [error, setError] = useState('')
   const [history, setHistory] = useState<{ readonly id: string; readonly ready: boolean }>()
   const historyRead = useCallback((id: string, ready: boolean): void => setHistory({ id, ready }), [])
@@ -93,7 +137,7 @@ export function ManagerChat({ view, settings, connected = true, onSettings }: { 
     void (view.state === 'paused' ? window.geckit.manager.resume() : window.geckit.manager.retry()).catch((caught: Error) => setError(caught.message))
   }
   const facts = [llmProviderInfo(managerAssistant(view), undefined, settings.providerPlugins).name, view.session?.model ?? 'Provider default', view.workers.length === 0 ? undefined : `${String(view.workers.length)} ${view.workers.length === 1 ? 'worker' : 'workers'}`].filter((fact) => fact !== undefined)
-  return <div className="manager-chat">
+  const chat = <div className="manager-chat">
     <div className="manager-inspection-info"><p className="manager-inspection-facts">{facts.join(' · ')}</p>
       {!view.config.enabled ? <p>{ON_PHONE && view.session === undefined ? 'Set up Manager on your computer, then chat here.' : 'Manager disabled. History is kept.'}</p> : view.state === 'paused' ? <p>Manager paused</p> : view.state === 'blocked' ? <p>Manager unavailable</p> : null}
       {view.error === undefined ? null : <p className="manager-error" role="status">{view.error}</p>}{error === '' ? null : <p className="manager-error" role="alert">{error}</p>}
@@ -101,7 +145,15 @@ export function ManagerChat({ view, settings, connected = true, onSettings }: { 
       {connected && view.config.enabled && (view.state === 'paused' || view.state === 'blocked') ? <button type="button" className="quiet small" onClick={recover}>{view.state === 'paused' ? 'Resume' : 'Try again'}</button> : null}
       {!view.config.enabled && onSettings !== undefined ? <button type="button" className="quiet small" onClick={onSettings}>Open Manager in Team</button> : null}
     </div>
-    <History key={view.session?.id ?? 'manager'} view={view} connected={connected} onReady={historyRead} />
-    <ManagerComposer view={view} connected={connected} historyReady={view.session === undefined || (history?.id === view.session.id && history.ready)} />
+    {!channel ? null : <div className="manager-thread-head">
+      <p>{[thread.place, thread.title, thread.from].filter((part) => part !== undefined && part !== '').join(' · ')}{thread.link === undefined ? null : <button type="button" className="quiet small" onClick={() => { if (thread.link !== undefined) window.geckit.chat.openLink(thread.link) }}>Open in {thread.place ?? 'channel'}</button>}</p>
+      {Object.entries(thread.labels).map(([key, value]) => <p key={key} className="manager-thread-label">{key}: {value}</p>)}
+      {thread.closed === undefined ? null : <p className="manager-error" role="status">{thread.closed}</p>}
+    </div>}
+    {thread === undefined ? null : <Work thread={thread} workers={all.workers} onOpen={onOpen} />}
+    <History key={view.session?.id ?? thread?.id ?? 'manager'} view={view} connected={connected} onReady={historyRead} />
+    <ManagerComposer view={view} connected={connected} historyReady={view.session === undefined || (history?.id === view.session.id && history.ready)} closed={!channel ? undefined : thread.closed ?? (thread.session === undefined ? 'This thread has no Manager session yet.' : undefined)} posted={channel ? `Manager's answer is also posted to ${thread.place ?? 'the channel'}.` : undefined} />
   </div>
+  if (threads.length === 0) return chat
+  return <div className="manager-chat-threads"><Threads threads={threads} picked={thread?.id ?? MANAGER_MAIN_THREAD} workers={all.workers} onPick={setPicked} />{chat}</div>
 }

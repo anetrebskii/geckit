@@ -53,6 +53,7 @@ export interface ManagerThread {
   readonly from?: string
   readonly link?: string
   readonly session?: ChatSession['id']
+  readonly conversation?: ChatSession
   readonly state: 'idle' | 'working' | 'asks' | 'failed'
   readonly error?: string
   /** The thread's channel is off or may no longer talk to Manager. */

@@ -14,7 +14,7 @@ import { Meter, until } from './UsageMeter'
 import type { Chat } from './useChat'
 import './phone-home.css'
 
-export type AssistantStatusChat = Pick<Chat, 'provider' | 'settings' | 'hosts' | 'plans' | 'plan' | 'plansAt'>
+export type AssistantStatusChat = Pick<Chat, 'provider' | 'settings' | 'hosts' | 'plans' | 'plan' | 'plansAt'> & Partial<Pick<Chat, 'goTo'>>
 const measuredTime = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' })
 
 type Snapshot = Required<Pick<ClaudeAccount, 'provider'>> & { readonly account: ClaudeAccount | undefined; readonly state: 'checking' | 'ready' | 'unavailable' }
@@ -160,7 +160,7 @@ function AssistantStatusView({ chat, phone = false, onManagerSettings }: { reado
       const info = llmProviderInfo(provider, undefined, chat.settings.providerPlugins)
       const groups = groupsOf(provider, snapshots.find((one) => one.provider === provider), chat)
       return groups.map((group) => <button type="button" className="assistant-chip" key={`${provider}:${group.name}`} title={`${info.name}${group.name === '' ? '' : ` · ${group.name}`}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><Icon name={info.icon} size={12} /><span className="assistant-name">{info.shortName}{groups.length > 1 ? ` · ${group.name}` : ''}</span><Summary group={group} now={now} /></button>)
-    })}</div>{onManagerSettings === undefined ? null : <ManagerStatus settings={chat.settings} onSettings={onManagerSettings} />}<button type="button" className="assistant-open" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Assistants<Icon name="chevron" size={10} /></button></div>}
+    })}</div>{onManagerSettings === undefined ? null : <ManagerStatus settings={chat.settings} onSettings={onManagerSettings} onOpen={chat.goTo} />}<button type="button" className="assistant-open" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>Assistants<Icon name="chevron" size={10} /></button></div>}
     {open ? <Details chat={chat} providers={providers} snapshots={snapshots} phone={phone} now={now} onClose={close} /> : null}
   </>
 }

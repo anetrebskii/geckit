@@ -118,7 +118,7 @@ export function PhoneHome({
       <div className="phone-tab" hidden={tab !== 'settings' || managerBack !== undefined}>
         <PhoneSettings chat={chat} onEdit={edit} />
       </div>
-      {managerBack === undefined ? null : <div className="phone-tab"><ManagerPhone settings={chat.settings} back={managerBack} onBack={() => setManagerBack(undefined)} onSettings={() => { setManagerBack(undefined); openTeam('manager') }} /></div>}
+      {managerBack === undefined ? null : <div className="phone-tab"><ManagerPhone settings={chat.settings} back={managerBack} onBack={() => setManagerBack(undefined)} onSettings={() => { setManagerBack(undefined); openTeam('manager') }} onOpen={(id) => { setManagerBack(undefined); chat.goTo(id) }} /></div>}
       {managerBack === undefined ? <nav className="phone-tabs" role="tablist">
         {TABS.map((one) => (
           <button

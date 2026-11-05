@@ -281,6 +281,7 @@ export class Manager {
       ...(record?.from === undefined ? {} : { from: record.from }),
       ...(record?.link === undefined ? {} : { link: record.link }),
       ...(state.sessionId === undefined ? {} : { session: state.sessionId }),
+      ...(session === undefined ? {} : { conversation: session }),
       state: state.error !== undefined ? 'failed' : decisions.some((decision) => (decision.thread ?? MAIN) === thread) ? 'asks' : working ? 'working' : 'idle',
       ...(state.error === undefined ? {} : { error: state.error }),
       ...(closed === undefined ? {} : { closed }),

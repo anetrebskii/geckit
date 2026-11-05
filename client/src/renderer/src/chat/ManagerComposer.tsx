@@ -53,12 +53,12 @@ async function reconcile(): Promise<void> {
   return checking
 }
 
-export function ManagerComposer({ view, connected, historyReady }: { readonly view: ManagerView; readonly connected: boolean; readonly historyReady: boolean }): React.JSX.Element {
+export function ManagerComposer({ view, connected, historyReady, closed, posted }: { readonly view: ManagerView; readonly connected: boolean; readonly historyReady: boolean; readonly closed?: string | undefined; readonly posted?: string | undefined }): React.JSX.Element {
   const held = useSyncExternalStore(subscribe, () => draft)
   const field = useRef<HTMLTextAreaElement>(null)
   const [ready, setReady] = useState(loaded)
   const busy = held.pending !== undefined && held.pending.phase !== 'failed'
-  const blocked = !connected ? 'Computer disconnected. Reconnect to send.' : view.appChat !== true ? MANAGER_CHAT_UPDATE : !view.config.enabled ? 'Manager disabled. History is kept.' : view.state === 'paused' ? 'Manager paused' : view.state === 'blocked' ? 'Manager unavailable' : undefined
+  const blocked = !connected ? 'Computer disconnected. Reconnect to send.' : view.appChat !== true ? MANAGER_CHAT_UPDATE : !view.config.enabled ? 'Manager disabled. History is kept.' : view.state === 'paused' ? 'Manager paused' : view.state === 'blocked' ? 'Manager unavailable' : closed
   useEffect(() => { void load().then(() => setReady(true)) }, [])
   useEffect(() => { if (ready && connected && view.appChat === true && draft.pending?.phase === 'checking') void reconcile() }, [ready, connected, view])
   useEffect(() => { if (!ON_PHONE && ready && blocked === undefined && !busy) field.current?.focus({ preventScroll: true }) }, [ready, blocked, busy])
@@ -87,7 +87,7 @@ export function ManagerComposer({ view, connected, historyReady }: { readonly vi
       <textarea ref={field} rows={2} value={held.text} disabled={!ready || busy} placeholder="Message Manager" aria-label="Message Manager" onChange={(event) => { void save({ text: event.target.value, ...(held.pending?.phase === 'failed' ? {} : held.pending === undefined ? {} : { pending: held.pending }) }) }} onKeyDown={(event) => {
         if (!ON_PHONE && event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); void send() }
       }} />
-      <div className="manager-composer-actions"><span className="manager-composer-hint" role="status">{blocked ?? (ON_PHONE ? '' : 'Enter to send · Shift+Enter for a new line')}</span><button type="button" className="primary" disabled={!ready || !historyReady || busy || blocked !== undefined || held.text.trim() === ''} onClick={() => { void send() }}>Send</button></div>
+      <div className="manager-composer-actions"><span className="manager-composer-hint" role="status">{blocked ?? (posted ?? (ON_PHONE ? '' : 'Enter to send · Shift+Enter for a new line'))}</span><button type="button" className="primary" disabled={!ready || !historyReady || busy || blocked !== undefined || held.text.trim() === ''} onClick={() => { void send() }}>Send</button></div>
     </div>
   </div>
 }

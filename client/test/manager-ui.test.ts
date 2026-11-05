@@ -281,3 +281,41 @@ describe('Channels settings', () => {
     vi.unstubAllGlobals()
   })
 })
+
+const { Threads, threadOrder, threadView } = await import('../src/renderer/src/chat/ManagerChat')
+
+describe('Manager threads in the window', () => {
+  const backing: ChatSession = { ...worker, id: 'manager-main', manager: true }
+  const slackSession: ChatSession = { ...worker, id: 'manager-slack', manager: true, title: 'Slack thread' }
+  const owned: ChatSession = { ...worker, id: 'codex:owned', title: 'Fix login redirect' }
+  const followed: ChatSession = { ...worker, id: 'codex:followed', title: 'Deploy preview' }
+  const threaded: ManagerView = { ...ready, session: backing, workers: [owned, followed], decisions: [{ id: 'mine', title: 'Main decision', choices: [] }, { id: 'theirs', title: 'Slack decision', choices: [], thread: 'slack:C1:1' }], requests: [{ id: 'r1', text: 'hi', source: 'desktop', at: 1, session: 'manager-slack', state: 'queued' }], threads: [
+    { id: 'slack:C1:1', place: 'Slack', title: '#dev', labels: { starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://slack.example/p1', session: 'manager-slack', conversation: slackSession, state: 'working', at: 20, owns: ['codex:owned'], follows: ['codex:followed'] },
+    { id: 'main', title: 'Manager', labels: {}, session: 'manager-main', conversation: backing, state: 'idle', at: 10, owns: [], follows: [] },
+  ] }
+
+  it('puts GeckIt first and gives each thread its own session, requests and decisions', () => {
+    const [main, slack] = threadOrder(threaded.threads ?? [])
+    expect(main?.id).toBe('main')
+    const mainView = threadView(threaded, main)
+    expect(mainView.session?.id).toBe('manager-main')
+    expect(mainView.decisions.map((one) => one.id)).toEqual(['mine'])
+    expect(mainView.requests).toEqual([])
+    const slackView = threadView(threaded, slack)
+    expect(slackView.session?.id).toBe('manager-slack')
+    expect(slackView.decisions.map((one) => one.id)).toEqual(['theirs'])
+    expect(slackView.requests?.map((one) => one.id)).toEqual(['r1'])
+    expect(slackView.state).toBe('working')
+    expect(threadView({ ...threaded, state: 'paused' }, slack).state).toBe('paused')
+  })
+
+  it('lists the threads with GeckIt first and counts their working workers', () => {
+    const markup = renderToStaticMarkup(createElement(Threads, { threads: threadOrder(threaded.threads ?? []), picked: 'main', workers: [{ ...threaded.workers[0]!, state: 'working' }, { ...threaded.workers[1]!, state: 'idle' }], onPick: vi.fn() }))
+    expect(markup).toContain('aria-label="Manager threads"')
+    expect(markup).toContain('aria-current="true"><span class="manager-thread-text"><strong>GeckIt</strong><span>Manager chat</span>')
+    expect(markup).toContain('<strong>#dev</strong><span>Slack · Maria Ivanova</span>')
+    expect(markup).toContain('aria-label="1 working"')
+    const plain: ManagerView = { ...threaded, threads: [] }
+    expect(threadView(plain, undefined)).toBe(plain)
+  })
+})

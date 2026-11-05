@@ -15084,6 +15084,184 @@ html.phone .phone-team-block .employee-section-head h3 {
   outline-offset: 2px;
 }
 
+/* Manager threads: a list on the left of the chat on the computer, a menu above it on the phone. */
+.manager-chat-threads {
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+.manager-threads {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  inline-size: 200px;
+  padding: 8px;
+  overflow-y: auto;
+  border-inline-end: 1px solid var(--border);
+}
+
+.manager-thread {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  text-align: start;
+}
+
+.manager-thread:hover {
+  background: var(--bg-hover);
+}
+
+.manager-thread[aria-current='true'] {
+  background: var(--accent-soft);
+}
+
+.manager-thread-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.manager-thread-text strong,
+.manager-thread-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-thread-text strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.manager-thread-text span {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.manager-thread-dot {
+  flex: none;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.manager-thread-dot[data-state='working'] {
+  background: var(--accent);
+}
+
+.manager-thread-dot[data-state='asks'] {
+  background: var(--review-solid);
+}
+
+.manager-thread-dot[data-state='failed'] {
+  background: var(--danger);
+}
+
+.manager-thread-count {
+  flex: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.manager-thread-menu {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-block-end: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.manager-thread-menu select {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+html.phone .manager-chat-threads {
+  flex-direction: column;
+}
+
+.manager-thread-head {
+  flex: none;
+  padding: 8px 16px;
+  border-block-end: 1px solid var(--border);
+}
+
+.manager-thread-head p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block: 2px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.manager-thread-head .manager-thread-label {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.manager-work {
+  flex: none;
+  max-block-size: 30%;
+  padding: 6px 16px;
+  overflow-y: auto;
+  border-block-end: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.manager-work summary {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.manager-work summary span {
+  margin-inline-start: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.manager-work h4 {
+  margin: 6px 0 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.manager-work-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  text-align: start;
+}
+
+.manager-work-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.manager-work-row span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 html.phone .manager-phone {
   block-size: 100%;
   background: var(--bg);

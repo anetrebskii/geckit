@@ -43,7 +43,8 @@ GeckIt gives a person one place to supervise work across AI conversations, proje
 - Channels: `manager(thread)`, `label()` and the `answer` event in `client/src/main/channels/channel-api.ts` and `channels.ts`; built-in Slack over Socket Mode in `client/src/main/channels/slack.ts`. Tests: `client/test/channels.test.ts`.
 - Telegram: one thread per chat from `client/src/core/runtime.ts`; its settings moved from the Manager settings in Team to Settings > Channels (`TelegramRow` in `client/src/renderer/src/ui/Channels.tsx`). Tests: `client/test/manager-ui.test.ts` "Channels settings"; reviewed in the settings preview, light and dark, connected and with Manager off.
 - UI lines: `managerFrom()` and `managerTrace()` in `client/src/renderer/src/chat/Request.tsx`, phone cells in `PhoneInfo.tsx`.
-- Not verified live: Slack, Telegram and the running app. The Manager window thread list waits for spec 021.
+- Window: `Threads`, `Work`, `threadView` and `threadOrder` in `client/src/renderer/src/chat/ManagerChat.tsx`; the thread's conversation row comes as `conversation` in `ManagerThread`. Tests: `client/test/manager-ui.test.ts` "Manager threads in the window"; reviewed in `manager-preview.html?threads`, desktop light and phone dark.
+- Not verified live: Slack, Telegram and the running app.
 
 ## Product feature list
 

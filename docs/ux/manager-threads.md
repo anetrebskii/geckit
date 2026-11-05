@@ -49,7 +49,7 @@ block-beta
   style s2 fill:#dbeafe,stroke:#2563eb
 ```
 
-The card line and Session info do not depend on the window and come with the core. The window layout itself is built after spec 021 (Manager chat) lands in `main`, on top of its header and transcript.
+The card line and Session info do not depend on the window and come with the core. The window layout is built on top of spec 021's header and transcript. The list appears once a channel thread exists; until then the window is unchanged. The composer keeps one draft for all threads: text typed in one thread stays in the field when another is opened, and the line under it says where Manager's answer goes.
 
 ### The model
 
