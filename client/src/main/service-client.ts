@@ -26,6 +26,7 @@ export interface DesktopServiceClient extends Pick<RpcClient<ServiceMethods>, 'c
   readonly snapshot: Snapshot
   readonly connected: boolean
   shutdownForUpdate(): Promise<void>
+  importConfiguration(text: string): Promise<void>
 }
 
 export class ServiceCompatibilityError extends Error {
@@ -50,7 +51,8 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
   let launchError: Error | undefined
   let connectionError: Error | undefined
   let launched = false
-  let updateShutdown: Promise<void> | undefined
+  let shutdownPromise: Promise<void> | undefined
+  let importing: string | undefined
 
   const close = (): void => {
     closed = true
@@ -155,6 +157,27 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
     closed = true
     throw new Error(`Could not connect desktop to the GeckIt service: ${failure} Check ${logFile} and the process owning ${ownerFile}; verify that it has stopped before removing stale files.`)
   }
+  const shutdown = (text?: string): Promise<void> => {
+    if (shutdownPromise !== undefined) return importing === text ? shutdownPromise : Promise.reject(new Error('GeckIt is already restarting. Wait for it to reopen, then try again.'))
+    const connection = current
+    if (closed || connection === undefined) return Promise.reject(new Error(text === undefined ? 'Reconnect the GeckIt service before installing an update.' : 'Reconnect the GeckIt service before importing configuration.'))
+    importing = text
+    shutdownPromise = (async () => {
+      const deadline = Date.now() + 15_000
+      const failure = text === undefined ? 'The update was not installed.' : 'The configuration was not imported.'
+      let timeout: NodeJS.Timeout | undefined
+      try {
+        const expired = new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error(`The GeckIt service did not finish shutting down. ${failure}`)), 15_000) })
+        await Promise.race([text === undefined ? connection.call('service:shutdownForUpdate') : connection.call('service:importConfiguration', text), expired])
+        while (Date.now() < deadline) {
+          if (!existsSync(ownerFile) && !existsSync(tokenFile) && (!endpointOnDisk() || !existsSync(rpcEndpoint(options.directory)))) { close(); return }
+          await new Promise<void>((resolve) => setTimeout(resolve, STARTUP_RETRY))
+        }
+        throw new Error(`The GeckIt service did not finish shutting down. ${failure}`)
+      } finally { if (timeout !== undefined) clearTimeout(timeout) }
+    })().catch((error: Error) => { shutdownPromise = undefined; throw error })
+    return shutdownPromise
+  }
   const initial = snapshot
   return {
     get snapshot() { return snapshot ?? initial },
@@ -164,24 +187,7 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
       return current.call(name, ...args)
     },
     close,
-    shutdownForUpdate: () => {
-      if (updateShutdown !== undefined) return updateShutdown
-      const connection = current
-      if (closed || connection === undefined) return Promise.reject(new Error('Reconnect the GeckIt service before installing an update.'))
-      updateShutdown = (async () => {
-        const deadline = Date.now() + 15_000
-        let timeout: NodeJS.Timeout | undefined
-        try {
-          const expired = new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('The GeckIt service did not finish shutting down. The update was not installed.')), 15_000) })
-          await Promise.race([connection.call('service:shutdownForUpdate'), expired])
-          while (Date.now() < deadline) {
-            if (!existsSync(ownerFile) && !existsSync(tokenFile) && (!endpointOnDisk() || !existsSync(rpcEndpoint(options.directory)))) { close(); return }
-            await new Promise<void>((resolve) => setTimeout(resolve, STARTUP_RETRY))
-          }
-          throw new Error('The GeckIt service did not finish shutting down. The update was not installed.')
-        } finally { if (timeout !== undefined) clearTimeout(timeout) }
-      })().catch((error: Error) => { updateShutdown = undefined; throw error })
-      return updateShutdown
-    },
+    shutdownForUpdate: () => shutdown(),
+    importConfiguration: (text) => shutdown(text),
   }
 }

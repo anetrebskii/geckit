@@ -152,7 +152,7 @@ it('reports a service without negotiation support immediately', async () => {
   expect(bootstrap).not.toHaveBeenCalled()
 })
 
-it('waits for owner, credentials, and control socket release before allowing an update', async () => {
+it.each(['update', 'import'] as const)('waits for owner, credentials, and control socket release before allowing an %s restart', async (action) => {
   const path = directory()
   const ownerFile = join(path, 'service-owner.json')
   const tokenFile = join(path, 'operator-token')
@@ -164,9 +164,10 @@ it('waits for owner, credentials, and control socket release before allowing an 
     'desktop:hello': () => hello(),
     'service:bootstrap': () => snapshot(),
     'service:shutdownForUpdate': () => { acknowledged = true; return { ready: true } },
+    'service:importConfiguration': (text: string) => { expect(text).toBe('{"version":1}'); acknowledged = true; return { ready: true } },
   }
   const server = listenRpc<typeof methods, ServiceEvents>(path, 'secret', methods, undefined, (method) => {
-    if (method !== 'service:shutdownForUpdate') return
+    if (method !== 'service:shutdownForUpdate' && method !== 'service:importConfiguration') return
     setTimeout(() => {
       void server.close().then(() => {
         rmSync(ownerFile)
@@ -179,10 +180,11 @@ it('waits for owner, credentials, and control socket release before allowing an 
   await server.ready
   const client = await attach(path)
   let finished = false
-  const updating = client.shutdownForUpdate().then(() => { finished = true })
+  const updating = (action === 'update' ? client.shutdownForUpdate() : client.importConfiguration('{"version":1}')).then(() => { finished = true })
   await vi.waitFor(() => expect(acknowledged).toBe(true), { interval: 5 })
   expect(finished).toBe(false)
   expect(released).toBe(false)
+  await expect(action === 'update' ? client.importConfiguration('{"version":1}') : client.shutdownForUpdate()).rejects.toThrow('already restarting')
   await updating
   expect(released).toBe(true)
   expect(client.connected).toBe(false)

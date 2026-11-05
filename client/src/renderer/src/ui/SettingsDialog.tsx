@@ -14,6 +14,7 @@ import { MOD, said } from './Shortcuts'
 import { Version } from './UpdateNotice'
 import { Libraries } from './Libraries'
 import { VpnIpSettings } from './VpnIpSettings'
+import { ConfigurationSettings } from './ConfigurationSettings'
 
 /**
  * Settings, a section at a time: General, Profiles, Hosts, Phrases, Correct and dictation, Phone, Version.
@@ -387,6 +388,8 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
           className="select"
         />
       </div>
+
+      {!document.documentElement.classList.contains('phone') && <ConfigurationSettings />}
 
       <div className="field">
         <label>Gecko</label>

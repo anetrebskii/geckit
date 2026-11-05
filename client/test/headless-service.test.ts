@@ -14,6 +14,9 @@ import type { OperatorAnswered, ServiceAsked } from '../src/core/operator'
 import type { EmployeesView } from '../src/shared/employees'
 import type { ManagerView } from '../src/shared/manager'
 import { askedEndpoint } from '../src/cli/endpoint'
+import { connectRpc } from '../src/core/rpc'
+import { parseConfiguration } from '../src/core/configuration'
+import type { ServiceEvents, ServiceMethods } from '../src/service/application'
 
 const exec = promisify(execFile)
 const client = resolve(import.meta.dirname, '..')
@@ -172,6 +175,36 @@ it('preserves program-request approval, settings and history through a clean res
   expect(Number(await readFile(join(directory, 'fixture-child.pid'), 'utf8'))).toBe(child)
   const exitedAgain = once(running!, 'exit'); running?.kill('SIGTERM'); await exitedAgain
   expect(running?.exitCode).toBe(0)
+}, 20_000)
+
+it('rejects import during work, then imports through a real service shutdown and fresh startup', async () => {
+  await start()
+  const token = (await readFile(join(directory, 'operator-token'), 'utf8')).trim()
+  const rpc = await connectRpc<ServiceMethods, ServiceEvents>(directory, token, () => undefined)
+  try {
+    const text = await rpc.call('configuration:export')
+    const original = parseConfiguration(text)
+    const next = JSON.stringify({ ...original, general: { ...original.general, theme: 'dark' }, manager: { ...original.manager, instructions: 'Imported instructions' } })
+    const id = await send('hang')
+    await eventually(() => read<ChatSession[]>('sessions', 'list'), (all) => all.some((one) => one.id === id && one.state === 'working'))
+    await expect(rpc.call('service:importConfiguration', next)).rejects.toThrow('Finish or stop active and queued work')
+    await expect(stat(join(directory, 'configuration-import.json'))).rejects.toThrow()
+    await cli('sessions', 'stop', id)
+    await eventually(() => read<ChatSession[]>('sessions', 'list'), (all) => all.every((one) => one.state !== 'working'))
+    const local = await readFile(join(directory, 'local-state.json'), 'utf8')
+    const before = await readFile(join(directory, 'settings.json'), 'utf8')
+    const exited = once(running!, 'exit')
+    expect(await rpc.call('service:importConfiguration', next)).toEqual({ ready: true })
+    await exited
+    expect(running?.exitCode).toBe(0)
+    expect(await readFile(join(directory, 'settings.json'), 'utf8')).toBe(before)
+    await start()
+    expect(await read('settings', 'get')).toMatchObject({ theme: 'dark' })
+    expect((await read<ManagerView>('manager', 'view')).config.instructions).toBe('Imported instructions')
+    expect((await read<EmployeesView>('employees', 'list')).employees).toEqual(original.employees)
+    expect(JSON.parse(await readFile(join(directory, 'local-state.json'), 'utf8'))).toMatchObject(JSON.parse(local))
+    await expect(stat(join(directory, 'configuration-import.json'))).rejects.toThrow()
+  } finally { rpc.close() }
 }, 20_000)
 
 it('does not unlink an existing legacy listener without ownership metadata', async () => {

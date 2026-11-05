@@ -15035,3 +15035,8 @@ html.phone .manager-composer-actions {
 .manager-settings > .team-section {
   margin-block-start: 20px;
 }
+
+.configuration-settings h3 { margin: 0; font-size: 12px; font-weight: 600; }
+.configuration-settings p { margin: 0; color: var(--text-faint); font-size: 12px; overflow-wrap: anywhere; }
+.configuration-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.configuration-settings .configuration-error { color: var(--danger); }

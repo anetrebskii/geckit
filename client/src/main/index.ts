@@ -20,6 +20,7 @@ import type { ServiceSnapshot } from '../core/application'
 import type { ServiceMethods, ServiceEvents } from '../service/application'
 import type { RpcEvent } from '../core/rpc'
 import { connectDesktop } from './service-client'
+import { configurationActions } from './configuration-actions'
 import type { DesktopServiceClient } from './service-client'
 import { isVaultEnvelope } from '../core/vault'
 import track from './analytics'
@@ -504,6 +505,36 @@ function registerCore<K extends typeof CORE_CHANNELS[number]>(channel: K): void 
   ipcMain.on(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => send(channel, ...args))
 }
 function wire(): void {
+  const configuration = configurationActions({
+    directory: app.getPath('userData'),
+    chooseExport: async () => {
+      const choice = await dialog.showSaveDialog({ title: 'Export GeckIt configuration', defaultPath: join(app.getPath('documents'), 'geckit-settings.json'), filters: [{ name: 'JSON', extensions: ['json'] }] })
+      return choice.canceled ? undefined : choice.filePath
+    },
+    chooseImport: async () => {
+      const choice = await dialog.showOpenDialog({ title: 'Import GeckIt configuration', properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] })
+      return choice.canceled ? undefined : choice.filePaths[0]
+    },
+    confirmImport: async () => {
+      const choice = await dialog.showMessageBox({
+        type: 'question', message: 'Import configuration and restart GeckIt?',
+        detail: 'This replaces preferences, shortcuts, employees, library registrations and Manager configuration. A backup of your current configuration will be kept. Accounts and conversation history stay on this installation. Referenced libraries must already be installed and signed in.',
+        buttons: ['Import and restart', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
+      })
+      return choice.response === 0
+    },
+    export: () => invoke('configuration:export'),
+    import: async (text) => {
+      if (service === undefined) throw new Error('Reconnect the GeckIt service before importing configuration.')
+      await service.importConfiguration(text)
+    },
+    reveal: (path) => shell.showItemInFolder(path),
+    restart: () => { app.relaunch(); app.quit() },
+  })
+  ipcMain.handle('configuration:reveal', () => configuration.reveal())
+  ipcMain.handle('configuration:export', () => configuration.export())
+  ipcMain.handle('configuration:import', () => configuration.import())
+
   for (const channel of CORE_CHANNELS) registerCore(channel)
 
   ipcMain.handle('manager:inspect', (event, id: string) => {

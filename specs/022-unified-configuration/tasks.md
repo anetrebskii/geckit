@@ -20,3 +20,11 @@
 - [x] T009 Run affected tests and required build/type/lint checks; record results in specs/022-unified-configuration/verification.md.
 
 Dependencies: T001 -> T002 -> US1 -> US2 -> T009. Execute serially because owners share storage and the checkout has other active work. Independent tests in T003 and T007 may run together after implementation; no separate agents needed.
+
+## UI follow-up (requested after storage delivery)
+- [x] T010 Write UX proposal and extend specification/design/plan for FR-008 through FR-010.
+- [x] T011 Add portable-file validation, pending import, private backup and service-startup application.
+- [x] T012 Add service export/import RPC and desktop shutdown barrier with isolated filesystem/service tests.
+- [ ] T013 Alex approved UX; prototype and native/Settings implementation are complete. Prototype visual review remains blocked by GeckIt conversation registration.
+- [ ] T014 Exercise actual Settings handlers in light/dark desktop contexts; keyboard, scrolling, cancel, errors, export and import. Verify native boundaries independently.
+- [x] T015 Feature/docs, typecheck/lint/full suite/build/mobile checks and static performance review complete. Alex subsequently requested direct-main delivery with T013/T014 verification gaps documented; integrate, push, verify remote and remove the temporary worktree as part of delivery.

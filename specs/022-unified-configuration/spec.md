@@ -1,6 +1,6 @@
 # Feature Specification: Unified configuration
 
-**Feature Branch**: Current shared checkout (`main`); no branch switch while other sessions work here.
+**Feature Branch**: Original storage delivered on `main`; UI follow-up isolated on `feat/configuration-transfer-ui` in `/private/tmp/geckit-configuration-ui`.
 **Created**: 2026-11-05
 **Status**: Implementation authorized
 **Input**: "ok, then merge into one. Like it's in vscode, with sections"
@@ -29,6 +29,10 @@ The person copies the configuration file to another stopped GeckIt installation 
 1. Given copied configuration, when the destination starts, then shared settings load without source pairing secrets, queue state or account credentials.
 2. Given a malformed or newer unsupported file, when configuration is read or saved, then the original bytes remain intact and the failure is reported.
 
+### User Story 3 - Transfer from Settings (follow-up)
+
+Alex asked to add Open configuration, Export and Import controls. Desktop Settings > General uses native file pickers and a confirmed replacement with automatic backup and restart. Cancellation preserves configuration; active or queued work blocks import. See [Approved UX](../../docs/ux/configuration-transfer.md). Alex approved the UX flow on 2026-11-05.
+
 ### Edge Cases
 
 Missing legacy files; repeated migration; empty employee list; omitted configuration sections; invalid employee catalog; failed backup or atomic write; external editor replacement; unknown future fields; source/development isolation; standalone CLI reads; session-ID migration.
@@ -44,6 +48,10 @@ Missing legacy files; repeated migration; empty employee list; omitted configura
 - **FR-005**: Existing preference, employee, Manager, CLI and metadata-migration entry points must use the same configuration.
 - **FR-006**: Document how to copy configuration while both services are stopped, including local path and provider-library requirements.
 - **FR-007**: Verify migration, owner interleaving, corruption/failure preservation, restart and copy-to-another-directory behavior using actual filesystem operations without live provider calls.
+
+- **FR-008**: Offer Open configuration, Export and Import in desktop General Settings.
+- **FR-009**: Validate and confirm import, refuse active/queued work, preserve private backups, and load replacement only after the old service exits.
+- **FR-010**: Show truthful cancellation/error/progress feedback and verify keyboard, scrolling, light and dark states in the actual renderer.
 
 ### Key Entities
 
@@ -61,6 +69,6 @@ Missing legacy files; repeated migration; empty employee list; omitted configura
 ## Assumptions
 
 - "Another app" means another GeckIt installation; unrelated products need their own format adapter.
-- No new settings screen, export/import buttons or JSON-with-comments editor is requested.
+- The follow-up requests file access and export/import in the existing Settings screen. JSON-with-comments editing remains outside scope.
 - Copying uses the filesystem with both GeckIt services stopped; accounts and provider libraries are installed separately and paths must exist on the destination.
 - Existing desktop/phone contracts stay flat; grouping is the persistence format.

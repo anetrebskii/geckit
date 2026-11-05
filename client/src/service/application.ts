@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { version } from '../../package.json'
 import { application } from '../core/application'
+import { exportConfiguration, stageConfigurationImport } from '../core/configuration-transfer'
 import type { CoreEvents } from '../core/events'
 import type { CoreRuntime } from '../core/runtime'
 import { initializeVault, isVaultEnvelope } from '../core/vault'
@@ -137,6 +138,13 @@ export function migrateSecrets(directory: string, security: ServiceSecurity, req
 export function serviceApplication(runtime: CoreRuntime, directory: string, security: ServiceSecurity, native: ReturnType<typeof nativeRequests>) {
   const core = application(runtime)
   const desktop = {
+    'configuration:export': () => exportConfiguration(directory),
+    'service:importConfiguration': async (text: string) => {
+      const manager = await runtime.manager.view()
+      if (runtime.sessions.hasPendingWork() || manager.queued > 0) throw new Error('Finish or stop active and queued work before importing configuration.')
+      stageConfigurationImport(directory, text)
+      return { ready: true }
+    },
     'service:shutdownForUpdate': () => {
       if (runtime.sessions.working().length > 0) throw new Error('GeckIt is still working. Wait for active tasks to finish before updating.')
       return { ready: true }

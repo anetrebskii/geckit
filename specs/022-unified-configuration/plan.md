@@ -1,6 +1,6 @@
 # Implementation Plan: Unified configuration
 
-**Branch**: Shared main checkout | **Date**: 2026-11-05 | **Spec**: [spec.md](spec.md)
+**Branch**: Original shared main; UI follow-up `feat/configuration-transfer-ui` | **Date**: 2026-11-05 | **Spec**: [spec.md](spec.md)
 
 ## Summary
 
@@ -26,3 +26,7 @@ Credentials remain in vault/local pairing storage. No provider backend changes. 
 ## Complexity Tracking
 
 No constitution violations. Keep existing contracts and service lifecycle; do not restart the active app or deploy.
+
+## Configuration UI follow-up
+
+Use a validated portable JSON boundary and service-owned pending import. Desktop will choose and confirm the file, request import over authenticated RPC, wait for the old service to release ownership, then relaunch. The owned startup applies the replacement before constructing any runtime owner, retaining local state and private backups. Do not hot-reload a subset of configuration owners. Block active turns, approvals, background work and queued messages, but not unread completed conversations. Prototype/renderer/native dialogs await the UX review.

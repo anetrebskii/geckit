@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GeckIt configuration transfer</title></head>
+<body>
+<div id="root"></div>
+<script type="module">
+  import React from 'react'
+  import { createRoot } from 'react-dom/client'
+  import '/client/src/renderer/src/styles.css'
+  import { DEFAULT_SETTINGS } from '/client/src/shared/api.ts'
+  // Native boundaries are fixtures; the Settings dialog and its controls are production components.
+  window.fixture = { outcome: 'success', calls: [], release: undefined }
+  const operation = async (name) => {
+    window.fixture.calls.push(name)
+    const outcome = window.fixture.outcome
+    if (outcome === 'busy') return new Promise(resolve => { window.fixture.release = resolve })
+    if (outcome === 'blocked') throw new Error('Finish or stop active and queued work before importing configuration.')
+    if (outcome === 'invalid') throw new Error('This file is not a supported GeckIt configuration. Choose an exported settings file.')
+    if (outcome === 'error') throw new Error('EACCES: permission denied, open /Documents/geckit-settings.json')
+    return outcome !== 'cancel'
+  }
+  window.geckit = {
+    platform: 'darwin', home: '/Users/demo',
+    configuration: { reveal: () => operation('reveal').then(() => undefined), export: () => operation('export'), import: () => operation('import') },
+    settings: { pickApp: async () => undefined },
+  }
+  const { SettingsDialog } = await import('/client/src/renderer/src/ui/SettingsDialog.tsx')
+  function Prototype() {
+    const [open, setOpen] = React.useState(false)
+    const [settings, setSettings] = React.useState(DEFAULT_SETTINGS)
+    return React.createElement(React.Fragment, null,
+      React.createElement('button', { type: 'button', onClick: () => setOpen(true), style: { margin: 24 } }, 'Settings'),
+      open && React.createElement(SettingsDialog, {
+        settings,
+        change: change => { setSettings(current => ({ ...current, ...change })); if (change.theme) document.documentElement.dataset.theme = change.theme },
+        onClose: () => setOpen(false), onShortcuts: () => setOpen(false),
+      }),
+    )
+  }
+  createRoot(document.getElementById('root')).render(React.createElement(Prototype))
+</script>
+</body>
+</html>

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 import type {
   Answered,
+  ConfigurationApi,
   Lineup,
   Browser,
   CardAnswer,
@@ -84,6 +85,12 @@ const geckit = {
 
   /** Where a dropped file is, which the file itself no longer says. */
   pathFor: (file: File): string => webUtils.getPathForFile(file),
+
+  configuration: {
+    reveal: (): Promise<void> => ipcRenderer.invoke('configuration:reveal'),
+    export: (): Promise<boolean> => ipcRenderer.invoke('configuration:export'),
+    import: (): Promise<boolean> => ipcRenderer.invoke('configuration:import'),
+  } satisfies ConfigurationApi,
 
   employees: {
     list: (): Promise<EmployeesView> => ipcRenderer.invoke('employees:list'),

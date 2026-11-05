@@ -3334,6 +3334,10 @@ export class Sessions {
       .map((live) => this.#deps.notes.all()[live.id]?.title ?? live.title)
   }
 
+  hasPendingWork(): boolean {
+    return [...this.#live.values()].some((live) => live.state === 'working' || live.state === 'asks' || live.queued.length > 0 || live.checkingIp || live.heldOperation !== undefined || live.commands.size > 0 || live.tasks.some((task) => task.status === 'running'))
+  }
+
   /** Everything is going. Every process goes with it, and the conversations stay where the tool keeps them. */
   dispose(): void {
     this.#glancing?.()

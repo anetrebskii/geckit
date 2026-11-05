@@ -445,6 +445,11 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     home: boot.home,
     copy: (text) => void navigator.clipboard.writeText(text),
     pathFor: () => '',
+    configuration: {
+      reveal: () => Promise.reject(new Error('Manage configuration on the computer.')),
+      export: () => Promise.reject(new Error('Manage configuration on the computer.')),
+      import: () => Promise.reject(new Error('Manage configuration on the computer.')),
+    },
     employees: {
       list: () => call('employees.list'),
       save: (draft) => call('employees.save', draft),

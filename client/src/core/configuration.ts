@@ -63,6 +63,12 @@ function validate(config: Configuration): void {
   if (config.employees !== undefined) validateEmployees(config.employees)
 }
 
+export function parseConfiguration(text: string): Configuration {
+  const parsed = JSON.parse(text) as Configuration
+  validate(parsed)
+  return parsed
+}
+
 function load(directory: string): Configuration | Partial<Settings> | undefined {
   try {
     const parsed = read<Configuration | Partial<Settings>>(join(directory, FILE))

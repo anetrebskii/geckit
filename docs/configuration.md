@@ -56,15 +56,21 @@ Example of a partial configuration; omitted fields use normal defaults:
 
 The file uses standard JSON. Comments and trailing commas are not supported. Existing APIs retain their flat Settings contract; section names belong to the file format. Preference edits still update open windows. For edits to employees or Manager in the file, restart the service after saving. Stop the service before replacing the whole configuration.
 
-## Copy to another installation
+## Open, export and import
 
-1. Stop both GeckIt services, including background work. Closing the desktop window alone leaves the service running.
-2. Back up the destination's `settings.json` and `local-state.json`.
-3. Copy the source's `settings.json` into the destination data directory, replacing its configuration file. Both installations must support format version 1.
-4. Check project paths, SSH configuration, microphone availability, VPN rules, enabled Manager and schedules. The destination must have the referenced provider libraries and assistant programs installed and signed in; the JSON includes registrations, not their binaries or accounts.
-5. Start the destination service. Its own credentials and pairing identity remain in place; a fresh installation creates its own identity and needs its own phone pairing. New shortcut history starts at the destination's first load, without replaying past scheduled occurrences. Shortcuts already known on that destination retain their local history.
+On desktop, open **Settings > General > Configuration**:
 
-This is a configuration copy, not a conversation or account backup. A different product needs an adapter for this format. There are no new export/import buttons in this change.
+- **Open configuration** selects the active `settings.json` in the system file manager.
+- **Export…** saves a portable JSON file, named `geckit-settings.json` by default. Choose a destination outside GeckIt's data folder.
+- **Import…** selects an exported JSON file, validates it, then asks **Import and restart** or **Cancel**. Import replaces the whole reusable configuration. Active or queued work blocks import; finish or stop it and retry.
+
+A confirmed import waits for the old service to exit. On fresh startup GeckIt keeps a private backup under `backups/configuration-import-<id>/`, then loads the replacement preferences, employees and Manager configuration together. Cancelling or selecting invalid input leaves the active configuration unchanged. Backup or write failures preserve the original and report a startup error. Fix the cause and restart to retry, or remove `configuration-import.json` with the service stopped to cancel a staged import.
+
+After importing, check project paths, SSH configuration, microphone availability, VPN rules, enabled Manager and schedules. Referenced provider libraries and assistant programs must already be installed and signed in; the JSON includes registrations, not binaries or accounts. The destination retains its own credentials, pairing identity and local shortcut history. A fresh installation needs its own phone pairing. New shortcuts start a destination-local execution baseline without replaying past scheduled occurrences.
+
+These controls operate on desktop; phone Settings does not offer host file actions. This transfers GeckIt configuration. A different product needs an adapter for this format. Export is not a conversation or account backup.
+
+To transfer manually, stop both services (closing desktop alone leaves the service running), back up the destination's settings and local state, replace only `settings.json`, then restart. Both installations must support format version 1.
 
 ## Local state and credentials
 

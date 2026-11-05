@@ -7,6 +7,7 @@ import log from 'electron-log'
 
 import { serviceHandler } from '../core/operator'
 import { ownDataDirectory } from '../core/ownership'
+import { applyConfigurationImport } from '../core/configuration-transfer'
 import { configureCorePlatform, defaultDataDirectory } from '../core/platform'
 import { createRuntime } from '../core/runtime'
 import { serveLocal } from '../core/socket'
@@ -61,6 +62,7 @@ async function main(): Promise<void> {
   process.once('SIGTERM', shutdown)
   process.once('SIGINT', shutdown)
   try {
+    applyConfigurationImport(directory)
     const security = serviceSecurity(directory)
     delete process.env['GECKIT_VAULT_KEY']
     runtime = await createRuntime(script, { vault: security.vault, secrets: security.secrets })
@@ -68,7 +70,7 @@ async function main(): Promise<void> {
     writeFileSync(tokenPath, token, { mode: 0o600, flag: 'wx' })
     listener = serveLocal(directory, serviceHandler(runtime, token, shutdown))
     rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native), undefined, (method) => {
-      if (method === 'service:shutdownForUpdate' && runtime?.sessions.working().length === 0) shutdown()
+      if ((method === 'service:shutdownForUpdate' || method === 'service:importConfiguration') && runtime?.sessions.working().length === 0) shutdown()
     })
     unsubscribe = runtime.subscribe((event) => {
       if (event.name === 'core:terminal' && rpc?.connections === 0) {

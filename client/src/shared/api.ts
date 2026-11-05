@@ -14,6 +14,12 @@ import type { Employee } from './employees'
  * sessions, never about `stream-json`.
  */
 
+export interface ConfigurationApi {
+  readonly reveal: () => Promise<void>
+  readonly export: () => Promise<boolean>
+  readonly import: () => Promise<boolean>
+}
+
 /** What a session may do without asking: Claude Code's own permission modes, in its own words. */
 export type SessionMode = 'manual' | 'auto' | 'plan'
 
