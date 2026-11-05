@@ -15,7 +15,7 @@ import type { ChatSession, Settings } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { ManagerView } from '../src/shared/manager'
 import type { ChannelView } from '../src/shared/channels'
-import { createSlack } from '../src/main/channels/slack'
+import { after, createSlack } from '../src/main/channels/slack'
 import type { SlackTransport } from '../src/main/channels/slack'
 
 const folders: string[] = []
@@ -267,7 +267,7 @@ class FakeSocket {
   emit(envelope: object): void { this.listeners.message?.({ data: JSON.stringify(envelope) }) }
 }
 
-function slackHarness(manager = true) {
+function slackHarness(manager = true, history: { ts: string; user?: string; text: string; files?: { name: string; permalink: string }[] }[] = []) {
   const posted: { channel: string; thread_ts?: string; text: string }[] = []
   const sent: [string, unknown][] = []
   const answered: [string, string, unknown][] = []
@@ -299,9 +299,9 @@ function slackHarness(manager = true) {
   } as unknown as ChannelContext
   const fetch = (async (url: string, init: { body: string }) => {
     const method = url.split('/').at(-1)
-    const body = JSON.parse(init.body) as { channel: string; thread_ts?: string; text: string; user?: string }
+    const body = JSON.parse(init.body) as { channel: string; thread_ts?: string; text: string; user?: string; oldest?: string }
     if (method === 'chat.postMessage') posted.push(body)
-    const reply = method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : { ok: true }
+    const reply = method === 'auth.test' ? { ok: true, user_id: 'B1' } : method === 'conversations.replies' ? { ok: true, messages: history.filter((one) => body.oldest === undefined || !after(body.oldest, one.ts)) } : method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : { ok: true }
     return { json: async () => reply }
   }) as unknown as typeof globalThis.fetch
   const channel = createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] })
@@ -352,4 +352,38 @@ it('Slack: says Manager is unavailable when it may not talk to Manager, and foll
   run.watchers.get('channel:slack:C1:3.0')?.({ kind: 'answer', text: 'Written from GeckIt, answered here.' })
   await run.settle()
   expect(run.posted).toEqual([{ channel: 'C1', thread_ts: '3.0', text: 'Written from GeckIt, answered here.' }])
+})
+
+it('Slack: a mention partway down a thread opens one Manager thread for it and sends what was written before, once', async () => {
+  const history = [
+    { ts: '1762400000.000100', user: 'U3', text: 'Login redirect loops after the deploy' },
+    { ts: '1762400060.000200', user: 'U9', text: 'same for me <@U1>', files: [{ name: 'trace.txt', permalink: 'https://files.example/trace' }] },
+    { ts: '1762400090.000000', user: 'U9', text: 'here is mine xoxb-1234567890-abcdef' },
+    { ts: '1762400120.000300', user: 'U1', text: '<@B1> can you look?' },
+  ]
+  const run = slackHarness(true, history)
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '1762400120.000300', thread_ts: '1762400000.000100', text: '<@B1> can you look?' })
+  run.event({ type: 'message', channel_type: 'channel', user: 'U1', channel: 'C1', ts: '1762400120.000300', thread_ts: '1762400000.000100', text: '<@B1> can you look?' })
+  await run.settle()
+  await run.settle()
+  expect(run.opened.at(-1)).toMatchObject({ key: 'C1:1762400000.000100', title: 'can you look?', labels: { thread: '1762400000.000100', starter: 'Maria Ivanova' } })
+  expect(run.sent).toEqual([['channel:slack:C1:1762400000.000100', { from: 'Maria Ivanova', text: 'Earlier in this Slack thread:\nBen (2025-11-06 03:33 UTC): Login redirect loops after the deploy\nBen (2025-11-06 03:34 UTC): same for me @Maria Ivanova [file: trace.txt https://files.example/trace]\nBen (2025-11-06 03:34 UTC): (left out: looks like it contains a token or key)\n\nMessage to you:\ncan you look?' }]])
+  history.push({ ts: '1762400150.000000', user: 'B1', text: 'Looking into it.' }, { ts: '1762400180.000000', user: 'U9', text: 'it started after 14:00' }, { ts: '1762400200.000000', user: 'U2', text: 'any news?' })
+  run.event({ type: 'message', channel_type: 'channel', user: 'U9', channel: 'C1', ts: '1762400180.000000', thread_ts: '1762400000.000100', text: 'it started after 14:00' })
+  await run.settle()
+  expect(run.posted).toEqual([])
+  expect(run.sent).toHaveLength(1)
+  run.event({ type: 'message', channel_type: 'channel', user: 'U2', channel: 'C1', ts: '1762400200.000000', thread_ts: '1762400000.000100', text: 'any news?' })
+  await run.settle()
+  await run.settle()
+  expect(run.sent.at(-1)).toEqual(['channel:slack:C1:1762400000.000100', { from: 'Ben', text: 'Earlier in this Slack thread:\nBen (2025-11-06 03:36 UTC): it started after 14:00\n\nMessage to you:\nany news?' }])
+  await run.channel.stop()
+})
+
+it('Slack: orders timestamps by seconds and microseconds', () => {
+  expect(after('1762400000.000200', '1762400000.000100')).toBe(true)
+  expect(after('1762400000.1', '1762400000.000100')).toBe(true)
+  expect(after('1762399999.999999', '1762400000.000000')).toBe(false)
+  expect(after('3.0', '3.0')).toBe(false)
 })
