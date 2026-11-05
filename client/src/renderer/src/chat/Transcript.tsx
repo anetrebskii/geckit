@@ -173,11 +173,12 @@ function Card({
     {card.detail === undefined ? null : <Code detail>{card.detail}</Code>}
     {card.elicitation === undefined ? null : <><p>{card.elicitation.message}</p>{card.elicitation.url === undefined ? null : <Code detail>{card.elicitation.url}</Code>}{card.elicitation.fields.map((field) => <p key={field.name}>{field.label}{field.required ? ' (required)' : ''}{field.description === undefined ? '' : ` - ${field.description}`}</p>)}</>}
     {card.choices === undefined ? null : <ul>{card.choices.map((choice) => <li key={choice}>{choice}</li>)}</ul>}
-    <p>Answer this request in Telegram. For unsupported requests, open Manager in Team.</p>
+    <p>Open GeckIt on your computer to answer this request.</p>
   </div>
   if (card.kind === 'elicitation' && card.elicitation !== undefined) return <div className="card elicitation">
     <div className="card-title">{card.title}</div>
     <div className="where">{card.where}</div>
+    {card.detail === undefined ? null : <Code detail>{card.detail}</Code>}
     <ElicitationForm request={card.elicitation} onAnswer={(answer) => onAnswer(item.id, answer)} />
   </div>
   return (
@@ -374,7 +375,7 @@ const Turn = memo(function Turn({
         <ManagerSaid said={managerSaid(item.text) ?? { kind: 'telegram', marks: [], text: item.text }} />
       ) : item.kind === 'mine' ? (
         <div className={`mine${item.unsent === true ? ' unsent' : ''}`}>
-          {item.text}
+          {manager && item.text.startsWith('[User request]\n') ? item.text.slice('[User request]\n'.length) : item.text}
           {item.images === undefined ? null : (
             <div className="pictures">
               {item.images.map((one, index) => (
@@ -398,17 +399,17 @@ const Turn = memo(function Turn({
           </div>
         </>
       ) : item.kind === 'did' ? (
-        <Did readOnly={readOnly} item={item} active={active} going={going} onFile={onFile} onBackground={onBackground} onPicture={onPicture} />
+        <Did readOnly={readOnly || manager} item={item} active={active} going={going} onFile={onFile} onBackground={onBackground} onPicture={onPicture} />
       ) : item.kind === 'thought' ? (
         <div className="thought">{item.text === '' ? 'Thought about it' : item.text}</div>
       ) : item.kind === 'card' ? (
         <Card readOnly={readOnly} item={item} onAnswer={onAnswer} />
       ) : item.kind === 'request' ? (
-        readOnly && item.answer === undefined ? <div className="card request"><div className="card-title">Requested conversations</div>{item.tasks.map((task, index) => <details key={index}><summary>{task.title} - {task.project}</summary><p>{task.text}</p>{task.goal === undefined ? null : <p>{task.goal}</p>}</details>)}<p>Review requests in Telegram.</p></div> : <Request item={item} />
+        (readOnly || manager) && item.answer === undefined ? <div className="card request"><div className="card-title">Requested conversations</div>{item.tasks.map((task, index) => <details key={index}><summary>{task.title} - {task.project}</summary><p>{task.text}</p>{task.goal === undefined ? null : <p>{task.goal}</p>}</details>)}<p>{manager ? 'Review the pending requests below.' : 'Review requests in Telegram.'}</p></div> : <Request item={item} />
       ) : item.kind === 'team-request' ? (
-        <TeamRequest item={item} readOnly={readOnly} />
+        <><TeamRequest item={item} readOnly={readOnly || manager} />{manager && item.answer === undefined ? <p className="manager-inspection-hint">Review the pending requests below.</p> : null}</>
       ) : item.kind === 'shell' ? (
-        <Shell readOnly={readOnly} item={item} onStop={onStopShell} onType={onTypeShell} />
+        <Shell readOnly={readOnly || manager} item={item} onStop={onStopShell} onType={onTypeShell} />
       ) : item.kind === 'wrote' ? (
         <div className="wrote">
           Changed
@@ -604,6 +605,16 @@ export const Transcript = memo(function Transcript({
   const [opened, setOpened] = useState<{ readonly at: string; readonly keys: ReadonlySet<string> }>({ at, keys: new Set() })
   const [now, setNow] = useState(() => Date.now())
   const [query, setQuery] = useState('')
+  const [newMessages, setNewMessages] = useState(false)
+  const latestItems = useRef(items)
+  const seenItems = useRef(items)
+  useLayoutEffect(() => {
+    latestItems.current = items
+    if (!manager || stuck.current || seenItems.current === items) return
+    let here = true
+    queueMicrotask(() => { if (here && !stuck.current && seenItems.current !== items) setNewMessages(true) })
+    return () => { here = false }
+  }, [items, manager])
   // Which of the messages found is gone to, counted back from the newest.
   const [picked, setPicked] = useState(0)
   const field = useRef<HTMLInputElement>(null)
@@ -636,7 +647,7 @@ export const Transcript = memo(function Transcript({
     // Content getting shorter pulls it up too, and then it is still at the bottom.
     const said = (): void => {
       if (scroller.scrollTop < last && gap() > 1) stuck.current = false
-      else if (scroller.scrollTop > last && gap() < 16) stuck.current = true
+      else if (scroller.scrollTop > last && gap() < 16) { stuck.current = true; if (manager) { seenItems.current = latestItems.current; setNewMessages(false) } }
       last = scroller.scrollTop
     }
     const wheel = (event: WheelEvent): void => {
@@ -644,7 +655,8 @@ export const Transcript = memo(function Transcript({
     }
     // What grows without a new item, the Working line or a picture loading, is followed too.
     const follow = new ResizeObserver(() => {
-      if (stuck.current) scroller.scrollTop = scroller.scrollHeight
+      if (stuck.current) { scroller.scrollTop = scroller.scrollHeight; if (manager) { seenItems.current = latestItems.current; setNewMessages(false) } }
+      else if (manager && seenItems.current !== latestItems.current) setNewMessages(true)
     })
     follow.observe(scroller)
     follow.observe(content)
@@ -655,7 +667,19 @@ export const Transcript = memo(function Transcript({
       scroller.removeEventListener('scroll', said)
       scroller.removeEventListener('wheel', wheel)
     }
-  }, [])
+  }, [manager])
+
+  useEffect(() => {
+    if (!manager) return
+    const follow = (): void => {
+      stuck.current = true
+      seenItems.current = latestItems.current
+      setNewMessages(false)
+      if (box.current !== null) box.current.scrollTop = box.current.scrollHeight
+    }
+    window.addEventListener('manager:sent', follow)
+    return () => window.removeEventListener('manager:sent', follow)
+  }, [manager])
 
   // A message the person has just sent takes hold of the bottom again, however far up they were.
   const lastMine = items.findLast((item) => item.kind === 'mine')?.id
@@ -664,11 +688,11 @@ export const Transcript = memo(function Transcript({
     if (was.current !== at) {
       was.current = at
       stuck.current = true
-    } else if (sent.current !== lastMine && lastMine !== undefined) stuck.current = true
+    } else if (!manager && sent.current !== lastMine && lastMine !== undefined) stuck.current = true
     sent.current = lastMine
     if (!stuck.current || box.current === null) return
     box.current.scrollTop = box.current.scrollHeight
-  }, [at, items, lastMine])
+  }, [at, items, lastMine, manager])
 
   // The message a search went to, however far back it is.
   const sought = useMemo(
@@ -889,8 +913,8 @@ export const Transcript = memo(function Transcript({
     )}
     <div
       className="transcript"
-      tabIndex={readOnly ? 0 : undefined}
-      aria-label={readOnly ? 'Manager transcript' : undefined}
+      tabIndex={readOnly || manager ? 0 : undefined}
+      aria-label={readOnly || manager ? 'Manager transcript' : undefined}
       ref={box}
       onCopy={(event) => {
         const copied = richSelection(document.getSelection(), event.currentTarget)
@@ -916,7 +940,7 @@ export const Transcript = memo(function Transcript({
         {shown.map((item) => {
           const key = foldOf.get(item.id)
           const held = key === undefined ? undefined : folds.get(key)
-          if (key === undefined || held === undefined) return <Turn readOnly={readOnly} manager={manager} key={item.id} item={item} active={current.has(item.id)} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={readOnly || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
+          if (key === undefined || held === undefined) return <Turn readOnly={readOnly} manager={manager} key={item.id} item={item} active={current.has(item.id)} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={readOnly || manager || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
           if (held.first !== item.id && !isOpen(key)) return null
           const open = (): void => {
             setOpened({ at, keys: new Set([...openKeys, key]) })
@@ -963,7 +987,7 @@ export const Transcript = memo(function Transcript({
                 going={going.has(item.id)}
                 when={when(item)}
                 onAnswer={onAnswer}
-                onAgain={readOnly || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain}
+                onAgain={readOnly || manager || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain}
                 onFile={onFile}
                 onPicture={picture}
                 onCopyAnswer={copyAnswer}
@@ -975,7 +999,7 @@ export const Transcript = memo(function Transcript({
           )
         })}
 
-        {!readOnly && retryable ? (
+        {!readOnly && !manager && retryable ? (
           <div className="turn">
             <button type="button" className="quiet retry" disabled={retrying} onClick={onRetry}>Try again</button>
           </div>
@@ -985,7 +1009,7 @@ export const Transcript = memo(function Transcript({
           <div className="turn"><div className="did" role="status">Checking public IP...</div></div>
         ) : null}
 
-        {!readOnly && stopped ? (
+        {!readOnly && !manager && stopped ? (
           <div className="turn">
             <button type="button" className="quiet" onClick={onContinue}>
               Continue
@@ -1028,7 +1052,7 @@ export const Transcript = memo(function Transcript({
             going={false}
             when={undefined}
             onAnswer={onAnswer}
-            onAgain={readOnly || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain}
+            onAgain={readOnly || manager || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain}
             onFile={onFile}
             onPicture={picture}
             onCopyAnswer={copyAnswer}
@@ -1041,6 +1065,7 @@ export const Transcript = memo(function Transcript({
 
       {preview === undefined ? null : <Preview src={preview} onClose={() => setPreview(undefined)} />}
     </div>
+    {manager && newMessages ? <button type="button" className="quiet manager-new-messages" onClick={() => { stuck.current = true; seenItems.current = latestItems.current; setNewMessages(false); if (box.current !== null) box.current.scrollTop = box.current.scrollHeight }}>New messages <Icon name="down" size={12} /></button> : null}
     </>
   )
 })

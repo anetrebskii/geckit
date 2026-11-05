@@ -61,7 +61,7 @@ describe('Manager assistant availability', () => {
   it('keeps configuration and lifecycle in Settings without a chat or task dashboard', () => {
     const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue({ ...ready, session: { ...worker, manager: true }, workers: [worker], decisions: [{ id: 'decision', title: 'Internal decision', choices: [{ label: 'Answer', value: 'answer' }] }] })
     const markup = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
-    expect(markup).toContain('Manage GeckIt from Telegram.')
+    expect(markup).toContain('Give Manager work in the app or Telegram.')
     expect(markup).toContain('Pause</button>')
     expect(markup).toContain('Restart session</button>')
     expect(markup).toContain('Disable Manager</button>')
@@ -111,20 +111,50 @@ describe('Manager guided setup', () => {
     expect(markup).toContain('Loading models...')
     expect(markup).toContain('class="primary" disabled="">Continue</button>')
     expect(markup).toContain('Decide how work starts first.')
-    expect(markup).toContain('Connect Telegram first.')
+    expect(markup).toContain('Choose the assistant first.')
+    expect(markup).not.toContain('Connect Telegram first.')
+    expect(markup.match(/class="manager-step is-/g)).toHaveLength(3)
+    expect(markup.indexOf('aria-label="Connect Telegram"')).toBeGreaterThan(markup.indexOf('</ol>', markup.indexOf('class="manager-steps"')))
+    expect(markup).toContain('Telegram is optional. Connect it to talk to the same Manager outside GeckIt.')
     expect(markup).not.toContain('Enable Manager')
     expect(markup).not.toContain('Delegation policy')
     hook.mockRestore()
   })
 
-  it('cannot be finished while Telegram is unconnected, and keeps lifecycle once it is on', () => {
+  it('keeps Manager ready and its lifecycle controls available without a Telegram connection', () => {
     const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue({ ...ready, session: { ...worker, id: 'claude-backing', manager: true } })
     const markup = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
     expect(markup).toContain('Connect Telegram')
     expect(markup).toContain('Manager is on')
+    expect(markup).toContain('Pause</button>')
+    expect(markup).toContain('Restart session</button>')
+    expect(markup).toContain('Disable Manager</button>')
+    expect(markup).toContain('Loading Telegram...')
     expect(markup).toContain('All projects, current and future, across every profile.')
     expect(markup).not.toContain('Connect Telegram first.')
     hook.mockRestore()
+  })
+})
+
+const { ManagerPage, PhoneManager } = await import('../src/renderer/src/employees/TeamManager')
+
+describe('Manager chat entry points', () => {
+  it('offers desktop and phone chat before an enabled Manager has its first session', () => {
+    const desktop = renderToStaticMarkup(createElement(ManagerPage, { settings: DEFAULT_SETTINGS, change: () => undefined, view: ready, onChat: () => undefined }))
+    const phone = renderToStaticMarkup(createElement(PhoneManager, { settings: DEFAULT_SETTINGS, change: () => undefined, view: ready, onBack: () => undefined }))
+    expect(desktop).toContain('Open chat</button>')
+    expect(phone).toContain('Open chat</span>')
+    expect(desktop).toContain('Coordinates work in GeckIt, Telegram and shortcuts')
+    expect(phone).toContain('Coordinates work in GeckIt, Telegram and shortcuts')
+  })
+
+  it('keeps first setup on desktop while retaining chat access to disabled history', () => {
+    const fresh = renderToStaticMarkup(createElement(PhoneManager, { settings: DEFAULT_SETTINGS, change: () => undefined, view: { ...ready, config: DEFAULT_MANAGER_CONFIG, state: 'off' }, onBack: () => undefined }))
+    const disabled = renderToStaticMarkup(createElement(PhoneManager, { settings: DEFAULT_SETTINGS, change: () => undefined, view: { ...ready, config: DEFAULT_MANAGER_CONFIG, state: 'off', session: { ...worker, manager: true } }, onBack: () => undefined }))
+    expect(fresh).toContain('Set up Manager on your computer, then chat here.')
+    expect(fresh).not.toContain('Open chat')
+    expect(disabled).toContain('Open chat')
+    expect(disabled).toContain('Disabled')
   })
 })
 

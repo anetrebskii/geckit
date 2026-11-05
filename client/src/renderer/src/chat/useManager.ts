@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react'
 
 import type { ManagerView } from '../../../shared/manager'
-import { ON_PHONE } from '../on-phone'
 
 export function useManager(): ManagerView | undefined {
   const [view, setView] = useState<ManagerView>()
   useEffect(() => {
-    if (ON_PHONE) return
     const api = window.geckit.manager
     if (api === undefined) return
     let here = true

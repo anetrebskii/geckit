@@ -3,9 +3,10 @@ import { vpnIpMismatchError } from '../../shared/vpn-ip'
 import { DEFAULT_SETTINGS, providerOf } from '../../shared/api'
 import type { ChatSession, ClaudeModel, SessionItem, SessionItems, SessionProvider, Settings } from '../../shared/api'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE } from '../../shared/manager'
-import type { ManagerApi, ManagerView } from '../../shared/manager'
+import type { ManagerApi, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from '../../shared/manager'
 import type { TelegramAction, TelegramView } from '../../shared/telegram'
 import type { Geckit } from '../../preload'
+import type { PhoneCalls } from './phone-calls'
 import './styles.css'
 import './chat/phone-home.css'
 
@@ -42,9 +43,9 @@ if (query.has('links') && telegram.account !== undefined) telegram = { ...telegr
 let previousTelegram = telegram
 let telegramAttempt = 0
 if (query.get('state') === 'disabled') view = { ...view, config: { ...view.config, enabled: false }, state: 'off' }
-const inspectionItems: readonly SessionItem[] = query.has('inspectEmpty') ? [] : [
+let inspectionItems: readonly SessionItem[] = query.has('inspectEmpty') || query.get('state') === 'setup' ? [] : [
   { kind: 'mine', id: 'manager-question', text: '[Telegram]\nCheck the latest Apple submission.' },
-  { kind: 'theirs', id: 'manager-reply', text: 'I delegated the submission check to a worker. It is waiting for your approval in Telegram.' },
+  { kind: 'theirs', id: 'manager-reply', text: 'I delegated the submission check to a worker. Review its current approval here.' },
   { kind: 'did', id: 'manager-step', what: 'Used GeckIt CLI: sessions list', detail: 'Worker: Check latest submission. Needs your approval.', live: true, lasting: true },
   { kind: 'card', id: 'manager-native', card: { kind: 'elicitation', title: 'Allow Computer Use to use "Mail"?', where: 'Requested by cua_repl', elicitation: { serverName: 'cua_repl', message: 'Allow Computer Use to use "Mail"?', fields: [], rememberAllowed: true } } },
   { kind: 'shell', id: 'manager-shell', command: 'fixture command', output: 'Read-only output fixture.', running: true },
@@ -56,6 +57,21 @@ const inspectionItems: readonly SessionItem[] = query.has('inspectEmpty') ? [] :
   ...(query.has('inspectLong') ? Array.from({ length: 650 }, (_one, index): SessionItem => ({ kind: 'theirs', id: `manager-history-${String(index)}`, text: `Earlier Manager activity ${String(index + 1)}: worker reconciliation fixture.` })) : []),
   { kind: 'note', id: 'manager-stopped', note: 'stopped', text: 'Stopped fixture. Continue is intentionally unavailable in inspection.' },
 ]
+const receipts = new Map<ManagerSendRequest['id'], ManagerRequestReceipt>()
+const sends: ManagerSendRequest[] = []
+const answers: { readonly id: string; readonly choice: string }[] = []
+let sendAttempt = 0
+let connected = !query.has('offline')
+const connectionListeners = new Set<(value: boolean) => void>()
+const pushItems = (gone?: SessionItems['gone']): void => { for (const callback of managerItemListeners) callback({ id: backing.id, items: inspectionItems, ...(gone === undefined ? {} : { gone }) }) }
+const fixture = {
+  sends, answers,
+  snapshot: () => ({ view, receipts: [...receipts.values()], sends, answers, items: inspectionItems, connected }),
+  connection: (value: boolean): void => { connected = value; for (const callback of connectionListeners) callback(value) },
+  state: (state: ManagerView['state']): void => { update({ state, ...(state === 'blocked' ? { error: 'Fixture VPN check refused this request.' } : {}) }) },
+  message: (text: string): void => { inspectionItems = [...inspectionItems, { kind: 'theirs', id: crypto.randomUUID(), text }]; pushItems() },
+}
+Object.assign(window, { geckitManagerFixture: fixture })
 let inspectionAttempts = 0
 let inspectionReplacement = false
 const update = (change: Partial<ManagerView>): ManagerView => { view = { ...view, ...change }; for (const callback of managerListeners) callback(view); for (const callback of sessionsListeners) callback([worker]); return view }
@@ -79,6 +95,42 @@ const manager: ManagerApi = {
     if (query.has('inspectLive')) setTimeout(() => { for (const callback of managerItemListeners) callback({ id, items: [{ kind: 'theirs', id: 'manager-live-reply', text: 'Live Manager update fixture received while inspection was open.' }] }) }, 300)
     if (query.has('inspectSlow')) await new Promise<void>((resolve) => setTimeout(resolve, 1200))
     return snapshot
+  },
+  send: async (request) => {
+    if (!connected) throw new Error('Computer disconnected. Reconnect to send.')
+    const accepted = receipts.get(request.id)
+    if (accepted !== undefined) return accepted
+    if (!view.config.enabled || view.state === 'paused' || view.state === 'blocked') throw new Error('Manager is unavailable. Open Manager settings to continue.')
+    if (query.has('sendFailure') && ++sendAttempt === 1) throw new Error('Synthetic send failure. No request was accepted.')
+    sends.push(request)
+    const receipt: ManagerRequestReceipt = { id: request.id, session: backing.id, state: 'queued' }
+    receipts.set(request.id, receipt)
+    const pending = { ...receipt, text: request.text, at: Date.now(), source: 'desktop' as const }
+    update({ requests: [...(view.requests ?? []), pending], queued: (view.queued ?? 0) + 1 })
+    if (query.has('sendLost')) throw new Error('Synthetic response loss after durable acceptance.')
+    if (!query.has('sendQueued')) setTimeout(() => {
+      inspectionItems = [...inspectionItems, { kind: 'mine', id: `app-${request.id}`, text: request.text }, { kind: 'theirs', id: `reply-${request.id}`, text: 'Manager fixture received your request. No provider was contacted.' }]
+      receipts.set(request.id, { ...receipt, state: 'sent' })
+      update({ state: 'idle', requests: (view.requests ?? []).filter((one) => one.id !== request.id), queued: Math.max(0, view.queued - 1) })
+      pushItems()
+    }, 400)
+    return receipt
+  },
+  receipt: async (id) => { if (!connected || query.has('receiptFailure')) throw new Error('Synthetic receipt lookup unavailable.'); return receipts.get(id) },
+  answer: async (request) => {
+    if (request.session !== backing.id) throw new Error('Manager session changed. Reload before answering.')
+    const decision = view.decisions.find((one) => one.id === request.id)
+    if (decision === undefined || !decision.choices.some((one) => one.value === request.choice)) throw new Error('This request is no longer pending.')
+    answers.push({ id: request.id, choice: request.choice })
+    const next = update({ decisions: view.decisions.filter((one) => one.id !== request.id) })
+    return { ...next, answer: 'Answer sent.' }
+  },
+  answerCard: async (session, card, answer) => {
+    if (session !== backing.id) throw new Error('Manager session changed. Reload before answering.')
+    answers.push({ id: card, choice: answer })
+    inspectionItems = inspectionItems.filter((one) => one.id !== card)
+    pushItems([card])
+    return true
   },
   onItems: (callback) => { managerItemListeners.add(callback); return () => managerItemListeners.delete(callback) },
   configure: async (change) => {
@@ -131,18 +183,20 @@ const chat: Partial<Geckit['chat']> = {
   onSessions: (callback) => { sessionsListeners.add(callback); return () => sessionsListeners.delete(callback) }, onItems: (callback) => { itemListeners.add(callback); return () => itemListeners.delete(callback) },
   account: async (provider) => ({ provider: provider ?? 'claude', here: true, signedIn: true, plan: 'Fixture' }), onAccount: listen, plan: async () => undefined, plans: async () => [], onPlan: listen, onPlans: listen,
   models: async (_root, provider) => query.has('modelsFailure') ? undefined : [...modelsFor(provider ?? 'claude')],
-  onNotice: listen, onEarlier: listen, onShow: (callback) => { if (query.has('staleManager')) queueMicrotask(() => callback('archived-manager-fixture')); else if (query.has('unknownWorker')) queueMicrotask(() => callback(unknownWorker)); else if (query.has('worker')) queueMicrotask(() => callback(worker.id)); return noop }, onSpotlight: listen, onScreenshot: listen,
+  onNotice: listen, onTask: listen, onEarlier: listen, onShow: (callback) => { if (query.has('staleManager')) queueMicrotask(() => callback('archived-manager-fixture')); else if (query.has('unknownWorker')) queueMicrotask(() => callback(unknownWorker)); else if (query.has('worker')) queueMicrotask(() => callback(worker.id)); return noop }, onSpotlight: listen, onScreenshot: listen,
   cutOff: async () => [], links: async () => [], waiting: async () => undefined, repo: async () => undefined, onGit: listen, git: async () => undefined, files: async () => [], mcp: async () => [], browsers: async () => [], picture: async () => undefined, queuedPicture: async () => undefined, read: noop,
-  stop: noop, openLink: (url) => { if (url.startsWith('https://t.me/geckit_fixture_bot?start=') && telegram.state === 'pairing') { telegram = { ...telegram, state: 'confirming', candidate: { id: 42, chatId: 42, name: 'Alex fixture', username: 'alex_fixture' } }; for (const callback of telegramListeners) callback(telegram) } },
+  openFile: noop, stop: noop, openLink: (url) => { if (url.startsWith('https://t.me/geckit_fixture_bot?start=') && telegram.state === 'pairing') { telegram = { ...telegram, state: 'confirming', candidate: { id: 42, chatId: 42, name: 'Alex fixture', username: 'alex_fixture' } }; for (const callback of telegramListeners) callback(telegram) } },
 }
 const bridge: Omit<Partial<Geckit>, 'chat' | 'hosts' | 'shortcuts' | 'settings' | 'update' | 'errors' | 'speech'> & { readonly chat: typeof chat; readonly hosts: Partial<Geckit['hosts']>; readonly shortcuts: Partial<Geckit['shortcuts']>; readonly settings: Partial<Geckit['settings']>; readonly update: Partial<Geckit['update']>; readonly errors: Partial<Geckit['errors']> } = {
   platform: 'darwin', home: '/Users/alex', copy: noop, pathFor: () => '', manager,
   telegram: { view: async () => telegram, action: telegramAction, on: (callback) => { telegramListeners.add(callback); return () => telegramListeners.delete(callback) } },
+  employees: { list: async () => ({ employees: [] }), save: async () => { throw new Error('Employee editing is outside this Manager fixture.') }, archive: async () => ({ employees: [] }), restore: async () => ({ employees: [] }), retryInstructions: async () => ({ employees: [] }), memory: async () => { throw new Error('No employee memory in this fixture.') }, on: listen },
   chat, hosts: { list: async () => [], prompts: async () => [], onChanged: listen, onPrompt: listen, onAnswered: listen }, shortcuts: { onManage: listen },
   settings: { get: async () => settings, set: async (change) => { settings = { ...settings, ...change }; for (const callback of settingsListeners) callback(settings); return settings }, on: (callback) => { settingsListeners.add(callback); return () => settingsListeners.delete(callback) } },
   lineup: { state: async () => ({ working: 0, limit: 6 }), onChanged: listen },
   update: { view: async () => ({ state: 'off', version: 'preview', offered: '', channel: 'dev', percent: 0, message: '', waitingFor: [] }), on: listen }, errors: { onQuestion: listen, question: async () => undefined, answer: noop },
 }
-Object.assign(window, { geckit: bridge })
+const phone: Pick<PhoneCalls, 'connected' | 'onConnection' | 'version'> = { connected: () => connected, onConnection: (callback) => { connectionListeners.add(callback); return () => connectionListeners.delete(callback) }, version: async () => 'preview' }
+Object.assign(window, { geckit: bridge, ...(query.has('phone') ? { geckitPhone: phone } : {}) })
 const { Chat } = await import('./chat/Chat')
 createRoot(document.getElementById('root')!).render(<Chat />)

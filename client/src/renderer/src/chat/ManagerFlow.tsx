@@ -1,10 +1,10 @@
 import type { ManagerConfig } from '../../../shared/manager'
 import { Icon } from '../ui/Icon'
 
-export type ManagerStepName = 'assistant' | 'delegation' | 'telegram' | 'enable'
+export type ManagerStepName = 'assistant' | 'delegation' | 'enable'
 
 const NODES = [
-  { key: 'you', icon: 'chat', label: 'Telegram' },
+  { key: 'you', icon: 'chat', label: 'You' },
   { key: 'manager', icon: 'terminal', label: 'Manager' },
   { key: 'workers', icon: 'board', label: 'Workers' },
 ] as const
@@ -12,15 +12,13 @@ const NODES = [
 function lit(step: ManagerStepName, delegation: ManagerConfig['delegation']): readonly string[] {
   if (step === 'assistant') return ['manager']
   if (step === 'delegation') return delegation === 'approve' ? ['you', 'manager', 'workers'] : ['manager', 'workers']
-  if (step === 'telegram') return ['you', 'manager']
   return ['you', 'manager', 'workers']
 }
 
 function say(step: ManagerStepName, delegation: ManagerConfig['delegation']): string {
   if (step === 'assistant') return 'One GeckIt session is the manager. The assistant you pick here is the one that runs it.'
-  if (step === 'delegation') return delegation === 'approve' ? 'Manager asks you in Telegram before each new worker starts.' : 'Manager starts a worker session for each task and follows it up.'
-  if (step === 'telegram') return 'Telegram is where you talk to Manager, through a bot that is yours.'
-  return 'You write in Telegram, Manager puts workers on it, and the answers come back to you.'
+  if (step === 'delegation') return delegation === 'approve' ? 'Manager asks you before each new worker starts. Answer in the app or Telegram.' : 'Manager starts a worker session for each task and follows it up.'
+  return 'Write in the app or Telegram. Manager gives work to employees and brings back the results.'
 }
 
 /** What the open step is about, drawn as the three parts it joins and the direction it adds. */

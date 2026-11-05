@@ -14,6 +14,7 @@ import { EmployeeShortcut, shortcutDraft } from './shortcuts'
 import { useManager } from '../chat/useManager'
 import { managerStand } from '../chat/manager-label'
 import { ManagerPage, managerFace } from './TeamManager'
+import { openManagerChat } from '../chat/manager-chat-open'
 
 export type TeamChat = Pick<Chat, 'everyone' | 'settings' | 'change'>
 type Selected = Employee['id'] | 'none' | 'manager'
@@ -153,7 +154,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
   const scheduledCount = shortcuts.filter((one) => one.on && (one.cron !== undefined || one.recurrence !== undefined)).length
 
   const page = (): React.ReactNode => {
-    if (shownId === 'manager' && draft === undefined) return <ManagerPage settings={chat.settings} change={chat.change} view={manager}>
+    if (shownId === 'manager' && draft === undefined) return <ManagerPage settings={chat.settings} change={chat.change} view={manager} onChat={() => { onClose(); openManagerChat() }}>
       <section className="team-section" aria-label="Shortcuts"><div className="employee-section-head"><h3>Shortcuts</h3><button type="button" className="quiet" onClick={() => onShortcut({ name: '', root: chat.settings.projects[0] ?? '', prompt: '', mode: 'auto', on: true, target: 'manager' })}><Icon name="plus" size={11} />New shortcut</button></div>
         <p className="employee-note">Run recurring Manager requests from Shortcuts.</p>
         <div className="team-box">{chat.settings.shortcuts.filter((one) => one.target === 'manager').map((one) => <EmployeeShortcut key={one.id} shortcut={one} chat={chat} archived={false} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>

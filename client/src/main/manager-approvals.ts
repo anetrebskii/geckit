@@ -24,8 +24,8 @@ export function managerApproval(session: ChatSession, pending: Pending, epoch: s
   const title = [session.manager === true ? 'Manager approval' : `Approval - ${session.title}`, `Project: ${session.project ?? session.root}`, pending.card.title, pending.card.where, pending.card.detail].filter((line) => line !== undefined && line !== '').join('\n\n')
   const answers = choices(pending.card)
   const supported = title.length <= 24_000 && answers.length > 0 && answers.length <= 40 && answers.every((choice) => choice.label.length <= 64)
-  const fallback = session.manager === true ? 'This request needs the native GeckIt UI. Manager cannot continue here. Restart Manager or change its assistant in GeckIt Settings → Manager.' : 'This request needs the native GeckIt UI. Open the worker in GeckIt to review and answer it.'
-  return { ...pending, session: session.id, decision: { id: `native:${identity}`, kind: 'native', title: supported ? title : `${title.length > 24_000 ? `Approval - ${session.title}\n\nThe full request is too large to show safely in Telegram.` : title}\n\n${fallback}`, choices: supported ? answers : [] } }
+  const fallback = session.manager === true ? 'Open Manager chat in GeckIt to review and answer it.' : 'This request needs the native GeckIt UI. Open the worker in GeckIt to review and answer it.'
+  return { ...pending, session: session.id, decision: { id: `native:${identity}`, kind: 'native', session: session.id, card: pending.id, title: supported ? title : `${title.length > 24_000 ? `Approval - ${session.title}\n\nThe full request is too large to show safely in Telegram.` : title}\n\n${fallback}`, choices: supported ? answers : [] } }
 }
 
 export class ManagerDecisionFailure extends Error {

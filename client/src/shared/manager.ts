@@ -2,7 +2,17 @@ import type { ManagerIntakeConfig, ManagerIntakeView, VoiceMemosConnection } fro
 import type { TelegramAccount } from './telegram'
 import type { ChatSession, SessionItem, SessionItems, SessionMessage, SessionProvider, Settings } from './api'
 
-export const MANAGER_CHAT_GUIDANCE = 'Use Telegram to talk to Manager.'
+export const MANAGER_CHAT_GUIDANCE = 'Open Manager chat to send a request.'
+
+export type ManagerSendRequest = Pick<Extract<SessionItem, { kind: 'mine' }>, 'id' | 'text'> & Pick<SessionMessage, 'session'>
+export type ManagerRequestReceipt = Pick<ManagerSendRequest, 'id'> & Required<Pick<SessionMessage, 'session'>> & {
+  readonly state: 'queued' | 'sending' | 'sent'
+}
+export type ManagerQueuedRequest = ManagerRequestReceipt & Pick<Extract<SessionItem, { kind: 'mine' }>, 'text' | 'at'> & {
+  readonly source: 'desktop' | 'telegram'
+}
+export type ManagerAnswerRequest = Pick<ManagerRequestReceipt, 'session' | 'id'> & { readonly choice: string }
+export type ManagerAnswerResult = ManagerView & { readonly answer: ManagerDecisionOutcome }
 
 export type ManagerConfig = Required<Pick<SessionMessage, 'provider'>> & Pick<Settings, 'chatModel'> & {
   readonly enabled: boolean
@@ -36,6 +46,7 @@ export interface ManagerView {
   readonly providers: readonly ManagerProvider[]
   readonly decisions: readonly ManagerDecision[]
   readonly queued: number
+  readonly requests?: readonly ManagerQueuedRequest[]
   readonly error?: string
 }
 
@@ -43,6 +54,10 @@ export interface ManagerApi {
   voiceMemos(action?: 'privacy'): Promise<VoiceMemosConnection>
   view(): Promise<ManagerView>
   inspect(id: ChatSession['id']): Promise<SessionItems>
+  send(request: ManagerSendRequest): Promise<ManagerRequestReceipt>
+  receipt(id: ManagerSendRequest['id']): Promise<ManagerRequestReceipt | undefined>
+  answer(request: ManagerAnswerRequest): Promise<ManagerAnswerResult>
+  answerCard(session: ChatSession['id'], card: SessionItem['id'], answer: string): Promise<boolean>
   onItems(said: (items: SessionItems) => void): () => void
   configure(change: Partial<ManagerConfig>): Promise<ManagerView>
   pause(): Promise<ManagerView>
@@ -55,6 +70,8 @@ export interface ManagerApi {
 export const DEFAULT_MANAGER_CONFIG: ManagerConfig = { enabled: false, provider: 'claude', chatModel: '', instructions: '', delegation: 'automatic' }
 
 export interface ManagerDecision {
+  readonly session?: ChatSession['id']
+  readonly card?: SessionItem['id']
   readonly kind?: 'native' | 'intake'
   readonly id: string
   readonly title: string

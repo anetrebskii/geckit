@@ -13,7 +13,7 @@ const { Transcript } = await import('../src/renderer/src/chat/Transcript')
 
 const nothing = (): void => undefined
 
-function drawn(items: SessionItem[], working = false, tasks?: readonly BackgroundTask[], guard: Pick<ComponentProps<typeof Transcript>, 'checkingIp' | 'heldSend' | 'retrying' | 'queued' | 'readOnly'> = {}): string {
+function drawn(items: SessionItem[], working = false, tasks?: readonly BackgroundTask[], guard: Pick<ComponentProps<typeof Transcript>, 'checkingIp' | 'heldSend' | 'retrying' | 'queued' | 'readOnly' | 'manager'> = {}): string {
   return renderToStaticMarkup(
     createElement(Transcript, {
       at: 's1',
@@ -342,7 +342,7 @@ describe('read-only Manager inspection', () => {
     expect(html).toContain('Current output')
     expect(html).toContain('Read current review state')
     expect(html).toContain('Return current status')
-    expect(html).toContain('Answer this request in Telegram.')
+    expect(html).toContain('Open GeckIt on your computer to answer this request.')
     for (const action of ['Allow once</button>', 'Allow for this session</button>', 'Decline</button>', 'Send again</button>', 'Continue</button>', 'Stop</button>', 'answerRequest']) expect(html).not.toContain(action)
     expect(html).not.toContain('<input')
     expect(html).not.toContain('<form')
@@ -367,5 +367,15 @@ describe('read-only Manager inspection', () => {
     expect(ordinary).toContain('question-option')
     expect(ordinary).toContain('Try again</button>')
     expect(ordinary).toContain('Running in the background:')
+  })
+
+  it('enables native Manager approval cards without exposing generic session mutation controls', () => {
+    const items: SessionItem[] = [...pending, { kind: 'team-request', id: 'team', lines: ['Add a reviewer'] }]
+    const html = drawn(items, false, undefined, { manager: true })
+    expect(html).toContain('Allow for this session</button>')
+    expect(html).toContain('Read the review notification in Mail.')
+    expect(html).toContain('Review the pending requests below.')
+    expect(html).toContain('Add a reviewer')
+    for (const action of ['Send again</button>', 'Continue</button>', 'Stop</button>', 'Start</button>', 'Allow</button>', 'shell-typed', 'request-reply-add']) expect(html).not.toContain(action)
   })
 })

@@ -109,6 +109,86 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
   return { manager: active, sessions, root, directory, notes, made, sent, fanned, answers, cli, finish, hear: (id: string, heard: Heard) => hearings.get(id)?.(heard), command, setCli: (run: ManagerDeps['cli'] | undefined) => { callCli = run }, reload: () => { current.manager?.dispose(); const next = new Manager(deps); current.manager = next; return next }, settings: () => settings, set: (change: Partial<Settings>) => { settings = { ...settings, ...change } } }
 }
 
+describe('Manager app conversation', () => {
+  it('accepts app messages without Telegram once, queues across channels and keeps receipts after restart and pruning', async () => {
+    const f = await fixture()
+    const view = await f.manager.configure({ enabled: true })
+    const session = view.session?.id
+    if (session === undefined) throw new Error('Missing Manager session')
+    const request = { id: 'app:stable', text: '/pause remains a text request', session }
+    const accepted = await Promise.all([f.manager.sendApp(request), f.manager.sendApp(request)])
+    expect(accepted).toHaveLength(2)
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    expect(f.sent[0]?.text).toBe('[User request]\n/pause remains a text request')
+    await f.manager.send('Telegram follow-up', 'telegram', 'telegram:after-app')
+    await f.manager.sendApp({ id: 'app:after-telegram', text: 'App follow-up', session })
+    expect((await f.manager.view()).requests?.map((one) => one.id)).toEqual(['app:stable', 'telegram:after-app', 'app:after-telegram'])
+    await expect(f.manager.sendApp({ ...request, text: 'Changed work' })).rejects.toThrow('different request')
+    await f.manager.pause()
+    expect(await f.manager.sendApp(request)).toMatchObject({ id: request.id, session })
+    const path = join(f.directory, 'manager.json')
+    const stored = JSON.parse(await readFile(path, 'utf8')) as { readonly inbox: readonly object[] }
+    await writeFile(path, JSON.stringify({ ...stored, inbox: [] }))
+    const restored = f.reload()
+    expect(restored.receipt(request.id)).toEqual({ id: request.id, session, state: 'sent' })
+    expect(await restored.sendApp(request)).toMatchObject({ id: request.id, session })
+    expect(f.sent).toHaveLength(1)
+  })
+
+  it('rejects disabled, paused, oversized, blank and stale-session app requests without accepting them', async () => {
+    const f = await fixture()
+    await expect(f.manager.sendApp({ id: 'app:off', text: 'Task' })).rejects.toThrow('disabled')
+    const configured = await f.manager.configure({ enabled: true })
+    const session = configured.session?.id
+    if (session === undefined) throw new Error('Missing Manager session')
+    await expect(f.manager.sendApp({ id: 'app:missing-session', text: 'Task' })).rejects.toThrow('session changed')
+    await expect(f.manager.sendApp({ id: 'app:blank', text: '  ', session })).rejects.toThrow('Write a message')
+    await expect(f.manager.sendApp({ id: 'app:large', text: 'x'.repeat(100_001), session })).rejects.toThrow('too long')
+    await f.manager.pause()
+    await expect(f.manager.sendApp({ id: 'app:paused', text: 'Task', session })).rejects.toThrow('paused')
+    expect(f.manager.receipt('app:paused')).toBeUndefined()
+    expect(f.sent).toHaveLength(0)
+  })
+
+  it('answers typed native questions once through the current Manager boundary and preserves VPN checks', async () => {
+    let allowed = true
+    const f = await fixture(0, { beforeSend: async () => { if (!allowed) throw new Error('VPN refused') } })
+    const configured = await f.manager.configure({ enabled: true })
+    const session = configured.session?.id
+    if (session === undefined) throw new Error('Missing Manager session')
+    await f.manager.sendApp({ id: 'app:question', text: 'Coordinate', session })
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    f.hear(session, { items: [], gone: [], signals: [{ kind: 'asks', ask: 'details', wanted: { kind: 'question', question: 'What details?', choices: [] } }] })
+    expect((await f.manager.view()).decisions[0]?.title).toContain('Open Manager chat in GeckIt to review and answer it.')
+    await expect(f.manager.answerCard('old-manager', 'card:details', 'Details')).rejects.toThrow('session changed')
+    allowed = false
+    expect(await f.manager.answerCard(session, 'card:details', 'Details')).toBe(false)
+    expect(f.answers).toHaveLength(0)
+    allowed = true
+    expect(await f.manager.answerCard(session, 'card:details', 'Details')).toBe(true)
+    expect(await f.manager.answerCard(session, 'card:details', 'Details')).toBe(false)
+    expect(f.answers).toEqual([{ id: session, ask: 'details', answer: 'Details' }])
+  })
+
+  it('shares a bound delegation decision across app and Telegram without accepting stale-session answers', async () => {
+    const f = await fixture()
+    const configured = await f.manager.configure({ enabled: true, delegation: 'approve' })
+    const session = configured.session?.id
+    if (session === undefined) throw new Error('Missing Manager session')
+    await f.manager.sendApp({ id: 'app:delegate', text: 'Delegate this task', session })
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    f.finish(session, f.command('app-start', ['sessions', 'start', '--project', f.root, '--text', 'Fix a bug', '--goal', 'Tests pass']))
+    await vi.waitFor(async () => expect((await f.manager.view()).decisions).toHaveLength(1))
+    const decision = (await f.manager.view()).decisions[0]
+    if (decision === undefined) throw new Error('Missing decision')
+    await expect(f.manager.answerApp({ session: 'old-manager', id: decision.id, choice: 'allow' })).rejects.toThrow('session changed')
+    await f.manager.answerApp({ session, id: decision.id, choice: 'allow' })
+    await expect(f.manager.answer(decision.id, 'allow')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
+    expect(f.cli).toHaveLength(1)
+    expect((await f.manager.view()).workers).toHaveLength(1)
+  })
+})
+
 describe('Manager Telegram response ownership', () => {
   it('keeps input correlation through commentary and CLI continuation, independently of queued requests', async () => {
     const f = await fixture()
@@ -1033,7 +1113,7 @@ describe('Manager session inspection', () => {
     expect(await f.manager.inspect(id)).toEqual({ id, items: [] })
     expect(f.made).toHaveLength(0)
     expect(f.settings().chatProviders).toEqual([])
-    await expect(f.sessions.items(id)).rejects.toThrow('Use Telegram')
+    await expect(f.sessions.items(id)).rejects.toThrow('Open Manager chat')
     await expect(f.sessions.inspectManager('ordinary')).rejects.toThrow('not a Manager session')
   })
 
@@ -1123,7 +1203,7 @@ describe('Manager session', () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true, chatModel: 'sonnet' })
     const id = await f.manager.open()
-    await expect(f.sessions.send({ session: id, root: f.root, mode: 'auto', text: 'Bypass Telegram' })).rejects.toThrow('Use Telegram to talk to Manager.')
+    await expect(f.sessions.send({ session: id, root: f.root, mode: 'auto', text: 'Bypass Telegram' })).rejects.toThrow('Open Manager chat to send a request.')
     await f.manager.send('Coordinate my projects', 'telegram')
     await vi.waitFor(() => expect(f.sent).toHaveLength(1))
     expect(f.made[0]?.managerPrompt).toContain('Your role is coordination through GeckIt CLI')
@@ -1136,8 +1216,8 @@ describe('Manager session', () => {
     await vi.waitFor(() => expect(f.cli).toHaveLength(1))
     await vi.waitFor(() => expect(f.sent).toHaveLength(2))
     expect(f.sent[1]?.text).toContain('[GeckIt CLI result]')
-    await expect(f.sessions.items(id)).rejects.toThrow('Use Telegram to talk to Manager.')
-    await expect(f.sessions.links(id)).rejects.toThrow('Use Telegram to talk to Manager.')
+    await expect(f.sessions.items(id)).rejects.toThrow('Open Manager chat to send a request.')
+    await expect(f.sessions.links(id)).rejects.toThrow('Open Manager chat to send a request.')
     expect(f.fanned.filter((one) => one.id === id)).toEqual([])
     expect((await f.manager.view()).session?.id).toBe(id)
   })
@@ -1168,10 +1248,10 @@ describe('Manager session', () => {
       expect(() => f.sessions.watching(id)).not.toThrow()
       expect(f.sessions.watched()).toBeUndefined()
       expect(f.sessions.isManager(id)).toBe(true)
-      await expect(f.sessions.items(id)).rejects.toThrow('Use Telegram to talk to Manager.')
-      await expect(f.sessions.links(id)).rejects.toThrow('Use Telegram to talk to Manager.')
-      await expect(f.sessions.send({ session: id, root: f.root, mode: 'auto', text: 'Bypass' })).rejects.toThrow('Use Telegram to talk to Manager.')
-      expect(() => f.sessions.bring(id)).toThrow('Use Telegram to talk to Manager.')
+      await expect(f.sessions.items(id)).rejects.toThrow('Open Manager chat to send a request.')
+      await expect(f.sessions.links(id)).rejects.toThrow('Open Manager chat to send a request.')
+      await expect(f.sessions.send({ session: id, root: f.root, mode: 'auto', text: 'Bypass' })).rejects.toThrow('Open Manager chat to send a request.')
+      expect(() => f.sessions.bring(id)).toThrow('Open Manager chat to send a request.')
     }
     expect(f.sessions.isManager(worker)).toBe(false)
     expect((await f.sessions.list([f.root]))[0]).toMatchObject({ id: worker, managerManaged: true })
@@ -1204,7 +1284,7 @@ describe('Manager session', () => {
     const decision = (await f.manager.view()).decisions[0]
     expect(decision).toMatchObject({ title: expect.stringContaining('inspect project'), choices: expect.arrayContaining([{ label: 'Allow once', value: 'once' }]) })
     expect(f.answers).toEqual([])
-    await expect(f.sessions.answer(id, 'native-approval', 'once')).rejects.toThrow('Use Telegram to talk to Manager.')
+    await expect(f.sessions.answer(id, 'native-approval', 'once')).rejects.toThrow('Open Manager chat to send a request.')
     if (decision === undefined) throw new Error('Missing native decision')
     await f.manager.answer(decision.id, 'once')
     expect(f.answers).toEqual([{ id, ask: 'native-approval', answer: 'once' }])
@@ -1425,7 +1505,7 @@ describe('Manager session', () => {
     expect(switched.session?.id).not.toBe(original)
     expect(f.notes.all()[worker]?.managerOwner).toBe('manager')
     expect(plugin.sent).toHaveLength(0)
-    await expect(f.sessions.send({ session: original, root: f.root, mode: 'auto', text: 'Old history' })).rejects.toThrow('Use Telegram to talk to Manager.')
+    await expect(f.sessions.send({ session: original, root: f.root, mode: 'auto', text: 'Old history' })).rejects.toThrow('Open Manager chat to send a request.')
     await f.manager.resume()
     f.finish(worker, 'Done')
     f.sessions.carryOn(switched.session?.id ?? '')
@@ -1553,7 +1633,7 @@ describe('Manager session', () => {
     await expect(reloaded.open()).rejects.toThrow('instructions are missing')
     await expect(reloaded.send('Do work')).rejects.toThrow('instructions are missing')
     await expect(f.sessions.sendManager({ session: id, root: f.root, mode: 'manual', text: 'Bypass' })).rejects.toThrow('instructions are missing')
-    await expect(f.sessions.send({ session: id, root: f.root, mode: 'auto', text: 'Bypass ordinary chat' })).rejects.toThrow('Use Telegram to talk to Manager.')
+    await expect(f.sessions.send({ session: id, root: f.root, mode: 'auto', text: 'Bypass ordinary chat' })).rejects.toThrow('Open Manager chat to send a request.')
     expect(f.made).toHaveLength(0)
     const recovered = await reloaded.restart()
     expect(recovered.session?.id).not.toBe(id)

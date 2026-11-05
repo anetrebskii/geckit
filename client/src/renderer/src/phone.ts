@@ -11,6 +11,7 @@ import { OWN } from './phone-calls'
 import { phoneErrors } from './phone-errors'
 import type { PhoneCalls } from './phone-calls'
 import type { EmployeesView } from '../../shared/employees'
+import type { ManagerView } from '../../shared/manager'
 import { keep, readKept } from './kept'
 import { showLocal } from './local-page'
 import type { Link } from './link'
@@ -456,8 +457,12 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     manager: {
       voiceMemos: async () => ({ state: 'unsupported', detail: 'Connect Voice Memos on the computer.' }),
       view: () => call('manager.view'),
-      inspect: () => Promise.reject(new Error('Inspect Manager on the computer.')),
-      onItems: () => () => undefined,
+      inspect: (id) => call('manager.inspect', id),
+      send: (request) => call('manager.send', request),
+      receipt: (id) => call('manager.receipt', id),
+      answer: (request) => call('manager.answer', request),
+      answerCard: (session, card, answer) => call('manager.answerCard', session, card, answer),
+      onItems: (said) => listen('manager:items', said),
       configure: (change) => call('manager.configure', change),
       pause: () => call('manager.pause'),
       resume: () => call('manager.resume'),
@@ -838,12 +843,13 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     can(next)
     if (opened !== undefined) send('chat.watching', opened)
     for (const later of held.splice(0)) later()
-    // Told again as if the Mac had told it: the list, the employees, the plan, the count working, the settings, and the end of the conversation on screen.
+    // Told again as if the Mac had told it: the list, employees, Manager, plan, count working, settings, and the end of the conversation on screen.
     void call<ChatSession[]>('chat.list', undefined).then((all) => {
       settled.add('list')
       told('chat:sessions', all)
     })
     void call<EmployeesView>('employees.list').then((view) => told('employees:changed', view)).catch(() => undefined)
+    void call<ManagerView>('manager.view').then((view) => told('manager:view', view)).catch(() => undefined)
     void call('chat.plan').then((plan) => told('chat:plan', plan))
     void call('lineup.state').then((lineup) => told('lineup:changed', lineup))
     void call<Settings>('settings.get').then((settings) => {

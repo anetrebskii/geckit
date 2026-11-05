@@ -10,7 +10,7 @@ import type { ChatSession, SessionItems, Settings, Shortcut } from '../shared/ap
 import { providerOf } from '../shared/api'
 import { VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError } from '../shared/vpn-ip'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE, managerProjects } from '../shared/manager'
-import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerConfig, ManagerDecision, ManagerDecisionOutcome, ManagerView, ManagerReplyOrigin, ManagerTelegramReply } from '../shared/manager'
+import type { ManagerActivity, ManagerAnswerRequest, ManagerAnswerResult, ManagerCliAnswered, ManagerCliAsked, ManagerConfig, ManagerDecision, ManagerDecisionOutcome, ManagerView, ManagerReplyOrigin, ManagerRequestReceipt, ManagerSendRequest, ManagerTelegramReply } from '../shared/manager'
 import type { ManagerIntakeDeps } from './manager-intake'
 import { TelegramAttachments } from './telegram-attachments'
 import type { TelegramAttachment, TelegramFileSender } from './telegram-attachments'
@@ -49,6 +49,8 @@ interface WorkerEvent {
   readonly signature: string
 }
 
+type AppReceipt = Omit<ManagerRequestReceipt, 'state'> & Required<Pick<Operation, 'fingerprint'>>
+
 interface ManagerRecord {
   readonly config: ManagerConfig
   readonly sessionId?: ChatSession['id'] | undefined
@@ -56,6 +58,7 @@ interface ManagerRecord {
   readonly paused: boolean
   readonly pauseReason?: 'user' | undefined
   readonly inbox: readonly Message[]
+  readonly receipts: readonly AppReceipt[]
   readonly operations: readonly Operation[]
   readonly decisions: readonly PendingDecision[]
   readonly responseOrigin?: ManagerReplyOrigin | undefined
@@ -125,7 +128,7 @@ export class Manager {
     try { stored = JSON.parse(readFileSync(this.#path(), 'utf8')) as Partial<ManagerRecord> } catch { /* First setup has no record. */ }
     const settings = deps.settings()
     const provider = settings.chatProviders.includes(settings.chatProvider) ? settings.chatProvider : settings.chatProviders[0] ?? DEFAULT_MANAGER_CONFIG.provider
-    this.#record = { config: { ...DEFAULT_MANAGER_CONFIG, provider, ...stored.config }, paused: stored.paused ?? false, pauseReason: stored.pauseReason, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }) }
+    this.#record = { config: { ...DEFAULT_MANAGER_CONFIG, provider, ...stored.config }, paused: stored.paused ?? false, pauseReason: stored.pauseReason, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], receipts: stored.receipts ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }) }
     if (this.#record.config.intake?.enabled === true) this.#save({ config: { ...this.#record.config, intake: { ...this.#record.config.intake, enabled: false } } })
     if (this.#record.inbox.some((message) => message.id.startsWith('intake-task:') && message.state === 'queued')) this.#save({ inbox: this.#record.inbox.map((message) => message.id.startsWith('intake-task:') && message.state === 'queued' ? { ...message, state: 'sent', completed: true } : message) })
     const deliveryPause = this.#record.paused && this.#record.pauseReason !== 'user' && (this.#record.error === 'CLI delivery is uncertain. Review current state before resuming.' || this.#record.error === 'Manager was interrupted. Review current task state before resuming; operations with uncertain delivery are not replayed.')
@@ -170,8 +173,10 @@ export class Manager {
   #snapshot(): ManagerView {
     const session = this.#sessions.find((one) => one.id === this.#record.sessionId)
     const providers = this.#deps.settings().chatProviders.map((provider) => ({ provider, available: true }))
-    const error = this.#record.config.enabled && !this.#deps.settings().chatProviders.includes(this.#record.config.provider) ? 'The Manager assistant is disabled. Open Assistants to restore it.' : this.#record.error ?? (session?.state === 'asks' ? this.#approvals().some((one) => one.session === session.id && one.decision.choices.length > 0) ? 'Manager is waiting for your approval in Telegram.' : 'Manager is waiting for a request that needs the native UI. Restart Manager or change its assistant in Settings.' : undefined)
-    return { queued: this.#record.inbox.filter((message) => message.state === 'queued').length, config: this.#record.config, state: !this.#record.config.enabled ? 'off' : this.#record.paused ? 'paused' : error !== undefined ? 'blocked' : session?.state === 'working' || this.#dispatching ? 'working' : 'idle', ...(session === undefined ? {} : { session }), workers: this.#sessions.filter((one) => this.manages(one.id)), activity: this.#record.operations.slice(-100).toReversed(), providers, decisions: [...this.#record.decisions.map(({ command: _command, ...decision }) => decision), ...this.#approvals().map((one) => one.decision)], ...(error === undefined ? {} : { error }) }
+    const error = this.#record.config.enabled && !this.#deps.settings().chatProviders.includes(this.#record.config.provider) ? 'The Manager assistant is disabled. Open Assistants to restore it.' : this.#record.error
+    const sessionId = this.#record.sessionId
+    const requests = sessionId === undefined ? [] : this.#record.inbox.flatMap((message) => (message.source === 'desktop' || message.source === 'telegram') && message.completed !== true ? [{ id: message.id, text: message.text, source: message.source, at: message.at, session: sessionId, state: message.state }] : [])
+    return { queued: this.#record.inbox.filter((message) => message.state === 'queued').length, requests, config: this.#record.config, state: !this.#record.config.enabled ? 'off' : this.#record.paused ? 'paused' : error !== undefined ? 'blocked' : session?.state === 'working' || this.#dispatching ? 'working' : 'idle', ...(session === undefined ? {} : { session }), workers: this.#sessions.filter((one) => this.manages(one.id)), activity: this.#record.operations.slice(-100).toReversed(), providers, decisions: [...this.#record.decisions.map(({ command: _command, ...decision }) => decision), ...this.#approvals().map((one) => one.decision)], ...(error === undefined ? {} : { error }) }
   }
 
   #approvals(): readonly ManagerApproval[] {
@@ -185,7 +190,7 @@ export class Manager {
   telegramPending(): readonly Message['id'][] {
     return [...new Set([...this.#activeTelegram, ...this.#record.inbox.filter((message) => message.state === 'queued').flatMap((message) => this.#telegramRequests(message))])]
   }
-  telegramTypingAllowed(): boolean { const state = this.#snapshot().state; return !this.#stopped && state !== 'off' && state !== 'paused' && state !== 'blocked' }
+  telegramTypingAllowed(): boolean { const view = this.#snapshot(); return !this.#stopped && view.session?.state !== 'asks' && view.state !== 'off' && view.state !== 'paused' && view.state !== 'blocked' }
   #telegramRequests(message: Message): readonly Message['id'][] { return message.source === 'telegram' ? [message.id] : message.telegramRequests ?? [] }
   voiceMemosDirectory(): string | undefined { return this.#record.config.intake?.sources.find((source) => source.kind === 'voice-memos')?.directory }
   enabled(): boolean { return this.#record.config.enabled }
@@ -208,6 +213,63 @@ export class Manager {
     const items = await this.#deps.sessions.inspectManager(id)
     if (id !== this.#record.sessionId) throw new Error('Manager session changed. Open the current session.')
     return { id, items }
+  }
+
+  receipt(id: ManagerSendRequest['id']): ManagerRequestReceipt | undefined {
+    const receipt = this.#record.receipts.find((one) => one.id === id)
+    if (receipt === undefined) return undefined
+    return { id: receipt.id, session: receipt.session, state: this.#record.inbox.find((one) => one.id === id)?.state ?? 'sent' }
+  }
+
+  #appReady(): void {
+    this.#assertEnabled()
+    if (this.#record.paused) throw new Error('Manager is paused. Resume it before sending a message.')
+    if (this.#stopped || this.#record.error !== undefined) throw new Error(this.#record.error ?? 'Manager is unavailable. Open Team, Manager to continue.')
+  }
+
+  async sendApp(request: ManagerSendRequest): Promise<ManagerRequestReceipt> {
+    if (typeof request.id !== 'string' || request.id.trim() === '' || request.id.length > 200) throw new Error('This message has no valid request identity.')
+    if (typeof request.text !== 'string' || request.text.trim() === '') throw new Error('Write a message for Manager.')
+    if (request.text.length > 100_000) throw new Error('That message is too long. Send a shorter request.')
+    const fingerprint = createHash('sha256').update(request.text).digest('hex')
+    const accepted = (): ManagerRequestReceipt | undefined => {
+      const stored = this.#record.receipts.find((one) => one.id === request.id)
+      if (stored !== undefined && (stored.fingerprint !== fingerprint || request.session !== undefined && stored.session !== request.session)) throw new Error('That message identity belongs to a different request.')
+      return this.receipt(request.id)
+    }
+    const previous = accepted()
+    if (previous !== undefined) return previous
+    this.#appReady()
+    const generation = this.#generation
+    const revision = this.#configurationRevision
+    if (request.session !== this.#record.sessionId) throw new Error('Manager session changed. Open the current session before sending.')
+    const session = await this.open()
+    const duplicate = accepted()
+    if (duplicate !== undefined) return duplicate
+    this.#appReady()
+    if (generation !== this.#generation || revision !== this.#configurationRevision || session !== this.#record.sessionId) throw new Error('Manager session changed. Open the current session before sending.')
+    if (this.#record.inbox.some((one) => one.id === request.id)) throw new Error('That message identity belongs to a different request.')
+    const text = request.text.trim()
+    this.#save({ receipts: [...this.#record.receipts, { id: request.id, session, fingerprint }], inbox: [...this.#record.inbox, { id: request.id, text: /^[!/]/.test(text) ? `[User request]\n${text}` : text, source: 'desktop', at: Date.now(), state: 'queued' }] })
+    void this.#dispatch()
+    return this.receipt(request.id) ?? { id: request.id, session, state: 'queued' }
+  }
+
+  async answerApp(request: ManagerAnswerRequest): Promise<ManagerAnswerResult> {
+    this.#appReady()
+    if (request.session !== this.#record.sessionId) throw new Error('Manager session changed. Open the current session before answering.')
+    const generation = this.#generation
+    return this.answer(request.id, request.choice, () => generation === this.#generation && request.session === this.#record.sessionId && !this.#record.paused && !this.#stopped)
+  }
+
+  async answerCard(session: ChatSession['id'], card: SessionItems['items'][number]['id'], answer: string): Promise<boolean> {
+    this.#appReady()
+    if (session !== this.#record.sessionId) throw new Error('Manager session changed. Open the current session before answering.')
+    const pending = this.#deps.sessions.pendingForManager(session).find((one) => one.id === card)
+    if (pending === undefined) return false
+    if (pending.card.kind === 'permission' && !['once', 'session', 'no'].includes(answer) || pending.card.kind === 'start' && !['once', 'no'].includes(answer)) throw new ManagerDecisionFailure('choice')
+    const generation = this.#generation
+    return this.#deps.sessions.answerForManager(session, card, answer, pending.fingerprint, () => generation === this.#generation && session === this.#record.sessionId && this.#record.config.enabled && !this.#record.paused && !this.#stopped)
   }
 
   async configure(change: Partial<ManagerConfig>): Promise<ManagerView> {

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import type { ChatSession, ShortcutDraft } from '../../../shared/api'
 import { phoneCalls } from '../phone-calls'
 import { tap } from '../tap'
-import { TEAM_EVENT } from '../employees/Employees'
+import { TEAM_EVENT, openTeam } from '../employees/Employees'
 import { Icon } from '../ui/Icon'
 import { PhoneBoard } from './PhoneBoard'
 import { PhoneQuestions } from './PhoneQuestions'
@@ -11,6 +11,8 @@ import { PhoneSay } from './PhoneSay'
 import { PhoneSearch } from './PhoneSearch'
 import { PhoneSettings } from './PhoneSettings'
 import { PhoneShortcuts, ShortcutSheet } from './PhoneShortcuts'
+import { ManagerPhone } from './ManagerInspection'
+import { MANAGER_CHAT_EVENT } from './manager-chat-open'
 import type { Seek } from './Switcher'
 import type { Chat } from './useChat'
 import './phone-home.css'
@@ -48,6 +50,7 @@ export function PhoneHome({
     return TABS.some((one) => one.tab === kept) ? (kept as Tab) : 'tasks'
   })
   const [saying, setSaying] = useState(false)
+  const [managerBack, setManagerBack] = useState<string>()
   // Shortcuts opened over the board, from its bolt or from All shortcuts on the New task sheet.
   const [shortcuts, setShortcuts] = useState(false)
   const [editing, setEditing] = useState<{ readonly draft: ShortcutDraft; readonly at: number } | undefined>()
@@ -67,6 +70,11 @@ export function PhoneHome({
     window.addEventListener(TEAM_EVENT, open)
     return () => window.removeEventListener(TEAM_EVENT, open)
   }, [])
+  useEffect(() => {
+    const open = (): void => setManagerBack(tab === 'tasks' ? 'Tasks' : 'Manager')
+    window.addEventListener(MANAGER_CHAT_EVENT, open)
+    return () => window.removeEventListener(MANAGER_CHAT_EVENT, open)
+  }, [tab])
 
   // A shortcut made from a conversation starts with what was asked in it first, as the Mac's menu makes one.
   const shortcutFrom = (session: ChatSession): void =>
@@ -86,7 +94,7 @@ export function PhoneHome({
 
   return (
     <div className="phone-home">
-      <div className="phone-tab" hidden={tab !== 'tasks' || shortcuts}>
+      <div className="phone-tab" hidden={tab !== 'tasks' || shortcuts || managerBack !== undefined}>
         <PhoneBoard
           chat={chat}
           onNew={onNew}
@@ -97,20 +105,21 @@ export function PhoneHome({
         />
       </div>
       {tab === 'tasks' && shortcuts ? (
-        <div className="phone-tab">
+        <div className="phone-tab" hidden={managerBack !== undefined}>
           <PhoneShortcuts chat={chat} back="Tasks" onBack={() => setShortcuts(false)} onEdit={edit} />
         </div>
       ) : null}
-      <div className="phone-tab" hidden={tab !== 'questions'}>
+      <div className="phone-tab" hidden={tab !== 'questions' || managerBack !== undefined}>
         <PhoneQuestions chat={chat} onAsk={onAsk} />
       </div>
-      <div className="phone-tab" hidden={tab !== 'search'}>
+      <div className="phone-tab" hidden={tab !== 'search' || managerBack !== undefined}>
         <PhoneSearch chat={chat} shown={tab === 'search' && chat.shown.kind !== 'session'} onSeek={onSeek} />
       </div>
-      <div className="phone-tab" hidden={tab !== 'settings'}>
+      <div className="phone-tab" hidden={tab !== 'settings' || managerBack !== undefined}>
         <PhoneSettings chat={chat} onEdit={edit} />
       </div>
-      <nav className="phone-tabs" role="tablist">
+      {managerBack === undefined ? null : <div className="phone-tab"><ManagerPhone settings={chat.settings} back={managerBack} onBack={() => setManagerBack(undefined)} onSettings={() => { setManagerBack(undefined); openTeam('manager') }} /></div>}
+      {managerBack === undefined ? <nav className="phone-tabs" role="tablist">
         {TABS.map((one) => (
           <button
             key={one.tab}
@@ -126,7 +135,7 @@ export function PhoneHome({
             {one.tab === 'questions' && tab !== 'questions' && questionBadge !== undefined ? <i className={`phone-tab-badge ${questionBadge}`} /> : null}
           </button>
         ))}
-      </nav>
+      </nav> : null}
       {saying ? <PhoneSay chat={chat} onClose={() => setSaying(false)} /> : null}
       {editing === undefined ? null : <ShortcutSheet key={editing.at} chat={chat} given={editing.draft} onClose={() => setEditing(undefined)} />}
     </div>

@@ -14879,3 +14879,159 @@ html.phone .phone-team-block .employee-section-head h3 {
 .phone-board-seg button {
   font-size: 12px;
 }
+
+.manager-chat,
+.manager-history,
+.manager-phone {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+.manager-history {
+  position: relative;
+}
+
+.manager-history > .transcript {
+  flex: 1;
+  min-block-size: 0;
+}
+
+.manager-composer {
+  padding: 12px 16px 16px;
+  border-block-start: 1px solid var(--border);
+}
+
+.manager-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 8px 8px 12px;
+}
+
+.manager-composer-actions > button {
+  flex: none;
+}
+
+.manager-composer-hint {
+  flex: 1;
+  min-inline-size: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.manager-send-state,
+.manager-answer-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-block: 0 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.manager-send-state > span {
+  flex-basis: 100%;
+}
+
+.manager-answer-error {
+  flex: none;
+  padding-inline: 16px;
+}
+
+.manager-decisions,
+.manager-queued {
+  flex: none;
+  max-block-size: 35%;
+  padding: 0 16px 8px;
+  overflow-y: auto;
+}
+
+.manager-decisions .card {
+  margin-block: 8px 0;
+}
+
+.manager-queued > div {
+  padding: 8px 12px;
+  margin-block-start: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bubble);
+}
+
+.manager-queued p {
+  max-block-size: 72px;
+  margin: 0 0 4px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.manager-queued span {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.manager-new-messages {
+  position: absolute;
+  inset-block-end: 12px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+}
+
+.manager-chat button:focus-visible,
+.manager-phone button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+html.phone .manager-phone {
+  block-size: 100%;
+  background: var(--bg);
+}
+
+html.phone .manager-phone .manager-inspection-header {
+  gap: 8px;
+  padding: 12px;
+}
+
+html.phone .manager-phone .manager-inspection-header h2 {
+  font-size: 17px;
+}
+
+html.phone .manager-phone .manager-stand {
+  padding-inline: 6px;
+  font-size: 11px;
+}
+
+html.phone .manager-composer {
+  padding: 8px 12px max(12px, env(safe-area-inset-bottom));
+}
+
+html.phone .manager-composer .composer-inner {
+  display: block;
+  border-radius: var(--radius-lg);
+}
+
+html.phone .manager-composer textarea {
+  min-block-size: 52px;
+  max-block-size: 180px;
+  padding: 10px 12px 4px;
+  font-size: 16px;
+}
+
+html.phone .manager-composer-actions {
+  padding: 4px 8px 8px 12px;
+}
+
+.manager-settings > .team-section {
+  margin-block-start: 20px;
+}

@@ -12,8 +12,8 @@ import { ManagerTelegram, SharedLinks, useTelegram } from './ManagerTelegram'
 import { managerAssistant } from './manager-label'
 import { managerLabel, useManager } from './useManager'
 
-const ORDER: readonly ManagerStepName[] = ['assistant', 'delegation', 'telegram', 'enable']
-const LOCKED: Record<ManagerStepName, string> = { assistant: '', delegation: 'Choose the assistant first.', telegram: 'Decide how work starts first.', enable: 'Connect Telegram first.' }
+const ORDER: readonly ManagerStepName[] = ['assistant', 'delegation', 'enable']
+const LOCKED = { assistant: '', delegation: 'Choose the assistant first.', enable: 'Decide how work starts first.' } satisfies { readonly [Step in ManagerStepName]: string }
 const PROJECTS = 'All projects, current and future, across every profile.'
 
 export function ManagerSettings({ settings, embedded = false }: { readonly settings: Settings; readonly embedded?: boolean }): React.JSX.Element {
@@ -78,12 +78,11 @@ export function ManagerSettings({ settings, embedded = false }: { readonly setti
   const saveNow = (): void => { if (view.session !== undefined && provider !== managerAssistant(view)) { setError(''); setConfirm('change') } else save() }
   const answer = (step: ManagerStepName): void => { setPassed((before) => before.includes(step) ? before : [...before, step]); setOpened(undefined) }
   const settled = available?.available === true && !modelUnavailable
-  const answered: Record<ManagerStepName, boolean> = {
+  const answered = {
     assistant: settled && (enabled || passed.includes('assistant')),
     delegation: enabled || passed.includes('delegation'),
-    telegram: telegram?.state === 'connected',
     enable: enabled,
-  }
+  } satisfies { readonly [Step in ManagerStepName]: boolean }
   const current = ORDER.find((step) => !answered[step]) ?? 'enable'
   const focus = opened ?? current
   const stepState = (step: ManagerStepName): 'open' | 'answered' | 'locked' => {
@@ -98,7 +97,7 @@ export function ManagerSettings({ settings, embedded = false }: { readonly setti
   const reopen = (step: ManagerStepName) => () => { setError(''); setOpened(step) }
   const done = <button type="button" className="quiet" onClick={() => setOpened(undefined)}>Done</button>
   return <section className="manager-settings">
-    {embedded ? null : <><h3>Manager</h3><p>Manage GeckIt from Telegram. The manager delegates work to separate sessions and brings back results.</p></>}
+    {embedded ? null : <><h3>Manager</h3><p>Give Manager work in the app or Telegram. It delegates work to separate sessions and brings back results.</p></>}
     {enabled || view.session === undefined ? null : <p role="status">Manager disabled. History is kept.</p>}
     <ManagerFlow step={focus} delegation={delegation} />
     <ol className="manager-steps">
@@ -123,10 +122,7 @@ export function ManagerSettings({ settings, embedded = false }: { readonly setti
             : <button type="button" className="primary" onClick={() => answer('delegation')}>Continue</button>}
         </div>
       </ManagerStep>
-      <ManagerStep number={3} title="Connect Telegram" {...(account === undefined ? {} : { value: account })} state={stepState('telegram')} locked={LOCKED.telegram} onOpen={reopen('telegram')}>
-        <ManagerTelegram view={telegram} onView={setTelegram} {...(opened === 'telegram' ? { done } : {})} />
-      </ManagerStep>
-      <ManagerStep number={4} title={enabled ? 'Manager is on' : 'Turn Manager on'} state={stepState('enable')} locked={LOCKED.enable}>
+      <ManagerStep number={3} title={enabled ? 'Manager is on' : 'Turn Manager on'} state={stepState('enable')} locked={LOCKED.enable}>
         {enabled
           ? <>
             <dl className="manager-details"><dt>Status</dt><dd>{managerLabel(view)}</dd>{view.session === undefined ? null : <><dt>Current assistant</dt><dd>{llmProviderInfo(managerAssistant(view), 'stream', settings.providerPlugins).name}</dd><dt>Current model</dt><dd>{view.session.model ?? 'Provider default'}</dd>{view.config.chatModel === (view.session.chosen ?? '') ? null : <><dt>Next turn</dt><dd>{view.config.chatModel || 'Provider default'}</dd></>}</>}<dt>Projects</dt><dd>{PROJECTS}</dd></dl>
@@ -141,11 +137,15 @@ export function ManagerSettings({ settings, embedded = false }: { readonly setti
           </>
           : <>
             <dl className="manager-details"><dt>Assistant</dt><dd>{assistantName}</dd><dt>Model</dt><dd>{modelName}</dd><dt>Delegation</dt><dd>{delegationName}</dd>{account === undefined ? null : <><dt>Telegram</dt><dd>{account}</dd></>}<dt>Projects</dt><dd>{PROJECTS}</dd></dl>
-            <div className="manager-actions"><button type="button" className="primary" disabled={saving || !settled || !answered.telegram} onClick={save}>{saving ? 'Saving...' : 'Enable Manager'}</button></div>
+            <div className="manager-actions"><button type="button" className="primary" disabled={saving || !settled || !answered.assistant || !answered.delegation} onClick={save}>{saving ? 'Saving...' : 'Enable Manager'}</button></div>
           </>}
       </ManagerStep>
     </ol>
-    <SharedLinks view={telegram} onView={setTelegram} />
+    <section className="team-section" aria-label="Connect Telegram">
+      <div className="employee-section-head"><span><h3>Connect Telegram</h3><p className="employee-note">Telegram is optional. Connect it to talk to the same Manager outside GeckIt.</p></span></div>
+      <ManagerTelegram view={telegram} onView={setTelegram} />
+      <SharedLinks view={telegram} onView={setTelegram} />
+    </section>
     {error === '' ? null : <p className="manager-error" role="alert">{error}</p>}
     {view.error === undefined ? null : <p className="manager-error" role="status">{view.error}</p>}
     {confirm === undefined ? null : <ManagerConfirm kind={confirm} busy={saving} working={view.state === 'working' || view.session?.state === 'working'} error={error} onCancel={() => setConfirm(undefined)} onConfirm={() => { if (confirm === 'change') save(); else void run(async () => { const next = await (confirm === 'restart' ? window.geckit.manager.restart() : window.geckit.manager.configure({ enabled: false })); setConfirm(undefined); return next }) }} />}

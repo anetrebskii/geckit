@@ -7,7 +7,7 @@ created: 2026-10-17
 
 # UX: Manager through Telegram
 
-> Current direction: [Telegram-only revision](#telegram-only-revision---2026-10-17) supersedes the Desktop/phone conversation surfaces below. Desktop retains Settings setup/status/recovery; Telegram is the sole Manager conversation. Earlier sections and prototypes record the prior design.
+> Current direction: [Manager chat in the app](manager-chat.md), authorized by Alex on 2026-11-05, supersedes the Telegram-only and read-only inspection restrictions below. Desktop and the paired phone share the configured Manager with optional Telegram. Earlier sections retain the design history; implementation and verification are recorded in [021-manager-chat](../../specs/021-manager-chat/verification.md).
 
 ## 1. Why
 

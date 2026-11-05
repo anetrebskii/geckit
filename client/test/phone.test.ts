@@ -6,6 +6,8 @@ import type { LinkMessage, Piece } from '../src/shared/pairing'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { ChatSession, SessionItem, SessionItems, Settings } from '../src/shared/api'
 import type { Employee, EmployeesView } from '../src/shared/employees'
+import { DEFAULT_MANAGER_CONFIG } from '../src/shared/manager'
+import type { ManagerView } from '../src/shared/manager'
 import { collapse, isPending, pendingLast } from '../src/shared/steps'
 
 const cache = vi.hoisted(() => new Map<string, string>())
@@ -27,6 +29,7 @@ function macWith(
   all: SessionItem[],
   old = false,
   team?: { readonly employees?: EmployeesView; readonly rows: readonly ChatSession[] },
+  manager?: ManagerView,
 ): { readonly link: Link; readonly asked: string[]; readonly calls: Extract<LinkMessage, { t: 'call' }>[]; readonly tell: (value: SessionItems) => void } {
   const hearers: ((message: LinkMessage) => void)[] = []
   const asked: string[] = []
@@ -42,6 +45,7 @@ function macWith(
       const [, second, third] = message.args as [string, unknown, unknown]
       if (old && (message.name === 'chat.turns' || message.name === 'chat.turnsBefore' || message.name === 'chat.steps')) return answer(message.id, undefined, `No such call: ${message.name}`)
       if (message.name === 'settings.get') return answer(message.id, mac)
+      if (message.name === 'manager.view') return manager === undefined ? answer(message.id, undefined, 'No such call: manager.view') : answer(message.id, manager)
       if (team !== undefined && message.name === 'chat.list') return answer(message.id, team.rows)
       if (team !== undefined && message.name === 'employees.list') return team.employees === undefined ? answer(message.id, undefined, 'No such call: employees.list') : answer(message.id, team.employees)
       if (message.name === 'settings.set') {
@@ -296,6 +300,21 @@ describe('the phone over the link', () => {
     swap(macWith(all).link)
     await new Promise((done) => setTimeout(done, 5))
     expect([...page.keys()]).toEqual(['m1', 't1'])
+  })
+
+  it('refreshes Manager on a new link after an initial failure and after its lifecycle changes offline', async () => {
+    const { swap } = install(macWith([]).link)
+    await expect(window.geckit.manager.view()).rejects.toThrow('manager.view')
+    const views: ManagerView[] = []
+    window.geckit.manager.on((view) => views.push(view))
+    const paused: ManagerView = { config: { ...DEFAULT_MANAGER_CONFIG, enabled: true }, state: 'paused', workers: [], activity: [], providers: [], decisions: [], queued: 0 }
+    const first = macWith([], false, undefined, paused)
+    swap(first.link)
+    await vi.waitFor(() => expect(views.at(-1)).toEqual(paused))
+    expect(first.asked).toContain('manager.view')
+    const disabled: ManagerView = { ...paused, config: DEFAULT_MANAGER_CONFIG, state: 'off' }
+    swap(macWith([], false, undefined, disabled).link)
+    await vi.waitFor(() => expect(views.at(-1)).toEqual(disabled))
   })
 
   it('reads the employees again on a new link, so an assignment made while they failed to load is shown', async () => {

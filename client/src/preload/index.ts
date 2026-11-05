@@ -55,7 +55,7 @@ import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from 
 import { pieceOf } from '../shared/pairing'
 import type { Pairing, Piece } from '../shared/pairing'
 import type { VoiceMemosConnection } from '../shared/manager-intake'
-import type { ManagerApi, ManagerConfig, ManagerView } from '../shared/manager'
+import type { ManagerApi, ManagerAnswerRequest, ManagerAnswerResult, ManagerConfig, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from '../shared/manager'
 import type { TelegramAction, TelegramApi, TelegramView } from '../shared/telegram'
 import type { EmployeeDraft, EmployeeMemory, EmployeesApi, EmployeesView } from '../shared/employees'
 
@@ -99,6 +99,10 @@ const geckit = {
     voiceMemos: (action?: 'privacy'): Promise<VoiceMemosConnection> => ipcRenderer.invoke('manager:voice-memos', action),
     view: (): Promise<ManagerView> => ipcRenderer.invoke('manager:view'),
     inspect: (id: string): Promise<SessionItems> => ipcRenderer.invoke('manager:inspect', id),
+    send: (request: ManagerSendRequest): Promise<ManagerRequestReceipt> => ipcRenderer.invoke('manager:sendApp', request),
+    receipt: (id: ManagerSendRequest['id']): Promise<ManagerRequestReceipt | undefined> => ipcRenderer.invoke('manager:receipt', id),
+    answer: (request: ManagerAnswerRequest): Promise<ManagerAnswerResult> => ipcRenderer.invoke('manager:answerApp', request),
+    answerCard: (session: string, card: string, answer: string): Promise<boolean> => ipcRenderer.invoke('manager:answerCard', session, card, answer),
     onItems: (said: (items: SessionItems) => void): (() => void) => listen('manager:items', said),
     configure: (change: Partial<ManagerConfig>): Promise<ManagerView> => ipcRenderer.invoke('manager:configure', change),
     pause: (): Promise<ManagerView> => ipcRenderer.invoke('manager:pause'),

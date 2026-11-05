@@ -1,4 +1,5 @@
 import { AssignSheet, EmployeeAvatar, EmployeeFilter } from '../employees/Employees'
+import { managerFace } from '../employees/TeamManager'
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -12,6 +13,10 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { PhoneScope, ScopeButton } from './PhoneScope'
+import { Cell } from './PhoneKit'
+import { openManagerChat } from './manager-chat-open'
+import { managerStand } from './manager-label'
+import { useManager } from './useManager'
 import { startedLine } from './Request'
 import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
@@ -68,6 +73,8 @@ export function PhoneBoard({
   /** All shortcuts, over the board: from the bolt in the bar or the end of the New task sheet. */
   readonly onShortcuts: () => void
 }): React.JSX.Element {
+  const manager = useManager()
+  const managerState = managerStand(manager)
   const [shown, setShown] = useState<Column>(() => {
     const kept = localStorage.getItem('phoneColumn')
     return BOARD_COLUMNS.find((one) => one.id === kept)?.id ?? columnOf(undefined).id
@@ -339,6 +346,7 @@ export function PhoneBoard({
         className="phone-list"
         onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 30)}
       >
+        {manager?.config.enabled !== true && manager?.session === undefined ? null : <div className="phone-group phone-team-group"><Cell label={<span className="phone-team-person"><EmployeeAvatar employee={managerFace(chat.settings)} size="medium" /><span><b>Manager</b><small>{managerState.short}</small></span></span>} value={managerState.tone === 'working' ? <span className="team-live" title="Working now" /> : undefined} onPress={openManagerChat} /></div>}
         {!chat.listed ? (
           <div className="phone-group" aria-busy="true" aria-label="Reading the conversations">
             {[0, 1, 2].map((one) => (
