@@ -28,10 +28,11 @@ Manager is one conversation today. Telegram, every channel and the Manager windo
 | Manager window, thread row | After its dots, the number of its workers working now: "2" | The thread owns or follows a working worker |
 | Manager window, header | The thread's place and labels under its title: "Slack · #dev · Maria Ivanova", and "Open in Slack" when the channel gave a link | A channel thread is open |
 | Manager window, composer | Writing into a channel thread; under it "Manager's answer is also posted to Slack." | A channel thread is open and its channel is on |
-| Session info (existing) | All labels of the thread, as "key: value" lines | Opened from the header |
-| Worker's Session info (existing) | "Reports to: Slack · Maria Ivanova" and "Followed by: Telegram · Alex"; each name opens that thread in the Manager window | Managed worker |
+| Manager window header | All labels of the thread, as "key: value" lines, under its place line | A channel thread is open (with the window, after 021) |
+| Worker's conversation info on the phone (existing) | "Reports to: Slack · Maria Ivanova", "Followed by: Telegram · Alex" and one row per label | Managed worker |
+| Board card hover on the computer | The same lines as a tooltip over the "From Manager" line: the computer has no conversation info panel for workers | Managed worker |
 | Board card and worker header (existing "From Manager" line) | "From Manager · Slack · Maria Ivanova" for work a channel thread started; "· +1 following" at its end when other threads follow it, hover lists them | Worker started by a channel thread |
-| Search (existing) | Label values are found: a Slack thread id or a person's name finds the thread and its workers | Always |
+| Search (existing) | Label values are found: a Slack thread id or a person's name finds the conversations it labels. Work Manager starts from a thread inherits the thread's labels | Always |
 | Settings, Channels | Slack as a built-in row next to Telegram; its row line counts threads: "Connected · 3 threads" | Always |
 | Phone, Manager page (existing) | The same list of threads above the transcript, as a menu under the title | Manager on |
 
@@ -172,9 +173,11 @@ stateDiagram-v2
 
 ## 8. Edge cases
 
-- **Existing history:** the current Manager session becomes the GeckIt thread. Telegram's private chat gets a new thread at its next message; its earlier messages stay in the GeckIt thread's history.
+- **Existing history:** the current Manager session becomes the GeckIt thread. Telegram's private chat gets a new thread at its next message; its earlier messages stay in the GeckIt thread's history. From then on an answer Manager gives in the GeckIt window is no longer repeated in Telegram, and the other way round.
 - **A worker in the shared pool steered by two threads:** both can; its updates still go to the thread that started it. A thread asking about another's work reads it through the CLI like any managed conversation.
-- **The starting thread is gone** (channel removed): the worker's updates go to GeckIt; followers keep getting them.
+- **The starting thread is gone or closed** (its channel removed, off or no longer allowed to talk to Manager): the worker's updates go to GeckIt; followers whose channel is on keep getting them. When the channel comes back, updates go to the starter again.
+- **Telegram and GeckIt's own decisions:** the paired Telegram chat is Alex's own remote, so it keeps receiving the decisions raised in the GeckIt thread, as before threads, besides those raised in its own thread. Decisions from a Slack thread go to that Slack thread and the window only.
+- **Slack, the first and the next messages:** the first message in a channel thread mentions the bot; later replies in a thread the bot already knows reach Manager without a mention. In a direct message each top-level message starts a Slack thread, and Manager answers in it.
 - **A decision raised in a Slack thread** is shown in that thread and in the window; whichever answers first wins, the other sees "This request is no longer pending."
 - **Two messages in one thread at once:** queued in the thread, one turn at a time, as Manager does today.
 - **Many threads at once:** all run; each row shows its working dot.
@@ -216,3 +219,4 @@ stateDiagram-v2
 - Channels label conversations with who started them and custom fields such as a Slack thread id, to trace and debug later: sections 2, 5, 6.
 - Slack built in, turned on with its values in Settings: section 2.
 - Not covered: Slack and Telegram parity for files and voice in channel threads; Telegram's existing attachment handling keeps working in its threads, Slack's built-in sends text only in the first version.
+- Not covered yet: Telegram groups. Telegram pairs one private chat today, so it has one thread; a group needs its own access rules before it can be its own thread. The thread key is already the chat, so a group becomes a thread of its own once access allows it.

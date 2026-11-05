@@ -10,6 +10,7 @@ Settings, Channels, after Integrations. Assistant libraries are added in Assista
 
 - Heading "Channels", with "Add channel" at its right, as Assistants has "Add assistant".
 - Under it one line: "Libraries from GitHub that bring your conversations to Slack, Telegram or another place. Each decides how it works with them."
+- Slack comes with GeckIt and is always the first row; it has no Remove, only "On". Its fields are the bot token, the app token, the people who may write and the secret check; each Slack thread with the bot is a Manager thread of its own (see [Manager threads](manager-threads.md)).
 - Nothing installed: "No channels installed."
 - At the bottom, "Update channels automatically", on at first, and "Check now", which fetches newer versions and restarts each one that changed.
 
@@ -27,7 +28,7 @@ The line under the name says where it stands, in its library's words where it ga
 | Running | Connected, then what the library said: "Connected · Listening in 3 channels" |
 | Failed | Stopped: and the reason, in the danger colour |
 
-When it has started conversations: "4 conversations" after the state.
+When it has started conversations: "4 conversations" after the state; when it has Manager threads: "3 threads".
 
 Turning it on with a required setting empty does not start it; the row says what to fill in and Set up opens.
 

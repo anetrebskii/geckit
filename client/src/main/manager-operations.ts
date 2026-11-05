@@ -6,7 +6,7 @@ import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writ
 import { basename, dirname, isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 
 import { providerOf } from '../shared/api'
-import type { ChatSession, SessionMessage, SessionProvider, Settings } from '../shared/api'
+import type { ChatSession, ManagerLabels, SessionMessage, SessionProvider, Settings } from '../shared/api'
 import { isRemote } from '../shared/hosts'
 import { isCodexProvider, llmProviderInfo, providerModel } from '../shared/providers'
 import { managerProjects } from '../shared/manager'
@@ -32,6 +32,10 @@ interface OperationDeps {
   readonly owner: string
   readonly managed: (id: string) => boolean
   readonly managerSession: () => string | undefined
+  /** The Manager thread the operation came from. */
+  readonly managerThread?: () => string
+  /** What the thread's channel said about it, inherited by the work it starts. */
+  readonly threadLabels?: () => ManagerLabels
   readonly authorized?: () => boolean
 }
 
@@ -65,6 +69,8 @@ export const MANAGER_CAPABILITIES = {
     'sessions stop --id <managed-worker-id>',
     'sessions mark --id <managed-worker-id> --status progress|review|blocked|done|archived (done needs confirmation)',
     'sessions attach --id <unrelated-worker-id> (user confirmation)',
+    'sessions follow --id <managed-worker-id> (this thread also receives its updates; its starter keeps receiving them)',
+    'sessions unfollow --id <managed-worker-id>',
     'sessions answer --id <managed-worker-id> --card <current-question-id> --text <answer> (user confirmation; questions only)',
     'employees shortcuts [<employee-id>|none] [--json]',
     'employees shortcut add <employee-id|none> --name <name> --project <registered-project-name> --prompt <text> [--target task|manager] [--goal <text>] [--every <hour|hour 15|day 9:00|weekdays 9:00|week monday 9:00>|--cron <expression>] [--start-window-minutes <1-1440|none>] [--provider <enabled-provider-id>] [--model <id>] [--reasoning <effort|default>] [--mode manual|auto|plan] (no product confirmation; Manager target uses none and its configured assistant/approvals)',
@@ -112,6 +118,8 @@ const SHAPES: readonly CommandShape[] = [
   { domain: 'sessions', command: 'stop', flags: ['--id'] },
   { domain: 'sessions', command: 'mark', flags: ['--id', '--status'] },
   { domain: 'sessions', command: 'attach', flags: ['--id'] },
+  { domain: 'sessions', command: 'follow', flags: ['--id'] },
+  { domain: 'sessions', command: 'unfollow', flags: ['--id'] },
   { domain: 'sessions', command: 'answer', flags: ['--id', '--card', '--text'] },
   { domain: 'employees', command: 'rename', flags: ['--id', '--name', '--expected-name'] },
   { domain: 'settings', command: 'manager', flags: [] },
@@ -236,6 +244,14 @@ export class ManagerOperations {
     if (manager === undefined || manager !== this.#deps.managerSession() || this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
     const current = await this.#worker(worker.id)
     if (manager !== this.#deps.managerSession() || this.#deps.authorized?.() === false || current.root !== worker.root || !this.#deps.settings().chatProviders.includes(providerOf(worker.id))) throw new Error('The worker ownership, project or provider changed. Select the intended worker again.')
+  }
+
+  #own(id: string): void {
+    const thread = this.#deps.managerThread?.() ?? 'main'
+    const note = this.#deps.notes.all()[id] ?? {}
+    if (thread === 'main' || note.managerThread !== undefined) return
+    const labels = this.#deps.threadLabels?.() ?? {}
+    this.#deps.notes.set(id, { ...note, managerThread: thread, ...(Object.keys(labels).length === 0 ? {} : { labels: { ...labels, ...note.labels } }) })
   }
 
   async run(args: readonly string[], operation: string): Promise<string> {
@@ -428,6 +444,7 @@ export class ManagerOperations {
         }
         const message: SessionMessage = { root, ...(employeeId === undefined ? {} : { employeeId }), provider: resolved.provider, mode: settings.chatMode, text, goal, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
         const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, this.#deps.managerSession())
+        this.#own(id)
         if (flags.has('--title')) this.#deps.sessions.rename(id, required(flags, '--title'))
         const worker = await this.#worker(id)
         return JSON.stringify({ id, provider: resolved.provider, providerReason: resolved.reason, model, modelReason: flags.has('--model') ? 'task' : 'default', employeeId: worker.employeeId, state: worker.waits === true || (worker.queued?.length ?? 0) > 0 ? 'queued' : worker.state, goal })
@@ -444,7 +461,17 @@ export class ManagerOperations {
         if (this.#deps.managed(id)) return JSON.stringify({ id, attached: false, alreadyManaged: true })
         const note = this.#deps.notes.all()[id] ?? {}
         this.#deps.notes.set(id, { ...note, managerOwner: this.#deps.owner })
+        this.#own(id)
         return JSON.stringify({ id, attached: true })
+      }
+      if (command === 'follow' || command === 'unfollow') {
+        const thread = this.#deps.managerThread?.() ?? 'main'
+        const note = this.#deps.notes.all()[id] ?? {}
+        const owner = note.managerThread ?? 'main'
+        const followers = (note.managerFollowers ?? []).filter((one) => one !== thread)
+        const next = command === 'follow' && owner !== thread ? [...followers, thread] : followers
+        this.#deps.notes.set(id, { ...note, managerFollowers: next })
+        return JSON.stringify({ id, following: command === 'follow', reportsHere: owner === thread, notice: owner === thread ? 'This thread started the worker and already receives its updates.' : undefined })
       }
       if (command === 'show') {
         const count = Number(flags.get('--last') ?? 10)

@@ -2306,3 +2306,100 @@ describe('Manager CLI preferences and explicit new-worker models', () => {
     expect(capabilities).toHaveProperty('commands', expect.arrayContaining([expect.stringContaining('employees rename'), expect.stringContaining('settings manager-edit'), expect.stringContaining('--model')]))
   })
 })
+
+describe('Manager threads', () => {
+  const settle = async (): Promise<void> => { for (let turn = 0; turn < 8; turn++) await new Promise<void>((resolve) => setImmediate(resolve)) }
+  const slack = { channel: 'channel:slack', place: 'Slack', key: 'C1:1730.1', title: 'Fix login', from: 'Maria Ivanova', labels: { thread: '1730.1', starter: 'Maria Ivanova' } }
+
+  it('keeps one conversation per place, answers each in its own thread, and lets one fail alone', async () => {
+    const f = await fixture()
+    const configured = await f.manager.configure({ enabled: true })
+    const main = configured.session?.id
+    if (main === undefined) throw new Error('Missing Manager session')
+    const answers: ManagerReplyOrigin[] = []
+    f.manager.onResponse((_text, origin) => answers.push(origin))
+    const thread = f.manager.thread(slack)
+    expect(f.manager.thread({ channel: slack.channel, place: slack.place, key: slack.key, labels: { channel: '#dev' } })).toBe(thread)
+    await f.manager.send('[Via Slack, from Maria Ivanova]\nFix the login redirect', 'channel', 'slack:1', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('Fix the login redirect'))).toBe(true))
+    const backing = f.sent.find((one) => one.text.includes('Fix the login redirect'))?.id
+    expect(backing).toBeDefined()
+    expect(backing).not.toBe(main)
+    const view = await f.manager.view()
+    expect(view.threads?.find((one) => one.id === thread)).toMatchObject({ place: 'Slack', title: 'Fix login', from: 'Maria Ivanova', labels: { thread: '1730.1', starter: 'Maria Ivanova', channel: '#dev' }, session: backing, state: 'working' })
+    f.finish(backing ?? '', 'On it.')
+    await vi.waitFor(() => expect(answers).toContainEqual(expect.objectContaining({ thread, session: backing })))
+    await f.manager.send('Still here?', 'channel', 'slack:2', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === backing && one.text.includes('Still here?'))).toBe(true))
+    f.hear(backing ?? '', { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed', text: 'Provider broke' }] })
+    await vi.waitFor(async () => expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.state).toBe('failed'))
+    await f.manager.sendApp({ id: 'app:main', text: 'Plan the week', session: main })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Plan the week'))).toBe(true))
+    expect((await f.manager.view()).state).not.toBe('blocked')
+  })
+
+  it('reports a worker to the thread that started it, and to threads that follow it', async () => {
+    const f = await fixture()
+    const configured = await f.manager.configure({ enabled: true })
+    const main = configured.session?.id
+    if (main === undefined) throw new Error('Missing Manager session')
+    const thread = f.manager.thread(slack)
+    await f.manager.send('Fix it', 'channel', 'slack:start', [], () => true, [], [], thread)
+    await vi.waitFor(async () => expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.session).toBeDefined())
+    const backing = (await f.manager.view()).threads?.find((one) => one.id === thread)?.session ?? ''
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === backing)).toBe(true))
+    f.finish(backing, f.command('slack-start', ['sessions', 'start', '--project', f.root, '--text', 'Fix the login redirect', '--goal', 'Tests pass']))
+    await vi.waitFor(async () => expect((await f.manager.view()).workers).toHaveLength(1))
+    const worker = (await f.manager.view()).workers[0]?.id ?? ''
+    expect(f.notes.all()[worker]?.managerThread).toBe(thread)
+    expect(f.notes.all()[worker]?.labels).toEqual({ thread: '1730.1', starter: 'Maria Ivanova' })
+    expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.owns).toEqual([worker])
+    expect((await f.sessions.allForManager([f.root])).find((one) => one.id === worker)).toMatchObject({ managerThread: { id: thread, said: 'Slack · Maria Ivanova' } })
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === backing).length).toBeGreaterThanOrEqual(2))
+    f.finish(backing, 'Started.')
+    await settle()
+    await f.manager.sendApp({ id: 'app:follow', text: 'Keep an eye on the login fix', session: main })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Keep an eye'))).toBe(true))
+    f.finish(main, f.command('follow-login', ['sessions', 'follow', '--id', worker]))
+    await vi.waitFor(() => expect(f.notes.all()[worker]?.managerFollowers).toEqual(['main']))
+    expect((await f.manager.view()).threads?.find((one) => one.id === 'main')?.follows).toEqual([worker])
+    expect((await f.sessions.allForManager([f.root])).find((one) => one.id === worker)?.managerFollowers).toEqual([{ id: 'main', said: 'GeckIt' }])
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main).length).toBeGreaterThanOrEqual(2))
+    f.finish(main, 'Following.')
+    await settle()
+    const before = { main: f.sent.filter((one) => one.id === main).length, thread: f.sent.filter((one) => one.id === backing).length }
+    f.finish(worker, 'Fixed and tested.')
+    await vi.waitFor(() => {
+      expect(f.sent.filter((one) => one.id === main && one.text.includes('[Worker update')).length).toBeGreaterThan(0)
+      expect(f.sent.filter((one) => one.id === backing && one.text.includes('[Worker update')).length).toBeGreaterThan(0)
+    })
+    expect(f.sent.filter((one) => one.id === main).length).toBeGreaterThan(before.main)
+    expect(f.sent.filter((one) => one.id === backing).length).toBeGreaterThan(before.thread)
+  })
+
+  it('takes desktop messages into a channel thread and refuses them while its channel is off', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread(slack)
+    const session = await f.manager.open(thread)
+    await f.manager.sendApp({ id: 'app:slack', text: 'Use the staging server', session })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === session && one.text.includes('Use the staging server'))).toBe(true))
+    f.manager.close('channel:slack', 'Slack is off. Turn it on in Settings, Channels to reply in this thread.')
+    expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.closed).toBe('Slack is off. Turn it on in Settings, Channels to reply in this thread.')
+    await expect(f.manager.sendApp({ id: 'app:slack-2', text: 'More', session })).rejects.toThrow('Slack is off')
+    f.manager.close('channel:slack', undefined)
+    expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.closed).toBeUndefined()
+  })
+
+  it('keeps threads, their sessions and labels across a restart', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread(slack)
+    const session = await f.manager.open(thread)
+    f.manager.label(thread, { starter: '', ticket: 'GK-12' })
+    const next = f.reload()
+    const restored = (await next.view()).threads?.find((one) => one.id === thread)
+    expect(restored).toMatchObject({ session, labels: { thread: '1730.1', ticket: 'GK-12' } })
+    expect(restored?.labels['starter']).toBeUndefined()
+  })
+})

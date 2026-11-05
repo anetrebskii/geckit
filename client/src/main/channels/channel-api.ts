@@ -1,15 +1,28 @@
-import type { CardAnswer, ChatSession, SessionImage, SessionItem, SessionMode, SessionNotice, SessionProvider } from '../../shared/api'
+import type { CardAnswer, ChatSession, ManagerLabels, SessionImage, SessionItem, SessionMode, SessionNotice, SessionProvider } from '../../shared/api'
 import type { ChannelField, ChannelId, ChannelInfo, ChannelValue, ChannelValues } from '../../shared/channels'
 import type { ManagerDecision } from '../../shared/manager'
 import type { PluginLogger } from '../sessions/plugin-api'
 
-export type { CardAnswer, ChannelField, ChannelId, ChannelInfo, ChannelValue, ChannelValues, ManagerDecision, PluginLogger, SessionImage, SessionItem, SessionNotice }
+export type { CardAnswer, ChannelField, ChannelId, ChannelInfo, ChannelValue, ChannelValues, ManagerDecision, ManagerLabels, PluginLogger, SessionImage, SessionItem, SessionNotice }
 
 export type Json = string | number | boolean | null | readonly Json[] | { readonly [key: string]: Json }
 
 export interface ChannelConversation extends Pick<ChatSession, 'id' | 'root' | 'title' | 'state'> {
   readonly provider: SessionProvider
   readonly manager: boolean
+}
+
+/** A place where people write, as the channel names it: a chat, a Slack thread. The same key is always the same Manager thread. */
+export interface ChannelThread {
+  readonly key: string
+  /** What the thread is about, shown in the Manager window; the first message shortened when absent. */
+  readonly title?: string
+  /** Who wrote last, as people read it. */
+  readonly from?: string
+  /** A link back to the place, shown as "Open in <channel>". */
+  readonly link?: string
+  /** Up to 8 labels, such as who started it or a thread id, for tracing it later. Never permissions. */
+  readonly labels?: ManagerLabels
 }
 
 export interface ChannelStart {
@@ -20,6 +33,8 @@ export interface ChannelStart {
   readonly mode?: SessionMode
   readonly employeeId?: string
   readonly images?: readonly SessionImage[]
+  /** Labels kept on the conversation, shown in its Session info and found by Search. */
+  readonly labels?: ManagerLabels
 }
 
 export interface ChannelSend {
@@ -34,14 +49,18 @@ export type ChannelEvent =
   | { readonly kind: 'state'; readonly conversation: ChannelConversation }
   | { readonly kind: 'notice'; readonly notice: SessionNotice }
   | { readonly kind: 'decisions'; readonly decisions: readonly ManagerDecision[] }
+  /** Manager's answer in a thread, ready to post, whoever wrote the message it answers. */
+  | { readonly kind: 'answer'; readonly text: string }
 
 export interface ChannelConversations {
-  /** Manager's conversation, when this channel may talk to Manager and Manager is on. */
-  manager(): string | undefined
+  /** The Manager thread for this place, when this channel may talk to Manager and Manager is on. Without a place, the channel's one default thread. */
+  manager(thread?: ChannelThread): string | undefined
+  /** Adds labels to a conversation this channel started or to one of its Manager threads; an empty value removes one. */
+  label(id: string, labels: ManagerLabels): void
   start(request: ChannelStart): Promise<string>
   send(id: string, message: ChannelSend): Promise<void>
   get(id: string): ChannelConversation | undefined
-  /** Conversations this channel started, Manager not included. */
+  /** Conversations this channel started, its Manager threads not included. */
   list(): readonly ChannelConversation[]
   items(id: string): Promise<readonly SessionItem[]>
   watch(id: string, listener: (event: ChannelEvent) => void): () => void

@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { ChatSession, Lineup } from '../shared/api'
-import type { ManagerConfig, ManagerView } from '../shared/manager'
+import type { ManagerConfig, ManagerDecision, ManagerView } from '../shared/manager'
 import { DEFAULT_MANAGER_INTAKE } from '../shared/manager-intake'
 import { classifyIntake } from '../main/intake-classify'
 import { correct, stopCorrecting } from '../main/correct'
@@ -206,6 +206,13 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     let view: ManagerView = await coordinator.view()
     const decisions = new Map<string, string>()
     let deliveryChannel = ''
+    // Telegram talks to Manager in a thread of its own per chat; the paired person still answers GeckIt's own decisions there, as before threads.
+    const telegramThread = (): string => {
+      const account = telegram?.view().account
+      if (account === undefined) throw new Error('Telegram is not connected.')
+      return coordinator.thread({ channel: 'telegram', place: 'Telegram', key: String(account.chatId), title: account.name, from: account.name, labels: { chat: String(account.chatId), user: String(account.id), ...(account.username === undefined ? {} : { username: `@${account.username}` }) } })
+    }
+    const forTelegram = (decision: ManagerDecision): boolean => decision.thread === undefined || coordinator.threadRecord(decision.thread)?.channel === 'telegram'
     const bridge = new ManagerTelegram({
       directory,
       shares,
@@ -213,15 +220,15 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       vault: options.vault ?? { available: () => false, encrypt: () => { throw new Error('Secure storage is unavailable.') }, decrypt: () => { throw new Error('Secure storage is unavailable.') } },
       manager: {
         pending: () => coordinator.telegramPending(),
-        typingAllowed: () => coordinator.telegramTypingAllowed(),
+        typingAllowed: () => coordinator.telegramTypingAllowed(telegramThread()),
         onPending: (changed) => coordinator.on(() => changed()),
-        submit: (text, id, files, authorized) => coordinator.send(text, 'telegram', id, [], authorized, files),
-        reply: async (text, id, reference, authorized, files) => { await coordinator.reply(text, id, reference, authorized, files) },
+        submit: (text, id, files, authorized) => coordinator.send(text, 'telegram', id, [], authorized, files, [], telegramThread()),
+        reply: async (text, id, reference, authorized, files) => { await coordinator.reply(text, id, reference, authorized, files, reference.thread ?? telegramThread()) },
         pause: async () => { await coordinator.pause() },
         resume: async () => { await coordinator.resume() },
         status: () => managerTelegramStatus(view),
         enabled: () => coordinator.enabled(),
-        decisions: () => view.decisions,
+        decisions: () => view.decisions.filter(forTelegram),
         hasDecision: (id) => view.decisions.some((item) => item.id === id),
         answer: async (id, choice, authorized) => {
           const decision = view.decisions.find((item) => item.id === id)
@@ -238,16 +245,17 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
           notifyDecisions(view)
         }
         if (changed.state === 'disconnected') deliveryChannel = ''
+        coordinator.close('telegram', changed.state === 'connected' && changed.account !== undefined ? undefined : 'Telegram is not connected. Connect it in Settings, Manager to reply in this thread.')
       },
     })
     telegram = bridge
     const notifyDecisions = (changed: ManagerView): void => {
       if (bridge.view().account === undefined) return
-      for (const id of decisions.keys()) if (!changed.decisions.some((item) => item.id === id)) {
+      for (const id of decisions.keys()) if (!changed.decisions.some((item) => item.id === id && forTelegram(item))) {
         decisions.delete(id)
         try { bridge.resolve(id) } catch { /* Telegram reports its secure-storage failure in its own view. */ }
       }
-      for (const decision of changed.decisions) {
+      for (const decision of changed.decisions.filter(forTelegram)) {
         const signature = JSON.stringify(decision)
         if (decisions.get(decision.id) === signature) continue
         decisions.set(decision.id, signature)
@@ -267,6 +275,12 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       save: setSettings,
       sessions: started,
       conversations: () => all,
+      labelConversation: (id, labels) => {
+        const note = notes.all()[id] ?? {}
+        const merged: { [key: string]: string } = { ...note.labels }
+        for (const [key, value] of Object.entries(labels)) { if (value === '') delete merged[key]; else merged[key] = value }
+        notes.set(id, { ...note, labels: merged })
+      },
       manager: coordinator,
       managerView: () => view,
       employees: () => employees.list().employees,
@@ -275,7 +289,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       changed: (changed) => events.emit('channels:changed', changed),
     })
     channels = hub
-    coordinator.onResponse((text, origin) => { void bridge.notify(text, undefined, origin).catch(() => undefined) })
+    coordinator.onResponse((text, origin) => { if (origin.thread !== undefined && coordinator.threadRecord(origin.thread)?.channel === 'telegram') void bridge.notify(text, undefined, origin).catch(() => undefined) })
 
     setGuideManager(coordinator.instructions())
     keepBrowserBridge(getSettings().chromeBridge)

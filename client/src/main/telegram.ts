@@ -112,7 +112,7 @@ const accountOf = (value: Json | undefined): TelegramAccount | undefined => {
 
 function replyOf(value: Json | undefined): ManagerTelegramReply | undefined {
   const item = jsonObject(value)
-  return item !== undefined && safeInteger(item['chatId']) && safeInteger(item['messageId']) && typeof item['session'] === 'string' && typeof item['text'] === 'string' && Array.isArray(item['workers']) && item['workers'].every((worker) => typeof worker === 'string') ? { chatId: item['chatId'], messageId: item['messageId'], session: item['session'], text: item['text'], workers: item['workers'] } : undefined
+  return item !== undefined && safeInteger(item['chatId']) && safeInteger(item['messageId']) && typeof item['session'] === 'string' && typeof item['text'] === 'string' && Array.isArray(item['workers']) && item['workers'].every((worker) => typeof worker === 'string') ? { chatId: item['chatId'], messageId: item['messageId'], session: item['session'], text: item['text'], workers: item['workers'], ...(typeof item['thread'] === 'string' ? { thread: item['thread'] } : {}) } : undefined
 }
 
 function keptOf(text: string): KeptTelegram | undefined {

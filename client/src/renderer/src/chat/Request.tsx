@@ -324,6 +324,22 @@ export function originFor(chat: Pick<Chat, 'sessions'>, session: ChatSession): C
   return session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent && one.manager !== true)
 }
 
+/** "From Manager · Slack · Maria Ivanova · +1 following": the Manager thread a managed conversation reports to. */
+export function managerFrom(session: Pick<ChatSession, 'managerThread' | 'managerFollowers'>): string | undefined {
+  if (session.managerThread === undefined) return undefined
+  const followers = session.managerFollowers?.length ?? 0
+  return `From Manager${session.managerThread.said === 'GeckIt' ? '' : ` · ${session.managerThread.said}`}${followers === 0 ? '' : ` · +${String(followers)} following`}`
+}
+
+/** Who it reports to, who follows it and what its channel said about it, one per line. */
+export function managerTrace(session: Pick<ChatSession, 'managerThread' | 'managerFollowers' | 'labels'>): readonly string[] {
+  return [
+    ...(session.managerThread === undefined ? [] : [`Reports to: ${session.managerThread.said}`]),
+    ...(session.managerFollowers === undefined || session.managerFollowers.length === 0 ? [] : [`Followed by: ${session.managerFollowers.map((one) => one.said).join(', ')}`]),
+    ...Object.entries(session.labels ?? {}).map(([key, value]) => `${key}: ${value}`),
+  ]
+}
+
 /** "From <parent title>": the conversation that asked for this one, while it is still there. */
 export function From({
   chat,
@@ -335,6 +351,8 @@ export function From({
   readonly className: string
 }): React.JSX.Element | null {
   const parent = originFor(chat, session)
+  const manager = managerFrom(session)
+  if (parent === undefined && manager !== undefined) return <div className={className} title={managerTrace(session).join('\n')}>{manager}</div>
   if (parent === undefined) return null
   return (
     <div className={className}>

@@ -202,15 +202,15 @@ it('executes authenticated Manager settings and saved-shortcut commands through 
 }, 30_000)
 
 it('runs a channel library with a sealed secret and only the folders granted to it', async () => {
-  expect(await read<ChannelsView>('call', 'channels:view', '[]')).toMatchObject({ channels: [{ id: 'channel:probe', state: 'off' }] })
-  expect(await read<ChannelsView>('call', 'channels:configure', JSON.stringify(['channel:probe', { enabled: true, projects: [project] }]))).toMatchObject({ channels: [{ state: 'setup', says: 'Fill in Token.' }] })
+  expect(await read<ChannelsView>('call', 'channels:view', '[]')).toMatchObject({ channels: [{ id: 'channel:slack', builtIn: true, state: 'off' }, { id: 'channel:probe', state: 'off' }] })
+  expect(await read<ChannelsView>('call', 'channels:configure', JSON.stringify(['channel:probe', { enabled: true, projects: [project] }]))).toMatchObject({ channels: [{ id: 'channel:slack' }, { state: 'setup', says: 'Fill in Token.' }] })
   await read<ChannelsView>('call', 'channels:configure', JSON.stringify(['channel:probe', { secrets: { token: 'probe-secret' } }]))
-  await eventually(() => read<ChannelsView>('call', 'channels:view', '[]'), (view) => view.channels[0]?.state === 'connected' && view.channels[0].says === 'token ok' && view.channels[0].conversations === 1)
+  await eventually(() => read<ChannelsView>('call', 'channels:view', '[]'), (view) => view.channels[1]?.state === 'connected' && view.channels[1].says === 'token ok' && view.channels[1].conversations === 1)
   const state = join(directory, 'channels', 'channel-probe.json')
   await eventually(async () => readFile(state, 'utf8').catch(() => ''), (text) => text.includes('fixture:complete'))
   expect(await readFile(join(directory, 'settings.json'), 'utf8')).not.toContain('probe-secret')
   expect((await readFile(join(directory, 'channels', 'channel-probe.secrets'))).toString('utf8')).not.toContain('probe-secret')
-  expect(await read<ChannelsView>('call', 'channels:configure', JSON.stringify(['channel:probe', { enabled: false }]))).toMatchObject({ channels: [{ state: 'off' }] })
+  expect(await read<ChannelsView>('call', 'channels:configure', JSON.stringify(['channel:probe', { enabled: false }]))).toMatchObject({ channels: [{ id: 'channel:slack' }, { state: 'off' }] })
 }, 20_000)
 
 it('keeps working after the operator disconnects and requires an explicit native answer', async () => {

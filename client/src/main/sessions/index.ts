@@ -28,6 +28,8 @@ import type {
   ClaudeModel,
   ClaudeProgram,
   CutOff,
+  ManagerLabels,
+  ManagerThreadName,
   McpServer,
   PlanUsage,
   ReasoningEffort,
@@ -110,6 +112,11 @@ export interface SessionNote {
   readonly managerPrompt?: string
   readonly managerBegun?: true
   readonly managerOwner?: string
+  /** The Manager thread its updates go to, and the threads that follow it as well. */
+  readonly managerThread?: string
+  readonly managerFollowers?: readonly string[]
+  /** What the channel that started it says about it. */
+  readonly labels?: ManagerLabels
   readonly managerOperation?: string
   readonly heldOperation?: HeldOperation
   readonly guardError?: string
@@ -641,6 +648,8 @@ export class Sessions {
     return this.#deps.now?.() ?? Date.now()
   }
 
+  #threadName: ((thread: string) => ManagerThreadName | undefined) | undefined
+
   managerOutput(heard: (id: string, text: string) => void): void {
     this.#managerOutput = heard
   }
@@ -650,6 +659,15 @@ export class Sessions {
   }
 
   managerItems(heard: (items: SessionItems) => void): void { this.#managerItems = heard }
+
+  managerThreads(name: (thread: string) => ManagerThreadName | undefined): void { this.#threadName = name }
+
+  #managerThreadsOf(note: SessionNote | undefined): Pick<ChatSession, 'managerThread' | 'managerFollowers'> {
+    if (note?.managerOwner === undefined || this.#threadName === undefined) return {}
+    const owner = this.#threadName(note.managerThread ?? 'main') ?? this.#threadName('main')
+    const followers = (note.managerFollowers ?? []).flatMap((one) => one === owner?.id ? [] : this.#threadName?.(one) ?? [])
+    return { ...(owner === undefined ? {} : { managerThread: owner }), ...(followers.length === 0 ? {} : { managerFollowers: followers }) }
+  }
 
   #tellItems(items: SessionItems): void {
     if (this.isManager(items.id)) this.#managerItems?.({ ...items, items: items.items.map((item) => managerVisibleItem(managerHistoryItem(item))) })
@@ -1048,6 +1066,8 @@ export class Sessions {
         ...(note?.delivery === undefined ? {} : { delivery: note.delivery }),
         ...(this.isManager(id) ? { manager: true as const } : {}),
         ...(note?.managerOwner === undefined ? {} : { managerManaged: true as const }),
+        ...this.#managerThreadsOf(note),
+        ...(note?.labels === undefined || Object.keys(note.labels).length === 0 ? {} : { labels: note.labels }),
         ...(providerOf(id) === 'claude' ? {} : { provider: providerOf(id) }),
         root: where,
         ...(project === undefined ? {} : { project }),
@@ -1236,8 +1256,15 @@ export class Sessions {
 
   async search(roots: readonly string[], asked: string): Promise<ChatFound[]> {
     const providers = [this.#providers.stream, this.#providers.codex, ...this.#providers.plugins.values()]
-    const found = await Promise.all(providers.map((provider) => provider.search(roots, asked)))
-    return found.flat().filter((row) => !this.isManager(row.id) && this.#keptHistory(row.id))
+    const found = (await Promise.all(providers.map((provider) => provider.search(roots, asked)))).flat().filter((row) => !this.isManager(row.id) && this.#keptHistory(row.id))
+    const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
+    const notes = this.#deps.notes.all()
+    const labelled = words.length === 0 ? [] : this.#listed(roots).flatMap((one) => {
+      const labels = Object.entries(notes[one.id]?.labels ?? {}).map(([key, value]) => `${key}: ${value}`)
+      const hit = labels.find((label) => words.every((word) => label.toLowerCase().includes(word))) ?? (words.every((word) => labels.join(' ').toLowerCase().includes(word)) ? labels.join(' · ') : undefined)
+      return hit === undefined || found.some((row) => row.id === one.id) || this.isManager(one.id) ? [] : [{ id: one.id, root: one.root, said: hit.slice(0, 160), count: 1 }]
+    })
+    return [...found, ...labelled]
   }
 
   /** The limit changed: whatever it makes room for goes now. */

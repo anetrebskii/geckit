@@ -3,15 +3,21 @@ import { join } from 'node:path'
 
 import { writeJson } from '../../core/configuration'
 import type { CoreEvent } from '../../core/events'
-import type { CardAnswer, ChatSession, SessionItem, SessionItems, SessionMessage, Settings } from '../../shared/api'
+import type { CardAnswer, ChatSession, ManagerLabels, SessionItem, SessionItems, SessionMessage, Settings } from '../../shared/api'
 import { providerOf } from '../../shared/api'
 import type { ChannelChange, ChannelFailure, ChannelId, ChannelSetting, ChannelState, ChannelValues, ChannelView, ChannelsView } from '../../shared/channels'
 import { missingFields } from '../../shared/channels'
-import type { ManagerView } from '../../shared/manager'
+import { MANAGER_MAIN_THREAD, managerLabels } from '../../shared/manager'
+import type { ManagerReplyOrigin, ManagerThreadOpen, ManagerView } from '../../shared/manager'
 import { pluginLogger } from '../sessions/plugin-logs'
-import type { Channel, ChannelContext, ChannelConversation, ChannelEvent, Json } from './channel-api'
+import type { Channel, ChannelContext, ChannelConversation, ChannelEvent, ChannelThread, Json } from './channel-api'
 import type { LoadedChannel } from './libraries'
 import { installChannel, installedChannels, removeChannelLibrary, updateChannel } from './libraries'
+import { SLACK_INFO, SLACK_MODULE } from './slack'
+
+/** Channels that come with GeckIt: turned on and set up like a library, never removed or updated from GitHub. */
+const BUILT_IN: readonly LoadedChannel[] = [{ info: SLACK_INFO, path: 'built-in', module: SLACK_MODULE }]
+const builtIn = (id: ChannelId): boolean => BUILT_IN.some((one) => one.info.id === id)
 
 export interface ChannelVault {
   available(): boolean
@@ -28,7 +34,13 @@ export interface ChannelSessions {
 
 export interface ChannelManager {
   enabled(): boolean
-  send(text: string, source: 'channel'): Promise<string>
+  send(text: string, source: 'channel', id: string | undefined, workers: readonly string[], authorized: () => boolean, attachments: readonly string[], telegramRequests: readonly string[], thread: string): Promise<string>
+  thread(open: ManagerThreadOpen): string
+  label(thread: string, labels: ManagerLabels): void
+  threadOf(session: string): string | undefined
+  threadRecord(thread: string): { readonly channel: string } | undefined
+  close(channel: string, reason: string | undefined): void
+  onResponse(listener: (text: string, origin: ManagerReplyOrigin) => void): () => void
   inspect(id: string): Promise<SessionItems>
   answer(id: string, choice: string): Promise<unknown>
   answerCard(session: string, card: string, answer: string): Promise<boolean>
@@ -41,6 +53,8 @@ export interface ChannelsDeps {
   readonly save: (change: Pick<Settings, 'channels'>) => void
   readonly sessions: ChannelSessions
   readonly conversations: () => readonly ChatSession[]
+  /** Keeps labels on a conversation a channel started. */
+  readonly labelConversation: (id: string, labels: ManagerLabels) => void
   readonly manager: ChannelManager
   readonly managerView: () => ManagerView | undefined
   readonly employees: () => readonly { readonly id: string; readonly name: string; readonly role: string; readonly archived: boolean }[]
@@ -75,7 +89,9 @@ export class Channels {
   #unsubscribe: (() => void) | undefined
   readonly #listeners = new Map<string, Set<(event: ChannelEvent) => void>>()
   readonly #shown = new Map<string, string>()
-  #decisions = ''
+  readonly #decisions = new Map<string, string>()
+  #unanswer: (() => void) | undefined
+  #counted = ''
 
   constructor(deps: ChannelsDeps) {
     this.#deps = deps
@@ -130,7 +146,7 @@ export class Channels {
       const running = this.#running.get(setting.info.id)
       if (running === undefined) return []
       const secrets = Object.keys(this.#secrets(setting.info.id))
-      return [{ id: setting.info.id, name: setting.info.name, icon: setting.info.icon, ...(setting.info.source === undefined ? {} : { source: setting.info.source }), state: running.state, ...(running.says === undefined ? {} : { says: running.says }), secrets, conversations: this.#state(setting.info.id).conversations.length }]
+      return [{ id: setting.info.id, name: setting.info.name, icon: setting.info.icon, ...(builtIn(setting.info.id) ? { builtIn: true as const } : {}), threads: (this.#deps.managerView()?.threads ?? []).filter((one) => one.id.startsWith(`${setting.info.id}:`)).length, ...(setting.info.source === undefined ? {} : { source: setting.info.source }), state: running.state, ...(running.says === undefined ? {} : { says: running.says }), secrets, conversations: this.#state(setting.info.id).conversations.length }]
     })
     return { channels, failures: this.#failures }
   }
@@ -138,8 +154,10 @@ export class Channels {
   #emit(): void { if (!this.#stopped) this.#deps.changed(this.view()) }
 
   async start(): Promise<void> {
-    const { loaded, failures } = await installedChannels()
-    this.#failures = failures
+    const { loaded: libraries, failures } = await installedChannels()
+    const clashing = libraries.filter((one) => builtIn(one.info.id))
+    this.#failures = [...failures, ...clashing.map((one) => ({ id: one.info.id, name: one.info.name, ...(one.info.source === undefined ? {} : { source: one.info.source }), error: `${one.info.name} is now built into GeckIt. Remove this library; the built-in one keeps its settings.` }))]
+    const loaded = [...BUILT_IN, ...libraries.filter((one) => !builtIn(one.info.id))]
     const settings = this.#deps.settings().channels
     for (const one of loaded) {
       const known = settings.find((setting) => setting.info.id === one.info.id)
@@ -148,6 +166,7 @@ export class Channels {
       this.#running.set(one.info.id, { loaded: one, instance: undefined, state: 'off', says: undefined, signature: undefined, alive: { value: false }, unwatch: new Set() })
     }
     this.#unsubscribe = this.#deps.subscribe((event) => this.#heard(event))
+    this.#unanswer = this.#deps.manager.onResponse((text, origin) => { if (origin.thread !== undefined) this.#tell(origin.thread, { kind: 'answer', text }) })
     await this.reconcile()
   }
 
@@ -158,6 +177,7 @@ export class Channels {
       const setting = this.#setting(id)
       const secrets = Object.keys(this.#secrets(id))
       const signature = setting === undefined ? 'gone' : JSON.stringify([setting.enabled, setting.projects, setting.manager, setting.config, secrets, running.loaded.path, running.loaded.info])
+      this.#deps.manager.close(id, setting === undefined ? `${running.loaded.info.name} was removed. Its threads can only be read.` : !setting.enabled ? `${setting.info.name} is off. Turn it on in Settings, Channels to reply in this thread.` : !setting.manager ? `${setting.info.name} may no longer talk to Manager. Allow it in Settings, Channels to reply in this thread.` : undefined)
       if (signature === running.signature) return
       running.signature = signature
       await this.#halt(running)
@@ -198,15 +218,26 @@ export class Channels {
     await instance?.stop().catch(() => undefined)
   }
 
-  #managerId(id: ChannelId): string | undefined {
-    if (this.#setting(id)?.manager !== true || !this.#deps.manager.enabled()) return undefined
-    return this.#deps.managerView()?.session?.id
+  #mayTalk(id: ChannelId): boolean { return this.#setting(id)?.manager === true && this.#deps.manager.enabled() }
+
+  #thread(id: ChannelId, place: ChannelThread | undefined): string | undefined {
+    if (!this.#mayTalk(id)) return undefined
+    const setting = this.#setting(id)
+    if (setting === undefined) return undefined
+    const { labels, cut } = managerLabels(place?.labels)
+    if (cut) pluginLogger({ id }).write('warn', 'labels.cut', { kept: Object.keys(labels).length })
+    return this.#deps.manager.thread({ channel: id, place: setting.info.name, key: place?.key ?? 'default', ...(place?.title === undefined ? {} : { title: place.title }), ...(place?.from === undefined ? {} : { from: place.from }), ...(place?.link === undefined ? {} : { link: place.link }), labels })
   }
 
-  #conversation(id: string, manager: boolean): ChannelConversation | undefined {
-    const found = this.#deps.conversations().find((one) => one.id === id) ?? (manager ? this.#deps.managerView()?.session : undefined)
-    if (found === undefined) return manager ? { id, root: '', title: 'Manager', state: 'idle', provider: providerOf(id), manager } : undefined
-    return { id: found.id, root: found.root, title: found.title, state: found.state, provider: providerOf(found.id), manager }
+  #threadConversation(thread: string, manager: ManagerView | undefined = this.#deps.managerView()): ChannelConversation {
+    const view = manager?.threads?.find((one) => one.id === thread)
+    return { id: thread, root: '', title: view?.title ?? 'Manager', state: view?.state ?? 'idle', provider: view?.session === undefined ? manager?.config.provider ?? 'claude' : providerOf(view.session), manager: true }
+  }
+
+  #conversation(id: string): ChannelConversation | undefined {
+    const found = this.#deps.conversations().find((one) => one.id === id)
+    if (found === undefined) return undefined
+    return { id: found.id, root: found.root, title: found.title, state: found.state, provider: providerOf(found.id), manager: false }
   }
 
   #context(id: ChannelId, running: Running, alive: { readonly value: boolean }): ChannelContext {
@@ -217,7 +248,7 @@ export class Channels {
       return found
     }
     const owned = (conversation: string): boolean => this.#state(id).conversations.includes(conversation)
-    const isManager = (conversation: string): boolean => conversation === this.#managerId(id)
+    const isManager = (conversation: string): boolean => this.#deps.manager.threadRecord(conversation)?.channel === id
     const reach = (conversation: string): void => {
       live()
       if (!owned(conversation) && !isManager(conversation)) throw new Error('This channel did not start that conversation.')
@@ -255,7 +286,15 @@ export class Channels {
       providers: () => { live(); return this.#deps.settings().chatProviders },
       employees: () => { live(); return this.#deps.employees().filter((one) => !one.archived).map(({ id: employee, name, role }) => ({ id: employee, name, role })) },
       conversations: {
-        manager: () => { live(); return this.#managerId(id) },
+        manager: (place) => { live(); return this.#thread(id, place) },
+        label: (conversation, labels) => {
+          reach(conversation)
+          const { labels: kept, cut } = managerLabels(labels)
+          if (cut) log.write('warn', 'labels.cut', { kept: Object.keys(kept).length })
+          const cleared = Object.fromEntries(Object.entries(labels).filter(([, value]) => value === '').map(([key]) => [key, '']))
+          if (isManager(conversation)) this.#deps.manager.label(conversation, { ...kept, ...cleared })
+          else this.#deps.labelConversation(conversation, { ...kept, ...cleared })
+        },
         start: async (request) => {
           live()
           if (!setting().projects.includes(request.root)) throw new Error('This channel may not start conversations in that folder. Allow it in Settings, Channels.')
@@ -265,6 +304,11 @@ export class Channels {
           if (request.employeeId !== undefined && !this.#deps.employees().some((one) => one.id === request.employeeId && !one.archived)) throw new Error('That employee does not exist.')
           const started = await this.#deps.sessions.send({ root: request.root, text: request.text, mode: request.mode ?? settings.chatMode, provider, ...(request.model === undefined ? {} : { model: request.model }), ...(request.employeeId === undefined ? {} : { employeeId: request.employeeId }), ...(request.images === undefined ? {} : { images: request.images }) })
           this.#saveState(id, { conversations: [...new Set([...this.#state(id).conversations, started])] })
+          if (request.labels !== undefined) {
+            const { labels, cut } = managerLabels(request.labels)
+            if (cut) log.write('warn', 'labels.cut', { kept: Object.keys(labels).length })
+            this.#deps.labelConversation(started, labels)
+          }
           log.write('info', 'conversation.started', { provider })
           this.#emit()
           return started
@@ -272,19 +316,23 @@ export class Channels {
         send: async (conversation, said) => {
           reach(conversation)
           if (isManager(conversation)) {
+            if (!this.#mayTalk(id)) throw new Error(`${setting().info.name} may not talk to Manager. Allow it in Settings, Channels.`)
             const from = said.from === undefined || said.from.trim() === '' ? '' : `, from ${said.from.trim().slice(0, 200)}`
-            await this.#deps.manager.send(`[Via ${setting().info.name}${from}]\n${said.text}`, 'channel')
+            if (from !== '') this.#deps.manager.thread({ channel: id, place: setting().info.name, key: conversation.slice(id.length + 1), from: said.from?.trim() ?? '' })
+            await this.#deps.manager.send(`[Via ${setting().info.name}${from}]\n${said.text}`, 'channel', undefined, [], () => true, [], [], conversation)
             return
           }
           const found = this.#deps.conversations().find((one) => one.id === conversation)
           if (found === undefined) throw new Error('That conversation is gone.')
           await this.#deps.sessions.send({ session: conversation, root: found.root, mode: found.mode, text: said.text, ...(said.images === undefined ? {} : { images: said.images }) })
         },
-        get: (conversation) => { live(); return owned(conversation) || isManager(conversation) ? this.#conversation(conversation, isManager(conversation)) : undefined },
-        list: () => { live(); return this.#state(id).conversations.flatMap((one) => this.#conversation(one, false) ?? []) },
+        get: (conversation) => { live(); return isManager(conversation) ? this.#threadConversation(conversation) : owned(conversation) ? this.#conversation(conversation) : undefined },
+        list: () => { live(); return this.#state(id).conversations.flatMap((one) => this.#conversation(one) ?? []) },
         items: async (conversation) => {
           reach(conversation)
-          return isManager(conversation) ? (await this.#deps.manager.inspect(conversation)).items : this.#deps.sessions.items(conversation)
+          if (!isManager(conversation)) return this.#deps.sessions.items(conversation)
+          if (this.#deps.managerView()?.threads?.find((one) => one.id === conversation)?.session === undefined) return []
+          return (await this.#deps.manager.inspect(conversation)).items
         },
         watch: (conversation, listener) => {
           reach(conversation)
@@ -323,7 +371,8 @@ export class Channels {
       case 'chat:items':
       case 'manager:items': {
         const [items] = event.args
-        this.#tell(items.id, { kind: 'items', items: items.items, gone: items.gone ?? [] })
+        const thread = event.name === 'manager:items' ? this.#deps.manager.threadOf(items.id) : undefined
+        this.#tell(thread === undefined || thread === MANAGER_MAIN_THREAD ? items.id : thread, { kind: 'items', items: items.items, gone: items.gone ?? [] })
         return
       }
       case 'chat:notice': {
@@ -344,17 +393,22 @@ export class Channels {
       }
       case 'manager:view': {
         const [view] = event.args
-        const session = view.session?.id
-        if (session === undefined) return
-        const decisions = JSON.stringify(view.decisions)
-        if (decisions !== this.#decisions) {
-          this.#decisions = decisions
-          this.#tell(session, { kind: 'decisions', decisions: view.decisions })
-        }
-        const shown = JSON.stringify([view.state, view.session?.title])
-        if (this.#shown.get(session) !== shown) {
-          this.#shown.set(session, shown)
-          this.#tell(session, { kind: 'state', conversation: { id: session, root: view.session?.root ?? '', title: view.session?.title ?? 'Manager', state: view.session?.state ?? 'idle', provider: providerOf(session), manager: true } })
+        const counted = JSON.stringify((view.threads ?? []).map((one) => one.id))
+        if (counted !== this.#counted) { this.#counted = counted; this.#emit() }
+        for (const thread of view.threads ?? []) {
+          if (thread.id === MANAGER_MAIN_THREAD || !this.#listeners.has(thread.id)) continue
+          const mine = view.decisions.filter((one) => one.thread === thread.id)
+          const decisions = JSON.stringify(mine)
+          if (decisions !== (this.#decisions.get(thread.id) ?? '[]')) {
+            this.#decisions.set(thread.id, decisions)
+            this.#tell(thread.id, { kind: 'decisions', decisions: mine })
+          }
+          const conversation = this.#threadConversation(thread.id, view)
+          const shown = JSON.stringify([conversation.state, conversation.title])
+          if (this.#shown.get(thread.id) !== shown) {
+            this.#shown.set(thread.id, shown)
+            this.#tell(thread.id, { kind: 'state', conversation })
+          }
         }
         return
       }
@@ -395,8 +449,17 @@ export class Channels {
   }
 
   async remove(id: ChannelId): Promise<ChannelsView> {
+    if (builtIn(id) && this.#running.get(id)?.loaded.path === 'built-in') {
+      const clash = this.#failures.find((one) => one.id === id)
+      if (clash === undefined) throw new Error('Built-in channels can be turned off, not removed.')
+      await removeChannelLibrary(id)
+      this.#failures = this.#failures.filter((one) => one !== clash)
+      this.#emit()
+      return this.view()
+    }
     const running = this.#running.get(id)
     if (running !== undefined) await this.#halt(running)
+    this.#deps.manager.close(id, `${running?.loaded.info.name ?? 'This channel'} was removed. Its threads can only be read.`)
     await removeChannelLibrary(id)
     this.#running.delete(id)
     this.#failures = this.#failures.filter((one) => one.id !== id)
@@ -411,6 +474,7 @@ export class Channels {
     const updated: ChannelId[] = []
     const failed: ChannelId[] = []
     for (const [id, running] of this.#running) {
+      if (running.loaded.path === 'built-in') continue
       try {
         const next = await updateChannel(id, async (loaded) => {
           await this.#halt(running)
@@ -428,6 +492,7 @@ export class Channels {
   async dispose(): Promise<void> {
     this.#stopped = true
     this.#unsubscribe?.()
+    this.#unanswer?.()
     await Promise.all([...this.#running.values()].map((running) => this.#halt(running)))
   }
 }

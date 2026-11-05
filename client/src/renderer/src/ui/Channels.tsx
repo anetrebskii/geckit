@@ -10,7 +10,8 @@ export type ChannelsApi = Geckit['channels']
 const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error)).replace(/^Error invoking remote method '[^']+': Error: /, '')
 
 function stateLine(view: ChannelView): string {
-  const count = view.conversations === 0 ? '' : ` · ${String(view.conversations)} conversation${view.conversations === 1 ? '' : 's'}`
+  const threads = view.threads ?? 0
+  const count = `${view.conversations === 0 ? '' : ` · ${String(view.conversations)} conversation${view.conversations === 1 ? '' : 's'}`}${threads === 0 ? '' : ` · ${String(threads)} thread${threads === 1 ? '' : 's'}`}`
   if (view.state === 'off') return `Off${count}`
   if (view.state === 'setup') return view.says ?? 'Fill in its settings.'
   if (view.state === 'starting') return 'Starting…'
@@ -134,7 +135,7 @@ function ChannelRow({ setting, view, settings, api }: {
       </span>
       <label className="check channel-on"><input type="checkbox" checked={setting.enabled} onChange={(event) => toggle(event.target.checked)} />On</label>
       <button ref={setUpButton} type="button" className="quiet provider-library-remove" aria-expanded={open} onClick={() => open ? close() : setOpen(true)}>Set up</button>
-      <button ref={removeButton} type="button" className="quiet provider-library-remove" aria-label={`Remove ${setting.info.name}`} aria-expanded={confirming} disabled={busy} onClick={() => setConfirming((current) => !current)}>Remove</button>
+      {view.builtIn === true ? null : <button ref={removeButton} type="button" className="quiet provider-library-remove" aria-label={`Remove ${setting.info.name}`} aria-expanded={confirming} disabled={busy} onClick={() => setConfirming((current) => !current)}>Remove</button>}
       {error === '' ? null : <p className="provider-library-failure-reason" role="alert">{error}</p>}
       {confirming ? <div className="provider-library-confirm">
         <span>Remove {setting.info.name}? It stops, its copy moves to Trash, and GeckIt forgets its settings and secrets. Conversations it started stay.</span>

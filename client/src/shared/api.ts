@@ -367,6 +367,14 @@ export interface SessionNotice {
 }
 
 /** One row in the sidebar. */
+export type ManagerLabels = { readonly [key: string]: string }
+
+export interface ManagerThreadName {
+  readonly id: string
+  /** "GeckIt", or the place and who wrote: "Slack · Maria Ivanova". */
+  readonly said: string
+}
+
 export interface ChatSession {
   readonly employeeId?: Employee['id']
   readonly prepared?: true
@@ -374,6 +382,11 @@ export interface ChatSession {
   readonly delivery?: SessionDeliveryReceipt
   readonly manager?: true
   readonly managerManaged?: true
+  /** The Manager thread its updates go to, and the threads that follow it, as they read. */
+  readonly managerThread?: ManagerThreadName
+  readonly managerFollowers?: readonly ManagerThreadName[]
+  /** What the channel that started it says about it. */
+  readonly labels?: ManagerLabels
   readonly provider?: SessionProvider
   readonly transport?: ClaudeTransport
   readonly reasoning?: ReasoningEffort | ''

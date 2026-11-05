@@ -80,16 +80,23 @@ export function create(context) {
 
 | | |
 | --- | --- |
-| `start({ root, text, provider?, model?, mode?, employeeId?, images? })` | A new conversation in an allowed folder; returns its id. Provider defaults to GeckIt's choice and must be enabled |
-| `send(id, { text, images?, from? })` | The next message. For Manager, `from` is shown to it with the channel's name |
-| `manager()` | Manager's conversation id, when this channel may talk to Manager and Manager is on |
+| `start({ root, text, provider?, model?, mode?, employeeId?, images?, labels? })` | A new conversation in an allowed folder; returns its id. Provider defaults to GeckIt's choice and must be enabled. `labels` stay on it (below) |
+| `send(id, { text, images?, from? })` | The next message. For a Manager thread, `from` is shown to Manager with the channel's name and becomes the thread's "who wrote last" |
+| `manager({ key, title?, from?, link?, labels? })` | The Manager thread for one place, when this channel may talk to Manager and Manager is on. The same `key` is always the same thread: use a chat id, or a channel and Slack thread. Without an argument, the channel's one default thread |
+| `label(id, labels)` | Adds labels to a conversation it started or to one of its Manager threads; an empty value removes one |
 | `get(id)`, `list()` | `{ id, root, title, state, provider, manager }`; `list` is what this channel started |
 | `items(id)` | The transcript so far |
-| `watch(id, listener)` | `items` (upserted by id, with `gone`), `state`, `notice`, and for Manager `decisions`; returns an unwatch function |
+| `watch(id, listener)` | `items` (upserted by id, with `gone`), `state`, `notice`, and for a Manager thread `decisions` raised in it and `answer`, Manager's reply ready to post, whoever wrote the message it answers; returns an unwatch function |
 | `answer(id, card, answer)` | A permission card (`once`, `session`, `no`, or a choice's words), or one of Manager's decisions |
 | `stop(id)` | Stops the current turn; Manager is paused in GeckIt instead |
 
-A channel reaches only the conversations it started and, when allowed, Manager. Anything else is refused with "This channel did not start that conversation", so a company's library cannot read personal chats in the same GeckIt.
+### Manager threads and labels
+
+Manager keeps one conversation per place a channel names, so two Slack threads never read each other's answers. All threads share Manager's settings, decisions and the conversations it manages; a conversation Manager starts from a thread reports back to that thread. Alex can read every thread in GeckIt's Manager window and write into one; Manager's answer then arrives as `answer` and the channel posts it.
+
+Labels are up to 8 `key: value` pairs, keys up to 40 characters and values up to 300; more is cut and the channel's log says so. They say where something came from (who started it, a thread id, a ticket) so it can be traced later: GeckIt shows them in Session info and finds them in Search, and never treats them as permissions. Who may write is decided by the channel before a message reaches GeckIt.
+
+A channel reaches only the conversations it started and, when allowed, its own Manager threads. Anything else is refused with "This channel did not start that conversation", so a company's library cannot read personal chats in the same GeckIt.
 
 ## Trust
 

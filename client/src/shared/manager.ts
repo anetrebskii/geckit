@@ -1,6 +1,6 @@
 import type { ManagerIntakeConfig, ManagerIntakeView, VoiceMemosConnection } from './manager-intake'
 import type { TelegramAccount } from './telegram'
-import type { ChatSession, SessionItem, SessionItems, SessionMessage, SessionProvider, Settings } from './api'
+import type { ChatSession, ManagerLabels, SessionItem, SessionItems, SessionMessage, SessionProvider, Settings } from './api'
 
 export const MANAGER_CHAT_GUIDANCE = 'Open Manager chat to send a request.'
 export const MANAGER_CHAT_UPDATE = 'Manager chat needs a service update. Finish active work, then restart GeckIt.'
@@ -37,6 +37,54 @@ export interface ManagerProvider {
   readonly reason?: string
 }
 
+export const MANAGER_MAIN_THREAD = 'main'
+export const MANAGER_LABELS = 8
+export const MANAGER_LABEL_KEY = 40
+export const MANAGER_LABEL_VALUE = 300
+
+/** One of Manager's conversations with the outside world: GeckIt itself, a Telegram chat, a Slack thread. */
+export interface ManagerThread {
+  readonly id: string
+  /** The channel's name, such as "Telegram" or "Slack"; none for GeckIt. */
+  readonly place?: string
+  readonly title: string
+  readonly labels: ManagerLabels
+  /** Who wrote last, as the channel names them. */
+  readonly from?: string
+  readonly link?: string
+  readonly session?: ChatSession['id']
+  readonly state: 'idle' | 'working' | 'asks' | 'failed'
+  readonly error?: string
+  /** The thread's channel is off or may no longer talk to Manager. */
+  readonly closed?: string
+  readonly at: number
+  readonly owns: readonly ChatSession['id'][]
+  readonly follows: readonly ChatSession['id'][]
+}
+
+export interface ManagerThreadOpen {
+  readonly channel: string
+  readonly place: string
+  readonly key: string
+  readonly title?: string
+  readonly labels?: ManagerLabels
+  readonly from?: string
+  readonly link?: string
+}
+
+export function managerLabels(labels: unknown): { readonly labels: ManagerLabels; readonly cut: boolean } {
+  if (labels === null || typeof labels !== 'object' || Array.isArray(labels)) return { labels: {}, cut: labels !== undefined }
+  const entries = Object.entries(labels as { readonly [key: string]: unknown }).flatMap(([key, value]): [string, string][] => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? [[key.trim().slice(0, MANAGER_LABEL_KEY), String(value).trim().slice(0, MANAGER_LABEL_VALUE)]] : []).filter(([key, value]) => key !== '' && value !== '')
+  const kept = entries.slice(0, MANAGER_LABELS)
+  const cut = kept.length !== Object.keys(labels).length || Object.entries(labels as { readonly [key: string]: unknown }).some(([key, value]) => key.trim().length > MANAGER_LABEL_KEY || typeof value === 'string' && value.trim().length > MANAGER_LABEL_VALUE)
+  return { labels: Object.fromEntries(kept), cut }
+}
+
+export function managerThreadSaid(thread: Pick<ManagerThread, 'place' | 'from' | 'title'>): string {
+  if (thread.place === undefined) return 'GeckIt'
+  return [thread.place, thread.from ?? thread.title].join(' · ')
+}
+
 export interface ManagerView {
   readonly appChat?: boolean
   readonly intake?: ManagerIntakeView
@@ -49,6 +97,7 @@ export interface ManagerView {
   readonly decisions: readonly ManagerDecision[]
   readonly queued: number
   readonly requests?: readonly ManagerQueuedRequest[]
+  readonly threads?: readonly ManagerThread[]
   readonly error?: string
 }
 
@@ -73,6 +122,8 @@ export const DEFAULT_MANAGER_CONFIG: ManagerConfig = { enabled: false, provider:
 
 export interface ManagerDecision {
   readonly session?: ChatSession['id']
+  /** The thread it was raised in; GeckIt's own when absent. */
+  readonly thread?: ManagerThread['id']
   readonly card?: SessionItem['id']
   readonly kind?: 'native' | 'intake'
   readonly id: string
@@ -100,6 +151,7 @@ export interface ProjectAssistant {
 export const managerProjects = (settings: Pick<Settings, 'projects' | 'profiles'>): readonly string[] => [...new Set([...settings.projects, ...settings.profiles.flatMap((profile) => profile.projects)])]
 
 export type ManagerReplyOrigin = {
+  readonly thread?: ManagerThread['id']
   readonly session: ChatSession['id']
   readonly workers: readonly ChatSession['id'][]
 }

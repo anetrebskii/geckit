@@ -46,6 +46,10 @@ export interface ChannelView {
   /** Secret fields that have a saved value. */
   readonly secrets: readonly string[]
   readonly conversations: number
+  /** Manager threads it has opened. */
+  readonly threads?: number
+  /** Comes with GeckIt: turned off, never removed. */
+  readonly builtIn?: true
 }
 
 export interface ChannelFailure {

@@ -14,6 +14,9 @@ import type { CoreEvent } from '../src/core/events'
 import type { ChatSession, Settings } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { ManagerView } from '../src/shared/manager'
+import type { ChannelView } from '../src/shared/channels'
+import { createSlack } from '../src/main/channels/slack'
+import type { SlackTransport } from '../src/main/channels/slack'
 
 const folders: string[] = []
 afterEach(async () => {
@@ -29,10 +32,14 @@ const library = `export function create(context) {
   return { start: async () => { context.status('connected', 'Listening') }, stop: async () => { seen.stopped += 1 } }
 }`
 
+const echo = (channels: Channels): ChannelView | undefined => channels.view().channels.find((one) => one.id === 'channel:echo')
+
 interface Seen { readonly contexts: ChannelContext[]; stopped: number }
 const seen = (): Seen => (globalThis as unknown as { channelTest: Seen }).channelTest
 
-async function setup(): Promise<{ channels: Channels; deps: ChannelsDeps; settings: () => Settings; emit: (event: CoreEvent) => void; managerSent: string[]; answered: string[]; sessionsSent: unknown[] }> {
+interface FakeThread { readonly id: string; readonly channel: string; labels: { [key: string]: string }; from?: string; title?: string }
+
+async function setup(): Promise<{ channels: Channels; deps: ChannelsDeps; settings: () => Settings; emit: (event: CoreEvent) => void; managerSent: string[]; answered: string[]; sessionsSent: unknown[]; threads: Map<string, FakeThread>; respond: (text: string, thread: string) => void; closed: Map<string, string | undefined>; labelled: Map<string, unknown> }> {
   const home = await mkdtemp(join(tmpdir(), 'geckit-channels-'))
   folders.push(home)
   process.env['GECKIT_CHANNEL_TEST_HOME'] = home
@@ -46,7 +53,11 @@ async function setup(): Promise<{ channels: Channels; deps: ChannelsDeps; settin
   const answered: string[] = []
   const sessionsSent: unknown[] = []
   const conversations: ChatSession[] = []
-  const managerView = { state: 'idle', session: { id: 'manager-1', root: '/home', title: 'Manager', state: 'idle' }, decisions: [{ id: 'decision-1', title: 'Start?', choices: [{ label: 'Yes', value: 'yes' }] }] } as unknown as ManagerView
+  const threads = new Map<string, FakeThread>()
+  const responses = new Set<(text: string, origin: { thread?: string; session: string; workers: readonly string[] }) => void>()
+  const closed = new Map<string, string | undefined>()
+  const labelled = new Map<string, unknown>()
+  const managerView = { state: 'idle', session: { id: 'manager-1', root: '/home', title: 'Manager', state: 'idle' }, decisions: [{ id: 'decision-1', title: 'Start?', choices: [{ label: 'Yes', value: 'yes' }], thread: 'channel:echo:chat-7' }], get threads() { return [...threads.values()].map((one) => ({ id: one.id, title: one.title ?? 'Echo', labels: one.labels, state: 'idle', at: 0, owns: [], follows: [] })) } } as unknown as ManagerView
   const deps: ChannelsDeps = {
     directory: home,
     vault: { available: () => true, encrypt: (text) => Buffer.from(text).reverse(), decrypt: (bytes) => Buffer.from(bytes).reverse().toString() },
@@ -65,9 +76,21 @@ async function setup(): Promise<{ channels: Channels; deps: ChannelsDeps; settin
       items: async () => [],
     },
     conversations: () => [...conversations, { id: 'not-mine', root: '/work/app', title: 'Other', state: 'idle', mode: 'auto' } as ChatSession],
+    labelConversation: (id, labels) => { labelled.set(id, labels) },
     manager: {
       enabled: () => true,
-      send: async (text) => { managerSent.push(text); return 'manager-1' },
+      send: async (text, _source, _id, _workers, _authorized, _attachments, _requests, thread) => { managerSent.push(`${thread}|${text}`); return 'manager-1' },
+      thread: (open) => {
+        const id = `${open.channel}:${open.key}`
+        const known = threads.get(id) ?? { id, channel: open.channel, labels: {} }
+        threads.set(id, { ...known, labels: { ...known.labels, ...open.labels }, ...(open.from === undefined ? {} : { from: open.from }), ...(open.title === undefined ? {} : { title: open.title }) })
+        return id
+      },
+      label: (thread, labels) => { const known = threads.get(thread); if (known !== undefined) known.labels = { ...known.labels, ...labels } },
+      threadOf: (session) => session === 'manager-2' ? 'channel:echo:chat-7' : undefined,
+      threadRecord: (thread) => threads.get(thread),
+      close: (channel, reason) => { closed.set(channel, reason) },
+      onResponse: (listener) => { responses.add(listener); return () => responses.delete(listener) },
       inspect: async (id) => ({ id, items: [] }),
       answer: async (id, choice) => { answered.push(`manager:${id}:${choice}`) },
       answerCard: async () => false,
@@ -80,7 +103,7 @@ async function setup(): Promise<{ channels: Channels; deps: ChannelsDeps; settin
   }
   const channels = new Channels(deps)
   await channels.start()
-  return { channels, deps, settings: () => settings, emit: (event) => { for (const listener of listeners) listener(event) }, managerSent, answered, sessionsSent }
+  return { channels, deps, settings: () => settings, emit: (event) => { for (const listener of listeners) listener(event) }, managerSent, answered, sessionsSent, threads, respond: (text, thread) => { for (const listener of responses) listener(text, { thread, session: 'manager-2', workers: [] }) }, closed, labelled }
 }
 
 it('reads a channel manifest and refuses a provider manifest', async () => {
@@ -94,12 +117,12 @@ it('reads a channel manifest and refuses a provider manifest', async () => {
 
 it('registers an installed library off and asks for its required secret before starting it', async () => {
   const { channels } = await setup()
-  expect(channels.view().channels).toMatchObject([{ id: 'channel:echo', state: 'off' }])
+  expect(channels.view().channels).toMatchObject([{ id: 'channel:slack', state: 'off', builtIn: true }, { id: 'channel:echo', state: 'off' }])
   await channels.configure('channel:echo', { enabled: true })
-  expect(channels.view().channels[0]).toMatchObject({ state: 'setup', says: 'Fill in Token.' })
+  expect(echo(channels)).toMatchObject({ state: 'setup', says: 'Fill in Token.' })
   expect((globalThis as { channelTest?: unknown }).channelTest).toBeUndefined()
   await channels.configure('channel:echo', { secrets: { token: 'xoxb-1' } })
-  expect(channels.view().channels[0]).toMatchObject({ state: 'connected', says: 'Listening', secrets: ['token'] })
+  expect(echo(channels)).toMatchObject({ state: 'connected', says: 'Listening', secrets: ['token'] })
   expect(seen().contexts[0]?.secret('token')).toBe('xoxb-1')
   await channels.dispose()
 })
@@ -121,24 +144,66 @@ it('starts conversations only in allowed folders and reaches only its own', asyn
   await channels.dispose()
 })
 
-it('treats Manager as one more conversation only when the channel is allowed to', async () => {
-  const { channels, managerSent, answered } = await setup()
+it('gives each place its own Manager thread only when the channel is allowed to', async () => {
+  const { channels, managerSent, answered, threads, closed } = await setup()
   await channels.configure('channel:echo', { enabled: true, secrets: { token: 't' } })
+  expect(closed.get('channel:echo')).toBe('Echo may no longer talk to Manager. Allow it in Settings, Channels to reply in this thread.')
   const first = seen().contexts[0]
-  expect(first?.conversations.manager()).toBeUndefined()
+  expect(first?.conversations.manager({ key: 'chat-7' })).toBeUndefined()
   await expect(first?.conversations.send('manager-1', { text: 'x' })).rejects.toThrow('did not start that conversation')
   await channels.configure('channel:echo', { manager: true })
+  expect(closed.get('channel:echo')).toBeUndefined()
   expect(seen().stopped).toBe(1)
   const context = seen().contexts[1]
   if (context === undefined) throw new Error('not restarted')
   expect(() => first?.conversations.manager()).toThrow('This channel was stopped')
-  const manager = context.conversations.manager()
-  expect(manager).toBe('manager-1')
-  await context.conversations.send('manager-1', { text: 'Plan the release', from: 'Alex' })
-  expect(managerSent).toEqual(['[Via Echo, from Alex]\nPlan the release'])
-  expect(await context.conversations.answer('manager-1', 'decision-1', 'yes')).toBe(true)
+  const thread = context.conversations.manager({ key: 'chat-7', title: 'Release', labels: { chat: '7', starter: 'Alex' } })
+  expect(thread).toBe('channel:echo:chat-7')
+  expect(context.conversations.manager({ key: 'chat-8' })).toBe('channel:echo:chat-8')
+  expect(context.conversations.manager()).toBe('channel:echo:default')
+  expect(threads.get('channel:echo:chat-7')?.labels).toEqual({ chat: '7', starter: 'Alex' })
+  await context.conversations.send('channel:echo:chat-7', { text: 'Plan the release', from: 'Alex' })
+  expect(managerSent).toEqual(['channel:echo:chat-7|[Via Echo, from Alex]\nPlan the release'])
+  expect(threads.get('channel:echo:chat-7')?.from).toBe('Alex')
+  await expect(context.conversations.send('manager-1', { text: 'x' })).rejects.toThrow('did not start that conversation')
+  expect(await context.conversations.answer('channel:echo:chat-7', 'decision-1', 'yes')).toBe(true)
   expect(answered).toEqual(['manager:decision-1:yes'])
-  await expect(context.conversations.stop('manager-1')).rejects.toThrow('Pause Manager')
+  await expect(context.conversations.stop('channel:echo:chat-7')).rejects.toThrow('Pause Manager')
+  await channels.configure('channel:echo', { enabled: false })
+  expect(closed.get('channel:echo')).toBe('Echo is off. Turn it on in Settings, Channels to reply in this thread.')
+  await channels.dispose()
+})
+
+it('tells a watched thread its answers, items and decisions, and nothing of other threads', async () => {
+  const { channels, emit, respond } = await setup()
+  await channels.configure('channel:echo', { enabled: true, manager: true, secrets: { token: 't' } })
+  const context = seen().contexts[0]
+  if (context === undefined) throw new Error('not started')
+  const thread = context.conversations.manager({ key: 'chat-7' }) ?? ''
+  const other = context.conversations.manager({ key: 'chat-8' }) ?? ''
+  const heard: ChannelEvent[] = []
+  const elsewhere: ChannelEvent[] = []
+  context.conversations.watch(thread, (event) => heard.push(event))
+  context.conversations.watch(other, (event) => elsewhere.push(event))
+  respond('Release planned.', thread)
+  emit({ name: 'manager:items', args: [{ id: 'manager-2', items: [{ kind: 'theirs', id: 'a', text: 'Release planned.' }] }] })
+  emit({ name: 'manager:view', args: [{ state: 'idle', config: { provider: 'claude' }, decisions: [{ id: 'decision-1', title: 'Start?', choices: [], thread }], threads: [{ id: thread, title: 'Echo', labels: {}, state: 'asks', at: 0, owns: [], follows: [] }, { id: other, title: 'Echo', labels: {}, state: 'idle', at: 0, owns: [], follows: [] }] } as unknown as ManagerView] })
+  expect(heard.map((one) => one.kind)).toEqual(['answer', 'items', 'decisions', 'state'])
+  expect(heard[0]).toEqual({ kind: 'answer', text: 'Release planned.' })
+  expect(elsewhere.map((one) => one.kind)).toEqual(['state'])
+  await channels.dispose()
+})
+
+it('keeps labels on the conversations a channel starts', async () => {
+  const { channels, labelled } = await setup()
+  await channels.configure('channel:echo', { enabled: true, projects: ['/work/app'], secrets: { token: 't' } })
+  const context = seen().contexts[0]
+  if (context === undefined) throw new Error('not started')
+  const id = await context.conversations.start({ root: '/work/app', text: 'hi', labels: { starter: 'Maria', thread: '1730.42' } })
+  expect(labelled.get(id)).toEqual({ starter: 'Maria', thread: '1730.42' })
+  context.conversations.label(id, { thread: '' })
+  expect(labelled.get(id)).toEqual({ thread: '' })
+  expect(() => context.conversations.label('not-mine', { a: 'b' })).toThrow('did not start that conversation')
   await channels.dispose()
 })
 
@@ -160,7 +225,7 @@ it('passes items, notices and state of watched conversations, and stops when tur
   emit({ name: 'chat:items', args: [{ id, items: [] }] })
   expect(heard).toHaveLength(3)
   await expect(context.conversations.send(id, { text: 'x' })).rejects.toThrow('This channel was stopped')
-  expect(channels.view().channels[0]?.state).toBe('off')
+  expect(echo(channels)?.state).toBe('off')
   await channels.dispose()
 })
 
@@ -170,7 +235,7 @@ it('rejects settings the library does not declare and folders GeckIt does not kn
   await expect(channels.configure('channel:echo', { config: { token: 'x' } })).rejects.toThrow('no setting called token')
   await expect(channels.configure('channel:echo', { projects: ['/elsewhere'] })).rejects.toThrow('Add those folders')
   await channels.configure('channel:echo', { config: { allow: [' U1 ', ''] } })
-  expect(settings().channels[0]?.config).toEqual({ allow: ['U1'] })
+  expect(settings().channels.find((one) => one.info.id === 'channel:echo')?.config).toEqual({ allow: ['U1'] })
   await channels.dispose()
 })
 
@@ -182,4 +247,109 @@ it('loads the Slack example as GeckIt would install it', async () => {
   expect(loaded.info.id).toBe('channel:slack')
   expect(loaded.info.fields.filter((one) => one.required === true).map((one) => one.key)).toEqual(['botToken', 'appToken', 'allow'])
   expect(typeof loaded.module.create).toBe('function')
+})
+
+it('comes with Slack built in, which can be turned off but not removed', async () => {
+  const { channels } = await setup()
+  await expect(channels.remove('channel:slack')).rejects.toThrow('turned off, not removed')
+  expect(channels.view().channels.find((one) => one.id === 'channel:slack')).toMatchObject({ builtIn: true, state: 'off' })
+  await channels.dispose()
+})
+
+class FakeSocket {
+  static last: FakeSocket | undefined
+  readonly sent: unknown[] = []
+  readonly listeners: { message?: (message: { readonly data: unknown }) => void; close?: () => void } = {}
+  constructor(readonly url: string) { FakeSocket.last = this }
+  addEventListener(name: 'message' | 'close', listener: never): void { this.listeners[name] = listener }
+  send(text: string): void { this.sent.push(JSON.parse(text)) }
+  close(): void { /* nothing to close */ }
+  emit(envelope: object): void { this.listeners.message?.({ data: JSON.stringify(envelope) }) }
+}
+
+function slackHarness(manager = true) {
+  const posted: { channel: string; thread_ts?: string; text: string }[] = []
+  const sent: [string, unknown][] = []
+  const answered: [string, string, unknown][] = []
+  const opened: unknown[] = []
+  const watchers = new Map<string, (event: ChannelEvent) => void>()
+  const store = new Map<string, unknown>()
+  const context = {
+    id: 'channel:slack',
+    log: { path: '', write: () => undefined },
+    config: () => ({ allow: ['U1', 'U2'], checkSecrets: true }),
+    secret: (key: string) => ({ botToken: 'xoxb-test', appToken: 'xapp-test' } as { readonly [key: string]: string })[key],
+    store: { get: (key: string) => store.get(key), set: (key: string, value: unknown) => { if (value === undefined) store.delete(key); else store.set(key, value) } },
+    status: () => undefined,
+    projects: () => [],
+    providers: () => ['claude'],
+    employees: () => [],
+    conversations: {
+      manager: (place?: { key: string }) => { opened.push(place); return manager ? `channel:slack:${place?.key ?? 'default'}` : undefined },
+      label: () => undefined,
+      start: async () => 'never',
+      send: async (id: string, message: unknown) => { sent.push([id, message]) },
+      get: () => undefined,
+      list: () => [],
+      items: async () => [],
+      watch: (id: string, listener: (event: ChannelEvent) => void) => { watchers.set(id, listener); return () => watchers.delete(id) },
+      answer: async (id: string, card: string, answer: unknown) => { answered.push([id, card, answer]); return true },
+      stop: async () => undefined,
+    },
+  } as unknown as ChannelContext
+  const fetch = (async (url: string, init: { body: string }) => {
+    const method = url.split('/').at(-1)
+    const body = JSON.parse(init.body) as { channel: string; thread_ts?: string; text: string; user?: string }
+    if (method === 'chat.postMessage') posted.push(body)
+    const reply = method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : { ok: true }
+    return { json: async () => reply }
+  }) as unknown as typeof globalThis.fetch
+  const channel = createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] })
+  const event = (body: object): void => FakeSocket.last?.emit({ type: 'events_api', envelope_id: 'e1', payload: { event: body } })
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
+  return { channel, event, settle, posted, sent, answered, opened, watchers, store }
+}
+
+it('Slack: one Manager thread per Slack thread, labelled with who started it, answered in that thread', async () => {
+  const run = slackHarness()
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U9', channel: 'C1', ts: '1.0', text: '<@B1> fix it' })
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '2.0', text: '<@B1> token xoxb-1234567890-abcdef' })
+  await run.settle()
+  expect(run.sent).toEqual([])
+  expect(run.posted.map((one) => one.text)).toEqual([expect.stringContaining('not on the list'), expect.stringContaining('token or key')])
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> fix the login redirect' })
+  await run.settle()
+  expect(run.opened.at(-1)).toEqual({ key: 'C1:3.0', from: 'Maria Ivanova', title: 'fix the login redirect', link: 'https://slack.example/p1', labels: { channel: 'C1', thread: '3.0', starter: 'Maria Ivanova', starterId: 'U1' } })
+  expect(run.sent).toEqual([['channel:slack:C1:3.0', { text: 'fix the login redirect', from: 'Maria Ivanova' }]])
+  run.event({ type: 'message', channel_type: 'channel', user: 'U2', channel: 'C1', ts: '3.5', thread_ts: '3.0', text: 'and keep the tests green' })
+  run.event({ type: 'message', channel_type: 'channel', user: 'U2', channel: 'C1', ts: '4.0', text: 'unrelated chatter' })
+  await run.settle()
+  expect(run.sent.at(-1)).toEqual(['channel:slack:C1:3.0', { text: 'and keep the tests green', from: 'Ben' }])
+  expect(run.sent).toHaveLength(2)
+  run.event({ type: 'message', channel_type: 'im', user: 'U1', channel: 'D1', ts: '5.0', text: 'what is running?' })
+  await run.settle()
+  expect(run.sent.at(-1)).toEqual(['channel:slack:D1:5.0', { text: 'what is running?', from: 'Maria Ivanova' }])
+  run.watchers.get('channel:slack:C1:3.0')?.({ kind: 'answer', text: 'Started a worker for it.' })
+  run.watchers.get('channel:slack:C1:3.0')?.({ kind: 'decisions', decisions: [{ id: 'd1', title: 'Start this worker?', choices: [{ label: 'Allow', value: 'allow' }, { label: 'Refuse', value: 'refuse' }] }] })
+  await run.settle()
+  expect(run.posted.slice(-2)).toEqual([{ channel: 'C1', thread_ts: '3.0', text: 'Started a worker for it.' }, { channel: 'C1', thread_ts: '3.0', text: '*Start this worker?*\nReply with one of: `allow`, `refuse`' }])
+  run.event({ type: 'message', channel_type: 'channel', user: 'U1', channel: 'C1', ts: '6.0', thread_ts: '3.0', text: 'Allow' })
+  await run.settle()
+  expect(run.answered).toEqual([['channel:slack:C1:3.0', 'd1', 'allow']])
+  await run.channel.stop()
+})
+
+it('Slack: says Manager is unavailable when it may not talk to Manager, and follows known threads after a restart', async () => {
+  const closed = slackHarness(false)
+  await closed.channel.start()
+  closed.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '7.0', text: '<@B1> hi' })
+  await closed.settle()
+  expect(closed.posted.at(-1)?.text).toContain('Manager is not available to Slack')
+  const run = slackHarness()
+  run.store.set('threads', [{ key: 'C1:3.0', channel: 'C1', ts: '3.0' }])
+  await run.channel.start()
+  run.watchers.get('channel:slack:C1:3.0')?.({ kind: 'answer', text: 'Written from GeckIt, answered here.' })
+  await run.settle()
+  expect(run.posted).toEqual([{ channel: 'C1', thread_ts: '3.0', text: 'Written from GeckIt, answered here.' }])
 })
