@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import type { ManagerSendRequest, ManagerView } from '../../../shared/manager'
+import { MANAGER_CHAT_UPDATE } from '../../../shared/manager'
 import { keep, readKept } from '../kept'
 import { ON_PHONE } from '../on-phone'
 
@@ -57,9 +58,9 @@ export function ManagerComposer({ view, connected, historyReady }: { readonly vi
   const field = useRef<HTMLTextAreaElement>(null)
   const [ready, setReady] = useState(loaded)
   const busy = held.pending !== undefined && held.pending.phase !== 'failed'
-  const blocked = !connected ? 'Computer disconnected. Reconnect to send.' : !view.config.enabled ? 'Manager disabled. History is kept.' : view.state === 'paused' ? 'Manager paused' : view.state === 'blocked' ? 'Manager unavailable' : undefined
+  const blocked = !connected ? 'Computer disconnected. Reconnect to send.' : view.appChat !== true ? MANAGER_CHAT_UPDATE : !view.config.enabled ? 'Manager disabled. History is kept.' : view.state === 'paused' ? 'Manager paused' : view.state === 'blocked' ? 'Manager unavailable' : undefined
   useEffect(() => { void load().then(() => setReady(true)) }, [])
-  useEffect(() => { if (ready && connected && draft.pending?.phase === 'checking') void reconcile() }, [ready, connected, view])
+  useEffect(() => { if (ready && connected && view.appChat === true && draft.pending?.phase === 'checking') void reconcile() }, [ready, connected, view])
   useEffect(() => { if (!ON_PHONE && ready && blocked === undefined && !busy) field.current?.focus({ preventScroll: true }) }, [ready, blocked, busy])
   useLayoutEffect(() => {
     const textarea = field.current
@@ -81,7 +82,7 @@ export function ManagerComposer({ view, connected, historyReady }: { readonly vi
     }
   }
   return <div className="composer manager-composer">
-    {held.pending === undefined ? null : <div className="manager-send-state" role="status"><span>{held.pending.phase === 'sending' ? 'Sending...' : held.pending.phase === 'checking' ? 'Checking whether your message was received...' : 'Message was not sent. Try again.'}</span>{held.pending.phase === 'failed' && held.pending.error !== undefined && held.pending.error !== 'Message was not sent. Try again.' ? <span>{held.pending.error}</span> : null}{held.pending.phase === 'checking' && connected ? <button type="button" className="quiet small" onClick={() => { void reconcile() }}>Check status</button> : null}</div>}
+    {held.pending === undefined ? null : <div className="manager-send-state" role="status"><span>{held.pending.phase === 'sending' ? 'Sending...' : held.pending.phase === 'checking' ? 'Checking whether your message was received...' : 'Message was not sent. Try again.'}</span>{held.pending.phase === 'failed' && held.pending.error !== undefined && held.pending.error !== 'Message was not sent. Try again.' ? <span>{held.pending.error}</span> : null}{held.pending.phase === 'checking' && connected && view.appChat === true ? <button type="button" className="quiet small" onClick={() => { void reconcile() }}>Check status</button> : null}</div>}
     <div className="composer-inner">
       <textarea ref={field} rows={2} value={held.text} disabled={!ready || busy} placeholder="Message Manager" aria-label="Message Manager" onChange={(event) => { void save({ text: event.target.value, ...(held.pending?.phase === 'failed' ? {} : held.pending === undefined ? {} : { pending: held.pending }) }) }} onKeyDown={(event) => {
         if (!ON_PHONE && event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); void send() }

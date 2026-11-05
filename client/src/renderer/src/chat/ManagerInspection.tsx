@@ -6,6 +6,8 @@ import type { ManagerView } from '../../../shared/manager'
 import { useBack } from '../phone-back'
 import { phoneCalls } from '../phone-calls'
 import { Icon } from '../ui/Icon'
+import { EmployeeAvatar } from '../employees/Employees'
+import { managerFace } from '../employees/TeamManager'
 import { ManagerChat } from './ManagerChat'
 import { EdgeBack } from './PhoneKit'
 import { MANAGER_CHAT_EVENT } from './manager-chat-open'
@@ -49,7 +51,7 @@ export function ManagerInspection({ view, settings, onClose, onSettings }: { rea
     return () => { window.removeEventListener('keydown', key, true); if (before instanceof HTMLElement) before.focus() }
   }, [onClose])
   return createPortal(<div className="dialog-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={body} className="dialog manager-inspection" role="dialog" aria-modal="true" aria-labelledby="manager-inspection-title">
-    <header className="manager-inspection-header"><h2 id="manager-inspection-title">Manager</h2><Stand view={view} /><button type="button" className="icon-button" aria-label="Manager settings" title="Manager settings" onClick={onSettings}><Icon name="settings" /></button><button ref={close} type="button" className="icon-button" aria-label="Close Manager" onClick={onClose}><Icon name="close" /></button></header>
+    <header className="manager-inspection-header"><EmployeeAvatar employee={managerFace(settings)} /><h2 id="manager-inspection-title">Manager</h2><Stand view={view} /><button type="button" className="icon-button" aria-label="Manager settings" title="Manager settings" onClick={onSettings}><Icon name="settings" /></button><button ref={close} type="button" className="icon-button" aria-label="Close Manager" onClick={onClose}><Icon name="close" /></button></header>
     <ManagerChat view={view} settings={settings} onSettings={onSettings} />
   </div></div>, document.body)
 }

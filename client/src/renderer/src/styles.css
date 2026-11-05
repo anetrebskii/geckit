@@ -13708,7 +13708,8 @@ button.manager-step-head:hover > svg {
 }
 
 /* Team in the top bar: the first faces of the team, and the page it opens. */
-.team-button {
+.team-button,
+.manager-open {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -13720,7 +13721,8 @@ button.manager-step-head:hover > svg {
   font-size: 12px;
 }
 
-.team-button:hover {
+.team-button:hover,
+.manager-open:hover {
   color: var(--text);
   background: var(--bg-hover);
 }
@@ -13729,6 +13731,11 @@ button.manager-step-head:hover > svg {
   color: var(--text);
   background: var(--bg-active);
   border-color: transparent;
+}
+
+.manager-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .team-faces {
@@ -15034,10 +15041,7 @@ html.phone .phone-team-block .employee-section-head h3 {
 
 .manager-decisions,
 .manager-queued {
-  flex: none;
-  max-block-size: 35%;
   padding: 0 16px 8px;
-  overflow-y: auto;
 }
 
 .manager-decisions .card {

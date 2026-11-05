@@ -5,7 +5,7 @@ import { elicitationAnswer, elicitationUrl, validField } from '../../../shared/e
 
 interface Props {
   readonly request: Elicitation
-  readonly onAnswer: (answer: string) => void
+  readonly onAnswer: (answer: string) => void | Promise<boolean>
 }
 
 export function ElicitationForm({ request, onAnswer }: Props): React.JSX.Element {
@@ -21,7 +21,9 @@ export function ElicitationForm({ request, onAnswer }: Props): React.JSX.Element
     if (elicitationAnswer(encoded, request) === undefined || (action === 'accept' && form.current?.reportValidity() === false)) { setInvalid(true); return }
     sent.current = true
     setSending(true)
-    onAnswer(encoded)
+    void Promise.resolve().then<boolean | void>(() => onAnswer(encoded)).then((accepted) => {
+      if (accepted === false) { sent.current = false; setSending(false) }
+    }, () => { sent.current = false; setSending(false) })
   }
   const setValue = (field: ElicitationField, value: Json | undefined): void => {
     setValues((before) => {

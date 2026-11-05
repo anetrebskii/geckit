@@ -59,3 +59,50 @@ Consequently T015/SC-005 are only partially verified: long transcript paging/scr
 The task-owned preview server on port 5211 was stopped after review. The browser registration failure was confirmed again before stopping.
 
 Real provider execution, real bot/account delivery, native credentials, WebRTC peers, SSH integration and physical iPhone/Android behavior were not tested. Builds, synthetic replies and screenshots do not establish those flows. Implementation remains reviewable source support, not a deployed or fully live-verified release.
+
+## Follow-up chat repair - 2026-11-05
+
+Alex requested a recheck after an `Unknown GeckIt service method` error and suggested a Manager icon in the top bar. Work was performed locally in the main checkout, Codex session `01a1aba5-0b63-77b1-bee5-890e69896f24`; no commit, push, installation or active-service restart was performed.
+
+The running service's read-only `desktop:hello` handshake advertises version `1.0.0` and the older Manager methods, without `manager:sendApp`, `manager:receipt`, `manager:answerApp` or `manager:answerCard`. Source already contained these methods, but its package version was also `1.0.0`. The renderer now requires the service's explicit `appChat` capability before sending, reconciling receipts or answering. An old service keeps readable history and drafts, disables unsupported actions and explains the update required. This does not update the running service or establish live chat delivery.
+
+Other repairs put history, decisions and queued requests in the same Transcript scroller; prevent immediate duplicate answers; restore native approval forms after a rejected answer; and keep the chosen portrait synchronized between the new top-bar entry and chat header.
+
+### Final checks
+
+| Check | Observed result |
+| --- | --- |
+| Full `client` suite, serial | 120 files passed, one skipped; 1,605 tests passed, one skipped. Includes snapshot/lifecycle capability coverage. |
+| Typecheck and lint | All four TypeScript projects passed; `rtk proxy npm run lint` passed with no diagnostics. |
+| Desktop and phone production builds | Both passed after the final form retry repair. Existing phone chunk-size warnings remain. |
+| Top-bar entry and focus | One dialog opens, composer receives focus, Tab wraps within it, Escape closes it and restores focus to the top-bar button. |
+| Portrait update | Changing the fixture settings boundary updates both top-bar and header portraits to the same selected image. |
+| Normal text and failed send retry | Enter accepts one request and clears the draft. A known rejection retains editable text; explicit retry accepts it once. |
+| Lost send response | Two immediate clicks produce one send; receipt recovery clears the draft and keeps the accepted request visible as Queued. |
+| Typed question | Submitting the custom answer sends its exact text once and removes the question. |
+| Native approval refusal and retry | Double click produces one failed call; the form becomes enabled again. After restoring the fixture boundary, retry accepts once, removes the card and clears its error. |
+| Delegation decision | Double Start produces one call. Successful acceptance removes the decision; refusal keeps it with the actual error. |
+| Long history | With 650 fixture items and Transcript paging, an incoming message preserves the visible anchor within one pixel; New messages returns to the bottom. Questions use the same scroller. |
+| Old service | Unsupported writes and receipt calls stay at zero; history remains visible, Send and answers are unavailable, and the service-update message is shown. |
+| Phone connection | At 390x844, disconnect retains the multiline draft and disables Send. Reconnect does not send automatically; explicit Send accepts the full text once. Return alone sends nothing. |
+
+The actual Chat/Manager/Transcript components were driven in four task-owned localhost tabs through the GeckIt browser CLI. The test-profile registration guard still refused this conversation, so the supported fallback was new background tabs in the last-used browser profile; existing tabs and accounts were not modified. Only native/service/provider boundaries were synthetic. DOM clicks and form submissions exercised real controls; fixture calls injected service failure, reconnect and incoming messages. Escape was exercised through the CLI keyboard command; Tab wrapping was checked with a DOM keyboard event. This does not establish physical-device keyboard behavior.
+
+Full-screen visual review covered desktop 1440x900 dark and 900x700 light, and phone 390x844 in both themes. Header/composer remain reachable; scrolling, wrapping, focus styling and surrounding board context were reviewed. The earlier final-focus, native-card removal and long-history interaction gaps above are now covered for this renderer fixture. Real provider/account delivery remains unverified.
+
+Fixture evidence: [desktop dark](evidence/recheck-desktop-dark.png), [old service, light](evidence/recheck-legacy-light.png), [phone light](evidence/recheck-phone-light.png), [phone dark](evidence/recheck-phone-dark.png).
+
+### Performance review
+
+Needs measuring: before/after input-to-paint timing in an app running the updated service. Static review found no new per-keystroke history work, per-row formatter or animation. Existing Transcript paging and Turn memoization remain; composer state stays isolated. The shared renderer was rebuilt for the phone.
+
+| Touched checklist item | Verdict | Evidence |
+| --- | --- | --- |
+| Memoized repeated rows and callbacks | Holds | Turn keeps memoization; Manager answer callback uses current session/availability dependencies; AssistantStatus compares the portrait setting it now displays. |
+| Unchanged item identity | Holds | History retains `updatedItems`; the new footer does not clone transcript items. |
+| Long-list layout | Holds | Existing Transcript paging remains; decisions share its scroller rather than a second constrained area. |
+| Typing redraws only dependent UI | Holds by source review | Draft subscription stays inside ManagerComposer; History remains memoized. Runtime typing timing was not measured. |
+| Measure in running app | Unverified | Active GeckIt still runs the old service; it was not restarted for this task. |
+| Rebuild phone | Holds | Final mobile production build passed. |
+
+Six checklist items were unaffected: per-row computation, formatter construction, global conversation filtering, pointer selection, compositor animation and hidden infinite animation.

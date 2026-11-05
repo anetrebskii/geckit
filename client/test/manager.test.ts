@@ -111,6 +111,18 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
 }
 
 describe('Manager app conversation', () => {
+  it('advertises app chat support in snapshots and lifecycle events', async () => {
+    const f = await fixture()
+    expect((await f.manager.view()).appChat).toBe(true)
+    const changed: ManagerView[] = []
+    const off = f.manager.on((view) => changed.push(view))
+    await f.manager.configure({ enabled: true })
+    await f.manager.pause()
+    off()
+    expect(changed.length).toBeGreaterThan(0)
+    expect(changed.every((view) => view.appChat === true)).toBe(true)
+  })
+
   it('accepts app messages without Telegram once, queues across channels and keeps receipts after restart and pruning', async () => {
     const f = await fixture()
     const view = await f.manager.configure({ enabled: true })

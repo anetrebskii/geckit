@@ -151,10 +151,12 @@ function Card({
   item,
   onAnswer,
   readOnly,
+  manager,
 }: {
   readonly item: Extract<SessionItem, { kind: 'card' }>
   readonly readOnly: boolean
-  readonly onAnswer: (card: string, answer: CardAnswer | string) => void
+  readonly manager: boolean
+  readonly onAnswer: (card: string, answer: CardAnswer | string) => void | Promise<boolean>
 }): React.JSX.Element {
   const card = item.card
   if (card.answered !== undefined) {
@@ -173,7 +175,7 @@ function Card({
     {card.detail === undefined ? null : <Code detail>{card.detail}</Code>}
     {card.elicitation === undefined ? null : <><p>{card.elicitation.message}</p>{card.elicitation.url === undefined ? null : <Code detail>{card.elicitation.url}</Code>}{card.elicitation.fields.map((field) => <p key={field.name}>{field.label}{field.required ? ' (required)' : ''}{field.description === undefined ? '' : ` - ${field.description}`}</p>)}</>}
     {card.choices === undefined ? null : <ul>{card.choices.map((choice) => <li key={choice}>{choice}</li>)}</ul>}
-    <p>Open GeckIt on your computer to answer this request.</p>
+    <p>{manager ? 'Replies are unavailable. Check Manager status below.' : 'Open GeckIt on your computer to answer this request.'}</p>
   </div>
   if (card.kind === 'elicitation' && card.elicitation !== undefined) return <div className="card elicitation">
     <div className="card-title">{card.title}</div>
@@ -351,7 +353,7 @@ const Turn = memo(function Turn({
   readonly going: boolean
   /** When it was said, where it is one to date: a message, or the end of an answer. */
   readonly when: string | undefined
-  readonly onAnswer: (card: string, answer: CardAnswer | string) => void
+  readonly onAnswer: (card: string, answer: CardAnswer | string) => void | Promise<boolean>
   readonly onAgain: ((id: string) => void) | undefined
   readonly onFile: (path: string, how: FileHow) => void
   readonly onPicture: (src: string) => void
@@ -403,7 +405,7 @@ const Turn = memo(function Turn({
       ) : item.kind === 'thought' ? (
         <div className="thought">{item.text === '' ? 'Thought about it' : item.text}</div>
       ) : item.kind === 'card' ? (
-        <Card readOnly={readOnly} item={item} onAnswer={onAnswer} />
+        <Card readOnly={readOnly} manager={manager} item={item} onAnswer={onAnswer} />
       ) : item.kind === 'request' ? (
         (readOnly || manager) && item.answer === undefined ? <div className="card request"><div className="card-title">Requested conversations</div>{item.tasks.map((task, index) => <details key={index}><summary>{task.title} - {task.project}</summary><p>{task.text}</p>{task.goal === undefined ? null : <p>{task.goal}</p>}</details>)}<p>{manager ? 'Review the pending requests below.' : 'Review requests in Telegram.'}</p></div> : <Request item={item} />
       ) : item.kind === 'team-request' ? (
@@ -560,6 +562,7 @@ export const Transcript = memo(function Transcript({
   onSteps,
   find,
   onFindClose,
+  footer,
 }: {
   /** Which conversation this is, so another one opens at its end rather than where this one was left. */
   readonly at: string
@@ -568,7 +571,7 @@ export const Transcript = memo(function Transcript({
   readonly manager?: boolean
   readonly items: readonly SessionItem[]
   readonly working: boolean
-  readonly onAnswer: (card: string, answer: CardAnswer | string) => void
+  readonly onAnswer: (card: string, answer: CardAnswer | string) => void | Promise<boolean>
   readonly onAgain: (id: string) => void
   /** A file pressed: opened, shown in the Finder, or its menu asked for. */
   readonly onFile: (path: string, how: FileHow) => void
@@ -595,6 +598,7 @@ export const Transcript = memo(function Transcript({
   /** When finding in it was last asked for, which puts the field there and in focus; none, and there is no field. */
   readonly find?: number | undefined
   readonly onFindClose?: () => void
+  readonly footer?: React.ReactNode
 }): React.JSX.Element {
   const box = useRef<HTMLDivElement>(null)
   const stuck = useRef(true)
@@ -1061,6 +1065,7 @@ export const Transcript = memo(function Transcript({
             onBackground={onBackground}
           />
         ))}
+        {footer}
       </div>
 
       {preview === undefined ? null : <Preview src={preview} onClose={() => setPreview(undefined)} />}

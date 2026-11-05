@@ -15,7 +15,7 @@ if (query.has('phone')) document.documentElement.classList.add('phone')
 const noop = (): void => undefined
 const listen = (): (() => void) => noop
 const root = '/Users/alex/Projects/mine/geckit'
-let settings: Settings = { ...DEFAULT_SETTINGS, theme: query.get('theme') === 'dark' ? 'dark' : 'light', projects: [root, '/Users/alex/Projects/mine/notula'], chatProviders: ['claude', 'codex', 'plugin:fixture'], providerPlugins: [{ id: 'plugin:fixture', family: 'plugin:fixture', name: 'Library fixture', shortName: 'Library', icon: 'terminal', browser: 'none', loginCommand: '', planName: 'Fixture' }], chatView: query.has('list') ? 'list' : 'board', analyticsAsked: true }
+let settings: Settings = { ...DEFAULT_SETTINGS, managerAvatar: 'employee-01', theme: query.get('theme') === 'dark' ? 'dark' : 'light', projects: [root, '/Users/alex/Projects/mine/notula'], chatProviders: ['claude', 'codex', 'plugin:fixture'], providerPlugins: [{ id: 'plugin:fixture', family: 'plugin:fixture', name: 'Library fixture', shortName: 'Library', icon: 'terminal', browser: 'none', loginCommand: '', planName: 'Fixture' }], chatView: query.has('list') ? 'list' : 'board', analyticsAsked: true }
 const settingsListeners = new Set<(value: Settings) => void>()
 const managerListeners = new Set<(value: ManagerView) => void>()
 const telegramListeners = new Set<(value: TelegramView) => void>()
@@ -29,7 +29,7 @@ const worker: ChatSession = { id: 'codex:worker-fixture', parent: backing.id, ma
 const unknownWorker = 'codex:unlisted-worker-fixture'
 if (query.has('nativeRetry')) backing = { ...backing, state: 'working', retryNotice: 'Codex is retrying automatically.\nReconnecting... 1/5\n429 Too Many Requests' }
 if (query.has('nativeRetryLong')) backing = { ...backing, state: 'working', retryNotice: `${backing.retryNotice ?? ''}\n${'Long provider diagnostic without whitespace. '.repeat(12)}${'x'.repeat(300)}` }
-let view: ManagerView = { queued: query.has('pending') ? 2 : 0, config: { ...DEFAULT_MANAGER_CONFIG, provider: initialProvider, enabled: query.get('state') !== 'setup' }, state: query.get('state') === 'setup' ? 'off' : query.get('state') === 'paused' ? 'paused' : query.get('state') === 'blocked' ? 'blocked' : query.get('state') === 'working' ? 'working' : 'idle', ...(query.get('state') === 'setup' ? {} : { session: backing }), workers: query.get('state') === 'setup' ? [] : [worker], decisions: query.has('decision') ? [{ id: 'start-worker', title: 'Start provider preference work in GeckIt?', choices: [{ label: 'Start', value: 'start' }, { label: 'Refuse', value: 'refuse' }] }] : [], activity: [{ id: 'fixture-cli-1', at: Date.now(), command: ['sessions', '--json'], state: 'done' }], providers: [{ provider: 'claude', available: true }, { provider: 'codex', available: true }, { provider: 'plugin:fixture', available: true }], ...(query.get('state') === 'blocked' ? { error: query.has('vpnMismatch') ? vpnIpMismatchError('5.165.50.8') : 'Claude Code is signed out. Sign in on your computer, then try again.' } : {}) }
+let view: ManagerView = { ...(query.has('legacyService') ? {} : { appChat: true }), queued: query.has('pending') ? 2 : 0, config: { ...DEFAULT_MANAGER_CONFIG, provider: initialProvider, enabled: query.get('state') !== 'setup' }, state: query.get('state') === 'setup' ? 'off' : query.get('state') === 'paused' ? 'paused' : query.get('state') === 'blocked' ? 'blocked' : query.get('state') === 'working' ? 'working' : 'idle', ...(query.get('state') === 'setup' ? {} : { session: backing }), workers: query.get('state') === 'setup' ? [] : [worker], decisions: query.has('decision') ? [{ id: 'start-worker', title: 'Start provider preference work in GeckIt?', choices: [{ label: 'Start', value: 'start' }, { label: 'Refuse', value: 'refuse' }] }] : [], activity: [{ id: 'fixture-cli-1', at: Date.now(), command: ['sessions', '--json'], state: 'done' }], providers: [{ provider: 'claude', available: true }, { provider: 'codex', available: true }, { provider: 'plugin:fixture', available: true }], ...(query.get('state') === 'blocked' ? { error: query.has('vpnMismatch') ? vpnIpMismatchError('5.165.50.8') : 'Claude Code is signed out. Sign in on your computer, then try again.' } : {}) }
 if (query.has('many')) view = { ...view, workers: Array.from({ length: 30 }, (_one, index) => ({ ...worker, id: `codex:worker-fixture-${String(index)}`, title: `Worker ${String(index + 1)}: ${worker.title}` })), decisions: Array.from({ length: 20 }, (_one, index) => ({ id: `decision-${String(index)}`, title: `Start task ${String(index + 1)} in GeckIt?`, choices: [{ label: 'Start', value: 'start' }, { label: 'Refuse', value: 'refuse' }] })) }
 if (query.has('noProviders')) { settings = { ...settings, chatProviders: [] }; view = { ...view, providers: [] } }
 else if (query.has('disabledProvider')) { settings = { ...settings, chatProviders: settings.chatProviders.filter((provider) => provider !== initialProvider) }; view = { ...view, providers: view.providers.filter((one) => one.provider !== initialProvider) } }
@@ -44,6 +44,7 @@ let previousTelegram = telegram
 let telegramAttempt = 0
 if (query.get('state') === 'disabled') view = { ...view, config: { ...view.config, enabled: false }, state: 'off' }
 let inspectionItems: readonly SessionItem[] = query.has('inspectEmpty') || query.get('state') === 'setup' ? [] : [
+  ...(query.has('question') ? [{ kind: 'card', id: 'manager-typed-question', card: { kind: 'question', title: 'Which description should I update?', choices: ['Threads post', 'Instagram caption', 'Type something.', 'Chat about this'] } } satisfies SessionItem] : []),
   { kind: 'mine', id: 'manager-question', text: '[Telegram]\nCheck the latest Apple submission.' },
   { kind: 'theirs', id: 'manager-reply', text: 'I delegated the submission check to a worker. Review its current approval here.' },
   { kind: 'did', id: 'manager-step', what: 'Used GeckIt CLI: sessions list', detail: 'Worker: Check latest submission. Needs your approval.', live: true, lasting: true },
@@ -60,13 +61,16 @@ let inspectionItems: readonly SessionItem[] = query.has('inspectEmpty') || query
 const receipts = new Map<ManagerSendRequest['id'], ManagerRequestReceipt>()
 const sends: ManagerSendRequest[] = []
 const answers: { readonly id: string; readonly choice: string }[] = []
+const calls = { send: 0, receipt: 0, answer: 0, answerCard: 0 }
 let sendAttempt = 0
+let answeringFails = query.has('answerFailure')
 let connected = !query.has('offline')
 const connectionListeners = new Set<(value: boolean) => void>()
 const pushItems = (gone?: SessionItems['gone']): void => { for (const callback of managerItemListeners) callback({ id: backing.id, items: inspectionItems, ...(gone === undefined ? {} : { gone }) }) }
 const fixture = {
   sends, answers,
-  snapshot: () => ({ view, receipts: [...receipts.values()], sends, answers, items: inspectionItems, connected }),
+  answerFailure: (value: boolean): void => { answeringFails = value },
+  snapshot: () => ({ view, receipts: [...receipts.values()], sends, answers, calls, items: inspectionItems, connected }),
   connection: (value: boolean): void => { connected = value; for (const callback of connectionListeners) callback(value) },
   state: (state: ManagerView['state']): void => { update({ state, ...(state === 'blocked' ? { error: 'Fixture VPN check refused this request.' } : {}) }) },
   message: (text: string): void => { inspectionItems = [...inspectionItems, { kind: 'theirs', id: crypto.randomUUID(), text }]; pushItems() },
@@ -97,6 +101,8 @@ const manager: ManagerApi = {
     return snapshot
   },
   send: async (request) => {
+    calls.send++
+    if (query.has('legacyService')) throw new Error('Unknown GeckIt service method.')
     if (!connected) throw new Error('Computer disconnected. Reconnect to send.')
     const accepted = receipts.get(request.id)
     if (accepted !== undefined) return accepted
@@ -116,8 +122,12 @@ const manager: ManagerApi = {
     }, 400)
     return receipt
   },
-  receipt: async (id) => { if (!connected || query.has('receiptFailure')) throw new Error('Synthetic receipt lookup unavailable.'); return receipts.get(id) },
+  receipt: async (id) => { calls.receipt++; if (query.has('legacyService')) throw new Error('Unknown GeckIt service method.'); if (!connected || query.has('receiptFailure')) throw new Error('Synthetic receipt lookup unavailable.'); return receipts.get(id) },
   answer: async (request) => {
+    calls.answer++
+    if (query.has('legacyService')) throw new Error('Unknown GeckIt service method.')
+    if (query.has('answerSlow')) await new Promise<void>((resolve) => setTimeout(resolve, 1200))
+    if (answeringFails) throw new Error('Synthetic answer refusal. Nothing was accepted.')
     if (request.session !== backing.id) throw new Error('Manager session changed. Reload before answering.')
     const decision = view.decisions.find((one) => one.id === request.id)
     if (decision === undefined || !decision.choices.some((one) => one.value === request.choice)) throw new Error('This request is no longer pending.')
@@ -126,6 +136,10 @@ const manager: ManagerApi = {
     return { ...next, answer: 'Answer sent.' }
   },
   answerCard: async (session, card, answer) => {
+    calls.answerCard++
+    if (query.has('legacyService')) throw new Error('Unknown GeckIt service method.')
+    if (query.has('answerSlow')) await new Promise<void>((resolve) => setTimeout(resolve, 1200))
+    if (answeringFails) throw new Error('Synthetic answer refusal. Nothing was accepted.')
     if (session !== backing.id) throw new Error('Manager session changed. Reload before answering.')
     answers.push({ id: card, choice: answer })
     inspectionItems = inspectionItems.filter((one) => one.id !== card)

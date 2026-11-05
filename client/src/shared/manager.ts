@@ -3,6 +3,7 @@ import type { TelegramAccount } from './telegram'
 import type { ChatSession, SessionItem, SessionItems, SessionMessage, SessionProvider, Settings } from './api'
 
 export const MANAGER_CHAT_GUIDANCE = 'Open Manager chat to send a request.'
+export const MANAGER_CHAT_UPDATE = 'Manager chat needs a service update. Finish active work, then restart GeckIt.'
 
 export type ManagerSendRequest = Pick<Extract<SessionItem, { kind: 'mine' }>, 'id' | 'text'> & Pick<SessionMessage, 'session'>
 export type ManagerRequestReceipt = Pick<ManagerSendRequest, 'id'> & Required<Pick<SessionMessage, 'session'>> & {
@@ -37,6 +38,7 @@ export interface ManagerProvider {
 }
 
 export interface ManagerView {
+  readonly appChat?: boolean
   readonly intake?: ManagerIntakeView
   readonly config: ManagerConfig
   readonly state: 'off' | 'idle' | 'working' | 'paused' | 'blocked'

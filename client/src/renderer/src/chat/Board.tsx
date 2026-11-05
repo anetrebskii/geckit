@@ -1,4 +1,6 @@
-import { EmployeeCardAssign, EmployeeFilter, EmployeeSelect, TeamButton } from '../employees/Employees'
+import { EmployeeAvatar, EmployeeCardAssign, EmployeeFilter, EmployeeSelect, TeamButton } from '../employees/Employees'
+import { managerFace } from '../employees/TeamManager'
+import { openManagerChat } from './manager-chat-open'
 import type { Employee } from '../../../shared/employees'
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -134,6 +136,7 @@ export function TopBar({
         <Icon name="bolt" />
       </button>
       {onTeam === undefined ? null : <TeamButton chat={chat} on={teamOn} onTeam={onTeam} />}
+      <button type="button" className="manager-open no-drag" aria-label="Chat with Manager" aria-haspopup="dialog" title="Chat with Manager" onClick={openManagerChat}><EmployeeAvatar employee={managerFace(chat.settings)} /><span>Manager</span></button>
       {chat.settings.showGecko || ON_PHONE ? null : (
         <button type="button" className="icon-button no-drag" aria-label="Show the gecko" title="Show the gecko" onClick={() => chat.change({ showGecko: true })}>
           <img className="gecko-glyph" src={geckoGlyph} alt="" />
