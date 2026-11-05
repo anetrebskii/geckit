@@ -422,6 +422,7 @@ export interface ChatSession {
   readonly checkingIp?: true
   readonly heldSend?: true
   readonly canInject?: true
+  readonly canStopTasks?: true
   readonly injecting?: QueuedMessage['id']
   /** Its queued messages wait for a slot, as many working as the limit. */
   readonly waits?: true
@@ -495,7 +496,10 @@ export interface BackgroundTask {
   readonly command?: string
   /** The tool use that started it, which is also the id of its line in the conversation. */
   readonly use?: string
-  readonly status: 'running' | 'completed' | 'failed' | 'stopped'
+  readonly status: 'running' | 'asks' | 'unknown' | 'completed' | 'failed' | 'stopped'
+  readonly observedAt?: number
+  readonly activity?: 'browser' | 'computer' | 'tool'
+  readonly activityTool?: string
   /** When it was started and when it ended, in milliseconds. */
   readonly started: number
   readonly ended?: number

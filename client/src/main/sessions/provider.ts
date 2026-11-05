@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import type { Answered, Browser, ChatFound, ClaudeAccount, ClaudeModel, ClaudeProgram, McpServer, ProviderUsage, ReasoningEffort, SessionItem, SessionMode } from '../../shared/api'
+import type { Answered, Browser, ChatFound, ChatSession, ClaudeAccount, ClaudeModel, ClaudeProgram, McpServer, ProviderUsage, ReasoningEffort, SessionItem, SessionMode } from '../../shared/api'
 import { hostOf, isRemote, remoteRoot } from '../../shared/hosts'
 import type { Link } from '../../shared/links'
 import { linksIn } from '../../shared/links'
@@ -29,7 +29,7 @@ type ProviderDeps = Pick<SessionsDeps, 'codex' | 'disk' | 'claude' | 'claudeAcco
   readonly stopCorrect?: () => void
 }
 
-export type ProviderRow = Found & { readonly root: string; readonly project?: string; readonly created?: number; readonly importedFrom?: string; readonly actualReasoning?: ReasoningEffort }
+export type ProviderRow = Found & Pick<ChatSession, 'tasks'> & { readonly root: string; readonly project?: string; readonly created?: number; readonly importedFrom?: string; readonly actualReasoning?: ReasoningEffort }
 export type ProviderGoal = GoalRead & { readonly status?: CodexGoal['status'] }
 export type ProviderFork = Pick<ClaudeOptions, 'id' | 'fork'> & { readonly begun: boolean; readonly items: readonly SessionItem[] }
 export type ProviderLimits = Usage & Pick<ClaudeAccount, 'limits'> & Pick<ProviderUsage, 'quotas' | 'unavailableReason'>

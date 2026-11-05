@@ -6,13 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { holdClaude } from '../src/main/sessions/claude'
 import { llmProvider } from '../src/main/sessions/provider'
 import type { LlmProvider } from '../src/main/sessions/provider'
+import { claudeState, readClaude } from '../src/main/sessions/claude-read'
 import type { GoalRead } from '../src/main/sessions/claude-read'
 import type { Found } from '../src/main/sessions/disk'
 import type { Ran, runShell } from '../src/main/sessions/shell'
 import type { Driver, Heard, Signal } from '../src/main/sessions/heard'
 import { memoryNotes, Sessions, withMoves } from '../src/main/sessions'
 import type { SessionNotice, SessionsDeps } from '../src/main/sessions'
-import type { ChatSession, ClaudeAccount, SessionItem, SessionItems, SessionMode } from '../src/shared/api'
+import type { BackgroundTask, ChatSession, ClaudeAccount, SessionItem, SessionItems, SessionMode } from '../src/shared/api'
 import { letsGo } from '../src/shared/api'
 import { VPN_IP_UNAVAILABLE_ERROR } from '../src/shared/vpn-ip'
 
@@ -1325,7 +1326,7 @@ describe('the list', () => {
     }
     for (const built of [build(deps), build(deps)]) {
       expect((await built.sessions.list([ROOT])).map((row) => row.id).sort()).toEqual([
-        ...ids, 'plugin:claude-tmux:created', 'plugin:claude-tmux:shown',
+        ...ids.filter((id) => id !== 'created' && id !== 'hidden'), 'plugin:claude-tmux:created', 'plugin:claude-tmux:shown',
       ].sort())
       expect((await built.sessions.search([ROOT], 'task')).map((row) => row.id).sort()).toEqual([
         ...ids, 'plugin:claude-tmux:created', 'plugin:claude-tmux:shown', 'plugin:claude-tmux:hidden',
@@ -2360,6 +2361,36 @@ describe('what runs in the background', () => {
     expect(of(built.rows, id)?.tasks).toEqual([done])
     built.sessions.clearTask(id, 'b1')
     expect(of(built.rows, id)?.tasks).toBeUndefined()
+  })
+
+  it('resumes a completed native stream helper with the same ID and clears the old end time', async () => {
+    const built = build()
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    const state = claudeState(ROOT)
+    const launch = { type: 'system', subtype: 'task_started', task_id: 'native-helper', task_type: 'local_agent', description: 'Helper', is_backgrounded: true }
+    const startedTask = readClaude(state, launch).signals.find((signal) => signal.kind === 'task')
+    if (startedTask === undefined) throw new Error('Missing native task start')
+    built.fake.hear({ signals: [startedTask] })
+    const completed = readClaude(state, { type: 'system', subtype: 'task_updated', task_id: 'native-helper', patch: { status: 'completed' } }).signals.find((signal) => signal.kind === 'task')
+    if (completed === undefined) throw new Error('Missing native task completion')
+    built.fake.hear({ signals: [completed] })
+    expect(of(built.rows, id)?.tasks?.[0]?.status).toBe('completed')
+    const resumed = readClaude(state, launch).signals.find((signal) => signal.kind === 'task')
+    if (resumed === undefined) throw new Error('Missing native task resume')
+    built.fake.hear({ signals: [resumed] })
+    expect(of(built.rows, id)).toMatchObject({ state: 'working', tasks: [{ id: 'native-helper', status: 'running' }] })
+    expect(of(built.rows, id)?.tasks?.[0]?.ended).toBeUndefined()
+  })
+
+  it('applies native stream progress with no observation timestamp after launch', async () => {
+    const built = build()
+    const id = await started(built)
+    const helper = { ...task, id: 'native-helper', kind: 'local_agent' }
+    const progressed = { ...helper, progress: { doing: 'Read', tools: 2, tokens: 100 } }
+    built.fake.hear({ signals: [{ kind: 'task', task: helper }] })
+    built.fake.hear({ signals: [{ kind: 'task', task: progressed }] })
+    expect(of(built.rows, id)?.tasks).toEqual([progressed])
   })
 
   it('clears only what has ended', async () => {
@@ -3737,4 +3768,73 @@ it('reports direct native steering failure without retaining or replaying the co
   expect((await built.sessions.items(id)).some((one) => one.kind === 'mine' && one.text === 'Do not replay')).toBe(false)
   expect(built.fake.stopped).toBe(0)
   expect(built.fake.ended).toBe(0)
+})
+
+
+describe('discovered helper activity', () => {
+  const id = 'plugin:claude-tmux:parent'
+  const first: BackgroundTask = { id: 'child-a', kind: 'local_agent', what: 'Browser checks', started: 500, observedAt: 900, status: 'running', activity: 'browser', activityTool: 'mcp__claude-in-chrome__navigate' }
+  function discovered(tasks: readonly BackgroundTask[], now = 1000): Built {
+    const provider: LlmProvider = { ...llmProvider({}, 'claude'), id: 'plugin:claude-tmux', family: 'plugin:claude-tmux', list: async () => [{ id, root: ROOT, title: 'Parent', stands: 'Answer ended', driven: false, at: 900, tasks }] }
+    const notes = memoryNotes()
+    notes.set(id, { here: true })
+    return build({ notes, plugins: [provider], now: () => now })
+  }
+  it('shares discovered tasks and working state with list and Manager without creating a driver or injection capability', async () => {
+    const built = discovered([first])
+    const rows = await built.sessions.list([ROOT])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ id, state: 'working', tasks: [first] })
+    expect(rows[0]?.canInject).toBeUndefined()
+    expect(rows[0]?.canStopTasks).toBeUndefined()
+    expect(await built.sessions.allForManager([ROOT])).toEqual(rows)
+    expect(built.fake.made).toEqual([])
+  })
+  it('aggregates multiple helpers and only returns idle when all terminate', async () => {
+    for (const status of ['completed', 'failed', 'stopped'] as const) {
+      const terminal = { ...first, status, ended: 950, observedAt: 950 }
+      const other = { ...first, id: 'child-b' }
+      const partial = discovered([terminal, other])
+      expect((await partial.sessions.list([ROOT]))[0]?.state).toBe('working')
+      const ended = discovered([terminal, { ...terminal, id: other.id }])
+      expect((await ended.sessions.list([ROOT]))[0]).toMatchObject({ state: 'idle', tasks: [terminal, { ...terminal, id: other.id }] })
+    }
+  })
+  it('clears discovered terminal evidence without rediscovery restoring it and reveals a later resumed helper', async () => {
+    let tasks: readonly BackgroundTask[] = [{ ...first, status: 'completed', ended: 950, observedAt: 950 }]
+    const notes = memoryNotes()
+    notes.set(id, { here: true })
+    const provider: LlmProvider = { ...llmProvider({}, 'claude'), id: 'plugin:claude-tmux', family: 'plugin:claude-tmux', list: async () => [{ id, root: ROOT, title: 'Parent', stands: '', driven: false, at: 900, tasks }] }
+    const built = build({ notes, plugins: [provider] })
+    await built.sessions.list([ROOT])
+    built.sessions.clearTask(id, first.id)
+    expect((await built.sessions.list([ROOT]))[0]?.tasks).toBeUndefined()
+    tasks = [{ ...first, observedAt: 1000 }]
+    expect((await built.sessions.list([ROOT]))[0]).toMatchObject({ state: 'working', tasks })
+  })
+  it('preserves an actual foreground question and error alongside active helpers', async () => {
+    const built = build()
+    const session = await started(built)
+    built.fake.hear({ signals: [{ kind: 'task', task: first }, { kind: 'asks', ask: 'a1', wanted: { kind: 'command', command: 'read' } }] })
+    expect(of(built.rows, session)?.state).toBe('asks')
+    expect(of(built.rows, session)?.canInject).toBeUndefined()
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'failed', text: 'Failure' }] })
+    expect(of(built.rows, session)?.state).toBe('failed')
+  })
+  it('distinguishes waiting from stale observations after restart, without claiming injection', async () => {
+    const waiting = discovered([{ ...first, status: 'asks' }])
+    expect((await waiting.sessions.list([ROOT]))[0]).toMatchObject({ state: 'asks' })
+    const stale = discovered([first], 121001)
+    expect((await stale.sessions.list([ROOT]))[0]).toMatchObject({ state: 'idle', stands: 'Helper activity unconfirmed', tasks: [{ ...first, status: 'unknown' }] })
+    expect((await stale.sessions.list([ROOT]))[0]?.canInject).toBeUndefined()
+  })
+  it('keeps the managed canonical parent and does not globally hide independent providers', async () => {
+    const notes = memoryNotes()
+    notes.set(id, { here: true })
+    const provider: LlmProvider = { ...llmProvider({}, 'claude'), id: 'plugin:claude-tmux', family: 'plugin:claude-tmux', list: async () => [{ id, root: ROOT, title: 'Parent', stands: '', at: 900, driven: false, tasks: [first] }] }
+    const built = build({ notes, plugins: [provider], disk: { list: async () => [{ id: 'parent', title: 'Mirror', stands: '', at: 900, driven: false }], read: async () => undefined, has: async () => false } })
+    expect((await built.sessions.list([ROOT])).map((row) => row.id)).toEqual([id])
+    notes.set(id, { shown: true })
+    expect((await built.sessions.list([ROOT])).map((row) => row.id)).toEqual(['parent', id])
+  })
 })
