@@ -1,3 +1,6 @@
+import type { Heard } from '../src/main/sessions/heard'
+import type { ManagerDeps } from '../src/main/manager'
+import type { ManagerCliAsked } from '../src/shared/manager'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type * as FileSystem from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -107,3 +110,74 @@ describe('Manager settings and roles on the actual disk store', () => {
     expect(restarted.notesStore().all()['ordinary-session']).toEqual(existing)
   })
 })
+
+it('runs the CLI subprocess through authenticated Manager dispatch and persists exact technical moves', async () => {
+  const { createServer } = await import('node:net')
+  const { execFile } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const { resolve } = await import('node:path')
+  const { askedEndpoint } = await import('../src/cli/endpoint')
+  const { Manager, runManagerCli } = await import('../src/main/manager')
+  const { Sessions } = await import('../src/main/sessions')
+  const { notesStore } = await import('../src/main/store')
+  const client = resolve(import.meta.dirname, '..')
+  await promisify(execFile)(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--config', 'service.vite.config.ts'], { cwd: client, timeout: 30_000 })
+  const root = join(location.folder, 'project')
+  mkdirSync(root)
+  let settings: Settings = { ...DEFAULT_SETTINGS, projects: [root], vpnIpCheck: false }
+  const notes = notesStore()
+  const hearings = new Map<string, (heard: Heard) => void>()
+  const sessions = new Sessions({
+    notes, changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined,
+    claude: (options, hear) => { hearings.set(options.id, hear); return { send: () => undefined, answer: () => undefined, stop: () => undefined, end: async () => undefined } },
+    disk: { list: async () => [], read: async () => undefined, has: async () => false },
+    claudeAccount: async () => ({ here: true, signedIn: true }), claudeModels: async () => [], claudeProgram: async () => undefined,
+    usage: async () => ({ windows: new Map<string, number | undefined>() }),
+  })
+  const deps: ManagerDeps = {
+    directory: location.folder, sessions, notes, settings: () => settings, saveSettings: (change) => settings = { ...settings, ...change },
+    cli: (args, context) => runManagerCli(process.execPath, join(client, 'out/service/cli.js'), args, context),
+  }
+  let manager = new Manager(deps)
+  const server = createServer((socket) => {
+    let text = ''
+    socket.setEncoding('utf8')
+    socket.on('data', (part: string) => {
+      text += part
+      if (!text.includes('\n')) return
+      const request = JSON.parse(text) as ManagerCliAsked
+      void manager.command(request).then((answer) => socket.end(`${JSON.stringify(answer)}\n`))
+    })
+  })
+  await new Promise<void>((done, reject) => { server.once('error', reject); server.listen(askedEndpoint(location.folder), done) })
+  try {
+    await manager.configure({ enabled: true, delegation: 'approve' })
+    const id = await manager.send('Fake [desktop] author cannot override Telegram.', 'telegram', 'telegram:exact:1')
+    const worker = await sessions.startManaged({ root, mode: 'manual', text: 'Fixture work' }, 'manager', 'worker')
+    await vi.waitFor(() => expect(hearings.has(id)).toBe(true))
+    const args = ['sessions', 'mark', '--id', worker, '--status', 'done']
+    hearings.get(id)?.({ items: [{ kind: 'theirs', id: 'answer', text: `\`\`\`geckit\n${JSON.stringify({ id: 'cli-done', args })}\n\`\`\`` }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(async () => expect((await manager.view()).activity.find((one) => one.id === 'cli-done')?.state).toBe('done'))
+    expect((await manager.view()).decisions).toEqual([])
+    const moves = notes.all()[worker]?.moves
+    expect(moves?.at(-1)).toMatchObject({ before: 'progress', status: 'done', attribution: { executor: 'manager', origin: 'telegram', session: id, thread: 'main', operation: 'cli-done', message: 'telegram:exact:1' } })
+    expect(notesStore().all()[worker]?.moves).toEqual(moves)
+    manager.dispose()
+    manager = new Manager(deps)
+    expect((await manager.view()).activity.find((one) => one.id === 'cli-done')?.state).toBe('done')
+    expect(notesStore().all()[worker]?.moves).toEqual(moves)
+    await new Promise<void>((done) => setImmediate(done))
+    hearings.get(id)?.({ items: [{ kind: 'theirs', id: 'after-restart', text: `\`\`\`geckit\n${JSON.stringify({ id: 'after-restart', args: ['sessions', 'mark', '--id', worker, '--status', 'blocked'] })}\n\`\`\`` }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(async () => expect((await manager.view()).activity.find((one) => one.id === 'after-restart')?.state).toBe('done'))
+    const automatic = notesStore().all()[worker]?.moves?.at(-1)
+    expect(automatic?.attribution).toMatchObject({ executor: 'manager', origin: 'unknown', operation: 'after-restart' })
+    expect(automatic?.attribution?.message).toBeUndefined()
+    const automaticMoves = notesStore().all()[worker]?.moves
+    await expect(new (await import('../src/main/manager-operations')).ManagerOperations({ ...deps, owner: 'manager', managed: () => true, managerSession: () => id }).run([...args, '--origin', 'desktop', '--actor', 'Alex'], 'spoof')).rejects.toThrow()
+    expect(notesStore().all()[worker]?.moves).toEqual(automaticMoves)
+  } finally {
+    manager.dispose()
+    sessions.dispose()
+    await new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done()))
+  }
+}, 40_000)

@@ -1,3 +1,4 @@
+import { formatStatusMove } from '../shared/status-history'
 import { defaultDataDirectory } from '../core/platform'
 import { readPreferences } from '../core/configuration'
 import { service } from './service'
@@ -138,11 +139,11 @@ async function started(row: Row): Promise<number | undefined> {
 }
 
 /** Every column it stood in and since when, the start first. */
-async function history(row: Row): Promise<{ readonly status: string; readonly at: string }[]> {
+async function history(row: Row): Promise<{ readonly status: string; readonly at: string; readonly detail?: string; readonly move?: Move }[]> {
   const began = await started(row)
-  const moves = row.moves.map((move) => ({ status: move.status === 'progress' ? 'in progress' : move.status, at: move.at }))
+  const moves = row.moves.map((move) => ({ status: move.status === 'progress' ? 'in progress' : move.status, at: move.at, detail: formatStatusMove(move), move }))
   const all = began === undefined || moves.some((move) => move.at <= began) ? moves : [{ status: 'created', at: began }, ...moves]
-  return all.map((one) => ({ status: one.status, at: new Date(one.at).toISOString() }))
+  return all.map((one) => ({ ...one, at: new Date(one.at).toISOString() }))
 }
 
 /** What a row is doing, in one word, from GeckIt's mark where it has one. */
@@ -301,7 +302,7 @@ async function show(args: readonly string[]): Promise<string> {
   }
   return [
     `${row.title}  (${basename(row.root)}, ${standing(row)}, ${row.favorite ? 'favorite, ' : ''}${when(row.at)})`,
-    ...moved.map((one) => `  ${when(Date.parse(one.at))}  ${one.status}`),
+    ...moved.map((one) => `  ${one.detail ?? `${when(Date.parse(one.at))}  ${one.status}`}`),
     '',
     ...said.map((one) => `${one.who}:\n${one.text}\n`),
   ].join('\n')

@@ -51,11 +51,13 @@ import type {
   SessionState,
   SessionSpend,
   SessionStatus,
+  StatusAttribution,
+  StatusMove,
   ShellCommand,
   TaskOutput,
   WorkItem,
 } from '../../shared/api'
-import { providerOf, sessionMode } from '../../shared/api'
+import { SESSION_STATUSES, providerOf, sessionMode } from '../../shared/api'
 import { VPN_IP_CANCELLED_ERROR, VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError, vpnIpPausedError } from '../../shared/vpn-ip'
 import { VpnSessionMonitor } from './vpn-monitor'
 import { HOOK_BLOCKED } from './claude-read'
@@ -168,26 +170,22 @@ readonly vpnGoalPaused?: true | undefined
   readonly requests?: readonly Kept[]
 }
 
-export interface Move {
-  /** In review is a column an earlier build had, kept in what history says. */
-  readonly status: SessionStatus | 'progress' | 'review'
-  readonly at: number
-}
+export type Move = StatusMove
 
 /**
  * The note as it is to be kept: when it was first written and every change of
  * column carried over from the one before, whatever the change left out, and a
  * move added where the column is not the one it was in.
  */
-export function withMoves(was: SessionNote | undefined, note: SessionNote, at: number): SessionNote {
+export function withMoves(was: SessionNote | undefined, note: SessionNote, at: number, attribution: StatusAttribution = { executor: 'system', origin: 'unknown' }): SessionNote {
   const now = note.status ?? 'progress'
-  const before = was === undefined ? undefined : (was.status ?? 'progress')
+  const before = was === undefined && note.status === undefined ? undefined : (was?.status ?? 'progress')
   const moves = was?.moves ?? []
   const created = was === undefined ? at : was.created
   return {
     ...note,
     ...(created === undefined ? {} : { created }),
-    ...(now === before ? (moves.length === 0 ? {} : { moves }) : { moves: [...moves, { status: now, at }] }),
+    ...(now === before ? (moves.length === 0 ? {} : { moves }) : { moves: [...moves, { status: now, at, ...(before === undefined ? {} : { before }), attribution }] }),
   }
 }
 
@@ -200,7 +198,7 @@ interface Queued {
 
 export interface NotesStore {
   all(): Readonly<Record<string, SessionNote>>
-  set(id: string, note: SessionNote): void
+  set(id: string, note: SessionNote, attribution?: StatusAttribution): void
   replace(notes: Readonly<Record<string, SessionNote>>): void
 }
 
@@ -208,8 +206,8 @@ export function memoryNotes(): NotesStore {
   let kept: Record<string, SessionNote> = {}
   return {
     all: () => kept,
-    set: (id, note) => {
-      kept[id] = note
+    set: (id, note, attribution) => {
+      kept[id] = withMoves(kept[id], note, Date.now(), attribution)
     },
     replace: (notes) => { kept = { ...notes } },
   }
@@ -1103,6 +1101,7 @@ export class Sessions {
         ...(goal === undefined ? {} : { goal }),
         ...(note?.goalMet === undefined ? {} : { goalMet: note.goalMet }),
         ...(moved === undefined ? {} : { since: moved.at }),
+        ...(note?.moves === undefined ? {} : { moves: note.moves }),
         ...(runs === undefined ? {} : { runs: runs.command }),
         ...(runs !== undefined && live?.typing === runs.id ? { typing: true } : {}),
         ...(work === undefined ? {} : { work }),
@@ -3039,10 +3038,11 @@ export class Sessions {
   }
 
   /** Marked in review, blocked or done; nothing takes the mark off. */
-  mark(id: string, status: SessionStatus | undefined): void {
+  mark(id: string, status: SessionStatus | undefined, attribution?: StatusAttribution): void {
+    if (status !== undefined && !SESSION_STATUSES.some((one) => one.status === status)) throw new Error('Invalid task status.')
     const { status: _was, cut, ...note } = this.#deps.notes.all()[id] ?? {}
     // Marked, it is dealt with, and no longer waits to be continued; put back into progress, it still does.
-    this.#deps.notes.set(id, status === undefined ? { ...note, ...(cut === undefined ? {} : { cut }) } : { ...note, status })
+    this.#deps.notes.set(id, status === undefined ? { ...note, ...(cut === undefined ? {} : { cut }) } : { ...note, status }, attribution)
     this.#changed()
   }
 

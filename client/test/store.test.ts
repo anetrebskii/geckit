@@ -407,3 +407,22 @@ it('turns Chrome through GeckIt on once for settings saved while it was off by d
     rmSync(state.folder, { recursive: true, force: true })
   }
 })
+
+it('saves technical status transitions before acknowledgment and preserves legacy on a fresh store', async () => {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-status-history-'))
+  const { notesStore } = await import('../src/main/store')
+  try {
+    writeFileSync(join(state.folder, 'sessions.json'), JSON.stringify({ task: { status: 'todo', moves: [{ status: 'todo', at: 1 }] } }))
+    const first = notesStore()
+    first.set('task', { ...first.all()['task'], status: 'done' }, { executor: 'manager', origin: 'telegram', session: 'manager:1', operation: 'op:1', message: 'telegram:1' })
+    const fresh = notesStore()
+    expect(fresh.all()['task']).toEqual(first.all()['task'])
+    expect(fresh.all()['task']?.moves?.[0]).toEqual({ status: 'todo', at: 1 })
+    expect(fresh.all()['task']?.moves?.[1]).toMatchObject({ before: 'todo', status: 'done', attribution: { executor: 'manager', origin: 'telegram', session: 'manager:1', operation: 'op:1', message: 'telegram:1' } })
+    fresh.set('task', { ...fresh.all()['task'], status: 'blocked' })
+    expect(notesStore().all()['task']?.moves?.at(-1)?.attribution).toEqual({ executor: 'system', origin: 'unknown' })
+    const before = fresh.all()['task']?.moves
+    fresh.set('task', { ...fresh.all()['task'], status: 'blocked' })
+    expect(fresh.all()['task']?.moves).toEqual(before)
+  } finally { rmSync(state.folder, { recursive: true, force: true }) }
+})

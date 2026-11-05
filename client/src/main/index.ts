@@ -768,7 +768,7 @@ function wire(): void {
 const PHONE_CALLS = {
   'manager.view': (...args: Parameters<ServiceMethods['manager:view']>) => invoke('manager:view', ...args),
   'manager.inspect': (...args: Parameters<ServiceMethods['manager:inspect']>) => invoke('manager:inspect', ...args),
-  'manager.send': (...args: Parameters<ServiceMethods['manager:sendApp']>) => invoke('manager:sendApp', ...args),
+  'manager.send': (request: Parameters<ServiceMethods['manager:sendAppPhone']>[0]) => invoke('manager:sendAppPhone', request),
   'manager.receipt': (...args: Parameters<ServiceMethods['manager:receipt']>) => invoke('manager:receipt', ...args),
   'manager.answer': (...args: Parameters<ServiceMethods['manager:answerApp']>) => invoke('manager:answerApp', ...args),
   'manager.answerCard': (...args: Parameters<ServiceMethods['manager:answerCard']>) => invoke('manager:answerCard', ...args),
@@ -837,7 +837,7 @@ const PHONE_CALLS = {
   'chat.mode': (...args: Parameters<ServiceMethods['chat:mode']>) => invoke('chat:mode', ...args),
   'chat.transport': (...args: Parameters<ServiceMethods['chat:transport']>) => invoke('chat:transport', ...args),
   'chat.rename': (...args: Parameters<ServiceMethods['chat:rename']>) => invoke('chat:rename', ...args),
-  'chat.mark': (...args: Parameters<ServiceMethods['chat:mark']>) => invoke('chat:mark', ...args),
+  'chat.mark': (id: string, status: Parameters<ServiceMethods['chat:markPhone']>[1]) => invoke('chat:markPhone', id, status),
   'chat.hide': (...args: Parameters<ServiceMethods['chat:hide']>) => invoke('chat:hide', ...args),
   'chat.keep': (...args: Parameters<ServiceMethods['chat:keep']>) => invoke('chat:keep', ...args),
   'chat.remove': (...args: Parameters<ServiceMethods['chat:delete']>) => invoke('chat:delete', ...args),

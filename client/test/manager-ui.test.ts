@@ -1,3 +1,6 @@
+import { StatusHistory } from '../src/renderer/src/chat/StatusHistory'
+import { formatStatusMove } from '../src/shared/status-history'
+import type { StatusMove } from '../src/shared/api'
 import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -318,4 +321,19 @@ describe('Manager threads in the window', () => {
     const plain: ManagerView = { ...threaded, threads: [] }
     expect(threadView(plain, undefined)).toBe(plain)
   })
+})
+
+it('formats persisted fields deterministically without guessing legacy attribution', () => {
+  const legacy: StatusMove = { at: 1, status: 'review' }
+  expect(formatStatusMove(legacy)).toBe('1970-01-01T00:00:00.001Z · unknown → review · Legacy / unknown')
+  const move: StatusMove = { at: 2, before: 'progress', status: 'done', attribution: { executor: 'manager', origin: 'telegram', session: 'manager:1', thread: 'telegram:1', operation: 'op:1', message: 'telegram:1:42' } }
+  const expected = '1970-01-01T00:00:00.002Z · progress → done · Manager session · Origin: telegram · session: manager:1 · thread: telegram:1 · operation: op:1 · message: telegram:1:42'
+  expect(formatStatusMove(move)).toBe(expected)
+  expect(formatStatusMove(JSON.parse(JSON.stringify(move)) as StatusMove)).toBe(expected)
+  const markup = renderToStaticMarkup(createElement(StatusHistory, { moves: [legacy, move] }))
+  expect(markup).toContain('<summary>Status history</summary>')
+  expect(markup).toContain('Legacy / unknown')
+  expect(markup).toContain(expected)
+  expect(markup).not.toContain('Alex')
+  expect(renderToStaticMarkup(createElement(StatusHistory, {}))).toContain('No status changes recorded.')
 })

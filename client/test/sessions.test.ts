@@ -2848,23 +2848,23 @@ describe('turns cut off by GeckIt closing', () => {
 describe('the moves between columns', () => {
   it('keeps when it was created and each move, and nothing for a change that stays in the column', () => {
     const first = withMoves(undefined, { title: 'Fix it' }, 1)
-    expect(first).toEqual({ title: 'Fix it', created: 1, moves: [{ status: 'progress', at: 1 }] })
+    expect(first).toEqual({ title: 'Fix it', created: 1, moves: [{ status: 'progress', at: 1, attribution: { executor: 'system', origin: 'unknown' } }] })
     const renamed = withMoves(first, { title: 'Fix the spinner' }, 2)
-    expect(renamed.moves).toEqual([{ status: 'progress', at: 1 }])
+    expect(renamed.moves).toEqual([{ status: 'progress', at: 1, attribution: { executor: 'system', origin: 'unknown' } }])
     const todo = withMoves(renamed, { title: 'Fix the spinner', status: 'todo' }, 3)
     const back = withMoves(todo, { title: 'Fix the spinner' }, 4)
     const done = withMoves(back, { title: 'Fix the spinner', status: 'done' }, 5)
     expect(done.created).toBe(1)
     expect(done.moves).toEqual([
-      { status: 'progress', at: 1 },
-      { status: 'todo', at: 3 },
-      { status: 'progress', at: 4 },
-      { status: 'done', at: 5 },
+      { status: 'progress', at: 1, attribution: { executor: 'system', origin: 'unknown' } },
+      { status: 'todo', before: 'progress', at: 3, attribution: { executor: 'system', origin: 'unknown' } },
+      { status: 'progress', before: 'todo', at: 4, attribution: { executor: 'system', origin: 'unknown' } },
+      { status: 'done', before: 'progress', at: 5, attribution: { executor: 'system', origin: 'unknown' } },
     ])
   })
 
   it('starts the record for a note written before there was one', () => {
-    expect(withMoves({ status: 'todo' }, { status: 'done' }, 7)).toEqual({ status: 'done', moves: [{ status: 'done', at: 7 }] })
+    expect(withMoves({ status: 'todo' }, { status: 'done' }, 7)).toEqual({ status: 'done', moves: [{ status: 'done', before: 'todo', at: 7, attribution: { executor: 'system', origin: 'unknown' } }] })
   })
 })
 

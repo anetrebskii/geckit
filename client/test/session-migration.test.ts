@@ -144,7 +144,7 @@ describe('Claude conversation metadata imported into Codex', () => {
   it('migrates the running app snapshot rather than stale disk data and replaces its cached notes', () => {
     const { folder, manifest } = fixture({ [SOURCE]: { status: 'todo' } })
     const notes = memoryNotes()
-    notes.set(SOURCE, NOTE)
+    notes.replace({ [SOURCE]: NOTE })
     let settings: Partial<Settings> = { ...DEFAULT_SETTINGS, favorites: [SOURCE] }
     const result = migrateCodexMetadata(folder, manifest, false, { notes, settings, saveSettings: (next) => { settings = next } })
     expect(result.migrated).toBe(1)

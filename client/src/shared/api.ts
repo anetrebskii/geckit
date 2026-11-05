@@ -375,7 +375,25 @@ export interface ManagerThreadName {
   readonly said: string
 }
 
+export interface StatusAttribution {
+  readonly executor: 'user' | 'manager' | 'system'
+  readonly origin: 'geckit' | 'desktop' | 'telegram' | 'channel' | 'phone' | 'unknown'
+  readonly session?: ChatSession['id'] | undefined
+  readonly thread?: string
+  readonly operation?: string
+  readonly message?: string
+  readonly channel?: string
+}
+
+export interface StatusMove {
+  readonly status: SessionStatus | 'progress' | 'review'
+  readonly at: number
+  readonly before?: StatusMove['status']
+  readonly attribution?: StatusAttribution
+}
+
 export interface ChatSession {
+  readonly moves?: readonly StatusMove[]
   readonly employeeId?: Employee['id']
   readonly prepared?: true
   readonly retryNotice?: string

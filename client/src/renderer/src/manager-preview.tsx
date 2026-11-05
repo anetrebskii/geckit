@@ -25,7 +25,14 @@ const sessionsListeners = new Set<(value: readonly ChatSession[]) => void>()
 const initialProvider: SessionProvider = query.get('provider') === 'codex' ? 'codex' : query.get('provider') === 'library' ? 'plugin:fixture' : 'claude'
 const initialModel = initialProvider === 'codex' ? 'gpt-fixture' : initialProvider === 'plugin:fixture' ? 'library-model' : 'sonnet'
 let backing: ChatSession = { id: initialProvider === 'claude' ? 'manager-fixture-1' : `${initialProvider}:manager-fixture-1`, manager: true, root: '/Users/alex/Library/Application Support/geckit/manager', title: 'Manager', stands: 'Ready', state: query.get('state') === 'working' ? 'working' : 'idle', at: Date.now(), here: true, mode: 'manual', model: initialModel }
-const worker: ChatSession = { id: 'codex:worker-fixture', parent: backing.id, managerManaged: true, root, title: 'Add project provider preferences', stands: 'Waiting for your answer', state: 'asks', at: Date.now(), here: true, mode: 'auto' }
+let worker: ChatSession = { id: 'codex:worker-fixture', parent: backing.id, managerManaged: true, root, title: 'Add project provider preferences', stands: 'Waiting for your answer', state: 'asks', at: Date.now(), here: true, mode: 'auto' }
+if (query.has('statusHistory')) {
+  worker = { ...worker, status: 'blocked', moves: [
+    { status: 'review', at: 1793912400000 },
+    { status: 'done', before: 'progress', at: 1793912460000, attribution: { executor: 'manager', origin: 'telegram', session: backing.id, thread: 'main', operation: 'mark:telegram', message: 'telegram:trusted:42' } },
+    { status: 'blocked', before: 'done', at: 1793912520000, attribution: { executor: 'system', origin: 'unknown' } },
+  ] }
+}
 const unknownWorker = 'codex:unlisted-worker-fixture'
 if (query.has('nativeRetry')) backing = { ...backing, state: 'working', retryNotice: 'Codex is retrying automatically.\nReconnecting... 1/5\n429 Too Many Requests' }
 if (query.has('nativeRetryLong')) backing = { ...backing, state: 'working', retryNotice: `${backing.retryNotice ?? ''}\n${'Long provider diagnostic without whitespace. '.repeat(12)}${'x'.repeat(300)}` }
@@ -208,6 +215,15 @@ const chat: Partial<Geckit['chat']> = {
   models: async (_root, provider) => query.has('modelsFailure') ? undefined : [...modelsFor(provider ?? 'claude')],
   onNotice: listen, onTask: listen, onEarlier: listen, onShow: (callback) => { if (query.has('staleManager')) queueMicrotask(() => callback('archived-manager-fixture')); else if (query.has('unknownWorker')) queueMicrotask(() => callback(unknownWorker)); else if (query.has('worker')) queueMicrotask(() => callback(worker.id)); return noop }, onSpotlight: listen, onScreenshot: listen,
   cutOff: async () => [], links: async () => [], waiting: async () => undefined, repo: async () => undefined, onGit: listen, git: async () => undefined, files: async () => [], mcp: async () => [], browsers: async () => [], picture: async () => undefined, queuedPicture: async () => undefined, read: noop,
+  mark: (id, status) => {
+    if (id !== worker.id) return
+    const before = worker.status ?? 'progress'
+    const target = status ?? 'progress'
+    if (target === before) return
+    const { status: _old, ...rest } = worker
+    worker = { ...rest, ...(status === undefined ? {} : { status }), moves: [...(worker.moves ?? []), { before, status: target, at: Date.now(), attribution: { executor: 'user', origin: 'desktop' } }] }
+    for (const callback of sessionsListeners) callback([worker])
+  },
   openFile: noop, stop: noop, openLink: (url) => { if (url.startsWith('https://t.me/geckit_fixture_bot?start=') && telegram.state === 'pairing') { telegram = { ...telegram, state: 'confirming', candidate: { id: 42, chatId: 42, name: 'Alex fixture', username: 'alex_fixture' } }; for (const callback of telegramListeners) callback(telegram) } },
 }
 const bridge: Omit<Partial<Geckit>, 'chat' | 'hosts' | 'shortcuts' | 'settings' | 'update' | 'errors' | 'speech'> & { readonly chat: typeof chat; readonly hosts: Partial<Geckit['hosts']>; readonly shortcuts: Partial<Geckit['shortcuts']>; readonly settings: Partial<Geckit['settings']>; readonly update: Partial<Geckit['update']>; readonly errors: Partial<Geckit['errors']> } = {

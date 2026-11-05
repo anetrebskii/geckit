@@ -110,7 +110,7 @@ export async function operate(runtime: CoreRuntime, args: readonly string[], shu
   if (group === 'manager') {
     if (command === 'view') return json(await runtime.manager.view())
     if (command === 'configure') return json(await runtime.configureManager(managerFrom(at(0))))
-    if (command === 'send') return json(await runtime.manager.send(at(0)))
+    if (command === 'send') return json(await runtime.manager.send(at(0), 'operator'))
     if (command === 'pause') return json(await runtime.manager.pause())
     if (command === 'resume') return json(await runtime.manager.resume())
     if (command === 'answer') return json(await runtime.manager.answer(at(0), at(1)))

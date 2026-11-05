@@ -250,11 +250,11 @@ export function notesStore(): NotesStore {
   let soon: NodeJS.Timeout | undefined
   return {
     all: () => notes,
-    set: (id, note) => {
-      const next = { ...notes, [id]: withMoves(notes[id], note, Date.now()) }
+    set: (id, note, attribution) => {
+      const next = { ...notes, [id]: withMoves(notes[id], note, Date.now(), attribution) }
       if (note.status !== notes[id]?.status) setBrowserConversationDone(id, note.status === 'done')
       clearTimeout(soon)
-      if (note.employeeId !== notes[id]?.employeeId || note.employeeRoot !== notes[id]?.employeeRoot || note.managerPrompt !== undefined || note.managerOwner !== undefined || (note.prepared !== undefined && notes[id] === undefined)) {
+      if (note.status !== notes[id]?.status || note.employeeId !== notes[id]?.employeeId || note.employeeRoot !== notes[id]?.employeeRoot || note.managerPrompt !== undefined || note.managerOwner !== undefined || (note.prepared !== undefined && notes[id] === undefined)) {
         const path = join(folder(), NOTES)
         writeFileSync(`${path}.new`, JSON.stringify(next, undefined, 2))
         renameSync(`${path}.new`, path)

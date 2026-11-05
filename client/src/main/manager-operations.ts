@@ -1,3 +1,4 @@
+import { formatStatusMove } from '../shared/status-history'
 import { settingsCommand } from './agent-settings'
 import { AGENT_SETTINGS_SCHEMA } from '../shared/agent-settings'
 import type { Employees } from './employees'
@@ -6,7 +7,7 @@ import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writ
 import { basename, dirname, isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 
 import { providerOf } from '../shared/api'
-import type { ChatSession, ManagerLabels, SessionMessage, SessionProvider, Settings } from '../shared/api'
+import type { ChatSession, StatusAttribution, ManagerLabels, SessionMessage, SessionProvider, Settings } from '../shared/api'
 import { isRemote } from '../shared/hosts'
 import { isCodexProvider, llmProviderInfo, providerModel } from '../shared/providers'
 import { managerProjects } from '../shared/manager'
@@ -18,6 +19,8 @@ import type { TelegramAttachments, TelegramFileSender } from './telegram-attachm
 import type { NotesStore, Sessions } from './sessions'
 
 interface OperationDeps {
+  readonly statusAttribution?: () => StatusAttribution
+
   readonly instructions?: {
     readonly read: () => ManagerConfig['instructions']
     readonly write: (instructions: ManagerConfig['instructions'], expected: ManagerConfig['instructions']) => Promise<ManagerInstructionsResult>
@@ -67,7 +70,7 @@ export const MANAGER_CAPABILITIES = {
     'sessions retry --id <managed-worker-id> (same deliberate Try again as GeckIt; rechecks VPN)',
     'sessions steer --id <managed-worker-id> --text <correction> (active native runtime only; never queues or restarts)',
     'sessions stop --id <managed-worker-id>',
-    'sessions mark --id <managed-worker-id> --status progress|review|blocked|done|archived (done needs confirmation)',
+    'sessions mark --id <managed-worker-id> --status todo|progress|blocked|done|archived (no product confirmation)',
     'sessions attach --id <existing-worker-id> (no product confirmation; use when the user asks to coordinate or watch it; it reports to this thread)',
     'sessions follow --id <managed-worker-id> (no product confirmation; this thread also receives its updates; its starter keeps receiving them)',
     'sessions unfollow --id <managed-worker-id> (no product confirmation)',
@@ -216,7 +219,6 @@ export class ManagerOperations {
     if (domain === 'employees' && command === 'rename') return `Change these user preferences? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'start' && policy === 'approve') return `Start this worker? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'answer') return `Send this answer to the worker's question? ${JSON.stringify(args)}`
-    if (domain === 'sessions' && command === 'mark' && args.includes('done')) return `Accept this task as Done? ${JSON.stringify(args)}`
     if (domain === 'projects' && (command === 'add' || command === 'create')) return `Register this folder for Manager access? ${JSON.stringify(args)}`
     if ((domain === 'projects' || domain === 'files') && command === 'remove') return `Remove this ${domain === 'projects' ? 'project from GeckIt (files are kept)' : 'file or empty folder'}? ${JSON.stringify(args)}`
     return undefined
@@ -475,7 +477,7 @@ export class ManagerOperations {
       if (command === 'show') {
         const count = Number(flags.get('--last') ?? 10)
         if (!Number.isInteger(count) || count < 1 || count > 30) throw new Error('--last must be an integer from 1 to 30.')
-        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, state: worker.state, delivery: worker.delivery, tasks: worker.tasks, canStopTasks: worker.canStopTasks === true, canInject: worker.canInject === true, items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
+        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, state: worker.state, status: worker.status, history: (worker.moves ?? []).map(formatStatusMove), moves: worker.moves ?? [], delivery: worker.delivery, tasks: worker.tasks, canStopTasks: worker.canStopTasks === true, canInject: worker.canInject === true, items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
       }
       if (command === 'retry' || command === 'steer') {
         if (!settings.chatProviders.includes(providerOf(id))) throw new Error('This worker provider is disabled. No replacement was selected.')
@@ -490,7 +492,8 @@ export class ManagerOperations {
       if (command === 'mark') {
         const status = required(flags, '--status')
         if (status !== 'progress' && status !== 'todo' && status !== 'blocked' && status !== 'done' && status !== 'archived') throw new Error('Status must be todo, progress, blocked, done or archived.')
-        this.#deps.sessions.mark(id, status === 'progress' ? undefined : status)
+        if (this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
+        this.#deps.sessions.mark(id, status === 'progress' ? undefined : status, this.#deps.statusAttribution?.() ?? { executor: 'manager', origin: 'unknown', session: this.#deps.managerSession(), operation })
         return JSON.stringify({ id, status })
       }
       if (command === 'answer') {

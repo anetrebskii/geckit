@@ -64,7 +64,7 @@ describe('Codex conversations in the GeckIt CLI', () => {
 
   it('lists migrated metadata, favorites and exact history', async () => {
     const result = await run(['sessions', '--provider', 'codex', '--status', 'done', '--favorites', '--json'])
-    expect(JSON.parse(result)).toEqual([{ id: ID, provider: 'codex', at: new Date(2000).toISOString(), project: 'app', root: ROOT, status: 'done', title: 'GeckIt title', favorite: true, last: 'Finished', history: [{ status: 'created', at: new Date(500).toISOString() }, { status: 'review', at: new Date(1500).toISOString() }, { status: 'done', at: new Date(2000).toISOString() }] }])
+    expect(JSON.parse(result)).toEqual([{ id: ID, provider: 'codex', at: new Date(2000).toISOString(), project: 'app', root: ROOT, status: 'done', title: 'GeckIt title', favorite: true, last: 'Finished', history: [{ status: 'created', at: new Date(500).toISOString() }, { status: 'review', at: new Date(1500).toISOString(), detail: '1970-01-01T00:00:01.500Z · unknown → review · Legacy / unknown', move: { status: 'review', at: 1500 } }, { status: 'done', at: new Date(2000).toISOString(), detail: '1970-01-01T00:00:02.000Z · unknown → done · Legacy / unknown', move: { status: 'done', at: 2000 } }] }])
     expect(codex.dispose).toHaveBeenCalledOnce()
   })
 

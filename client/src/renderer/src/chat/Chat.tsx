@@ -1,3 +1,4 @@
+import { StatusHistory } from './StatusHistory'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DEFAULT_SETTINGS, homeOf, inProgress, providerOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
@@ -830,6 +831,7 @@ export function Chat(): React.JSX.Element {
           </div>
         )}
 
+        {chat.session === undefined ? null : <StatusHistory {...(chat.session.moves === undefined ? {} : { moves: chat.session.moves })} />}
         {chat.shown.kind === 'new' && chat.items.length === 0 ? (
           <div className="transcript">
             <div className="turn" role={chat.checkingIp ? 'status' : undefined} style={{ paddingTop: 40, color: 'var(--text-dim)' }}>

@@ -72,7 +72,7 @@ Telegram disconnection never disables desktop Manager. A paused/disabled manager
 
 ### Task and decision state
 
-Use board words: working, queued, waiting for your answer, blocked, In review, Done. A decision is Waiting, Answered or No longer available. A delivery is Received, Queued, Delivered, Failed or Delivery uncertain. These are observable outcomes, not model predictions. Manager never marks work Done from a worker's assertion alone; Alex accepts it.
+Use board words: working, queued, waiting for your answer, blocked, In review, Done. A decision is Waiting, Answered or No longer available. A delivery is Received, Queued, Delivered, Failed or Delivery uncertain. These are observable outcomes, not model predictions. Manager should verify work before reporting completion. As of Alex's 2026-11-06 instruction, status updates including Done execute without an additional product confirmation. [Technical status history](task-status-history.md) records Manager as the executor and only technically known transport/message references; it does not infer Alex's authorship from the thread or prompt. Earlier saved pending decisions are not automatically approved.
 
 ## 4. Transitions
 

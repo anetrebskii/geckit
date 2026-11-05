@@ -51,6 +51,17 @@ it('bootstraps persisted projects before listing, shares events across desktop c
     expect((await desktop.call('chat:list', undefined)).map((one) => one.id)).toEqual([firstId])
     expect((await desktop.call('phone:list', undefined)).map((one) => one.id)).toEqual(expect.arrayContaining([firstId, secondId]))
     expect(await desktop.call('phone:settings')).toMatchObject({ profile: '', chatProjects: [], chatAll: true })
+    const forged: Parameters<ServiceMethods['chat:mark']> = [firstId, 'done']
+    Object.assign(forged, { 2: { executor: 'manager', origin: 'telegram', message: 'spoof' } })
+    await desktop.call('chat:mark', ...forged)
+    const marked = (await desktop.call('chat:list', undefined)).find((one) => one.id === firstId)
+    expect(marked?.moves?.at(-1)).toMatchObject({ before: 'progress', status: 'done', attribution: { executor: 'user', origin: 'desktop' } })
+    expect(marked?.moves?.at(-1)?.attribution?.message).toBeUndefined()
+    const persisted = JSON.parse(await readFile(join(directory, 'sessions.json'), 'utf8')) as { readonly [id: string]: Pick<NonNullable<typeof marked>, 'moves' | 'status'> }
+    expect(persisted[firstId]?.moves).toEqual(marked?.moves)
+    await desktop.call('chat:markPhone', firstId, 'blocked')
+    const phoneMarked = (await desktop.call('chat:list', undefined)).find((one) => one.id === firstId)
+    expect(phoneMarked?.moves?.at(-1)).toMatchObject({ before: 'done', status: 'blocked', attribution: { executor: 'user', origin: 'phone' } })
     other = await connectDesktop(options)
     await other.call('settings:set', { nativeLanguage: 'French' })
     const deadline = Date.now() + 3_000

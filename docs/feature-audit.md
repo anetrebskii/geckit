@@ -684,3 +684,10 @@ Requested explicitly by Alex in Codex session `01a1ace8-8e2b-7dd3-aa4e-724fb333b
 - `test/agent-settings.test.ts` checks schema, atomic invalid values, provider boundaries, maps/arrays, expected-value conflicts and related preferences. `test/employees-team.test.ts` checks shortcut lifecycle with no ask and unchanged catalog approvals.
 - `test/headless-service.test.ts` runs the built service and CLI on temporary data with a fixture provider, verifies worker writes/readback/restart, disk state, actual dispatch of changed prompts, and Manager commands via its authenticated subprocess CLI under approve delegation without decisions. `test/manager.test.ts` additionally checks auth, preference conflicts, durable instructions and absence of decisions.
 - Installed GeckIt/Manager was not restarted or updated. Fixture provider completion proves host dispatch and persistence, not live provider integration. Renderer and phone interaction review is blocked by browser access; no renderer/CSS changes were made.
+
+
+## Task status technical history - 2026-11-06, local working tree
+
+Alex requested status updates including Done without an extra product card, with deterministic technical attribution from the authenticated host. Existing move history now retains previous/new status, time, factual executor and known transport/operation references; legacy stays unknown. CLI, Manager and Chat share formatting. Old pending decisions are preserved without automatic consent; native and unrelated confirmations remain.
+
+Evidence: [UX](ux/task-status-history.md), [verification and limits](reports/task-status-history.md), `shared/api.ts`, `shared/status-history.ts`, `main/manager.ts`, `main/manager-operations.ts`, `main/sessions/index.ts`, `main/store.ts`, core fixed desktop/phone routes, and Chat `StatusHistory`. Full local suite passed; installed application and live accounts were not restarted or published. Canonical feature-list wording proposed separately; no unapproved list addition.

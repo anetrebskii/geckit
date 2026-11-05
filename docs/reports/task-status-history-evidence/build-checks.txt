@@ -1,0 +1,32 @@
+Desktop build
+../../out/renderer/assets/recording-DdFynjWA.js                                     1.13 kB
+../../out/renderer/assets/pictures-Ds_1hoMw.js                                      1.52 kB
+../../out/renderer/assets/steps-D6kYWwJk.js                                         1.83 kB
+../../out/renderer/assets/panel-oTYzauVl.js                                        21.46 kB
+../../out/renderer/assets/Menu-CiGMzvjP.js                                         21.69 kB
+../../out/renderer/assets/speech-kINQmSOX.js                                       29.83 kB
+../../out/renderer/assets/voice-Bn3WYe3E.js                                        30.12 kB
+../../out/renderer/assets/gecko-zJXM8lrC.js                                        37.68 kB
+../../out/renderer/assets/styles-gt7MKRGm.js                                      641.27 kB
+../../out/renderer/assets/peer-DCV77e4I.js                                        955.69 kB
+../../out/renderer/assets/chat-D2PkZ4T1.js                                      1,516.18 kB
+✓ built in 1.30s
+
+Mobile build
+www/assets/web-DJG8AUTI.js                                           3.06 kB │ gzip:   1.24 kB
+www/assets/stub-BOdiwcfu.js                                         14.11 kB │ gzip:   6.01 kB
+www/assets/phone-bFk3ppwl.js                                        30.37 kB │ gzip:  11.26 kB
+www/assets/index-BixBxlrz.js                                       454.13 kB │ gzip: 150.49 kB
+www/assets/main-BAJhD1_M.js                                        821.92 kB │ gzip: 246.99 kB
+www/assets/main-Cwj726y6.js                                      1,024.74 kB │ gzip: 299.56 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.12s
+
+Typecheck
+
+> geckit@1.0.0 typecheck
+> tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.viewer.json && tsc --noEmit -p tsconfig.sw.json

@@ -10,7 +10,7 @@ export type ManagerRequestReceipt = Pick<ManagerSendRequest, 'id'> & Required<Pi
   readonly state: 'queued' | 'sending' | 'sent'
 }
 export type ManagerQueuedRequest = ManagerRequestReceipt & Pick<Extract<SessionItem, { kind: 'mine' }>, 'text' | 'at'> & {
-  readonly source: 'desktop' | 'telegram'
+  readonly source: 'desktop' | 'phone' | 'telegram' | 'operator'
 }
 export type ManagerAnswerRequest = Pick<ManagerRequestReceipt, 'session' | 'id'> & { readonly choice: string }
 export type ManagerAnswerResult = ManagerView & { readonly answer: ManagerDecisionOutcome }
