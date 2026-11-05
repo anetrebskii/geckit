@@ -39,6 +39,7 @@ import { keptOrder } from '../shared/order'
 import { createCoreHosts } from './hosts'
 import { dataDirectory } from './platform'
 import { createCoreSessions } from './sessions'
+import { registerProjectBrowserConversation } from '../cli/browser-lifecycle'
 
 export interface RuntimeOptions {
   readonly vault?: TelegramVault
@@ -168,6 +169,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       } } : {}),
       changed: (changed) => {
         all = changed
+        for (const conversation of changed) registerProjectBrowserConversation(conversation, getSettings().projects)
         manager?.observeSessions(changed)
         events.emit('chat:sessions', changed)
         const settings = getSettings()

@@ -1,6 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
+import { requestingSession } from './start'
+import { conversationTestName } from './browser-lifecycle'
 import { findModelServer, findModelState, findModelUsable, pickRefs } from './find-model'
 import { downloading, TEST_PREFIX, testBrowsersState, testLog, testName, validTestName } from './testing'
 import type { BrowserBridgeState } from '../shared/api'
@@ -197,21 +199,33 @@ export function browserHost(folder: string = browserFolder()): void {
 const percent = (part: number, whole: number): number => whole === 0 ? 0 : Math.round((part / whole) * 100)
 
 /** Starts a test browser through the GeckIt service, which runs outside any conversation's sandbox, making its profile if it is new. */
-async function startTest(name: string, folder: string = browserFolder()): Promise<{ readonly ok: boolean; readonly said: string }> {
+async function startTest(name: string, folder: string = browserFolder(), conversation?: string): Promise<{ readonly ok: boolean; readonly said: string }> {
   if (!validTestName(name)) return { ok: false, said: 'Name the test profile test:<name>, with lowercase letters, digits and hyphens, such as test:store.' }
   const label = `${TEST_PREFIX}${name}`
-  if (profiles(folder).some((one) => one.label === label)) return { ok: true, said: `${label} is already open.` }
+  if (profiles(folder).some((one) => one.label === label)) {
+    const claimed = await claimTest(name, folder, conversation)
+    if (claimed.ok || !claimed.said.includes('closing')) return claimed
+  }
   if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, said: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Integrations.' }
   const launch = join(folder, `${randomUUID()}.launch`)
   try {
     mkdirSync(folder, { recursive: true })
-    writeFileSync(`${launch}.part`, JSON.stringify({ name }))
+    writeFileSync(`${launch}.part`, JSON.stringify({ name, ...(conversation === undefined ? {} : { conversation }) }))
     renameSync(`${launch}.part`, launch)
   } catch { return { ok: false, said: `This sandbox may not write to ${folder}. GeckIt's own conversations may; elsewhere ask the person to allow writing there.` } }
   for (let waited = 0; waited < 60_000; waited += 500) {
     await new Promise((done) => setTimeout(done, 500))
-    if (profiles(folder).some((one) => one.label === label)) return { ok: true, said: `${label} is open. Give --profile ${label} to open, and its tab ids to the rest.` }
-    if (waited >= 5_000 && existsSync(launch)) { rmSync(launch, { force: true }); return { ok: false, said: 'GeckIt is not running, and it is GeckIt that starts test browsers. Ask the person to open GeckIt.' } }
+    if (conversation !== undefined) {
+      try { conversationTestName(conversation, folder, name) } catch (error) { rmSync(launch, { force: true }); return { ok: false, said: error instanceof Error ? error.message : String(error) } }
+    }
+    if (profiles(folder).some((one) => one.label === label)) {
+      const claimed = await claimTest(name, folder, conversation)
+      if (claimed.ok || !claimed.said.includes('closing')) return claimed
+    }
+    if (conversation !== undefined && waited > 0 && waited % 2_000 === 0 && !existsSync(launch)) {
+      writeFileSync(`${launch}.part`, JSON.stringify({ name, conversation }))
+      renameSync(`${launch}.part`, launch)
+    }
     const fetching = downloading()
     if (fetching?.error !== undefined) return { ok: false, said: `Chrome for Testing did not download: ${fetching.error}.` }
   }
@@ -220,6 +234,17 @@ async function startTest(name: string, folder: string = browserFolder()): Promis
   let log: string
   try { log = readFileSync(testLog(name), 'utf8').trim().split('\n').at(-1) ?? '' } catch { log = '' }
   return { ok: false, said: `${label} did not start within a minute${log === '' ? '.' : `: ${log}`}` }
+}
+
+async function claimTest(name: string, folder: string, conversation?: string): Promise<{ readonly ok: boolean; readonly said: string }> {
+  const label = `${TEST_PREFIX}${name}`
+  const host = profiles(folder).find((one) => one.label === label)
+  if (host === undefined) return { ok: false, said: `${label} is not open.` }
+  if (conversation !== undefined) {
+    const reply = await ask({ cmd: 'acquire', conversation }, folder, host.pid)
+    if (!reply.ok) return { ok: false, said: reply.error ?? 'The test browser refused ownership.' }
+  }
+  return { ok: true, said: `${label} is open. Use open <url> --profile test; GeckIt closes your tabs when this card reaches Done.` }
 }
 
 /** Closes a test browser; its profile stays for next time. */
@@ -364,8 +389,12 @@ export const BROWSER_HELP = `geckit browser: the person's own Chrome, through th
   profiles                      the Chrome profiles here: email, name, whether GeckIt Browser is in it and open, which was used last;
                                 then the test profiles, test:<name>
   start <profile>               open a window of a profile that has GeckIt Browser but is closed
-  start test:<name>             open a test browser with that profile, making it if new; its sign-ins stay for next time
-  stop test:<name>              close a test browser; its profile stays
+  start test                    start or reuse this conversation project test browser; no profile name needed
+  start test:<name>             outside conversations: explicitly open a separate account profile
+                                conversations may select only accounts configured by the person in
+                                ~/.geckit/browser-state/test-project-profiles.json
+  stop test:<name>              outside conversations: close a test browser; its profile stays
+                                conversation tabs close on Done; the last owner closes the browser
   pages [--profile <name>]      tabs: id, title, url (* is the tab shown in its window), under each Chrome profile's email
   open <url> [--profile <name>] open in a new background tab and wait for it to load; the profile used last unless --profile
   go <tab> <url>                load a url in a tab
@@ -411,8 +440,17 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
   const [what, ...rest] = args
   if (what === undefined || what === 'help' || what === '--help') return { ok: true, said: BROWSER_HELP }
   if (what === 'profiles') return { ok: true, said: listProfiles() }
-  if (what === 'start') return rest[0]?.startsWith(TEST_PREFIX) === true ? startTest(rest[0].slice(TEST_PREFIX.length)) : startProfile(rest[0])
-  if (what === 'stop') return stopTest(rest[0]?.startsWith(TEST_PREFIX) === true ? rest[0].slice(TEST_PREFIX.length) : rest[0] ?? '')
+  const conversation = requestingSession()
+  if (what === 'start' || what === 'stop') {
+    try {
+      const test = rest[0] === 'test' || rest[0]?.startsWith(TEST_PREFIX) === true
+      if (!test) return what === 'start' ? startProfile(rest[0]) : { ok: false, said: 'Give a test profile to stop.' }
+      const name = conversation === undefined ? rest[0]?.slice(TEST_PREFIX.length) ?? '' : conversationTestName(conversation, browserFolder(), rest[0]?.slice(TEST_PREFIX.length))
+      if (what === 'start') return startTest(name, browserFolder(), conversation)
+      if (conversation !== undefined) return { ok: false, said: 'Move this conversation card to Done to release its test tabs; other conversations keep their browser.' }
+      return stopTest(name)
+    } catch (error) { return { ok: false, said: error instanceof Error ? error.message : String(error) } }
+  }
   const words = rest.filter((one, at) => !(one.startsWith('--') || one === '-o') && !VALUED.includes(rest[at - 1] ?? ''))
   try {
     const request = (): object => {
@@ -468,16 +506,22 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
         default: throw new Error(`Unknown command ${what}.\n\n${BROWSER_HELP}`)
       }
     }
-    const asked = request() as { readonly cmd: string; readonly tab?: number }
+    const asked = { ...request(), ...(conversation === undefined ? {} : { conversation }) } as { readonly cmd: string; readonly tab?: number; readonly conversation?: string }
     const known = profiles()
-    const named = option(rest, '--profile')
-    if (asked.cmd === 'pages' && known.length > 1 && named === undefined) {
-      const replies = await Promise.all(known.map(async (one) => ({ one, reply: await ask(asked, browserFolder(), one.pid) })))
+    const selected = option(rest, '--profile')
+    const named = selected === 'test' || (conversation !== undefined && selected?.startsWith(TEST_PREFIX) === true) ? `${TEST_PREFIX}${conversationTestName(conversation ?? '', browserFolder(), selected?.slice(TEST_PREFIX.length))}` : selected
+    const scoped = known.filter((one) => {
+      if (!one.label.startsWith(TEST_PREFIX) || conversation === undefined) return true
+      try { return one.label === `${TEST_PREFIX}${conversationTestName(conversation, browserFolder(), testName(one.label))}` } catch { return false }
+    })
+    if (asked.cmd === 'pages' && scoped.length > 1 && named === undefined) {
+      const replies = await Promise.all(scoped.map(async (one) => ({ one, reply: await ask(asked, browserFolder(), one.pid) })))
       const failed = replies.find((one) => !one.reply.ok)
       if (failed !== undefined) return { ok: false, said: `${failed.one.label}: ${failed.reply.error ?? 'Chrome refused.'}` }
       return { ok: true, said: replies.map(({ one, reply }) => `${one.label}\n${shown(what, rest, words, reply.result)}`).join('\n\n') }
     }
-    const target = known.length === 0 ? undefined : pickProfile(known, asked, named)
+    if (asked.tab !== undefined && known.some((one) => one.label.startsWith(TEST_PREFIX) && one.tabs.includes(asked.tab as number)) && !scoped.some((one) => one.tabs.includes(asked.tab as number))) return { ok: false, said: 'This test tab belongs to another project or an unowned legacy browser.' }
+    const target = known.length === 0 && !named?.startsWith(TEST_PREFIX) ? undefined : pickProfile(scoped, asked, named)
     if (typeof target === 'string') return { ok: false, said: target }
     const reply = await ask(asked, browserFolder(), target?.pid)
     if (!reply.ok) return { ok: false, said: reply.error ?? 'Chrome refused.' }

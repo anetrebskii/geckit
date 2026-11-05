@@ -15,6 +15,7 @@ import { localCalendarZone, recurrenceError } from '../shared/recurrence'
 import { startWindowError } from '../shared/schedule'
 import { carriedOver } from './carry-over'
 import { withMoves } from './sessions'
+import { setBrowserConversationDone } from '../cli/browser-lifecycle'
 import type { NotesStore, SessionNote } from './sessions'
 
 /**
@@ -245,7 +246,7 @@ export function forgetRoots(matches: (root: string) => boolean): Settings {
 /** What the tool's own session file will not say back, kept beside it. */
 export function notesStore(): NotesStore {
   // In review is gone: a card an earlier build put there stands in In progress.
-  let notes = Object.fromEntries(Object.entries(read<Record<string, SessionNote>>(NOTES, {}) ?? {}).map(([id, note]) => {
+  let notes: ReturnType<NotesStore['all']> = Object.fromEntries(Object.entries(read<Record<string, SessionNote>>(NOTES, {}) ?? {}).map(([id, note]) => {
     if ((note.status as string | undefined) !== 'review') return [id, note]
     const { status: _review, ...rest } = note
     return [id, rest]
@@ -255,6 +256,7 @@ export function notesStore(): NotesStore {
     all: () => notes,
     set: (id, note) => {
       const next = { ...notes, [id]: withMoves(notes[id], note, Date.now()) }
+      if (note.status !== notes[id]?.status) setBrowserConversationDone(id, note.status === 'done')
       clearTimeout(soon)
       if (note.employeeId !== notes[id]?.employeeId || note.employeeRoot !== notes[id]?.employeeRoot || note.managerPrompt !== undefined || note.managerOwner !== undefined || (note.prepared !== undefined && notes[id] === undefined)) {
         const path = join(folder(), NOTES)
@@ -268,6 +270,7 @@ export function notesStore(): NotesStore {
     },
     replace: (next) => {
       clearTimeout(soon)
+      for (const [id, note] of Object.entries(next)) if (note.status !== notes[id]?.status) setBrowserConversationDone(id, note.status === 'done')
       notes = { ...next }
       write(NOTES, notes)
     },

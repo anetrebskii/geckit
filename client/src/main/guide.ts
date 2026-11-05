@@ -423,7 +423,7 @@ A test browser is Chrome for Testing that GeckIt starts and drives itself, with 
 - the work should stay away from the person's own tabs and accounts: checking an app on localhost, trying a sign-up as a new user, a design check that must not touch their windows;
 - no Chrome profile has GeckIt Browser.
 
-Otherwise use the person's own Chrome: it has their accounts. \`start test:<name>\` opens a test browser, making the profile if it is new; name it for what it is for, such as \`test:store\`, and reuse the names \`profiles\` lists. Then \`open <url> --profile test:<name>\`, and its tab ids for the rest, as with any profile. A new profile is signed in to nothing: when the work needs an account, ask the person to sign in in that window, and do not type their password. \`stop test:<name>\` closes it when the work is done; the profile stays. The first start downloads Chrome for Testing, about 200 MB, and says so: run \`start\` again a minute later.
+Otherwise use the person's own Chrome: it has their accounts. \`start test\` starts or reuses the one persistent test browser for this conversation's registered project folder. Then \`open <url> --profile test\` creates a tab owned by this conversation; use its tab ids for the rest. Do not invent profile names. Conversations in the same project share the browser and sign-ins, with separate tabs; other projects use separate profiles. GeckIt refuses access to another conversation's test tabs. Moving this card to Done closes its tabs; the last owning conversation closes the browser while keeping cookies and sign-ins for next time. Do not close a shared browser yourself. A new profile is signed in to nothing: when work needs an account, ask the person to sign in in that window, and do not type their password. The person can explicitly configure separate account profiles in \`~/.geckit/browser-state/test-project-profiles.json\`: each registered project folder maps to an array of allowed profile names; only those explicit names may be selected with \`--profile test:<name>\` (a single string also sets that project's default). The first start downloads Chrome for Testing, about 200 MB, and says so: run \`start test\` again a minute later.
 
 ## Commands
 
@@ -449,7 +449,7 @@ export const BROWSER_SKILL = (command: string, name: string): string => {
   const said = command.includes(' ') ? `"${command}"` : command
   return `---
 name: ${name}
-description: Work in the person's own Chrome through GeckIt, or in a test browser GeckIt drives. Choose the Chrome profile or a test:<name> profile, open pages, find and click, type, read text, take screenshots, check styles, dark and phone layouts, record animations. Use for any task on a website or in Chrome.
+description: Work in the person's own Chrome through GeckIt, or in a test browser GeckIt drives. Choose the Chrome profile or use the project test browser with --profile test, open pages, find and click, type, read text, take screenshots, check styles, dark and phone layouts, record animations. Use for any task on a website or in Chrome.
 ---
 
 # Chrome through GeckIt

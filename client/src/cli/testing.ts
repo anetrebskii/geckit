@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import type { TestBrowsersState } from '../shared/api'
 import background from '../../extension/background.js?raw'
 import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browser'
+import { acquireTestLock, browserConversation, conversationTestName, TestTabOwners } from './browser-lifecycle'
 
 /** Where test browsers live: Chrome for Testing itself under chrome/, each profile under profiles/<name>/. */
 export const testingFolder = (root: string = homedir()): string => join(root, '.geckit', 'chrome-for-testing')
@@ -192,8 +193,8 @@ class Cdp {
   }
 }
 
-interface TargetInfo { readonly targetId: string; readonly type: string; readonly title: string; readonly url: string }
-interface Request { readonly cmd: string; readonly tab?: number; readonly url?: string; readonly ref?: string | null; readonly real?: boolean; readonly text?: string; readonly by?: number; readonly key?: string; readonly code?: string; readonly pointer?: boolean; readonly reset?: boolean; readonly set?: Record<string, unknown>; readonly ms?: number; readonly slow?: number; readonly then?: { readonly cmd: string; readonly ref?: string; readonly key?: string }; readonly query?: string }
+interface TargetInfo { readonly targetId: string; readonly type: string; readonly title: string; readonly url: string; readonly openerId?: string }
+interface Request { readonly conversation?: string; readonly cmd: string; readonly tab?: number; readonly url?: string; readonly ref?: string | null; readonly real?: boolean; readonly text?: string; readonly by?: number; readonly key?: string; readonly code?: string; readonly pointer?: boolean; readonly reset?: boolean; readonly set?: Record<string, unknown>; readonly ms?: number; readonly slow?: number; readonly then?: { readonly cmd: string; readonly ref?: string; readonly key?: string }; readonly query?: string }
 
 const KEYS: Record<string, { code: string; keyCode: number; key?: string; text?: string }> = {
   Enter: { code: 'Enter', keyCode: 13, text: '\r' }, Tab: { code: 'Tab', keyCode: 9 }, Escape: { code: 'Escape', keyCode: 27 },
@@ -206,19 +207,39 @@ const KEYS: Record<string, { code: string; keyCode: number; key?: string; text?:
 const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
 
 /** One test browser: starts Chrome for Testing on a pipe with the profile, says who it is in the hosts folder and answers the requests addressed to it. */
-export async function testBrowser(name: string, folder: string = browserFolder()): Promise<void> {
+export async function testBrowser(name: string, folder: string = browserFolder(), root: string = homedir(), initialConversation: string | undefined = process.env['GECKIT_TEST_CONVERSATION']): Promise<void> {
   if (!validTestName(name)) throw new Error(`${name} is not a test profile name: lowercase letters, digits and hyphens.`)
+  mkdirSync(folder, { recursive: true })
   const label = `${TEST_PREFIX}${name}`
   if (profiles(folder).some((one) => one.label === label && one.pid !== process.pid && alive(one.pid))) return
-  const chrome = testingChrome() ?? await fetchChrome()
-  const dir = join(profilesFolder(), name)
+  const unlock = acquireTestLock(name, folder)
+  if (unlock === undefined) return
+  process.once('exit', unlock)
+  const owners = new TestTabOwners(name, folder, initialConversation !== undefined)
+  if (initialConversation !== undefined) owners.acquire(initialConversation)
+  const acquirePending = (): void => {
+    for (const file of readdirSync(folder).filter((one) => one.endsWith('.launch'))) {
+      try {
+        const launch = JSON.parse(readFileSync(join(folder, file), 'utf8')) as { name: string; conversation?: string }
+        if (launch.conversation === undefined || conversationTestName(launch.conversation, folder, launch.name) !== name) continue
+        owners.acquire(launch.conversation)
+        rmSync(join(folder, file), { force: true })
+      } catch { continue }
+    }
+  }
+  acquirePending()
+  const chrome = testingChrome(root) ?? await fetchChrome()
+  acquirePending()
+  owners.released()
+  if (owners.managed && owners.conversations.size === 0) { unlock(); return }
+  const dir = join(profilesFolder(root), name)
   mkdirSync(dir, { recursive: true })
   const child = spawn(chrome.path, [`--user-data-dir=${dir}`, '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
   child.stderr?.resume()
   const cdp = new Cdp(child.stdio[3] as Writable, child.stdio[4] as Readable)
   mkdirSync(join(folder, 'hosts'), { recursive: true })
   const card = join(folder, 'hosts', `${process.pid}.json`)
-  const base = 900_000_000 + (process.pid % 1000) * 100_000
+  const base = 900_000_000 + process.pid * 100_000
   let counter = 0
   const ids = new Map<string, number>()
   const targets = new Map<number, TargetInfo>()
@@ -234,6 +255,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     let id = ids.get(info.targetId)
     if (id === undefined) { id = base + ++counter; ids.set(info.targetId, id) }
     targets.set(id, info)
+    owners.inherit(info.targetId, info.openerId)
   }
   const sessions = new Map<string, string>()
   const worlds = new Map<string, number>()
@@ -243,6 +265,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     if (method === 'Target.targetDestroyed') {
       const id = ids.get(params['targetId'] as string)
       if (id !== undefined) { targets.delete(id); held.delete(id) }
+      owners.tabs.delete(params['targetId'] as string)
       sessions.delete(params['targetId'] as string)
       worlds.delete(params['targetId'] as string)
       say()
@@ -258,10 +281,13 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   for (const one of (await cdp.send<{ targetInfos: TargetInfo[] }>('Target.getTargets')).targetInfos) track(one)
   say()
 
+  let activeConversation: string | undefined
+  let closing = false
   const targetOf = (id: number | undefined): string => {
     if (id === undefined || !Number.isInteger(id)) throw new Error('Give the tab id from geckit browser pages.')
     const found = targets.get(id)
     if (found === undefined) throw new Error(`No tab ${id}. Run geckit browser pages for the current ids.`)
+    owners.authorize(activeConversation, found.targetId)
     return found.targetId
   }
   const session = async (targetId: string): Promise<string> => {
@@ -337,10 +363,12 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     const id = request.tab
     switch (request.cmd) {
       case 'ping': return { version: `Chrome for Testing ${chrome.version}` }
-      case 'quit': setTimeout(() => { void cdp.send('Browser.close').catch(() => end()) }, 100); return {}
-      case 'pages': return [...targets.entries()].map(([one, info]) => ({ id: one, window: 0, active: false, title: info.title, url: info.url }))
+      case 'acquire': return {}
+      case 'quit': if (owners.conversations.size > 0) throw new Error('This browser still belongs to conversations. Move their cards to Done to release it.'); setTimeout(() => { void cdp.send('Browser.close').catch(() => end()) }, 100); return {}
+      case 'pages': return [...targets.entries()].filter(([, info]) => activeConversation === undefined ? !owners.managed : owners.tabs.get(info.targetId) === activeConversation).map(([one, info]) => ({ id: one, window: 0, active: false, title: info.title, url: info.url }))
       case 'open': {
         const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', background: true })
+        if (activeConversation !== undefined) owners.tabs.set(targetId, activeConversation)
         track({ targetId, type: 'page', title: '', url: 'about:blank' })
         const made = ids.get(targetId) as number
         const send = await sender(made)
@@ -452,36 +480,81 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     })
   }
 
-  const handle = async (request: object): Promise<Reply> => {
-    const asked = request as Request
-    const one = (next: Request): Promise<Reply> => answer(next).then((result) => ({ ok: true, result }), (error: Error) => ({ ok: false, error: error.message }))
-    return asked.cmd === 'find' ? findIn(one, asked.tab, asked.query ?? '') : one(asked)
+  const release = async (): Promise<void> => {
+    if (closing) return
+    acquirePending()
+    const released = owners.released()
+    for (const targetId of released) {
+      await cdp.send('Target.closeTarget', { targetId }).catch(() => undefined)
+      owners.tabs.delete(targetId)
+    }
+    if (owners.managed && owners.conversations.size === 0 && !closing) {
+      closing = true
+      setTimeout(() => { void cdp.send('Browser.close').catch(() => end()) }, 100)
+    }
+  }
+  let queue: Promise<Reply> = Promise.resolve({ ok: true })
+  const handle = (request: object): Promise<Reply> => {
+    const run = async (): Promise<Reply> => {
+      const asked = request as Request
+      try {
+        if (closing) throw new Error('This test browser is closing. Start test again.')
+        activeConversation = asked.conversation
+        if (asked.tab !== undefined) targetOf(asked.tab)
+        else owners.acquire(asked.conversation)
+        const one = (next: Request): Promise<Reply> => answer(next).then((result) => ({ ok: true, result }), (error: Error) => ({ ok: false, error: error.message }))
+        const reply = asked.cmd === 'find' ? await findIn(one, asked.tab, asked.query ?? '') : await one(asked)
+        await release()
+        if (asked.conversation !== undefined && browserConversation(asked.conversation, folder)?.done !== false) return { ok: false, error: 'This conversation is Done; its test tabs have been released.' }
+        return reply
+      } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+      finally { activeConversation = undefined }
+    }
+    queue = queue.then(run, run)
+    return queue
   }
   const pick = serveAsks(folder, (to) => to === process.pid, handle)
   watch(folder, pick)
   setInterval(() => {
-    if (!existsSync(join(homedir(), '.geckit', 'bin', 'geckit-browser-host'))) { void cdp.send('Browser.close').catch(() => end()); return }
     say()
     pick()
+    queue = queue.then(async () => { await release(); return { ok: true } }, async () => { await release(); return { ok: true } })
   }, 1_000)
+
 }
 
 /** Has the service start a test browser outside any sandbox: a conversation only leaves a .launch file. */
 export function serveTestLaunches(executable: string, script: string, folder: string = browserFolder(), root: string = homedir()): () => void {
   mkdirSync(folder, { recursive: true })
+  const pending = new Set<string>()
   const pick = (): void => {
     let files: string[]
     try { files = readdirSync(folder).filter((one) => one.endsWith('.launch')) } catch { return }
     for (const file of files) {
-      const mine = join(folder, `${file}.${process.pid}`)
-      try { renameSync(join(folder, file), mine) } catch { continue }
+      const source = join(folder, file)
       let name: string
-      try { name = (JSON.parse(readFileSync(mine, 'utf8')) as { name: string }).name } catch { rmSync(mine, { force: true }); continue } finally { rmSync(mine, { force: true }) }
+      let conversation: string | undefined
+      try {
+        const launch = JSON.parse(readFileSync(source, 'utf8')) as { name: string; conversation?: string }
+        conversation = launch.conversation
+        name = conversation === undefined ? launch.name : conversationTestName(conversation, folder, launch.name)
+      } catch { rmSync(source, { force: true }); continue }
+      if (pending.has(name) && !profiles(folder).some((one) => one.label === `${TEST_PREFIX}${name}`)) {
+        if (conversation === undefined) rmSync(source, { force: true })
+        continue
+      }
+      if (conversation !== undefined && profiles(folder).some((one) => one.label === `${TEST_PREFIX}${name}`)) continue
+      const mine = `${source}.${process.pid}`
+      try { renameSync(source, mine) } catch { continue }
+      rmSync(mine, { force: true })
       if (!validTestName(name) || profiles(folder).some((one) => one.label === `${TEST_PREFIX}${name}`)) continue
+      pending.add(name)
       mkdirSync(testingFolder(root), { recursive: true })
       const log = openSync(testLog(name, root), 'w')
-      const child = spawn(executable, [script, 'browser-test', name], { detached: true, stdio: ['ignore', log, log], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } })
-      child.on('error', () => undefined)
+      const child = spawn(executable, [script, 'browser-test', name], { detached: true, stdio: ['ignore', log, log], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...(conversation === undefined ? {} : { GECKIT_TEST_CONVERSATION: conversation }) } })
+      closeSync(log)
+      child.on('error', () => { pending.delete(name) })
+      child.on('exit', () => { pending.delete(name) })
       child.unref()
     }
   }

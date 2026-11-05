@@ -146,7 +146,7 @@ export function application(runtime: CoreRuntime) {
     'browser:fetchModel': () => { if (browserBridgeOn() && findModelServer()) void fetchFindModel() },
     'browser:deleteModel': async () => { if (!browserBridgeOn()) await deleteFindModel() },
     'browser:openTest': async (name: string) => { if (browserBridgeOn()) await openTest(name) },
-    'browser:deleteTest': async (name: string) => { await stopTest(name); deleteTestProfile(name) },
+    'browser:deleteTest': async (name: string) => { const stopped = await stopTest(name); if (!stopped.ok) throw new Error(stopped.said); deleteTestProfile(name) },
     'voice:video': () => startRecording(),
     'recording:start': (ext: string) => startRecording(ext),
     'recording:part': (part: string) => addToRecording(Buffer.from(part, 'base64')),

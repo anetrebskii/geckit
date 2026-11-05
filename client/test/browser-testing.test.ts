@@ -43,6 +43,7 @@ describe('test browsers', () => {
     const script = join(folder, 'driver.cjs')
     writeFileSync(script, "require('node:fs').appendFileSync(process.argv[1] + '.ran', process.argv.slice(2).join(' ') + '\\n')")
     writeFileSync(join(folder, 'a.launch'), JSON.stringify({ name: 'store' }))
+    writeFileSync(join(folder, 'duplicate.launch'), JSON.stringify({ name: 'store' }))
     writeFileSync(join(folder, 'b.launch'), JSON.stringify({ name: '../etc' }))
     const stop = serveTestLaunches(process.execPath, script, folder, folder)
     for (let waited = 0; waited < 5_000 && !existsSync(`${script}.ran`); waited += 100) await new Promise((done) => setTimeout(done, 100))
