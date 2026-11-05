@@ -1,0 +1,18 @@
+{
+  "apiVersion": 1,
+  "kind": "channel",
+  "entry": "index.mjs",
+  "channel": {
+    "id": "channel:slack",
+    "name": "Slack",
+    "icon": "chat",
+    "description": "Each Slack thread that mentions the bot is a Claude Code conversation; a direct message goes to Manager."
+  },
+  "config": [
+    { "key": "botToken", "label": "Bot token", "type": "secret", "required": true, "help": "xoxb-, from OAuth and Permissions." },
+    { "key": "appToken", "label": "App token", "type": "secret", "required": true, "help": "xapp-, with connections:write, for Socket Mode." },
+    { "key": "allow", "label": "People who may write", "type": "list", "required": true, "help": "Slack user IDs, such as U012ABC. Nobody else is answered." },
+    { "key": "folder", "label": "Folder for new threads", "type": "text", "help": "One of the folders allowed below. Empty takes the first." },
+    { "key": "checkSecrets", "label": "Refuse messages that contain a token or key", "type": "boolean", "default": true }
+  ]
+}

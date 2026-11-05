@@ -3,14 +3,13 @@ import { dirname, join } from 'node:path'
 
 import { dataDirectory } from '../../core/platform'
 
-import type { LlmProviderInfo } from '../../shared/providers'
 import { redact } from '../../shared/reporting'
 import type { PluginLogFields, PluginLogLevel, PluginLogger, PluginLogValue } from './plugin-api'
 
 export interface PluginLogEntry {
   readonly at: string
   readonly level: PluginLogLevel
-  readonly plugin: LlmProviderInfo['id']
+  readonly plugin: string
   readonly event: string
   readonly fields?: PluginLogFields
 }
@@ -52,11 +51,11 @@ async function append(path: string, line: string): Promise<void> {
 
 export const flushPluginLogs = async (path: string): Promise<void> => { await pending.get(path) }
 
-export function pluginLogger(info: Pick<LlmProviderInfo, 'id'>, scope: PluginLogFields = {}): PluginLogger {
+export function pluginLogger(info: { readonly id: string }, scope: PluginLogFields = {}): PluginLogger {
   const id = info.id === 'claude-tmux' ? 'plugin:claude-tmux' : info.id
   let path = ''
   try {
-    if (/^plugin:[a-z][a-z0-9-]*$/.test(id)) path = join(dataDirectory(), 'provider-logs', `${id.replaceAll(':', '-')}.jsonl`)
+    if (/^(?:plugin|channel):[a-z][a-z0-9-]*$/.test(id)) path = join(dataDirectory(), 'provider-logs', `${id.replaceAll(':', '-')}.jsonl`)
   } catch { /* Diagnostics cannot prevent a library from loading. */ }
   return {
     path,

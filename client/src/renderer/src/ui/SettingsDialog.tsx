@@ -12,7 +12,8 @@ import { Icon } from './Icon'
 import { Picker } from './Menu'
 import { MOD, said } from './Shortcuts'
 import { Version } from './UpdateNotice'
-import { Libraries } from './Libraries'
+import { AddAssistantButton, AddLibrary, FailedLibraryRow, LibraryActions, LibraryUpdates, useLibraries } from './Libraries'
+import { Channels } from './Channels'
 import { VpnIpSettings } from './VpnIpSettings'
 import { ConfigurationSettings } from './ConfigurationSettings'
 
@@ -44,14 +45,14 @@ export const LANGUAGES = [
   'Japanese',
 ]
 
-export type Section = 'general' | 'vpn' | 'assistants' | 'integrations' | 'libraries' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
+export type Section = 'general' | 'vpn' | 'assistants' | 'integrations' | 'channels' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
   { value: 'vpn', label: 'VPN IP check' },
   { value: 'assistants', label: 'Assistants' },
   { value: 'integrations', label: 'Integrations' },
-  { value: 'libraries', label: 'Libraries' },
+  { value: 'channels', label: 'Channels' },
   { value: 'profiles', label: 'Profiles' },
   { value: 'hosts', label: 'Hosts' },
   { value: 'phrases', label: 'Phrases' },
@@ -122,7 +123,7 @@ export function SettingsDialog({
         <h2>Settings</h2>
         <div className="settings-body">
           <nav ref={navigation} className="settings-nav" aria-label="Sections">
-            {SECTIONS.filter((one) => !onPhone || (one.value !== 'phone' && one.value !== 'libraries' && one.value !== 'integrations')).map((one) => (
+            {SECTIONS.filter((one) => !onPhone || (one.value !== 'phone' && one.value !== 'channels' && one.value !== 'integrations')).map((one) => (
               <button
                 key={one.value}
                 type="button"
@@ -149,7 +150,7 @@ export function SettingsDialog({
             {section === 'vpn' ? <VpnIpSettings settings={settings} /> : null}
             {section === 'assistants' ? <Assistants settings={settings} change={change} assistantChat={assistantChat} /> : null}
             {section === 'integrations' ? <Integrations settings={settings} change={change} /> : null}
-            {section === 'libraries' ? <Libraries settings={settings} change={change} /> : null}
+            {section === 'channels' ? <Channels settings={settings} change={change} /> : null}
             {section === 'hosts' ? <HostsSection /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
@@ -187,9 +188,14 @@ function Assistants({ settings, change, assistantChat }: Part & { readonly assis
     if (chatProviders.length === 0) return
     change({ chatProviders, chatProvider: chatProviders.includes(settings.chatProvider) ? settings.chatProvider : chatProviders[0] ?? 'claude' })
   }
+  const onPhone = document.documentElement.classList.contains('phone')
+  const libraries = useLibraries(settings, window.geckit.chat)
   return (
     <section className="assistant-settings" aria-labelledby="assistant-settings-title">
-      <h3 id="assistant-settings-title">Assistants</h3>
+      <div className="provider-library-head">
+        <h3 id="assistant-settings-title">Assistants</h3>
+        {onPhone ? null : <AddAssistantButton libraries={libraries} />}
+      </div>
       <AssistantStatus chat={assistantChat ?? { settings, provider: settings.chatProvider, hosts: [], plans: [], plan: undefined, plansAt: {} }} />
       <div className="assistant-options">
         <label className="assistant-option">
@@ -220,13 +226,13 @@ function Assistants({ settings, change, assistantChat }: Part & { readonly assis
           const instructions = instructionsFor(one)
           return (
           <Fragment key={one.id}>
-            <label className="assistant-option">
-              <span className="assistant-option-copy">
+            <div className="assistant-option assistant-library">
+              <label className="assistant-option-copy" htmlFor={`assistant-${one.id}`}>
                 <span className="assistant-option-name"><Icon name={one.icon} size={14} /> {one.name}</span>
-                <span className="assistant-option-description">{one.source ?? 'Installed provider plugin'}</span>
-              </span>
-              <input className="assistant-toggle" type="checkbox" role="switch" aria-label={`Use ${one.name}`} checked={enabled.includes(one.family)} disabled={enabled.length === 1 && enabled.includes(one.family)} onChange={(event) => toggle(one.family, event.target.checked)} />
-            </label>
+                <span className="assistant-option-description" title={one.source}>{libraries.ready.has(one.id) ? 'Update ready · ' : ''}{one.source?.replace(/^https:\/\//, '') ?? 'Installed locally'}</span>
+              </label>
+              {onPhone ? <input id={`assistant-${one.id}`} className="assistant-toggle" type="checkbox" role="switch" aria-label={`Use ${one.name}`} checked={enabled.includes(one.family)} disabled={enabled.length === 1 && enabled.includes(one.family)} onChange={(event) => toggle(one.family, event.target.checked)} /> : <LibraryActions provider={one} libraries={libraries}><input id={`assistant-${one.id}`} className="assistant-toggle" type="checkbox" role="switch" aria-label={`Use ${one.name}`} checked={enabled.includes(one.family)} disabled={enabled.length === 1 && enabled.includes(one.family)} onChange={(event) => toggle(one.family, event.target.checked)} /></LibraryActions>}
+            </div>
             <details className="assistant-guide">
               <summary>GeckIt instructions</summary>
               <label className="check"><input type="checkbox" checked={instructions === 'claude' ? settings.guideClaude : instructions === 'codex' ? settings.guideCodex : settings.guidePlugins[one.id] ?? true} onChange={(event) => instructions === 'claude' ? change({ guideClaude: event.target.checked }) : instructions === 'codex' ? change({ guideCodex: event.target.checked }) : change({ guidePlugins: { ...settings.guidePlugins, [one.id]: event.target.checked } })} />Tell {one.name} how GeckIt works</label>
@@ -235,8 +241,11 @@ function Assistants({ settings, change, assistantChat }: Part & { readonly assis
           </Fragment>
           )
         })}
+        {onPhone ? null : libraries.failures.map((failure) => <FailedLibraryRow key={failure.id ?? failure.name} failure={failure} libraries={libraries} />)}
       </div>
       <p className="assistant-settings-note" id="assistant-settings-note">Turning off an assistant hides its conversations and pauses its shortcuts.</p>
+      {onPhone ? null : <AddLibrary libraries={libraries} />}
+      {onPhone ? null : <LibraryUpdates settings={settings} change={change} libraries={libraries} />}
     </section>
   )
 }

@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { DEFAULT_SETTINGS } from '../../shared/api'
 import type { ClaudeAccount, SessionProvider, Settings } from '../../shared/api'
 import type { LlmProviderInfo, ProviderPluginFailure } from '../../shared/providers'
+import type { ChannelChange, ChannelSetting, ChannelsView } from '../../shared/channels'
 import { registerProviderInfo } from '../../shared/providers'
 import './styles.css'
 import './chat/phone-home.css'
@@ -42,6 +43,31 @@ Object.assign(window.geckit, { browser: {
   openFolder: async () => { setTimeout(() => { chromeConnected = true }, 3000) },
 } })
 
+const slackInfo: ChannelSetting['info'] = { id: 'channel:slack', name: 'Slack', icon: 'chat', source: 'https://github.com/example/geckit-slack', fields: [{ key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions.' }, { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write.' }, { key: 'allow', label: 'People who may write', type: 'list', help: 'Slack user IDs. Empty lets nobody in.' }, { key: 'verify', label: 'Check messages for secrets before sending', type: 'boolean', default: true }] }
+let channelSettings: readonly ChannelSetting[] = query.has('channels') ? [{ info: slackInfo, enabled: query.get('channels') !== 'off', projects: ['/Users/alex/Projects/app'], manager: false, config: { allow: ['U012ABC'] } }] : []
+let channelView: ChannelsView = { channels: channelSettings.map((one): ChannelsView['channels'][number] => ({ id: one.info.id, name: one.info.name, icon: one.info.icon, source: one.info.source ?? '', state: query.get('channels') === 'off' ? 'off' : query.get('channels') === 'failed' ? 'failed' : 'connected', ...(query.get('channels') === 'failed' ? { says: 'Slack refused the app token: invalid_auth' } : { says: 'Listening in 3 channels' }), secrets: query.get('channels') === 'off' ? [] : ['botToken', 'appToken'], conversations: 4 })), failures: query.has('channelFailed') ? [{ id: 'channel:jira', name: 'Jira', source: 'https://github.com/example/geckit-jira', error: 'Channel library must export create().' }] : [] }
+const channelListeners = new Set<(view: ChannelsView) => void>()
+let channelSettingsChanged: (channels: readonly ChannelSetting[]) => void = () => undefined
+const tellChannels = (): ChannelsView => { channelSettingsChanged(channelSettings); for (const listener of channelListeners) listener(channelView); return channelView }
+Object.assign(window.geckit, { channels: {
+  view: async () => channelView,
+  install: async () => { await new Promise<void>((resolve) => setTimeout(resolve, 800)); throw new Error('This repository is not a GeckIt channel library.') },
+  configure: async (id: string, change: ChannelChange) => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 300))
+    if (change.config?.['allow'] !== undefined && (change.config['allow'] as readonly string[]).some((one) => one.trim() !== '' && !/^U[A-Z0-9]+$/.test(one.trim()))) throw new Error('People who may write takes Slack user IDs such as U012ABC.')
+    channelSettings = channelSettings.map((one) => one.info.id === id ? { ...one, ...(change.enabled === undefined ? {} : { enabled: change.enabled }), ...(change.projects === undefined ? {} : { projects: change.projects }), ...(change.manager === undefined ? {} : { manager: change.manager }), ...(change.config === undefined ? {} : { config: change.config }) } : one)
+    const secrets = new Set(channelView.channels.find((one) => one.id === id)?.secrets ?? [])
+    for (const [key, value] of Object.entries(change.secrets ?? {})) { if (value === null || value === '') { if (value === null) secrets.delete(key) } else secrets.add(key) }
+    const enabled = channelSettings.find((one) => one.info.id === id)?.enabled === true
+    const missing = ['botToken', 'appToken'].filter((key) => !secrets.has(key))
+    channelView = { ...channelView, channels: channelView.channels.map((one) => one.id === id ? { ...one, secrets: [...secrets], state: !enabled ? 'off' : missing.length > 0 ? 'setup' : 'connected', says: !enabled ? undefined : missing.length > 0 ? `Fill in ${missing.map((key) => key === 'botToken' ? 'Bot token' : 'App token').join(', ')}.` : 'Listening in 3 channels' } as ChannelsView['channels'][number] : one) }
+    return tellChannels()
+  },
+  remove: async (id: string) => { channelSettings = channelSettings.filter((one) => one.info.id !== id); channelView = { channels: channelView.channels.filter((one) => one.id !== id), failures: channelView.failures.filter((one) => one.id !== id) }; return tellChannels() },
+  checkUpdates: async () => { await new Promise<void>((resolve) => setTimeout(resolve, 600)); return { updated: [], failed: [] } },
+  on: (said: (view: ChannelsView) => void) => { channelListeners.add(said); return () => channelListeners.delete(said) },
+} })
+
 const { SettingsDialog } = await import('./ui/SettingsDialog')
 const { PhoneVpnSettings } = await import('./ui/VpnIpSettings')
 const { Cell, Page } = await import('./chat/PhoneKit')
@@ -49,7 +75,8 @@ const { Cell, Page } = await import('./chat/PhoneKit')
 function Preview(): React.JSX.Element {
   const [open, setOpen] = useState(true)
   const trigger = useRef<HTMLButtonElement>(null)
-  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, theme, chromeBridge: !['off', 'kept', 'windows'].includes(chrome), vpnIpCheck: query.has('vpnEnabled'), vpnAllowedIps: query.has('vpnLong') ? Array.from({ length: 64 }, (_one, index) => `8.8.4.${String(index + 1)}`) : query.has('vpnSaved') ? ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'] : DEFAULT_SETTINGS.vpnAllowedIps, providerPlugins: libraries, chatProviders: query.has('libraries') ? ['claude', 'codex', 'plugin:codex-mirror', 'plugin:kimi', 'plugin:claude-tmux'] : DEFAULT_SETTINGS.chatProviders, providerUpdatesReady: query.has('libraries') ? ['plugin:kimi'] : [] })
+  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, theme, chromeBridge: !['off', 'kept', 'windows'].includes(chrome), vpnIpCheck: query.has('vpnEnabled'), vpnAllowedIps: query.has('vpnLong') ? Array.from({ length: 64 }, (_one, index) => `8.8.4.${String(index + 1)}`) : query.has('vpnSaved') ? ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'] : DEFAULT_SETTINGS.vpnAllowedIps, providerPlugins: libraries, chatProviders: query.has('libraries') ? ['claude', 'codex', 'plugin:codex-mirror', 'plugin:kimi', 'plugin:claude-tmux'] : DEFAULT_SETTINGS.chatProviders, providerUpdatesReady: query.has('libraries') ? ['plugin:kimi'] : [], channels: channelSettings, projects: ['/Users/alex/Projects/app', '/Users/alex/Projects/notula', '/Users/alex/Projects/private'] })
+  useEffect(() => { channelSettingsChanged = (channels) => setSettings((current) => ({ ...current, channels })) }, [])
   const [failed, setFailed] = useState(failedLibraries)
   useEffect(() => {
     if (!open) trigger.current?.focus()
@@ -100,7 +127,7 @@ function Preview(): React.JSX.Element {
   if (query.has('phone')) return open ? <PhoneVpnSettings settings={settings} save={save} back="Settings" onBack={() => setOpen(false)} /> : <Page title="Settings"><div className="phone-group"><Cell label="VPN IP check" value={settings.vpnIpCheck ? 'On' : 'Off'} onPress={() => setOpen(true)} /></div></Page>
   return <>
     <header className="board-head"><h1>GeckIt</h1><button ref={trigger} type="button" className="quiet" onClick={() => setOpen(true)}>Settings</button></header>
-    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : query.get('section') === 'integrations' ? 'integrations' : 'libraries'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
+    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : query.get('section') === 'integrations' ? 'integrations' : query.get('section') === 'channels' ? 'channels' : 'assistants'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
   </>
 }
 

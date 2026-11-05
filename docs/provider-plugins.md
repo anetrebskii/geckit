@@ -4,8 +4,8 @@ A library is a public GitHub repository that implements GeckIt's provider contra
 
 ## For users
 
-1. Open **Settings > Libraries**, choose **Add library**, paste the repository URL and press **Add**.
-2. Enable the new assistant in **Settings > Assistants**. Independent assistants have independent switches; installing a library does not replace Codex.
+1. Open **Settings > Assistants**, choose **Add assistant**, paste the repository URL and press **Add**.
+2. Turn the new assistant on in the same list. Independent assistants have independent switches; installing a library does not replace Codex. Its row also carries **Apply update** and **Remove**, and a library that failed to load shows there with **Reinstall**.
 3. Select it in the composer. **Model details** shows reported model identity, version, context capacity, maximum output, reasoning, supported modes, token rates, CLI version and account limits. The phone has the same control in Conversation info.
 
 Several libraries can be attached. Their code runs with GeckIt's local access; add repositories you trust. Automatic updates check on startup and every 24 hours, then stage and validate a candidate. **Check now** checks manually. **Apply update** swaps one ready library while GeckIt stays open. New conversations use it immediately; active turns finish on the previous version, and the next message resumes with the new version. Each running version stays in its own immutable module snapshot so cached helper modules and current conversations do not mix.

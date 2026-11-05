@@ -8,7 +8,7 @@ export const PREFERENCE_SECTIONS = {
   projects: ['projects', 'projectAssistants', 'newTaskRoot', 'profiles', 'profile', 'projectColors', 'chatAll', 'chatProjects', 'employeeFilter'],
   conversation: ['chatGrouping', 'chatView', 'conversationPlace', 'boardHeight', 'boardColumns', 'openWith', 'chatBounds', 'panelBounds', 'geckoBounds', 'sidebarWidth'],
   speech: ['microphoneDeviceId'],
-  integrations: ['browserNames', 'guideClaude', 'guideCodex', 'guidePlugins', 'chromeBridge', 'chromeBridgeDefault', 'phone', 'vpnIpCheck', 'vpnAllowedIps'],
+  integrations: ['browserNames', 'guideClaude', 'guideCodex', 'guidePlugins', 'chromeBridge', 'chromeBridgeDefault', 'phone', 'vpnIpCheck', 'vpnAllowedIps', 'channels', 'channelAutoUpdate'],
 } as const satisfies { readonly [section: string]: readonly (keyof Settings)[] }
 
 export const LOCAL_SETTINGS = ['audioDevices', 'client', 'transcriptions', 'favorites', 'phoneKey', 'progressOrder', 'columnOrders', 'providerUpdatesReady', 'providerRemovalPending'] as const satisfies readonly (keyof Settings)[]

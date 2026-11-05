@@ -25,6 +25,7 @@ import { Plans } from '../main/plans'
 import { updateInstalledPlugins } from '../main/sessions/plugins'
 import type { PluginUpdateResult } from '../shared/providers'
 import { coreEvents } from './events'
+import { Channels } from '../main/channels/channels'
 
 import { Employees } from '../main/employees'
 import { keepBrowserBridge, setGuideEmployees, setGuideManager, syncEmployeeGuides } from '../main/guide'
@@ -53,6 +54,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
   let lineup: Lineup = { working: 0, limit: 0 }
   let telegram: ManagerTelegram | undefined
   let plans: Plans | undefined
+  let channels: Channels | undefined
   const hostWasUp = new Map<string, boolean>()
   const shares = new Shares({
     changed: () => { events.emit('peer:shares', shares.rooms()); if (telegram !== undefined) events.emit('telegram:view', telegram.view()) },
@@ -124,6 +126,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
   })
   let providerUpdateCheck: Promise<PluginUpdateResult> | undefined
   let providerUpdateTimer: NodeJS.Timeout | undefined
+  let channelUpdateTimer: NodeJS.Timeout | undefined
   const checkProviderUpdates = async (): Promise<PluginUpdateResult> => {
     if (providerUpdateCheck !== undefined) return providerUpdateCheck
     providerUpdateCheck = updateInstalledPlugins().then((result) => {
@@ -146,11 +149,13 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     stopSettings?.()
     stopSchedule?.()
     if (providerUpdateTimer !== undefined) clearInterval(providerUpdateTimer)
+    if (channelUpdateTimer !== undefined) clearInterval(channelUpdateTimer)
     stopSpeech?.()
     stopCorrecting()
     plans?.dispose()
     shares.stopAll()
     telegram?.stop()
+    await channels?.dispose()
     manager?.dispose()
     sessions?.dispose()
     routes.forwards.dispose()
@@ -255,6 +260,21 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       notifyDecisions(changed)
     })
     coordinator.onItems((items) => events.emit('manager:items', items))
+    const hub = new Channels({
+      directory,
+      vault: options.vault ?? { available: () => false, encrypt: () => { throw new Error('Secure storage is unavailable.') }, decrypt: () => { throw new Error('Secure storage is unavailable.') } },
+      settings: getSettings,
+      save: setSettings,
+      sessions: started,
+      conversations: () => all,
+      manager: coordinator,
+      managerView: () => view,
+      employees: () => employees.list().employees,
+      projectName: (root) => projectSaid(root, hostNamed),
+      subscribe: events.subscribe,
+      changed: (changed) => events.emit('channels:changed', changed),
+    })
+    channels = hub
     coordinator.onResponse((text, origin) => { void bridge.notify(text, undefined, origin).catch(() => undefined) })
 
     setGuideManager(coordinator.instructions())
@@ -272,6 +292,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         if (settings.chromeBridge !== browserBridgeOn()) keepBrowserBridge(settings.chromeBridge)
         guideWrites = guideWrites.then(() => started.setAllInstructions(settings)).catch((error: Error) => { console.error('Could not set provider instructions:', error.message) })
       }
+      void hub.reconcile().catch((error: Error) => console.error('Could not update channels:', error.message))
       started.again()
     })
     let active = false
@@ -284,6 +305,9 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       providerUpdateTimer = setInterval(() => { if (getSettings().providerAutoUpdate) void checkProviderUpdates().catch(() => undefined) }, 24 * 60 * 60_000)
       if (getSettings().providerAutoUpdate) void checkProviderUpdates().catch(() => undefined)
       providerUpdateTimer.unref?.()
+      channelUpdateTimer = setInterval(() => { if (getSettings().channelAutoUpdate) void hub.checkUpdates().catch(() => undefined) }, 24 * 60 * 60_000)
+      channelUpdateTimer.unref?.()
+      void hub.start().then(() => { if (getSettings().channelAutoUpdate) return hub.checkUpdates() }).catch((error: Error) => console.error('Could not start channels:', error.message))
       stopSchedule = startShortcuts({
         manager: (shortcut, request) => coordinator.runShortcut(shortcut, request),
         start: (message) => started.send(message),
@@ -297,7 +321,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       void Promise.allSettled(hosts.map((id) => routes.hosts.ensure(id))).then(() => stopped ? undefined : started.reattach(running)).catch((error: Error) => console.error(error.message))
     }
     const configureManager = async (change: Partial<ManagerConfig>): Promise<ManagerView> => configureManagerAccess(coordinator, bridge, change)
-    return { sessions: started, manager: coordinator, telegram: bridge, shares, plans, employees, routes, notes, hostNamed, start, dispose, wake: () => { resumeSchedule?.(); started.again() }, configureManager, checkProviderUpdates, subscribe: events.subscribe, emit: events.emit, current: () => ({ sessions: all, lineup, settings: getSettings(), employees: employees.list(), hosts: routes.hosts.views(), prompts: routes.hosts.prompts(), telegram: bridge.view(), shares: shares.rooms(), working: started.working(), wanting: started.wanting(), watched: started.watched() }) }
+    return { sessions: started, manager: coordinator, telegram: bridge, channels: hub, shares, plans, employees, routes, notes, hostNamed, start, dispose, wake: () => { resumeSchedule?.(); started.again() }, configureManager, checkProviderUpdates, subscribe: events.subscribe, emit: events.emit, current: () => ({ sessions: all, lineup, settings: getSettings(), employees: employees.list(), hosts: routes.hosts.views(), prompts: routes.hosts.prompts(), telegram: bridge.view(), shares: shares.rooms(), working: started.working(), wanting: started.wanting(), watched: started.watched() }) }
   } catch (error) {
     await dispose()
     throw error

@@ -13,6 +13,7 @@ import type { ChatSession, SessionItem, SessionMessage, Shortcut } from '../src/
 import type { OperatorAnswered, ServiceAsked } from '../src/core/operator'
 import type { EmployeesView } from '../src/shared/employees'
 import type { ManagerView } from '../src/shared/manager'
+import type { ChannelsView } from '../src/shared/channels'
 import { askedEndpoint } from '../src/cli/endpoint'
 import { connectRpc } from '../src/core/rpc'
 import { parseConfiguration } from '../src/core/configuration'
@@ -84,6 +85,19 @@ beforeAll(async () => {
   const plugin = join(directory, 'provider-plugins', 'plugin-fixture')
   await cp(join(import.meta.dirname, 'fixtures', 'headless'), plugin, { recursive: true })
   await writeFile(join(plugin, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { id: 'plugin:fixture', family: 'plugin:fixture', name: 'Fixture', shortName: 'Fixture', icon: 'terminal', browser: 'none', loginCommand: '', planName: '' } }))
+  const channel = join(directory, 'channel-libraries', 'channel-probe')
+  await mkdir(channel, { recursive: true })
+  await writeFile(join(channel, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, kind: 'channel', entry: 'index.mjs', channel: { id: 'channel:probe', name: 'Probe', icon: 'chat' }, config: [{ key: 'token', label: 'Token', type: 'secret', required: true }] }))
+  await writeFile(join(channel, 'index.mjs'), `export function create(context) {
+  return {
+    start: async () => {
+      const id = await context.conversations.start({ root: context.projects()[0].root, text: 'complete', provider: 'plugin:fixture', mode: 'manual' })
+      context.conversations.watch(id, (event) => { if (event.kind === 'items') for (const item of event.items) if (item.kind === 'theirs') context.store.set('heard', item.text) })
+      context.status('connected', context.secret('token') === 'probe-secret' ? 'token ok' : 'token missing')
+    },
+    stop: async () => undefined,
+  }
+}`)
   await writeFile(join(directory, 'settings.json'), JSON.stringify({ chatProviders: ['plugin:fixture'], chatProvider: 'plugin:fixture', vpnIpCheck: false, guideClaude: false, guideCodex: false, workingAtOnce: 0 }))
   env = { ...process.env, GECKIT_DATA: directory, GECKIT_VAULT_KEY: Buffer.alloc(32, 13).toString('base64'), GECKIT_LLAMA_SERVER: process.execPath, HOME: join(folder, 'home'), CODEX_HOME: join(folder, 'codex'), CLAUDE_CONFIG_DIR: join(folder, 'claude') }
   for (const key of ['DISPLAY', 'CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID', 'GECKIT_MANAGER_SESSION', 'GECKIT_MANAGER_TOKEN', 'GECKIT_MANAGER_OPERATION', 'CLAUDECODE', 'GECKIT_SOURCE_CLI', 'GECKIT_SOURCE_GUIDE', 'GECKIT_SOURCE_CODEX_GUIDE']) delete env[key]
@@ -106,6 +120,18 @@ it('runs without display or Electron, rejects competitors and private-socket cal
   expect(await cli('projects', 'add', project)).toContain(project)
   const id = await send('complete')
   await eventually(() => items(id), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:complete'))
+}, 20_000)
+
+it('runs a channel library with a sealed secret and only the folders granted to it', async () => {
+  expect(await read<ChannelsView>('call', 'channels:view', '[]')).toMatchObject({ channels: [{ id: 'channel:probe', state: 'off' }] })
+  expect(await read<ChannelsView>('call', 'channels:configure', JSON.stringify(['channel:probe', { enabled: true, projects: [project] }]))).toMatchObject({ channels: [{ state: 'setup', says: 'Fill in Token.' }] })
+  await read<ChannelsView>('call', 'channels:configure', JSON.stringify(['channel:probe', { secrets: { token: 'probe-secret' } }]))
+  await eventually(() => read<ChannelsView>('call', 'channels:view', '[]'), (view) => view.channels[0]?.state === 'connected' && view.channels[0].says === 'token ok' && view.channels[0].conversations === 1)
+  const state = join(directory, 'channels', 'channel-probe.json')
+  await eventually(async () => readFile(state, 'utf8').catch(() => ''), (text) => text.includes('fixture:complete'))
+  expect(await readFile(join(directory, 'settings.json'), 'utf8')).not.toContain('probe-secret')
+  expect((await readFile(join(directory, 'channels', 'channel-probe.secrets'))).toString('utf8')).not.toContain('probe-secret')
+  expect(await read<ChannelsView>('call', 'channels:configure', JSON.stringify(['channel:probe', { enabled: false }]))).toMatchObject({ channels: [{ state: 'off' }] })
 }, 20_000)
 
 it('keeps working after the operator disconnects and requires an explicit native answer', async () => {

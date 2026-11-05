@@ -70,6 +70,8 @@ const PATHS: Record<string, string> = {
 
 const FILLED = new Set(['stop', 'more'])
 
+export const hasIcon = (name: string): boolean => PATHS[name] !== undefined || providerIconPath(name) !== undefined
+
 export function Icon({
   name,
   size = 14,

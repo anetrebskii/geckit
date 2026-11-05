@@ -3,6 +3,7 @@ import type { Employees } from '../main/employees'
 import type { HostCheck, HostPrompt, HostView } from '../shared/hosts'
 import type { ManagerView } from '../shared/manager'
 import type { TelegramView } from '../shared/telegram'
+import type { ChannelsView } from '../shared/channels'
 import type { Shares } from '../main/shares'
 import type { RpcEvent } from './rpc'
 
@@ -25,6 +26,7 @@ export interface CoreEvents {
   'manager:view': (view: ManagerView) => void
   'manager:items': (items: SessionItems) => void
   'telegram:view': (view: TelegramView) => void
+  'channels:changed': (view: ChannelsView) => void
   'peer:shares': (shares: ReturnType<Shares['rooms']>) => void
   'speech:model': (model: SpeechModel) => void
   'core:terminal': (root: string, command: string, status?: string) => void

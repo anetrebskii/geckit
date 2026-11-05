@@ -8,6 +8,7 @@ import { hostOf, isRemote, machineName } from '../shared/hosts'
 import type { LocalAsk } from '../shared/local'
 import type { ManagerConfig } from '../shared/manager'
 import type { TelegramAction } from '../shared/telegram'
+import type { ChannelChange, ChannelId } from '../shared/channels'
 import { recordedNote } from '../shared/recording'
 import { commandsFor } from '../main/commands'
 import { continueConversation, prepareConversation, writeConversationExport } from '../main/conversation-export'
@@ -44,7 +45,7 @@ import type { CoreRuntime } from './runtime'
 import { dataDirectory } from './platform'
 
 export function application(runtime: CoreRuntime) {
-  const { sessions, employees, manager, telegram, routes, shares } = runtime
+  const { sessions, employees, manager, telegram, routes, shares, channels } = runtime
   let cutOffered = false
   let planned: { readonly orders: readonly Order[]; readonly told: readonly Told[]; readonly recording?: Recording } | undefined
   const unfavorite = (ids: readonly string[]): void => {
@@ -137,6 +138,11 @@ export function application(runtime: CoreRuntime) {
     'manager:answerCard': (...args: Parameters<typeof manager.answerCard>) => manager.answerCard(...args),
     'manager:voice-memos': () => voiceMemosConnection({ transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }, manager.voiceMemosDirectory()),
     'telegram:view': () => telegram.view(),
+    'channels:view': () => channels.view(),
+    'channels:install': (url: string) => channels.install(url),
+    'channels:configure': (id: ChannelId, change: ChannelChange) => channels.configure(id, change),
+    'channels:remove': (id: ChannelId) => channels.remove(id),
+    'channels:checkUpdates': () => channels.checkUpdates(),
     'telegram:action': (action: TelegramAction) => telegramActionAccess(manager, telegram, action, true),
     'correct': (request: CorrectRequest) => correct(request),
     'transcribe': (request: TranscribeRequest) => transcribe(request),

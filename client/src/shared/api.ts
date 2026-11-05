@@ -5,6 +5,7 @@ import type { LlmProviderInfo } from './providers'
 import { llmProviderInfo } from './providers'
 import type { ProjectAssistant } from './manager'
 import type { Employee } from './employees'
+import type { ChannelSetting } from './channels'
 
 /**
  * The contract between the main process and the windows.
@@ -1138,6 +1139,8 @@ export interface Settings {
   readonly providerAutoUpdate: boolean
   readonly providerUpdatesReady: readonly string[]
   readonly providerRemovalPending: boolean
+  readonly channels: readonly ChannelSetting[]
+  readonly channelAutoUpdate: boolean
   readonly codexModel: string
   readonly codexReasoning: ReasoningEffort | ''
   readonly chatMode: SessionMode
@@ -1325,6 +1328,8 @@ export const DEFAULT_SETTINGS: Settings = {
   providerAutoUpdate: true,
   providerUpdatesReady: [],
   providerRemovalPending: false,
+  channels: [],
+  channelAutoUpdate: true,
   codexModel: '',
   codexReasoning: '',
   chatMode: 'auto',

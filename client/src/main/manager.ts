@@ -29,7 +29,7 @@ interface Message {
   readonly attachments?: readonly TelegramAttachment['id'][]
   readonly completed?: boolean
   readonly telegramRequests?: readonly Message['id'][]
-  readonly source: 'desktop' | 'telegram' | 'event' | 'cli'
+  readonly source: 'desktop' | 'telegram' | 'event' | 'cli' | 'channel'
   readonly at: number
   readonly state: 'queued' | 'sending' | 'sent'
 }

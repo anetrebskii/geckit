@@ -40,7 +40,7 @@ Use Node 22+. Bundle dependencies as ESM for Node/Electron into index.mjs; exter
 
 Run your build and deterministic tests with a fake CLI. Test namespace round trips, streaming, permissions, stop/end/dispose, model metadata, quotas, pricing, instructions and failures. Verify GeckIt's typecheck, lint, provider/session tests and desktop/mobile builds when changing the host contract. Review real components in Chrome in light/dark and at desktop/phone sizes when changing UI.
 
-Publish a public repository with geckit-plugin.json, index.mjs, source, lockfile, license and README. In GeckIt use Settings > Libraries > Add library, then enable the new assistant in Settings > Assistants. Updates are staged and loaded after restart. Removal moves the installed copy to Trash; never deletes the native conversation history.
+Publish a public repository with geckit-plugin.json, index.mjs, source, lockfile, license and README. In GeckIt use Settings > Assistants > Add assistant, then turn the new assistant on in the same list. Updates are staged and loaded after restart. Removal moves the installed copy to Trash; never deletes the native conversation history.
 `
 
 export const APP_BUILD_GUIDE = `# Build GeckIt from source

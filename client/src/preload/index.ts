@@ -58,6 +58,7 @@ import type { Pairing, Piece } from '../shared/pairing'
 import type { VoiceMemosConnection } from '../shared/manager-intake'
 import type { ManagerApi, ManagerAnswerRequest, ManagerAnswerResult, ManagerConfig, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from '../shared/manager'
 import type { TelegramAction, TelegramApi, TelegramView } from '../shared/telegram'
+import type { ChannelChange, ChannelId, ChannelsView } from '../shared/channels'
 import type { EmployeeDraft, EmployeeMemory, EmployeesApi, EmployeesView } from '../shared/employees'
 
 /**
@@ -124,6 +125,15 @@ const geckit = {
     action: (action: TelegramAction): Promise<TelegramView> => ipcRenderer.invoke('telegram:action', action),
     on: (said: (view: TelegramView) => void): (() => void) => listen('telegram:view', said),
   } satisfies TelegramApi,
+
+  channels: {
+    view: (): Promise<ChannelsView> => ipcRenderer.invoke('channels:view'),
+    install: (url: string): Promise<ChannelsView> => ipcRenderer.invoke('channels:install', url),
+    configure: (id: ChannelId, change: ChannelChange): Promise<ChannelsView> => ipcRenderer.invoke('channels:configure', id, change),
+    remove: (id: ChannelId): Promise<ChannelsView> => ipcRenderer.invoke('channels:remove', id),
+    checkUpdates: (): Promise<{ readonly updated: readonly ChannelId[]; readonly failed: readonly ChannelId[] }> => ipcRenderer.invoke('channels:checkUpdates'),
+    on: (said: (view: ChannelsView) => void): (() => void) => listen('channels:changed', said),
+  },
 
   settings: {
     get: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),

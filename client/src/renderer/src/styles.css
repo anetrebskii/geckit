@@ -1350,6 +1350,40 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
   opacity: 0.6;
 }
 
+/* An assistant from a library keeps its switch at the end and adds Update and Remove before it; the question before removing wraps under the row. */
+.assistant-library {
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  cursor: default;
+}
+
+.assistant-library > .assistant-option-copy {
+  flex: 1;
+  cursor: pointer;
+}
+
+.assistant-library-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.assistant-library .provider-library-confirm,
+.assistant-library .provider-library-failure-reason,
+.assistant-library .provider-library-failure-help {
+  padding-inline-start: 20px;
+}
+
+.assistant-library.provider-library-failure .assistant-option-name {
+  color: var(--danger);
+}
+
+.assistant-settings .assistant-library-message {
+  display: block;
+  margin-block-start: 8px;
+  font-size: 11px;
+}
+
 .assistant-settings .assistant-settings-note {
   margin: 7px 2px 0;
   font-size: 11px;
@@ -1571,6 +1605,59 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
 .provider-library-updates .quiet {
   padding: 3px 5px;
   font-size: 11px;
+}
+
+/* A channel's settings open under its row, lined up with its name. */
+.channel-setup {
+  flex: 1 0 100%;
+  min-width: 0;
+  padding: 6px 0 4px 38px;
+}
+
+.channel-setup textarea {
+  resize: vertical;
+}
+
+.channel-secret {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.channel-secret .quiet {
+  padding: 3px 5px;
+  font-size: 11px;
+}
+
+.channel-help {
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.channel-setup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.channel-setup > .error {
+  display: block;
+  margin-block-end: 8px;
+  font-size: 11px;
+}
+
+.channel-on {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.provider-library-copy > span.channel-failed {
+  color: var(--danger);
+  white-space: normal;
 }
 
 .provider-libraries > [role='alert'],

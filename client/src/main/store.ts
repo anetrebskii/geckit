@@ -97,6 +97,7 @@ export function getSettings(): Settings {
       vpnAllowedIps: validateVpnIps(found.vpnAllowedIps).ips,
       chatTransport: found.chatTransport === 'tmux' ? 'tmux' : 'stream',
       providerPlugins: found.providerPlugins ?? [],
+      channels: found.channels ?? [],
       projectAssistants: found.projectAssistants ?? [],
       employeeFilter: typeof found.employeeFilter === 'string' ? found.employeeFilter : '',
       providerAutoUpdate: found.providerAutoUpdate ?? true,
