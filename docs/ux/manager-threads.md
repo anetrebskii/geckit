@@ -27,6 +27,7 @@ Manager is one conversation today. Telegram, every channel and the Manager windo
 | Manager window, header | The thread's place and labels under its title: "Slack · #dev · Maria Ivanova", and "Open in Slack" when the channel gave a link | A channel thread is open |
 | Manager window, composer | Writing into a channel thread; under it "Manager's answer is also posted to Slack." | A channel thread is open and its channel is on |
 | Session info (existing) | All labels of the thread, as "key: value" lines | Opened from the header |
+| Worker's Session info (existing) | "Reports to: Slack · Maria Ivanova" and "Followed by: Telegram · Alex" | Managed worker |
 | Board card and worker header (existing "From Manager" line) | "From Manager · Slack · Maria Ivanova" for work a channel thread started | Worker started by a channel thread |
 | Search (existing) | Label values are found: a Slack thread id or a person's name finds the thread and its workers | Always |
 | Settings, Channels | Slack as a built-in row next to Telegram; its row line counts threads: "Connected · 3 threads" | Always |
@@ -67,7 +68,8 @@ sequenceDiagram
   S-->>M: posted in the same Slack thread
 ```
 
-- Any thread can see and steer any conversation Manager manages (one shared pool). A worker's updates go to the thread that started it; a worker started from the GeckIt thread, or attached by hand, reports to GeckIt.
+- Any thread can see and steer any conversation Manager manages (one shared pool). A worker's updates go to the thread that started it, its owner; a worker started from the GeckIt thread, or attached by hand in GeckIt, reports to GeckIt. A worker attached by Manager from a thread is owned by that thread.
+- A thread can follow a worker it does not own: asked "keep an eye on the login fix" in Telegram, Manager subscribes its thread, and from then on the worker's updates go to the owner and to every follower. "Stop following" removes the subscription. The owner never changes: the person who asked for the work always gets its result.
 - A channel decides which place is which thread by a key it chooses: Telegram uses the chat, so a private chat and each group are separate threads; Slack uses the thread, and a top-level message to the bot starts a Slack thread with its answer.
 - Labels are what a channel says about a thread or a conversation it started: who started it, the chat or Slack thread id, a link back. GeckIt shows and searches them and never acts on them.
 
@@ -128,6 +130,8 @@ stateDiagram-v2
 | Ready, Failed, Needs your answer | Alex turns the channel off, removes it, or untics "May talk to Manager" | Channel off | The composer line instead of the composer; the transcript stays |
 | Channel off | The channel is on and allowed again | Ready | The composer comes back |
 | Any | Alex pauses Manager | (state kept, nothing runs) | "Manager paused" across all threads, as today |
+| Any | Manager follows a worker on a request in this thread (automatic, by its CLI) | (state kept) | Manager's answer says so; the worker's Session info lists the thread under "Followed by" |
+| Any | Manager stops following on a request, the worker is removed, or the thread's channel is removed (automatic) | (state kept) | The thread leaves "Followed by"; nothing else |
 | Any | Alex presses Restart session in Session info of a thread | Working | That thread's history is kept as previous; a fresh backing session reconciles from the durable record |
 
 ## 5. What stays silent
@@ -142,7 +146,7 @@ stateDiagram-v2
 | Value | Why |
 |---|---|
 | At most 8 labels per thread or conversation, key up to 40 characters, value up to 300 | Enough for who, where, thread id, link and a few custom fields; keeps Session info one screen and notes small |
-| Threads run in parallel, at most 3 Manager turns at once; the rest wait their turn | Each turn is a model call on the plan; three keeps a busy Slack from eating the five-hour window while one thread rarely waits long |
+| No limit on Manager turns at once: every thread answers in parallel | A turn is short coordination; a cap would make a person in Slack wait only because others write at the same time (Alex, 2026-11-05). The plan's use is bounded where the cost is, the work turns start |
 | Manager turns do not take "working at once" slots | They are short coordination turns; the slots are for the work they start, as today |
 | The list shows threads with a message in the last 30 days; older ones under "Older" at the bottom | A month covers an ongoing Slack discussion; the list stays short without losing anything |
 
@@ -158,6 +162,7 @@ stateDiagram-v2
 - Not allowed: "Slack may no longer talk to Manager. Allow it in Settings, Channels to reply in this thread."
 - Failed: "This thread stopped: <reason>" and the button "Try again"
 - Card parent line: "From Manager · Slack · Maria Ivanova"
+- Worker's Session info: "Reports to: Slack · Maria Ivanova", "Followed by: Telegram · Alex, GeckIt"
 - Settings row: "Connected · 3 threads"
 - Older group: "Older"
 - A message by someone other than Alex, in the transcript: their name above it, as the channel gave it
@@ -166,10 +171,12 @@ stateDiagram-v2
 
 - **Existing history:** the current Manager session becomes the GeckIt thread. Telegram's private chat gets a new thread at its next message; its earlier messages stay in the GeckIt thread's history.
 - **A worker in the shared pool steered by two threads:** both can; its updates still go to the thread that started it. A thread asking about another's work reads it through the CLI like any managed conversation.
-- **The starting thread is gone** (channel removed): the worker's updates go to GeckIt.
+- **The starting thread is gone** (channel removed): the worker's updates go to GeckIt; followers keep getting them.
 - **A decision raised in a Slack thread** is shown in that thread and in the window; whichever answers first wins, the other sees "This request is no longer pending."
 - **Two messages in one thread at once:** queued in the thread, one turn at a time, as Manager does today.
-- **Many threads at once:** the fourth waits for a turn (section 6); its row shows the working dot from the moment its message is queued.
+- **Many threads at once:** all run; each row shows its working dot.
+- **A follower asks to follow twice, or the owner asks to follow:** nothing changes; the owner already gets every update.
+- **One update, owner and followers:** each thread gets it once, in its own queue; a decision the update raises is still one decision, answered once.
 - **Channel restarts or reconnects:** the key maps to the same thread, nothing new is created.
 - **A channel sends a label too long or too many:** the extra is cut and the channel's log says so; the message still goes through.
 - **Restart Manager (provider or model change):** each thread gets a fresh backing session at its next message, with the same reconciliation Manager does today.
@@ -190,6 +197,8 @@ stateDiagram-v2
 |---|---|---|
 | Can Alex write into a channel thread from the window? | Yes, the answer goes to the channel | Alex, 2026-11-05 |
 | Shared or per-thread pool of workers? | Shared, updates to the starter | Alex, 2026-11-05 |
+| Another thread wants a worker's updates: take ownership or follow | Follow; the owner keeps getting them | Taking over would stop the person who asked from getting the result (Alex, 2026-11-05) |
+| Limit Manager turns at once | No limit | Alex, 2026-11-05: a cap of 3 had no reason a person waiting in Slack would accept |
 | Slack mapping: per Slack thread or per channel | Per Slack thread; a top-level message starts one | Alex: "один thread, это одна сессия менеджера" |
 | Telegram mapping: one for everything or per chat | Per chat (private chat and each group) | Alex: "в Telegram одна сессия на один чат" |
 | Who keys and labels threads: GeckIt or the channel | The channel, through its API | Each place has its own idea of a thread; GeckIt cannot know it |
