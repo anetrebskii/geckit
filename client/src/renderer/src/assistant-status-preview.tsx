@@ -17,7 +17,7 @@ const libraries: readonly LlmProviderInfo[] = [
 ]
 registerProviderInfo(libraries)
 const providers: readonly SessionProvider[] = ['claude', 'codex', 'plugin:claude-tmux', 'plugin:kimi']
-const scenarios = ['ready', 'checking', 'unavailable', 'signed-out', 'no-quotas', 'single-quotas', 'many-quotas', 'multi-hosts', 'local-plan'] as const
+const scenarios = ['ready', 'checking', 'unavailable', 'signed-out', 'no-quotas', 'single-quotas', 'many-quotas', 'multi-hosts', 'local-plan', 'credits', 'empty-credits'] as const
 type Scenario = typeof scenarios[number]
 let scenario: Scenario = scenarios.find((one) => one === query.get('state')) ?? 'ready'
 const measuredAt = Date.now()
@@ -25,6 +25,7 @@ const quotas: readonly ProviderQuota[] = [{ id: 'five-hour', name: '5h', part: 0
 const listeners = new Set<(account: ClaudeAccount) => void>()
 function fixture(provider: SessionProvider, state: Scenario): ClaudeAccount | undefined {
   if (state === 'unavailable') return undefined
+  if (state === 'credits' || state === 'empty-credits') return { provider, here: true, signedIn: true, usage: { quotas: [{ id: 'credits', name: 'Credits', remaining: state === 'credits' ? 1250 : 0, unit: 'credits' }], measuredAt } }
   const providerQuotas: readonly ProviderQuota[] = state === 'no-quotas' ? [] : state === 'many-quotas' ? Array.from({ length: 20 }, (_, index) => ({ id: String(index), name: `Model ${String(index + 1)} monthly token allowance`, used: index * 10000, limit: 200000, unit: 'tokens', resetsAt: measuredAt + 86_400_000 })) : provider === 'codex' ? quotas.map((one) => ({ ...one, part: one.id === 'five-hour' ? 0.78 : 0.91 })) : provider === 'plugin:kimi' ? [{ id: 'requests', name: 'Day', used: 34, limit: 100, unit: 'requests' }] : quotas
   const shownQuotas = state === 'single-quotas' ? providerQuotas.filter((_quota, index) => index === (provider === 'codex' ? 1 : 0)) : providerQuotas
   return { provider, here: true, signedIn: state !== 'signed-out', plan: provider === 'codex' ? 'Plus' : provider === 'plugin:kimi' ? 'Standard' : provider === 'plugin:claude-tmux' ? 'Max' : 'Team', program: { version: provider === 'codex' ? '0.114.0' : '2.1.294', from: 'the native installer' }, usage: { quotas: shownQuotas, measuredAt } }

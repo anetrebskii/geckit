@@ -177,6 +177,8 @@ Return `plugin:<slug>:<native-id>` from `create`, `list` and `fork`. Translate i
 
 `part` is a fraction, 0..1. Alternatively provide `used`/`limit`/`unit`. `resetsAt` and `measuredAt` are Unix **milliseconds**. IDs must be stable and unique per quota. `account().usage` may return the same quotas plus `measuredAt` for account-based integrations.
 
+For a remaining balance, use `remaining` and `unit`, for example `{ id: 'credits', name: 'Credits', remaining: 1200, unit: 'credits' }`. GeckIt displays `1,200 credits left`. Do not put a balance in `used`, or infer a percentage without a known allowance. If no quota figures are available, `unavailableReason` in `limits()` or `account().usage` can explain why; it is displayed only when there are no quota rows.
+
 API v1 legacy `plan` (Claude five-hour/seven-day windows) and `limits` (Codex primary/secondary windows) still normalize automatically. Codex legacy reset timestamps are seconds; the generic fields above are milliseconds. Provider/model measurements are isolated, concurrent requests coalesce, and the backend caches for one minute. Visible windows refresh every five minutes and on focus. Failed polling retains the previous successful measurement.
 
 Context capacity comes from model metadata, measured `windows`, persisted conversation data, or a live `spend.window`. Live conversation capacity takes precedence. Unknown remains omitted, not zero.
