@@ -73,6 +73,7 @@ sequenceDiagram
 
 - Any thread can see and steer any conversation Manager manages (one shared pool). A worker's updates go to the thread that started it, its owner; a worker started from the GeckIt thread, or attached by hand in GeckIt, reports to GeckIt. A worker attached by Manager from a thread is owned by that thread.
 - A thread can follow a worker it does not own: asked "keep an eye on the login fix" in Telegram, Manager subscribes its thread, and from then on the worker's updates go to the owner and to every follower. "Stop following" removes the subscription. The owner never changes: the person who asked for the work always gets its result.
+- Watching needs no product confirmation, as of 2026-11-06. When someone asks Manager to keep an eye on an existing task, Manager attaches it if it does not manage it yet (`sessions attach`: the task becomes managed and reports to the asking thread), or follows it if another thread owns it (`sessions follow`), and stops with `sessions unfollow`; none of these raises a card. Attaching also lets Manager send to, steer and stop that task, as it can any managed task. Starting work under "Approve each new worker", answering a worker's question, accepting Done, adding or removing projects and files, and renaming an employee keep their cards, and a provider's own permission requests are untouched.
 - A channel decides which place is which thread by a key it chooses: Telegram uses the chat, so a private chat and each group are separate threads; Slack uses the thread, and a top-level message to the bot starts a Slack thread with its answer.
 - Labels are what a channel says about a thread or a conversation it started: who started it, the chat or Slack thread id, a link back. GeckIt shows and searches them and never acts on them.
 
@@ -210,6 +211,7 @@ stateDiagram-v2
 | Limit Manager turns at once | No limit | Alex, 2026-11-05: a cap of 3 had no reason a person waiting in Slack would accept |
 | Slack mapping: per Slack thread or per channel | Per Slack thread; a top-level message starts one | Alex: "один thread, это одна сессия менеджера" |
 | Slack: a mention in a thread that began without the bot | One Manager thread for the whole Slack thread, with everything written before the mention | Alex, 2026-11-06: the whole information from the thread is sent |
+| Product card before attaching or following an existing task | None for attach, follow and unfollow | Alex, 2026-11-06 via Telegram: turn off confirmations for following and the like; asking to watch a Slack task needed an extra attach card |
 | Telegram mapping: one for everything or per chat | Per chat (private chat and each group) | Alex: "в Telegram одна сессия на один чат" |
 | Who keys and labels threads: GeckIt or the channel | The channel, through its API | Each place has its own idea of a thread; GeckIt cannot know it |
 | One error blocks all of Manager or only the thread | Only the thread; Manager-wide states stay global | A failing Slack thread must not stop Telegram |

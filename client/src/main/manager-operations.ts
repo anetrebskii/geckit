@@ -68,9 +68,9 @@ export const MANAGER_CAPABILITIES = {
     'sessions steer --id <managed-worker-id> --text <correction> (active native runtime only; never queues or restarts)',
     'sessions stop --id <managed-worker-id>',
     'sessions mark --id <managed-worker-id> --status progress|review|blocked|done|archived (done needs confirmation)',
-    'sessions attach --id <unrelated-worker-id> (user confirmation)',
-    'sessions follow --id <managed-worker-id> (this thread also receives its updates; its starter keeps receiving them)',
-    'sessions unfollow --id <managed-worker-id>',
+    'sessions attach --id <existing-worker-id> (no product confirmation; use when the user asks to coordinate or watch it; it reports to this thread)',
+    'sessions follow --id <managed-worker-id> (no product confirmation; this thread also receives its updates; its starter keeps receiving them)',
+    'sessions unfollow --id <managed-worker-id> (no product confirmation)',
     'sessions answer --id <managed-worker-id> --card <current-question-id> --text <answer> (user confirmation; questions only)',
     'employees shortcuts [<employee-id>|none] [--json]',
     'employees shortcut add <employee-id|none> --name <name> --project <registered-project-name> --prompt <text> [--target task|manager] [--goal <text>] [--every <hour|hour 15|day 9:00|weekdays 9:00|week monday 9:00>|--cron <expression>] [--start-window-minutes <1-1440|none>] [--provider <enabled-provider-id>] [--model <id>] [--reasoning <effort|default>] [--mode manual|auto|plan] (no product confirmation; Manager target uses none and its configured assistant/approvals)',
@@ -215,7 +215,6 @@ export class ManagerOperations {
     const [domain, command] = args
     if (domain === 'employees' && command === 'rename') return `Change these user preferences? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'start' && policy === 'approve') return `Start this worker? ${JSON.stringify(args)}`
-    if (domain === 'sessions' && command === 'attach' && !this.#deps.managed(required(values(args), '--id'))) return `Allow Manager to coordinate this existing conversation? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'answer') return `Send this answer to the worker's question? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'mark' && args.includes('done')) return `Accept this task as Done? ${JSON.stringify(args)}`
     if (domain === 'projects' && (command === 'add' || command === 'create')) return `Register this folder for Manager access? ${JSON.stringify(args)}`
@@ -236,7 +235,7 @@ export class ManagerOperations {
     const worker = (await this.#deps.sessions.list(projects)).find((one) => one.id === id)
     const currentProjects = managerProjects(this.#deps.settings())
     if (worker === undefined || worker.manager === true || worker.question === true || worker.id === this.#deps.managerSession() || !currentProjects.includes(worker.project ?? worker.root)) throw new Error('That worker is not in a currently registered project.')
-    if (!allowUnmanaged && !this.#deps.managed(id)) throw new Error('This conversation is not managed here. Request sessions attach and wait for user confirmation first.')
+    if (!allowUnmanaged && !this.#deps.managed(id)) throw new Error('This conversation is not managed here. Attach it with sessions attach first.')
     return worker
   }
 

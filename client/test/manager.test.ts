@@ -262,29 +262,25 @@ describe('Manager Telegram response ownership', () => {
 describe('Manager CLI delivery recovery', () => {
   const settle = async (): Promise<void> => { for (let turn = 0; turn < 8; turn++) await new Promise<void>((resolve) => setImmediate(resolve)) }
 
-  it('reconciles a saved attach approval from fresh managed ownership without attaching or granting approval', async () => {
+  it('attaches and follows an existing worker without a product card when asked to watch it', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true })
-    const id = await f.manager.send('Coordinate existing workers')
+    const id = await f.manager.send('Keep an eye on the existing worker')
     await settle()
     const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Existing work' }, 'other', 'existing-worker')
-    const args = ['sessions', 'attach', '--id', worker]
-    f.finish(id, f.command('attach-existing', args))
+    f.finish(id, f.command('attach-existing', ['sessions', 'attach', '--id', worker]))
     await settle()
-    const decision = (await f.manager.view()).decisions[0]
-    if (decision === undefined) throw new Error('Missing attach approval')
-    expect(f.cli).toHaveLength(0)
-    f.notes.set(worker, { ...f.notes.all()[worker], managerOwner: 'manager' })
-    const attach = vi.spyOn(f.notes, 'set')
-    const restored = f.reload()
-    const view = await restored.view()
+    const view = await f.manager.view()
     expect(view.decisions).toEqual([])
-    expect(view.activity[0]).toMatchObject({ id: 'attach-existing', state: 'done', result: expect.stringContaining('alreadyManaged') })
-    expect(view.activity[0]).not.toHaveProperty('approved')
-    await expect(restored.answer(decision.id, 'allow')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
-    await expect(restored.answer(decision.id, 'allow')).resolves.toMatchObject({ answer: expect.stringContaining('no longer pending') })
-    expect(attach.mock.calls.filter(([target]) => target === worker)).toEqual([])
-    expect(f.cli).toHaveLength(0)
+    expect(view.activity[0]).toMatchObject({ id: 'attach-existing', state: 'done', result: expect.stringContaining('"attached":true') })
+    expect(f.notes.all()[worker]?.managerOwner).toBe('manager')
+    expect(f.cli).toEqual([expect.objectContaining({ args: ['sessions', 'attach', '--id', worker] })])
+    const again = await f.manager.send('Stop watching it, then watch it again')
+    await settle()
+    f.finish(again, f.command('unfollow-existing', ['sessions', 'unfollow', '--id', worker]))
+    await settle()
+    expect((await f.manager.view()).decisions).toEqual([])
+    expect((await f.manager.view()).activity[0]).toMatchObject({ id: 'unfollow-existing', state: 'done' })
   })
 
   it.each(['done', 'failed'] as const)('preserves an existing %s attach receipt while retiring its stale decision', async (state) => {
@@ -341,16 +337,17 @@ describe('Manager CLI delivery recovery', () => {
     expect(f.cli[0]?.args).toEqual(args)
   })
 
-  it('retains genuine attach approval and refuses revoked authority after refreshing current state', async () => {
+  it('retains a genuine Done approval and refuses revoked authority after refreshing current state', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true })
-    const id = await f.manager.send('Coordinate an existing worker')
+    const id = await f.manager.send('Accept the finished worker')
     await settle()
-    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Existing work' }, 'other', 'unmanaged-worker')
-    f.finish(id, f.command('genuine-attach', ['sessions', 'attach', '--id', worker]))
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Existing work' }, 'manager', 'finished-worker')
+    const args = ['sessions', 'mark', '--id', worker, '--status', 'done']
+    f.finish(id, f.command('genuine-done', args))
     await settle()
     const decision = (await f.manager.view()).decisions[0]
-    if (decision === undefined) throw new Error('Missing attach approval')
+    if (decision === undefined) throw new Error('Missing Done approval')
     const rows = await f.sessions.allForManager([f.root])
     let refresh: (() => void) | undefined
     const gate = new Promise<void>((resolve) => { refresh = resolve })
@@ -361,11 +358,9 @@ describe('Manager CLI delivery recovery', () => {
     refresh?.()
     await expect(answer).rejects.toThrow('request changed')
     listing.mockRestore()
-    expect(f.notes.all()[worker]?.managerOwner).toBe('other')
     expect((await f.manager.view()).decisions[0]?.id).toBe(decision.id)
     expect(f.cli).toHaveLength(0)
     await f.manager.answer(decision.id, 'allow')
-    expect(f.notes.all()[worker]?.managerOwner).toBe('manager')
     expect(f.cli).toHaveLength(1)
     await f.manager.answer(decision.id, 'allow')
     expect(f.cli).toHaveLength(1)
@@ -2304,6 +2299,11 @@ describe('Manager CLI preferences and explicit new-worker models', () => {
     expect(managerReadOnly(['employees', 'rename'])).toBe(false)
     const capabilities: object = JSON.parse(await ops.run(['capabilities'], 'caps')) as object
     expect(capabilities).toHaveProperty('commands', expect.arrayContaining([expect.stringContaining('employees rename'), expect.stringContaining('settings manager-edit'), expect.stringContaining('--model')]))
+    expect(capabilities).toHaveProperty('commands', expect.arrayContaining([expect.stringMatching(/^sessions attach .*no product confirmation/), expect.stringMatching(/^sessions follow .*no product confirmation/), expect.stringMatching(/^sessions unfollow .*no product confirmation/)]))
+    for (const command of ['attach', 'follow', 'unfollow']) expect(ops.confirmation(['sessions', command, '--id', 'codex:not-managed'], 'approve')).toBeUndefined()
+    expect(ops.confirmation(['sessions', 'mark', '--id', first, '--status', 'done'], 'automatic')).toContain('Accept this task as Done?')
+    expect(ops.confirmation(['sessions', 'start', ...start.slice(2)], 'approve')).toContain('Start this worker?')
+    expect(ops.confirmation(['projects', 'add', '--path', f.root], 'automatic')).toContain('Register this folder')
   })
 })
 
