@@ -1,5 +1,6 @@
 import type { ChannelInfo } from '../../shared/channels'
 import type { Channel, ChannelContext, ChannelEvent, ChannelModule } from './channel-api'
+import { StatusMessage } from '../manager-status'
 
 const SECRET = /\b(?:xox[abposr]-[\w-]{10,}|xapp-[\w-]{10,}|sk-[\w-]{16,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/
 
@@ -60,6 +61,7 @@ interface SlackReply {
   readonly url?: string
   readonly permalink?: string
   readonly user_id?: string
+  readonly ts?: string
   readonly messages?: readonly SlackMessage[]
   readonly has_more?: boolean
   readonly response_metadata?: { readonly next_cursor?: string }
@@ -160,7 +162,17 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   const follow = (thread: string, channel: string, ts: string, key: string): void => {
     if (watching.has(thread)) return
     const shown = new Set(pending(key).map((one) => one.id))
+    const plain = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+    const status = new StatusMessage({
+      post: async (text) => {
+        const reply = await post(channel, ts, plain(text))
+        if (reply.ts === undefined) throw new Error('Slack chat.postMessage: no ts')
+        return reply.ts
+      },
+      edit: async (id, text) => { await slack('chat.update', { channel, ts: id, text: plain(text) }) },
+    }, { failed: (error) => context.log.write('warn', 'slack.status.failed', { reason: said(error) }) })
     watching.set(thread, context.conversations.watch(thread, (event: ChannelEvent) => {
+      if (event.kind === 'status') status.update(event.activity)
       if (event.kind === 'answer') posted(channel, ts, event.text)
       if (event.kind === 'decisions') {
         context.store.set(`decisions:${key}`, event.decisions.map((one) => ({ id: one.id, values: one.choices.map((choice) => choice.value) })))

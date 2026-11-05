@@ -18,6 +18,8 @@ import type { TelegramAttachment, TelegramFileSender } from './telegram-attachme
 import { TelegramBotClient, TelegramFailure, telegramUpdate } from './telegram-bot'
 import type { TelegramMessage, TelegramUpdate } from './telegram-bot'
 import { TelegramTyping } from './telegram-typing'
+import { StatusMessage } from './manager-status'
+import type { ThreadActivity } from './manager-status'
 
 export interface TelegramVault {
   available(): boolean
@@ -155,6 +157,7 @@ export class ManagerTelegram {
   readonly attachments: TelegramAttachments
   private pendingListener: (() => void) | undefined
   private cleanupTimer: ReturnType<typeof setInterval> | undefined
+  private status: { readonly connection: Connection; readonly chatId: number; readonly message: StatusMessage } | undefined
 
   constructor(private readonly options: TelegramOptions) {
     this.path = join(options.directory, 'manager-telegram.sealed')
@@ -420,6 +423,26 @@ export class ManagerTelegram {
 
   private syncTyping(connection: Connection): void {
     connection.typing.update(this.current(connection) && connection === this.active && !connection.typingFailed && this.pairing === undefined && connection.state === 'connected' && this.options.manager.enabled() && this.options.manager.typingAllowed?.() !== false && (connection.dispatches.size > 0 || connection.responses > 0 || this.pendingInputs(connection).length > 0))
+  }
+
+  /** The Telegram thread's status message, docs/ux/channel-status.md: sent silently, then edited in place while Manager and its workers change state. */
+  progress(activity: ThreadActivity | undefined): void {
+    const connection = this.active
+    const chatId = connection?.kept.account?.chatId
+    if (connection === undefined || chatId === undefined || !this.current(connection) || connection.state !== 'connected' || this.pairing !== undefined || !this.options.manager.enabled()) { this.status = undefined; return }
+    if (this.status?.connection !== connection || this.status.chatId !== chatId) {
+      const signal = connection.controller.signal
+      this.status = { connection, chatId, message: new StatusMessage({
+        post: async (text) => {
+          const sent = jsonObject(await connection.client.call('sendMessage', { chat_id: chatId, text, disable_notification: true, link_preview_options: { is_disabled: true } }, signal))
+          const id = sent?.['message_id']
+          if (!safeInteger(id)) throw new Error('Telegram sendMessage: no message_id')
+          return String(id)
+        },
+        edit: async (id, text) => { await connection.client.call('editMessageText', { chat_id: chatId, message_id: Number(id), text, link_preview_options: { is_disabled: true } }, signal) },
+      }, { now: this.now }) }
+    }
+    this.status.message.update(activity)
   }
 
   private current(connection: Connection): boolean {

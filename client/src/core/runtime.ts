@@ -15,6 +15,7 @@ import { stopFindModelDownload } from '../cli/find-model'
 import { sweepRecordings } from '../main/recordings'
 import { TelegramAttachments } from '../main/telegram-attachments'
 import { ManagerTelegram } from '../main/telegram'
+import { threadActivity } from '../main/manager-status'
 import type { TelegramVault } from '../main/telegram'
 import { Shares } from '../main/shares'
 import { managerTelegramStatus } from '../main/telegram-text'
@@ -266,6 +267,8 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       view = changed
       events.emit('manager:view', changed)
       notifyDecisions(changed)
+      const chat = bridge.view().account?.chatId
+      bridge.progress(chat === undefined ? undefined : threadActivity(changed, `telegram:${String(chat)}`))
     })
     coordinator.onItems((items) => events.emit('manager:items', items))
     const hub = new Channels({

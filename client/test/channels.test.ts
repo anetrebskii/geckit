@@ -188,9 +188,10 @@ it('tells a watched thread its answers, items and decisions, and nothing of othe
   respond('Release planned.', thread)
   emit({ name: 'manager:items', args: [{ id: 'manager-2', items: [{ kind: 'theirs', id: 'a', text: 'Release planned.' }] }] })
   emit({ name: 'manager:view', args: [{ state: 'idle', config: { provider: 'claude' }, decisions: [{ id: 'decision-1', title: 'Start?', choices: [], thread }], threads: [{ id: thread, title: 'Echo', labels: {}, state: 'asks', at: 0, owns: [], follows: [] }, { id: other, title: 'Echo', labels: {}, state: 'idle', at: 0, owns: [], follows: [] }] } as unknown as ManagerView] })
-  expect(heard.map((one) => one.kind)).toEqual(['answer', 'items', 'decisions', 'state'])
+  expect(heard.map((one) => one.kind)).toEqual(['answer', 'items', 'decisions', 'status', 'state'])
+  expect(heard[3]).toEqual({ kind: 'status', activity: { manager: 'Manager is waiting for your answer above.', ending: 'Waiting for your answer above.', active: false, workers: [] } })
   expect(heard[0]).toEqual({ kind: 'answer', text: 'Release planned.' })
-  expect(elsewhere.map((one) => one.kind)).toEqual(['state'])
+  expect(elsewhere.map((one) => one.kind)).toEqual(['status', 'state'])
   await channels.dispose()
 })
 
@@ -269,6 +270,7 @@ class FakeSocket {
 
 function slackHarness(manager = true, history: { ts: string; user?: string; text: string; files?: { name: string; permalink: string }[] }[] = []) {
   const posted: { channel: string; thread_ts?: string; text: string }[] = []
+  const updated: { channel: string; ts?: string; text: string }[] = []
   const sent: [string, unknown][] = []
   const answered: [string, string, unknown][] = []
   const opened: unknown[] = []
@@ -301,13 +303,14 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
     const method = url.split('/').at(-1)
     const body = JSON.parse(init.body) as { channel: string; thread_ts?: string; text: string; user?: string; oldest?: string }
     if (method === 'chat.postMessage') posted.push(body)
-    const reply = method === 'auth.test' ? { ok: true, user_id: 'B1' } : method === 'conversations.replies' ? { ok: true, messages: history.filter((one) => body.oldest === undefined || !after(body.oldest, one.ts)) } : method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : { ok: true }
+    if (method === 'chat.update') updated.push(body)
+    const reply = method === 'auth.test' ? { ok: true, user_id: 'B1' } : method === 'conversations.replies' ? { ok: true, messages: history.filter((one) => body.oldest === undefined || !after(body.oldest, one.ts)) } : method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : method === 'chat.postMessage' ? { ok: true, ts: `9.${String(posted.length)}` } : { ok: true }
     return { json: async () => reply }
   }) as unknown as typeof globalThis.fetch
   const channel = createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] })
   const event = (body: object): void => FakeSocket.last?.emit({ type: 'events_api', envelope_id: 'e1', payload: { event: body } })
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
-  return { channel, event, settle, posted, sent, answered, opened, watchers, store }
+  return { channel, event, settle, posted, updated, sent, answered, opened, watchers, store }
 }
 
 it('Slack: one Manager thread per Slack thread, labelled with who started it, answered in that thread', async () => {
@@ -387,3 +390,21 @@ it('Slack: orders timestamps by seconds and microseconds', () => {
   expect(after('1762399999.999999', '1762400000.000000')).toBe(false)
   expect(after('3.0', '3.0')).toBe(false)
 })
+
+it('Slack: one status message per stretch in the thread, edited in place and ended, never naming what runs', async () => {
+  const run = slackHarness()
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> fix the login redirect' })
+  await run.settle()
+  const watch = run.watchers.get('channel:slack:C1:3.0')
+  watch?.({ kind: 'status', activity: { manager: 'Manager has your message and has not started yet.', ending: 'Done.', active: true, workers: [] } })
+  await run.settle()
+  expect(run.posted.at(-1)).toEqual({ channel: 'C1', thread_ts: '3.0', text: 'Manager has your message and has not started yet.' })
+  const posts = run.posted.length
+  watch?.({ kind: 'status', activity: { manager: 'Manager is done for now.', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
+  await vi.waitFor(() => expect(run.updated.at(-1)).toEqual({ channel: 'C1', ts: `9.${String(posts)}`, text: 'Manager is done for now.\n• Fix &lt;login&gt;: working' }), { timeout: 5_000 })
+  watch?.({ kind: 'status', activity: { manager: 'Manager is done for now.', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: finished', active: false }] } })
+  await vi.waitFor(() => expect(run.updated.at(-1)?.text).toMatch(/^Done\.\n• Fix &lt;login&gt;: finished\nUpdated \d\d:\d\d UTC$/), { timeout: 5_000 })
+  expect(run.posted).toHaveLength(posts)
+  await run.channel.stop()
+}, 15_000)

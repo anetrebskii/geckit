@@ -86,7 +86,7 @@ export function create(context) {
 | `label(id, labels)` | Adds labels to a conversation it started or to one of its Manager threads; an empty value removes one |
 | `get(id)`, `list()` | `{ id, root, title, state, provider, manager }`; `list` is what this channel started |
 | `items(id)` | The transcript so far |
-| `watch(id, listener)` | `items` (upserted by id, with `gone`), `state`, `notice`, and for a Manager thread `decisions` raised in it and `answer`, Manager's reply ready to post, whoever wrote the message it answers; returns an unwatch function |
+| `watch(id, listener)` | `items` (upserted by id, with `gone`), `state`, `notice`, and for a Manager thread `decisions` raised in it `answer`, Manager's reply ready to post, whoever wrote the message it answers, and `status`, what Manager and the thread's own and followed workers are doing now (`activity`: a Manager line, an ending, whether Manager is active and one line per worker; render it with `StatusMessage` semantics from `docs/ux/channel-status.md`); returns an unwatch function |
 | `answer(id, card, answer)` | A permission card (`once`, `session`, `no`, or a choice's words), or one of Manager's decisions |
 | `stop(id)` | Stops the current turn; Manager is paused in GeckIt instead |
 

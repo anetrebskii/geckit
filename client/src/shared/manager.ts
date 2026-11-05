@@ -55,6 +55,8 @@ export interface ManagerThread {
   readonly session?: ChatSession['id']
   readonly conversation?: ChatSession
   readonly state: 'idle' | 'working' | 'asks' | 'failed'
+  /** What Manager itself does in this thread: the host has a message the model has not started on, or the model (or the host carrying out its commands) is at work. */
+  readonly manager?: 'received' | 'working'
   readonly error?: string
   /** The thread's channel is off or may no longer talk to Manager. */
   readonly closed?: string

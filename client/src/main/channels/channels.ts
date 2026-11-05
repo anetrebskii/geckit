@@ -11,6 +11,7 @@ import { MANAGER_MAIN_THREAD, managerLabels } from '../../shared/manager'
 import type { ManagerReplyOrigin, ManagerThreadOpen, ManagerView } from '../../shared/manager'
 import { pluginLogger } from '../sessions/plugin-logs'
 import type { Channel, ChannelContext, ChannelConversation, ChannelEvent, ChannelThread, Json } from './channel-api'
+import { threadActivity } from '../manager-status'
 import type { LoadedChannel } from './libraries'
 import { installChannel, installedChannels, removeChannelLibrary, updateChannel } from './libraries'
 import { SLACK_INFO, SLACK_MODULE } from './slack'
@@ -90,6 +91,7 @@ export class Channels {
   readonly #listeners = new Map<string, Set<(event: ChannelEvent) => void>>()
   readonly #shown = new Map<string, string>()
   readonly #decisions = new Map<string, string>()
+  readonly #statuses = new Map<string, string>()
   #unanswer: (() => void) | undefined
   #counted = ''
 
@@ -402,6 +404,12 @@ export class Channels {
           if (decisions !== (this.#decisions.get(thread.id) ?? '[]')) {
             this.#decisions.set(thread.id, decisions)
             this.#tell(thread.id, { kind: 'decisions', decisions: mine })
+          }
+          const activity = threadActivity(view, thread.id)
+          const status = JSON.stringify(activity ?? null)
+          if (activity !== undefined && status !== this.#statuses.get(thread.id)) {
+            this.#statuses.set(thread.id, status)
+            this.#tell(thread.id, { kind: 'status', activity })
           }
           const conversation = this.#threadConversation(thread.id, view)
           const shown = JSON.stringify([conversation.state, conversation.title])

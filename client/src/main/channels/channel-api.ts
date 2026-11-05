@@ -2,6 +2,7 @@ import type { CardAnswer, ChatSession, ManagerLabels, SessionImage, SessionItem,
 import type { ChannelField, ChannelId, ChannelInfo, ChannelValue, ChannelValues } from '../../shared/channels'
 import type { ManagerDecision } from '../../shared/manager'
 import type { PluginLogger } from '../sessions/plugin-api'
+import type { ThreadActivity } from '../manager-status'
 
 export type { CardAnswer, ChannelField, ChannelId, ChannelInfo, ChannelValue, ChannelValues, ManagerDecision, ManagerLabels, PluginLogger, SessionImage, SessionItem, SessionNotice }
 
@@ -51,6 +52,8 @@ export type ChannelEvent =
   | { readonly kind: 'decisions'; readonly decisions: readonly ManagerDecision[] }
   /** Manager's answer in a thread, ready to post, whoever wrote the message it answers. */
   | { readonly kind: 'answer'; readonly text: string }
+  /** What Manager and the workers of a thread are doing now, sent when it changes; `StatusMessage` turns it into one edited status message. */
+  | { readonly kind: 'status'; readonly activity: ThreadActivity }
 
 export interface ChannelConversations {
   /** The Manager thread for this place, when this channel may talk to Manager and Manager is on. Without a place, the channel's one default thread. */

@@ -272,6 +272,7 @@ export class Manager {
     const session = this.#sessions.find((one) => one.id === state.sessionId)
     const closed = record === undefined ? undefined : this.#closed.get(record.channel)
     const working = session?.state === 'working' || live.dispatching || live.awaitingOutput || this.#record.inbox.some((message) => message.state !== 'sent' && this.#threadOf(message) === thread)
+    const manager = session?.state === 'working' || live.processingOutput ? 'working' : working ? 'received' : undefined
     const at = Math.max(record?.at ?? 0, ...this.#record.inbox.filter((message) => this.#threadOf(message) === thread).map((message) => message.at))
     return {
       id: thread,
@@ -283,6 +284,7 @@ export class Manager {
       ...(state.sessionId === undefined ? {} : { session: state.sessionId }),
       ...(session === undefined ? {} : { conversation: session }),
       state: state.error !== undefined ? 'failed' : decisions.some((decision) => (decision.thread ?? MAIN) === thread) ? 'asks' : working ? 'working' : 'idle',
+      ...(manager === undefined ? {} : { manager }),
       ...(state.error === undefined ? {} : { error: state.error }),
       ...(closed === undefined ? {} : { closed }),
       at,
