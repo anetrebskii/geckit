@@ -308,7 +308,7 @@ export function geckoWindow(): BrowserWindow {
     hasShadow: false,
     backgroundColor: '#00000000',
     // A panel, so a press does not bring GeckIt's other windows forward.
-    ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
+    ...(process.platform === 'darwin' ? { type: 'panel', hiddenInMissionControl: true } : {}),
     webPreferences: { preload, sandbox: false, devTools: false },
   })
   gecko.setAlwaysOnTop(true, 'floating')
@@ -374,7 +374,7 @@ export function warmRing(): BrowserWindow {
     transparent: true,
     hasShadow: false,
     backgroundColor: '#00000000',
-    ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
+    ...(process.platform === 'darwin' ? { type: 'panel', hiddenInMissionControl: true } : {}),
     webPreferences: { preload, sandbox: false, devTools: false, backgroundThrottling: false },
   })
   ring = made

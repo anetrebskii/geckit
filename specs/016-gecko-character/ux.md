@@ -97,6 +97,8 @@ stateDiagram-v2
 | look | a choice, Esc, a click elsewhere | the pose of the choice, or the state | the menu goes |
 | any | Screenshot | camera, then the state | crosshair at once, camera and flash beside it |
 | any | Voice task | listen while the capsule is open | the capsule hears; GeckIt opens on New task |
+| any | the person enters Mission Control on macOS | the same pose, with its windows excluded from Mission Control | only ordinary app windows are offered for selection |
+| any | the person selects another desktop in Mission Control | the same pose on the selected desktop | the selected desktop stays in front; GeckIt opens only when explicitly chosen |
 
 ## What stays silent
 
@@ -131,6 +133,7 @@ stateDiagram-v2
 - Everything at once (waiting, working, review): working with the count; the hop is dropped.
 - A waiting conversation is hidden: it stops counting.
 - The screen is locked, or the gecko switched off: its window and menu are closed; nothing of it runs.
+- On macOS, the gecko and its menu are hidden from Mission Control. Their presence on every desktop must not activate GeckIt or return the person to the desktop with its main window, whether a conversation is open or the board is shown.
 - The window was left on a display no longer connected: it comes back at the top right of the main display.
 - Dragged partly off a display: on release all of it is moved onto the display it is mostly on. Resized near an edge: kept on that display.
 - The menu near an edge or in a corner: the items spread over the part of the circle that is on the gecko's screen, the first at the end nearer the top, and the circle grows until they are a disc and a half apart. The items always clear the gecko's corners, where its count is.
