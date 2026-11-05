@@ -214,7 +214,7 @@ export class Employees {
     }
     const team = this.#deps.team
     if (command === undefined || (!WRITES.has(command) && command !== 'tasks' && command !== 'shortcuts')) throw new Error(USAGE)
-    if (team === undefined || compactMemory) throw new Error('Use employees list, employees current, employees show <employee-id> or employees memory <employee-id> [--cursor <next>]. These commands only read.')
+    if (team === undefined || compactMemory && !['shortcuts', 'shortcut'].includes(command)) throw new Error('Use employees list, employees current, employees show <employee-id> or employees memory <employee-id> [--cursor <next>]. These commands only read.')
     const json = args.includes('--json')
     const read = args.slice(1).filter((value) => value !== '--json')
     if (command === 'tasks') {
@@ -232,7 +232,7 @@ export class Employees {
       return this.#shortcuts(team, read[0] === undefined ? undefined : read[0] === 'none' ? null : this.#employee(read[0]).id, json)
     }
     const change = command === 'shortcut' ? this.#shortcutChange(team, args.slice(1)) : command === 'manager' ? this.#managerChange(team, args.slice(1)) : this.#change(team, command, args.slice(1))
-    if (session !== undefined && session.trim() !== '') {
+    if (command !== 'shortcut' && command !== 'manager' && session !== undefined && session.trim() !== '') {
       const answer = await team.ask(session, change.lines, gone ?? new AbortController().signal)
       if (answer === undefined) throw new Error('The requesting conversation stopped waiting.')
       if (answer.how !== 'allowed') throw new Error(answer.note === undefined ? 'Declined by the person.' : `Declined by the person. Their note: ${answer.note}`)

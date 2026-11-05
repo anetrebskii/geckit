@@ -1,3 +1,4 @@
+import type { SettingsCliAsked, SettingsCliAnswered } from '../shared/agent-settings'
 import type { EmployeesCliAnswered, EmployeesCliAsked } from '../shared/employees'
 import { rmSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -29,8 +30,8 @@ export interface StartAsked {
 
 export type StartAnswered = { readonly ok: false; readonly error: string } | ({ readonly ok: true } & RequestAnswered)
 
-export type CliAsked = StartAsked | MigrationAsked | ManagerCliAsked | EmployeesCliAsked
-export type CliAnswered = StartAnswered | MigrationAnswered | ManagerCliAnswered | EmployeesCliAnswered
+export type CliAsked = StartAsked | MigrationAsked | ManagerCliAsked | EmployeesCliAsked | SettingsCliAsked
+export type CliAnswered = StartAnswered | MigrationAnswered | ManagerCliAnswered | EmployeesCliAnswered | SettingsCliAnswered
 
 export const askedPath = (): string => askedEndpoint(dataDirectory())
 

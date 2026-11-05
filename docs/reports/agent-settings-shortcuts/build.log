@@ -1,0 +1,138 @@
+
+> geckit@1.0.0 build
+> npm run build:service && electron-vite build
+
+
+> geckit@1.0.0 build:service
+> vite build --config service.vite.config.ts
+
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 206 modules transformed.
+rendering chunks...
+out/service/package.json                            0.16 kB
+out/service/cli.js                                 37.44 kB │ map:    63.17 kB
+out/service/assets/session-migration-Dl_j4dec.js  428.72 kB │ map:   835.35 kB
+out/service/service.js                            869.51 kB │ map: 1,751.29 kB
+✓ built in 600ms
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 100 modules transformed.
+rendering chunks...
+out/main/chunks/trayAsleepTemplate-BRdl4Nnm.png        0.34 kB
+out/main/chunks/trayWorkingTemplate-VIC0hSLb.png       0.37 kB
+out/main/chunks/trayWaitingTemplate-OexAFGJ2.png       0.42 kB
+out/main/chunks/trayTemplate-Ckly2nNy.png              0.49 kB
+out/main/chunks/trayAsleepTemplate@2x-BznLbCT1.png     0.62 kB
+out/main/chunks/trayWorkingTemplate@2x-CCCIXXen.png    0.74 kB
+out/main/chunks/trayWaitingTemplate@2x-Cv2cDlxy.png    0.85 kB
+out/main/chunks/trayTemplate@2x-Dd17v9N2.png           1.17 kB
+out/main/chunks/32x32-D88gcABV.png                     1.38 kB
+out/main/cli.js                                       95.50 kB
+out/main/index.js                                    149.44 kB
+out/main/chunks/search-BhYGfB4S.js                   196.24 kB
+✓ built in 260ms
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 2 modules transformed.
+rendering chunks...
+out/preload/index.mjs  26.28 kB
+✓ built in 12ms
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 517 modules transformed.
+rendering chunks...
+../../out/renderer/peer.html                                                        0.50 kB
+../../out/renderer/gecko.html                                                       0.67 kB
+../../out/renderer/panel.html                                                       0.77 kB
+../../out/renderer/voice.html                                                       0.79 kB
+../../out/renderer/chat.html                                                        1.08 kB
+../../out/renderer/assets/employee-03-_3w0bWJV.svg                                  4.25 kB
+../../out/renderer/assets/employee-05-ClbmTv3F.svg                                  4.49 kB
+../../out/renderer/assets/employee-11-BQMmCr5v.svg                                  4.57 kB
+../../out/renderer/assets/employee-08-DgkkMjah.svg                                  4.63 kB
+../../out/renderer/assets/employee-06-BdCK2zPg.svg                                  4.89 kB
+../../out/renderer/assets/employee-12-2XbNhK4a.svg                                  5.16 kB
+../../out/renderer/assets/employee-01-CXsE24vn.svg                                  6.08 kB
+../../out/renderer/assets/employee-10-C-BlD7WT.svg                                  6.51 kB
+../../out/renderer/assets/employee-07-BNd4wxQP.svg                                  6.72 kB
+../../out/renderer/assets/jetbrains-mono-vietnamese-wght-normal-Bt-aOZkq.woff2      7.50 kB
+../../out/renderer/assets/jetbrains-mono-greek-wght-normal-Bw9x6K1M.woff2           9.00 kB
+../../out/renderer/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2              10.25 kB
+../../out/renderer/assets/employee-04-C5jn_hPy.svg                                 10.26 kB
+../../out/renderer/assets/tAc-BChVZXJW.webp                                        10.38 kB
+../../out/renderer/assets/bend41-k0-CFLxy2ax.webp                                  11.11 kB
+../../out/renderer/assets/bend07-k0-DTvaxqGr.webp                                  11.12 kB
+../../out/renderer/assets/bend23-k0-_hUd9t6j.webp                                  11.15 kB
+../../out/renderer/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2               11.23 kB
+../../out/renderer/assets/bAc-DwbLQljW.webp                                        11.27 kB
+../../out/renderer/assets/bend08-k1-B2HrtUsh.webp                                  11.40 kB
+../../out/renderer/assets/bend11-k4-YK8Q9dJR.webp                                  11.44 kB
+../../out/renderer/assets/bend09-k2-Crq6ABO5.webp                                  11.46 kB
+../../out/renderer/assets/bend10-k3-B-YYlOB1.webp                                  11.53 kB
+../../out/renderer/assets/bend14-k7-DJBupaUf.webp                                  11.62 kB
+../../out/renderer/assets/bend13-k6-GmaJ2XZM.webp                                  11.64 kB
+../../out/renderer/assets/bend12-k5-BIL9Yg9T.webp                                  11.66 kB
+../../out/renderer/assets/bend56-k6-BqQ-K8L6.webp                                  11.80 kB
+../../out/renderer/assets/bend57-k7-Bg6BKOnE.webp                                  11.81 kB
+../../out/renderer/assets/bend24-k1-qQu2UdYh.webp                                  11.81 kB
+../../out/renderer/assets/bend48-k7-DzD3W9ay.webp                                  11.82 kB
+../../out/renderer/assets/bend47-k6-C7GkPBbZ.webp                                  11.85 kB
+../../out/renderer/assets/bend46-k5-BV3SJnYH.webp                                  11.85 kB
+../../out/renderer/assets/bend55-k5-CSykoghN.webp                                  11.88 kB
+../../out/renderer/assets/bend43-k2-VJLqSviW.webp                                  11.88 kB
+../../out/renderer/assets/bend42-k1-CKSJEK6r.webp                                  11.89 kB
+../../out/renderer/assets/bend52-k2-DCrEgC6M.webp                                  11.90 kB
+../../out/renderer/assets/bend51-k1-BlokNOy4.webp                                  11.96 kB
+../../out/renderer/assets/bend45-k4-DLFVrM4i.webp                                  12.00 kB
+../../out/renderer/assets/bend54-k4-CXsoSUri.webp                                  12.02 kB
+../../out/renderer/assets/bend25-k2-CB-qHEqD.webp                                  12.03 kB
+../../out/renderer/assets/bend29-k6-CgPKnTT4.webp                                  12.03 kB
+../../out/renderer/assets/bend53-k3-286KUCVt.webp                                  12.06 kB
+../../out/renderer/assets/bend26-k3-CpL5wovV.webp                                  12.09 kB
+../../out/renderer/assets/bend27-k4-Cq2QW6QP.webp                                  12.11 kB
+../../out/renderer/assets/jetbrains-mono-cyrillic-wght-normal-D73BlboJ.woff2       12.11 kB
+../../out/renderer/assets/bend30-k7-4mYptgo1.webp                                  12.12 kB
+../../out/renderer/assets/bend28-k5-BMT-M4IJ.webp                                  12.18 kB
+../../out/renderer/assets/bend31-k0-Cs1JzHmX.webp                                  12.25 kB
+../../out/renderer/assets/bend44-k3-BlW0SI3W.webp                                  12.25 kB
+../../out/renderer/assets/bend38-k7-CX8VJEIy.webp                                  12.96 kB
+../../out/renderer/assets/bend33-k2-CCz6fNwe.webp                                  12.97 kB
+../../out/renderer/assets/bend35-k4-NFQ1vrEd.webp                                  13.06 kB
+../../out/renderer/assets/bend37-k6-4djWPlaX.webp                                  13.07 kB
+../../out/renderer/assets/bend32-k1-BtiKeyz0.webp                                  13.11 kB
+../../out/renderer/assets/bend36-k5-BZ93qPTZ.webp                                  13.14 kB
+../../out/renderer/assets/bend34-k3-VVX_zzkk.webp                                  13.36 kB
+../../out/renderer/assets/jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2      15.20 kB
+../../out/renderer/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2                18.75 kB
+../../out/renderer/assets/inter-greek-wght-normal-CkhJZR-_.woff2                   19.00 kB
+../../out/renderer/assets/aA-Bjn6Kc88.webp                                         19.23 kB
+../../out/renderer/assets/bA-D9-fRCmf.webp                                         19.50 kB
+../../out/renderer/assets/tB-BsHr45tA.webp                                         21.88 kB
+../../out/renderer/assets/tA-CboWfVpq.webp                                         22.28 kB
+../../out/renderer/assets/wA-DgmGythc.webp                                         23.98 kB
+../../out/renderer/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2            25.96 kB
+../../out/renderer/assets/cGot-CvufPEc8.webp                                       26.45 kB
+../../out/renderer/assets/wB-DVtLci1G.webp                                         27.54 kB
+../../out/renderer/assets/cam-BkZWOlnn.webp                                        29.00 kB
+../../out/renderer/assets/hA-VffI88W_.webp                                         35.40 kB
+../../out/renderer/assets/cUp-DFMhjF7M.webp                                        36.55 kB
+../../out/renderer/assets/lA-CdgbswSw.webp                                         38.75 kB
+../../out/renderer/assets/lB-DbE9vSHm.webp                                         39.27 kB
+../../out/renderer/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2          40.40 kB
+../../out/renderer/assets/inter-latin-wght-normal-Dx4kXJAl.woff2                   48.26 kB
+../../out/renderer/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2               85.07 kB
+../../out/renderer/assets/chat-BonrFIke.css                                        12.91 kB
+../../out/renderer/assets/styles-BPdbF5Z8.css                                     299.10 kB
+../../out/renderer/assets/recording-DdFynjWA.js                                     1.13 kB
+../../out/renderer/assets/pictures-Ds_1hoMw.js                                      1.52 kB
+../../out/renderer/assets/steps-D6kYWwJk.js                                         1.83 kB
+../../out/renderer/assets/panel-ji9yaf9V.js                                        21.46 kB
+../../out/renderer/assets/Menu-Dz7ebpjM.js                                         21.69 kB
+../../out/renderer/assets/speech-cuDDvQ8-.js                                       29.83 kB
+../../out/renderer/assets/voice-C-pJz-dQ.js                                        30.12 kB
+../../out/renderer/assets/gecko-BxYqRxUN.js                                        37.68 kB
+../../out/renderer/assets/styles-B5XdiVdl.js                                      641.27 kB
+../../out/renderer/assets/peer-DCV77e4I.js                                        955.69 kB
+../../out/renderer/assets/chat-B1I6fmC2.js                                      1,500.33 kB
+✓ built in 1.21s

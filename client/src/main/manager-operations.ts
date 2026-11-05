@@ -1,3 +1,5 @@
+import { settingsCommand } from './agent-settings'
+import { AGENT_SETTINGS_SCHEMA } from '../shared/agent-settings'
 import type { Employees } from './employees'
 import { constants } from 'node:fs'
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
@@ -64,15 +66,23 @@ export const MANAGER_CAPABILITIES = {
     'sessions mark --id <managed-worker-id> --status progress|review|blocked|done|archived (done needs confirmation)',
     'sessions attach --id <unrelated-worker-id> (user confirmation)',
     'sessions answer --id <managed-worker-id> --card <current-question-id> --text <answer> (user confirmation; questions only)',
+    'employees shortcuts [<employee-id>|none] [--json]',
+    'employees shortcut add <employee-id|none> --name <name> --project <registered-project-name> --prompt <text> [--target task|manager] [--goal <text>] [--every <hour|hour 15|day 9:00|weekdays 9:00|week monday 9:00>|--cron <expression>] [--start-window-minutes <1-1440|none>] [--provider <enabled-provider-id>] [--model <id>] [--reasoning <effort|default>] [--mode manual|auto|plan] (no product confirmation; Manager target uses none and its configured assistant/approvals)',
+    'employees shortcut edit <shortcut-id> [same optional fields as add; --every none removes timetable, --goal empty clears goal] (no product confirmation)',
+    'employees shortcut pause|resume|remove|run <shortcut-id> (no product confirmation)',
+    'employees shortcut give <shortcut-id> <employee-id|none> (no product confirmation)',
+    'settings schema',
+    'settings edit --patch <JSON object> [--expected <JSON object>] (no product confirmation)',
     'settings show',
     'settings manager',
-    'settings manager-edit --instructions <text> --expected-instructions <last-read-text> (user confirmation; empty text clears; read settings manager afterwards)',
+    'settings manager-edit --instructions <text> --expected-instructions <last-read-text> (no product confirmation; empty text clears; read settings manager afterwards)',
     'attachments send --attachment <retained-attachment-id> --id <managed-local-worker-id> --text <instruction> (explicit permanent project input copy; retained until user/project cleanup)',
     'telegram send-file --id <managed-local-worker-id> --path <project-relative-deliverable> [--caption <caption>] [--as document|photo] (explicit selected artifact only; default document; worker requests via result containing exact path)',
   ],
+  settings: AGENT_SETTINGS_SCHEMA,
   unavailable: [
     { aspects: 'SSH project creation and remote file management', reason: 'Use a worker on the registered host; local file commands never fall back to this computer.' },
-    { aspects: 'profiles, favorites, schedules, libraries, provider enable/install, hosts and other settings mutations', reason: 'This first Manager CLI version exposes their current settings but changes require the existing GeckIt UI.' },
+    { aspects: 'libraries, provider enable/install, credentials, channel grants, hosts and project registration through settings edit', reason: 'Use the existing dedicated interfaces; settings schema lists writable preferences. Native permissions remain user-controlled.' },
     { aspects: 'arbitrary shell, native permission approval, deep code execution and direct provider API calls', reason: 'Outside Manager coordination. Delegate deep execution to workers; normal provider tools and permission checks remain available.' },
   ],
 } as const
@@ -107,13 +117,15 @@ const SHAPES: readonly CommandShape[] = [
   { domain: 'settings', command: 'manager', flags: [] },
   { domain: 'settings', command: 'manager-edit', flags: ['--instructions', '--expected-instructions'] },
   { domain: 'settings', command: 'show', flags: [] },
+  { domain: 'settings', command: 'schema', flags: [] },
+  { domain: 'settings', command: 'edit', flags: ['--patch', '--expected'] },
   { domain: 'attachments', command: 'send', flags: ['--attachment', '--id', '--text'] },
   { domain: 'telegram', command: 'send-file', flags: ['--id', '--path', '--caption', '--as'] },
 ]
 
 export function managerReadOnly(args: readonly string[]): boolean {
   const [domain, command] = args
-  return domain === 'employees' && ['list', 'show', 'memory', 'current'].includes(command ?? '') || domain === 'capabilities' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'manager')
+  return domain === 'employees' && ['list', 'show', 'memory', 'current', 'shortcuts'].includes(command ?? '') || domain === 'capabilities' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'schema' || command === 'manager')
 }
 
 const values = (args: readonly string[]): Map<string, string> => {
@@ -193,7 +205,7 @@ export class ManagerOperations {
 
   confirmation(args: readonly string[], policy: 'automatic' | 'approve'): string | undefined {
     const [domain, command] = args
-    if (domain === 'employees' && command === 'rename' || domain === 'settings' && command === 'manager-edit') return `Change these user preferences? ${JSON.stringify(args)}`
+    if (domain === 'employees' && command === 'rename') return `Change these user preferences? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'start' && policy === 'approve') return `Start this worker? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'attach' && !this.#deps.managed(required(values(args), '--id'))) return `Allow Manager to coordinate this existing conversation? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'answer') return `Send this answer to the worker's question? ${JSON.stringify(args)}`
@@ -463,7 +475,7 @@ export class ManagerOperations {
         return JSON.stringify({ id, card: cardId, answered: true })
       }
     }
-    if (domain === 'settings' && command === 'show') return JSON.stringify({ theme: settings.theme, workingAtOnce: settings.workingAtOnce, defaultProvider: settings.chatProvider, projects: settings.projects, projectAssistants: settings.projectAssistants, profiles: settings.profiles, favorites: settings.favorites, hosts: settings.hosts.map(({ id, name }) => ({ id, name })), schedules: settings.shortcuts.map(({ id, name, on }) => ({ id, name, on })) })
+    if (domain === 'settings') return settingsCommand(args.slice(1), this.#deps.settings, this.#deps.saveSettings)
     throw new Error('This GeckIt CLI operation is unavailable. Run capabilities for supported commands and limitations.')
   }
 }

@@ -141,7 +141,7 @@ stateDiagram-v2
 | Assigning | Запись подтверждена, сам | Назначено | Новый портрет на карточке, в чате, в Team |
 | Assigning | Запись не удалась, сам | Assign failed | "Could not change employee. Try again."; портрет прежний |
 | Меню назначения | Escape, нажатие вне меню | Карточка | Ничего не изменилось, фокус на портрете |
-| Чат | `geckit employees ...` с изменением, из сессии | CLI request waiting | Карточка запроса в чате с описанием изменения |
+| Чат | `geckit employees ...` с изменением каталога/назначения (не настроек и Shortcuts), из сессии | CLI request waiting | Карточка запроса в чате с описанием изменения |
 | CLI request waiting | Allow | Применено | Изменение в Team; CLI печатает результат |
 | CLI request waiting | Decline | Отклонено | CLI печатает отказ и заметку человека |
 | Терминал | `geckit employees ...` вне сессии | Применено | Изменение сразу; CLI печатает результат |
@@ -237,8 +237,8 @@ stateDiagram-v2
 
 | Вариант | Вердикт |
 | --- | --- |
-| Применять сразу | Нет: ассистент мог бы молча завести себе расписание |
-| Карточка Allow / Decline в чате, как у `geckit start` | Да; из терминала без сессии - сразу |
+| Применять сразу | С 2026-11-05 да для настроек и Shortcuts по прямому запросу Alex; см. [agent settings and shortcuts](agent-settings-shortcuts.md) |
+| Карточка Allow / Decline в чате, как у `geckit start` | Сохранена только для остальных изменений команды; из терминала без сессии - сразу |
 
 ## 11. Сверка с требованиями
 
@@ -277,7 +277,7 @@ geckit employees shortcut run <shortcut-id>
 - На телефоне пустой "+" на карточке не показывается: наведения нет, а "+" на каждой строке - шум. Назначение на телефоне - в заголовке чата.
 - CLI принимает сотрудника и Shortcut и по id, и по точному уникальному имени без учёта регистра.
 - `pause` и `resume` отказывают Shortcut, который запускается только вручную: ставить на паузу нечего.
-- Запись из разговора, который GeckIt не показывает, не ждёт карточку, а сразу отвечает "GeckIt does not show this conversation, so it cannot ask the person here. Run the command in a terminal."
+- Для изменений каталога/назначения запись из разговора, который GeckIt не показывает, не ждёт карточку, а сразу отвечает "GeckIt does not show this conversation, so it cannot ask the person here. Run the command in a terminal."
 - Пока карточка Allow / Decline ждёт, разговор в состоянии "спрашивает" с подписью "Wants to change the team".
 
 ## 13. Сотрудник в каждой строке Shortcuts - 2026-11-02

@@ -1,3 +1,4 @@
+import { settingsCommand } from '../main/agent-settings'
 import { OPERATOR_HELP } from '../shared/service'
 import type { OperatorAsked, OperatorAnswered } from '../shared/service'
 import { timingSafeEqual } from 'node:crypto'
@@ -128,6 +129,7 @@ export function serviceHandler(runtime: CoreRuntime, token: string, shutdown: ()
       if (!Array.isArray(ask.args) || !ask.args.every((one) => typeof one === 'string')) throw new Error('Operator arguments must be strings.')
       return { ok: true, result: await operate(runtime, ask.args, () => { if (gone.aborted) shutdown(); else gone.addEventListener('abort', shutdown, { once: true }) }) }
     }
+    if (ask.action === 'settings') return { ok: true, result: settingsCommand(ask.args, getSettings, setSettings) }
     if (ask.action === 'employees') return { ok: true, result: await runtime.employees.command(ask.args, ask.session, false, gone) }
     if (ask.action === 'manage') return runtime.manager.command(ask)
     if (ask.action === 'migrate-codex') {

@@ -1,0 +1,53 @@
+
+> build
+> NODE_ENV=production vite build
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 829 modules transformed.
+rendering chunks...
+computing gzip size...
+www/stub.html                                                        0.50 kB │ gzip:   0.30 kB
+www/index.html                                                       0.66 kB │ gzip:   0.34 kB
+www/assets/employee-03-_3w0bWJV.svg                                  4.25 kB │ gzip:   1.77 kB
+www/assets/employee-05-ClbmTv3F.svg                                  4.49 kB │ gzip:   1.90 kB
+www/assets/employee-11-BQMmCr5v.svg                                  4.57 kB │ gzip:   1.88 kB
+www/assets/employee-08-DgkkMjah.svg                                  4.63 kB │ gzip:   1.91 kB
+www/assets/employee-06-BdCK2zPg.svg                                  4.89 kB │ gzip:   1.97 kB
+www/assets/employee-12-2XbNhK4a.svg                                  5.16 kB │ gzip:   2.27 kB
+www/assets/employee-01-CXsE24vn.svg                                  6.08 kB │ gzip:   2.64 kB
+www/assets/employee-10-C-BlD7WT.svg                                  6.51 kB │ gzip:   2.89 kB
+www/assets/employee-07-BNd4wxQP.svg                                  6.72 kB │ gzip:   2.93 kB
+www/assets/jetbrains-mono-vietnamese-wght-normal-Bt-aOZkq.woff2      7.50 kB
+www/assets/jetbrains-mono-greek-wght-normal-Bw9x6K1M.woff2           9.00 kB
+www/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2              10.25 kB
+www/assets/employee-04-C5jn_hPy.svg                                 10.26 kB │ gzip:   4.58 kB
+www/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2               11.23 kB
+www/assets/jetbrains-mono-cyrillic-wght-normal-D73BlboJ.woff2       12.11 kB
+www/assets/jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2      15.20 kB
+www/assets/icon-DwL_WT4w.png                                        15.55 kB
+www/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2                18.75 kB
+www/assets/inter-greek-wght-normal-CkhJZR-_.woff2                   19.00 kB
+www/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2            25.96 kB
+www/assets/hA-VffI88W_.webp                                         35.40 kB
+www/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2          40.40 kB
+www/assets/inter-latin-wght-normal-Dx4kXJAl.woff2                   48.26 kB
+www/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2               85.07 kB
+www/assets/main-ir3JG5J0.css                                         3.47 kB │ gzip:   1.31 kB
+www/assets/main-CtpVKtdr.css                                         9.46 kB │ gzip:   2.38 kB
+www/assets/phone-B7tztiLD.css                                      224.36 kB │ gzip:  42.37 kB
+www/assets/_commonjsHelpers-Cpj98o6Y.js                              0.24 kB │ gzip:   0.18 kB
+www/assets/web-ekaHqKw0.js                                           0.91 kB │ gzip:   0.44 kB
+www/assets/web-BFf-Hd1l.js                                           0.96 kB │ gzip:   0.49 kB
+www/assets/stub-BAddP6RS.js                                          1.65 kB │ gzip:   0.86 kB
+www/assets/web-B1uya_0j.js                                           3.06 kB │ gzip:   1.24 kB
+www/assets/phone-BbD8hekH.js                                        30.37 kB │ gzip:  11.26 kB
+www/assets/index-BixBxlrz.js                                       454.13 kB │ gzip: 150.49 kB
+www/assets/main-JmQmwuC6.js                                        821.92 kB │ gzip: 246.98 kB
+www/assets/main-BtJwOTvU.js                                      1,015.76 kB │ gzip: 296.53 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.04s

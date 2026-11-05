@@ -28,8 +28,8 @@ let env: NodeJS.ProcessEnv
 let running: ChildProcess | undefined
 let output = ''
 
-async function eventually<T>(read: () => Promise<T>, check: (value: T) => boolean): Promise<T> {
-  const until = Date.now() + 8_000
+async function eventually<T>(read: () => Promise<T>, check: (value: T) => boolean, timeout = 8_000): Promise<T> {
+  const until = Date.now() + timeout
   for (;;) {
     const value = await read()
     if (check(value)) return value
@@ -121,6 +121,85 @@ it('runs without display or Electron, rejects competitors and private-socket cal
   const id = await send('complete')
   await eventually(() => items(id), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:complete'))
 }, 20_000)
+
+it('applies agent settings and shortcuts through real CLI/handlers without approval, persists and runs the changed prompt', async () => {
+  const agent = async (...args: string[]): Promise<string> => (await exec(process.execPath, [join(folder, 'service', 'cli.js'), ...args], { cwd: client, env: { ...env, CODEX_THREAD_ID: 'isolated-agent' }, timeout: 5_000 })).stdout.trim()
+  expect(JSON.parse(await agent('settings', 'schema'))).toHaveProperty('fields.theme')
+  await agent('settings', 'edit', '--patch', JSON.stringify({ theme: 'dark', workingAtOnce: 3, phrases: ['Preserve this'] }))
+  expect(JSON.parse(await agent('settings', 'show'))).toMatchObject({ theme: 'dark', workingAtOnce: 3, phrases: ['Preserve this'] })
+  expect(parseConfiguration(await readFile(join(directory, 'settings.json'), 'utf8')).general).toMatchObject({ theme: 'dark', workingAtOnce: 3 })
+  const before = await readFile(join(directory, 'settings.json'), 'utf8')
+  for (const patch of [{ theme: 'blue' }, { workingAtOnce: -1 }, { chatProvider: 'codex' }, { chatProviders: ['codex'] }, { theme: 'light', workingAtOnce: -1 }]) {
+    await expect(agent('settings', 'edit', '--patch', JSON.stringify(patch))).rejects.toMatchObject({ code: 1 })
+    expect(await readFile(join(directory, 'settings.json'), 'utf8')).toBe(before)
+  }
+  await expect(agent('settings', 'edit', '--patch', '{"theme":"light"}', '--expected', '{"theme":"system"}')).rejects.toMatchObject({ code: 1, stdout: expect.stringContaining('changed') })
+  await agent('employees', 'shortcut', 'add', 'none', '--name', 'Agent shortcut', '--project', 'project', '--prompt', 'before', '--provider', 'plugin:fixture', '--cron', '0 10 * * *', '--start-window-minutes', '15')
+  const list = async (): Promise<Shortcut[]> => JSON.parse(await agent('employees', 'shortcuts', '--json')) as Shortcut[]
+  const shortcut = (await list()).find((one) => one.name === 'Agent shortcut')
+  if (shortcut === undefined) throw new Error('Shortcut missing')
+  await agent('employees', 'shortcut', 'edit', shortcut.id, '--prompt', 'applied-agent-shortcut')
+  await agent('employees', 'shortcut', 'pause', shortcut.id)
+  expect((await list()).find((one) => one.id === shortcut.id)).toMatchObject({ on: false, cron: '0 10 * * *', startWindowMinutes: 15 })
+  await agent('employees', 'shortcut', 'resume', shortcut.id)
+  await expect(agent('employees', 'shortcut', 'edit', shortcut.id, '--cron', 'bad')).rejects.toMatchObject({ code: 1, stdout: expect.stringContaining('cron') })
+  expect((await list()).find((one) => one.id === shortcut.id)).toMatchObject({ prompt: 'applied-agent-shortcut', on: true, cron: '0 10 * * *' })
+  await agent('employees', 'shortcut', 'run', shortcut.id)
+  const ran = (await list()).find((one) => one.id === shortcut.id)
+  await eventually(() => items(ran?.lastSession ?? ''), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:applied-agent-shortcut'))
+  const stored = parseConfiguration(await readFile(join(directory, 'settings.json'), 'utf8'))
+  expect(stored.shortcuts).toEqual(expect.arrayContaining([expect.objectContaining({ id: shortcut.id, prompt: 'applied-agent-shortcut' })]))
+  expect(stored.shortcuts?.find((one) => one.id === shortcut.id)).not.toHaveProperty('lastSession')
+  const pending = await Promise.all((await read<ChatSession[]>('sessions', 'list')).map((one) => items(one.id)))
+  expect(pending.flat().some((one) => one.kind === 'team-request')).toBe(false)
+  const exited = once(running!, 'exit'); running?.kill('SIGTERM'); await exited
+  await start()
+  expect(JSON.parse(await agent('settings', 'show'))).toMatchObject({ theme: 'dark', workingAtOnce: 3, phrases: ['Preserve this'] })
+  expect((await list()).find((one) => one.id === shortcut.id)).toMatchObject({ prompt: 'applied-agent-shortcut', lastSession: ran?.lastSession })
+  await agent('employees', 'shortcut', 'remove', shortcut.id)
+  expect((await list()).some((one) => one.id === shortcut.id)).toBe(false)
+  await agent('settings', 'edit', '--patch', '{"workingAtOnce":1}')
+  const occupied = await send('hang')
+  await eventually(() => read<ChatSession[]>('sessions', 'list'), (all) => all.some((one) => one.id === occupied && one.state === 'working'))
+  const queued = await send('applied-new-concurrency')
+  await eventually(() => read<ChatSession[]>('sessions', 'list'), (all) => all.some((one) => one.id === queued && one.waits))
+  expect((await items(queued)).some((one) => one.kind === 'theirs')).toBe(false)
+  await agent('settings', 'edit', '--patch', '{"workingAtOnce":3}')
+  await eventually(() => items(queued), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:applied-new-concurrency'), 15_000)
+  await cli('sessions', 'stop', occupied)
+  await agent('settings', 'edit', '--patch', '{"workingAtOnce":0}')
+}, 30_000)
+
+it('executes authenticated Manager settings and saved-shortcut commands through its real subprocess CLI without decisions', async () => {
+  await cli('manager', 'configure', JSON.stringify({ enabled: true, provider: 'plugin:fixture', delegation: 'approve' }))
+  let sequence = 0
+  const execute = async (args: readonly string[]): Promise<ManagerView> => {
+    const id = `agent-settings-${String(++sequence)}`
+    await cli('manager', 'send', `fixture-command:${JSON.stringify({ id, args })}`)
+    const view = await eventually(() => read<ManagerView>('manager', 'view'), (current) => current.decisions.length > 0 || current.activity.some((one) => one.id === id && one.state !== 'running'))
+    expect(view.decisions).toEqual([])
+    expect(view.activity.find((one) => one.id === id)).toMatchObject({ state: 'done' })
+    await eventually(() => read<ManagerView>('manager', 'view'), (current) => current.state === 'idle')
+    return view
+  }
+  await execute(['settings', 'edit', '--patch', '{"theme":"light","workingAtOnce":4}'])
+  expect(await read('settings', 'get')).toMatchObject({ theme: 'light', workingAtOnce: 4 })
+  await execute(['settings', 'manager-edit', '--instructions', 'Saved without decision', '--expected-instructions', ''])
+  await execute(['employees', 'shortcut', 'add', 'none', '--name', 'Manager-created task', '--project', 'project', '--prompt', 'manager-created-shortcut', '--provider', 'plugin:fixture'])
+  const all = await read<Shortcut[]>('employees', 'shortcuts', '--json')
+  const shortcut = all.find((one) => one.name === 'Manager-created task')
+  if (shortcut === undefined) throw new Error('Manager shortcut missing')
+  await execute(['employees', 'shortcut', 'edit', shortcut.id, '--prompt', 'manager-edited-shortcut'])
+  await execute(['employees', 'shortcuts', '--json'])
+  await execute(['employees', 'shortcut', 'run', shortcut.id])
+  const ran = (await read<Shortcut[]>('employees', 'shortcuts', '--json')).find((one) => one.id === shortcut.id)
+  await eventually(() => items(ran?.lastSession ?? ''), (current) => current.some((one) => one.kind === 'theirs' && one.text === 'fixture:manager-edited-shortcut'))
+  await execute(['employees', 'shortcut', 'remove', shortcut.id])
+  expect((await read<Shortcut[]>('employees', 'shortcuts', '--json')).some((one) => one.id === shortcut.id)).toBe(false)
+  expect(parseConfiguration(await readFile(join(directory, 'settings.json'), 'utf8')).manager?.instructions).toBe('Saved without decision')
+  await cli('manager', 'configure', JSON.stringify({ enabled: false }))
+  await cli('settings', 'set', '{"workingAtOnce":0}')
+}, 30_000)
 
 it('runs a channel library with a sealed secret and only the folders granted to it', async () => {
   expect(await read<ChannelsView>('call', 'channels:view', '[]')).toMatchObject({ channels: [{ id: 'channel:probe', state: 'off' }] })

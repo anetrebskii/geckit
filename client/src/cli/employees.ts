@@ -35,8 +35,8 @@ export function readEmployees(args: readonly string[], directory: string): Promi
     const socket = connect(askedEndpoint(directory))
     let received = ''
     socket.setEncoding('utf8')
-    // A change asked for in a conversation waits for the person, however long they take.
-    if (READS.has(args[0] ?? '') || (args[0] === 'manager' && args[1] !== 'edit') || session === undefined) socket.setTimeout(55_000, () => socket.destroy(new Error('GeckIt did not answer the employee command.')))
+    // Only unrelated team changes wait for the person's decision.
+    if (READS.has(args[0] ?? '') || args[0] === 'manager' || args[0] === 'shortcut' || session === undefined) socket.setTimeout(55_000, () => socket.destroy(new Error('GeckIt did not answer the employee command.')))
     socket.on('connect', () => socket.write(`${JSON.stringify(request)}\n`))
     socket.on('data', (part: string) => { received += part })
     socket.on('error', (error: Error) => resolve({ ok: false, said: error.message }))
