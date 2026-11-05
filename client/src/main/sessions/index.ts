@@ -1,3 +1,4 @@
+import { mergeTasks, taskTerminal } from '../../shared/background-tasks'
 import type { Employee, EmployeeConversation } from '../../shared/employees'
 import { createHash, randomUUID } from 'node:crypto'
 import { managerContext, managerHistoryItem, managerVisibleItem } from '../manager-protocol'
@@ -207,7 +208,7 @@ export function memoryNotes(): NotesStore {
   }
 }
 
-interface Row extends Pick<SessionSpend, 'window' | 'cost' | 'currency' | 'costKind'> {
+interface Row extends Pick<ChatSession, 'tasks'>, Pick<SessionSpend, 'window' | 'cost' | 'currency' | 'costKind'> {
   readonly id: string
   readonly root: string
   /** The project it is listed under, where it was started in a folder below. */
@@ -424,9 +425,9 @@ function after(run: () => void, ms: number): () => void {
 
 const running = (task: BackgroundTask): boolean => task.status === 'running'
 
-/** Tasks as they stand once their process is gone, which took every one still running with it. */
+/** A parent process ending does not confirm that its helpers stopped. */
 const ended = (tasks: readonly BackgroundTask[]): readonly BackgroundTask[] =>
-  tasks.map((task) => (running(task) ? { ...task, status: 'stopped', ended: Date.now() } : task))
+  tasks.map((task) => taskTerminal(task) ? task : task.kind === 'local_bash' || task.kind === 'monitor' ? { ...task, status: 'stopped', ended: Date.now() } : { ...task, status: 'unknown' })
 
 /** How long Stop waits to be heard before the process is ended instead. */
 const STOP_HEARD = 5_000
@@ -542,6 +543,7 @@ export class Sessions {
   /** The cards of requests made by a program rather than a conversation (`requestFromApp`). */
   readonly #holders = new Set<string>()
   readonly #rows = new Map<string, Row>()
+  readonly #clearedTasks = new Map<string, Map<string, number>>()
   #watching: string | undefined
   #goalWatch: ReturnType<typeof setInterval> | undefined
   #vpnMonitor: VpnSessionMonitor | undefined
@@ -994,6 +996,12 @@ export class Sessions {
       const family = providerOf(id)
       if (family !== 'claude' && family !== 'codex' && !this.#providers.plugins.has(family)) continue
       const row = this.#rows.get(id)
+      if (family === 'claude') {
+        const canonical = `plugin:claude-tmux:${id}`
+        const canonicalNote = this.#deps.notes.all()[canonical]
+        const managed = this.#live.get(canonical)?.driver !== undefined || canonicalNote?.here === true || canonicalNote?.managerOwner !== undefined
+        if (managed && ids.has(canonical) && (this.#rows.get(canonical)?.root ?? this.#live.get(canonical)?.root) === row?.root) continue
+      }
       const live = this.#live.get(id)
       const note = this.#deps.notes.all()[id]
       const where = live?.root ?? row?.root
@@ -1025,6 +1033,13 @@ export class Sessions {
       const teamAsking = [...this.#teamRequests.values()].some((pending) => pending.session === id)
       const goal = live?.goal ?? note?.goal
       const moved = note?.moves?.at(-1)
+      const tasks = mergeTasks([row?.tasks, live?.tasks], this.#deps.now?.() ?? Date.now()).filter((task) => !taskTerminal(task) || (this.#clearedTasks.get(id)?.get(task.id) ?? -Infinity) < (task.observedAt ?? task.ended ?? task.started))
+      const helpers = tasks.filter((task) => task.kind !== 'local_bash' && task.kind !== 'monitor')
+      const childState = helpers.some((task) => task.status === 'asks') ? 'asks' : helpers.some(running) ? 'working' : undefined
+      const foreground = live?.state ?? 'idle'
+      const state = foreground === 'idle' && childState !== undefined ? childState : foreground
+      const activeHelpers = helpers.filter(running).length
+      const childStands = foreground !== 'idle' ? undefined : childState === 'asks' ? 'Helper waiting for input or permission' : childState === 'working' ? `${String(activeHelpers)} ${activeHelpers === 1 ? 'helper' : 'helpers'} working` : helpers.some((task) => task.status === 'unknown') ? 'Helper activity unconfirmed' : undefined
       sessions.push({
         id,
         ...(note?.employeeId === undefined ? {} : { employeeId: note.employeeId }),
@@ -1042,6 +1057,8 @@ export class Sessions {
             ? `Wants to start ${conversations(asking)}`
             : teamAsking
             ? 'Wants to change the team'
+            : childStands !== undefined
+            ? childStands
             : quiet
             ? runs !== undefined
               ? live?.typing === runs.id
@@ -1051,7 +1068,7 @@ export class Sessions {
                 ? 'Stopped when GeckIt closed'
                 : live?.stands || row?.stands
             : live.stands) ?? '',
-        state: asking !== undefined || teamAsking ? 'asks' : quiet && note?.unread === true ? 'unread' : (live?.state ?? 'idle'),
+        state: asking !== undefined || teamAsking ? 'asks' : state === 'idle' && quiet && note?.unread === true ? 'unread' : state,
         at: Math.max(live?.at ?? 0, row?.at ?? 0),
         here: note?.here === true,
         mode: live?.mode ?? sessionMode(note?.mode),
@@ -1062,7 +1079,7 @@ export class Sessions {
         ...(actualReasoning === undefined ? {} : { actualReasoning }),
         ...(note?.seen === undefined ? {} : { seen: note.seen }),
         ...(live?.remote === undefined ? {} : { remote: live.remote }),
-        ...(live === undefined || live.tasks.length === 0 ? {} : { tasks: live.tasks }),
+        ...(tasks.length === 0 ? {} : { tasks }),
         ...(goal === undefined ? {} : { goal }),
         ...(note?.goalMet === undefined ? {} : { goalMet: note.goalMet }),
         ...(moved === undefined ? {} : { since: moved.at }),
@@ -1074,6 +1091,7 @@ export class Sessions {
           ? {}
           : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0, ...(message.again === undefined ? {} : { again: message.again }), ...(/^!|^\/[a-z][\w-]*(?:\s|$)/i.test(message.text.trim()) || message.goal?.trim() ? { command: true as const } : {}) })) }),
         ...(live?.state === 'working' && live.asks.size === 0 && live.stopping === undefined && live.driver?.inject !== undefined ? { canInject: true as const } : {}),
+        ...(live?.driver?.control === undefined ? {} : { canStopTasks: true as const }),
         ...(live?.checkingIp === true ? { checkingIp: true as const } : {}),
         ...(live?.heldOperation === undefined ? {} : { heldSend: true as const }),
         ...(live?.injecting === undefined ? {} : { injecting: live.injecting }),
@@ -2460,24 +2478,30 @@ export class Sessions {
   /** Takes one that has ended off the list, as x does in the terminal's `/tasks`. */
   clearTask(id: string, task: string): void {
     const live = this.#live.get(id)
-    if (live === undefined || !live.tasks.some((one) => one.id === task && one.status !== 'running')) return
-    live.tasks = live.tasks.filter((one) => one.id !== task)
+    const one = mergeTasks([this.#rows.get(id)?.tasks, live?.tasks], this.#deps.now?.() ?? Date.now()).find((one) => one.id === task)
+    if (one === undefined || !taskTerminal(one)) return
+    const cleared = this.#clearedTasks.get(id) ?? new Map<string, number>()
+    cleared.set(task, one.observedAt ?? one.ended ?? one.started)
+    this.#clearedTasks.set(id, cleared)
+    if (live !== undefined) live.tasks = live.tasks.filter((one) => one.id !== task)
     this.#changed()
   }
 
   /** What a task in the background has printed so far, or what a helper has said and done. */
   async taskOutput(id: string, task: string): Promise<TaskOutput | undefined> {
     const live = this.#live.get(id)
-    const one = live?.tasks.find((each) => each.id === task)
-    if (live === undefined || one === undefined) return undefined
+    const row = this.#rows.get(id)
+    const root = live?.root ?? row?.root
+    const one = mergeTasks([row?.tasks, live?.tasks], this.#deps.now?.() ?? Date.now()).find((each) => each.id === task)
+    if (root === undefined || one === undefined) return undefined
     const elsewhere = this.#deps.taskOutput
     if (elsewhere !== undefined) {
-      const read = await elsewhere(live.root, live.id, one)
+      const read = await elsewhere(root, id, one)
       if (read !== undefined) return read
       // A host not reached for it is not a reason to read this computer's own files instead: there is nothing of this task's here.
-      if (isRemote(live.root)) return undefined
+      if (isRemote(root)) return undefined
     }
-    return taskOutput(live.root, one.output ?? (await taskFile(live.root, live.id, one.id)), one.kind)
+    return taskOutput(root, one.output ?? (await taskFile(root, id, one.id)), one.kind)
   }
 
   /** Have a process holding the conversation, started the way its mode needs. */
@@ -3545,9 +3569,7 @@ export class Sessions {
         return
       case 'task': {
         const { task } = signal
-        live.tasks = live.tasks.some((one) => one.id === task.id)
-          ? live.tasks.map((one) => (one.id === task.id ? task : one))
-          : [...live.tasks, task]
+        live.tasks = mergeTasks([live.tasks, [task]], this.#deps.now?.() ?? Date.now())
         // The process was kept for them, and with none left running an idle one may go again.
         const idle = live.state !== 'working' && live.state !== 'asks'
         if (!running(task) && !live.tasks.some(running) && idle) this.#rest(live)

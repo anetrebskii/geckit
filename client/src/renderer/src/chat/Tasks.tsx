@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 
+import { taskTerminal } from '../../../shared/background-tasks'
 import type { BackgroundTask, ChatSession, TaskOutput } from '../../../shared/api'
 import { providerOf } from '../../../shared/api'
 import { llmProviderInfo } from '../../../shared/providers'
@@ -53,6 +54,10 @@ export function Dot({ session }: { readonly session: ChatSession }): React.JSX.E
 /** What the card says is happening in it, in the words the rest of the window uses. */
 export function cardSays(session: ChatSession): { readonly words: string; readonly tone: string } | undefined {
   const assistant = llmProviderInfo(providerOf(session.id), session.transport).shortName
+  const children = session.tasks?.filter((task) => !scripted(task)) ?? []
+  if (session.state === 'working' && children.some(running) && /^\d+ helpers? working$/.test(session.stands)) return { words: session.stands, tone: 'said-working' }
+  if (session.state === 'asks' && session.stands === 'Helper waiting for input or permission') return { words: 'Helper waiting for input or permission', tone: 'said-asks' }
+  if ((session.state === 'idle' || session.state === 'unread') && children.some((task) => task.status === 'unknown')) return { words: 'Helper activity unconfirmed', tone: '' }
   if (session.state === 'working') return { words: `${assistant} is working`, tone: 'said-working' }
   if (session.state === 'asks') return { words: 'Asking you', tone: 'said-asks' }
   if (session.waits === true) return { words: 'Waiting for a slot', tone: '' }
@@ -109,7 +114,10 @@ function lasted(ms: number): string {
 }
 
 function standing(task: BackgroundTask, stopping: boolean): string {
-  if (running(task)) return stopping ? 'Stopping' : 'Running'
+  if (!taskTerminal(task) && stopping) return 'Stop requested'
+  if (running(task)) return 'Running'
+  if (task.status === 'asks') return 'Waiting for input or permission'
+  if (task.status === 'unknown') return 'Activity unconfirmed'
   if (task.status === 'stopped') return 'Stopped'
   const code = task.exit === undefined || task.exit === 0 ? '' : `, exit code ${String(task.exit)}`
   return `${task.status === 'failed' ? 'Failed' : 'Finished'}${code}`
@@ -123,6 +131,7 @@ function Glyph({ task }: { readonly task: BackgroundTask }): React.JSX.Element {
       </span>
     )
   }
+  if (!taskTerminal(task)) return <span className="glyph"><Icon name="minus" size={11} /></span>
   const name = task.status === 'completed' ? 'check' : task.status === 'failed' ? 'close' : 'stop'
   return (
     <span className={`glyph ${task.status}`}>
@@ -156,12 +165,14 @@ export function Tasks({
   onClose,
   onStop,
   onClear,
+  canStop = true,
 }: {
   readonly session: string | undefined
   readonly tasks: readonly BackgroundTask[]
   readonly open: boolean
   readonly onOpen: () => void
   readonly onClose: () => void
+  readonly canStop?: boolean
   readonly onStop: (task: string) => void
   readonly onClear: (task: string) => void
 }): React.JSX.Element {
@@ -175,10 +186,10 @@ export function Tasks({
           title="What Claude Code has in the background. Typing /tasks opens it too"
           onClick={onOpen}
         >
-          {count > 0 ? `${String(count)} in the background` : `${String(tasks.length)} finished in the background`}
+          {count > 0 ? `${String(count)} in the background` : tasks.some((task) => !taskTerminal(task)) ? 'Background activity' : `${String(tasks.length)} finished in the background`}
         </button>
       )}
-      {open ? <Background session={session} tasks={tasks} onClose={onClose} onStop={onStop} onClear={onClear} /> : null}
+      {open ? <Background session={session} tasks={tasks} canStop={canStop} onClose={onClose} onStop={onStop} onClear={onClear} /> : null}
     </>
   )
 }
@@ -189,10 +200,12 @@ function Background({
   onClose,
   onStop,
   onClear,
+  canStop = true,
 }: {
   readonly session: string | undefined
   readonly tasks: readonly BackgroundTask[]
   readonly onClose: () => void
+  readonly canStop?: boolean
   readonly onStop: (task: string) => void
   readonly onClear: (task: string) => void
 }): React.JSX.Element {
@@ -201,6 +214,9 @@ function Background({
   const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set())
   const box = useRef<HTMLDivElement>(null)
   const now = useNow(tasks.some(running))
+
+  const stillStopping = new Set([...stopping].filter((id) => tasks.some((task) => task.id === id && !taskTerminal(task))))
+  if (stillStopping.size !== stopping.size) setStopping(stillStopping)
 
   const known = new Set(GROUPS.map((group) => group.kind))
   const groups = [
@@ -212,7 +228,8 @@ function Background({
   const shown = tasks.find((task) => task.id === opened)
 
   const act = (task: BackgroundTask): void => {
-    if (running(task)) {
+    if (!taskTerminal(task)) {
+      if (!canStop) return
       setStopping(new Set([...stopping, task.id]))
       onStop(task.id)
     } else {
@@ -285,7 +302,7 @@ function Background({
                 onClick={() => setOpened(task.id)}
               >
                 <Glyph task={task} />
-                <span className="what">{task.what || task.id}</span>
+                <span className="what">{task.what || task.id}{task.activityTool === undefined ? '' : ` · ${task.activity === 'browser' ? 'Browser' : task.activity === 'computer' ? 'Computer' : 'Tool'}: ${task.activityTool}`}</span>
                 <span className="lasted">{lasted((task.ended ?? now) - task.started)}</span>
                 <span className={`how ${task.status}`}>{standing(task, stopping.has(task.id))}</span>
               </div>
@@ -312,6 +329,7 @@ function Background({
           <div className="dialog tasks one">
             <Details
               session={session}
+              canStop={canStop}
               task={shown}
               now={now}
               stopping={stopping.has(shown.id)}
@@ -351,6 +369,7 @@ function Background({
         ) : (
           <Details
             session={session}
+            canStop={canStop}
             task={shown}
             now={now}
             stopping={stopping.has(shown.id)}
@@ -370,6 +389,7 @@ function Details({
   task,
   now,
   stopping,
+  canStop,
   onBack,
   onAct,
   onClose,
@@ -378,6 +398,7 @@ function Details({
   readonly task: BackgroundTask
   readonly now: number
   readonly stopping: boolean
+  readonly canStop: boolean
   readonly onBack: () => void
   readonly onAct: () => void
   readonly onClose: () => void
@@ -418,6 +439,9 @@ function Details({
     <>
       <h2>{task.what || task.id}</h2>
       <dl className="task-facts">
+        <div><dt>Helper ID</dt><dd>{task.id}</dd></div>
+        <div><dt>Source</dt><dd>{llmProviderInfo(providerOf(session)).shortName} · {task.kind}</dd></div>
+        {task.activityTool === undefined ? null : <div><dt>Latest activity</dt><dd>{task.activity ?? 'tool'} · {task.activityTool}</dd></div>}
         <div>
           <dt>Status</dt>
           <dd className={`how ${task.status}`}>{standing(task, stopping)}</dd>
@@ -493,9 +517,9 @@ function Details({
         <button type="button" className="quiet" onClick={onBack}>
           Back
         </button>
-        <span className="task-keys">Left to go back, X to {live ? 'stop' : 'clear'}</span>
-        <button type="button" className="quiet" disabled={stopping} onClick={onAct}>
-          {live ? 'Stop' : 'Clear'}
+        {ON_PHONE ? null : <span className="task-keys">Left to go back, X to {taskTerminal(task) ? 'clear' : 'request stop'}</span>}
+        <button type="button" className="quiet" disabled={!taskTerminal(task) && (stopping || !canStop)} title={!taskTerminal(task) && !canStop ? 'Inspect or stop this helper in its native parent runtime' : undefined} onClick={onAct}>
+          {taskTerminal(task) ? 'Clear' : 'Request stop'}
         </button>
         <button type="button" className="primary" onClick={onClose}>
           Done

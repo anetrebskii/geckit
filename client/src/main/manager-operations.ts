@@ -393,7 +393,7 @@ export class ManagerOperations {
     if (domain === 'sessions') {
       if (command === 'list') {
         const all = (await this.#deps.sessions.list(managerProjects(settings))).filter((one) => one.question !== true && (!flags.has('--managed') || this.#deps.managed(one.id)))
-        return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0 })))
+        return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, tasks: one.tasks, canStopTasks: one.canStopTasks === true, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0 })))
       }
       if (command === 'start') {
         const root = this.#project(required(flags, '--project'))
@@ -437,7 +437,7 @@ export class ManagerOperations {
       if (command === 'show') {
         const count = Number(flags.get('--last') ?? 10)
         if (!Number.isInteger(count) || count < 1 || count > 30) throw new Error('--last must be an integer from 1 to 30.')
-        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, state: worker.state, delivery: worker.delivery, canInject: worker.canInject === true, items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
+        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, state: worker.state, delivery: worker.delivery, tasks: worker.tasks, canStopTasks: worker.canStopTasks === true, canInject: worker.canInject === true, items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
       }
       if (command === 'retry' || command === 'steer') {
         if (!settings.chatProviders.includes(providerOf(id))) throw new Error('This worker provider is disabled. No replacement was selected.')

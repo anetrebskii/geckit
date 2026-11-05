@@ -1924,6 +1924,22 @@ describe('Manager explicit Telegram file operations', () => {
 describe('worker delivery receipts and explicit recovery', () => {
   const operationsFor = (f: Awaited<ReturnType<typeof fixture>>): ManagerOperations => new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => 'manager' })
 
+  it('reports idle-parent helper activity consistently through sessions list/show without claiming injection or a confirmed stop', async () => {
+    const f = await fixture()
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Initial' }, 'manager', 'helper-worker')
+    f.finish(worker, 'Parent answer ended')
+    const task = { id: 'child', kind: 'local_agent', what: 'Browser checks', status: 'running', started: Date.now(), observedAt: Date.now(), activity: 'browser', activityTool: 'mcp__claude-in-chrome__navigate' } as const
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'task', task }] })
+    const operations = operationsFor(f)
+    const listed: object = JSON.parse(await operations.run(['sessions', 'list'], 'helper-list')) as object
+    expect(listed).toEqual(expect.arrayContaining([expect.objectContaining({ id: worker, state: 'working', tasks: [task], canInject: false })]))
+    expect(JSON.parse(await operations.run(['sessions', 'show', '--id', worker], 'helper-show'))).toMatchObject({ id: worker, state: 'working', tasks: [task], canInject: false })
+    f.sessions.stopTask(worker, task.id)
+    expect(JSON.parse(await operations.run(['sessions', 'show', '--id', worker], 'helper-after-stop'))).toMatchObject({ state: 'working', tasks: [{ status: 'running' }] })
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'task', task: { ...task, status: 'stopped', ended: Date.now(), observedAt: Date.now() } }] })
+    expect(JSON.parse(await operations.run(['sessions', 'show', '--id', worker], 'helper-stopped'))).toMatchObject({ tasks: [{ status: 'stopped' }] })
+  })
+
   it('reports VPN refusal as blocked instead of delivered and exposes the exact attempt', async () => {
     let allowed = true
     const f = await fixture(0, { beforeSend: async () => { if (!allowed) throw new Error(VPN_IP_UNAVAILABLE_ERROR) } })

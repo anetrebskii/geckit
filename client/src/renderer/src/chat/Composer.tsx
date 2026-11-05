@@ -1102,6 +1102,7 @@ export function Composer({ chat, onContinue }: { readonly chat: Chat; readonly o
           <Tasks
             session={chat.session?.id}
             tasks={chat.session?.tasks ?? []}
+            canStop={chat.session?.canStopTasks === true}
             open={chat.tasksShown}
             onOpen={() => chat.showTasks(true)}
             onClose={() => chat.showTasks(false)}

@@ -1,4 +1,5 @@
 import type { BackgroundTask, PlanUsage, PlanWindow, SessionGoal, SessionImage, SessionItem } from '../../shared/api'
+import { taskTerminal } from '../../shared/background-tasks'
 import { askId, cardId } from './heard'
 import type { Signal } from './heard'
 import { filesAmong } from './rule'
@@ -549,9 +550,13 @@ export function readClaude(state: ClaudeState, message: Json): Reading {
       const command = string(doing?.input['command'])
       state.uses.set(use, id)
       if (message['is_backgrounded'] === true) state.backgrounded.add(id)
+      const previous = state.tasks.get(id)
+      const resumed = previous !== undefined && taskTerminal(previous)
+      const { ended: _ended, ...held } = previous ?? {}
       keepTask(state, out, {
         started: Date.now(),
-        ...state.tasks.get(id),
+        ...held,
+        ...(resumed ? { started: Date.now(), observedAt: Math.max(Date.now(), previous.observedAt ?? previous.ended ?? previous.started) + 1 } : {}),
         id,
         kind: doing?.tool === 'Monitor' ? 'monitor' : string(message['task_type']),
         what: string(message['description']),

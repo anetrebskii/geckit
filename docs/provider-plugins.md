@@ -194,6 +194,14 @@ hear({ items: [], gone: [], signals: [
 
 `spend.cost` is cumulative for the current driver run; GeckIt combines runs. `costKind` is `billed` or `api-equivalent` (legacy default); `currency` defaults to USD for existing plugins. Context used is occupancy, not total billable tokens. A provider's usage event does not change another provider's plan. Emit `ended` once per turn and call `left()` when the driver exits.
 
+### Background activity
+
+`ProviderRow.tasks` may expose existing `BackgroundTask` records during `list()` discovery without starting or holding a driver. Live `task` signals and discovered tasks merge by `observedAt` (Unix milliseconds), then `ended` or `started`. Terminal confirmation wins ties; only newer evidence can resume the same task. Keep stable native task IDs.
+
+Statuses include `running`, `asks`, `unknown`, `completed`, `failed` and `stopped`. Emit `asks` only for a known input/permission request; stale or unavailable evidence is `unknown`, never a fabricated stop. Optional `activity` (`tool`, `browser`, `computer`) and `activityTool` expose tool names, without tool arguments or page contents. Timestamped running/asking helper evidence expires after two minutes; command and monitor tasks keep their own lifecycle.
+
+Helpers aggregate into their parent state across Desktop and Manager sessions list/show. This does not enable foreground `canInject`. `canStopTasks` reflects a live driver's actual `control` method; a requested stop remains nonterminal until provider confirmation.
+
 ### Messages during active work
 
 The live `Driver` may implement `inject(text, images?, before?): Promise<void>`, with the same arguments as `send`. GeckIt then offers **Send now** on ordinary queued messages while that driver is working and no approval or question is pending. Normal Send continues to queue messages. Capability comes from the running driver's method, so an old library or an active driver from an earlier library version is not assumed to support injection.
