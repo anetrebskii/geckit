@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Settings } from '../../../shared/api'
 import type { ChannelChange, ChannelId, ChannelSetting, ChannelValue, ChannelView, ChannelsView } from '../../../shared/channels'
 import type { Geckit } from '../../../preload'
+import { ManagerTelegram, SharedLinks, telegramState, useTelegram, who } from '../chat/ManagerTelegram'
 import { homePath, projectLabel, projectName } from '../chat/project'
+import { useManager } from '../chat/useManager'
 import { Icon, hasIcon } from './Icon'
 
 export type ChannelsApi = Geckit['channels']
@@ -152,6 +154,31 @@ function ChannelRow({ setting, view, settings, api }: {
   )
 }
 
+function TelegramRow(): React.JSX.Element | null {
+  const [view, setView] = useTelegram()
+  const manager = useManager()
+  const [open, setOpen] = useState(false)
+  const setUpButton = useRef<HTMLButtonElement>(null)
+  if (window.geckit.telegram === undefined) return null
+  const close = (): void => { setOpen(false); setUpButton.current?.focus() }
+  const line = view === undefined ? 'Loading…' : [telegramState(view.state), who(view)].filter((part) => part !== '').join(' · ')
+  return (
+    <div className="provider-library-row channel-row">
+      <span className="provider-library-icon"><Icon name={hasIcon('telegram') ? 'telegram' : 'chat'} size={16} /></span>
+      <span className="provider-library-copy">
+        <strong>Telegram</strong>
+        <span>{line}</span>
+      </span>
+      <button ref={setUpButton} type="button" className="quiet provider-library-remove" aria-expanded={open} onClick={() => open ? close() : setOpen(true)}>Set up</button>
+      {open ? <div className="channel-setup" onKeyDown={(event) => { if (event.key === 'Escape' && !event.defaultPrevented) { event.stopPropagation(); close() } }}>
+        {manager?.config.enabled === false && view?.state === 'disconnected'
+          ? <p className="channel-help">Turn Manager on in Team, Manager first. Telegram talks to Manager.</p>
+          : <><ManagerTelegram view={view} onView={setView} /><SharedLinks view={view} onView={setView} /></>}
+      </div> : null}
+    </div>
+  )
+}
+
 export function Channels({ settings, change, api = window.geckit.channels }: { readonly settings: Settings; readonly change: (change: Partial<Settings>) => void; readonly api?: ChannelsApi }): React.JSX.Element {
   const [view, setView] = useState<ChannelsView | undefined>(undefined)
   const [adding, setAdding] = useState(false)
@@ -177,8 +204,9 @@ export function Channels({ settings, change, api = window.geckit.channels }: { r
         <h3 id="channels-title">Channels</h3>
         <button type="button" className="provider-library-add-button" onClick={() => setAdding(true)} disabled={adding}><Icon name="plus" size={14} />Add channel</button>
       </div>
-      <p className="provider-library-intro">Libraries from GitHub that bring your conversations to Slack, Telegram or another place. Each decides how it works with them.</p>
-      {view === undefined ? null : rows.length === 0 && failures.length === 0 ? adding ? null : <p className="provider-library-empty">No channels installed.</p> : <div className="provider-library-list">
+      <p className="provider-library-intro">Places outside GeckIt where people write to your conversations and Manager. Telegram and Slack come with GeckIt; add others from GitHub.</p>
+      <div className="provider-library-list">
+        <TelegramRow />
         {failures.map((failure) => (
           <div key={failure.id ?? failure.name} className="provider-library-row provider-library-failure">
             <span className="provider-library-icon"><Icon name="chat" size={16} /></span>
@@ -193,7 +221,7 @@ export function Channels({ settings, change, api = window.geckit.channels }: { r
           </div>
         ))}
         {rows.map(({ setting, shown }) => <ChannelRow key={setting.info.id} setting={setting} view={shown} settings={settings} api={api} />)}
-      </div>}
+      </div>
       {adding ? <form className="provider-library-add" onSubmit={(event) => {
         event.preventDefault()
         setInstalling(true)

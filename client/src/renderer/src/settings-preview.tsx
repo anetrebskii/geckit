@@ -6,6 +6,8 @@ import type { ClaudeAccount, SessionProvider, Settings } from '../../shared/api'
 import type { LlmProviderInfo, ProviderPluginFailure } from '../../shared/providers'
 import type { ChannelChange, ChannelSetting, ChannelsView } from '../../shared/channels'
 import { registerProviderInfo } from '../../shared/providers'
+import { DEFAULT_MANAGER_CONFIG } from '../../shared/manager'
+import type { TelegramAction, TelegramView } from '../../shared/telegram'
 import './styles.css'
 import './chat/phone-home.css'
 
@@ -45,8 +47,14 @@ Object.assign(window.geckit, { browser: {
 
 const slackInfo: ChannelSetting['info'] = { id: 'channel:slack', name: 'Slack', icon: 'chat', source: 'https://github.com/example/geckit-slack', fields: [{ key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions.' }, { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write.' }, { key: 'allow', label: 'People who may write', type: 'list', help: 'Slack user IDs. Empty lets nobody in.' }, { key: 'verify', label: 'Check messages for secrets before sending', type: 'boolean', default: true }] }
 let channelSettings: readonly ChannelSetting[] = query.has('channels') ? [{ info: slackInfo, enabled: query.get('channels') !== 'off', projects: ['/Users/alex/Projects/app'], manager: false, config: { allow: ['U012ABC'] } }] : []
-let channelView: ChannelsView = { channels: channelSettings.map((one): ChannelsView['channels'][number] => ({ id: one.info.id, name: one.info.name, icon: one.info.icon, source: one.info.source ?? '', state: query.get('channels') === 'off' ? 'off' : query.get('channels') === 'failed' ? 'failed' : 'connected', ...(query.get('channels') === 'failed' ? { says: 'Slack refused the app token: invalid_auth' } : { says: 'Listening in 3 channels' }), secrets: query.get('channels') === 'off' ? [] : ['botToken', 'appToken'], conversations: 4 })), failures: query.has('channelFailed') ? [{ id: 'channel:jira', name: 'Jira', source: 'https://github.com/example/geckit-jira', error: 'Channel library must export create().' }] : [] }
+let channelView: ChannelsView = { channels: channelSettings.map((one): ChannelsView['channels'][number] => ({ id: one.info.id, name: one.info.name, icon: one.info.icon, source: one.info.source ?? '', state: query.get('channels') === 'off' ? 'off' : query.get('channels') === 'failed' ? 'failed' : 'connected', ...(query.get('channels') === 'failed' ? { says: 'Slack refused the app token: invalid_auth' } : { says: 'Listening in 3 channels' }), secrets: query.get('channels') === 'off' ? [] : ['botToken', 'appToken'], conversations: 4, threads: 3, builtIn: true })), failures: query.has('channelFailed') ? [{ id: 'channel:jira', name: 'Jira', source: 'https://github.com/example/geckit-jira', error: 'Channel library must export create().' }] : [] }
 const channelListeners = new Set<(view: ChannelsView) => void>()
+const telegramConnected = query.get('telegram') === 'connected'
+let telegramView: TelegramView = { state: telegramConnected ? 'connected' : 'disconnected', pendingLate: 0, ...(telegramConnected ? { bot: { id: 1, username: 'alex_geckit_bot' }, account: { id: 4242, name: 'Alex Netrebskii', username: 'anetrebskii' } } : {}) } as TelegramView
+Object.assign(window.geckit, {
+  telegram: { view: async () => telegramView, on: () => () => undefined, action: async (action: TelegramAction) => { if (action.kind === 'disconnect') telegramView = { state: 'disconnected', pendingLate: 0 } as TelegramView; return telegramView } },
+  manager: { view: async () => ({ queued: 0, config: { ...DEFAULT_MANAGER_CONFIG, enabled: !query.has('managerOff') }, state: 'idle', workers: [], activity: [], providers: [], decisions: [] }), on: () => () => undefined },
+})
 let channelSettingsChanged: (channels: readonly ChannelSetting[]) => void = () => undefined
 const tellChannels = (): ChannelsView => { channelSettingsChanged(channelSettings); for (const listener of channelListeners) listener(channelView); return channelView }
 Object.assign(window.geckit, { channels: {

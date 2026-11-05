@@ -17,7 +17,7 @@ export function useTelegram(): readonly [TelegramView | undefined, (next: Telegr
   return [view, setView]
 }
 
-const label = (state: TelegramView['state']): string => {
+export const telegramState = (state: TelegramView['state']): string => {
   switch (state) {
     case 'disconnected': return 'Not connected'
     case 'pairing': return 'Waiting for you in Telegram'
@@ -73,7 +73,7 @@ export function SharedLinks({ view, onView }: { readonly view: TelegramView | un
   </div>
 }
 
-const who = (view: TelegramView): string => [
+export const who = (view: TelegramView): string => [
   view.bot === undefined ? undefined : `@${view.bot.username}`,
   view.account === undefined ? undefined : `${view.account.name}${view.account.username === undefined ? '' : ` · @${view.account.username}`}`,
 ].filter((part) => part !== undefined).join(' · ')
@@ -140,7 +140,7 @@ export function ManagerTelegram({ view, onView, done }: { readonly view: Telegra
       <div className="manager-telegram-state" data-state={view.state}>
         <span className="manager-telegram-dot" aria-hidden="true" />
         <div>
-          <strong>{label(view.state)}</strong>
+          <strong>{telegramState(view.state)}</strong>
           {who(view) === '' ? null : <p>{who(view)}</p>}
           {view.account === undefined ? null : <p className="manager-telegram-id">Account ID {String(view.account.id)}</p>}
           {view.detail === undefined ? null : <p className="manager-telegram-detail" role="status">{view.detail}</p>}

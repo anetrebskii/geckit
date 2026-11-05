@@ -8,7 +8,7 @@ import { Picker } from '../ui/Menu'
 import { ManagerFlow } from './ManagerFlow'
 import type { ManagerStepName } from './ManagerFlow'
 import { ManagerStep } from './ManagerStep'
-import { ManagerTelegram, SharedLinks, useTelegram } from './ManagerTelegram'
+import { useTelegram } from './ManagerTelegram'
 import { managerAssistant } from './manager-label'
 import { managerLabel, useManager } from './useManager'
 
@@ -18,7 +18,7 @@ const PROJECTS = 'All projects, current and future, across every profile.'
 
 export function ManagerSettings({ settings, embedded = false }: { readonly settings: Settings; readonly embedded?: boolean }): React.JSX.Element {
   const view = useManager()
-  const [telegram, setTelegram] = useTelegram()
+  const [telegram] = useTelegram()
   const initialProvider = useRef(view?.config.provider ?? 'claude')
   const [provider, setProvider] = useState<ManagerConfig['provider']>(view?.config.provider ?? 'claude')
   const [delegation, setDelegation] = useState<ManagerConfig['delegation']>('automatic')
@@ -141,11 +141,7 @@ export function ManagerSettings({ settings, embedded = false }: { readonly setti
           </>}
       </ManagerStep>
     </ol>
-    <section className="team-section" aria-label="Connect Telegram">
-      <div className="employee-section-head"><span><h3>Connect Telegram</h3><p className="employee-note">Telegram is optional. Connect it to talk to the same Manager outside GeckIt.</p></span></div>
-      <ManagerTelegram view={telegram} onView={setTelegram} />
-      <SharedLinks view={telegram} onView={setTelegram} />
-    </section>
+    <p className="employee-note">Telegram and Slack reach Manager from Settings, Channels.</p>
     {error === '' ? null : <p className="manager-error" role="alert">{error}</p>}
     {view.error === undefined ? null : <p className="manager-error" role="status">{view.error}</p>}
     {confirm === undefined ? null : <ManagerConfirm kind={confirm} busy={saving} working={view.state === 'working' || view.session?.state === 'working'} error={error} onCancel={() => setConfirm(undefined)} onConfirm={() => { if (confirm === 'change') save(); else void run(async () => { const next = await (confirm === 'restart' ? window.geckit.manager.restart() : window.geckit.manager.configure({ enabled: false })); setConfirm(undefined); return next }) }} />}

@@ -33,7 +33,7 @@ Manager is one conversation today. Telegram, every channel and the Manager windo
 | Board card hover on the computer | The same lines as a tooltip over the "From Manager" line: the computer has no conversation info panel for workers | Managed worker |
 | Board card and worker header (existing "From Manager" line) | "From Manager · Slack · Maria Ivanova" for work a channel thread started; "· +1 following" at its end when other threads follow it, hover lists them | Worker started by a channel thread |
 | Search (existing) | Label values are found: a Slack thread id or a person's name finds the conversations it labels. Work Manager starts from a thread inherits the thread's labels | Always |
-| Settings, Channels | Slack as a built-in row next to Telegram; its row line counts threads: "Connected · 3 threads" | Always |
+| Settings, Channels | Telegram (moved from the Manager settings in Team) and Slack as built-in rows; Slack's row line counts threads: "Connected · 3 threads" | Always |
 | Phone, Manager page (existing) | The same list of threads above the transcript, as a menu under the title | Manager on |
 
 ```mermaid

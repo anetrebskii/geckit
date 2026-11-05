@@ -245,7 +245,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
           notifyDecisions(view)
         }
         if (changed.state === 'disconnected') deliveryChannel = ''
-        coordinator.close('telegram', changed.state === 'connected' && changed.account !== undefined ? undefined : 'Telegram is not connected. Connect it in Settings, Manager to reply in this thread.')
+        coordinator.close('telegram', changed.state === 'connected' && changed.account !== undefined ? undefined : 'Telegram is not connected. Connect it in Settings, Channels to reply in this thread.')
       },
     })
     telegram = bridge

@@ -7,6 +7,7 @@ import type { ChatSession } from '../src/shared/api'
 import { DEFAULT_MANAGER_CONFIG } from '../src/shared/manager'
 import type { ManagerView } from '../src/shared/manager'
 import { managerAssistant, managerLabel } from '../src/renderer/src/chat/manager-label'
+import type { ChannelsApi } from '../src/renderer/src/ui/Channels'
 
 const worker: ChatSession = { id: 'codex:worker', root: '/work/project', title: 'Add provider preferences', stands: 'Working', state: 'working', at: 1, here: true, mode: 'auto' }
 const ready: ManagerView = { queued: 0, config: { ...DEFAULT_MANAGER_CONFIG, enabled: true }, state: 'idle', workers: [], activity: [], providers: [{ provider: 'claude', available: true }], decisions: [] }
@@ -114,8 +115,8 @@ describe('Manager guided setup', () => {
     expect(markup).toContain('Choose the assistant first.')
     expect(markup).not.toContain('Connect Telegram first.')
     expect(markup.match(/class="manager-step is-/g)).toHaveLength(3)
-    expect(markup.indexOf('aria-label="Connect Telegram"')).toBeGreaterThan(markup.indexOf('</ol>', markup.indexOf('class="manager-steps"')))
-    expect(markup).toContain('Telegram is optional. Connect it to talk to the same Manager outside GeckIt.')
+    expect(markup).not.toContain('aria-label="Connect Telegram"')
+    expect(markup).toContain('Telegram and Slack reach Manager from Settings, Channels.')
     expect(markup).not.toContain('Enable Manager')
     expect(markup).not.toContain('Delegation policy')
     hook.mockRestore()
@@ -124,12 +125,12 @@ describe('Manager guided setup', () => {
   it('keeps Manager ready and its lifecycle controls available without a Telegram connection', () => {
     const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue({ ...ready, session: { ...worker, id: 'claude-backing', manager: true } })
     const markup = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
-    expect(markup).toContain('Connect Telegram')
+    expect(markup).not.toContain('Connect Telegram')
     expect(markup).toContain('Manager is on')
     expect(markup).toContain('Pause</button>')
     expect(markup).toContain('Restart session</button>')
     expect(markup).toContain('Disable Manager</button>')
-    expect(markup).toContain('Loading Telegram...')
+    expect(markup).not.toContain('Loading Telegram...')
     expect(markup).toContain('All projects, current and future, across every profile.')
     expect(markup).not.toContain('Connect Telegram first.')
     hook.mockRestore()
@@ -260,5 +261,23 @@ describe('Manager thread on a worker card', () => {
     const html = renderToStaticMarkup(createElement(From, { chat: { sessions: [slack], goTo: vi.fn() }, session: slack, className: 'board-card-from' }))
     expect(html).toContain('From Manager · Slack · Maria Ivanova · +1 following')
     expect(html).toContain('title="Reports to: Slack · Maria Ivanova')
+  })
+})
+
+const { Channels } = await import('../src/renderer/src/ui/Channels')
+
+describe('Channels settings', () => {
+  it('lists Telegram as a built-in channel with its own Set up and no Remove', () => {
+    vi.stubGlobal('window', { geckit: { telegram: { view: vi.fn(), on: vi.fn(), action: vi.fn() }, manager: { view: vi.fn(), on: vi.fn() } } })
+    const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue(ready)
+    const api = { view: vi.fn(), on: vi.fn(), install: vi.fn(), configure: vi.fn(), remove: vi.fn(), checkUpdates: vi.fn() } as unknown as ChannelsApi
+    const markup = renderToStaticMarkup(createElement(Channels, { settings: DEFAULT_SETTINGS, change: vi.fn(), api }))
+    expect(markup).toContain('Places outside GeckIt where people write to your conversations and Manager. Telegram and Slack come with GeckIt; add others from GitHub.')
+    expect(markup).toContain('<strong>Telegram</strong><span>Loading…</span>')
+    expect(markup).toContain('Set up</button>')
+    expect(markup).not.toContain('Remove Telegram')
+    expect(markup).not.toContain('No channels installed.')
+    hook.mockRestore()
+    vi.unstubAllGlobals()
   })
 })

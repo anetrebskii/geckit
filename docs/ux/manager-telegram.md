@@ -7,7 +7,7 @@ created: 2026-10-17
 
 # UX: Manager through Telegram
 
-> Current direction: [Manager chat in the app](manager-chat.md), authorized by Alex on 2026-11-05, supersedes the Telegram-only and read-only inspection restrictions below. Desktop and the paired phone share the configured Manager with optional Telegram. Earlier sections retain the design history; implementation and verification are recorded in [021-manager-chat](../../specs/021-manager-chat/verification.md).
+> Current direction: [Manager chat in the app](manager-chat.md), authorized by Alex on 2026-11-05, supersedes the Telegram-only and read-only inspection restrictions below. Since 2026-11-05 the Telegram connection is set up in Settings, Channels, not in Manager settings ([Channels](channels.md)); the flow itself is unchanged. Desktop and the paired phone share the configured Manager with optional Telegram. Earlier sections retain the design history; implementation and verification are recorded in [021-manager-chat](../../specs/021-manager-chat/verification.md).
 
 ## 1. Why
 

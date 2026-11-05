@@ -4,14 +4,16 @@ A channel is a library from GitHub that takes GeckIt to another place where peop
 
 ## Where
 
-Settings, Channels, after Integrations. Assistant libraries are added in Assistants; channel libraries have their own section here. Not on the phone: channels are installed and set up on the computer that runs them.
+Settings, Channels, after Integrations. Assistant libraries are added in Assistants; channel libraries have their own section here. Not on the phone: channels are installed and set up on the computer that runs them, and Telegram is connected on the computer too.
 
 ## The section
 
 - Heading "Channels", with "Add channel" at its right, as Assistants has "Add assistant".
-- Under it one line: "Libraries from GitHub that bring your conversations to Slack, Telegram or another place. Each decides how it works with them."
-- Slack comes with GeckIt and is always the first row; it has no Remove, only "On". Its fields are the bot token, the app token, the people who may write and the secret check; each Slack thread with the bot is a Manager thread of its own (see [Manager threads](manager-threads.md)).
-- Nothing installed: "No channels installed."
+- Under it one line: "Places outside GeckIt where people write to your conversations and Manager. Telegram and Slack come with GeckIt; add others from GitHub."
+- Telegram is always the first row. It moved here from the Manager settings in Team on 2026-11-05: it is a place people write to Manager from, like Slack, and Manager settings keep only how Manager works. Its row has no "On" and no Remove: the line under the name is its connection state ("Not connected", "Connected", "Telegram needs attention"), and "Set up" opens the same connect flow Manager had (create a bot, paste its token, confirm the account, Disconnect), with the links shared from Telegram under it. With Manager off, Set up says "Turn Manager on in Team, Manager first. Telegram talks to Manager." and offers nothing else, since connecting is refused then.
+- Slack comes with GeckIt and is the second row; it has no Remove, only "On". Its fields are the bot token, the app token, the people who may write and the secret check; each Slack thread with the bot is a Manager thread of its own (see [Manager threads](manager-threads.md)).
+- The Manager settings in Team keep one line where the Telegram step was: "Telegram and Slack reach Manager from Settings, Channels." The summary of a configured Manager still names the connected Telegram account.
+- Nothing installed from GitHub: Telegram and Slack are still listed, so the section is never empty.
 - At the bottom, "Update channels automatically", on at first, and "Check now", which fetches newer versions and restarts each one that changed.
 
 ## A channel's row
