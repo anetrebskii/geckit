@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
+import { readPreferences, writePreferences } from '../core/configuration'
 
 import type { Settings } from '../shared/api'
 import type { Move, NotesStore, SessionNote } from './sessions'
@@ -110,23 +111,22 @@ export function migrateCodexMetadata(folder: string, importsFile = sessionImport
   const notesPath = join(folder, 'sessions.json')
   const settingsPath = join(folder, 'settings.json')
   const notes = store?.notes.all() ?? (existsSync(notesPath) ? JSON.parse(readFileSync(notesPath, 'utf8')) as Readonly<Record<string, SessionNote>> : {})
-  const settings = store?.settings ?? (existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'utf8')) as Partial<Settings> : {})
+  const settings = store?.settings ?? readPreferences(folder, false) ?? {}
   const migration = sessionMigration(notes, settings, imports, dryRun)
   const settingsChanged = JSON.stringify(settings) !== JSON.stringify(migration.settings)
   if (dryRun || (migration.report.migrated === 0 && !settingsChanged)) return migration.report
   const backup = join(folder, 'backups', `codex-metadata-${new Date().toISOString().replace(/[:.]/g, '-')}`)
   mkdirSync(backup, { recursive: true })
   writeFileSync(join(backup, 'sessions.json'), JSON.stringify(notes, null, 2), { mode: 0o600 })
-  writeFileSync(join(backup, 'settings.json'), JSON.stringify(settings, null, 2), { mode: 0o600 })
+  writeFileSync(join(backup, 'settings.json'), existsSync(settingsPath) ? readFileSync(settingsPath) : JSON.stringify(settings, null, 2), { mode: 0o600 })
+  const localState = join(folder, 'local-state.json')
+  if (existsSync(localState)) writeFileSync(join(backup, 'local-state.json'), readFileSync(localState), { mode: 0o600 })
   writeFileSync(join(backup, 'imports.json'), JSON.stringify(imports, null, 2), { mode: 0o600 })
   if (migration.report.migrated > 0) {
     writeFileSync(`${notesPath}.new`, JSON.stringify(migration.notes, null, 2))
     renameSync(`${notesPath}.new`, notesPath)
   }
-  if (settingsChanged) {
-    writeFileSync(`${settingsPath}.new`, JSON.stringify(migration.settings, null, 2))
-    renameSync(`${settingsPath}.new`, settingsPath)
-  }
+  if (settingsChanged && store === undefined) writePreferences(folder, migration.settings)
   if (store !== undefined) {
     store.notes.replace(migration.notes)
     if (settingsChanged) store.saveSettings(migration.settings)

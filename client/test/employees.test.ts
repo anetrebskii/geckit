@@ -64,11 +64,11 @@ describe('durable employee catalog', () => {
   it('keeps disk and memory intact when the atomic catalog write fails', async () => {
     const f = catalog()
     const employee = first((await f.employee.save(draft)).employees)
-    const before = readFileSync(join(f.folder, 'employees.json'), 'utf8')
-    mkdirSync(join(f.folder, 'employees.json.new'))
+    const before = readFileSync(join(f.folder, 'settings.json'), 'utf8')
+    mkdirSync(join(f.folder, 'settings.json.new'))
     await expect(f.employee.save({ ...employee, name: 'Lost' })).rejects.toThrow()
     expect(f.employee.get(employee.id)).toEqual(employee)
-    expect(readFileSync(join(f.folder, 'employees.json'), 'utf8')).toBe(before)
+    expect(readFileSync(join(f.folder, 'settings.json'), 'utf8')).toBe(before)
   })
 
   it('reports saved catalog independently from failed instruction sync and retry creates no duplicate', async () => {

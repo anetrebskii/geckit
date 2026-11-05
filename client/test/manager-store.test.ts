@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { readPreferences } from '../src/core/configuration'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { Settings } from '../src/shared/api'
 import { managerProjects } from '../src/shared/manager'
@@ -38,7 +39,7 @@ describe('Manager settings and roles on the actual disk store', () => {
     const store = await import('../src/main/store')
     const projectAssistants: Settings['projectAssistants'] = [{ root: '/alpha', provider: 'claude' }, { root: '/beta', provider: 'codex' }]
     store.setSettings({ projectAssistants })
-    const persisted = JSON.parse(readFileSync(join(location.folder, 'settings.json'), 'utf8')) as Settings
+    const persisted = readPreferences(location.folder, false) as Settings
     expect(persisted.projectAssistants).toEqual(projectAssistants)
     expect(persisted.projects).toEqual(['/alpha'])
     expect(persisted.profiles[1]?.projects).toEqual(['/beta'])

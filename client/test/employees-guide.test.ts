@@ -1,3 +1,4 @@
+import { configuration } from '../src/core/configuration'
 import { sourceArgs } from '../src/main/sessions/claude'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -88,7 +89,7 @@ describe('employee managed instructions in isolated provider configs', () => {
     const view = await employees.save({ name: employee.name, role: employee.role, description: employee.description, avatar: employee.avatar })
     expect(view.employees).toHaveLength(1)
     expect(view.error).toBeDefined()
-    expect(JSON.parse(readFileSync(join(folder, 'data', 'employees.json'), 'utf8'))).toHaveLength(1)
+    expect(configuration(join(folder, 'data')).employees).toHaveLength(1)
     rmSync(join(folder, 'claude', 'GECKIT.md'), { recursive: true })
     expect((await employees.retryInstructions()).error).toBeUndefined()
     expect(employees.list().employees).toHaveLength(1)

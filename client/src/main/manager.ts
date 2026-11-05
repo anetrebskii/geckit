@@ -5,6 +5,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { configuration, setConfiguration, writeJson } from '../core/configuration'
 
 import type { ChatSession, SessionItems, Settings, Shortcut } from '../shared/api'
 import { providerOf } from '../shared/api'
@@ -127,8 +128,13 @@ export class Manager {
     let stored: Partial<ManagerRecord> = {}
     try { stored = JSON.parse(readFileSync(this.#path(), 'utf8')) as Partial<ManagerRecord> } catch { /* First setup has no record. */ }
     const settings = deps.settings()
+    const config = configuration(deps.directory).manager
     const provider = settings.chatProviders.includes(settings.chatProvider) ? settings.chatProvider : settings.chatProviders[0] ?? DEFAULT_MANAGER_CONFIG.provider
-    this.#record = { config: { ...DEFAULT_MANAGER_CONFIG, provider, ...stored.config }, paused: stored.paused ?? false, pauseReason: stored.pauseReason, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], receipts: stored.receipts ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }) }
+    this.#record = { config: { ...DEFAULT_MANAGER_CONFIG, provider, ...config }, paused: stored.paused ?? false, pauseReason: stored.pauseReason, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], receipts: stored.receipts ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }) }
+    if (stored.config !== undefined) {
+      const { config: _config, ...runtime } = stored
+      writeJson(this.#path(), runtime)
+    }
     if (this.#record.config.intake?.enabled === true) this.#save({ config: { ...this.#record.config, intake: { ...this.#record.config.intake, enabled: false } } })
     if (this.#record.inbox.some((message) => message.id.startsWith('intake-task:') && message.state === 'queued')) this.#save({ inbox: this.#record.inbox.map((message) => message.id.startsWith('intake-task:') && message.state === 'queued' ? { ...message, state: 'sent', completed: true } : message) })
     const deliveryPause = this.#record.paused && this.#record.pauseReason !== 'user' && (this.#record.error === 'CLI delivery is uncertain. Review current state before resuming.' || this.#record.error === 'Manager was interrupted. Review current task state before resuming; operations with uncertain delivery are not replayed.')
@@ -154,7 +160,7 @@ export class Manager {
       this.#processingOutput = true
       this.#processing = this.#processing.then(() => id === this.#record.sessionId ? this.#output(id, text) : undefined).catch((error: Error) => this.#fail(error.message)).finally(() => { this.#processingOutput = false; void this.#dispatch() })
     })
-    if (stored.config?.enabled === true && !this.#record.paused && this.#record.error === undefined) queueMicrotask(() => this.#reconcile('GeckIt restarted. Restore coordination from durable ownership and decisions, then reconcile fresh CLI task state. Do not replay old operations.'))
+    if (this.#record.config.enabled && !this.#record.paused && this.#record.error === undefined) queueMicrotask(() => this.#reconcile('GeckIt restarted. Restore coordination from durable ownership and decisions, then reconcile fresh CLI task state. Do not replay old operations.'))
     if (this.#record.error !== undefined) queueMicrotask(() => this.#scheduleRecovery())
   }
 
@@ -163,7 +169,9 @@ export class Manager {
   #save(change: Partial<ManagerRecord>): void {
     const merged = { ...this.#record, ...change }
     const next: ManagerRecord = { ...merged, operations: merged.operations.map((operation, index, all) => index >= all.length - 100 || operation.state === 'running' || operation.state === 'uncertain' ? operation : { ...operation, command: operation.command.slice(0, 2), ...(operation.fingerprint === undefined ? { fingerprint: createHash('sha256').update(JSON.stringify(operation.command)).digest('hex') } : {}), ...(operation.result === undefined ? {} : { result: operation.result.slice(0, 500) }) }) }
-    writeFileSync(`${this.#path()}.new`, JSON.stringify(next, undefined, 2), { mode: 0o600 })
+    const { config: _config, ...runtime } = next
+    writeFileSync(`${this.#path()}.new`, JSON.stringify(runtime, undefined, 2), { mode: 0o600 })
+    if (change.config !== undefined) setConfiguration(this.#deps.directory, { manager: { ...configuration(this.#deps.directory).manager, ...next.config } })
     renameSync(`${this.#path()}.new`, this.#path())
     this.#record = next
     this.#pinAttachments()

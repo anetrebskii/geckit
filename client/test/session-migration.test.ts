@@ -9,6 +9,7 @@ import type { SessionImport } from '../src/main/session-migration'
 import { memoryNotes } from '../src/main/sessions'
 import type { SessionNote } from '../src/main/sessions'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
+import { readPreferences } from '../src/core/configuration'
 import type { Settings } from '../src/shared/api'
 
 const SOURCE = '11111111-1111-4111-8111-111111111111'
@@ -134,7 +135,7 @@ describe('Claude conversation metadata imported into Codex', () => {
     expect(JSON.parse(readFileSync(join(result.backup ?? '', 'sessions.json'), 'utf8'))).toEqual(notes)
     expect(JSON.parse(readFileSync(join(result.backup ?? '', 'settings.json'), 'utf8'))).toEqual(settings)
     expect(JSON.parse(readFileSync(join(folder, 'sessions.json'), 'utf8'))[TARGET]).toMatchObject({ created: 100, status: 'done', moves: NOTE.moves })
-    expect(JSON.parse(readFileSync(join(folder, 'settings.json'), 'utf8'))).toEqual({ ...settings, favorites: [TARGET], progressOrder: [TARGET] })
+    expect(readPreferences(folder, false)).toEqual({ ...settings, favorites: [TARGET], progressOrder: [TARGET] })
     const repeated = migrateCodexMetadata(folder, manifest)
     expect(repeated).toMatchObject({ migrated: 0, favorites: 0, order: 0 })
     expect(repeated.backup).toBeUndefined()

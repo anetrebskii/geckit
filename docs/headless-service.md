@@ -2,7 +2,7 @@
 
 The working tree runs the application core in an independent Node service. Desktop and the local operator CLI connect to that service. Electron, a display server and a desktop login are not required for the service. This is not yet a release artifact.
 
-The service owns conversations, providers, queues, settings, employees, Manager, Telegram, SSH, Plans, schedules, recordings and transcription. Desktop keeps native capture, windows, dialogs, notifications, clipboard and the phone WebRTC bridge. Slack, portable configuration import/export and shared access for colleagues remain separate features.
+The service owns conversations, providers, queues, settings, employees, Manager, Telegram, SSH, Plans, schedules, recordings and transcription. Desktop keeps native capture, windows, dialogs, notifications, clipboard and the phone WebRTC bridge. Slack and shared access for colleagues remain separate features. Reusable configuration is consolidated in one sectioned file; see [configuration and transfer](configuration.md).
 
 ## Run desktop from the current checkout
 

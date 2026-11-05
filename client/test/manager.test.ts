@@ -1,4 +1,5 @@
 import { Employees } from '../src/main/employees'
+import { configuration } from '../src/core/configuration'
 import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -2058,6 +2059,7 @@ describe('Manager shortcuts and retired source intake', () => {
     await writeFile(join(f.directory, 'manager-intake.json'), history)
     await writeFile(join(f.directory, 'recording.m4a'), 'original recording')
     const config = { ...DEFAULT_MANAGER_INTAKE, enabled: true, timeZone: 'invalid/legacy-zone', sources: [{ id: 'memos', kind: 'voice-memos' as const, enabled: true, directory: '/legacy/recordings' }] }
+    await rm(join(f.directory, 'settings.json'))
     await writeFile(join(f.directory, 'manager.json'), JSON.stringify({ config: { enabled: false, provider: 'claude', chatModel: '', instructions: 'Keep my preferences', delegation: 'automatic', intake: config }, inbox: [{ id: 'intake-task:pending', text: 'Old pending intake', source: 'event', at: 1, state: 'queued' }] }))
     const restored = f.reload()
     await restored.tickIntake()
@@ -2185,7 +2187,7 @@ describe('Manager CLI preferences and explicit new-worker models', () => {
     expect(sync).toHaveBeenCalledWith('')
     expect(await execute(f, session, 'read-empty-preferences', ['settings', 'manager'])).toMatchObject({ state: 'done', result: JSON.stringify({ instructions: '' }) })
     expect(f.sent.at(-1)?.input).toContain(MANAGER_INSTRUCTIONS)
-    expect((JSON.parse(await readFile(join(f.directory, 'manager.json'), 'utf8')) as Pick<ManagerView, 'config'>).config.instructions).toBe('')
+    expect(configuration(f.directory).manager?.instructions).toBe('')
   })
 
   it('renames by stable ID, keeps concurrent role/memory/assignment data and rejects stale names, IDs and unsupported fields', async () => {

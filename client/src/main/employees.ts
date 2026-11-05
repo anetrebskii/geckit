@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { configuration, setConfiguration } from '../core/configuration'
 
 import type { Employee, EmployeeConversation, EmployeeDraft, EmployeeMemory, EmployeesView } from '../shared/employees'
 import type { ChatSession, ReasoningEffort, SessionItem, SessionMode, Settings, Shortcut, ShortcutDraft, TeamAnswer } from '../shared/api'
@@ -119,20 +118,13 @@ const ITEM_PAGE = 40
 
 export class Employees {
   readonly #deps: EmployeeDeps
-  readonly #file: string
   #employees: readonly Employee[]
   #error: string | undefined
   #writing = Promise.resolve()
 
   constructor(deps: EmployeeDeps) {
     this.#deps = deps
-    this.#file = join(deps.directory, 'employees.json')
-    if (!existsSync(this.#file)) this.#employees = []
-    else {
-      const parsed = JSON.parse(readFileSync(this.#file, 'utf8')) as Partial<Employee>[]
-      if (!Array.isArray(parsed) || !parsed.every((one) => typeof one.id === 'string' && typeof one.name === 'string' && one.name.trim() !== '' && typeof one.role === 'string' && typeof one.description === 'string' && typeof one.avatar === 'string' && avatarValid(one.avatar) && typeof one.archived === 'boolean' && typeof one.revision === 'number' && Number.isInteger(one.revision) && one.revision > 0)) throw new Error('The employee catalog could not be read.')
-      this.#employees = parsed as Employee[]
-    }
+    this.#employees = configuration(deps.directory).employees ?? []
   }
 
   list(): EmployeesView {
@@ -152,9 +144,7 @@ export class Employees {
   }
 
   #write(employees: readonly Employee[]): void {
-    mkdirSync(this.#deps.directory, { recursive: true })
-    writeFileSync(`${this.#file}.new`, JSON.stringify(employees, undefined, 2))
-    renameSync(`${this.#file}.new`, this.#file)
+    setConfiguration(this.#deps.directory, { employees })
     this.#employees = employees
   }
 

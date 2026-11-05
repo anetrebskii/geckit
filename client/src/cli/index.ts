@@ -1,4 +1,5 @@
 import { defaultDataDirectory } from '../core/platform'
+import { readPreferences } from '../core/configuration'
 import { service } from './service'
 import { readEmployees } from './employees'
 import { APP_BUILD_GUIDE, PROVIDER_BUILD_GUIDE } from '../shared/provider-build-guide'
@@ -8,7 +9,7 @@ import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { providerOf } from '../shared/api'
-import type { Settings, SessionStatus } from '../shared/api'
+import type { SessionStatus } from '../shared/api'
 import { claudeFile, listClaude, readClaudeSession, readSessionAt, slug } from '../main/sessions/disk'
 import type { Conversation, Found } from '../main/sessions/disk'
 import type { Move, SessionNote } from '../main/sessions'
@@ -74,7 +75,7 @@ async function projectRows(root: string): Promise<(Found & { readonly below?: st
 }
 
 async function rows(): Promise<Row[]> {
-  const settings = kept<Partial<Pick<Settings, 'projects' | 'favorites'>>>('settings.json', {})
+  const settings = readPreferences(data(), false) ?? {}
   const projects = settings.projects ?? []
   const favorites = new Set(settings.favorites ?? [])
   const notes = kept<Record<string, SessionNote>>('sessions.json', {})

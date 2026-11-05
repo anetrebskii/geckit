@@ -1,9 +1,10 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { app, shell } from 'electron'
 
 import { configureCorePlatform } from '../core/platform'
+import { copyConfiguration } from '../core/configuration'
 
 /**
  * Run from the source, GeckIt keeps a folder of its own, so it can run beside
@@ -25,8 +26,7 @@ if (process.env['GECKIT_DATA']) {
     mkdirSync(local, { recursive: true })
     if (existsSync(join(installed, 'sessions.json'))) copyFileSync(join(installed, 'sessions.json'), join(local, 'sessions.json'))
     try {
-      const settings = JSON.parse(readFileSync(join(installed, 'settings.json'), 'utf8')) as Record<string, unknown>
-      writeFileSync(join(local, 'settings.json'), JSON.stringify({ ...settings, phone: false }, undefined, 2))
+      copyConfiguration(installed, local)
     } catch {
       // Nothing installed to copy, so it starts empty.
     }

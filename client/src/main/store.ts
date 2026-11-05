@@ -1,8 +1,9 @@
-import { mkdirSync, readFileSync, renameSync, watch, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 
 import { dataDirectory } from '../core/platform'
+import { readPreferences, writePreferences } from '../core/configuration'
 
 import { DEFAULT_SETTINGS, sessionMode } from '../shared/api'
 import { newKey } from '../shared/pairing'
@@ -17,14 +18,6 @@ import { carriedOver } from './carry-over'
 import { withMoves } from './sessions'
 import { setBrowserConversationDone } from '../cli/browser-lifecycle'
 import type { NotesStore, SessionNote } from './sessions'
-
-/**
- * What this application remembers, in two files it owns.
- *
- * `localStorage` was where this lived, and a window is the wrong place for it
- * now: three windows and the main process all read the same values, and the
- * main process is the one that has to have the keys.
- */
 
 const folder = (): string => {
   const path = dataDirectory()
@@ -55,6 +48,8 @@ const SETTINGS = 'settings.json'
 const NOTES = 'sessions.json'
 const ERRORS = 'errors.json'
 
+const readSettings = (): Settings => ({ ...DEFAULT_SETTINGS, ...readPreferences(folder()) })
+
 let settings: Settings | undefined
 interface SettingsClient {
   get(): Settings
@@ -71,6 +66,8 @@ export function getSettings(): Settings {
   const loaded = settings === undefined
   // No file yet means a first run, and the old build's keys are worth keeping.
   if (settings === undefined) {
+    const firstRun = !existsSync(join(folder(), SETTINGS))
+    const persisted = readPreferences(folder())
     // Correct and dictation no longer run on a key: the keys and the choices that went with them are dropped.
     const {
       openRouterKey: _openRouter,
@@ -88,10 +85,10 @@ export function getSettings(): Settings {
       managerShortcutsVersion: _storedManagerVersion,
       boardColumn: _boardColumn,
       ...found
-    } = (read(SETTINGS, DEFAULT_SETTINGS) ?? { ...DEFAULT_SETTINGS, ...carriedOver() }) as Settings & Readonly<Record<string, unknown>>
+    } = { ...DEFAULT_SETTINGS, ...(firstRun ? carriedOver() : {}), ...persisted } as Settings & Readonly<Record<string, unknown>>
     // A build from before the welcome kept no answer, and anyone with a project has already set up.
-    const welcomed = read<Partial<Settings>>(SETTINGS, {})?.welcomed
-    const chromeChosen = read<Partial<Settings>>(SETTINGS, {})?.chromeBridgeDefault === 1
+    const welcomed = persisted?.welcomed
+    const chromeChosen = persisted?.chromeBridgeDefault === 1
     settings = {
       ...found,
       chromeBridge: chromeChosen ? found.chromeBridge : true,
@@ -120,7 +117,7 @@ export function getSettings(): Settings {
       settings.phoneKey !== found.phoneKey ||
       settings.welcomed !== welcomed
     ) {
-      write(SETTINGS, settings)
+      writePreferences(folder(), settings)
     }
   }
   const calendarTimeZone = localCalendarZone()
@@ -165,24 +162,22 @@ export function setSettings(change: Partial<Settings>): Settings {
   }
   const next = { ...current, ...validated }
   const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, cronStartWindowVersion: _windowVersion, managerShortcutsVersion: _managerVersion, ...persisted } = next
-  if (vpnChange || change.shortcuts !== undefined || change.projects !== undefined || change.projectAssistants !== undefined) {
-    const path = join(folder(), SETTINGS)
-    writeFileSync(`${path}.new`, JSON.stringify(persisted, undefined, 2))
-    renameSync(`${path}.new`, path)
-  } else write(SETTINGS, persisted)
+  writePreferences(folder(), persisted)
   settings = next
   for (const watcher of watchers) watcher(settings)
   return settings
 }
 
 const reloadSettings = (): void => {
-  const found = read(SETTINGS, DEFAULT_SETTINGS)
-  if (found === undefined) return
+  let found: Settings
+  try { found = readSettings() } catch { return }
   const { calendarTimeZone: _foundZone, calendarRecurrenceVersion: _foundRecurrenceVersion, cronStartWindowVersion: _foundWindowVersion, managerShortcutsVersion: _foundManagerVersion, ...disk } = found
   const { calendarTimeZone: _currentZone, calendarRecurrenceVersion: _currentRecurrenceVersion, cronStartWindowVersion: _currentWindowVersion, managerShortcutsVersion: _currentManagerVersion, ...current } = getSettings()
   if (isDeepStrictEqual(disk, current)) return
+  const previous = settings
   settings = undefined
-  const changed = getSettings()
+  let changed: Settings
+  try { changed = getSettings() } catch { settings = previous; return }
   for (const watcher of watchers) watcher(changed)
 }
 
@@ -193,7 +188,7 @@ export function onSettings(watcher: (settings: Settings) => void): () => void {
   watchers.add(watcher)
   if (watchers.size === 1) {
     settingsWatcher = watch(folder(), { encoding: 'utf8', persistent: false }, (_event, name) => {
-      if (name === SETTINGS) reloadSettings()
+      if (name === SETTINGS || name === 'local-state.json') reloadSettings()
     })
     reloadSettings()
   }

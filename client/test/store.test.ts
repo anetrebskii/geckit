@@ -4,6 +4,8 @@ import { join } from 'node:path'
 
 import { expect, it, vi } from 'vitest'
 
+import { readPreferences } from '../src/core/configuration'
+import type { Configuration } from '../src/shared/configuration'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { CalendarRecurrence, Settings, Shortcut } from '../src/shared/api'
 import { Sessions } from '../src/main/sessions'
@@ -34,7 +36,7 @@ it('updates open windows when settings.json is replaced outside GeckIt', async (
   const changed: Settings[] = []
   const stop = onSettings((settings) => changed.push(settings))
   try {
-    const edited: Settings = { ...initial, projects: ['/new', '/old'] }
+    const edited: Configuration = { ...JSON.parse(readFileSync(path, 'utf8')) as Configuration, projects: { projects: ['/new', '/old'] } }
     writeFileSync(`${path}.new`, JSON.stringify(edited))
     renameSync(`${path}.new`, path)
 
@@ -206,9 +208,9 @@ it('round-trips custom rules and ignores stale phone time-zone metadata without 
     const saved = setSettings({ shortcuts: [scheduled], calendarTimeZone: 'America/New_York' })
     expect(saved.shortcuts).toEqual([scheduled])
     expect(saved.calendarTimeZone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
-    const persisted: Settings = JSON.parse(readFileSync(join(state.folder, 'settings.json'), 'utf8')) as Settings
-    expect(persisted.shortcuts).toEqual([scheduled])
-    expect(persisted.calendarTimeZone).toBeUndefined()
+    const persisted = readPreferences(state.folder, false)
+    expect(persisted?.shortcuts).toEqual([scheduled])
+    expect(persisted?.calendarTimeZone).toBeUndefined()
     const stop = onSettings(() => {})
     stop()
     expect(getSettings().shortcuts).toEqual([scheduled])
@@ -279,8 +281,8 @@ it('persists the chosen task folder across board changes and a fresh settings lo
     expect(initial.getSettings().newTaskRoot).toBe('')
     initial.setSettings({ newTaskRoot: '/chosen' })
     initial.setSettings({ chatProjects: ['/first'] })
-    const persisted = JSON.parse(readFileSync(join(state.folder, 'settings.json'), 'utf8')) as Settings
-    expect(persisted.newTaskRoot).toBe('/chosen')
+    const persisted = readPreferences(state.folder, false)
+    expect(persisted?.newTaskRoot).toBe('/chosen')
     vi.resetModules()
     const restarted = await import('../src/main/store')
     expect(restarted.getSettings().newTaskRoot).toBe('/chosen')
@@ -399,7 +401,7 @@ it('turns Chrome through GeckIt on once for settings saved while it was off by d
   try {
     expect(getSettings().chromeBridge).toBe(true)
     setSettings({ chromeBridge: false })
-    loadVpnSettings(JSON.parse(readFileSync(join(state.folder, 'settings.json'), 'utf8')) as Partial<Settings>)
+    loadVpnSettings(readPreferences(state.folder, false))
     expect(getSettings().chromeBridge).toBe(false)
   } finally {
     rmSync(state.folder, { recursive: true, force: true })

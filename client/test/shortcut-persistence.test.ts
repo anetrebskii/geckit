@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readPreferences } from '../src/core/configuration'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -26,7 +27,7 @@ it('acknowledges and persists custom recurrence through the actual main save and
   try {
     const { getSettings, setSettings } = await import('../src/main/store')
     const saved = await checkedSave({ save: async (next) => saveShortcut(next) }, getSettings(), draft)
-    const created = JSON.parse(readFileSync(path, 'utf8')) as Settings
+    const created = readPreferences(state.folder, false) as Settings
     expect(sameRecurrence(recurrence, saved.recurrence)).toBe(true)
     expect(created.shortcuts).toEqual([saved])
     expect(created.calendarRecurrenceVersion).toBeUndefined()
@@ -39,7 +40,7 @@ it('acknowledges and persists custom recurrence through the actual main save and
 
     const editedRule: CalendarRecurrence = { ...recurrence, time: '18:15', end: { kind: 'on', date: '2027-01-05' } }
     const edited = await checkedSave({ save: async (next) => saveShortcut(next) }, getSettings(), { ...saved, recurrence: editedRule })
-    const editedDisk = JSON.parse(readFileSync(path, 'utf8')) as Settings
+    const editedDisk = readPreferences(state.folder, false) as Settings
     expect(sameRecurrence(editedRule, edited.recurrence)).toBe(true)
     expect(editedDisk.shortcuts).toEqual([edited])
 
@@ -61,7 +62,7 @@ it('persists the chosen CRON window and progress through settings reloads and pr
     const draft: ShortcutDraft = { name: 'Window review', root: '/fixture', prompt: 'Review pull requests', mode: 'auto', on: true, cron: '0 9 * * *', startWindowMinutes: 60 }
     const saved = await checkedSave({ save: async (next) => main.saveShortcut(next) }, store.getSettings(), draft)
     const chosen = nextTimed(saved, saved.since)
-    const disk = JSON.parse(readFileSync(path, 'utf8')) as Settings
+    const disk = readPreferences(state.folder, false) as Settings
     expect(disk.shortcuts).toEqual([saved])
     expect(disk.cronStartWindowVersion).toBeUndefined()
     expect(store.getSettings().cronStartWindowVersion).toBe(1)
@@ -101,7 +102,7 @@ it('preserves a Manager target and explicit paused timetable through disk reload
     expect(manual.recurrence).toBeUndefined()
     const paused = await checkedSave({ save: async (draft) => main.saveShortcut(draft) }, store.getSettings(), { ...manual, cron: '0 10 * * *', on: false })
     expect(paused).toMatchObject({ target: 'manager', cron: '0 10 * * *', on: false })
-    const disk = JSON.parse(readFileSync(path, 'utf8')) as Settings
+    const disk = readPreferences(state.folder, false) as Settings
     expect(disk.shortcuts).toEqual([paused])
     expect(disk.managerShortcutsVersion).toBeUndefined()
     vi.resetModules()
