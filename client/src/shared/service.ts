@@ -5,7 +5,8 @@ export interface OperatorAsked {
 }
 
 export type OperatorAnswered = { readonly ok: true; readonly result: string } | { readonly ok: false; readonly error: string }
-export const OPERATOR_HELP = `geckit service status
+export const OPERATOR_HELP = `geckit service run [--data <directory>]
+geckit service status
 geckit service projects list|add <absolute-path>
 geckit service settings get|set <JSON>
 geckit service sessions list|start <SessionMessage JSON>

@@ -1,3 +1,5 @@
+import { remoteAccess } from './remote/access'
+import type { RemoteAccess } from './remote/access'
 import { randomBytes } from 'node:crypto'
 import { rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -49,8 +51,10 @@ async function main(): Promise<void> {
   let listener: ReturnType<typeof serveLocal> | undefined
   let activation: Promise<void> | undefined
   let unsubscribe: (() => void) | undefined
+  let remote: RemoteAccess | undefined
   let stopping: Promise<void> | undefined
   const stop = (): Promise<void> => stopping ??= (async () => {
+    remote?.dispose()
     native.dispose()
     unsubscribe?.()
     try { await Promise.all([listener?.close(), rpc?.close()]); await activation }
@@ -68,8 +72,9 @@ async function main(): Promise<void> {
     runtime = await createRuntime(script, { vault: security.vault, secrets: security.secrets })
     rmSync(tokenPath, { force: true })
     writeFileSync(tokenPath, token, { mode: 0o600, flag: 'wx' })
+    remote = await remoteAccess(runtime, directory, security)
     listener = serveLocal(directory, serviceHandler(runtime, token, shutdown))
-    rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native), undefined, (method) => {
+    rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native, remote), undefined, (method) => {
       if ((method === 'service:shutdownForUpdate' || method === 'service:importConfiguration') && runtime?.sessions.working().length === 0) shutdown()
     })
     unsubscribe = runtime.subscribe((event) => {

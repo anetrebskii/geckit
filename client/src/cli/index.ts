@@ -1,4 +1,5 @@
 import { formatStatusMove } from '../shared/status-history'
+import { remoteCli, remoteCommand } from './remote'
 import { defaultDataDirectory } from '../core/platform'
 import { readPreferences } from '../core/configuration'
 import { service } from './service'
@@ -372,6 +373,7 @@ export async function run(args: readonly string[]): Promise<string> {
   try {
     if (managerCommand(args)) return (await manage(args, data())).said
     const [what, ...rest] = args
+    if (remoteCommand(what) && what !== undefined) return (await remoteCli(what, rest)).said
     if (what === 'service') return (await service(rest, data())).said
     if (what === 'settings') return (await readSettings(rest, data())).said
     if (what === 'employees') return (await readEmployees(rest, data())).said
@@ -404,6 +406,10 @@ if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync
     process.exitCode = answer.ok ? 0 : 1
   } else if (managerCommand(process.argv.slice(2))) {
     const answer = await manage(process.argv.slice(2), data())
+    process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.ok ? 0 : 1
+  } else if (remoteCommand(what) && what !== undefined) {
+    const answer = await remoteCli(what, rest)
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
   } else if (what === 'service') {

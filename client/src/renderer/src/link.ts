@@ -71,7 +71,7 @@ async function iceServers(pairing: Pairing, room: string): Promise<RTCIceServer[
   }
 }
 
-function gathered(peer: RTCPeerConnection): Promise<void> {
+export function gathered(peer: RTCPeerConnection): Promise<void> {
   if (peer.iceGatheringState === 'complete') return Promise.resolve()
   return new Promise((done) => {
     const until = Date.now() + GATHERING

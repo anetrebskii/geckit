@@ -1161,6 +1161,7 @@ export function MacList({
           ))}
         </div>
         <div className="sheet-list phone-mac-add">
+          {list?.servers === undefined ? null : <button type="button" className="sheet-option" onClick={() => { onClose(); list.servers?.() }}><span className="sheet-words"><span className="label">Connect to a server</span><span className="says">Enter a temporary code from its GeckIt CLI</span></span></button>}
           <button
             type="button"
             className="sheet-option"

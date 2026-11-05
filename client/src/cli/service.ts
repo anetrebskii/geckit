@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
 import { connect } from 'node:net'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { OPERATOR_HELP } from '../shared/service'
 import type { OperatorAsked, OperatorAnswered } from '../shared/service'
@@ -37,6 +38,18 @@ async function callService(args: readonly string[], directory: string, token: st
 export async function service(args: readonly string[], directory: string): Promise<{ readonly ok: boolean; readonly said: string }> {
   if (args.length === 0 || args[0] === 'help' || args[0] === '--help') return { ok: true, said: OPERATOR_HELP }
   if (requestingSession() !== undefined || process.env['GECKIT_MANAGER_SESSION'] || process.env['CLAUDECODE']) return { ok: false, said: 'Operator access denied. Use the conversation commands to request changes.' }
+  if (args[0] === 'run') {
+    if (args.length !== 1 && (args.length !== 3 || args[1] !== '--data' || !args[2] || args[2].startsWith('--'))) return { ok: false, said: 'Use geckit service run [--data <directory>].' }
+    const target = args[2] === undefined ? directory : resolve(args[2])
+    return new Promise((done) => {
+      const child = spawn(process.execPath, [join(import.meta.dirname, 'service.js'), '--data', target], { stdio: 'inherit', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } })
+      const stop = (): void => { child.kill('SIGTERM') }
+      process.on('SIGTERM', stop); process.on('SIGINT', stop)
+      const finish = (ok: boolean, said: string): void => { process.off('SIGTERM', stop); process.off('SIGINT', stop); done({ ok, said }) }
+      child.once('error', (error) => finish(false, error.message))
+      child.once('exit', (code) => finish(code === 0, code === 0 ? 'GeckIt service stopped.' : `GeckIt service exited (${code ?? 'signal'}).`))
+    })
+  }
   let token: string
   try { token = readFileSync(join(directory, 'operator-token'), 'utf8').trim() }
   catch { return { ok: false, said: 'GeckIt service is not running for this data directory.' } }

@@ -1,4 +1,5 @@
 import { StatusHistory } from './StatusHistory'
+import { Servers } from '../remote/Servers'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DEFAULT_SETTINGS, homeOf, inProgress, providerOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
@@ -68,6 +69,7 @@ const boardAt = (y: number): number => Math.round(Math.min(Math.max(y - TOP_BAR,
  * in the folder they chose.
  */
 export function Chat(): React.JSX.Element {
+  const [servers, setServers] = useState(false)
   const chat = useChat()
   registerProviderInfo(chat.settings.providerPlugins)
   const providerInfo = llmProviderInfo(chat.provider, chat.transport)
@@ -329,6 +331,7 @@ export function Chat(): React.JSX.Element {
     }
 
     const key = (event: KeyboardEvent): void => {
+      if (servers) return
       if (transferring !== undefined || setting) return
       if (clearing || chat.compacting !== undefined) {
         if (event.key === 'Escape') {
@@ -452,6 +455,7 @@ export function Chat(): React.JSX.Element {
     }
     // Letting go of Ctrl is what opens it, as in VS Code.
     const up = (event: KeyboardEvent): void => {
+      if (servers) return
       const now = recentRef.current
       if (now === undefined || event.key !== 'Control') return
       toRecent(undefined)
@@ -468,7 +472,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, switching, setting, keys, managing, clearing, transferring, making, asking, formStarting, cut, team])
+  }, [chat, servers, switching, setting, keys, managing, clearing, transferring, making, asking, formStarting, cut, team])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -495,6 +499,8 @@ export function Chat(): React.JSX.Element {
       all.at(-1) === openId ? undefined : movedOrder(chat.settings.progressOrder, [openId], 'bottom'),
     ]
   }, [openId, chat.sessions, chat.settings.progressOrder])
+
+  if (servers) return <Servers onClose={() => setServers(false)} />
 
   return (
     <div
@@ -529,6 +535,7 @@ export function Chat(): React.JSX.Element {
           onSeek={setSeek}
           onSettings={() => setSetting('general')}
           onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
+          onServers={() => setServers(true)}
           onTeam={() => team === undefined ? openTeam() : setTeam(undefined)}
           teamOn={team !== undefined}
         />

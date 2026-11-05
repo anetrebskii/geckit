@@ -3,6 +3,7 @@ export interface Macs {
   readonly list: () => readonly { readonly name: string; readonly current: boolean }[]
   readonly switchTo: (index: number) => void
   readonly add: () => void
+  readonly servers?: () => void
   readonly forget: (index: number) => void
   /** An empty name gives back the one the host tells. */
   readonly rename: (index: number, name: string) => void

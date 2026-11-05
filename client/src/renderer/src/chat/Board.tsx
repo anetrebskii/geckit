@@ -103,6 +103,7 @@ export function TopBar({
   onSettings,
   onShortcuts,
   onTeam,
+  onServers,
   teamOn = false,
 }: {
   readonly chat: Chat
@@ -112,6 +113,7 @@ export function TopBar({
   readonly onSeek: (seek: Seek) => void
   readonly onSettings: () => void
   readonly onShortcuts: () => void
+  readonly onServers?: () => void
   readonly onTeam?: (() => void) | undefined
   readonly teamOn?: boolean
 }): React.JSX.Element {
@@ -135,6 +137,7 @@ export function TopBar({
       >
         <Icon name="bolt" />
       </button>
+      {onServers === undefined ? null : <button type="button" className="remote-button no-drag" onClick={onServers}>Servers</button>}
       {onTeam === undefined ? null : <TeamButton chat={chat} on={teamOn} onTeam={onTeam} />}
       <button type="button" className="manager-open no-drag" aria-label="Chat with Manager" aria-haspopup="dialog" title="Chat with Manager" onClick={openManagerChat}><EmployeeAvatar employee={managerFace(chat.settings)} /><span>Manager</span></button>
       {chat.settings.showGecko || ON_PHONE ? null : (

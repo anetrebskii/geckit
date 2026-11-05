@@ -1,3 +1,4 @@
+import type { RemoteAccess } from './remote/access'
 import { randomUUID } from 'node:crypto'
 import { chmodSync, copyFileSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -135,9 +136,17 @@ export function migrateSecrets(directory: string, security: ServiceSecurity, req
   return migrationState(directory, security)
 }
 
-export function serviceApplication(runtime: CoreRuntime, directory: string, security: ServiceSecurity, native: ReturnType<typeof nativeRequests>) {
+export function serviceApplication(runtime: CoreRuntime, directory: string, security: ServiceSecurity, native: ReturnType<typeof nativeRequests>, remote?: RemoteAccess) {
   const core = application(runtime)
   const desktop = {
+    'remote:enable': (signal?: string) => { if (remote === undefined) throw new Error('Remote access unavailable.'); return remote.enable(signal) },
+    'remote:disable': () => remote?.disable(),
+    'remote:create': (projects: readonly string[], manager?: boolean, ttl?: number) => remote?.create(projects, manager, ttl),
+    'remote:pending': () => remote?.pending(),
+    'remote:approve': (id: string, phrase: string) => remote?.approve(id, phrase),
+    'remote:cancel': (id: string) => remote?.cancel(id),
+    'remote:devices': () => remote?.devices(),
+    'remote:revoke': (id: string) => remote?.revoke(id),
     'configuration:export': () => exportConfiguration(directory),
     'service:importConfiguration': async (text: string) => {
       const manager = await runtime.manager.view()

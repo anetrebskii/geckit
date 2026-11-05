@@ -1,3 +1,4 @@
+import { readInvitation } from '../../client/src/shared/remote/protocol'
 import { App } from '@capacitor/app'
 import { CapacitorBarcodeScanner, CapacitorBarcodeScannerTypeHint } from '@capacitor/barcode-scanner'
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
@@ -22,6 +23,8 @@ import type { Pairing } from '../../client/src/shared/pairing'
 import icon from './icon.png'
 
 const KEPT = 'pairing'
+const SERVER_VIEW = 'geckit-server-view'
+let serverMounted = false
 
 // The page says which phone it is on where that is not an iPhone.
 if (Capacitor.getPlatform() === 'android') (window as { geckitPhoneOs?: string }).geckitPhoneOs = 'android'
@@ -68,6 +71,7 @@ function useMac(link: string | undefined): void {
   list: () => keptMacs().map((mac, at) => ({ name: nameOf(mac, at), current: isCurrent(mac) })),
   switchTo: (index) => useMac(keptMacs()[index]?.link),
   add: () => void scan(),
+  servers: () => void serverView(),
   forget: (index) => {
     const list = keptMacs()
     const gone = list[index]
@@ -364,7 +368,7 @@ function notPaired(wrong = false): void {
       steps(['Open GeckIt on your host', 'Settings, then turn on Phone', 'Scan the code']),
       ...(wrong ? [line('That is not a GeckIt code.', 'pair-error')] : []),
     ],
-    [button('Scan', 'pair-fill', () => void scan())],
+    [button('Scan', 'pair-fill', () => void scan()), button('Connect to a server', 'pair-plain', () => void serverView())],
   )
 }
 
@@ -378,6 +382,7 @@ async function scan(): Promise<void> {
     else void connect()
     return
   }
+  if (readInvitation(text) !== undefined) { await serverView(text); return }
   const pairing = readPairing(text)
   if (pairing === undefined) return notPaired(true)
   paired(pairing)
@@ -646,12 +651,28 @@ void App.addListener('resume', () => {
 })
 
 void App.addListener('appUrlOpen', ({ url }) => {
+  if (readInvitation(url) !== undefined) { void serverView(url); return }
   const pairing = readPairing(url)
   if (pairing !== undefined) paired(pairing)
 })
 
-void App.getLaunchUrl().then((launched) => {
+const requestedServer = sessionStorage.getItem(SERVER_VIEW)
+sessionStorage.removeItem(SERVER_VIEW)
+if (requestedServer === 'local') void connect()
+else if (requestedServer !== null) void serverView(requestedServer)
+else void App.getLaunchUrl().catch(() => undefined).then((launched) => {
+  if (launched !== undefined && readInvitation(launched.url) !== undefined) { void serverView(launched.url); return }
   const pairing = launched === undefined ? undefined : readPairing(launched.url)
   if (pairing !== undefined) paired(pairing)
   else void connect()
 })
+
+async function serverView(invitation = ''): Promise<void> {
+  if (started || serverMounted) { sessionStorage.setItem(SERVER_VIEW, invitation); location.reload(); return }
+  serverMounted = true
+  attempt++; current?.close(); current = undefined
+  document.querySelector('.pair')?.remove()
+  const [{ createRoot }, { createElement }, { Servers }] = await Promise.all([import('react-dom/client'), import('react'), import('../../client/src/renderer/src/remote/Servers')])
+  const root = createRoot(document.getElementById('root') as HTMLElement)
+  root.render(createElement(Servers, { invitation, onClose: () => { sessionStorage.setItem(SERVER_VIEW, 'local'); root.unmount(); location.reload() }, scan: async () => { try { return (await CapacitorBarcodeScanner.scanBarcode({ hint: CapacitorBarcodeScannerTypeHint.QR_CODE })).ScanResult } catch { return undefined } } }))
+}
