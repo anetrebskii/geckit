@@ -34,6 +34,25 @@ it('keeps resolved model metadata, zero prices and unknown rates distinct', () =
 })
 
 describe('provider-scoped measurements', () => {
+  it('replaces old quota figures with a provider explanation and clears it after recovery', async () => {
+    let now = 1000
+    const cache = new ProviderMeasurements(() => now, () => {})
+    const reason = 'No active Token Plan subscription'
+    const limits = vi.fn<LlmProvider['limits']>()
+      .mockResolvedValueOnce({ windows: new Map(), quotas: [{ id: 'credits', name: 'Credits', remaining: 1250, unit: 'credits' }] })
+      .mockResolvedValueOnce({ windows: new Map(), quotas: [], unavailableReason: reason })
+      .mockResolvedValueOnce({ windows: new Map(), quotas: [{ id: 'credits', name: 'Credits', remaining: 0, unit: 'credits' }] })
+    const provider = plugin({ limits })
+    await cache.measure(provider, [])
+    expect(cache.usage(provider.family).quotas).toEqual([{ id: 'credits', name: 'Credits', remaining: 1250, unit: 'credits' }])
+    now += 60_001
+    await cache.measure(provider, [])
+    expect(cache.usage(provider.family)).toEqual({ quotas: [], unavailableReason: reason, measuredAt: now })
+    now += 60_001
+    await cache.measure(provider, [])
+    expect(cache.usage(provider.family)).toEqual({ quotas: [{ id: 'credits', name: 'Credits', remaining: 0, unit: 'credits' }], measuredAt: now })
+  })
+
   it('isolates equal model IDs and coalesces requests within a minute', async () => {
     let now = 1000
     const cache = new ProviderMeasurements(() => now, () => {})

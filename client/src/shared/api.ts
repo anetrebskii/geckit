@@ -251,6 +251,8 @@ export interface ProviderQuota extends Partial<PlanWindow> {
   readonly id: string
   readonly name: string
   readonly used?: number
+  /** Available balance, independently of how much has been consumed. */
+  readonly remaining?: number
   readonly limit?: number
   readonly unit?: string
 }
@@ -258,6 +260,8 @@ export interface ProviderQuota extends Partial<PlanWindow> {
 export interface ProviderUsage {
   readonly quotas?: readonly ProviderQuota[]
   readonly measuredAt?: number
+  /** Provider-reported explanation when quota figures are unavailable. */
+  readonly unavailableReason?: string
 }
 
 /** Prices in the named currency per million tokens. Omitted rates are unknown. */

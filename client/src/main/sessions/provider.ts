@@ -32,7 +32,7 @@ type ProviderDeps = Pick<SessionsDeps, 'codex' | 'disk' | 'claude' | 'claudeAcco
 export type ProviderRow = Found & { readonly root: string; readonly project?: string; readonly created?: number; readonly importedFrom?: string; readonly actualReasoning?: ReasoningEffort }
 export type ProviderGoal = GoalRead & { readonly status?: CodexGoal['status'] }
 export type ProviderFork = Pick<ClaudeOptions, 'id' | 'fork'> & { readonly begun: boolean; readonly items: readonly SessionItem[] }
-export type ProviderLimits = Usage & Pick<ClaudeAccount, 'limits'> & Pick<ProviderUsage, 'quotas'>
+export type ProviderLimits = Usage & Pick<ClaudeAccount, 'limits'> & Pick<ProviderUsage, 'quotas' | 'unavailableReason'>
 export type ProviderBrowser = Pick<Browser, 'id' | 'name'> & Partial<Pick<Browser, 'current'>>
 
 export interface LlmProvider extends LlmProviderInfo {

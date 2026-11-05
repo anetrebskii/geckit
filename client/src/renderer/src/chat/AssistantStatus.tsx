@@ -58,7 +58,7 @@ function stateLine(group: Group): string | undefined {
   if (group.account?.here === false) return 'Not installed'
   if (group.account?.signedIn === false) return 'Sign in required'
   if (group.stale) return 'Last measured'
-  return group.usage?.quotas?.length ? undefined : 'Limits unavailable'
+  return group.usage?.quotas?.length ? undefined : group.usage?.unavailableReason ?? 'Limits unavailable'
 }
 
 function groupsOf(provider: SessionProvider, snapshot: Snapshot | undefined, chat: AssistantStatusChat): Group[] {

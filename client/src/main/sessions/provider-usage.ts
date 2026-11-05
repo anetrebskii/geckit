@@ -78,7 +78,7 @@ export class ProviderMeasurements {
       if (this.#all.get(provider.family) !== entry) return
       for (const model of missing) if (!entry.windows.has(model) || limits.windows.get(model) !== undefined) entry.windows.set(model, limits.windows.get(model))
       const quotas = providerQuotas(limits)
-      if (entry.revision === revision) entry.usage = { ...(quotas === undefined ? {} : { quotas }), measuredAt: this.#now() }
+      if (entry.revision === revision) entry.usage = { ...(quotas === undefined ? {} : { quotas }), ...(limits.unavailableReason === undefined ? {} : { unavailableReason: limits.unavailableReason }), measuredAt: this.#now() }
       this.#changed(provider.family, entry.revision === revision ? limits : { windows: limits.windows })
     }).catch(() => undefined).finally(() => { entry.pending = undefined })
     await entry.pending
