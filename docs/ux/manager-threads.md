@@ -24,11 +24,13 @@ Manager is one conversation today. Telegram, every channel and the Manager windo
 | Surface | What appears | When visible |
 |---|---|---|
 | Manager window, new list on the left | Threads: "GeckIt" first, then the others by last message. Each row: where it is from, its title, who wrote last, and a dot for working or needs your answer | Manager on, at least one channel thread exists |
+| Manager window, "Work" above the transcript | Two lists for the open thread: "Started here" (workers it owns) and "Following" (workers it follows). Each row: state dot and title; a click opens the worker in Chat. Collapsible, like Tasks in Chat; shut when both lists are empty | A thread with at least one worker |
+| Manager window, thread row | After its dots, the number of its workers working now: "2" | The thread owns or follows a working worker |
 | Manager window, header | The thread's place and labels under its title: "Slack · #dev · Maria Ivanova", and "Open in Slack" when the channel gave a link | A channel thread is open |
 | Manager window, composer | Writing into a channel thread; under it "Manager's answer is also posted to Slack." | A channel thread is open and its channel is on |
 | Session info (existing) | All labels of the thread, as "key: value" lines | Opened from the header |
-| Worker's Session info (existing) | "Reports to: Slack · Maria Ivanova" and "Followed by: Telegram · Alex" | Managed worker |
-| Board card and worker header (existing "From Manager" line) | "From Manager · Slack · Maria Ivanova" for work a channel thread started | Worker started by a channel thread |
+| Worker's Session info (existing) | "Reports to: Slack · Maria Ivanova" and "Followed by: Telegram · Alex"; each name opens that thread in the Manager window | Managed worker |
+| Board card and worker header (existing "From Manager" line) | "From Manager · Slack · Maria Ivanova" for work a channel thread started; "· +1 following" at its end when other threads follow it, hover lists them | Worker started by a channel thread |
 | Search (existing) | Label values are found: a Slack thread id or a person's name finds the thread and its workers | Always |
 | Settings, Channels | Slack as a built-in row next to Telegram; its row line counts threads: "Connected · 3 threads" | Always |
 | Phone, Manager page (existing) | The same list of threads above the transcript, as a menu under the title | Manager on |
@@ -46,7 +48,7 @@ block-beta
   style s2 fill:#dbeafe,stroke:#2563eb
 ```
 
-The window layout itself is built after spec 021 (Manager chat) lands in `main`, on top of its header and transcript.
+The card line and Session info do not depend on the window and come with the core. The window layout itself is built after spec 021 (Manager chat) lands in `main`, on top of its header and transcript.
 
 ### The model
 
@@ -161,7 +163,8 @@ stateDiagram-v2
 - Channel off: "Slack is off. Turn it on in Settings, Channels to reply in this thread."
 - Not allowed: "Slack may no longer talk to Manager. Allow it in Settings, Channels to reply in this thread."
 - Failed: "This thread stopped: <reason>" and the button "Try again"
-- Card parent line: "From Manager · Slack · Maria Ivanova"
+- Card parent line: "From Manager · Slack · Maria Ivanova", with followers: "From Manager · Slack · Maria Ivanova · +1 following"
+- Work section: "Work", lists "Started here" and "Following"
 - Worker's Session info: "Reports to: Slack · Maria Ivanova", "Followed by: Telegram · Alex, GeckIt"
 - Settings row: "Connected · 3 threads"
 - Older group: "Older"
@@ -189,6 +192,7 @@ stateDiagram-v2
 - Labels as permissions (for example "only Maria may stop this"): a channel decides who may write before the message reaches GeckIt; labels are for reading and tracing.
 - Posting Alex's own desktop message into Slack or Telegram: rejected on 2026-11-05.
 - Merging or moving threads.
+- A separate board for Manager's workers: they already stand on the board with everything else, and a second board would show the same cards twice.
 - The example Slack library going away: it stays in `examples/` for authors; the built-in Slack is separate.
 
 ## 10. Forks
