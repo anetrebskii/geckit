@@ -254,7 +254,7 @@ export function notesStore(): NotesStore {
       const next = { ...notes, [id]: withMoves(notes[id], note, Date.now(), attribution) }
       if (note.status !== notes[id]?.status) setBrowserConversationDone(id, note.status === 'done')
       clearTimeout(soon)
-      if (note.status !== notes[id]?.status || note.employeeId !== notes[id]?.employeeId || note.employeeRoot !== notes[id]?.employeeRoot || note.managerPrompt !== undefined || note.managerOwner !== undefined || (note.prepared !== undefined && notes[id] === undefined)) {
+      if (note.status !== notes[id]?.status || note.employeeId !== notes[id]?.employeeId || note.employeeRoot !== notes[id]?.employeeRoot || note.hidden !== notes[id]?.hidden || note.managerPrompt !== undefined || note.managerOwner !== undefined || note.managerOwner !== notes[id]?.managerOwner || (note.prepared !== undefined && notes[id] === undefined)) {
         const path = join(folder(), NOTES)
         writeFileSync(`${path}.new`, JSON.stringify(next, undefined, 2))
         renameSync(`${path}.new`, path)

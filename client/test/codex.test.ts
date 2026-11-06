@@ -767,6 +767,27 @@ describe('Codex app-server', () => {
     expect(server.requests.find((one) => one.method === 'thread/unsubscribe')?.params?.threadId).toBe(id.slice(6))
   })
 
+  it('unsubscribes a queued native thread through Sessions removal while prepared copies stay host-only', async () => {
+    const { server, codex } = setup()
+    const notes = memoryNotes()
+    const sessions = new Sessions({ codex, notes, limit: () => 1, changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    try {
+      const working = await sessions.send({ root: ROOT, provider: 'codex', mode: 'manual', text: 'Working sentinel' })
+      const queued = await sessions.startManaged({ root: ROOT, provider: 'codex', mode: 'manual', text: 'Queued first turn' }, 'manager', 'native-queued')
+      expect(notes.all()[queued]?.unborn).toBe(ROOT)
+      expect(notes.all()[queued]?.queued).toHaveLength(1)
+      expect(await sessions.remove([queued])).toEqual([queued])
+      expect(server.requests.filter((one) => one.method === 'thread/unsubscribe').map((one) => one.params?.threadId)).toEqual([queued.slice(6)])
+      expect(server.requests.some((one) => one.method === 'thread/delete')).toBe(false)
+      expect(server.requests.some((one) => one.method === 'turn/start' && one.params?.threadId === queued.slice(6))).toBe(false)
+      const prepared = sessions.prepare({ root: ROOT, provider: 'codex', mode: 'manual', text: 'Unsent copy' })
+      expect(await sessions.remove([prepared])).toEqual([prepared])
+      expect(server.requests.filter((one) => one.method === 'thread/unsubscribe')).toHaveLength(1)
+      expect((await sessions.list([ROOT])).some((one) => one.id === working)).toBe(true)
+      expect(notes.all()[queued]?.queued).toBeUndefined()
+    } finally { sessions.dispose() }
+  })
+
   it('ends an interrupted turn and starts Continue as a new active turn', async () => {
     const { server, codex, heard } = setup()
     const id = await codex.create(ROOT, 'manual')

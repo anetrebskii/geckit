@@ -70,6 +70,7 @@ export const MANAGER_CAPABILITIES = {
     'sessions retry --id <managed-worker-id> (same deliberate Try again as GeckIt; rechecks VPN)',
     'sessions steer --id <managed-worker-id> --text <correction> (active native runtime only; never queues or restarts)',
     'sessions stop --id <managed-worker-id>',
+    'sessions delete --id <full-managed-worker-id> (user confirmation; stops work, cancels queued messages and permanently deletes the conversation; project files kept; inspect deleted in the result)',
     'sessions mark --id <managed-worker-id> --status todo|progress|blocked|done|archived (no product confirmation)',
     'sessions attach --id <existing-worker-id> (no product confirmation; use when the user asks to coordinate or watch it; it reports to this thread)',
     'sessions follow --id <managed-worker-id> (no product confirmation; this thread also receives its updates; its starter keeps receiving them)',
@@ -119,6 +120,7 @@ const SHAPES: readonly CommandShape[] = [
   { domain: 'sessions', command: 'retry', flags: ['--id'] },
   { domain: 'sessions', command: 'steer', flags: ['--id', '--text'] },
   { domain: 'sessions', command: 'stop', flags: ['--id'] },
+  { domain: 'sessions', command: 'delete', flags: ['--id'] },
   { domain: 'sessions', command: 'mark', flags: ['--id', '--status'] },
   { domain: 'sessions', command: 'attach', flags: ['--id'] },
   { domain: 'sessions', command: 'follow', flags: ['--id'] },
@@ -219,6 +221,7 @@ export class ManagerOperations {
     if (domain === 'employees' && command === 'rename') return `Change these user preferences? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'start' && policy === 'approve') return `Start this worker? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'answer') return `Send this answer to the worker's question? ${JSON.stringify(args)}`
+    if (domain === 'sessions' && command === 'delete') return `Delete this worker conversation permanently? Its running work will stop and queued messages will be canceled. Project files are kept. ${JSON.stringify(args)}`
     if (domain === 'projects' && (command === 'add' || command === 'create')) return `Register this folder for Manager access? ${JSON.stringify(args)}`
     if ((domain === 'projects' || domain === 'files') && command === 'remove') return `Remove this ${domain === 'projects' ? 'project from GeckIt (files are kept)' : 'file or empty folder'}? ${JSON.stringify(args)}`
     return undefined
@@ -451,6 +454,7 @@ export class ManagerOperations {
         return JSON.stringify({ id, provider: resolved.provider, providerReason: resolved.reason, model, modelReason: flags.has('--model') ? 'task' : 'default', employeeId: worker.employeeId, state: worker.waits === true || (worker.queued?.length ?? 0) > 0 ? 'queued' : worker.state, goal })
       }
       const id = required(flags, '--id')
+      const managerSession = this.#deps.managerSession()
       const worker = await this.#worker(id, command === 'attach' || command === 'show')
       if (command === 'assign') {
         const choice = required(flags, '--employee')
@@ -489,6 +493,20 @@ export class ManagerOperations {
         return JSON.stringify(await this.#deps.sessions.sendWithReceipt({ session: id, root: worker.root, provider, mode: worker.mode, text: required(flags, '--text'), ...(worker.chosen === undefined ? {} : { model: worker.chosen }) }, operation))
       }
       if (command === 'stop') { this.#deps.sessions.stop(id); return JSON.stringify({ id, stopRequested: true }) }
+      if (command === 'delete') {
+        await this.#currentWorker(worker, managerSession)
+        const deleted = (await this.#deps.sessions.remove([id])).includes(id)
+        let notice = deleted ? undefined : 'Deletion was not confirmed. Running work was stopped and queued messages were canceled; the conversation is kept visible. Check the provider or host before trying again.'
+        if (deleted) {
+          const favorites = this.#deps.settings().favorites
+          if (favorites.includes(id)) {
+            try { this.#deps.saveSettings({ favorites: favorites.filter((one) => one !== id) }) } catch {
+              notice = 'The conversation was deleted, but its favorite could not be saved. Do not repeat deletion; inspect settings and remove only this favorite.'
+            }
+          }
+        }
+        return JSON.stringify({ id, deleted, stopped: true, queueCleared: true, projectFilesKept: true, ...(notice === undefined ? {} : { notice }) })
+      }
       if (command === 'mark') {
         const status = required(flags, '--status')
         if (status !== 'progress' && status !== 'todo' && status !== 'blocked' && status !== 'done' && status !== 'archived') throw new Error('Status must be todo, progress, blocked, done or archived.')

@@ -127,10 +127,23 @@ it('runs the CLI subprocess through authenticated Manager dispatch and persists 
   let settings: Settings = { ...DEFAULT_SETTINGS, projects: [root], vpnIpCheck: false }
   const notes = notesStore()
   const hearings = new Map<string, (heard: Heard) => void>()
+  const transcripts = new Map<string, string>()
+  const deleted: string[] = []
   const sessions = new Sessions({
     notes, changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined,
     claude: (options, hear) => { hearings.set(options.id, hear); return { send: () => undefined, answer: () => undefined, stop: () => undefined, end: async () => undefined } },
-    disk: { list: async () => [], read: async () => undefined, has: async () => false },
+    disk: {
+      list: async () => [...transcripts.keys()].map((id) => ({ id, title: id, stands: '', at: 1, driven: false })),
+      read: async () => undefined, has: async () => false,
+      delete: async (_root, id) => {
+        const path = transcripts.get(id)
+        if (path === undefined) return false
+        rmSync(path)
+        transcripts.delete(id)
+        deleted.push(id)
+        return true
+      },
+    },
     claudeAccount: async () => ({ here: true, signedIn: true }), claudeModels: async () => [], claudeProgram: async () => undefined,
     usage: async () => ({ windows: new Map<string, number | undefined>() }),
   })
@@ -175,6 +188,57 @@ it('runs the CLI subprocess through authenticated Manager dispatch and persists 
     const automaticMoves = notesStore().all()[worker]?.moves
     await expect(new (await import('../src/main/manager-operations')).ManagerOperations({ ...deps, owner: 'manager', managed: () => true, managerSession: () => id }).run([...args, '--origin', 'desktop', '--actor', 'Alex'], 'spoof')).rejects.toThrow()
     expect(notesStore().all()[worker]?.moves).toEqual(automaticMoves)
+    const sentinel = await sessions.startManaged({ root, mode: 'manual', text: 'Sentinel work' }, 'manager', 'sentinel')
+    const transcript = join(root, 'selected.jsonl')
+    const sentinelTranscript = join(root, 'sentinel.jsonl')
+    const projectFile = join(root, 'project.txt')
+    writeFileSync(transcript, 'selected disposable transcript')
+    writeFileSync(sentinelTranscript, 'sentinel disposable transcript')
+    writeFileSync(projectFile, 'project files survive')
+    transcripts.set(worker, transcript)
+    transcripts.set(sentinel, sentinelTranscript)
+    notes.set(worker, { ...notes.all()[worker], managerFollowers: ['fixture-thread'] })
+    settings = { ...settings, favorites: [worker, sentinel] }
+    await sessions.send({ session: worker, root, mode: 'manual', text: 'Cancel this follow-up' })
+    const deletion = ['sessions', 'delete', '--id', worker]
+    const issue = (operation: string): void => hearings.get(id)?.({ items: [{ kind: 'theirs', id: operation, text: '```geckit\n' + JSON.stringify({ id: operation, args: deletion }) + '\n```' }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    issue('delete-refused')
+    await vi.waitFor(async () => expect((await manager.view()).decisions).toHaveLength(1))
+    const refused = (await manager.view()).decisions[0]
+    if (refused === undefined) throw new Error('Missing delete refusal fixture')
+    expect(deleted).toEqual([])
+    await manager.answer(refused.id, 'refuse')
+    expect(readFileSync(transcript, 'utf8')).toBe('selected disposable transcript')
+    expect(settings.favorites).toEqual([worker, sentinel])
+    expect(notes.all()[worker]?.queued).toHaveLength(1)
+    await manager.configure({ delegation: 'automatic' })
+    issue('delete-allowed')
+    await vi.waitFor(async () => expect((await manager.view()).decisions).toHaveLength(1))
+    const allowed = (await manager.view()).decisions[0]
+    if (allowed === undefined) throw new Error('Missing delete approval fixture')
+    expect(allowed.title).toContain(worker)
+    expect(allowed.title).toContain('Project files are kept')
+    expect(deleted).toEqual([])
+    await expect(runManagerCli(process.execPath, join(client, 'out/service/cli.js'), deletion, { data: location.folder, session: id, token: 'invalid-fixture-token', operation: 'delete-allowed' })).rejects.toThrow('not authorized')
+    expect(deleted).toEqual([])
+    await manager.answer(allowed.id, 'allow')
+    await vi.waitFor(async () => expect((await manager.view()).activity.find((one) => one.id === 'delete-allowed')?.state).toBe('done'))
+    const receipt = (await manager.view()).activity.find((one) => one.id === 'delete-allowed')?.result
+    expect(JSON.parse(receipt ?? '{}')).toEqual({ id: worker, deleted: true, stopped: true, queueCleared: true, projectFilesKept: true })
+    expect(deleted).toEqual([worker])
+    expect(() => readFileSync(transcript)).toThrow()
+    expect(readFileSync(sentinelTranscript, 'utf8')).toBe('sentinel disposable transcript')
+    expect(readFileSync(projectFile, 'utf8')).toBe('project files survive')
+    expect(settings.favorites).toEqual([sentinel])
+    expect(notesStore().all()[worker]?.queued).toBeUndefined()
+    expect(notesStore().all()[worker]?.managerOwner).toBeUndefined()
+    expect(notesStore().all()[worker]?.managerFollowers).toBeUndefined()
+    issue('delete-allowed')
+    await new Promise<void>((done) => setImmediate(done))
+    expect(deleted).toEqual([worker])
+    manager.dispose()
+    manager = new Manager(deps)
+    expect((await manager.view()).activity.find((one) => one.id === 'delete-allowed')?.result).toBe(receipt)
   } finally {
     manager.dispose()
     sessions.dispose()

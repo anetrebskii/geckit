@@ -1,11 +1,14 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { GUIDE, keepCodexGuide, keepGuide, launchers } from '../src/main/guide'
+import { GUIDE, browserPluginFolder, keepBrowserBridge, keepCodexGuide, keepGuide, launchers } from '../src/main/guide'
+import { browserBridgeOn, setBrowserBridgeOn } from '../src/cli/browser'
+import { configureCorePlatform, corePlatform } from '../src/core/platform'
+import { sourceArgs } from '../src/main/sessions/claude'
 import { memoryNotes, Sessions } from '../src/main/sessions'
 import { llmProvider } from '../src/main/sessions/provider'
 import type { LlmProvider } from '../src/main/sessions/provider'
@@ -104,6 +107,92 @@ describe('what Claude Code is told about GeckIt', () => {
     const sessions = new Sessions({ notes: memoryNotes(), changed: () => {}, items: () => {}, account: () => {}, notify: () => {}, plugins: [kimi, mirror] })
     await sessions.setAllInstructions({ guideClaude: true, guideCodex: false, guidePlugins: { 'plugin:kimi': false }, browserNames: {}, providerPlugins: [kimi, mirror] })
     expect(called).toEqual([['kimi', false], ['mirror', false]])
+  })
+
+  it.each([false, true])('generates mandatory browser instructions and removes them when disabled (source: %s)', async (source) => {
+    const platform = corePlatform()
+    const bridge = browserBridgeOn()
+    const sourceEnvironment = ['GECKIT_SOURCE_CLI', 'GECKIT_SOURCE_GUIDE', 'GECKIT_SOURCE_CODEX_GUIDE', 'GECKIT_LLAMA_SERVER'] as const
+    const saved = sourceEnvironment.map((key) => [key, process.env[key]] as const)
+    for (const key of sourceEnvironment) delete process.env[key]
+    const data = join(folder, 'data')
+    const claude = join(folder, 'claude')
+    const codex = join(folder, 'codex')
+    await Promise.all([data, claude, codex].map((directory) => mkdir(directory)))
+    process.env['CLAUDE_CONFIG_DIR'] = claude
+    process.env['CODEX_HOME'] = codex
+    configureCorePlatform({ directory: () => data, source: () => source })
+    const claudeGuide = join(source ? data : claude, 'GECKIT.md')
+    const codexGuide = join(source ? data : codex, source ? 'GECKIT-CODEX.md' : 'GECKIT.md')
+    const claudeSkill = join(browserPluginFolder(), 'skills', 'browser', 'SKILL.md')
+    const codexSkill = join(codex, 'skills', 'geckit-browser', 'SKILL.md')
+    const required = [
+      'for all browser actions and page reading',
+      'tab the person named or a new background tab you open for this task',
+      'Do not take over unrelated tabs or switch Chrome profiles to find the target tab.',
+      'unavailable, disconnected, paused, denied or does not support the requested action',
+      'report the specific failure or unsupported action and stop the affected browser work',
+      'Do not fall back to other browser tools, direct page fetching, Playwright/CDP, AppleScript or native computer control.',
+      "GeckIt's documented test browser is not a way around a refusal or permission denial.",
+      'Native provider permissions still apply.',
+      'do not bypass a denial, change permissions, extract credentials or switch profiles to evade a restriction.',
+    ]
+    try {
+      if (source) {
+        await writeFile(join(claude, 'GECKIT.md'), 'Installed Claude guide')
+        await writeFile(join(codex, 'GECKIT.md'), 'Installed Codex guide')
+        await mkdir(join(codex, 'skills', 'geckit-browser'), { recursive: true })
+        await writeFile(codexSkill, 'Installed Codex skill')
+      }
+      keepBrowserBridge(true)
+      configureCorePlatform({ ...corePlatform(), launcher: () => ({ executable: process.execPath, script: join(data, 'cli.js') }) })
+      await keepGuide(true, {}, [], true)
+      await keepCodexGuide(true, [], true)
+      const generated = await Promise.all([claudeGuide, codexGuide, claudeSkill, ...(source ? [] : [codexSkill])].map((file) => readFile(file, 'utf8')))
+      for (const content of generated) {
+        for (const rule of required) expect(content).toContain(rule)
+        expect(content).not.toContain('unless the person names one')
+        expect(content).toContain(source ? '.geckit/bin/geckit-local' : '.geckit/bin/geckit')
+      }
+      const claudeContent = generated[0] ?? ''
+      const codexContent = generated[1] ?? ''
+      expect(claudeContent).toContain('`geckit:browser` skill')
+      expect(await readFile(join(browserPluginFolder(), '.claude-plugin', 'plugin.json'), 'utf8')).toContain('"name": "geckit"')
+      if (source) {
+        expect(sourceArgs()).toContain('--append-system-prompt')
+        expect(sourceArgs().join(' ')).toContain(claudeGuide)
+        expect(process.env['GECKIT_SOURCE_CODEX_GUIDE']).toBe(codexGuide)
+        expect(codexContent).toContain('## Test browsers')
+        expect(codexContent).toContain('no Chrome profile has GeckIt Browser')
+        expect(await readFile(join(claude, 'GECKIT.md'), 'utf8')).toBe('Installed Claude guide')
+        expect(await readFile(join(codex, 'GECKIT.md'), 'utf8')).toBe('Installed Codex guide')
+        expect(await readFile(codexSkill, 'utf8')).toBe('Installed Codex skill')
+      } else {
+        expect(await readFile(join(claude, 'CLAUDE.md'), 'utf8')).toBe('@GECKIT.md\n')
+        expect(await readFile(join(codex, 'AGENTS.md'), 'utf8')).toContain(`Read ${codexGuide}`)
+        expect(codexContent).toContain('`geckit-browser` skill')
+      }
+      keepBrowserBridge(false)
+      await keepGuide(true, {}, [], true)
+      await keepCodexGuide(true, [], true)
+      for (const file of [claudeGuide, codexGuide]) {
+        const content = await readFile(file, 'utf8')
+        expect(content).not.toContain('## Chrome through GeckIt')
+        expect(content).not.toContain('## Test browsers')
+        for (const rule of required) expect(content).not.toContain(rule)
+      }
+      await expect(readFile(claudeSkill, 'utf8')).rejects.toThrow()
+      if (source) expect(await readFile(codexSkill, 'utf8')).toBe('Installed Codex skill')
+      else await expect(readFile(codexSkill, 'utf8')).rejects.toThrow()
+    } finally {
+      keepBrowserBridge(false)
+      setBrowserBridgeOn(bridge)
+      configureCorePlatform(platform)
+      for (const [key, value] of saved) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
   })
 
   it('writes the command as a shell script, and on Windows a .cmd beside it that cmd reads whatever the code page', () => {

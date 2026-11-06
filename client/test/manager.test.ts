@@ -110,6 +110,75 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
   return { manager: active, sessions, root, directory, notes, made, sent, fanned, answers, cli, finish, hear: (id: string, heard: Heard) => hearings.get(id)?.(heard), command, setCli: (run: ManagerDeps['cli'] | undefined) => { callCli = run }, reload: () => { current.manager?.dispose(); const next = new Manager(deps); current.manager = next; return next }, settings: () => settings, set: (change: Partial<Settings>) => { settings = { ...settings, ...change } } }
 }
 
+describe('Manager exact-session deletion', () => {
+  it.each(['automatic', 'approve'] as const)('requires product confirmation under %s delegation', async (policy) => {
+    const f = await fixture()
+    const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => { f.set(change); return f.settings() }, owner: 'manager', managed: () => true, managerSession: () => 'manager' })
+    const args = ['sessions', 'delete', '--id', 'exact-worker-id']
+    expect(operations.confirmation(args, policy)).toContain('Delete this worker conversation permanently?')
+    expect(operations.confirmation(args, policy)).toContain('exact-worker-id')
+    expect(managerReadOnly(args)).toBe(false)
+    expect(MANAGER_INSTRUCTIONS).toContain('Check the deleted field')
+  })
+
+  it('rejects partial, unknown, unmanaged, Manager, question and unregistered targets without deleting', async () => {
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => true)
+    const f = await fixture(0, { disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: remove } })
+    const configured = await f.manager.configure({ enabled: true })
+    const managerId = configured.session?.id
+    if (managerId === undefined) throw new Error('Missing Manager fixture')
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Managed worker' }, 'manager', 'managed')
+    const ordinary = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Ordinary worker' }, 'other', 'ordinary')
+    const question = await f.sessions.send({ root: f.root, mode: 'manual', text: 'General question', question: true })
+    const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => { f.set(change); return f.settings() }, owner: 'manager', managed: (id) => f.notes.all()[id]?.managerOwner === 'manager', managerSession: () => managerId })
+    for (const id of [worker.slice(0, 8), 'unknown', ordinary, managerId, question]) {
+      await expect(operations.run(['sessions', 'delete', '--id', id], 'invalid-' + id)).rejects.toThrow()
+    }
+    for (const args of [['sessions', 'delete'], ['sessions', 'delete', '--id', worker, '--all'], ['sessions', 'delete', '--id', worker, '--id', ordinary]]) await expect(operations.run(args, 'invalid-shape')).rejects.toThrow()
+    f.set({ projects: [], profiles: [] })
+    await expect(operations.run(['sessions', 'delete', '--id', worker], 'unregistered')).rejects.toThrow()
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('revalidates Manager identity after reading the worker and before deletion', async () => {
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => true)
+    const f = await fixture(0, { disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: remove } })
+    let managerId = (await f.manager.configure({ enabled: true })).session?.id
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Worker' }, 'manager', 'managed')
+    const list = f.sessions.list.bind(f.sessions)
+    vi.spyOn(f.sessions, 'list').mockImplementationOnce(async (roots) => { const rows = await list(roots); managerId = 'replacement-manager'; return rows })
+    const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => { f.set(change); return f.settings() }, owner: 'manager', managed: () => true, managerSession: () => managerId })
+    await expect(operations.run(['sessions', 'delete', '--id', worker], 'stale-manager')).rejects.toThrow('no longer authorized')
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('keeps the confirmed deletion receipt when saving favorites fails', async () => {
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => true)
+    const f = await fixture(0, { disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: remove } })
+    const managerId = (await f.manager.configure({ enabled: true })).session?.id
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Worker' }, 'manager', 'managed')
+    f.set({ favorites: [worker] })
+    const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => { throw new Error('Disk unavailable') }, owner: 'manager', managed: () => true, managerSession: () => managerId })
+    expect(JSON.parse(await operations.run(['sessions', 'delete', '--id', worker], 'favorite-error'))).toMatchObject({ id: worker, deleted: true, notice: expect.stringContaining('Do not repeat deletion') })
+    expect(remove).toHaveBeenCalledOnce()
+  })
+
+  it.each(['false', 'throw'] as const)('returns an explicit unconfirmed receipt and keeps favorites/subscriptions: %s', async (failure) => {
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => { if (failure === 'throw') throw new Error('Offline'); return false })
+    const f = await fixture(0, { disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: remove } })
+    const managerId = (await f.manager.configure({ enabled: true })).session?.id
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Worker' }, 'manager', 'managed')
+    f.set({ favorites: [worker] })
+    f.notes.set(worker, { ...f.notes.all()[worker], managerFollowers: ['other-thread'] })
+    const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => { f.set(change); return f.settings() }, owner: 'manager', managed: () => true, managerSession: () => managerId })
+    const result = await operations.run(['sessions', 'delete', '--id', worker], 'failed-delete')
+    expect(JSON.parse(result)).toMatchObject({ id: worker, deleted: false, stopped: true, queueCleared: true, projectFilesKept: true, notice: expect.stringContaining('Deletion was not confirmed') })
+    expect(f.settings().favorites).toEqual([worker])
+    expect(f.notes.all()[worker]).toMatchObject({ managerOwner: 'manager', managerFollowers: ['other-thread'] })
+    expect((await f.sessions.list([f.root])).some((one) => one.id === worker)).toBe(true)
+  })
+})
+
 describe('Manager app conversation', () => {
   it('advertises app chat support in snapshots and lifecycle events', async () => {
     const f = await fixture()

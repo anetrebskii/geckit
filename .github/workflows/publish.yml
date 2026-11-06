@@ -125,6 +125,9 @@ jobs:
           chmod +x llama/bin/*/llama-server* 2>/dev/null || true
           ls -lR whisper/bin
           npm ci
+          if [ "${{ matrix.platform }}" = mac ]; then
+            node scripts/prepare-mac-service-addons.cjs
+          fi
           npm run typecheck
           npm version "${{ needs.version.outputs.version }}" --no-git-tag-version --allow-same-version
           npm run build

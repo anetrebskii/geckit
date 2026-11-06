@@ -537,6 +537,7 @@ export class Sessions {
   readonly #deps: SessionsDeps
   readonly #providers: { codex: LlmProvider; readonly stream: LlmProvider; readonly plugins: Map<string, LlmProvider> }
   readonly #dispatching = new Set<string>()
+  readonly #deleting = new Set<string>()
   readonly #preparedSending = new Set<string>()
   readonly #live = new Map<string, Live>()
   readonly #retiredProviders = new Set<LlmProvider>()
@@ -590,7 +591,7 @@ export class Sessions {
     }
     // Conversations begun with a message that was still waiting for a slot when GeckIt closed.
     for (const [id, note] of Object.entries(deps.notes.all())) {
-      if (note.unborn === undefined || note.hidden === true || (note.prepared === undefined && (note.queued ?? []).length === 0 && note.heldOperation === undefined)) continue
+      if (note.unborn === undefined || note.hidden === true || (note.prepared === undefined && (note.queued ?? []).length === 0 && note.heldOperation === undefined && note.shown !== true)) continue
       const provider = providerOf(id)
       if (provider !== 'claude' && provider !== 'codex' && !this.#providers.plugins.has(provider)) continue
       const live = this.#fresh(id, note.unborn, note.title ?? '', sessionMode(note.mode))
@@ -1027,7 +1028,7 @@ export class Sessions {
       if (note?.hidden === true) continue
       if ((live === undefined || (providerOf(id) === 'codex' && !live.question)) && row?.driven === true && note?.here !== true && note?.shown !== true) continue
       // Held only because it was looked at, and the tool has nothing under that id any more.
-      if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0 && live.queued.length === 0 && !live.checkingIp && note?.managerPrompt === undefined && note?.prepared === undefined) {
+      if (live !== undefined && row === undefined && !live.begun && live.state === 'idle' && live.last === undefined && live.items.size === 0 && live.queued.length === 0 && !live.checkingIp && note?.managerPrompt === undefined && note?.prepared === undefined && note?.shown !== true) {
         continue
       }
       const quiet = live === undefined || live.state === 'idle'
@@ -1449,6 +1450,7 @@ export class Sessions {
 
   /** A conversation given a slot: the first of its queued messages goes. */
   carryOn(id: string): void {
+    if (this.#deleting.has(id)) return
     if (this.#suspendedManagers.has(id)) return
     const live = this.#live.get(id) ?? this.#adopt(id)
     const next = live?.queued[0]
@@ -2036,6 +2038,7 @@ export class Sessions {
 
   /** `go` is a message that is part of a turn already given its slot, so the limit never holds it. */
   async send(message: SessionMessage, go = false, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt, delivery?: DeliveryAttempt): Promise<string> {
+    if ([message.session, guardSource, delegateFrom].some((id) => id !== undefined && this.#deleting.has(id))) throw new Error('This conversation is being deleted. Nothing was sent.')
     if (message.session === undefined && guardSource === undefined && message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
     if (message.session !== undefined && this.#deps.notes.all()[message.session]?.preparedDestination !== undefined) throw new Error('This copy was already sent. Open its new conversation before sending again.')
     if (message.session !== undefined && this.#deps.notes.all()[message.session]?.prepared !== undefined) {
@@ -2118,6 +2121,7 @@ export class Sessions {
       }
       return id
     } catch (error) {
+      if (target !== undefined && this.#live.get(target.id) !== target) throw new Error('The conversation was released before dispatch. Nothing was sent.', { cause: error })
       const cancelled = error instanceof GuardCancelled
       if (!(error instanceof GuardRefused) && !cancelled) {
         if (provisional && target !== undefined) { this.#live.delete(target.id); this.#changed() }
@@ -2145,7 +2149,7 @@ export class Sessions {
   }
 
   async #send(message: SessionMessage, go: boolean, attempt?: GuardAttempt, queued?: Queued['id'], delegateFrom?: Live['id'], delivery?: DeliveryAttempt): Promise<string> {
-
+    if (message.session !== undefined && this.#deleting.has(message.session)) throw new Error('This conversation is being deleted. Nothing was sent.')
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
       if (message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
@@ -2177,6 +2181,7 @@ export class Sessions {
       if (live.driver === undefined) await this.#reread(live)
     }
 
+    if (this.#live.get(live.id) !== live || this.#deleting.has(live.id)) throw new Error('The conversation was released before dispatch. Nothing was sent.')
     this.#clearGuard(live)
     if (attempt !== undefined) attempt = { ...attempt, destination: { live, guardGeneration: live.guardGeneration } }
     const backend = this.#for(live)
@@ -2187,11 +2192,14 @@ export class Sessions {
     if (nativeGoal !== undefined && nativeGoal.toLowerCase() !== 'pause' && nativeGoal.toLowerCase() !== 'resume') {
       if ((await backend.account()).key === true) throw new Error('Sign in with your ChatGPT plan to change a Codex goal.')
       if (this.#deps.beforeSend !== undefined) await this.#check(live, attempt)
+      if (this.#live.get(live.id) !== live || this.#deleting.has(live.id)) throw new Error('The conversation was released before dispatch. Nothing was sent.')
       if (nativeGoal === '') {
         await backend.clearGoal(live.id)
+        if (this.#live.get(live.id) !== live) throw new Error('The conversation was released during goal dispatch. Inspect the deletion receipt.')
         this.#signal(live, { kind: 'goal', goal: undefined })
       } else {
         const goal = await backend.setGoal(live.id, nativeGoal)
+        if (this.#live.get(live.id) !== live) throw new Error('The conversation was released during goal dispatch. Inspect the deletion receipt.')
         this.#signal(live, { kind: 'goal', goal: goal?.goal, ...(goal?.status === undefined ? {} : { status: goal.status }) })
         if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
       }
@@ -2306,6 +2314,7 @@ export class Sessions {
       if (backend.nativeGoals && message.goal?.trim()) await backend.setGoal(live.id, message.goal.trim())
       if (backend.nativeGoals && message.goal?.trim()) this.#note(live.id, { goal: live.goal })
     } catch (error) {
+      if (this.#live.get(live.id) !== live) throw new Error('The conversation was released before dispatch. Nothing was sent.', { cause: error })
       if (error instanceof GuardRefused || error instanceof GuardCancelled) {
         const unsent = { ...mine, unsent: true }
         live.items.set(mine.id, unsent)
@@ -2324,6 +2333,7 @@ export class Sessions {
 
     if (this.#deps.beforeSend !== undefined) {
       try { await this.#check(live, attempt) } catch (error) {
+        if (this.#live.get(live.id) !== live) throw new Error('The conversation was released before dispatch. Nothing was sent.', { cause: error })
         const unsent = { ...mine, unsent: true }
         live.items.set(mine.id, unsent)
         this.#tellItems({ id: live.id, items: [unsent] })
@@ -2335,6 +2345,7 @@ export class Sessions {
         return live.id
       }
     }
+    if (this.#live.get(live.id) !== live || this.#deleting.has(live.id)) throw new Error('The conversation was released before dispatch. Nothing was sent.')
     this.#note(live.id, {
       mode: live.mode,
       ...(this.#deps.notes.all()[live.id]?.managerPrompt === undefined ? {} : { managerBegun: true as const }),
@@ -2546,8 +2557,10 @@ export class Sessions {
       live.driver = undefined
       live.injectionEchoes = []
       live.tasks = ended(live.tasks)
-      if (this.#for(live).waitForExit) await old.end()
-      else void old.end()
+      const closing = old.end().finally(() => { if (live.closing === closing) live.closing = undefined })
+      live.closing = closing
+      if (this.#for(live).waitForExit) await closing
+      else void closing.catch(() => undefined)
     }
 
     if (live.driver !== undefined) return
@@ -2565,6 +2578,7 @@ export class Sessions {
     live.ranReasoning = live.reasoning
 
     if (this.#deps.beforeSend !== undefined) await this.#check(live, attempt)
+    if (this.#live.get(live.id) !== live || this.#deleting.has(live.id)) throw new Error('The conversation was released before dispatch. Nothing was sent.')
     let assignedDriver: Driver | undefined = undefined
     const driver = backend.hold(
       {
@@ -3265,13 +3279,45 @@ export class Sessions {
         continue
       }
       const root = this.#live.get(id)?.root ?? this.#rows.get(id)?.root
+      if (this.#deleting.has(id)) throw new Error('Deletion of this conversation is already in progress. Inspect the original operation before trying again.')
       if (root === undefined) continue
-      // The tool writes to the file as it exits, so it goes first.
-      await this.#letGo(id)
-      const removed = this.#deps.notes.all()[id]?.prepared !== undefined ? Promise.resolve(true) : this.#provider(providerOf(id), this.#deps.notes.all()[id]?.transport).delete(root, id)
-      if (await removed.catch(() => false)) gone.push(id)
-      this.#rows.delete(id)
-      this.#note(id, { hidden: true })
+      this.#deleting.add(id)
+      try {
+        const live = this.#live.get(id)
+        const note = this.#deps.notes.all()[id]
+        const hostOnly = note?.prepared !== undefined || note?.unborn !== undefined && live?.begun !== true && live?.driver === undefined
+        if (live !== undefined) {
+          this.#rows.set(id, { ...this.#rows.get(id), id, root, title: live.title, stands: live.stands, at: live.at, driven: true, tasks: ended(live.tasks) })
+          this.#queue(live, [])
+          this.#clearGuard(live)
+        }
+        const { queued: _queued, heldOperation: _held, guardError: _guard, guardItems: _items, vpnPaused: _paused, vpnGoalPaused: _goalPaused, cut: _cut, ...stopped } = this.#deps.notes.all()[id] ?? {}
+        this.#deps.notes.set(id, stopped)
+        // The tool writes to the file as it exits, so it goes first.
+        try { await this.#letGo(id) } catch {
+          this.#adopt(id)
+          this.#changed()
+          throw new Error('Runtime shutdown was not confirmed. Provider deletion was not attempted; queued messages were canceled. Inspect the worker before trying again.')
+        }
+        const backend = this.#provider(providerOf(id), note?.transport)
+        const noTranscript = hostOnly && !await backend.has(root, id).catch(() => true)
+        const hostRecordOnly = noTranscript && (note?.prepared !== undefined || backend === this.#providers.stream)
+        const removed = hostRecordOnly || await backend.delete(root, id).catch(() => false)
+        if (!removed) {
+          if (hostOnly) this.#note(id, { shown: true })
+          this.#adopt(id)
+          continue
+        }
+        gone.push(id)
+        this.#rows.delete(id)
+        const { prepared: _prepared, unborn: _unborn, managerOwner: _owner, managerThread: _thread, managerFollowers: _followers, managerOperation: _operation, ...kept } = this.#deps.notes.all()[id] ?? {}
+        try { this.#deps.notes.set(id, { ...kept, hidden: true }) } catch (error) {
+          this.#changed()
+          throw new Error('The provider confirmed deletion, but local cleanup could not be saved. Do not repeat deletion; inspect the host notes store.', { cause: error })
+        }
+      } finally {
+        this.#deleting.delete(id)
+      }
     }
     this.#changed()
     return gone
@@ -3282,10 +3328,15 @@ export class Sessions {
     const live = this.#live.get(id)
     if (live === undefined) return
     clearTimeout(live.quiet)
+    clearTimeout(live.back)
+    clearTimeout(live.stopping)
+    live.guardGeneration += 1
+    for (const cancel of live.guardCancels) cancel()
     for (const running of live.commands.values()) running.stop()
     const ended = live.driver?.end()
+    live.driver = undefined
     this.#live.delete(id)
-    await ended
+    await Promise.all([ended, live.closing])
     this.#disposeRetiredProviders()
   }
 

@@ -1646,7 +1646,7 @@ describe('the list', () => {
     const id = await started(built)
     expect(await built.sessions.remove([id])).toEqual([])
     expect(built.fake.ended).toBe(1)
-    expect(of(built.rows, id)).toBeUndefined()
+    expect(of(built.rows, id)?.id).toBe(id)
   })
 
   it('deletes the file once the process has gone, since it writes to it as it exits', async () => {
@@ -1686,7 +1686,193 @@ describe('the list', () => {
     const sent = built.rows.length
     expect(await built.sessions.remove(['a', 'b', 'c'])).toEqual(['a', 'c'])
     expect(built.rows.length).toBe(sent + 1)
-    expect(built.rows.at(-1)?.map((one) => one.id)).toEqual([])
+    expect(built.rows.at(-1)?.map((one) => one.id)).toEqual(['b'])
+  })
+
+  it.each(['false', 'throw'] as const)('retains failed deletion visibly, cancels queues and keeps Manager subscriptions: %s', async (failure) => {
+    const notes = memoryNotes()
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => {
+      if (failure === 'throw') throw new Error('Provider unavailable')
+      return false
+    })
+    const built = build({ notes, disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: remove } })
+    const id = await started(built)
+    notes.set(id, { ...notes.all()[id], managerOwner: 'manager', managerFollowers: ['thread'] })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Never send this' })
+    expect(notes.all()[id]?.queued).toHaveLength(1)
+    expect(await built.sessions.remove([id])).toEqual([])
+    expect(notes.all()[id]).toMatchObject({ managerOwner: 'manager', managerFollowers: ['thread'] })
+    expect(notes.all()[id]?.queued).toBeUndefined()
+    expect(notes.all()[id]?.hidden).not.toBe(true)
+    expect(of(built.rows, id)).toBeDefined()
+    built.sessions.carryOn(id)
+    expect(built.fake.sent).toHaveLength(1)
+  })
+
+  it('cancels a queued unborn worker without asking a provider to delete a nonexistent transcript', async () => {
+    const notes = memoryNotes()
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => false)
+    const built = build({ notes, limit: () => 1, disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: remove } })
+    await started(built)
+    const worker = await built.sessions.startManaged({ root: ROOT, mode: 'manual', text: 'Queued first turn' }, 'manager', 'queued-first')
+    notes.set(worker, { ...notes.all()[worker], managerFollowers: ['thread'] })
+    expect(notes.all()[worker]?.unborn).toBe(ROOT)
+    expect(await built.sessions.remove([worker])).toEqual([worker])
+    expect(remove).not.toHaveBeenCalled()
+    expect(notes.all()[worker]).toMatchObject({ hidden: true })
+    expect(notes.all()[worker]?.queued).toBeUndefined()
+    expect(notes.all()[worker]?.unborn).toBeUndefined()
+    expect(notes.all()[worker]?.managerOwner).toBeUndefined()
+    expect(notes.all()[worker]?.managerFollowers).toBeUndefined()
+    const restored = build({ notes })
+    expect(await restored.sessions.list([ROOT])).toEqual([])
+    restored.sessions.dispose()
+  })
+
+  it('keeps a failed unborn deletion visible after restart without recreating its canceled first turn', async () => {
+    const notes = memoryNotes()
+    let unavailable = false
+    const disk: NonNullable<SessionsDeps['disk']> = { list: async () => [], read: async () => undefined, has: async () => { if (unavailable) throw new Error('Offline'); return false }, delete: async () => false }
+    const built = build({ notes, limit: () => 1, disk })
+    await started(built)
+    const id = await built.sessions.startManaged({ root: ROOT, mode: 'manual', text: 'Queued first turn' }, 'manager', 'unborn-failed')
+    unavailable = true
+    expect(await built.sessions.remove([id])).toEqual([])
+    expect(notes.all()[id]?.queued).toBeUndefined()
+    expect(notes.all()[id]?.shown).toBe(true)
+    built.sessions.dispose()
+    const restored = build({ notes, disk })
+    expect((await restored.sessions.list([ROOT])).map((one) => one.id)).toContain(id)
+    restored.sessions.carryOn(id)
+    expect(restored.fake.made).toEqual([])
+    expect(restored.fake.sent).toEqual([])
+    restored.sessions.dispose()
+  })
+
+  it('waits for pending handover and rejects sends during deletion', async () => {
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => true)
+    const built = build({ disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: remove } })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    let close: (() => void) | undefined
+    built.fake.closing = new Promise<void>((resolve) => { close = resolve })
+    built.sessions.handOver(id)
+    const deleting = built.sessions.remove([id])
+    await expect(built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Late send' })).rejects.toThrow('being deleted')
+    built.sessions.carryOn(id)
+    expect(remove).not.toHaveBeenCalled()
+    close?.()
+    expect(await deleting).toEqual([id])
+    expect(remove).toHaveBeenCalledOnce()
+  })
+
+  it('reports confirmed provider deletion separately when its tombstone cannot be saved', async () => {
+    const notes = memoryNotes()
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => true)
+    const built = build({ notes, disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: remove } })
+    const id = await started(built)
+    const set = notes.set.bind(notes)
+    vi.spyOn(notes, 'set').mockImplementation((session, note, attribution) => { if (session === id && note.hidden === true) throw new Error('Disk unavailable'); set(session, note, attribution) })
+    await expect(built.sessions.remove([id])).rejects.toThrow('provider confirmed deletion, but local cleanup could not be saved. Do not repeat deletion')
+    expect(remove).toHaveBeenCalledOnce()
+    expect(built.fake.ended).toBe(1)
+    expect(of(built.rows, id)).toBeUndefined()
+  })
+
+  it('does not delete a transcript when runtime shutdown fails', async () => {
+    const notes = memoryNotes()
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => true)
+    const built = build({ notes, disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: remove } })
+    const id = await started(built)
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Queued' })
+    built.fake.closing = Promise.reject(new Error('Shutdown failed'))
+    await expect(built.sessions.remove([id])).rejects.toThrow('Runtime shutdown was not confirmed')
+    expect(remove).not.toHaveBeenCalled()
+    expect(of(built.rows, id)).toBeDefined()
+    expect(notes.all()[id]?.queued).toBeUndefined()
+  })
+
+  it('waits for a replaced runtime that is still closing before deleting its transcript', async () => {
+    let release: (() => void) | undefined
+    const closing = new Promise<void>((resolve) => { release = resolve })
+    let generation = 0
+    let hear: ((heard: Heard) => void) | undefined
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => true)
+    const built = build({ claude: (_options, hearing) => {
+      const current = ++generation
+      hear = hearing
+      return { send: () => undefined, answer: () => undefined, stop: () => undefined, end: () => current === 1 ? closing : Promise.resolve() }
+    }, disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: remove } })
+    const id = await started(built)
+    hear?.({ items: [], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Use another model', model: 'replacement' })
+    expect(generation).toBe(2)
+    const deleting = built.sessions.remove([id])
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(remove).not.toHaveBeenCalled()
+    release?.()
+    expect(await deleting).toEqual([id])
+    expect(remove).toHaveBeenCalledOnce()
+  })
+
+  it('cancels a native goal command whose account check finishes after deletion', async () => {
+    const notes = memoryNotes()
+    let checking = false
+    let release: (() => void) | undefined
+    const setGoal = vi.fn<NonNullable<SessionsDeps['codex']>['setGoal']>()
+    const codex = fakeCodex({ create: async () => 'codex:goal-race', delete: async () => true, setGoal, account: async () => {
+      if (checking) await new Promise<void>((resolve) => { release = resolve })
+      return { provider: 'codex', here: true, signedIn: true }
+    } })
+    const built = build({ notes, codex })
+    const id = await built.sessions.send({ root: ROOT, provider: 'codex', mode: 'manual', text: 'First turn' })
+    checking = true
+    const setting = built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: '/goal Do this later' })
+    const rejected = expect(setting).rejects.toThrow('released before dispatch')
+    await vi.waitFor(() => expect(release).toBeDefined())
+    expect(await built.sessions.remove([id])).toEqual([id])
+    release?.()
+    await rejected
+    expect(setGoal).not.toHaveBeenCalled()
+    expect(notes.all()[id]?.hidden).toBe(true)
+  })
+
+  it('does not start a runtime after deletion overtakes its first provider lookup', async () => {
+    const notes = memoryNotes()
+    let release: (() => void) | undefined
+    const has = vi.fn<NonNullable<SessionsDeps['disk']>['has']>(() => new Promise<boolean>((resolve) => { release = () => resolve(false) }))
+    const remove = vi.fn<NonNullable<NonNullable<SessionsDeps['disk']>['delete']>>(async () => true)
+    const built = build({ notes, disk: { list: async () => [], read: async () => undefined, has, delete: remove } })
+    const starting = built.sessions.startManaged({ root: ROOT, mode: 'manual', text: 'First turn' }, 'manager', 'first-turn-race')
+    const failed = expect(starting).rejects.toThrow('released before dispatch')
+    await vi.waitFor(() => expect(has).toHaveBeenCalled())
+    const id = Object.keys(notes.all())[0]
+    if (id === undefined) throw new Error('Missing pending worker')
+    expect(await built.sessions.remove([id])).toEqual([id])
+    release?.()
+    await failed
+    expect(remove).toHaveBeenCalledOnce()
+    expect(built.fake.made).toEqual([])
+    expect(notes.all()[id]?.hidden).toBe(true)
+    expect(notes.all()[id]?.managerOwner).toBeUndefined()
+  })
+
+  it('does not resurrect a send canceled while its public IP check is pending', async () => {
+    const notes = memoryNotes()
+    let release: (() => void) | undefined
+    let blocked = false
+    const built = build({ notes, beforeSend: () => blocked ? new Promise<void>((resolve) => { release = resolve }) : undefined, disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: async () => true } })
+    const id = await started(built)
+    blocked = true
+    const sending = built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Late check' })
+    const result = expect(sending).rejects.toThrow('released before dispatch')
+    expect(await built.sessions.remove([id])).toEqual([id])
+    release?.()
+    await result
+    expect(notes.all()[id]?.heldOperation).toBeUndefined()
+    expect(notes.all()[id]?.queued).toBeUndefined()
+    expect(notes.all()[id]?.hidden).toBe(true)
+    expect(built.fake.sent).toHaveLength(1)
   })
 
   it('lets go of one about to be continued in a terminal', async () => {
