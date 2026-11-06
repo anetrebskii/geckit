@@ -17,7 +17,16 @@ const STANDS: Readonly<Record<string, string>> = {
  * stands, asked when the menu is opened. Pressing one switches it on or off
  * for every conversation in the project, as /mcp in a terminal does.
  */
-export function Mcp({ root, id }: { readonly root: string; readonly id: string | undefined }): React.JSX.Element {
+export function Mcp({
+  root,
+  id,
+  opening,
+}: {
+  readonly root: string
+  readonly id: string | undefined
+  /** Goes up when /mcp is typed in the field, which opens the menu as a press would. */
+  readonly opening?: number
+}): React.JSX.Element {
   const [said, setSaid] = useState<{ readonly root: string; readonly servers: readonly McpServer[] | undefined }>()
   const [asking, setAsking] = useState(false)
   const servers = said?.root === root ? said.servers : undefined
@@ -42,6 +51,8 @@ export function Mcp({ root, id }: { readonly root: string; readonly id: string |
               {
                 value: '__asking',
                 label: asking ? 'Asking Claude Code...' : servers === undefined ? 'Claude Code did not say' : 'None in this folder',
+                // Only words, so a menu opened from the keyboard waits for the servers to move into.
+                disabled: true,
               },
             ]
           : servers.map((one) => ({
@@ -52,6 +63,7 @@ export function Mcp({ root, id }: { readonly root: string; readonly id: string |
             }))
       }
       note="Switched for every conversation in this folder, as /mcp does."
+      {...(opening === undefined ? {} : { opening })}
       onOpen={() => ask()}
       onPick={(value) => {
         const server = servers?.find((one) => one.name === value)

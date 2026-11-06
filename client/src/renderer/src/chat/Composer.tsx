@@ -102,6 +102,9 @@ function Offered({ path }: { readonly path: string }): React.JSX.Element {
 
 /** What opens the background tasks rather than going to Claude, as in a terminal. */
 const TASKS = /^\s*\/(tasks|bashes)\s*$/
+// /mcp is the terminal's own menu, which Claude Code does not answer when it is sent: here it opens the MCP menu under the field.
+// Codex has servers of its own and no such menu, so the words go to it as they are.
+const MCP = /^\s*\/mcp\s*$/
 const GOAL = /^\s*\/goal(\s|$)/
 const COMPACT = /^\s*\/compact(\s|$)/
 
@@ -244,9 +247,15 @@ export function Composer({ chat, onContinue }: { readonly chat: Chat; readonly o
     recorder.start()
     field.current?.focus()
   }
+  const [mcpOpening, setMcpOpening] = useState(0)
   const submit = (): void => {
     if (COMPACT.test(chat.draft)) {
       chat.setCompacting('typed')
+      return
+    }
+    if (MCP.test(chat.draft) && !ON_PHONE && chat.root !== undefined && !isCodexProvider(chat.provider)) {
+      chat.setDraft('')
+      setMcpOpening((times) => times + 1)
       return
     }
     if (!TASKS.test(chat.draft)) {
@@ -1081,7 +1090,7 @@ export function Composer({ chat, onContinue }: { readonly chat: Chat; readonly o
           {!isCodexProvider(chat.provider) ? null : <Picker label={`Reasoning: ${efforts.find((one) => one.value === chat.reasoning)?.label ?? 'Default'}`} choices={efforts} chosen={chat.reasoning} title="Reasoning level for the next message" onOpen={() => chat.askModels()} onPick={(value) => chat.setReasoning(value as ReasoningEffort | '')} />}
           {ON_PHONE ? null : (
             <>
-              {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} />}
+              {chat.root === undefined ? null : <Mcp root={chat.root} id={chat.session?.id} opening={mcpOpening} />}
               {providerInfo.browser !== 'claude' || chat.root === undefined ? null : host === undefined ? (
                 <Chrome
                   root={chat.root}
