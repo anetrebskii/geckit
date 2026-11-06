@@ -7,7 +7,8 @@ import type { ServiceEvents, ServiceMethods } from '../service/application'
 import QRCode from 'qrcode'
 const HELP = `Remote observation (server CLI):
   geckit access enable [--data <directory>]
-  geckit pair create --project <path> [--project <path>] [--manager] [--qr] [--expires <seconds>s] [--data <directory>]
+  geckit pair create [--project <path>]... [--manager] [--qr] [--expires <seconds>s] [--data <directory>]
+    Without --project the device sees every registered project.
   geckit pair pending
   geckit pair approve <request-id> --phrase <verification-phrase>
   geckit pair cancel <invitation-id>

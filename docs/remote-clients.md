@@ -107,7 +107,7 @@ Revoke конкретного `deviceId`: сохранить tombstone/revision,
 geckit service run --data /var/lib/geckit
 GECKIT_DATA=/var/lib/geckit geckit service projects add /srv/app
 geckit access enable --data /var/lib/geckit
-geckit pair create --data /var/lib/geckit --project /srv/app --expires 300s --qr
+geckit pair create --data /var/lib/geckit --expires 300s --qr
 geckit pair pending --data /var/lib/geckit
 geckit pair approve <request-id> --phrase <verification-phrase> --data /var/lib/geckit
 geckit pair cancel <invitation-id> --data /var/lib/geckit
@@ -116,7 +116,7 @@ geckit devices revoke <device-id> --data /var/lib/geckit
 geckit access disable --data /var/lib/geckit
 ```
 
-Нужен существующий поддерживаемый vault headless service; ключ provisioned оператором, не выводится командами pairing. Новый код - 256 случайных бит, 43 base64url символа. TTL по умолчанию 300 секунд, разрешено 1–300 секунд. QR содержит тот же временный invitation. Обязательна сверка phrase перед `approve`. Для истории Manager требуется `--manager` и явный `--project` для каждого зарегистрированного проекта, включая профили; без этого передаётся только summary state Manager.
+Нужен существующий поддерживаемый vault headless service; ключ provisioned оператором, не выводится командами pairing. Новый код - 256 случайных бит, 43 base64url символа. TTL по умолчанию 300 секунд, разрешено 1–300 секунд. QR содержит тот же временный invitation. Обязательна сверка phrase перед `approve`. Без `--project` устройство видит все проекты, зарегистрированные на момент создания кода; `--project` сужает область. Для истории Manager требуется `--manager` и доступ ко всем зарегистрированным проектам, включая профили; без этого передаётся только summary state Manager.
 
 Добавление/подключение/отключение сервера на desktop и mobile выполняется в общей форме Servers: код или QR, сохранённый сервер, Disconnect, Forget. **`geckit servers add/connect/disconnect/list/forget` пока только предложения для следующего этапа**, не реализованные команды. CLI-клиент удалённого board в этот этап не входит. `--role` не нужен: разрешено только чтение. Control/approvals не передаются. Несколько серверов сохраняются отдельно, активен один.
 
@@ -180,7 +180,7 @@ Wire version отделить от package version: несовместимый m
 | `configuration.admin`, service lifecycle | Нет | Provider install, credential changes, channels, новые grants, shutdown/import/update не входят в remote control MVP. Управляются локальным оператором. |
 | OS/native control | Нет | Capture, clipboard, keyboard, shell, browser, Trash и screen remote-control - отдельные host-local capabilities и permissions, не последствия P2P pairing. |
 
-Read-only доступ тоже раскрывает тексты разговоров, имена и пути. Scope выбирается оператором при invitation, по умолчанию один явно указанный зарегистрированный проект; `--all-projects` требует явного решения. Employee/Manager summaries фильтруются либо не выдаются, если безопасную projection построить нельзя. Устройство не получает полный `settings:get`, `phone:settings`, generic `service call`, migration RPC или broadcast всех core events.
+Read-only доступ тоже раскрывает тексты разговоров, имена и пути. Scope выбирается оператором при invitation, по умолчанию все зарегистрированные проекты, `--project` сужает область до перечисленных. Employee/Manager summaries фильтруются либо не выдаются, если безопасную projection построить нельзя. Устройство не получает полный `settings:get`, `phone:settings`, generic `service call`, migration RPC или broadcast всех core events.
 
 Provider approval разрешает инструмент в provider на сервере и не заменяет системный prompt macOS/Windows/Linux. При отсутствии native adapter возвращать `capability_unavailable`/pending по смыслу операции; не выполнять её на клиентском компьютере. На этапе управления native запросы маршрутизируются только к adapter того же serverId и с явной policy назначения устройства. Аутентифицированный remote desktop не может выдавать себя за локальный trusted operator или завершать `desktop:completeNative`.
 

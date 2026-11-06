@@ -137,7 +137,11 @@ export function TopBar({
       >
         <Icon name="bolt" />
       </button>
-      {onServers === undefined ? null : <button type="button" className="remote-button no-drag" onClick={onServers}>Servers</button>}
+      {onServers === undefined ? null : (
+        <button type="button" className="icon-button no-drag" aria-label="Servers" title="Servers: read conversations on another GeckIt" onClick={onServers}>
+          <Icon name="server" />
+        </button>
+      )}
       {onTeam === undefined ? null : <TeamButton chat={chat} on={teamOn} onTeam={onTeam} />}
       <button type="button" className="manager-open no-drag" aria-label="Chat with Manager" aria-haspopup="dialog" title="Chat with Manager" onClick={openManagerChat}><EmployeeAvatar employee={managerFace(chat.settings)} /><span>Manager</span></button>
       {chat.settings.showGecko || ON_PHONE ? null : (
