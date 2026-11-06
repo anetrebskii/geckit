@@ -141,8 +141,9 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
       save(); start(); return { server: record.server, enabled: true, signal }
     },
     disable: () => { const current = active(); record = { ...current, enabled: false }; save(); stop(); return { enabled: false } },
-    create: (projects: readonly string[], manager = false, ttl = CODE_TTL) => {
+    create: (chosen: readonly string[], manager = false, ttl = CODE_TTL) => {
       const current = active()
+      const projects = chosen.length === 0 ? managerProjects(getSettings()) : chosen
       if (projects.length === 0 || projects.some((root) => !managerProjects(getSettings()).includes(root))) throw new Error('Choose registered projects for this device.')
       if (!Number.isInteger(ttl) || ttl < 1000 || ttl > CODE_TTL) throw new Error('Invitation lifetime must be between 1 second and 5 minutes.')
       if (manager && managerProjects(getSettings()).some((root) => !projects.includes(root))) throw new Error('Manager history requires all registered projects.')
