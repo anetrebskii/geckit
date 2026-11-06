@@ -142,6 +142,10 @@
       "provider": "github",
       "owner": "anetrebskii",
       "repo": "geckit"
-    }
+    },
+    "asarUnpack": [
+      "out/service/node_modules/@node-datachannel/**"
+    ],
+    "afterPack": "./scripts/check-asar-native.cjs"
   }
 }
