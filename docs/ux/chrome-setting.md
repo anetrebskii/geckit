@@ -15,7 +15,7 @@ created: 2026-11-04
 
 - **Вход и результат:** Settings > Integrations, блок "Chrome through GeckIt". В конце Codex и Claude работают в Chrome человека через `geckit browser`, а `find` отвечает моделью.
 - **Готовность:** три независимых признака. Переключатель включён (мост и инструкции на месте). Расширение подключено (оно отметилось меньше 15 с назад). Модель скачана (размер и sha256 сошлись). Без модели всё работает, `find` ищет по словам.
-- **Решения и порядок:** человек решает одно: включить. Дальше один шаг руками, Load unpacked в Chrome; модель качается сама.
+- **Решения и порядок:** человек решает одно: включить. Дальше один шаг руками: поставить GeckIt Browser из Chrome Web Store (или Load unpacked); модель качается сама.
 - **Форма пути:** переключатель и под ним то, что ещё не готово. Постепенное раскрытие: выключенный блок занимает две строки, включённый показывает только недостающее. Мастер не нужен: шаг один, порядок очевиден.
 - **Первый запуск и возврат:** закрыл Settings посреди скачивания: оно продолжается, при возврате видна полоса. Выключил и включил: модель не качается заново, расширение в Chrome подключается само.
 
@@ -49,7 +49,7 @@ block-beta
 |---|---|---|---|
 | Выключено | По умолчанию, или выключил | Переключатель и описание | Включить, если нужен Chrome |
 | Не подключено | Включено, расширение не отмечалось 15 с | Шаги Load unpacked и "Open folder" | Загрузить расширение в Chrome |
-| Подключено | Отметка расширения свежее 15 с | "Chrome is connected." | Ничего |
+| Подключено | Отметка расширения свежее 15 с | карточка GeckIt Browser: иконка расширения, зелёная точка "Connected to Chrome", кнопка-ссылка "Add to another profile" на Chrome Web Store | Ничего, или поставить расширение в другой профиль |
 | Модель качается | Включено, модели нет, скачивание идёт | Полоса и "Downloading the search model, 1.2 of 2.5 GB." | Ничего, пройдёт само |
 | Модель не скачалась | Пять попыток подряд не дали файла с верным sha256 | Текст ошибки и "Try again" | Нажать "Try again" |
 | Модель готова | Включено, файл на месте | "Search model ready." | Ничего |
@@ -141,8 +141,8 @@ stateDiagram-v2
 |---|---|
 | Название | «Chrome through GeckIt» |
 | Описание | «Codex and Claude work in your own Chrome, in the tabs you are signed in to, through the GeckIt Browser extension. Turning this off removes the bridge and the Chrome part of their instructions.» |
-| Не подключено | «Connect Chrome once: open chrome://extensions, turn on Developer mode, press Load unpacked and choose the folder below.» и кнопка «Open folder» |
-| Подключено | «Chrome is connected.» |
+| Не подключено | Карточка GeckIt Browser: иконка расширения, пустая точка «Not added to Chrome yet», кнопка-ссылка «Add to Chrome» на https://chromewebstore.google.com/detail/geckit-browser/mjllmbfhnbeihgghghnbbkfcpahljnkp. Под ней свёрнуто «Install from a folder instead»: «Open chrome://extensions, turn on Developer mode, press Load unpacked and choose this folder.», путь и кнопка «Open folder» |
+| Подключено | Карточка GeckIt Browser: зелёная точка «Connected to Chrome», кнопка-ссылка «Add to another profile» на Chrome Web Store |
 | Модель качается | «Downloading the search model, 1.2 of 2.5 GB. Until it is here, find matches words.» |
 | Модель не скачалась | «The search model did not download: <ошибка>.» и кнопка «Try again» |
 | Модель готова | «Search model ready.» |

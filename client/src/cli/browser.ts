@@ -5,6 +5,7 @@ import { requestingSession } from './start'
 import { conversationTestName } from './browser-lifecycle'
 import { findModelServer, findModelState, findModelUsable, pickRefs } from './find-model'
 import { downloading, TEST_PREFIX, testBrowsersState, testLog, testName, validTestName } from './testing'
+import { BROWSER_STORE_URL } from '../shared/api'
 import type { BrowserBridgeState } from '../shared/api'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -261,7 +262,7 @@ export async function stopTest(name: string, folder: string = browserFolder()): 
   return { ok: false, said: `${label} did not close within 10 seconds.` }
 }
 
-const NOT_CONNECTED = (): string => `The GeckIt Browser extension is not connected to Chrome. Ask the person to open chrome://extensions, turn on Developer mode, press Load unpacked and choose ${extensionFolder()}. If it is already there, Chrome may be closed.`
+const NOT_CONNECTED = (): string => `The GeckIt Browser extension is not connected to Chrome. Ask the person to add it from the Chrome Web Store, ${BROWSER_STORE_URL}, or to load it unpacked from ${extensionFolder()} in chrome://extensions with Developer mode on. If it is already there, Chrome may be closed.`
 
 /** The profiles whose host said who it is within the last 15 s. */
 export function profiles(folder: string = browserFolder()): Profile[] {
@@ -305,7 +306,7 @@ async function startProfile(named: string | undefined): Promise<{ readonly ok: b
   const found = chromeProfiles().filter((one) => matches(one, named))
   const profile = found[0]
   if (profile === undefined || found.length > 1) return { ok: false, said: `${found.length === 0 ? 'No' : 'More than one'} Chrome profile matches ${named}. Run geckit browser profiles.` }
-  if (!profile.extension) return { ok: false, said: `${profile.name} does not have GeckIt Browser. Ask the person to add it there: chrome://extensions, Developer mode, Load unpacked, ${extensionFolder()}.` }
+  if (!profile.extension) return { ok: false, said: `${profile.name} does not have GeckIt Browser. Ask the person to add it there from the Chrome Web Store, ${BROWSER_STORE_URL}, or unpacked from ${extensionFolder()}.` }
   const label = profile.email || profile.name
   if (profiles().some((one) => one.label === label)) return { ok: true, said: `${label} is already open.` }
   const child = process.platform === 'darwin'

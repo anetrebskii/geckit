@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 
-import { ANYWHERE, UPDATE_CHANNELS, appName, assistantsIn, channelLabel, profileOf } from '../../../shared/api'
+import { ANYWHERE, BROWSER_STORE_URL, UPDATE_CHANNELS, appName, assistantsIn, channelLabel, profileOf } from '../../../shared/api'
 import { independentProviderInfo, instructionsFor, llmProviderInfo } from '../../../shared/providers'
 import type { Anywhere, NoticeWhen, OpenRule, BrowserBridgeState, PhoneView, ProjectProfile, SessionProvider, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
@@ -9,6 +9,7 @@ import type { AssistantStatusChat } from '../chat/AssistantStatus'
 import { hostOf } from '../../../shared/hosts'
 import { homePath, projectLabel, projectName } from '../chat/project'
 import { Icon } from './Icon'
+import extensionIcon from '../../../../extension/icons/128.png'
 import { Picker } from './Menu'
 import { MOD, said } from './Shortcuts'
 import { Version } from './UpdateNotice'
@@ -340,14 +341,23 @@ function ChromeBridge({ settings, change }: Part): React.JSX.Element {
       </label>
       {state === undefined || !state.supported ? null : on ? (
         <div className="chrome-bridge-status" aria-live="polite">
-          {state.connected ? <p>Chrome is connected.</p> : (
-            <div className="chrome-bridge-connect">
-              <p>Connect Chrome once: open chrome://extensions, turn on Developer mode, press Load unpacked and choose the folder below.</p>
+          <div className="chrome-extension">
+            <img className="chrome-extension-icon" src={extensionIcon} alt="" width={28} height={28} />
+            <span className="chrome-extension-copy">
+              <span className="chrome-extension-name">GeckIt Browser</span>
+              <span className="chrome-extension-state"><span className={state.connected ? 'host-dot' : 'host-dot idle'} />{state.connected ? 'Connected to Chrome' : 'Not added to Chrome yet'}</span>
+            </span>
+            <a className="quiet" href={BROWSER_STORE_URL} target="_blank" rel="noreferrer">{state.connected ? 'Add to another profile' : 'Add to Chrome'}</a>
+          </div>
+          {state.connected ? null : (
+            <details className="chrome-extension-folder">
+              <summary>Install from a folder instead</summary>
+              <p>Open chrome://extensions, turn on Developer mode, press Load unpacked and choose this folder.</p>
               <div className="chrome-bridge-folder">
                 <code title={state.folder}>{state.folder}</code>
                 <button type="button" className="quiet" onClick={() => { void window.geckit.browser.openFolder() }}>Open folder</button>
               </div>
-            </div>
+            </details>
           )}
           {!state.modelServer ? <p>find matches words: this build has no search model.</p>
             : model?.state === 'ready' ? <p>Search model ready.</p>

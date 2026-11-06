@@ -1244,6 +1244,60 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
   margin-top: 4px;
 }
 
+/* The extension as Chrome shows it: its own icon, its name and whether it is there, with the one thing to do about it. */
+.chrome-extension {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.chrome-extension-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+
+.chrome-extension-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.chrome-extension-name {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.chrome-extension-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.chrome-extension a.quiet {
+  flex: none;
+  text-decoration: none;
+}
+
+.chrome-extension-folder summary {
+  width: fit-content;
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chrome-extension-folder[open] summary {
+  margin-bottom: 4px;
+}
+
 /* Test browsers sit under the bridge's own status, set apart by a hairline rather than a box. */
 .test-browsers {
   display: flex;

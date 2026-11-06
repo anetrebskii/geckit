@@ -238,6 +238,9 @@ export interface Lineup {
 
 export const GRACE = 10_000
 
+/** GeckIt Browser in the Chrome Web Store. */
+export const BROWSER_STORE_URL = 'https://chromewebstore.google.com/detail/geckit-browser/mjllmbfhnbeihgghghnbbkfcpahljnkp'
+
 /** Where a session stands, which is also which group its row is under. */
 export type SessionState = 'working' | 'asks' | 'unread' | 'idle' | 'limit' | 'failed'
 
