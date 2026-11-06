@@ -43,6 +43,14 @@ These commands run under the service's OS account. Desktop attachment uses local
 
 From `client/`, run `npm run package`. It builds the service and desktop, then creates the current platform's installer in `client/release/build/` without publishing. This is separate from the source launch above. Provider installation, authentication and native OS permissions are still required on the target machine.
 
+The default Mac package includes arm64 and x64. `npm run package` prepares both service addons before building. When invoking electron-builder directly, run this before `npm run build`:
+
+```sh
+node scripts/prepare-mac-service-addons.cjs
+```
+
+This fetches only the two packages pinned in the lockfile, checks their integrity and extracts them without running scripts or resolving the dependency tree again. The packaging guard still rejects a missing target addon. Single-architecture source/headless builds need only their host addon.
+
 ## Install the headless bundle
 
 Build with the repository's dependencies installed:
