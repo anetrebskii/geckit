@@ -407,6 +407,14 @@ export async function keepCodexGuide(wanted: boolean, employees: readonly Employ
 /** The Claude plugin GeckIt hands its own local Claude sessions with --plugin-dir, holding the browser skill while Chrome through GeckIt is on. */
 export const browserPluginFolder = (): string => join(dataDirectory(), 'claude-plugin')
 
+const browserRules = (said: string): string => `Use \`${said} browser\` for all browser actions and page reading through GeckIt's browser integration. The person's Chrome is reached through the GeckIt Browser extension; GeckIt's own test browser is available only for the documented test-browser scenarios.
+
+Work only in the tab the person named or a new background tab you open for this task. Do not take over unrelated tabs or switch Chrome profiles to find the target tab.
+
+If GeckIt's browser integration is unavailable, disconnected, paused, denied or does not support the requested action, report the specific failure or unsupported action and stop the affected browser work. Do not fall back to other browser tools, direct page fetching, Playwright/CDP, AppleScript or native computer control. GeckIt's documented test browser is not a way around a refusal or permission denial.
+
+Native provider permissions still apply. This browser requirement grants no new permission: do not bypass a denial, change permissions, extract credentials or switch profiles to evade a restriction.`
+
 const browserHow = (said: string): string => `## Where to work
 
 \`${said} browser profiles\` lists the Chrome profiles on this computer: the account's email, the profile's name, whether GeckIt Browser is in it, whether it is open, and which one the person used last. Pick the profile before opening anything:
@@ -443,7 +451,7 @@ ${said} browser shot <tab>
 
 To check a design or an animation: \`shot <tab> <ref>\` is one element at full resolution, \`hover <tab> <ref>\` shows its hover state, \`style <tab> <ref>\` gives its computed style in a dozen lines, and \`view <tab> --size 1024x768 --dark --reduced-motion\` (or \`--phone\`) shows the page as that window and those preferences would until \`view <tab> --reset\`. \`record <tab> [<ref>] --click <ref> --for 600 --slow 4\` records what an action sets moving and prints a sheet of up to 12 frames with their times: open the sheet, not the frames, and the frames only to look closer at one moment. GeckIt's own pointer is never in a picture unless asked with \`--pointer\`.
 
-Work in the tab the person named, and open a new background tab with \`open\` rather than taking over one of theirs. Do not post, send, buy or delete anything the person did not ask for. If the command says the extension is not connected, tell the person what it says and stop the browser part of the work.
+Do not post, send, buy or delete anything the person did not ask for.
 `
 
 /** The skill that holds how to work in Chrome, loaded only when a conversation needs it. */
@@ -456,7 +464,7 @@ description: Work in the person's own Chrome through GeckIt, or in a test browse
 
 # Chrome through GeckIt
 
-The person's own Chrome, with the tabs and accounts they are signed in to, is reached with \`${said} browser\`, through the GeckIt Browser extension.
+${browserRules(said)}
 
 ${browserHow(said)}`
 }
@@ -465,14 +473,11 @@ ${browserHow(said)}`
 export const BROWSER = (command: string, claude = false, inline = false): string => {
   if (!browserBridgeOn()) return ''
   const said = command.includes(' ') ? `"${command}"` : command
-  const other = claude
-    ? 'Do not use Claude in Chrome, Playwright or another browser tool for it unless the person names one.'
-    : 'The ChatGPT browser (node_repl, the browser host, Computer Use on Chrome) does not exist here: do not try it and do not report it as missing.'
   const how = inline ? `\n${browserHow(said)}` : ` The \`${claude ? 'geckit:browser' : 'geckit-browser'}\` skill says how: load it before the first browser command.\n`
   return `
 ## Chrome through GeckIt
 
-The person turned on Chrome through GeckIt. Every task on a website or in Chrome goes through \`${said} browser\`, in the person's own Chrome profiles, through the GeckIt Browser extension. ${other}${how}`
+The person turned on Chrome through GeckIt. ${browserRules(said)}${how}`
 }
 
 const codexGuide = (employees: readonly Employee[]): string => {
