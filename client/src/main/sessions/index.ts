@@ -63,6 +63,7 @@ import { VpnSessionMonitor } from './vpn-monitor'
 import { HOOK_BLOCKED } from './claude-read'
 import { providerQuotas } from '../../shared/provider-usage'
 import { instructionsFor, isCodexProvider } from '../../shared/providers'
+import { browserBridge } from '../guide'
 import { isRemote, pathOf } from '../../shared/hosts'
 import type { Link } from '../../shared/links'
 import { linksIn, workItem } from '../../shared/links'
@@ -803,7 +804,7 @@ export class Sessions {
       const enabled = target === 'claude' ? settings.guideClaude
         : target === 'codex' ? settings.guideCodex
           : settings.guidePlugins[info.id] ?? true
-      await provider.setInstructions(enabled, settings.browserNames)
+      await provider.setInstructions(enabled, settings.browserNames, browserBridge())
     }
   }
 

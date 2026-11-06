@@ -1,5 +1,5 @@
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -11,6 +11,7 @@ import { serveTestLaunches } from '../cli/testing'
 import { fetchFindModel, findModelServer } from '../cli/find-model'
 import type { Employee } from '../shared/employees'
 import type { Settings } from '../shared/api'
+import type { BrowserBridge } from './sessions/provider'
 
 /**
  * What Claude Code is told about being run by GeckIt.
@@ -468,6 +469,10 @@ ${browserRules(said)}
 
 ${browserHow(said)}`
 }
+
+/** What a provider library is handed while Chrome through GeckIt is on, to start Claude with the skill and the rule and without Claude in Chrome. */
+export const browserBridge = (): BrowserBridge | undefined =>
+  browserBridgeOn() && existsSync(browserPluginFolder()) ? { pluginDir: browserPluginFolder(), rule: BROWSER(cliPath(), true).trim() } : undefined
 
 /** What the main guide says while Chrome through GeckIt is on: the rule, and where the skill is, or the whole of it where no skill can be given. */
 export const BROWSER = (command: string, claude = false, inline = false): string => {

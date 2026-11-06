@@ -67,9 +67,15 @@ export interface LlmProvider extends LlmProviderInfo {
   mcp(root: string, change?: McpChange, driver?: Driver): Promise<McpServer[] | undefined>
   browsers(root?: string, pick?: string, driver?: Driver): Promise<ProviderBrowser[] | undefined>
   correct(text: string, instruction: string, model: string): Promise<Answered>
-  setInstructions(enabled: boolean, browserNames: Readonly<Record<string, string>>): Promise<void>
+  setInstructions(enabled: boolean, browserNames: Readonly<Record<string, string>>, browser?: BrowserBridge): Promise<void>
   delete(root: string, id: string): Promise<boolean>
   dispose(): void
+}
+
+/** Chrome through GeckIt while it is on: the Claude plugin folder holding the browser skill, and the rule to put into the conversation. */
+export interface BrowserBridge {
+  readonly pluginDir: string
+  readonly rule: string
 }
 
 const shownGoal = (goal: CodexGoal | null): ProviderGoal => ({

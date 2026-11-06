@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { GUIDE, browserPluginFolder, keepBrowserBridge, keepCodexGuide, keepGuide, launchers } from '../src/main/guide'
+import { GUIDE, browserBridge, browserPluginFolder, keepBrowserBridge, keepCodexGuide, keepGuide, launchers } from '../src/main/guide'
 import { browserBridgeOn, setBrowserBridgeOn } from '../src/cli/browser'
 import { configureCorePlatform, corePlatform } from '../src/core/platform'
 import { sourceArgs } from '../src/main/sessions/claude'
@@ -102,7 +102,7 @@ describe('what Claude Code is told about GeckIt', () => {
 
   it('passes independent and shared settings to plugin instruction methods', async () => {
     const called: [string, boolean][] = []
-    const kimi: LlmProvider = { ...llmProvider({}, 'claude'), id: 'plugin:kimi', family: 'plugin:kimi', setInstructions: async (enabled) => { called.push(['kimi', enabled]) } }
+    const kimi: LlmProvider = { ...llmProvider({}, 'claude'), id: 'plugin:kimi', family: 'plugin:kimi', setInstructions: async (enabled, _names, browser) => { called.push(['kimi', enabled]); expect(browser).toEqual(browserBridge()) } }
     const mirror: LlmProvider = { ...llmProvider({}, 'codex'), id: 'plugin:codex-mirror', family: 'plugin:codex-mirror', runtime: 'codex', setInstructions: async (enabled) => { called.push(['mirror', enabled]) } }
     const sessions = new Sessions({ notes: memoryNotes(), changed: () => {}, items: () => {}, account: () => {}, notify: () => {}, plugins: [kimi, mirror] })
     await sessions.setAllInstructions({ guideClaude: true, guideCodex: false, guidePlugins: { 'plugin:kimi': false }, browserNames: {}, providerPlugins: [kimi, mirror] })
@@ -155,6 +155,8 @@ describe('what Claude Code is told about GeckIt', () => {
         expect(content).toContain(source ? '.geckit/bin/geckit-local' : '.geckit/bin/geckit')
       }
       const claudeContent = generated[0] ?? ''
+      expect(browserBridge()?.pluginDir).toBe(browserPluginFolder())
+      for (const rule of required) expect(browserBridge()?.rule).toContain(rule)
       const codexContent = generated[1] ?? ''
       expect(claudeContent).toContain('`geckit:browser` skill')
       expect(await readFile(join(browserPluginFolder(), '.claude-plugin', 'plugin.json'), 'utf8')).toContain('"name": "geckit"')
@@ -173,6 +175,7 @@ describe('what Claude Code is told about GeckIt', () => {
         expect(codexContent).toContain('`geckit-browser` skill')
       }
       keepBrowserBridge(false)
+      expect(browserBridge()).toBeUndefined()
       await keepGuide(true, {}, [], true)
       await keepCodexGuide(true, [], true)
       for (const file of [claudeGuide, codexGuide]) {

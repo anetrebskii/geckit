@@ -26,7 +26,7 @@ Stream transcript and control changes through hear({ items, gone, signals }). Em
 
 Driver may optionally implement inject(text, images?, before?): Promise<void>, using the same arguments as send. Resolve after the active transport accepts guidance; this does not mean the model applied it. Reject when idle, disconnected, awaiting permission, or unable to deliver. Never start a new turn or interrupt as a fallback. GeckIt keeps the queued message until acceptance and offers Send now only for a supporting live driver. Existing apiVersion: 1 libraries without inject keep working.
 
-setInstructions(enabled, browserNames) owns instruction setup/cleanup. Select instructions: own for an independent switch, or codex/claude only when sharing that provider's global instructions. Remove only files and references your library owns. dispose must release only your resources.
+setInstructions(enabled, browserNames, browser) owns instruction setup/cleanup. browser is { pluginDir, rule } while Chrome through GeckIt is on, undefined otherwise: a Claude-based library starts claude with --no-chrome, --plugin-dir pluginDir and the rule appended to its system prompt. Select instructions: own for an independent switch, or codex/claude only when sharing that provider's global instructions. Remove only files and references your library owns. dispose must release only your resources.
 
 ## Local diagnostics
 
