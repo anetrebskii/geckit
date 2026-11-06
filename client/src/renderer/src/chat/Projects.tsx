@@ -547,9 +547,6 @@ export function Projects({ chat, single, disabled = false }: { readonly chat: Ch
     requestAnimationFrame(() => { if (document.activeElement === document.body) button.current?.focus() })
   }
   const [anchor, setAnchor] = useState<DOMRect | undefined>()
-  const [hidden, setHidden] = useState(false)
-  const [folderOn, setFolderOn] = useState<HostView | undefined>()
-  const [addingHost, setAddingHost] = useState(false)
   return (
     <>
       <button
@@ -569,12 +566,22 @@ export function Projects({ chat, single, disabled = false }: { readonly chat: Ch
         {single === undefined ? <span className="keys">{MOD}+K</span> : null}
         <Icon name="down" size={11} />
       </button>
+      <ProjectMenu chat={chat} {...(single === undefined ? {} : { single })} anchor={anchor} onClose={close} />
+    </>
+  )
+}
+
+export function ProjectMenu({ chat, single, anchor, onClose }: { readonly chat: Chat; readonly single?: SingleFolder; readonly anchor: DOMRect | undefined; readonly onClose: () => void }): React.JSX.Element {
+  const [hidden, setHidden] = useState(false)
+  const [folderOn, setFolderOn] = useState<HostView | undefined>()
+  const [addingHost, setAddingHost] = useState(false)
+  return <>
       {anchor === undefined ? null : (
         <Menu
           chat={chat}
           {...(single === undefined ? {} : { single })}
           anchor={anchor}
-          onClose={close}
+          onClose={onClose}
           onHidden={() => setHidden(true)}
           onFolderOn={setFolderOn}
           onAddHost={() => setAddingHost(true)}
@@ -584,5 +591,4 @@ export function Projects({ chat, single, disabled = false }: { readonly chat: Ch
       {folderOn === undefined ? null : <HostFolders host={folderOn} onClose={() => setFolderOn(undefined)} onAdded={(root) => (single?.onPick ?? chat.setScope)(root)} />}
       {addingHost ? <AddHost onClose={() => setAddingHost(false)} /> : null}
     </>
-  )
 }

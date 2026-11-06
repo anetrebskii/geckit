@@ -113,15 +113,20 @@ export function EmployeeSelect({ employees, value, onPick, disabled = false, onM
   readonly compact?: boolean
 }): React.JSX.Element {
   const [anchor, setAnchor] = useState<DOMRect>()
-  const [search, setSearch] = useState('')
   const employee = employees.find((one) => one.id === value)
-  const found = useMemo(() => employees.filter((one) => `${one.name} ${one.role}`.toLowerCase().includes(search.trim().toLowerCase())), [employees, search])
   const label = compact ? employee !== undefined ? <><EmployeeAvatar employee={employee} /><span className="employee-chip-name">{employee.name.split(/\s+/)[0]}</span></> : value === 'unassigned' ? <><Icon name="minus" size={12} /><span className="employee-chip-name">Unassigned</span></> : <span className="employee-chip-stack">{employees.slice(0, 2).map((one) => <EmployeeAvatar key={one.id} employee={one} />)}</span> : employee === undefined ? value === 'unassigned' ? 'Unassigned' : value !== '' ? 'Employee unavailable' : filter ? 'All employees' : 'None' : <EmployeeBadge employee={employee} />
   return <>
-    <button type="button" className={className} disabled={disabled} aria-label={filter ? `Employees: ${employee?.name ?? label}` : `Employee: ${employee?.name ?? 'None'}`} aria-haspopup="menu" aria-expanded={anchor !== undefined} onClick={(event) => { setSearch(''); setAnchor(event.currentTarget.getBoundingClientRect()) }}>
+    <button type="button" className={className} disabled={disabled} aria-label={filter ? `Employees: ${employee?.name ?? label}` : `Employee: ${employee?.name ?? 'None'}`} aria-haspopup="menu" aria-expanded={anchor !== undefined} onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}>
       {label}<Icon name="down" size={11} />
     </button>
-    {anchor === undefined ? null : <Menu anchor={anchor} title={filter ? 'Employees' : 'Employee'} chosen={value} autoFocus
+    {anchor === undefined ? null : <EmployeeSelectMenu employees={employees} value={value} onPick={onPick} filter={filter} {...(onManage === undefined ? {} : { onManage })} anchor={anchor} onClose={() => setAnchor(undefined)} />}
+  </>
+}
+
+export function EmployeeSelectMenu({ employees, value, onPick, onManage, filter = false, anchor, onClose }: Pick<Parameters<typeof EmployeeSelect>[0], 'employees' | 'value' | 'onPick' | 'onManage' | 'filter'> & { readonly anchor: DOMRect; readonly onClose: () => void }): React.JSX.Element {
+  const [search, setSearch] = useState('')
+  const found = useMemo(() => employees.filter((one) => `${one.name} ${one.role}`.toLowerCase().includes(search.trim().toLowerCase())), [employees, search])
+  return <Menu anchor={anchor} title={filter ? 'Employees' : 'Employee'} chosen={value} autoFocus
       search={{ value: search, onChange: setSearch, placeholder: 'Search employees' }}
       choices={[
         { value: '', label: filter ? 'All employees' : 'None' },
@@ -130,8 +135,7 @@ export function EmployeeSelect({ employees, value, onPick, disabled = false, onM
         ...(onManage === undefined ? [] : [{ value: 'manage-employees', label: 'Manage employees' }]),
       ]}
       {...(employees.length === 0 ? { note: ON_PHONE ? 'Create employees in Settings, Team' : 'No employees yet' } : {})}
-      onPick={(id) => id === 'manage-employees' ? onManage?.() : onPick(id)} onClose={() => setAnchor(undefined)} />}
-  </>
+      onPick={(id) => id === 'manage-employees' ? onManage?.() : onPick(id)} onClose={onClose} />
 }
 
 export function EmployeeFilter({ chat, compact = false }: { readonly chat: Pick<Chat, 'employees' | 'everyone' | 'settings' | 'change'>; readonly compact?: boolean }): React.JSX.Element | null {

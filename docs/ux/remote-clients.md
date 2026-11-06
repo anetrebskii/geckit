@@ -2,101 +2,64 @@
 type: spec
 status: implementation-authorized
 owner: Alex
-created: 2026-11-06
+updated: 2026-11-06
 ---
 
-# UX: Connect to a GeckIt server
+# Connect to a GeckIt server
 
-## 1. Зачем
-Desktop и mobile должны показывать работу конкретного headless сервера без переноса его файлов на клиент и без прав управления задачами.
+## Purpose and path
+Run `geckit pair` on the server, paste its code into Servers, press Connect. The command starts the service if absent and enables remote access. Code possession grants the whole server immediately, including projects added later. No registered project is required. A returning device chooses its saved server. Full connections open the ordinary GeckIt workspace, including new tasks, replies, approvals, Manager and settings. A compact computer selector in the normal toolbar identifies the active computer. Choosing This computer returns to local work; each computer keeps its conversation and text drafts.
 
-### Путь до результата
-Уже сопряжённый legacy phone открывает Connect to a server в списке Hosts. Переход перезагружает только mobile WebView, сохраняет legacy pairing и прекращает его reconnect-loop. Local возвращает прежний режим; новый deep-link не должен снова перехватывать этот возврат. Два React root на одном контейнере не создаются.
-В desktop пользователь открывает Servers из верхней панели. На mobile на экране сопряжения выбирает Connect to a server; старый Scan остаётся для прежнего phone pairing. CLI на сервере выдаёт код и QR. Одна форма принимает код или ссылку и имя устройства. После защищённого соединения пользователь сверяет verification phrase с CLI; оператор подтверждает запрос. Только после этого загружаются проекты, сессии и Manager. Сохранённый сервер ещё не означает подключённый: готовность подтверждается полученным snapshot. При возврате выбирается сохранённый сервер, новое сопряжение не нужно. Данные прошлого соединения не выдаются за актуальные. Форма остаётся одной: код и имя независимы, подтверждение зависит от ответа сервера.
+## Surfaces and layout
+The existing Servers form contains a command with Copy, followed by Connection code and Connect. No device-name field or approval step. After connection, the ordinary Chat workspace fills the window with its normal toolbar. The computer selector replaces the old Servers icon; no second desktop header or reduced history viewer. Its menu offers This computer, saved computers and Connect computer. Mobile uses one compact computer row above the normal phone workspace. Existing observation grants ask for a fresh pairing code to open this workspace; they never silently gain control. Native actions act on their named computer or report unavailability; remote paths are never sent to local filesystem operations.
 
-## 2. Что добавляется
-| Поверхность | Что появляется | Когда видно |
+## States and exact wording
+| State | Text | Action |
 |---|---|---|
-| Desktop Chat top bar | Servers, возврат к Local | Всегда |
-| Mobile pairing | Connect to a server, Scan server QR | До legacy подключения |
-| Общий Servers | Сохранённые серверы, код, имя устройства, Connect | При выборе Servers |
-| Remote board | Имя сервера, Read only, проекты, сессии, Manager | После snapshot |
-| История | Пагинация текста без интерактивных approvals/файловых действий | При открытой сессии |
-| Серверный CLI | Приглашение, QR, pending/approve, devices/revoke | По команде оператора |
+| idle | Connect to a server | Paste code / choose saved server |
+| connecting | Connecting… | Wait or Cancel |
+| connected | Connected | Use workspace / Switch computer |
+| reconnecting | Reconnecting… | Wait or Disconnect; writes disabled |
+| expired | Code expired. Create a new code on the server. | Run geckit pair again |
+| reused | Code already used. Create a new code on the server. | Run geckit pair again |
+| revoked | Device access revoked. Pair again with a new code. | Obtain new code |
+| incompatible | Server version is not compatible with this client. | Update server/client |
+| invalid | This is not a connection code. Copy the whole code the server printed. | Correct code |
+| uncertain write | Connection lost. Check the server before retrying this action. | Reconnect, inspect result; no automatic replay |
 
-## 3. Состояния
-| Состояние | Когда | Что видно | Что делать |
-|---|---|---|---|
-| idle | Не выбран сервер | “Connect to a server” | Ввести код / выбрать сохранённый |
-| connecting | Идёт dial | “Connecting…” | Ждать или Disconnect |
-| pending | Запрос принят | “Confirm this device on the server” + phrase | Сверить phrase и подтвердить CLI |
-| connected | Snapshot принят | “Connected · Read only” | Открыть проект / сессию / Manager |
-| disconnected | Отключено явно | “Disconnected” | Connect |
-| reconnecting | Связь потеряна | “Reconnecting…” | Ждать / Disconnect |
-| expired | Приглашение истекло | “Code expired. Create a new code on the server.” | Новый код |
-| reused | Код уже использован | “Code already used. Create a new code on the server.” | Новый код |
-| revoked | Сервер отозвал устройство | “Device access revoked. Pair again with a new code.” | Новый код |
-| incompatible | Другая major protocol | “Server version is not compatible with this client.” | Обновить приложение |
-| error | Ошибка сети / неверный код | “Could not connect. Check the code and server, then try again.” | Попробовать снова |
-
-## 4. Переходы
+## Transitions
 ```mermaid
 stateDiagram-v2
-  direction LR
   [*] --> idle
   idle --> connecting: Connect
-  connecting --> pending: enrollment
-  pending --> connected: approved
-  connecting --> connected: trusted
-  connecting --> error: failure
-  pending --> error: expiry
+  connecting --> connected: automatic enrollment
+  connecting --> error: invalid or expired
   connected --> reconnecting: link lost
-  reconnecting --> connected: snapshot
+  reconnecting --> connected: fresh state
   reconnecting --> error: revoked
   connected --> idle: Disconnect
-  pending --> idle: Disconnect
-  error --> connecting: Retry
-  connecting --> idle: Disconnect
+  connecting --> idle: Cancel
   reconnecting --> idle: Disconnect
+  error --> connecting: Retry
 ```
-| Из | Событие | В | Что видит пользователь |
-|---|---|---|---|
-| idle/error | Нажал Connect | connecting | Connecting… |
-| connecting | Сервер принял enrollment, сам | pending | Confirm this device on the server + phrase |
-| pending | Оператор подтвердил, сам | connected | Connected · Read only + данные |
-| connecting | Сервер признал устройство, сам | connected | Connected · Read only + данные |
-| connected | Пропала связь, сам | reconnecting | Reconnecting…, данные скрыты |
-| reconnecting | Новый snapshot, сам | connected | Обновлённые данные |
-| connecting/pending/reconnecting | Истекло время / сервер отказал, сам | error | Точный текст состояния из раздела 3 |
-| Любое | Disconnect / Back | idle | Список сохранённых серверов; новые запросы отменены |
-| idle/error/disconnected | Forget | idle | Сервер удалён только с клиента; CLI revoke нужен для отзыва |
+Connection automatically advances to the workspace when fresh authenticated server data arrives. Cancel closes the attempt and ignores late responses. Reconnection never replays a mutation; the workspace remounts with fresh server data. Forget removes the client copy; `geckit devices revoke ID` revokes server access.
 
-## 5. Что молчит
-ICE candidates, SDP, адрес TURN и внутренние RPC не показываются. Никаких уведомлений на каждое событие. Скрытые поля и чужие проекты не передаются клиенту.
+## What stays silent
+Service startup, enabling access, SDP, ICE and internal RPC. No project scope ceremony or separate approval confirmation. Do not announce every streamed event.
 
-## 6. Пороги и время
-| Число | Значение | Причина |
-|---|---|---|
-| Invitation TTL | 5 минут | Достаточно перенести код между устройствами, ограничивает украденное приглашение |
-| Dial | 45 секунд | Существующий mobile transport допускает медленный signaling |
-| Reconnect | 2, 5, 10, 30 секунд | Быстрое восстановление смены сети без нагрузки на спящий сервер |
-| History page | 100 элементов | Не загружать всю историю сразу |
-| Snapshot invalidation | coalesce 300 мс | События потока не перерисовывают весь board на каждый токен |
+## Time and limits
+Codes last five minutes, enough to copy between devices. Single use means only the enrolling device may recover a lost acknowledgement. Reconnect uses existing 2/5/10/30 second backoff. On disconnect pending writes fail explicitly and are never queued for replay. Observation compatibility keeps 300ms snapshot coalescing. Full workspaces load an authenticated snapshot on connect/reconnect, then receive normal typed events without repeating board snapshot queries.
 
-## 7. Формулировки
-Тексты состояний в разделе 3 являются точными строками. Действия: “Servers”, “Local”, “Connect”, “Disconnect”, “Forget”, “Manager”, “Load earlier”, “Scan server QR”. Пустые данные: “No conversations in this project.”; история: “No messages yet.”. Устройство не подтверждено: данные не видны.
+## Edges
+Empty server connects and can add projects. Empty code disables Connect. Enter submits; Tab and focus work; Escape returns Local when outside a child workspace dialog. Long names truncate and workspaces scroll at desktop and phone sizes. Two servers with the same paths and IDs live in isolated renderer contexts. Revocation stops current and future calls. Failed calls display failure and leave the connection usable. Copy/open-link use the client's native capability; server folder navigation and all core mutations target the server.
 
-## 8. Краевые случаи
-Пустой код блокирует Connect. QR содержит то же приглашение. Неверная ссылка не открывается внешним браузером. Double submit не создаёт второго enrollment. Отмена закрывает channel; ответ старой попытки игнорируется. Несколько серверов с одинаковыми путями и ID используют отдельные пространства имён. Длинные имена и история прокручиваются; Tab и Enter работают в форме, Escape возвращает Local на desktop; фокус возвращается в Servers. После потери связи скрывается содержимое; свежий snapshot заменяет данные целиком. Revoke обрывает соединение и не даёт автоматическому retry обойти запрет. Никаких интерактивных ссылок локального filesystem, approvals или команд из истории.
+## Decision reversal
+Alex explicitly replaced the initial read-only scope on 2026-11-06. Code possession now suffices to enroll with full control; a second phrase/approval and project restrictions contradict the requested workflow. Existing scoped grants do not silently gain control. Cryptographic identities, encrypted trust, expiry, single use and per-device revoke remain.
 
-## 9. Чего намеренно нет
-Управление задачами, approvals, native permissions, терминал, открытие удалённых файлов/URL на клиенте, смешанный локальный/удалённый board: следующий этап или вне scope. Не мигрируем общий legacy phone key в device trust.
+## Requirements
+FR-001/002: single command and immediate enrollment. FR-003: shared clients and preserved legacy phone entry. FR-004/005: isolated normal workspace and full core API. FR-006: states above. FR-007: existing encrypted direct/relay transport. Verification: docs/reports/simple-remote-control.md.
 
-## 10. Развилки
-Общий viewer для desktop/mobile принят: одинаковые read-only полномочия и протокол. Legacy phone остаётся отдельным рабочим сценарием. Пользователь одобрил архитектуру и реализацию; этот документ конкретизирует её состояния. QR раскрывает только временное приглашение. CLI подтверждение обязательно: украденный код сам не даёт доступ. Сохранённое доверие хранится отдельно от приглашения.
+## Computer switching, 2026-11-06 correction
+Alex rejected a separate server UI. Keep the existing board, list, conversations, Manager and settings. One compact toolbar selector shows the computer name, chevron and connection dot; its menu marks the current computer. The selector stays reachable above the conversation backdrop, so switching does not require closing a chat. Local work stays mounted in its controller; remote drafts and the selected conversation are stored under the server identity. During reconnection the current computer remains identified and offers This computer. Pairing is the only separate setup screen. Escape closes a menu or dialog first; it must not unexpectedly switch computers while composing.
 
-## 11. Сверка с требованиями
-FR-001/002: серверный код, pending, revoke. FR-003: общий viewer и legacy entry. FR-004/005: board/history/Manager только чтение. FR-006: таблицы состояний/переходов. FR-007: transport остаётся вне пользовательских решений. Неуточнённых продуктовых развилок нет; недоступные live проверки записываются в evidence.
-
-## 12. Проверка реализации
-[Отчёт и границы проверки](../reports/remote-clients.md). [Отрисованная диаграмма состояний](../design/remote-clients-states.svg). Desktop1440x900 и mobile390x844 осмотрены в обеих темах; реальные WebRTC/CLI проверки отделены от mock native/legacy UI boundary. Физические устройства, native QR/deep-link и внешний TURN остаются release checks.
+The workspace keeps the client window's titlebar inset when switching computers, independently of the server OS. macOS window buttons retain their reserved space; phone and framed desktop windows keep their existing layout. The workspace frame has an accessible name without a hover tooltip covering the toolbar. The computer selector alone identifies the active server.

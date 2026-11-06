@@ -57,7 +57,7 @@ function Preview(): React.JSX.Element {
   const chat: Chat = {
     employees: [], employeesById: new Map(),
     settings: { ...DEFAULT_SETTINGS, phrases: [] }, hosts: [], prompts: [], lineup: { working: 1, limit: 6 }, full: false, change: noop,
-    root: session.root, scope: session.root, sessions: [session], listed: true, everyone: [session], questions: [], waiting: [], notices: [], shown: { kind: 'session', id: session.id }, session,
+    root: session.root, scope: session.root, sessions: [session], listed: true, listLoading: false, listProblem: undefined, listStatus: [], everyone: [session], questions: [], waiting: [], notices: [], shown: { kind: 'session', id: session.id }, session,
     items, itemsFor: session.id, earlier: 0, showEarlier: noop, loadSteps: noop, draft, pictures: [], trouble, checkingIp: false, retrying: false, retry: noop, uploading: false,
     account: { provider: 'codex', here: true, signedIn: true, plan: 'Plus' }, plan: undefined, plans: [], plansAt: {}, models: [{ value: 'gpt-preview', name: 'Preview model' }],
     mode, transport: 'stream', provider: scenario === 'helpers' ? 'plugin:claude-tmux' : 'codex', showProviders: true, reasoning: '', setReasoning: noop, model, working: session.state !== 'idle', focusSeed: 0, chosen: [session.root],

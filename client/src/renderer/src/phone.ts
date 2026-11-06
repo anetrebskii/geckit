@@ -532,6 +532,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onManage: never,
     },
     transcribe: (request) => call('transcribe', request),
+    signIn: { onOpen: () => () => undefined },
     browser: {
       state: () => Promise.resolve({ supported: false, connected: false, folder: '', modelServer: false, model: { state: 'absent', received: 0, total: 0 }, testing: { supported: false, profiles: [] } }),
       fetchModel: () => Promise.resolve(),
@@ -539,6 +540,11 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       openFolder: () => Promise.resolve(),
       openTest: () => Promise.resolve(),
       deleteTest: () => Promise.resolve(),
+      account: () => Promise.resolve(),
+      viewStart: () => Promise.reject(new Error('Open the live view from Servers on the phone.')),
+      viewFrame: () => Promise.reject(new Error('Open the live view from Servers on the phone.')),
+      viewInput: () => Promise.resolve(),
+      viewEnd: () => Promise.resolve(),
     },
     speech: {
       model: () => call('speech.model'),
@@ -576,6 +582,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
               'chat:sessions',
             )
           : call('chat.list', root),
+      listStatus: () => orAsBefore(call('chat.listStatus'), () => Promise.resolve([])),
+      onListStatus: (said) => listen('chat:listStatus', said),
       items: async (id) => {
         if (shown?.id !== id) expanded = new Set()
         const kept = await readKept<Piece>(named(itemsKey(id)))

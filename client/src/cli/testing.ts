@@ -3,10 +3,11 @@ import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirS
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
-import type { TestBrowsersState } from '../shared/api'
+import type { TestBrowsersState, ViewInput } from '../shared/api'
 import background from '../../extension/background.js?raw'
 import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browser'
-import { acquireTestLock, browserConversation, conversationTestName, TestTabOwners } from './browser-lifecycle'
+import { signInLink } from './live-view'
+import { acquireTestLock, browserConversation, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TestTabOwners } from './browser-lifecycle'
 
 /** Where test browsers live: Chrome for Testing itself under chrome/, each profile under profiles/<name>/. */
 export const testingFolder = (root: string = homedir()): string => join(root, '.geckit', 'chrome-for-testing')
@@ -194,7 +195,7 @@ class Cdp {
 }
 
 interface TargetInfo { readonly targetId: string; readonly type: string; readonly title: string; readonly url: string; readonly openerId?: string }
-interface Request { readonly conversation?: string; readonly cmd: string; readonly tab?: number; readonly url?: string; readonly ref?: string | null; readonly real?: boolean; readonly text?: string; readonly by?: number; readonly key?: string; readonly code?: string; readonly pointer?: boolean; readonly reset?: boolean; readonly set?: Record<string, unknown>; readonly ms?: number; readonly slow?: number; readonly then?: { readonly cmd: string; readonly ref?: string; readonly key?: string }; readonly query?: string }
+interface Request { readonly conversation?: string; readonly cmd: string; readonly tab?: number; readonly url?: string; readonly ref?: string | null; readonly real?: boolean; readonly text?: string; readonly by?: number; readonly key?: string; readonly code?: string; readonly pointer?: boolean; readonly reset?: boolean; readonly set?: Record<string, unknown>; readonly ms?: number; readonly slow?: number; readonly then?: { readonly cmd: string; readonly ref?: string; readonly key?: string }; readonly query?: string; readonly input?: ViewInput }
 
 const KEYS: Record<string, { code: string; keyCode: number; key?: string; text?: string }> = {
   Enter: { code: 'Enter', keyCode: 13, text: '\r' }, Tab: { code: 'Tab', keyCode: 9 }, Escape: { code: 'Escape', keyCode: 27 },
@@ -205,6 +206,14 @@ const KEYS: Record<string, { code: string; keyCode: number; key?: string; text?:
 }
 
 const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
+
+/** On Linux sign-ins are kept with Chrome's own key rather than a keyring a server may not have, and a computer with no screen runs the browser without a window. */
+export function chromeFlags(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): string[] {
+  if (platform !== 'linux') return []
+  return ['--password-store=basic', ...(env['DISPLAY'] || env['WAYLAND_DISPLAY'] ? [] : ['--headless=new', '--window-size=1280,800'])]
+}
+
+export const VIEW_SIZE = { width: 1280, height: 800 } as const
 
 /** One test browser: starts Chrome for Testing on a pipe with the profile, says who it is in the hosts folder and answers the requests addressed to it. */
 export async function testBrowser(name: string, folder: string = browserFolder(), root: string = homedir(), initialConversation: string | undefined = process.env['GECKIT_TEST_CONVERSATION']): Promise<void> {
@@ -234,7 +243,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   if (owners.managed && owners.conversations.size === 0) { unlock(); return }
   const dir = join(profilesFolder(root), name)
   mkdirSync(dir, { recursive: true })
-  const child = spawn(chrome.path, [`--user-data-dir=${dir}`, '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
+  const child = spawn(chrome.path, [`--user-data-dir=${dir}`, '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', ...chromeFlags(), 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
   child.stderr?.resume()
   const cdp = new Cdp(child.stdio[3] as Writable, child.stdio[4] as Readable)
   mkdirSync(join(folder, 'hosts'), { recursive: true })
@@ -431,8 +440,50 @@ export async function testBrowser(name: string, folder: string = browserFolder()
         return { width, height, dark, still }
       }
       case 'record': return record(request)
+      case 'view-open': return viewOpen(request.url)
+      case 'view-frame': return viewFrame()
+      case 'view-input': return viewInput(request.input)
+      case 'view-close': { const target = viewTarget; viewTarget = undefined; if (target !== undefined) await cdp.send('Target.closeTarget', { targetId: target }).catch(() => undefined); return {} }
       default: throw new Error(`Unknown command ${request.cmd}.`)
     }
+  }
+
+  let viewTarget: string | undefined
+  const viewSend = async (): Promise<(method: string, params?: object) => Promise<Record<string, unknown>>> => {
+    if (viewTarget === undefined || ![...targets.values()].some((one) => one.targetId === viewTarget)) throw new Error('The sign-in tab is closed. Start the sign-in again.')
+    const sessionId = await session(viewTarget)
+    return (method, params = {}) => cdp.send(method, params, sessionId)
+  }
+  const viewOpen = async (url: string | undefined): Promise<unknown> => {
+    if (viewTarget === undefined || ![...targets.values()].some((one) => one.targetId === viewTarget)) {
+      const { targetId } = await cdp.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' })
+      track({ targetId, type: 'page', title: '', url: 'about:blank' })
+      viewTarget = targetId
+    }
+    const send = await viewSend()
+    await send('Emulation.setDeviceMetricsOverride', { ...VIEW_SIZE, deviceScaleFactor: 1, mobile: false })
+    if (url !== undefined && url !== '') await loaded(viewTarget, () => send('Page.navigate', { url }))
+    return { ...VIEW_SIZE }
+  }
+  const viewFrame = async (): Promise<unknown> => {
+    const send = await viewSend()
+    const shot = await send('Page.captureScreenshot', { format: 'jpeg', quality: 60 })
+    const { targetInfo } = await cdp.send<{ targetInfo: TargetInfo }>('Target.getTargetInfo', { targetId: viewTarget })
+    return { jpeg: shot['data'], ...VIEW_SIZE, url: targetInfo.url, title: targetInfo.title }
+  }
+  const viewInput = async (input: ViewInput | undefined): Promise<unknown> => {
+    if (input === undefined) throw new Error('Nothing to do.')
+    const send = await viewSend()
+    if (input.type === 'click' || input.type === 'move') await mouse(send, { x: input.x, y: input.y }, input.type === 'click')
+    else if (input.type === 'wheel') await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: input.x, y: input.y, deltaX: 0, deltaY: input.dy })
+    else if (input.type === 'key') await press(send, input.key)
+    else if (input.type === 'text') await send('Input.insertText', { text: input.text.slice(0, 2000) })
+    else if (input.type === 'go') {
+      const url = /^[a-z][a-z0-9+.-]*:/i.test(input.url) ? input.url : `https://${input.url}`
+      if (!/^https?:\/\//i.test(url)) throw new Error('Open an http or https address.')
+      await loaded(viewTarget ?? '', () => send('Page.navigate', { url }))
+    } else if (input.type === 'back') await send('Runtime.evaluate', { expression: 'history.back()' })
+    return {}
   }
 
   const record = async (request: Request): Promise<unknown> => {
@@ -499,6 +550,10 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       const asked = request as Request
       try {
         if (closing) throw new Error('This test browser is closing. Start test again.')
+        if (asked.cmd.startsWith('view-')) {
+          if (asked.conversation !== undefined) throw new Error('Only the person signs in, through GeckIt.')
+          return await answer(asked).then((result) => ({ ok: true, result }), (error: Error) => ({ ok: false, error: error.message }))
+        }
         activeConversation = asked.conversation
         if (asked.tab !== undefined) targetOf(asked.tab)
         else owners.acquire(asked.conversation)
@@ -523,13 +578,33 @@ export async function testBrowser(name: string, folder: string = browserFolder()
 
 }
 
+const tell = (source: string, reply: object): void => { writeFileSync(`${source}.told.part`, JSON.stringify(reply)); renameSync(`${source}.told.part`, `${source}.told`) }
+
 /** Has the service start a test browser outside any sandbox: a conversation only leaves a .launch file. */
 export function serveTestLaunches(executable: string, script: string, folder: string = browserFolder(), root: string = homedir()): () => void {
   mkdirSync(folder, { recursive: true })
   const pending = new Set<string>()
   const pick = (): void => {
     let files: string[]
-    try { files = readdirSync(folder).filter((one) => one.endsWith('.launch')) } catch { return }
+    try { files = readdirSync(folder) } catch { return }
+    for (const file of files.filter((one) => one.endsWith('.account'))) {
+      const source = join(folder, file)
+      try {
+        const asked = JSON.parse(readFileSync(source, 'utf8')) as { name: string; note: string }
+        let error: string | undefined
+        try { makeTestAccount(asked.name, asked.note, root) } catch (failed) { error = failed instanceof Error ? failed.message : String(failed) }
+        tell(source, error === undefined ? { ok: true } : { ok: false, error })
+      } catch { /* A request left half written is read again next time. */ continue }
+      rmSync(source, { force: true })
+    }
+    for (const file of files.filter((one) => one.endsWith('.signin'))) {
+      const source = join(folder, file)
+      let name: string
+      try { name = (JSON.parse(readFileSync(source, 'utf8')) as { name: string }).name } catch { continue }
+      rmSync(source, { force: true })
+      try { tell(source, { ok: true, ...signInLink(name) }) } catch (error) { tell(source, { ok: false, error: error instanceof Error ? error.message : String(error) }) }
+    }
+    files = files.filter((one) => one.endsWith('.launch'))
     for (const file of files) {
       const source = join(folder, file)
       let name: string
@@ -576,7 +651,7 @@ export function testBrowsersState(root?: string): TestBrowsersState {
     supported: platformName() !== undefined,
     ...(chrome === undefined ? {} : { version: chrome.version }),
     ...(fetching === undefined ? {} : { download: { received: fetching.received, total: fetching.total, ...(fetching.error === undefined ? {} : { error: fetching.error }) } }),
-    profiles: names.sort().map((name) => ({ name, open: open.has(name) })),
+    profiles: names.sort().map((name) => { const note = testAccount(name)?.note; return { name, open: open.has(name), ...(note === undefined ? {} : { note }) } }),
   }
 }
 
@@ -585,4 +660,12 @@ export function deleteTestProfile(name: string, root?: string): void {
   if (!validTestName(name)) return
   rmSync(join(profilesFolder(root), name), { recursive: true, force: true })
   rmSync(testLog(name, root), { force: true })
+  forgetTestAccount(name)
+}
+
+/** Makes a test profile for one account, or changes what its note says; the browser opens only when asked. */
+export function makeTestAccount(name: string, note: string, root?: string): void {
+  if (!validTestName(name)) throw new Error('Name the profile with lowercase letters, digits and hyphens, such as github-work.')
+  saveTestAccount(name, note)
+  mkdirSync(join(profilesFolder(root), name), { recursive: true })
 }

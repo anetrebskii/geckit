@@ -18,3 +18,14 @@ No provider credentials exported or changed. Native transport dependency necessa
 
 ## Complexity tracking
 Native dependency justified by WebRTC requirement. Local rendezvous exists only as an isolated integration fixture; production reuses existing encrypted Firebase offers/answers and managed TURN endpoint. No remote mutation gateway or durable event log in stage1.
+
+
+## Full-control revision, 2026-11-06
+Scope approved by Alex: one command and whole-server control. [UX](../../docs/ux/remote-clients.md), [handoff](design.md). Existing feature revision, not a second remote product.
+Technical context: existing TS/React/Electron/Capacitor, native WebRTC, encrypted device trust; no new dependencies.
+1. Add full-grant invitation and immediate atomic enrollment; retain old scoped grants without privilege escalation.
+2. Typed core application requests/results/events over the authenticated channel. CoreMethods is the single contract; reject non-core/prototype methods. Mutation failures do not close the connection; uncertain sends are never replayed.
+3. Portable renderer API factory shared with preload, isolated remote Chat workspace; no local native fallthrough for server paths.
+4. CLI connects or starts detached existing service bundle with private logs and bounded readiness; does not delete stale ownership, restart active work or modify login persistence. `pair create` is an alias. Code only, no QR.
+5. Unit/integration checks for zero projects, new projects, expired/reused/revoked trust, full controls and old-grant denial; actual browser review desktop/mobile both themes; distinguish local signaling fixture from live remote checks.
+Constitution: no credentials changed, service owns work, recorded fixture provider, UX before implementation, existing tokens. Work on feat/simple-remote-control; no commit/push/release without requested delivery. Small pure transport extraction justified by reuse of actual UI rather than duplicate controls.

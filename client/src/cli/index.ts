@@ -25,6 +25,7 @@ import { migrate } from './migrate'
 import { manage, managerCommand } from './manage'
 import { browser, browserHost } from './browser'
 import { testBrowser } from './testing'
+import { computerArg, onComputer } from './computer'
 
 interface Row extends Found {
   readonly root: string
@@ -396,7 +397,12 @@ export async function run(args: readonly string[]): Promise<string> {
 
 if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [what, ...rest] = process.argv.slice(2)
-  if (what === 'browser-host') {
+  const routed = computerArg(process.argv.slice(2))
+  if (typeof routed === 'string' || routed.computer !== undefined) {
+    const answer = typeof routed === 'string' ? { ok: false, said: routed } : await onComputer(routed.computer ?? '', routed.args)
+    process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.ok ? 0 : 1
+  } else if (what === 'browser-host') {
     browserHost()
   } else if (what === 'browser-test') {
     await testBrowser(rest[0] ?? '').catch((error: unknown) => { process.stdout.write(`${error instanceof Error ? error.message : String(error)}\n`); process.exit(1) })

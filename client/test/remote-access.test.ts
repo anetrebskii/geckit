@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ChatSession } from '../src/shared/api'
+import type { CoreMethods } from '../src/core/application'
 import type { RemoteChannel, RemoteIdentity, RemoteResponse, RemoteSignal } from '../src/shared/remote/protocol'
 import type { RemoteAccess } from '../src/service/remote/access'
 import type { ObservationRuntime } from '../src/service/remote/gateway'
@@ -210,4 +211,51 @@ it('binds client authentication to the negotiated transport and suppresses data 
   finish?.([{ id: 'secret', kind: 'theirs', text: 'Should not escape after revoke', at: 1 }])
   await new Promise((resolve) => setTimeout(resolve, 30))
   expect(client.responses.some((response) => response.type === 'history')).toBe(false)
+})
+
+it('pairs an empty server without enable or approval and grants live whole-server control', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'geckit-full-access-'))
+  folders.push(directory)
+  const security = serviceSecurity(directory, { key: Buffer.alloc(32, 97).toString('base64') })
+  const rename = vi.fn<(id: string, title: string) => void>()
+  const answer = vi.fn<CoreMethods['chat:answer']>().mockResolvedValue(true)
+  const result = await remoteAccess(runtime, directory, security, { 'chat:rename': rename, 'chat:answer': answer })
+  opened.push(result)
+  const invitation = await result.pair()
+  const first = await enroll(invitation.code)
+  await vi.waitFor(() => expect(first.responses.some((one) => one.type === 'trusted')).toBe(true))
+  expect(result.pending()).toEqual([])
+  const trusted = first.responses.find((one) => one.type === 'trusted')
+  if (trusted?.type !== 'trusted') throw new Error('No full trust')
+  expect(trusted.trust.full).toBe(true)
+  first.send({ type: 'core-call', id: 40, call: { method: 'chat:rename', args: ['remote-id', 'Changed remotely'] } })
+  await vi.waitFor(() => expect(rename).toHaveBeenCalledWith('remote-id', 'Changed remotely'))
+  await vi.waitFor(() => expect(first.responses.some((one) => one.type === 'core-result' && one.id === 40)).toBe(true))
+  first.send({ type: 'core-call', id: 41, call: { method: 'chat:answer', args: ['remote-id', 'approval-id', 'allow'] } })
+  await vi.waitFor(() => expect(answer).toHaveBeenCalledWith('remote-id', 'approval-id', 'allow'))
+  const attacker = await enroll(invitation.code)
+  await vi.waitFor(() => expect(attacker.responses.some((one) => one.type === 'error' && one.code === 'reused')).toBe(true))
+  first.send({ type: 'snapshot', id: 42 })
+  await vi.waitFor(() => expect(first.responses.some((one) => one.type === 'snapshot' && one.id === 42)).toBe(true))
+  const snapshot = first.responses.find((one) => one.type === 'snapshot')
+  expect(snapshot?.type === 'snapshot' && snapshot.snapshot.projects.map((one) => one.path)).toEqual(['/srv/allowed', '/srv/private'])
+  first.send({ type: 'core-call', id: 43, call: { method: 'desktop:hello', args: [] } })
+  await vi.waitFor(() => expect(first.responses.some((one) => one.type === 'core-failure' && one.id === 43)).toBe(true))
+  expect(first.closed()).toBe(false)
+  first.send({ type: 'core-call', id: 44, call: { method: 'chat:rename', args: ['remote-id', 'Still connected'] } })
+  await vi.waitFor(() => expect(rename).toHaveBeenCalledWith('remote-id', 'Still connected'))
+  result.revoke(trusted.trust.device)
+  const rejected = await enroll(trusted.trust.key, first.device)
+  await vi.waitFor(() => expect(rejected.responses.some((one) => one.type === 'error' && one.code === 'revoked')).toBe(true))
+})
+
+it('does not silently upgrade an existing scoped device to full control', async () => {
+  const { result } = await access()
+  const invitation = result.create(['/srv/allowed'])
+  const first = await enroll(invitation.code)
+  const request = await pending(result)
+  await result.approve(request.id, request.phrase)
+  first.send({ type: 'core-call', id: 50, call: { method: 'chat:rename', args: ['remote-id', 'No upgrade'] } })
+  await vi.waitFor(() => expect(first.responses.some((one) => one.type === 'core-failure' && one.id === 50)).toBe(true))
+  expect(first.closed()).toBe(false)
 })

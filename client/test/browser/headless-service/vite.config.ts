@@ -38,6 +38,10 @@ function serviceBridge(): Plugin {
       const updates: UpdateView = { state: 'off', version: 'browser-harness', offered: '', channel: 'stable', percent: 0, message: 'Native app updates are unavailable in this browser harness.', waitingFor: [] }
       stop = () => { connection.close(); for (const peer of peers) peer.end() }
       server.httpServer?.once('close', stop)
+      server.middlewares.use('/remote-workspace.html', (_request, response, next) => {
+        const html = readFileSync(resolve(import.meta.dirname, '../../../src/renderer/remote-workspace.html'), 'utf8').replace('/src/remote/workspace-entry.ts', '/src/renderer/src/remote/workspace-entry.ts')
+        void server.transformIndexHtml('/remote-workspace.html', html).then((page) => { response.setHeader('Content-Type', 'text/html'); response.end(page) }).catch(next)
+      })
       server.middlewares.use('/favicon.ico', (_request, response) => { response.writeHead(204).end() })
       server.middlewares.use('/api/fixture/notice', (request, response) => {
         if (request.method !== 'POST') { response.writeHead(405).end(); return }

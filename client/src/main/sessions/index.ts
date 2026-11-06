@@ -79,6 +79,7 @@ import type { McpChange } from './mcp'
 import { llmProvider } from './provider'
 import { ProviderMeasurements } from './provider-usage'
 import type { LlmProvider } from './provider'
+import type { SessionListStatus } from '../../shared/session-list'
 import { elicitationAnswer } from '../../shared/elicitation'
 import type { Wanted } from './rule'
 import { asksToType, runInTerminal, runShell, toldClaude, wantsKeyboard } from './shell'
@@ -239,6 +240,7 @@ export interface SessionsDeps {
   readonly codex?: Pick<CodexSessions, 'account' | 'models' | 'create' | 'list' | 'read' | 'turns' | 'search' | 'delete' | 'rename' | 'hold' | 'dispose' | 'goal' | 'setGoal' | 'clearGoal' | 'correct'> & Partial<Pick<CodexSessions, 'pauseGoal' | 'resumeGoal'>>
   readonly notes: NotesStore
   readonly changed: (sessions: readonly ChatSession[]) => void
+  readonly listStatus?: (status: readonly SessionListStatus[]) => void
   readonly items: (items: SessionItems) => void
   readonly account: (account: ClaudeAccount) => void
   /** How much of the plan is spent, each time a turn says so. */
@@ -550,6 +552,9 @@ export class Sessions {
   /** The cards of requests made by a program rather than a conversation (`requestFromApp`). */
   readonly #holders = new Set<string>()
   readonly #rows = new Map<string, Row>()
+  readonly #lists = new Map<string, Promise<ChatSession[]>>()
+  readonly #providerLists = new Map<string, Promise<Awaited<ReturnType<LlmProvider['list']>> | undefined>>()
+  readonly #listStatus = new Map<string, SessionListStatus>()
   readonly #clearedTasks = new Map<string, Map<string, number>>()
   #watching: string | undefined
   #goalWatch: ReturnType<typeof setInterval> | undefined
@@ -955,10 +960,57 @@ export class Sessions {
     return (await this.allForManager(roots)).filter((one) => !this.isManager(one.id))
   }
 
-  async allForManager(roots: readonly string[]): Promise<ChatSession[]> {
+  listStatus(): readonly SessionListStatus[] { return [...this.#listStatus.values()] }
+
+  #readList(provider: LlmProvider, roots: readonly string[]): Promise<Awaited<ReturnType<LlmProvider['list']>> | undefined> {
+    const key = JSON.stringify([provider.family, [...roots].sort()])
+    const held = this.#providerLists.get(key)
+    if (held !== undefined) return held
+    const reading = this.#loadProvider(key, provider, roots).finally(() => this.#providerLists.delete(key))
+    this.#providerLists.set(key, reading)
+    return reading
+  }
+
+  #clearListFailures(provider: LlmProvider, roots: readonly string[]): void {
+    for (const [id, status] of this.#listStatus) {
+      if (status.provider !== provider.family || status.state !== 'failed') continue
+      const remaining = status.roots.filter((root) => !roots.includes(root))
+      if (remaining.length === 0) this.#listStatus.delete(id)
+      else if (remaining.length !== status.roots.length) this.#listStatus.set(id, { ...status, roots: remaining })
+    }
+  }
+
+  async #loadProvider(key: string, provider: LlmProvider, roots: readonly string[]): Promise<Awaited<ReturnType<LlmProvider['list']>> | undefined> {
+    this.#clearListFailures(provider, roots)
+    this.#listStatus.set(key, { provider: provider.family, roots, state: 'loading' })
+    this.#deps.listStatus?.(this.listStatus())
+    try {
+      const result = await provider.list(roots)
+      this.#clearListFailures(provider, roots)
+      this.#listStatus.delete(key)
+      return result
+    } catch (error) {
+      this.#listStatus.set(key, { provider: provider.family, roots, state: 'failed', problem: error instanceof Error ? error.message : String(error) })
+      return undefined
+    } finally {
+      this.#deps.listStatus?.(this.listStatus())
+    }
+  }
+
+  allForManager(roots: readonly string[]): Promise<ChatSession[]> {
+    const key = JSON.stringify([...roots].sort())
+    const held = this.#lists.get(key)
+    if (held !== undefined) return held
+    const reading = this.#readForManager(roots).finally(() => this.#lists.delete(key))
+    this.#lists.set(key, reading)
+    return reading
+  }
+
+  async #readForManager(roots: readonly string[]): Promise<ChatSession[]> {
     for (const root of roots) {
-      const found = await this.#providers.stream.list([root])
-      for (const [id, row] of this.#rows) if ((row.project ?? row.root) === root) this.#rows.delete(id)
+      const found = await this.#readList(this.#providers.stream, [root])
+      if (found === undefined) continue
+      for (const [id, row] of this.#rows) if (providerOf(id) === 'claude' && (row.project ?? row.root) === root) this.#rows.delete(id)
       for (const row of found) {
         // A folder below two projects is the nearer one's.
         const held = this.#rows.get(row.id)
@@ -966,11 +1018,12 @@ export class Sessions {
         this.#rows.set(row.id, row)
       }
     }
-    const codexRows = await this.#providers.codex.list(roots)
-    const importedIds = new Map(codexRows.flatMap((row) => row.importedFrom === undefined ? [] : [[row.importedFrom, row.id] as const]))
+    const codexRows = await this.#readList(this.#providers.codex, roots)
+    if (codexRows !== undefined) for (const [id, row] of this.#rows) if (providerOf(id) === 'codex' && roots.includes(row.project ?? row.root)) this.#rows.delete(id)
+    const importedIds = new Map((codexRows ?? []).flatMap((row) => row.importedFrom === undefined ? [] : [[row.importedFrom, row.id] as const]))
     let imported = false
     const notes = { ...this.#deps.notes.all() }
-    for (const row of codexRows) {
+    for (const row of codexRows ?? []) {
       const note = this.#deps.notes.all()[row.id]
       if (row.importedFrom !== undefined && note?.importedFrom === undefined) {
         const original = this.#deps.notes.all()[row.importedFrom]
@@ -982,8 +1035,10 @@ export class Sessions {
     }
     if (imported) this.#deps.notes.replace(notes)
     for (const provider of this.#providers.plugins.values()) {
+      const found = await this.#readList(provider, roots)
+      if (found === undefined) continue
       for (const [id, row] of this.#rows) if (providerOf(id) === provider.family && roots.includes(row.project ?? row.root)) this.#rows.delete(id)
-      for (const row of await provider.list(roots)) if (providerOf(row.id) === provider.family && this.#keptHistory(row.id)) this.#rows.set(row.id, row)
+      for (const row of found) if (providerOf(row.id) === provider.family && this.#keptHistory(row.id)) this.#rows.set(row.id, row)
     }
     const goalRows = [...this.#rows.values()].filter((row) => this.#provider(providerOf(row.id)).nativeGoals && this.#live.get(row.id)?.driver === undefined && (this.#deps.notes.all()[row.id]?.goal !== undefined || row.id === this.#watching))
     const messages = goalRows.map((row) => this.#live.get(row.id)?.messages)

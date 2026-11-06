@@ -1,4 +1,5 @@
 import type { Answered, ChatFound, ClaudeAccount, ClaudeModel, ReasoningEffort, SessionGoal, SessionMode } from '../../shared/api'
+import { computersFolder } from '../../cli/computer'
 import { elicitationAccessKey, elicitationAnswer, elicitationForm, elicitationUrl } from '../../shared/elicitation'
 import type { Elicitation } from '../../shared/elicitation'
 import { modelVersion } from '../../shared/providers'
@@ -212,25 +213,21 @@ export class CodexSessions {
 
   async list(roots: readonly string[]): Promise<(Found & { root: string; created?: number; importedFrom?: string; actualReasoning?: ReasoningEffort })[]> {
     if (roots.length === 0) return []
-    try {
-      const rpc = await this.#connection()
-      const rows: (Found & { root: string; created?: number; importedFrom?: string; actualReasoning?: ReasoningEffort })[] = []
-      const imports = await readFile(join(process.env['CODEX_HOME'] ?? join(homedir(), '.codex'), 'external_agent_session_imports.json'), 'utf8').then((text) => JSON.parse(text) as { records: { source_path: string; imported_thread_id: string }[] }).catch(() => undefined)
-      const imported = new Map((imports?.records ?? []).filter((one) => one.source_path.includes('/.claude/projects/')).map((one) => [one.imported_thread_id, basename(one.source_path, '.jsonl')]))
-      let cursor: string | null = null
-      do {
-        const page: RpcResults['thread/list'] = await rpc.request('thread/list', { cwd: [...roots], cursor, limit: 100, sortKey: 'updated_at', sourceKinds: ['cli', 'vscode', 'exec', 'appServer', 'unknown'] })
-        for (const thread of page.data) if (typeof thread.path === 'string') this.#files.set(thread.id, { id: `codex:${thread.id}`, root: thread.cwd, path: thread.path })
-        rows.push(...page.data.map((thread) => {
-          const importedFrom = imported.get(thread.id)
-          return { id: `codex:${thread.id}`, root: thread.cwd, title: thread.name || firstLine(thread.preview, 80), stands: firstLine(thread.preview, 160), at: thread.updatedAt * 1000, ...('createdAt' in thread && typeof thread.createdAt === 'number' ? { created: thread.createdAt * 1000 } : {}), driven: true, ...(importedFrom === undefined ? {} : { importedFrom }), ...(thread.model === null ? {} : { model: thread.model }), ...(thread.reasoningEffort == null ? {} : { actualReasoning: thread.reasoningEffort }) }
-        }))
-        cursor = page.nextCursor
-      } while (cursor !== null)
-      return rows
-    } catch {
-      return []
-    }
+    const rpc = await this.#connection()
+    const rows: (Found & { root: string; created?: number; importedFrom?: string; actualReasoning?: ReasoningEffort })[] = []
+    const imports = await readFile(join(process.env['CODEX_HOME'] ?? join(homedir(), '.codex'), 'external_agent_session_imports.json'), 'utf8').then((text) => JSON.parse(text) as { records: { source_path: string; imported_thread_id: string }[] }).catch(() => undefined)
+    const imported = new Map((imports?.records ?? []).filter((one) => one.source_path.includes('/.claude/projects/')).map((one) => [one.imported_thread_id, basename(one.source_path, '.jsonl')]))
+    let cursor: string | null = null
+    do {
+      const page: RpcResults['thread/list'] = await rpc.request('thread/list', { cwd: [...roots], cursor, limit: 100, sortKey: 'updated_at', sourceKinds: ['cli', 'vscode', 'exec', 'appServer', 'unknown'] })
+      for (const thread of page.data) if (typeof thread.path === 'string') this.#files.set(thread.id, { id: `codex:${thread.id}`, root: thread.cwd, path: thread.path })
+      rows.push(...page.data.map((thread) => {
+        const importedFrom = imported.get(thread.id)
+        return { id: `codex:${thread.id}`, root: thread.cwd, title: thread.name || firstLine(thread.preview, 80), stands: firstLine(thread.preview, 160), at: thread.updatedAt * 1000, ...('createdAt' in thread && typeof thread.createdAt === 'number' ? { created: thread.createdAt * 1000 } : {}), driven: true, ...(importedFrom === undefined ? {} : { importedFrom }), ...(thread.model === null ? {} : { model: thread.model }), ...(thread.reasoningEffort == null ? {} : { actualReasoning: thread.reasoningEffort }) }
+      }))
+      cursor = page.nextCursor
+    } while (cursor !== null)
+    return rows
   }
 
   async turns(id: string): Promise<CodexTurn[]> {
@@ -551,7 +548,7 @@ export class CodexSessions {
             ...(options.model === undefined ? {} : { model: options.model }),
             approvalPolicy: options.mode === 'manual' ? 'untrusted' : 'on-request',
             approvalsReviewer: options.mode === 'auto' ? 'auto_review' : 'user',
-            sandboxPolicy: options.mode === 'plan' ? { type: 'readOnly', networkAccess: false } : { type: 'workspaceWrite', writableRoots: browserBridgeOn() ? [options.root, browserFolder()] : [options.root], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
+            sandboxPolicy: options.mode === 'plan' ? { type: 'readOnly', networkAccess: false } : { type: 'workspaceWrite', writableRoots: browserBridgeOn() ? [options.root, browserFolder(), computersFolder()] : [options.root, computersFolder()], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
           }
           const response = await rpc?.request('turn/start', params).catch(async (error: Error) => {
             if (isDraining(error.message)) this.#discardConnection(rpc)

@@ -20,3 +20,14 @@
 Dependencies: T001 precedes transport integration; T003 precedes US1; US1 precedes US2/US3. Independent checks can run concurrently with documentation, no overlapping production writes. Deliver entire requested first stage; no task control.
 
 Verification boundaries and release checks: [evidence](../../docs/reports/remote-clients.md). Functional scope matches FR-001 through FR-007; no remote control or approvals were added. Real WebRTC is verified locally; external NAT/TURN and physical devices remain release gates.
+
+
+## Full-control revision
+- [x] T011 [US1] Implement connect-or-start and code-only pair alias in client/src/cli/remote.ts and service-start.ts.
+- [x] T012 [US1] Implement full auto-enrollment and typed authenticated core calls/events in client/src/service/remote/access.ts and shared/remote/protocol.ts.
+- [x] T013 [US2] Extract portable renderer API and mount actual remote Chat in isolated context in preload and renderer/src/remote/Workspace.tsx.
+- [x] T014 [US2] Simplify Servers form and route new full grants to remote workspace in renderer/src/remote/Servers.tsx and client.ts.
+- [x] T015 [US3] Verify full controls, legacy scoped denial, single use, reconnect/no replay, revoke and service auto-start in client/test/remote-*.test.ts and real fixture.
+- [x] T016 Review actual desktop/mobile light/dark flows and performance; record evidence and remote deployment boundary in docs/reports/simple-remote-control.md.
+
+Revision dependencies: T012 before T013/T014 integration; T011 independent of renderer extraction. T015 follows core implementation; T016 follows integrated renderer. Requirement coverage: FR001=T011; FR002=T012/T015; FR003=T013/T016; FR004/005=T012/T013/T014/T015; FR006=T014/T015/T016; FR007=T015/T016. Analysis: all7 revised requirements have tasks, no unresolved product choice; old observation-only clauses above describe historical completed stage, explicitly superseded by this revision.

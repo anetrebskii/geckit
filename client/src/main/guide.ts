@@ -8,6 +8,7 @@ import { corePlatform, dataDirectory } from '../core/platform'
 import { forwardSlashes } from '../cli/endpoint'
 import { browserBridgeOn, installBrowserBridge, removeBrowserBridge, setBrowserBridgeOn } from '../cli/browser'
 import { serveTestLaunches } from '../cli/testing'
+import { knownComputers } from '../cli/computer'
 import { fetchFindModel, findModelServer } from '../cli/find-model'
 import type { Employee } from '../shared/employees'
 import type { Settings } from '../shared/api'
@@ -200,6 +201,15 @@ const SEND = (said: string, batch: Batch): string =>
     ? ['Send everything in one command, run in the background, since it waits for the person and that can take hours:', '', '```', `${said} start --conversations - <<'EOF'`, EXAMPLE, 'EOF', '```'].join('\n')
     : ['Write the conversations to a file, then send them in one command, run in the background, since it waits for the person and that can take hours:', '', '```', `${said} start --conversations conversations.json`, '```', '', 'with the file holding', '', '```', EXAMPLE, '```'].join('\n')
 
+const OTHER_COMPUTERS = (said: string): string => {
+  const known = knownComputers()
+  return `## Other computers
+
+The person may have paired this GeckIt with GeckIt on other computers. Any \`${said}\` command runs on one of them when \`--computer <name>\` is added, and answers what it answers there: \`${said} sessions --today --computer <name>\`, \`${said} browser profiles --computer <name>\`. \`${said} computers\` lists them. ${known.length === 0 ? 'None is paired now.' : `Paired now: ${known.map((one) => one.name).join(', ')}.`} Pairing and forgetting a computer are the person's, on the computer itself: ask them.
+
+`
+}
+
 const COMMAND = (path: string, batch: Batch = 'heredoc'): string => {
   const said = path.includes(' ') ? `"${path}"` : path
   return `
@@ -218,7 +228,7 @@ ${said} show <id> --last 10
 
 \`sessions\` prints one line each, newest first: a \\* for a favorite, the id, when it last changed, the project, how it stands - in progress, review, blocked, done or archived - and the title. \`--today\` and \`--since\` also count one moved between columns in that time, and \`--favorites\` keeps only the favorites. \`show\` prints when it was created and each time it moved to another column, then what was said in it, the person and Claude, without what the tools printed. \`--json\` gives the same for reading with a program, with that history in \`history\` and \`favorite\` true or false.
 
-## Building GeckIt or a provider library
+${OTHER_COMPUTERS(said)}## Building GeckIt or a provider library
 
 When asked to create or change a provider, run \`${said} instructions providers\` for the contract, example, build and verification instructions. For GeckIt itself, run \`${said} instructions app\`. These commands only read and work with the installed CLI.
 
@@ -412,6 +422,8 @@ const browserRules = (said: string): string => `Use \`${said} browser\` for all 
 
 Work only in the tab the person named or a new background tab you open for this task. Do not take over unrelated tabs or switch Chrome profiles to find the target tab.
 
+If \`${said} browser profiles\` reports no ordinary Chrome profiles, or none has GeckIt Browser, use \`${said} browser start test\`, then \`open <url> --profile test\`. Missing Chrome profiles do not block this fallback on macOS or Linux. GeckIt automatically downloads Chrome for Testing on first use if needed and reuses it afterward; no manual browser or extension installation is needed. A closed profile that has GeckIt Browser can instead be opened with \`start <profile>\`.
+
 If GeckIt's browser integration is unavailable, disconnected, paused, denied or does not support the requested action, report the specific failure or unsupported action and stop the affected browser work. Do not fall back to other browser tools, direct page fetching, Playwright/CDP, AppleScript or native computer control. GeckIt's documented test browser is not a way around a refusal or permission denial.
 
 Native provider permissions still apply. This browser requirement grants no new permission: do not bypass a denial, change permissions, extract credentials or switch profiles to evade a restriction.`
@@ -432,9 +444,11 @@ A test browser is Chrome for Testing that GeckIt starts and drives itself, with 
 
 - the page is closed to extensions: the Chrome Web Store and its developer dashboard, \`chrome://\` pages, other extensions' pages, where a command in the person's Chrome fails;
 - the work should stay away from the person's own tabs and accounts: checking an app on localhost, trying a sign-up as a new user, a design check that must not touch their windows;
-- no Chrome profile has GeckIt Browser.
+- no ordinary Chrome profiles are available, or no Chrome profile has GeckIt Browser.
 
-Otherwise use the person's own Chrome: it has their accounts. \`start test\` starts or reuses the one persistent test browser for this conversation's registered project folder. Then \`open <url> --profile test\` creates a tab owned by this conversation; use its tab ids for the rest. Do not invent profile names. Conversations in the same project share the browser and sign-ins, with separate tabs; other projects use separate profiles. GeckIt refuses access to another conversation's test tabs. Moving this card to Done closes its tabs; the last owning conversation closes the browser while keeping cookies and sign-ins for next time. Do not close a shared browser yourself. A new profile is signed in to nothing: when work needs an account, ask the person to sign in in that window, and do not type their password. The person can explicitly configure separate account profiles in \`~/.geckit/browser-state/test-project-profiles.json\`: each registered project folder maps to an array of allowed profile names; only those explicit names may be selected with \`--profile test:<name>\` (a single string also sets that project's default). The first start downloads Chrome for Testing, about 200 MB, and says so: run \`start test\` again a minute later.
+Otherwise use the person's own Chrome: it has their accounts. \`start test\` starts or reuses the one persistent test browser for this conversation's registered project folder. Then \`open <url> --profile test\` creates a tab owned by this conversation; use its tab ids for the rest. Conversations in the same project share the browser and sign-ins, with separate tabs; other projects use separate profiles. GeckIt refuses access to another conversation's test tabs. Moving this card to Done closes its tabs; the last owning conversation closes the browser while keeping cookies and sign-ins for next time. Do not close a shared browser yourself. A new profile is signed in to nothing, and you never type the person's password.
+
+When work needs a particular account, use an account profile: \`profiles\` lists each \`test:<name>\` with the account it is for, and any conversation may use one with \`--profile test:<name>\`. When the person asks for one, or there is none for the account the work needs, make it with \`profiles create <name> --note "<site> as <who>"\`, a short name of your own such as \`github-work\`, and tell the person the name so they can ask for it later. Then \`signin <name>\` prints a link: give it to the person, in the conversation or the thread they wrote from. It opens in GeckIt on their phone or computer, once, within 15 minutes, and shows that browser live so they sign in themselves. When they say they are done, run \`signin <name> --done\` and say which profile now holds the sign-in. On another computer add \`--computer <name>\` to each of these, and the profile lives there. Where no device is paired, \`signin\` says so: on a computer with a screen, \`start test:<name>\` opens its window for the person instead. The person can also configure separate account profiles in \`~/.geckit/browser-state/test-project-profiles.json\`: each registered project folder maps to an array of allowed profile names; only those explicit names may be selected with \`--profile test:<name>\` (a single string also sets that project's default). The first start downloads Chrome for Testing, about 200 MB, and says so: run \`start test\` again a minute later.
 
 ## Commands
 
@@ -460,7 +474,7 @@ export const BROWSER_SKILL = (command: string, name: string): string => {
   const said = command.includes(' ') ? `"${command}"` : command
   return `---
 name: ${name}
-description: Work in the person's own Chrome through GeckIt, or in a test browser GeckIt drives. Choose the Chrome profile or use the project test browser with --profile test, open pages, find and click, type, read text, take screenshots, check styles, dark and phone layouts, record animations. Use for any task on a website or in Chrome.
+description: Work in the person's own Chrome through GeckIt, or in a test browser GeckIt drives. Choose the Chrome profile or use the project test browser with --profile test, make an account test profile and give the person a link to sign in to it, on this computer or another with --computer, open pages, find and click, type, read text, take screenshots, check styles, dark and phone layouts, record animations. Use for any task on a website or in Chrome.
 ---
 
 # Chrome through GeckIt

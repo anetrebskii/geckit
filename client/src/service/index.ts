@@ -1,4 +1,7 @@
 import { remoteAccess } from './remote/access'
+import { remoteComputers } from './remote/computers'
+import type { RemoteComputers } from './remote/computers'
+import { setLiveServer } from '../cli/live-view'
 import type { RemoteAccess } from './remote/access'
 import { randomBytes } from 'node:crypto'
 import { rmSync, writeFileSync } from 'node:fs'
@@ -12,6 +15,7 @@ import { ownDataDirectory } from '../core/ownership'
 import { applyConfigurationImport } from '../core/configuration-transfer'
 import { configureCorePlatform, defaultDataDirectory } from '../core/platform'
 import { createRuntime } from '../core/runtime'
+import { application } from '../core/application'
 import { serveLocal } from '../core/socket'
 import { listenRpc } from '../core/rpc'
 import type { RpcServer } from '../core/rpc'
@@ -52,9 +56,13 @@ async function main(): Promise<void> {
   let activation: Promise<void> | undefined
   let unsubscribe: (() => void) | undefined
   let remote: RemoteAccess | undefined
+  let computers: RemoteComputers | undefined
+  let stopComputers: (() => void) | undefined
   let stopping: Promise<void> | undefined
   const stop = (): Promise<void> => stopping ??= (async () => {
     remote?.dispose()
+    stopComputers?.()
+    computers?.dispose()
     native.dispose()
     unsubscribe?.()
     try { await Promise.all([listener?.close(), rpc?.close()]); await activation }
@@ -72,9 +80,13 @@ async function main(): Promise<void> {
     runtime = await createRuntime(script, { vault: security.vault, secrets: security.secrets })
     rmSync(tokenPath, { force: true })
     writeFileSync(tokenPath, token, { mode: 0o600, flag: 'wx' })
-    remote = await remoteAccess(runtime, directory, security)
+    remote = await remoteAccess(runtime, directory, security, application(runtime))
+    const access = remote
+    setLiveServer(() => access.server())
+    computers = remoteComputers(directory, security)
+    stopComputers = computers.serve()
     listener = serveLocal(directory, serviceHandler(runtime, token, shutdown))
-    rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native, remote), undefined, (method) => {
+    rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native, remote, computers), undefined, (method) => {
       if ((method === 'service:shutdownForUpdate' || method === 'service:importConfiguration') && runtime?.sessions.working().length === 0) shutdown()
     })
     unsubscribe = runtime.subscribe((event) => {

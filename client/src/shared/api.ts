@@ -878,13 +878,26 @@ export interface BrowserBridgeState {
   readonly testing: TestBrowsersState
 }
 
+/** What the person does in the live view of a test browser, in page pixels of its sign-in tab. */
+export type ViewInput =
+  | { readonly type: 'click' | 'move'; readonly x: number; readonly y: number }
+  | { readonly type: 'wheel'; readonly x: number; readonly y: number; readonly dy: number }
+  | { readonly type: 'key'; readonly key: string }
+  | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'go'; readonly url: string }
+  | { readonly type: 'back' }
+
+/** One picture of the sign-in tab, a JPEG in base64, with the page it shows. */
+export interface ViewFrame { readonly jpeg: string; readonly width: number; readonly height: number; readonly url: string; readonly title: string }
+
 /** Test browsers: Chrome for Testing driven by GeckIt, each profile kept by name. */
 export interface TestBrowsersState {
   readonly supported: boolean
   /** The Chrome for Testing a test browser starts, when there is one. */
   readonly version?: string
   readonly download?: { readonly received: number; readonly total: number; readonly error?: string }
-  readonly profiles: readonly { readonly name: string; readonly open: boolean }[]
+  /** note: which account a profile made for one account is signed in to. */
+  readonly profiles: readonly { readonly name: string; readonly open: boolean; readonly note?: string }[]
 }
 
 /** The model dictation hears with on this computer, and how far its one download has come. */

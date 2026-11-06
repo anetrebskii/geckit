@@ -33,6 +33,7 @@ export default defineConfig({
         input: {
           panel: resolve(here, 'src/renderer/panel.html'),
           chat: resolve(here, 'src/renderer/chat.html'),
+          remoteWorkspace: resolve(here, 'src/renderer/remote-workspace.html'),
           voice: resolve(here, 'src/renderer/voice.html'),
           peer: resolve(here, 'src/renderer/peer.html'),
           gecko: resolve(here, 'src/renderer/gecko.html'),

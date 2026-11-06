@@ -26,6 +26,7 @@ import { helping, inBackground, scripts, useNeedsYou, waitsOnHelpers, working } 
 import { ago, byDay, questionLeft } from './time'
 import type { Chat } from './useChat'
 import { useBack } from '../phone-back'
+import { TaskListStatus, taskListSettled } from './TaskListStatus'
 
 /**
  * The board as an iPhone draws a list: one column at a time under a large
@@ -347,7 +348,8 @@ export function PhoneBoard({
         onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 30)}
       >
         {manager?.config.enabled !== true && manager?.session === undefined ? null : <div className="phone-group phone-team-group"><Cell label={<span className="phone-team-person"><EmployeeAvatar employee={managerFace(chat.settings)} size="medium" /><span><b>Manager</b><small>{managerState.short}</small></span></span>} value={managerState.tone === 'working' ? <span className="team-live" title="Working now" /> : undefined} onPress={openManagerChat} /></div>}
-        {!chat.listed ? (
+        <TaskListStatus chat={chat} />
+        {!chat.listed && chat.sessions.length === 0 && chat.listProblem === undefined ? (
           <div className="phone-group" aria-busy="true" aria-label="Reading the conversations">
             {[0, 1, 2].map((one) => (
               <div key={one} className="phone-row">
@@ -359,7 +361,7 @@ export function PhoneBoard({
               </div>
             ))}
           </div>
-        ) : rows.length === 0 ? (
+        ) : rows.length === 0 && taskListSettled(chat) ? (
           <div className="phone-empty">
             {emptyProfile(chat.settings) === undefined
               ? chat.settings.employeeFilter !== '' ? 'No tasks match these filters' : column.empty

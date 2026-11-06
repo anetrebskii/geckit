@@ -59,7 +59,7 @@ const server = createServer(async (request, response) => {
     if (url.pathname === '/revoke') { const devices = JSON.parse(await cli('devices','list')); const one = devices.find((one) => !one.revoked); if (one) await cli('devices','revoke',one.id); response.end('{"revoked":true}'); return }
     if (url.pathname === '/restart') { const exited = new Promise((done) => child.once('exit',done)); await cli('service','shutdown'); await exited; await start(); response.end('{"restarted":true}'); return }
     if (url.pathname === '/event') { await cli('service','call','chat:rename',JSON.stringify(['plugin:fixture:remote-real-history', 'Updated by the real service event'])); response.end('{"changed":true}'); return }
-    if (url.pathname === '/new-code') { const text = await cli('pair','create','--project',project,...(url.searchParams.has('manager') ? ['--project',hidden,'--manager'] : []),'--expires',url.searchParams.get('ttl') ?? '300s'); invitation = JSON.parse(text.slice(0,text.lastIndexOf('\nKeep'))); response.end(JSON.stringify(invitation)); return }
+    if (url.pathname === '/new-code') { invitation = { link: (await cli('pair')).trim() }; response.end(JSON.stringify(invitation)); return }
     if (request.method === 'PUT' && /^\/rooms\/[a-f0-9]{64}(\/(offers|answers)\/[A-Za-z0-9-]+)?$/.test(url.pathname)) { boxes.set(url.pathname, { ...JSON.parse(body), at: Date.now() }); response.end('{}'); return }
     if (url.pathname.endsWith('/offers')) { response.end(JSON.stringify([...boxes].filter(([path, value]) => path.startsWith(`${url.pathname}/`) && value.at > Date.now()-60000).map(([path,value]) => ({id:path.split('/').at(-1),box:value.box})))); return }
     response.end(JSON.stringify(boxes.get(url.pathname) ?? {}))
@@ -68,8 +68,7 @@ const server = createServer(async (request, response) => {
 server.listen(47932, '127.0.0.1')
 await start()
 await cli('access','enable','--signal','http://127.0.0.1:47932')
-const text = await cli('pair','create','--project',project,'--qr')
-invitation = JSON.parse(text.slice(0,text.indexOf('\n}\n') + 2))
+invitation = { link: (await cli('pair')).trim() }
 await writeFile(join(folder,'evidence.json'), JSON.stringify({directory,project,hidden,service:join(folder,'service'),started:Date.now()}))
 console.log(JSON.stringify({ folder, directory, project, url: 'http://127.0.0.1:5213/test/browser/remote-clients/' }))
 process.on('SIGINT', () => { child.kill('SIGTERM'); server.close(); process.exitCode=0 })

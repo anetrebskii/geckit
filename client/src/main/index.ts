@@ -451,6 +451,7 @@ function settingsChanged(settings: Settings): void {
 function coreEvent(event: RpcEvent<ServiceEvents>): void {
   switch (event.name) {
     case 'chat:sessions': listChanged(event.args[0]); return
+    case 'chat:listStatus': tell(event.name, event.args[0]); return
     case 'settings:changed': settingsChanged(event.args[0]); return
     case 'chat:notice': notice(event.args[0]); return
     case 'chat:show': openChat(event.args[0]); return
@@ -494,7 +495,7 @@ function applySnapshot(next: ServiceSnapshot): void {
   if (watched !== undefined) void invoke('chat:items', watched).then((items) => tellChats('chat:items', { id: watched ?? '', items })).catch(report)
 }
 
-const CORE_CHANNELS = ["hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:resume", "manager:retry", "manager:restart", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "telegram:view", "telegram:action", "channels:view", "channels:install", "channels:configure", "channels:remove", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:search", "chat:delete", "chat:items", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:run"] as const satisfies readonly (keyof ServiceMethods)[]
+const CORE_CHANNELS = ["hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:resume", "manager:retry", "manager:restart", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "telegram:view", "telegram:action", "channels:view", "channels:install", "channels:configure", "channels:remove", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "browser:account", "browser:viewStart", "browser:viewFrame", "browser:viewInput", "browser:viewEnd", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:listStatus", "chat:search", "chat:delete", "chat:items", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:run"] as const satisfies readonly (keyof ServiceMethods)[]
 
 function registerCore<K extends typeof CORE_CHANNELS[number]>(channel: K): void {
   ipcMain.handle(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => {
@@ -801,6 +802,7 @@ const PHONE_CALLS = {
   'chat.plan': (...args: Parameters<ServiceMethods['chat:plan']>) => invoke('chat:plan', ...args),
   'chat.plans': (...args: Parameters<ServiceMethods['chat:plans']>) => invoke('chat:plans', ...args),
   'chat.list': (...args: Parameters<ServiceMethods['phone:list']>) => invoke('phone:list', ...args),
+  'chat.listStatus': (...args: Parameters<ServiceMethods['chat:listStatus']>) => invoke('chat:listStatus', ...args),
   'chat.hidden': (...args: Parameters<ServiceMethods['chat:hidden']>) => invoke('chat:hidden', ...args),
   'chat.bring': (...args: Parameters<ServiceMethods['chat:bring']>) => invoke('chat:bring', ...args),
   'chat.rememberProject': (...args: Parameters<ServiceMethods['chat:rememberProject']>) => invoke('chat:rememberProject', ...args),
@@ -900,9 +902,16 @@ async function migrateSecrets(): Promise<void> {
   if (hosts.length > 0 || telegram !== undefined) await invoke('desktop:migrateSecrets', { hosts, ...(telegram === undefined ? {} : { telegram }) })
 }
 
+const SIGN_IN = 'geckit://signin'
+const openSignIn = (url: string): void => { openChat(); tellChat('remote:signin', url) }
+if (primary && app.isPackaged) app.setAsDefaultProtocolClient('geckit')
+app.on('open-url', (event, url) => { if (!url.startsWith(SIGN_IN)) return; event.preventDefault(); if (app.isReady()) openSignIn(url); else void app.whenReady().then(() => openSignIn(url)) })
+
 if (!primary) app.quit()
 else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    const link = argv.find((one) => one.startsWith(SIGN_IN))
+    if (link !== undefined) { openSignIn(link); return }
     const window = personWindows()[0]
     if (window === undefined) { openChat(); return }
     if (window.isMinimized()) window.restore()

@@ -1,5 +1,7 @@
 import { StatusHistory } from './StatusHistory'
 import { Servers } from '../remote/Servers'
+import { readSignIn } from '../../../shared/live-view'
+import type { SignInLink } from '../../../shared/live-view'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DEFAULT_SETTINGS, homeOf, inProgress, providerOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
@@ -69,7 +71,9 @@ const boardAt = (y: number): number => Math.round(Math.min(Math.max(y - TOP_BAR,
  * in the folder they chose.
  */
 export function Chat(): React.JSX.Element {
-  const [servers, setServers] = useState(false)
+  const [servers, setServers] = useState<string>()
+  const [signIn, setSignIn] = useState<SignInLink>()
+  useEffect(() => window.geckit.signIn?.onOpen((url) => { const link = readSignIn(url); if (link !== undefined) { setSignIn(link); setServers(link.computer) } }), [])
   const chat = useChat()
   registerProviderInfo(chat.settings.providerPlugins)
   const providerInfo = llmProviderInfo(chat.provider, chat.transport)
@@ -427,7 +431,9 @@ export function Chat(): React.JSX.Element {
       if (meta && event.key === 'k') {
         event.preventDefault()
         // The button is the control; pressing it is what opens the menu in its place.
-        document.querySelector<HTMLButtonElement>('.project')?.click()
+        const folder = document.querySelector<HTMLButtonElement>('.project')
+        if (folder === null) window.dispatchEvent(new Event('geckit:folders'))
+        else folder.click()
       }
       if (event.key === 'F2' && chat.session !== undefined) {
         event.preventDefault()
@@ -500,7 +506,7 @@ export function Chat(): React.JSX.Element {
     ]
   }, [openId, chat.sessions, chat.settings.progressOrder])
 
-  if (servers) return <Servers onClose={() => setServers(false)} />
+  if (servers !== undefined) return <Servers key={signIn?.token ?? servers} initialServer={servers} {...(signIn === undefined ? {} : { signIn })} onClose={() => { setServers(undefined); setSignIn(undefined) }} />
 
   return (
     <div
@@ -535,7 +541,7 @@ export function Chat(): React.JSX.Element {
           onSeek={setSeek}
           onSettings={() => setSetting('general')}
           onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
-          onServers={() => setServers(true)}
+          onServers={(id) => setServers(id ?? ':add')}
           onTeam={() => team === undefined ? openTeam() : setTeam(undefined)}
           teamOn={team !== undefined}
         />

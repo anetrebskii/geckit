@@ -1,5 +1,7 @@
 # Подключение mobile и desktop к серверу GeckIt
 
+2026-11-06 revision: new `geckit pair` codes immediately grant the ordinary full workspace through a toolbar computer selector. The observation-only architecture below is historical; current behavior and boundaries are in [UX](ux/remote-clients.md), [contract](../specs/023-remote-clients/contracts/protocol.md), and [verification](reports/simple-remote-control.md).
+
 Статус: архитектура одобрена Алексом; первый этап реализован локально. Проверки и границы: [implementation evidence](reports/remote-clients.md). Исходное исследование ниже сохраняет варианты развития; они не все реализованы. 2026-11-06. Учтены уточнения Алекса: предпочтителен P2P; код выдаётся CLI **на том сервере**, к которому подключается клиент. Короткая запись решения: [ITD-001](../DECISIONS.md).
 
 ## Рекомендация

@@ -3,7 +3,8 @@ import { cleanup, PeerConnection } from 'node-datachannel'
 import type { DataChannel, IceServer } from 'node-datachannel'
 import { remoteChannel } from '../../shared/remote/channel'
 import type { RemoteChannel, RemoteSignal } from '../../shared/remote/protocol'
-import { iceFor, offers, postSignal, presence } from '../../shared/remote/signaling'
+import { answer, iceFor, offers, postSignal, presence } from '../../shared/remote/signaling'
+import { randomUUID } from 'node:crypto'
 const ice = async (pairing: RemoteSignal): Promise<IceServer[]> => (await iceFor(pairing)).flatMap((server) => (typeof server.urls === 'string' ? [server.urls] : server.urls).map((url) => {
   const found = /^(stun|turn|turns):([^:/?]+)(?::(\d+))?(?:\?transport=(udp|tcp))?$/.exec(url)
   if (found?.[2] === undefined) return undefined
@@ -62,4 +63,39 @@ export function nodeListen(pairing: RemoteSignal, joined: (channel: RemoteChanne
   void tick()
   const interval = setInterval(() => void tick(), 2000)
   return () => { stopped = true; clearInterval(interval); for (const peer of peers) peer.close(); peers.clear() }
+}
+
+/** This service calling another GeckIt it is paired with, the way a desktop or phone dials it. */
+export async function nodeDial(pairing: RemoteSignal): Promise<RemoteChannel> {
+  const peer = new PeerConnection('GeckIt computer', { iceServers: await ice(pairing), enableIceTcp: true })
+  const until = Date.now() + 45_000
+  try {
+    const gathered = new Promise<void>((done) => peer.onGatheringStateChange((state) => { if (state === 'complete') done() }))
+    const channel = peer.createDataChannel('geckit')
+    const opened = new Promise<void>((done, fail) => {
+      channel.onOpen(() => done())
+      channel.onClosed(() => fail(new Error('Connection closed.')))
+      setTimeout(() => fail(new Error('The computer did not answer.')), 45_000).unref()
+    })
+    await gathered
+    const offer = peer.localDescription()?.sdp
+    if (offer === undefined) throw new Error('No connection offer.')
+    const id = randomUUID()
+    await postSignal(pairing, 'offers', id, { sdp: offer, at: Date.now() })
+    let description = await answer(pairing, id)
+    while (description === undefined) {
+      if (Date.now() > until) throw new Error('The computer did not answer. Is GeckIt running there?')
+      await new Promise((done) => setTimeout(done, 1000))
+      description = await answer(pairing, id)
+    }
+    peer.setRemoteDescription(description.sdp, 'answer')
+    await opened
+    const listeners: (() => void)[] = []
+    let ended = false
+    const end = (): void => { if (ended) return; ended = true; try { channel.close() } catch { /* Already closed. */ } peer.close(); for (const listener of listeners) listener() }
+    channel.onClosed(end)
+    peer.onStateChange((state) => { if (state === 'failed' || state === 'closed' || state === 'disconnected') end() })
+    channel.setBufferedAmountLowThreshold(250_000)
+    return remoteChannel({ send: (text) => { channel.sendMessage(text) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else end() }), closed: (closed) => listeners.push(closed), close: end, buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, transportBinding(offer, description.sdp))
+  } catch (error) { peer.close(); throw error }
 }

@@ -134,6 +134,10 @@ describe('what Claude Code is told about GeckIt', () => {
       'report the specific failure or unsupported action and stop the affected browser work',
       'Do not fall back to other browser tools, direct page fetching, Playwright/CDP, AppleScript or native computer control.',
       "GeckIt's documented test browser is not a way around a refusal or permission denial.",
+      'browser profiles` reports no ordinary Chrome profiles, or none has GeckIt Browser',
+      'Missing Chrome profiles do not block this fallback on macOS or Linux.',
+      'GeckIt automatically downloads Chrome for Testing on first use if needed and reuses it afterward',
+      'open <url> --profile test',
       'Native provider permissions still apply.',
       'do not bypass a denial, change permissions, extract credentials or switch profiles to evade a restriction.',
     ]

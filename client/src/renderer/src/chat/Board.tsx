@@ -1,3 +1,4 @@
+import { Computer } from '../remote/Computer'
 import { EmployeeAvatar, EmployeeCardAssign, EmployeeFilter, EmployeeSelect, TeamButton } from '../employees/Employees'
 import { managerFace } from '../employees/TeamManager'
 import { openManagerChat } from './manager-chat-open'
@@ -5,7 +6,7 @@ import type { Employee } from '../../../shared/employees'
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { assistantFor, ANYWHERE, BOARD_COLUMNS, columnOf, columnShown, goalMet, toggledColumns, homeOf, letsGo, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { assistantFor, ANYWHERE, BOARD_COLUMNS, columnOf, columnShown, goalMet, homeOf, letsGo, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, ClaudeModel, ModelsSaid, ReasoningEffort, RecordedFrame, SessionImage, SessionProvider, SessionStatus } from '../../../shared/api'
 import { landingIndex, movedOrder, ordered } from '../../../shared/order'
 import { isCodexProvider, llmProviderInfo, modelPreference, providerModel, selectableProviders } from '../../../shared/providers'
@@ -38,6 +39,8 @@ import { shortUrl } from '../../../shared/links'
 import type { Link } from '../../../shared/links'
 import { ago, byDay } from './time'
 import type { Chat } from './useChat'
+import { TaskListStatus, taskListSettled } from './TaskListStatus'
+import { TaskFilters } from './TaskFilters'
 
 /**
  * The conversations as cards in columns, by how each stands.
@@ -48,45 +51,6 @@ import type { Chat } from './useChat'
  * to the next, which is the same as marking it, and pressing one opens the
  * conversation itself over the board.
  */
-
-function Columns({ chat }: { readonly chat: Chat }): React.JSX.Element {
-  const [anchor, setAnchor] = useState<DOMRect | undefined>()
-  const shown = BOARD_COLUMNS.filter((one) => columnShown(chat.settings.boardColumns, one.id))
-  const every = shown.length === BOARD_COLUMNS.length
-  const label = every ? 'All columns' : shown.map((one) => one.title).join(', ')
-  return (
-    <>
-      <button
-        type="button"
-        className={`icon-button board-view-options${anchor === undefined ? '' : ' on'}`}
-        aria-label={`View options: ${label}`}
-        aria-haspopup="menu"
-        aria-expanded={anchor !== undefined}
-        title={`View options: ${label}`}
-        data-focus-tip
-        onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}
-      >
-        <Icon name="sliders" />
-        {every ? null : <span className="board-view-dot" />}
-      </button>
-      {anchor === undefined ? null : (
-        <Menu
-          anchor={anchor}
-          title="Visible columns"
-          choices={[
-            { value: 'all', label: 'All columns', says: `${BOARD_COLUMNS.map((one) => one.title).join(', ').replace(/, ([^,]*)$/, ' and $1')} side by side`, on: every },
-            ...BOARD_COLUMNS.map((one) => ({ value: one.id, label: one.title, says: `Show ${one.title}`, on: shown.includes(one) })),
-          ]}
-          explained
-          autoFocus
-          stays
-          onPick={(value) => chat.change({ boardColumns: toggledColumns(chat.settings.boardColumns, value) })}
-          onClose={() => setAnchor(undefined)}
-        />
-      )}
-    </>
-  )
-}
 
 /** Before which card of a column the pointer is, counting the cards in the part kept in the person's order; among tiles, where in the row too. */
 function landingAt(column: HTMLElement, x: number, y: number, tiled: boolean): number {
@@ -113,7 +77,7 @@ export function TopBar({
   readonly onSeek: (seek: Seek) => void
   readonly onSettings: () => void
   readonly onShortcuts: () => void
-  readonly onServers?: () => void
+  readonly onServers?: (id?: string) => void
   readonly onTeam?: (() => void) | undefined
   readonly teamOn?: boolean
 }): React.JSX.Element {
@@ -123,10 +87,8 @@ export function TopBar({
     <div className="board-head drag">
       <div className="board-views no-drag" role="group" aria-label="View controls">
         <Views chat={chat} />
-        {chat.settings.chatView === 'board' && !ON_PHONE ? <Columns chat={chat} /> : null}
       </div>
-      <Projects chat={chat} />
-      <EmployeeFilter chat={chat} />
+      {ON_PHONE ? <><Projects chat={chat} /><EmployeeFilter chat={chat} /></> : <TaskFilters chat={chat} />}
       <BoardSearch chat={chat} onSeek={onSeek} />
       <button
         type="button"
@@ -137,11 +99,7 @@ export function TopBar({
       >
         <Icon name="bolt" />
       </button>
-      {onServers === undefined ? null : (
-        <button type="button" className="icon-button no-drag" aria-label="Servers" title="Servers: read conversations on another GeckIt" onClick={onServers}>
-          <Icon name="server" />
-        </button>
-      )}
+      <Computer {...(onServers === undefined ? {} : { onConnect: onServers })} />
       {onTeam === undefined ? null : <TeamButton chat={chat} on={teamOn} onTeam={onTeam} />}
       <button type="button" className="manager-open no-drag" aria-label="Chat with Manager" aria-haspopup="dialog" title="Chat with Manager" onClick={openManagerChat}><EmployeeAvatar employee={managerFace(chat.settings)} /><span>Manager</span></button>
       {chat.settings.showGecko || ON_PHONE ? null : (
@@ -227,7 +185,7 @@ export function TopBar({
   )
 }
 
-type BoardChat = Pick<Chat, 'employees' | 'refresh' | 'employeesById' | 'sessions' | 'everyone' | 'settings' | 'hosts' | 'lineup' | 'shown' | 'showProviders' | 'show' | 'goTo' | 'change' | 'rename' | 'hide' | 'mark' | 'terminal' | 'copyTerminal' | 'letGo' | 'remove'>
+type BoardChat = Pick<Chat, 'employees' | 'refresh' | 'employeesById' | 'sessions' | 'everyone' | 'settings' | 'hosts' | 'lineup' | 'shown' | 'showProviders' | 'show' | 'goTo' | 'change' | 'rename' | 'hide' | 'mark' | 'terminal' | 'copyTerminal' | 'letGo' | 'remove' | 'root' | 'listed' | 'listLoading' | 'listProblem' | 'listStatus'>
 
 interface BoardProps {
   readonly chat: BoardChat
@@ -262,8 +220,13 @@ export function Board({ chat, onShortcutFrom }: BoardProps): React.JSX.Element {
     lineup: chat.lineup,
     shown: chat.shown,
     showProviders: chat.showProviders,
+    root: chat.root,
+    listed: chat.listed,
+    listLoading: chat.listLoading,
+    listProblem: chat.listProblem,
+    listStatus: chat.listStatus,
     ...actions,
-  }), [chat.employees, chat.employeesById, chat.sessions, chat.everyone, chat.settings, chat.hosts, chat.lineup, chat.shown, chat.showProviders, actions])
+  }), [chat.employees, chat.employeesById, chat.sessions, chat.everyone, chat.settings, chat.hosts, chat.lineup, chat.shown, chat.showProviders, chat.root, chat.listed, chat.listLoading, chat.listProblem, chat.listStatus, actions])
   const shortcutFrom = useCallback((session: ChatSession) => latest.current.onShortcutFrom(session), [])
   return <BoardView chat={view} onShortcutFrom={shortcutFrom} />
 }
@@ -437,10 +400,12 @@ const BoardView = memo(function BoardView({
 
   return (
     <div className={`board${tiled ? ' tiled' : ''}`}>
+      <TaskListStatus chat={chat} />
+      {taskListSettled(chat) && chat.sessions.length === 0 && chat.settings.employeeFilter === '' && emptyProfile(chat.settings) === undefined ? <div className="board-empty">{chat.root === undefined ? 'Add a folder to start.' : 'No tasks in these folders yet.'}</div> : null}
       {emptyProfile(chat.settings) === undefined ? null : (
         <div className="board-empty">No folders in {emptyProfile(chat.settings)}. Tick some in Settings, Profiles.</div>
       )}
-      {chat.settings.employeeFilter !== '' && chat.sessions.length === 0 ? <div className="board-empty">No tasks match these filters <button type="button" className="quiet" onClick={() => chat.change({ employeeFilter: '' })}>Clear employee filter</button></div> : null}
+      {taskListSettled(chat) && chat.settings.employeeFilter !== '' && chat.sessions.length === 0 ? <div className="board-empty">No tasks match these filters <button type="button" className="quiet" onClick={() => chat.change({ employeeFilter: '' })}>Clear employee filter</button></div> : null}
       <div className="board-columns">
         {columns.map((column) => (
             <div
@@ -471,7 +436,7 @@ const BoardView = memo(function BoardView({
                     {`${String(chat.lineup.working)} of ${String(chat.lineup.limit)} working`}
                   </span>
                 ) : null}
-                <span className="count">{column.rows.length}</span>
+                {chat.listed ? <span className="count">{column.rows.length}</span> : null}
               </div>
               <div className="board-cards">
                 {groups(column).map((day) => (

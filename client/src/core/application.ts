@@ -1,5 +1,6 @@
 import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
+import type { ViewInput } from '../shared/api'
 import type { Answered, ConversationContinuation, CorrectRequest, Recording, SessionMessage, Settings, ShortcutDraft, TranscribeRequest } from '../shared/api'
 import { assistantsIn, providerOf, shownProjects, resumeCommand } from '../shared/api'
 import type { EmployeeDraft } from '../shared/employees'
@@ -24,7 +25,9 @@ import { keepToken, pushTo } from '../main/push'
 import type { SessionNotice } from '../shared/api'
 import { localFetch } from '../main/local-page'
 import { browserBridgeOn, browserBridgeState, openTest, stopTest } from '../cli/browser'
-import { deleteTestProfile } from '../cli/testing'
+import { deleteTestProfile, makeTestAccount } from '../cli/testing'
+import { signInLink, viewEnd, viewFrame, viewInput, viewStart } from '../cli/live-view'
+import { runCli } from './cli-run'
 import { deleteFindModel, fetchFindModel, findModelServer } from '../cli/find-model'
 import { localTranscriptionReadiness } from '../main/local-transcription'
 import { askOrders, carryOut, saying } from '../main/orders'
@@ -111,8 +114,8 @@ export function application(runtime: CoreRuntime) {
   }
   return {
     'service:bootstrap': async () => {
-      await sessions.refresh(getSettings().projects)
-      return { ...runtime.current(), manager: await manager.view(), speech: speechModel(), home: homedir(), platform: process.platform, name: machineName(hostname()) }
+      void sessions.refresh(getSettings().projects).then(() => runtime.refreshManager()).catch(() => undefined)
+      return { ...runtime.current(), manager: runtime.managerView(), speech: speechModel(), home: homedir(), platform: process.platform, name: machineName(hostname()) }
     },
     'core:state': () => runtime.current(),
     'core:resume': () => runtime.wake(),
@@ -155,6 +158,13 @@ export function application(runtime: CoreRuntime) {
     'browser:deleteModel': async () => { if (!browserBridgeOn()) await deleteFindModel() },
     'browser:openTest': async (name: string) => { if (browserBridgeOn()) await openTest(name) },
     'browser:deleteTest': async (name: string) => { const stopped = await stopTest(name); if (!stopped.ok) throw new Error(stopped.said); deleteTestProfile(name) },
+    'browser:account': (name: string, note: string) => makeTestAccount(name, note),
+    'browser:signInLink': (name: string) => signInLink(name),
+    'browser:viewStart': (name: string, url?: string, token?: string) => viewStart(name, url, token),
+    'browser:viewFrame': (name: string) => viewFrame(name),
+    'browser:viewInput': (name: string, input: ViewInput) => viewInput(name, input),
+    'browser:viewEnd': (name: string) => viewEnd(name),
+    'cli:run': (args: readonly string[]) => runCli(args),
     'voice:video': () => startRecording(),
     'recording:start': (ext: string) => startRecording(ext),
     'recording:part': (part: string) => addToRecording(Buffer.from(part, 'base64')),
@@ -187,6 +197,7 @@ export function application(runtime: CoreRuntime) {
     'shortcuts:remove': (id: string) => removeShortcut(id),
     'shortcuts:run': (id: string) => runShortcut(id, 'hand'),
     'chat:list': (root: string | undefined) => list(root, shownProjects(getSettings())),
+    'chat:listStatus': () => sessions.listStatus(),
     'chat:search': (asked: string, root: string | undefined) => search(asked, root, shownProjects(getSettings())),
     'chat:hidden': (older: boolean) => sessions.hidden(getSettings().projects, older),
     'chat:forgetProject': (root: string) => forgetProject(root),

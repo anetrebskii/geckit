@@ -6,9 +6,11 @@ import type { TelegramView } from '../shared/telegram'
 import type { ChannelsView } from '../shared/channels'
 import type { Shares } from '../main/shares'
 import type { RpcEvent } from './rpc'
+import type { SessionListStatus } from '../shared/session-list'
 
 export interface CoreEvents {
   'chat:sessions': (sessions: readonly ChatSession[]) => void
+  'chat:listStatus': (status: readonly SessionListStatus[]) => void
   'chat:items': (items: SessionItems) => void
   'chat:accountChanged': (account: ClaudeAccount) => void
   'chat:show': (id: string) => void

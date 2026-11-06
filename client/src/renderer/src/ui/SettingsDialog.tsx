@@ -13,6 +13,8 @@ import extensionIcon from '../../../../extension/icons/128.png'
 import { Picker } from './Menu'
 import { MOD, said } from './Shortcuts'
 import { Version } from './UpdateNotice'
+import { LiveView } from '../chat/LiveView'
+import type { LiveViewApi } from '../chat/LiveView'
 import { AddAssistantButton, AddLibrary, FailedLibraryRow, LibraryActions, LibraryUpdates, useLibraries } from './Libraries'
 import { Channels } from './Channels'
 import { VpnIpSettings } from './VpnIpSettings'
@@ -264,10 +266,22 @@ function Integrations({ settings, change }: Part): React.JSX.Element {
 
 const GB = (bytes: number): string => (bytes / 1e9).toFixed(1)
 
+const liveApi: LiveViewApi = {
+  start: (name, url, token) => window.geckit.browser.viewStart(name, url, token),
+  frame: (name) => window.geckit.browser.viewFrame(name),
+  input: (name, input) => window.geckit.browser.viewInput(name, input),
+  end: (name) => window.geckit.browser.viewEnd(name),
+}
+
 /** Test browsers: Chrome for Testing that GeckIt starts and drives, each profile kept by name with its sign-ins. */
 function TestBrowsers({ testing }: { readonly testing: BrowserBridgeState['testing'] | undefined }): React.JSX.Element | null {
   const [asking, setAsking] = useState<string>()
   const [busy, setBusy] = useState<string>()
+  const [signing, setSigning] = useState<string>()
+  const [making, setMaking] = useState(false)
+  const [name, setName] = useState('')
+  const [note, setNote] = useState('')
+  const [problem, setProblem] = useState('')
   if (testing === undefined || !testing.supported) return null
   const download = testing.download
   const act = (name: string, run: () => Promise<void>): void => { setBusy(name); void run().finally(() => { setBusy(undefined); setAsking(undefined) }) }
@@ -282,7 +296,7 @@ function TestBrowsers({ testing }: { readonly testing: BrowserBridgeState['testi
             <div className="progress"><span style={{ width: `${download.total === 0 ? 0 : Math.round((download.received / download.total) * 100)}%` }} /></div>
           </div>
         ) : testing.version === undefined ? <p>Chrome for Testing downloads the first time a test browser starts, about 200 MB.</p> : null}
-      {testing.profiles.length === 0 ? <p>None yet. A conversation makes one with geckit browser start test:&lt;name&gt;.</p> : (
+      {testing.profiles.length === 0 ? <p>None yet. An assistant makes one for an account with geckit browser profiles create &lt;name&gt;.</p> : (
         <ul className="test-browsers-list">
           {testing.profiles.map((one) => (
             <li key={one.name} className="chrome-bridge-row">
@@ -296,8 +310,9 @@ function TestBrowsers({ testing }: { readonly testing: BrowserBridgeState['testi
                 </>
               ) : (
                 <>
-                  <span><code>test:{one.name}</code> {one.open ? 'open' : 'closed'}</span>
+                  <span><code>test:{one.name}</code>{one.note === undefined ? null : <span className="test-browsers-note"> {one.note}</span>} {one.open ? 'open' : 'closed'}</span>
                   <span className="test-browsers-actions">
+                    <button type="button" className="quiet" onClick={() => setSigning(one.name)}>Sign in</button>
                     {one.open ? null : <button type="button" className="quiet" disabled={busy === one.name} onClick={() => act(one.name, () => window.geckit.browser.openTest(one.name))}>{busy === one.name ? 'Opening' : 'Open'}</button>}
                     <button type="button" className="quiet" onClick={() => setAsking(one.name)}>Delete</button>
                   </span>
@@ -307,6 +322,16 @@ function TestBrowsers({ testing }: { readonly testing: BrowserBridgeState['testi
           ))}
         </ul>
       )}
+      {making ? (
+        <form className="test-browsers-new" onSubmit={(event) => { event.preventDefault(); setProblem(''); void window.geckit.browser.account(name.trim(), note).then(() => { setMaking(false); setName(''); setNote('') }, (error: Error) => setProblem(error.message)) }}>
+          <input type="text" aria-label="Profile name" placeholder="Name, such as github-work" value={name} autoCapitalize="off" spellCheck={false} onChange={(event) => setName(event.target.value.toLowerCase())} />
+          <input type="text" aria-label="Account" placeholder="Account, such as GitHub as alex" value={note} onChange={(event) => setNote(event.target.value)} />
+          <button type="button" className="quiet" onClick={() => { setMaking(false); setProblem('') }}>Cancel</button>
+          <button type="submit" className="quiet" disabled={!/^[a-z0-9][a-z0-9-]{0,39}$/.test(name.trim()) || note.trim() === ''}>Create</button>
+        </form>
+      ) : <span><button type="button" className="quiet" onClick={() => setMaking(true)}>New account profile</button></span>}
+      {problem === '' ? null : <p role="alert">{problem}</p>}
+      {signing === undefined ? null : <LiveView name={signing} api={liveApi} {...(window.geckitRemoteComputer === undefined ? {} : { computer: window.geckitRemoteComputer.server.name })} onClose={() => setSigning(undefined)} />}
     </div>
   )
 }

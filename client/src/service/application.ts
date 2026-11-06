@@ -1,4 +1,5 @@
 import type { RemoteAccess } from './remote/access'
+import type { RemoteComputers } from './remote/computers'
 import { randomUUID } from 'node:crypto'
 import { chmodSync, copyFileSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -136,9 +137,10 @@ export function migrateSecrets(directory: string, security: ServiceSecurity, req
   return migrationState(directory, security)
 }
 
-export function serviceApplication(runtime: CoreRuntime, directory: string, security: ServiceSecurity, native: ReturnType<typeof nativeRequests>, remote?: RemoteAccess) {
+export function serviceApplication(runtime: CoreRuntime, directory: string, security: ServiceSecurity, native: ReturnType<typeof nativeRequests>, remote?: RemoteAccess, computers?: RemoteComputers) {
   const core = application(runtime)
   const desktop = {
+    'remote:pair': () => { if (remote === undefined) throw new Error('Remote access unavailable.'); return remote.pair() },
     'remote:enable': (signal?: string) => { if (remote === undefined) throw new Error('Remote access unavailable.'); return remote.enable(signal) },
     'remote:disable': () => remote?.disable(),
     'remote:create': (projects: readonly string[], manager?: boolean, ttl?: number) => remote?.create(projects, manager, ttl),
@@ -147,6 +149,9 @@ export function serviceApplication(runtime: CoreRuntime, directory: string, secu
     'remote:cancel': (id: string) => remote?.cancel(id),
     'remote:devices': () => remote?.devices(),
     'remote:revoke': (id: string) => remote?.revoke(id),
+    'computers:add': (code: string) => { if (computers === undefined) throw new Error('Computers unavailable.'); return computers.add(code) },
+    'computers:list': () => computers?.list() ?? [],
+    'computers:forget': (name: string) => { if (computers === undefined) throw new Error('Computers unavailable.'); return computers.forget(name) },
     'configuration:export': () => exportConfiguration(directory),
     'service:importConfiguration': async (text: string) => {
       const manager = await runtime.manager.view()

@@ -1,4 +1,5 @@
 import { readInvitation } from '../../client/src/shared/remote/protocol'
+import { readSignIn } from '../../client/src/shared/live-view'
 import { App } from '@capacitor/app'
 import { CapacitorBarcodeScanner, CapacitorBarcodeScannerTypeHint } from '@capacitor/barcode-scanner'
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
@@ -651,7 +652,7 @@ void App.addListener('resume', () => {
 })
 
 void App.addListener('appUrlOpen', ({ url }) => {
-  if (readInvitation(url) !== undefined) { void serverView(url); return }
+  if (readInvitation(url) !== undefined || readSignIn(url) !== undefined) { void serverView(url); return }
   const pairing = readPairing(url)
   if (pairing !== undefined) paired(pairing)
 })
@@ -661,7 +662,7 @@ sessionStorage.removeItem(SERVER_VIEW)
 if (requestedServer === 'local') void connect()
 else if (requestedServer !== null) void serverView(requestedServer)
 else void App.getLaunchUrl().catch(() => undefined).then((launched) => {
-  if (launched !== undefined && readInvitation(launched.url) !== undefined) { void serverView(launched.url); return }
+  if (launched !== undefined && (readInvitation(launched.url) !== undefined || readSignIn(launched.url) !== undefined)) { void serverView(launched.url); return }
   const pairing = launched === undefined ? undefined : readPairing(launched.url)
   if (pairing !== undefined) paired(pairing)
   else void connect()
@@ -674,5 +675,6 @@ async function serverView(invitation = ''): Promise<void> {
   document.querySelector('.pair')?.remove()
   const [{ createRoot }, { createElement }, { Servers }] = await Promise.all([import('react-dom/client'), import('react'), import('../../client/src/renderer/src/remote/Servers')])
   const root = createRoot(document.getElementById('root') as HTMLElement)
-  root.render(createElement(Servers, { invitation, onClose: () => { sessionStorage.setItem(SERVER_VIEW, 'local'); root.unmount(); location.reload() }, scan: async () => { try { return (await CapacitorBarcodeScanner.scanBarcode({ hint: CapacitorBarcodeScannerTypeHint.QR_CODE })).ScanResult } catch { return undefined } } }))
+  const signIn = readSignIn(invitation)
+  root.render(createElement(Servers, { ...(signIn === undefined ? { invitation } : { signIn }), onClose: () => { sessionStorage.setItem(SERVER_VIEW, 'local'); root.unmount(); location.reload() }, scan: async () => { try { return (await CapacitorBarcodeScanner.scanBarcode({ hint: CapacitorBarcodeScannerTypeHint.QR_CODE })).ScanResult } catch { return undefined } } }))
 }

@@ -15,5 +15,5 @@ export default defineConfig(({ mode }) => ({
     },
   },
   server: { fs: { allow: ['..'] } },
-  build: { outDir: 'www', emptyOutDir: true, rollupOptions: { input: { main: resolve(import.meta.dirname, 'index.html'), stub: resolve(import.meta.dirname, 'stub.html') } } },
+  build: { outDir: 'www', emptyOutDir: true, rollupOptions: { input: { main: resolve(import.meta.dirname, 'index.html'), stub: resolve(import.meta.dirname, 'stub.html'), remoteWorkspace: resolve(import.meta.dirname, 'remote-workspace.html') } } },
 }))

@@ -36,6 +36,7 @@ import type { Settings } from '../../../shared/api'
 import { hostName } from './project'
 import { useHosts } from './useHosts'
 import { updatedItems } from '../../../shared/transcript-items'
+import type { SessionListStatus } from '../../../shared/session-list'
 
 /** What the window is showing: a conversation, or one that has not been sent yet. */
 export type Shown = { readonly kind: 'new' } | { readonly kind: 'session'; readonly id: string }
@@ -86,6 +87,9 @@ export interface Chat {
   readonly sessions: readonly ChatSession[]
   /** The list has been read at least once, so an empty one means there is nothing. */
   readonly listed: boolean
+  readonly listLoading: boolean
+  readonly listProblem: string | undefined
+  readonly listStatus: readonly SessionListStatus[]
   /** Every project's conversations, whichever is listed. */
   readonly everyone: readonly ChatSession[]
   /** General questions still open, newest first; each is gone a day after its last answer. */
@@ -252,10 +256,26 @@ export function useChat(): Chat {
   const [started, setStarted] = useState<string | undefined>()
   const [storedSessions, setSessions] = useState<readonly ChatSession[]>([])
   const [listed, setListed] = useState(false)
+  const [listLoading, setListLoading] = useState(true)
+  const [listProblem, setListProblem] = useState<string>()
+  const [listStatus, setListStatus] = useState<readonly SessionListStatus[]>([])
+  const listRequest = useRef(0)
+  useEffect(() => {
+    let changed = false
+    const off = window.geckit.chat.onListStatus((status) => { changed = true; setListStatus(status) })
+    void window.geckit.chat.listStatus().then((status) => { if (!changed) setListStatus(status) }, () => undefined)
+    return () => { changed = true; off() }
+  }, [])
   const [storedEveryone, setEveryone] = useState<readonly ChatSession[]>([])
   const [storedQuestions, setQuestions] = useState<readonly ChatSession[]>([])
   const [notices, setNotices] = useState<readonly SessionNotice[]>([])
+  const restoring = useRef(document.documentElement.classList.contains('remote-workspace-page') ? sessionStorage.getItem('open-conversation') ?? undefined : undefined)
   const [shown, setShown] = useState<Shown>({ kind: 'new' })
+  useEffect(() => {
+    if (!document.documentElement.classList.contains('remote-workspace-page') || restoring.current !== undefined) return
+    if (shown.kind === 'session') sessionStorage.setItem('open-conversation', shown.id)
+    else sessionStorage.removeItem('open-conversation')
+  }, [shown])
   const [nextChoices, setNextChoices] = useState<ReadonlyMap<string, Pick<SessionMessage, 'model' | 'reasoning'>>>(() => new Map())
   const [items, setItems] = useState<readonly SessionItem[]>([])
   const [itemsFor, setItemsFor] = useState('new')
@@ -300,6 +320,10 @@ export function useChat(): Chat {
   // One project is a scope the rest of the window understands; several are every project, narrowed.
   const scope = chosen.length === 1 ? (chosen[0] ?? ALL) : ALL
   const enabled = useMemo(() => assistantsIn({ chatProviders: settings.chatProviders }), [settings.chatProviders])
+  const visibleListStatus = useMemo(() => {
+    const roots = chosen.length === 0 ? shownProjects(settings) : chosen
+    return listStatus.filter((one) => enabled.includes(one.provider) && one.roots.some((root) => roots.includes(root)))
+  }, [listStatus, chosen, settings, enabled])
   const sessions = useMemo(() => storedSessions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedSessions, enabled])
   const visibleSessions = useMemo(() => sessions.filter((one) => matchesEmployee(one, settings.employeeFilter)), [sessions, settings.employeeFilter])
   const everyone = useMemo(() => storedEveryone.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedEveryone, enabled])
@@ -330,18 +354,28 @@ export function useChat(): Chat {
     one.question !== true && (chosenRef.current.length === 0 || chosenRef.current.includes(homeOf(one)))
 
   const refreshList = useCallback(() => {
+    const request = ++listRequest.current
+    setListLoading(true)
+    setListProblem(undefined)
     const one = chosenRef.current.length === 1 ? chosenRef.current[0] : undefined
     void window.geckit.chat.list(one).then((listed) => {
+      if (request !== listRequest.current) return
       const all = sameAsBefore(listed)
       setSessions((held) => sameList(held, all.filter(within)))
       setListed(true)
       // Asked for every project, this is every project: the counts are made from the same answer.
       if (one === undefined) setEveryone((held) => sameList(held, all.filter((session) => session.question !== true)))
+    }).catch((error: Error) => {
+      if (request === listRequest.current) setListProblem(error.message)
+    }).finally(() => {
+      if (request === listRequest.current) setListLoading(false)
     })
   }, [])
 
   // Another profile changes what the list may hold, with the scope itself unmoved.
-  useEffect(refreshList, [refreshList, scope, chosen.join('\n'), shownProjects(settings).join('\n')])
+  const chosenList = chosen.join('\n')
+  const projectList = shownProjects(settings).join('\n')
+  useEffect(() => { void Promise.resolve().then(refreshList) }, [refreshList, scope, chosenList, projectList])
 
   // Asked until it is answered: a phone that opened while the host was starting, or while the link was down, would otherwise never know who is signed in.
   useEffect(() => {
@@ -400,12 +434,11 @@ export function useChat(): Chat {
     void window.geckit.chat.list(undefined).then((all) => {
       const listed = sameAsBefore(all).filter((one) => one.question !== true)
       setEveryone((held) => sameList(held, listed))
-    })
+    }, () => undefined)
     let asked = new Set<string>()
     return window.geckit.chat.onSessions((sent) => {
       const all = sameAsBefore(sent)
       setSessions((held) => sameList(held, all.filter(within)))
-      setListed(true)
       setEveryone((held) => sameList(held, all.filter((one) => one.question !== true)))
       const now = all.filter((one) => one.question === true)
       setQuestions((held) => sameList(held, now))
@@ -462,6 +495,7 @@ export function useChat(): Chat {
   const persistedDrafts = useRef(new Map<string, string>())
 
   const open = useCallback((next: Shown): void => {
+    restoring.current = undefined
     if (next.kind === 'session' && managerIds.current.has(next.id)) return
     const before = shownRef.current
     shownRef.current = next
@@ -516,6 +550,11 @@ export function useChat(): Chat {
       window.geckit.chat.watching(undefined)
     })
   }, [])
+
+  useEffect(() => {
+    const id = restoring.current
+    if (id !== undefined && listed && enabled.includes(providerOf(id))) open({ kind: 'session', id })
+  }, [enabled, listed, open])
 
   const refresh = useCallback(() => {
     refreshList()
@@ -1053,6 +1092,9 @@ export function useChat(): Chat {
     scope,
     sessions: visibleSessions,
     listed,
+    listLoading,
+    listProblem,
+    listStatus: visibleListStatus,
     earlier: shown.kind === 'session' && earlier.id === shown.id ? earlier.left : 0,
     showEarlier,
     loadSteps,

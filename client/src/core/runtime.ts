@@ -183,6 +183,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         const progressOrder = keptOrder(settings.progressOrder, changed)
         if (progressOrder !== undefined) setSettings({ progressOrder })
       },
+      listStatus: (status) => events.emit('chat:listStatus', status),
       items: (items) => { if (!sessions?.isManager(items.id)) events.emit('chat:items', items) },
       account: (account) => events.emit('chat:accountChanged', account),
       show: (id) => { if (!sessions?.isManager(id)) events.emit('chat:show', id) },
@@ -341,7 +342,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       void Promise.allSettled(hosts.map((id) => routes.hosts.ensure(id))).then(() => stopped ? undefined : started.reattach(running)).catch((error: Error) => console.error(error.message))
     }
     const configureManager = async (change: Partial<ManagerConfig>): Promise<ManagerView> => configureManagerAccess(coordinator, bridge, change)
-    return { sessions: started, manager: coordinator, telegram: bridge, channels: hub, shares, plans, employees, routes, notes, hostNamed, start, dispose, wake: () => { resumeSchedule?.(); started.again() }, configureManager, checkProviderUpdates, subscribe: events.subscribe, emit: events.emit, current: () => ({ sessions: all, lineup, settings: getSettings(), employees: employees.list(), hosts: routes.hosts.views(), prompts: routes.hosts.prompts(), telegram: bridge.view(), shares: shares.rooms(), working: started.working(), wanting: started.wanting(), watched: started.watched() }) }
+    return { sessions: started, manager: coordinator, telegram: bridge, channels: hub, shares, plans, employees, routes, notes, hostNamed, start, dispose, wake: () => { resumeSchedule?.(); started.again() }, configureManager, checkProviderUpdates, subscribe: events.subscribe, emit: events.emit, managerView: () => view, refreshManager: async () => { view = await coordinator.view(); events.emit('manager:view', view) }, current: () => ({ sessions: all, lineup, settings: getSettings(), employees: employees.list(), hosts: routes.hosts.views(), prompts: routes.hosts.prompts(), telegram: bridge.view(), shares: shares.rooms(), working: started.working(), wanting: started.wanting(), watched: started.watched() }) }
   } catch (error) {
     await dispose()
     throw error

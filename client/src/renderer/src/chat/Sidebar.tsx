@@ -17,6 +17,7 @@ import { Dot } from './Tasks'
 import { ago } from './time'
 import type { Chat } from './useChat'
 import { ALL } from './useChat'
+import { TaskListStatus, taskListSettled } from './TaskListStatus'
 
 /**
  * The projects, and the conversations of one of them or of all of them.
@@ -679,6 +680,7 @@ export function Sidebar({
 
   return (
     <div className="sidebar">
+      <TaskListStatus chat={chat} />
       {headings.length === 0 && chat.scope !== ALL ? null : (
       <div className="sidebar-tools">
         <span className="spacer" />
@@ -716,7 +718,7 @@ export function Sidebar({
         now={now}
         scope={chat.scope}
         colors={chat.settings}
-        empty={chat.root === undefined ? 'Add a folder to start.' : chat.settings.employeeFilter !== '' && chat.sessions.length === 0 ? 'No tasks match these filters' : undefined}
+        empty={!taskListSettled(chat) && chat.sessions.length === 0 ? '' : chat.root === undefined ? 'Add a folder to start.' : chat.settings.employeeFilter !== '' && chat.sessions.length === 0 ? 'No tasks match these filters' : undefined}
         shownId={shownId}
         folded={folded}
         renaming={renaming}

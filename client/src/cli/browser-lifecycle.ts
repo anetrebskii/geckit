@@ -10,6 +10,28 @@ export const browserStateFolder = (folder = defaultFolder()): string => `${folde
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex').slice(0, 16)
 const conversationFile = (id: string, folder: string): string => join(browserStateFolder(folder), 'conversations', `${digest(id)}.json`)
 
+export interface TestAccount { readonly name: string; readonly note: string; readonly at: number }
+const accountFile = (name: string, folder: string): string => join(browserStateFolder(folder), 'accounts', `${name}.json`)
+
+/** A test profile made for one account on purpose, with a note saying which: any conversation may use it by name. */
+export function testAccount(name: string, folder = defaultFolder()): TestAccount | undefined {
+  try { const saved = JSON.parse(readFileSync(accountFile(name, folder), 'utf8')) as TestAccount; return saved.name === name && typeof saved.note === 'string' ? saved : undefined } catch { return undefined }
+}
+
+export function saveTestAccount(name: string, note: string, folder = defaultFolder()): TestAccount {
+  if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(name)) throw new Error('Name the profile with lowercase letters, digits and hyphens, such as github-work.')
+  const trimmed = note.trim().replace(/\s+/g, ' ').slice(0, 120)
+  if (trimmed === '') throw new Error('Say which account the profile is for, such as --note "GitHub as alex".')
+  const account: TestAccount = { name, note: trimmed, at: testAccount(name, folder)?.at ?? Date.now() }
+  mkdirSync(join(browserStateFolder(folder), 'accounts'), { recursive: true, mode: 0o700 })
+  const file = accountFile(name, folder)
+  writeFileSync(`${file}.part`, JSON.stringify(account))
+  renameSync(`${file}.part`, file)
+  return account
+}
+
+export const forgetTestAccount = (name: string, folder = defaultFolder()): void => { rmSync(accountFile(name, folder), { force: true }) }
+
 export function browserConversation(id: string, folder = defaultFolder()): BrowserConversation | undefined {
   try { const saved = JSON.parse(readFileSync(conversationFile(id, folder), 'utf8')) as BrowserConversation; return saved.id === id ? saved : undefined } catch { return undefined }
 }
@@ -51,7 +73,7 @@ export function conversationTestName(id: string, folder = defaultFolder(), reque
   const configured = accounts[conversation.root]
   const allowed = typeof configured === 'string' ? [configured] : configured ?? []
   if (allowed.some((name) => !/^[a-z0-9][a-z0-9-]{0,39}$/.test(name))) throw new Error('The configured project test profile name is invalid.')
-  if (requested !== undefined && allowed.includes(requested)) return requested
+  if (requested !== undefined && (allowed.includes(requested) || testAccount(requested, folder) !== undefined)) return requested
   return typeof configured === 'string' ? configured : projectTestName(conversation.root)
 }
 

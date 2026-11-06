@@ -71,6 +71,14 @@
     "beforePack": "./scripts/check-service-native.cjs",
     "productName": "GeckIt",
     "appId": "org.anetrebskii.GeckIt",
+    "protocols": [
+      {
+        "name": "GeckIt",
+        "schemes": [
+          "geckit"
+        ]
+      }
+    ],
     "asar": true,
     "files": [
       "out",

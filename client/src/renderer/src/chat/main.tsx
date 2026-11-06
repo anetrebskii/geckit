@@ -6,8 +6,8 @@ import { watchWindowErrors } from '../errors'
 import { Tips } from '../ui/Tips'
 import { Chat } from './Chat'
 
-// Only macOS draws its window buttons over the page, so only there do the heads leave room for them.
-if (window.geckit.platform !== 'darwin') document.documentElement.classList.add('framed')
+// Remote workspaces inherit the client window's inset; only local macOS windows reserve room for overlay buttons here.
+if (!document.documentElement.classList.contains('remote-workspace-page') && window.geckit.platform !== 'darwin') document.documentElement.classList.add('framed')
 
 watchWindowErrors()
 

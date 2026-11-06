@@ -338,7 +338,7 @@ function listProfiles(): string {
   const testing = testBrowsersState()
   const tests = testing.profiles.map((one) => {
     const open = known.find((host) => host.label === `${TEST_PREFIX}${one.name}`)
-    return `${`${TEST_PREFIX}${one.name}`.padEnd(34)} ${'Chrome for Testing'.padEnd(20)} ${open !== undefined ? `open, ${open.tabs.length} tabs` : 'closed: start opens it'}`
+    return `${`${TEST_PREFIX}${one.name}`.padEnd(34)} ${'Chrome for Testing'.padEnd(20)} ${open !== undefined ? `open, ${open.tabs.length} tabs` : 'closed: start opens it'}${one.note === undefined ? '' : `, ${one.note}`}`
   })
   return [...lines, ...unnamed, ...tests].join('\n') || 'No Chrome profile found.'
 }
@@ -361,6 +361,68 @@ export function pickProfile(known: readonly Profile[], request: { readonly tab?:
   }
   const own = known.filter((one) => testName(one.label) === undefined)
   return [...(own.length > 0 ? own : known)].sort((a, b) => b.focused - a.focused)[0] ?? 'No Chrome profile is connected.'
+}
+
+/** Asks the open test browser of one profile. */
+export async function askTest(name: string, request: object, folder: string = browserFolder()): Promise<Reply> {
+  const open = profiles(folder).find((one) => one.label === `${TEST_PREFIX}${name}`)
+  if (open === undefined) return { ok: false, error: `${TEST_PREFIX}${name} is not open.` }
+  return ask(request, folder, open.pid)
+}
+
+/** Leaves a request the GeckIt service answers, outside any sandbox: making an account profile, or a sign-in link. */
+async function askService(kind: 'account' | 'signin', request: object, folder: string = browserFolder()): Promise<Reply & { readonly link?: string; readonly expires?: number }> {
+  if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Integrations.' }
+  const file = join(folder, `${randomUUID()}.${kind}`)
+  try {
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(`${file}.part`, JSON.stringify(request))
+    renameSync(`${file}.part`, file)
+  } catch { return { ok: false, error: `This sandbox may not write to ${folder}. GeckIt's own conversations may; elsewhere ask the person to allow writing there.` } }
+  for (let waited = 0; waited < 20_000; waited += 100) {
+    await new Promise((done) => setTimeout(done, 100))
+    try {
+      const told = JSON.parse(readFileSync(`${file}.told`, 'utf8')) as Reply & { readonly link?: string; readonly expires?: number }
+      rmSync(`${file}.told`, { force: true })
+      return told
+    } catch { continue }
+  }
+  rmSync(file, { force: true })
+  return { ok: false, error: 'The GeckIt service did not answer. Is GeckIt running?' }
+}
+
+async function accountCommand(rest: readonly string[]): Promise<{ readonly ok: boolean; readonly said: string }> {
+  const [how, named, ...more] = rest
+  const name = named?.startsWith(TEST_PREFIX) ? named.slice(TEST_PREFIX.length) : named ?? ''
+  const note = how === 'note' ? more.join(' ') : option(rest, '--note') ?? ''
+  if (!validTestName(name)) return { ok: false, said: 'Name the profile with lowercase letters, digits and hyphens, such as github-work.' }
+  if (how === 'create' && testBrowsersState().profiles.some((one) => one.name === name)) return { ok: false, said: `${TEST_PREFIX}${name} already exists. Change its note with geckit browser profiles note ${name} "<account>".` }
+  if (how === 'note' && !testBrowsersState().profiles.some((one) => one.name === name)) return { ok: false, said: `There is no ${TEST_PREFIX}${name}. Make it with geckit browser profiles create ${name} --note "<account>".` }
+  const told = await askService('account', { name, note })
+  if (!told.ok) return { ok: false, said: told.error ?? 'The profile was not made.' }
+  return { ok: true, said: how === 'create' ? `Made ${TEST_PREFIX}${name} for ${note.trim()}. It is signed in to nothing yet: geckit browser signin ${name} gives the person a link to sign in.` : `${TEST_PREFIX}${name} is now noted as ${note.trim()}.` }
+}
+
+async function signInCommand(named: string | undefined): Promise<{ readonly ok: boolean; readonly said: string }> {
+  const name = named?.startsWith(TEST_PREFIX) ? named.slice(TEST_PREFIX.length) : named ?? ''
+  if (!validTestName(name)) return { ok: false, said: 'Give the profile to sign in to, such as geckit browser signin github-work.' }
+  if (!testBrowsersState().profiles.some((one) => one.name === name)) return { ok: false, said: `There is no ${TEST_PREFIX}${name}. Make it first with geckit browser profiles create ${name} --note "<account>".` }
+  const told = await askService('signin', { name })
+  if (!told.ok || told.link === undefined) return { ok: false, said: told.error ?? 'No link was made.' }
+  const minutes = Math.round(((told.expires ?? Date.now()) - Date.now()) / 60_000)
+  return { ok: true, said: `${told.link}
+Give the person this link. It opens in GeckIt paired with this computer, once, within ${minutes} minutes, and shows ${TEST_PREFIX}${name} live so they sign in themselves. When they say they are done, run geckit browser signin ${name} --done.` }
+}
+
+async function signInDone(named: string | undefined): Promise<{ readonly ok: boolean; readonly said: string }> {
+  const name = named?.startsWith(TEST_PREFIX) ? named.slice(TEST_PREFIX.length) : named ?? ''
+  const open = profiles().some((one) => one.label === `${TEST_PREFIX}${name}`)
+  if (open) {
+    await askTest(name, { cmd: 'view-close' })
+    const stopped = await stopTest(name)
+    if (!stopped.ok) return { ok: true, said: `${TEST_PREFIX}${name} keeps its sign-in; it stays open because a conversation still uses it.` }
+  }
+  return { ok: true, said: `${TEST_PREFIX}${name} is saved with its sign-in on this computer. Use it with --profile ${TEST_PREFIX}${name}.` }
 }
 
 async function ask(request: object, folder: string = browserFolder(), to?: number): Promise<Reply> {
@@ -388,7 +450,13 @@ async function ask(request: object, folder: string = browserFolder(), to?: numbe
 export const BROWSER_HELP = `geckit browser: the person's own Chrome, through the GeckIt Browser extension, and test browsers, Chrome for Testing driven by GeckIt.
 
   profiles                      the Chrome profiles here: email, name, whether GeckIt Browser is in it and open, which was used last;
-                                then the test profiles, test:<name>
+                                then the test profiles, test:<name>, with the account each is for
+  profiles create <name> --note "<account>"
+                                make a test profile for one account, such as github-work --note "GitHub as alex";
+                                any conversation may then use it with --profile test:<name>
+  profiles note <name> "<account>"  change which account the note says
+  signin <name>                 a link the person opens in GeckIt to see test:<name> live and sign in themselves
+  signin <name> --done          when they say they are done: the sign-in is kept and the browser closes
   start <profile>               open a window of a profile that has GeckIt Browser but is closed
   start test                    start or reuse this conversation project test browser; no profile name needed
   start test:<name>             outside conversations: explicitly open a separate account profile
@@ -430,7 +498,7 @@ function refOf(word: string | undefined): string {
   return word
 }
 
-const VALUED = ['--max', '-o', '--size', '--click', '--hover', '--key', '--for', '--slow', '--profile']
+const VALUED = ['--max', '-o', '--size', '--click', '--hover', '--key', '--for', '--slow', '--profile', '--note']
 
 function option(args: readonly string[], name: string): string | undefined {
   const at = args.indexOf(name)
@@ -440,7 +508,9 @@ function option(args: readonly string[], name: string): string | undefined {
 export async function browser(args: readonly string[]): Promise<{ readonly ok: boolean; readonly said: string }> {
   const [what, ...rest] = args
   if (what === undefined || what === 'help' || what === '--help') return { ok: true, said: BROWSER_HELP }
+  if (what === 'profiles' && (rest[0] === 'create' || rest[0] === 'note')) return accountCommand(rest)
   if (what === 'profiles') return { ok: true, said: listProfiles() }
+  if (what === 'signin') return rest.includes('--done') ? signInDone(rest.find((one) => !one.startsWith('--'))) : signInCommand(rest[0])
   const conversation = requestingSession()
   if (what === 'start' || what === 'stop') {
     try {

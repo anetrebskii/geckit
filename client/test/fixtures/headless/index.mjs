@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath, URL } from 'node:url'
+import { setTimeout } from 'node:timers/promises'
 
 export function create() {
   const directory = process.env.GECKIT_DATA
@@ -19,7 +20,13 @@ export function create() {
     program: async () => undefined,
     models: async () => [{ value: 'fixture', label: 'Fixture' }],
     limits: async () => ({ windows: new Map() }),
-    list: async (roots) => records.filter((one) => roots.includes(one.root)).map(({ id, root, title, at, stands, driven }) => ({ id, root, title, at, stands, driven })),
+    list: async (roots) => {
+      const control = join(directory, 'fixture-list.json')
+      const state = existsSync(control) ? JSON.parse(readFileSync(control, 'utf8')) : {}
+      if (state.delay > 0) await setTimeout(state.delay)
+      if (state.fail) throw new Error('Fixture provider disconnected')
+      return state.empty ? [] : records.filter((one) => roots.includes(one.root)).map(({ id, root, title, at, stands, driven }) => ({ id, root, title, at, stands, driven }))
+    },
     search: async () => [], hidden: async () => [],
     create: async ({ root }) => { const id = `plugin:fixture:${randomUUID()}`; records.push({ id, root, title: 'Fixture', at: Date.now(), stands: '', driven: false, items: [] }); save(); return id },
     fork: async () => { throw new Error('Fixture does not fork') },

@@ -541,6 +541,74 @@ describe('holding a conversation', () => {
     expect(calls).toEqual(['create', 'hold', 'send'])
   })
 
+  it('keeps every provider visible while another provider is being reread', async () => {
+    const pluginRow = { id: 'plugin:other:saved', root: ROOT, title: 'Plugin task', stands: '', at: 1_000, driven: false }
+    const codexRow = { ...pluginRow, id: 'codex:saved', title: 'Codex task' }
+    let releaseCodex = (): void => undefined
+    let releasePlugin = (): void => undefined
+    const codexRead = new Promise<typeof codexRow[]>((resolve) => { releaseCodex = () => resolve([codexRow]) })
+    const pluginRead = new Promise<typeof pluginRow[]>((resolve) => { releasePlugin = () => resolve([pluginRow]) })
+    const codexList = vi.fn<NonNullable<SessionsDeps['codex']>['list']>().mockResolvedValueOnce([codexRow]).mockReturnValue(codexRead)
+    const pluginList = vi.fn<LlmProvider['list']>().mockResolvedValueOnce([pluginRow]).mockReturnValue(pluginRead)
+    const provider: LlmProvider = { ...llmProvider({}, 'claude'), id: 'plugin:other', family: 'plugin:other', name: 'Other AI', list: pluginList }
+    const built = build({ codex: fakeCodex({ list: codexList }), plugins: [provider] })
+    expect(await built.sessions.list([ROOT])).toHaveLength(2)
+    const refreshing = built.sessions.list([ROOT])
+    const duplicate = built.sessions.list([ROOT])
+    await vi.waitFor(() => expect(codexList).toHaveBeenCalledTimes(2))
+    built.sessions.mark(pluginRow.id, 'done')
+    expect(last(built.rows)?.map((one) => one.id)).toEqual(expect.arrayContaining([pluginRow.id, codexRow.id]))
+    expect(built.sessions.listStatus()).toContainEqual({ provider: 'codex', roots: [ROOT], state: 'loading' })
+    releaseCodex()
+    await vi.waitFor(() => expect(pluginList).toHaveBeenCalledTimes(2))
+    built.sessions.mark(codexRow.id, 'done')
+    expect(last(built.rows)?.map((one) => one.id)).toEqual(expect.arrayContaining([pluginRow.id, codexRow.id]))
+    releasePlugin()
+    expect(await refreshing).toHaveLength(2)
+    expect(await duplicate).toHaveLength(2)
+    expect(pluginList).toHaveBeenCalledTimes(2)
+    expect(built.sessions.listStatus()).toEqual([])
+    built.sessions.dispose()
+  })
+
+  it('retains a failed provider snapshot, reports its error, and accepts a successful empty retry', async () => {
+    const row = { id: 'plugin:other:saved', root: ROOT, title: 'Saved task', stands: '', at: 1_000, driven: false }
+    const list = vi.fn<LlmProvider['list']>().mockResolvedValueOnce([row]).mockRejectedValueOnce(new Error('Provider disconnected')).mockResolvedValue([])
+    const statuses: ReturnType<Sessions['listStatus']>[] = []
+    const provider: LlmProvider = { ...llmProvider({}, 'claude'), id: 'plugin:other', family: 'plugin:other', name: 'Other AI', list }
+    const built = build({ plugins: [provider], listStatus: (status) => statuses.push(status) })
+    expect(await built.sessions.list([ROOT])).toMatchObject([{ id: row.id }])
+    expect(await built.sessions.list([ROOT])).toMatchObject([{ id: row.id }])
+    expect(built.sessions.listStatus()).toEqual([{ provider: 'plugin:other', roots: [ROOT], state: 'failed', problem: 'Provider disconnected' }])
+    expect(await built.sessions.list([ROOT])).toEqual([])
+    expect(built.sessions.listStatus()).toEqual([])
+    expect(statuses.some((status) => status.some((one) => one.provider === 'plugin:other' && one.state === 'loading'))).toBe(true)
+    built.sessions.dispose()
+  })
+
+  it('retains Codex history on errors and removes it only after a successful empty list', async () => {
+    const row = { id: 'codex:saved', root: ROOT, title: 'Saved task', stands: '', at: 1_000, driven: false }
+    const list = vi.fn<NonNullable<SessionsDeps['codex']>['list']>().mockResolvedValueOnce([row]).mockRejectedValueOnce(new Error('Codex unavailable')).mockResolvedValue([])
+    const built = build({ codex: fakeCodex({ list }) })
+    expect(await built.sessions.list([ROOT])).toMatchObject([{ id: row.id }])
+    expect(await built.sessions.list([ROOT])).toMatchObject([{ id: row.id }])
+    expect(built.sessions.listStatus()).toEqual([{ provider: 'codex', roots: [ROOT], state: 'failed', problem: 'Codex unavailable' }])
+    expect(await built.sessions.list([ROOT])).toEqual([])
+    built.sessions.dispose()
+  })
+
+  it('clears a provider failure only for the folders successfully retried', async () => {
+    const list = vi.fn<LlmProvider['list']>().mockRejectedValueOnce(new Error('Offline')).mockResolvedValue([])
+    const provider: LlmProvider = { ...llmProvider({}, 'claude'), id: 'plugin:other', family: 'plugin:other', name: 'Other AI', list }
+    const built = build({ plugins: [provider] })
+    await built.sessions.list([ROOT, '/work/another'])
+    await built.sessions.list([ROOT])
+    expect(built.sessions.listStatus()).toEqual([{ provider: 'plugin:other', roots: ['/work/another'], state: 'failed', problem: 'Offline' }])
+    await built.sessions.list(['/work/another'])
+    expect(built.sessions.listStatus()).toEqual([])
+    built.sessions.dispose()
+  })
+
   it('starts one and hands the message over', async () => {
     const built = build()
     const id = await started(built)

@@ -8,15 +8,18 @@ import { managerProjects } from '../../shared/manager'
 import { newKey, SIGNAL } from '../../shared/pairing'
 import { identity, phraseOf, sign, transcript, trustProof, verify } from '../../shared/remote/identity'
 import { CODE_TTL, invitationLink, REMOTE_PROTOCOL, requestOf, validSignal } from '../../shared/remote/protocol'
-import type { RemoteChannel, RemoteIdentity, RemoteResponse, RemoteServer, RemoteTrust } from '../../shared/remote/protocol'
+import { stringifyRemote } from '../../shared/remote/codec'
+import type { RemoteChannel, RemoteIdentity, RemoteResponse, RemoteResult, RemoteServer, RemoteTrust } from '../../shared/remote/protocol'
 import { observation } from './gateway'
+import type { CoreMethods } from '../../core/application'
+import type { CoreEvent } from '../../core/events'
 import type { ObservationRuntime } from './gateway'
 import { disposeTransport, nodeListen } from './transport'
-interface Device { readonly id: string; readonly name: string; readonly publicKey: string; readonly key: string; readonly projects: readonly string[]; readonly manager: boolean; readonly created: number; readonly revoked?: number }
+interface Device { readonly id: string; readonly name: string; readonly publicKey: string; readonly key: string; readonly projects: readonly string[]; readonly manager: boolean; readonly created: number; readonly revoked?: number; readonly full?: true }
 interface AccessRecord { readonly server: RemoteServer; readonly identity: RemoteIdentity; readonly enabled: boolean; readonly signal: string; readonly devices: readonly Device[] }
-interface Invitation { readonly id: string; readonly key: string; readonly expires: number; readonly projects: readonly string[]; readonly manager: boolean; consumed: string | undefined; readonly stop: () => void }
+interface Invitation { readonly id: string; readonly key: string; readonly expires: number; readonly projects: readonly string[]; readonly manager: boolean; readonly full?: true; consumed: string | undefined; readonly stop: () => void }
 interface Pending { readonly id: string; readonly name: string; readonly publicKey: string; readonly phrase: string; readonly invitation: Invitation; readonly approve: (device: Device) => Promise<void>; readonly close: () => void }
-export async function remoteAccess(runtime: ObservationRuntime, directory: string, security: ServiceSecurity) {
+export async function remoteAccess(runtime: ObservationRuntime, directory: string, security: ServiceSecurity, core?: Partial<CoreMethods>) {
   const path = join(directory, 'remote-access.sealed')
   let record: AccessRecord | undefined
   if (existsSync(path)) {
@@ -35,7 +38,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
     renameSync(`${path}.new`, path)
   }
   const active = (): AccessRecord => { if (record === undefined || !record.enabled) throw new Error('Enable remote access first.'); return record }
-  const send = (channel: RemoteChannel, message: RemoteResponse): void => channel.send(JSON.stringify(message))
+  const send = (channel: RemoteChannel, message: RemoteResponse): void => channel.send(stringifyRemote(message))
   const refuse = (channel: RemoteChannel, code: Extract<RemoteResponse, { type: 'error' }>['code'], message: string): void => { send(channel, { type: 'error', code, message }); setTimeout(() => channel.close(), 100) }
   const serve = (channel: RemoteChannel, invitation?: Invitation, trusted?: Device): void => {
     const server = record?.server
@@ -46,10 +49,11 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
     let ended = false
     let requests = 0
     let stopChanges: (() => void) | undefined
+    let stopEvents: (() => void) | undefined
     let requestId: string | undefined
     let updateTimer: ReturnType<typeof setTimeout> | undefined
     const timeout = setTimeout(() => { if (device === undefined) refuse(channel, 'expired', 'Code expired. Create a new code on the server.') }, invitation === undefined ? 15_000 : Math.max(1, invitation.expires - Date.now()))
-    const end = (): void => { if (ended) return; ended = true; clearTimeout(timeout); if (updateTimer !== undefined) clearTimeout(updateTimer); stopChanges?.(); if (requestId !== undefined) pending.delete(requestId); if (device !== undefined) channels.get(device.id)?.delete(channel) }
+    const end = (): void => { if (ended) return; ended = true; clearTimeout(timeout); if (updateTimer !== undefined) clearTimeout(updateTimer); stopChanges?.(); stopEvents?.(); if (requestId !== undefined) pending.delete(requestId); if (device !== undefined) channels.get(device.id)?.delete(channel) }
     channel.onClose(end)
     const establish = async (one: Device, text: string): Promise<void> => {
       if (ended) return
@@ -57,10 +61,13 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
       clearTimeout(timeout)
       const held = channels.get(one.id) ?? new Set<RemoteChannel>()
       held.add(channel); channels.set(one.id, held)
-      const trust: RemoteTrust = { server, device: one.id, key: one.key, signal: active().signal, projects: one.projects, manager: one.manager }
+      const trust: RemoteTrust = { server, device: one.id, key: one.key, signal: active().signal, projects: one.projects, manager: one.manager, ...(one.full ? { full: true } : {}) }
       const proof = await sign(active().identity, trustProof(text, trust))
       if (ended || !record?.enabled || record.devices.find((device) => device.id === one.id)?.revoked !== undefined) { channel.close(); return }
       send(channel, { type: 'trusted', trust, proof })
+      if (one.full) stopEvents = runtime.subscribe((event: CoreEvent) => {
+        if (!ended && record?.enabled && record.devices.some((current) => current.id === one.id && current.revoked === undefined)) send(channel, { type: 'core-event', event })
+      })
       stopChanges = gateway?.changed((seq) => {
         if (updateTimer !== undefined) return
         updateTimer = setTimeout(() => { updateTimer = undefined; if (!ended) send(channel, { type: 'changed', epoch: gateway?.epoch ?? '', seq }) }, 300)
@@ -68,7 +75,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
     }
     channel.onMessage((raw) => {
       void (async () => {
-        if (ended || !record?.enabled || requests >= 4) { channel.close(); return }
+        if (ended || !record?.enabled || requests >= 128) { channel.close(); return }
         requests++
         try {
           const request = requestOf(raw)
@@ -89,6 +96,15 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
               if (enrolled !== undefined) { await establish(enrolled, text); return }
               refuse(channel, 'reused', 'Code already used. Create a new code on the server.'); return
             }
+            if (invitation.full) {
+              const current = active()
+              const enrolled: Device = { id: randomUUID(), name: request.name, publicKey: request.publicKey, key: newKey(), projects: [], manager: true, full: true, created: Date.now() }
+              record = { ...current, devices: [...current.devices, enrolled] }
+              try { save() } catch (error) { record = current; throw error }
+              invitation.consumed = enrolled.id
+              listenDevice(enrolled)
+              await establish(enrolled, text); return
+            }
             if (pending.size >= 16) throw new Error('Too many pending devices')
             requestId = randomUUID()
             const phrase = await phraseOf(text)
@@ -99,8 +115,20 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
           if (device === undefined) throw new Error('Confirm this device on the server first.')
           const current = active().devices.find((one) => one.id === device?.id)
           if (current === undefined || current.revoked !== undefined) { refuse(channel, 'revoked', 'Device access revoked. Pair again with a new code.'); return }
+          if (request.type === 'core-call') {
+            try {
+              if (!current.full || core === undefined) throw new Error('Pair again with geckit pair to control this server.')
+              const { method, args } = request.call
+              if (!Object.hasOwn(core, method) || Object.hasOwn(Object.prototype, method)) throw new Error('Unknown GeckIt method.')
+              const operation = core[method] as (...args: never[]) => RemoteResult | Promise<RemoteResult>
+              const value = await operation(...args as never[])
+              if (!ended && record.enabled && record.devices.some((one) => one.id === current.id && one.revoked === undefined)) send(channel, { type: 'core-result', id: request.id, value })
+            } catch (error) { if (!ended && record?.enabled && record.devices.some((one) => one.id === current.id && one.revoked === undefined)) send(channel, { type: 'core-failure', id: request.id, message: error instanceof Error ? error.message : 'Remote operation failed.' }) }
+            return
+          }
           if (gateway === undefined) throw new Error('Remote data is unavailable')
-          const response: RemoteResponse = request.type === 'snapshot' ? { type: 'snapshot', id: request.id, snapshot: await gateway.snapshot(current.projects, current.manager) } : { type: 'history', id: request.id, history: await gateway.history(current.projects, request.session, request.before, current.manager) }
+          const projects = current.full ? managerProjects(getSettings()) : current.projects
+          const response: RemoteResponse = request.type === 'snapshot' ? { type: 'snapshot', id: request.id, snapshot: await gateway.snapshot(projects, current.manager) } : { type: 'history', id: request.id, history: await gateway.history(projects, request.session, request.before, current.manager) }
           if (!ended && record.enabled && record.devices.find((one) => one.id === current.id)?.revoked === undefined) send(channel, response)
         } catch (error) { refuse(channel, 'denied', error instanceof Error ? error.message : 'Remote operation denied.') }
         finally { requests-- }
@@ -129,8 +157,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
     for (const [id, invitation] of invitations) if (Date.now() >= invitation.expires + 60_000) { invitation.stop(); invitations.delete(id) }
     for (const request of pending.values()) if (Date.now() >= request.invitation.expires) { request.close(); pending.delete(request.id) }
   }, 1000)
-  return {
-    enable: async (signal = SIGNAL) => {
+  const enable = async (signal = record?.signal ?? SIGNAL) => {
       if (!validSignal(signal)) throw new Error('Use the managed signaling service or a localhost test endpoint.')
       if (!security.vault.available()) throw new Error('Secure storage is unavailable.')
       if (record === undefined) {
@@ -139,6 +166,18 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
         record = { server: { id: randomUUID(), name: hostname(), publicKey: keys.publicKey }, identity: keys, enabled: true, signal, devices: [] }
       } else { stop(); record = { ...record, enabled: true, signal } }
       save(); start(); return { server: record.server, enabled: true, signal }
+  }
+  return {
+    server: (): RemoteServer | undefined => record?.enabled === true && record.devices.some((one) => one.revoked === undefined) ? record.server : undefined,
+    enable,
+    pair: async () => {
+      if (!record?.enabled) await enable()
+      const current = active()
+      if (invitations.size >= 16) throw new Error('Cancel an outstanding invitation first.')
+      const key = newKey(); const id = randomUUID(); const expires = Date.now() + CODE_TTL
+      const invitation: Invitation = { id, key, expires, projects: [], manager: true, full: true, consumed: undefined, stop: nodeListen({ key, signal: current.signal }, (channel) => serve(channel, invitation), (error) => console.warn(`Invitation signaling unavailable: ${error.message}`)) }
+      invitations.set(id, invitation)
+      return { code: current.signal === SIGNAL ? key : invitationLink(key, current.signal), expires }
     },
     disable: () => { const current = active(); record = { ...current, enabled: false }; save(); stop(); return { enabled: false } },
     create: (chosen: readonly string[], manager = false, ttl = CODE_TTL) => {
