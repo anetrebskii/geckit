@@ -585,6 +585,23 @@ describe('Manager Telegram, with a fake Bot API', () => {
     expect(sent(value.api)).toHaveLength(before)
   })
 
+  it('sends a Manager answer with a wide table as labeled entries, and the plain fallback without the pipes', async () => {
+    const value = fixture()
+    await paired(value)
+    const answer = 'Here is the week.\n\n| # | Point | Owner |\n|---|---|---|\n| 1 | Review [#4069](https://github.com/example/app/pull/4069) before anything else starts | Alex |\n| 2 | Get the carrier running on preview 4018 | Alex, Daniel |\n\n```sh\nnpm test | tee log\n```'
+    const before = sent(value.api).length
+    await value.telegram.notify(answer)
+    const [body] = sent(value.api).slice(before).map((one) => one.body)
+    expect(body?.['parse_mode']).toBe('HTML')
+    expect(body?.['text']).toBe('Here is the week.\n\n1. <b>Review <a href="https://github.com/example/app/pull/4069">#4069</a> before anything else starts</b>\nOwner: Alex\n\n2. <b>Get the carrier running on preview 4018</b>\nOwner: Alex, Daniel\n\n<pre><code class="language-sh">npm test | tee log</code></pre>')
+    value.api.refuseFormatting()
+    await value.telegram.notify(answer)
+    const fallback = sent(value.api).at(-1)?.body
+    expect(fallback?.['parse_mode']).toBeUndefined()
+    expect(String(fallback?.['text']).split('```')[0]).not.toContain('|')
+    expect(String(fallback?.['text'])).toContain('Owner: Alex, Daniel')
+  })
+
   it('does not create whitespace-only chunks at Telegram message boundaries', async () => {
     const value = fixture()
     await paired(value)

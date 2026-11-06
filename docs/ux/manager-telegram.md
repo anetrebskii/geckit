@@ -1059,3 +1059,31 @@ The earlier lookup-only exception above left Manager latched in manual recovery 
 ### Native typing acknowledgement - 2026-10-24
 
 [Telegram typing lifecycle](telegram-manager-typing.md) replaces the successful ordinary "Sent to Manager." bubble with Telegram's native typing action. It follows correlated pending inputs through queueing, intermediate output and final response; existing permission, failure and recovery messages remain explicit.
+
+## Tables that fit a phone - 2026-10-20
+
+Alex, 2026-10-20: "I mean there artifacts of table in reply, but not table. AI should format to telegram reply." The case is Manager's answer of 2026-10-19 with the weekly plan: four columns, cells of two or three sentences and links. Padded into one monospace block, each line was as wide as the longest cell, about 200 characters, so on a phone every row wrapped into a staircase of spaces and the links showed as `[#4069](https://...)`. Telegram has no table of its own, so a table is now drawn in one of two ways.
+
+| Table | What Telegram shows | Why |
+| --- | --- | --- |
+| Narrow: every line fits 36 characters and no cell has a link, emphasis or code | The monospace block with lined-up columns, as before | A small status grid reads best as a grid, and 36 monospace characters fit a phone held upright |
+| Anything else | One entry per row: its first cell in bold, numbered when the first column is a row number, then a line per other column, "Header: value", with the cell's links, emphasis and code drawn as in prose. A blank line between rows | Each row is read on its own, every value keeps the name of its column, and nothing depends on the width of the screen |
+
+Rules both share:
+
+- A row is cut at the pipes between cells only: a pipe written `\|` and a pipe inside a `code span` belong to the cell.
+- A table is a header line followed by a line of dashes with the same number of cells. Lines with pipes that are not followed by that, a shell pipeline in prose for example, are prose; a pipe inside a fenced code block is code and is never read as a table.
+- An empty cell is left out of its entry; a column with no header shows its value alone.
+- A table with no data rows keeps its headers: a narrow plain header stays a grid; wider or formatted headers are prose lines with their links and inline formatting. No empty row or status message is invented.
+- A long table is split into messages between rows, and within a row between its lines, never inside one.
+- When Telegram refuses the formatting, the plain words of the entries are sent, not the pipes.
+
+Manager is also told that its words reach a phone in Telegram, so it prefers short paragraphs and lists to tables; the rendering above is what happens when it writes one anyway, or quotes a document that has one.
+
+| From | Event | To | What Alex sees |
+| --- | --- | --- | --- |
+| Manager's answer | It has a narrow table | Sent | Columns lined up in a monospace block |
+| Manager's answer | It has a wide table or one with links | Sent | One entry per row, "Header: value" lines |
+| Sent | Telegram refuses the formatting | Plain | The same entries without formatting (unchanged rule) |
+
+Not chosen: an image of the table (not searchable or copyable, and needs a renderer on the computer); a document attachment (one tap away from the answer it belongs to); a monospace block scrolled sideways (Telegram wraps pre text on phones rather than scrolling it).
