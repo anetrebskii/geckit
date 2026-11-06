@@ -1074,6 +1074,7 @@ Rules both share:
 - A row is cut at the pipes between cells only: a pipe written `\|` and a pipe inside a `code span` belong to the cell.
 - A table is a header line followed by a line of dashes with the same number of cells. Lines with pipes that are not followed by that, a shell pipeline in prose for example, are prose; a pipe inside a fenced code block is code and is never read as a table.
 - An empty cell is left out of its entry; a column with no header shows its value alone.
+- A table with no data rows keeps its headers: a narrow plain header stays a grid; wider or formatted headers are prose lines with their links and inline formatting. No empty row or status message is invented.
 - A long table is split into messages between rows, and within a row between its lines, never inside one.
 - When Telegram refuses the formatting, the plain words of the entries are sent, not the pipes.
 

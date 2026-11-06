@@ -95,6 +95,7 @@ function table(rows: readonly string[]): Block[] {
   const widths = grid.reduce<number[]>((held, row) => row.map((cell, at) => Math.max(held[at] ?? 0, cell.length)), [])
   const padded = grid.map((row) => row.map((cell, at) => cell.padEnd(widths[at] ?? 0)).join('  ').trimEnd()).join('\n')
   if (padded.split('\n').every((one) => one.length <= NARROW) && !grid.flat().some((cell) => MARKUP.test(cell))) return [{ kind: 'pre', html: code(padded), text: padded, body: padded }]
+  if (body.length === 0) return headers.map((header): Block => ({ kind: 'line', html: inline(header), text: header }))
   const numbered = /^(#|№|no\.?|n)?$/i.test(headers[0] ?? '') && body.length > 0 && body.every((row) => /^\d+\.?$/.test(row[0] ?? ''))
   const first = numbered ? 1 : 0
   const out: Block[] = []

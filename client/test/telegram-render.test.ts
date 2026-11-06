@@ -45,6 +45,24 @@ describe('what Manager writes, drawn with Telegram’s own formatting', () => {
     expect(one('| Worker | State |\n| --- | --- |\n| chat | working |\n| docs | idle |')).toBe('<pre>Worker  State\nchat    working\ndocs    idle</pre>')
   })
 
+  it('keeps a narrow plain table without body rows as a grid', () => {
+    expect(telegramMessages('| Worker | State |\n| --- | --- |')).toEqual([
+      { html: '<pre>Worker  State</pre>', text: 'Worker  State' },
+    ])
+  })
+
+  it('retains wide table headers as prose without body rows', () => {
+    expect(telegramMessages('| A descriptive header wider than a phone | Owner |\n| --- | --- |')).toEqual([
+      { html: 'A descriptive header wider than a phone\nOwner', text: 'A descriptive header wider than a phone\nOwner' },
+    ])
+  })
+
+  it('retains formatted table headers and links without body rows', () => {
+    expect(telegramMessages('| **Task** | [Ref](https://x.io) |\n| --- | --- |')).toEqual([
+      { html: '<b>Task</b>\n<a href="https://x.io">Ref</a>', text: '**Task**\n[Ref](https://x.io)' },
+    ])
+  })
+
   it('turns a weekly plan table into one numbered entry per row, each value named by its column, with links kept', () => {
     expect(one(weeklyPlan)).toBe([
       '<b>The plan</b>',
