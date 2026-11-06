@@ -159,19 +159,40 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     return Array.isArray(value) ? value.flatMap((one) => one !== null && typeof one === 'object' && !Array.isArray(one) && typeof one['key'] === 'string' && typeof one['channel'] === 'string' && typeof one['ts'] === 'string' ? [{ key: one['key'], channel: one['channel'], ts: one['ts'] }] : []) : []
   }
 
+  const boundary = (key: string): string | undefined => context.conversations.historyBoundary?.(key)?.revision
+  const cutoff = (key: string): string | undefined => { const at = context.conversations.historyBoundary?.(key)?.at; return at === undefined ? undefined : (at / 1000).toFixed(6) }
+
   const follow = (thread: string, channel: string, ts: string, key: string): void => {
     if (watching.has(thread)) return
+    const revision = boundary(key)
+    const current = (): boolean => !stopped && revision === boundary(key)
     const shown = new Set(pending(key).map((one) => one.id))
     const plain = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
     const status = new StatusMessage({
       post: async (text) => {
+        if (!current()) throw new Error('Manager conversation changed.')
         const reply = await post(channel, ts, plain(text))
         if (reply.ts === undefined) throw new Error('Slack chat.postMessage: no ts')
         return reply.ts
       },
-      edit: async (id, text) => { await slack('chat.update', { channel, ts: id, text: plain(text) }) },
+      edit: async (id, text) => { if (!current()) return; await slack('chat.update', { channel, ts: id, text: plain(text) }) },
     }, { failed: (error) => context.log.write('warn', 'slack.status.failed', { reason: said(error) }) })
     watching.set(thread, context.conversations.watch(thread, (event: ChannelEvent) => {
+      if (event.kind === 'history') {
+        context.store.set(`reset:${key}`, event.change.revision)
+        const seen = context.store.get(`seen:${key}`)
+        const cutoffAt = (event.change.at / 1000).toFixed(6)
+        context.store.set(`seen:${key}`, typeof seen === 'string' && after(seen, cutoffAt) ? seen : cutoffAt)
+        context.store.set(`decisions:${key}`, [])
+        shown.clear()
+        if (event.change.action === 'delete') {
+          context.store.set('threads', places().filter((one) => one.key !== key))
+          context.store.set(`thread:${key}`, undefined)
+          watching.get(thread)?.(); watching.delete(thread)
+        } else { watching.get(thread)?.(); watching.delete(thread); follow(thread, channel, ts, key) }
+        return
+      }
+      if (!current()) return
       if (event.kind === 'status') status.update(event.activity)
       if (event.kind === 'answer') posted(channel, ts, event.text)
       if (event.kind === 'decisions') {
@@ -191,10 +212,15 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     const mention = event.type === 'app_mention'
     const ts = event.thread_ts ?? event.ts
     const key = keyOf(event.channel, ts)
+    const revision = boundary(key)
+    const current = (): boolean => revision === boundary(key) && !stopped
+    const cutoffAt = cutoff(key)
+    if (cutoffAt !== undefined && !after(event.ts, cutoffAt)) return
     const known = context.store.get(`thread:${key}`) === true
     if (!mention && !direct && !(event.type === 'message' && event.thread_ts !== undefined && known)) return
     const seen = context.store.get(`seen:${key}`)
-    const last = typeof seen === 'string' ? seen : undefined
+    const seenAt = typeof seen === 'string' ? seen : undefined
+    const last = cutoffAt !== undefined && (seenAt === undefined || after(cutoffAt, seenAt)) ? cutoffAt : seenAt
     if (last !== undefined && !after(event.ts, last)) return
     const allow = context.config()['allow']
     if (!Array.isArray(allow) || !allow.includes(event.user)) {
@@ -206,6 +232,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(event.channel, ts, 'That message looks like it contains a token or key, so it was not sent. Remove it and write again.'); return }
     const from = await person(event.user)
     const link = known ? undefined : await slack('chat.getPermalink', { channel: event.channel, message_ts: ts }).then((reply) => reply.permalink, () => undefined)
+    if (!current()) return
     const thread = context.conversations.manager({ key, from, ...(known ? {} : { title: text.split('\n')[0]?.slice(0, 80) || 'Slack thread' }), ...(link === undefined ? {} : { link }), labels: { channel: event.channel, thread: ts, ...(known ? {} : { starter: from, starterId: event.user }) } })
     if (thread === undefined) { await post(event.channel, ts, 'Manager is not available to Slack. Allow it in GeckIt, Settings, Channels.'); return }
     if (!known) {
@@ -217,6 +244,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     const decision = pending(key).find((one) => one.values.includes(choice))
     if (decision !== undefined && await context.conversations.answer(thread, decision.id, choice)) { context.store.set(`seen:${key}`, event.ts); return }
     const before = event.thread_ts === undefined ? '' : await earlier(event.channel, ts, last, event.ts)
+    if (!current()) return
     const request = text === '' ? 'They mentioned you without a message. Read the thread above and help with it.' : text
     await context.conversations.send(thread, { text: before === '' ? request : `${before}\n\nMessage to you:\n${request}`, from })
     context.store.set(`seen:${key}`, event.ts)
@@ -250,6 +278,15 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       context.status('starting', 'Connecting to Slack')
       me = (await slack('auth.test')).user_id
       for (const place of places()) {
+        const reset = context.conversations.historyBoundary?.(place.key)
+        if (reset?.action === 'delete') { context.store.set(`thread:${place.key}`, undefined); continue }
+        if (reset !== undefined && context.store.get(`reset:${place.key}`) !== reset.revision) {
+          const seen = context.store.get(`seen:${place.key}`)
+          const cutoffAt = (reset.at / 1000).toFixed(6)
+          context.store.set(`seen:${place.key}`, typeof seen === 'string' && after(seen, cutoffAt) ? seen : cutoffAt)
+          context.store.set(`decisions:${place.key}`, [])
+          context.store.set(`reset:${place.key}`, reset.revision)
+        }
         const thread = context.conversations.manager({ key: place.key })
         if (thread !== undefined) follow(thread, place.channel, place.ts, place.key)
       }

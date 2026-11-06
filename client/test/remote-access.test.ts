@@ -74,7 +74,7 @@ afterEach(() => {
 })
 
 it('denies task control, native capabilities and generic service RPC at the remote boundary', () => {
-  for (const type of ['chat:send', 'manager:configure', 'core:trash', 'settings:set', 'desktop:hello', 'answer']) expect(() => requestOf(JSON.stringify({ type, id: 1, args: [] }))).toThrow()
+  for (const type of ['chat:send', 'manager:configure', 'manager:history', 'manager.history', 'core:trash', 'settings:set', 'desktop:hello', 'answer']) expect(() => requestOf(JSON.stringify({ type, id: 1, args: [] }))).toThrow()
   expect(() => requestOf('{')).toThrow()
   expect(() => requestOf(JSON.stringify({ type: 'history', id: 1, session: 'remote', before: -1 }))).toThrow()
 })

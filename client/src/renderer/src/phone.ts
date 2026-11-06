@@ -472,6 +472,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       pause: () => call('manager.pause'),
       resume: () => call('manager.resume'),
       retry: () => call('manager.retry'),
+      history: (request) => call('manager.history', request),
       restart: () => call('manager.restart'),
       on: (said) => listen('manager:view', said),
     },

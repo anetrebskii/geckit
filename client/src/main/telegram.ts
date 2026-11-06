@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path'
 import { createHash, randomBytes } from 'node:crypto'
 
-import type { ManagerDecision, ManagerDecisionOutcome, ManagerReplyOrigin, ManagerTelegramReply } from '../shared/manager'
+import type { ManagerHistoryBoundary, ManagerHistoryChange, ManagerDecision, ManagerDecisionOutcome, ManagerReplyOrigin, ManagerTelegramReply } from '../shared/manager'
 import type { Json, JsonObject } from '../shared/elicitation'
 import { jsonObject } from '../shared/elicitation'
 import type { TelegramAction, TelegramAccount, TelegramBot, TelegramDecision, TelegramView } from '../shared/telegram'
@@ -28,6 +28,8 @@ export interface TelegramVault {
 }
 
 export interface TelegramManager {
+  historyBoundary?(chatId: number): ManagerHistoryBoundary | undefined
+  originCurrent?(origin: ManagerReplyOrigin): boolean
   submit(text: string, id?: string, attachments?: readonly TelegramAttachment['id'][], authorized?: () => boolean): Promise<void | ManagerReplyOrigin['session']>
   reply?(text: string, id: string | undefined, reference: ManagerTelegramReply, authorized?: () => boolean, attachments?: readonly TelegramAttachment['id'][]): Promise<void>
   typingAllowed?(): boolean
@@ -67,6 +69,7 @@ interface KeptTelegram {
   readonly bot: TelegramBot
   readonly account?: TelegramAccount
   readonly offset: number
+  readonly historyRevision?: string
   readonly pendingInputs?: readonly string[]
   readonly replies: readonly ManagerTelegramReply[]
   readonly callbacks: readonly Callback[]
@@ -79,6 +82,7 @@ interface KeptTelegram {
 }
 
 interface Connection {
+  historyEpoch: number
   kept: KeptTelegram
   readonly client: TelegramBotClient
   readonly controller: AbortController
@@ -142,7 +146,7 @@ function keptOf(text: string): KeptTelegram | undefined {
     const item = jsonObject(entry)
     if (item !== undefined && safeInteger(item['messageId']) && typeof item['id'] === 'string') questions.push({ messageId: item['messageId'], id: item['id'] })
   }
-  return { pendingInputs: Array.isArray(value['pendingInputs']) ? value['pendingInputs'].filter((id): id is string => typeof id === 'string') : [], token: value['token'], bot: { id: bot['id'], username: bot['username'] }, offset: value['offset'], replies: Array.isArray(value['replies']) ? value['replies'].flatMap((entry) => { const reply = replyOf(entry); return reply === undefined ? [] : [reply] }).slice(-2048) : [], callbacks, questions, ...(account === undefined ? {} : { account }), ...(safeInteger(value['incoming']) ? { incoming: value['incoming'] } : {}), ...(value['outgoing'] === true ? { outgoing: true } : {}), ...(value['uncertain'] === true ? { uncertain: true } : {}), ...(typeof value['pendingUpload'] === 'string' && /^[a-f0-9]{64}$/.test(value['pendingUpload']) ? { pendingUpload: value['pendingUpload'] } : {}), uncertainUploads: Array.isArray(value['uncertainUploads']) ? value['uncertainUploads'].filter((entry): entry is string => typeof entry === 'string' && /^[a-f0-9]{64}$/.test(entry)) : [] }
+  return { ...(typeof value['historyRevision'] === 'string' ? { historyRevision: value['historyRevision'] } : {}), pendingInputs: Array.isArray(value['pendingInputs']) ? value['pendingInputs'].filter((id): id is string => typeof id === 'string') : [], token: value['token'], bot: { id: bot['id'], username: bot['username'] }, offset: value['offset'], replies: Array.isArray(value['replies']) ? value['replies'].flatMap((entry) => { const reply = replyOf(entry); return reply === undefined ? [] : [reply] }).slice(-2048) : [], callbacks, questions, ...(account === undefined ? {} : { account }), ...(safeInteger(value['incoming']) ? { incoming: value['incoming'] } : {}), ...(value['outgoing'] === true ? { outgoing: true } : {}), ...(value['uncertain'] === true ? { uncertain: true } : {}), ...(typeof value['pendingUpload'] === 'string' && /^[a-f0-9]{64}$/.test(value['pendingUpload']) ? { pendingUpload: value['pendingUpload'] } : {}), uncertainUploads: Array.isArray(value['uncertainUploads']) ? value['uncertainUploads'].filter((entry): entry is string => typeof entry === 'string' && /^[a-f0-9]{64}$/.test(entry)) : [] }
 }
 
 export class ManagerTelegram {
@@ -204,6 +208,11 @@ export class ManagerTelegram {
     if (kept.account === undefined) return
     const connection = this.connection(kept)
     this.active = connection
+    const boundary = this.options.manager.historyBoundary?.(kept.account.chatId)
+    if (boundary !== undefined && boundary.revision !== kept.historyRevision) {
+      this.historyChanged({ ...boundary, sessions: kept.replies.filter((one) => this.options.manager.originCurrent?.(one) === false).map((one) => one.session) })
+      kept = connection.kept
+    }
     if (kept.incoming !== undefined || kept.outgoing === true || kept.uncertain === true) {
       const { pendingUpload, ...rest } = kept
       connection.kept = { ...rest, uncertain: true, uncertainUploads: [...new Set([...(kept.uncertainUploads ?? []), ...(pendingUpload === undefined ? [] : [pendingUpload])])] }
@@ -272,8 +281,9 @@ export class ManagerTelegram {
     if (connection === undefined || connection.kept.account === undefined) return Promise.resolve()
     const pendingResponse = connection.dispatches.size > 0 || this.pendingInputs(connection).length > 0
     if (pendingResponse) { connection.responses += 1; this.syncTyping(connection) }
+    const historyEpoch = connection.historyEpoch
     const job = this.outgoing.then(async () => {
-      if (!this.current(connection)) return
+      if (!this.current(connection) || historyEpoch !== connection.historyEpoch || origin !== undefined && this.options.manager.originCurrent?.(origin) === false || decision !== undefined && this.options.manager.hasDecision?.(decision.id) === false) return
       const choices: { readonly text: string; readonly callback_data: string }[] = []
       let question = decision
       if (decision !== undefined && (connection.kept.callbacks.length + decision.choices.length > 256 || connection.kept.questions.length >= 128 || decision.choices.length > 50)) {
@@ -296,6 +306,23 @@ export class ManagerTelegram {
     const finished = job.finally(() => { if (pendingResponse) connection.responses -= 1; this.syncTyping(connection) })
     this.outgoing = finished.catch(() => undefined)
     return finished
+  }
+
+  historyChanged(change: ManagerHistoryChange): void {
+    const connection = this.active
+    if (connection === undefined) return
+    const account = connection.kept.account
+    const selected = account !== undefined && this.options.manager.historyBoundary?.(account.chatId)?.id === change.id
+    if (selected) connection.historyEpoch += 1
+    connection.kept = {
+      ...connection.kept,
+      replies: connection.kept.replies.filter((one) => !change.sessions.includes(one.session)),
+      callbacks: connection.kept.callbacks.filter((one) => one.kind === 'decision' ? this.options.manager.hasDecision?.(one.id) !== false : one.kind !== 'late' || !selected && (one.reference === undefined || !change.sessions.includes(one.reference.session))),
+      questions: connection.kept.questions.filter((one) => this.options.manager.hasDecision?.(one.id) !== false),
+      ...(selected ? { pendingInputs: [], historyRevision: change.revision } : {}),
+    }
+    if (selected) { connection.dispatches.clear(); connection.typing.update(false) }
+    this.save(connection)
   }
 
   /** A link ended, by Stop, its time or the app: a Stop button left for it in Telegram stops being one. */
@@ -401,7 +428,7 @@ export class ManagerTelegram {
   }
 
   private connection(kept: KeptTelegram, client = new TelegramBotClient(kept.token, this.options.fetch), controller = new AbortController()): Connection {
-    const connection: Connection = { kept, client, controller, state: 'connected', sending: Promise.resolve(), typingFailed: false, responses: 0, dispatches: new Set(), typing: new TelegramTyping(async (signal) => {
+    const connection: Connection = { historyEpoch: 0, kept: { ...kept, replies: kept.replies.filter((one) => this.options.manager.originCurrent?.(one) !== false), callbacks: kept.callbacks.filter((one) => one.kind !== 'late' || one.reference === undefined || this.options.manager.originCurrent?.(one.reference) !== false) }, client, controller, state: 'connected', sending: Promise.resolve(), typingFailed: false, responses: 0, dispatches: new Set(), typing: new TelegramTyping(async (signal) => {
       const chatId = connection.kept.account?.chatId
       if (chatId !== undefined && this.current(connection) && connection.state === 'connected') await client.call('sendChatAction', { chat_id: chatId, action: 'typing' }, signal)
     }, controller.signal, this.now) }
@@ -622,6 +649,8 @@ GeckIt must stay open on your computer.`)
       return
     }
     if (message?.private !== true || message.from?.id !== account.id || message.chatId !== account.chatId) return
+    const reset = this.options.manager.historyBoundary?.(account.chatId)
+    if (reset !== undefined && message.date < Math.floor(reset.at / 1000)) return
     if (message.unsupportedFile === true) { await this.send(connection, 'This photo or document has invalid metadata or no downloadable variant within 20 MiB. Resend it as a smaller file.'); return }
     if (message.text === undefined && message.file === undefined) { await this.send(connection, 'Send a text message, photo or document. This attachment type is unsupported; resend it as a file.'); return }
     const text = message.file === undefined ? message.text?.trim() ?? '' : message.text ?? ''
@@ -645,6 +674,8 @@ GeckIt must stay open on your computer.`)
   }
 
   private async dispatch(connection: Connection, text: string, question?: string, id?: string, replyTo?: number, reference?: ManagerTelegramReply, attachment?: TelegramFileReference): Promise<void> {
+    const historyEpoch = connection.historyEpoch
+    const authorized = (): boolean => this.current(connection) && this.options.manager.enabled() && historyEpoch === connection.historyEpoch
     const command = attachment === undefined ? text.replace(/@[A-Za-z0-9_]+$/, '') : ''
     if (command === '/status') {
       await this.send(connection, this.options.manager.status())
@@ -675,7 +706,7 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
     try {
       if (attachment?.file !== undefined) {
         const bytes = await connection.client.download(attachment.file, connection.controller.signal)
-        if (!this.current(connection) || !this.options.manager.enabled()) return
+        if (!authorized()) return
         const kept = this.attachments.put(bytes, attachment.file.name, attachment.file.media)
         attachments.push(kept.id)
         text = `${text === '' ? '[Attachment without caption]' : `[User caption]\n${text}`}\n[Telegram source] ${JSON.stringify({ chatId: connection.kept.account?.chatId, messageId: attachment.id, mediaGroup: attachment.mediaGroup })}`
@@ -685,7 +716,7 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
         if (this.options.manager.answer === undefined) { await this.send(connection, 'This question cannot be answered here. Ask Manager to show the current question again.'); return }
         this.removeDecision(connection, question)
         this.save(connection)
-        const outcome = await this.options.manager.answer(question, text, () => this.current(connection) && this.options.manager.enabled())
+        const outcome = await this.options.manager.answer(question, text, authorized)
         if (this.options.manager.hasDecision?.(question) === true) { this.restoreDecision(connection, previous, question); this.save(connection) }
         else { this.retire(connection, question, previous.questions); this.removeDecision(connection, question); this.save(connection) }
         if (outcome !== undefined) { await this.send(connection, outcome, [], undefined, replyTo); return }
@@ -703,14 +734,15 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
       }
       else if (reference !== undefined) {
         if (this.options.manager.reply === undefined) throw new Error('Reply routing unavailable')
-        if (attachments.length === 0) await this.options.manager.reply(text, id, reference, () => this.current(connection) && this.options.manager.enabled())
-        else await this.options.manager.reply(text, id, reference, () => this.current(connection) && this.options.manager.enabled(), attachments)
+        if (attachments.length === 0) await this.options.manager.reply(text, id, reference, authorized)
+        else await this.options.manager.reply(text, id, reference, authorized, attachments)
       } else {
-        const session = attachments.length === 0 ? await this.options.manager.submit(text, id, undefined, () => this.current(connection) && this.options.manager.enabled()) : await this.options.manager.submit(text, id, attachments, () => this.current(connection) && this.options.manager.enabled())
+        const session = attachments.length === 0 ? await this.options.manager.submit(text, id, undefined, authorized) : await this.options.manager.submit(text, id, attachments, authorized)
         if (session !== undefined) origin = { session, workers: [] }
       }
       if (question !== undefined || command === '/pause' || command === '/resume') await this.send(connection, question !== undefined ? 'Answer sent to Manager.' : command === '/pause' ? 'Manager paused. Existing workers continue.' : 'Manager resumed.', [], undefined, replyTo, question === undefined ? origin : undefined)
     } catch (error) {
+      if (!authorized()) return
       if (question !== undefined) {
         if (this.options.manager.hasDecision?.(question) !== false) this.restoreDecision(connection, previous, question)
         else { this.retire(connection, question, previous.questions); this.removeDecision(connection, question) }
@@ -779,7 +811,9 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
   }
 
   private send(connection: Connection, text: string, choices: readonly { readonly text: string; readonly callback_data: string }[] = [], question?: string, replyTo?: number, origin?: ManagerReplyOrigin, rows: readonly (readonly Button[])[] = []): Promise<void> {
+    const historyEpoch = connection.historyEpoch
     const job = connection.sending.then(async () => {
+      if (historyEpoch !== connection.historyEpoch) return
       const pieces = telegramMessages(text)
       for (const [index, piece] of pieces.entries()) {
         const last = index === pieces.length - 1
@@ -793,7 +827,8 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
 
   private async sendOne(connection: Connection, piece: TelegramPiece, choices: readonly { readonly text: string; readonly callback_data: string }[], question?: string, replyTo?: number, origin?: ManagerReplyOrigin, rows: readonly (readonly Button[])[] = []): Promise<void> {
     const account = connection.kept.account
-    if (account === undefined || !this.current(connection)) return
+    if (account === undefined || !this.current(connection) || origin !== undefined && this.options.manager.originCurrent?.(origin) === false) return
+    const historyEpoch = connection.historyEpoch
     connection.kept = { ...connection.kept, outgoing: true }
     this.save(connection)
     const body: JsonObject = { chat_id: account.chatId, text: piece.html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } }
@@ -802,7 +837,7 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
     if (keyboard.length !== 0) body['reply_markup'] = { inline_keyboard: keyboard }
     try {
       const result = jsonObject(await this.sendBody(connection, body, piece))
-      if (!this.current(connection)) return
+      if (!this.current(connection) || historyEpoch !== connection.historyEpoch || origin !== undefined && this.options.manager.originCurrent?.(origin) === false) return
       const { outgoing: _outgoing, ...kept } = connection.kept
       connection.kept = { ...kept, ...(origin !== undefined && safeInteger(result?.['message_id']) ? { replies: [...kept.replies, { ...origin, chatId: account.chatId, messageId: result['message_id'], text: piece.text }].slice(-2048) } : {}), ...(question !== undefined && safeInteger(result?.['message_id']) ? { questions: [...kept.questions, { messageId: result['message_id'], id: question }] } : {}) }
       this.save(connection)

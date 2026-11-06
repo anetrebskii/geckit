@@ -1,0 +1,7 @@
+# Data model
+
+`ManagerHistoryRequest` composes `id`, observed `session` and `historyRevision` from `ManagerThread`, with action `clear | delete`. `ManagerThread` and `ManagerView` expose selected-only pending cleanup metadata; selecting another thread never inherits the main thread cleanup.
+
+Durable `historyBoundaries` store exact ID, action, timestamp, revision and external channel/key where applicable. They fence old runtime/CLI/send continuations before stopping them. `historyPurges` retain unfinished native backing IDs for same-action retry and startup recovery. Current and previous backing IDs are purged through existing Sessions/provider deletion; selected inbox, receipts, operations, decisions and history notes are scrubbed. A minimal hidden native-question tombstone remains to reject old answers.
+
+Worker-event cursors are shared task-state watermarks and remain, preventing replay of already observed task updates. Clear preserves thread identity/place and worker routing. Delete removes the external incarnation, moves its owned workers to GeckIt and removes only its subscriptions; other followers remain. A subsequent same-place input gets a fresh incarnation with inherited cutoff. Slack persists applied reset revision and a monotonic seen watermark; Telegram synchronizes the active binding boundary on startup and fences callbacks/outbox by generation. Global workers, settings, projects and employee assignments are retained.

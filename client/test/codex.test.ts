@@ -8,6 +8,7 @@ import { WebSocketServer } from 'ws'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { Manager } from '../src/main/manager'
 import { memoryNotes, Sessions } from '../src/main/sessions'
 import { managerContext, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
 import type { Held } from '../src/main/sessions/claude'
@@ -765,6 +766,33 @@ describe('Codex app-server', () => {
     expect(await codex.delete(id)).toBe(true)
     expect(server.requests.some((one) => one.method === 'thread/delete')).toBe(false)
     expect(server.requests.find((one) => one.method === 'thread/unsubscribe')?.params?.threadId).toBe(id.slice(6))
+  })
+
+  it('clears Manager native context with deletion and a fresh thread instead of resuming old history', async () => {
+    const { server, codex } = setup()
+    const directory = await mkdtemp(join(tmpdir(), 'geckit-manager-native-history-'))
+    const notes = memoryNotes()
+    const current: { manager?: Manager } = {}
+    const settings = { ...DEFAULT_SETTINGS, chatProviders: ['codex'] as const, chatProvider: 'codex' as const, projects: [ROOT], vpnIpCheck: false }
+    const sessions = new Sessions({ codex, notes, changed: (rows) => current.manager?.observeSessions(rows), items: () => undefined, account: () => undefined, notify: () => undefined, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    const manager = new Manager({ directory, sessions, notes, settings: () => settings, saveSettings: () => settings, cli: async () => '{}' })
+    current.manager = manager
+    try {
+      await manager.configure({ enabled: true, provider: 'codex' })
+      const old = await manager.send('Private old context')
+      await tick()
+      const next = await manager.history({ id: 'main', session: old, action: 'clear' })
+      const fresh = next.session?.id ?? ''
+      expect(fresh).not.toBe(old)
+      expect(server.requests.some((one) => one.method === 'thread/delete' && one.params?.threadId === old.slice(6))).toBe(true)
+      const at = server.requests.length
+      await manager.sendApp({ id: 'fresh-native-input', session: fresh, text: 'Fresh independent instruction' })
+      await tick()
+      const dispatched = server.requests.slice(at)
+      expect(dispatched.some((one) => one.method === 'thread/resume' && one.params?.threadId === old.slice(6))).toBe(false)
+      expect(dispatched.filter((one) => one.method === 'turn/start').map((one) => one.params?.threadId)).toEqual([fresh.slice(6)])
+      expect(JSON.stringify(dispatched)).not.toContain('Private old context')
+    } finally { manager.dispose(); sessions.dispose(); await rm(directory, { recursive: true, force: true }) }
   })
 
   it('unsubscribes a queued native thread through Sessions removal while prepared copies stay host-only', async () => {

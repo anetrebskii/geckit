@@ -447,7 +447,8 @@ export class ManagerOperations {
           if (employeeId !== undefined) this.#deps.employees?.active(employeeId)
         }
         const message: SessionMessage = { root, ...(employeeId === undefined ? {} : { employeeId }), provider: resolved.provider, mode: settings.chatMode, text, goal, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
-        const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, this.#deps.managerSession())
+        const manager = this.#deps.managerSession()
+        const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, manager, () => manager === this.#deps.managerSession() && this.#deps.authorized?.() !== false)
         this.#own(id)
         if (flags.has('--title')) this.#deps.sessions.rename(id, required(flags, '--title'))
         const worker = await this.#worker(id)
@@ -456,6 +457,7 @@ export class ManagerOperations {
       const id = required(flags, '--id')
       const managerSession = this.#deps.managerSession()
       const worker = await this.#worker(id, command === 'attach' || command === 'show')
+      if (managerSession !== this.#deps.managerSession() || this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
       if (command === 'assign') {
         const choice = required(flags, '--employee')
         if (choice !== 'none') { if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.'); this.#deps.employees.active(choice) }
@@ -517,6 +519,7 @@ export class ManagerOperations {
       if (command === 'answer') {
         const cardId = required(flags, '--card')
         const card = (await this.#deps.sessions.items(id)).find((item) => item.id === cardId)
+        if (managerSession !== this.#deps.managerSession() || this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
         if (card?.kind !== 'card' || card.card.kind !== 'question' || card.card.answered !== undefined) throw new Error('That question is no longer awaiting an answer. Native permissions require the user’s bound Telegram buttons or the GeckIt UI; the Manager CLI cannot approve them.')
         await this.#deps.sessions.answer(id, cardId.replace(/^card:/, ''), required(flags, '--text'))
         return JSON.stringify({ id, card: cardId, answered: true })

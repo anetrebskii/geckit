@@ -1,0 +1,6 @@
+# Verification
+
+Use task-owned worktree and disposable manager/provider stores only. Run focused Manager/store/channel/API tests, typecheck/lint and serial full suite, then desktop/service/mobile builds without overlapping service compilation. Start real renderer fixture in owned browser tab and inspect desktop/phone light/dark, both actions cancel/confirm, active/empty, keyboard/focus/scroll/refresh. Verify native context and disk restart separately from browser boundary. Do not invoke history action on running user app. Record evidence in verification.md.
+
+
+The exact temporary Vite configuration used for UI acceptance is retained at `evidence/preview.config.mjs` (absolute paths describe this worktree). From `client`, run `node node_modules/vite/bin/vite.js --config ../specs/024-manager-history-actions/evidence/preview.config.mjs --configLoader native`, then open `http://127.0.0.1:5191/manager-preview.html?historyActions&theme=light` in an owned test tab. Add `&phone` for phone layout. The first fixture request allocates a new OS temporary directory; it does not connect to the running application or real native provider. The HTTP fixture supports `ledger`, `failure` and `restart` for observation/failure injection/host reconstruction; execute destructive actions through the visible UI. Stop this temporary server after checking.

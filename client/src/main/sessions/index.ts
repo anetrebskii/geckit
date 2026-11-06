@@ -721,12 +721,17 @@ export class Sessions {
     this.#note(id, { managerPrompt: prompt })
   }
 
-  async startManaged(message: SessionMessage, owner: string, operation: string, parent = owner): Promise<string> {
+  async startManaged(message: SessionMessage, owner: string, operation: string, parent = owner, authorized: () => boolean = () => true): Promise<string> {
     const found = Object.entries(this.#deps.notes.all()).find(([, note]) => note.managerOwner === owner && note.managerOperation === operation)
     if (found !== undefined) return found[0]
     if (message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
     const provider = message.provider ?? 'claude'
-    const id = await this.#provider(provider).create({ root: message.root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }) })
+    const backend = this.#provider(provider)
+    const id = await backend.create({ root: message.root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }) })
+    if (!authorized()) {
+      await backend.delete(message.root, id).catch(() => false)
+      throw new Error('The originating request changed. No worker message was sent.')
+    }
     this.#fresh(id, message.root, firstLine(message.text, 80), message.mode)
     this.#note(id, { here: true, parent, managerOwner: owner, managerOperation: operation, ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), unborn: message.root, title: firstLine(message.text, 80) })
     return this.send({ ...message, session: id })
@@ -1600,6 +1605,15 @@ export class Sessions {
     if (session === undefined) throw new Error('This conversation is no longer available.')
     if (items.length === 0) throw new Error('This conversation has no available history to export.')
     return { session, items, at: this.#now() }
+  }
+
+  async purgeManager(id: string, root: string): Promise<boolean> {
+    if (!this.isManager(id)) throw new Error('This is not a Manager session.')
+    if (this.#deps.notes.all()[id]?.hidden === true && this.#deps.notes.all()[id]?.managerPrompt === undefined) return true
+    if (!this.#live.has(id) && !this.#rows.has(id)) this.#fresh(id, root, 'Manager', sessionMode(this.#deps.notes.all()[id]?.mode), true)
+    const removed = (await this.remove([id])).includes(id)
+    if (removed) this.#deps.notes.set(id, { hidden: true, question: true })
+    return removed
   }
 
   async inspectManager(id: string): Promise<SessionItem[]> {
@@ -3285,7 +3299,7 @@ export class Sessions {
       try {
         const live = this.#live.get(id)
         const note = this.#deps.notes.all()[id]
-        const hostOnly = note?.prepared !== undefined || note?.unborn !== undefined && live?.begun !== true && live?.driver === undefined
+        const hostOnly = note?.prepared !== undefined || (note?.unborn !== undefined || note?.managerPrompt !== undefined && note.managerBegun !== true) && live?.begun !== true && live?.driver === undefined
         if (live !== undefined) {
           this.#rows.set(id, { ...this.#rows.get(id), id, root, title: live.title, stands: live.stands, at: live.at, driven: true, tasks: ended(live.tasks) })
           this.#queue(live, [])

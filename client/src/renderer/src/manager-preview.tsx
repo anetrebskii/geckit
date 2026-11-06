@@ -102,6 +102,7 @@ const replaceBacking = (provider: SessionProvider, model: string): void => {
   backing = { ...backing, id: provider === 'claude' ? id : `${provider}:${id}`, model: model || modelsFor(provider)[0]?.value || '', chosen: model }
 }
 const manager: ManagerApi = {
+  history: async () => { throw new Error('History actions require the isolated historyActions preview.') },
   voiceMemos: async () => ({ state: 'unsupported', detail: 'Voice Memos connection checks are unavailable in this preview.' }),
   view: async () => view,
   inspect: async (id) => {
@@ -235,6 +236,21 @@ const bridge: Omit<Partial<Geckit>, 'chat' | 'hosts' | 'shortcuts' | 'settings' 
   settings: { get: async () => settings, set: async (change) => { settings = { ...settings, ...change }; for (const callback of settingsListeners) callback(settings); return settings }, on: (callback) => { settingsListeners.add(callback); return () => settingsListeners.delete(callback) } },
   lineup: { state: async () => ({ working: 0, limit: 6 }), onChanged: listen },
   update: { view: async () => ({ state: 'off', version: 'preview', offered: '', channel: 'dev', percent: 0, message: '', waitingFor: [] }), on: listen }, errors: { onQuestion: listen, question: async () => undefined, answer: noop },
+}
+if (query.has('historyActions')) {
+  const host = async <T,>(method: string, args: readonly (string | boolean | object)[] = []): Promise<T> => {
+    const response = await fetch('/__manager-history', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ method, args }) })
+    const result = await response.json() as { readonly result: T; readonly error?: string }
+    if (!response.ok) throw new Error(result.error ?? 'History fixture request failed.')
+    return result.result
+  }
+  manager.view = () => host<ManagerView>('view')
+  manager.inspect = (id) => host<SessionItems>('inspect', [id])
+  manager.history = async (request) => update(await host<ManagerView>('history', [request]))
+  manager.send = (request) => host<ManagerRequestReceipt>('send', [request])
+  view = await manager.view()
+  setInterval(() => { void manager.view().then((next) => update(next)) }, 250)
+  Object.assign(fixture, { historyHost: host })
 }
 const phone: Pick<PhoneCalls, 'connected' | 'onConnection' | 'version'> = { connected: () => connected, onConnection: (callback) => { connectionListeners.add(callback); return () => connectionListeners.delete(callback) }, version: async () => 'preview' }
 Object.assign(window, { geckit: bridge, ...(query.has('phone') ? { geckitPhone: phone } : {}) })

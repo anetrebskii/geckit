@@ -33,6 +33,8 @@ it('bootstraps persisted projects before listing, shares events across desktop c
   try {
     const plugin = join(directory, 'provider-plugins', 'plugin-fixture')
     await cp(join(import.meta.dirname, 'fixtures', 'headless'), plugin, { recursive: true })
+    const providerPath = join(plugin, 'index.mjs')
+    await writeFile(providerPath, (await readFile(providerPath, 'utf8')).replace('delete: async () => false', "delete: async (_root, id) => { const at = records.findIndex((one) => one.id === id); if (at < 0) return false; records.splice(at, 1); save(); return true }"))
     await mkdir(firstProject)
     await mkdir(secondProject)
     await writeFile(join(plugin, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { id: 'plugin:fixture', family: 'plugin:fixture', name: 'Fixture', shortName: 'Fixture', icon: 'terminal', browser: 'none', loginCommand: '', planName: '' } }))
@@ -51,6 +53,23 @@ it('bootstraps persisted projects before listing, shares events across desktop c
     expect((await desktop.call('chat:list', undefined)).map((one) => one.id)).toEqual([firstId])
     expect((await desktop.call('phone:list', undefined)).map((one) => one.id)).toEqual(expect.arrayContaining([firstId, secondId]))
     expect(await desktop.call('phone:settings')).toMatchObject({ profile: '', chatProjects: [], chatAll: true })
+    const initialManager = await desktop.call('manager:configure', { enabled: true, provider: 'plugin:fixture' })
+    const oldManager = initialManager.session?.id ?? ''
+    expect(oldManager).toBeDefined()
+    await desktop.call('manager:sendApp', { id: 'history-route-private', session: oldManager, text: 'Private isolated Manager request' })
+    const resetManager = await desktop.call('manager:history', { id: 'main', session: oldManager, action: 'clear' })
+    expect(resetManager.session?.id).not.toBe(oldManager)
+    expect(await desktop.call('manager:inspect', resetManager.session?.id ?? '')).toMatchObject({ items: [] })
+    expect((await readFile(join(directory, 'manager.json'), 'utf8'))).not.toContain('Private isolated Manager request')
+    const history = await readFile(join(directory, 'fixture-history.json'), 'utf8')
+    expect(history).not.toContain(oldManager)
+    expect(history).toContain(firstId)
+    expect(history).toContain(secondId)
+    await expect(desktop.call('manager:history', { id: 'main', session: oldManager, action: 'delete' })).rejects.toThrow('changed')
+    const emptiedManager = await desktop.call('manager:history', { id: 'main', session: resetManager.session?.id ?? '', historyRevision: resetManager.historyRevision, action: 'delete' })
+    expect(emptiedManager.session?.id).not.toBe(resetManager.session?.id)
+    expect(await desktop.call('manager:inspect', emptiedManager.session?.id ?? '')).toMatchObject({ items: [] })
+
     const forged: Parameters<ServiceMethods['chat:mark']> = [firstId, 'done']
     Object.assign(forged, { 2: { executor: 'manager', origin: 'telegram', message: 'spoof' } })
     await desktop.call('chat:mark', ...forged)

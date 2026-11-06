@@ -13,7 +13,7 @@ import { channelManifest, loadChannel } from '../src/main/channels/libraries'
 import type { CoreEvent } from '../src/core/events'
 import type { ChatSession, Settings } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
-import type { ManagerView } from '../src/shared/manager'
+import type { ManagerHistoryBoundary, ManagerView } from '../src/shared/manager'
 import type { ChannelView } from '../src/shared/channels'
 import { after, createSlack } from '../src/main/channels/slack'
 import type { SlackTransport } from '../src/main/channels/slack'
@@ -310,7 +310,7 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
   const channel = createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] })
   const event = (body: object): void => FakeSocket.last?.emit({ type: 'events_api', envelope_id: 'e1', payload: { event: body } })
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
-  return { channel, event, settle, posted, updated, sent, answered, opened, watchers, store }
+  return { channel, context, makeChannel: () => createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] }), event, settle, posted, updated, sent, answered, opened, watchers, store }
 }
 
 it('Slack: one Manager thread per Slack thread, labelled with who started it, answered in that thread', async () => {
@@ -408,3 +408,34 @@ it('Slack: one status message per stretch in the thread, edited in place and end
   expect(run.posted).toHaveLength(posts)
   await run.channel.stop()
 }, 15_000)
+
+
+it('Slack reset cuts earlier history, deletes the old place and preserves new seen/decisions through restart', async () => {
+  const run = slackHarness(true, [{ ts: '1762400001.000000', user: 'U2', text: 'private earlier history' }])
+  let boundary: ManagerHistoryBoundary | undefined
+  run.context.conversations.historyBoundary = () => boundary
+  await run.channel.start()
+  run.event({ type: 'app_mention', channel: 'C1', user: 'U1', ts: '1762400002.000000', thread_ts: '1762400000.000000', text: '<@B1> first' })
+  await run.settle()
+  const key = 'C1:1762400000.000000'
+  const id = `channel:slack:${key}`
+  boundary = { id, revision: 'reset-1', action: 'delete', at: 1762400003000 }
+  run.watchers.get(id)?.({ kind: 'history', change: { ...boundary, sessions: ['old-native'] } })
+  expect(run.store.get('threads')).toEqual([])
+  await run.channel.stop()
+  const restarted = run.makeChannel()
+  await restarted.start()
+  expect(run.watchers.has(id)).toBe(false)
+  run.event({ type: 'app_mention', channel: 'C1', user: 'U1', ts: '1762400004.000000', thread_ts: '1762400000.000000', text: '<@B1> fresh request' })
+  await run.settle()
+  expect(run.sent.at(-1)).toEqual([id, { from: 'Maria Ivanova', text: 'fresh request' }])
+  boundary = { ...boundary, action: 'clear' }
+  run.store.set(`decisions:${key}`, [{ id: 'new-decision', values: ['yes'] }])
+  await restarted.stop()
+  const again = run.makeChannel()
+  await again.start()
+  expect(run.watchers.has(id)).toBe(true)
+  expect(run.store.get(`seen:${key}`)).toBe('1762400004.000000')
+  expect(run.store.get(`decisions:${key}`)).toEqual([{ id: 'new-decision', values: ['yes'] }])
+  await again.stop()
+})

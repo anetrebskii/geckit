@@ -1,5 +1,8 @@
 # Verification and integration handoff
 
+> Scope correction, 2026-11-06: Alex meant deleting/clearing Manager conversations themselves. This document records the separate worker-delete feature; it is retained, not treated as fulfillment of that request. Manager history/context actions are specified in [Manager history actions](../../docs/ux/manager-history-actions.md). Earlier statements that cleanup scope was unanswered describe the original worker-delete implementation only.
+
+
 Date: 2026-11-06. Source base: `236bcef9`. Branch: `feat/manager-session-delete`. Worktree: `/private/tmp/geckit-manager-session-delete`. Codex session: `01a1af1d-da13-7291-ae5c-c3191397e442`.
 
 ## Command and result

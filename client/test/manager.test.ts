@@ -110,6 +110,49 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
   return { manager: active, sessions, root, directory, notes, made, sent, fanned, answers, cli, finish, hear: (id: string, heard: Heard) => hearings.get(id)?.(heard), command, setCli: (run: ManagerDeps['cli'] | undefined) => { callCli = run }, reload: () => { current.manager?.dispose(); const next = new Manager(deps); current.manager = next; return next }, settings: () => settings, set: (change: Partial<Settings>) => { settings = { ...settings, ...change } } }
 }
 
+describe('Manager selected thread history', () => {
+  it('keeps workers and their native permissions, reroutes deleted ownership and removes only its follower', async () => {
+    const f = await fixture(0, { disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: async () => true } })
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: '42' })
+    const session = await f.manager.open(thread)
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Keep worker' }, 'manager', 'keep-worker', thread)
+    f.notes.set(worker, { ...f.notes.all()[worker], managerThread: thread, managerFollowers: [thread, 'other-thread'] })
+    f.hear(worker, { items: [{ kind: 'card', id: 'native-worker-card', card: { kind: 'permission', title: 'Native worker request', detail: 'Keep pending' } }], gone: [], signals: [{ kind: 'asks', ask: 'native-worker-ask', wanted: { kind: 'command', command: 'inspect project' } }] })
+    expect(f.sessions.pendingForManager(worker)).toHaveLength(1)
+    const answers = f.answers.length
+    await f.manager.history({ id: thread, session, action: 'delete' })
+    expect(f.notes.all()[worker]?.managerOwner).toBe('manager')
+    expect(f.notes.all()[worker]?.managerThread).toBe('main')
+    expect(f.notes.all()[worker]?.managerFollowers).toEqual(['other-thread'])
+    expect(f.answers).toHaveLength(answers)
+    expect(f.sessions.pendingForManager(worker)).toHaveLength(1)
+    expect((await f.manager.view()).workers.some((one) => one.id === worker)).toBe(true)
+    const fresh = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: '42' })
+    expect(fresh).not.toBe(thread)
+    expect(f.manager.historyBoundaryFor('telegram', '42')?.action).toBe('clear')
+    expect(f.notes.all()[worker]?.managerThread).toBe('main')
+  })
+
+  it('fences a CLI result returning after clear instead of adding old text to fresh context', async () => {
+    const f = await fixture(0, { disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: async () => true } })
+    await f.manager.configure({ enabled: true })
+    const old = (await f.manager.view()).session?.id ?? ''
+    let complete: ((text: string) => void) | undefined
+    f.setCli(() => new Promise<string>((resolve) => { complete = resolve }))
+    await f.manager.send('old private request')
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === old)).toBe(true))
+    f.finish(old, f.command('late-history-op', ['sessions', 'list']))
+    await vi.waitFor(() => expect(complete).toBeDefined())
+    const next = await f.manager.history({ id: 'main', session: old, action: 'clear' })
+    complete?.('private late CLI result')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect((await f.manager.view()).activity.some((one) => one.id === 'late-history-op')).toBe(false)
+    expect(f.sent.filter((one) => one.id === next.session?.id).some((one) => one.text.includes('private'))).toBe(false)
+    expect(await f.manager.inspect(next.session?.id ?? '')).toEqual({ id: next.session?.id, items: [] })
+  })
+})
+
 describe('Manager exact-session deletion', () => {
   it.each(['automatic', 'approve'] as const)('requires product confirmation under %s delegation', async (policy) => {
     const f = await fixture()

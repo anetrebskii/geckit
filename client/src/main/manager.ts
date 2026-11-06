@@ -1,4 +1,4 @@
-import type { ManagerInstructionsResult } from '../shared/manager'
+import type { ManagerHistoryRequest, ManagerHistoryBoundary, ManagerHistoryChange, ManagerInstructionsResult } from '../shared/manager'
 import type { Employees } from './employees'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { execFile } from 'node:child_process'
@@ -80,7 +80,12 @@ interface ThreadRecord extends ThreadState {
   readonly at: number
 }
 
+type HistoryBoundary = ManagerHistoryBoundary & Partial<Pick<ThreadRecord, 'channel' | 'key'>>
+interface HistoryPurge { readonly request: ManagerHistoryRequest; readonly sessions: readonly ChatSession['id'][] }
+
 interface ManagerRecord extends ThreadState {
+  readonly historyBoundaries: readonly HistoryBoundary[]
+  readonly historyPurges: readonly HistoryPurge[]
   readonly config: ManagerConfig
   readonly paused: boolean
   readonly pauseReason?: 'user' | undefined
@@ -143,6 +148,8 @@ export class Manager {
   readonly #token = randomBytes(32).toString('hex')
   readonly #listeners = new Set<(view: ManagerView) => void>()
   readonly #itemListeners = new Set<(items: SessionItems) => void>()
+  readonly #historyListeners = new Set<(change: ManagerHistoryChange) => void>()
+  readonly #historyBusy = new Set<string>()
   readonly #responses = new Set<(text: string, origin: ManagerReplyOrigin) => void>()
   readonly #operations: ManagerOperations
   readonly #attachments: TelegramAttachments
@@ -165,7 +172,7 @@ export class Manager {
     const settings = deps.settings()
     const config = configuration(deps.directory).manager
     const provider = settings.chatProviders.includes(settings.chatProvider) ? settings.chatProvider : settings.chatProviders[0] ?? DEFAULT_MANAGER_CONFIG.provider
-    this.#record = { config: { ...DEFAULT_MANAGER_CONFIG, provider, ...config }, paused: stored.paused ?? false, pauseReason: stored.pauseReason, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], receipts: stored.receipts ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], threads: (stored.threads ?? []).map((thread) => ({ ...thread, previousSessions: thread.previousSessions ?? [], labels: thread.labels ?? {} })), manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }) }
+    this.#record = { historyBoundaries: stored.historyBoundaries ?? [], historyPurges: stored.historyPurges ?? [], config: { ...DEFAULT_MANAGER_CONFIG, provider, ...config }, paused: stored.paused ?? false, pauseReason: stored.pauseReason, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], receipts: stored.receipts ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], threads: (stored.threads ?? []).map((thread) => ({ ...thread, previousSessions: thread.previousSessions ?? [], labels: thread.labels ?? {} })), manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }) }
     if (stored.config !== undefined) {
       const { config: _config, ...runtime } = stored
       writeJson(this.#path(), runtime)
@@ -175,6 +182,7 @@ export class Manager {
     const deliveryPause = this.#record.paused && this.#record.pauseReason !== 'user' && (this.#record.error === 'CLI delivery is uncertain. Review current state before resuming.' || this.#record.error === 'Manager was interrupted. Review current task state before resuming; operations with uncertain delivery are not replayed.')
     if (deliveryPause) this.#record = { ...this.#record, paused: false, manualRecovery: false, error: 'CLI delivery is uncertain. Manager will reconcile automatically without repeating changes.' }
     if (this.#record.decisions.some((decision) => decision.uncertain === true)) this.#record = { ...this.#record, decisions: this.#record.decisions.filter((decision) => decision.uncertain !== true) }
+    for (const purge of this.#record.historyPurges) for (const id of purge.sessions) { deps.sessions.protectManager(id); deps.sessions.suspendManager(id) }
     for (const thread of this.#threadIds()) {
       const state = this.#state(thread)
       for (const id of state.previousSessions) { deps.sessions.protectManager(id); deps.sessions.suspendManager(id) }
@@ -281,6 +289,8 @@ export class Manager {
     const at = Math.max(record?.at ?? 0, ...this.#record.inbox.filter((message) => this.#threadOf(message) === thread).map((message) => message.at))
     return {
       id: thread,
+      ...this.#pendingHistory(thread),
+      ...(this.historyBoundary(thread) === undefined ? {} : { historyRevision: this.historyBoundary(thread)?.revision }),
       ...(record === undefined ? {} : { place: record.place }),
       title: record?.title ?? 'Manager',
       labels: record?.labels ?? {},
@@ -309,7 +319,7 @@ export class Manager {
     const workers = this.#sessions.filter((one) => this.manages(one.id))
     const decisions = [...this.#record.decisions.map(({ command: _command, ...decision }) => decision), ...this.#approvals().map((one) => one.decision)]
     const threads = this.#threadIds().map((thread) => this.#threadView(thread, workers, decisions))
-    return { appChat: true, queued: this.#record.inbox.filter((message) => message.state === 'queued').length, requests, config: this.#record.config, state: !this.#record.config.enabled ? 'off' : this.#record.paused ? 'paused' : error !== undefined ? 'blocked' : session?.state === 'working' || this.#l(MAIN).dispatching || threads.some((thread) => thread.id !== MAIN && thread.state === 'working') ? 'working' : 'idle', ...(session === undefined ? {} : { session }), workers, activity: this.#record.operations.slice(-100).toReversed(), providers, decisions, ...(this.#record.threads.length === 0 ? {} : { threads }), ...(error === undefined ? {} : { error }) }
+    return { ...this.#pendingHistory(MAIN), ...(this.historyBoundary(MAIN) === undefined ? {} : { historyRevision: this.historyBoundary(MAIN)?.revision }), appChat: true, queued: this.#record.inbox.filter((message) => message.state === 'queued').length, requests, config: this.#record.config, state: !this.#record.config.enabled ? 'off' : this.#record.paused ? 'paused' : error !== undefined ? 'blocked' : session?.state === 'working' || this.#l(MAIN).dispatching || threads.some((thread) => thread.id !== MAIN && thread.state === 'working') ? 'working' : 'idle', ...(session === undefined ? {} : { session }), workers, activity: this.#record.operations.slice(-100).toReversed(), providers, decisions, ...(this.#record.threads.length === 0 ? {} : { threads }), ...(error === undefined ? {} : { error }) }
   }
 
   #approvals(): readonly ManagerApproval[] {
@@ -347,14 +357,17 @@ export class Manager {
   thread(open: ManagerThreadOpen): string {
     const key = open.key.trim().slice(0, 300)
     if (key === '') throw new Error('A Manager thread needs a key.')
-    const id = `${open.channel}:${key}`
+    const knownPlace = this.#record.threads.find((one) => one.channel === open.channel && one.key === key)
+    const reset = this.#record.historyBoundaries.some((one) => one.channel === open.channel && one.key === key)
+    const id = knownPlace?.id ?? `${open.channel}:${key}${reset ? `:${randomUUID()}` : ''}`
     const { labels } = managerLabels(open.labels)
     const known = this.#threadRecord(id)
     const title = open.title?.trim().slice(0, 120)
     const from = open.from?.trim().slice(0, 120)
     const link = open.link?.trim().slice(0, 1000)
     if (known === undefined) {
-      this.#save({ threads: [...this.#record.threads, { id, channel: open.channel, place: open.place, key, title: title === undefined || title === '' ? open.place : title, labels, ...(from === undefined || from === '' ? {} : { from }), ...(link === undefined || link === '' ? {} : { link }), at: Date.now(), previousSessions: [] }] })
+      const priorBoundary = this.historyBoundaryFor(open.channel, key)
+      this.#save({ ...(priorBoundary === undefined ? {} : { historyBoundaries: [...this.#record.historyBoundaries, { ...priorBoundary, id, channel: open.channel, key, action: 'clear' }] }), threads: [...this.#record.threads, { id, channel: open.channel, place: open.place, key, title: title === undefined || title === '' ? open.place : title, labels, ...(from === undefined || from === '' ? {} : { from }), ...(link === undefined || link === '' ? {} : { link }), at: Date.now(), previousSessions: [] }] })
       return id
     }
     const next: ThreadRecord = { ...known, place: open.place, labels: managerLabels({ ...known.labels, ...labels }).labels, ...(title === undefined || title === '' ? {} : { title }), ...(from === undefined || from === '' ? {} : { from }), ...(link === undefined || link === '' ? {} : { link }) }
@@ -405,6 +418,7 @@ export class Manager {
   }
 
   #appReady(thread: string = MAIN): void {
+    this.#historyReady(thread)
     this.#assertEnabled()
     if (this.#record.paused) throw new Error('Manager is paused. Resume it before sending a message.')
     if (this.#stopped || this.#state(thread).error !== undefined) throw new Error(this.#state(thread).error ?? 'Manager is unavailable. Open Team, Manager to continue.')
@@ -503,6 +517,7 @@ export class Manager {
   }
 
   async open(thread: string = MAIN): Promise<string> {
+    this.#historyReady(thread)
     this.#assertEnabled()
     if (!this.#exists(thread)) throw new Error('That Manager thread does not exist.')
     const current = this.#state(thread).sessionId
@@ -519,6 +534,12 @@ export class Manager {
     const result = this.#deps.sessions.managerSession({ root: homedir(), provider: config.provider, mode: this.#deps.settings().chatMode, ...(config.chatModel === '' ? {} : { model: config.chatModel }) }, this.#instructions()).then(async (sessionId) => {
       if (epoch !== this.#epoch(thread) || !this.#record.config.enabled || !this.#exists(thread)) {
         this.#deps.sessions.suspendManager(sessionId)
+        if (this.#record.historyBoundaries.some((one) => one.id === thread)) {
+          const purge = this.#record.historyPurges.find((one) => one.request.id === thread)
+          if (purge !== undefined) this.#save({ historyPurges: this.#record.historyPurges.map((one) => one === purge ? { ...one, sessions: [...one.sessions, sessionId] } : one) })
+          else await this.#deps.sessions.remove([sessionId])
+          throw new Error('Manager history changed before its session was ready.')
+        }
         this.#saveThread(thread, { previousSessions: [...this.#state(thread).previousSessions, sessionId] })
         throw new Error('Manager setup changed before its session was ready. Open Manager to continue.')
       }
@@ -552,7 +573,9 @@ export class Manager {
     if (!this.#exists(thread)) throw new Error('That Manager thread does not exist.')
     const closed = this.#closed.get(this.#threadRecord(thread)?.channel ?? '')
     if (closed !== undefined && (source === 'desktop' || source === 'phone' || source === 'telegram' || source === 'channel')) throw new Error(closed)
+    const epoch = this.#epoch(thread)
     const session = await this.open(thread)
+    if (epoch !== this.#epoch(thread) || session !== this.#state(thread).sessionId) throw new Error('Manager conversation changed. Nothing was queued.')
     if (!authorized()) throw new Error('This Telegram connection is no longer authorized.')
     for (const attachment of attachments) this.#attachments.read(attachment)
     const literal = /^[!/]/.test(text.trim()) ? `[User request]\n${text.trim()}` : text.trim()
@@ -586,7 +609,7 @@ export class Manager {
     if (only === undefined) { await Promise.all(this.#threadIds().map((thread) => this.#dispatch(thread))); return }
     const thread = only
     const live = this.#l(thread)
-    if (live.dispatching || live.awaitingOutput || live.processingOutput || this.#stopped || !this.#record.config.enabled || this.#record.paused || this.#state(thread).error !== undefined || !this.#exists(thread)) return
+    if (this.#record.historyPurges.some((one) => one.request.id === thread) || live.dispatching || live.awaitingOutput || live.processingOutput || this.#stopped || !this.#record.config.enabled || this.#record.paused || this.#state(thread).error !== undefined || !this.#exists(thread)) return
     const session = this.#state(thread).sessionId
     if (session === undefined) {
       if (thread !== MAIN && this.#record.inbox.some((one) => one.state === 'queued' && this.#threadOf(one) === thread)) void this.open(thread).then(() => this.#dispatch(thread), (error: Error) => this.#fail(thread, error.message))
@@ -657,7 +680,9 @@ export class Manager {
   async #execute(command: ManagerCommand, approved = false, telegramRequests: readonly Message['id'][] = [], thread: string = MAIN, input?: Message): Promise<void> {
     this.#assertEnabled()
     const session = this.#state(thread).sessionId
-    const continuation = (text: string, id?: string, workers: ManagerReplyOrigin['workers'] = []): Promise<string> => this.send(text, 'cli', id, workers, () => true, [], telegramRequests, thread)
+    const epoch = this.#epoch(thread)
+    const current = (): boolean => epoch === this.#epoch(thread) && session === this.#state(thread).sessionId && this.#exists(thread)
+    const continuation = (text: string, id?: string, workers: ManagerReplyOrigin['workers'] = []): Promise<string> => current() ? this.send(text, 'cli', id, workers, current, [], telegramRequests, thread) : Promise.resolve('')
     const pending = this.#record.decisions.find((one) => one.command.id === command.id && one.uncertain !== true)
     if (pending !== undefined && JSON.stringify(pending.command.args) !== JSON.stringify(command.args)) {
       await continuation(JSON.stringify({ operation: command.id, error: 'This operation ID belongs to a different pending request. Its approval was not changed. Use a new operation ID.' }))
@@ -690,10 +715,12 @@ export class Manager {
     try {
       if (session === undefined) throw new Error('Manager session is unavailable.')
       const printed = await this.#deps.cli(command.args, { data: this.#deps.directory, session, token: this.#token, operation: command.id })
+      if (!current()) return
       const result = printed.length <= 20_000 ? printed : `${printed.slice(0, 20_000)}\n[Result shortened for Manager context. Ask a narrower CLI question or delegate detailed reading.]`
       this.#save({ operations: this.#record.operations.map((one) => one.id === command.id ? { ...one, state: 'done', result } : one) })
       await continuation(`${JSON.stringify({ operation: command.id, args: command.args, result })}`, `result:${command.id}`, this.#commandWorkers(command))
     } catch (error) {
+      if (!current()) return
       const result = error instanceof Error ? error.message : String(error)
       const receipt = this.#record.operations.find((one) => one.id === command.id)
       if (receipt?.state === 'done' || receipt?.state === 'failed') {
@@ -732,14 +759,14 @@ export class Manager {
       let running = this.#commands.get(asked.operation)
       if (running === undefined) {
         running = this.#acting.run({ thread, session: asked.session, attribution: operation.attribution ?? { executor: 'manager', origin: 'unknown', session: asked.session, thread, operation: asked.operation } }, () => this.#operations.run(asked.args, asked.operation)).then(async (result) => {
-          if (!this.#stopped) {
+          if (!this.#stopped && this.#state(thread).sessionId === asked.session) {
             const late = this.#record.operations.find((one) => one.id === asked.operation)?.state === 'uncertain'
             this.#save({ operations: this.#record.operations.map((one) => one.id === asked.operation ? { ...one, state: 'done', result: result.slice(0, 20_000) } : one), decisions: this.#record.decisions.filter((one) => one.uncertain !== true || one.command.id !== asked.operation) })
             if (late) await this.send(JSON.stringify({ operation: asked.operation, args: asked.args, result, notice: 'The original operation completed; nothing was resent.' }), 'cli', `result:${asked.operation}`, [], () => true, [], [], origin)
           }
           return result
         }, async (error: Error) => {
-          if (!this.#stopped && (managerReadOnly(asked.args) || !/uncertain|timed?\s*out|killed|SIGTERM/i.test(error.message))) {
+          if (!this.#stopped && this.#state(thread).sessionId === asked.session && (managerReadOnly(asked.args) || !/uncertain|timed?\s*out|killed|SIGTERM/i.test(error.message))) {
             const late = this.#record.operations.find((one) => one.id === asked.operation)?.state === 'uncertain'
             this.#save({ operations: this.#record.operations.map((one) => one.id === asked.operation ? { ...one, state: 'failed', result: error.message } : one), decisions: this.#record.decisions.filter((one) => one.uncertain !== true || one.command.id !== asked.operation) })
             if (late) await this.send(JSON.stringify({ operation: asked.operation, args: asked.args, error: error.message, notice: 'The original operation failed; nothing was resent.' }), 'cli', `result:${asked.operation}`, [], () => true, [], [], origin)
@@ -908,6 +935,64 @@ export class Manager {
     return this.view()
   }
 
+  #pendingHistory(thread: string): Pick<ManagerView, 'historyPending'> { const pending = this.#record.historyPurges.find((one) => one.request.id === thread); return pending === undefined ? {} : { historyPending: pending.request } }
+  historyBoundary(thread: string): ManagerHistoryBoundary | undefined { return this.#record.historyBoundaries.findLast((one) => one.id === thread) }
+  historyBoundaryFor(channel: string, key: string): ManagerHistoryBoundary | undefined { return this.#record.historyBoundaries.findLast((one) => one.channel === channel && one.key === key) }
+  onHistoryChange(listener: (change: ManagerHistoryChange) => void): () => void { this.#historyListeners.add(listener); return () => this.#historyListeners.delete(listener) }
+  originCurrent(origin: ManagerReplyOrigin): boolean { return this.#threadOfSession(origin.session) === (origin.thread ?? MAIN) }
+  #historyReady(thread: string): void {
+    if (this.#record.historyPurges.some((one) => one.request.id === thread)) throw new Error('History cleanup is incomplete. Retry the conversation action before sending a new message.')
+  }
+
+  async history(request: ManagerHistoryRequest): Promise<ManagerView> {
+    if (request.action !== 'clear' && request.action !== 'delete') throw new Error('Choose Clear history or Delete conversation.')
+    const thread = request.id
+    if (this.#historyBusy.has(thread)) throw new Error('This conversation action is already in progress.')
+    let purge = this.#record.historyPurges.find((one) => one.request.id === thread)
+    if (purge !== undefined) {
+      if (JSON.stringify(purge.request) !== JSON.stringify(request)) throw new Error('Retry the original conversation action to finish history cleanup.')
+    } else {
+      if (!this.#exists(thread) || this.#state(thread).sessionId !== request.session || this.historyBoundary(thread)?.revision !== request.historyRevision) throw new Error('Manager conversation changed. Open the current conversation before trying again.')
+      purge = { request, sessions: [...this.#state(thread).previousSessions, ...(request.session === undefined ? [] : [request.session])] }
+      const record = this.#threadRecord(thread)
+      const boundary: HistoryBoundary = { action: request.action, id: thread, at: Date.now(), revision: randomUUID(), ...(record === undefined ? {} : { channel: record.channel, key: record.key }) }
+      const live = this.#l(thread)
+      live.generation += 1
+      live.activeInput = undefined; live.activeTelegram = []; live.awaitingOutput = false
+      this.#cancelRecovery(thread)
+      this.#saveThread(thread, { sessionId: undefined, previousSessions: [], responseOrigin: undefined, error: 'History cleanup is incomplete. Retry the conversation action before sending a new message.', manualRecovery: true }, {
+        historyBoundaries: [...this.#record.historyBoundaries.filter((one) => one.id !== thread), boundary], historyPurges: [...this.#record.historyPurges, purge],
+        inbox: this.#record.inbox.filter((one) => this.#threadOf(one) !== thread),
+        receipts: this.#record.receipts.filter((one) => !this.#state(thread).previousSessions.includes(one.session) && one.session !== request.session),
+        operations: this.#record.operations.filter((one) => (one.thread ?? MAIN) !== thread),
+        decisions: this.#record.decisions.filter((one) => (one.thread ?? MAIN) !== thread),
+      })
+    }
+    this.#historyBusy.add(thread)
+    try {
+      const boundary = this.historyBoundary(thread)
+      if (boundary !== undefined) for (const listener of this.#historyListeners) listener({ ...request, ...boundary, sessions: purge.sessions })
+      const opening = this.#l(thread).opening?.result
+      if (opening !== undefined) await opening.catch(() => undefined)
+      purge = this.#record.historyPurges.find((one) => one.request.id === thread) ?? purge
+      for (const id of purge.sessions) {
+        this.#deps.sessions.suspendManager(id)
+        if (!await this.#deps.sessions.purgeManager(id, homedir())) throw new Error('Provider history deletion was not confirmed. Old context is fenced; retry this conversation action to finish cleanup. Partial provider effects are possible.')
+        this.#save({ historyPurges: this.#record.historyPurges.map((one) => one.request.id === thread ? { ...one, sessions: one.sessions.filter((session) => session !== id) } : one) })
+      }
+      if (request.action === 'delete' && thread !== MAIN) {
+        for (const [id, note] of Object.entries(this.#deps.notes.all())) {
+          if (note.managerThread !== thread && !note.managerFollowers?.includes(thread)) continue
+          this.#deps.notes.set(id, { ...note, ...(note.managerThread === thread ? { managerThread: MAIN } : {}), ...(note.managerFollowers === undefined ? {} : { managerFollowers: note.managerFollowers.filter((one) => one !== thread) }) })
+        }
+        this.#save({ threads: this.#record.threads.filter((one) => one.id !== thread), historyPurges: this.#record.historyPurges.filter((one) => one.request.id !== thread) })
+      } else this.#saveThread(thread, { error: undefined, manualRecovery: false }, { historyPurges: this.#record.historyPurges.filter((one) => one.request.id !== thread) })
+      this.#live.delete(thread)
+      if (this.#record.config.enabled && (request.action === 'clear' || thread === MAIN)) await this.open(thread)
+      return this.view()
+    } finally { this.#historyBusy.delete(thread) }
+  }
+
   #vpnLookupHeld(thread: string): boolean {
     const session = this.#state(thread).sessionId
     const note = session === undefined ? undefined : this.#deps.notes.all()[session]
@@ -976,6 +1061,7 @@ export class Manager {
   }
 
   #fail(thread: string, error: string): void {
+    if (!this.#exists(thread) || this.#record.historyPurges.some((one) => one.request.id === thread)) return
     const id = this.#state(thread).sessionId
     const session = this.#sessions.find((one) => one.id === id)
     const note = id === undefined ? undefined : this.#deps.notes.all()[id]

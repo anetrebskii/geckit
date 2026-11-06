@@ -1,6 +1,6 @@
 import type { CardAnswer, ChatSession, ManagerLabels, SessionImage, SessionItem, SessionMode, SessionNotice, SessionProvider } from '../../shared/api'
 import type { ChannelField, ChannelId, ChannelInfo, ChannelValue, ChannelValues } from '../../shared/channels'
-import type { ManagerDecision } from '../../shared/manager'
+import type { ManagerHistoryBoundary, ManagerHistoryChange, ManagerDecision } from '../../shared/manager'
 import type { PluginLogger } from '../sessions/plugin-api'
 import type { ThreadActivity } from '../manager-status'
 
@@ -46,6 +46,7 @@ export interface ChannelSend {
 }
 
 export type ChannelEvent =
+  | { readonly kind: 'history'; readonly change: ManagerHistoryChange }
   | { readonly kind: 'items'; readonly items: readonly SessionItem[]; readonly gone: readonly string[] }
   | { readonly kind: 'state'; readonly conversation: ChannelConversation }
   | { readonly kind: 'notice'; readonly notice: SessionNotice }
@@ -56,6 +57,7 @@ export type ChannelEvent =
   | { readonly kind: 'status'; readonly activity: ThreadActivity }
 
 export interface ChannelConversations {
+  historyBoundary?(key: string): ManagerHistoryBoundary | undefined
   /** The Manager thread for this place, when this channel may talk to Manager and Manager is on. Without a place, the channel's one default thread. */
   manager(thread?: ChannelThread): string | undefined
   /** Adds labels to a conversation this channel started or to one of its Manager threads; an empty value removes one. */

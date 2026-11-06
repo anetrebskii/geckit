@@ -131,6 +131,7 @@ export function application(runtime: CoreRuntime) {
     'employees:memory': (id: string, cursor?: string) => employees.memory(id, cursor),
     'manager:view': () => manager.view(),
     'manager:configure': (change: Partial<ManagerConfig>) => configureManagerAccess(manager, telegram, change),
+    'manager:history': (...args: Parameters<typeof manager.history>) => manager.history(...args),
     'manager:inspect': (...args: Parameters<typeof manager.inspect>) => manager.inspect(...args),
     'manager:sendApp': (request: Parameters<typeof manager.sendApp>[0]) => manager.sendApp(request, 'desktop'),
     'manager:sendAppPhone': (request: Parameters<typeof manager.sendApp>[0]) => manager.sendApp(request, 'phone'),
