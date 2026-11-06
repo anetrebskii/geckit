@@ -1,0 +1,9 @@
+# Integrator handoff
+
+Ready for integration. Branch `feat/manager-history-actions`, retained worktree `/private/tmp/geckit-manager-history`, base `eb2efdbbf653ba2a1092496ceac9ab97ed5a70b6`. Obtain the single task commit with `git rev-parse feat/manager-history-actions`. Apply that commit after the existing worker-delete/browser delivery; do not revert `ab1cc236`/`3db813cc`, which implement a separate worker-session capability.
+
+User-facing result: selected Manager conversation menu offers Clear history and Delete conversation with named confirmation. Both cancel active response/queued input and purge selected current/previous native contexts. Clear keeps binding/routing; delete removes external incarnation, preserving working tasks and rerouting its owned workers to GeckIt. Next same-place Telegram/Slack input starts empty. No global bulk cleanup, settings/project/employee deletion or native-permission automation.
+
+See [verification.md](verification.md) for full evidence and limitations. 1729 full-suite tests, 51 settled Telegram tests, typecheck/lint/desktop-service/mobile builds passed; real renderer UI with real isolated Manager/disk and fake native driver covered both operations, cancellation, empty/active, failure/retry, refresh/restart, themes, phone, keyboard/focus/scroll. Real provider/account deletion and installed-app integration remain delivery smoke checks; use disposable data only. Telegram has one-second raw inbound timestamp ambiguity and remote messages already accepted by Telegram/Slack cannot be retracted.
+
+Sole delivery owner: `codex:01a1af24-e587-7bd2-a795-9c490d3fd814`, coordinated by Manager. This session did not push main or restart the user app. Retain this worktree until coordinated delivery succeeds; do not mistake the prior worker-delete delivery for completion of this corrected scope. Optional product feature-list approval is not an implementation gate.

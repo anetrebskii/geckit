@@ -1178,3 +1178,32 @@ describe('Telegram status message', () => {
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 2))
   })
 })
+
+it('fences queued replies and purges saved old references/late prompts across a missed reset and restart', async () => {
+  let reset = false
+  const boundary = { id: 'telegram:81', action: 'clear' as const, revision: 'history-reset', at: now }
+  const access: Pick<TelegramManager, 'originCurrent' | 'historyBoundary'> = { originCurrent: (origin) => origin.session !== 'old-native' || !reset, historyBoundary: () => reset ? boundary : undefined }
+  const value = fixture({ manager: access })
+  await paired(value)
+  await value.telegram.notify('private saved old reply', undefined, { thread: 'telegram:81', session: 'old-native', workers: [] })
+  value.api.deliver([message(2, 'private stale prompt', { date: now / 1000 - 700 })])
+  await vi.waitFor(() => expect(value.telegram.view().pendingLate).toBe(1))
+  value.telegram.historyChanged({ id: 'telegram:another-chat', action: 'clear', revision: 'other-reset', at: now, sessions: [] })
+  expect(value.telegram.view().pendingLate).toBe(1)
+  const count = sent(value.api).length
+  const queued = value.telegram.notify('private queued old reply', undefined, { thread: 'telegram:81', session: 'old-native', workers: [] })
+  reset = true
+  await queued
+  expect(sent(value.api)).toHaveLength(count)
+  value.telegram.stop()
+  const again = fixture({ directory: value.directory, manager: access })
+  await again.telegram.start()
+  expect(again.telegram.view().pendingLate).toBe(0)
+  const saved = vault.decrypt(readFileSync(join(value.directory, 'manager-telegram.sealed')))
+  expect(saved).not.toContain('private saved old reply')
+  expect(saved).not.toContain('private stale prompt')
+  again.api.deliver([message(3, 'private old pending input', { date: now / 1000 - 1 }), message(4, 'Fresh request')])
+  await vi.waitFor(() => expect(again.submit).toHaveBeenCalledTimes(1))
+  expect(again.submit.mock.calls[0]?.[0]).toBe('Fresh request')
+  expect(again.telegram.view().pendingLate).toBe(0)
+})

@@ -39,6 +39,7 @@ export function ManagerInspection({ view, settings, onClose, onSettings, onOpen 
     const before = document.activeElement
     close.current?.focus()
     const key = (event: KeyboardEvent): void => {
+      if (!(event.target instanceof Node) || !body.current?.contains(event.target)) return
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); onClose(); return }
       if (event.key !== 'Tab') return
       const controls = body.current?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], summary, [tabindex="0"]')

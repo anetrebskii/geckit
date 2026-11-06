@@ -8,7 +8,7 @@ import { providerOf } from '../../shared/api'
 import type { ChannelChange, ChannelFailure, ChannelId, ChannelSetting, ChannelState, ChannelValues, ChannelView, ChannelsView } from '../../shared/channels'
 import { missingFields } from '../../shared/channels'
 import { MANAGER_MAIN_THREAD, managerLabels } from '../../shared/manager'
-import type { ManagerReplyOrigin, ManagerThreadOpen, ManagerView } from '../../shared/manager'
+import type { ManagerHistoryBoundary, ManagerHistoryChange, ManagerReplyOrigin, ManagerThreadOpen, ManagerView } from '../../shared/manager'
 import { pluginLogger } from '../sessions/plugin-logs'
 import type { Channel, ChannelContext, ChannelConversation, ChannelEvent, ChannelThread, Json } from './channel-api'
 import { threadActivity } from '../manager-status'
@@ -34,12 +34,15 @@ export interface ChannelSessions {
 }
 
 export interface ChannelManager {
+  historyBoundaryFor?(channel: string, key: string): ManagerHistoryBoundary | undefined
+  onHistoryChange?(listener: (change: ManagerHistoryChange) => void): () => void
+  originCurrent?(origin: ManagerReplyOrigin): boolean
   enabled(): boolean
   send(text: string, source: 'channel', id: string | undefined, workers: readonly string[], authorized: () => boolean, attachments: readonly string[], telegramRequests: readonly string[], thread: string): Promise<string>
   thread(open: ManagerThreadOpen): string
   label(thread: string, labels: ManagerLabels): void
   threadOf(session: string): string | undefined
-  threadRecord(thread: string): { readonly channel: string } | undefined
+  threadRecord(thread: string): (Pick<ManagerThreadOpen, 'channel'> & Partial<Pick<ManagerThreadOpen, 'key'>>) | undefined
   close(channel: string, reason: string | undefined): void
   onResponse(listener: (text: string, origin: ManagerReplyOrigin) => void): () => void
   inspect(id: string): Promise<SessionItems>
@@ -92,6 +95,7 @@ export class Channels {
   readonly #shown = new Map<string, string>()
   readonly #decisions = new Map<string, string>()
   readonly #statuses = new Map<string, string>()
+  #unhistory: (() => void) | undefined
   #unanswer: (() => void) | undefined
   #counted = ''
 
@@ -168,7 +172,8 @@ export class Channels {
       this.#running.set(one.info.id, { loaded: one, instance: undefined, state: 'off', says: undefined, signature: undefined, alive: { value: false }, unwatch: new Set() })
     }
     this.#unsubscribe = this.#deps.subscribe((event) => this.#heard(event))
-    this.#unanswer = this.#deps.manager.onResponse((text, origin) => { if (origin.thread !== undefined) this.#tell(origin.thread, { kind: 'answer', text }) })
+    this.#unhistory = this.#deps.manager.onHistoryChange?.((change) => this.#tell(change.id, { kind: 'history', change }))
+    this.#unanswer = this.#deps.manager.onResponse((text, origin) => { if (origin.thread !== undefined && this.#deps.manager.originCurrent?.(origin) !== false) this.#tell(origin.thread, { kind: 'answer', text }) })
     await this.reconcile()
   }
 
@@ -288,6 +293,7 @@ export class Channels {
       providers: () => { live(); return this.#deps.settings().chatProviders },
       employees: () => { live(); return this.#deps.employees().filter((one) => !one.archived).map(({ id: employee, name, role }) => ({ id: employee, name, role })) },
       conversations: {
+        historyBoundary: (key) => this.#deps.manager.historyBoundaryFor?.(id, key),
         manager: (place) => { live(); return this.#thread(id, place) },
         label: (conversation, labels) => {
           reach(conversation)
@@ -320,7 +326,7 @@ export class Channels {
           if (isManager(conversation)) {
             if (!this.#mayTalk(id)) throw new Error(`${setting().info.name} may not talk to Manager. Allow it in Settings, Channels.`)
             const from = said.from === undefined || said.from.trim() === '' ? '' : `, from ${said.from.trim().slice(0, 200)}`
-            if (from !== '') this.#deps.manager.thread({ channel: id, place: setting().info.name, key: conversation.slice(id.length + 1), from: said.from?.trim() ?? '' })
+            if (from !== '') this.#deps.manager.thread({ channel: id, place: setting().info.name, key: this.#deps.manager.threadRecord(conversation)?.key ?? conversation.slice(id.length + 1), from: said.from?.trim() ?? '' })
             await this.#deps.manager.send(`[Via ${setting().info.name}${from}]\n${said.text}`, 'channel', undefined, [], () => true, [], [], conversation)
             return
           }
@@ -501,6 +507,7 @@ export class Channels {
     this.#stopped = true
     this.#unsubscribe?.()
     this.#unanswer?.()
+    this.#unhistory?.()
     await Promise.all([...this.#running.values()].map((running) => this.#halt(running)))
   }
 }

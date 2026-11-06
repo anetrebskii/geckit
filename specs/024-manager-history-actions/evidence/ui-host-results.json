@@ -1,0 +1,30 @@
+{
+  "environment": "Real Manager, Sessions, disk store and HTTP host; fake native provider; task-owned GeckIt Browser test tab",
+  "fixtureDirectory": "/var/folders/c3/2y8b2_v56c9bl7_qfsfg9tsh0000gn/T/geckit-manager-history-preview-6ltM7o",
+  "cancelClearUnchanged": true,
+  "cancelDeleteUnchanged": true,
+  "firstFreshContext": {
+    "resume": false,
+    "freshRequestPresent": true,
+    "oldMainAbsent": true,
+    "oldQueueAbsent": true
+  },
+  "selectedSlackRemoved": true,
+  "telegramTranscriptPreserved": true,
+  "projectSentinelPreserved": true,
+  "finalPendingPurges": [],
+  "restartFreshContext": {
+    "resume": false,
+    "oldMainAbsent": true,
+    "priorFreshMessageAbsent": true,
+    "oldMainQueueAbsent": true,
+    "freshGlobalReconciliationPresent": true
+  },
+  "ui": {
+    "escapeRetainsManagerAndReturnsOpener": true,
+    "tabWrapsToCancel": true,
+    "lightDarkDesktopPhoneReviewed": true,
+    "providerFailureShownAndRetrySucceeded": true,
+    "phoneHorizontalOverflow": false
+  }
+}

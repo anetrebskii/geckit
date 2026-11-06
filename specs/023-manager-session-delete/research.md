@@ -1,5 +1,8 @@
 # Research
 
+> Scope correction, 2026-11-06: Alex meant deleting/clearing Manager conversations themselves. This document records the separate worker-delete feature; it is retained, not treated as fulfillment of that request. Manager history/context actions are specified in [Manager history actions](../../docs/ux/manager-history-actions.md). Earlier statements that cleanup scope was unanswered describe the original worker-delete implementation only.
+
+
 - Decision: reuse provider deletion via Sessions.remove, as the existing Chat action does. UI remove handler opens a new chat only for IDs confirmed removed; core wrapper clears favorites for those IDs.
 - Existing defect: remove hides rows even when provider returns false; fixes are required for truthful Manager results.
 - Decision: preserve existing Manager operation authentication, approval binding and durable operation replay. Automatic delegation does not waive deletion confirmation.

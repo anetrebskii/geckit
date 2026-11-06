@@ -9,6 +9,7 @@ import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
 import { Files } from './Prose'
 import { Transcript } from './Transcript'
+import { ManagerHistory } from './ManagerHistory'
 import { ManagerComposer } from './ManagerComposer'
 import { managerAssistant } from './manager-label'
 
@@ -89,11 +90,11 @@ const History = memo(function History({ view, connected, onReady }: { readonly v
 export function threadView(view: ManagerView, thread: ManagerThread | undefined): ManagerView {
   if (thread === undefined || thread.id === MANAGER_MAIN_THREAD && (view.threads ?? []).length === 0) return view
   const main = thread.id === MANAGER_MAIN_THREAD
-  const { session: _session, error: _error, ...rest } = view
+  const { session: _session, error: _error, historyPending: _pending, historyRevision: _revision, ...rest } = view
   const session = main ? view.session : thread.conversation
   const error = main ? view.error : thread.error
   const state = view.state === 'off' || view.state === 'paused' || main && view.state === 'blocked' ? view.state : thread.state === 'failed' ? 'blocked' : thread.state === 'working' ? 'working' : 'idle'
-  return { ...rest, ...(session === undefined ? {} : { session }), ...(error === undefined ? {} : { error }), state, requests: (view.requests ?? []).filter((request) => request.session === thread.session), decisions: view.decisions.filter((decision) => (decision.thread ?? MANAGER_MAIN_THREAD) === thread.id) }
+  return { ...rest, historyRevision: thread.historyRevision, ...(thread.historyPending === undefined ? {} : { historyPending: thread.historyPending }), ...(session === undefined ? {} : { session }), ...(error === undefined ? {} : { error }), state, requests: (view.requests ?? []).filter((request) => request.session === thread.session), decisions: view.decisions.filter((decision) => (decision.thread ?? MANAGER_MAIN_THREAD) === thread.id) }
 }
 
 export function threadOrder(threads: readonly ManagerThread[]): readonly ManagerThread[] {
@@ -138,7 +139,7 @@ export function ManagerChat({ view: all, settings, connected = true, onSettings,
   }
   const facts = [llmProviderInfo(managerAssistant(view), undefined, settings.providerPlugins).name, view.session?.model ?? 'Provider default', view.workers.length === 0 ? undefined : `${String(view.workers.length)} ${view.workers.length === 1 ? 'worker' : 'workers'}`].filter((fact) => fact !== undefined)
   const chat = <div className="manager-chat">
-    <div className="manager-inspection-info"><p className="manager-inspection-facts">{facts.join(' · ')}</p>
+    <div className="manager-inspection-info"><ManagerHistory view={view} thread={thread} connected={connected} onDeleted={() => setPicked(MANAGER_MAIN_THREAD)} /><p className="manager-inspection-facts">{facts.join(' · ')}</p>
       {!view.config.enabled ? <p>{ON_PHONE && view.session === undefined ? 'Set up Manager on your computer, then chat here.' : 'Manager disabled. History is kept.'}</p> : view.state === 'paused' ? <p>Manager paused</p> : view.state === 'blocked' ? <p>Manager unavailable</p> : null}
       {view.error === undefined ? null : <p className="manager-error" role="status">{view.error}</p>}{error === '' ? null : <p className="manager-error" role="alert">{error}</p>}
       {view.state !== 'working' || view.session?.retryNotice === undefined ? null : <p className="manager-retry" role="status">{view.session.retryNotice}</p>}

@@ -312,6 +312,13 @@ describe('Manager threads in the window', () => {
     expect(threadView({ ...threaded, state: 'paused' }, slack).state).toBe('paused')
   })
 
+  it('never carries the default thread cleanup request into a selected external thread', () => {
+    const pending: NonNullable<ManagerView['historyPending']> = { id: 'main', session: 'manager-main', action: 'clear' }
+    const selected = threadView({ ...threaded, historyPending: pending, historyRevision: 'main-reset' }, threaded.threads?.find((one) => one.place === 'Slack'))
+    expect(selected.historyPending).toBeUndefined()
+    expect(selected.historyRevision).toBeUndefined()
+  })
+
   it('lists the threads with GeckIt first and counts their working workers', () => {
     const markup = renderToStaticMarkup(createElement(Threads, { threads: threadOrder(threaded.threads ?? []), picked: 'main', workers: [{ ...threaded.workers[0]!, state: 'working' }, { ...threaded.workers[1]!, state: 'idle' }], onPick: vi.fn() }))
     expect(markup).toContain('aria-label="Manager threads"')

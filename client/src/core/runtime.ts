@@ -220,6 +220,8 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       attachments,
       vault: options.vault ?? { available: () => false, encrypt: () => { throw new Error('Secure storage is unavailable.') }, decrypt: () => { throw new Error('Secure storage is unavailable.') } },
       manager: {
+        historyBoundary: (chatId) => coordinator.historyBoundaryFor('telegram', String(chatId)),
+        originCurrent: (origin) => coordinator.originCurrent(origin),
         pending: () => coordinator.telegramPending(),
         typingAllowed: () => coordinator.telegramTypingAllowed(telegramThread()),
         onPending: (changed) => coordinator.on(() => changed()),
@@ -292,6 +294,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       changed: (changed) => events.emit('channels:changed', changed),
     })
     channels = hub
+    coordinator.onHistoryChange((change) => bridge.historyChanged(change))
     coordinator.onResponse((text, origin) => { if (origin.thread !== undefined && coordinator.threadRecord(origin.thread)?.channel === 'telegram') void bridge.notify(text, undefined, origin).catch(() => undefined) })
 
     setGuideManager(coordinator.instructions())

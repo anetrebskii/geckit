@@ -106,6 +106,7 @@ const geckit = {
   manager: {
     voiceMemos: (action?: 'privacy'): Promise<VoiceMemosConnection> => ipcRenderer.invoke('manager:voice-memos', action),
     view: (): Promise<ManagerView> => ipcRenderer.invoke('manager:view'),
+    history: (request: Parameters<ManagerApi['history']>[0]): Promise<ManagerView> => ipcRenderer.invoke('manager:history', request),
     inspect: (id: string): Promise<SessionItems> => ipcRenderer.invoke('manager:inspect', id),
     send: (request: ManagerSendRequest): Promise<ManagerRequestReceipt> => ipcRenderer.invoke('manager:sendApp', request),
     receipt: (id: ManagerSendRequest['id']): Promise<ManagerRequestReceipt | undefined> => ipcRenderer.invoke('manager:receipt', id),

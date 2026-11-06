@@ -5,6 +5,9 @@ owner: Alex
 created: 2026-11-06
 ---
 
+> Scope correction, 2026-11-06: Alex meant deleting/clearing Manager conversations themselves. This document records the separate worker-delete feature; it is retained, not treated as fulfillment of that request. Manager history/context actions are specified in [Manager history actions](manager-history-actions.md). Earlier statements that cleanup scope was unanswered describe the original worker-delete implementation only.
+
+
 # UX: Delete one worker through Manager
 
 ## 1. Why

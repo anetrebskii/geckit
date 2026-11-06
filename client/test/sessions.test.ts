@@ -1837,6 +1837,22 @@ describe('the list', () => {
     expect(notes.all()[id]?.hidden).toBe(true)
   })
 
+  it('discards an allocated worker when its originating Manager request was reset during creation', async () => {
+    let release: ((id: string) => void) | undefined
+    let authorized = true
+    const remove = vi.fn<NonNullable<SessionsDeps['codex']>['delete']>(async () => true)
+    const built = build({ codex: fakeCodex({ create: () => new Promise<string>((resolve) => { release = resolve }), delete: remove }) })
+    const starting = built.sessions.startManaged({ root: ROOT, provider: 'codex', mode: 'manual', text: 'Private old request' }, 'manager', 'old-operation', 'manager', () => authorized)
+    const failed = expect(starting).rejects.toThrow('originating request changed')
+    await vi.waitFor(() => expect(release).toBeDefined())
+    authorized = false
+    release?.('codex:abandoned-worker')
+    await failed
+    expect(remove).toHaveBeenCalledWith('codex:abandoned-worker')
+    expect(built.fake.sent).toEqual([])
+    expect(built.rows.flat().some((row) => row.id === 'codex:abandoned-worker')).toBe(false)
+  })
+
   it('does not start a runtime after deletion overtakes its first provider lookup', async () => {
     const notes = memoryNotes()
     let release: (() => void) | undefined

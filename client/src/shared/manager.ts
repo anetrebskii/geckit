@@ -44,6 +44,8 @@ export const MANAGER_LABEL_VALUE = 300
 
 /** One of Manager's conversations with the outside world: GeckIt itself, a Telegram chat, a Slack thread. */
 export interface ManagerThread {
+  readonly historyPending?: ManagerHistoryRequest
+  readonly historyRevision?: string | undefined
   readonly id: string
   /** The channel's name, such as "Telegram" or "Slack"; none for GeckIt. */
   readonly place?: string
@@ -88,7 +90,7 @@ export function managerThreadSaid(thread: Pick<ManagerThread, 'place' | 'from' |
   return [thread.place, thread.from ?? thread.title].join(' · ')
 }
 
-export interface ManagerView {
+export interface ManagerView extends Pick<ManagerThread, 'historyPending' | 'historyRevision'> {
   readonly appChat?: boolean
   readonly intake?: ManagerIntakeView
   readonly config: ManagerConfig
@@ -104,7 +106,12 @@ export interface ManagerView {
   readonly error?: string
 }
 
+export type ManagerHistoryRequest = Pick<ManagerThread, 'id' | 'session' | 'historyRevision'> & { readonly action: 'clear' | 'delete' }
+export type ManagerHistoryBoundary = Pick<ManagerThread, 'id' | 'at'> & Pick<ManagerHistoryRequest, 'action'> & { readonly revision: string }
+export type ManagerHistoryChange = ManagerHistoryRequest & ManagerHistoryBoundary & { readonly sessions: readonly ChatSession['id'][] }
+
 export interface ManagerApi {
+  history(request: ManagerHistoryRequest): Promise<ManagerView>
   voiceMemos(action?: 'privacy'): Promise<VoiceMemosConnection>
   view(): Promise<ManagerView>
   inspect(id: ChatSession['id']): Promise<SessionItems>
