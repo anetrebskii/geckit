@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -89,6 +89,28 @@ describe("bringing a conversation's mirror up to date", () => {
     } finally {
       await rm(folder, { recursive: true, force: true })
     }
+  })
+
+  it('preserves the mirror and offline listing when SSH deletion fails', async () => {
+    vi.mocked(runOn).mockReset()
+    const folder = await mkdtemp(join(tmpdir(), 'geckit-mirror-delete-failed-'))
+    try {
+      const noteFailure = vi.fn()
+      const hosts = { config: () => fakeHost, setup: () => ({ env: {} }), state: () => 'up' as const, noteFailure }
+      const disk = new HostDisk(hosts, folder)
+      const listed = join(folder, fakeHost.id, 'listed', `${slug('/home/leo/trailmap')}.json`)
+      const mirror = join(folder, fakeHost.id, 'projects', slug('/home/leo/trailmap'), 'a-1.jsonl')
+      await mkdir(dirname(listed), { recursive: true })
+      await mkdir(dirname(mirror), { recursive: true })
+      await writeFile(listed, JSON.stringify([{ id: 'a-1', title: 'Kept', stands: '', at: 5, driven: false }]))
+      await writeFile(mirror, 'retained transcript')
+      vi.mocked(runOn).mockResolvedValueOnce({ code: 255, out: Buffer.alloc(0), err: 'SSH unavailable' })
+      await expect(disk.delete(root, 'a-1')).resolves.toBe(false)
+      expect(noteFailure).toHaveBeenCalledOnce()
+      expect(await readFile(mirror, 'utf8')).toBe('retained transcript')
+      const asleep = new HostDisk({ config: () => fakeHost, setup: () => ({ env: {} }), state: () => 'lost' as const }, folder)
+      await expect(asleep.has(root, 'a-1')).resolves.toBe(true)
+    } finally { await rm(folder, { recursive: true, force: true }) }
   })
 
   it('never lands a fetch already in flight after a delete for the same file', async () => {

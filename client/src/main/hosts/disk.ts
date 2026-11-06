@@ -305,7 +305,7 @@ export class HostDisk {
   /** One delete, never run at the same time as a fetch of the same file's mirror (see `delete`). */
   async #deleteOnce(host: HostConfig, root: string, id: string, file: string, local: string): Promise<boolean> {
     const ran = await runOn(host, this.#hosts.setup(), deleteScript(file), { timeout: 30_000 })
-    if (ran.code !== 0) this.#hosts.noteFailure?.(host.id, ran)
+    if (ran.code !== 0) { this.#hosts.noteFailure?.(host.id, ran); return false }
     await rm(local, { force: true })
     this.#rows.delete(file)
     this.#listed.delete(root)
