@@ -3,7 +3,7 @@ import type { RemoteServer, RemoteTrust } from '../../../shared/remote/protocol'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import type { RemoteView } from './client'
-import { savedServers } from './storage'
+import { savedServers, shownName } from './storage'
 
 export interface RemoteComputer {
   readonly server: RemoteServer
@@ -34,7 +34,7 @@ export function Computer({ onConnect }: ComputerProps): React.JSX.Element {
   useEffect(() => {
     if (source !== undefined || anchor === undefined) return
     let active = true
-    void savedServers().then((servers) => { if (active) { setSaved(servers); setTrouble('') } }).catch(() => { if (active) setTrouble('Saved computers are unavailable. Allow app storage, then try again.') })
+    void savedServers().then((servers) => { if (active) { setSaved(servers.map((one) => ({ server: { ...one.server, name: shownName(one) } }))); setTrouble('') } }).catch(() => { if (active) setTrouble('Saved computers are unavailable. Allow app storage, then try again.') })
     return () => { active = false }
   }, [source, anchor])
   const name = source?.server.name ?? 'This computer'

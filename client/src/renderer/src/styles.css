@@ -15455,7 +15455,18 @@ html.phone .remote-clients .board-head { padding-inline-start: 12px; }
 .remote-code input, .remote-name { min-inline-size: 0; block-size: 28px; padding-inline: 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--field); color: var(--text); font: inherit; }
 .remote-code input { flex: 1; font-family: var(--font-code); font-size: 11px; }
 .remote-code input:focus-visible, .remote-name:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
-.remote-name { inline-size: 220px; }
+.remote-name { inline-size: 100%; box-sizing: border-box; }
+.remote-saved li.remote-editing, .remote-saved li.remote-editing:hover, .remote-saved li.remote-removing, .remote-saved li.remote-removing:hover { background: var(--bg-hover); }
+.remote-rename { display: flex; align-items: center; gap: 6px; flex: 1; min-inline-size: 0; min-block-size: 52px; box-sizing: border-box; padding: 6px 4px 6px 10px; }
+.remote-rename > svg { flex-shrink: 0; color: var(--text-faint); margin-inline-end: 4px; }
+.remote-rename input { flex: 1; min-inline-size: 0; block-size: 28px; padding-inline: 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--field); color: var(--text); font: inherit; }
+.remote-rename input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.remote-saved li.remote-removing { gap: 6px; min-block-size: 52px; box-sizing: border-box; padding: 8px 4px 8px 10px; }
+.remote-removing > span { display: grid; gap: 2px; flex: 1; min-inline-size: 0; }
+.remote-removing strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-removing small { color: var(--text-dim); font-size: 11px; }
+.remote-button.danger { background: var(--danger-solid); border-color: var(--danger-solid); color: var(--danger-text); }
+html.phone .remote-saved li .icon-button { opacity: 1; }
 .remote-pending { display: grid; gap: 12px; justify-items: start; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-raised); }
 .remote-pending p { margin: 0; line-height: 1.6; color: var(--text-dim); }
 .remote-pending .remote-phrase { color: var(--text); font-size: 15px; font-weight: 600; letter-spacing: 0.01em; }

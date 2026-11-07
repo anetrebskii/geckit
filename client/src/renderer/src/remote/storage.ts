@@ -29,22 +29,25 @@ export const deviceIdentity = (): Promise<KeptDevice> => opening ??= (async () =
   await save(device)
   return device
 })()
-export async function savedServers(): Promise<RemoteTrust[]> {
+export type SavedServer = RemoteTrust & { readonly label?: string }
+export const shownName = (one: Pick<SavedServer, 'server' | 'label'>): string => one.label ?? one.server.name
+export async function savedServers(): Promise<SavedServer[]> {
   const device = await deviceIdentity()
   const found = await load() ?? device
   return Promise.all(found.servers.map(async (box) => {
     const raw = decode(box)
     const text = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, device.wrapping, raw.slice(12))
-    return JSON.parse(new TextDecoder().decode(text)) as RemoteTrust
+    return JSON.parse(new TextDecoder().decode(text)) as SavedServer
   }))
 }
 export async function rememberServer(trust: RemoteTrust): Promise<void> {
   const device = await deviceIdentity()
   const previous = await savedServers()
-  const servers = [...previous.filter((one) => one.server.id !== trust.server.id), trust]
+  const label = previous.find((one) => one.server.id === trust.server.id)?.label
+  const servers = [...previous.filter((one) => one.server.id !== trust.server.id), label === undefined ? trust : { ...trust, label }]
   await writeServers(device, servers)
 }
-async function writeServers(device: KeptDevice, servers: readonly RemoteTrust[]): Promise<void> {
+async function writeServers(device: KeptDevice, servers: readonly SavedServer[]): Promise<void> {
   const boxes = await Promise.all(servers.map(async (one) => {
     const iv = crypto.getRandomValues(new Uint8Array(12))
     const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, device.wrapping, new TextEncoder().encode(JSON.stringify(one))))
@@ -54,3 +57,11 @@ async function writeServers(device: KeptDevice, servers: readonly RemoteTrust[])
   await save({ ...device, servers: boxes })
 }
 export const forgetServer = async (id: string): Promise<void> => writeServers(await deviceIdentity(), (await savedServers()).filter((one) => one.server.id !== id))
+export const nameServer = async (id: string, label: string): Promise<void> => {
+  const name = label.trim().slice(0, 80)
+  await writeServers(await deviceIdentity(), (await savedServers()).map((one) => {
+    if (one.server.id !== id) return one
+    const { label: _old, ...trust } = one
+    return name === '' || name === one.server.name ? trust : { ...trust, label: name }
+  }))
+}

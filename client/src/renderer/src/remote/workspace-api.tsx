@@ -52,6 +52,7 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
       default: throw new Error('This action requires a desktop on the server.')
     }
   }
+  const quiet = new Set(['chat:listStatus'])
   const ownCalls = new Set(['chat:addProject', 'settings:accessibility', 'errors:question', 'phone:state', 'update:view', 'settings:pickApp', 'configuration:reveal', 'configuration:export', 'configuration:import', 'update:check'])
   const transport: RendererTransport = {
     invoke: async <Result,>(channel: string, ...args: readonly RendererArgument[]): Promise<Result> => {
@@ -59,7 +60,13 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
         if (ownCalls.has(channel)) return await localInvoke(channel) as Result
         return await connection.call(channel as keyof CoreMethods, ...args as Parameters<CoreMethods[keyof CoreMethods]>) as Result
       } catch (error) {
-        report(error instanceof Error ? error : new Error(String(error)))
+        const failure = error instanceof Error ? error : new Error(String(error))
+        if (failure.message === 'Unknown GeckIt method.') {
+          const older = new Error('GeckIt on the server is older than this app. Update it there to use this.')
+          if (!quiet.has(channel)) report(older)
+          throw older
+        }
+        report(failure)
         throw error
       }
     },
