@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 vi.mock('../src/core/platform', () => ({ dataDirectory: () => process.env['GECKIT_CHANNEL_TEST_HOME'], corePlatform: () => ({}) }))
 
 import { Channels } from '../src/main/channels/channels'
+import { flushPluginLogs } from '../src/main/sessions/plugin-logs'
 import type { ChannelsDeps } from '../src/main/channels/channels'
 import type { ChannelContext, ChannelEvent } from '../src/main/channels/channel-api'
 import { channelManifest, loadChannel } from '../src/main/channels/libraries'
@@ -20,8 +21,9 @@ import type { SlackTransport } from '../src/main/channels/slack'
 
 const folders: string[] = []
 afterEach(async () => {
+  await Promise.all(((globalThis as { channelTest?: Seen }).channelTest?.contexts ?? []).map((context) => flushPluginLogs(context.log.path)))
   delete process.env['GECKIT_CHANNEL_TEST_HOME']
-  delete (globalThis as { channelTest?: unknown }).channelTest
+  delete (globalThis as { channelTest?: Seen }).channelTest
   await Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true })))
 })
 
