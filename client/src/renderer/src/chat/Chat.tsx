@@ -72,6 +72,7 @@ const boardAt = (y: number): number => Math.round(Math.min(Math.max(y - TOP_BAR,
  */
 export function Chat(): React.JSX.Element {
   const [servers, setServers] = useState<string>()
+  const [remote, setRemote] = useState(false)
   const [signIn, setSignIn] = useState<SignInLink>()
   useEffect(() => window.geckit.signIn?.onOpen((url) => { const link = readSignIn(url); if (link !== undefined) { setSignIn(link); setServers(link.computer) } }), [])
   const chat = useChat()
@@ -506,9 +507,11 @@ export function Chat(): React.JSX.Element {
     ]
   }, [openId, chat.sessions, chat.settings.progressOrder])
 
-  if (servers !== undefined) return <Servers key={signIn?.token ?? servers} initialServer={servers} {...(signIn === undefined ? {} : { signIn })} onClose={() => { setServers(undefined); setSignIn(undefined) }} />
+  const remoteView = servers === undefined ? null : <Servers key={signIn?.token ?? servers} initialServer={servers} {...(signIn === undefined ? {} : { signIn })} onWorkspace={setRemote} onClose={() => { setServers(undefined); setSignIn(undefined); setRemote(false) }} />
 
   return (
+    <>
+    {servers !== undefined && remote ? null : (
     <div
       ref={frame}
       className={`chat${board ? ' boarded' : ''}${docked ? ' docked' : ''}${ON_PHONE ? '' : ' topped'}${over && !making && !asking ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
@@ -1038,5 +1041,8 @@ export function Chat(): React.JSX.Element {
         </div>
       ) : null}
     </div>
+    )}
+    {remoteView}
+    </>
   )
 }

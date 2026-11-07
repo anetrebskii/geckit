@@ -9,10 +9,10 @@ import { LiveView } from '../chat/LiveView'
 import type { SignInLink } from '../../../shared/live-view'
 import type { RemoteView } from './client'
 import { forgetServer, nameServer, savedServers, shownName } from './storage'
-interface ServersProps { readonly onClose: () => void; readonly scan?: () => Promise<string | undefined>; readonly invitation?: string; readonly initialServer?: string; readonly signIn?: SignInLink }
+interface ServersProps { readonly onClose: () => void; readonly onWorkspace?: (open: boolean) => void; readonly scan?: () => Promise<string | undefined>; readonly invitation?: string; readonly initialServer?: string; readonly signIn?: SignInLink }
 const COMMAND = 'geckit pair'
 const FAILED = ['error', 'expired', 'reused', 'revoked', 'incompatible']
-export function Servers({ onClose, invitation = '', initialServer, signIn }: ServersProps): React.JSX.Element {
+export function Servers({ onClose, onWorkspace, invitation = '', initialServer, signIn }: ServersProps): React.JSX.Element {
   const [signing, setSigning] = useState(signIn)
   const [code, setCode] = useState(invitation)
   const [saved, setSaved] = useState<readonly SavedServer[]>()
@@ -23,7 +23,7 @@ export function Servers({ onClose, invitation = '', initialServer, signIn }: Ser
   const naming = useRef('')
   const [view, setView] = useState<RemoteView>({ state: 'disconnected', message: '' })
   const [snapshot, setSnapshot] = useState<RemoteSnapshot>()
-  const [server, setServer] = useState<RemoteServer>()
+  const [, setServer] = useState<RemoteServer>()
   const [target, setTarget] = useState('')
   const [adding, setAdding] = useState(invitation !== '' || initialServer === ':add')
   const [copied, setCopied] = useState(false)
@@ -69,11 +69,14 @@ export function Servers({ onClose, invitation = '', initialServer, signIn }: Ser
     return closeConnection
   }, [closeConnection, connect, initialServer, signIn])
   const showForm = adding || saved?.length === 0
-  useEffect(() => { if (showForm && snapshot === undefined) input.current?.focus() }, [showForm, snapshot])
+  const open = snapshot !== undefined && workspace !== undefined
+  useEffect(() => { onWorkspace?.(open) }, [onWorkspace, open])
+  useEffect(() => { if (showForm && snapshot === undefined) setTimeout(() => input.current?.focus(), 0) }, [showForm, snapshot])
   const leave = (): void => { disconnect(); onClose() }
   const choose = (id: string): void => {
     if (id === ':local') { leave(); return }
     if (id === ':add') { disconnect(); setServer(undefined); setAdding(true); return }
+    if (id === ':manage') { disconnect(); setServer(undefined); setAdding(false); return }
     const trust = saved?.find((one) => one.server.id === id)
     if (trust !== undefined && id !== snapshot?.server.id) connect(trust)
   }
@@ -94,63 +97,81 @@ export function Servers({ onClose, invitation = '', initialServer, signIn }: Ser
       onClose={() => setSigning(undefined)}
     />}
   </main>
-  return <main className="remote-clients" onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Escape') leave() }}>
-    <header className="board-head drag">
-      <button type="button" className="icon-button no-drag" aria-label="Back to This computer" title="Back to This computer" onClick={leave}><Icon name="left" /></button>
-      <strong className="remote-title">{server === undefined ? 'Computers' : labelled(server).name}</strong>
-      <span className="spacer" />
-      {view.state === 'reconnecting' ? <span className="remote-state reconnecting" role="status">Reconnecting…</span> : null}
-    </header>
-    <div className="remote-body"><div className="remote-setup">
-      {saved === undefined || saved.length === 0 ? null : <section aria-labelledby="remote-saved-title">
-        <h2 id="remote-saved-title">Your computers</h2>
-        <ul className="remote-saved">{saved.map((one) => {
-          const going = busy && target === one.server.id
-          const name = shownName(one)
-          if (editing === one.server.id) return <li key={one.server.id} className="remote-editing">
-            <form className="remote-rename" onSubmit={(event) => { event.preventDefault(); rename(one.server.id) }} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setEditing(undefined) } }}>
-              <Icon name="server" />
-              <input aria-label={`Name for ${one.server.name}`} placeholder={one.server.name} value={draft} maxLength={80} autoFocus onChange={(event) => setDraft(event.target.value)} autoComplete="off" spellCheck={false} />
-              <button type="submit" className="remote-button primary">Save</button>
-              <button type="button" className="remote-button" onClick={() => setEditing(undefined)}>Cancel</button>
-            </form>
-          </li>
-          if (removing === one.server.id) return <li key={one.server.id} className="remote-removing" onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setRemoving(undefined) } }}>
-            <span><strong>Remove {name}?</strong><small>To use it again, pair it with a new code.</small></span>
-            <button type="button" className="remote-button danger" onClick={() => remove(one.server.id)}>Remove</button>
-            <button type="button" className="remote-button" autoFocus onClick={() => setRemoving(undefined)}>Cancel</button>
-          </li>
-          return <li key={one.server.id}>
-            <button type="button" className="remote-server" disabled={busy} onClick={() => connect(one)}>
-              <Icon name="server" />
-              <span><strong>{name}</strong><small>{!one.full ? 'Pair again to use this computer' : one.label === undefined ? 'Saved connection' : one.server.name}</small></span>
-              {going ? <span className="spinner-turn" aria-label="Connecting"><Icon name="spinner" /></span> : null}
-            </button>
-            <button type="button" className="icon-button" disabled={busy} aria-label={`Rename ${name}`} title="Rename" onClick={() => { setRemoving(undefined); setDraft(name); setEditing(one.server.id) }}><Icon name="pencil" /></button>
-            <button type="button" className="icon-button" disabled={busy} aria-label={`Remove ${name}`} title="Remove" onClick={() => { setEditing(undefined); setRemoving(one.server.id) }}><Icon name="trash" /></button>
-          </li>
-        })}</ul>
-        {feedback(target !== '')}
-        {showForm ? null : <button type="button" className="remote-add-open" onClick={() => { setView({ state: 'disconnected', message: '' }); setAdding(true) }}><Icon name="plus" />Connect computer</button>}
-      </section>}
-      {showForm ? <section className="remote-add" aria-labelledby="remote-add-title">
-        <div className="remote-add-head"><h2 id="remote-add-title">{saved !== undefined && saved.length > 0 ? 'Connect computer' : 'Connect a computer'}</h2>{saved !== undefined && saved.length > 0 && !busy ? <button type="button" className="icon-button" aria-label="Cancel" title="Cancel" onClick={() => { setAdding(false); setView({ state: 'disconnected', message: '' }) }}><Icon name="close" /></button> : null}</div>
-        {view.state === 'pending' ? <div className="remote-pending" role="status">
-          <p>Update GeckIt on the server, then run <code>geckit pair</code> for a new connection code.</p>
-          <button type="button" className="remote-button" onClick={disconnect}>Cancel</button>
-        </div> : <ol className="remote-steps">
-          <li><span>On the server, run</span><div className="remote-command"><code>{COMMAND}</code><button type="button" className="icon-button" aria-label="Copy command" title={copied ? 'Copied' : 'Copy'} onClick={copy}><Icon name={copied ? 'check' : 'copy'} /></button></div></li>
-          <li><span>Paste the code it prints</span>
-            <form className="remote-code" onSubmit={(event) => { event.preventDefault(); if (!busy && code.trim() !== '') connect(undefined, code) }}>
-              <input ref={input} aria-label="Connection code" placeholder="Connection code" value={code} onChange={(event) => setCode(event.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} disabled={busy} />
-              <button className="remote-button primary" disabled={busy || code.trim() === ''} type="submit">{busy && target === '' ? 'Connecting…' : 'Connect'}</button>
-            </form>
-            <input className="remote-name" aria-label="Name (optional)" placeholder="Name on this device (optional)" value={label} maxLength={80} onChange={(event) => setLabel(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !busy && code.trim() !== '') connect(undefined, code) }} autoComplete="off" spellCheck={false} disabled={busy} />
-            {feedback(target === '')}
-          </li>
-        </ol>}
-        {busy ? <button type="button" className="remote-button" onClick={disconnect}>Cancel</button> : null}
-      </section> : null}
-    </div></div>
-  </main>
+  const empty = saved !== undefined && saved.length === 0
+  const editingOne = saved?.find((one) => one.server.id === editing)
+  const removingOne = saved?.find((one) => one.server.id === removing)
+  const toList = (): void => { if (busy) disconnect(); setAdding(false); setEditing(undefined); setRemoving(undefined); setView({ state: 'disconnected', message: '' }) }
+  const back = (): void => { if (removingOne !== undefined || editingOne !== undefined || (adding && !empty)) toList(); else leave() }
+  const startAdding = (keep = ''): void => { setView({ state: 'disconnected', message: '' }); setTarget(''); setLabel(keep); setAdding(true) }
+  const head = (title: string): React.JSX.Element => <div className="computers-head">
+    <h2>{title}</h2>
+    <button type="button" className="icon-button" aria-label="Close" title="Close" onClick={leave}><Icon name="close" /></button>
+  </div>
+  let body: React.JSX.Element
+  if (removingOne !== undefined) body = <>
+    <h2>Remove {shownName(removingOne)}?</h2>
+    <p className="add-host-lead">This device forgets it. To use it again, run geckit pair there and paste a new code.</p>
+    <div className="dialog-actions">
+      <button type="button" className="quiet" autoFocus onClick={() => setRemoving(undefined)}>Cancel</button>
+      <button type="button" className="primary danger" onClick={() => remove(removingOne.server.id)}>Remove</button>
+    </div>
+  </>
+  else if (editingOne !== undefined) body = <form onSubmit={(event) => { event.preventDefault(); rename(editingOne.server.id) }}>
+    {head(`Edit ${shownName(editingOne)}`)}
+    <div className="field">
+      <label htmlFor="computer-rename">Name</label>
+      <input id="computer-rename" type="text" value={draft} maxLength={80} placeholder={editingOne.server.name} autoFocus onChange={(event) => setDraft(event.target.value)} autoComplete="off" spellCheck={false} />
+      <span className="hint">Kept on this device. Leave empty to use <span className="nowrap">{editingOne.server.name}</span>.</span>
+    </div>
+    <div className="dialog-actions">
+      <button type="button" className="quiet host-remove" onClick={() => { setRemoving(editingOne.server.id); setEditing(undefined) }}>Remove</button>
+      <button type="button" className="quiet" onClick={() => setEditing(undefined)}>Cancel</button>
+      <button type="submit" className="primary">Save</button>
+    </div>
+  </form>
+  else if (showForm) body = <form onSubmit={(event) => { event.preventDefault(); if (!busy && code.trim() !== '') connect(undefined, code) }}>
+    {head('Connect a computer')}
+    <p className="add-host-lead">On the other computer, run this command, then paste the code it prints.</p>
+    <div className="remote-command"><code>{COMMAND}</code><button type="button" className="icon-button" aria-label="Copy command" title={copied ? 'Copied' : 'Copy'} onClick={copy}><Icon name={copied ? 'check' : 'copy'} /></button></div>
+    {view.state === 'pending' ? <p className="remote-feedback" role="status">Update GeckIt on the server, then run <code>geckit pair</code> for a new connection code.</p> : <div className="computers-fields">
+      <div className="field">
+        <label htmlFor="computer-code">Connection code</label>
+        <input id="computer-code" ref={input} type="text" className="computer-code" value={code} onChange={(event) => setCode(event.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} disabled={busy} />
+      </div>
+      <div className="field">
+        <label htmlFor="computer-name">Name <span className="optional">optional</span></label>
+        <input id="computer-name" type="text" value={label} maxLength={80} placeholder="Its own name" onChange={(event) => setLabel(event.target.value)} autoComplete="off" spellCheck={false} disabled={busy} />
+      </div>
+    </div>}
+    {feedback(target === '')}
+    <div className="dialog-actions">
+      <button type="button" className="quiet" onClick={empty ? leave : toList}>{empty ? 'Cancel' : 'Back'}</button>
+      <button type="submit" className="primary" disabled={busy || code.trim() === '' || view.state === 'pending'}>{busy && target === '' ? 'Connecting…' : 'Connect'}</button>
+    </div>
+  </form>
+  else body = <>
+    {head('Computers')}
+    <div className="hosts-list">
+      {(saved ?? []).map((one) => {
+        const name = shownName(one)
+        const going = busy && target === one.server.id
+        return <div key={one.server.id} className="host-row">
+          <Icon name="server" />
+          <span className="host-lines">
+            <span className="name">{name}</span>
+            <span className="says">{going ? 'Connecting…' : !one.full ? <span className="host-state trouble">Needs a new code</span> : one.label === undefined ? 'Saved connection' : one.server.name}</span>
+          </span>
+          {going ? <button type="button" className="quiet" onClick={disconnect}>Cancel</button> : <button type="button" className="quiet" disabled={busy} onClick={() => { if (one.full) connect(one); else startAdding(one.label ?? '') }}>{one.full ? 'Open' : 'Pair again'}</button>}
+          <button type="button" className="quiet" disabled={busy} onClick={() => { setDraft(one.label ?? ''); setEditing(one.server.id) }}>Edit</button>
+        </div>
+      })}
+    </div>
+    {feedback(target !== '')}
+    <div className="dialog-actions computers-actions">
+      <button type="button" className="quiet" disabled={busy} onClick={() => startAdding()}><Icon name="plus" size={12} />Connect computer</button>
+    </div>
+  </>
+  return <div className="dialog-scrim" onMouseDown={leave} onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Escape') back() }}>
+    <div className="dialog add-host computers-dialog" role="dialog" aria-modal="true" aria-label="Computers" onMouseDown={(event) => event.stopPropagation()}>{body}</div>
+  </div>
 }

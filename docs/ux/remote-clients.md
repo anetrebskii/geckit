@@ -2,7 +2,7 @@
 type: spec
 status: implementation-authorized
 owner: Alex
-updated: 2026-11-06
+updated: 2026-11-07
 ---
 
 # Connect to a GeckIt server
@@ -63,3 +63,6 @@ FR-001/002: single command and immediate enrollment. FR-003: shared clients and 
 Alex rejected a separate server UI. Keep the existing board, list, conversations, Manager and settings. One compact toolbar selector shows the computer name, chevron and connection dot; its menu marks the current computer. The selector stays reachable above the conversation backdrop, so switching does not require closing a chat. Local work stays mounted in its controller; remote drafts and the selected conversation are stored under the server identity. During reconnection the current computer remains identified and offers This computer. Pairing is the only separate setup screen. Escape closes a menu or dialog first; it must not unexpectedly switch computers while composing.
 
 The workspace keeps the client window's titlebar inset when switching computers, independently of the server OS. macOS window buttons retain their reserved space; phone and framed desktop windows keep their existing layout. The workspace frame has an accessible name without a hover tooltip covering the toolbar. The computer selector alone identifies the active server.
+
+## Computers dialog, 2026-11-07 redesign
+Alex rejected both the narrow page with numbered steps and a full-window list: a list of one to three computers left the window empty. Computers is a dialog over the board, sized to its content, never a page; only an opened remote workspace fills the window. The toolbar computer menu opens it: Connect computer… on the connect view, Manage computers… (shown once one is saved) on the list. The list holds the saved computers only (the board under it is this computer): name, its own hostname when renamed or Saved connection, Needs a new code for an observation-only grant, quiet Open (Pair again when it needs a code) and Edit, and Connect computer under the list. Opening one shows Connecting… on its row with Cancel; success replaces the board with that workspace. Connect: the command with Copy, Connection code, optional Name, Back (Cancel when nothing is saved) and Connect. Edit: Name, kept on this device, empty meaning its own name; Remove on the left asks once (Remove <name>? This device forgets it. To use it again, run geckit pair there and paste a new code.) with Cancel focused. Escape goes back one view, and from the list closes the dialog.

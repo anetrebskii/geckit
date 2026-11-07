@@ -62,7 +62,7 @@ export function Computer({ onConnect }: ComputerProps): React.JSX.Element {
       autoFocus
       title="Computer"
       chosen={source?.server.id ?? ':local'}
-      choices={[{ value: ':local', label: 'This computer', icon: 'display' }, ...computers.map((one) => ({ value: one.server.id, label: one.server.name, icon: 'server' })), { value: ':add', label: 'Connect computer…', icon: 'plus' }]}
+      choices={[{ value: ':local', label: 'This computer', icon: 'display' }, ...computers.map((one) => ({ value: one.server.id, label: one.server.name, icon: 'server' })), { value: ':add', label: 'Connect computer…', icon: 'plus' }, ...(computers.length === 0 ? [] : [{ value: ':manage', label: 'Manage computers…', icon: 'settings' }])]}
       {...(trouble === '' ? {} : { note: trouble })}
       onPick={(id) => {
         if (id === (source?.server.id ?? ':local')) return
