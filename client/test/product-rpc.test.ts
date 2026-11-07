@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { listenRpc } from '../src/core/rpc'
@@ -9,7 +10,7 @@ afterEach(async () => { vi.unstubAllEnvs(); for (const dispose of cleanup.splice
 
 it('reports an uncertain result after a real authenticated RPC drops a dispatched mutation, without replay', async () => {
   for (const name of ['CODEX_THREAD_ID', 'GECKIT_MANAGER_SESSION', 'CLAUDECODE', 'CLAUDE_SESSION_ID']) vi.stubEnv(name, undefined)
-  const folder = await mkdtemp('/private/tmp/gk-product-rpc-')
+  const folder = await mkdtemp(join(tmpdir(), 'gk-product-rpc-'))
   cleanup.push(() => rm(folder, { recursive: true, force: true }))
   await writeFile(join(folder, 'operator-token'), 'isolated-token')
   let count = 0
@@ -25,7 +26,7 @@ it('reports an uncertain result after a real authenticated RPC drops a dispatche
 
 it('preserves a definitive application refusal over the same real RPC boundary', async () => {
   for (const name of ['CODEX_THREAD_ID', 'GECKIT_MANAGER_SESSION', 'CLAUDECODE', 'CLAUDE_SESSION_ID']) vi.stubEnv(name, undefined)
-  const folder = await mkdtemp('/private/tmp/gk-product-rpc-')
+  const folder = await mkdtemp(join(tmpdir(), 'gk-product-rpc-'))
   cleanup.push(() => rm(folder, { recursive: true, force: true }))
   await writeFile(join(folder, 'operator-token'), 'isolated-token')
   const server = listenRpc(folder, 'isolated-token', { 'desktop:hello': () => ({ methods: ['cli:product'] }), 'cli:product': () => { throw new Error('theme changed. Read target state.') } })

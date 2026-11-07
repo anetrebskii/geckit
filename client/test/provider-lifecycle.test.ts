@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import type { CoreRuntime } from '../src/core/runtime'
@@ -13,7 +14,7 @@ import { uninstallProvider } from '../src/core/application'
 import { getSettings, setSettings } from '../src/main/store'
 
 it('locks a deferred safe uninstall against concurrent enables and runtimes while preserving unrelated settings', async () => {
-  const folder = mkdtempSync('/private/tmp/gk-provider-race-')
+  const folder = mkdtempSync(join(tmpdir(), 'gk-provider-race-'))
   const provider = { id: 'plugin:fixture', family: 'plugin:fixture', name: 'Fixture', shortName: 'Fixture', icon: 'terminal', browser: 'none', loginCommand: '', planName: '' } as const
   writeFileSync(join(folder, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, providerPlugins: [provider], chatProviders: ['codex'], chatProvider: 'codex', correctProvider: 'codex', providerAutoUpdate: false, theme: 'light' }))
   configureCorePlatform({ directory: () => folder, source: () => false })

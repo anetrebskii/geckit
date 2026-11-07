@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import type * as ComputerCli from '../src/cli/computer'
@@ -36,7 +37,7 @@ function channels(): RemoteChannel {
 }
 
 it('rechecks revoked Manager authorization after dialing and never dispatches a core call', async () => {
-  const folder = mkdtempSync('/private/tmp/gk-product-guard-')
+  const folder = mkdtempSync(join(tmpdir(), 'gk-product-guard-'))
   cleanup.push(() => rmSync(folder, { recursive: true, force: true }))
   const runtime: ObservationRuntime = { sessions: { list: async () => [], items: async () => [] }, manager: { view: async () => ({ config: DEFAULT_MANAGER_CONFIG, state: 'off', workers: [], activity: [], providers: [], decisions: [], queued: 0 }), inspect: async (id) => ({ id, items: [] }) }, subscribe: coreEvents().subscribe }
   const key = { key: Buffer.alloc(32, 97).toString('base64') }

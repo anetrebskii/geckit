@@ -45,3 +45,19 @@ Acceptance still required: new PIDs/start times and exact loaded version/SHA, lo
 Logs: `/private/tmp/geckit-integrate-01a1b5e2-{types,lint,build,mobile,tests,tests-final,overlay,transport,postinstall-repaired}.log`. Baseline/read evidence: `/private/tmp/geckit-delivery-evidence-01a1b5e2/`. Worktree/PR cleanup result is appended after remote publication verification. CLI source worktree is owned by `codex:01a1b589-679e-7a93-aa35-28f2446bad8f`; integrator does not remove it. Author cleanup handoff must name delivered PR/SHA and verify source content coverage first.
 
 Library index read; no library how-to matched this engineering delivery report.
+
+## Published candidate and verified cleanup
+
+[Integration PR64](https://github.com/anetrebskii/geckit/pull/64) is OPEN, exact remote head **741a51bf3032c63c0412bb8d54288a1c148a8788**. `git ls-remote` confirms remote branch contains this commit; both original source SHAs are ancestors. Main remains **8d1a68c9ba87c8646504432fa6688a38c6061dbd**. PR64 requires an eligible independent GitHub approval and successful check. [CI42371321009](https://github.com/anetrebskii/geckit/actions/runs/42371321009) was confirmed live on this exact head; final result is not yet claimed.
+
+Own worktree removed normally after PR/remote verification, without force, from surviving main checkout. Before removal, tracked/untracked state was clean; ignored paths were dependencies, compiled output and TypeScript cache. Candidate runtime (310 files), checksums, mobile output and report were preserved under `/private/tmp/geckit-delivery-evidence-01a1b5e2/`. Local/remote branch `delivery/discord-cli-01a1b5e2` retained. Own preview was stopped with SIGTERM; no shared browser was killed. `git worktree list` now contains only original dirty checkout and foreign CLI worktree.
+
+CLI author cleanup handoff: source commit **72cf6c2cef681daf895e34cbe55a6216748568eb** is present in remote PR64 head **741a51bf3032c63c0412bb8d54288a1c148a8788** (ancestry verified). `/private/tmp/geckit-cli-01a1b589` is still clean on that source commit and owned by `codex:01a1b589-679e-7a93-aa35-28f2446bad8f`. Author can inspect all tracked/untracked/ignored material, preserve valuable artifacts and remove their own worktree normally; integrator has not removed it. This handoff proves PR delivery, not main integration.
+
+Current blockers: protected merge needs eligible GitHub approval; physical remote target unresolved; worker identity receives explicit operator access refusal; GeckIt Browser bridge times out. Main deployment, consistent backups and runnable target-specific rollback remain pending rather than falsely completed. No live data/permissions/providers/models/grants were changed by integrator.
+
+## Required CI portability correction
+
+Initial PR64 run42371321009 failed four tests in three newly introduced CLI suites on Ubuntu: hardcoded `/private/tmp` in mkdtemp did not exist. Lint/types succeeded; 1785 tests passed and 10 skipped on Linux. Platform packaging jobs were skipped because `check` failed. No CI bypass/rerun without a fix.
+
+Recreated own worktree on retained PR branch. Narrow test-only correction in `product-rpc.test.ts`, `product-remote-guard.test.ts`, `provider-lifecycle.test.ts` and the standalone `cli-product/transport.mjs`: use `join(tmpdir(), same-prefix)` for five temp paths. No production code/assertion/authorization guard changed. Local four previously failed tests passed, types and full ESLint passed, diff-check passed. Independent `/root/integration_review` re-review found no concrete issue; temp uniqueness, cleanup and socket-path length reviewed. Default macOS system-temp: all four tests passed again; standalone transport passed all seven scenario groups again. New remote SHA/CI are recorded after publication. Original product build and full local1797/2skip evidence still cover unchanged production code; new Linux CI is required for the portability correction.

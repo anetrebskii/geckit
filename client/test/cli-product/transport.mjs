@@ -13,7 +13,7 @@ import console from 'node:console'
 
 const exec = promisify(execFile)
 const client = resolve(import.meta.dirname, '../..')
-const folder = await mkdtemp('/private/tmp/gk-cli-')
+const folder = await mkdtemp(join(tmpdir(), 'gk-cli-'))
 await cp(join(client, 'out/service'), join(folder, 'service'), { recursive: true })
 const cliPath = join(folder, 'service/cli.js')
 const boxes = new Map()
