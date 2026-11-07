@@ -93,7 +93,7 @@ async function rest() {
   const groups = await chrome.tabGroups.query({ title: GROUP }).catch(() => [])
   for (const group of groups) {
     for (const one of await chrome.tabs.query({ groupId: group.id })) {
-      const used = Math.max(state.tabs[one.id]?.t ?? 0, one.lastAccessed ?? Date.now())
+      const used = Math.max(state.tabs[one.id]?.t ?? 0, one.lastAccessed ?? 0)
       if (Date.now() - used < IDLE || one.active || one.audible || one.discarded || held.has(one.id) || state.busy?.tab === one.id) continue
       await chrome.tabs.discard(one.id).catch(() => undefined)
     }
