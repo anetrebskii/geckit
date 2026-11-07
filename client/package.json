@@ -50,14 +50,14 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.18.2",
-    "@vitejs/plugin-react": "^6.1.2",
+    "@vitejs/plugin-react": "^6.2.1",
     "electron": "^38.4.0",
     "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
-    "esbuild": "^0.27.7",
+    "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "globals": "^17.13.0",
+    "globals": "^17.14.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",
@@ -65,7 +65,7 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.1",
     "vite": "^8.0.0",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   },
   "build": {
     "beforePack": "./scripts/check-service-native.cjs",
