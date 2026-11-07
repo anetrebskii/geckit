@@ -34,9 +34,9 @@ export function Servers({ onClose, onWorkspace, invitation = '', initialServer, 
   const closeConnection = useCallback((): void => { attempt.current++; connection.current?.close() }, [])
   const refreshSaved = useCallback((): void => { void savedServers().then(setSaved).catch(() => { setSaved([]); setView({ state: 'error', message: 'Device storage is unavailable. Allow app storage, then try again.' }) }) }, [])
   const disconnect = useCallback((): void => { attempt.current++; connection.current?.close(); connection.current = undefined; setSnapshot(undefined); setView({ state: 'disconnected', message: '' }) }, [])
-  const connect = useCallback((trust?: RemoteTrust, value = ''): void => {
+  const connect = useCallback((trust?: RemoteTrust, value = '', name = ''): void => {
     const pairing = trust ?? readInvitation(value)
-    naming.current = trust === undefined ? label.trim() : ''
+    naming.current = trust === undefined ? name.trim() : ''
     setTarget(trust?.server.id ?? '')
     if (pairing === undefined) { setView({ state: 'error', message: 'This is not a connection code. Copy the whole code the server printed.' }); return }
     disconnect()
@@ -58,7 +58,7 @@ export function Servers({ onClose, onWorkspace, invitation = '', initialServer, 
       }
     }, trust)
     setWorkspace(connection.current)
-  }, [disconnect, refreshSaved, label])
+  }, [disconnect, refreshSaved])
   useEffect(() => {
     void savedServers().then((items) => {
       setSaved(items)
@@ -129,7 +129,7 @@ export function Servers({ onClose, onWorkspace, invitation = '', initialServer, 
       <button type="submit" className="primary">Save</button>
     </div>
   </form>
-  else if (showForm) body = <form onSubmit={(event) => { event.preventDefault(); if (!busy && code.trim() !== '') connect(undefined, code) }}>
+  else if (showForm) body = <form onSubmit={(event) => { event.preventDefault(); if (!busy && code.trim() !== '') connect(undefined, code, label) }}>
     {head('Connect a computer')}
     <p className="add-host-lead">On the other computer, run this command, then paste the code it prints.</p>
     <div className="remote-command"><code>{COMMAND}</code><button type="button" className="icon-button" aria-label="Copy command" title={copied ? 'Copied' : 'Copy'} onClick={copy}><Icon name={copied ? 'check' : 'copy'} /></button></div>
