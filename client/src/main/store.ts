@@ -1,3 +1,4 @@
+import { assertProviderSettingsWritable } from './provider-changes'
 import { existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -130,6 +131,7 @@ export function getSettings(): Settings {
 }
 
 export function setSettings(change: Partial<Settings>): Settings {
+  assertProviderSettingsWritable(change)
   if (client !== undefined) return client.set(change)
   const current = getSettings()
   let validated = { ...change }

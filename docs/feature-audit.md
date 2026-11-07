@@ -714,3 +714,7 @@ Integrated the ready wide-table behavior from `32604e1a8450f9bbdece1ad3c9630f56f
 Evidence: `test/telegram-render.test.ts` covers narrow/wide tables, weekly plans, numbered rows, matching separator counts, code/escaped pipes, long-table row splits, and one mixed answer containing a wide table, a local guide link, terminal approval diagnostics and fenced code. `test/telegram.test.ts` checks actual notify payloads and formatting rejection through a fake Bot API. These checks establish generated Telegram HTML and plain fallback; Telegram client rendering and live account delivery remain unverified. [UX amendment](ux/manager-telegram.md#tables-that-fit-a-phone---2026-10-20).
 
 Integration checks: 69 focused Telegram tests passed; full serial suite 1,735 passed and 2 skipped across 126 passed files and 2 skipped files. Typecheck, lint, desktop/service build and mobile build passed. The first default-sandbox full run was stopped after local IPC/SSH fixture denials; the successful full run allowed those isolated fixtures. No live Telegram messages or user-data mutations were made.
+
+### Unified local and registered-host CLI configuration - 2026-11-07 (working tree)
+
+Alex explicitly requested this implementation. The existing Agent settings and shortcuts entry now includes ordinary CLI target selection, dedicated entity commands and guarded provider disable. Full method/field coverage, evidence and limits: [CLI audit](feature-audit-cli.md). No real providers, credentials, grants or remote computers were changed during verification. Not released.

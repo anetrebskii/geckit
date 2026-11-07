@@ -2,6 +2,9 @@ import type { Settings } from './api'
 
 export const AGENT_SETTING_RULES = {
   theme: ['system', 'light', 'dark'],
+  employeeFilter: 'string', welcomed: 'boolean',
+  boardHeight: 'nonnegative integer', sidebarWidth: 'nonnegative integer', progressOrder: 'string array', columnOrders: 'string array map',
+  chatBounds: 'bounds', panelBounds: 'bounds', geckoBounds: 'bounds',
   nativeLanguage: 'string', secondLanguage: 'string', microphoneDeviceId: 'string',
   analytics: 'boolean', sendErrors: 'boolean', showGecko: 'boolean', autoUpdate: 'boolean',
   updateChannel: ['stable', 'dev'], flashFor: ['asks', 'all', 'never'], soundFor: ['asks', 'all', 'never'],
@@ -32,5 +35,5 @@ export const AGENT_SETTINGS_SCHEMA = {
   commands: ['settings schema', 'settings show', 'settings edit --patch <JSON object> [--expected <JSON object>]'],
   fields: AGENT_SETTING_RULES,
   semantics: 'Patch only named fields; arrays replace; maps merge named entries. --expected compares named fields with current values. anywhereOff takes an array of the listed global action IDs; other choice lists take a single string. Empty patch is rejected. Read back after writes or uncertain responses.',
-  unavailable: 'Provider enable/install, credentials, pairing keys, channel access grants, host/project registration, runtime history and internal state. Use the dedicated shortcuts commands for saved prompts and schedules; settings manager-edit for Manager instructions.',
+  unavailable: 'Credentials, pairing keys, runtime history and internal state. Use dedicated providers, channels, hosts, projects, employees and shortcuts commands for those entities; capabilities describes target authority and native boundaries. Use the dedicated shortcuts commands for saved prompts and schedules; settings manager-edit for Manager instructions.',
 } as const
