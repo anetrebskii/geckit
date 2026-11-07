@@ -35,8 +35,8 @@ describe('computers', () => {
   it('takes --computer out of a command line', () => {
     expect(computerArg(['sessions', '--today'])).toEqual({ args: ['sessions', '--today'] })
     expect(computerArg(['browser', 'profiles', '--computer', 'linux-box'])).toEqual({ computer: 'linux-box', args: ['browser', 'profiles'] })
-    expect(computerArg(['sessions', '--computer'])).toMatch(/Give the computer/)
-    expect(computerArg(['--computer', 'a', 'x', '--computer', 'b'])).toBe('Name one computer.')
+    expect(computerArg(['sessions', '--computer'])).toMatch(/Give the host/)
+    expect(computerArg(['--computer', 'a', 'x', '--computer', 'b'])).toContain('Name one host')
   })
   it('finds a paired computer by id or by name, and says which are paired when none matches', () => {
     const paired = [{ server: { id: 'one', name: 'linux-box', publicKey: '' } }, { server: { id: 'two', name: 'Mac', publicKey: '' } }]
@@ -48,7 +48,7 @@ describe('computers', () => {
   it('refuses the commands only the person runs on the computer itself', () => {
     for (const one of ['pair', 'devices', 'access', 'service', 'computers']) expect(refusedCli([one, 'list'])).toMatch(/by the person/)
     expect(refusedCli([])).toBeDefined()
-    expect(refusedCli(['sessions', '--computer', 'x'])).toBe('Name one computer.')
+    expect(refusedCli(['sessions', '--computer', 'x'])).toContain('Nested host selection')
     expect(refusedCli(['browser', 'profiles'])).toBeUndefined()
   })
 })

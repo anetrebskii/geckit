@@ -8,6 +8,7 @@ import { identity, sign, transcript, trustProof, verify } from '../../shared/rem
 import { readInvitation, REMOTE_PROTOCOL } from '../../shared/remote/protocol'
 import { parseRemote, stringifyRemote } from '../../shared/remote/codec'
 import type { RemoteCall, RemoteChannel, RemoteIdentity, RemoteRequest, RemoteResponse, RemoteResult, RemoteSignal, RemoteTrust } from '../../shared/remote/protocol'
+import type { ProductAuthority } from '../../shared/product-cli'
 import type { CoreMethods } from '../../core/application'
 import { nodeDial } from './transport'
 
@@ -16,7 +17,7 @@ interface Link { readonly channel: RemoteChannel; readonly call: <K extends keyo
 
 
 /** Picks the computer a name means: its id, or its name, ignoring case. */
-export function computerNamed<T extends Pick<RemoteTrust, 'server'>>(computers: readonly T[], named: string): T | string {
+export function computerNamed<T extends { readonly server: Pick<RemoteTrust['server'], 'id' | 'name'> }>(computers: readonly T[], named: string): T | string {
   const exact = computers.find((one) => one.server.id === named)
   if (exact !== undefined) return exact
   const found = computers.filter((one) => one.server.name.toLowerCase() === named.toLowerCase())
@@ -63,7 +64,7 @@ export function remoteComputers(directory: string, security: ServiceSecurity) {
       const timer = setTimeout(() => fail(new Error('The computer did not confirm this one in time.')), 30_000)
       channel.onClose(() => {
         clearTimeout(timer)
-        for (const one of pending.values()) { clearTimeout(one.timer); one.reject(new Error('The connection to the computer closed. Check it before retrying.')) }
+        for (const one of pending.values()) { clearTimeout(one.timer); one.reject(new Error('Delivery is uncertain: the connection closed after dispatch. Read target state before retrying.')) }
         pending.clear()
         if (trusted === undefined) reject(new Error('The computer closed the connection.'))
         if (trusted !== undefined) links.delete(trusted.server.id)
@@ -95,9 +96,10 @@ export function remoteComputers(directory: string, security: ServiceSecurity) {
               idle: undefined,
               call: (method, ...args) => new Promise((done, refuse) => {
                 const id = ++next
-                const waiting = setTimeout(() => { pending.delete(id); refuse(new Error('The computer did not answer within two minutes.')) }, 120_000)
+                const waiting = setTimeout(() => { pending.delete(id); refuse(new Error('Delivery is uncertain: the computer timed out after dispatch. Read target state before retrying.')) }, 120_000)
                 pending.set(id, { resolve: (value) => done(value as never), reject: refuse, timer: waiting })
-                send({ type: 'core-call', id, call: { method, args } as RemoteCall })
+                try { send({ type: 'core-call', id, call: { method, args } as RemoteCall }) }
+                catch { pending.delete(id); clearTimeout(waiting); refuse(new Error('Delivery is uncertain: sending to the computer failed. Read target state before retrying.')) }
               }),
             }
             resolve({ trust: received, link })
@@ -181,6 +183,13 @@ export function remoteComputers(directory: string, security: ServiceSecurity) {
       void links.get(trust.server.id)?.then((link) => link.channel.close(), () => undefined)
       links.delete(trust.server.id)
       return { forgotten: trust.server.name }
+    },
+    product: async (name: string, args: readonly string[], authorized: () => boolean = () => true, authority: ProductAuthority = 'operator'): Promise<string> => {
+      const trust = named(name)
+      const link = await linkTo(trust)
+      if (!authorized()) throw new Error('The originating Manager session is no longer authorized. Nothing was dispatched.')
+      if (named(trust.server.id) !== trust) throw new Error('Computer trust changed during connection. Nothing was dispatched; select the target again.')
+      return link.call('cli:product', args, authority)
     },
     run,
     serve,

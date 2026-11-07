@@ -7,8 +7,9 @@ const OPERATOR = new Set(['service', 'pair', 'devices', 'access', 'computers', '
 export function refusedCli(args: readonly string[]): string | undefined {
   if (args.length === 0) return 'Give the command to run.'
   if (args.some((one) => typeof one !== 'string' || one.length > 20_000)) return 'Give the command as words.'
+  if (args[0] === 'employees' && !['list', 'show', 'memory', 'tasks', 'shortcuts'].includes(args[1] ?? '')) return 'Remote employee changes require authenticated operator or Manager targeting. No native approval was bypassed.'
   if (OPERATOR.has(args[0] ?? '')) return `geckit ${args[0]} runs only on that computer itself, by the person.`
-  if (args.includes('--computer')) return 'Name one computer.'
+  if (args.some((one) => one === '--host' || one === '--computer' || one.startsWith('--host=') || one.startsWith('--computer='))) return 'Nested host selection is unavailable. Select one host on the originating computer.'
   return undefined
 }
 

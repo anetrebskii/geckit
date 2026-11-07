@@ -1,3 +1,4 @@
+import { providerSettings } from '../main/provider-settings'
 import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -50,6 +51,7 @@ export interface RuntimeOptions {
 }
 
 export async function createRuntime(cliScript: string, options: RuntimeOptions = {}) {
+  let cliTargets: { readonly run: (host: string, args: readonly string[], authorized: () => boolean) => Promise<string>; readonly local: (args: readonly string[]) => Promise<string>; readonly registry: (args: readonly string[]) => string; readonly list: () => readonly { readonly id: string; readonly name: string }[] } | undefined
   const events = coreEvents()
   let all: readonly ChatSession[] = []
   let lineup: Lineup = { working: 0, limit: 0 }
@@ -202,7 +204,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       pairing: () => { const state = telegram?.view(); return state?.state === 'connected' && state.account !== undefined && state.bot !== undefined ? `${String(state.bot.id)}:${String(state.account.id)}:${String(state.account.chatId)}` : undefined },
       adapters: () => (view.config.intake ?? DEFAULT_MANAGER_INTAKE).sources.filter((source) => source.enabled).map((source) => { const key = JSON.stringify(source); let adapter = sources.get(key); if (adapter === undefined) { adapter = new VoiceMemosSource(source, { transcribe: transcribeInstalledFile, transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }); sources.set(key, adapter) }; return adapter }),
       classify: (text) => classifyIntake(text, { config: () => view.config, settings: getSettings, check: () => checkVpnIp(getSettings), correct }),
-    }, employees, telegramFile: () => telegram === undefined ? (() => { throw new Error('Telegram is not ready yet.') })() : telegram.fileSender(), sessions: started, notes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, cliScript, args, context) })
+    }, target: (host, args, authorized) => { if (cliTargets === undefined) throw new Error('Host targeting is unavailable. No command ran locally.'); return cliTargets.run(host, args, authorized) }, product: (args) => { if (cliTargets === undefined) throw new Error('Product CLI is unavailable in this host runtime.'); return cliTargets.local(args) }, computers: () => cliTargets?.list() ?? [], providerSettings: (args) => providerSettings(args, { read: getSettings, save: setSettings, inUse: (provider) => started.providerInUse(provider), manager: () => view.config }), employees, telegramFile: () => telegram === undefined ? (() => { throw new Error('Telegram is not ready yet.') })() : telegram.fileSender(), sessions: started, notes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, cliScript, args, context) })
     manager = coordinator
     if (coordinator.instructions().trim() !== '') void syncInstructions(coordinator.instructions()).catch((error: Error) => { console.warn('Could not write Manager instructions', error) })
     let view: ManagerView = await coordinator.view()
@@ -342,7 +344,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       void Promise.allSettled(hosts.map((id) => routes.hosts.ensure(id))).then(() => stopped ? undefined : started.reattach(running)).catch((error: Error) => console.error(error.message))
     }
     const configureManager = async (change: Partial<ManagerConfig>): Promise<ManagerView> => configureManagerAccess(coordinator, bridge, change)
-    return { sessions: started, manager: coordinator, telegram: bridge, channels: hub, shares, plans, employees, routes, notes, hostNamed, start, dispose, wake: () => { resumeSchedule?.(); started.again() }, configureManager, checkProviderUpdates, subscribe: events.subscribe, emit: events.emit, managerView: () => view, refreshManager: async () => { view = await coordinator.view(); events.emit('manager:view', view) }, current: () => ({ sessions: all, lineup, settings: getSettings(), employees: employees.list(), hosts: routes.hosts.views(), prompts: routes.hosts.prompts(), telegram: bridge.view(), shares: shares.rooms(), working: started.working(), wanting: started.wanting(), watched: started.watched() }) }
+    return { cliRegistry: (args: readonly string[]): string => { if (cliTargets === undefined) throw new Error('Computer registry is unavailable on this runtime.'); return cliTargets.registry(args) }, setCliTargets: (targets: NonNullable<typeof cliTargets>) => { cliTargets = targets }, sessions: started, manager: coordinator, telegram: bridge, channels: hub, shares, plans, employees, routes, notes, hostNamed, start, dispose, wake: () => { resumeSchedule?.(); started.again() }, configureManager, checkProviderUpdates, subscribe: events.subscribe, emit: events.emit, managerView: () => view, refreshManager: async () => { view = await coordinator.view(); events.emit('manager:view', view) }, current: () => ({ sessions: all, lineup, settings: getSettings(), employees: employees.list(), hosts: routes.hosts.views(), prompts: routes.hosts.prompts(), telegram: bridge.view(), shares: shares.rooms(), working: started.working(), wanting: started.wanting(), watched: started.watched() }) }
   } catch (error) {
     await dispose()
     throw error

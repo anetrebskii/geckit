@@ -149,6 +149,7 @@ export function serviceApplication(runtime: CoreRuntime, directory: string, secu
     'remote:cancel': (id: string) => remote?.cancel(id),
     'remote:devices': () => remote?.devices(),
     'remote:revoke': (id: string) => remote?.revoke(id),
+    'computers:product': (name: string, args: readonly string[]) => { if (computers === undefined) throw new Error('Computers unavailable.'); return computers.product(name, args) },
     'computers:add': (code: string) => { if (computers === undefined) throw new Error('Computers unavailable.'); return computers.add(code) },
     'computers:list': () => computers?.list() ?? [],
     'computers:forget': (name: string) => { if (computers === undefined) throw new Error('Computers unavailable.'); return computers.forget(name) },
