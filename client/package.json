@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@sentry/browser": "^10.75.0",
-    "@sentry/electron": "^7.20.0",
+    "@sentry/electron": "^8.3.0",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.11",
     "firebase": "^13.1.0",
