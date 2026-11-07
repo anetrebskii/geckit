@@ -15,9 +15,10 @@ import { threadActivity } from '../manager-status'
 import type { LoadedChannel } from './libraries'
 import { installChannel, installedChannels, removeChannelLibrary, updateChannel } from './libraries'
 import { SLACK_INFO, SLACK_MODULE } from './slack'
+import { DISCORD_INFO, DISCORD_MODULE } from './discord'
 
 /** Channels that come with GeckIt: turned on and set up like a library, never removed or updated from GitHub. */
-const BUILT_IN: readonly LoadedChannel[] = [{ info: SLACK_INFO, path: 'built-in', module: SLACK_MODULE }]
+const BUILT_IN: readonly LoadedChannel[] = [{ info: SLACK_INFO, path: 'built-in', module: SLACK_MODULE }, { info: DISCORD_INFO, path: 'built-in', module: DISCORD_MODULE }]
 const builtIn = (id: ChannelId): boolean => BUILT_IN.some((one) => one.info.id === id)
 
 export interface ChannelVault {
@@ -460,6 +461,27 @@ export class Channels {
     this.#saveSetting(id, (setting) => ({ ...setting, config, projects, ...(change.enabled === undefined ? {} : { enabled: change.enabled }), ...(change.manager === undefined ? {} : { manager: change.manager }) }))
     await this.reconcile()
     return this.view()
+  }
+
+  /** Asks a channel what it can see with its saved settings, for Settings to show while it is set up. */
+  async inspect(id: ChannelId, request: Json): Promise<Json> {
+    const running = this.#running.get(id)
+    const setting = this.#setting(id)
+    if (running === undefined || setting === undefined) throw new Error('This channel library is not installed.')
+    const inspect = running.loaded.module.inspect
+    if (inspect === undefined) throw new Error(`${setting.info.name} has nothing to check.`)
+    const log = pluginLogger({ id })
+    try {
+      return await inspect({
+        id,
+        log,
+        config: () => Object.fromEntries(setting.info.fields.filter((field) => field.type !== 'secret').flatMap((field) => { const value = setting.config[field.key] ?? field.default; return value === undefined ? [] : [[field.key, value]] })),
+        secret: (key) => this.#secrets(id)[key],
+      }, request)
+    } catch (error) {
+      log.write('warn', 'inspect.failed', { reason: message(error) })
+      throw error
+    }
   }
 
   async remove(id: ChannelId): Promise<ChannelsView> {

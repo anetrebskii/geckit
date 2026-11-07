@@ -141,7 +141,7 @@ export function ManagerSettings({ settings, embedded = false }: { readonly setti
           </>}
       </ManagerStep>
     </ol>
-    <p className="employee-note">Telegram and Slack reach Manager from Settings, Channels.</p>
+    <p className="employee-note">Telegram, Slack and Discord reach Manager from Settings, Channels.</p>
     {error === '' ? null : <p className="manager-error" role="alert">{error}</p>}
     {view.error === undefined ? null : <p className="manager-error" role="status">{view.error}</p>}
     {confirm === undefined ? null : <ManagerConfirm kind={confirm} busy={saving} working={view.state === 'working' || view.session?.state === 'working'} error={error} onCancel={() => setConfirm(undefined)} onConfirm={() => { if (confirm === 'change') save(); else void run(async () => { const next = await (confirm === 'restart' ? window.geckit.manager.restart() : window.geckit.manager.configure({ enabled: false })); setConfirm(undefined); return next }) }} />}

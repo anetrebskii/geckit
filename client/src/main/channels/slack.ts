@@ -2,7 +2,7 @@ import type { ChannelInfo } from '../../shared/channels'
 import type { Channel, ChannelContext, ChannelEvent, ChannelModule } from './channel-api'
 import { StatusMessage } from '../manager-status'
 
-const SECRET = /\b(?:xox[abposr]-[\w-]{10,}|xapp-[\w-]{10,}|sk-[\w-]{16,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/
+const SECRET = /\b(?:xox[abposr]-[\w-]{10,}|xapp-[\w-]{10,}|sk-[\w-]{16,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|AKIA[0-9A-Z]{16}|[MNO][\w-]{23,27}\.[\w-]{6}\.[\w-]{27,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/
 
 export const SLACK_INFO: ChannelInfo = {
   id: 'channel:slack',

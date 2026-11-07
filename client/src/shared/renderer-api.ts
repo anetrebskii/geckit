@@ -58,7 +58,7 @@ import type { Piece } from './pairing'
 import type { VoiceMemosConnection } from './manager-intake'
 import type { ManagerApi, ManagerAnswerRequest, ManagerAnswerResult, ManagerConfig, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from './manager'
 import type { TelegramAction, TelegramApi, TelegramView } from './telegram'
-import type { ChannelChange, ChannelId, ChannelsView } from './channels'
+import type { ChannelChange, ChannelId, ChannelInspectRequest, ChannelInspectResult, ChannelsView } from './channels'
 import type { EmployeeDraft, EmployeeMemory, EmployeesApi, EmployeesView } from './employees'
 import type { SessionListStatus } from './session-list'
 
@@ -133,6 +133,8 @@ return {
     install: (url: string): Promise<ChannelsView> => rendererTransport.invoke('channels:install', url),
     configure: (id: ChannelId, change: ChannelChange): Promise<ChannelsView> => rendererTransport.invoke('channels:configure', id, change),
     remove: (id: ChannelId): Promise<ChannelsView> => rendererTransport.invoke('channels:remove', id),
+    /** What a channel sees with its saved settings, for its Set up. */
+    inspect: (id: ChannelId, request: ChannelInspectRequest): Promise<ChannelInspectResult> => rendererTransport.invoke('channels:inspect', id, request),
     checkUpdates: (): Promise<{ readonly updated: readonly ChannelId[]; readonly failed: readonly ChannelId[] }> => rendererTransport.invoke('channels:checkUpdates'),
     on: (said: (view: ChannelsView) => void): (() => void) => rendererTransport.listen('channels:changed', said),
   },

@@ -51,6 +51,18 @@ GeckIt gives a person one place to supervise work across AI conversations, proje
 - Channel status: `threadActivity()` and `StatusMessage` in `client/src/main/manager-status.ts` (the thread's own and followed workers only, secret-looking titles as "a task", edits at most every 3 s, one message per stretch); `manager` (`received` / `working`) on each thread from `#threadView` in `client/src/main/manager.ts`; the `status` event in `channels.ts`; Slack `chat.postMessage` / `chat.update` in `slack.ts`; Telegram silent `sendMessage` / `editMessageText` in `ManagerTelegram.progress()`, fed from `client/src/core/runtime.ts`. Design `docs/ux/channel-status.md`. Tests: `client/test/manager-status.test.ts`, `client/test/channels.test.ts` "one status message per stretch", `client/test/telegram.test.ts` "Telegram status message".
 - Not verified live: Slack, Telegram and the running app.
 
+## Discord channel - 2026-11-07 (branch feat/discord-channel, not released)
+
+- Channel: `createDiscord()` in `client/src/main/channels/discord.ts`, built in through `BUILT_IN` in `client/src/main/channels/channels.ts`. Gateway v10 with intents GUILDS, GUILD_MESSAGES, DIRECT_MESSAGES and MESSAGE_CONTENT, heartbeat with jitter, resume on `resume_gateway_url`, op 7 and op 9, backoff 1 to 30 s, fatal close codes 4004 and 4010 to 4014 reported with their fix.
+- Places: a mention in a text channel starts a thread on the message (`POST /channels/{id}/messages/{id}/threads`, 1 day archive); keys are the thread id or `dm:<channel>`; allow list, chosen channels (a thread counts by its parent), direct messages on or off, the shared token check (`containsSecret`, Discord bot tokens added in `slack.ts`), earlier thread messages for Manager, mentions off (`allowed_mentions.parse = []`), answers cut at 2000 characters, files named not passed.
+- Questions: buttons (up to 25, `custom_id` a hash of the decision id and choice index) checked against the allow list, the thread key, the stored message id and the open decision; deferred update (type 6), then `@original` edited with who chose what; refusals ephemeral (flag 64); answered or cleared questions lose their buttons.
+- Idempotency: per-process seen message and interaction ids, `seen:<key>` snowflake per thread and history boundaries, kept in the channel's store across restarts.
+- REST: `discordApi()` waits `retry_after` on 429 up to three times, retries 5xx and network errors twice, names 401 and 403 plainly.
+- Setup: optional `inspect` in `ChannelModule` (`channel-api.ts`), `Channels.inspect()`, `channels:inspect` in `core/application.ts`, `main/index.ts` and `shared/renderer-api.ts`; `inspectDiscord()` reads `/users/@me`, `/oauth2/applications/@me` (intent flags 1<<18, 1<<19), `/users/@me/guilds`, `/guilds/{id}/channels` and `/users/{id}`. UI `client/src/renderer/src/ui/DiscordSetup.tsx`, styles under `.discord-*` in `styles.css`, design `docs/ux/discord-channel.md`, guide `docs/discord.md`.
+- Tests: `client/test/discord.test.ts` (gateway identify and resume, fatal intent close, thread and DM isolation, allow list and refusals, chosen channels, duplicate and replayed events, button binding, chunking, attachments, missing thread permission, earlier context, rate limit, inspect), `client/test/channels.test.ts` (built in, not removable, inspect), `client/test/headless-service.test.ts`.
+- Renderer: `settings-preview.html?section=channels&channels=on&discord=new|ready|nointent|empty|refused|failed|connected|reconnecting|offline` checked in Chrome, light and dark, 900 and 560 px wide.
+- Not verified live: a real Discord bot, server and the running app.
+
 ## Product feature list
 
 ### Conversation export and continuation - 2026-10-29

@@ -9,7 +9,7 @@ import { hostOf, isRemote, machineName } from '../shared/hosts'
 import type { LocalAsk } from '../shared/local'
 import type { ManagerConfig } from '../shared/manager'
 import type { TelegramAction } from '../shared/telegram'
-import type { ChannelChange, ChannelId } from '../shared/channels'
+import type { ChannelChange, ChannelId, ChannelInspectRequest } from '../shared/channels'
 import { recordedNote } from '../shared/recording'
 import { commandsFor } from '../main/commands'
 import { continueConversation, prepareConversation, writeConversationExport } from '../main/conversation-export'
@@ -147,6 +147,7 @@ export function application(runtime: CoreRuntime) {
     'channels:install': (url: string) => channels.install(url),
     'channels:configure': (id: ChannelId, change: ChannelChange) => channels.configure(id, change),
     'channels:remove': (id: ChannelId) => channels.remove(id),
+    'channels:inspect': (id: ChannelId, request: ChannelInspectRequest) => channels.inspect(id, request),
     'channels:checkUpdates': () => channels.checkUpdates(),
     'telegram:action': (action: TelegramAction) => telegramActionAccess(manager, telegram, action, true),
     'correct': (request: CorrectRequest) => correct(request),

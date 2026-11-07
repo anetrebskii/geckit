@@ -117,7 +117,7 @@ it('reads a channel manifest and refuses a provider manifest', async () => {
 
 it('registers an installed library off and asks for its required secret before starting it', async () => {
   const { channels } = await setup()
-  expect(channels.view().channels).toMatchObject([{ id: 'channel:slack', state: 'off', builtIn: true }, { id: 'channel:echo', state: 'off' }])
+  expect(channels.view().channels).toMatchObject([{ id: 'channel:slack', state: 'off', builtIn: true }, { id: 'channel:discord', state: 'off', builtIn: true }, { id: 'channel:echo', state: 'off' }])
   await channels.configure('channel:echo', { enabled: true })
   expect(echo(channels)).toMatchObject({ state: 'setup', says: 'Fill in Token.' })
   expect((globalThis as { channelTest?: unknown }).channelTest).toBeUndefined()
@@ -248,6 +248,16 @@ it('loads the Slack example as GeckIt would install it', async () => {
   expect(loaded.info.id).toBe('channel:slack')
   expect(loaded.info.fields.filter((one) => one.required === true).map((one) => one.key)).toEqual(['botToken', 'appToken', 'allow'])
   expect(typeof loaded.module.create).toBe('function')
+})
+
+it('comes with Discord built in: not removable, checked in Set up only with its saved token', async () => {
+  const { channels } = await setup()
+  await expect(channels.remove('channel:discord')).rejects.toThrow('turned off, not removed')
+  expect(await channels.inspect('channel:discord', {})).toEqual({ token: 'missing' })
+  await expect(channels.inspect('channel:slack', {})).rejects.toThrow('Slack has nothing to check')
+  await channels.configure('channel:discord', { enabled: true })
+  expect(channels.view().channels.find((one) => one.id === 'channel:discord')).toMatchObject({ state: 'setup', says: 'Fill in Bot token, People who may write.' })
+  await channels.dispose()
 })
 
 it('comes with Slack built in, which can be turned off but not removed', async () => {
