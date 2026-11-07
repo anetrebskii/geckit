@@ -1,0 +1,47 @@
+# Discord and unified CLI delivery, 2026-11-07
+
+Integrator: `codex:01a1b5e2-17ca-74f3-b27a-38ff492fbe81`. This is a separate delivery of Discord PR59 and unified CLI, not continuation of the November 6 release. Delivery and installation are **not complete**. No Stable promotion, live configuration change or restart has been performed.
+
+## Verified source and integration
+
+- Remote main observed twice: `8d1a68c9ba87c8646504432fa6688a38c6061dbd` ([commit](https://github.com/anetrebskii/geckit/commit/8d1a68c9ba87c8646504432fa6688a38c6061dbd)).
+- [Discord PR59](https://github.com/anetrebskii/geckit/pull/59): OPEN, head `c845b0b55a0a9e0475c56681024aee50c4f35b09`, branch `feat/discord-channel`; check and platform builds succeeded, `REVIEW_REQUIRED`.
+- Unified CLI: `feat/unified-host-cli`, `72cf6c2cef681daf895e34cbe55a6216748568eb`; author-owned `/private/tmp/geckit-cli-01a1b589` is clean and preserved.
+- Own branch `delivery/discord-cli-01a1b5e2`, own worktree `/private/tmp/geckit-integrate-01a1b5e2`, integration commit `3348c554a008e6473b4637f091a4983b62cb83d7`. Both exact source SHAs are ancestors. Discord fast-forwarded from main; CLI merged without text conflicts. Additive overlap in `core/application.ts` retains both `channels:inspect` and the product dispatcher. No source fixes or unrelated working-tree changes included.
+- Independent read-only review `/root/integration_review` found no concrete integration defects. Reviewed dispatcher/host selection, default-off Discord registration, grants/config preservation, secret filtering and no local fallback. Discord implementation, setup and types match original source. This review is not a GitHub approving review.
+
+## Verification
+
+- Typecheck (all four configurations), full ESLint, desktop/service build, mobile build and `git diff --check`: PASS.
+- Initial serial full suite, disposable HOME: 1792 tests passed, 2 skipped; 135 files passed, 2 skipped, overlay suite failed to import because Electron installation was incomplete. Verified cached Electron 38.8.6 archive against package checksum, restored only this worktree's dependency, reran dev-bundle successfully; overlay suite then passed all 5 tests. Final serial full-suite rerun: **1797 passed, 2 skipped**, 136 passed files and 2 skipped files, 84.67 seconds.
+- `node test/cli-product/transport.mjs`: PASS, seven scenario groups, fixture `/private/tmp/gk-cli-i8qKBq`. Real authenticated RPC and encrypted WebRTC between disposable services with local signaling; providers are synthetic. Includes target/source separation, expected-value conflicts, unknown-host refusal/no fallback, disabled-provider guards, worker/operator separation and authentication rejection. This is not physical remote, managed signaling, NAT/TURN or real account verification.
+- Actual Channels/DiscordSetup preview started at `127.0.0.1:5239`, using existing renderer and fixture native API. GeckIt Browser `start test` returned `The GeckIt Browser bridge did not answer within 70 seconds.` No fallback browser/CDP/native control used. Rendered integration checks, themes, keyboard and installed Discord UI remain unverified. Original author screenshots/interaction evidence remain in `discord-channel-evidence/`; these are historical fixture evidence, not current installed acceptance.
+- No Discord bot enabled, token supplied, native permission answered or real message sent.
+
+## Current Local and remote evidence
+
+At `2026-11-07T12:08:02Z`, Local data is `/Users/alex/Library/Application Support/geckit-local`; persisted notes contain 2647 session IDs. Baseline IDs and hashes of settings/session/employee/Manager files when present and current built bundles saved to `/private/tmp/geckit-delivery-evidence-01a1b5e2/baseline.json`. This is an observational manifest, not a restorable backup. User data has not been replaced.
+
+Owner PID `23995` is alive, started November 7 at 12:43:33 local time, executable in original checkout's Electron bundle. Authenticated employee lookup succeeded and ordinary `sessions --today --json` returned 29 records. This proves those read paths, not complete health. Current compiled SHA/version, desktop PID, Manager/Telegram connection health, active/queued/pending work and after-state remain unverified. Current source checkout is dirty on `feat/simple-remote-control`; its HEAD does not prove loaded code and must not be built/reset for delivery.
+
+Both Local and installed `geckit` sectioned settings have empty SSH-host lists. Shared paired-computer cache contains only `19b28b8e-a4d0-4260-84e3-cdc411333e8f`, name `Alexs-MacBook-Pro.local`, identical to current hostname. Cache is not authoritative proof of an external machine. Renderer server trust lives encrypted in IndexedDB; it was not extracted/decrypted. Prior remote-host report does not identify a physical server/version or prove a successful connection. Asked Alex for address or registered name; no new pairing or access grant created.
+
+Local `service status` and `service methods` return `Operator access denied. Use the conversation commands to request changes.` Built candidate `capabilities --host 19b28b8e-a4d0-4260-84e3-cdc411333e8f` returns exit 1: `Operator access denied. Use authenticated Manager commands for product changes; native permissions remain user-controlled.` This is a confirmed source-authority refusal, not a remote response or remote-health result. Identity variables/tokens were not removed, read or substituted to evade it. Physical remote read-only --host remains unverified.
+
+## Protection, next deployment and rollback
+
+Active main ruleset `24040966` requires a PR, one approving review, resolved threads, strict successful `check` and squash merge. Current GitHub identity `anetrebskii` is also PR author and cannot self-approve. Do not direct-push main, admin-merge, force-push, change protection or switch credentials. Common integration PR is the reviewable delivery candidate; original PR59 stays open unless separately reconciled after delivery.
+
+Before either update: identify actual target, service manager, runtime/data paths and current loaded build; inspect active work and pending requests through permitted APIs; take private consistent backups of the complete required state, transcripts, Manager contexts, pending work and sealed storage without exposing secret contents. Preserve previous runtime bundle and checksum manifest outside task worktree. Do not treat the observational baseline as backup. Refresh backup immediately before maintenance because other sessions remain active.
+
+After protected merge: fetch and prove remote main contains both changes (squash requires content comparison), build from a clean persistent checkout of delivered SHA; do not deploy from the dirty user checkout or a temporary worktree scheduled for removal. Follow `docs/headless-service.md`: finish active work, quit attached desktop normally, shut down service normally, confirm exit, replace entire runtime bundle while preserving data and existing vault mechanism, start service to readiness before reopening desktop. Local restart must have an external saved supervisor/recovery record before stopping this conversation's host. Use target's existing service manager for remote. No force kill or stale ownership deletion for a live process.
+
+Rollback preparation: retain previous bundle with hashes and launch/service-manager recipe; on new-runtime failure stop normally and restore previous bundle, preserving user data. Restore data only after proving it is needed and reconciling post-backup writes; do not blindly overwrite active settings/history. No runnable rollback artifact or remote backup is claimed before target/access is established.
+
+Acceptance still required: new PIDs/start times and exact loaded version/SHA, local and physical remote service health, Manager/Telegram reconnection, settings/provider/model/grant preservation, retained employees/session IDs/Manager native contexts and pending operations, actual Discord UI with bot off, successful real read-only --host without fallback. No complete preservation or success claim is made from current hashes, build results or isolated transport.
+
+## Evidence and cleanup
+
+Logs: `/private/tmp/geckit-integrate-01a1b5e2-{types,lint,build,mobile,tests,tests-final,overlay,transport,postinstall-repaired}.log`. Baseline/read evidence: `/private/tmp/geckit-delivery-evidence-01a1b5e2/`. Worktree/PR cleanup result is appended after remote publication verification. CLI source worktree is owned by `codex:01a1b589-679e-7a93-aa35-28f2446bad8f`; integrator does not remove it. Author cleanup handoff must name delivered PR/SHA and verify source content coverage first.
+
+Library index read; no library how-to matched this engineering delivery report.
