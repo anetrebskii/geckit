@@ -254,3 +254,7 @@ Use an OS service manager to keep the process running after logout. See [the ins
 ## License
 
 [Functional Source License 1.1](LICENSE), MIT Future License (FSL-1.1-MIT). Use it, change it and share it for anything, work included, except a commercial product or service that competes with GeckIt. Each version becomes MIT two years after its release. The GeckIt name and the gecko icon are not part of the license. Versions up to 1.21 were released under MIT with an attribution condition and stay under it.
+
+## CLI configuration
+
+Ordinary configuration commands support a registered computer through `--host <id-or-name>` (`--computer` remains compatible). Read [CLI usage and MCode-only configuration](docs/cli.md), [coverage and native boundaries](docs/cli-coverage.md), and [verification](specs/026-unified-host-cli/verification.md). This branch implementation requires compatible source and target services; it does not imply released support.

@@ -96,6 +96,16 @@ export interface Channel {
   stop(): Promise<void>
 }
 
+/** What a channel may read while it is being set up, whether or not it runs. */
+export interface ChannelSetupContext {
+  readonly id: ChannelId
+  readonly log: PluginLogger
+  config(): ChannelValues
+  secret(key: string): string | undefined
+}
+
 export interface ChannelModule {
   readonly create: (context: ChannelContext) => Channel | Promise<Channel>
+  /** Answers Settings while the channel is set up: checks its secrets, lists what it can reach. Optional. */
+  readonly inspect?: (setup: ChannelSetupContext, request: Json) => Promise<Json>
 }

@@ -30,6 +30,10 @@ export interface RpcClient<Methods extends MethodsOf<Methods>> {
   readonly closed: Promise<void>
 }
 
+export class RpcDisconnectedError extends Error {
+  constructor(cause: Error) { super('GeckIt service disconnected.', { cause }); this.name = 'RpcDisconnectedError' }
+}
+
 export interface RpcServer<Events extends MethodsOf<Events>> {
   readonly ready: Promise<void>
   readonly connections: number
@@ -175,7 +179,7 @@ export function connectRpc<Methods extends MethodsOf<Methods>, Events extends Me
     socket.on('close', () => {
       clearTimeout(timer)
       if (!accepted) reject(failure)
-      for (const request of pending.values()) request.reject(failure)
+      for (const request of pending.values()) request.reject(new RpcDisconnectedError(failure))
       pending.clear()
       finish()
     })
@@ -189,7 +193,7 @@ export function connectRpc<Methods extends MethodsOf<Methods>, Events extends Me
           closed,
           close: () => { socket.destroy() },
           call: (name, ...args) => new Promise((done, failed) => {
-            if (socket.destroyed) { failed(failure); return }
+            if (socket.destroyed) { failed(new RpcDisconnectedError(failure)); return }
             const id = ++nextId
             pending.set(id, { resolve: (value) => done(value as Awaited<ReturnType<Methods[typeof name]>>), reject: failed })
             send(socket, { kind: 'request', id, name, args: args as Value[] })

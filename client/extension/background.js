@@ -86,15 +86,42 @@ chrome.tabs.onCreated.addListener(() => void announce())
 chrome.tabs.onRemoved.addListener(() => void announce())
 chrome.windows.onFocusChanged.addListener((id) => { if (id !== chrome.windows.WINDOW_ID_NONE) { focused = Date.now(); void announce() } })
 
+// A background tab GeckIt opened and stopped using is discarded, since its page keeps running after the conversation ends (a stuck Instagram reel held six cores for hours).
+const IDLE = 10 * 60 * 1000
+async function rest() {
+  await ready
+  const groups = await chrome.tabGroups.query({ title: GROUP }).catch(() => [])
+  for (const group of groups) {
+    for (const one of await chrome.tabs.query({ groupId: group.id })) {
+      const used = Math.max(state.tabs[one.id]?.t ?? 0, one.lastAccessed ?? 0)
+      if (Date.now() - used < IDLE || one.active || one.audible || one.discarded || held.has(one.id) || state.busy?.tab === one.id) continue
+      await chrome.tabs.discard(one.id).catch(() => undefined)
+    }
+  }
+}
+
+chrome.tabs.onReplaced.addListener((added, removed) => {
+  void save((now) => {
+    if (now.tabs[removed]) { now.tabs[added] = now.tabs[removed]; delete now.tabs[removed] }
+  })
+  void announce()
+})
+
 chrome.alarms.create('connect', { periodInMinutes: 0.5 })
-chrome.alarms.onAlarm.addListener(() => { connect(); void announce() })
+chrome.alarms.onAlarm.addListener(() => { connect(); void announce(); void rest() })
 chrome.runtime.onStartup.addListener(connect)
 chrome.runtime.onInstalled.addListener(connect)
 connect()
 
 async function tab(id) {
   if (!Number.isInteger(id)) throw new Error('Give the tab id from geckit browser pages.')
-  try { return await chrome.tabs.get(id) } catch { throw new Error(`No tab ${id}. Run geckit browser pages for the current ids.`) }
+  let found
+  try { found = await chrome.tabs.get(id) } catch { throw new Error(`No tab ${id}. Run geckit browser pages for the current ids.`) }
+  if (!found.discarded) return found
+  const back = loaded(id)
+  await chrome.tabs.reload(id)
+  await back
+  return chrome.tabs.get(id)
 }
 
 async function inPage(id, func, ...args) {

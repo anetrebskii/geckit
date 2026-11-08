@@ -6,6 +6,7 @@ import { ManagerTelegram, SharedLinks, telegramState, useTelegram, who } from '.
 import { homePath, projectLabel, projectName } from '../chat/project'
 import { useManager } from '../chat/useManager'
 import { Icon, hasIcon } from './Icon'
+import { DiscordSetup, discordLine } from './DiscordSetup'
 
 export type ChannelsApi = Geckit['channels']
 
@@ -128,12 +129,13 @@ function ChannelRow({ setting, view, settings, api }: {
     void api.configure(setting.info.id, { enabled }).then((next) => { if (enabled && next.channels.find((one) => one.id === setting.info.id)?.state === 'setup') setOpen(true) }).catch((failure: unknown) => setError(reason(failure)))
   }
   const close = (): void => { setOpen(false); setUpButton.current?.focus() }
+  const discord = setting.info.id === 'channel:discord'
   return (
-    <div className="provider-library-row channel-row">
+    <div className={`provider-library-row channel-row${discord ? ' discord-row' : ''}`}>
       <span className="provider-library-icon"><Icon name={hasIcon(setting.info.icon) ? setting.info.icon : 'chat'} size={16} /></span>
       <span className="provider-library-copy">
         <strong>{setting.info.name}</strong>
-        <span className={view.state === 'failed' ? 'channel-failed' : ''} title={setting.info.source}>{stateLine(view)}</span>
+        <span className={view.state === 'failed' ? 'channel-failed' : ''} title={setting.info.source}>{discord ? discordLine(view) : stateLine(view)}</span>
       </span>
       <label className="check channel-on"><input type="checkbox" checked={setting.enabled} onChange={(event) => toggle(event.target.checked)} />On</label>
       <button ref={setUpButton} type="button" className="quiet provider-library-remove" aria-expanded={open} onClick={() => open ? close() : setOpen(true)}>Set up</button>
@@ -149,7 +151,7 @@ function ChannelRow({ setting, view, settings, api }: {
           }}>{busy ? 'Removing…' : 'Remove channel'}</button>
         </div>
       </div> : null}
-      {open ? <SetUp setting={setting} view={view} settings={settings} api={api} onDone={close} /> : null}
+      {open ? discord ? <DiscordSetup setting={setting} view={view} settings={settings} api={api} onDone={close} /> : <SetUp setting={setting} view={view} settings={settings} api={api} onDone={close} /> : null}
     </div>
   )
 }
@@ -204,7 +206,7 @@ export function Channels({ settings, change, api = window.geckit.channels }: { r
         <h3 id="channels-title">Channels</h3>
         <button type="button" className="provider-library-add-button" onClick={() => setAdding(true)} disabled={adding}><Icon name="plus" size={14} />Add channel</button>
       </div>
-      <p className="provider-library-intro">Places outside GeckIt where people write to your conversations and Manager. Telegram and Slack come with GeckIt; add others from GitHub.</p>
+      <p className="provider-library-intro">Places outside GeckIt where people write to your conversations and Manager. Telegram, Slack and Discord come with GeckIt; add others from GitHub.</p>
       <div className="provider-library-list">
         <TelegramRow />
         {failures.map((failure) => (

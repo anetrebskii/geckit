@@ -15,6 +15,7 @@ import { memoryNotes, Sessions, withMoves } from '../src/main/sessions'
 import type { SessionNotice, SessionsDeps } from '../src/main/sessions'
 import type { BackgroundTask, ChatSession, ClaudeAccount, SessionItem, SessionItems, SessionMode } from '../src/shared/api'
 import { letsGo } from '../src/shared/api'
+import { providerChange } from '../src/main/provider-changes'
 import { VPN_IP_UNAVAILABLE_ERROR } from '../src/shared/vpn-ip'
 
 vi.mock('../src/main/sessions/account', () => ({
@@ -4107,4 +4108,44 @@ describe('discovered helper activity', () => {
     notes.set(id, { shown: true })
     expect((await built.sessions.list([ROOT])).map((row) => row.id)).toEqual(['parent', id])
   })
+})
+
+it('refuses an existing idle runtime during a deferred provider library change', async () => {
+  const held = heldCodex('codex:library-race')
+  const built = build({ codex: held.codex })
+  const id = await built.sessions.send({ root: ROOT, provider: 'codex', text: 'first', mode: 'manual' })
+  held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+  built.sessions.handOver(id)
+  await vi.waitFor(() => expect(built.sessions.providerInUse('codex')).toEqual([]))
+  let resume: (() => void) | undefined
+  const changing = providerChange('codex', () => new Promise<void>((done) => { resume = done }))
+  try {
+    await expect(built.sessions.send({ root: ROOT, session: id, text: 'during uninstall', mode: 'manual' })).rejects.toThrow('library is changing')
+    expect(held.fake.made).toHaveLength(1)
+    expect(held.fake.sent).toHaveLength(1)
+  } finally { resume?.(); await changing; built.sessions.dispose() }
+})
+
+it('processes an active turn ending while another provider installation is deferred', async () => {
+  const held = heldCodex('codex:install-completion')
+  const built = build({ codex: held.codex })
+  const id = await built.sessions.send({ root: ROOT, provider: 'codex', text: 'first', mode: 'manual' })
+  let resume: (() => void) | undefined
+  const changing = providerChange(undefined, () => new Promise<void>((done) => { resume = done }))
+  try {
+    held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    expect(of(built.rows, id)?.state).toBe('unread')
+  } finally { resume?.(); await changing; built.sessions.dispose() }
+})
+
+it('prevents library changes while provider metadata creation is pending', async () => {
+  let created: ((id: string) => void) | undefined
+  const held = heldCodex('codex:pending-create', { create: () => new Promise<string>((done) => { created = done }) })
+  const built = build({ codex: held.codex })
+  const sending = built.sessions.send({ root: ROOT, provider: 'codex', text: 'first', mode: 'manual' })
+  await vi.waitFor(() => expect(created).toBeDefined())
+  try {
+    expect(built.sessions.providerInUse('codex')).toEqual(['A provider runtime is being prepared.'])
+    await expect(providerChange('codex', async () => undefined)).rejects.toThrow('runtime is being prepared')
+  } finally { created?.('codex:pending-create'); await sending; built.sessions.dispose() }
 })

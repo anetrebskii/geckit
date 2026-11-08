@@ -2604,3 +2604,34 @@ describe('Manager threads', () => {
     expect(restored?.labels['starter']).toBeUndefined()
   })
 })
+
+describe('Manager explicit computer targeting', () => {
+  it('keeps source authorization, immutable target IDs and remote confirmation boundaries', async () => {
+    const f = await fixture()
+    let authorized = true
+    const calls: { readonly host: string; readonly args: readonly string[]; readonly guard: () => boolean }[] = []
+    const target = vi.fn<NonNullable<ManagerDeps['target']>>(async (host, args, guard) => { calls.push({ host, args, guard }); return 'target receipt' })
+    const ops = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => false, managerSession: () => 'source-manager', authorized: () => authorized, computers: () => [{ id: 'immutable', name: 'Build' }], target })
+    expect(ops.confirmation(['settings', 'edit', '--patch', '{"theme":"dark"}', '--host', 'immutable'], 'automatic')).toContain('immutable')
+    expect(ops.confirmation(['settings', 'show', '--host', 'Build'], 'approve')).toBeUndefined()
+    expect(managerReadOnly(['--host', 'immutable', 'settings', 'show'])).toBe(true)
+    await expect(ops.run(['settings', 'edit', '--patch', '{"theme":"dark"}', '--host', 'Build'], 'bad-name')).rejects.toThrow('immutable computer ID')
+    await expect(ops.run(['settings', 'show', '--host', 'Build'], 'read')).resolves.toBe('target receipt')
+    expect(calls[0]?.args).toEqual(['settings', 'show'])
+    expect(calls[0]?.guard()).toBe(true)
+    authorized = false
+    expect(calls[0]?.guard()).toBe(false)
+    await expect(ops.run(['providers', 'list', '--host', 'immutable'], 'revoked')).rejects.toThrow('no longer authorized')
+    expect(target).toHaveBeenCalledTimes(1)
+    expect(f.settings().theme).toBe(DEFAULT_SETTINGS.theme)
+  })
+  it('protects held runtimes even after a completed turn until they are explicitly released', async () => {
+    const f = await fixture()
+    const id = await f.sessions.send({ root: f.root, mode: 'manual', text: 'hello' })
+    expect(f.sessions.providerInUse('claude')).toContain(id)
+    f.finish(id, 'Done')
+    expect(f.sessions.providerInUse('claude')).toContain(id)
+    f.sessions.handOver(id)
+    await vi.waitFor(() => expect(f.sessions.providerInUse('claude')).not.toContain(id))
+  })
+})

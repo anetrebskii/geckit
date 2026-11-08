@@ -15,7 +15,9 @@ GeckIt owns the conversations, assistants, queue, Manager and secure storage. Th
 
 Updates follow Update channels automatically at the bottom of Channels, and Check now. A changed library is stopped, swapped and started again. Remove stops it, moves its copy to Trash and forgets its settings and secrets; the conversations it started stay.
 
-On a headless service the same calls are `service call channels:view '[]'`, `channels:install`, `channels:configure`, `channels:remove` and `channels:checkUpdates`.
+On a headless service the same calls are `service call channels:view '[]'`, `channels:install`, `channels:configure`, `channels:inspect`, `channels:remove` and `channels:checkUpdates`.
+
+Slack and Discord come with GeckIt and are set up the same way, from their rows; [Connecting Discord](discord.md) walks through the Discord bot.
 
 ## Repository layout
 
@@ -89,6 +91,10 @@ export function create(context) {
 | `watch(id, listener)` | `items` (upserted by id, with `gone`), `state`, `notice`, and for a Manager thread `decisions` raised in it `answer`, Manager's reply ready to post, whoever wrote the message it answers, and `status`, what Manager and the thread's own and followed workers are doing now (`activity`: a Manager line, an ending, whether Manager is active and one line per worker; render it with `StatusMessage` semantics from `docs/ux/channel-status.md`); returns an unwatch function |
 | `answer(id, card, answer)` | A permission card (`once`, `session`, `no`, or a choice's words), or one of Manager's decisions |
 | `stop(id)` | Stops the current turn; Manager is paused in GeckIt instead |
+
+### Checking a setup
+
+A library may also export `inspect(setup, request)`. Settings calls it through `channels:inspect` while the channel is being set up, whether or not it runs, to check a saved secret and list what it can reach. `setup` has `id`, `log`, `config()` and `secret(key)`; `request` and the answer are JSON the library and its own setup screen agree on. A library without it answers "<name> has nothing to check". The built-in Discord channel uses it to show the bot, its servers and channels, and who the allowed IDs are (`client/src/shared/discord.ts`).
 
 ### Manager threads and labels
 

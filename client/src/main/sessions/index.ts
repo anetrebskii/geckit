@@ -1,3 +1,4 @@
+import { assertProviderAvailable, prepareProvider, providerPreparing } from '../provider-changes'
 import { mergeTasks, taskTerminal } from '../../shared/background-tasks'
 import type { Employee, EmployeeConversation } from '../../shared/employees'
 import { createHash, randomUUID } from 'node:crypto'
@@ -707,9 +708,11 @@ export class Sessions {
 
   async managerSession(options: Pick<SessionMessage, 'root' | 'mode' | 'model' | 'provider'>, prompt: string): Promise<string> {
     const provider = options.provider ?? 'claude'
+    assertProviderAvailable(provider)
     const backend = this.#provider(provider)
     if (!backend.available) throw new Error(`${backend.name} is unavailable. Restore its setup in Assistants.`)
-    const id = await backend.create(options)
+    const id = await prepareProvider(provider, () => backend.create(options))
+    assertProviderAvailable(provider)
     if (providerOf(id) !== provider) throw new Error(`${backend.name} returned a session ID without its provider prefix.`)
     this.protectManager(id)
     const live = this.#fresh(id, options.root, 'Manager', options.mode, true)
@@ -732,8 +735,9 @@ export class Sessions {
     if (found !== undefined) return found[0]
     if (message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
     const provider = message.provider ?? 'claude'
+    assertProviderAvailable(provider)
     const backend = this.#provider(provider)
-    const id = await backend.create({ root: message.root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }) })
+    const id = await prepareProvider(provider, () => backend.create({ root: message.root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }) }))
     if (!authorized()) {
       await backend.delete(message.root, id).catch(() => false)
       throw new Error('The originating request changed. No worker message was sent.')
@@ -1572,6 +1576,7 @@ export class Sessions {
   prepare(message: SessionMessage): string {
     if (message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
     const provider = message.provider ?? 'claude'
+    assertProviderAvailable(provider)
     const backend = this.#provider(provider)
     if (!backend.available) throw new Error(`${backend.name} is unavailable. Choose another assistant.`)
     if (backend.localOnly && isRemote(message.root)) throw new Error(`${backend.name} is available for local folders.`)
@@ -2165,6 +2170,7 @@ export class Sessions {
     const provisional = message.session === undefined && guardSource === undefined && this.#deps.beforeSend !== undefined
     if (target === undefined && provisional) {
       const provider = message.provider ?? 'claude'
+      assertProviderAvailable(provider)
       const id = message.submission ?? `${provider === 'claude' ? '' : `${provider}:`}pending-${randomUUID()}`
       target = this.#fresh(id, message.question === true ? homedir() : message.root, firstLine(message.text, 80), message.mode, message.question === true)
       if (message.employeeId !== undefined) this.#note(id, { employeeId: message.employeeId, employeeRoot: target.root })
@@ -2225,6 +2231,7 @@ export class Sessions {
       if (message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
       const root = message.question === true ? homedir() : message.root
       const provider = message.session === undefined ? message.provider ?? 'claude' : providerOf(message.session)
+      assertProviderAvailable(provider)
       const transport: ClaudeTransport = 'stream'
       const backend = this.#provider(provider, transport)
       if (!backend.available) throw new Error('Codex is not available. Install Codex and run codex login in a terminal.')
@@ -2233,7 +2240,8 @@ export class Sessions {
       }
       if (backend.localOnly && isRemote(root)) throw new Error(`${backend.name} is available for local folders. Choose Claude Code Stream for this host.`)
 
-      const id = backend.nativeGoals && message.session !== undefined ? message.session : await backend.create({ root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }) })
+      const id = backend.nativeGoals && message.session !== undefined ? message.session : await prepareProvider(provider, () => backend.create({ root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }) }))
+      assertProviderAvailable(provider)
       if (providerOf(id) !== provider) throw new Error(`${backend.name} returned a session ID without its provider prefix.`)
       live =
         message.question === true
@@ -2252,6 +2260,7 @@ export class Sessions {
     }
 
     if (this.#live.get(live.id) !== live || this.#deleting.has(live.id)) throw new Error('The conversation was released before dispatch. Nothing was sent.')
+    assertProviderAvailable(providerOf(live.id))
     this.#clearGuard(live)
     if (attempt !== undefined) attempt = { ...attempt, destination: { live, guardGeneration: live.guardGeneration } }
     const backend = this.#for(live)
@@ -2263,6 +2272,7 @@ export class Sessions {
       if ((await backend.account()).key === true) throw new Error('Sign in with your ChatGPT plan to change a Codex goal.')
       if (this.#deps.beforeSend !== undefined) await this.#check(live, attempt)
       if (this.#live.get(live.id) !== live || this.#deleting.has(live.id)) throw new Error('The conversation was released before dispatch. Nothing was sent.')
+      assertProviderAvailable(providerOf(live.id))
       if (nativeGoal === '') {
         await backend.clearGoal(live.id)
         if (this.#live.get(live.id) !== live) throw new Error('The conversation was released during goal dispatch. Inspect the deletion receipt.')
@@ -2463,10 +2473,12 @@ export class Sessions {
     const command = asked.command.trim()
     if (live === undefined) {
       const provider = asked.session === undefined ? asked.provider ?? 'claude' : providerOf(asked.session)
+      assertProviderAvailable(provider)
       const backend = this.#provider(provider, isRemote(asked.root) || process.platform === 'win32' ? 'stream' : this.#deps.transport?.())
       if (backend.localOnly && isRemote(asked.root)) throw new Error(`${backend.name} is available for local folders.`)
       if (this.#deps.beforeSend !== undefined) await this.#check(live)
-      const id = backend.nativeGoals && asked.session !== undefined ? asked.session : await backend.create({ root: asked.root, mode: 'auto' })
+      const id = backend.nativeGoals && asked.session !== undefined ? asked.session : await prepareProvider(provider, () => backend.create({ root: asked.root, mode: 'auto' }))
+      assertProviderAvailable(provider)
       live = this.#fresh(id, asked.root, firstLine(`!${command}`, 80), sessionMode(undefined))
       if (backend.nativeGoals && asked.session !== undefined) {
         live.begun = true
@@ -2649,6 +2661,7 @@ export class Sessions {
 
     if (this.#deps.beforeSend !== undefined) await this.#check(live, attempt)
     if (this.#live.get(live.id) !== live || this.#deleting.has(live.id)) throw new Error('The conversation was released before dispatch. Nothing was sent.')
+    assertProviderAvailable(providerOf(live.id))
     let assignedDriver: Driver | undefined = undefined
     const driver = backend.hold(
       {
@@ -2717,6 +2730,7 @@ export class Sessions {
     const driver = live.driver
     if (driver === undefined) throw new Error('Claude Code is not running for this conversation.')
     if (this.#deps.beforeSend !== undefined) await this.#check(live, attempt)
+    assertProviderAvailable(providerOf(live.id))
     const url = await this.#for(live).remote(driver, true, this.#deps.notes.all()[live.id]?.title ?? live.title) ?? ''
     live.remote = url
     this.#changed()
@@ -3504,6 +3518,11 @@ export class Sessions {
     return [...this.#live.values()]
       .filter((live) => (live.state === 'working' || live.state === 'asks') && !isRemote(live.root))
       .map((live) => this.#deps.notes.all()[live.id]?.title ?? live.title)
+  }
+
+  providerInUse(provider: SessionProvider): readonly string[] {
+    if (providerPreparing(provider)) return ['A provider runtime is being prepared.']
+    return [...this.#live.values()].filter((live) => providerOf(live.id) === provider && (live.driver !== undefined || live.closing !== undefined || live.state === 'working' || live.state === 'asks' || live.queued.length > 0 || live.checkingIp || live.heldOperation !== undefined || live.commands.size > 0 || live.tasks.some((task) => task.status === 'running' || task.status === 'unknown'))).map((live) => live.id)
   }
 
   hasPendingWork(): boolean {
