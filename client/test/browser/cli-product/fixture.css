@@ -1,0 +1,8 @@
+.cli-product-screen {
+  display: flex;
+  flex-direction: column;
+  block-size: calc(100% - 80px);
+  margin-block-start: 40px;
+  background: var(--bg);
+  color: var(--text);
+}

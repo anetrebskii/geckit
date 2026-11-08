@@ -119,7 +119,7 @@ describe('Manager guided setup', () => {
     expect(markup).not.toContain('Connect Telegram first.')
     expect(markup.match(/class="manager-step is-/g)).toHaveLength(3)
     expect(markup).not.toContain('aria-label="Connect Telegram"')
-    expect(markup).toContain('Telegram and Slack reach Manager from Settings, Channels.')
+    expect(markup).toContain('Telegram, Slack and Discord reach Manager from Settings, Channels.')
     expect(markup).not.toContain('Enable Manager')
     expect(markup).not.toContain('Delegation policy')
     hook.mockRestore()
@@ -273,9 +273,9 @@ describe('Channels settings', () => {
   it('lists Telegram as a built-in channel with its own Set up and no Remove', () => {
     vi.stubGlobal('window', { geckit: { telegram: { view: vi.fn(), on: vi.fn(), action: vi.fn() }, manager: { view: vi.fn(), on: vi.fn() } } })
     const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue(ready)
-    const api = { view: vi.fn(), on: vi.fn(), install: vi.fn(), configure: vi.fn(), remove: vi.fn(), checkUpdates: vi.fn() } as unknown as ChannelsApi
+    const api = { view: vi.fn(), on: vi.fn(), install: vi.fn(), configure: vi.fn(), remove: vi.fn(), inspect: vi.fn(), checkUpdates: vi.fn() } as unknown as ChannelsApi
     const markup = renderToStaticMarkup(createElement(Channels, { settings: DEFAULT_SETTINGS, change: vi.fn(), api }))
-    expect(markup).toContain('Places outside GeckIt where people write to your conversations and Manager. Telegram and Slack come with GeckIt; add others from GitHub.')
+    expect(markup).toContain('Places outside GeckIt where people write to your conversations and Manager. Telegram, Slack and Discord come with GeckIt; add others from GitHub.')
     expect(markup).toContain('<strong>Telegram</strong><span>Loading…</span>')
     expect(markup).toContain('Set up</button>')
     expect(markup).not.toContain('Remove Telegram')

@@ -486,6 +486,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       install: () => Promise.reject(new Error('Manage channels on the computer.')),
       configure: () => Promise.reject(new Error('Manage channels on the computer.')),
       remove: () => Promise.reject(new Error('Manage channels on the computer.')),
+      inspect: () => Promise.reject(new Error('Manage channels on the computer.')),
       checkUpdates: () => Promise.reject(new Error('Manage channels on the computer.')),
       on: never,
     },

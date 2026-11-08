@@ -1,3 +1,5 @@
+import { product } from './product'
+import { productCommand, PRODUCT_COMMANDS } from '../shared/product-cli'
 import { formatStatusMove } from '../shared/status-history'
 import { remoteCli, remoteCommand } from './remote'
 import { defaultDataDirectory } from '../core/platform'
@@ -12,7 +14,7 @@ import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { providerOf } from '../shared/api'
-import type { SessionStatus } from '../shared/api'
+import type { ChatSession, SessionItem, SessionStatus } from '../shared/api'
 import { claudeFile, listClaude, readClaudeSession, readSessionAt, slug } from '../main/sessions/disk'
 import type { Conversation, Found } from '../main/sessions/disk'
 import type { Move, SessionNote } from '../main/sessions'
@@ -84,8 +86,14 @@ async function rows(): Promise<Row[]> {
   const favorites = new Set(settings.favorites ?? [])
   const notes = kept<Record<string, SessionNote>>('sessions.json', {})
   const found: (Found & { root: string; created?: number; below?: string })[] = []
-  for (const root of projects) found.push(...(await projectRows(root)).map((one) => ({ ...one, root })))
-  found.push(...await codexClient().list(projects.filter((root) => !isRemote(root))))
+  if (settings.chatProviders === undefined || settings.chatProviders.includes('claude')) for (const root of projects) found.push(...(await projectRows(root)).map((one) => ({ ...one, root })))
+  if (settings.chatProviders === undefined || settings.chatProviders.includes('codex')) found.push(...await codexClient().list(projects.filter((root) => !isRemote(root))))
+  if ((settings.providerPlugins?.length ?? 0) > 0) {
+    const reply = await product(['sessions', 'list'], data())
+    if (!reply.ok) throw new Error(`Provider history needs the running GeckIt service: ${reply.said}`)
+    const current = JSON.parse(reply.said) as readonly ChatSession[]
+    for (const one of current) if (providerOf(one.id).startsWith('plugin:')) found.push({ id: one.id, root: one.root, title: one.title, stands: one.stands, at: one.at, driven: one.here })
+  }
   const all: Row[] = []
   for (const one of found) {
     const note = notes[one.id]
@@ -154,7 +162,7 @@ const standing = (row: Row): string => (row.status === 'todo' || row.status === 
 
 function table(found: readonly Row[]): string {
   if (found.length === 0) return 'Nothing.'
-  const said = found.map((row) => [row.favorite ? '*' : ' ', providerOf(row.id) === 'codex' ? row.id : row.id.slice(0, 8), when(row.at), basename(row.root), standing(row), row.title])
+  const said = found.map((row) => [row.favorite ? '*' : ' ', providerOf(row.id) === 'claude' ? row.id.slice(0, 8) : row.id, when(row.at), basename(row.root), standing(row), row.title])
   const wide = [0, 1, 2, 3, 4].map((at) => Math.max(...said.map((one) => (one[at] ?? '').length)))
   return said
     .map((one) => one.map((cell, at) => (at === 5 ? cell : cell.padEnd(wide[at] ?? 0))).join('  '))
@@ -162,6 +170,9 @@ function table(found: readonly Row[]): string {
 }
 
 const HELP = `geckit service - control a running headless service (run service help for commands).\n\ngeckit - what GeckIt holds, read from a command line.
+
+  --host <id-or-name> selects one paired GeckIt computer; --host local selects this computer.
+  --computer remains a compatible alias. No local fallback on target errors.
 
   geckit browser <command>
       The person's own Chrome through the GeckIt Browser extension: tabs, page text, clicks, typing, screenshots. geckit browser help lists the commands.
@@ -230,11 +241,15 @@ const HELP = `geckit service - control a running headless service (run service h
       Build instructions for AI agents. Includes plugin contract, independent Codex example and verification steps.
       providers is the default; app explains desktop and phone builds.
 
+  Product configuration and control (operator terminal; same commands accept --host):
+${PRODUCT_COMMANDS.map((one) => `    geckit ${one}`).join('\n')}
+  Run capabilities on the selected target for schemas, authority and native-only boundaries.
+
   Manager sessions additionally use capabilities, providers, projects, files,
   sessions, settings, attachments and telegram through the running app's authenticated CLI interface.
   Run capabilities in Manager for supported operations and named limitations.
 
-Outside Manager, start, migrate-codex, settings edit and the employees changes write.
+Outside Manager, product configuration/control commands, start, migrate-codex, settings edit and employee changes can write. Native permission answers remain in the bound human flow.
 Authenticated Manager commands can make the changes advertised by capabilities.`
 
 async function sessions(args: readonly string[]): Promise<string> {
@@ -285,7 +300,12 @@ async function show(args: readonly string[]): Promise<string> {
   const remote = isRemote(root)
   const provider = providerOf(row.id)
   let conversation: Conversation | undefined
-  if (provider === 'codex') conversation = await codexClient().read(root, row.id)
+  if (provider.startsWith('plugin:')) {
+    const reply = await product(['sessions', 'show', '--id', row.id, '--last', '1000'], data())
+    if (!reply.ok) throw new Error(reply.said)
+    const shown = JSON.parse(reply.said) as { readonly items: readonly SessionItem[] }
+    conversation = { items: [...shown.items], tasks: [] }
+  } else if (provider === 'codex') conversation = await codexClient().read(root, row.id)
   else {
     const path = remote ? hostFile(root, row.id) : await claudeFile(root, row.id)
     if (path === undefined) return 'Claude Code has no file for it any more.'
@@ -294,7 +314,7 @@ async function show(args: readonly string[]): Promise<string> {
   }
   const items = conversation?.items ?? []
   const every = items.flatMap((item) =>
-    item.kind === 'mine' || item.kind === 'theirs' ? [{ who: item.kind === 'mine' ? 'Alex' : provider === 'codex' ? 'Codex' : 'Claude', text: item.text }] : [],
+    item.kind === 'mine' || item.kind === 'theirs' ? [{ who: item.kind === 'mine' ? 'Alex' : provider === 'codex' ? 'Codex' : provider.startsWith('plugin:') ? provider : 'Claude', text: item.text }] : [],
   )
   const last = Number(args[args.indexOf('--last') + 1])
   const said = args.includes('--last') && Number.isInteger(last) && last > 0 ? every.slice(-last) : every
@@ -375,6 +395,7 @@ export async function run(args: readonly string[]): Promise<string> {
     if (managerCommand(args)) return (await manage(args, data())).said
     const [what, ...rest] = args
     if (remoteCommand(what) && what !== undefined) return (await remoteCli(what, rest)).said
+    if (productCommand(args)) return (await product(args, data())).said
     if (what === 'service') return (await service(rest, data())).said
     if (what === 'settings') return (await readSettings(rest, data())).said
     if (what === 'employees') return (await readEmployees(rest, data())).said
@@ -396,10 +417,11 @@ export async function run(args: readonly string[]): Promise<string> {
 }
 
 if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [what, ...rest] = process.argv.slice(2)
   const routed = computerArg(process.argv.slice(2))
+  const args = typeof routed === 'string' ? [] : routed.args
+  const [what, ...rest] = args
   if (typeof routed === 'string' || routed.computer !== undefined) {
-    const answer = typeof routed === 'string' ? { ok: false, said: routed } : await onComputer(routed.computer ?? '', routed.args)
+    const answer = typeof routed === 'string' ? { ok: false, said: routed } : managerCommand(routed.args) || process.env['GECKIT_MANAGER_SESSION'] !== undefined ? await manage(process.argv.slice(2), data()) : productCommand(routed.args) || routed.args.includes('--help') || routed.args[0] === 'help' || ['settings', 'employees', 'computers', 'devices', 'access'].includes(routed.args[0] ?? '') && requestingSession() === undefined && !process.env['CLAUDECODE'] ? await product(routed.args, data(), routed.computer) : await onComputer(routed.computer ?? '', routed.args)
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
   } else if (what === 'browser-host') {
@@ -410,8 +432,12 @@ if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync
     const answer = await browser(rest)
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
-  } else if (managerCommand(process.argv.slice(2))) {
-    const answer = await manage(process.argv.slice(2), data())
+  } else if (managerCommand(args)) {
+    const answer = await manage(args, data())
+    process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.ok ? 0 : 1
+  } else if (productCommand(args)) {
+    const answer = await product(args, data())
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
   } else if (remoteCommand(what) && what !== undefined) {
@@ -439,7 +465,7 @@ if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
   } else {
-    const answer = await run(process.argv.slice(2))
+    const answer = await run(args)
     process.stdout.write(`${answer}\n`)
   }
 }

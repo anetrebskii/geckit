@@ -1,7 +1,11 @@
+import { productCommand, PRODUCT_COMMANDS } from '../shared/product-cli'
+import { computerArg } from '../cli/computer'
+import { providerCatalog } from './provider-settings'
 import { formatStatusMove } from '../shared/status-history'
 import { settingsCommand } from './agent-settings'
 import { AGENT_SETTINGS_SCHEMA } from '../shared/agent-settings'
 import type { Employees } from './employees'
+import type { Json } from '../shared/elicitation'
 import { constants } from 'node:fs'
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, normalize, relative, resolve, sep } from 'node:path'
@@ -19,6 +23,10 @@ import type { TelegramAttachments, TelegramFileSender } from './telegram-attachm
 import type { NotesStore, Sessions } from './sessions'
 
 interface OperationDeps {
+  readonly target?: (host: string, args: readonly string[], authorized: () => boolean) => Promise<string>
+  readonly product?: (args: readonly string[]) => Promise<string>
+  readonly computers?: () => readonly { readonly id: string; readonly name: string }[]
+  readonly providerSettings?: (args: readonly string[]) => string
   readonly statusAttribution?: () => StatusAttribution
 
   readonly instructions?: {
@@ -45,8 +53,11 @@ interface OperationDeps {
 export const MANAGER_CAPABILITIES = {
   interface: 'GeckIt CLI; arguments are literal strings, never shell syntax',
   commands: [
-    'capabilities',
+    'capabilities [--host <paired-computer-id-or-unique-name>]',
+    'computers list',
+    'Ordinary commands accept --host <id-or-name>; --computer is a compatible alias. Remote writes require the immutable computer ID and user confirmation; unknown or unavailable targets never run locally.',
     'providers list',
+    'providers enable|disable --provider <installed-provider-id> --expected <enabled-provider-JSON-array> (user confirmation; dependencies and active work must be resolved)',
     'providers models --provider <enabled-provider-id>',
     'projects list',
     'projects add --path <absolute-existing-local-folder>',
@@ -92,7 +103,7 @@ export const MANAGER_CAPABILITIES = {
   settings: AGENT_SETTINGS_SCHEMA,
   unavailable: [
     { aspects: 'SSH project creation and remote file management', reason: 'Use a worker on the registered host; local file commands never fall back to this computer.' },
-    { aspects: 'libraries, provider enable/install, credentials, channel grants, hosts and project registration through settings edit', reason: 'Use the existing dedicated interfaces; settings schema lists writable preferences. Native permissions remain user-controlled.' },
+    { aspects: 'libraries, provider installation, credentials, channel grants, hosts and project registration through settings edit', reason: 'Use the existing dedicated interfaces; settings schema lists writable preferences. Native permissions remain user-controlled.' },
     { aspects: 'arbitrary shell, native permission approval, deep code execution and direct provider API calls', reason: 'Outside Manager coordination. Delegate deep execution to workers; normal provider tools and permission checks remain available.' },
   ],
 } as const
@@ -105,6 +116,7 @@ interface CommandShape {
 
 const SHAPES: readonly CommandShape[] = [
   { domain: 'providers', command: 'list', flags: [] },
+  ...['enable', 'disable'].map((command) => ({ domain: 'providers', command, flags: ['--provider', '--expected'] })),
   { domain: 'providers', command: 'models', flags: ['--provider'] },
   { domain: 'projects', command: 'list', flags: [] },
   { domain: 'projects', command: 'add', flags: ['--path'] },
@@ -137,8 +149,12 @@ const SHAPES: readonly CommandShape[] = [
 ]
 
 export function managerReadOnly(args: readonly string[]): boolean {
+  const selected = computerArg(args)
+  if (typeof selected === 'string') return false
+  args = selected.args
+  if (args.includes('--help') || args[0] === 'help') return true
   const [domain, command] = args
-  return domain === 'employees' && ['list', 'show', 'memory', 'current', 'shortcuts'].includes(command ?? '') || domain === 'capabilities' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'schema' || command === 'manager')
+  return domain === 'employees' && ['list', 'show', 'memory', 'current', 'shortcuts'].includes(command ?? '') || domain === 'capabilities' || ['computers', 'devices', 'channels', 'hosts', 'shortcuts'].includes(domain ?? '') && ['list', 'known'].includes(command ?? '') || domain === 'access' && command === 'status' || domain === 'manager' && command === 'view' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'schema' || command === 'manager')
 }
 
 const values = (args: readonly string[]): Map<string, string> => {
@@ -217,7 +233,12 @@ export class ManagerOperations {
   constructor(deps: OperationDeps) { this.#deps = deps }
 
   confirmation(args: readonly string[], policy: 'automatic' | 'approve'): string | undefined {
-    const [domain, command] = args
+    const selected = computerArg(args)
+    if (typeof selected === 'string') return undefined
+    if (selected.computer !== undefined && !managerReadOnly(selected.args) && this.#deps.computers?.().some((one) => one.id === selected.computer)) return `Change ${selected.computer}? Native permissions remain user-controlled. ${JSON.stringify(selected.args)}`
+    const [domain, command] = selected.args
+    if (['hosts', 'channels', 'manager', 'shortcuts', 'computers', 'devices', 'access', 'speech', 'browser-config'].includes(domain ?? '') && !managerReadOnly(selected.args) || domain === 'providers' && !['list', 'models', 'account'].includes(command ?? '')) return `Change target configuration? Native permissions remain user-controlled. ${JSON.stringify(args)}`
+    if (domain === 'providers' && (command === 'enable' || command === 'disable')) return `Change enabled assistants? Native provider permissions remain user-controlled. ${JSON.stringify(args)}`
     if (domain === 'employees' && command === 'rename') return `Change these user preferences? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'start' && policy === 'approve') return `Start this worker? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'answer') return `Send this answer to the worker's question? ${JSON.stringify(args)}`
@@ -259,17 +280,30 @@ export class ManagerOperations {
   }
 
   async run(args: readonly string[], operation: string): Promise<string> {
+    const parsed = computerArg(args)
+    const selected = typeof parsed === 'string' ? parsed : { ...parsed, args: parsed.args.includes('--help') || parsed.args[0] === 'help' ? ['capabilities'] : parsed.args }
+    if (typeof selected === 'string') throw new Error(selected)
+    if (this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
+    if (selected.computer !== undefined) {
+      if (this.#deps.target === undefined) throw new Error('Host targeting is unavailable on this GeckIt. No command ran locally.')
+      if (!managerReadOnly(selected.args) && !this.#deps.computers?.().some((one) => one.id === selected.computer)) throw new Error('Remote changes require the immutable computer ID from computers list. Read the target capabilities and request confirmation with that ID.')
+      return this.#deps.target(selected.computer, selected.args, () => this.#deps.authorized?.() !== false)
+    }
+    args = selected.args
     const [domain, command] = args
     if (this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
     if (domain === 'employees' && command !== 'rename') {
       if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.')
       return this.#deps.employees.command(args.slice(1), this.#deps.managerSession(), true)
     }
+    if (domain === 'computers' && command === 'list' && args.length === 2) return JSON.stringify(this.#deps.computers?.() ?? [])
     if (domain === 'capabilities') {
       if (args.length !== 1) throw new Error('capabilities takes no arguments.')
-      return JSON.stringify(MANAGER_CAPABILITIES)
+      return JSON.stringify({ ...MANAGER_CAPABILITIES, configurationCommands: PRODUCT_COMMANDS.filter((one) => !one.startsWith('sessions ') && !one.startsWith('employees ')), configuration: this.#deps.product === undefined ? undefined : JSON.parse(await this.#deps.product(['capabilities'])) as Json, target: 'local', computers: this.#deps.computers?.() ?? [] })
     }
-    const flags = values(args)
+    if ((['hosts', 'channels', 'manager', 'shortcuts', 'devices', 'access', 'speech', 'browser-config'].includes(domain ?? '') || domain === 'computers') && this.#deps.product !== undefined) return this.#deps.product(args)
+    if (domain === 'sessions' && !SHAPES.some((one) => one.domain === domain && one.command === command) && this.#deps.product !== undefined) return this.#deps.product(args)
+    const flags = domain === 'providers' && !['list', 'enable', 'disable', 'models'].includes(command ?? '') ? new Map<string, string>() : values(args)
     const settings = this.#deps.settings()
     if (domain === 'employees' && command === 'rename') {
       const employees = this.#deps.employees
@@ -291,7 +325,12 @@ export class ManagerOperations {
       return JSON.stringify(await instructions.write(text, expected))
     }
     if (domain === 'providers') {
-      if (command === 'list') return JSON.stringify(settings.chatProviders.map((provider) => ({ ...llmProviderInfo(provider, 'stream', settings.providerPlugins), enabled: true })))
+      if (!['list', 'enable', 'disable', 'models'].includes(command ?? '') && this.#deps.product !== undefined) return this.#deps.product(args)
+      if (command === 'list') return JSON.stringify(providerCatalog(settings))
+      if (command === 'enable' || command === 'disable') {
+        if (this.#deps.providerSettings === undefined) throw new Error('Provider configuration is unavailable on this target.')
+        return this.#deps.providerSettings(args.slice(1))
+      }
       if (command === 'models') {
         const provider = requestedProvider(required(flags, '--provider'))
         if (provider === undefined || !settings.chatProviders.includes(provider)) throw new Error('Select an enabled provider from providers list.')
@@ -526,6 +565,10 @@ export class ManagerOperations {
       }
     }
     if (domain === 'settings') return settingsCommand(args.slice(1), this.#deps.settings, this.#deps.saveSettings)
+    if (productCommand(args) || ['devices', 'access'].includes(domain ?? '')) {
+      if (this.#deps.product === undefined) throw new Error('Product configuration unavailable on this runtime.')
+      return this.#deps.product(args)
+    }
     throw new Error('This GeckIt CLI operation is unavailable. Run capabilities for supported commands and limitations.')
   }
 }

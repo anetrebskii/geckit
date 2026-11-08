@@ -73,6 +73,11 @@ export interface ChannelChange {
   readonly secrets?: { readonly [key: string]: string | null }
 }
 
+export type ChannelJson = string | number | boolean | null | readonly ChannelJson[] | { readonly [key: string]: ChannelJson }
+/** What Settings asks a channel while it is set up, and what it answers; each channel names its own shape (Discord: shared/discord.ts). */
+export type ChannelInspectRequest = ChannelJson
+export type ChannelInspectResult = ChannelJson
+
 export const channelId = (id: string): id is ChannelId => /^channel:[a-z][a-z0-9-]*$/.test(id)
 
 export function missingFields(setting: Pick<ChannelSetting, 'info' | 'config'>, secrets: readonly string[]): readonly ChannelField[] {

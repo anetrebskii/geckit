@@ -60,3 +60,13 @@ describe('agent preference contract', () => {
     expect(() => f.command('edit', '--patch', '{"theme":"dark"}', '--expected', 'null')).toThrow('--expected')
   })
 })
+
+it('configures layout, ordering and calendar preferences without accepting invalid geometry or time zones', () => {
+  const f = fixture()
+  f.command('edit', '--patch', JSON.stringify({ employeeFilter: 'none', boardHeight: 200, sidebarWidth: 280, progressOrder: ['a'], columnOrders: { todo: ['b'] }, chatBounds: { x: -100, y: 0, width: 1000, height: 700 } }))
+  expect(f.read()).toMatchObject({ boardHeight: 200, columnOrders: { todo: ['b'] } })
+  for (const patch of [{ calendarTimeZone: 'Invalid/Zone' }, { chatBounds: { x: 0, y: 0, width: 0, height: 700 } }, { columnOrders: { todo: [1] } }, { sidebarWidth: -1 }]) expect(() => f.command('edit', '--patch', JSON.stringify(patch))).toThrow()
+  expect(f.save).toHaveBeenCalledTimes(1)
+  f.command('edit', '--patch', JSON.stringify({ columnOrders: { done: ['c'] } }))
+  expect(f.read().columnOrders).toEqual({ todo: ['b'], done: ['c'] })
+})

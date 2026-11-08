@@ -1,3 +1,7 @@
+import { providerChange } from '../main/provider-changes'
+import { assertProviderUnused } from '../main/provider-settings'
+import type { ProductAuthority } from '../shared/product-cli'
+import { dispatchProduct } from './product-cli'
 import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
 import type { ViewInput } from '../shared/api'
@@ -9,7 +13,7 @@ import { hostOf, isRemote, machineName } from '../shared/hosts'
 import type { LocalAsk } from '../shared/local'
 import type { ManagerConfig } from '../shared/manager'
 import type { TelegramAction } from '../shared/telegram'
-import type { ChannelChange, ChannelId } from '../shared/channels'
+import type { ChannelChange, ChannelId, ChannelInspectRequest } from '../shared/channels'
 import { recordedNote } from '../shared/recording'
 import { commandsFor } from '../main/commands'
 import { continueConversation, prepareConversation, writeConversationExport } from '../main/conversation-export'
@@ -46,6 +50,50 @@ import { instructionsFor, registerProviderInfo } from '../shared/providers'
 import type { SessionProvider } from '../shared/api'
 import type { CoreRuntime } from './runtime'
 import { dataDirectory } from './platform'
+
+export function uninstallProvider(runtime: Pick<CoreRuntime, 'managerView'> & { readonly sessions: Pick<Sessions, 'providerInUse' | 'setInstructions' | 'refresh'> }, id: string, safe = false): Promise<void> {
+  const { sessions } = runtime
+  return providerChange(getSettings().providerPlugins.find((one) => one.id === id)?.family, async () => {
+    const previous = getSettings()
+    const provider = previous.providerPlugins.find((one) => one.id === id)
+    if (provider === undefined) {
+      if (!providerPluginFailures().some((one) => one.id === id)) throw new Error('Library is not installed.')
+      await uninstallPlugin(id)
+      setSettings({ providerRemovalPending: true })
+      return
+    }
+    const ownInstructions = instructionsFor(provider) === 'own' && previous.guidePlugins[id] !== false
+    const check = (): void => {
+      if (!safe) return
+      const current = getSettings()
+      if (current.chatProviders.includes(provider.family)) throw new Error('Disable this provider explicitly before uninstalling.')
+      assertProviderUnused(provider.family, current, { manager: () => runtime.managerView().config, inUse: (family) => sessions.providerInUse(family) })
+    }
+    check()
+    if (ownInstructions) await sessions.setInstructions(provider.family, false, previous.browserNames)
+    try { check(); await uninstallPlugin(id) }
+    catch (error) {
+      if (ownInstructions) void sessions.setInstructions(provider.family, true, previous.browserNames)
+      throw error
+    }
+    const current = getSettings()
+    const providerPlugins = current.providerPlugins.filter((one) => one.id !== id)
+    const enabled = assistantsIn(current).filter((one) => one !== provider.family)
+    const fallback: SessionProvider = provider.runtime === 'codex' ? 'codex' : 'claude'
+    const chatProviders: readonly SessionProvider[] = enabled.length > 0 ? enabled : [fallback]
+    const chatProvider: SessionProvider = chatProviders.includes(current.chatProvider) ? current.chatProvider : chatProviders[0] ?? fallback
+    setSettings({
+      providerPlugins,
+      providerUpdatesReady: current.providerUpdatesReady.filter((one) => one !== id),
+      providerRemovalPending: true,
+      chatProviders,
+      chatProvider,
+      correctProvider: current.correctProvider === provider.family ? chatProvider : current.correctProvider,
+    })
+    registerProviderInfo(providerPlugins)
+    void sessions.refresh(getSettings().projects)
+    })
+}
 
 export function application(runtime: CoreRuntime) {
   const { sessions, employees, manager, telegram, routes, shares, channels } = runtime
@@ -147,6 +195,7 @@ export function application(runtime: CoreRuntime) {
     'channels:install': (url: string) => channels.install(url),
     'channels:configure': (id: ChannelId, change: ChannelChange) => channels.configure(id, change),
     'channels:remove': (id: ChannelId) => channels.remove(id),
+    'channels:inspect': (id: ChannelId, request: ChannelInspectRequest) => channels.inspect(id, request),
     'channels:checkUpdates': () => channels.checkUpdates(),
     'telegram:action': (action: TelegramAction) => telegramActionAccess(manager, telegram, action, true),
     'correct': (request: CorrectRequest) => correct(request),
@@ -164,6 +213,7 @@ export function application(runtime: CoreRuntime) {
     'browser:viewFrame': (name: string) => viewFrame(name),
     'browser:viewInput': (name: string, input: ViewInput) => viewInput(name, input),
     'browser:viewEnd': (name: string) => viewEnd(name),
+    'cli:product': (args: readonly string[], authority: ProductAuthority = 'operator'): Promise<string> => dispatchProduct(runtime, args, authority),
     'cli:run': (args: readonly string[]) => runCli(args),
     'voice:video': () => startRecording(),
     'recording:start': (ext: string) => startRecording(ext),
@@ -209,7 +259,7 @@ export function application(runtime: CoreRuntime) {
     'chat:copyConversation': (request: ConversationContinuation) => transfer(request, true),
     'chat:waiting': async (id: string) => (await sessions.items(id)).findLast((item) => item.kind === 'card' && item.card.answered === undefined),
     'chat:cutOff': () => { if (cutOffered) return []; cutOffered = true; return sessions.cutOff().filter((one) => routes.runs.get(one.id) === undefined) },
-    'chat:proceed': (ids: readonly string[]) => { for (const id of ids) void sessions.proceed(id) },
+    'chat:proceed': async (ids: readonly string[]) => { await Promise.all(ids.map((id) => sessions.proceed(id))) },
     'lineup:state': () => runtime.current().lineup,
     'chat:terminalCommand': (id: string, root: string) => { const line = resumeCommand(id); if (line === undefined) return undefined; sessions.handOver(id); return { root: isRemote(root) ? homedir() : root, line: isRemote(root) ? hostTerminal(routes, root, line) : line } },
     'hosts:terminalCommand': (id: string, run: string | undefined) => routes.hosts.terminalCommand(id, undefined, run),
@@ -259,6 +309,7 @@ export function application(runtime: CoreRuntime) {
     'chat:preparedDraft': (...args: Parameters<Sessions['preparedDraft']>) => sessions.preparedDraft(...args),
     'chat:savePreparedDraft': (...args: Parameters<Sessions['savePreparedDraft']>) => sessions.savePreparedDraft(...args),
     'chat:links': (...args: Parameters<Sessions['links']>) => sessions.links(...args),
+    'chat:steer': (...args: Parameters<Sessions['steer']>) => sessions.steer(...args),
     'chat:retry': (...args: Parameters<Sessions['retry']>) => sessions.retry(...args),
     'chat:send': (message: SessionMessage) => sessions.send(message),
     'chat:answer': (...args: Parameters<Sessions['answer']>) => sessions.answer(...args),
@@ -300,59 +351,28 @@ export function application(runtime: CoreRuntime) {
     'manager:restart': (...args: Parameters<typeof manager.restart>) => manager.restart(...args),
     'manager:send': (text: string) => manager.send(text),
     'manager:answer': (id: string, choice: string) => manager.answer(id, choice),
-    'chat:installProvider': async (url: string) => {
+    'chat:installProvider': async (url: string, enable = true) => providerChange(undefined, async () => {
     const installed = await installPlugin(url)
     sessions.addProvider(installed.provider)
     const enabled = assistantsIn(getSettings())
-    setSettings({ providerPlugins: [...getSettings().providerPlugins, installed.info], chatProviders: enabled.includes(installed.provider.family) ? enabled : [...enabled, installed.provider.family] })
+    setSettings({ providerPlugins: [...getSettings().providerPlugins, installed.info], chatProviders: !enable || enabled.includes(installed.provider.family) ? enabled : [...enabled, installed.provider.family] })
     registerProviderInfo(getSettings().providerPlugins)
     void sessions.refresh(getSettings().projects)
     return installed.info
-    },
-    'chat:reinstallProvider': async (id: string) => {
+    }),
+    'chat:reinstallProvider': async (id: string, enable = true) => providerChange(getSettings().providerPlugins.find((one) => one.id === id)?.family, async () => {
     const reinstalled = await reinstallFailedPlugin(id)
     sessions.addProvider(reinstalled.provider)
     const previous = getSettings()
     const enabled = assistantsIn(previous)
     const providerPlugins = [...previous.providerPlugins.filter((one) => one.id !== reinstalled.info.id), reinstalled.info]
-    setSettings({ providerPlugins, providerUpdatesReady: previous.providerUpdatesReady.filter((one) => one !== reinstalled.info.id), chatProviders: enabled.includes(reinstalled.info.family) ? enabled : [...enabled, reinstalled.info.family] })
+    setSettings({ providerPlugins, providerUpdatesReady: previous.providerUpdatesReady.filter((one) => one !== reinstalled.info.id), chatProviders: !enable || enabled.includes(reinstalled.info.family) ? enabled : [...enabled, reinstalled.info.family] })
     registerProviderInfo(providerPlugins)
     void sessions.refresh(getSettings().projects)
     return reinstalled.info
-    },
-    'chat:uninstallProvider': async (id: string) => {
-    const previous = getSettings()
-    const provider = previous.providerPlugins.find((one) => one.id === id)
-    if (provider === undefined) {
-      if (!providerPluginFailures().some((one) => one.id === id)) throw new Error('Library is not installed.')
-      await uninstallPlugin(id)
-      setSettings({ providerRemovalPending: true })
-      return
-    }
-    const ownInstructions = instructionsFor(provider) === 'own' && previous.guidePlugins[id] !== false
-    if (ownInstructions) await sessions.setInstructions(provider.family, false, previous.browserNames)
-    try { await uninstallPlugin(id) }
-    catch (error) {
-      if (ownInstructions) void sessions.setInstructions(provider.family, true, previous.browserNames)
-      throw error
-    }
-    const providerPlugins = previous.providerPlugins.filter((one) => one.id !== id)
-    const enabled = assistantsIn(previous).filter((one) => one !== provider.family)
-    const fallback: SessionProvider = provider.runtime === 'codex' ? 'codex' : 'claude'
-    const chatProviders: readonly SessionProvider[] = enabled.length > 0 ? enabled : [fallback]
-    const chatProvider: SessionProvider = chatProviders.includes(previous.chatProvider) ? previous.chatProvider : chatProviders[0] ?? fallback
-    setSettings({
-      providerPlugins,
-      providerUpdatesReady: previous.providerUpdatesReady.filter((one) => one !== id),
-      providerRemovalPending: true,
-      chatProviders,
-      chatProvider,
-      correctProvider: previous.correctProvider === provider.family ? chatProvider : previous.correctProvider,
-    })
-    registerProviderInfo(providerPlugins)
-    void sessions.refresh(getSettings().projects)
-    },
-    'chat:applyProviderUpdate': async (id: string) => {
+    }),
+    'chat:uninstallProvider': (id: string, safe = false) => uninstallProvider(runtime, id, safe),
+    'chat:applyProviderUpdate': async (id: string) => providerChange(getSettings().providerPlugins.find((one) => one.id === id)?.family, async () => {
     const previous = getSettings()
     if (!previous.providerUpdatesReady.includes(id)) throw new Error('No update is ready for this library. Check for updates and try again.')
     const updated = await applyReadyPlugin(id)
@@ -363,7 +383,7 @@ export function application(runtime: CoreRuntime) {
     registerProviderInfo(providerPlugins)
     void sessions.refresh(getSettings().projects)
     return updated.info
-    },
+    }),
     'chat:checkProviderUpdates': () => runtime.checkProviderUpdates(),
     'chat:providerPluginFailures': () => providerPluginFailures(),
   }

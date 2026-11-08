@@ -1,3 +1,4 @@
+import { assertProviderAvailable } from './provider-changes'
 import type { ManagerHistoryRequest, ManagerHistoryBoundary, ManagerHistoryChange, ManagerInstructionsResult } from '../shared/manager'
 import type { Employees } from './employees'
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -136,6 +137,10 @@ export interface ManagerDeps {
   readonly telegramFile?: () => TelegramFileSender
   readonly sessions: Sessions
   readonly notes: NotesStore
+  readonly target?: (host: string, args: readonly string[], authorized: () => boolean) => Promise<string>
+  readonly product?: (args: readonly string[]) => Promise<string>
+  readonly computers?: () => readonly { readonly id: string; readonly name: string }[]
+  readonly providerSettings?: (args: readonly string[]) => string
   readonly settings: () => Settings
   readonly saveSettings: (change: Partial<Settings>) => Settings
   readonly cli: (args: readonly string[], context: ManagerCliContext) => Promise<string>
@@ -196,7 +201,7 @@ export class Manager {
     for (const thread of interruptedThreads) this.#saveThread(thread, { error: 'Manager was interrupted. Reconcile current task state without replaying interrupted messages.' }, { inbox: this.#record.inbox.map((message) => message.state === 'sending' && this.#threadOf(message) === thread ? { ...message, state: 'sent' } : message) })
     this.#pinAttachments()
     this.#attachments.cleanup()
-    this.#operations = new ManagerOperations({ ...deps, statusAttribution: () => this.#acting.getStore()?.attribution ?? { executor: 'manager', origin: 'unknown' }, instructions: { read: () => this.instructions(), write: (text, expected) => this.#editInstructions(text, expected) }, attachments: this.#attachments, authorized: () => { const acting = this.#acting.getStore(); return this.#record.config.enabled && !this.#record.paused && !this.#stopped && (acting === undefined || this.#state(acting.thread).sessionId === acting.session) }, owner: 'manager', managed: (id) => this.manages(id), managerSession: () => this.#acting.getStore()?.session ?? this.#record.sessionId, managerThread: () => this.#acting.getStore()?.thread ?? MAIN, threadLabels: () => this.#threadRecord(this.#acting.getStore()?.thread ?? MAIN)?.labels ?? {} })
+    this.#operations = new ManagerOperations({ ...deps, statusAttribution: () => this.#acting.getStore()?.attribution ?? { executor: 'manager', origin: 'unknown' }, instructions: { read: () => this.instructions(), write: (text, expected) => this.editInstructions(text, expected) }, attachments: this.#attachments, authorized: () => { const acting = this.#acting.getStore(); return this.#record.config.enabled && !this.#record.paused && !this.#stopped && (acting === undefined || this.#state(acting.thread).sessionId === acting.session) }, owner: 'manager', managed: (id) => this.manages(id), managerSession: () => this.#acting.getStore()?.session ?? this.#record.sessionId, managerThread: () => this.#acting.getStore()?.thread ?? MAIN, threadLabels: () => this.#threadRecord(this.#acting.getStore()?.thread ?? MAIN)?.labels ?? {} })
     deps.sessions.managerThreads((thread) => this.#threadName(thread))
     deps.sessions.managerItems((items) => {
       if (this.#threadOfSession(items.id) === undefined) return
@@ -482,6 +487,7 @@ export class Manager {
   }
 
   async configure(change: Partial<ManagerConfig>): Promise<ManagerView> {
+    assertProviderAvailable(change.provider ?? this.#record.config.provider)
     if (change.intake?.enabled === true) throw new Error('Automatic Voice Memos intake was removed. Create a Manager shortcut instead.')
     const revision = ++this.#configurationRevision
     const reenabled = change.enabled === true && !this.#record.config.enabled && this.#record.sessionId !== undefined
@@ -493,6 +499,8 @@ export class Manager {
       const selected = models?.find((model) => model.value === config.chatModel)
       if (selected === undefined || selected.disabled === true) throw new Error('That Manager model is unavailable. Refresh the model list and choose another.')
     }
+    assertProviderAvailable(config.provider)
+    if ((config.enabled || change.provider !== undefined) && !this.#deps.settings().chatProviders.includes(config.provider)) throw new Error('The selected Manager assistant is disabled. Enable it in Assistants first.')
     if (revision !== this.#configurationRevision) throw new Error('Manager settings changed while validating the selection. Open its settings to continue.')
     for (const thread of this.#threadIds()) this.#cancelRecovery(thread)
     const generation = ++this.#generation
@@ -555,7 +563,7 @@ export class Manager {
 
   instructions(): string { return this.#record.config.instructions }
 
-  async #editInstructions(instructions: ManagerConfig['instructions'], expected: ManagerConfig['instructions']): Promise<ManagerInstructionsResult> {
+  async editInstructions(instructions: ManagerConfig['instructions'], expected: ManagerConfig['instructions']): Promise<ManagerInstructionsResult> {
     if (this.#record.config.instructions !== expected) throw new Error('Manager instructions changed. Read settings manager and merge before retrying.')
     this.#configurationRevision++
     this.#save({ config: { ...this.#record.config, instructions } })

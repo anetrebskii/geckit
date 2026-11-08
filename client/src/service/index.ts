@@ -84,6 +84,19 @@ async function main(): Promise<void> {
     const access = remote
     setLiveServer(() => access.server())
     computers = remoteComputers(directory, security)
+    const paired = computers
+    const targetRuntime = runtime
+    runtime.setCliTargets({ local: (args) => application(targetRuntime)['cli:product'](args, 'manager'), registry: (args) => {
+      const [domain, command, id, ...rest] = args
+      if (rest.length > 0) throw new Error('Unsupported registry arguments.')
+      if (domain === 'computers' && command === 'list' && id === undefined) return JSON.stringify(paired.list())
+      if (domain === 'computers' && command === 'forget' && id !== undefined) return JSON.stringify(paired.forget(id))
+      if (domain === 'devices' && command === 'list' && id === undefined) return JSON.stringify(access.devices())
+      if (domain === 'devices' && command === 'revoke' && id !== undefined) return JSON.stringify(access.revoke(id) ?? null)
+      if (domain === 'access' && command === 'status' && id === undefined) return JSON.stringify({ reachable: access.server() !== undefined })
+      if (domain === 'access' && command === 'disable' && id === undefined) return JSON.stringify(access.disable())
+      throw new Error('Pairing and authentication require the user on the target; registry supports list/forget, devices list/revoke, access status/disable.')
+    }, run: (name, args, authorized) => paired.product(name, args, authorized, 'manager'), list: () => paired.list() })
     stopComputers = computers.serve()
     listener = serveLocal(directory, serviceHandler(runtime, token, shutdown))
     rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native, remote, computers), undefined, (method) => {

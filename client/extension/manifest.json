@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GeckIt Browser",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Lets GeckIt conversations read, check and use your Chrome tabs. Click the icon to see which tabs they used and what they did.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq5/IRouI5hZUNcaawEmRFfSBEZJtHjiov5Y8K9zOlPMDObnOVauL2z8qd5CK5Ln/4BDvsCHjsPRXRV8N/kQzrKhsQPAF9Pl88kiBHas21yXFZ7mBU8oDtahBMpl9ZM2uO7i8TgpNaiNO/SPr0S/5SRpfTWsM1SI7pbkk65VeLRi6I+YCB8nEmAq+SnQC1z0FTTIfptAHCChCKKZlUX99l1m2Sm4VkNFowC1jzx2IGX1iiAtpEMsj7cWDT6zvWGodQHnAEOK3q61EY/h2fDgmHKv/aIKyoObjfH6ALp8XaqHc8bK6VZuvY2aK19nQkJMYnmNe/uk2wdL3WGtYMN6i7QIDAQAB",
   "minimum_chrome_version": "116",

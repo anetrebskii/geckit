@@ -7,15 +7,24 @@ import { join } from 'node:path'
 export const computersFolder = (root: string = homedir()): string => join(root, '.geckit', 'computers')
 export interface KnownComputer { readonly id: string; readonly name: string }
 
-/** The command line with --computer <name> taken out, and the name, when it is there. */
+/** Selects one paired GeckIt computer; `local` explicitly keeps execution here. */
 export function computerArg(args: readonly string[]): { readonly computer?: string; readonly args: readonly string[] } | string {
-  const at = args.indexOf('--computer')
-  if (at < 0) return { args }
-  const computer = args[at + 1]
-  if (computer === undefined || computer.startsWith('--')) return 'Give the computer: --computer <name>, from geckit computers.'
-  const rest = [...args.slice(0, at), ...args.slice(at + 2)]
-  if (rest.includes('--computer')) return 'Name one computer.'
-  return { computer, args: rest }
+  const rest: string[] = []
+  let computer: string | undefined
+  let selected = false
+  for (let at = 0; at < args.length; at++) {
+    const word = args[at] ?? ''
+    if (word === '--') { rest.push(...args.slice(at)); break }
+    const flag = word.split('=', 1)[0]
+    if (flag !== '--host' && flag !== '--computer') { rest.push(word); continue }
+    if (selected) return 'Name one host using --host or --computer.'
+    selected = true
+    const equals = word.indexOf('=')
+    const value = equals < 0 ? args[++at] : word.slice(equals + 1)
+    if (value === undefined || value.trim() === '' || value.startsWith('--')) return 'Give the host: --host <id-or-name>, from geckit computers.'
+    computer = value
+  }
+  return { ...(computer === undefined || computer.toLowerCase() === 'local' ? {} : { computer }), args: rest }
 }
 
 export function knownComputers(folder: string = computersFolder()): KnownComputer[] {
@@ -30,6 +39,11 @@ export function noteComputers(computers: readonly KnownComputer[], folder: strin
 
 /** Runs a GeckIt command on a paired computer, through the GeckIt service here. */
 export async function onComputer(computer: string, args: readonly string[], folder: string = computersFolder()): Promise<{ readonly ok: boolean; readonly said: string }> {
+  const known = knownComputers(folder)
+  const exact = known.find((one) => one.id === computer)
+  const matches = exact === undefined ? known.filter((one) => one.name.toLowerCase() === computer.toLowerCase()) : [exact]
+  if (matches.length !== 1) return { ok: false, said: matches.length === 0 ? `No paired computer is called ${computer}. No command ran locally.` : `More than one computer is called ${computer}. Use its ID.` }
+  computer = matches[0]?.id ?? computer
   const name = randomUUID()
   const asked = join(folder, `${name}.ask`)
   try {
@@ -47,5 +61,5 @@ export async function onComputer(computer: string, args: readonly string[], fold
     } catch { continue }
   }
   rmSync(asked, { force: true })
-  return { ok: false, said: `${computer} did not answer, or GeckIt is not running here.` }
+  return { ok: false, said: `${computer} did not answer. Delivery is uncertain; inspect target state before retrying.` }
 }

@@ -29,6 +29,8 @@ function patch(text: string, settings: Settings): AgentSettingsPatch {
     if (Array.isArray(rule)) valid = key === 'anywhereOff' ? strings(value) && value.every((one) => rule.includes(one)) : typeof value === 'string' && rule.includes(value)
     else if (rule === 'string' || rule === 'boolean') valid = typeof value === rule
     else if (rule === 'nonnegative integer') valid = typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    else if (rule === 'bounds') valid = object(value) && Object.keys(value).length === 4 && ['x', 'y', 'width', 'height'].every((key) => typeof value[key] === 'number' && Number.isFinite(value[key])) && Number(value.width) > 0 && Number(value.height) > 0
+    else if (rule === 'string array map') valid = object(value) && Object.entries(value).every(([key, one]) => !['__proto__', 'constructor', 'prototype'].includes(key) && strings(one))
     else if (rule === 'enabled provider') valid = enabled(value)
     else if (rule === 'string array') valid = strings(value)
     else if (rule === 'registered project array') valid = strings(value) && projects(value)
@@ -82,6 +84,7 @@ export function settingsCommand(args: readonly string[], read: () => Settings, s
     ...(change.browserNames === undefined ? {} : { browserNames: { ...current.browserNames, ...change.browserNames } }),
     ...(change.projectColors === undefined ? {} : { projectColors: { ...current.projectColors, ...change.projectColors } }),
     ...(change.guidePlugins === undefined ? {} : { guidePlugins: { ...current.guidePlugins, ...change.guidePlugins } }),
+    ...(change.columnOrders === undefined ? {} : { columnOrders: { ...current.columnOrders, ...change.columnOrders } }),
   }
   return JSON.stringify({ saved: true, settings: agentSettings(save(change.analytics === false ? { ...merged, client: '' } : merged)) })
 }
