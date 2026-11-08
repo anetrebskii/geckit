@@ -49,8 +49,6 @@ export const ALL = 'all'
 /** More than this in one message is a mistake rather than an intention. */
 const MOST_PICTURES = 8
 
-const PLAN_EVERY = 5 * 60_000
-
 /** How long a notice that asks for nothing stays up. */
 const NOTICE_FOR = 8000
 
@@ -394,7 +392,6 @@ export function useChat(): Chat {
       )
     }
     ask()
-    const every = window.setInterval(() => { if (document.visibilityState === 'visible') ask() }, PLAN_EVERY)
     window.addEventListener('focus', ask)
     const off = window.geckit.chat.onAccount((said) => {
       if ((said.provider ?? 'claude') === provider) setAccount(said)
@@ -402,14 +399,15 @@ export function useChat(): Chat {
     return () => {
       gone = true
       window.clearTimeout(again)
-      window.clearInterval(every)
       off()
       window.removeEventListener('focus', ask)
     }
   }, [provider])
 
-  // Asking has the plan measured again, so it is asked for on opening, on
-  // coming to the front, and every few minutes while the window is seen.
+  // Asking has the plan measured again, so it is asked for only on opening and
+  // on coming to the front, what a person does; main keeps each answer for a
+  // while, and a turn brings fresh numbers by itself. No timer: a window left
+  // open would otherwise start a `claude` on a beat all day.
   useEffect(() => {
     const ask = (): void => {
       if (document.visibilityState !== 'visible') return
@@ -418,12 +416,10 @@ export function useChat(): Chat {
       void window.geckit.chat.plans().then(setPlans, () => undefined)
     }
     ask()
-    const every = setInterval(ask, PLAN_EVERY)
     window.addEventListener('focus', ask)
     const off = window.geckit.chat.onPlan(setPlan)
     const offPlans = window.geckit.chat.onPlans(setPlans)
     return () => {
-      clearInterval(every)
       window.removeEventListener('focus', ask)
       off()
       offPlans()

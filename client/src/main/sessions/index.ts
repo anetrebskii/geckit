@@ -444,8 +444,8 @@ const STOP_HEARD = 5_000
 /** How long a command typed after ! has to say nothing, after a question, to be taken as waiting for an answer. */
 const ASKS_AFTER = 1_500
 
-/** How long the plan's windows, once asked, are taken to stand. */
-const MEASURED_FOR = 60_000
+/** How long the local Claude version is kept before checking again. */
+const LOOKED_FOR = 60_000
 
 /** How far back Hidden conversations reads before it is asked for older ones: what is looked for there is remembered as recent. */
 const HIDDEN_FOR = 30 * 24 * 60 * 60_000
@@ -561,6 +561,8 @@ export class Sessions {
   #goalWatch: ReturnType<typeof setInterval> | undefined
   #vpnMonitor: VpnSessionMonitor | undefined
   #plan: PlanUsage | undefined
+  /** Who is signed in, as last asked, for the list of plans that is drawn far more often than anyone signs in or out. */
+  #account: ClaudeAccount | undefined
   /** How much context each model may hold, as the tool measures it; nothing for one it would not say. */
   readonly #measurements: ProviderMeasurements
   /** What the tool said it has, kept once said: a vendor ships a model far less often than a window is opened. */
@@ -886,7 +888,13 @@ export class Sessions {
     const program = provider === 'claude' ? await this.#look() : account.program ?? await backend.program()
     const measured = this.#measurements.usage(provider)
     const usage = account.usage !== undefined && (measured.measuredAt ?? 0) <= (account.usage.measuredAt ?? Infinity) ? account.usage : measured
-    return { ...account, provider, ...(program === undefined ? {} : { program }), usage }
+    const result = { ...account, provider, ...(program === undefined ? {} : { program }), usage }
+    if (provider === 'claude') this.#account = result
+    return result
+  }
+
+  async knownAccount(): Promise<ClaudeAccount> {
+    return this.#account ?? this.account()
   }
 
   /**
@@ -895,7 +903,7 @@ export class Sessions {
    * was updated, and GeckIt may have been open for weeks.
    */
   async #look(): Promise<ClaudeProgram | undefined> {
-    if (this.#looking === undefined && this.#now() - this.#looked >= MEASURED_FOR) {
+    if (this.#looking === undefined && this.#now() - this.#looked >= LOOKED_FOR) {
       this.#looked = this.#now()
       this.#looking = this.#providers.stream.program()
         .then((program) => {
@@ -3488,8 +3496,8 @@ export class Sessions {
 
   /**
    * Ask the tool, without a turn, how much of the plan is spent and how much
-   * context the models in the list may hold. The plan is asked at most once a
-   * minute however often a window comes to the front; a model not measured
+   * context the models in the list may hold. Claude's plan is asked at most once in
+   * ten minutes however often a window comes to the front; a model not measured
    * yet is asked about whenever it turns up, after the one being asked now.
    */
   async measure(provider: SessionProvider = 'claude'): Promise<void> {
@@ -3728,11 +3736,15 @@ export class Sessions {
         void this.account(providerOf(live.id)).then((account) => this.#deps.account(account)).catch(() => undefined)
         return
       case 'plan':
-        this.#measurements.setUsage(providerOf(live.id), { quotas: providerQuotas({ plan: signal.plan }) ?? [] })
+        if (isRemote(live.root)) return
         if (providerOf(live.id) === 'claude') {
-          this.#plan = signal.plan
-          this.#deps.plan?.(signal.plan)
-        } else void this.account(providerOf(live.id)).then((account) => this.#deps.account(account)).catch(() => undefined)
+          this.#plan = { ...this.#plan, ...signal.plan }
+          this.#measurements.setUsage('claude', { quotas: providerQuotas({ plan: this.#plan }) ?? [] }, signal.plan.fiveHour !== undefined && signal.plan.sevenDay !== undefined)
+          this.#deps.plan?.(this.#plan)
+        } else {
+          this.#measurements.setUsage(providerOf(live.id), { quotas: providerQuotas({ plan: signal.plan }) ?? [] })
+          void this.account(providerOf(live.id)).then((account) => this.#deps.account(account)).catch(() => undefined)
+        }
         return
       case 'task': {
         const { task } = signal

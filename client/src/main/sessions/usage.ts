@@ -49,22 +49,29 @@ export function controlResponse(line: string): { readonly id: string; readonly o
   return { id, ok: response['subtype'] === 'success', answer: (response['response'] ?? {}) as Json }
 }
 
+/**
+ * How a `claude` that is only asked something and given no message is
+ * started, here and on a host: it leaves no session, and the person's MCP
+ * servers and hooks are not started for a question that is about nothing.
+ */
+export const ASK_ONLY: readonly string[] = [
+  '-p',
+  '--input-format',
+  'stream-json',
+  '--output-format',
+  'stream-json',
+  '--verbose',
+  '--no-session-persistence',
+  '--strict-mcp-config',
+  '--settings',
+  JSON.stringify({ disableAllHooks: true }),
+]
+
 export function readUsage(models: readonly string[]): Promise<Usage> {
   return new Promise((done) => {
     const child = spawn(
       claudeCommand(),
-      [
-        '-p',
-        '--input-format',
-        'stream-json',
-        '--output-format',
-        'stream-json',
-        '--verbose',
-        '--no-session-persistence',
-        '--strict-mcp-config',
-        '--settings',
-        JSON.stringify({ disableAllHooks: true }),
-      ],
+      [...ASK_ONLY],
       { cwd: homedir(), stdio: ['pipe', 'pipe', 'ignore'], env: planOnly(), windowsHide: true },
     )
     let plan: PlanUsage | undefined

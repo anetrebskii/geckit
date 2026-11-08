@@ -266,6 +266,7 @@ export function Picker({
   className = 'picker',
   disabled,
   onOpen,
+  opening,
 }: {
   readonly label: React.ReactNode
   readonly choices: readonly Choice[]
@@ -280,18 +281,31 @@ export function Picker({
   readonly disabled?: boolean
   /** The menu is about to be drawn, which is when something worth asking for is asked for. */
   readonly onOpen?: () => void
+  /** Opens the menu as a press would, each time it goes up: a command typed in the field. */
+  readonly opening?: number
 }): React.JSX.Element {
-  const [anchor, setAnchor] = useState<DOMRect | undefined>()
+  // Where the menu hangs, and whether it was opened from the keyboard, which then moves into it.
+  const [anchor, setAnchor] = useState<{ readonly rect: DOMRect; readonly typed: boolean } | undefined>()
+  const button = useRef<HTMLButtonElement>(null)
+  // The count it was drawn with is not a press: a control drawn again after a command was typed stays shut.
+  const seen = useRef(opening)
+  useEffect(() => {
+    if (opening === seen.current || button.current === null) return
+    seen.current = opening
+    onOpen?.()
+    setAnchor({ rect: button.current.getBoundingClientRect(), typed: true })
+  }, [opening, onOpen])
   return (
     <>
       <button
+        ref={button}
         type="button"
         className={className}
         disabled={disabled === true}
         {...(tip === undefined ? {} : { title: tip })}
         onClick={(event) => {
           onOpen?.()
-          setAnchor(event.currentTarget.getBoundingClientRect())
+          setAnchor({ rect: event.currentTarget.getBoundingClientRect(), typed: false })
         }}
       >
         {label}
@@ -299,7 +313,8 @@ export function Picker({
       </button>
       {anchor === undefined ? null : (
         <Menu
-          anchor={anchor}
+          anchor={anchor.rect}
+          autoFocus={anchor.typed}
           choices={choices}
           {...(chosen === undefined ? {} : { chosen })}
           {...(title === undefined ? {} : { title })}

@@ -1,0 +1,76 @@
+
+> build
+> NODE_ENV=production vite build
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 860 modules transformed.
+rendering chunks...
+computing gzip size...
+www/remote-workspace.html                                          0.67 kB │ gzip:   0.40 kB
+www/stub.html                                                      0.81 kB │ gzip:   0.37 kB
+www/index.html                                                     1.05 kB │ gzip:   0.41 kB
+www/assets/employee-03-_3w0bWJV.svg                                4.25 kB │ gzip:   1.77 kB
+www/assets/employee-05-ClbmTv3F.svg                                4.49 kB │ gzip:   1.90 kB
+www/assets/employee-11-BQMmCr5v.svg                                4.57 kB │ gzip:   1.88 kB
+www/assets/employee-08-DgkkMjah.svg                                4.63 kB │ gzip:   1.91 kB
+www/assets/employee-06-BdCK2zPg.svg                                4.89 kB │ gzip:   1.97 kB
+www/assets/employee-12-2XbNhK4a.svg                                5.16 kB │ gzip:   2.27 kB
+www/assets/employee-01-CXsE24vn.svg                                6.08 kB │ gzip:   2.64 kB
+www/assets/128-D8KBJkwy.png                                        6.19 kB
+www/assets/employee-10-C-BlD7WT.svg                                6.51 kB │ gzip:   2.89 kB
+www/assets/employee-07-BNd4wxQP.svg                                6.72 kB │ gzip:   2.93 kB
+www/assets/jetbrains-mono-vietnamese-wght-normal-Bt-aOZkq.woff2    7.50 kB
+www/assets/jetbrains-mono-greek-wght-normal-Bw9x6K1M.woff2         9.00 kB
+www/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2            10.25 kB
+www/assets/employee-04-C5jn_hPy.svg                               10.26 kB │ gzip:   4.58 kB
+www/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2             11.23 kB
+www/assets/jetbrains-mono-cyrillic-wght-normal-D73BlboJ.woff2     12.11 kB
+www/assets/jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2    15.20 kB
+www/assets/icon-DwL_WT4w.png                                      15.55 kB
+www/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2              18.75 kB
+www/assets/inter-greek-wght-normal-CkhJZR-_.woff2                 19.00 kB
+www/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2          25.96 kB
+www/assets/hA-VffI88W_.webp                                       35.40 kB
+www/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2        40.40 kB
+www/assets/inter-latin-wght-normal-Dx4kXJAl.woff2                 48.26 kB
+www/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2             85.07 kB
+www/assets/main-ir3JG5J0.css                                       3.47 kB │ gzip:   1.31 kB
+www/assets/main-CtpVKtdr.css                                       9.46 kB │ gzip:   2.38 kB
+www/assets/kept-C90WdgUd.css                                     242.37 kB │ gzip:  45.29 kB
+www/assets/index-Bpjg_70d.js                                       0.06 kB │ gzip:   0.08 kB
+www/assets/_commonjsHelpers-Cpj98o6Y.js                            0.24 kB │ gzip:   0.18 kB
+www/assets/jsx-runtime-u17CrQMm.js                                 0.48 kB │ gzip:   0.31 kB
+www/assets/index-G5snjqjJ.js                                       0.52 kB │ gzip:   0.37 kB
+www/assets/web-DzpejdQw.js                                         1.06 kB │ gzip:   0.51 kB
+www/assets/web-ZiC5kA-G.js                                         1.11 kB │ gzip:   0.56 kB
+www/assets/hosts-Dl1uV09C.js                                       1.70 kB │ gzip:   0.86 kB
+www/assets/preload-helper-DD1OZmLC.js                              1.82 kB │ gzip:   0.94 kB
+www/assets/Computer-BR8mjow3.js                                    2.26 kB │ gzip:   1.11 kB
+www/assets/storage-BJYr_FBC.js                                     2.29 kB │ gzip:   1.01 kB
+www/assets/stub-CpN41K6G.js                                        2.30 kB │ gzip:   1.17 kB
+www/assets/remoteWorkspace-ClIfs3NV.js                             2.62 kB │ gzip:   1.18 kB
+www/assets/pairing-CHcBI2eH.js                                     2.88 kB │ gzip:   1.28 kB
+www/assets/web-DLvjZyIF.js                                         3.21 kB │ gzip:   1.31 kB
+www/assets/index-BtIQMdgs.js                                       3.97 kB │ gzip:   1.43 kB
+www/assets/kept-DIwCOBCd.js                                        4.09 kB │ gzip:   1.94 kB
+www/assets/HostFolders-xe8Cy9tu.js                                 6.37 kB │ gzip:   2.55 kB
+www/assets/index-BUW9V29z.js                                       7.95 kB │ gzip:   3.03 kB
+www/assets/Icon-BZrvshBD.js                                        8.01 kB │ gzip:   3.21 kB
+www/assets/useHosts-CcvFekX4.js                                    8.47 kB │ gzip:   3.64 kB
+www/assets/Menu-CTBcP2Jh.js                                        8.65 kB │ gzip:   3.02 kB
+www/assets/workspace-api-BlMm-Qsf.js                              14.93 kB │ gzip:   4.56 kB
+www/assets/phone-DCTZMMVY.js                                      20.77 kB │ gzip:   7.46 kB
+www/assets/Servers-C23j4noj.js                                   102.23 kB │ gzip:  33.82 kB
+www/assets/FileView-FHund9DP.js                                  195.94 kB │ gzip:  59.62 kB
+www/assets/client-BGIAZVyO.js                                    209.47 kB │ gzip:  65.41 kB
+www/assets/main-n__fLiYr.js                                      359.59 kB │ gzip: 109.13 kB
+www/assets/index-BixBxlrz.js                                     454.13 kB │ gzip: 150.49 kB
+www/assets/link-CJcdg91P.js                                      486.68 kB │ gzip: 148.40 kB
+www/assets/main-BQJLZs9e.js                                      600.53 kB │ gzip: 167.56 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.73s

@@ -155,7 +155,6 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     if (channelUpdateTimer !== undefined) clearInterval(channelUpdateTimer)
     stopSpeech?.()
     stopCorrecting()
-    plans?.dispose()
     shares.stopAll()
     telegram?.stop()
     await channels?.dispose()

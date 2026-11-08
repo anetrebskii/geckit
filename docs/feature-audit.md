@@ -231,7 +231,7 @@ Assistant status update (2026-10-08, current working tree): desktop compact summ
 - Show conversation context usage/capacity and reported cost, distinguishing API-equivalent and billed values where provided.
 - Show Git branch and checkout changes in the status bar.
 - Model details show reported model identity/version, context capacity, maximum output, reasoning, modes and token pricing with source/date when available.
-- View and toggle Claude MCP servers.
+- View and toggle Claude MCP servers. Typing `/mcp` alone in a Claude conversation on the desktop opens the same menu instead of sending it, with the keyboard in it (`chat/Composer.tsx`, `chat/Mcp.tsx`, `opening` on `Picker` in `ui/Menu.tsx`); on the phone and to Codex the words still go as they are.
 - Pick a Claude in Chrome browser connection and give connections persistent local names.
 - Codex Chrome connection picker and persistent local names are present in the uncommitted tree.
 - Claude Remote Control can continue a conversation through claude.ai or the Claude app.

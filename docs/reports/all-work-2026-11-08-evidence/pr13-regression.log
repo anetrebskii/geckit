@@ -1,0 +1,12 @@
+
+ RUN  v5.0.5 /private/tmp/geckit-integration-01a1bc13/client
+
+
+ Test Files  5 passed (5)
+      Tests  288 passed (288)
+   Start at  21:10:12
+   Duration  4.69s (tests 92%, transform 5%, import 3%)
+
+    Isolate  5 workers spawned · ~76ms startup each (spawn + environment, per file)
+             at least ~304ms faster with isolate: false — reuses workers across files instead of one per file
+
