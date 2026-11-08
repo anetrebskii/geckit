@@ -25,6 +25,7 @@ import type { DesktopServiceClient } from './service-client'
 import { isVaultEnvelope } from '../core/vault'
 import track from './analytics'
 import { control } from './control'
+import { copyRichText, correctionText } from './clipboard'
 import { answerErrors, errorQuestion, followErrors, startErrors, watchErrors, windowError } from './errors'
 import { fileAt, fileMenu, openFile, pickApp } from './open-with'
 import { extensionFolder } from '../cli/browser'
@@ -269,12 +270,13 @@ function registerCorrect(): void {
   const took = globalShortcut.register(CORRECT, () => {
     track('shortcutPressed')
     const window = panelWindow()
-    const text = clipboard.readText('selection') || clipboard.readText()
-    const send = (): void => window.webContents.send('panel:text', text)
-    if (window.webContents.isLoading()) window.webContents.once('did-finish-load', send)
-    else send()
-    window.show()
-    window.focus()
+    void correctionText().then((text) => {
+      const send = (): void => window.webContents.send('panel:text', text)
+      if (window.webContents.isLoading()) window.webContents.once('did-finish-load', send)
+      else send()
+      window.show()
+      window.focus()
+    }).catch(report)
   })
   if (!took) log.warn(`${CORRECT} is taken by something else, the panel has no shortcut`)
 }
@@ -314,8 +316,8 @@ function keepShortcuts(off: readonly Anywhere[]): void {
  * into somebody else's application. The shortcut is taken down first so the
  * simulated press cannot trigger it again.
  */
-function pasteBack(text: string): void {
-  clipboard.writeText(text)
+async function pasteBack(text: string): Promise<void> {
+  await clipboard.writeText(text)
   const into = dictatedInto?.isDestroyed() === false ? dictatedInto : undefined
   dictatedInto = undefined
   // Hiding the app would hand the text to whatever is behind it.
@@ -588,7 +590,7 @@ function wire(): void {
       tellChat('chat:task', { images: [], paths: [], text: said.text.trim() })
       return said
     }
-    pasteBack(said.text)
+    await pasteBack(said.text)
     return said
   })
 
@@ -686,7 +688,7 @@ function wire(): void {
     if (process.platform === 'darwin') void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility')
   })
 
-  ipcMain.on('clipboard:write', (_event, text: string, html: string) => clipboard.write({ text, html }))
+  ipcMain.on('clipboard:write', (_event, text: string, html: string) => { void copyRichText(text, html).catch(report) })
 
   ipcMain.on('open:link', (_event, href: string) => {
     if (!/^https?:\/\//.test(href)) return
