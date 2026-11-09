@@ -16,6 +16,8 @@ import { browserBridgeOn, browserFolder } from '../../cli/browser'
 import type { ApprovalEvent, CodexEvent, CodexGoal, CodexInput, CodexItem, CodexTurn, RpcId, RpcParams, RpcResults } from './codex-protocol'
 import { CodexRpc, launchCodex } from './codex-rpc'
 import { firstLine } from './wording'
+import { workItemsInText } from '../../shared/links'
+import { visibleWork } from '../../shared/work-items'
 import { searchCodex } from './search'
 
 const native = (id: string): string => id.slice('codex:'.length)
@@ -223,7 +225,9 @@ export class CodexSessions {
       for (const thread of page.data) if (typeof thread.path === 'string') this.#files.set(thread.id, { id: `codex:${thread.id}`, root: thread.cwd, path: thread.path })
       rows.push(...page.data.map((thread) => {
         const importedFrom = imported.get(thread.id)
-        return { id: `codex:${thread.id}`, root: thread.cwd, title: thread.name || firstLine(thread.preview, 80), stands: firstLine(thread.preview, 160), at: thread.updatedAt * 1000, ...('createdAt' in thread && typeof thread.createdAt === 'number' ? { created: thread.createdAt * 1000 } : {}), driven: true, ...(importedFrom === undefined ? {} : { importedFrom }), ...(thread.model === null ? {} : { model: thread.model }), ...(thread.reasoningEffort == null ? {} : { actualReasoning: thread.reasoningEffort }) }
+        const workItems = visibleWork(workItemsInText(thread.preview))
+        const work = workItems[0]
+        return { id: `codex:${thread.id}`, root: thread.cwd, title: thread.name || firstLine(thread.preview, 80), stands: firstLine(thread.preview, 160), at: thread.updatedAt * 1000, ...('createdAt' in thread && typeof thread.createdAt === 'number' ? { created: thread.createdAt * 1000 } : {}), driven: true, ...(work === undefined ? {} : { work, workItems }), ...(importedFrom === undefined ? {} : { importedFrom }), ...(thread.model === null ? {} : { model: thread.model }), ...(thread.reasoningEffort == null ? {} : { actualReasoning: thread.reasoningEffort }) }
       }))
       cursor = page.nextCursor
     } while (cursor !== null)

@@ -51,6 +51,8 @@ class Server extends EventEmitter implements Held {
   effort: ReasoningEffort = 'high'
   model = 'first'
   developerInstructions: string | null = null
+  preview = 'From the terminal'
+  name: string | null = null
   resolvedModel: string | undefined
   correctionEfforts: readonly ReasoningEffort[] = ['medium', 'low', 'high']
   next = 0
@@ -74,7 +76,7 @@ class Server extends EventEmitter implements Held {
       case 'thread/start':
       case 'thread/fork': this.model = this.resolvedModel ?? request.params?.model ?? this.model; this.reply(id, { thread: { id: `thread-${String(++this.next)}` }, model: this.model, reasoningEffort: this.effort }); return
       case 'thread/resume': if (!this.pauseResume) { this.model = this.resolvedModel ?? request.params?.model ?? this.model; this.reply(id, { thread: { id: request.params?.threadId }, model: this.model, reasoningEffort: this.effort }) } return
-      case 'thread/list': this.reply(id, { data: [{ id: 'terminal', cwd: ROOT, preview: 'From the terminal', name: null, model: 'first', reasoningEffort: this.effort, updatedAt: 100 }], nextCursor: null }); return
+      case 'thread/list': this.reply(id, { data: [{ id: 'terminal', cwd: ROOT, preview: this.preview, name: this.name, model: 'first', reasoningEffort: this.effort, updatedAt: 100 }], nextCursor: null }); return
       case 'thread/read': this.reply(id, { thread: { id: request.params?.threadId, model: this.model, reasoningEffort: this.effort } }); return
       case 'thread/goal/get': this.reply(id, { goal: this.goals.get(request.params?.threadId ?? '') ?? null }); return
       case 'thread/goal/set': {
@@ -425,6 +427,21 @@ describe('Codex app-server', () => {
     } finally { vi.unstubAllEnvs() }
   })
 
+  it('shows first-prompt work links for existing renamed sessions without reading history', async () => {
+    const { server, codex } = setup()
+    server.preview = 'Check https://acme.atlassian.net/browse/OPS-12 and https://code.example.org/team/app/-/merge_requests/42'
+    server.name = 'A renamed conversation'
+    const notes = memoryNotes()
+    notes.set('codex:terminal', { shown: true })
+    const sessions = new Sessions({ codex, notes, changed: () => undefined, items: () => undefined, account: () => undefined, notify: () => undefined, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    try {
+      const row = (await sessions.list([ROOT])).find((one) => one.id === 'codex:terminal')
+      expect(row?.title).toBe('A renamed conversation')
+      expect(row?.workItems?.map((one) => one.label)).toEqual(['OPS-12', '!42'])
+      expect(row?.work?.label).toBe('OPS-12')
+      expect(server.requests.some((one) => one.method === 'thread/turns/list')).toBe(false)
+    } finally { sessions.dispose() }
+  })
   it('pauses a native goal as control without starting or resuming a model turn', async () => {
     const { server, codex } = setup()
     await codex.setGoal('codex:terminal', 'Tests pass')

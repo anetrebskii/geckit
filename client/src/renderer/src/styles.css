@@ -3582,6 +3582,18 @@ button.tag:hover {
   border-color: var(--border-strong);
 }
 
+button.tag.work {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row .foot:has(button.tag.work) {
+  flex-wrap: wrap;
+}
+
 .tag.blocked {
   color: var(--danger);
   border-color: currentColor;

@@ -1,6 +1,8 @@
 import { EmployeeBadge } from '../employees/Employees'
 import type { Employee } from '../../../shared/employees'
 import { ProviderIcon } from './ProviderIcon'
+import { Tags } from './Tags'
+export { Tags } from './Tags'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
@@ -110,43 +112,6 @@ function arrange(
 interface Landing {
   readonly id: string
   readonly after: boolean
-}
-
-/** What it is about and where it stands: the tracker item from its first message, and the mark it was given. */
-export function Tags({
-  session,
-  marked = true,
-}: {
-  readonly session: ChatSession
-  /** False leaves the mark to a control of its own. */
-  readonly marked?: boolean
-}): React.JSX.Element | null {
-  const { work } = session
-  const status = marked ? session.status : undefined
-  if (work === undefined && status === undefined) return null
-  return (
-    <>
-      {work === undefined ? null : (
-        <button
-          type="button"
-          className="tag work"
-          title={`Open ${work.says}`}
-          onClick={(event) => {
-            event.stopPropagation()
-            window.geckit.chat.openLink(work.url)
-          }}
-        >
-          {work.label}
-        </button>
-      )}
-      {status === undefined ? null : (
-        <span className={`tag ${status}`} title={SESSION_STATUSES.find((one) => one.status === status)?.why}>
-          {status === 'done' ? <Icon name="check" size={9} /> : null}
-          {SESSION_STATUSES.find((one) => one.status === status)?.label}
-        </span>
-      )}
-    </>
-  )
 }
 
 export function Views({ chat }: { chat: Chat }): React.JSX.Element {

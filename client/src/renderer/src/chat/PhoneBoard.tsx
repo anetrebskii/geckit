@@ -1,6 +1,7 @@
 import { AssignSheet, EmployeeAvatar, EmployeeFilter } from '../employees/Employees'
 import { managerFace } from '../employees/TeamManager'
 import { ProviderIcon } from './ProviderIcon'
+import { Tags } from './Tags'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -621,6 +622,7 @@ export function RowBody({
             {projectLabel(homeOf(session))}
           </span>
           {employee === undefined ? null : <span className="phone-row-employee"><EmployeeAvatar employee={employee} />{employee.name.split(/\s+/)[0]}</span>}
+          <Tags session={session} marked={false} />
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
           {goalMet(session) ? <span className="phone-row-tag met">Goal reached</span> : session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
           {helpers === 0 ? null : <span className="phone-row-tag">{helpers === 1 ? 'a helper running' : `${helpers} helpers running`}</span>}

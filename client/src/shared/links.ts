@@ -39,17 +39,38 @@ export function shortUrl(url: string): string {
 const GITHUB = /https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/(issues|pull)\/(\d+)/
 const LINEAR = /https:\/\/linear\.app\/[\w-]+\/issue\/([A-Z][A-Z0-9]*-\d+)[^\s)>\]]*/
 const JIRA = /https:\/\/[\w-]+\.atlassian\.net\/browse\/([A-Z][A-Z0-9]*-\d+)/
+const GITLAB = /https?:\/\/[^\s/<>"'`]+\/[\w./-]+\/-\/(merge_requests|issues)\/(\d+)(?![\w-])/
 
-/** The first issue, pull request, Linear or Jira link in a message: what a conversation that begins with it is about. */
+/** The first tracker link in a message. */
 export function workItem(text: string): WorkItem | undefined {
-  const found = [GITHUB, LINEAR, JIRA]
-    .map((pattern) => pattern.exec(text))
-    .filter((match): match is RegExpExecArray => match !== null)
-    .sort((one, other) => one.index - other.index)[0]
-  if (found === undefined) return undefined
-  const [url, first = '', repo, kind, number] = found
-  if (number !== undefined) {
-    return { label: `#${number}`, url, says: `${first}/${repo ?? ''} ${kind === 'pull' ? 'pull request' : 'issue'} ${number}` }
+  return workItemsInText(text)[0]
+}
+
+/** Canonical tracker URLs: original subject first, related items in last-mention order. */
+export function workItemsInText(text: string): WorkItem[] {
+  const matches = [GITHUB, LINEAR, JIRA, GITLAB]
+    .flatMap((pattern) => [...text.matchAll(new RegExp(pattern.source, 'g'))])
+    .sort((one, other) => one.index - other.index)
+  const found = new Map<string, WorkItem>()
+  for (const match of matches) {
+    const [url, first = '', repo, kind, number] = match
+    const repeated = found.get(url)
+    if (repeated !== undefined) {
+      if (url !== found.keys().next().value) {
+        found.delete(url)
+        found.set(url, repeated)
+      }
+      continue
+    }
+    if (number !== undefined) {
+      found.set(url, { label: `#${number}`, url, says: `${first}/${repo ?? ''} ${kind === 'pull' ? 'pull request' : 'issue'} ${number}` })
+    } else if (first === 'merge_requests' || first === 'issues') {
+      let destination: URL
+      try { destination = new URL(url) } catch { continue }
+      if (destination.username || destination.password) continue
+      const path = destination.pathname.split('/-/')[0]?.slice(1) ?? ''
+      found.set(url, { label: `${first === 'merge_requests' ? '!' : '#'}${repo ?? ''}`, url, says: `${destination.host}/${path} ${first === 'merge_requests' ? 'merge request' : 'issue'} ${repo ?? ''}` })
+    } else found.set(url, { label: first, url, says: first })
   }
-  return { label: first, url, says: first }
+  return [...found.values()]
 }

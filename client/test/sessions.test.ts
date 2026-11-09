@@ -160,6 +160,81 @@ const last = <T>(all: readonly T[]): T | undefined => all.at(-1)
 const of = (all: readonly (readonly ChatSession[])[], id: string): ChatSession | undefined =>
   last(all)?.find((one) => one.id === id)
 
+describe('work links on session cards', () => {
+  const task = 'https://acme.atlassian.net/browse/OPS-12'
+  const mr = 'https://code.example.org/team/app/-/merge_requests/42'
+
+  it('keeps saved badges when history cannot be read before a follow-up is sent', async () => {
+    const id = 'codex:unavailable-history'
+    const held = heldCodex(id, { read: async () => { throw new Error('Temporarily unavailable') } })
+    const notes = memoryNotes()
+    notes.set(id, { shown: true, workItems: [{ label: 'OPS-12', url: task, says: 'OPS-12' }] })
+    const built = build({ notes, codex: held.codex })
+    try {
+      await built.sessions.list([ROOT])
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Continue checking' })
+      expect(of(built.rows, id)?.work?.label).toBe('OPS-12')
+      expect(notes.all()[id]?.workItems?.[0]?.url).toBe(task)
+      held.fake.hear({ items: [{ kind: 'theirs', id: 'a', text: mr }] })
+      expect(of(built.rows, id)?.workItems?.map((one) => one.label)).toEqual(['OPS-12', '!42'])
+    } finally { built.sessions.dispose() }
+  })
+
+  it('uses live Codex history even when its listed row has no work metadata', async () => {
+    const id = 'codex:existing-work'
+    const held = heldCodex(id, { read: async () => ({ items: [{ kind: 'mine', id: 'original', text: task }], tasks: [] }) })
+    const notes = memoryNotes()
+    notes.set(id, { shown: true })
+    const built = build({ notes, codex: held.codex })
+    try {
+      await built.sessions.list([ROOT])
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Continue the check' })
+      expect(of(built.rows, id)?.work?.label).toBe('OPS-12')
+      held.fake.hear({ items: [{ kind: 'theirs', id: 'a', text: mr }] })
+      expect(of(built.rows, id)?.workItems?.map((one) => one.label)).toEqual(['OPS-12', '!42'])
+    } finally { built.sessions.dispose() }
+  })
+
+  it('updates during a turn with a disk row present and retains discovered links on restore', async () => {
+    const notes = memoryNotes()
+    const built = build({ notes })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: `Check ${task}` })
+    await built.sessions.list([ROOT])
+    built.fake.hear({ items: [{ kind: 'theirs', id: 'answer', text: `Created ${mr}` }] })
+    expect(of(built.rows, id)?.workItems?.map((one) => one.label)).toEqual(['OPS-12', '!42'])
+    expect(notes.all()[id]?.workItems?.map((one) => one.label)).toEqual(['OPS-12', '!42'])
+    const restoredNotes = memoryNotes()
+    restoredNotes.replace(JSON.parse(JSON.stringify(notes.all())))
+    const restored = build({ notes: restoredNotes, disk: { list: async () => [{ id, title: 'Renamed', stands: '', at: 1, driven: false }], read: async () => undefined, has: async () => true } })
+    try {
+      expect((await restored.sessions.list([ROOT])).find((one) => one.id === id)?.workItems?.map((one) => one.label)).toEqual(['OPS-12', '!42'])
+      const before = built.rows.length
+      built.fake.hear({ items: [{ kind: 'theirs', id: 'answer', text: `Created ${mr}; all checks passed` }] })
+      expect(built.rows).toHaveLength(before)
+      built.fake.hear({ signals: [{ kind: 'started', session: 'new-session', model: 'model', key: false }] })
+      expect(of(built.rows, 'new-session')?.workItems).toBeUndefined()
+      expect(notes.all()[id]?.workItems?.map((one) => one.label)).toEqual(['OPS-12', '!42'])
+    } finally { built.sessions.dispose(); restored.sessions.dispose() }
+  })
+
+  it('reads old history and clears stale discovered metadata on an empty reread', async () => {
+    const id = 'old-session'
+    const notes = memoryNotes()
+    notes.set(id, { shown: true })
+    let items: SessionItem[] = [{ kind: 'mine', id: 'm', text: task }, { kind: 'theirs', id: 'a', text: mr }]
+    const built = build({ notes, disk: { list: async () => [{ id, title: 'Old', stands: '', at: 1, driven: false }], read: async () => ({ items, tasks: [] }), has: async () => true } })
+    try {
+      await built.sessions.list([ROOT])
+      await built.sessions.items(id)
+      expect(of(built.rows, id)?.workItems?.map((one) => one.label)).toEqual(['OPS-12', '!42'])
+      items = []
+      await built.sessions.items(id)
+      expect(of(built.rows, id)?.workItems).toBeUndefined()
+      expect(notes.all()[id]?.workItems).toEqual([])
+    } finally { built.sessions.dispose() }
+  })
+})
+
 describe('injecting a queued message', () => {
   const more = (id: string, text: string, mode: SessionMode = 'manual'): Parameters<Sessions['send']>[0] => ({ session: id, root: ROOT, mode, text })
 

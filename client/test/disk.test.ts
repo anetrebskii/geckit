@@ -79,6 +79,15 @@ describe('the conversations about a folder', () => {
     expect(found.find((one) => one.id === 'eee')?.work).toBeUndefined()
   })
 
+  it('retains the first task beside the MR in a later assistant reply', async () => {
+    conversation('work-links', [
+      said('u1', 'Check https://acme.atlassian.net/browse/OPS-12'),
+      answered('a1', 'Created https://code.example.org/team/app/-/merge_requests/42'),
+      line({ type: 'user', uuid: 'tool', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: 'https://code.example.org/team/app/-/merge_requests/99' }] } }),
+    ])
+    expect((await listClaude(ROOT)).find((one) => one.id === 'work-links')?.workItems?.map((one) => one.label)).toEqual(['OPS-12', '!42'])
+  })
+
   it('falls back to the title the tool wrote', async () => {
     conversation('ccc', [said('u1', 'Rename the button'), line({ type: 'ai-title', aiTitle: 'Button renaming' })])
     expect((await listClaude(ROOT))[0]?.title).toBe('Button renaming')
