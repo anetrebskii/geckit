@@ -187,8 +187,11 @@ export function browserHost(folder: string = browserFolder()): void {
     }
   }
   void extension({ cmd: 'ping' }).then((reply) => {
-    const loaded = (reply.result as { version?: string } | undefined)?.version
-    if (reply.ok && loaded !== (JSON.parse(manifest) as { version: string }).version) tell({ id: next++, cmd: 'reload' })
+    const loaded = reply.result as { version?: string; id?: string } | undefined
+    if (!reply.ok || (loaded?.id !== undefined && loaded.id !== EXTENSION_ID)) return
+    let onDisk: string | undefined
+    try { onDisk = (JSON.parse(readFileSync(join(extensionFolder(), 'manifest.json'), 'utf8')) as { version?: string }).version } catch { return }
+    if (onDisk !== undefined && loaded?.version !== onDisk) tell({ id: next++, cmd: 'reload' })
   })
   beat()
   setInterval(beat, 5_000)

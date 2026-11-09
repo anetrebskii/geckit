@@ -235,7 +235,7 @@ async function answer(request) {
   const id = request.tab
   if (Number.isInteger(id) && request.cmd !== 'close') await claim(id, false)
   switch (request.cmd) {
-    case 'ping': return { version: chrome.runtime.getManifest().version }
+    case 'ping': return { version: chrome.runtime.getManifest().version, id: chrome.runtime.id }
     case 'reload': setTimeout(() => chrome.runtime.reload(), 100); return {}
     case 'pages': return (await chrome.tabs.query({})).map((one) => ({ id: one.id, window: one.windowId, active: one.active, title: one.title ?? '', url: one.url ?? '' }))
     case 'open': {
