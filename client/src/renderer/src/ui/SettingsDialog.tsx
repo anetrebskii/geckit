@@ -362,7 +362,7 @@ function ChromeBridge({ settings, change }: Part): React.JSX.Element {
           <span className="assistant-option-name"><Icon name="globe" size={14} /> Chrome through GeckIt</span>
           <span className="assistant-option-description">{state?.supported === false ? 'Not on Windows yet.' : 'Codex and Claude work in your own Chrome, in the profiles and tabs you are signed in to, through the GeckIt Browser extension. On, their instructions say to use it for every Chrome task; off, that and the bridge are removed.'}</span>
         </span>
-        <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Chrome through GeckIt" checked={on} disabled={state?.supported === false} onChange={(event) => change({ chromeBridge: event.target.checked })} />
+        <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Chrome through GeckIt" checked={on} disabled={!on && state?.supported === false} onChange={(event) => change({ chromeBridge: event.target.checked })} />
       </label>
       {state === undefined || !state.supported ? null : on ? (
         <div className="chrome-bridge-status" aria-live="polite">

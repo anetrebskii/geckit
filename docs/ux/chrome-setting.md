@@ -55,7 +55,7 @@ block-beta
 | Модель готова | Включено, файл на месте | "Search model ready." | Ничего |
 | Модель осталась | Выключено, файл на месте | "The search model stays on this computer, 2.5 GB." и "Delete model" | Удалить, если место нужно |
 | Модели не будет | Нет `llama-server` в этой сборке | "find matches words: this build has no search model." | Ничего |
-| Не на этой системе | Windows | Переключатель недоступен, "Not on Windows yet." | Ничего |
+| Не на этой системе | Windows | "Not on Windows yet."; включённый переключатель можно выключить, выключенный недоступен | Выключить, если настройка включена |
 
 ## 4. Переходы
 
