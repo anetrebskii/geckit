@@ -24,9 +24,10 @@ On 2026-11-10 Alex asked Manager in Telegram "Что ты делаешь?" and g
 |---|---|
 | Status message in Telegram, Slack, Discord (`docs/ux/channel-status.md`) | First person and the thread's language; a worker line says what it is doing in words |
 | Telegram replies GeckIt writes: answer received, paused, resumed, button no longer works, file and reply problems, Manager off, late message, links | First person, the person's language |
-| Telegram /status, /help, /settings and the message on pairing | First person, the person's language |
-| Telegram command menu | "What I and my workers are doing", "Where my setup is changed" (English; Telegram shows it before any message) |
-| Slack and Discord replies when the person is not allowed, a message holds a token, or Manager is not available there | First person, the language of that message |
+| Telegram /status, /help, /settings, /links (title, "ends in 2 h" / "закроется через 2 ч", Stop buttons) and the message on pairing | First person, the person's language |
+| Telegram command menu and the bot's short description | First person; English for everyone and Russian for people whose Telegram app is in Russian (`language_code: ru`), since Telegram shows them before any message |
+| Slack and Discord replies when the person is not allowed, a message holds a token, or Manager is not available there; Discord's direct messages off, a channel it does not answer in, a thread it could not open | First person, the language of that message |
+| Discord replies to a button press (not allowed, question closed, answer not recorded, "<name> chose <choice>") | First person, the language of the person's Discord app (`locale`), since a press has no words |
 
 ## 4. States
 
@@ -68,6 +69,7 @@ stateDiagram-v2
 - The language is never announced or asked for.
 - Manager does not name itself in these lines. A name is needed nowhere in them: the chat or thread already shows the bot's name. Manager's settings have no name of their own today (only the portrait and instructions), so no line invents one.
 - Raw commands, tool names and technical errors from the host stay out of the status (`docs/ux/channel-status.md`).
+- The text of an approval or question itself ("Allow Computer Use to use Mail?", a worker's permission request) is shown as the tool or worker wrote it. Only the channel's own frame around it is Manager's voice: the reply after a choice, "This question is already closed", the buttons' fallback lines. Rewording a native approval could change what the person agrees to.
 
 ## 6. Numbers
 
@@ -110,6 +112,7 @@ The full list, with every other reply, is `client/src/main/manager-voice.ts`; bo
 - A model call to translate host lines: costs plan usage and can change what a line means.
 - A Manager name setting: not asked for in these lines and none exists; first person needs no name.
 - Translating the desktop app: its interface stays English.
+- Translating native approval cards: their words are the tool's request, and a paraphrase could change what is allowed.
 
 ## 10. Forks
 
