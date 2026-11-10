@@ -13,7 +13,7 @@ import type { Ran, runShell } from '../src/main/sessions/shell'
 import type { Driver, Heard, Signal } from '../src/main/sessions/heard'
 import { memoryNotes, Sessions, withMoves } from '../src/main/sessions'
 import type { SessionNotice, SessionsDeps } from '../src/main/sessions'
-import type { BackgroundTask, ChatSession, ClaudeAccount, SessionItem, SessionItems, SessionMode } from '../src/shared/api'
+import type { BackgroundTask, ChatSession, ClaudeAccount, SessionItem, SessionItems, SessionMode, SessionProvider } from '../src/shared/api'
 import { letsGo } from '../src/shared/api'
 import { providerChange } from '../src/main/provider-changes'
 import { VPN_IP_UNAVAILABLE_ERROR } from '../src/shared/vpn-ip'
@@ -670,6 +670,29 @@ describe('holding a conversation', () => {
     expect(await built.sessions.list([ROOT])).toMatchObject([{ id: row.id }])
     expect(built.sessions.listStatus()).toEqual([{ provider: 'codex', roots: [ROOT], state: 'failed', problem: 'Codex unavailable' }])
     expect(await built.sessions.list([ROOT])).toEqual([])
+    built.sessions.dispose()
+  })
+
+  it('reads no Codex list while only Claude is turned on, and drops its old failure', async () => {
+    const list = vi.fn<NonNullable<SessionsDeps['codex']>['list']>().mockRejectedValue(new Error('spawn codex ENOENT'))
+    let enabled: readonly SessionProvider[] = ['claude', 'codex']
+    const built = build({ codex: fakeCodex({ list }), enabled: () => enabled, disk: { list: async () => [{ id: 'saved', title: 'Saved chat', stands: '', at: 1_000, driven: false }], read: async () => undefined, has: async () => true } })
+    await built.sessions.list([ROOT])
+    expect(built.sessions.listStatus()).toEqual([{ provider: 'codex', roots: [ROOT], state: 'failed', problem: 'spawn codex ENOENT' }])
+    enabled = ['claude']
+    expect(await built.sessions.list([ROOT])).toMatchObject([{ id: 'saved' }])
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(built.sessions.listStatus()).toEqual([])
+    built.sessions.dispose()
+  })
+
+  it('reads no Claude list while only Codex is turned on', async () => {
+    const claudeList = vi.fn(async () => [{ id: 'saved', title: 'Saved chat', stands: '', at: 1_000, driven: false }])
+    const row = { id: 'codex:saved', root: ROOT, title: 'Saved task', stands: '', at: 1_000, driven: false }
+    const built = build({ codex: fakeCodex({ list: async () => [row] }), enabled: () => ['codex'], disk: { list: claudeList, read: async () => undefined, has: async () => true } })
+    expect(await built.sessions.list([ROOT])).toMatchObject([{ id: row.id }])
+    expect(claudeList).not.toHaveBeenCalled()
+    expect(built.sessions.listStatus()).toEqual([])
     built.sessions.dispose()
   })
 
