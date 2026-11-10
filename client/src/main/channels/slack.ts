@@ -45,6 +45,7 @@ interface SlackMessage {
 
 const CONTEXT_LIMIT = 30_000
 const PAGES = 10
+const READ_METHODS = new Set(['conversations.replies', 'users.info', 'chat.getPermalink'])
 
 /** Whether Slack timestamp a comes after b; both are seconds and microseconds, too precise for one float. */
 export const after = (a: string, b: string): boolean => {
@@ -91,7 +92,9 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   let chain: Promise<void> = Promise.resolve()
 
   const slack = async (method: string, body: object = {}, token = context.secret('botToken')): Promise<SlackReply> => {
-    const response = await transport.fetch(`https://slack.com/api/${method}`, { method: 'POST', headers: { authorization: `Bearer ${token ?? ''}`, 'content-type': 'application/json; charset=utf-8' }, body: JSON.stringify(body) })
+    // Slack's read methods ignore a JSON body and answer invalid_arguments, so they get a form.
+    const form = READ_METHODS.has(method)
+    const response = await transport.fetch(`https://slack.com/api/${method}`, { method: 'POST', headers: { authorization: `Bearer ${token ?? ''}`, 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json; charset=utf-8' }, body: form ? new URLSearchParams(Object.entries(body).map(([key, value]) => [key, String(value)])).toString() : JSON.stringify(body) })
     const json = await response.json() as SlackReply
     if (!json.ok) throw new Error(`Slack ${method}: ${json.error ?? 'failed'}`)
     return json
