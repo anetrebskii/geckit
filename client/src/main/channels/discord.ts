@@ -5,6 +5,7 @@ import type { DiscordInspect, DiscordPerson, DiscordServer, DiscordSetupView } f
 import { DISCORD_INVITE_PERMISSIONS } from '../../shared/discord'
 import type { Channel, ChannelContext, ChannelEvent, ChannelModule, ChannelSetupContext, Json } from './channel-api'
 import { StatusMessage } from '../manager-status'
+import { heard as speechOf, say } from '../manager-voice'
 import { containsSecret } from './slack'
 
 export const DISCORD_INFO: ChannelInfo = {
@@ -363,7 +364,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     if (seenAt !== undefined && !newer(message.id, seenAt)) return
     const reply = message.channel_id
     if (!allowed(user)) {
-      if (mention || direct) await post(reply, 'You are not on the list of people who may use this bot.', { message_reference: { message_id: message.id, fail_if_not_exists: false } })
+      if (mention || direct) await post(reply, say(speechOf(message.content ?? '')).notAllowed, { message_reference: { message_id: message.id, fail_if_not_exists: false } })
       return
     }
     if (direct && context.config()['directMessages'] === false) { await post(reply, 'Direct messages are off for this bot. Mention it in a server channel instead.'); return }
@@ -375,7 +376,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     const text = named(message)
     const attached = files(message)
     if (text === '' && attached === '' && !mention) return
-    if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(reply, 'That message looks like it contains a token or key, so it was not sent. Delete it and write again.', { message_reference: { message_id: message.id, fail_if_not_exists: false } }); return }
+    if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(reply, say(speechOf(text)).secret, { message_reference: { message_id: message.id, fail_if_not_exists: false } }); return }
     const from = nameOf(message.author, message.member?.nick)
     const revision = boundary(key)
     const current = (): boolean => revision === boundary(key) && !stopped
@@ -394,7 +395,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     if (!current()) return
     const parent = direct ? undefined : inThread ? info?.parent_id ?? undefined : message.channel_id
     const thread = context.conversations.manager({ key, from, ...(known ? {} : { title: text.split('\n')[0]?.slice(0, 80) || 'Discord thread' }), link: `https://discord.com/channels/${message.guild_id ?? '@me'}/${channel}`, labels: { ...(message.guild_id === undefined ? { place: 'direct message' } : { guild: message.guild_id }), ...(parent === undefined ? {} : { channel: parent }), thread: channel, ...(known ? {} : { starter: from, starterId: user }) } })
-    if (thread === undefined) { await post(channel, 'Manager is not available to Discord. Allow it in GeckIt, Settings, Channels, Discord.'); return }
+    if (thread === undefined) { await post(channel, say(speechOf(text)).unavailable('Discord', 'Settings, Channels, Discord')); return }
     if (!known) {
       context.store.set(`thread:${key}`, true)
       context.store.set('threads', [...places().filter((one) => one.key !== key), { key, channel }].slice(-500))

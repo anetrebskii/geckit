@@ -37,6 +37,9 @@ export interface ManagerProvider {
   readonly reason?: string
 }
 
+/** The language Manager answers a person in, from what they last wrote: docs/ux/manager-voice.md. */
+export type ManagerSpeech = 'en' | 'ru'
+
 export const MANAGER_MAIN_THREAD = 'main'
 export const MANAGER_LABELS = 8
 export const MANAGER_LABEL_KEY = 40
@@ -59,6 +62,8 @@ export interface ManagerThread {
   readonly state: 'idle' | 'working' | 'asks' | 'failed'
   /** What Manager itself does in this thread: the host has a message the model has not started on, or the model (or the host carrying out its commands) is at work. */
   readonly manager?: 'received' | 'working'
+  /** The language of the last message a person wrote in this thread. */
+  readonly language?: ManagerSpeech
   readonly error?: string
   /** The thread's channel is off or may no longer talk to Manager. */
   readonly closed?: string

@@ -1,6 +1,8 @@
 import type { ChatSession } from '../shared/api'
 import type { ManagerThread, ManagerView } from '../shared/manager'
 import { containsSecret } from './channels/slack'
+import { say } from './manager-voice'
+import type { Speech } from './manager-voice'
 
 export interface ThreadWorker {
   readonly id: ChatSession['id']
@@ -14,6 +16,8 @@ export interface ThreadActivity {
   readonly ending: string
   readonly active: boolean
   readonly workers: readonly ThreadWorker[]
+  /** The language the lines are in, so the status message words its own lines the same way. */
+  readonly language?: Speech
 }
 
 const WORKERS = 8
@@ -22,28 +26,30 @@ const TITLE = 80
 const STANDS = 120
 const TASKS = 3
 
-function workerSaid(worker: ChatSession): { readonly said: string; readonly active: boolean } {
-  if (worker.state === 'working') return { said: 'working', active: true }
-  if (worker.state === 'asks') return { said: 'waiting for an answer in GeckIt', active: false }
-  if (worker.delivery?.status === 'pending') return { said: 'message sent, not started yet', active: true }
-  if (worker.waits === true || (worker.queued?.length ?? 0) > 0) return { said: 'waiting for a free slot', active: true }
-  if (worker.state === 'limit') return { said: "paused by the plan's usage limit", active: true }
-  if (worker.state === 'failed') return { said: 'stopped with an error', active: false }
-  if (running(worker).length > 0) return { said: 'running in the background', active: true }
-  return { said: 'finished', active: false }
+function workerSaid(worker: ChatSession, speech?: Speech): { readonly said: string; readonly active: boolean } {
+  const said = say(speech).worker
+  if (worker.state === 'working') return { said: said.working, active: true }
+  if (worker.state === 'asks') return { said: said.asks, active: false }
+  if (worker.delivery?.status === 'pending') return { said: said.pending, active: true }
+  if (worker.waits === true || (worker.queued?.length ?? 0) > 0) return { said: said.slot, active: true }
+  if (worker.state === 'limit') return { said: said.limit, active: true }
+  if (worker.state === 'failed') return { said: said.failed, active: false }
+  if (running(worker).length > 0) return { said: said.background, active: true }
+  return { said: said.finished, active: false }
 }
 
 const running = (worker: ChatSession): NonNullable<ChatSession['tasks']> => (worker.tasks ?? []).filter((task) => task.status === 'running' || task.status === 'asks')
 const clip = (text: string, limit: number): string => text.length > limit ? `${text.slice(0, limit - 1)}…` : text
-const titled = (title: string): string => containsSecret(title) ? 'a task' : clip(title, TITLE)
+const titled = (title: string, speech?: Speech): string => containsSecret(title) ? say(speech).task : clip(title, TITLE)
 
-function workerLine(worker: ChatSession): string {
-  const lines = [`• ${titled(worker.title)}: ${workerSaid(worker).said}`]
+function workerLine(worker: ChatSession, speech?: Speech): string {
+  const words = say(speech)
+  const lines = [`• ${titled(worker.title, speech)}: ${workerSaid(worker, speech).said}`]
   const stands = worker.stands.split('\n')[0]?.trim() ?? ''
   if (stands !== '' && !containsSecret(stands)) lines.push(`  ${clip(stands, STANDS)}`)
   const tasks = running(worker)
-  for (const task of tasks.slice(0, TASKS)) lines.push(`  - ${containsSecret(task.what) ? 'a background task' : clip(task.what, TITLE)}: ${task.status === 'asks' ? 'waiting for an answer' : 'running'}`)
-  if (tasks.length > TASKS) lines.push(`  - and ${String(tasks.length - TASKS)} more in the background`)
+  for (const task of tasks.slice(0, TASKS)) lines.push(`  - ${containsSecret(task.what) ? words.backgroundTask : clip(task.what, TITLE)}: ${task.status === 'asks' ? words.taskAsks : words.taskRuns}`)
+  if (tasks.length > TASKS) lines.push(`  - ${words.moreBackground(tasks.length - TASKS)}`)
   return lines.join('\n')
 }
 
@@ -53,13 +59,15 @@ export function threadActivity(view: ManagerView, id: ManagerThread['id']): Thre
   const reason = (thread.error ?? '').split('\n')[0]?.slice(0, REASON) ?? ''
   const failed = thread.state === 'failed'
   const asks = view.decisions.some((one) => one.thread === id)
-  const manager = failed ? `Manager stopped: ${reason}` : asks ? 'Manager is waiting for your answer above.' : 'Work in progress'
-  const ending = failed ? `Manager stopped: ${reason}` : asks ? 'Waiting for your answer above.' : 'Done.'
+  const speech = thread.language
+  const words = say(speech)
+  const manager = failed ? words.stopped(reason) : asks ? words.asks : words.idle
+  const ending = failed ? words.stopped(reason) : asks ? words.asks : words.done
   const workers = thread.owns.flatMap((worker) => {
     const found = view.workers.find((one) => one.id === worker)
-    return found === undefined ? [] : [{ id: worker, line: workerLine(found), active: workerSaid(found).active }]
+    return found === undefined ? [] : [{ id: worker, line: workerLine(found, speech), active: workerSaid(found).active }]
   })
-  return { manager, ending, active: !failed && thread.manager !== undefined, workers }
+  return { manager, ending, active: !failed && thread.manager !== undefined, workers, ...(speech === undefined ? {} : { language: speech }) }
 }
 
 export interface StatusPoster {
@@ -112,11 +120,11 @@ export class StatusMessage {
       if (this.#seen.includes(worker.id)) this.#lines.set(worker.id, worker.line)
     }
     if (activity.active) this.#want = undefined
-    else if (working) this.#want = this.#text(activity.manager)
+    else if (working) this.#want = this.#text(activity.manager, activity.language)
     else {
       this.#stretch = false
       if (this.#want === undefined) { void this.#flush(); return }
-      this.#want = this.#text(activity.ending)
+      this.#want = this.#text(activity.ending, activity.language)
       this.#closing = true
     }
     void this.#flush()
@@ -128,11 +136,11 @@ export class StatusMessage {
     if (this.#id !== undefined && !this.#closing) { this.#lower = true; void this.#flush() }
   }
 
-  #text(first: string): string {
+  #text(first: string, speech: Speech | undefined): string {
     const workers = this.#seen.slice(0, WORKERS).map((id) => this.#lines.get(id) ?? '')
     const more = this.#seen.length - WORKERS
     const time = new Date(this.#now()).toISOString().slice(11, 16)
-    return [first, ...workers, ...(more > 0 ? [`and ${String(more)} more`] : []), `Updated ${time} UTC`].join('\n')
+    return [first, ...workers, ...(more > 0 ? [say(speech).more(more)] : []), say(speech).updated(time)].join('\n')
   }
 
   async #flush(): Promise<void> {

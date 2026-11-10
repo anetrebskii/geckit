@@ -168,11 +168,11 @@ it('answers only the people allowed, refuses tokens, honours chosen channels and
   await run.settle()
   expect(run.sent).toEqual([])
   expect(run.posts().map((one) => [one.path.split('/')[2], one.body['content']])).toEqual([
-    [TEXT, 'You are not on the list of people who may use this bot.'],
-    [TEXT, 'That message looks like it contains a token or key, so it was not sent. Delete it and write again.'],
+    [TEXT, 'Sorry, I can only take requests from people GeckIt lets me work for.'],
+    [TEXT, "That message looks like it holds a token or key, so I didn't take it. Remove it and write again."],
     [ELSEWHERE, 'This bot does not answer in this channel. Choose it in GeckIt, Settings, Channels, Discord.'],
     ['dm-2', 'Direct messages are off for this bot. Mention it in a server channel instead.'],
-    ['dm-3', 'You are not on the list of people who may use this bot.'],
+    ['dm-3', 'Sorry, I can only take requests from people GeckIt lets me work for.'],
   ])
   await run.channel.stop()
 })
@@ -280,7 +280,7 @@ it('reads earlier messages of an existing thread for Manager and says Manager is
   closed.ready()
   closed.message('550000000000000009', ALLOWED, `<@${BOT}> hi`)
   await closed.settle()
-  expect(closed.posts().at(-1)?.body['content']).toBe('Manager is not available to Discord. Allow it in GeckIt, Settings, Channels, Discord.')
+  expect(closed.posts().at(-1)?.body['content']).toBe("I can't answer in Discord yet. Allow me in GeckIt, Settings, Channels, Discord.")
   await run.channel.stop()
   await closed.channel.stop()
 })

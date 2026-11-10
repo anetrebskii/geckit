@@ -128,13 +128,13 @@ describe('opening what a Manager message names, from Telegram', () => {
     await telegram.action({ kind: 'stop-link', id: shares.list()[0]?.id ?? '' })
     expect(shares.list()).toEqual([])
     api.deliver([press(21, stop)])
-    await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe('This action has already been answered or is no longer available. Use /status or ask Manager here for the current question.'))
+    await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe('That button no longer works. Send /status or ask me for the current question.'))
   })
 
   it('lists live links with /links, stops one from there, and ends every link on disconnect', async () => {
     const { telegram, api, shares, project } = await setUp()
     api.deliver([message(20, '/links')])
-    await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe('Nothing is shared. A link appears in a Manager message that names a localhost address or a file.'))
+    await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe("I'm not sharing anything. A link appears when my message names a localhost address or a file."))
     await shares.open(join(project, 'report.html'))
     await shares.open(project)
     api.deliver([message(21, '/links')])

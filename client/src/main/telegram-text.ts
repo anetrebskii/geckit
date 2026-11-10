@@ -1,5 +1,6 @@
-import type { SessionState } from '../shared/api'
 import type { ManagerView } from '../shared/manager'
+import { say } from './manager-voice'
+import type { Speech } from './manager-voice'
 
 export function telegramText(text: string): string {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
@@ -19,21 +20,20 @@ export function telegramText(text: string): string {
   return kept.join('\n')
 }
 
-const STANDS: Record<ManagerView['state'], string> = { off: 'off', idle: 'ready', working: 'working', paused: 'paused', blocked: 'unavailable' }
-const WORKER: Record<SessionState, string> = { working: 'working', asks: 'needs an answer', unread: 'has news', idle: 'idle', limit: 'at its limit', failed: 'failed' }
 const SHOWN = 8
 
-/** What /status answers: where Manager stands, what its workers are doing, and what waits for Alex. */
-export function managerTelegramStatus(view: ManagerView): string {
-  const lines = [`**Manager** - ${STANDS[view.state]}`, '']
-  if (view.workers.length === 0) lines.push('No workers running.')
+/** What /status answers, in the person's language: where Manager stands, what its workers are doing, and what waits for Alex. */
+export function managerTelegramStatus(view: ManagerView, speech?: Speech): string {
+  const words = say(speech)
+  const lines = [words.stands[view.state], '']
+  if (view.workers.length === 0) lines.push(words.noWorkers)
   else {
-    lines.push(`**Workers** (${String(view.workers.length)})`)
-    for (const worker of view.workers.slice(0, SHOWN)) lines.push(`- ${worker.title} - ${WORKER[worker.state]}`)
-    if (view.workers.length > SHOWN) lines.push(`- and ${String(view.workers.length - SHOWN)} more`)
+    lines.push(`**${words.workers}** (${String(view.workers.length)})`)
+    for (const worker of view.workers.slice(0, SHOWN)) lines.push(`- ${worker.title} - ${words.workerState[worker.state]}`)
+    if (view.workers.length > SHOWN) lines.push(`- ${words.more(view.workers.length - SHOWN)}`)
   }
-  if (view.decisions.length > 0) lines.push('', `**Waiting for your answer:** ${String(view.decisions.length)}`)
-  if (view.queued > 0) lines.push('', `Queued instructions: ${String(view.queued)}`)
+  if (view.decisions.length > 0) lines.push('', `**${words.waiting}:** ${String(view.decisions.length)}`)
+  if (view.queued > 0) lines.push('', `${words.queued}: ${String(view.queued)}`)
   if (view.error !== undefined) lines.push('', ...view.error.split('\n').map((one) => `> ${one}`))
   return lines.join('\n')
 }

@@ -19,6 +19,8 @@ import { TelegramBotClient, TelegramFailure, telegramUpdate } from './telegram-b
 import type { TelegramMessage, TelegramUpdate } from './telegram-bot'
 import { TelegramTyping } from './telegram-typing'
 import { StatusMessage } from './manager-status'
+import { heard, say } from './manager-voice'
+import type { Speech } from './manager-voice'
 import type { ThreadActivity } from './manager-status'
 
 export interface TelegramVault {
@@ -37,7 +39,9 @@ export interface TelegramManager {
   onPending?(changed: () => void): () => void
   pause(): Promise<void>
   resume(): Promise<void>
-  status(): string
+  status(speech?: Speech): string
+  /** The language of the last message in the Telegram thread, for the replies GeckIt itself words. */
+  language?(): Speech | undefined
   enabled(): boolean
   answer?(id: TelegramDecision['id'], choice: string, authorized?: () => boolean): Promise<void | ManagerDecisionOutcome>
   decisions?(): readonly ManagerDecision[]
@@ -100,12 +104,6 @@ interface Pairing extends Connection {
   readonly expiresAt: number
   candidate?: TelegramAccount
 }
-
-const COMMANDS = `/status - what Manager and its workers are doing
-/pause - stop starting new work
-/resume - start work again
-/settings - where the setup is changed
-/links - what is shared and how to stop it`
 
 const nonce = (): string => randomBytes(18).toString('base64url')
 // Stop buttons kept across restarts; the oldest fall away first, and a tap on one says it is no longer available.
@@ -287,7 +285,7 @@ export class ManagerTelegram {
       const choices: { readonly text: string; readonly callback_data: string }[] = []
       let question = decision
       if (decision !== undefined && (connection.kept.callbacks.length + decision.choices.length > 256 || connection.kept.questions.length >= 128 || decision.choices.length > 50)) {
-        text += '\n\nTelegram has reached its pending decision limit. Answer or discard earlier questions here, then ask Manager to show this question again.'
+        text += `\n\n${say(this.speech()).decisionLimit}`
         question = undefined
       }
       if (question !== undefined) {
@@ -300,7 +298,7 @@ export class ManagerTelegram {
         })
         connection.kept = { ...connection.kept, callbacks: [...connection.kept.callbacks, ...callbacks] }
       }
-      const limited = text.length > 32_768 ? `${text.slice(0, 32_768)}\n\nResponse shortened. Ask Manager here for a shorter summary or the missing part.` : text
+      const limited = text.length > 32_768 ? `${text.slice(0, 32_768)}\n\n${say(this.speech()).shortened}` : text
       await this.send(connection, await this.linked(limited), choices, question?.id, undefined, origin)
     })
     const finished = job.finally(() => { if (pendingResponse) connection.responses -= 1; this.syncTyping(connection) })
@@ -363,12 +361,12 @@ export class ManagerTelegram {
     connection.kept = { ...connection.kept, callbacks: connection.kept.callbacks.filter((item) => item.token !== callback.token) }
     this.save(connection)
     const stopped = this.options.shares?.stop(callback.id)
-    await this.send(connection, stopped === undefined ? 'This link has already ended.' : `Stopped sharing ${stopped.title}. The link no longer opens.`, [], undefined, replyTo)
+    await this.send(connection, stopped === undefined ? say(this.speech()).linkEnded : say(this.speech()).unshared(stopped.title), [], undefined, replyTo)
   }
 
   private async links(connection: Connection): Promise<void> {
     const live = this.options.shares?.list() ?? []
-    if (live.length === 0) { await this.send(connection, 'Nothing is shared. A link appears in a Manager message that names a localhost address or a file.'); return }
+    if (live.length === 0) { await this.send(connection, say(this.speech()).nothingShared); return }
     const rows: Button[][] = live.map((link) => {
       const token = nonce()
       this.keepShareButton(connection, { token, kind: 'unshare', id: link.id })
@@ -474,6 +472,10 @@ export class ManagerTelegram {
     this.status.message.update(activity)
   }
 
+  private speech(text?: string): Speech | undefined {
+    return (text === undefined ? undefined : heard(text)) ?? this.options.manager.language?.()
+  }
+
   private current(connection: Connection): boolean {
     return !connection.controller.signal.aborted && (connection === this.active || connection === this.pairing)
   }
@@ -538,13 +540,8 @@ export class ManagerTelegram {
     this.detail = undefined
     void this.describe(pairing)
     this.changed()
-    await this.notify(`**Connected to your GeckIt Manager.**
-
-Send a task as a message. Reply to a question to answer it.
-
-${COMMANDS}
-
-GeckIt must stay open on your computer.`)
+    const words = say(this.speech())
+    await this.notify(words.connected(words.commands))
   }
 
   private async verifyAndPoll(connection: Connection): Promise<void> {
@@ -620,44 +617,46 @@ GeckIt must stay open on your computer.`)
       if (!query.message.private || query.from.id !== account.id || query.message.chatId !== account.chatId) return
       try { await connection.client.call('answerCallbackQuery', { callback_query_id: query.id }, connection.controller.signal) } catch { /* Acknowledgement does not authorize the action. */ }
       const callback = connection.kept.callbacks.find((item) => item.token === query.data)
+      const words = say(this.speech())
       if (callback === undefined) {
         void connection.client.call('editMessageReplyMarkup', { chat_id: query.message.chatId, message_id: query.message.id, reply_markup: { inline_keyboard: [] } }, connection.controller.signal).catch(() => undefined)
-        await this.send(connection, 'This action has already been answered or is no longer available. Use /status or ask Manager here for the current question.', [], undefined, query.message.id); return
+        await this.send(connection, words.buttonGone, [], undefined, query.message.id); return
       }
       if (callback.kind === 'unshare') {
         await this.unshare(connection, callback, query.message.id); return
       }
-      if (callback.kind === 'decision' && this.options.manager.hasDecision?.(callback.id) === false) { this.retire(connection, callback.id); this.removeDecision(connection, callback.id); this.save(connection); await this.send(connection, 'This request is no longer pending. Use /status to see current requests.', [], undefined, query.message.id); return }
-      if (!this.options.manager.enabled()) { await this.send(connection, 'Manager is disabled. Enable it in GeckIt Settings → Manager before answering.'); return }
+      if (callback.kind === 'decision' && this.options.manager.hasDecision?.(callback.id) === false) { this.retire(connection, callback.id); this.removeDecision(connection, callback.id); this.save(connection); await this.send(connection, words.closed, [], undefined, query.message.id); return }
+      if (!this.options.manager.enabled()) { await this.send(connection, words.off); return }
       const previous = connection.kept
       connection.kept = { ...connection.kept, callbacks: connection.kept.callbacks.filter((item) => callback.kind === 'decision' ? item.kind !== 'decision' || item.id !== callback.id : item.kind !== 'late' || item.group !== callback.group) }
       this.save(connection)
       if (callback.kind === 'late') {
         if (callback.run) await this.dispatch(connection, callback.text, callback.question, `telegram:late:${callback.group}`, undefined, callback.reference, callback.attachment)
-        else await this.send(connection, 'Discarded the delayed instruction.')
+        else await this.send(connection, words.discarded)
       } else if (this.options.manager.answer !== undefined) {
         try {
           const outcome = await this.options.manager.answer(callback.id, callback.value, () => this.current(connection) && this.options.manager.enabled())
           if (this.options.manager.hasDecision?.(callback.id) === true) this.restoreDecision(connection, previous, callback.id)
-          else { this.retire(connection, callback.id); this.removeDecision(connection, callback.id); this.save(connection); await this.send(connection, outcome ?? 'Answer sent.', [], undefined, query.message.id) }
+          else { this.retire(connection, callback.id); this.removeDecision(connection, callback.id); this.save(connection); await this.send(connection, outcome === undefined ? words.answered : words.outcome[outcome], [], undefined, query.message.id) }
         } catch (error) {
           if (this.options.manager.hasDecision?.(callback.id) !== false) this.restoreDecision(connection, previous, callback.id)
           else { this.retire(connection, callback.id); this.removeDecision(connection, callback.id) }
           this.save(connection)
-          await this.send(connection, error instanceof ManagerDecisionFailure ? error.message : 'Answer was not sent. Check /status for the current request or open its approval in GeckIt.')
+          await this.send(connection, error instanceof ManagerDecisionFailure ? words.failure[error.reason] : words.notSent)
         }
       }
-      else await this.send(connection, 'This question cannot be answered here. Ask Manager to show the current question again.')
+      else await this.send(connection, words.notHere)
       return
     }
     if (message?.private !== true || message.from?.id !== account.id || message.chatId !== account.chatId) return
     const reset = this.options.manager.historyBoundary?.(account.chatId)
     if (reset !== undefined && message.date < Math.floor(reset.at / 1000)) return
-    if (message.unsupportedFile === true) { await this.send(connection, 'This photo or document has invalid metadata or no downloadable variant within 20 MiB. Resend it as a smaller file.'); return }
-    if (message.text === undefined && message.file === undefined) { await this.send(connection, 'Send a text message, photo or document. This attachment type is unsupported; resend it as a file.'); return }
+    const words = say(this.speech(message.text))
+    if (message.unsupportedFile === true) { await this.send(connection, words.badFile); return }
+    if (message.text === undefined && message.file === undefined) { await this.send(connection, words.badKind); return }
     const text = message.file === undefined ? message.text?.trim() ?? '' : message.text ?? ''
     if (text === '' && message.file === undefined) return
-    if (text.length > 16_384) { await this.send(connection, 'This instruction is too long for Telegram Manager. Send a shorter instruction here.'); return }
+    if (text.length > 16_384) { await this.send(connection, words.tooLong); return }
     if (message.file === undefined && /^\/(status|help|settings|start|links)(?:@[A-Za-z0-9_]+)?$/.test(text)) { await this.dispatch(connection, text); return }
     const question = message.replyTo === undefined ? undefined : connection.kept.questions.find((item) => item.messageId === message.replyTo)?.id
     if (message.file === undefined && question === undefined && /^\/(pause|resume)(?:@[A-Za-z0-9_]+)?$/.test(text)) {
@@ -668,8 +667,8 @@ GeckIt must stay open on your computer.`)
     const invalid = message.reference?.external === true || message.reference?.chatId !== undefined && message.reference.chatId !== account.chatId || message.reference?.botId !== undefined && message.reference.botId !== connection.kept.bot.id
     const candidates = connection.kept.replies.filter((item) => item.messageId === message.replyTo && item.chatId === account.chatId)
     const reference = candidates.length === 1 ? candidates[0] : undefined
-    if (invalid || (message.replyTo !== undefined || message.reference !== undefined) && question === undefined && (reference === undefined || this.options.manager.reply === undefined)) { await this.send(connection, 'This reply cannot be matched to a saved Manager message. Reply to a known message or send a new instruction here.'); return }
-    if (message.file !== undefined && question !== undefined) { await this.send(connection, 'A file cannot answer an approval or question. Use its buttons or a text reply, then send the file as a new message.'); return }
+    if (invalid || (message.replyTo !== undefined || message.reference !== undefined) && question === undefined && (reference === undefined || this.options.manager.reply === undefined)) { await this.send(connection, words.unmatched); return }
+    if (message.file !== undefined && question !== undefined) { await this.send(connection, words.fileAnswer); return }
     const attachment: TelegramFileReference | undefined = message.file === undefined ? undefined : { file: message.file, id: message.id, ...(message.mediaGroup === undefined ? {} : { mediaGroup: message.mediaGroup }) }
     if (message.date * 1000 < this.now() - 10 * 60_000) { await this.late(connection, text, question, reference, attachment); return }
     await this.dispatch(connection, text, question, `telegram:${String(update.id)}`, message.id, reference, attachment)
@@ -679,27 +678,19 @@ GeckIt must stay open on your computer.`)
     const historyEpoch = connection.historyEpoch
     const authorized = (): boolean => this.current(connection) && this.options.manager.enabled() && historyEpoch === connection.historyEpoch
     const command = attachment === undefined ? text.replace(/@[A-Za-z0-9_]+$/, '') : ''
+    const speech = this.speech(text)
+    const words = say(speech)
     if (command === '/status') {
-      await this.send(connection, this.options.manager.status())
+      await this.send(connection, this.options.manager.status(speech))
       if (this.options.manager.enabled()) for (const decision of this.options.manager.decisions?.() ?? []) await this.notify(decision.title, decision)
       return
     }
     if (command === '/help' || command === '/start') {
-      await this.send(connection, `**Manager in Telegram**
-
-Send a task as a message. Reply to a question to answer it, or use the buttons on approvals that can be answered here.
-
-${COMMANDS}
-
-Typed forms and sign-in links need GeckIt itself.`); return
+      await this.send(connection, words.help(words.commands)); return
     }
-    if (command === '/settings') { await this.send(connection, `**Where the setup lives**
-
-GeckIt → Settings → Manager changes the assistant, model, delegation and this Telegram connection.
-
-Credentials stay on the computer. Talk to Manager here; approvals a worker can take here arrive with buttons.`); return }
+    if (command === '/settings') { await this.send(connection, words.settings); return }
     if (command === '/links') { await this.links(connection); return }
-    if (!this.options.manager.enabled()) { await this.send(connection, 'Manager is disabled. Enable it in GeckIt Settings → Manager before sending instructions.'); return }
+    if (!this.options.manager.enabled()) { await this.send(connection, words.off); return }
     const previous = connection.kept
     let origin: ManagerReplyOrigin | undefined = reference
     const attachments: TelegramAttachment['id'][] = []
@@ -714,14 +705,14 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
         text = `${text === '' ? '[Attachment without caption]' : `[User caption]\n${text}`}\n[Telegram source] ${JSON.stringify({ chatId: connection.kept.account?.chatId, messageId: attachment.id, mediaGroup: attachment.mediaGroup })}`
       }
       if (question !== undefined) {
-        if (this.options.manager.hasDecision?.(question) === false) { this.removeDecision(connection, question); this.save(connection); await this.send(connection, 'This request is no longer pending. Use /status to see current requests.'); return }
-        if (this.options.manager.answer === undefined) { await this.send(connection, 'This question cannot be answered here. Ask Manager to show the current question again.'); return }
+        if (this.options.manager.hasDecision?.(question) === false) { this.removeDecision(connection, question); this.save(connection); await this.send(connection, words.closed); return }
+        if (this.options.manager.answer === undefined) { await this.send(connection, words.notHere); return }
         this.removeDecision(connection, question)
         this.save(connection)
         const outcome = await this.options.manager.answer(question, text, authorized)
         if (this.options.manager.hasDecision?.(question) === true) { this.restoreDecision(connection, previous, question); this.save(connection) }
         else { this.retire(connection, question, previous.questions); this.removeDecision(connection, question); this.save(connection) }
-        if (outcome !== undefined) { await this.send(connection, outcome, [], undefined, replyTo); return }
+        if (outcome !== undefined) { await this.send(connection, words.outcome[outcome], [], undefined, replyTo); return }
       } else if (command === '/pause') await this.options.manager.pause()
       else if (command === '/resume') {
         await connection.sending
@@ -742,17 +733,17 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
         const session = attachments.length === 0 ? await this.options.manager.submit(text, id, undefined, authorized) : await this.options.manager.submit(text, id, attachments, authorized)
         if (session !== undefined) origin = { session, workers: [] }
       }
-      if (question !== undefined || command === '/pause' || command === '/resume') await this.send(connection, question !== undefined ? 'Answer sent to Manager.' : command === '/pause' ? 'Manager paused. Existing workers continue.' : 'Manager resumed.', [], undefined, replyTo, question === undefined ? origin : undefined)
+      if (question !== undefined || command === '/pause' || command === '/resume') await this.send(connection, question !== undefined ? words.answered : command === '/pause' ? words.paused : words.resumed, [], undefined, replyTo, question === undefined ? origin : undefined)
     } catch (error) {
       if (!authorized()) return
       if (question !== undefined) {
         if (this.options.manager.hasDecision?.(question) !== false) this.restoreDecision(connection, previous, question)
         else { this.retire(connection, question, previous.questions); this.removeDecision(connection, question) }
         this.save(connection)
-        if (error instanceof ManagerDecisionFailure) { await this.send(connection, error.message, [], undefined, replyTo); return }
+        if (error instanceof ManagerDecisionFailure) { await this.send(connection, words.failure[error.reason], [], undefined, replyTo); return }
       }
-      if (attachment !== undefined) { await this.send(connection, error instanceof TelegramAttachmentFailure ? error.message : 'Telegram file could not be handed to Manager. Check Manager status and the connection, then resend the file.', [], undefined, replyTo); return }
-      await this.send(connection, 'Manager could not accept this instruction. Use /status here or check GeckIt Settings → Manager before sending again.', [], undefined, replyTo)
+      if (attachment !== undefined) { await this.send(connection, words.fileFailed(error instanceof TelegramAttachmentFailure ? error.message : 'I couldn\'t take that file. Check /status and the connection, then send it again.'), [], undefined, replyTo); return }
+      await this.send(connection, words.notAccepted, [], undefined, replyTo)
     } finally {
       if (typingId !== undefined) connection.dispatches.delete(typingId)
       this.pruneInputs(connection)
@@ -761,12 +752,13 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
   }
 
   private async late(connection: Connection, text: string, question?: string, reference?: ManagerTelegramReply, attachment?: TelegramFileReference): Promise<void> {
-    if (connection.kept.callbacks.length > 254) { await this.send(connection, 'Too many decisions are waiting in Telegram. Use their Run now or Discard buttons, then send this instruction again. It has not been run.'); return }
+    const words = say(this.speech(text))
+    if (connection.kept.callbacks.length > 254) { await this.send(connection, words.tooManyLate); return }
     const group = nonce()
     const callbacks: Callback[] = [true, false].map((run) => ({ token: nonce(), kind: 'late', group, text, run, ...(question === undefined ? {} : { question }), ...(reference === undefined ? {} : { reference }), ...(attachment === undefined ? {} : { attachment }) }))
     connection.kept = { ...connection.kept, callbacks: [...connection.kept.callbacks, ...callbacks] }
-    const choices = callbacks.map((callback) => ({ text: callback.kind === 'late' && callback.run ? 'Run now' : 'Discard', callback_data: callback.token }))
-    await this.send(connection, `**This instruction arrived more than 10 minutes late.** Run it now?\n\n${text.split('\n').map((one) => `> ${one}`).join('\n')}`, choices)
+    const choices = callbacks.map((callback) => ({ text: callback.kind === 'late' && callback.run ? words.run : words.discard, callback_data: callback.token }))
+    await this.send(connection, `${words.late}\n\n${text.split('\n').map((one) => `> ${one}`).join('\n')}`, choices)
   }
 
   private removeDecision(connection: Connection, id: string): void {
@@ -781,10 +773,10 @@ Credentials stay on the computer. Talk to Manager here; approvals a worker can t
   /** The command menu and the profile line Telegram shows before the first message. */
   private async describe(connection: Connection): Promise<void> {
     const commands = [
-      { command: 'status', description: 'What Manager and its workers are doing' },
+      { command: 'status', description: 'What I and my workers are doing' },
       { command: 'pause', description: 'Stop starting new work' },
       { command: 'resume', description: 'Start work again' },
-      { command: 'settings', description: 'Where the setup is changed' },
+      { command: 'settings', description: 'Where my setup is changed' },
       { command: 'links', description: 'What is shared and how to stop it' },
       { command: 'help', description: 'What can be done here' },
     ]
