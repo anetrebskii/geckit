@@ -366,14 +366,15 @@ export class ManagerTelegram {
 
   private async links(connection: Connection): Promise<void> {
     const live = this.options.shares?.list() ?? []
-    if (live.length === 0) { await this.send(connection, say(this.speech()).nothingShared); return }
+    const words = say(this.speech())
+    if (live.length === 0) { await this.send(connection, words.nothingShared); return }
     const rows: Button[][] = live.map((link) => {
       const token = nonce()
       this.keepShareButton(connection, { token, kind: 'unshare', id: link.id })
-      return [{ text: `Stop ${link.title}`.slice(0, 64), callback_data: token }]
+      return [{ text: words.stopLink(link.title).slice(0, 64), callback_data: token }]
     })
     this.save(connection)
-    await this.send(connection, [`**Shared links** (${String(live.length)})`, ...live.map((link) => `- ${link.title} - ends in ${endsIn(link.expiresAt, this.now())}`)].join('\n'), [], undefined, undefined, undefined, rows)
+    await this.send(connection, [`**${words.linksTitle}** (${String(live.length)})`, ...live.map((link) => `- ${link.title} - ${words.endsIn(endsIn(link.expiresAt, this.now()))}`)].join('\n'), [], undefined, undefined, undefined, rows)
   }
 
   fileSender(): TelegramFileSender {
@@ -772,17 +773,14 @@ export class ManagerTelegram {
 
   /** The command menu and the profile line Telegram shows before the first message. */
   private async describe(connection: Connection): Promise<void> {
-    const commands = [
-      { command: 'status', description: 'What I and my workers are doing' },
-      { command: 'pause', description: 'Stop starting new work' },
-      { command: 'resume', description: 'Start work again' },
-      { command: 'settings', description: 'Where my setup is changed' },
-      { command: 'links', description: 'What is shared and how to stop it' },
-      { command: 'help', description: 'What can be done here' },
-    ]
+    const commands = (speech: Speech): JsonObject[] => Object.entries(say(speech).menu).map(([command, description]) => ({ command, description }))
     try {
-      await connection.client.call('setMyCommands', { commands, scope: { type: 'all_private_chats' } }, connection.controller.signal)
-      await connection.client.call('setMyShortDescription', { short_description: 'Runs GeckIt on your own computer. Send a task, answer its questions here.' }, connection.controller.signal)
+      // English for everyone, Russian where the person's Telegram app is in Russian: the menu shows before any message says which language they write in.
+      for (const speech of ['en', 'ru'] as const) {
+        const language = speech === 'en' ? {} : { language_code: speech }
+        await connection.client.call('setMyCommands', { commands: commands(speech), scope: { type: 'all_private_chats' }, ...language }, connection.controller.signal)
+        await connection.client.call('setMyShortDescription', { short_description: say(speech).about, ...language }, connection.controller.signal)
+      }
     } catch { /* A bot whose menu could not be set still carries every message. */ }
   }
 

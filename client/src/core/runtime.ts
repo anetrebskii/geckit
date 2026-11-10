@@ -50,6 +50,12 @@ export interface RuntimeOptions {
   readonly secrets?: HostsDeps['secrets']
 }
 
+/** The paired Telegram chat's status after every Manager view: only the chat's own thread and the workers it tracks, docs/ux/channel-status.md. */
+export function telegramProgress(bridge: Pick<ManagerTelegram, 'view' | 'progress'>, view: ManagerView): void {
+  const chat = bridge.view().account?.chatId
+  bridge.progress(chat === undefined ? undefined : threadActivity(view, `telegram:${String(chat)}`))
+}
+
 export async function createRuntime(cliScript: string, options: RuntimeOptions = {}) {
   let cliTargets: { readonly run: (host: string, args: readonly string[], authorized: () => boolean) => Promise<string>; readonly local: (args: readonly string[]) => Promise<string>; readonly registry: (args: readonly string[]) => string; readonly list: () => readonly { readonly id: string; readonly name: string }[] } | undefined
   const events = coreEvents()
@@ -272,8 +278,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       view = changed
       events.emit('manager:view', changed)
       notifyDecisions(changed)
-      const chat = bridge.view().account?.chatId
-      bridge.progress(chat === undefined ? undefined : threadActivity(changed, `telegram:${String(chat)}`))
+      telegramProgress(bridge, changed)
     })
     coordinator.onItems((items) => events.emit('manager:items', items))
     const hub = new Channels({

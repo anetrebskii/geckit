@@ -24,6 +24,7 @@ import { managerHistoryItem } from '../src/main/manager-protocol'
 import { DEFAULT_MANAGER_CONFIG } from '../src/shared/manager'
 import type { ManagerThread, ManagerView } from '../src/shared/manager'
 import { threadActivity } from '../src/main/manager-status'
+import { telegramProgress } from '../src/core/runtime'
 
 const token = '123456:very_secret_example_token_for_tests'
 const now = 1_800_000_000_000
@@ -87,13 +88,13 @@ function botApi(): { readonly fetch: typeof fetch; readonly calls: Request[]; re
   return { fetch: fetcher, calls, files, uploads, failUpload: (code) => { uploadFailure = code }, deliver: (updates) => deliver(response(updates)), failSend: () => { sendFailure = true }, failPoll: (code) => deliver(Response.json({ ok: false, error_code: code, description: `Secret ${token}` }, { status: code })), refuseFormatting: () => { formatFailure = true } }
 }
 
-function fixture(options: { readonly api?: ReturnType<typeof botApi>; readonly directory?: string; readonly store?: TelegramVault; readonly manager?: Partial<TelegramManager> } = {}): { readonly telegram: ManagerTelegram; readonly api: ReturnType<typeof botApi>; readonly directory: string; readonly submit: ReturnType<typeof vi.fn<TelegramManager['submit']>>; readonly answer: ReturnType<typeof vi.fn<NonNullable<TelegramManager['answer']>>> } {
+function fixture(options: { readonly api?: ReturnType<typeof botApi>; readonly directory?: string; readonly store?: TelegramVault; readonly manager?: Partial<TelegramManager>; readonly now?: () => number } = {}): { readonly telegram: ManagerTelegram; readonly api: ReturnType<typeof botApi>; readonly directory: string; readonly submit: ReturnType<typeof vi.fn<TelegramManager['submit']>>; readonly answer: ReturnType<typeof vi.fn<NonNullable<TelegramManager['answer']>>> } {
   const api = options.api ?? botApi()
   const directory = options.directory ?? mkdtempSync(join(tmpdir(), 'geckit-telegram-'))
   if (options.directory === undefined) paths.push(directory)
   const submit = vi.fn<TelegramManager['submit']>(async () => undefined)
   const answer = vi.fn<NonNullable<TelegramManager['answer']>>(async () => undefined)
-  const telegram = new ManagerTelegram({ directory, vault: options.store ?? vault, fetch: api.fetch, now: () => now, changed: () => undefined, manager: { submit, answer, pause: async () => undefined, resume: async () => undefined, status: () => 'Manager is idle.', enabled: () => true, ...options.manager } })
+  const telegram = new ManagerTelegram({ directory, vault: options.store ?? vault, fetch: api.fetch, now: options.now ?? (() => now), changed: () => undefined, manager: { submit, answer, pause: async () => undefined, resume: async () => undefined, status: () => 'Manager is idle.', enabled: () => true, ...options.manager } })
   running.push(telegram)
   return { telegram, api, directory, submit, answer }
 }
@@ -801,6 +802,11 @@ describe('Manager Telegram, with a fake Bot API', () => {
     await vi.waitFor(() => expect(value.api.calls.some((item) => item.method === 'setMyCommands')).toBe(true))
     const commands = value.api.calls.find((item) => item.method === 'setMyCommands')?.body['commands']
     expect(Array.isArray(commands) ? commands.map((one) => jsonObject(one)?.['command']) : []).toEqual(['status', 'pause', 'resume', 'settings', 'links', 'help'])
+    await vi.waitFor(() => expect(value.api.calls.filter((item) => item.method === 'setMyCommands')).toHaveLength(2))
+    const russian = value.api.calls.find((item) => item.method === 'setMyCommands' && item.body['language_code'] === 'ru')?.body['commands']
+    expect(Array.isArray(russian) ? jsonObject(russian[0])?.['description'] : undefined).toBe('Что делаю я и исполнители')
+    await vi.waitFor(() => expect(String(value.api.calls.find((item) => item.method === 'setMyShortDescription' && item.body['language_code'] === 'ru')?.body['short_description'])).toContain('Пиши мне задачи'))
+    expect(value.api.calls.find((item) => item.method === 'setMyShortDescription' && item.body['language_code'] === undefined)?.body['short_description']).toBe('I run GeckIt on your own computer. Send me a task and answer my questions here.')
   })
 
   it('omits ordinary success acknowledgement and takes the buttons off a question it has answered', async () => {
@@ -1209,6 +1215,80 @@ describe('Telegram status message', () => {
     expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, disable_notification: true, text: expect.stringMatching(/^Пока жду, вот что сейчас идёт:\n• Ответы менеджера: запускает тесты\nОбновлено в \d\d:\d\d UTC$/) })
     expect(String(sent(value.api).at(-1)?.body['text'])).not.toContain('vitest')
   })
+})
+
+describe('runtime: Telegram status from Manager views', () => {
+  // The Bot API is the fake one (botApi); Manager, Sessions, the status message and ManagerTelegram are the real ones, wired as createRuntime wires them.
+  it("tells the paired chat what its own thread's workers do once Manager's turn is over, in the person's language, once per change and nothing of other threads", async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'geckit-telegram-runtime-'))
+    paths.push(directory)
+    const notes = memoryNotes()
+    const hearings = new Map<string, (heard: Heard) => void>()
+    const current: { manager?: Manager } = {}
+    const sessions = new Sessions({
+      notes, changed: (all) => current.manager?.observeSessions(all), items: () => undefined, notify: () => undefined, account: () => undefined,
+      claude: (options, hear) => { hearings.set(options.id, hear); return { send: () => undefined, answer: () => undefined, stop: () => undefined, end: async () => undefined } },
+      disk: { list: async () => [], read: async () => undefined, has: async () => false },
+      claudeAccount: async () => ({ here: true, signedIn: true, plan: 'Max' }), claudeProgram: async () => undefined,
+      usage: async () => ({ windows: new Map() }),
+    })
+    const settings = { ...DEFAULT_SETTINGS, projects: [directory], chatProviders: ['claude'] as const, chatProvider: 'claude' as const }
+    const coordinator = new Manager({ directory, sessions, notes, settings: () => settings, saveSettings: () => settings, cli: async () => { throw new Error('No CLI operation expected') } })
+    current.manager = coordinator
+    disposals.push(() => { coordinator.dispose(); sessions.dispose() })
+    await coordinator.configure({ enabled: true })
+    let view = await coordinator.view()
+    let clock = now
+    const value = fixture({ directory, now: () => clock, manager: { enabled: () => coordinator.enabled(), language: () => view.threads?.find((one) => one.id === 'telegram:81')?.language } })
+    const progress = vi.spyOn(value.telegram, 'progress')
+    coordinator.on((changed) => { view = changed; telegramProgress(value.telegram, changed) })
+    await paired(value)
+    const statuses = (): Request[] => value.api.calls.filter((call) => (call.method === 'sendMessage' && call.body['disable_notification'] === true) || call.method === 'editMessageText')
+    const telegram = coordinator.thread({ channel: 'telegram', place: 'Telegram', key: '81' })
+    const slack = coordinator.thread({ channel: 'slack', place: 'Slack', key: 'C1:1.0' })
+    expect(telegram).toBe('telegram:81')
+
+    await coordinator.send('Что ты делаешь?', 'telegram', 'tg:1', [], () => true, [], [], telegram)
+    const backing = (await coordinator.view()).threads?.find((one) => one.id === telegram)?.session ?? ''
+    await vi.waitFor(() => expect(hearings.has(backing)).toBe(true))
+    const mine = await sessions.startManaged({ root: directory, mode: 'manual', text: 'Почини тесты логина' }, 'manager', 'op-telegram')
+    const theirs = await sessions.startManaged({ root: directory, mode: 'manual', text: 'Slack only secret plan' }, 'manager', 'op-slack')
+    notes.set(mine, { ...notes.all()[mine], managerThread: telegram })
+    notes.set(theirs, { ...notes.all()[theirs], managerThread: slack })
+    hearings.get(mine)?.({ items: [], gone: [], signals: [{ kind: 'begun' }, { kind: 'doing', what: 'running npx vitest run test/login.test.ts' }] })
+    hearings.get(theirs)?.({ items: [], gone: [], signals: [{ kind: 'begun' }, { kind: 'doing', what: 'reading slack-only.md' }] })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(statuses()).toEqual([])
+
+    hearings.get(backing)?.({ items: [{ kind: 'theirs', id: 'answer:1', text: 'Смотрю тесты.' }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(statuses()).toHaveLength(1))
+    const first = statuses()[0]
+    expect(first?.body).toMatchObject({ chat_id: 81, disable_notification: true })
+    expect(String(first?.body['text'])).toMatch(/^Пока жду, вот что сейчас идёт:\n• Почини тесты логина: запускает тесты\nОбновлено в \d\d:\d\d UTC$/)
+
+    const calls = progress.mock.calls.length
+    for (let at = 0; at < 3; at += 1) telegramProgress(value.telegram, view)
+    expect(progress.mock.calls.length).toBe(calls + 3)
+    hearings.get(theirs)?.({ items: [], gone: [], signals: [{ kind: 'doing', what: 'changing slack-only.md' }] })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(statuses()).toHaveLength(1)
+
+    clock += 4_000
+    hearings.get(mine)?.({ items: [], gone: [], signals: [{ kind: 'doing', what: 'reading src/login.ts' }] })
+    await vi.waitFor(() => expect(statuses()).toHaveLength(2))
+    telegramProgress(value.telegram, view)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(statuses()).toHaveLength(2)
+    expect(statuses()[1]).toMatchObject({ method: 'editMessageText', body: { chat_id: 81, text: expect.stringContaining('• Почини тесты логина: читает src/login.ts') } })
+    for (const call of statuses()) {
+      const text = String(call.body['text'])
+      expect(text).not.toContain('Slack only')
+      expect(text).not.toContain('slack-only')
+      expect(text).not.toContain('vitest')
+      expect(text).not.toMatch(/Manager (is|has)/)
+    }
+    expect(value.api.calls.filter((call) => call.method === 'sendMessage' || call.method === 'editMessageText').every((call) => call.body['chat_id'] === 81)).toBe(true)
+  }, 15_000)
 })
 
 it('fences queued replies and purges saved old references/late prompts across a missed reset and restart', async () => {

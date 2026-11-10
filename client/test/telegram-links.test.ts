@@ -19,6 +19,7 @@ const user = { id: 81, is_bot: false, first_name: 'Alex', username: 'alex' }
 const xor = (bytes: Buffer): Buffer => Buffer.from(bytes.map((byte) => byte ^ 123))
 const vault: TelegramVault = { available: () => true, encrypt: (text) => xor(Buffer.from(text)), decrypt: (bytes) => xor(bytes).toString() }
 const cleanup: (() => void)[] = []
+const speech: { now: 'en' | 'ru' | undefined } = { now: undefined }
 afterEach(() => { for (const one of cleanup.splice(0)) one() })
 
 const server = createServer((_request, answer) => { answer.writeHead(200, { 'content-type': 'text/plain' }); answer.end('page') })
@@ -77,7 +78,7 @@ async function setUp(enabled = true): Promise<{ readonly telegram: ManagerTelegr
   const api = botApi()
   const holder: { telegram?: ManagerTelegram } = {}
   const shares = new Shares({ home, now: () => now, changed: () => undefined, ended: (id) => holder.telegram?.linkEnded(id) })
-  const telegram = new ManagerTelegram({ directory: home, vault, fetch: api.fetch, now: () => now, changed: () => undefined, shares, manager: { submit: async () => undefined, pause: async () => undefined, resume: async () => undefined, status: () => 'idle', enabled: () => enabled } })
+  const telegram = new ManagerTelegram({ directory: home, vault, fetch: api.fetch, now: () => now, changed: () => undefined, shares, manager: { submit: async () => undefined, pause: async () => undefined, resume: async () => undefined, status: () => 'idle', enabled: () => enabled, language: () => speech.now } })
   holder.telegram = telegram
   cleanup.push(() => { telegram.stop(); shares.stopAll(); rmSync(home, { recursive: true, force: true }) })
   await telegram.action({ kind: 'connect', token })
@@ -129,6 +130,19 @@ describe('opening what a Manager message names, from Telegram', () => {
     expect(shares.list()).toEqual([])
     api.deliver([press(21, stop)])
     await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe('That button no longer works. Send /status or ask me for the current question.'))
+  })
+
+  it('lists links in Russian when the Telegram thread speaks Russian', async () => {
+    const { api, shares, project } = await setUp()
+    speech.now = 'ru'
+    try {
+      api.deliver([message(30, '/links')])
+      await vi.waitFor(() => expect(sent(api).at(-1)?.body['text']).toBe('Сейчас я ничем не делюсь. Ссылка появляется, когда в моём сообщении есть адрес localhost или файл.'))
+      await shares.open(join(project, 'report.html'))
+      api.deliver([message(31, '/links')])
+      await vi.waitFor(() => expect(String(sent(api).at(-1)?.body['text'])).toMatch(/<b>Открытые ссылки<\/b> \(1\)\n• report\.html - закроется через \d+ (ч|мин)$/))
+      expect(rows(sent(api).at(-1)).map((row) => row[0]?.['text'])).toEqual(['Закрыть report.html'])
+    } finally { speech.now = undefined }
   })
 
   it('lists live links with /links, stops one from there, and ends every link on disconnect', async () => {

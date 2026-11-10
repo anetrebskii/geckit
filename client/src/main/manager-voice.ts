@@ -93,6 +93,17 @@ GeckIt must stay open on your computer.`,
   late: '**This message reached me more than 10 minutes late.** Run it now?',
   run: 'Run now',
   discard: 'Discard',
+  linksTitle: 'Shared links',
+  endsIn: (left: string) => `ends in ${left}`,
+  stopLink: (title: string) => `Stop ${title}`,
+  menu: { status: 'What I and my workers are doing', pause: 'Stop starting new work', resume: 'Start work again', settings: 'Where my setup is changed', links: 'What is shared and how to stop it', help: 'What can be done here' },
+  about: 'I run GeckIt on your own computer. Send me a task and answer my questions here.',
+  dmOff: 'Direct messages to me are off. Mention me in a server channel instead.',
+  wrongPlace: "I don't answer in this channel. Choose it for me in GeckIt, Settings, Channels, Discord.",
+  noThread: (reason: string) => `I couldn't start a thread for this: ${reason}. Give me Create Public Threads and Send Messages in Threads in this channel.`,
+  questionClosed: 'This question is already closed.',
+  notRecorded: "I couldn't record that answer. It may already be answered in GeckIt.",
+  chose: (name: string, label: string) => `${name} chose ${label}.`,
   linkEnded: 'This link has already ended.',
   unshared: (title: string) => `Stopped sharing ${title}. The link no longer opens.`,
   nothingShared: "I'm not sharing anything. A link appears when my message names a localhost address or a file.",
@@ -194,6 +205,17 @@ GeckIt должен оставаться открытым на компьюте�
   late: '**Это сообщение дошло до меня с опозданием больше 10 минут.** Выполнить сейчас?',
   run: 'Выполнить',
   discard: 'Отменить',
+  linksTitle: 'Открытые ссылки',
+  endsIn: (left) => `закроется через ${left.replace(/ h$/, ' ч').replace(/ min$/, ' мин')}`,
+  stopLink: (title) => `Закрыть ${title}`,
+  menu: { status: 'Что делаю я и исполнители', pause: 'Не начинать новую работу', resume: 'Снова начинать работу', settings: 'Где меня настраивать', links: 'Чем я делюсь и как это остановить', help: 'Что здесь можно сделать' },
+  about: 'Я работаю в GeckIt на твоём компьютере. Пиши мне задачи и отвечай здесь на мои вопросы.',
+  dmOff: 'Личные сообщения мне выключены. Упомяни меня в канале сервера.',
+  wrongPlace: 'В этом канале я не отвечаю. Выбери его для меня в GeckIt: Settings, Channels, Discord.',
+  noThread: (reason) => `Не получилось открыть тред: ${reason}. Дай мне права Create Public Threads и Send Messages in Threads в этом канале.`,
+  questionClosed: 'Этот вопрос уже закрыт.',
+  notRecorded: 'Не получилось записать ответ. Возможно, на него уже ответили в GeckIt.',
+  chose: (name, label) => `Ответ ${name}: ${label}.`,
   linkEnded: 'Эта ссылка уже не действует.',
   unshared: (title) => `Больше не делюсь "${title}", ссылка не открывается.`,
   nothingShared: 'Сейчас я ничем не делюсь. Ссылка появляется, когда в моём сообщении есть адрес localhost или файл.',
@@ -255,3 +277,6 @@ export function workerDoing(stands: string, speech: Speech | undefined): string 
   if ((found = match(/^(?:using|used) (.+)$/)) !== undefined) return words.using(found)
   return undefined
 }
+
+/** The language Discord says a person's own app is in, for a button press, which has no words of its own. */
+export const localeSpeech = (locale: string | undefined): Speech | undefined => locale === undefined ? undefined : locale.toLowerCase().startsWith('ru') ? 'ru' : 'en'

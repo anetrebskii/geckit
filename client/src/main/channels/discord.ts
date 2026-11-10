@@ -5,7 +5,7 @@ import type { DiscordInspect, DiscordPerson, DiscordServer, DiscordSetupView } f
 import { DISCORD_INVITE_PERMISSIONS } from '../../shared/discord'
 import type { Channel, ChannelContext, ChannelEvent, ChannelModule, ChannelSetupContext, Json } from './channel-api'
 import { StatusMessage } from '../manager-status'
-import { heard as speechOf, say } from '../manager-voice'
+import { heard as speechOf, localeSpeech, say } from '../manager-voice'
 import { containsSecret } from './slack'
 
 export const DISCORD_INFO: ChannelInfo = {
@@ -98,6 +98,8 @@ export interface DiscordInteraction {
   readonly member?: { readonly user?: DiscordUser; readonly nick?: string | null }
   readonly user?: DiscordUser
   readonly message?: { readonly id: string }
+  /** The person's Discord app language, such as `ru` or `en-US`. */
+  readonly locale?: string
 }
 
 interface DiscordChannelInfo {
@@ -367,10 +369,10 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       if (mention || direct) await post(reply, say(speechOf(message.content ?? '')).notAllowed, { message_reference: { message_id: message.id, fail_if_not_exists: false } })
       return
     }
-    if (direct && context.config()['directMessages'] === false) { await post(reply, 'Direct messages are off for this bot. Mention it in a server channel instead.'); return }
+    if (direct && context.config()['directMessages'] === false) { await post(reply, say(speechOf(message.content ?? '')).dmOff); return }
     const placesAllowed = strings(context.config()['places'] as Json | undefined)
     if (!direct && placesAllowed.length > 0 && !placesAllowed.includes(message.channel_id) && !(inThread && info?.parent_id != null && placesAllowed.includes(info.parent_id))) {
-      if (mention) await post(reply, 'This bot does not answer in this channel. Choose it in GeckIt, Settings, Channels, Discord.', { message_reference: { message_id: message.id, fail_if_not_exists: false } })
+      if (mention) await post(reply, say(speechOf(message.content ?? '')).wrongPlace, { message_reference: { message_id: message.id, fail_if_not_exists: false } })
       return
     }
     const text = named(message)
@@ -388,7 +390,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         channels.set(opened.id, opened)
         channel = opened.id
       } catch (error) {
-        await post(reply, `I could not start a thread for this: ${said(error)}. Give the bot Create Public Threads and Send Messages in Threads in this channel.`, { message_reference: { message_id: message.id, fail_if_not_exists: false } }).catch(warn('discord.post.failed'))
+        await post(reply, say(speechOf(text)).noThread(said(error)), { message_reference: { message_id: message.id, fail_if_not_exists: false } }).catch(warn('discord.post.failed'))
         return
       }
     }
@@ -423,15 +425,16 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     const custom = interaction.data?.custom_id ?? ''
     if (interaction.type !== 3 || !custom.startsWith('gk:') || !once(`i:${interaction.id}`)) return
     const user = interaction.member?.user ?? interaction.user
-    if (user === undefined || !allowed(user.id)) { await ephemeral(interaction, 'You are not on the list of people who may use this bot.'); return }
+    const words = say(localeSpeech(interaction.locale))
+    if (user === undefined || !allowed(user.id)) { await ephemeral(interaction, words.notAllowed); return }
     const channel = interaction.channel_id ?? ''
     const direct = interaction.guild_id === undefined
     const key = direct ? `dm:${channel}` : channel
-    if (direct && context.config()['directMessages'] === false) { await ephemeral(interaction, 'Direct messages are off for this bot. Mention it in a server channel instead.'); return }
+    if (direct && context.config()['directMessages'] === false) { await ephemeral(interaction, words.dmOff); return }
     const placesAllowed = strings(context.config()['places'] as Json | undefined)
     if (!direct && placesAllowed.length > 0 && !placesAllowed.includes(channel)) {
       const info = await channelInfo(channel)
-      if (info?.parent_id == null || !placesAllowed.includes(info.parent_id)) { await ephemeral(interaction, 'This bot does not answer in this channel. Choose it in GeckIt, Settings, Channels, Discord.'); return }
+      if (info?.parent_id == null || !placesAllowed.includes(info.parent_id)) { await ephemeral(interaction, words.wrongPlace); return }
     }
     const [, hash = '', index = ''] = custom.split(':')
     const decision = pending(key).find((one) => buttonId(one.id, Number(index)) === `gk:${hash}:${index}`)
@@ -439,7 +442,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     const value = decision?.values[Number(index)]
     const thread = context.store.get(`thread:${key}`) === true ? context.conversations.manager({ key }) : undefined
     if (decision === undefined || value === undefined || prompt === undefined || prompt.message !== interaction.message?.id || thread === undefined) {
-      await ephemeral(interaction, 'This question is no longer open.')
+      await ephemeral(interaction, words.questionClosed)
       return
     }
     await respond(interaction, { type: 6 })
@@ -447,9 +450,9 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     const label = decision.labels[Number(index)] ?? value
     if (ok) {
       context.store.set(`prompts:${key}`, prompts(key).filter((one) => one.decision !== decision.id))
-      await api('PATCH', `/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, { content: `**${decision.title}**\n-# ${nameOf(user, interaction.member?.nick)} chose ${label}.`, components: [], allowed_mentions: { parse: [] } }).catch(warn('discord.prompt.close.failed'))
+      await api('PATCH', `/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, { content: `**${decision.title}**\n-# ${words.chose(nameOf(user, interaction.member?.nick), label)}`, components: [], allowed_mentions: { parse: [] } }).catch(warn('discord.prompt.close.failed'))
     } else {
-      await api('POST', `/webhooks/${interaction.application_id}/${interaction.token}`, { content: 'GeckIt could not record that answer. It may already be answered in GeckIt.', flags: 64, allowed_mentions: { parse: [] } }).catch(warn('discord.answer.failed'))
+      await api('POST', `/webhooks/${interaction.application_id}/${interaction.token}`, { content: words.notRecorded, flags: 64, allowed_mentions: { parse: [] } }).catch(warn('discord.answer.failed'))
     }
   }
 
