@@ -37,7 +37,7 @@ Object.assign(window.geckit, { browser: {
   state: async () => {
     if (chrome === 'downloading' || chrome === 'waiting') chromeReceived = Math.min(2_497_281_120, chromeReceived + 90_000_000)
     const done = chromeReceived >= 2_497_281_120
-    return { supported: chrome !== 'windows', connected: chromeConnected, folder: '/Users/alex/.geckit/chrome-extension', modelServer: chrome !== 'noserver', model: !chromeModel ? { state: 'absent', received: 0, total: 2_497_281_120 } : chrome === 'failed' ? { state: 'failed', received: 640_000_000, total: 2_497_281_120, error: 'Model download answered 503' } : { state: done ? 'ready' : 'downloading', received: chromeReceived, total: 2_497_281_120 }, testing: { supported: true, version: '142.0.7444.175', profiles: testProfiles } }
+    return { supported: !['windows', 'windows-on'].includes(chrome), connected: chromeConnected, folder: '/Users/alex/.geckit/chrome-extension', modelServer: chrome !== 'noserver', model: !chromeModel ? { state: 'absent', received: 0, total: 2_497_281_120 } : chrome === 'failed' ? { state: 'failed', received: 640_000_000, total: 2_497_281_120, error: 'Model download answered 503' } : { state: done ? 'ready' : 'downloading', received: chromeReceived, total: 2_497_281_120 }, testing: { supported: true, version: '142.0.7444.175', profiles: testProfiles } }
   },
   fetchModel: async () => undefined,
   deleteModel: async () => { chromeModel = false },
