@@ -4,7 +4,8 @@ import { join } from 'node:path'
 
 import type { BackgroundTask, SessionGoal, SessionItem, SessionSpend, WorkItem } from '../../shared/api'
 import type { Link } from '../../shared/links'
-import { linksInText, workItem } from '../../shared/links'
+import { linksInText, workItemsInText } from '../../shared/links'
+import { visibleWork } from '../../shared/work-items'
 import { costOf, goalOf, lastContext, lastSaid, replayClaude, saidIn, STILL_GOING, tasksOf, typed } from './claude-read'
 import type { GoalRead } from './claude-read'
 import { firstLine } from './wording'
@@ -38,6 +39,7 @@ export interface Found extends Pick<SessionSpend, 'window' | 'cost' | 'currency'
   /** Tokens in the context after the last answer. */
   readonly used?: number
   readonly work?: WorkItem
+  readonly workItems?: readonly WorkItem[]
   /** The folder it was started in, as the tool wrote it down. */
   readonly cwd?: string
 }
@@ -259,7 +261,8 @@ export function rowFrom(file: { readonly id: string; readonly at: number }, { he
     )
     .find((name) => name !== '' && name !== '<synthetic>')
   const used = lastContext(tail.length > 0 ? tail : head)
-  const work = workItem(asked)
+  const workItems = visibleWork([asked, ...all.map(saidIn)].flatMap(workItemsInText))
+  const work = workItems[0]
   const cwd = string(all.find((entry) => string(entry['cwd']) !== '')?.['cwd'])
   return {
     id: file.id,
@@ -270,6 +273,7 @@ export function rowFrom(file: { readonly id: string; readonly at: number }, { he
     ...(model === undefined ? {} : { model }),
     ...(used === undefined ? {} : { used }),
     ...(work === undefined ? {} : { work }),
+    ...(workItems.length === 0 ? {} : { workItems }),
     ...(cwd === '' ? {} : { cwd }),
   }
 }

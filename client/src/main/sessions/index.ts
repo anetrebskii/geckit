@@ -67,7 +67,8 @@ import { instructionsFor, isCodexProvider } from '../../shared/providers'
 import { browserBridge } from '../guide'
 import { isRemote, pathOf } from '../../shared/hosts'
 import type { Link } from '../../shared/links'
-import { linksIn, workItem } from '../../shared/links'
+import { linksIn } from '../../shared/links'
+import { ConversationItems, sameWork } from '../../shared/work-items'
 import type { holdClaude } from './claude'
 import type { CodexSessions } from './codex'
 import { standsIn } from './disk'
@@ -123,6 +124,7 @@ export interface SessionNote {
   /** What the channel that started it says about it. */
   readonly labels?: ManagerLabels
   readonly managerOperation?: string
+  readonly workItems?: readonly WorkItem[]
   readonly heldOperation?: HeldOperation
   readonly guardError?: string
 readonly guardItems?: readonly SessionItem[]
@@ -230,6 +232,7 @@ interface Row extends Pick<ChatSession, 'tasks'>, Pick<SessionSpend, 'window' | 
   /** Tokens in the context after the last answer. */
   readonly used?: number
   readonly work?: WorkItem
+  readonly workItems?: readonly WorkItem[]
 }
 
 export type { SessionNotice } from '../../shared/api'
@@ -349,7 +352,7 @@ interface Live {
   /** The tool has a conversation under this id, so it is picked up rather than begun. */
   begun: boolean
   messages: number
-  items: Map<string, SessionItem>
+  items: ConversationItems
   kept: Kept[]
   /** The line of a thing being asked about, taken down while its card is up. */
   held: Map<string, SessionItem>
@@ -1115,9 +1118,8 @@ export class Sessions {
       const reasoning = live === undefined ? note?.reasoning : live.reasoning
       const actualReasoning = live?.actualReasoning ?? row?.actualReasoning
       const runs = [...(live?.commands.keys() ?? [])].map((key) => live?.items.get(key)).find((item) => item?.kind === 'shell')
-      // One begun here is not on disk yet the first time it is listed.
-      const first = row === undefined ? [...(live?.items.values() ?? [])].find((item) => item.kind === 'mine') : undefined
-      const work = row?.work ?? (first?.kind === 'mine' ? workItem(first.text) : undefined)
+      const workItems = live?.items.workItems ?? note?.workItems ?? row?.workItems ?? (row?.work === undefined ? [] : [row.work])
+      const work = workItems[0]
       const queued = live?.queued ?? note?.queued ?? []
       const asking = this.#asking(id)
       const teamAsking = [...this.#teamRequests.values()].some((pending) => pending.session === id)
@@ -1179,6 +1181,7 @@ export class Sessions {
         ...(runs === undefined ? {} : { runs: runs.command }),
         ...(runs !== undefined && live?.typing === runs.id ? { typing: true } : {}),
         ...(work === undefined ? {} : { work }),
+        ...(workItems.length === 0 ? {} : { workItems }),
         ...(note?.status === undefined ? {} : { status: note.status }),
         ...(queued.length === 0
           ? {}
@@ -1212,6 +1215,10 @@ export class Sessions {
   }
 
   #changed(): void {
+    for (const live of this.#live.values()) {
+      const workItems = live.items.workItems
+      if (!sameWork(this.#deps.notes.all()[live.id]?.workItems ?? [], workItems)) this.#note(live.id, { workItems })
+    }
     const all = this.#listed()
     this.#deps.changed(all)
     this.#deps.lineup?.({ working: taken(this.#standing(all)), limit: this.#deps.limit?.() ?? 0 })
@@ -1736,6 +1743,8 @@ export class Sessions {
 
   #fresh(id: string, root: string, title: string, mode: SessionMode, question = false): Live {
     const note = this.#deps.notes.all()[id]
+    const row = this.#rows.get(id)
+    const workItems = note?.workItems ?? row?.workItems ?? (row?.work === undefined ? [] : [row.work])
     const live: Live = {
       checkingIp: false,
       guardGeneration: 0,
@@ -1764,7 +1773,7 @@ export class Sessions {
       ran: undefined,
       begun: false,
       messages: 0,
-      items: new Map(),
+      items: new ConversationItems([], workItems),
       kept: [],
       held: new Map(),
       state: 'idle',
@@ -1832,7 +1841,7 @@ export class Sessions {
     // ended, and once the list is here it is the process and the person who say what is in it.
     if (live.items.size === 0) live.tasks = [...conversation.tasks, ...live.tasks]
 
-    const items = new Map(read.map((item) => [item.id, item]))
+    const items = new ConversationItems(read.map((item) => [item.id, item] as const))
     // What only this window knows goes back where it was, unless the file says it too.
     const mine = read.filter((item) => item.kind === 'mine')
     let queueIdentityChanged = false
@@ -1873,7 +1882,9 @@ export class Sessions {
       for (const [key, item] of ordered) items.set(key, item)
     }
     live.items = items
-    if (queueIdentityChanged) this.#changed()
+    const workChanged = !sameWork(this.#deps.notes.all()[live.id]?.workItems ?? [], items.workItems)
+    if (workChanged) this.#note(live.id, { workItems: items.workItems })
+    if (queueIdentityChanged || workChanged) this.#changed()
   }
 
   #clearGuard(live: Live): void {
@@ -3565,6 +3576,7 @@ export class Sessions {
   #hear(live: Live, heard: Heard): void {
     if (this.#live.get(live.id) !== live) return
     if (this.#deps.notes.all()[live.id]?.managerPrompt !== undefined) heard = { ...heard, items: heard.items.map(managerHistoryItem) }
+    const workBefore = live.items.workItems
     const now = this.#now()
     // The stream does not say when; an answer is dated by when it first arrived here.
     const items = heard.items.filter((item) => {
@@ -3592,6 +3604,7 @@ export class Sessions {
       const last = all.findLastIndex((item) => item.kind === 'mine')
       this.#managerOutput?.(live.id, all.slice(last + 1).flatMap((item) => item.kind === 'theirs' ? [item.text] : []).join('\n\n'))
     }
+    if (!sameWork(workBefore, live.items.workItems)) this.#changed()
   }
 
   /**
@@ -3618,6 +3631,7 @@ export class Sessions {
     this.#live.delete(was)
     live.id = id
     live.items.clear()
+    this.#note(id, { workItems: [] })
     live.kept = []
     live.held.clear()
     live.asks.clear()

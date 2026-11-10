@@ -447,8 +447,10 @@ export interface ChatSession {
   readonly runs?: string
   /** That command has stopped on a question and waits for something typed. */
   readonly typing?: true
-  /** The tracker item it is about, from its first message. */
+  /** The original linked subject, retained for clients that display one badge. */
   readonly work?: WorkItem
+  /** Original subject and latest related tracker link, at most two. */
+  readonly workItems?: readonly WorkItem[]
   /** Where it stands, as the person marked it; saying anything more in it clears it. */
   readonly status?: SessionStatus
   /** Messages sent while it worked, oldest first, each going once the turn before it is answered. */
@@ -483,7 +485,7 @@ export interface QueuedMessage {
   readonly images: number
 }
 
-/** The tracker item a conversation is about: the first issue, pull request, Linear or Jira link in its first message. */
+/** A linked task, issue, pull request or merge request. */
 export interface WorkItem {
   /** `#3914`, `FOR-1067` */
   readonly label: string
