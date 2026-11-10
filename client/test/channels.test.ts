@@ -311,9 +311,11 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
       stop: async () => undefined,
     },
   } as unknown as ChannelContext
-  const fetch = (async (url: string, init: { body: string }) => {
+  const fetch = (async (url: string, init: { body: string; headers: Record<string, string> }) => {
     const method = url.split('/').at(-1)
-    const body = JSON.parse(init.body) as { channel: string; thread_ts?: string; text: string; user?: string; oldest?: string }
+    const form = init.headers['content-type'] === 'application/x-www-form-urlencoded'
+    if (!form && (method === 'conversations.replies' || method === 'users.info' || method === 'chat.getPermalink')) return { json: async () => ({ ok: false, error: 'invalid_arguments' }) }
+    const body = (form ? Object.fromEntries(new URLSearchParams(init.body)) : JSON.parse(init.body)) as { channel: string; thread_ts?: string; text: string; user?: string; oldest?: string }
     if (method === 'chat.postMessage') posted.push(body)
     if (method === 'chat.update') updated.push(body)
     const reply = method === 'auth.test' ? { ok: true, user_id: 'B1' } : method === 'conversations.replies' ? { ok: true, messages: history.filter((one) => body.oldest === undefined || !after(body.oldest, one.ts)) } : method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : method === 'chat.postMessage' ? { ok: true, ts: `9.${String(posted.length)}` } : { ok: true }
