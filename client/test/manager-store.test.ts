@@ -197,7 +197,7 @@ it('runs the CLI subprocess through authenticated Manager dispatch and persists 
     writeFileSync(projectFile, 'project files survive')
     transcripts.set(worker, transcript)
     transcripts.set(sentinel, sentinelTranscript)
-    notes.set(worker, { ...notes.all()[worker], managerFollowers: ['fixture-thread'] })
+    notes.set(worker, { ...notes.all()[worker], managerUntracked: true })
     settings = { ...settings, favorites: [worker, sentinel] }
     await sessions.send({ session: worker, root, mode: 'manual', text: 'Cancel this follow-up' })
     const deletion = ['sessions', 'delete', '--id', worker]
@@ -232,7 +232,7 @@ it('runs the CLI subprocess through authenticated Manager dispatch and persists 
     expect(settings.favorites).toEqual([sentinel])
     expect(notesStore().all()[worker]?.queued).toBeUndefined()
     expect(notesStore().all()[worker]?.managerOwner).toBeUndefined()
-    expect(notesStore().all()[worker]?.managerFollowers).toBeUndefined()
+    expect(notesStore().all()[worker]?.managerUntracked).toBeUndefined()
     issue('delete-allowed')
     await new Promise<void>((done) => setImmediate(done))
     expect(deleted).toEqual([worker])

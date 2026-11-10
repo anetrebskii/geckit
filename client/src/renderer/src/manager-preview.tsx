@@ -55,9 +55,9 @@ if (query.has('threads')) {
   const slack: ChatSession = { ...backing, id: 'manager-slack-fixture', title: 'Fix login redirect' }
   const following: ChatSession = { ...worker, id: 'codex:worker-following', title: 'Deploy preview for the login fix', state: 'working', stands: 'Working' }
   view = { ...view, workers: [...view.workers.filter((one) => one.id !== worker.id), worker, following], threads: [
-    { id: 'main', title: 'Manager', labels: {}, session: backing.id, conversation: backing, state: 'idle', at: Date.now() - 600_000, owns: [], follows: [] },
-    { id: 'slack:C012:1730800000.000100', place: 'Slack', title: '#dev', labels: { channel: 'C012DEV', thread: '1730800000.000100', starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://example.slack.com/archives/C012DEV/p1730800000000100', session: slack.id, conversation: slack, state: 'working', at: Date.now() - 60_000, owns: [worker.id], follows: [following.id] },
-    { id: 'telegram:4242', place: 'Telegram', title: 'Alex', labels: { chat: '4242', user: 'Alex' }, from: 'Alex', state: 'asks', at: Date.now() - 300_000, owns: [], follows: [worker.id], ...(query.has('closedThread') ? { closed: 'Telegram is not connected. Connect it in Settings, Channels to reply in this thread.' } : {}) },
+    { id: 'main', title: 'Manager', labels: {}, session: backing.id, conversation: backing, state: 'idle', at: Date.now() - 600_000, owns: [] },
+    { id: 'slack:C012:1730800000.000100', place: 'Slack', title: '#dev', labels: { channel: 'C012DEV', thread: '1730800000.000100', starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://example.slack.com/archives/C012DEV/p1730800000000100', session: slack.id, conversation: slack, state: 'working', at: Date.now() - 60_000, owns: [worker.id] },
+    { id: 'telegram:4242', place: 'Telegram', title: 'Alex', labels: { chat: '4242', user: 'Alex' }, from: 'Alex', state: 'asks', at: Date.now() - 300_000, owns: [], ...(query.has('closedThread') ? { closed: 'Telegram is not connected. Connect it in Settings, Channels to reply in this thread.' } : {}) },
   ] }
 }
 let inspectionItems: readonly SessionItem[] = query.has('inspectEmpty') || query.get('state') === 'setup' ? [] : [

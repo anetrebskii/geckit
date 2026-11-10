@@ -59,7 +59,7 @@ async function setup(): Promise<{ channels: Channels; deps: ChannelsDeps; settin
   const responses = new Set<(text: string, origin: { thread?: string; session: string; workers: readonly string[] }) => void>()
   const closed = new Map<string, string | undefined>()
   const labelled = new Map<string, unknown>()
-  const managerView = { state: 'idle', session: { id: 'manager-1', root: '/home', title: 'Manager', state: 'idle' }, decisions: [{ id: 'decision-1', title: 'Start?', choices: [{ label: 'Yes', value: 'yes' }], thread: 'channel:echo:chat-7' }], get threads() { return [...threads.values()].map((one) => ({ id: one.id, title: one.title ?? 'Echo', labels: one.labels, state: 'idle', at: 0, owns: [], follows: [] })) } } as unknown as ManagerView
+  const managerView = { state: 'idle', session: { id: 'manager-1', root: '/home', title: 'Manager', state: 'idle' }, decisions: [{ id: 'decision-1', title: 'Start?', choices: [{ label: 'Yes', value: 'yes' }], thread: 'channel:echo:chat-7' }], get threads() { return [...threads.values()].map((one) => ({ id: one.id, title: one.title ?? 'Echo', labels: one.labels, state: 'idle', at: 0, owns: [] })) } } as unknown as ManagerView
   const deps: ChannelsDeps = {
     directory: home,
     vault: { available: () => true, encrypt: (text) => Buffer.from(text).reverse(), decrypt: (bytes) => Buffer.from(bytes).reverse().toString() },
@@ -189,7 +189,7 @@ it('tells a watched thread its answers, items and decisions, and nothing of othe
   context.conversations.watch(other, (event) => elsewhere.push(event))
   respond('Release planned.', thread)
   emit({ name: 'manager:items', args: [{ id: 'manager-2', items: [{ kind: 'theirs', id: 'a', text: 'Release planned.' }] }] })
-  emit({ name: 'manager:view', args: [{ state: 'idle', config: { provider: 'claude' }, decisions: [{ id: 'decision-1', title: 'Start?', choices: [], thread }], threads: [{ id: thread, title: 'Echo', labels: {}, state: 'asks', at: 0, owns: [], follows: [] }, { id: other, title: 'Echo', labels: {}, state: 'idle', at: 0, owns: [], follows: [] }] } as unknown as ManagerView] })
+  emit({ name: 'manager:view', args: [{ state: 'idle', config: { provider: 'claude' }, decisions: [{ id: 'decision-1', title: 'Start?', choices: [], thread }], threads: [{ id: thread, title: 'Echo', labels: {}, state: 'asks', at: 0, owns: [] }, { id: other, title: 'Echo', labels: {}, state: 'idle', at: 0, owns: [] }] } as unknown as ManagerView] })
   expect(heard.map((one) => one.kind)).toEqual(['answer', 'items', 'decisions', 'status', 'state'])
   expect(heard[3]).toEqual({ kind: 'status', activity: { manager: 'Manager is waiting for your answer above.', ending: 'Waiting for your answer above.', active: false, workers: [] } })
   expect(heard[0]).toEqual({ kind: 'answer', text: 'Release planned.' })

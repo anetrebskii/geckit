@@ -107,7 +107,7 @@ const threadFrom = (thread: ManagerThread): string => thread.id === MANAGER_MAIN
 export function Threads({ threads, picked, workers, onPick }: { readonly threads: readonly ManagerThread[]; readonly picked: string; readonly workers: ManagerView['workers']; readonly onPick: (id: string) => void }): React.JSX.Element {
   if (ON_PHONE) return <label className="manager-thread-menu"><span>Thread</span><select value={picked} onChange={(event) => onPick(event.target.value)}>{threads.map((thread) => <option key={thread.id} value={thread.id}>{thread.id === MANAGER_MAIN_THREAD ? 'GeckIt' : `${threadFrom(thread)} · ${thread.title}`}</option>)}</select></label>
   return <nav className="manager-threads" aria-label="Manager threads">{threads.map((thread) => {
-    const working = workers.filter((one) => one.state === 'working' && (thread.owns.includes(one.id) || thread.follows.includes(one.id))).length
+    const working = workers.filter((one) => one.state === 'working' && thread.owns.includes(one.id)).length
     return <button key={thread.id} type="button" className="manager-thread" aria-current={thread.id === picked ? 'true' : undefined} onClick={() => onPick(thread.id)}>
       <span className="manager-thread-text"><strong>{threadName(thread)}</strong><span>{threadFrom(thread)}</span></span>
       {thread.state === 'idle' ? null : <span className="manager-thread-dot" data-state={thread.state} aria-label={thread.state === 'asks' ? 'Needs your answer' : thread.state === 'failed' ? 'Stopped' : 'Working'} />}
@@ -118,10 +118,8 @@ export function Threads({ threads, picked, workers, onPick }: { readonly threads
 
 function Work({ thread, workers, onOpen }: { readonly thread: ManagerThread; readonly workers: ManagerView['workers']; readonly onOpen?: ((id: string) => void) | undefined }): React.JSX.Element | null {
   const owns = workers.filter((one) => thread.owns.includes(one.id))
-  const follows = workers.filter((one) => thread.follows.includes(one.id))
-  if (owns.length === 0 && follows.length === 0) return null
-  const list = (title: string, rows: ManagerView['workers']): React.JSX.Element | null => rows.length === 0 ? null : <div className="manager-work-list"><h4>{title}</h4>{rows.map((one) => <button key={one.id} type="button" className="manager-work-row" disabled={onOpen === undefined} title="Open this conversation" onClick={() => onOpen?.(one.id)}><span className="manager-thread-dot" data-state={one.state === 'asks' ? 'asks' : one.state === 'failed' ? 'failed' : one.state === 'working' ? 'working' : 'idle'} aria-hidden="true" /><span>{one.title}</span></button>)}</div>
-  return <details className="manager-work" open><summary>Work <span>{owns.length + follows.length}</span></summary>{list('Started here', owns)}{list('Following', follows)}</details>
+  if (owns.length === 0) return null
+  return <details className="manager-work" open><summary>Work <span>{owns.length}</span></summary><div className="manager-work-list">{owns.map((one) => <button key={one.id} type="button" className="manager-work-row" disabled={onOpen === undefined} title="Open this conversation" onClick={() => onOpen?.(one.id)}><span className="manager-thread-dot" data-state={one.state === 'asks' ? 'asks' : one.state === 'failed' ? 'failed' : one.state === 'working' ? 'working' : 'idle'} aria-hidden="true" /><span>{one.title}</span></button>)}</div></details>
 }
 
 export function ManagerChat({ view: all, settings, connected = true, onSettings, onOpen }: { readonly view: ManagerView; readonly settings: Settings; readonly connected?: boolean; readonly onSettings?: (() => void) | undefined; readonly onOpen?: ((id: string) => void) | undefined }): React.JSX.Element {

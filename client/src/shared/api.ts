@@ -405,7 +405,6 @@ export interface ChatSession {
   readonly managerManaged?: true
   /** The Manager thread its updates go to, and the threads that follow it, as they read. */
   readonly managerThread?: ManagerThreadName
-  readonly managerFollowers?: readonly ManagerThreadName[]
   /** What the channel that started it says about it. */
   readonly labels?: ManagerLabels
   readonly provider?: SessionProvider

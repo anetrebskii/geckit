@@ -164,7 +164,6 @@ export function PhoneInfo({
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === session.mode)?.label ?? '-'} />
         <Cell label="Folder" value={projectLabel(homeOf(session))} />
         {session.managerThread === undefined ? null : <Cell label="Reports to" value={session.managerThread.said} />}
-        {session.managerFollowers === undefined || session.managerFollowers.length === 0 ? null : <Cell label="Followed by" value={session.managerFollowers.map((one) => one.said).join(', ')} />}
         {Object.entries(session.labels ?? {}).map(([key, value]) => <Cell key={`label:${key}`} label={key} value={value} />)}
         {parent === undefined ? null : (
           <Cell

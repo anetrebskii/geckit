@@ -40,7 +40,7 @@ export function threadActivity(view: ManagerView, id: ManagerThread['id']): Thre
   const asks = view.decisions.some((one) => one.thread === id)
   const manager = failed ? `Manager stopped: ${reason}` : thread.manager === 'working' ? 'Manager is working on it.' : thread.manager === 'received' ? 'Manager has your message and has not started yet.' : asks ? 'Manager is waiting for your answer above.' : 'Manager is done for now.'
   const ending = failed ? `Manager stopped: ${reason}` : asks ? 'Waiting for your answer above.' : 'Done.'
-  const workers = [...new Set([...thread.owns, ...thread.follows])].flatMap((worker) => {
+  const workers = thread.owns.flatMap((worker) => {
     const found = view.workers.find((one) => one.id === worker)
     if (found === undefined) return []
     const { said, active } = workerSaid(found)

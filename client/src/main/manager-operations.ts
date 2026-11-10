@@ -16,6 +16,7 @@ import { isRemote } from '../shared/hosts'
 import { isCodexProvider, llmProviderInfo, providerModel } from '../shared/providers'
 import { managerProjects } from '../shared/manager'
 import type { ManagerConfig, ManagerInstructionsResult } from '../shared/manager'
+import type { ManagerThreadName } from '../shared/api'
 import { withColors } from '../shared/project-color'
 import { requestedProvider } from '../cli/start'
 import { telegramFilename, telegramImage } from './telegram-attachments'
@@ -45,6 +46,8 @@ interface OperationDeps {
   readonly managerSession: () => string | undefined
   /** The Manager thread the operation came from. */
   readonly managerThread?: () => string
+  /** The one thread that tracks a worker, or none after it let it go. */
+  readonly trackedBy?: (id: string) => ManagerThreadName | undefined
   /** What the thread's channel said about it, inherited by the work it starts. */
   readonly threadLabels?: () => ManagerLabels
   readonly authorized?: () => boolean
@@ -84,8 +87,8 @@ export const MANAGER_CAPABILITIES = {
     'sessions delete --id <full-managed-worker-id> (user confirmation; stops work, cancels queued messages and permanently deletes the conversation; project files kept; inspect deleted in the result)',
     'sessions mark --id <managed-worker-id> --status todo|progress|blocked|done|archived (no product confirmation)',
     'sessions attach --id <existing-worker-id> (no product confirmation; use when the user asks to coordinate or watch it; it reports to this thread)',
-    'sessions follow --id <managed-worker-id> (no product confirmation; this thread also receives its updates; its starter keeps receiving them)',
-    'sessions unfollow --id <managed-worker-id> (no product confirmation)',
+    'sessions follow --id <managed-worker-id> (no product confirmation; this thread starts tracking it and receives its updates; refused while another thread tracks it)',
+    'sessions unfollow --id <managed-worker-id> (no product confirmation; this thread stops tracking it, and then no thread receives its updates until one follows it)',
     'sessions answer --id <managed-worker-id> --card <current-question-id> --text <answer> (user confirmation; questions only)',
     'employees shortcuts [<employee-id>|none] [--json]',
     'employees shortcut add <employee-id|none> --name <name> --project <registered-project-name> --prompt <text> [--target task|manager] [--goal <text>] [--every <hour|hour 15|day 9:00|weekdays 9:00|week monday 9:00>|--cron <expression>] [--start-window-minutes <1-1440|none>] [--provider <enabled-provider-id>] [--model <id>] [--reasoning <effort|default>] [--mode manual|auto|plan] (no product confirmation; Manager target uses none and its configured assistant/approvals)',
@@ -512,12 +515,17 @@ export class ManagerOperations {
       }
       if (command === 'follow' || command === 'unfollow') {
         const thread = this.#deps.managerThread?.() ?? 'main'
-        const note = this.#deps.notes.all()[id] ?? {}
-        const owner = note.managerThread ?? 'main'
-        const followers = (note.managerFollowers ?? []).filter((one) => one !== thread)
-        const next = command === 'follow' && owner !== thread ? [...followers, thread] : followers
-        this.#deps.notes.set(id, { ...note, managerFollowers: next })
-        return JSON.stringify({ id, following: command === 'follow', reportsHere: owner === thread, notice: owner === thread ? 'This thread started the worker and already receives its updates.' : undefined })
+        const tracker = this.#deps.trackedBy?.(id)
+        const { managerUntracked: _untracked, ...note } = this.#deps.notes.all()[id] ?? {}
+        if (command === 'unfollow') {
+          if (tracker?.id !== thread) return JSON.stringify({ id, tracking: false, notice: tracker === undefined ? 'No thread tracks this worker.' : `This thread does not track this worker; ${tracker.said} does.` })
+          this.#deps.notes.set(id, { ...note, managerUntracked: true })
+          return JSON.stringify({ id, tracking: false, notice: 'No thread tracks this worker now; another thread can follow it.' })
+        }
+        if (tracker?.id === thread) return JSON.stringify({ id, tracking: true, notice: 'This thread already tracks this worker.' })
+        if (tracker !== undefined) throw new Error(`${tracker.said} already tracks this worker, and only one thread can track a worker. Ask there to unfollow it first.`)
+        this.#deps.notes.set(id, { ...note, managerThread: thread })
+        return JSON.stringify({ id, tracking: true })
       }
       if (command === 'show') {
         const count = Number(flags.get('--last') ?? 10)

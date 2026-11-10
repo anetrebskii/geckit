@@ -118,9 +118,10 @@ export interface SessionNote {
   readonly managerPrompt?: string
   readonly managerBegun?: true
   readonly managerOwner?: string
-  /** The Manager thread its updates go to, and the threads that follow it as well. */
+  /** The one Manager thread that tracks it and gets its updates, GeckIt's own when absent. */
   readonly managerThread?: string
-  readonly managerFollowers?: readonly string[]
+  /** Its tracking thread let it go, so no thread gets its updates until one follows it. */
+  readonly managerUntracked?: true
   /** What the channel that started it says about it. */
   readonly labels?: ManagerLabels
   readonly managerOperation?: string
@@ -675,11 +676,10 @@ export class Sessions {
 
   managerThreads(name: (thread: string) => ManagerThreadName | undefined): void { this.#threadName = name }
 
-  #managerThreadsOf(note: SessionNote | undefined): Pick<ChatSession, 'managerThread' | 'managerFollowers'> {
-    if (note?.managerOwner === undefined || this.#threadName === undefined) return {}
+  #managerThreadsOf(note: SessionNote | undefined): Pick<ChatSession, 'managerThread'> {
+    if (note?.managerOwner === undefined || note.managerUntracked === true || this.#threadName === undefined) return {}
     const owner = this.#threadName(note.managerThread ?? 'main') ?? this.#threadName('main')
-    const followers = (note.managerFollowers ?? []).flatMap((one) => one === owner?.id ? [] : this.#threadName?.(one) ?? [])
-    return { ...(owner === undefined ? {} : { managerThread: owner }), ...(followers.length === 0 ? {} : { managerFollowers: followers }) }
+    return owner === undefined ? {} : { managerThread: owner }
   }
 
   #tellItems(items: SessionItems): void {
@@ -3421,7 +3421,7 @@ export class Sessions {
         }
         gone.push(id)
         this.#rows.delete(id)
-        const { prepared: _prepared, unborn: _unborn, managerOwner: _owner, managerThread: _thread, managerFollowers: _followers, managerOperation: _operation, ...kept } = this.#deps.notes.all()[id] ?? {}
+        const { prepared: _prepared, unborn: _unborn, managerOwner: _owner, managerThread: _thread, managerUntracked: _untracked, managerOperation: _operation, ...kept } = this.#deps.notes.all()[id] ?? {}
         try { this.#deps.notes.set(id, { ...kept, hidden: true }) } catch (error) {
           this.#changed()
           throw new Error('The provider confirmed deletion, but local cleanup could not be saved. Do not repeat deletion; inspect the host notes store.', { cause: error })

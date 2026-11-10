@@ -64,7 +64,6 @@ export interface ManagerThread {
   readonly closed?: string
   readonly at: number
   readonly owns: readonly ChatSession['id'][]
-  readonly follows: readonly ChatSession['id'][]
 }
 
 export interface ManagerThreadOpen {

@@ -201,7 +201,7 @@ export class Manager {
     for (const thread of interruptedThreads) this.#saveThread(thread, { error: 'Manager was interrupted. Reconcile current task state without replaying interrupted messages.' }, { inbox: this.#record.inbox.map((message) => message.state === 'sending' && this.#threadOf(message) === thread ? { ...message, state: 'sent' } : message) })
     this.#pinAttachments()
     this.#attachments.cleanup()
-    this.#operations = new ManagerOperations({ ...deps, statusAttribution: () => this.#acting.getStore()?.attribution ?? { executor: 'manager', origin: 'unknown' }, instructions: { read: () => this.instructions(), write: (text, expected) => this.editInstructions(text, expected) }, attachments: this.#attachments, authorized: () => { const acting = this.#acting.getStore(); return this.#record.config.enabled && !this.#record.paused && !this.#stopped && (acting === undefined || this.#state(acting.thread).sessionId === acting.session) }, owner: 'manager', managed: (id) => this.manages(id), managerSession: () => this.#acting.getStore()?.session ?? this.#record.sessionId, managerThread: () => this.#acting.getStore()?.thread ?? MAIN, threadLabels: () => this.#threadRecord(this.#acting.getStore()?.thread ?? MAIN)?.labels ?? {} })
+    this.#operations = new ManagerOperations({ ...deps, statusAttribution: () => this.#acting.getStore()?.attribution ?? { executor: 'manager', origin: 'unknown' }, instructions: { read: () => this.instructions(), write: (text, expected) => this.editInstructions(text, expected) }, attachments: this.#attachments, authorized: () => { const acting = this.#acting.getStore(); return this.#record.config.enabled && !this.#record.paused && !this.#stopped && (acting === undefined || this.#state(acting.thread).sessionId === acting.session) }, owner: 'manager', managed: (id) => this.manages(id), managerSession: () => this.#acting.getStore()?.session ?? this.#record.sessionId, managerThread: () => this.#acting.getStore()?.thread ?? MAIN, trackedBy: (id) => { const thread = this.#ownerThread(id); return thread === undefined ? undefined : this.#threadName(thread) }, threadLabels: () => this.#threadRecord(this.#acting.getStore()?.thread ?? MAIN)?.labels ?? {} })
     deps.sessions.managerThreads((thread) => this.#threadName(thread))
     deps.sessions.managerItems((items) => {
       if (this.#threadOfSession(items.id) === undefined) return
@@ -266,15 +266,11 @@ export class Manager {
     this.#emit()
   }
 
-  /** The thread a worker reports to: the one that started or attached it, or GeckIt's own when that one is gone or closed. */
-  #ownerThread(id: ChatSession['id']): string {
-    const thread = this.#deps.notes.all()[id]?.managerThread
-    return thread !== undefined && this.#open(thread) ? thread : MAIN
-  }
-
-  #followers(id: ChatSession['id']): readonly string[] {
-    const owner = this.#ownerThread(id)
-    return (this.#deps.notes.all()[id]?.managerFollowers ?? []).filter((thread) => thread !== owner && this.#open(thread))
+  /** The one thread that tracks a worker: the one that started, attached or followed it, GeckIt's own when that one is gone or closed, or none after it let the worker go. */
+  #ownerThread(id: ChatSession['id']): string | undefined {
+    const note = this.#deps.notes.all()[id]
+    if (note?.managerUntracked === true) return undefined
+    return note?.managerThread !== undefined && this.#open(note.managerThread) ? note.managerThread : MAIN
   }
 
   #threadName(thread: string): ManagerThreadName | undefined {
@@ -309,7 +305,6 @@ export class Manager {
       ...(closed === undefined ? {} : { closed }),
       at,
       owns: workers.filter((one) => this.#ownerThread(one.id) === thread).map((one) => one.id),
-      follows: workers.filter((one) => this.#followers(one.id).includes(thread)).map((one) => one.id),
     }
   }
 
@@ -330,7 +325,7 @@ export class Manager {
   #approvals(): readonly ManagerApproval[] {
     if (!this.#record.config.enabled) return []
     return this.#sessions.filter((one) => this.#deps.settings().chatProviders.includes(providerOf(one.id)) && (this.#threadOfSession(one.id) !== undefined || this.manages(one.id))).flatMap((session) => {
-      const thread = this.#threadOfSession(session.id) ?? this.#ownerThread(session.id)
+      const thread = this.#threadOfSession(session.id) ?? this.#ownerThread(session.id) ?? MAIN
       return this.#deps.sessions.pendingForManager(session.id).map((pending) => {
         const approval = managerApproval(session, pending, `${this.#state(thread).sessionId ?? ''}:${this.#epoch(thread)}`)
         return thread === MAIN ? approval : { ...approval, decision: { ...approval.decision, thread } }
@@ -818,7 +813,7 @@ export class Manager {
       const taskEnded = tasks.some(([id, status]) => status !== 'running' && status !== 'unknown' && was.get(id) !== status && (before !== undefined || status === 'asks'))
       if (worker.state === 'asks' && this.#deps.sessions.pendingForManager(worker.id).length === 0 || worker.state === 'failed' || worker.status === 'blocked' || (worker.goalMet ?? null) !== (before?.[3] ?? null) || worker.state === 'unread' && before?.[1] !== 'unread' || worker.state === 'idle' && before?.[1] === 'working' || taskEnded) {
         const line = JSON.stringify({ observedAt: Date.now(), id: worker.id, title: worker.title, root: worker.root, state: worker.state, status: worker.status, summary: worker.stands, delivery: worker.delivery, tasks: worker.tasks })
-        for (const thread of [this.#ownerThread(worker.id), ...this.#followers(worker.id)]) {
+        for (const thread of [this.#ownerThread(worker.id)].filter((one) => one !== undefined)) {
           const batch = events.get(thread) ?? { lines: [], workers: [] }
           batch.lines.push(line)
           batch.workers.push(worker.id)
@@ -945,7 +940,7 @@ export class Manager {
     this.#saveThread(thread, { sessionId: undefined, previousSessions: previous === undefined ? this.#state(thread).previousSessions : [...this.#state(thread).previousSessions, previous], error: undefined }, { inbox })
     await this.open(thread)
     live.awaitingOutput = false
-    this.#reconcile(`Backing session replaced. Restore coordination from this durable record, then check current CLI state: ${JSON.stringify({ operations: this.#record.operations.filter((one) => (one.thread ?? MAIN) === thread).slice(-30), decisions: this.#record.decisions.filter((one) => (one.thread ?? MAIN) === thread), workers: this.#sessions.filter((one) => this.manages(one.id) && (this.#ownerThread(one.id) === thread || this.#followers(one.id).includes(thread))) })}`, thread)
+    this.#reconcile(`Backing session replaced. Restore coordination from this durable record, then check current CLI state: ${JSON.stringify({ operations: this.#record.operations.filter((one) => (one.thread ?? MAIN) === thread).slice(-30), decisions: this.#record.decisions.filter((one) => (one.thread ?? MAIN) === thread), workers: this.#sessions.filter((one) => this.manages(one.id) && this.#ownerThread(one.id) === thread) })}`, thread)
     return this.view()
   }
 
@@ -996,8 +991,8 @@ export class Manager {
       }
       if (request.action === 'delete' && thread !== MAIN) {
         for (const [id, note] of Object.entries(this.#deps.notes.all())) {
-          if (note.managerThread !== thread && !note.managerFollowers?.includes(thread)) continue
-          this.#deps.notes.set(id, { ...note, ...(note.managerThread === thread ? { managerThread: MAIN } : {}), ...(note.managerFollowers === undefined ? {} : { managerFollowers: note.managerFollowers.filter((one) => one !== thread) }) })
+          if (note.managerThread !== thread) continue
+          this.#deps.notes.set(id, { ...note, managerThread: MAIN })
         }
         this.#save({ threads: this.#record.threads.filter((one) => one.id !== thread), historyPurges: this.#record.historyPurges.filter((one) => one.request.id !== thread) })
       } else this.#saveThread(thread, { error: undefined, manualRecovery: false }, { historyPurges: this.#record.historyPurges.filter((one) => one.request.id !== thread) })

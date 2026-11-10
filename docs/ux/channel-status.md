@@ -101,7 +101,7 @@ A worker waiting for an answer counts as not active for the final edit: the stre
 
 - **Restart of GeckIt:** the message being edited is not remembered; the next change posts a new one.
 - **Two messages quickly:** one status covers both.
-- **A follower thread:** a Slack thread that follows a worker started from Telegram shows that worker in its own status too.
+- **A thread that took over tracking:** once Telegram unfollows a worker it started and a Slack thread follows it, the worker shows in the Slack thread's status and leaves Telegram's.
 - **Channel off or thread closed:** no status is posted.
 
 ## 9. Not done on purpose

@@ -324,18 +324,16 @@ export function originFor(chat: Pick<Chat, 'sessions'>, session: ChatSession): C
   return session.parent === undefined ? undefined : chat.sessions.find((one) => one.id === session.parent && one.manager !== true)
 }
 
-/** "From Manager · Slack · Maria Ivanova · +1 following": the Manager thread a managed conversation reports to. */
-export function managerFrom(session: Pick<ChatSession, 'managerThread' | 'managerFollowers'>): string | undefined {
+/** "From Manager · Slack · Maria Ivanova": the one Manager thread that tracks a managed conversation. */
+export function managerFrom(session: Pick<ChatSession, 'managerThread'>): string | undefined {
   if (session.managerThread === undefined) return undefined
-  const followers = session.managerFollowers?.length ?? 0
-  return `From Manager${session.managerThread.said === 'GeckIt' ? '' : ` · ${session.managerThread.said}`}${followers === 0 ? '' : ` · +${String(followers)} following`}`
+  return `From Manager${session.managerThread.said === 'GeckIt' ? '' : ` · ${session.managerThread.said}`}`
 }
 
-/** Who it reports to, who follows it and what its channel said about it, one per line. */
-export function managerTrace(session: Pick<ChatSession, 'managerThread' | 'managerFollowers' | 'labels'>): readonly string[] {
+/** Who it reports to and what its channel said about it, one per line. */
+export function managerTrace(session: Pick<ChatSession, 'managerThread' | 'labels'>): readonly string[] {
   return [
     ...(session.managerThread === undefined ? [] : [`Reports to: ${session.managerThread.said}`]),
-    ...(session.managerFollowers === undefined || session.managerFollowers.length === 0 ? [] : [`Followed by: ${session.managerFollowers.map((one) => one.said).join(', ')}`]),
     ...Object.entries(session.labels ?? {}).map(([key, value]) => `${key}: ${value}`),
   ]
 }

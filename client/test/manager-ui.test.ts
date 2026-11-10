@@ -254,15 +254,15 @@ describe('Manager source settings', () => {
 })
 
 describe('Manager thread on a worker card', () => {
-  it('says which thread it reports to, who follows it and what its channel labelled it', async () => {
+  it('says which thread it reports to and what its channel labelled it', async () => {
     const { From, managerFrom, managerTrace } = await import('../src/renderer/src/chat/Request')
     expect(managerFrom(worker)).toBeUndefined()
     expect(managerFrom({ managerThread: { id: 'main', said: 'GeckIt' } })).toBe('From Manager')
-    const slack: ChatSession = { ...worker, managerManaged: true, managerThread: { id: 'channel:slack:C1:3.0', said: 'Slack · Maria Ivanova' }, managerFollowers: [{ id: 'telegram:7', said: 'Telegram · Alex' }], labels: { thread: '3.0' } }
-    expect(managerFrom(slack)).toBe('From Manager · Slack · Maria Ivanova · +1 following')
-    expect(managerTrace(slack)).toEqual(['Reports to: Slack · Maria Ivanova', 'Followed by: Telegram · Alex', 'thread: 3.0'])
+    const slack: ChatSession = { ...worker, managerManaged: true, managerThread: { id: 'channel:slack:C1:3.0', said: 'Slack · Maria Ivanova' }, labels: { thread: '3.0' } }
+    expect(managerFrom(slack)).toBe('From Manager · Slack · Maria Ivanova')
+    expect(managerTrace(slack)).toEqual(['Reports to: Slack · Maria Ivanova', 'thread: 3.0'])
     const html = renderToStaticMarkup(createElement(From, { chat: { sessions: [slack], goTo: vi.fn() }, session: slack, className: 'board-card-from' }))
-    expect(html).toContain('From Manager · Slack · Maria Ivanova · +1 following')
+    expect(html).toContain('From Manager · Slack · Maria Ivanova<')
     expect(html).toContain('title="Reports to: Slack · Maria Ivanova')
   })
 })
@@ -293,8 +293,8 @@ describe('Manager threads in the window', () => {
   const owned: ChatSession = { ...worker, id: 'codex:owned', title: 'Fix login redirect' }
   const followed: ChatSession = { ...worker, id: 'codex:followed', title: 'Deploy preview' }
   const threaded: ManagerView = { ...ready, session: backing, workers: [owned, followed], decisions: [{ id: 'mine', title: 'Main decision', choices: [] }, { id: 'theirs', title: 'Slack decision', choices: [], thread: 'slack:C1:1' }], requests: [{ id: 'r1', text: 'hi', source: 'desktop', at: 1, session: 'manager-slack', state: 'queued' }], threads: [
-    { id: 'slack:C1:1', place: 'Slack', title: '#dev', labels: { starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://slack.example/p1', session: 'manager-slack', conversation: slackSession, state: 'working', at: 20, owns: ['codex:owned'], follows: ['codex:followed'] },
-    { id: 'main', title: 'Manager', labels: {}, session: 'manager-main', conversation: backing, state: 'idle', at: 10, owns: [], follows: [] },
+    { id: 'slack:C1:1', place: 'Slack', title: '#dev', labels: { starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://slack.example/p1', session: 'manager-slack', conversation: slackSession, state: 'working', at: 20, owns: ['codex:owned', 'codex:followed'] },
+    { id: 'main', title: 'Manager', labels: {}, session: 'manager-main', conversation: backing, state: 'idle', at: 10, owns: [] },
   ] }
 
   it('puts GeckIt first and gives each thread its own session, requests and decisions', () => {

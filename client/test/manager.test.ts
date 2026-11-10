@@ -111,20 +111,19 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
 }
 
 describe('Manager selected thread history', () => {
-  it('keeps workers and their native permissions, reroutes deleted ownership and removes only its follower', async () => {
+  it('keeps workers and their native permissions, reroutes deleted ownership to GeckIt', async () => {
     const f = await fixture(0, { disk: { list: async () => [], read: async () => undefined, has: async () => false, delete: async () => true } })
     await f.manager.configure({ enabled: true })
     const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: '42' })
     const session = await f.manager.open(thread)
     const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Keep worker' }, 'manager', 'keep-worker', thread)
-    f.notes.set(worker, { ...f.notes.all()[worker], managerThread: thread, managerFollowers: [thread, 'other-thread'] })
+    f.notes.set(worker, { ...f.notes.all()[worker], managerThread: thread })
     f.hear(worker, { items: [{ kind: 'card', id: 'native-worker-card', card: { kind: 'permission', title: 'Native worker request', detail: 'Keep pending' } }], gone: [], signals: [{ kind: 'asks', ask: 'native-worker-ask', wanted: { kind: 'command', command: 'inspect project' } }] })
     expect(f.sessions.pendingForManager(worker)).toHaveLength(1)
     const answers = f.answers.length
     await f.manager.history({ id: thread, session, action: 'delete' })
     expect(f.notes.all()[worker]?.managerOwner).toBe('manager')
     expect(f.notes.all()[worker]?.managerThread).toBe('main')
-    expect(f.notes.all()[worker]?.managerFollowers).toEqual(['other-thread'])
     expect(f.answers).toHaveLength(answers)
     expect(f.sessions.pendingForManager(worker)).toHaveLength(1)
     expect((await f.manager.view()).workers.some((one) => one.id === worker)).toBe(true)
@@ -212,12 +211,12 @@ describe('Manager exact-session deletion', () => {
     const managerId = (await f.manager.configure({ enabled: true })).session?.id
     const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Worker' }, 'manager', 'managed')
     f.set({ favorites: [worker] })
-    f.notes.set(worker, { ...f.notes.all()[worker], managerFollowers: ['other-thread'] })
+    f.notes.set(worker, { ...f.notes.all()[worker], managerUntracked: true })
     const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => { f.set(change); return f.settings() }, owner: 'manager', managed: () => true, managerSession: () => managerId })
     const result = await operations.run(['sessions', 'delete', '--id', worker], 'failed-delete')
     expect(JSON.parse(result)).toMatchObject({ id: worker, deleted: false, stopped: true, queueCleared: true, projectFilesKept: true, notice: expect.stringContaining('Deletion was not confirmed') })
     expect(f.settings().favorites).toEqual([worker])
-    expect(f.notes.all()[worker]).toMatchObject({ managerOwner: 'manager', managerFollowers: ['other-thread'] })
+    expect(f.notes.all()[worker]).toMatchObject({ managerOwner: 'manager', managerUntracked: true })
     expect((await f.sessions.list([f.root])).some((one) => one.id === worker)).toBe(true)
   })
 })
@@ -2539,7 +2538,7 @@ describe('Manager threads', () => {
     expect((await f.manager.view()).state).not.toBe('blocked')
   })
 
-  it('reports a worker to the thread that started it, and to threads that follow it', async () => {
+  it('lets only one thread track a worker, and another follow it only after that one lets go', async () => {
     const f = await fixture()
     const configured = await f.manager.configure({ enabled: true })
     const main = configured.session?.id
@@ -2562,20 +2561,35 @@ describe('Manager threads', () => {
     await f.manager.sendApp({ id: 'app:follow', text: 'Keep an eye on the login fix', session: main })
     await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Keep an eye'))).toBe(true))
     f.finish(main, f.command('follow-login', ['sessions', 'follow', '--id', worker]))
-    await vi.waitFor(() => expect(f.notes.all()[worker]?.managerFollowers).toEqual(['main']))
-    expect((await f.manager.view()).threads?.find((one) => one.id === 'main')?.follows).toEqual([worker])
-    expect((await f.sessions.allForManager([f.root])).find((one) => one.id === worker)?.managerFollowers).toEqual([{ id: 'main', said: 'GeckIt' }])
-    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main).length).toBeGreaterThanOrEqual(2))
-    f.finish(main, 'Following.')
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Slack · Maria Ivanova already tracks this worker'))).toBe(true))
+    expect(f.notes.all()[worker]?.managerThread).toBe(thread)
+    f.finish(main, 'Slack tracks it.')
+    await settle()
+    await f.manager.send('Stop tracking the login fix', 'channel', 'slack:stop', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === backing && one.text.includes('Stop tracking'))).toBe(true))
+    f.finish(backing, f.command('unfollow-login', ['sessions', 'unfollow', '--id', worker]))
+    await vi.waitFor(() => expect(f.notes.all()[worker]?.managerUntracked).toBe(true))
+    expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.owns).toEqual([])
+    expect((await f.sessions.allForManager([f.root])).find((one) => one.id === worker)?.managerThread).toBeUndefined()
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === backing && one.text.includes('[GeckIt CLI result]')).length).toBeGreaterThanOrEqual(2))
+    f.finish(backing, 'Stopped.')
+    await settle()
+    await f.manager.sendApp({ id: 'app:follow-again', text: 'Now keep an eye on it', session: main })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Now keep an eye'))).toBe(true))
+    f.finish(main, f.command('follow-login-again', ['sessions', 'follow', '--id', worker]))
+    await vi.waitFor(() => expect(f.notes.all()[worker]?.managerThread).toBe('main'))
+    expect(f.notes.all()[worker]?.managerUntracked).toBeUndefined()
+    expect((await f.manager.view()).threads?.find((one) => one.id === 'main')?.owns).toEqual([worker])
+    expect((await f.sessions.allForManager([f.root])).find((one) => one.id === worker)?.managerThread).toEqual({ id: 'main', said: 'GeckIt' })
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.text.includes('[GeckIt CLI result]')).length).toBeGreaterThanOrEqual(2))
+    f.finish(main, 'Tracking.')
     await settle()
     const before = { main: f.sent.filter((one) => one.id === main).length, thread: f.sent.filter((one) => one.id === backing).length }
     f.finish(worker, 'Fixed and tested.')
-    await vi.waitFor(() => {
-      expect(f.sent.filter((one) => one.id === main && one.text.includes('[Worker update')).length).toBeGreaterThan(0)
-      expect(f.sent.filter((one) => one.id === backing && one.text.includes('[Worker update')).length).toBeGreaterThan(0)
-    })
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.text.includes('[Worker update')).length).toBeGreaterThan(0))
+    await settle()
     expect(f.sent.filter((one) => one.id === main).length).toBeGreaterThan(before.main)
-    expect(f.sent.filter((one) => one.id === backing).length).toBeGreaterThan(before.thread)
+    expect(f.sent.filter((one) => one.id === backing).length).toBe(before.thread)
   })
 
   it('wakes Manager when a watch ends, not while it keeps running', async () => {

@@ -41,7 +41,7 @@ GeckIt gives a person one place to supervise work across AI conversations, proje
 ## Manager threads and channel labels - 2026-11-05 (branch feat/manager-threads, not released)
 
 - Threads: `client/src/main/manager.ts` keeps the GeckIt thread at the top of `manager.json` and others in `threads`; `thread()`, `label()`, `close()`, per-thread error, recovery and decisions. Tests: `client/test/manager.test.ts` "Manager threads".
-- Ownership and following: `sessions follow --id` and `sessions unfollow --id` in `client/src/main/manager-operations.ts`; notes `managerThread`, `managerFollowers`, `labels` in `client/src/main/sessions/index.ts`, which Search also matches.
+- Ownership and following: `sessions follow --id` and `sessions unfollow --id` in `client/src/main/manager-operations.ts`; notes `managerThread`, `managerUntracked`, `labels`; one tracking thread per worker, follow refused while another thread tracks it (2026-11-10) in `client/src/main/sessions/index.ts`, which Search also matches.
 - Channels: `manager(thread)`, `label()` and the `answer` event in `client/src/main/channels/channel-api.ts` and `channels.ts`; built-in Slack over Socket Mode in `client/src/main/channels/slack.ts`. Tests: `client/test/channels.test.ts`.
 - Telegram: one thread per chat from `client/src/core/runtime.ts`; its settings moved from the Manager settings in Team to Settings > Channels (`TelegramRow` in `client/src/renderer/src/ui/Channels.tsx`). Tests: `client/test/manager-ui.test.ts` "Channels settings"; reviewed in the settings preview, light and dark, connected and with Manager off.
 - UI lines: `managerFrom()` and `managerTrace()` in `client/src/renderer/src/chat/Request.tsx`, phone cells in `PhoneInfo.tsx`.

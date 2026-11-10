@@ -15744,13 +15744,6 @@ html.phone .manager-chat-threads {
   font-variant-numeric: tabular-nums;
 }
 
-.manager-work h4 {
-  margin: 6px 0 2px;
-  color: var(--text-faint);
-  font-size: 11px;
-  font-weight: 500;
-}
-
 .manager-work-row {
   display: flex;
   align-items: center;

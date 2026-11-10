@@ -6,7 +6,7 @@ import type { ChatSession } from '../src/shared/api'
 import type { ManagerThread, ManagerView } from '../src/shared/manager'
 
 const worker = (id: string, title: string, extra: Partial<ChatSession> = {}): ChatSession => ({ id, title, state: 'idle', ...extra }) as ChatSession
-const thread = (extra: Partial<ManagerThread> = {}): ManagerThread => ({ id: 'slack:C1:3.0', title: 'Fix it', labels: {}, state: 'idle', at: 0, owns: [], follows: [], ...extra }) as ManagerThread
+const thread = (extra: Partial<ManagerThread> = {}): ManagerThread => ({ id: 'slack:C1:3.0', title: 'Fix it', labels: {}, state: 'idle', at: 0, owns: [], ...extra }) as ManagerThread
 const view = (threads: ManagerThread[], workers: ChatSession[] = [], decisions: ManagerView['decisions'] = []): ManagerView => ({ state: 'idle', config: {}, workers, activity: [], providers: [], decisions, queued: 0, threads }) as unknown as ManagerView
 
 describe('threadActivity', () => {
@@ -18,7 +18,7 @@ describe('threadActivity', () => {
     expect(threadActivity(view([thread()]), 'slack:C1:3.0')).toMatchObject({ manager: 'Manager is done for now.', ending: 'Done.', active: false })
   })
 
-  it('lists only the workers this thread started or follows, with states and no secrets', () => {
+  it('lists only the workers this thread tracks, with states and no secrets', () => {
     const workers = [
       worker('w1', 'Fix login', { state: 'working' }),
       worker('w2', 'Deploy with token xoxb-1234567890-abcdefghij', { state: 'asks' }),
@@ -27,7 +27,7 @@ describe('threadActivity', () => {
       worker('w5', 'Pending one', { delivery: { status: 'pending' } } as Partial<ChatSession>),
       worker('other', 'Someone else', { state: 'working' }),
     ]
-    const activity = threadActivity(view([thread({ owns: ['w1', 'w2', 'w4'], follows: ['w3', 'w5', 'w1'] }), thread({ id: 'telegram:81', owns: ['other'] })], workers), 'slack:C1:3.0')
+    const activity = threadActivity(view([thread({ owns: ['w1', 'w2', 'w4', 'w3', 'w5'] }), thread({ id: 'telegram:81', owns: ['other'] })], workers), 'slack:C1:3.0')
     expect(activity?.workers).toEqual([
       { id: 'w1', line: '• Fix login: working', active: true },
       { id: 'w2', line: '• a task: waiting for an answer in GeckIt', active: false },
