@@ -62,6 +62,7 @@ export async function createCoreSessions(held: Routes, callbacks: SessionsDeps):
     claudeModels: (root) => root !== undefined && isRemote(root) ? hostModels(held, root) : claudeModels(),
     search: (roots, asked) => searchClaude(roots, asked, (root) => foldersFor(held, root)),
     limit: () => getSettings().workingAtOnce,
+    enabled: () => assistantsIn(getSettings()),
     order: () => getSettings().progressOrder,
   }
   const plugins = await installedPlugins()

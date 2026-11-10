@@ -257,6 +257,8 @@ export interface SessionsDeps {
   readonly commands?: (root: string, names: readonly string[]) => void
   /** How many conversations may work at once; nought, or none given, is no limit. */
   readonly limit?: () => number
+  /** The assistants turned on in Settings; a list is read only from these. All when absent. */
+  readonly enabled?: () => readonly SessionProvider[]
   /** In progress as it was dragged into order on the board, which is who a free slot goes to first. */
   readonly order?: () => readonly string[]
   /** How full the conversations working are, each time it may have changed. */
@@ -1021,8 +1023,14 @@ export class Sessions {
     return reading
   }
 
+  #enabled(provider: LlmProvider, roots: readonly string[]): boolean {
+    const on = this.#deps.enabled?.().includes(provider.family) ?? true
+    if (!on) this.#clearListFailures(provider, roots)
+    return on
+  }
+
   async #readForManager(roots: readonly string[]): Promise<ChatSession[]> {
-    for (const root of roots) {
+    for (const root of this.#enabled(this.#providers.stream, roots) ? roots : []) {
       const found = await this.#readList(this.#providers.stream, [root])
       if (found === undefined) continue
       for (const [id, row] of this.#rows) if (providerOf(id) === 'claude' && (row.project ?? row.root) === root) this.#rows.delete(id)
@@ -1033,7 +1041,7 @@ export class Sessions {
         this.#rows.set(row.id, row)
       }
     }
-    const codexRows = await this.#readList(this.#providers.codex, roots)
+    const codexRows = this.#enabled(this.#providers.codex, roots) ? await this.#readList(this.#providers.codex, roots) : undefined
     if (codexRows !== undefined) for (const [id, row] of this.#rows) if (providerOf(id) === 'codex' && roots.includes(row.project ?? row.root)) this.#rows.delete(id)
     const importedIds = new Map((codexRows ?? []).flatMap((row) => row.importedFrom === undefined ? [] : [[row.importedFrom, row.id] as const]))
     let imported = false
