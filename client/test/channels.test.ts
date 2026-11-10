@@ -344,8 +344,7 @@ it('Slack: one Manager thread per Slack thread, labelled with who started it, an
   run.event({ type: 'message', channel_type: 'channel', user: 'U2', channel: 'C1', ts: '3.5', thread_ts: '3.0', text: 'and keep the tests green' })
   run.event({ type: 'message', channel_type: 'channel', user: 'U2', channel: 'C1', ts: '4.0', text: 'unrelated chatter' })
   await run.settle()
-  expect(run.sent.at(-1)).toEqual(['channel:slack:C1:3.0', { text: 'and keep the tests green', from: 'Ben' }])
-  expect(run.sent).toHaveLength(2)
+  expect(run.sent).toHaveLength(1)
   run.event({ type: 'message', channel_type: 'im', user: 'U1', channel: 'D1', ts: '5.0', text: 'what is running?' })
   await run.settle()
   expect(run.sent.at(-1)).toEqual(['channel:slack:D1:5.0', { text: 'what is running?', from: 'Maria Ivanova' }])
@@ -373,7 +372,7 @@ it('Slack: says Manager is unavailable when it may not talk to Manager, and foll
   expect(run.posted).toEqual([{ channel: 'C1', thread_ts: '3.0', text: 'Written from GeckIt, answered here.' }])
 })
 
-it('Slack: a mention partway down a thread opens one Manager thread for it and sends what was written before, once', async () => {
+it('Slack: a mention partway down a thread opens one Manager thread, replies without a mention wait, and the next mention brings them', async () => {
   const history = [
     { ts: '1762400000.000100', user: 'U3', text: 'Login redirect loops after the deploy' },
     { ts: '1762400060.000200', user: 'U9', text: 'same for me <@U1>', files: [{ name: 'trace.txt', permalink: 'https://files.example/trace' }] },
@@ -388,15 +387,18 @@ it('Slack: a mention partway down a thread opens one Manager thread for it and s
   await run.settle()
   expect(run.opened.at(-1)).toMatchObject({ key: 'C1:1762400000.000100', title: 'can you look?', labels: { thread: '1762400000.000100', starter: 'Maria Ivanova' } })
   expect(run.sent).toEqual([['channel:slack:C1:1762400000.000100', { from: 'Maria Ivanova', text: 'Earlier in this Slack thread:\nBen (2025-11-06 03:33 UTC): Login redirect loops after the deploy\nBen (2025-11-06 03:34 UTC): same for me @Maria Ivanova [file: trace.txt https://files.example/trace]\nBen (2025-11-06 03:34 UTC): (left out: looks like it contains a token or key)\n\nMessage to you:\ncan you look?' }]])
-  history.push({ ts: '1762400150.000000', user: 'B1', text: 'Looking into it.' }, { ts: '1762400180.000000', user: 'U9', text: 'it started after 14:00' }, { ts: '1762400200.000000', user: 'U2', text: 'any news?' })
+  history.push({ ts: '1762400150.000000', user: 'B1', text: 'Looking into it.' }, { ts: '1762400180.000000', user: 'U9', text: 'it started after 14:00' }, { ts: '1762400190.000000', user: 'U1', text: 'logs show a 302 loop' }, { ts: '1762400200.000000', user: 'U2', text: '<@B1> any news?' })
   run.event({ type: 'message', channel_type: 'channel', user: 'U9', channel: 'C1', ts: '1762400180.000000', thread_ts: '1762400000.000100', text: 'it started after 14:00' })
+  run.event({ type: 'message', channel_type: 'channel', user: 'U1', channel: 'C1', ts: '1762400190.000000', thread_ts: '1762400000.000100', text: 'logs show a 302 loop' })
   await run.settle()
   expect(run.posted).toEqual([])
   expect(run.sent).toHaveLength(1)
-  run.event({ type: 'message', channel_type: 'channel', user: 'U2', channel: 'C1', ts: '1762400200.000000', thread_ts: '1762400000.000100', text: 'any news?' })
+  run.event({ type: 'message', channel_type: 'channel', user: 'U2', channel: 'C1', ts: '1762400200.000000', thread_ts: '1762400000.000100', text: '<@B1> any news?' })
+  run.event({ type: 'app_mention', user: 'U2', channel: 'C1', ts: '1762400200.000000', thread_ts: '1762400000.000100', text: '<@B1> any news?' })
   await run.settle()
   await run.settle()
-  expect(run.sent.at(-1)).toEqual(['channel:slack:C1:1762400000.000100', { from: 'Ben', text: 'Earlier in this Slack thread:\nBen (2025-11-06 03:36 UTC): it started after 14:00\n\nMessage to you:\nany news?' }])
+  expect(run.sent).toHaveLength(2)
+  expect(run.sent.at(-1)).toEqual(['channel:slack:C1:1762400000.000100', { from: 'Ben', text: 'Earlier in this Slack thread:\nBen (2025-11-06 03:36 UTC): it started after 14:00\nMaria Ivanova (2025-11-06 03:36 UTC): logs show a 302 loop\n\nMessage to you:\nany news?' }])
   await run.channel.stop()
 })
 

@@ -233,6 +233,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     }
     const text = await named(event.text ?? '')
     if (text === '' && event.thread_ts === undefined) return
+    if (!mention && !direct && !pending(key).some((one) => one.values.includes(text.toLowerCase()))) return
     if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(event.channel, ts, 'That message looks like it contains a token or key, so it was not sent. Remove it and write again.'); return }
     const from = await person(event.user)
     const link = known ? undefined : await slack('chat.getPermalink', { channel: event.channel, message_ts: ts }).then((reply) => reply.permalink, () => undefined)
