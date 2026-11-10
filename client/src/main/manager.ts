@@ -805,12 +805,18 @@ export class Manager {
     const events = new Map<string, { readonly lines: string[]; readonly workers: string[] }>()
     const positions = [...this.#record.workerEvents]
     for (const worker of sessions.filter((one) => this.manages(one.id))) {
-      const signature = JSON.stringify([worker.state, worker.status, worker.goalMet, worker.stands, worker.queued?.length ?? 0, worker.delivery, worker.tasks?.map((task) => [task.id, task.status, task.activityTool])])
+      const tasks = (worker.tasks ?? []).map((task): [string, string] => [task.id, task.status])
+      const signature = JSON.stringify(['v2', worker.state, worker.status, worker.goalMet ?? null, worker.queued?.length ?? 0, worker.delivery ?? null, tasks])
       const old = positions.find((one) => one.id === worker.id)
-      if (old?.signature === signature) continue
+      if (old?.signature === signature || worker.delivery?.status === 'pending') continue
       if (old !== undefined) positions.splice(positions.indexOf(old), 1)
       positions.push({ id: worker.id, signature })
-      if (worker.delivery?.status !== 'pending' && (worker.state === 'asks' && this.#deps.sessions.pendingForManager(worker.id).length === 0 || worker.state === 'failed' || worker.status === 'blocked' || worker.goalMet !== undefined || worker.state === 'unread' || old !== undefined && worker.state === 'idle' || (worker.tasks?.length ?? 0) > 0)) {
+      const parsed: unknown = old === undefined ? undefined : JSON.parse(old.signature)
+      const before = Array.isArray(parsed) && parsed[0] === 'v2' ? parsed : undefined
+      if (old !== undefined && before === undefined) continue
+      const was = new Map((before?.[6] as [string, string][] | undefined) ?? [])
+      const taskEnded = tasks.some(([id, status]) => status !== 'running' && status !== 'unknown' && was.get(id) !== status && (before !== undefined || status === 'asks'))
+      if (worker.state === 'asks' && this.#deps.sessions.pendingForManager(worker.id).length === 0 || worker.state === 'failed' || worker.status === 'blocked' || (worker.goalMet ?? null) !== (before?.[3] ?? null) || worker.state === 'unread' && before?.[1] !== 'unread' || worker.state === 'idle' && before?.[1] === 'working' || taskEnded) {
         const line = JSON.stringify({ observedAt: Date.now(), id: worker.id, title: worker.title, root: worker.root, state: worker.state, status: worker.status, summary: worker.stands, delivery: worker.delivery, tasks: worker.tasks })
         for (const thread of [this.#ownerThread(worker.id), ...this.#followers(worker.id)]) {
           const batch = events.get(thread) ?? { lines: [], workers: [] }

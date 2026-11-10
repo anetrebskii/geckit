@@ -2578,6 +2578,27 @@ describe('Manager threads', () => {
     expect(f.sent.filter((one) => one.id === backing).length).toBeGreaterThan(before.thread)
   })
 
+  it('wakes Manager when a watch ends, not while it keeps running', async () => {
+    const f = await fixture()
+    const configured = await f.manager.configure({ enabled: true })
+    const main = configured.session?.id ?? ''
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Watch CI' }, 'manager', 'watch-worker')
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'task', task: { id: 'watch', kind: 'monitor', what: 'CI', status: 'running', started: Date.now(), activity: 'tool', activityTool: 'Bash' } }] })
+    f.finish(worker, 'Watching CI.')
+    await settle()
+    f.finish(main, 'Noted.')
+    await settle()
+    const updates = (): number => f.sent.filter((one) => one.id === main && one.text.includes('[Worker update')).length
+    const before = updates()
+    for (const tool of ['Read', 'Grep', 'Bash']) {
+      f.hear(worker, { items: [], gone: [], signals: [{ kind: 'task', task: { id: 'watch', kind: 'monitor', what: 'CI', status: 'running', started: Date.now(), activity: 'tool', activityTool: tool } }] })
+      await settle()
+    }
+    expect(updates()).toBe(before)
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'task', task: { id: 'watch', kind: 'monitor', what: 'CI', status: 'completed', started: Date.now(), ended: Date.now() } }] })
+    await vi.waitFor(() => expect(updates()).toBe(before + 1))
+  })
+
   it('takes desktop messages into a channel thread and refuses them while its channel is off', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true })
