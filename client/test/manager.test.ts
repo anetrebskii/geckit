@@ -1363,6 +1363,63 @@ describe('Manager session inspection', () => {
   })
 })
 
+describe('Manager task lifecycle', () => {
+  const operationsFor = (f: Awaited<ReturnType<typeof fixture>>): ManagerOperations => new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => 'manager' })
+
+  it.each(['done', 'archived'] as const)('resumes a %s worker in place and creates an independent task separately', async (status) => {
+    let worker = ''
+    const f = await fixture(0, { disk: { list: async () => worker === '' ? [] : [{ id: worker, title: 'Original result', stands: '', at: Date.now(), driven: true }], read: async () => undefined, has: async () => true } })
+    const ops = operationsFor(f)
+    worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Original result' }, 'manager', 'original')
+    f.finish(worker, 'Evidence for the original result')
+    await ops.run(['sessions', 'mark', '--id', worker, '--status', status], `close-${status}`)
+    expect(f.notes.all()[worker]?.status).toBe(status)
+    const receipt: object = JSON.parse(await ops.run(['sessions', 'send', '--id', worker, '--text', 'Correct the same result'], `resume-${status}`)) as object
+    expect(receipt).toMatchObject({ id: worker, status: 'accepted' })
+    expect(f.notes.all()[worker]?.status).toBeUndefined()
+    expect(f.notes.all()[worker]?.moves?.at(-1)).toMatchObject({ before: status, status: 'progress' })
+    expect(f.sent.at(-1)).toMatchObject({ id: worker, text: 'Correct the same result' })
+    const separate: { readonly id: string } = JSON.parse(await ops.run(['sessions', 'start', '--project', f.root, '--text', 'Independent outcome', '--goal', 'Separate evidence'], 'independent')) as { readonly id: string }
+    expect(separate.id).not.toBe(worker)
+    expect(f.sent.at(-1)).toMatchObject({ id: separate.id, text: 'Independent outcome' })
+  })
+
+  it('cancels queued work before waiting for shutdown, preserves the provider transcript and blocks a racing follow-up', async () => {
+    let finishShutdown: (() => void) | undefined
+    const closing = new Promise<void>((resolve) => { finishShutdown = resolve })
+    const end = vi.fn(async () => closing)
+    const remove = vi.fn(async () => true)
+    const sent: string[] = []
+    const f = await fixture(0, { claude: () => ({ send: (text) => { sent.push(text) }, answer: () => undefined, stop: () => undefined, end }), disk: { list: async () => [], read: async () => undefined, has: async () => true, delete: remove } })
+    const ops = operationsFor(f)
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Working' }, 'manager', 'cancel-working')
+    await f.sessions.send({ session: worker, root: f.root, mode: 'manual', text: 'Must never run' })
+    expect(f.notes.all()[worker]?.queued).toHaveLength(1)
+    const cancel = ops.run(['sessions', 'mark', '--id', worker, '--status', 'archived'], 'cancel')
+    await vi.waitFor(() => expect(end).toHaveBeenCalledOnce())
+    expect(f.notes.all()[worker]?.queued ?? []).toEqual([])
+    expect(f.notes.all()[worker]?.status).not.toBe('archived')
+    await expect(f.sessions.send({ session: worker, root: f.root, mode: 'manual', text: 'Racing message' })).rejects.toThrow('being closed')
+    finishShutdown?.()
+    await cancel
+    expect(f.sessions.busy(worker)).toBe(false)
+    expect(f.notes.all()[worker]).toMatchObject({ status: 'archived', managerOwner: 'manager' })
+    expect(remove).not.toHaveBeenCalled()
+    expect(sent).toEqual(['Working'])
+    expect(f.notes.all()[worker]?.moves?.at(-1)).toMatchObject({ status: 'archived', attribution: { executor: 'manager', operation: 'cancel' } })
+  })
+
+  it('does not claim Archived when shutdown fails and keeps the queue canceled', async () => {
+    const f = await fixture(0, { claude: () => ({ send: () => undefined, answer: () => undefined, stop: () => undefined, end: async () => { throw new Error('Shutdown failed') } }) })
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Working' }, 'manager', 'shutdown-failure')
+    await f.sessions.send({ session: worker, root: f.root, mode: 'manual', text: 'Cancel this queued step' })
+    await expect(operationsFor(f).run(['sessions', 'mark', '--id', worker, '--status', 'archived'], 'failed-cancel')).rejects.toThrow('Runtime shutdown was not confirmed')
+    expect(f.notes.all()[worker]?.status).toBeUndefined()
+    expect(f.notes.all()[worker]?.queued ?? []).toEqual([])
+    expect(f.notes.all()[worker]?.managerOwner).toBe('manager')
+  })
+})
+
 describe('Manager session', () => {
   it('delivers built-in task separation policy on initial, continuation, follow-up and restored turns without saved preferences', async () => {
     const f = await fixture()
@@ -1392,6 +1449,12 @@ describe('Manager session', () => {
     expect(f.sent[0]?.input).toMatch(/same employee keeps their identity and source memory across separate task sessions/)
     expect(f.sent[0]?.input).toMatch(/Honor the user's explicit direction to continue a specific session/)
     expect(f.sent[0]?.input).not.toContain('Use ordinary Send for separate later work.')
+    expect(f.sent[0]?.input).toContain('A runtime ending, Goal reached badge or worker claim alone is not proof.')
+    expect(f.sent[0]?.input).toContain('Once the full goal is confirmed, move that worker to Done yourself')
+    expect(f.sent[0]?.input).toContain('keep incomplete or unverified work open')
+    expect(f.sent[0]?.input).toContain('Cancellation is not deletion.')
+    expect(f.sent[0]?.input).toContain('recently closed Done or Archived task')
+    expect(f.sent[0]?.input).not.toContain('Completed work stays in In progress')
     for (const turn of f.sent) {
       expect(turn.id).toBe(id)
       expect(turn.input).toContain(MANAGER_INSTRUCTIONS)

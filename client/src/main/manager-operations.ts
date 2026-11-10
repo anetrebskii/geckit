@@ -85,7 +85,7 @@ export const MANAGER_CAPABILITIES = {
     'sessions steer --id <managed-worker-id> --text <correction> (active native runtime only; never queues or restarts)',
     'sessions stop --id <managed-worker-id>',
     'sessions delete --id <full-managed-worker-id> (user confirmation; stops work, cancels queued messages and permanently deletes the conversation; project files kept; inspect deleted in the result)',
-    'sessions mark --id <managed-worker-id> --status todo|progress|blocked|done|archived (no product confirmation)',
+    'sessions mark --id <managed-worker-id> --status todo|progress|blocked|done|archived (no product confirmation; archived cancels pending work and shuts down runtime, keeps conversation)',
     'sessions attach --id <existing-worker-id> (no product confirmation; use when the user asks to coordinate or watch it; it reports to this thread)',
     'sessions follow --id <managed-worker-id> (no product confirmation; this thread starts tracking it and receives its updates; refused while another thread tracks it)',
     'sessions unfollow --id <managed-worker-id> (no product confirmation; this thread stops tracking it, and then no thread receives its updates until one follows it)',
@@ -560,7 +560,9 @@ export class ManagerOperations {
         const status = required(flags, '--status')
         if (status !== 'progress' && status !== 'todo' && status !== 'blocked' && status !== 'done' && status !== 'archived') throw new Error('Status must be todo, progress, blocked, done or archived.')
         if (this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
-        this.#deps.sessions.mark(id, status === 'progress' ? undefined : status, this.#deps.statusAttribution?.() ?? { executor: 'manager', origin: 'unknown', session: this.#deps.managerSession(), operation })
+        const attribution = this.#deps.statusAttribution?.() ?? { executor: 'manager', origin: 'unknown', session: this.#deps.managerSession(), operation }
+        if (status === 'archived') await this.#deps.sessions.archive(id, attribution)
+        else this.#deps.sessions.mark(id, status === 'progress' ? undefined : status, attribution)
         return JSON.stringify({ id, status })
       }
       if (command === 'answer') {

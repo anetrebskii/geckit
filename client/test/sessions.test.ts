@@ -1925,7 +1925,7 @@ describe('the list', () => {
     built.fake.closing = new Promise<void>((resolve) => { close = resolve })
     built.sessions.handOver(id)
     const deleting = built.sessions.remove([id])
-    await expect(built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Late send' })).rejects.toThrow('being deleted')
+    await expect(built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Late send' })).rejects.toThrow('being closed')
     built.sessions.carryOn(id)
     expect(remove).not.toHaveBeenCalled()
     close?.()
