@@ -201,6 +201,55 @@ it('executes authenticated Manager settings and saved-shortcut commands through 
   await cli('settings', 'set', '{"workingAtOnce":0}')
 }, 30_000)
 
+it('runs Manager Done/archive/resume through real CLI, preserves transcript across restart and terminates the canceled worker process', async () => {
+  await cli('manager', 'configure', JSON.stringify({ enabled: true, provider: 'plugin:fixture', delegation: 'automatic' }))
+  let sequence = 0
+  const execute = async (args: readonly string[]): Promise<string> => {
+    const id = `lifecycle-${String(++sequence)}`
+    await cli('manager', 'send', `fixture-command:${JSON.stringify({ id, args })}`)
+    const view = await eventually(() => read<ManagerView>('manager', 'view'), (current) => current.activity.some((one) => one.id === id && one.state !== 'running'))
+    const result = view.activity.find((one) => one.id === id)
+    expect(result).toMatchObject({ state: 'done' })
+    await eventually(() => read<ManagerView>('manager', 'view'), (current) => current.state === 'idle')
+    return result?.result ?? ''
+  }
+  const started: Pick<ChatSession, 'id'> = JSON.parse(await execute(['sessions', 'start', '--project', project, '--text', 'lifecycle-original', '--goal', 'Original result is present'])) as Pick<ChatSession, 'id'>
+  const worker = started.id
+  const row = async (): Promise<ChatSession | undefined> => (await read<ChatSession[]>('sessions', 'list')).find((one) => one.id === worker)
+  await eventually(() => items(worker), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:lifecycle-original'))
+  expect((await row())?.status).not.toBe('done')
+  await execute(['sessions', 'show', '--id', worker])
+  await execute(['sessions', 'mark', '--id', worker, '--status', 'done'])
+  expect(await row()).toMatchObject({ status: 'done' })
+  await execute(['sessions', 'send', '--id', worker, '--text', 'lifecycle-correction'])
+  expect((await row())?.status).toBeUndefined()
+  await eventually(() => items(worker), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:lifecycle-correction'))
+  await execute(['sessions', 'send', '--id', worker, '--text', 'hang'])
+  const workerPid = Number(await readFile(join(directory, 'fixture-child.pid'), 'utf8'))
+  expect(() => process.kill(workerPid, 0)).not.toThrow()
+  await execute(['sessions', 'send', '--id', worker, '--text', 'must-not-run-after-cancellation'])
+  expect((await row())?.queued).toHaveLength(1)
+  await execute(['sessions', 'mark', '--id', worker, '--status', 'archived'])
+  expect(await row()).toMatchObject({ status: 'archived' })
+  expect((await row())?.queued ?? []).toEqual([])
+  expect(() => process.kill(workerPid, 0)).toThrow()
+  expect((await items(worker)).some((one) => one.kind === 'theirs' && one.text === 'fixture:lifecycle-original')).toBe(true)
+  const exited = once(running!, 'exit'); running?.kill('SIGTERM'); await exited
+  await start()
+  expect(await row()).toMatchObject({ status: 'archived' })
+  expect((await items(worker)).some((one) => one.kind === 'theirs' && one.text === 'fixture:lifecycle-correction')).toBe(true)
+  expect((await items(worker)).some((one) => one.kind === 'theirs' && one.text.includes('must-not-run-after-cancellation'))).toBe(false)
+  await execute(['sessions', 'show', '--id', worker])
+  await execute(['sessions', 'send', '--id', worker, '--text', 'lifecycle-resumed'])
+  expect((await row())?.status).toBeUndefined()
+  await eventually(() => items(worker), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:lifecycle-resumed'))
+  const independent: Pick<ChatSession, 'id'> = JSON.parse(await execute(['sessions', 'start', '--project', project, '--text', 'independent-lifecycle-task', '--goal', 'Separate result'])) as Pick<ChatSession, 'id'>
+  expect(independent.id).not.toBe(worker)
+  await eventually(() => items(independent.id), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:independent-lifecycle-task'))
+  expect((await items(worker)).some((one) => one.kind === 'theirs' && one.text.includes('independent-lifecycle-task'))).toBe(false)
+  await cli('manager', 'configure', JSON.stringify({ enabled: false }))
+}, 30_000)
+
 it('runs a channel library with a sealed secret and only the folders granted to it', async () => {
   expect(await read<ChannelsView>('call', 'channels:view', '[]')).toMatchObject({ channels: [{ id: 'channel:slack', builtIn: true, state: 'off' }, { id: 'channel:discord', builtIn: true, state: 'off' }, { id: 'channel:probe', state: 'off' }] })
   expect(await read<ChannelsView>('call', 'channels:configure', JSON.stringify(['channel:probe', { enabled: true, projects: [project] }]))).toMatchObject({ channels: [{ id: 'channel:slack' }, { id: 'channel:discord' }, { state: 'setup', says: 'Fill in Token.' }] })
