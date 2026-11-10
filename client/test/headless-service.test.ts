@@ -217,6 +217,7 @@ it('runs Manager Done/archive/resume through real CLI, preserves transcript acro
   const worker = started.id
   const row = async (): Promise<ChatSession | undefined> => (await read<ChatSession[]>('sessions', 'list')).find((one) => one.id === worker)
   await eventually(() => items(worker), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:lifecycle-original'))
+  expect((await row())?.status).not.toBe('done')
   await execute(['sessions', 'show', '--id', worker])
   await execute(['sessions', 'mark', '--id', worker, '--status', 'done'])
   expect(await row()).toMatchObject({ status: 'done' })
