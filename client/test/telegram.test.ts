@@ -1178,21 +1178,22 @@ describe('Telegram intake confirmation transport with real persistent intake and
 })
 
 describe('Telegram status message', () => {
-  it('sends the status silently to the paired chat, once per stretch, and not before pairing', async () => {
+  it('sends the status silently to the paired chat while workers run, not before pairing, and moves it below a reply', async () => {
     const value = fixture()
-    const activity = { manager: 'Manager has your message and has not started yet.', ending: 'Done.', active: true, workers: [] }
-    value.telegram.progress(activity)
+    const working = { manager: 'Work in progress', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix: working', active: true }] }
+    value.telegram.progress(working)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(sent(value.api)).toEqual([])
     await paired(value)
     const before = sent(value.api).length
-    value.telegram.progress(activity)
-    value.telegram.progress(activity)
+    value.telegram.progress(working)
+    value.telegram.progress(working)
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 1))
-    expect(sent(value.api).at(-1)?.body).toEqual({ chat_id: 81, text: 'Manager has your message and has not started yet.', disable_notification: true, link_preview_options: { is_disabled: true } })
-    value.telegram.progress(undefined)
-    value.telegram.progress(activity)
-    await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 2))
+    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, text: expect.stringMatching(/^Work in progress\n• Fix: working\nUpdated \d\d:\d\d UTC$/), disable_notification: true })
+    await value.telegram.notify('Still on it.')
+    await vi.waitFor(() => expect(value.api.calls.filter((call) => call.method === 'deleteMessage')).toHaveLength(1))
+    await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 3))
+    expect(sent(value.api).slice(-2).map((one) => String(one.body['text']).split('\n')[0])).toEqual(['Still on it.', 'Work in progress'])
   })
 })
 

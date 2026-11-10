@@ -305,6 +305,7 @@ export class ManagerTelegram {
     })
     const finished = job.finally(() => { if (pendingResponse) connection.responses -= 1; this.syncTyping(connection) })
     this.outgoing = finished.catch(() => undefined)
+    if (this.status?.connection === connection) this.status.message.after(finished)
     return finished
   }
 
@@ -467,6 +468,7 @@ export class ManagerTelegram {
           return String(id)
         },
         edit: async (id, text) => { await connection.client.call('editMessageText', { chat_id: chatId, message_id: Number(id), text, link_preview_options: { is_disabled: true } }, signal) },
+        remove: async (id) => { await connection.client.call('deleteMessage', { chat_id: chatId, message_id: Number(id) }, signal) },
       }, { now: this.now }) }
     }
     this.status.message.update(activity)

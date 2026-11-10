@@ -283,6 +283,7 @@ class FakeSocket {
 function slackHarness(manager = true, history: { ts: string; user?: string; text: string; files?: { name: string; permalink: string }[] }[] = []) {
   const posted: { channel: string; thread_ts?: string; text: string }[] = []
   const updated: { channel: string; ts?: string; text: string }[] = []
+  const deleted: { channel: string; ts: string }[] = []
   const sent: [string, unknown][] = []
   const answered: [string, string, unknown][] = []
   const opened: unknown[] = []
@@ -315,16 +316,17 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
     const method = url.split('/').at(-1)
     const form = init.headers['content-type'] === 'application/x-www-form-urlencoded'
     if (!form && (method === 'conversations.replies' || method === 'users.info' || method === 'chat.getPermalink')) return { json: async () => ({ ok: false, error: 'invalid_arguments' }) }
-    const body = (form ? Object.fromEntries(new URLSearchParams(init.body)) : JSON.parse(init.body)) as { channel: string; thread_ts?: string; text: string; user?: string; oldest?: string }
+    const body = (form ? Object.fromEntries(new URLSearchParams(init.body)) : JSON.parse(init.body)) as { channel: string; thread_ts?: string; text: string; user?: string; oldest?: string; ts?: string }
     if (method === 'chat.postMessage') posted.push(body)
     if (method === 'chat.update') updated.push(body)
+    if (method === 'chat.delete') deleted.push({ channel: body.channel, ts: body.ts ?? '' })
     const reply = method === 'auth.test' ? { ok: true, user_id: 'B1' } : method === 'conversations.replies' ? { ok: true, messages: history.filter((one) => body.oldest === undefined || !after(body.oldest, one.ts)) } : method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : method === 'chat.postMessage' ? { ok: true, ts: `9.${String(posted.length)}` } : { ok: true }
     return { json: async () => reply }
   }) as unknown as typeof globalThis.fetch
   const channel = createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] })
   const event = (body: object): void => FakeSocket.last?.emit({ type: 'events_api', envelope_id: 'e1', payload: { event: body } })
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
-  return { channel, context, makeChannel: () => createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] }), event, settle, posted, updated, sent, answered, opened, watchers, store }
+  return { channel, context, makeChannel: () => createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] }), event, settle, posted, updated, deleted, sent, answered, opened, watchers, store }
 }
 
 it('Slack: one Manager thread per Slack thread, labelled with who started it, answered in that thread', async () => {
@@ -405,21 +407,27 @@ it('Slack: orders timestamps by seconds and microseconds', () => {
   expect(after('3.0', '3.0')).toBe(false)
 })
 
-it('Slack: one status message per stretch in the thread, edited in place and ended, never naming what runs', async () => {
+it('Slack: the status shows while workers run, leaves while Manager answers and comes back below the answer', async () => {
   const run = slackHarness()
   await run.channel.start()
   run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> fix the login redirect' })
   await run.settle()
   const watch = run.watchers.get('channel:slack:C1:3.0')
-  watch?.({ kind: 'status', activity: { manager: 'Manager has your message and has not started yet.', ending: 'Done.', active: true, workers: [] } })
-  await run.settle()
-  expect(run.posted.at(-1)).toEqual({ channel: 'C1', thread_ts: '3.0', text: 'Manager has your message and has not started yet.' })
   const posts = run.posted.length
-  watch?.({ kind: 'status', activity: { manager: 'Manager is done for now.', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
-  await vi.waitFor(() => expect(run.updated.at(-1)).toEqual({ channel: 'C1', ts: `9.${String(posts)}`, text: 'Manager is done for now.\n• Fix &lt;login&gt;: working' }), { timeout: 5_000 })
-  watch?.({ kind: 'status', activity: { manager: 'Manager is done for now.', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: finished', active: false }] } })
-  await vi.waitFor(() => expect(run.updated.at(-1)?.text).toMatch(/^Done\.\n• Fix &lt;login&gt;: finished\nUpdated \d\d:\d\d UTC$/), { timeout: 5_000 })
+  watch?.({ kind: 'status', activity: { manager: 'Work in progress', ending: 'Done.', active: true, workers: [] } })
+  await run.settle()
   expect(run.posted).toHaveLength(posts)
+  watch?.({ kind: 'status', activity: { manager: 'Work in progress', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
+  await vi.waitFor(() => expect(run.posted.at(-1)?.text).toMatch(/^Work in progress\n• Fix &lt;login&gt;: working\nUpdated \d\d:\d\d UTC$/))
+  const status = `9.${String(run.posted.length)}`
+  watch?.({ kind: 'status', activity: { manager: 'Work in progress', ending: 'Done.', active: true, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
+  await vi.waitFor(() => expect(run.deleted.at(-1)).toEqual({ channel: 'C1', ts: status }))
+  watch?.({ kind: 'answer', text: 'Still on it.' })
+  watch?.({ kind: 'status', activity: { manager: 'Work in progress', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
+  await vi.waitFor(() => expect(run.posted.slice(-2).map((one) => one.text.split('\n')[0])).toEqual(['Still on it.', 'Work in progress']))
+  const again = `9.${String(run.posted.length)}`
+  watch?.({ kind: 'status', activity: { manager: 'Work in progress', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: finished', active: false }] } })
+  await vi.waitFor(() => expect(run.updated.at(-1)).toMatchObject({ ts: again, text: expect.stringMatching(/^Done\.\n• Fix &lt;login&gt;: finished\nUpdated \d\d:\d\d UTC$/) }), { timeout: 5_000 })
   await run.channel.stop()
 }, 15_000)
 

@@ -101,7 +101,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   }
   const post = (channel: string, thread: string, text: string): Promise<SlackReply> => slack('chat.postMessage', { channel, thread_ts: thread, text: text.slice(0, 39_000) })
   const said = (error: unknown): string => error instanceof Error ? error.message : String(error)
-  const posted = (channel: string, thread: string, text: string): void => { void post(channel, thread, text).catch((error: unknown) => context.log.write('warn', 'slack.post.failed', { reason: said(error) })) }
+  const posted = (channel: string, thread: string, text: string): Promise<unknown> => { const sent = post(channel, thread, text); sent.catch((error: unknown) => context.log.write('warn', 'slack.post.failed', { reason: said(error) })); return sent }
 
   const person = async (user: string): Promise<string> => {
     const known = names.get(user)
@@ -179,6 +179,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
         return reply.ts
       },
       edit: async (id, text) => { if (!current()) return; await slack('chat.update', { channel, ts: id, text: plain(text) }) },
+      remove: async (id) => { if (!current()) return; await slack('chat.delete', { channel, ts: id }) },
     }, { failed: (error) => context.log.write('warn', 'slack.status.failed', { reason: said(error) }) })
     watching.set(thread, context.conversations.watch(thread, (event: ChannelEvent) => {
       if (event.kind === 'history') {
@@ -197,13 +198,13 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       }
       if (!current()) return
       if (event.kind === 'status') status.update(event.activity)
-      if (event.kind === 'answer') posted(channel, ts, event.text)
+      if (event.kind === 'answer') status.after(posted(channel, ts, event.text))
       if (event.kind === 'decisions') {
         context.store.set(`decisions:${key}`, event.decisions.map((one) => ({ id: one.id, values: one.choices.map((choice) => choice.value) })))
         for (const decision of event.decisions) {
           if (shown.has(decision.id)) continue
           shown.add(decision.id)
-          posted(channel, ts, decision.choices.length === 0 ? `*${decision.title}*` : `*${decision.title}*\nReply with one of: ${decision.choices.map((one) => `\`${one.value}\``).join(', ')}`)
+          status.after(posted(channel, ts, decision.choices.length === 0 ? `*${decision.title}*` : `*${decision.title}*\nReply with one of: ${decision.choices.map((one) => `\`${one.value}\``).join(', ')}`))
         }
       }
     }))

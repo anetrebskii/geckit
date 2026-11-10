@@ -234,7 +234,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     void next.finally(() => { if (queues.get(channel) === next) queues.delete(channel) }).catch(() => undefined)
     return next
   }
-  const posted = (channel: string, text: string): void => { void post(channel, text).catch(warn('discord.post.failed')) }
+  const posted = (channel: string, text: string): Promise<unknown> => { const sent = post(channel, text); sent.catch(warn('discord.post.failed')); return sent }
 
   const channelInfo = async (id: string): Promise<DiscordChannelInfo | undefined> => {
     const known = channels.get(id)
@@ -301,6 +301,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         return id
       },
       edit: async (id, text) => { if (!current()) return; await api('PATCH', `/channels/${channel}/messages/${id}`, { content: text.slice(0, LIMIT), allowed_mentions: { parse: [] } }) },
+      remove: async (id) => { if (!current()) return; await api('DELETE', `/channels/${channel}/messages/${id}`) },
     }, { failed: warn('discord.status.failed') })
     watching.set(thread, context.conversations.watch(thread, (event: ChannelEvent) => {
       if (event.kind === 'history') {
@@ -321,7 +322,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       }
       if (!current()) return
       if (event.kind === 'status') status.update(event.activity)
-      if (event.kind === 'answer') posted(channel, event.text)
+      if (event.kind === 'answer') status.after(posted(channel, event.text))
       if (event.kind === 'decisions') {
         context.store.set(`decisions:${key}`, event.decisions.map((one) => ({ id: one.id, title: one.title.slice(0, 1_500), values: one.choices.map((choice) => choice.value), labels: one.choices.map((choice) => choice.label) })))
         const open = new Set(event.decisions.map((one) => one.id))
