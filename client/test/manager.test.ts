@@ -9,6 +9,7 @@ import { createServer } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { TelegramAttachments } from '../src/main/telegram-attachments'
+import { threadActivity } from '../src/main/manager-status'
 import { Manager, runManagerCli } from '../src/main/manager'
 import type { ManagerCliContext, ManagerDeps } from '../src/main/manager'
 import { ManagerOperations, managerFile, managerProvider, managerReadOnly } from '../src/main/manager-operations'
@@ -2555,6 +2556,9 @@ describe('Manager threads', () => {
     expect(f.notes.all()[worker]?.labels).toEqual({ thread: '1730.1', starter: 'Maria Ivanova' })
     expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.owns).toEqual([worker])
     expect((await f.sessions.allForManager([f.root])).find((one) => one.id === worker)).toMatchObject({ managerThread: { id: thread, said: 'Slack · Maria Ivanova' } })
+    const workersOf = async (id: string): Promise<readonly string[] | undefined> => threadActivity(await f.manager.view(), id)?.workers.map((one) => one.id)
+    expect(await workersOf(thread)).toEqual([worker])
+    expect(await workersOf('main')).toEqual([])
     await vi.waitFor(() => expect(f.sent.filter((one) => one.id === backing).length).toBeGreaterThanOrEqual(2))
     f.finish(backing, 'Started.')
     await settle()
@@ -2571,6 +2575,8 @@ describe('Manager threads', () => {
     await vi.waitFor(() => expect(f.notes.all()[worker]?.managerUntracked).toBe(true))
     expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.owns).toEqual([])
     expect((await f.sessions.allForManager([f.root])).find((one) => one.id === worker)?.managerThread).toBeUndefined()
+    expect(await workersOf(thread)).toEqual([])
+    expect(await workersOf('main')).toEqual([])
     await vi.waitFor(() => expect(f.sent.filter((one) => one.id === backing && one.text.includes('[GeckIt CLI result]')).length).toBeGreaterThanOrEqual(2))
     f.finish(backing, 'Stopped.')
     await settle()
@@ -2580,6 +2586,8 @@ describe('Manager threads', () => {
     await vi.waitFor(() => expect(f.notes.all()[worker]?.managerThread).toBe('main'))
     expect(f.notes.all()[worker]?.managerUntracked).toBeUndefined()
     expect((await f.manager.view()).threads?.find((one) => one.id === 'main')?.owns).toEqual([worker])
+    expect(await workersOf('main')).toEqual([worker])
+    expect(await workersOf(thread)).toEqual([])
     expect((await f.sessions.allForManager([f.root])).find((one) => one.id === worker)?.managerThread).toEqual({ id: 'main', said: 'GeckIt' })
     await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.text.includes('[GeckIt CLI result]')).length).toBeGreaterThanOrEqual(2))
     f.finish(main, 'Tracking.')
