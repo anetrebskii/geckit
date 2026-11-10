@@ -1,5 +1,5 @@
 import { assertProviderAvailable } from './provider-changes'
-import type { ManagerHistoryRequest, ManagerHistoryBoundary, ManagerHistoryChange, ManagerInstructionsResult } from '../shared/manager'
+import type { ManagerHistoryRequest, ManagerHistoryBoundary, ManagerHistoryChange, ManagerInstructionsResult, ManagerSpeech } from '../shared/manager'
 import type { Employees } from './employees'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { execFile } from 'node:child_process'
@@ -15,6 +15,7 @@ import { VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError } from '../shared/vpn-ip'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE, MANAGER_MAIN_THREAD, managerLabels, managerProjects, managerThreadSaid } from '../shared/manager'
 import type { ManagerActivity, ManagerAnswerRequest, ManagerAnswerResult, ManagerCliAnswered, ManagerCliAsked, ManagerConfig, ManagerDecision, ManagerDecisionOutcome, ManagerView, ManagerReplyOrigin, ManagerRequestReceipt, ManagerSendRequest, ManagerTelegramReply, ManagerThread, ManagerThreadOpen } from '../shared/manager'
 import type { ManagerIntakeDeps } from './manager-intake'
+import { heard } from './manager-voice'
 import { TelegramAttachments } from './telegram-attachments'
 import type { TelegramAttachment, TelegramFileSender } from './telegram-attachments'
 import { ManagerOperations, managerAttachTarget, managerReadOnly, managerSameUpload } from './manager-operations'
@@ -67,6 +68,7 @@ interface ThreadState {
   readonly responseOrigin?: ManagerReplyOrigin | undefined
   readonly error?: string | undefined
   readonly manualRecovery?: boolean
+  readonly language?: ManagerSpeech | undefined
 }
 
 interface ThreadRecord extends ThreadState {
@@ -177,7 +179,7 @@ export class Manager {
     const settings = deps.settings()
     const config = configuration(deps.directory).manager
     const provider = settings.chatProviders.includes(settings.chatProvider) ? settings.chatProvider : settings.chatProviders[0] ?? DEFAULT_MANAGER_CONFIG.provider
-    this.#record = { historyBoundaries: stored.historyBoundaries ?? [], historyPurges: stored.historyPurges ?? [], config: { ...DEFAULT_MANAGER_CONFIG, provider, ...config }, paused: stored.paused ?? false, pauseReason: stored.pauseReason, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], receipts: stored.receipts ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], threads: (stored.threads ?? []).map((thread) => ({ ...thread, previousSessions: thread.previousSessions ?? [], labels: thread.labels ?? {} })), manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }) }
+    this.#record = { historyBoundaries: stored.historyBoundaries ?? [], historyPurges: stored.historyPurges ?? [], config: { ...DEFAULT_MANAGER_CONFIG, provider, ...config }, paused: stored.paused ?? false, pauseReason: stored.pauseReason, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], receipts: stored.receipts ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], threads: (stored.threads ?? []).map((thread) => ({ ...thread, previousSessions: thread.previousSessions ?? [], labels: thread.labels ?? {} })), manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }), ...(stored.language === undefined ? {} : { language: stored.language }) }
     if (stored.config !== undefined) {
       const { config: _config, ...runtime } = stored
       writeJson(this.#path(), runtime)
@@ -301,6 +303,7 @@ export class Manager {
       ...(session === undefined ? {} : { conversation: session }),
       state: state.error !== undefined ? 'failed' : decisions.some((decision) => (decision.thread ?? MAIN) === thread) ? 'asks' : working ? 'working' : 'idle',
       ...(manager === undefined ? {} : { manager }),
+      ...(state.language === undefined ? {} : { language: state.language }),
       ...(state.error === undefined ? {} : { error: state.error }),
       ...(closed === undefined ? {} : { closed }),
       at,
@@ -582,6 +585,8 @@ export class Manager {
     if (!authorized()) throw new Error('This Telegram connection is no longer authorized.')
     for (const attachment of attachments) this.#attachments.read(attachment)
     const literal = /^[!/]/.test(text.trim()) ? `[User request]\n${text.trim()}` : text.trim()
+    const language = source === 'event' ? undefined : heard(text)
+    if (language !== undefined && language !== this.#state(thread).language) this.#saveThread(thread, { language })
     if (!this.#record.inbox.some((one) => one.id === id)) this.#save({ inbox: [...this.#record.inbox, { id, text: literal, ...(thread === MAIN ? {} : { thread }), source, workers, ...(telegramRequests.length === 0 ? {} : { telegramRequests }), ...(attachments.length === 0 ? {} : { attachments }), at: Date.now(), state: 'queued' }] })
     void this.#dispatch(thread)
     return session

@@ -1,6 +1,7 @@
 import type { ChannelInfo } from '../../shared/channels'
 import type { Channel, ChannelContext, ChannelEvent, ChannelModule } from './channel-api'
 import { StatusMessage } from '../manager-status'
+import { heard as speechOf, say } from '../manager-voice'
 
 const SECRET = /\b(?:xox[abposr]-[\w-]{10,}|xapp-[\w-]{10,}|sk-[\w-]{16,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|AKIA[0-9A-Z]{16}|[MNO][\w-]{23,27}\.[\w-]{6}\.[\w-]{27,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/
 
@@ -228,18 +229,18 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     if (last !== undefined && !after(event.ts, last)) return
     const allow = context.config()['allow']
     if (!Array.isArray(allow) || !allow.includes(event.user)) {
-      if (mention || direct) await post(event.channel, ts, 'You are not on the list of people who may use this bot.')
+      if (mention || direct) await post(event.channel, ts, say(speechOf(event.text ?? '')).notAllowed)
       return
     }
     const text = await named(event.text ?? '')
     if (text === '' && event.thread_ts === undefined) return
     if (!mention && !direct && !pending(key).some((one) => one.values.includes(text.toLowerCase()))) return
-    if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(event.channel, ts, 'That message looks like it contains a token or key, so it was not sent. Remove it and write again.'); return }
+    if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(event.channel, ts, say(speechOf(text)).secret); return }
     const from = await person(event.user)
     const link = known ? undefined : await slack('chat.getPermalink', { channel: event.channel, message_ts: ts }).then((reply) => reply.permalink, () => undefined)
     if (!current()) return
     const thread = context.conversations.manager({ key, from, ...(known ? {} : { title: text.split('\n')[0]?.slice(0, 80) || 'Slack thread' }), ...(link === undefined ? {} : { link }), labels: { channel: event.channel, thread: ts, ...(known ? {} : { starter: from, starterId: event.user }) } })
-    if (thread === undefined) { await post(event.channel, ts, 'Manager is not available to Slack. Allow it in GeckIt, Settings, Channels.'); return }
+    if (thread === undefined) { await post(event.channel, ts, say(speechOf(text)).unavailable('Slack', 'Settings, Channels')); return }
     if (!known) {
       context.store.set(`thread:${key}`, true)
       context.store.set('threads', [...places(), { key, channel: event.channel, ts }].slice(-500))

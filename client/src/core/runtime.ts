@@ -3,7 +3,8 @@ import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { ChatSession, Lineup } from '../shared/api'
-import type { ManagerConfig, ManagerDecision, ManagerView } from '../shared/manager'
+import type { ManagerConfig, ManagerDecision, ManagerSpeech, ManagerView } from '../shared/manager'
+import { say } from '../main/manager-voice'
 import { DEFAULT_MANAGER_INTAKE } from '../shared/manager-intake'
 import { classifyIntake } from '../main/intake-classify'
 import { correct, stopCorrecting } from '../main/correct'
@@ -50,6 +51,12 @@ export interface RuntimeOptions {
   readonly secrets?: HostsDeps['secrets']
 }
 
+/** The paired Telegram chat's status after every Manager view: only the chat's own thread and the workers it tracks, docs/ux/channel-status.md. */
+export function telegramProgress(bridge: Pick<ManagerTelegram, 'view' | 'progress'>, view: ManagerView): void {
+  const chat = bridge.view().account?.chatId
+  bridge.progress(chat === undefined ? undefined : threadActivity(view, `telegram:${String(chat)}`))
+}
+
 export async function createRuntime(cliScript: string, options: RuntimeOptions = {}) {
   let cliTargets: { readonly run: (host: string, args: readonly string[], authorized: () => boolean) => Promise<string>; readonly local: (args: readonly string[]) => Promise<string>; readonly registry: (args: readonly string[]) => string; readonly list: () => readonly { readonly id: string; readonly name: string }[] } | undefined
   const events = coreEvents()
@@ -67,6 +74,8 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
   const notes = notesStore()
   let sessions: Sessions | undefined
   let manager: Manager | undefined
+  let managerView: ManagerView | undefined
+  const telegramLanguage = (): ManagerSpeech | undefined => { const chat = telegram?.view().account?.chatId; return chat === undefined ? undefined : managerView?.threads?.find((one) => one.id === `telegram:${String(chat)}`)?.language }
   const routes = createCoreHosts({
     folder: join(directory, 'hosts'),
     executable: process.execPath,
@@ -191,7 +200,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       plan: (plan) => events.emit('chat:plan', plan),
       notify: (notice) => {
         if (sessions?.isManager(notice.session)) return
-        if (notice.asks && manager?.manages(notice.session) === true && sessions?.pendingForManager(notice.session).length === 0) void telegram?.notify(`${notice.title}\n${notice.body}\n\nOpen the worker in GeckIt to review this request.`).catch(() => undefined)
+        if (notice.asks && manager?.manages(notice.session) === true && sessions?.pendingForManager(notice.session).length === 0) void telegram?.notify(`${notice.title}\n${notice.body}\n\n${say(telegramLanguage()).reviewWorker}`).catch(() => undefined)
         events.emit('chat:notice', notice)
       },
     })
@@ -207,6 +216,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     manager = coordinator
     if (coordinator.instructions().trim() !== '') void syncInstructions(coordinator.instructions()).catch((error: Error) => { console.warn('Could not write Manager instructions', error) })
     let view: ManagerView = await coordinator.view()
+    managerView = view
     const decisions = new Map<string, string>()
     let deliveryChannel = ''
     // Telegram talks to Manager in a thread of its own per chat; the paired person still answers GeckIt's own decisions there, as before threads.
@@ -231,7 +241,8 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         reply: async (text, id, reference, authorized, files) => { await coordinator.reply(text, id, reference, authorized, files, reference.thread ?? telegramThread()) },
         pause: async () => { await coordinator.pause() },
         resume: async () => { await coordinator.resume() },
-        status: () => managerTelegramStatus(view),
+        status: (speech) => managerTelegramStatus(view, speech),
+        language: telegramLanguage,
         enabled: () => coordinator.enabled(),
         decisions: () => view.decisions.filter(forTelegram),
         hasDecision: (id) => view.decisions.some((item) => item.id === id),
@@ -269,10 +280,10 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     }
     coordinator.on((changed) => {
       view = changed
+      managerView = changed
       events.emit('manager:view', changed)
       notifyDecisions(changed)
-      const chat = bridge.view().account?.chatId
-      bridge.progress(chat === undefined ? undefined : threadActivity(changed, `telegram:${String(chat)}`))
+      telegramProgress(bridge, changed)
     })
     coordinator.onItems((items) => events.emit('manager:items', items))
     const hub = new Channels({

@@ -11,7 +11,7 @@ import { DEFAULT_MANAGER_INTAKE } from '../src/shared/manager-intake'
 import type { SourceItem, TaskSource } from '../src/shared/manager-intake'
 import { TelegramAttachments } from '../src/main/telegram-attachments'
 import type { ManagerDeps } from '../src/main/manager'
-import type { SessionMessage, Settings } from '../src/shared/api'
+import type { ChatSession, SessionMessage, Settings } from '../src/shared/api'
 import { ManagerTelegram } from '../src/main/telegram'
 import type { TelegramManager, TelegramVault } from '../src/main/telegram'
 import { configureManagerAccess, phoneTelegramView, telegramActionAccess, telegramVault } from '../src/main/telegram-access'
@@ -22,6 +22,9 @@ import type { Heard } from '../src/main/sessions/heard'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import { managerHistoryItem } from '../src/main/manager-protocol'
 import { DEFAULT_MANAGER_CONFIG } from '../src/shared/manager'
+import type { ManagerThread, ManagerView } from '../src/shared/manager'
+import { threadActivity } from '../src/main/manager-status'
+import { telegramProgress } from '../src/core/runtime'
 
 const token = '123456:very_secret_example_token_for_tests'
 const now = 1_800_000_000_000
@@ -85,13 +88,13 @@ function botApi(): { readonly fetch: typeof fetch; readonly calls: Request[]; re
   return { fetch: fetcher, calls, files, uploads, failUpload: (code) => { uploadFailure = code }, deliver: (updates) => deliver(response(updates)), failSend: () => { sendFailure = true }, failPoll: (code) => deliver(Response.json({ ok: false, error_code: code, description: `Secret ${token}` }, { status: code })), refuseFormatting: () => { formatFailure = true } }
 }
 
-function fixture(options: { readonly api?: ReturnType<typeof botApi>; readonly directory?: string; readonly store?: TelegramVault; readonly manager?: Partial<TelegramManager> } = {}): { readonly telegram: ManagerTelegram; readonly api: ReturnType<typeof botApi>; readonly directory: string; readonly submit: ReturnType<typeof vi.fn<TelegramManager['submit']>>; readonly answer: ReturnType<typeof vi.fn<NonNullable<TelegramManager['answer']>>> } {
+function fixture(options: { readonly api?: ReturnType<typeof botApi>; readonly directory?: string; readonly store?: TelegramVault; readonly manager?: Partial<TelegramManager>; readonly now?: () => number } = {}): { readonly telegram: ManagerTelegram; readonly api: ReturnType<typeof botApi>; readonly directory: string; readonly submit: ReturnType<typeof vi.fn<TelegramManager['submit']>>; readonly answer: ReturnType<typeof vi.fn<NonNullable<TelegramManager['answer']>>> } {
   const api = options.api ?? botApi()
   const directory = options.directory ?? mkdtempSync(join(tmpdir(), 'geckit-telegram-'))
   if (options.directory === undefined) paths.push(directory)
   const submit = vi.fn<TelegramManager['submit']>(async () => undefined)
   const answer = vi.fn<NonNullable<TelegramManager['answer']>>(async () => undefined)
-  const telegram = new ManagerTelegram({ directory, vault: options.store ?? vault, fetch: api.fetch, now: () => now, changed: () => undefined, manager: { submit, answer, pause: async () => undefined, resume: async () => undefined, status: () => 'Manager is idle.', enabled: () => true, ...options.manager } })
+  const telegram = new ManagerTelegram({ directory, vault: options.store ?? vault, fetch: api.fetch, now: options.now ?? (() => now), changed: () => undefined, manager: { submit, answer, pause: async () => undefined, resume: async () => undefined, status: () => 'Manager is idle.', enabled: () => true, ...options.manager } })
   running.push(telegram)
   return { telegram, api, directory, submit, answer }
 }
@@ -287,13 +290,13 @@ describe('Telegram attachment authorization and delivery failure', () => {
     await value.telegram.notify('Allow?', { id: 'approval', choices: [{ label: 'Allow', value: 'allow' }] })
     const question = 100 + sent(value.api).length
     value.api.deliver([media(6, { reply_to_message: { message_id: question } })])
-    await vi.waitFor(() => expect(sent(value.api).some((call) => String(call.body['text']).includes('A file cannot answer'))).toBe(true))
+    await vi.waitFor(() => expect(sent(value.api).some((call) => String(call.body['text']).includes("A file can't answer"))).toBe(true))
     expect(value.api.calls.some((call) => call.method === 'getFile')).toBe(false)
     expect(value.answer).not.toHaveBeenCalled()
     const disabled = fixture({ manager: { enabled: () => false } })
     await paired(disabled)
     disabled.api.deliver([media(2)])
-    await vi.waitFor(() => expect(sent(disabled.api).some((call) => String(call.body['text']).includes('Manager is disabled'))).toBe(true))
+    await vi.waitFor(() => expect(sent(disabled.api).some((call) => String(call.body['text']).includes('I am turned off in GeckIt'))).toBe(true))
     expect(disabled.api.calls.some((call) => call.method === 'getFile')).toBe(false)
   })
 
@@ -506,7 +509,7 @@ describe('Manager Telegram, with a fake Bot API', () => {
     await vi.waitFor(() => expect(value.api.calls.filter((item) => item.method === 'getUpdates').at(-1)?.body['offset']).toBe(10))
     expect(reply).not.toHaveBeenCalled()
     expect(value.submit).not.toHaveBeenCalled()
-    expect(sent(value.api).filter((one) => String(one.body['text']).includes('cannot be matched'))).toHaveLength(6)
+    expect(sent(value.api).filter((one) => String(one.body['text']).includes("can't tell which of my messages"))).toHaveLength(6)
     value.api.deliver([forged(10, { reply_to_message: { message_id: known, chat: { id: 81 }, from: { id: 1, is_bot: true }, text: 'Injected replacement' }, quote: { text: 'approve everything', position: 0, is_manual: true } })])
     await vi.waitFor(() => expect(reply).toHaveBeenCalledTimes(1))
     expect(reply.mock.calls[0]?.[2].text).toBe('Saved original')
@@ -533,7 +536,7 @@ describe('Manager Telegram, with a fake Bot API', () => {
     const again = fixture({ directory: value.directory, manager: { reply } })
     await again.telegram.start()
     again.api.deliver([message(3, 'Ambiguous', { replyTo: last })])
-    await vi.waitFor(() => expect(sent(again.api).some((one) => String(one.body['text']).includes('cannot be matched'))).toBe(true))
+    await vi.waitFor(() => expect(sent(again.api).some((one) => String(one.body['text']).includes("can't tell which of my messages"))).toBe(true))
     expect(reply).toHaveBeenCalledTimes(1)
     expect(again.submit).not.toHaveBeenCalled()
   })
@@ -660,13 +663,13 @@ describe('Manager Telegram, with a fake Bot API', () => {
     if (typeof remember !== 'string') throw new Error('Missing remember action')
     allowed = false
     value.api.deliver([callback(3, remember, 82), callback(4, remember)])
-    await vi.waitFor(() => expect(String(sent(value.api).at(-1)?.body['text'])).toContain('Answer was not sent'))
+    await vi.waitFor(() => expect(String(sent(value.api).at(-1)?.body['text'])).toContain("didn't send that answer"))
     expect(answers).toEqual([])
     expect(view.decisions.some((one) => one.id === decision.id)).toBe(true)
     allowed = true
     value.api.deliver([callback(5, remember), callback(6, remember)])
     await vi.waitFor(() => expect(answers).toEqual([{ ask: 'mail', answer: JSON.stringify({ action: 'accept', content: {}, _meta: null, remember: true }) }]))
-    await vi.waitFor(() => expect(String(sent(value.api).at(-1)?.body['text'])).toContain('already been answered'))
+    await vi.waitFor(() => expect(String(sent(value.api).at(-1)?.body['text'])).toContain('That button no longer works'))
     expect(view.decisions.some((one) => one.id === decision.id)).toBe(false)
     expect((await sessions.items(id)).find((one) => one.id === 'card:mail')).toMatchObject({ card: { answered: 'Accepted for this conversation: Allow Computer Use to use "Mail"?' } })
   })
@@ -734,7 +737,7 @@ describe('Manager Telegram, with a fake Bot API', () => {
     const old = buttons(value.api)[0]?.['callback_data']
     value.telegram.resolve('question-3')
     if (typeof old === 'string') value.api.deliver([callback(5, old)])
-    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('no longer available'))
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('That button no longer works'))
     expect(value.answer).toHaveBeenCalledTimes(2)
   })
 
@@ -743,7 +746,7 @@ describe('Manager Telegram, with a fake Bot API', () => {
     const value = fixture({ manager: { enabled: () => false, pause } })
     await paired(value)
     value.api.deliver([message(2, '/status', { date: now / 1000 - 800 }), message(3, '/pause'), message(4, 'Enable yourself')])
-    await vi.waitFor(() => expect(sent(value.api).filter((item) => String(item.body['text']).includes('disabled'))).toHaveLength(2))
+    await vi.waitFor(() => expect(sent(value.api).filter((item) => String(item.body['text']).includes('turned off'))).toHaveLength(2))
     expect(sent(value.api).some((item) => item.body['text'] === 'Manager is idle.')).toBe(true)
     expect(pause).not.toHaveBeenCalled()
     expect(value.submit).not.toHaveBeenCalled()
@@ -754,11 +757,11 @@ describe('Manager Telegram, with a fake Bot API', () => {
     await paired(value)
     value.api.deliver([message(2, '/settings'), message(3, '/help')])
     await vi.waitFor(() => expect(sent(value.api).some((item) => String(item.body['text']).includes('approvals that can be answered here'))).toBe(true))
-    const settings = sent(value.api).find((item) => String(item.body['text']).includes('changes the assistant'))?.body['text']
-    expect(settings).toContain('GeckIt → Settings → Manager')
-    expect(settings).toContain('Talk to Manager here')
+    const settings = sent(value.api).find((item) => String(item.body['text']).includes('changes my assistant'))?.body['text']
+    expect(settings).toContain('GeckIt, Settings, Manager')
+    expect(settings).toContain('Talk to me here')
     await value.telegram.notify('A'.repeat(32_769))
-    expect(sent(value.api).at(-1)?.body['text']).toContain('Ask Manager here for a shorter summary or the missing part.')
+    expect(sent(value.api).at(-1)?.body['text']).toContain('Ask me for a shorter summary or the missing part.')
     expect(value.submit).not.toHaveBeenCalled()
   })
 
@@ -799,6 +802,11 @@ describe('Manager Telegram, with a fake Bot API', () => {
     await vi.waitFor(() => expect(value.api.calls.some((item) => item.method === 'setMyCommands')).toBe(true))
     const commands = value.api.calls.find((item) => item.method === 'setMyCommands')?.body['commands']
     expect(Array.isArray(commands) ? commands.map((one) => jsonObject(one)?.['command']) : []).toEqual(['status', 'pause', 'resume', 'settings', 'links', 'help'])
+    await vi.waitFor(() => expect(value.api.calls.filter((item) => item.method === 'setMyCommands')).toHaveLength(2))
+    const russian = value.api.calls.find((item) => item.method === 'setMyCommands' && item.body['language_code'] === 'ru')?.body['commands']
+    expect(Array.isArray(russian) ? jsonObject(russian[0])?.['description'] : undefined).toBe('Что делаю я и исполнители')
+    await vi.waitFor(() => expect(String(value.api.calls.find((item) => item.method === 'setMyShortDescription' && item.body['language_code'] === 'ru')?.body['short_description'])).toContain('Пиши мне задачи'))
+    expect(value.api.calls.find((item) => item.method === 'setMyShortDescription' && item.body['language_code'] === undefined)?.body['short_description']).toBe('I run GeckIt on your own computer. Send me a task and answer my questions here.')
   })
 
   it('omits ordinary success acknowledgement and takes the buttons off a question it has answered', async () => {
@@ -902,8 +910,8 @@ describe('Manager Telegram, with a fake Bot API', () => {
     const data = buttons(value.api)[0]?.['callback_data']
     if (typeof data !== 'string') throw new Error('Missing review button')
     value.api.deliver([callback(2, data), callback(3, data)])
-    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('already been answered'))
-    expect(sent(value.api).some((one) => String(one.body['text']).includes('Delivery remains uncertain; nothing was resent'))).toBe(true)
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('That button no longer works'))
+    expect(sent(value.api).some((one) => String(one.body['text']).includes("Delivery isn't confirmed, so I didn't send it again"))).toBe(true)
     expect(answer).toHaveBeenCalledTimes(1)
     expect(value.api.calls.filter((one) => one.method === 'answerCallbackQuery')).toHaveLength(2)
     expect(value.api.calls.some((one) => one.method === 'editMessageReplyMarkup' && JSON.stringify(one.body).includes('"inline_keyboard":[]'))).toBe(true)
@@ -911,7 +919,7 @@ describe('Manager Telegram, with a fake Bot API', () => {
     const again = fixture({ directory: value.directory, manager: { answer, hasDecision: () => pending } })
     await again.telegram.start()
     again.api.deliver([callback(4, data)])
-    await vi.waitFor(() => expect(sent(again.api).at(-1)?.body['text']).toContain('already been answered'))
+    await vi.waitFor(() => expect(sent(again.api).at(-1)?.body['text']).toContain('That button no longer works'))
     expect(answer).toHaveBeenCalledTimes(1)
     expect(again.api.calls.filter((one) => one.method === 'answerCallbackQuery')).toHaveLength(1)
   })
@@ -923,7 +931,7 @@ describe('Manager Telegram, with a fake Bot API', () => {
     value.api.failUpload(0)
     await expect(value.telegram.sendFile(Buffer.from('Uncertain report'), 'report.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
     value.api.deliver([message(2, '/resume')])
-    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toBe('Manager resumed.'))
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toBe('Back at it.'))
     await expect(value.telegram.sendFile(Buffer.from('Uncertain report'), 'report.txt', 'text/plain', '', 'document', origin)).rejects.toThrow('uncertain')
     expect(value.api.uploads).toHaveLength(1)
     value.telegram.stop()
@@ -943,7 +951,7 @@ describe('Manager Telegram, with a fake Bot API', () => {
     const data = buttons(value.api)[0]?.['callback_data']
     if (typeof data !== 'string') throw new Error('Missing approval button')
     value.api.deliver([callback(2, data)])
-    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('Use /resume before answering'))
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('Send /resume, then answer this approval'))
     expect(value.telegram.view().state).toBe('connected')
     value.api.deliver([callback(3, data)])
     await vi.waitFor(() => expect(answer).toHaveBeenCalledTimes(2))
@@ -953,13 +961,13 @@ describe('Manager Telegram, with a fake Bot API', () => {
     const value = fixture()
     await paired(value)
     value.api.deliver(Array.from({ length: 129 }, (_item, index) => message(index + 2, `Delayed ${String(index)}`, { date: now / 1000 - 700 })))
-    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('Too many decisions'), { timeout: 3_000 })
+    await vi.waitFor(() => expect(sent(value.api).at(-1)?.body['text']).toContain('Too many questions are waiting here'), { timeout: 3_000 })
     expect(value.telegram.view().pendingLate).toBe(128)
     expect(value.submit).not.toHaveBeenCalled()
     const stored = jsonObject(JSON.parse(vault.decrypt(readFileSync(join(value.directory, 'manager-telegram.sealed')))) as Json)
     expect(Array.isArray(stored?.['callbacks']) && stored['callbacks'].length).toBe(256)
     await value.telegram.notify('Too many choices', { id: 'overflow', choices: Array.from({ length: 51 }, (_item, index) => ({ label: `Choice ${String(index)}`, value: String(index) })) })
-    expect(sent(value.api).at(-1)?.body['text']).toContain('ask Manager to show this question again')
+    expect(sent(value.api).at(-1)?.body['text']).toContain('ask me to show this one again')
     expect(sent(value.api).at(-1)?.body['reply_markup']).toBeUndefined()
   })
 
@@ -1108,7 +1116,7 @@ describe('Telegram Manager typing transport lifecycle', () => {
       value.api.deliver([message(2, 'Blocked input')]); await vi.advanceTimersByTimeAsync(1)
       expect(submit).toHaveBeenCalledTimes(1)
       expect(value.api.calls.some((call) => call.method === 'sendChatAction')).toBe(false)
-      expect(sent(value.api).some((call) => String(call.body['text']).includes('could not accept'))).toBe(true)
+      expect(sent(value.api).some((call) => String(call.body['text']).includes("couldn't take this message"))).toBe(true)
       pending.splice(0); allowed = true; changed()
       value.api.deliver([message(3, 'Rejected input')]); await vi.advanceTimersByTimeAsync(1)
       const count = value.api.calls.filter((call) => call.method === 'sendChatAction').length
@@ -1180,7 +1188,7 @@ describe('Telegram intake confirmation transport with real persistent intake and
 describe('Telegram status message', () => {
   it('sends the status silently to the paired chat while workers run, not before pairing, and moves it below a reply', async () => {
     const value = fixture()
-    const working = { manager: 'Work in progress', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix: working', active: true }] }
+    const working = { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix: working', active: true }] }
     value.telegram.progress(working)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(sent(value.api)).toEqual([])
@@ -1189,12 +1197,98 @@ describe('Telegram status message', () => {
     value.telegram.progress(working)
     value.telegram.progress(working)
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 1))
-    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, text: expect.stringMatching(/^Work in progress\n• Fix: working\nUpdated \d\d:\d\d UTC$/), disable_notification: true })
+    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, text: expect.stringMatching(/^While I wait, here is what is going on:\n• Fix: working\nUpdated \d\d:\d\d UTC$/), disable_notification: true })
     await value.telegram.notify('Still on it.')
     await vi.waitFor(() => expect(value.api.calls.filter((call) => call.method === 'deleteMessage')).toHaveLength(1))
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 3))
-    expect(sent(value.api).slice(-2).map((one) => String(one.body['text']).split('\n')[0])).toEqual(['Still on it.', 'Work in progress'])
+    expect(sent(value.api).slice(-2).map((one) => String(one.body['text']).split('\n')[0])).toEqual(['Still on it.', 'While I wait, here is what is going on:'])
   })
+  it('carries what a tmux worker of the Telegram thread does to the chat while Manager waits, in the language the person wrote in', async () => {
+    const value = fixture()
+    await paired(value)
+    const before = sent(value.api).length
+    const worker = { id: 'plugin:claude-tmux:1', title: 'Ответы менеджера', state: 'working', stands: 'Working - running npx vitest run test/telegram.test.ts', provider: 'plugin:claude-tmux' } as unknown as ChatSession
+    const thread = { id: 'telegram:81', title: 'Alexander', labels: {}, state: 'idle', at: 0, owns: [worker.id], follows: [], language: 'ru' } as ManagerThread
+    const view = { state: 'idle', config: {}, workers: [worker], activity: [], providers: [], decisions: [], queued: 0, threads: [thread] } as unknown as ManagerView
+    value.telegram.progress(threadActivity(view, 'telegram:81'))
+    await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 1))
+    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, disable_notification: true, text: expect.stringMatching(/^Пока жду, вот что сейчас идёт:\n• Ответы менеджера: запускает тесты\nОбновлено в \d\d:\d\d UTC$/) })
+    expect(String(sent(value.api).at(-1)?.body['text'])).not.toContain('vitest')
+  })
+})
+
+describe('runtime: Telegram status from Manager views', () => {
+  // The Bot API is the fake one (botApi); Manager, Sessions, the status message and ManagerTelegram are the real ones, wired as createRuntime wires them.
+  it("tells the paired chat what its own thread's workers do once Manager's turn is over, in the person's language, once per change and nothing of other threads", async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'geckit-telegram-runtime-'))
+    paths.push(directory)
+    const notes = memoryNotes()
+    const hearings = new Map<string, (heard: Heard) => void>()
+    const current: { manager?: Manager } = {}
+    const sessions = new Sessions({
+      notes, changed: (all) => current.manager?.observeSessions(all), items: () => undefined, notify: () => undefined, account: () => undefined,
+      claude: (options, hear) => { hearings.set(options.id, hear); return { send: () => undefined, answer: () => undefined, stop: () => undefined, end: async () => undefined } },
+      disk: { list: async () => [], read: async () => undefined, has: async () => false },
+      claudeAccount: async () => ({ here: true, signedIn: true, plan: 'Max' }), claudeProgram: async () => undefined,
+      usage: async () => ({ windows: new Map() }),
+    })
+    const settings = { ...DEFAULT_SETTINGS, projects: [directory], chatProviders: ['claude'] as const, chatProvider: 'claude' as const }
+    const coordinator = new Manager({ directory, sessions, notes, settings: () => settings, saveSettings: () => settings, cli: async () => { throw new Error('No CLI operation expected') } })
+    current.manager = coordinator
+    disposals.push(() => { coordinator.dispose(); sessions.dispose() })
+    await coordinator.configure({ enabled: true })
+    let view = await coordinator.view()
+    let clock = now
+    const value = fixture({ directory, now: () => clock, manager: { enabled: () => coordinator.enabled(), language: () => view.threads?.find((one) => one.id === 'telegram:81')?.language } })
+    const progress = vi.spyOn(value.telegram, 'progress')
+    coordinator.on((changed) => { view = changed; telegramProgress(value.telegram, changed) })
+    await paired(value)
+    const statuses = (): Request[] => value.api.calls.filter((call) => (call.method === 'sendMessage' && call.body['disable_notification'] === true) || call.method === 'editMessageText')
+    const telegram = coordinator.thread({ channel: 'telegram', place: 'Telegram', key: '81' })
+    const slack = coordinator.thread({ channel: 'slack', place: 'Slack', key: 'C1:1.0' })
+    expect(telegram).toBe('telegram:81')
+
+    await coordinator.send('Что ты делаешь?', 'telegram', 'tg:1', [], () => true, [], [], telegram)
+    const backing = (await coordinator.view()).threads?.find((one) => one.id === telegram)?.session ?? ''
+    await vi.waitFor(() => expect(hearings.has(backing)).toBe(true))
+    const mine = await sessions.startManaged({ root: directory, mode: 'manual', text: 'Почини тесты логина' }, 'manager', 'op-telegram')
+    const theirs = await sessions.startManaged({ root: directory, mode: 'manual', text: 'Slack only secret plan' }, 'manager', 'op-slack')
+    notes.set(mine, { ...notes.all()[mine], managerThread: telegram })
+    notes.set(theirs, { ...notes.all()[theirs], managerThread: slack })
+    hearings.get(mine)?.({ items: [], gone: [], signals: [{ kind: 'begun' }, { kind: 'doing', what: 'running npx vitest run test/login.test.ts' }] })
+    hearings.get(theirs)?.({ items: [], gone: [], signals: [{ kind: 'begun' }, { kind: 'doing', what: 'reading slack-only.md' }] })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(statuses()).toEqual([])
+
+    hearings.get(backing)?.({ items: [{ kind: 'theirs', id: 'answer:1', text: 'Смотрю тесты.' }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(statuses()).toHaveLength(1))
+    const first = statuses()[0]
+    expect(first?.body).toMatchObject({ chat_id: 81, disable_notification: true })
+    expect(String(first?.body['text'])).toMatch(/^Пока жду, вот что сейчас идёт:\n• Почини тесты логина: запускает тесты\nОбновлено в \d\d:\d\d UTC$/)
+
+    const calls = progress.mock.calls.length
+    for (let at = 0; at < 3; at += 1) telegramProgress(value.telegram, view)
+    expect(progress.mock.calls.length).toBe(calls + 3)
+    hearings.get(theirs)?.({ items: [], gone: [], signals: [{ kind: 'doing', what: 'changing slack-only.md' }] })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(statuses()).toHaveLength(1)
+
+    clock += 4_000
+    hearings.get(mine)?.({ items: [], gone: [], signals: [{ kind: 'doing', what: 'reading src/login.ts' }] })
+    await vi.waitFor(() => expect(statuses()).toHaveLength(2))
+    telegramProgress(value.telegram, view)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(statuses()).toHaveLength(2)
+    expect(statuses()[1]).toMatchObject({ method: 'editMessageText', body: { chat_id: 81, text: expect.stringContaining('• Почини тесты логина: читает src/login.ts') } })
+    for (const call of statuses()) {
+      const text = String(call.body['text'])
+      expect(text).not.toContain('Slack only')
+      expect(text).not.toContain('slack-only')
+      expect(text).not.toContain('vitest')
+      expect(text).not.toMatch(/Manager (is|has)/)
+    }
+    expect(value.api.calls.filter((call) => call.method === 'sendMessage' || call.method === 'editMessageText').every((call) => call.body['chat_id'] === 81)).toBe(true)
+  }, 15_000)
 })
 
 it('fences queued replies and purges saved old references/late prompts across a missed reset and restart', async () => {

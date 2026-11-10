@@ -162,17 +162,17 @@ it('answers only the people allowed, refuses tokens, honours chosen channels and
   run.message('510000000000000001', STRANGER, `<@${BOT}> run rm -rf`)
   run.message('510000000000000002', ALLOWED, `<@${BOT}> token ${['MTAxMjM0NTY3ODkwMTIzNDU2', 'GaBcDe', 'abcdefghijklmnopqrstuvwxyz0123'].join('.')}`)
   run.dispatch('MESSAGE_CREATE', { id: '510000000000000003', channel_id: ELSEWHERE, guild_id: GUILD, type: 0, author: { id: ALLOWED }, content: `<@${BOT}> hi`, mentions: [{ id: BOT }] })
-  run.dispatch('MESSAGE_CREATE', { id: '510000000000000004', channel_id: 'dm-2', type: 0, author: { id: ALLOWED }, content: 'hello', mentions: [] })
+  run.dispatch('MESSAGE_CREATE', { id: '510000000000000004', channel_id: 'dm-2', type: 0, author: { id: ALLOWED }, content: 'привет', mentions: [] })
   run.dispatch('MESSAGE_CREATE', { id: '510000000000000005', channel_id: 'dm-3', type: 0, author: { id: STRANGER }, content: 'let me in', mentions: [] })
   run.dispatch('MESSAGE_CREATE', { id: '510000000000000006', channel_id: TEXT, guild_id: GUILD, type: 0, author: { id: '777', bot: true }, content: `<@${BOT}> loop`, mentions: [{ id: BOT }] })
   await run.settle()
   expect(run.sent).toEqual([])
   expect(run.posts().map((one) => [one.path.split('/')[2], one.body['content']])).toEqual([
-    [TEXT, 'You are not on the list of people who may use this bot.'],
-    [TEXT, 'That message looks like it contains a token or key, so it was not sent. Delete it and write again.'],
-    [ELSEWHERE, 'This bot does not answer in this channel. Choose it in GeckIt, Settings, Channels, Discord.'],
-    ['dm-2', 'Direct messages are off for this bot. Mention it in a server channel instead.'],
-    ['dm-3', 'You are not on the list of people who may use this bot.'],
+    [TEXT, 'Sorry, I can only take requests from people GeckIt lets me work for.'],
+    [TEXT, "That message looks like it holds a token or key, so I didn't take it. Remove it and write again."],
+    [ELSEWHERE, "I don't answer in this channel. Choose it for me in GeckIt, Settings, Channels, Discord."],
+    ['dm-2', 'Личные сообщения мне выключены. Упомяни меня в канале сервера.'],
+    ['dm-3', 'Sorry, I can only take requests from people GeckIt lets me work for.'],
   ])
   await run.channel.stop()
 })
@@ -222,9 +222,9 @@ it('asks a question with buttons bound to the person, the thread, the message an
   press('i3', ALLOWED, allow, '530000000000000001', '999999999999999999')
   await run.settle()
   expect(callbacks().map((one) => [one.body['type'], (one.body['data'] as { content: string; flags: number }).content, (one.body['data'] as { flags: number }).flags])).toEqual([
-    [4, 'You are not on the list of people who may use this bot.', 64],
-    [4, 'This question is no longer open.', 64],
-    [4, 'This question is no longer open.', 64],
+    [4, 'Sorry, I can only take requests from people GeckIt lets me work for.', 64],
+    [4, 'This question is already closed.', 64],
+    [4, 'This question is already closed.', 64],
   ])
   expect(run.answered).toEqual([])
   press('i4', OTHER, refuse)
@@ -236,7 +236,10 @@ it('asks a question with buttons bound to the person, the thread, the message an
   press('i5', ALLOWED, allow)
   await run.settle()
   expect(run.answered).toHaveLength(1)
-  expect(callbacks().at(-1)?.body).toMatchObject({ type: 4, data: { content: 'This question is no longer open.' } })
+  expect(callbacks().at(-1)?.body).toMatchObject({ type: 4, data: { content: 'This question is already closed.' } })
+  run.dispatch('INTERACTION_CREATE', { id: 'i6', application_id: '111', type: 3, token: 't-i6', channel_id: '530000000000000001', guild_id: GUILD, locale: 'ru', data: { custom_id: allow, component_type: 2 }, member: { user: { id: STRANGER } }, message: { id: messageId } })
+  await run.settle()
+  expect(callbacks().at(-1)?.body).toMatchObject({ type: 4, data: { content: 'Извини, я принимаю запросы только от тех, для кого мне разрешено работать в GeckIt.' } })
   await run.channel.stop()
 })
 
@@ -259,7 +262,7 @@ it('splits long answers, names attached files once, and says what refused a thre
   blocked.message('540000000000000002', ALLOWED, `<@${BOT}> help`)
   await blocked.settle()
   expect(blocked.sent).toEqual([])
-  expect(blocked.posts().at(-1)?.body['content']).toBe('I could not start a thread for this: Discord POST /channels/410000000000000001/messages/540000000000000002/threads: Missing Permissions (the bot lacks a permission here). Give the bot Create Public Threads and Send Messages in Threads in this channel.')
+  expect(blocked.posts().at(-1)?.body['content']).toBe("I couldn't start a thread for this: Discord POST /channels/410000000000000001/messages/540000000000000002/threads: Missing Permissions (the bot lacks a permission here). Give me Create Public Threads and Send Messages in Threads in this channel.")
   await run.channel.stop()
   await blocked.channel.stop()
 })
@@ -280,7 +283,7 @@ it('reads earlier messages of an existing thread for Manager and says Manager is
   closed.ready()
   closed.message('550000000000000009', ALLOWED, `<@${BOT}> hi`)
   await closed.settle()
-  expect(closed.posts().at(-1)?.body['content']).toBe('Manager is not available to Discord. Allow it in GeckIt, Settings, Channels, Discord.')
+  expect(closed.posts().at(-1)?.body['content']).toBe("I can't answer in Discord yet. Allow me in GeckIt, Settings, Channels, Discord.")
   await run.channel.stop()
   await closed.channel.stop()
 })
@@ -373,7 +376,7 @@ it('binds buttons to the part that carries them and refuses a press outside the 
   fenced.ready()
   fenced.dispatch('INTERACTION_CREATE', { id: 'i9', application_id: '111', type: 3, token: 't-i9', channel_id: TEXT, guild_id: GUILD, data: { custom_id: custom, component_type: 2 }, member: { user: { id: ALLOWED } }, message: { id: '1' } })
   await fenced.settle()
-  expect(fenced.calls.find((one) => one.path === '/interactions/i9/t-i9/callback')?.body).toMatchObject({ type: 4, data: { content: 'This bot does not answer in this channel. Choose it in GeckIt, Settings, Channels, Discord.', flags: 64 } })
+  expect(fenced.calls.find((one) => one.path === '/interactions/i9/t-i9/callback')?.body).toMatchObject({ type: 4, data: { content: "I don't answer in this channel. Choose it for me in GeckIt, Settings, Channels, Discord.", flags: 64 } })
   expect(fenced.answered).toEqual([])
   await run.channel.stop()
   await fenced.channel.stop()
