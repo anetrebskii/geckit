@@ -2627,6 +2627,20 @@ describe('Manager threads', () => {
     expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.closed).toBeUndefined()
   })
 
+  it('remembers the language each thread was last written in, across a restart, and is not moved by worker events', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread(slack)
+    await f.manager.send('[Via Slack, from Maria Ivanova]\nЧто ты делаешь?', 'channel', 'slack:ru', [], () => true, [], [], thread)
+    expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.language).toBe('ru')
+    await f.manager.send('{"observedAt":1,"id":"w","title":"Fix the login redirect","state":"idle"}', 'event', 'event:1', [], () => true, [], [], thread)
+    await f.manager.send('/status', 'channel', 'slack:cmd', [], () => true, [], [], thread)
+    expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.language).toBe('ru')
+    expect((await f.reload().view()).threads?.find((one) => one.id === thread)?.language).toBe('ru')
+    await f.manager.send('What are you doing?', 'channel', 'slack:en', [], () => true, [], [], thread)
+    expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.language).toBe('en')
+  })
+
   it('keeps threads, their sessions and labels across a restart', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true })

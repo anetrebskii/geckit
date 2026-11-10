@@ -11,7 +11,7 @@ import { DEFAULT_MANAGER_INTAKE } from '../src/shared/manager-intake'
 import type { SourceItem, TaskSource } from '../src/shared/manager-intake'
 import { TelegramAttachments } from '../src/main/telegram-attachments'
 import type { ManagerDeps } from '../src/main/manager'
-import type { SessionMessage, Settings } from '../src/shared/api'
+import type { ChatSession, SessionMessage, Settings } from '../src/shared/api'
 import { ManagerTelegram } from '../src/main/telegram'
 import type { TelegramManager, TelegramVault } from '../src/main/telegram'
 import { configureManagerAccess, phoneTelegramView, telegramActionAccess, telegramVault } from '../src/main/telegram-access'
@@ -22,6 +22,8 @@ import type { Heard } from '../src/main/sessions/heard'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import { managerHistoryItem } from '../src/main/manager-protocol'
 import { DEFAULT_MANAGER_CONFIG } from '../src/shared/manager'
+import type { ManagerThread, ManagerView } from '../src/shared/manager'
+import { threadActivity } from '../src/main/manager-status'
 
 const token = '123456:very_secret_example_token_for_tests'
 const now = 1_800_000_000_000
@@ -1194,6 +1196,18 @@ describe('Telegram status message', () => {
     await vi.waitFor(() => expect(value.api.calls.filter((call) => call.method === 'deleteMessage')).toHaveLength(1))
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 3))
     expect(sent(value.api).slice(-2).map((one) => String(one.body['text']).split('\n')[0])).toEqual(['Still on it.', 'While I wait, here is what is going on:'])
+  })
+  it('carries what a tmux worker of the Telegram thread does to the chat while Manager waits, in the language the person wrote in', async () => {
+    const value = fixture()
+    await paired(value)
+    const before = sent(value.api).length
+    const worker = { id: 'plugin:claude-tmux:1', title: 'Ответы менеджера', state: 'working', stands: 'Working - running npx vitest run test/telegram.test.ts', provider: 'plugin:claude-tmux' } as unknown as ChatSession
+    const thread = { id: 'telegram:81', title: 'Alexander', labels: {}, state: 'idle', at: 0, owns: [worker.id], follows: [], language: 'ru' } as ManagerThread
+    const view = { state: 'idle', config: {}, workers: [worker], activity: [], providers: [], decisions: [], queued: 0, threads: [thread] } as unknown as ManagerView
+    value.telegram.progress(threadActivity(view, 'telegram:81'))
+    await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 1))
+    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, disable_notification: true, text: expect.stringMatching(/^Пока жду, вот что сейчас идёт:\n• Ответы менеджера: запускает тесты\nОбновлено в \d\d:\d\d UTC$/) })
+    expect(String(sent(value.api).at(-1)?.body['text'])).not.toContain('vitest')
   })
 })
 

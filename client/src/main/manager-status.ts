@@ -1,7 +1,7 @@
 import type { ChatSession } from '../shared/api'
 import type { ManagerThread, ManagerView } from '../shared/manager'
 import { containsSecret } from './channels/slack'
-import { say } from './manager-voice'
+import { commandSaid, say, workerDoing } from './manager-voice'
 import type { Speech } from './manager-voice'
 
 export interface ThreadWorker {
@@ -44,11 +44,14 @@ const titled = (title: string, speech?: Speech): string => containsSecret(title)
 
 function workerLine(worker: ChatSession, speech?: Speech): string {
   const words = say(speech)
-  const lines = [`• ${titled(worker.title, speech)}: ${workerSaid(worker, speech).said}`]
-  const stands = worker.stands.split('\n')[0]?.trim() ?? ''
-  if (stands !== '' && !containsSecret(stands)) lines.push(`  ${clip(stands, STANDS)}`)
+  const doing = worker.state === 'working' ? workerDoing(worker.stands.split('\n')[0] ?? '', speech) : undefined
+  const said = doing === undefined || containsSecret(doing) ? workerSaid(worker, speech).said : clip(doing, STANDS)
+  const lines = [`• ${titled(worker.title, speech)}: ${said}`]
   const tasks = running(worker)
-  for (const task of tasks.slice(0, TASKS)) lines.push(`  - ${containsSecret(task.what) ? words.backgroundTask : clip(task.what, TITLE)}: ${task.status === 'asks' ? words.taskAsks : words.taskRuns}`)
+  for (const task of tasks.slice(0, TASKS)) {
+    const what = task.command !== undefined && task.what.trim() === task.command.split('\n')[0]?.trim() ? commandSaid(task.command, speech) : task.what
+    lines.push(`  - ${containsSecret(what) ? words.backgroundTask : clip(what, TITLE)}: ${task.status === 'asks' ? words.taskAsks : words.taskRuns}`)
+  }
   if (tasks.length > TASKS) lines.push(`  - ${words.moreBackground(tasks.length - TASKS)}`)
   return lines.join('\n')
 }

@@ -585,7 +585,7 @@ export class Manager {
     if (!authorized()) throw new Error('This Telegram connection is no longer authorized.')
     for (const attachment of attachments) this.#attachments.read(attachment)
     const literal = /^[!/]/.test(text.trim()) ? `[User request]\n${text.trim()}` : text.trim()
-    const language = heard(text)
+    const language = source === 'event' ? undefined : heard(text)
     if (language !== undefined && language !== this.#state(thread).language) this.#saveThread(thread, { language })
     if (!this.#record.inbox.some((one) => one.id === id)) this.#save({ inbox: [...this.#record.inbox, { id, text: literal, ...(thread === MAIN ? {} : { thread }), source, workers, ...(telegramRequests.length === 0 ? {} : { telegramRequests }), ...(attachments.length === 0 ? {} : { attachments }), at: Date.now(), state: 'queued' }] })
     void this.#dispatch(thread)

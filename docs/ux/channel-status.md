@@ -9,7 +9,7 @@ created: 2026-11-06
 
 ## 1. Why
 
-Alex writes to Manager from Telegram and Slack and then sees nothing until an answer arrives. Telegram shows "typing" only while Manager itself answers; Slack shows nothing at all. When Manager hands the work to workers, nobody in the chat or thread can tell whether anything is running, waiting for an answer, stuck for a slot or finished. Alex asked on 2026-11-06 for a status message in the channel conversation that says what Manager and its workers are doing now. On 2026-11-10 he narrowed it: the status is for the time Manager is not answering and not waiting for him while its workers run, says what each worker is doing and its background jobs, so he knows work is in progress; when he writes to the bot it goes away and comes back after the reply.
+Alex writes to Manager from Telegram and Slack and then sees nothing until an answer arrives. Telegram shows "typing" only while Manager itself answers; Slack shows nothing at all. When Manager hands the work to workers, nobody in the chat or thread can tell whether anything is running, waiting for an answer, stuck for a slot or finished. Alex asked on 2026-11-06 for a status message in the channel conversation that says what Manager and its workers are doing now. On 2026-11-10 he narrowed it: the status is for the time Manager is not answering and not waiting for him while its workers run, says what each worker is doing and its background jobs, so he knows work is in progress; when he writes to the bot it goes away and comes back after the reply. Later on 2026-11-10 he asked for it to read like a person: Manager speaks in the first person, in the language he wrote in, never as "Manager is ...", and a worker line says in words what the worker is doing, without raw commands.
 
 ## 2. The path
 
@@ -29,38 +29,63 @@ Telegram's native "typing" stays as it is and is what shows while Manager answer
 
 ## 4. The message
 
-First line: what Manager is doing. Then one block per worker of this conversation that was active during this stretch, in the order they became active, at most 8; past 8, "and 3 more". Last line: "Updated 14:32 UTC".
+Every line is in the language of the last message a person wrote in this thread (`docs/ux/manager-voice.md`): Russian when it was Russian, English otherwise. Manager speaks of itself in the first person. Shown here in English, then Russian.
 
-| First line | When |
-|---|---|
-| "Work in progress" | Manager is free and workers run |
-| "Manager is waiting for your answer above." | A decision for this thread is open |
-| "Manager stopped: <reason>" | This thread's Manager session failed; reason as GeckIt shows it, first line, at most 200 characters |
+First line: what Manager is doing. Then one block per worker of this conversation that was active during this stretch, in the order they became active, at most 8; past 8, "and 3 more" / "и ещё 3". Last line: "Updated 14:32 UTC" / "Обновлено в 14:32 UTC".
 
-A worker block is its line "• <title>: <state>", then where it stands (the card's second line, first line only, at most 120 characters), then up to 3 of its running background jobs as "  - <what it is>: running" or "waiting for an answer", and "  - and 2 more in the background" past 3.
+| First line | Russian | When |
+|---|---|---|
+| "While I wait, here is what is going on:" | "Пока жду, вот что сейчас идёт:" | Manager is free and workers run |
+| "Waiting for your answer above." | "Жду ответа выше." | A decision for this thread is open |
+| "I can't go on: <reason>" | "Не могу продолжить: <reason>" | This thread's Manager session failed; reason as GeckIt shows it, first line, at most 200 characters |
 
-| Worker state | When |
-|---|---|
-| "working" | The worker is working |
-| "waiting for an answer in GeckIt" | It asks a question or a permission |
-| "waiting for a free slot" | Its message waits for a working slot |
-| "message sent, not started yet" | Its last delivery is pending at the host |
-| "paused by the plan's usage limit" | It hit the plan limit |
-| "stopped with an error" | It failed |
-| "running in the background" | Its turn is over and a background job (a command, a watch, a helper) still runs; this keeps the status live |
-| "finished" | It stopped working and nothing of it runs in the background |
+A worker block is its line "• <title>: <what it is doing>", then up to 3 of its running background jobs as "  - <what it is>: running" / "идёт" or "waiting for an answer" / "ждёт ответа", and "  - and 2 more in the background" / "и ещё 2 в фоне" past 3.
+
+While the worker works, "<what it is doing>" is the activity GeckIt already reads from its conversation (the `Working - ...` line of its card, from Claude Code over stream or tmux, and from Codex), said in words:
+
+| The worker | English | Russian |
+|---|---|---|
+| reads a file | "reading src/app.ts" | "читает src/app.ts" |
+| changes a file | "editing src/app.ts" | "правит src/app.ts" |
+| runs tests (vitest, jest, pytest, npm test ...) | "running the tests" | "запускает тесты" |
+| runs a type check or a linter | "checking the code" | "проверяет код" |
+| builds | "building the project" | "собирает проект" |
+| runs git or gh | "working with git" | "работает с git" |
+| installs packages | "installing packages" | "ставит пакеты" |
+| fetches with curl or wget | "fetching from the network" | "обращается к сети" |
+| runs any other command | "running a command" | "выполняет команду" |
+| starts one of these in the background | "... in the background" | "... в фоне" |
+| searches the code | "searching the code" | "ищет по коду" |
+| searches the web | "searching the web: <query>" | "ищет в интернете: <query>" |
+| opens a site | "opening <host>" | "открывает <host>" |
+| hands off to a helper | "handing off to a helper: <what>" | "поручает помощнику: <what>" |
+| uses a skill or another tool | "using the <skill> skill", "using <tool>" | "использует навык <skill>", "использует <tool>" |
+| has the message typed into Claude Code (tmux) | "starting on the message" | "берётся за сообщение" |
+| is thinking (tmux, between tools) | "thinking it through" | "обдумывает задачу" |
+
+A working worker with no known activity says "working" / "в работе". The other states:
+
+| Worker state | Russian | When |
+|---|---|---|
+| "waiting for an answer in GeckIt" | "ждёт ответа в GeckIt" | It asks a question or a permission |
+| "waiting for a free slot" | "ждёт свободного слота" | Its message waits for a working slot |
+| "message sent, not started yet" | "сообщение передано, ещё не начато" | Its last delivery is pending at the host |
+| "paused by the plan's usage limit" | "на паузе: лимит плана" | It hit the plan limit |
+| "stopped with an error" | "остановлено с ошибкой" | It failed |
+| "running in the background" | "работает в фоне" | Its turn is over and a background job (a command, a watch, a helper) still runs; this keeps the status live |
+| "finished" | "готово" | It stopped working and nothing of it runs in the background |
+
+A background job shows by its description; a command job with no description of its own shows as what the command does, as in the table above.
 
 ```text
-Work in progress
-• Fix login redirect: working
-  Running the redirect tests after the fix
-• Watch CI for #71: running in the background
-  CI is running; I will report when it finishes
-  - CI run 42: running
-Updated 14:32 UTC
+Пока жду, вот что сейчас идёт:
+• Ответы менеджера: запускает тесты
+• Следить за CI #71: работает в фоне
+  - CI run 42: идёт
+Обновлено в 14:32 UTC
 ```
 
-The final edit, when nothing is active: the first line becomes "Done." (or "Manager stopped: <reason>" / "Waiting for your answer above."), the worker blocks keep their last state, and the time is updated.
+The final edit, when nothing is active: the first line becomes "Done." / "Готово." (or the "I can't go on" line, or "Waiting for your answer above."), the worker blocks keep their last state, and the time is updated.
 
 ## 5. States
 
@@ -106,8 +131,10 @@ A worker waiting for an answer counts as not active for the final edit: the stre
 ## 6. What stays silent
 
 - Workers of other conversations, and every worker this conversation does not track.
-- Commands, tool names, prompts and Manager's operations: a background job shows by its description, never by the command it runs.
-- A worker title that looks like it holds a token or key shows as "a task", such a job description as "a background task", and such a stand line is left out.
+- Commands, prompts and Manager's operations: a command is said as what it does ("running the tests"), never as the command itself; a background job shows by its description.
+- Activity GeckIt cannot put into words: the worker says only "working", rather than showing a raw line.
+- A worker's last words and system stand lines ("Ready to send", "Did not finish"): the state word already says it, and the answer comes from Manager.
+- A worker title that looks like it holds a token or key shows as "a task", such a job description as "a background task", and such an activity is left at "working".
 - Changes that do not change the text.
 - The main GeckIt thread's work in Telegram: Telegram's status covers the Telegram thread only.
 
@@ -129,7 +156,9 @@ A worker waiting for an answer counts as not active for the final edit: the stre
 ## 9. Not done on purpose
 
 - A new message per change: floods the chat. Rejected.
-- Showing the commands a worker runs: can leak commands and paths. Rejected; the stand line and job descriptions are shown instead (Alex, 2026-11-10).
+- Showing the commands a worker runs, or the card's raw stand line: can leak commands and paths and reads as telemetry. Rejected; the activity is said in words instead (Alex, 2026-11-10).
+- Asking a model to describe each worker's progress: costs plan usage on every change and can invent progress. Rejected; the words come from what the worker's conversation already records.
+- A message per tool step: floods the chat. Rejected; the one status message is edited, no more often than every 3 s.
 - A status while Manager answers: Alex, 2026-11-10, wants it gone while he talks to the bot. Telegram's typing remains.
 - Deleting the status at the end: the person loses the outcome. Rejected; it is kept with its final text.
 
@@ -140,5 +169,6 @@ A worker waiting for an answer counts as not active for the final edit: the stre
 | Edit one message or post new ones | Edit one per stretch | Alex: avoid a stream of identical messages |
 | Accepted vs started | Separate lines; since 2026-11-10 neither is shown, the status being away while Manager works | Alex: do not present the host's acceptance as the model starting |
 | Status while the person talks to the bot | Deleted when Manager takes a message, posted again below its answer | Alex, 2026-11-10 |
-| What a worker line says | State, where it stands and its background jobs | Alex, 2026-11-10: so he knows work is in progress |
+| What a worker line says | What it is doing, in words, and its background jobs | Alex, 2026-11-10: so he knows work is in progress; later the same day, without raw commands and in his language |
+| Russian forms of address | "ты" in imperatives, no gendered past forms for Manager | Alex writes to Manager with "ты"; Manager has no set gender |
 | Telegram notification for the status | Silent | The answer itself notifies; the status should not buzz the phone each stretch |

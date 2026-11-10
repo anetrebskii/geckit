@@ -26,6 +26,23 @@ const EN = {
   taskAsks: 'waiting for an answer',
   taskRuns: 'running',
   moreBackground: (count: number) => `and ${String(count)} more in the background`,
+  runs: { tests: 'running the tests', checks: 'checking the code', build: 'building the project', git: 'working with git', install: 'installing packages', web: 'fetching from the network', other: 'running a command' },
+  doing: {
+    output: "reading a background task's output",
+    reading: (name: string) => `reading ${name}`,
+    changing: (name: string) => `editing ${name}`,
+    background: (runs: string) => `${runs} in the background`,
+    watching: 'watching a background process',
+    stopping: 'stopping a background task',
+    searching: 'searching the code',
+    opening: (where: string) => `opening ${where}`,
+    web: (query: string) => `searching the web: ${query}`,
+    handing: (what: string) => `handing off to a helper: ${what}`,
+    skill: (skill: string) => `using the ${skill} skill`,
+    using: (name: string) => `using ${name}`,
+    starting: 'starting on the message',
+    thinking: 'thinking it through',
+  },
   stands: { off: "I'm turned off in GeckIt.", idle: 'Free. Send me a task.', working: 'Working.', paused: 'Paused. Send /resume to go on.', blocked: "I can't work right now." },
   workers: 'Workers',
   noWorkers: 'No workers are running.',
@@ -110,6 +127,23 @@ const RU: typeof EN = {
   taskAsks: 'ждёт ответа',
   taskRuns: 'идёт',
   moreBackground: (count) => `и ещё ${String(count)} в фоне`,
+  runs: { tests: 'запускает тесты', checks: 'проверяет код', build: 'собирает проект', git: 'работает с git', install: 'ставит пакеты', web: 'обращается к сети', other: 'выполняет команду' },
+  doing: {
+    output: 'смотрит вывод фоновой задачи',
+    reading: (name) => `читает ${name}`,
+    changing: (name) => `правит ${name}`,
+    background: (runs) => `${runs} в фоне`,
+    watching: 'следит за фоновым процессом',
+    stopping: 'останавливает фоновую задачу',
+    searching: 'ищет по коду',
+    opening: (where) => `открывает ${where}`,
+    web: (query) => `ищет в интернете: ${query}`,
+    handing: (what) => `поручает помощнику: ${what}`,
+    skill: (skill) => `использует навык ${skill}`,
+    using: (name) => `использует ${name}`,
+    starting: 'берётся за сообщение',
+    thinking: 'обдумывает задачу',
+  },
   stands: { off: 'Меня отключили в GeckIt.', idle: 'Задач нет, можно давать новую.', working: 'Работаю.', paused: 'На паузе. Отправь /resume, чтобы продолжить.', blocked: 'Сейчас не могу работать.' },
   workers: 'Исполнители',
   noWorkers: 'Исполнители сейчас не работают.',
@@ -180,3 +214,44 @@ GeckIt должен оставаться открытым на компьюте�
 }
 
 export const say = (speech: Speech | undefined): typeof EN => speech === 'ru' ? RU : EN
+
+const KINDS: readonly (readonly [RegExp, keyof typeof EN.runs])[] = [
+  [/\b(vitest|jest|pytest|mocha|playwright|go test|cargo test|(npm|yarn|pnpm)( run)? test)\b/, 'tests'],
+  [/\b(tsc|typecheck|eslint|lint|prettier)\b/, 'checks'],
+  [/\b(build|electron-builder|xcodebuild|gradlew|webpack)\b/, 'build'],
+  [/(^|[;&|]\s*)(git|gh)\s/, 'git'],
+  [/\b(npm|yarn|pnpm|pip3?|brew)\s+(install|i|add|ci)\b/, 'install'],
+  [/\b(curl|wget)\b/, 'web'],
+]
+
+/** What a command does, in words, never the command itself. */
+export function commandSaid(command: string, speech: Speech | undefined): string {
+  const kind = KINDS.find(([pattern]) => pattern.test(command))?.[1] ?? 'other'
+  return say(speech).runs[kind]
+}
+
+/** What a working conversation is doing, from the `Working - <doing>` line GeckIt keeps for it, in words a person says; nothing for a line it does not know. */
+export function workerDoing(stands: string, speech: Speech | undefined): string | undefined {
+  const doing = /^Working - (.+)$/.exec(stands.trim())?.[1]
+  if (doing === undefined) return undefined
+  const words = say(speech).doing
+  const lower = doing.charAt(0).toLowerCase() + doing.slice(1)
+  const match = (pattern: RegExp): string | undefined => pattern.exec(lower)?.at(-1)
+  if (/^(reading|read) what a background task printed/.test(lower)) return words.output
+  if (lower.toLowerCase() === 'sending to claude code') return words.starting
+  if (lower.toLowerCase() === 'waiting for claude code') return words.thinking
+  let found: string | undefined
+  if ((found = match(/^(?:starting|started) in the background: (.+)$/)) !== undefined) return words.background(commandSaid(found, speech))
+  if ((found = match(/^(?:running|ran) (.+)$/)) !== undefined) return commandSaid(found, speech)
+  if (/^(starting to watch|watching in the background):/.test(lower)) return words.watching
+  if (/^(stopping|stopped) a background task/.test(lower)) return words.stopping
+  if (/^(searching for|searched the folder for|looking for|looked for) /.test(lower)) return words.searching
+  if ((found = match(/^(?:searching the web for|searched the web for) (.+)$/)) !== undefined) return words.web(found)
+  if ((found = match(/^(?:handing|handed) off(?: in the background)?: (.+)$/)) !== undefined) return words.handing(found)
+  if ((found = match(/^(?:using|used) the (.+) skill$/)) !== undefined) return words.skill(found)
+  if ((found = match(/^(?:reading|read) (.+)$/)) !== undefined) return words.reading(found)
+  if ((found = match(/^(?:changing|changed) (.+)$/)) !== undefined) return words.changing(found)
+  if ((found = match(/^(?:opening|opened) (.+)$/)) !== undefined) return words.opening(found)
+  if ((found = match(/^(?:using|used) (.+)$/)) !== undefined) return words.using(found)
+  return undefined
+}
