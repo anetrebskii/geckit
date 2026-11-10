@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { JSX } from 'react'
-import Markdown from 'react-markdown'
+import Markdown, { defaultUrlTransform } from 'react-markdown'
 import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import { Code } from './Code'
+import { ProsePicture } from './ProsePicture'
+import { pictureData, picturePath } from '../../../shared/pictures'
 import { issuesIn } from '../../../shared/issues'
 import { isRemote } from '../../../shared/hosts'
 import { pathIn, pathOfLink, pathsIn } from '../../../shared/paths'
@@ -14,7 +16,7 @@ import { pathIn, pathOfLink, pathsIn } from '../../../shared/paths'
  *
  * Built into React elements rather than into HTML, so nothing the assistant
  * echoes out of a file can become markup: a tag in the text is shown as the
- * text it is, and a picture is a link rather than something fetched.
+ * text it is. Local pictures use the file bridge; remote pictures stay links.
  */
 
 interface Node {
@@ -192,14 +194,7 @@ const COMPONENTS: Components = {
       </Mention>
     )
   },
-  img: ({ src, alt }) => {
-    const href = typeof src === 'string' ? src : undefined
-    return (
-      <a href={href} onClick={open(href)}>
-        {alt === undefined || alt === '' ? href : alt}
-      </a>
-    )
-  },
+  img: ({ src, alt }) => <ProsePicture src={typeof src === 'string' ? src : ''} alt={alt ?? ''} />,
   pre: ({ children }) => <Code>{children}</Code>,
   code: ({ className, children }) => {
     const path = typeof children === 'string' ? pathIn(children) : undefined
@@ -238,8 +233,8 @@ const BUILT = 2000
 export function Prose({ text }: { readonly text: string }): JSX.Element {
   let tree = built.get(text)
   built.delete(text)
-  tree ??= Markdown({ children: text, remarkPlugins: PLUGINS, components: COMPONENTS })
-  built.set(text, tree)
+  tree ??= Markdown({ children: text, remarkPlugins: PLUGINS, components: COMPONENTS, urlTransform: (url, key) => key === 'src' && (picturePath(url) !== undefined || pictureData(url)) ? url : defaultUrlTransform(url) })
+  if (text.length < 256 * 1024) built.set(text, tree)
   if (built.size > BUILT) built.delete(built.keys().next().value ?? '')
   return <div className="prose">{tree}</div>
 }

@@ -346,6 +346,17 @@ describe('conversation Computer Use access', () => {
 })
 
 describe('Codex app-server', () => {
+  it('delivers MCP screenshots during a live turn and again when history is reopened', async () => {
+    const { server, heard, driver, codex } = await accessSetup()
+    const item = { type: 'mcpToolCall' as const, id: 'screenshot', server: 'playwright', tool: 'screenshot', arguments: {}, result: { content: [{ type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' }] }, status: 'completed', error: null }
+    server.event({ method: 'item/completed', params: { threadId: 'terminal', item } })
+    const expected = { id: 'codex:screenshot', images: [{ media: 'image/png', data: 'aGVsbG8=' }] }
+    expect(heard.flatMap((one) => one.items)).toContainEqual(expect.objectContaining(expected))
+    server.history = [{ id: 'old', startedAt: 100, status: 'completed', error: null, items: [item] }]
+    expect((await codex.read(ROOT, 'codex:terminal'))?.items).toContainEqual(expect.objectContaining(expected))
+    await driver.end()
+  })
+
   it('passes only a common source guide pointer to new, cloned and resumed threads while preserving user input', async () => {
     vi.stubEnv('GECKIT_SOURCE_CODEX_GUIDE', '/isolated/source data/GECKIT-CODEX.md')
     const { server, codex, heard } = setup()
