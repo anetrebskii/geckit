@@ -1,5 +1,5 @@
-/** View Channels, Send Messages, Read Message History, Create Public Threads and Send Messages in Threads: what the bot needs to answer in a thread of its own. */
-export const DISCORD_INVITE_PERMISSIONS = String((1n << 10n) | (1n << 11n) | (1n << 16n) | (1n << 35n) | (1n << 38n))
+/** View Channels, Send Messages, Attach Files, Read Message History, Create Public Threads and Send Messages in Threads: what the bot needs to answer in a thread of its own. */
+export const DISCORD_INVITE_PERMISSIONS = String((1n << 10n) | (1n << 11n) | (1n << 15n) | (1n << 16n) | (1n << 35n) | (1n << 38n))
 
 export const DISCORD_PORTAL = 'https://discord.com/developers/applications'
 

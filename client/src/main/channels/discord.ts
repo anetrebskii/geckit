@@ -1,3 +1,5 @@
+import { channelDownload } from './channel-files'
+import type { ChannelFileSender } from './channel-files'
 import { createHash } from 'node:crypto'
 
 import type { ChannelInfo } from '../../shared/channels'
@@ -69,6 +71,8 @@ interface DiscordUser {
 }
 
 interface DiscordAttachment {
+  readonly id?: string
+  readonly url?: string
   readonly filename?: string
   readonly size?: number
   readonly content_type?: string
@@ -295,6 +299,36 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     if (watching.has(thread)) return
     const revision = boundary(key)
     const current = (): boolean => !stopped && revision === boundary(key)
+    const upload: ChannelFileSender = async (bytes, name, media, caption, _format, _origin, beforeSend) => {
+      const validate = async (): Promise<void> => {
+        const info = await channelInfo(channel)
+        const recheck = (): void => {
+          const writer = context.store.get(`writer:${key}`)
+          if (!current() || typeof writer !== 'string' || !allowed(writer)) throw new Error('The originating Discord conversation is no longer authorized.')
+          const direct = key.startsWith('dm:')
+          const chosen = strings(context.config()['places'] as Json | undefined)
+          if (direct && context.config()['directMessages'] === false || !direct && chosen.length > 0 && !chosen.includes(channel) && !(info?.parent_id != null && chosen.includes(info.parent_id))) throw new Error('Discord no longer answers in this conversation.')
+          if (context.config()['checkSecrets'] !== false && (containsSecret(caption) || containsSecret(bytes.toString('utf8')))) throw new Error('The selected file or caption appears to contain a token or key.')
+        }
+        recheck()
+        await beforeSend?.()
+        recheck()
+      }
+      await validate()
+      const form = new FormData()
+      form.set('payload_json', JSON.stringify({ content: caption, allowed_mentions: { parse: [] }, attachments: [{ id: 0, filename: name }] }))
+      form.set('files[0]', new Blob([new Uint8Array(bytes)], { type: media }), name)
+      let response: Response
+      try { response = await transport.fetch(`${API}/channels/${channel}/messages`, { method: 'POST', headers: { authorization: `Bot ${token()}` }, body: form, redirect: 'error', signal: AbortSignal.timeout(30_000) }) } catch { throw new Error('Discord file delivery is uncertain. Check this conversation before requesting another send; the upload was not retried.') }
+      if (response.status >= 500) throw new Error('Discord file delivery is uncertain. Check this conversation before requesting another send; the upload was not retried.')
+      if (!response.ok) throw new Error(response.status === 403 ? 'Discord file delivery failed: the bot needs Attach Files and Send Messages in Threads here. Grant them to the existing bot in Server Settings, Roles or channel Permissions.' : `Discord file delivery failed: native upload refused (${String(response.status)}).`)
+      let receipt: DiscordMessage
+      try { receipt = await response.json() as DiscordMessage } catch { throw new Error('Discord file delivery is uncertain: no native message receipt. The upload was not retried.') }
+      const file = receipt.attachments?.[0]
+      if (typeof receipt.id !== 'string' || receipt.id === '' || receipt.channel_id !== channel || typeof file?.id !== 'string' || file.id === '') throw new Error('Discord file delivery is uncertain: no matching native file receipt. The upload was not retried.')
+      return { channel: 'channel:discord', destination: channel, messageId: receipt.id, fileId: file.id }
+    }
+    context.files?.bind(thread, upload)
     const shown = new Set([...pending(key).map((one) => one.id), ...prompts(key).map((one) => one.decision)])
     const status = new StatusMessage({
       post: async (text) => {
@@ -381,7 +415,10 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(reply, say(speechOf(text)).secret, { message_reference: { message_id: message.id, fail_if_not_exists: false } }); return }
     const from = nameOf(message.author, message.member?.nick)
     const revision = boundary(key)
-    const current = (): boolean => revision === boundary(key) && !stopped
+    const current = (): boolean => {
+      const chosen = strings(context.config()['places'] as Json | undefined)
+      return revision === boundary(key) && !stopped && allowed(user) && (direct ? context.config()['directMessages'] !== false : chosen.length === 0 || chosen.includes(message.channel_id) || inThread && info?.parent_id != null && chosen.includes(info.parent_id))
+    }
     let channel = reply
     if (!direct && !inThread) {
       const title = (text.split('\n')[0] ?? '').slice(0, 90) || `Request from ${from}`
@@ -402,19 +439,31 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       context.store.set(`thread:${key}`, true)
       context.store.set('threads', [...places().filter((one) => one.key !== key), { key, channel }].slice(-500))
     }
+    context.store.set(`writer:${key}`, user)
     follow(thread, channel, key)
     const choice = text.toLowerCase()
     const decision = pending(key).find((one) => one.values.includes(choice))
+    if (decision !== undefined && (message.attachments?.length ?? 0) > 0) { await post(channel, 'A file cannot answer an approval or question. Use its buttons or a text reply, then send the file as a new message.'); return }
     if (decision !== undefined && await context.conversations.answer(thread, decision.id, choice)) { context.store.set(`seen:${key}`, message.id); return }
     const before = inThread ? await earlier(channel, seenAt ?? cutoffAt, message.id) : ''
     if (!current()) return
+    const attachments: string[] = []
+    try {
+      if ((message.attachments?.length ?? 0) > 10) throw new Error('Send at most 10 attachments in one message.')
+      for (const file of message.attachments ?? []) {
+        if (file.url === undefined || file.id === undefined || !/^\d+$/.test(file.id)) throw new Error('Discord did not provide downloadable attachment bytes. Resend the file.')
+        if (!current() || !allowed(user)) throw new Error('The originating Discord conversation changed.')
+        const bytes = await channelDownload(transport.fetch, file.url, (location) => location.hostname === 'cdn.discordapp.com' && location.pathname.startsWith(`/attachments/${message.channel_id}/${file.id}/`), file.size)
+        if (!current() || !allowed(user)) throw new Error('The originating Discord conversation changed.')
+        if (context.config()['checkSecrets'] !== false && containsSecret(bytes.toString('utf8'))) throw new Error('This attachment appears to contain a token or key. Remove the secret before resending.')
+        if (context.files === undefined) throw new Error('Attachment storage is unavailable.')
+        attachments.push(context.files.keep(thread, bytes, file.filename ?? 'attachment', file.content_type ?? 'application/octet-stream'))
+      }
+    } catch (error) { await post(channel, `Could not receive this attachment: ${said(error)}. Correct the issue and resend.`); return }
     const request = `${text === '' ? attached === '' ? 'They mentioned you without a message. Read the thread above and help with it.' : 'They sent only files.' : text}${attached}`
-    await context.conversations.send(thread, { text: before === '' ? request : `${before}\n\nMessage to you:\n${request}`, from })
+    await context.conversations.send(thread, { text: before === '' ? request : `${before}\n\nMessage to you:\n${request}`, from, ...(attachments.length === 0 ? {} : { attachments, authorized: current }) })
     context.store.set(`seen:${key}`, message.id)
-    if (attached !== '' && context.store.get(`files:${key}`) !== true) {
-      context.store.set(`files:${key}`, true)
-      posted(channel, '-# Files are not passed to GeckIt from Discord. Manager sees their names only; put the content in the message or a project folder.')
-    }
+
   }
 
   const respond = (interaction: DiscordInteraction, body: object): Promise<unknown> => api('POST', `/interactions/${interaction.id}/${interaction.token}/callback`, body)

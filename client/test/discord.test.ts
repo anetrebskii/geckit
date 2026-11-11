@@ -243,14 +243,14 @@ it('asks a question with buttons bound to the person, the thread, the message an
   await run.channel.stop()
 })
 
-it('splits long answers, names attached files once, and says what refused a thread', async () => {
+it('splits long answers, rejects unavailable attachment bytes, and says what refused a thread', async () => {
   const run = harness()
   await run.channel.start()
   run.ready()
   run.message('540000000000000001', ALLOWED, `<@${BOT}> look at this log`, { attachments: [{ filename: 'trace.txt', size: 4_096, content_type: 'text/plain' }] })
   await run.settle()
-  expect(run.sent[0]?.[1].text).toBe('look at this log [file: trace.txt, text/plain, 4 KB]')
-  expect(run.posts().at(-1)?.body['content']).toContain('Files are not passed to GeckIt from Discord')
+  expect(run.sent).toEqual([])
+  expect(run.posts().at(-1)?.body['content']).toContain('Could not receive this attachment: Discord did not provide downloadable attachment bytes')
   run.watchers.get('channel:discord:540000000000000001')?.({ kind: 'answer', text: `${'a'.repeat(1_500)}\n${'b'.repeat(1_500)}\n${'c'.repeat(2_500)}` })
   await run.settle()
   const parts = run.posts().slice(-4).map((one) => String(one.body['content']))
@@ -321,7 +321,7 @@ it('checks a bot for Set up: identity, intent, servers, channels, people and the
     servers: [{ id: GUILD, name: 'TwinsAI', channels: [{ id: TEXT, name: 'geckit', kind: 'text' }, { id: '3', name: 'help', kind: 'forum' }] }],
     people: [{ id: STRANGER, found: false }, { id: ALLOWED, found: true, name: 'Maria Ivanova', handle: 'maria' }],
   })
-  expect(DISCORD_INVITE_PERMISSIONS).toBe('309237713920')
+  expect(DISCORD_INVITE_PERMISSIONS).toBe('309237746688')
   const refused = (async () => ({ status: 401, ok: false, json: async () => ({}) })) as unknown as typeof globalThis.fetch
   expect(await inspectDiscord(setup, {}, { fetch: refused, WebSocket: FakeSocket as never })).toEqual({ token: 'refused' })
   expect(await inspectDiscord({ secret: () => undefined, config: () => ({}) }, {})).toEqual({ token: 'missing' })

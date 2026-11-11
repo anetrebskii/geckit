@@ -1,3 +1,4 @@
+import type { ChannelFileSender } from './channels/channel-files'
 import { assertProviderAvailable } from './provider-changes'
 import type { ManagerHistoryRequest, ManagerHistoryBoundary, ManagerHistoryChange, ManagerInstructionsResult, ManagerSpeech } from '../shared/manager'
 import type { Employees } from './employees'
@@ -136,6 +137,7 @@ export interface ManagerDeps {
   readonly directory: string
   readonly intake?: Pick<ManagerIntakeDeps, 'adapters' | 'classify' | 'pairing' | 'now'>
   readonly attachments?: TelegramAttachments
+  readonly channelFile?: (thread: string) => ChannelFileSender
   readonly telegramFile?: () => TelegramFileSender
   readonly sessions: Sessions
   readonly notes: NotesStore
@@ -583,7 +585,7 @@ export class Manager {
     const session = await this.open(thread)
     if (epoch !== this.#epoch(thread) || session !== this.#state(thread).sessionId) throw new Error('Manager conversation changed. Nothing was queued.')
     if (!authorized()) throw new Error('This Telegram connection is no longer authorized.')
-    for (const attachment of attachments) this.#attachments.read(attachment)
+    for (const attachment of attachments) this.#attachments.read(attachment, thread)
     const literal = /^[!/]/.test(text.trim()) ? `[User request]\n${text.trim()}` : text.trim()
     const language = source === 'event' ? undefined : heard(text)
     if (language !== undefined && language !== this.#state(thread).language) this.#saveThread(thread, { language })
@@ -634,7 +636,7 @@ export class Manager {
       live.activeTelegram = this.#telegramRequests(next)
       this.#saveThread(thread, { responseOrigin: { ...(thread === MAIN ? {} : { thread }), session, workers: next.workers ?? [] } }, { inbox: this.#record.inbox.map((one) => one.id === next.id ? { ...one, state: 'sending' } : one) })
       this.#deps.sessions.updateManager(session, this.#instructions())
-      const input = this.#attachments.input(next.attachments ?? [])
+      const input = this.#attachments.input(next.attachments ?? [], thread)
       live.awaitingOutput = true
       await this.#deps.sessions.sendManager({ session, root: homedir(), provider: this.#record.config.provider, mode: this.#deps.settings().chatMode, ...(this.#record.config.chatModel === '' ? {} : { model: this.#record.config.chatModel }), text: `${prefix(next.source)}${next.text}${input.text === '' ? '' : `\n\n${input.text}`}`, ...(input.images === undefined ? {} : { images: input.images }) })
       if (epoch !== this.#epoch(thread) || session !== this.#state(thread).sessionId) return
@@ -748,7 +750,7 @@ export class Manager {
   #commandWorkers(command: ManagerCommand): ManagerReplyOrigin['workers'] {
     const at = command.args.indexOf('--id')
     const id = at < 0 ? undefined : command.args[at + 1]
-    return ['sessions', 'attachments', 'telegram'].includes(command.args[0] ?? '') && id !== undefined && this.manages(id) ? [id] : []
+    return ['sessions', 'attachments', 'telegram', 'channels'].includes(command.args[0] ?? '') && id !== undefined && this.manages(id) ? [id] : []
   }
 
   async command(asked: ManagerCliAsked): Promise<ManagerCliAnswered> {

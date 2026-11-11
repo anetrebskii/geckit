@@ -1,3 +1,5 @@
+import type { ChannelFileSender } from './channel-files'
+import type { TelegramAttachment } from '../telegram-attachments'
 import type { CardAnswer, ChatSession, ManagerLabels, SessionImage, SessionItem, SessionMode, SessionNotice, SessionProvider } from '../../shared/api'
 import type { ChannelField, ChannelId, ChannelInfo, ChannelValue, ChannelValues } from '../../shared/channels'
 import type { ManagerHistoryBoundary, ManagerHistoryChange, ManagerDecision } from '../../shared/manager'
@@ -39,6 +41,8 @@ export interface ChannelStart {
 }
 
 export interface ChannelSend {
+  readonly attachments?: readonly TelegramAttachment['id'][]
+  readonly authorized?: () => boolean
   readonly text: string
   readonly images?: readonly SessionImage[]
   /** Who said it, as the channel names them. Manager reads it with the message. */
@@ -88,6 +92,10 @@ export interface ChannelContext {
   projects(): readonly { readonly root: string; readonly name: string }[]
   providers(): readonly SessionProvider[]
   employees(): readonly { readonly id: string; readonly name: string; readonly role: string }[]
+  readonly files?: {
+    keep(thread: string, bytes: Buffer, name: string, media: string): TelegramAttachment['id']
+    bind(thread: string, sender: ChannelFileSender): () => void
+  }
   readonly conversations: ChannelConversations
 }
 

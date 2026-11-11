@@ -176,7 +176,7 @@ stateDiagram-v2
 - Each direct message channel is its own Manager thread.
 - Manager's answers, the status message and questions go to the thread or direct message they belong to. No mention in them notifies anyone: every message is sent with mentions off.
 - A question with up to 25 choices comes with buttons, the first one primary; it also says the values that can be typed instead. A button works only for someone allowed, only on the message that asked it, only in its thread and only while it is open. Anyone else gets "This question is no longer open." or "You are not on the list of people who may use this bot.", seen only by them. After an answer the buttons are removed and the message says who chose what. A question answered in GeckIt loses its buttons in Discord and says "Answered."
-- Attached files are named to Manager, with type and size, and the thread says once: "Files are not passed to GeckIt from Discord. Manager sees their names only; put the content in the message or a project folder."
+- File/photo handling is extended by [channel attachments](channel-attachments.md): retained bytes and native image input, shared worker handoff, and explicit same-thread artifact delivery with a receipt. See that document for the implementation and verification boundary.
 
 ## What stays silent
 
@@ -217,9 +217,9 @@ stateDiagram-v2
 ## What is deliberately not there
 
 - No slash commands and no second Manager: Discord talks to the same Manager threads as Slack, through the same channel contract.
-- No file contents: the channel contract carries no attachments to Manager, so files are named, not passed.
+- File contents and explicit output now follow the shared [channel attachment contract](channel-attachments.md); no separate Discord attachment system.
 - No member picker: listing a server's members needs the privileged Server Members Intent; IDs are pasted instead.
-- No setting of server permissions or roles from GeckIt: the invite asks Discord for View Channels, Send Messages, Read Message History, Create Public Threads and Send Messages in Threads, and the server's owner decides.
+- No setting of server permissions or roles from GeckIt: the invite asks Discord for View Channels, Send Messages, Read Message History, Create Public Threads, Send Messages in Threads and Attach Files, and the server's owner decides.
 - No Discord on the phone: channels are set up on the computer that runs them, as Slack.
 
 ## Decisions

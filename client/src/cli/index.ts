@@ -246,7 +246,7 @@ ${PRODUCT_COMMANDS.map((one) => `    geckit ${one}`).join('\n')}
   Run capabilities on the selected target for schemas, authority and native-only boundaries.
 
   Manager sessions additionally use capabilities, providers, projects, files,
-  sessions, settings, attachments and telegram through the running app's authenticated CLI interface.
+  sessions, settings, attachments, channels send-file and telegram through the running app's authenticated CLI interface.
   Run capabilities in Manager for supported operations and named limitations.
 
 Outside Manager, product configuration/control commands, start, migrate-codex, settings edit and employee changes can write. Native permission answers remain in the bound human flow.
