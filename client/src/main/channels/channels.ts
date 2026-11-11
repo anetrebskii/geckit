@@ -103,6 +103,8 @@ export class Channels {
   #unhistory: (() => void) | undefined
   #unanswer: (() => void) | undefined
   #counted = ''
+  /** Reads Manager's view again each minute, so the minutes Manager has worked on a message go up. */
+  #tick: ReturnType<typeof setInterval> | undefined
 
   constructor(deps: ChannelsDeps) {
     this.#deps = deps
@@ -185,7 +187,22 @@ export class Channels {
     this.#unsubscribe = this.#deps.subscribe((event) => this.#heard(event))
     this.#unhistory = this.#deps.manager.onHistoryChange?.((change) => this.#tell(change.id, { kind: 'history', change }))
     this.#unanswer = this.#deps.manager.onResponse((text, origin) => { if (origin.thread !== undefined && this.#deps.manager.originCurrent?.(origin) !== false) this.#tell(origin.thread, { kind: 'answer', text }) })
+    this.#tick = setInterval(() => { const view = this.#deps.managerView(); if (view !== undefined) this.#statusAll(view) }, 60_000)
+    this.#tick.unref?.()
     await this.reconcile()
+  }
+
+  #status(view: ManagerView, thread: string): void {
+    const activity = threadActivity(view, thread)
+    const status = JSON.stringify(activity ?? null)
+    if (activity !== undefined && status !== this.#statuses.get(thread)) {
+      this.#statuses.set(thread, status)
+      this.#tell(thread, { kind: 'status', activity })
+    }
+  }
+
+  #statusAll(view: ManagerView): void {
+    for (const thread of view.threads ?? []) if (thread.id !== MANAGER_MAIN_THREAD && this.#listeners.has(thread.id)) this.#status(view, thread.id)
   }
 
   /** Starts, restarts or stops each channel to match its settings. */
@@ -448,12 +465,7 @@ export class Channels {
             this.#decisions.set(thread.id, decisions)
             this.#tell(thread.id, { kind: 'decisions', decisions: mine })
           }
-          const activity = threadActivity(view, thread.id)
-          const status = JSON.stringify(activity ?? null)
-          if (activity !== undefined && status !== this.#statuses.get(thread.id)) {
-            this.#statuses.set(thread.id, status)
-            this.#tell(thread.id, { kind: 'status', activity })
-          }
+          this.#status(view, thread.id)
           const conversation = this.#threadConversation(thread.id, view)
           const shown = JSON.stringify([conversation.state, conversation.title])
           if (this.#shown.get(thread.id) !== shown) {
@@ -563,6 +575,7 @@ export class Channels {
 
   async dispose(): Promise<void> {
     this.#stopped = true
+    clearInterval(this.#tick)
     this.#unsubscribe?.()
     this.#unanswer?.()
     this.#unhistory?.()

@@ -14,10 +14,10 @@ import { threadActivity } from '../src/main/manager-status'
 import { Manager, runManagerCli } from '../src/main/manager'
 import type { ManagerCliContext, ManagerDeps } from '../src/main/manager'
 import { ManagerOperations, managerFile, managerProvider, managerReadOnly } from '../src/main/manager-operations'
-import { managerCommands, managerContext, managerHistoryItem, managerMessage, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
+import { managerCommands, managerContext, managerHistoryItem, managerMessage, managerNote, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
 import { manage } from '../src/cli/manage'
 import { askedEndpoint } from '../src/cli/endpoint'
-import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerReplyOrigin, ManagerView } from '../src/shared/manager'
+import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerReplyOrigin, ManagerThread, ManagerView } from '../src/shared/manager'
 import { Sessions, memoryNotes } from '../src/main/sessions'
 import type { SessionsDeps } from '../src/main/sessions'
 import { llmProvider } from '../src/main/sessions/provider'
@@ -1714,6 +1714,28 @@ describe('Manager session', () => {
     await vi.waitFor(() => expect(replies).toHaveLength(1))
     expect(replies[0]).toBe('First.\n\nI will coordinate that.\n\nLast.')
     expect(managerMessage('```ts\n  first\n\n\n  second\n```')).toBe('```ts\n  first\n\n\n  second\n```')
+  })
+
+  it('hides status blocks from the answer and shows the last one in the thread until Manager answers', async () => {
+    expect(managerMessage('```status\nChecking the workers.\n```\nDone.')).toBe('Done.')
+    expect(managerNote('```status\nOne.\n```\ntext\n```status\n  Checking\n the  workers.\n```')).toBe('Checking the workers.')
+    expect(managerNote('```status\nStill writi')).toBeUndefined()
+    expect(MANAGER_INSTRUCTIONS).toContain('fenced status block')
+    const f = await fixture()
+    const replies: string[] = []
+    f.manager.onResponse((text) => replies.push(text))
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread({ channel: 'channel:slack', place: 'Slack', key: 'C1:1730.1', title: 'Fix login', labels: {} })
+    await f.manager.send('[Via Slack, from Maria Ivanova]\nWhat is going on?', 'channel', 'slack:1', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('What is going on?'))).toBe(true))
+    const id = f.sent.find((one) => one.text.includes('What is going on?'))?.id ?? ''
+    const main = async (): Promise<ManagerThread | undefined> => (await f.manager.view()).threads?.find((one) => one.id === thread)
+    f.hear(id, { items: [{ kind: 'theirs', id: 'note', text: '```status\nChecking what the workers did.\n```' }], gone: [], signals: [{ kind: 'begun' }] })
+    await vi.waitFor(async () => expect((await main())?.note).toBe('Checking what the workers did.'))
+    expect((await main())?.since).toEqual(expect.any(Number))
+    f.hear(id, { items: [{ kind: 'theirs', id: 'reply', text: 'All done.' }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(replies).toEqual(['All done.']))
+    await vi.waitFor(async () => expect((await main())?.note).toBeUndefined())
   })
 
   it('requires enabled assistants and rejects unavailable models without fallback', async () => {

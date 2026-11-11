@@ -3,7 +3,7 @@ import { assertProviderAvailable, prepareProvider, providerPreparing } from '../
 import { mergeTasks, taskTerminal } from '../../shared/background-tasks'
 import type { Employee, EmployeeConversation } from '../../shared/employees'
 import { createHash, randomUUID } from 'node:crypto'
-import { managerContext, managerHistoryItem, managerVisibleItem } from '../manager-protocol'
+import { managerContext, managerHistoryItem, managerNote, managerVisibleItem } from '../manager-protocol'
 import { MANAGER_CHAT_GUIDANCE } from '../../shared/manager'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -540,7 +540,7 @@ export function startsConversations(command: string): boolean {
 const conversations = (count: number): string => (count === 1 ? 'a conversation' : `${String(count)} conversations`)
 
 export class Sessions {
-  #managerItems: ((items: SessionItems) => void) | undefined
+  #managerItems: ((items: SessionItems, note: string | undefined) => void) | undefined
   #managerOutput: ((id: string, text: string) => void) | undefined
   #managerSend: ((message: SessionMessage) => Promise<string>) | undefined
   readonly #managerMessages = new WeakSet<SessionMessage>()
@@ -674,7 +674,7 @@ export class Sessions {
     this.#managerSend = send
   }
 
-  managerItems(heard: (items: SessionItems) => void): void { this.#managerItems = heard }
+  managerItems(heard: (items: SessionItems, note: string | undefined) => void): void { this.#managerItems = heard }
 
   managerThreads(name: (thread: string) => ManagerThreadName | undefined): void { this.#threadName = name }
 
@@ -685,7 +685,7 @@ export class Sessions {
   }
 
   #tellItems(items: SessionItems): void {
-    if (this.isManager(items.id)) this.#managerItems?.({ ...items, items: items.items.map((item) => managerVisibleItem(managerHistoryItem(item))) })
+    if (this.isManager(items.id)) this.#managerItems?.({ ...items, items: items.items.map((item) => managerVisibleItem(managerHistoryItem(item))) }, items.items.flatMap((item) => item.kind === 'theirs' ? [managerNote(item.text)] : []).filter((note) => note !== undefined).at(-1))
     else this.#deps.items(items)
   }
 
@@ -3624,7 +3624,7 @@ export class Sessions {
     // working would trade places in the list every second. A message sent, a
     // turn begun or over, and a card put up are what move a row.
     if (items.length > 0 || heard.gone.length > 0) {
-      this.#tellItems({ id: live.id, items: this.#deps.notes.all()[live.id]?.managerPrompt === undefined ? items : items.map(managerVisibleItem), ...(heard.gone.length > 0 ? { gone: heard.gone } : {}) })
+      this.#tellItems({ id: live.id, items, ...(heard.gone.length > 0 ? { gone: heard.gone } : {}) })
     }
     for (const signal of heard.signals) this.#signal(live, signal)
     if (this.#deps.notes.all()[live.id]?.managerPrompt !== undefined && heard.signals.some((signal) => signal.kind === 'ended' && signal.how === 'done')) {

@@ -1258,7 +1258,7 @@ describe('runtime: Telegram status from Manager views', () => {
     hearings.get(mine)?.({ items: [], gone: [], signals: [{ kind: 'begun' }, { kind: 'doing', what: 'running npx vitest run test/login.test.ts' }] })
     hearings.get(theirs)?.({ items: [], gone: [], signals: [{ kind: 'begun' }, { kind: 'doing', what: 'reading slack-only.md' }] })
     await vi.waitFor(() => expect(statuses()).toHaveLength(1))
-    expect(String(statuses()[0]?.body['text'])).toMatch(/^Готовлю ответ, сейчас: /)
+    expect(String(statuses()[0]?.body['text'])).toMatch(/^⏳ Готовлю ответ\n/)
 
     hearings.get(backing)?.({ items: [{ kind: 'theirs', id: 'answer:1', text: 'Смотрю тесты.' }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
     // The line about Manager's own work is edited no sooner than the 3 s gap, in real time, before it is deleted.

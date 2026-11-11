@@ -125,6 +125,9 @@ interface Live {
   opening: { readonly generation: string; readonly result: Promise<string> } | undefined
   recovery: ReturnType<typeof setTimeout> | undefined
   recoveryDelay: number
+  /** What Manager last said in a status block while it works on a message, and since when it has worked on it. */
+  note?: string | undefined
+  since?: number | undefined
 }
 
 export interface ManagerCliContext {
@@ -221,8 +224,10 @@ export class Manager {
     this.#attachments.cleanup()
     this.#operations = new ManagerOperations({ ...deps, statusAttribution: () => this.#acting.getStore()?.attribution ?? { executor: 'manager', origin: 'unknown' }, instructions: { read: () => this.instructions(), write: (text, expected) => this.editInstructions(text, expected) }, attachments: this.#attachments, authorized: () => { const acting = this.#acting.getStore(); return this.#record.config.enabled && !this.#record.paused && !this.#stopped && (acting === undefined || this.#state(acting.thread).sessionId === acting.session && this.#deps.threadAllowed?.(acting.thread) !== false) }, owner: 'manager', managed: (id) => this.manages(id), managerSession: () => this.#acting.getStore()?.session ?? this.#record.sessionId, managerThread: () => this.#acting.getStore()?.thread ?? MAIN, managerRequest: () => this.#acting.getStore()?.request, trackedBy: (id) => { const thread = this.#ownerThread(id); return thread === undefined ? undefined : this.#threadName(thread) }, threadLabels: () => this.#threadRecord(this.#acting.getStore()?.thread ?? MAIN)?.labels ?? {} })
     deps.sessions.managerThreads((thread) => this.#threadName(thread))
-    deps.sessions.managerItems((items) => {
-      if (this.#threadOfSession(items.id) === undefined) return
+    deps.sessions.managerItems((items, note) => {
+      const thread = this.#threadOfSession(items.id)
+      if (thread === undefined) return
+      if (note !== undefined && note !== this.#l(thread).note) { this.#l(thread).note = note; this.#emit() }
       for (const listener of this.#itemListeners) listener(items)
     })
     deps.sessions.managerSend(() => Promise.reject(new Error(MANAGER_CHAT_GUIDANCE)))
@@ -305,6 +310,7 @@ export class Manager {
     const closed = record === undefined ? undefined : this.#closed.get(record.channel)
     const working = session?.state === 'working' || live.dispatching || live.awaitingOutput || this.#record.inbox.some((message) => message.state !== 'sent' && this.#threadOf(message) === thread)
     const manager = session?.state === 'working' || live.processingOutput ? 'working' : working ? 'received' : undefined
+    if (manager !== undefined) live.since ??= Date.now()
     const at = Math.max(record?.at ?? 0, ...this.#record.inbox.filter((message) => this.#threadOf(message) === thread).map((message) => message.at))
     return {
       id: thread,
@@ -319,6 +325,8 @@ export class Manager {
       ...(session === undefined ? {} : { conversation: session }),
       state: state.error !== undefined ? 'failed' : decisions.some((decision) => (decision.thread ?? MAIN) === thread) ? 'asks' : working ? 'working' : 'idle',
       ...(manager === undefined ? {} : { manager }),
+      ...(manager === undefined || live.since === undefined ? {} : { since: live.since }),
+      ...(manager === undefined || live.note === undefined ? {} : { note: live.note }),
       ...(state.language === undefined ? {} : { language: state.language }),
       ...(state.error === undefined ? {} : { error: state.error }),
       ...(closed === undefined ? {} : { closed }),
@@ -718,6 +726,7 @@ export class Manager {
     const delivery = randomUUID()
     const telegramReplies: readonly TelegramReply[] = !teamThread(thread) || this.#deps.threadAllowed?.(thread) === false || visible === '' ? this.#record.telegramReplies : [...this.#record.telegramReplies, { id: delivery, text: visible.slice(0, 32_768), origin: { ...origin, telegramDelivery: delivery }, state: 'queued' }]
     this.#saveThread(thread, { ...(this.#canRecover(thread) ? { error: undefined } : {}), responseOrigin: undefined }, { telegramReplies, inbox: this.#record.inbox.map((message) => this.#threadOf(message) === thread && (message.state === 'sending' || message.state === 'sent') ? { ...message, state: 'sent', completed: true } : message) })
+    if (visible !== '' || commands.length === 0) { live.note = undefined; live.since = undefined }
     if (visible !== '') for (const listener of this.#responses) listener(visible, origin)
     try {
       if (this.#record.paused || !this.#record.config.enabled || teamThread(thread) && this.#deps.threadAllowed?.(thread) === false) return
@@ -1157,6 +1166,8 @@ export class Manager {
 
   #fail(thread: string, error: string): void {
     if (!this.#exists(thread) || this.#record.historyPurges.some((one) => one.request.id === thread)) return
+    this.#l(thread).note = undefined
+    this.#l(thread).since = undefined
     const id = this.#state(thread).sessionId
     const session = this.#sessions.find((one) => one.id === id)
     const note = id === undefined ? undefined : this.#deps.notes.all()[id]

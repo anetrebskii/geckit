@@ -64,6 +64,16 @@ describe('threadActivity', () => {
     for (const text of said) expect(text).not.toMatch(/Manager (is|has|stopped)/)
   })
 
+  it('shows what Manager last wrote in a status block and the minutes it has worked, the way FormulaBot does', () => {
+    const at = Date.UTC(2026, 10, 12, 1, 0)
+    const working = (extra: Partial<ManagerThread>, now = at): string | undefined => threadActivity(view([thread({ manager: 'working', since: at, ...extra })]), 'slack:C1:3.0', now)?.answering
+    expect(working({})).toBe('⏳ Working on it\nThinking it through')
+    expect(working({ note: 'Checking what the login fix has done so far.' }, at + 3 * 60_000 + 5_000)).toBe('⏳ Working on it · 3 min\nChecking what the login fix has done so far.')
+    expect(working({ note: 'Смотрю, что уже сделано.', language: 'ru' }, at + 61_000)).toBe('⏳ Готовлю ответ · 1 мин\nСмотрю, что уже сделано.')
+    expect(working({ note: 'Using token xoxb-1234567890-abcdefghij' })).toBe('⏳ Working on it\nThinking it through')
+    expect(working({ manager: 'received', note: 'Old note.' })).toBe('⏳ Working on it\nStarting on the message')
+  })
+
   it('keeps a worker active while its background tasks run, and lists them', () => {
     const task = (id: string, what: string, status: 'running' | 'asks' | 'completed'): NonNullable<ChatSession['tasks']>[number] => ({ id, kind: 'monitor', what, status, started: 0 })
     const watching = worker('w1', 'Watch CI', { tasks: [task('a', 'CI run 42', 'running'), task('b', 'Old build', 'completed'), task('c', 'Deploy check', 'asks'), task('d', 'D', 'running'), task('e', 'E', 'running')] })

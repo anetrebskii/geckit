@@ -62,6 +62,10 @@ export interface ManagerThread {
   readonly state: 'idle' | 'working' | 'asks' | 'failed'
   /** What Manager itself does in this thread: the host has a message the model has not started on, or the model (or the host carrying out its commands) is at work. */
   readonly manager?: 'received' | 'working'
+  /** When Manager began on what it is working on, in ms. */
+  readonly since?: number
+  /** The sentence Manager last wrote in a status block about what it is checking or doing next, while it works. */
+  readonly note?: string
   /** The language of the last message a person wrote in this thread. */
   readonly language?: ManagerSpeech
   readonly error?: string

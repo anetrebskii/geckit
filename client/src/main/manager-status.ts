@@ -58,7 +58,7 @@ function workerLine(worker: ChatSession, speech?: Speech): string {
   return lines.join('\n')
 }
 
-export function threadActivity(view: ManagerView, id: ManagerThread['id']): ThreadActivity | undefined {
+export function threadActivity(view: ManagerView, id: ManagerThread['id'], now = Date.now()): ThreadActivity | undefined {
   const thread = view.threads?.find((one) => one.id === id)
   if (thread === undefined || thread.closed !== undefined) return undefined
   const reason = (thread.error ?? '').split('\n')[0]?.slice(0, REASON) ?? ''
@@ -73,8 +73,10 @@ export function threadActivity(view: ManagerView, id: ManagerThread['id']): Thre
     return found === undefined ? [] : [{ id: worker, line: workerLine(found, speech), active: workerSaid(found).active }]
   })
   const active = !failed && thread.manager !== undefined
-  const doing = thread.manager === 'received' ? words.doing.starting : workerDoing(thread.conversation?.stands.split('\n')[0] ?? '', speech) ?? words.doing.thinking
-  const answering = active ? words.answering(containsSecret(doing) ? words.doing.thinking : clip(doing, STANDS)) : undefined
+  const doing = thread.manager === 'received' ? words.doing.starting : thread.note ?? workerDoing(thread.conversation?.stands.split('\n')[0] ?? '', speech) ?? words.doing.thinking
+  const line = containsSecret(doing) ? words.doing.thinking : clip(doing, STANDS)
+  const minutes = thread.since === undefined ? 0 : Math.max(0, Math.floor((now - thread.since) / 60_000))
+  const answering = active ? words.answering(minutes, `${line.charAt(0).toUpperCase()}${line.slice(1)}`) : undefined
   return { manager, ending, active, workers, ...(answering === undefined ? {} : { answering }), ...(speech === undefined ? {} : { language: speech }) }
 }
 
