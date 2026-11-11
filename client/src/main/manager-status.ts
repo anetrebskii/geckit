@@ -80,7 +80,7 @@ export interface StatusPoster {
 }
 
 /**
- * The status message of a channel conversation, docs/ux/channel-status.md: shown while Manager is free and the thread's workers run, edited as they change at most once per `gap`, taken away while Manager works on a message and posted again below what it sends, and left with its ending when the work is over.
+ * The status message of a channel conversation, docs/ux/channel-status.md: shown while Manager is free and the thread's workers run, edited as they change at most once per `gap`, taken away while Manager works on a message and posted again below what it sends, and left with its ending when the work is over until Manager sends something or the person writes, which deletes it.
  */
 export class StatusMessage {
   readonly #poster: StatusPoster
@@ -92,6 +92,7 @@ export class StatusMessage {
   readonly #seen: string[] = []
   readonly #lines = new Map<string, string>()
   #id: string | undefined
+  #left: string | undefined
   #shown = ''
   #want: string | undefined
   #closing = false
@@ -110,6 +111,7 @@ export class StatusMessage {
 
   update(activity: ThreadActivity | undefined): void {
     if (activity === undefined) { this.#stretch = false; this.#id = undefined; this.#shown = ''; this.#want = undefined; this.#closing = false; return }
+    if (activity.active) this.#drop()
     const working = activity.workers.some((one) => one.active)
     if (!this.#stretch) {
       if (!working) return
@@ -136,14 +138,21 @@ export class StatusMessage {
   /** Something Manager sends is on its way: the status goes below it once it is there. */
   after(sent: Promise<unknown>): void {
     this.#after = Promise.all([this.#after, sent.catch(() => undefined)])
+    this.#drop()
     if (this.#id !== undefined && !this.#closing) { this.#lower = true; void this.#flush() }
+  }
+
+  #drop(): void {
+    const id = this.#left
+    if (id === undefined) return
+    this.#left = undefined
+    this.#poster.remove(id).catch(this.#failed)
   }
 
   #text(first: string, speech: Speech | undefined): string {
     const workers = this.#seen.slice(0, WORKERS).map((id) => this.#lines.get(id) ?? '')
     const more = this.#seen.length - WORKERS
-    const time = new Date(this.#now()).toISOString().slice(11, 16)
-    return [first, ...workers, ...(more > 0 ? [say(speech).more(more)] : []), say(speech).updated(time)].join('\n')
+    return [first, ...workers, ...(more > 0 ? [say(speech).more(more)] : [])].join('\n')
   }
 
   async #flush(): Promise<void> {
@@ -163,12 +172,13 @@ export class StatusMessage {
         this.#lower = false
         if (want === undefined) break
         if (want === this.#shown) {
-          if (this.#closing) { this.#id = undefined; this.#shown = ''; this.#want = undefined; this.#closing = false }
+          if (this.#closing) { this.#left = this.#id; this.#id = undefined; this.#shown = ''; this.#want = undefined; this.#closing = false }
           break
         }
         if (this.#id === undefined) {
           await this.#after
           if (this.#want !== want || this.#lower) continue
+          this.#drop()
           this.#id = await this.#poster.post(want)
         } else {
           const left = this.#edited + this.#gap - this.#now()
