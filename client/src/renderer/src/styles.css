@@ -16054,3 +16054,9 @@ html.phone .live-view {
 .prose-picture { display: inline-block; max-width: 100%; }
 .prose-picture-open { display: inline-flex; padding: 0; border: 0; background: none; cursor: zoom-in; max-width: min(100%, 320px); }
 .prose-picture-open img { display: block; max-width: 100%; max-height: 240px; object-fit: contain; border: 1px solid var(--border); border-radius: var(--radius); }
+
+.manager-members { min-width: 0; overflow-wrap: anywhere; }
+.manager-members textarea { box-sizing: border-box; width: 100%; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+.manager-members ul { max-height: 320px; overflow: auto; padding-inline-start: 20px; }
+
+.manager-members li { content-visibility: auto; contain-intrinsic-size: auto 170px; }
