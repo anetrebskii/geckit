@@ -2150,12 +2150,12 @@ describe('Manager explicit Telegram file operations', () => {
     await writeFile(join(f.root, 'report.txt'), 'selected deliverable')
     const result = JSON.parse(await operations.run(['telegram', 'send-file', '--id', worker, '--path', 'report.txt'], 'send')) as { readonly sent: boolean; readonly messageId: number }
     expect(result).toMatchObject({ sent: true, messageId: 901 })
-    expect(sent).toHaveBeenCalledWith(Buffer.from('selected deliverable'), 'report.txt', 'application/octet-stream', '', 'document', { session: manager, workers: [worker] }, expect.any(Function))
+    expect(sent).toHaveBeenCalledWith(Buffer.from('selected deliverable'), 'report.txt', 'application/octet-stream', '', 'document', { session: manager, workers: [worker], thread: 'main' }, expect.any(Function))
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1kAAAAASUVORK5CYII=', 'base64')
     await writeFile(join(f.root, 'result.png'), png)
     const photoResult = JSON.parse(await operations.run(['telegram', 'send-file', '--id', worker, '--path', 'result.png', '--as', 'photo', '--caption', 'Selected image'], 'send-photo')) as { readonly as: string; readonly sent: boolean }
     expect(photoResult).toMatchObject({ as: 'photo', sent: true })
-    expect(sent).toHaveBeenLastCalledWith(png, 'result.png', 'image/png', 'Selected image', 'photo', { session: manager, workers: [worker] }, expect.any(Function))
+    expect(sent).toHaveBeenLastCalledWith(png, 'result.png', 'image/png', 'Selected image', 'photo', { session: manager, workers: [worker], thread: 'main' }, expect.any(Function))
     const manual = await f.sessions.send({ root: f.root, mode: 'manual', text: 'Unrelated manual conversation' })
     await expect(operations.run(['telegram', 'send-file', '--id', manual, '--path', 'report.txt'], 'manual-session')).rejects.toThrow('not managed')
     const remoteRoot = 'ssh://fixture-host/project'

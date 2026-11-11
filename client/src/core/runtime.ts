@@ -236,7 +236,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         thread: telegramThread,
         accepted: (id) => coordinator.accepted(id),
         historyBoundary: (chatId) => coordinator.historyBoundaryFor('telegram', telegram?.view().account === undefined ? String(chatId) : telegramThreadKey(telegram.view().account!)),
-        originCurrent: (origin) => coordinator.originCurrent(origin) && (telegram?.view().account?.team === undefined && !origin.thread?.startsWith('telegram:team:') || origin.thread === telegramThread()),
+        originCurrent: (origin) => { const account = telegram?.view().account; return coordinator.originCurrent(origin) && (account === undefined || account.team === undefined && !origin.thread?.startsWith('telegram:team:') || origin.thread === telegramThread()) },
         pending: () => coordinator.telegramPending(),
         typingAllowed: () => coordinator.telegramTypingAllowed(telegramThread()),
         onPending: (changed) => coordinator.on(() => changed()),
