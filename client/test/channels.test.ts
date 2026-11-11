@@ -335,6 +335,24 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
   return { channel, context, makeChannel: () => createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] }), event, settle, posted, updated, deleted, reactions, sent, answered, opened, watchers, store }
 }
 
+it('Slack: one message says what Manager does while it prepares an answer, edited in place and deleted when the answer comes', async () => {
+  const run = slackHarness()
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> what are you indexing?' })
+  await run.settle()
+  const watch = run.watchers.get('channel:slack:C1:3.0')
+  const activity = (answering?: string) => ({ manager: '', ending: 'Done.', active: answering !== undefined, workers: [], ...(answering === undefined ? {} : { answering }) })
+  watch?.({ kind: 'status', activity: activity('Preparing the answer: thinking it through') })
+  await vi.waitFor(() => expect(run.posted.at(-1)).toEqual({ channel: 'C1', thread_ts: '3.0', text: 'Preparing the answer: thinking it through' }))
+  const id = `9.${String(run.posted.length)}`
+  watch?.({ kind: 'status', activity: activity('Preparing the answer: reading <brain>/slack') })
+  await vi.waitFor(() => expect(run.updated.at(-1)).toMatchObject({ ts: id, text: 'Preparing the answer: reading &lt;brain&gt;/slack' }), { timeout: 5_000 })
+  watch?.({ kind: 'answer', text: 'Slack, 10 channels.' })
+  await vi.waitFor(() => expect(run.deleted).toContainEqual({ channel: 'C1', ts: id }))
+  expect(run.posted.at(-1)?.text).toBe('Slack, 10 channels.')
+  await run.channel.stop()
+}, 15_000)
+
 it('Slack: marks a message Manager took with :eyes: until it answers or finishes', async () => {
   const run = slackHarness()
   await run.channel.start()

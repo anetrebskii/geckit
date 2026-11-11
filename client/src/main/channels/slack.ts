@@ -267,7 +267,32 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     context.files?.bind(thread, upload)
     const shown = new Set(pending(key).map((one) => one.id))
     let busy = false
-    const plain =(text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+    const plain = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+    // One message saying what Manager does while it prepares an answer, edited at most every 3 s and deleted when the answer comes or the work ends.
+    const note: { id: string | undefined; shown: string; want: string | undefined; at: number; later: boolean; chain: Promise<void> } = { id: undefined, shown: '', want: undefined, at: 0, later: false, chain: Promise.resolve() }
+    const answering = (text: string | undefined): void => {
+      note.want = text
+      note.chain = note.chain.then(async () => {
+        const want = note.want
+        if (want === undefined) {
+          const id = note.id
+          note.id = undefined; note.shown = ''
+          if (id !== undefined) await slack('chat.delete', { channel, ts: id })
+          return
+        }
+        if (want === note.shown || !current()) return
+        if (note.id === undefined) {
+          const reply = await post(channel, ts, plain(want))
+          if (note.want === undefined) { if (reply.ts !== undefined) await slack('chat.delete', { channel, ts: reply.ts }); return }
+          note.id = reply.ts
+        } else {
+          const left = note.at + 3_000 - Date.now()
+          if (left > 0) { if (!note.later) { note.later = true; setTimeout(() => { note.later = false; if (note.want !== undefined) answering(note.want) }, left) } return }
+          await slack('chat.update', { channel, ts: note.id, text: plain(want) })
+        }
+        note.shown = want; note.at = Date.now()
+      }).catch((error: unknown) => context.log.write('warn', 'slack.answering.failed', { reason: said(error) }))
+    }
     const status = new StatusMessage({
       post: async (text) => {
         if (!current()) throw new Error('Manager conversation changed.')
@@ -297,9 +322,10 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       if (event.kind === 'status') {
         if (event.activity?.active === true) busy = true
         else if (busy) { busy = false; unmark(thread) }
+        answering(event.activity?.answering)
         status.update(event.activity)
       }
-      if (event.kind === 'answer') { unmark(thread); status.after(posted(channel, ts, event.text)) }
+      if (event.kind === 'answer') { unmark(thread); answering(undefined); status.after(posted(channel, ts, event.text)) }
       if (event.kind === 'decisions') {
         context.store.set(`decisions:${key}`, event.decisions.map((one) => ({ id: one.id, values: one.choices.map((choice) => choice.value) })))
         for (const decision of event.decisions) {

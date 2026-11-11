@@ -16,6 +16,8 @@ export interface ThreadActivity {
   readonly ending: string
   readonly active: boolean
   readonly workers: readonly ThreadWorker[]
+  /** What Manager itself is doing while it prepares an answer, in words; absent while it is not working on a message. */
+  readonly answering?: string
   /** The language the lines are in, so the status message words its own lines the same way. */
   readonly language?: Speech
 }
@@ -70,7 +72,10 @@ export function threadActivity(view: ManagerView, id: ManagerThread['id']): Thre
     const found = view.workers.find((one) => one.id === worker)
     return found === undefined ? [] : [{ id: worker, line: workerLine(found, speech), active: workerSaid(found).active }]
   })
-  return { manager, ending, active: !failed && thread.manager !== undefined, workers, ...(speech === undefined ? {} : { language: speech }) }
+  const active = !failed && thread.manager !== undefined
+  const doing = thread.manager === 'received' ? words.doing.starting : workerDoing(thread.conversation?.stands.split('\n')[0] ?? '', speech) ?? words.doing.thinking
+  const answering = active ? words.answering(containsSecret(doing) ? words.doing.thinking : clip(doing, STANDS)) : undefined
+  return { manager, ending, active, workers, ...(answering === undefined ? {} : { answering }), ...(speech === undefined ? {} : { language: speech }) }
 }
 
 export interface StatusPoster {

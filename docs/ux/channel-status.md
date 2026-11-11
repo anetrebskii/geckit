@@ -25,8 +25,9 @@ Alex writes to Manager from Telegram and Slack and then sees nothing until an an
 | Telegram chat paired with Manager | One status message, sent silently (no notification), edited as state changes | A worker the Telegram thread tracks is active and Manager is not working on a message |
 | Slack thread with the bot | One status message in the thread, edited as state changes | A worker the Slack thread tracks is active and Manager is not working on a message |
 | Slack message Manager took | An :eyes: reaction on it | From the moment Manager takes it until Manager answers or finishes |
+| Slack thread with the bot | "Preparing the answer: <what>", edited as Manager works | While Manager works on a message, until its answer is posted |
 
-Telegram's native "typing" stays as it is and is what shows while Manager answers. In Slack, each message Manager takes gets an :eyes: reaction from the bot at once, and it is taken off when Manager answers or finishes without a word, so the thread shows the bot is on it (asked by Alex on 2026-11-12, after the bot looked offline while it was replying). It needs the `reactions:write` scope; without it the reaction is skipped and logged. Discord shows nothing while Manager answers.
+Telegram's native "typing" stays as it is and is what shows while Manager answers. In Slack, each message Manager takes gets an :eyes: reaction from the bot at once, and it is taken off when Manager answers or finishes without a word, so the thread shows the bot is on it (asked by Alex on 2026-11-12, after the bot looked offline while it was replying). While Manager prepares the answer, one more message in the thread says what it is doing, "Preparing the answer: <what>" / "Готовлю ответ, сейчас: <what>", with <what> worded as for a worker ("thinking it through" when nothing is known, "starting on the message" before it starts); it is edited in place at most every 3 s and deleted when the answer is posted or Manager stops working (asked by Alex on 2026-11-12). It needs the `reactions:write` scope; without it the reaction is skipped and logged. Discord shows nothing while Manager answers.
 
 ## 4. The message
 
