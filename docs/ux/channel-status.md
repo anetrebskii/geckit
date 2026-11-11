@@ -13,7 +13,7 @@ Alex writes to Manager from Telegram and Slack and then sees nothing until an an
 
 ## 2. The path
 
-- **Entry and result:** a worker tracked by a Telegram chat or a Slack thread is working while Manager is free. One status message appears at the bottom of that conversation and is edited in place as the workers change. When someone writes and Manager takes the message, the status is deleted; when Manager has answered (or finished without a word), it is posted again below the answer if work still runs. When nothing runs any more, it is edited a last time to say how it ended.
+- **Entry and result:** a worker tracked by a Telegram chat or a Slack thread is working while Manager is free. One status message appears at the bottom of that conversation and is edited in place as the workers change. When someone writes and Manager takes the message, the status is deleted; when Manager has answered (or finished without a word), it is posted again below the answer if work still runs. When nothing runs any more, it is edited a last time to say how it ended, and that message is deleted as soon as Manager or the person writes next.
 - **Readiness:** the channel is connected and allowed to talk to Manager, as for any message. Nothing to set up.
 - **Decisions:** none for Alex.
 - **Form:** one message at the bottom of the conversation, edited, never a new message per change; moved below Manager's messages by deleting and posting it again.
@@ -31,7 +31,7 @@ Telegram's native "typing" stays as it is and is what shows while Manager answer
 
 Every line is in the language of the last message a person wrote in this thread (`docs/ux/manager-voice.md`): Russian when it was Russian, English otherwise. Manager speaks of itself in the first person. Shown here in English, then Russian.
 
-First line: what Manager is doing. Then one block per worker of this conversation that was active during this stretch, in the order they became active, at most 8; past 8, "and 3 more" / "и ещё 3". Last line: "Updated 14:32 UTC" / "Обновлено в 14:32 UTC".
+First line: what Manager is doing. Then one block per worker of this conversation that was active during this stretch, in the order they became active, at most 8; past 8, "and 3 more" / "и ещё 3".
 
 | First line | Russian | When |
 |---|---|---|
@@ -82,10 +82,9 @@ A background job shows by its description; a command job with no description of 
 • Ответы менеджера: запускает тесты
 • Следить за CI #71: работает в фоне
   - CI run 42: идёт
-Обновлено в 14:32 UTC
 ```
 
-The final edit, when nothing is active: the first line becomes "Done." / "Готово." (or the "I can't go on" line, or "Waiting for your answer above."), the worker blocks keep their last state, and the time is updated.
+The final edit, when nothing is active: the first line becomes "Done." / "Готово." (or the "I can't go on" line, or "Waiting for your answer above."), and the worker blocks keep their last state. It stays until Manager sends something into the conversation or the person writes, and then it is deleted.
 
 ## 5. States
 
@@ -104,6 +103,7 @@ stateDiagram-v2
   hidden --> none: nothing runs
   live --> final: nothing active
   final --> live: new work
+  final --> none: someone writes
   classDef quiet fill:#e5e7eb,stroke:#9ca3af
   classDef going fill:#dbeafe,stroke:#2563eb
   classDef done fill:#dcfce7,stroke:#16a34a
@@ -122,8 +122,9 @@ stateDiagram-v2
 | Shown, live | Manager sends something into the conversation (an answer or a question) | Shown, live | The status message is deleted and posted again below it |
 | Shown, live | Manager or a worker of this thread changes state so that the text changes, by itself | Shown, live | The same message edited, no sooner than 3 s after the last edit |
 | Shown, live | Same text after a change elsewhere | Shown, live | Nothing |
-| Shown, live | Nothing is active: Manager idle, waiting for an answer or stopped, and every worker of this stretch idle, failed or waiting for an answer | Final | Last edit with the ending line and time |
-| Final | New worker activity | Shown, live | A new status message below, so it is under the latest messages; the old one keeps its final text |
+| Shown, live | Nothing is active: Manager idle, waiting for an answer or stopped, and every worker of this stretch idle, failed or waiting for an answer | Final | Last edit with the ending line |
+| Final | Manager sends something, or Manager takes a message the person wrote | No status | The final status message is deleted |
+| Final | New worker activity | Shown, live | The final one is deleted and a new status message is posted at the bottom |
 | Shown, live | Posting or editing fails at Slack or Telegram | Shown, live | Nothing new; the next change tries again, a failed post starts over with a new message |
 
 A worker waiting for an answer counts as not active for the final edit: the stretch ends with that line visible, and the question itself arrives the usual way.
@@ -160,7 +161,8 @@ A worker waiting for an answer counts as not active for the final edit: the stre
 - Asking a model to describe each worker's progress: costs plan usage on every change and can invent progress. Rejected; the words come from what the worker's conversation already records.
 - A message per tool step: floods the chat. Rejected; the one status message is edited, no more often than every 3 s.
 - A status while Manager answers: Alex, 2026-11-10, wants it gone while he talks to the bot. Telegram's typing remains.
-- Deleting the status at the end: the person loses the outcome. Rejected; it is kept with its final text.
+- Keeping the final status in the conversation: Alex, 2026-11-11, wants it to read like talking with a person, so it is deleted once anyone writes next; Manager's own answer says how it went.
+- A clock line ("Updated 14:32 UTC"): reads as a machine. Removed, Alex, 2026-11-11.
 
 ## 10. Forks
 
