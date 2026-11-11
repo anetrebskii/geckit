@@ -1,3 +1,4 @@
+import type { ChannelFileReceipt, ChannelFileSender } from '../src/main/channels/channel-files'
 import { Employees } from '../src/main/employees'
 import { configuration } from '../src/core/configuration'
 import { existsSync } from 'node:fs'
@@ -2753,5 +2754,56 @@ describe('Manager explicit computer targeting', () => {
     expect(f.sessions.providerInUse('claude')).toContain(id)
     f.sessions.handOver(id)
     await vi.waitFor(() => expect(f.sessions.providerInUse('claude')).not.toContain(id))
+  })
+})
+
+describe('Manager built-in channel attachments', () => {
+  it('dispatches retained channel images to the real Manager send boundary and rejects another thread’s or Telegram’s opaque input IDs', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread({ channel: 'channel:slack', place: 'Slack', key: 'C1:100.000001' })
+    await f.manager.open(thread)
+    const attachments = new TelegramAttachments(f.directory)
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1kAAAAASUVORK5CYII=', 'base64')
+    const photo = attachments.put(png, 'input.png', 'text/plain', thread)
+    const document = attachments.put(Buffer.from('Actual document task data'), 'input.txt', 'text/plain', thread)
+    const dispatch = vi.spyOn(f.sessions, 'sendManager')
+    await f.manager.send('Use these attachments', 'channel', 'channel-input', [], () => true, [document.id, photo.id], [], thread)
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalled())
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({ text: expect.stringContaining('Actual document task data'), images: [{ media: 'image/png', data: png.toString('base64') }] })
+    const other = f.manager.thread({ channel: 'channel:discord', place: 'Discord', key: 'dm:other' })
+    await expect(f.manager.send('Read another input', 'channel', 'wrong-channel-input', [], () => true, [photo.id], [], other)).rejects.toThrow('unavailable')
+    const telegram = attachments.put(Buffer.from('Paired private input'), 'private.txt', 'text/plain')
+    await expect(f.manager.send('Read Telegram input', 'channel', 'wrong-telegram-input', [], () => true, [telegram.id], [], thread)).rejects.toThrow('unavailable')
+  })
+
+  it('routes explicit channel delivery through authenticated Manager operations, retains native receipts and refuses cross-thread worker handoff/output, protected paths and SSH fallback', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread({ channel: 'channel:discord', place: 'Discord', key: 'dm:one' })
+    const session = await f.manager.open(thread)
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Produce the requested artifact' }, 'manager', 'channel-artifact', thread)
+    f.notes.set(worker, { ...f.notes.all()[worker], managerThread: thread })
+    await writeFile(join(f.root, 'deliverable.txt'), 'Exact requested artifact')
+    const cache = new TelegramAttachments(f.directory)
+    const input = cache.put(Buffer.from('Incoming file'), 'input.txt', 'text/plain', thread)
+    const sender = vi.fn<ChannelFileSender>(async (_bytes, _name, _media, _caption, _as, _origin, beforeSend) => { await beforeSend?.(); return { channel: 'channel:discord', destination: 'one', messageId: 'native-message', fileId: 'native-file' } })
+    const product = vi.fn(async () => 'wrong configuration path')
+    const operations = new ManagerOperations({ attachments: cache, channelFile: (selected) => { expect(selected).toBe(thread); return sender }, product, sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => { f.set(change); return f.settings() }, owner: 'manager', managed: (id) => f.manager.manages(id), managerSession: () => session, managerThread: () => thread })
+    const args = ['channels', 'send-file', '--id', worker, '--path', 'deliverable.txt']
+    expect(operations.confirmation(args, 'automatic')).toBeUndefined()
+    const result = JSON.parse(await operations.run(args, 'channel-send')) as ChannelFileReceipt & { readonly sent: boolean; readonly path: string }
+    expect(result).toMatchObject({ sent: true, channel: 'channel:discord', destination: 'one', messageId: 'native-message', fileId: 'native-file', path: join(await realpath(f.root), 'deliverable.txt') })
+    expect(sender.mock.calls[0]?.[0]).toEqual(Buffer.from('Exact requested artifact'))
+    expect(sender.mock.calls[0]?.[5]).toMatchObject({ session, workers: [worker], thread })
+    expect(product).not.toHaveBeenCalled()
+    const copied = JSON.parse(await operations.run(['attachments', 'send', '--attachment', input.id, '--id', worker, '--text', 'Use this input'], 'channel-copy')) as { readonly path: string }
+    expect(await readFile(copied.path, 'utf8')).toBe('Incoming file')
+    await expect(operations.run(['channels', 'send-file', '--id', worker, '--path', '../private.txt'], 'escape')).rejects.toThrow('outside')
+    await expect(operations.run(['channels', 'send-file', '--id', worker, '--path', '.env'], 'secret')).rejects.toThrow('Credential')
+    f.notes.set(worker, { ...f.notes.all()[worker], managerThread: 'channel:slack:other' })
+    await expect(operations.run(args, 'wrong-output-thread')).rejects.toThrow('another Manager thread')
+    await expect(operations.run(['attachments', 'send', '--attachment', input.id, '--id', worker, '--text', 'Wrong thread'], 'wrong-input-thread')).rejects.toThrow('different Manager threads')
+    expect(sender).toHaveBeenCalledTimes(1)
   })
 })

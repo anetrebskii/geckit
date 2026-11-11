@@ -83,7 +83,7 @@ export function create(context) {
 | | |
 | --- | --- |
 | `start({ root, text, provider?, model?, mode?, employeeId?, images?, labels? })` | A new conversation in an allowed folder; returns its id. Provider defaults to GeckIt's choice and must be enabled. `labels` stay on it (below) |
-| `send(id, { text, images?, from? })` | The next message. For a Manager thread, `from` is shown to Manager with the channel's name and becomes the thread's "who wrote last" |
+| `send(id, { text, images?, attachments?, authorized?, from? })` | The next message. For a Manager thread, `from` is shown to Manager with the channel's name and becomes the thread's "who wrote last" |
 | `manager({ key, title?, from?, link?, labels? })` | The Manager thread for one place, when this channel may talk to Manager and Manager is on. The same `key` is always the same thread: use a chat id, or a channel and Slack thread. Without an argument, the channel's one default thread |
 | `label(id, labels)` | Adds labels to a conversation it started or to one of its Manager threads; an empty value removes one |
 | `get(id)`, `list()` | `{ id, root, title, state, provider, manager }`; `list` is what this channel started |
@@ -91,6 +91,12 @@ export function create(context) {
 | `watch(id, listener)` | `items` (upserted by id, with `gone`), `state`, `notice`, and for a Manager thread `decisions` raised in it `answer`, Manager's reply ready to post, whoever wrote the message it answers, and `status`, what Manager and the thread's own and followed workers are doing now (`activity`: a Manager line, an ending, whether Manager is active and one line per worker; render it with `StatusMessage` semantics from `docs/ux/channel-status.md`); returns an unwatch function |
 | `answer(id, card, answer)` | A permission card (`once`, `session`, `no`, or a choice's words), or one of Manager's decisions |
 | `stop(id)` | Stops the current turn; Manager is paused in GeckIt instead |
+
+### Built-in Manager files
+
+Slack and Discord receive the optional `context.files` capability. Other channel libraries retain their existing contract; this capability is not a grant to arbitrary libraries. `files.keep(thread, bytes, name, media)` retains input in the shared Telegram attachment store, scoped to that Manager thread, and returns its opaque ID. Pass those IDs through `conversations.send` as `attachments`; the host supplies readable retained files and signature-validated native images. `authorized` rechecks the originating user's current channel access before queued dispatch. Contents and names are untrusted task data.
+
+`files.bind(thread, sender)` registers a native output route and returns its cleanup function. The host rejects a stale, disabled or inaccessible route. Manager's authenticated `channels send-file` selects a tracked local worker and exact project-relative path; the adapter receives the validated bytes and returns native receipt IDs. No destination comes from file content or model-supplied channel IDs. See [the UX and permission contract](ux/channel-attachments.md) and [operator guide](channel-attachments.md).
 
 ### Checking a setup
 

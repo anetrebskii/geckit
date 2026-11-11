@@ -1,3 +1,5 @@
+import type { TelegramAttachments } from '../telegram-attachments'
+import type { ChannelFileSender } from './channel-files'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -53,6 +55,7 @@ export interface ChannelManager {
 
 export interface ChannelsDeps {
   readonly directory: string
+  readonly attachments?: TelegramAttachments
   readonly vault: ChannelVault
   readonly settings: () => Settings
   readonly save: (change: Pick<Settings, 'channels'>) => void
@@ -88,6 +91,7 @@ const message = (error: unknown): string => error instanceof Error ? error.messa
 
 export class Channels {
   readonly #deps: ChannelsDeps
+  readonly #fileSenders = new Map<string, ChannelFileSender>()
   readonly #running = new Map<ChannelId, Running>()
   #failures: readonly ChannelFailure[] = []
   #stopped = false
@@ -102,6 +106,12 @@ export class Channels {
 
   constructor(deps: ChannelsDeps) {
     this.#deps = deps
+  }
+
+  fileSender(thread: string): ChannelFileSender {
+    const sender = this.#fileSenders.get(thread)
+    if (sender === undefined) throw new Error('File delivery is unavailable for this channel thread. Send a new message to the bot in the intended conversation first.')
+    return sender
   }
 
   #folder(): string { return join(this.#deps.directory, 'channels') }
@@ -293,6 +303,32 @@ export class Channels {
       projects: () => { live(); return setting().projects.map((root) => ({ root, name: this.#deps.projectName(root) })) },
       providers: () => { live(); return this.#deps.settings().chatProviders },
       employees: () => { live(); return this.#deps.employees().filter((one) => !one.archived).map(({ id: employee, name, role }) => ({ id: employee, name, role })) },
+      ...(builtIn(id) && this.#deps.attachments !== undefined ? { files: {
+        keep: (conversation: string, bytes: Buffer, name: string, media: string): string => {
+          reach(conversation)
+          if (!isManager(conversation) || !this.#mayTalk(id)) throw new Error('Attachments require this channel’s authorized Manager thread.')
+          const cache = this.#deps.attachments
+          if (cache === undefined) throw new Error('Attachment storage is unavailable.')
+          return cache.put(bytes, name, media, conversation).id
+        },
+        bind: (conversation: string, sender: ChannelFileSender): (() => void) => {
+          reach(conversation)
+          const bound: ChannelFileSender = async (...args) => {
+            reach(conversation)
+            if (!isManager(conversation) || !this.#mayTalk(id)) throw new Error('This channel may no longer talk to Manager.')
+            const before = args[6]
+            return sender(args[0], args[1], args[2], args[3], args[4], args[5], async () => {
+              reach(conversation)
+              if (!isManager(conversation) || !this.#mayTalk(id)) throw new Error('This channel may no longer talk to Manager.')
+              await before?.()
+            })
+          }
+          this.#fileSenders.set(conversation, bound)
+          const unbind = (): void => { if (this.#fileSenders.get(conversation) === bound) this.#fileSenders.delete(conversation) }
+          running.unwatch.add(unbind)
+          return unbind
+        },
+      } } : {}),
       conversations: {
         historyBoundary: (key) => this.#deps.manager.historyBoundaryFor?.(id, key),
         manager: (place) => { live(); return this.#thread(id, place) },
@@ -328,7 +364,7 @@ export class Channels {
             if (!this.#mayTalk(id)) throw new Error(`${setting().info.name} may not talk to Manager. Allow it in Settings, Channels.`)
             const from = said.from === undefined || said.from.trim() === '' ? '' : `, from ${said.from.trim().slice(0, 200)}`
             if (from !== '') this.#deps.manager.thread({ channel: id, place: setting().info.name, key: this.#deps.manager.threadRecord(conversation)?.key ?? conversation.slice(id.length + 1), from: said.from?.trim() ?? '' })
-            await this.#deps.manager.send(`[Via ${setting().info.name}${from}]\n${said.text}`, 'channel', undefined, [], () => true, [], [], conversation)
+            await this.#deps.manager.send(`[Via ${setting().info.name}${from}]\n${said.text}`, 'channel', undefined, [], () => { try { reach(conversation); return this.#mayTalk(id) && said.authorized?.() !== false } catch { return false } }, said.attachments ?? [], [], conversation)
             return
           }
           const found = this.#deps.conversations().find((one) => one.id === conversation)

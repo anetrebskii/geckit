@@ -1,7 +1,11 @@
+import { channelDownload } from './channel-files'
+import type { ChannelFileSender } from './channel-files'
 import type { ChannelInfo } from '../../shared/channels'
 import type { Channel, ChannelContext, ChannelEvent, ChannelModule } from './channel-api'
 import { StatusMessage } from '../manager-status'
 import { heard as speechOf, say } from '../manager-voice'
+
+class SlackApiFailure extends Error {}
 
 const SECRET = /\b(?:xox[abposr]-[\w-]{10,}|xapp-[\w-]{10,}|sk-[\w-]{16,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|AKIA[0-9A-Z]{16}|[MNO][\w-]{23,27}\.[\w-]{6}\.[\w-]{27,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/
 
@@ -11,7 +15,7 @@ export const SLACK_INFO: ChannelInfo = {
   icon: 'chat',
   description: 'Each Slack thread with the bot is a Manager thread of its own.',
   fields: [
-    { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, users:read.' },
+    { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, users:read, files:read, files:write.' },
     { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write, for Socket Mode.' },
     { key: 'allow', label: 'People who may write', type: 'list', required: true, help: 'Slack user IDs, such as U012ABC. Nobody else is answered.' },
     { key: 'checkSecrets', label: 'Refuse messages that contain a token or key', type: 'boolean', default: true },
@@ -21,7 +25,21 @@ export const SLACK_INFO: ChannelInfo = {
 export const containsSecret = (text: string): boolean => SECRET.test(text)
 export const cleanMention = (text: string): string => text.replace(/<@[A-Z0-9]+>/g, '').trim()
 
+interface SlackFile {
+  readonly id?: string
+  readonly name?: string
+  readonly mimetype?: string
+  readonly size?: number
+  readonly url_private_download?: string
+  readonly url_private?: string
+  readonly shares?: {
+    readonly public?: { readonly [channel: string]: readonly { readonly ts?: string; readonly thread_ts?: string }[] }
+    readonly private?: { readonly [channel: string]: readonly { readonly ts?: string; readonly thread_ts?: string }[] }
+  }
+}
+
 interface SlackEvent {
+  readonly files?: readonly SlackFile[]
   readonly type?: string
   readonly subtype?: string
   readonly bot_id?: string
@@ -46,7 +64,7 @@ interface SlackMessage {
 
 const CONTEXT_LIMIT = 30_000
 const PAGES = 10
-const READ_METHODS = new Set(['conversations.replies', 'users.info', 'chat.getPermalink'])
+const READ_METHODS = new Set(['conversations.replies', 'users.info', 'chat.getPermalink', 'files.info', 'files.getUploadURLExternal'])
 
 /** Whether Slack timestamp a comes after b; both are seconds and microseconds, too precise for one float. */
 export const after = (a: string, b: string): boolean => {
@@ -58,6 +76,10 @@ export const after = (a: string, b: string): boolean => {
 const stamp = (ts: string): string => new Date(Number(ts.split('.')[0]) * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
 
 interface SlackReply {
+  readonly file?: SlackFile
+  readonly file_id?: string
+  readonly upload_url?: string
+  readonly files?: readonly SlackFile[]
   readonly ok: boolean
   readonly error?: string
   readonly url?: string
@@ -95,9 +117,12 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   const slack = async (method: string, body: object = {}, token = context.secret('botToken')): Promise<SlackReply> => {
     // Slack's read methods ignore a JSON body and answer invalid_arguments, so they get a form.
     const form = READ_METHODS.has(method)
-    const response = await transport.fetch(`https://slack.com/api/${method}`, { method: 'POST', headers: { authorization: `Bearer ${token ?? ''}`, 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json; charset=utf-8' }, body: form ? new URLSearchParams(Object.entries(body).map(([key, value]) => [key, String(value)])).toString() : JSON.stringify(body) })
-    const json = await response.json() as SlackReply
-    if (!json.ok) throw new Error(`Slack ${method}: ${json.error ?? 'failed'}`)
+    let response: Response
+    try { response = await transport.fetch(`https://slack.com/api/${method}`, { method: 'POST', signal: AbortSignal.timeout(30_000), headers: { authorization: `Bearer ${token ?? ''}`, 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json; charset=utf-8' }, body: form ? new URLSearchParams(Object.entries(body).map(([key, value]) => [key, String(value)])).toString() : JSON.stringify(body), redirect: 'error' }) } catch { throw new Error(`Slack ${method}: bot API connection failed.`) }
+    let json: SlackReply
+    try { json = await response.json() as SlackReply } catch { throw new Error(`Slack ${method}: invalid bot API response.`) }
+    if (response.status >= 500 || ['internal_error', 'fatal_error'].includes(json.error ?? '')) throw new Error(`Slack ${method}: bot API outcome is uncertain.`)
+    if (!json.ok) throw new SlackApiFailure(json.error === 'missing_scope' && method.startsWith('files.') ? `Slack ${method}: missing_scope. Add ${method === 'files.info' ? 'files:read' : 'files:write'} in the existing app’s OAuth & Permissions, then reinstall that app to the workspace.` : `Slack ${method}: ${/^[a-z_]+$/.test(json.error ?? '') ? json.error : 'failed'}`)
     return json
   }
   const post = (channel: string, thread: string, text: string): Promise<SlackReply> => slack('chat.postMessage', { channel, thread_ts: thread, text: text.slice(0, 39_000) })
@@ -166,10 +191,67 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   const boundary = (key: string): string | undefined => context.conversations.historyBoundary?.(key)?.revision
   const cutoff = (key: string): string | undefined => { const at = context.conversations.historyBoundary?.(key)?.at; return at === undefined ? undefined : (at / 1000).toFixed(6) }
 
+  const fileLinks = (text: string): readonly string[] => [...text.matchAll(/https:\/\/(?:[a-z0-9-]+\.slack\.com\/files\/[A-Z0-9]+\/|files\.slack\.com\/files-pri\/[A-Z0-9]+-)(F[A-Z0-9]+)/gi)].map((one) => one[1] ?? '')
+
+  const receive = async (event: SlackEvent, thread: string, channel: string, root: string, current: () => boolean): Promise<readonly string[]> => {
+    const ids: string[] = []
+    const linked = fileLinks(event.text ?? '')
+    const files = [...new Set([...(event.files ?? []).map((file) => file.id ?? ''), ...linked])]
+    if (files.length > 10) throw new Error('Send at most 10 attachments in one message.')
+    for (const id of files) {
+      if (!/^F[A-Z0-9]+$/.test(id)) throw new Error('Slack returned an invalid file ID.')
+      const file = (await slack('files.info', { file: id })).file
+      if (file?.id !== id) throw new Error('Slack could not read this file. Check the bot’s files:read scope and conversation access.')
+      if (linked.includes(id) && ![...file.shares?.public?.[channel] ?? [], ...file.shares?.private?.[channel] ?? []].some((share) => (share.thread_ts ?? share.ts) === root)) throw new Error('This Slack file link is not shared in the current conversation. Upload it here instead.')
+      const url = file.url_private_download ?? file.url_private
+      if (url === undefined) throw new Error('Slack did not provide downloadable bytes. Resend the file in this conversation.')
+      if (!current()) throw new Error('The Manager conversation changed.')
+      const bytes = await channelDownload(transport.fetch, url, (location) => location.hostname === 'files.slack.com' && location.pathname.startsWith('/files-pri/'), file.size, context.secret('botToken'))
+      if (!current()) throw new Error('The Manager conversation changed.')
+      if (context.config()['checkSecrets'] !== false && containsSecret(bytes.toString('utf8'))) throw new Error('This attachment appears to contain a token or key. Remove the secret before resending.')
+      if (context.files === undefined) throw new Error('Attachment storage is unavailable.')
+      ids.push(context.files.keep(thread, bytes, file.name ?? 'attachment', file.mimetype ?? 'application/octet-stream'))
+    }
+    return ids
+  }
+
   const follow = (thread: string, channel: string, ts: string, key: string): void => {
     if (watching.has(thread)) return
     const revision = boundary(key)
     const current = (): boolean => !stopped && revision === boundary(key)
+    const upload: ChannelFileSender = async (bytes, name, media, caption, _format, _origin, beforeSend) => {
+      const validate = (): void => {
+        const writer = context.store.get(`writer:${key}`)
+        const allow = context.config()['allow']
+        if (!current() || typeof writer !== 'string' || !Array.isArray(allow) || !allow.includes(writer)) throw new Error('The originating Slack conversation is no longer authorized.')
+        if (context.config()['checkSecrets'] !== false && (containsSecret(caption) || containsSecret(bytes.toString('utf8')))) throw new Error('The selected file or caption appears to contain a token or key.')
+      }
+      validate()
+      await beforeSend?.()
+      validate()
+      const prepared = await slack('files.getUploadURLExternal', { filename: name, length: bytes.length })
+      if (prepared.file_id === undefined || !/^F[A-Z0-9]+$/.test(prepared.file_id) || prepared.upload_url === undefined) throw new Error('Slack did not provide an upload location.')
+      const location = new URL(prepared.upload_url)
+      if (location.protocol !== 'https:' || location.hostname !== 'files.slack.com' || !location.pathname.startsWith('/upload/') || location.username !== '' || location.password !== '' || location.port !== '') throw new Error('Slack returned an untrusted upload location.')
+      validate()
+      await beforeSend?.()
+      validate()
+      let response: Response
+      try { response = await transport.fetch(location, { method: 'POST', body: new Uint8Array(bytes), headers: { 'content-type': media }, redirect: 'error', signal: AbortSignal.timeout(30_000) }) } catch { throw new Error('Slack file delivery is uncertain. Check this conversation before requesting another send; the upload was not retried.') }
+      if (response.status >= 500) throw new Error('Slack file delivery is uncertain. Check this conversation before requesting another send; the upload was not retried.')
+      if (!response.ok) throw new Error(`Slack file delivery failed: upload refused (${String(response.status)}).`)
+      validate()
+      await beforeSend?.()
+      validate()
+      let completed: SlackReply
+      try { completed = await slack('files.completeUploadExternal', { files: [{ id: prepared.file_id, title: name }], channel_id: channel, thread_ts: ts, ...(caption === '' ? {} : { initial_comment: caption }) }) } catch (error) {
+        if (error instanceof SlackApiFailure) throw error
+        throw new Error('Slack file delivery is uncertain. Check this conversation before requesting another send; the upload was not retried.', { cause: error })
+      }
+      if (!completed.files?.some((file) => file.id === prepared.file_id)) throw new Error('Slack file delivery is uncertain: no native file receipt. The upload was not retried.')
+      return { channel: 'channel:slack', destination: `${channel}:${ts}`, fileId: prepared.file_id }
+    }
+    context.files?.bind(thread, upload)
     const shown = new Set(pending(key).map((one) => one.id))
     const plain = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
     const status = new StatusMessage({
@@ -218,7 +300,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     const ts = event.thread_ts ?? event.ts
     const key = keyOf(event.channel, ts)
     const revision = boundary(key)
-    const current = (): boolean => revision === boundary(key) && !stopped
+    const current = (): boolean => { const allow = context.config()['allow']; return revision === boundary(key) && !stopped && Array.isArray(allow) && allow.includes(event.user ?? '') }
     const cutoffAt = cutoff(key)
     if (cutoffAt !== undefined && !after(event.ts, cutoffAt)) return
     const known = context.store.get(`thread:${key}`) === true
@@ -233,8 +315,8 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       return
     }
     const text = await named(event.text ?? '')
-    if (text === '' && event.thread_ts === undefined) return
-    if (!mention && !direct && !pending(key).some((one) => one.values.includes(text.toLowerCase()))) return
+    if (text === '' && event.thread_ts === undefined && (event.files?.length ?? 0) === 0) return
+    if (!mention && !direct && !pending(key).some((one) => one.values.includes(text.toLowerCase())) && (event.files?.length ?? 0) === 0 && fileLinks(event.text ?? '').length === 0) return
     if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(event.channel, ts, say(speechOf(text)).secret); return }
     const from = await person(event.user)
     const link = known ? undefined : await slack('chat.getPermalink', { channel: event.channel, message_ts: ts }).then((reply) => reply.permalink, () => undefined)
@@ -245,14 +327,19 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       context.store.set(`thread:${key}`, true)
       context.store.set('threads', [...places(), { key, channel: event.channel, ts }].slice(-500))
     }
+    context.store.set(`writer:${key}`, event.user)
     follow(thread, event.channel, ts, key)
     const choice = text.toLowerCase()
     const decision = pending(key).find((one) => one.values.includes(choice))
+    if (decision !== undefined && ((event.files?.length ?? 0) > 0 || fileLinks(event.text ?? '').length > 0)) { await post(event.channel, ts, 'A file cannot answer an approval or question. Use its buttons or a text reply, then send the file as a new message.'); return }
     if (decision !== undefined && await context.conversations.answer(thread, decision.id, choice)) { context.store.set(`seen:${key}`, event.ts); return }
     const before = event.thread_ts === undefined ? '' : await earlier(event.channel, ts, last, event.ts)
     if (!current()) return
-    const request = text === '' ? 'They mentioned you without a message. Read the thread above and help with it.' : text
-    await context.conversations.send(thread, { text: before === '' ? request : `${before}\n\nMessage to you:\n${request}`, from })
+    let attachments: readonly string[]
+    try { attachments = await receive(event, thread, event.channel, ts, current) } catch (error) { await post(event.channel, ts, `Could not receive this attachment: ${said(error)}. Correct the issue and resend.`); return }
+    if (!current()) return
+    const request = text === '' ? attachments.length > 0 ? 'They sent attachments.' : 'They mentioned you without a message. Read the thread above and help with it.' : text
+    await context.conversations.send(thread, { text: before === '' ? request : `${before}\n\nMessage to you:\n${request}`, from, ...(attachments.length === 0 ? {} : { attachments, authorized: current }) })
     context.store.set(`seen:${key}`, event.ts)
   }
 

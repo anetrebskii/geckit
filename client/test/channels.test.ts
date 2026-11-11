@@ -16,6 +16,9 @@ import type { ChatSession, Settings } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { ManagerHistoryBoundary, ManagerView } from '../src/shared/manager'
 import type { ChannelView } from '../src/shared/channels'
+import { TelegramAttachments } from '../src/main/telegram-attachments'
+import type { ChannelFileSender } from '../src/main/channels/channel-files'
+import { SLACK_MODULE } from '../src/main/channels/slack'
 import { after, createSlack } from '../src/main/channels/slack'
 import type { SlackTransport } from '../src/main/channels/slack'
 
@@ -41,7 +44,7 @@ const seen = (): Seen => (globalThis as unknown as { channelTest: Seen }).channe
 
 interface FakeThread { readonly id: string; readonly channel: string; labels: { [key: string]: string }; from?: string; title?: string }
 
-async function setup(): Promise<{ channels: Channels; deps: ChannelsDeps; settings: () => Settings; emit: (event: CoreEvent) => void; managerSent: string[]; answered: string[]; sessionsSent: unknown[]; threads: Map<string, FakeThread>; respond: (text: string, thread: string) => void; closed: Map<string, string | undefined>; labelled: Map<string, unknown> }> {
+async function setup(attachments?: TelegramAttachments): Promise<{ channels: Channels; deps: ChannelsDeps; settings: () => Settings; emit: (event: CoreEvent) => void; managerSent: string[]; answered: string[]; sessionsSent: unknown[]; threads: Map<string, FakeThread>; respond: (text: string, thread: string) => void; closed: Map<string, string | undefined>; labelled: Map<string, unknown> }> {
   const home = await mkdtemp(join(tmpdir(), 'geckit-channels-'))
   folders.push(home)
   process.env['GECKIT_CHANNEL_TEST_HOME'] = home
@@ -62,6 +65,7 @@ async function setup(): Promise<{ channels: Channels; deps: ChannelsDeps; settin
   const managerView = { state: 'idle', session: { id: 'manager-1', root: '/home', title: 'Manager', state: 'idle' }, decisions: [{ id: 'decision-1', title: 'Start?', choices: [{ label: 'Yes', value: 'yes' }], thread: 'channel:echo:chat-7' }], get threads() { return [...threads.values()].map((one) => ({ id: one.id, title: one.title ?? 'Echo', labels: one.labels, state: 'idle', at: 0, owns: [] })) } } as unknown as ManagerView
   const deps: ChannelsDeps = {
     directory: home,
+    ...(attachments === undefined ? {} : { attachments }),
     vault: { available: () => true, encrypt: (text) => Buffer.from(text).reverse(), decrypt: (bytes) => Buffer.from(bytes).reverse().toString() },
     settings: () => settings,
     save: (change) => { settings = { ...settings, ...change } },
@@ -462,4 +466,38 @@ it('Slack reset cuts earlier history, deletes the old place and preserves new se
   expect(run.store.get(`seen:${key}`)).toBe('1762400004.000000')
   expect(run.store.get(`decisions:${key}`)).toEqual([{ id: 'new-decision', values: ['yes'] }])
   await again.stop()
+})
+
+it('binds built-in retained inputs and file outputs to the live Manager thread and invalidates every stale sender on channel disable', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'channel-shared-attachments-'))
+  folders.push(directory)
+  const attachments = new TelegramAttachments(directory)
+  const contexts: ChannelContext[] = []
+  const create = vi.spyOn(SLACK_MODULE, 'create').mockImplementation((context) => { contexts.push(context); return { start: async () => undefined, stop: async () => undefined } })
+  const { channels, deps } = await setup(attachments)
+  try {
+    const submitted = vi.spyOn(deps.manager, 'send')
+    await channels.configure('channel:slack', { enabled: true, manager: true, config: { allow: ['U1'] }, secrets: { botToken: 'test-bot', appToken: 'test-app' } })
+    const context = contexts[0]
+    if (context?.files === undefined) throw new Error('Missing built-in files capability')
+    const thread = context.conversations.manager({ key: 'C1:100.000001' })
+    if (thread === undefined) throw new Error('Missing thread')
+    const input = context.files.keep(thread, Buffer.from('real bytes'), 'input.txt', 'text/plain')
+    expect(attachments.read(input, thread).bytes.toString()).toBe('real bytes')
+    expect(() => context.files?.keep('other-thread', Buffer.from('secret'), 'other.txt', 'text/plain')).toThrow('did not start')
+    await context.conversations.send(thread, { text: 'Use input', attachments: [input], authorized: () => true })
+    const call = submitted.mock.calls.at(-1)
+    expect(call?.[5]).toEqual([input])
+    expect(call?.[7]).toBe(thread)
+    expect(call?.[4]()).toBe(true)
+    const sender = vi.fn<ChannelFileSender>(async (_bytes, _name, _media, _caption, _as, _origin, beforeSend) => { await beforeSend?.(); return { channel: 'channel:slack', destination: 'C1:100.000001', fileId: 'FOUT' } })
+    context.files.bind(thread, sender)
+    const bound = channels.fileSender(thread)
+    expect(await bound(Buffer.from('artifact'), 'out.txt', 'text/plain', '', 'document', { session: 'manager', workers: [] })).toMatchObject({ fileId: 'FOUT' })
+    await channels.configure('channel:slack', { enabled: false })
+    expect(call?.[4]()).toBe(false)
+    expect(() => channels.fileSender(thread)).toThrow('unavailable')
+    await expect(bound(Buffer.from('artifact'), 'out.txt', 'text/plain', '', 'document', { session: 'manager', workers: [] })).rejects.toThrow('stopped')
+    expect(sender).toHaveBeenCalledTimes(1)
+  } finally { await channels.dispose(); create.mockRestore() }
 })
