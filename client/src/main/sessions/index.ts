@@ -664,8 +664,6 @@ export class Sessions {
     return this.#deps.now?.() ?? Date.now()
   }
 
-  readonly #routeStarting = new Set<string>()
-  #telegramAuthority: ((thread: string, root?: string) => boolean) | undefined
   #threadName: ((thread: string) => ManagerThreadName | undefined) | undefined
 
   managerOutput(heard: (id: string, text: string) => void): void {
@@ -677,8 +675,6 @@ export class Sessions {
   }
 
   managerItems(heard: (items: SessionItems) => void): void { this.#managerItems = heard }
-
-  telegramAuthority(allowed: (thread: string, root?: string) => boolean): void { this.#telegramAuthority = allowed }
 
   managerThreads(name: (thread: string) => ManagerThreadName | undefined): void { this.#threadName = name }
 
@@ -1319,21 +1315,9 @@ export class Sessions {
   }
 
   /** A message to this conversation may go now: there is no limit, or fewer are working than the limit. */
-  #routeRoom(id: string): boolean {
-    const note = this.#deps.notes.all()[id]
-    const thread = note?.managerThread
-    if (thread?.startsWith('telegram:team:') !== true) return true
-    if (!this.#may() && !this.#routeStarting.has(id) && !this.#live.get(id)?.question) return false
-    if (this.#telegramAuthority?.(thread, this.#listed().find((one) => one.id === id)?.project ?? this.#live.get(id)?.root ?? this.#listed().find((one) => one.id === id)?.root) === false) return false
-    const active = new Set([...this.#standing(this.#listed()).filter((one) => one.state === 'working').map((one) => one.id), ...this.#routeStarting].filter((other) => this.#deps.notes.all()[other]?.managerThread === thread && other !== id)).size
-    return active < (thread.startsWith('telegram:team:dm:') ? 2 : 4)
-  }
-
   #may(): boolean {
     const limit = this.#deps.limit?.() ?? 0
-    const standing = this.#standing(this.#listed())
-    const starting = [...this.#routeStarting].filter((id) => !this.#managerIds.has(id) && !this.#live.get(id)?.question && !standing.some((one) => one.id === id && one.state === 'working' && one.question !== true)).length
-    return limit === 0 || taken(standing) + starting < limit
+    return limit === 0 || taken(this.#standing(this.#listed())) < limit
   }
 
   /** A job is done: after the pause, the cards are looked at from the top and those with queued messages start, as many as there is room for. */
@@ -1561,7 +1545,7 @@ export class Sessions {
     const live = this.#live.get(id) ?? this.#adopt(id)
     const next = live?.queued[0]
     if (live === undefined || next === undefined || live.injecting !== undefined) return
-    if (this.#dispatching.has(id) || !this.#routeRoom(id)) return
+    if (this.#dispatching.has(id)) return
     this.#dispatching.add(id)
     const message = { ...next.message, mode: live.mode }
     if (this.#managerIds.has(id)) this.#managerMessages.add(message)
@@ -2270,8 +2254,6 @@ export class Sessions {
   }
 
   async #send(message: SessionMessage, go: boolean, attempt?: GuardAttempt, queued?: Queued['id'], delegateFrom?: Live['id'], delivery?: DeliveryAttempt): Promise<string> {
-    let routeStart: string | undefined
-    try {
     if (message.session !== undefined && this.#closingSessions.has(message.session)) throw new Error('This conversation is being closed. Nothing was sent.')
     let live = message.session === undefined ? undefined : (this.#live.get(message.session) ?? this.#adopt(message.session))
     if (live === undefined) {
@@ -2341,7 +2323,7 @@ export class Sessions {
     const busy = live.state === 'working' || live.state === 'asks' || live.injecting !== undefined
     // Written by the person, it is theirs again to be sent; a message waits behind the ones already queued, and for a slot.
     if (!go) live.parked = false
-    const held = !busy && (!this.#routeRoom(live.id) || !go && (!live.question || this.#managerIds.has(live.id)) && (live.queued.length > 0 || !this.#may()))
+    const held = !busy && !go && (!live.question || this.#managerIds.has(live.id)) && (live.queued.length > 0 || !this.#may())
     if (busy || held) {
       // A goal keeps the turn going until it holds, so it is cleared by stopping the turn and clearing it once it has.
       if (busy && live.goal !== undefined && goalSent(message.text) === '') {
@@ -2363,7 +2345,6 @@ export class Sessions {
       this.#changed()
       return live.id
     }
-    routeStart = live.id; this.#routeStarting.add(live.id)
     if (this.#deps.notes.all()[live.id]?.unborn !== undefined) {
       const { unborn: _unborn, ...note } = this.#deps.notes.all()[live.id] ?? {}
       this.#deps.notes.set(live.id, note)
@@ -2496,8 +2477,6 @@ export class Sessions {
     const managerPrompt = this.#deps.notes.all()[live.id]?.managerPrompt
     if (live.driver === undefined) throw new Error('The assistant disconnected before dispatch.')
     try {
-      const route = this.#deps.notes.all()[live.id]?.managerThread
-      if (route?.startsWith('telegram:team:') === true && this.#telegramAuthority?.(route, this.#listed().find((one) => one.id === live.id)?.project ?? live.root) === false) throw new Error('Telegram route authority was revoked')
       live.driver.send(managerPrompt === undefined ? saying.text : managerContext(managerPrompt, saying.text), saying.images, told.flatMap((one) => one.blocks))
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
@@ -2507,7 +2486,6 @@ export class Sessions {
     }
     this.#finishDelivery(delivery, live.id, 'accepted', { acceptance: 'host' })
     return live.id
-    } finally { if (routeStart !== undefined) this.#routeStarting.delete(routeStart) }
   }
 
   /**

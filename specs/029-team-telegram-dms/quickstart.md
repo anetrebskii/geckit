@@ -1,1 +1,0 @@
-Offline: run client tests using fake Bot API/provider. Browser fixture: client/test/browser/team-telegram/README.md. Run lint, node/web types, test and build; compare pre-existing failures. Never use real Telegram or paid provider during automated acceptance.
