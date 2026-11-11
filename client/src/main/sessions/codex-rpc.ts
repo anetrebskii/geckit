@@ -2,7 +2,6 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import { createInterface } from 'node:readline'
 import WebSocket from 'ws'
 
 import { planOnly } from './account'
@@ -75,7 +74,25 @@ export class CodexRpc {
       this.#child.on('close', () => failed(new Error(last.trim() || 'Codex has stopped.')))
       this.#child.stdin.on('error', () => undefined)
       this.#child.stderr.on('data', (chunk: Buffer) => { last = `${last}${chunk.toString('utf8')}`.slice(-2000) })
-      createInterface({ input: this.#child.stdout }).on('line', receive)
+      // JSON-RPC uses LF framing. readline also splits on U+2028/U+2029,
+      // which are valid inside JSON strings in conversation history.
+      let parts: Buffer[] = []
+      this.#child.stdout.on('data', (chunk: Buffer) => {
+        let start = 0
+        let end: number
+        while ((end = chunk.indexOf(10, start)) !== -1) {
+          parts.push(chunk.subarray(start, end))
+          const line = Buffer.concat(parts).toString('utf8')
+          parts = []
+          receive(line)
+          start = end + 1
+        }
+        if (start < chunk.length) parts.push(chunk.subarray(start))
+      })
+      this.#child.stdout.on('end', () => {
+        if (parts.length > 0) receive(Buffer.concat(parts).toString('utf8'))
+        parts = []
+      })
     }
     this.ready = this.request('initialize', { clientInfo: { name: 'geckit', title: 'GeckIt', version: '1.0.0' }, capabilities: { experimentalApi: true } }).then((result) => {
       this.userAgent = result.userAgent
