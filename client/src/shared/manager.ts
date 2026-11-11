@@ -165,6 +165,8 @@ export interface ProjectAssistant {
 export const managerProjects = (settings: Pick<Settings, 'projects' | 'profiles'>): readonly string[] => [...new Set([...settings.projects, ...settings.profiles.flatMap((profile) => profile.projects)])]
 
 export interface ManagerTelegramSource {
+  readonly route?: string
+  readonly authority?: string
   readonly id: string
   readonly bot: number
   readonly chatId: number
