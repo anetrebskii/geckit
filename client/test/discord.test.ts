@@ -127,6 +127,22 @@ it('identifies with the message intents, resumes after a drop and stops on a ref
   await run.channel.stop()
 })
 
+it('marks a message Manager took with 👀 until it answers or finishes', async () => {
+  const run = harness()
+  await run.channel.start()
+  run.ready()
+  run.message('500000000000000001', ALLOWED, `<@${BOT}> what are you indexing?`)
+  await run.settle()
+  const reaction = `/channels/${TEXT}/messages/500000000000000001/reactions/${encodeURIComponent('👀')}/@me`
+  expect(run.calls.filter((one) => one.path.includes('/reactions/'))).toEqual([{ method: 'PUT', path: reaction, body: {} }])
+  const watch = run.watchers.get('channel:discord:500000000000000001')
+  watch?.({ kind: 'status', activity: { manager: '', ending: 'Done.', active: true, workers: [] } })
+  watch?.({ kind: 'answer', text: 'Slack only.' })
+  await run.settle()
+  expect(run.calls.filter((one) => one.path.includes('/reactions/')).at(-1)).toEqual({ method: 'DELETE', path: reaction, body: {} })
+  await run.channel.stop()
+})
+
 it('opens a Discord thread per mention, keeps each thread and direct message its own Manager thread, and answers where it was asked', async () => {
   const run = harness()
   await run.channel.start()

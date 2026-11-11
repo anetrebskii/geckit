@@ -85,7 +85,7 @@ export interface StatusPoster {
 }
 
 /**
- * The status message of a channel conversation, docs/ux/channel-status.md: shown while Manager is free and the thread's workers run, edited as they change at most once per `gap`, taken away while Manager works on a message and posted again below what it sends, and left with its ending when the work is over until Manager sends something or the person writes, which deletes it.
+ * The status message of a channel conversation, docs/ux/channel-status.md: shown while Manager is free and the thread's workers run, edited as they change at most once per `gap`, saying what Manager does while it works on a message and taken away when it sends something, then posted again below it, and left with its ending when the work is over until Manager sends something or the person writes, which deletes it.
  */
 export class StatusMessage {
   readonly #poster: StatusPoster
@@ -102,6 +102,8 @@ export class StatusMessage {
   #want: string | undefined
   #closing = false
   #lower = false
+  /** What is wanted is the line saying what Manager does while it prepares an answer. */
+  #answering = false
   #after: Promise<unknown> = Promise.resolve()
   #flushing = false
   #edited = 0
@@ -117,9 +119,13 @@ export class StatusMessage {
   update(activity: ThreadActivity | undefined): void {
     if (activity === undefined) { this.#stretch = false; this.#id = undefined; this.#shown = ''; this.#want = undefined; this.#closing = false; return }
     if (activity.active) this.#drop()
+    const answering = activity.active ? activity.answering : undefined
     const working = activity.workers.some((one) => one.active)
     if (!this.#stretch) {
-      if (!working) return
+      if (!working) {
+        if (answering !== undefined || this.#answering) { this.#answering = answering !== undefined; this.#closing = false; this.#want = answering; void this.#flush() }
+        return
+      }
       this.#stretch = true
       this.#seen.length = 0
       this.#lines.clear()
@@ -129,7 +135,10 @@ export class StatusMessage {
       if (worker.active && !this.#seen.includes(worker.id)) this.#seen.push(worker.id)
       if (this.#seen.includes(worker.id)) this.#lines.set(worker.id, worker.line)
     }
-    if (activity.active) this.#want = undefined
+    // Manager's turn is over: its line goes, and the workers' status comes back below what it sent.
+    if (this.#answering && answering === undefined && this.#id !== undefined) this.#lower = true
+    this.#answering = answering !== undefined
+    if (activity.active) this.#want = answering
     else if (working) this.#want = this.#text(activity.manager, activity.language)
     else {
       this.#stretch = false
@@ -143,6 +152,7 @@ export class StatusMessage {
   /** Something Manager sends is on its way: the status goes below it once it is there. */
   after(sent: Promise<unknown>): void {
     this.#after = Promise.all([this.#after, sent.catch(() => undefined)])
+    if (this.#answering) { this.#answering = false; this.#want = undefined }
     this.#drop()
     if (this.#id !== undefined && !this.#closing) { this.#lower = true; void this.#flush() }
   }

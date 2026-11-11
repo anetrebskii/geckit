@@ -1219,7 +1219,7 @@ describe('Telegram status message', () => {
 
 describe('runtime: Telegram status from Manager views', () => {
   // The Bot API is the fake one (botApi); Manager, Sessions, the status message and ManagerTelegram are the real ones, wired as createRuntime wires them.
-  it("tells the paired chat what its own thread's workers do once Manager's turn is over, in the person's language, once per change and nothing of other threads", async () => {
+  it("tells the paired chat what its own thread's workers do once Manager's turn is over, after saying what Manager itself does, in the person's language, once per change and nothing of other threads", async () => {
     const directory = mkdtempSync(join(tmpdir(), 'geckit-telegram-runtime-'))
     paths.push(directory)
     const notes = memoryNotes()
@@ -1257,12 +1257,13 @@ describe('runtime: Telegram status from Manager views', () => {
     notes.set(theirs, { ...notes.all()[theirs], managerThread: slack })
     hearings.get(mine)?.({ items: [], gone: [], signals: [{ kind: 'begun' }, { kind: 'doing', what: 'running npx vitest run test/login.test.ts' }] })
     hearings.get(theirs)?.({ items: [], gone: [], signals: [{ kind: 'begun' }, { kind: 'doing', what: 'reading slack-only.md' }] })
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(statuses()).toEqual([])
+    await vi.waitFor(() => expect(statuses()).toHaveLength(1))
+    expect(String(statuses()[0]?.body['text'])).toMatch(/^Готовлю ответ, сейчас: /)
 
     hearings.get(backing)?.({ items: [{ kind: 'theirs', id: 'answer:1', text: 'Смотрю тесты.' }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
-    await vi.waitFor(() => expect(statuses()).toHaveLength(1))
-    const first = statuses()[0]
+    // The line about Manager's own work is edited no sooner than the 3 s gap, in real time, before it is deleted.
+    await vi.waitFor(() => expect(statuses()).toHaveLength(2), { timeout: 5_000 })
+    const first = statuses()[1]
     expect(first?.body).toMatchObject({ chat_id: 81, disable_notification: true })
     expect(String(first?.body['text'])).toMatch(/^Пока жду, вот что сейчас идёт:\n• Почини тесты логина: запускает тесты$/)
 
@@ -1271,15 +1272,15 @@ describe('runtime: Telegram status from Manager views', () => {
     expect(progress.mock.calls.length).toBe(calls + 3)
     hearings.get(theirs)?.({ items: [], gone: [], signals: [{ kind: 'doing', what: 'changing slack-only.md' }] })
     await new Promise((resolve) => setTimeout(resolve, 100))
-    expect(statuses()).toHaveLength(1)
+    expect(statuses()).toHaveLength(2)
 
     clock += 4_000
     hearings.get(mine)?.({ items: [], gone: [], signals: [{ kind: 'doing', what: 'reading src/login.ts' }] })
-    await vi.waitFor(() => expect(statuses()).toHaveLength(2))
+    await vi.waitFor(() => expect(statuses()).toHaveLength(3))
     telegramProgress(value.telegram, view)
     await new Promise((resolve) => setTimeout(resolve, 100))
-    expect(statuses()).toHaveLength(2)
-    expect(statuses()[1]).toMatchObject({ method: 'editMessageText', body: { chat_id: 81, text: expect.stringContaining('• Почини тесты логина: читает src/login.ts') } })
+    expect(statuses()).toHaveLength(3)
+    expect(statuses()[2]).toMatchObject({ method: 'editMessageText', body: { chat_id: 81, text: expect.stringContaining('• Почини тесты логина: читает src/login.ts') } })
     for (const call of statuses()) {
       const text = String(call.body['text'])
       expect(text).not.toContain('Slack only')
