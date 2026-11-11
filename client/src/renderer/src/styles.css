@@ -4184,6 +4184,8 @@ html.phone .find-bar .icon-button {
 
 .card .card-title {
   font-weight: 500;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .card .where {
