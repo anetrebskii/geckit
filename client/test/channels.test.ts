@@ -288,6 +288,7 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
   const posted: { channel: string; thread_ts?: string; text: string }[] = []
   const updated: { channel: string; ts?: string; text: string }[] = []
   const deleted: { channel: string; ts: string }[] = []
+  const reactions: [string, { channel: string; timestamp: string; name: string }][] = []
   const sent: [string, unknown][] = []
   const answered: [string, string, unknown][] = []
   const opened: unknown[] = []
@@ -324,14 +325,38 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
     if (method === 'chat.postMessage') posted.push(body)
     if (method === 'chat.update') updated.push(body)
     if (method === 'chat.delete') deleted.push({ channel: body.channel, ts: body.ts ?? '' })
+    if (method === 'reactions.add' || method === 'reactions.remove') reactions.push([method, body as unknown as { channel: string; timestamp: string; name: string }])
     const reply = method === 'auth.test' ? { ok: true, user_id: 'B1' } : method === 'conversations.replies' ? { ok: true, messages: history.filter((one) => body.oldest === undefined || !after(body.oldest, one.ts)) } : method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : method === 'chat.postMessage' ? { ok: true, ts: `9.${String(posted.length)}` } : { ok: true }
     return { json: async () => reply }
   }) as unknown as typeof globalThis.fetch
   const channel = createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] })
   const event = (body: object): void => FakeSocket.last?.emit({ type: 'events_api', envelope_id: 'e1', payload: { event: body } })
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
-  return { channel, context, makeChannel: () => createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] }), event, settle, posted, updated, deleted, sent, answered, opened, watchers, store }
+  return { channel, context, makeChannel: () => createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] }), event, settle, posted, updated, deleted, reactions, sent, answered, opened, watchers, store }
 }
+
+it('Slack: marks a message Manager took with :eyes: until it answers or finishes', async () => {
+  const run = slackHarness()
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> fix the login redirect' })
+  await run.settle()
+  expect(run.reactions).toEqual([['reactions.add', { channel: 'C1', timestamp: '3.0', name: 'eyes' }]])
+  const watch = run.watchers.get('channel:slack:C1:3.0')
+  watch?.({ kind: 'answer', text: 'Done.' })
+  await run.settle()
+  expect(run.reactions.at(-1)).toEqual(['reactions.remove', { channel: 'C1', timestamp: '3.0', name: 'eyes' }])
+  run.event({ type: 'message', channel_type: 'channel', user: 'U1', channel: 'C1', ts: '4.0', thread_ts: '3.0', text: '<@B1> and the tests?' })
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '4.0', thread_ts: '3.0', text: '<@B1> and the tests?' })
+  await vi.waitFor(() => expect(run.reactions.at(-1)).toEqual(['reactions.add', { channel: 'C1', timestamp: '4.0', name: 'eyes' }]))
+  watch?.({ kind: 'status', activity: { manager: '', ending: 'Done.', active: false, workers: [] } })
+  await run.settle()
+  expect(run.reactions).toHaveLength(3)
+  watch?.({ kind: 'status', activity: { manager: '', ending: 'Done.', active: true, workers: [] } })
+  watch?.({ kind: 'status', activity: { manager: '', ending: 'Done.', active: false, workers: [] } })
+  await run.settle()
+  expect(run.reactions.at(-1)).toEqual(['reactions.remove', { channel: 'C1', timestamp: '4.0', name: 'eyes' }])
+  await run.channel.stop()
+})
 
 it('Slack: one Manager thread per Slack thread, labelled with who started it, answered in that thread', async () => {
   const run = slackHarness()

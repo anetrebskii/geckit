@@ -15,7 +15,7 @@ export const SLACK_INFO: ChannelInfo = {
   icon: 'chat',
   description: 'Each Slack thread with the bot is a Manager thread of its own.',
   fields: [
-    { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, users:read, files:read, files:write.' },
+    { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, users:read, files:read, files:write, reactions:write.' },
     { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write, for Socket Mode.' },
     { key: 'allow', label: 'People who may write', type: 'list', required: true, help: 'Slack user IDs, such as U012ABC. Nobody else is answered.' },
     { key: 'checkSecrets', label: 'Refuse messages that contain a token or key', type: 'boolean', default: true },
@@ -128,6 +128,19 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   const post = (channel: string, thread: string, text: string): Promise<SlackReply> => slack('chat.postMessage', { channel, thread_ts: thread, text: text.slice(0, 39_000) })
   const said = (error: unknown): string => error instanceof Error ? error.message : String(error)
   const posted = (channel: string, thread: string, text: string): Promise<unknown> => { const sent = post(channel, thread, text); sent.catch((error: unknown) => context.log.write('warn', 'slack.post.failed', { reason: said(error) })); return sent }
+  // An :eyes: reaction on each message Manager took, until it answers or finishes, so the thread shows the bot is on it.
+  const marked = new Map<string, { readonly channel: string; readonly ts: string }[]>()
+  const react = (method: 'reactions.add' | 'reactions.remove', channel: string, ts: string): void => {
+    slack(method, { channel, timestamp: ts, name: 'eyes' }).catch((error: unknown) => context.log.write('warn', 'slack.reaction.failed', { method, reason: said(error) }))
+  }
+  const mark = (thread: string, channel: string, ts: string): void => {
+    marked.set(thread, [...(marked.get(thread) ?? []), { channel, ts }])
+    react('reactions.add', channel, ts)
+  }
+  const unmark = (thread: string): void => {
+    for (const one of marked.get(thread) ?? []) react('reactions.remove', one.channel, one.ts)
+    marked.delete(thread)
+  }
 
   const person = async (user: string): Promise<string> => {
     const known = names.get(user)
@@ -253,7 +266,8 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     }
     context.files?.bind(thread, upload)
     const shown = new Set(pending(key).map((one) => one.id))
-    const plain = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+    let busy = false
+    const plain =(text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
     const status = new StatusMessage({
       post: async (text) => {
         if (!current()) throw new Error('Manager conversation changed.')
@@ -280,8 +294,12 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
         return
       }
       if (!current()) return
-      if (event.kind === 'status') status.update(event.activity)
-      if (event.kind === 'answer') status.after(posted(channel, ts, event.text))
+      if (event.kind === 'status') {
+        if (event.activity?.active === true) busy = true
+        else if (busy) { busy = false; unmark(thread) }
+        status.update(event.activity)
+      }
+      if (event.kind === 'answer') { unmark(thread); status.after(posted(channel, ts, event.text)) }
       if (event.kind === 'decisions') {
         context.store.set(`decisions:${key}`, event.decisions.map((one) => ({ id: one.id, values: one.choices.map((choice) => choice.value) })))
         for (const decision of event.decisions) {
@@ -339,6 +357,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     try { attachments = await receive(event, thread, event.channel, ts, current) } catch (error) { await post(event.channel, ts, `Could not receive this attachment: ${said(error)}. Correct the issue and resend.`); return }
     if (!current()) return
     const request = text === '' ? attachments.length > 0 ? 'They sent attachments.' : 'They mentioned you without a message. Read the thread above and help with it.' : text
+    mark(thread, event.channel, event.ts)
     await context.conversations.send(thread, { text: before === '' ? request : `${before}\n\nMessage to you:\n${request}`, from, ...(attachments.length === 0 ? {} : { attachments, authorized: current }) })
     context.store.set(`seen:${key}`, event.ts)
   }
