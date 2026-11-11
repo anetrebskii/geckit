@@ -26,6 +26,7 @@ import type { TelegramAttachments, TelegramFileSender } from './telegram-attachm
 import type { NotesStore, Sessions } from './sessions'
 
 interface OperationDeps {
+  readonly allowedProjects?: () => readonly string[] | undefined
   readonly target?: (host: string, args: readonly string[], authorized: () => boolean) => Promise<string>
   readonly product?: (args: readonly string[]) => Promise<string>
   readonly computers?: () => readonly { readonly id: string; readonly name: string }[]
@@ -257,8 +258,13 @@ export class ManagerOperations {
     return undefined
   }
 
+  #projects(settings = this.#deps.settings()): readonly string[] {
+    const allowed = this.#deps.allowedProjects?.()
+    return managerProjects(settings).filter((root) => allowed === undefined || allowed.includes(root))
+  }
+
   #project(named: string): string {
-    const projects = managerProjects(this.#deps.settings())
+    const projects = this.#projects()
     if (projects.includes(named)) return named
     const found = projects.filter((root) => basename(root) === named)
     if (found.length !== 1) throw new Error(found.length === 0 ? `No registered project called ${named}. Run projects list.` : `Several projects are called ${named}. Use the full project root.`)
@@ -266,11 +272,11 @@ export class ManagerOperations {
   }
 
   async #worker(id: string, allowUnmanaged = false): Promise<ChatSession> {
-    const projects = managerProjects(this.#deps.settings())
+    const projects = this.#projects()
     const worker = (await this.#deps.sessions.list(projects)).find((one) => one.id === id)
     const thread = this.#deps.managerThread?.() ?? 'main'
     if (teamThread(thread) && (this.#deps.notes.all()[id]?.managerThread !== thread || this.#deps.authorized?.() === false)) throw new Error('This worker belongs to another Manager thread.')
-    const currentProjects = managerProjects(this.#deps.settings())
+    const currentProjects = this.#projects()
     if (worker === undefined || worker.manager === true || worker.question === true || worker.id === this.#deps.managerSession() || !currentProjects.includes(worker.project ?? worker.root)) throw new Error('That worker is not in a currently registered project.')
     if (!allowUnmanaged && !this.#deps.managed(id)) throw new Error('This conversation is not managed here. Attach it with sessions attach first.')
     return worker
@@ -342,19 +348,19 @@ export class ManagerOperations {
     }
     if (domain === 'providers') {
       if (!['list', 'enable', 'disable', 'models'].includes(command ?? '') && this.#deps.product !== undefined) return this.#deps.product(args)
-      if (command === 'list') return JSON.stringify(providerCatalog(settings))
+      if (command === 'list') return JSON.stringify(providerCatalog(settings).filter((provider) => !team || provider.enabled && this.#projects(settings).some((root) => managerProvider(settings, root).provider === provider.family)))
       if (command === 'enable' || command === 'disable') {
         if (this.#deps.providerSettings === undefined) throw new Error('Provider configuration is unavailable on this target.')
         return this.#deps.providerSettings(args.slice(1))
       }
       if (command === 'models') {
         const provider = requestedProvider(required(flags, '--provider'))
-        if (provider === undefined || !settings.chatProviders.includes(provider)) throw new Error('Select an enabled provider from providers list.')
+        if (provider === undefined || !settings.chatProviders.includes(provider) || team && !this.#projects(settings).some((root) => managerProvider(settings, root).provider === provider)) throw new Error('Select an enabled provider from providers list.')
         return JSON.stringify(await this.#deps.sessions.models(undefined, provider) ?? [])
       }
     }
     if (domain === 'projects') {
-      if (command === 'list') return JSON.stringify(managerProjects(settings).map((root) => ({ root, name: basename(root), provider: settings.projectAssistants.find((one) => one.root === root)?.provider ?? null, defaultProvider: settings.chatProvider })))
+      if (command === 'list') return JSON.stringify(this.#projects(settings).map((root) => ({ root, name: basename(root), provider: settings.projectAssistants.find((one) => one.root === root)?.provider ?? null, defaultProvider: settings.chatProvider })))
       if (command === 'add' || command === 'create') {
         const path = required(flags, '--path')
         if (!isAbsolute(path) || isRemote(path)) throw new Error('This command needs an absolute local folder path. Remote projects must be registered in GeckIt.')
@@ -491,11 +497,11 @@ export class ManagerOperations {
     }
     if (domain === 'sessions') {
       if (command === 'list') {
-        const all = (await this.#deps.sessions.list(managerProjects(settings))).filter((one) => one.question !== true && (!flags.has('--managed') || this.#deps.managed(one.id)) && (!team || this.#deps.notes.all()[one.id]?.managerThread === this.#deps.managerThread?.()))
+        const all = (await this.#deps.sessions.list(this.#projects(settings))).filter((one) => one.question !== true && (!flags.has('--managed') || this.#deps.managed(one.id)) && (!team || this.#deps.notes.all()[one.id]?.managerThread === this.#deps.managerThread?.()))
         return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, tasks: one.tasks, canStopTasks: one.canStopTasks === true, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0 })))
       }
       if (command === 'start') {
-        const bindingsAvailable = (): boolean => !team || Object.values(this.#deps.notes.all()).filter((note) => note.managerTelegramSource !== undefined).length < 2048
+        const bindingsAvailable = (): boolean => !team || Object.values(this.#deps.notes.all()).filter((note) => teamThread(note.managerThread ?? 'main')).length < 2048
         if (!bindingsAvailable()) throw new Error('Team worker links are full (2048). Remove finished team conversations in GeckIt before starting more workers.')
         const root = this.#project(required(flags, '--project'))
         const explicit = flags.get('--provider')
@@ -512,7 +518,7 @@ export class ManagerOperations {
           const models = await this.#deps.sessions.models(root, resolved.provider)
           if (!models?.some((one) => one.value === model && one.disabled !== true)) throw new Error('That model is unavailable for the selected provider. Run providers models; no replacement was selected.')
           const current = this.#deps.settings()
-          if (session !== this.#deps.managerSession() || this.#deps.authorized?.() === false || !managerProjects(current).includes(root) || managerProvider(current, root, provider).provider !== resolved.provider) throw new Error('The Manager, project or provider changed while validating the model. Read current state before retrying.')
+          if (session !== this.#deps.managerSession() || this.#deps.authorized?.() === false || !this.#projects(current).includes(root) || managerProvider(current, root, provider).provider !== resolved.provider) throw new Error('The Manager, project or provider changed while validating the model. Read current state before retrying.')
           if (employeeId !== undefined) this.#deps.employees?.active(employeeId)
         }
         const message: SessionMessage = { root, ...(employeeId === undefined ? {} : { employeeId }), provider: resolved.provider, mode: settings.chatMode, text, goal, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }

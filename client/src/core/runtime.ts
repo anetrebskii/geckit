@@ -1,3 +1,5 @@
+import type { TelegramAccount } from '../shared/telegram'
+import type { TelegramManager } from '../main/telegram'
 import { telegramThreadKey } from '../shared/telegram'
 import { providerSettings } from '../main/provider-settings'
 import { join } from 'node:path'
@@ -209,7 +211,14 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     const syncInstructions = async (instructions: string): Promise<void> => { setGuideManager(instructions); await syncEmployeeGuides(getSettings()) }
     const attachments = new TelegramAttachments(directory)
     const sources = new Map<string, VoiceMemosSource>()
-    const coordinator: Manager = new Manager({ directory, threadAllowed: (thread) => !thread.startsWith('telegram:team:') || telegram?.view().account !== undefined && coordinator.threadRecord(thread)?.key === telegramThreadKey(telegram.view().account!) && telegram.view().state === 'connected', syncInstructions, attachments, intake: {
+    const coordinator: Manager = new Manager({ directory, retainTelegramReceipt: (id) => telegram?.retainsRequest(id) === true, threadProjects: (thread) => {
+      if (!thread.startsWith('telegram:team:')) return undefined
+      const account = telegram?.accounts().find((one) => `telegram:${telegramThreadKey(one)}` === thread)
+      if (account === undefined) return []
+      const allowed = account.team?.member?.projects ?? telegram?.view().members?.projects
+      const registered = managerProjects(getSettings())
+      return allowed?.filter((root) => registered.includes(root))
+    }, threadAllowed: (thread) => !thread.startsWith('telegram:team:') || telegram?.view().state === 'connected' && telegram.accounts().some((one) => coordinator.threadRecord(thread)?.key === telegramThreadKey(one)), syncInstructions, attachments, intake: {
       pairing: () => { const state = telegram?.view(); return state?.state === 'connected' && state.account !== undefined && state.bot !== undefined ? `${String(state.bot.id)}:${String(state.account.id)}:${String(state.account.chatId)}` : undefined },
       adapters: () => (view.config.intake ?? DEFAULT_MANAGER_INTAKE).sources.filter((source) => source.enabled).map((source) => { const key = JSON.stringify(source); let adapter = sources.get(key); if (adapter === undefined) { adapter = new VoiceMemosSource(source, { transcribe: transcribeInstalledFile, transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }); sources.set(key, adapter) }; return adapter }),
       classify: (text) => classifyIntake(text, { config: () => view.config, settings: getSettings, check: () => checkVpnIp(getSettings), correct }),
@@ -221,49 +230,64 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     const decisions = new Map<string, string>()
     let deliveryChannel = ''
     // Telegram talks to Manager in a thread of its own per chat; the paired person still answers GeckIt's own decisions there, as before threads.
-    const telegramThread = (): string => {
-      const account = telegram?.view().account
+    const telegramThread = (selected?: TelegramAccount): string => {
+      const account = selected ?? telegram?.view().account
       if (account === undefined) throw new Error('Telegram is not connected.')
       return coordinator.thread({ channel: 'telegram', place: 'Telegram', key: telegramThreadKey(account), title: account.team === undefined ? account.name : `${account.team.title} / ${String(account.team.topicId)}`, from: account.name, labels: { chat: String(account.chatId), user: String(account.id), ...(account.username === undefined ? {} : { username: `@${account.username}` }) } })
     }
-    const forTelegram = (decision: ManagerDecision): boolean => telegram?.view().account?.team === undefined ? decision.thread === undefined || !decision.thread.startsWith('telegram:team:') && coordinator.threadRecord(decision.thread)?.channel === 'telegram' : decision.thread === telegramThread()
-    const bridge = new ManagerTelegram({
-      directory,
-      shares,
-      attachments,
-      vault: options.vault ?? { available: () => false, encrypt: () => { throw new Error('Secure storage is unavailable.') }, decrypt: () => { throw new Error('Secure storage is unavailable.') } },
-      manager: {
-        thread: telegramThread,
-        accepted: (id) => coordinator.accepted(id),
-        historyBoundary: (chatId) => coordinator.historyBoundaryFor('telegram', telegram?.view().account === undefined ? String(chatId) : telegramThreadKey(telegram.view().account!)),
-        originCurrent: (origin) => coordinator.originCurrent(origin) && (telegram?.view().account?.team === undefined && !origin.thread?.startsWith('telegram:team:') || origin.thread === telegramThread()),
-        pending: () => coordinator.telegramPending(),
-        typingAllowed: () => coordinator.telegramTypingAllowed(telegramThread()),
+    const managerFor = (account: TelegramAccount): TelegramManager => {
+      const thread = (): string => telegramThread(account)
+      const restricted = account.team !== undefined
+      const permitted = (decision: ManagerDecision): boolean => restricted ? decision.thread === thread() : decision.thread === undefined || !decision.thread.startsWith('telegram:team:') && coordinator.threadRecord(decision.thread)?.channel === 'telegram'
+      return {
+        thread, uncertainReplies: () => coordinator.telegramReplies(thread()).filter((one) => one.state === 'uncertain').length, capacity: () => coordinator.telegramCapacity(thread()), accepted: (id) => coordinator.accepted(id),
+        historyBoundary: () => coordinator.historyBoundaryFor('telegram', telegramThreadKey(account)),
+        replyActive: (origin) => origin.workers.some((id) => all.some((one) => one.id === id && (one.state === 'working' || one.state === 'asks' || (one.queued?.length ?? 0) > 0))),
+        originCurrent: (origin) => coordinator.originCurrent(origin) && (restricted ? origin.thread === thread() : !origin.thread?.startsWith('telegram:team:')),
+        pending: () => coordinator.telegramPending(thread()), typingAllowed: () => coordinator.telegramTypingAllowed(thread()),
         onPending: (changed) => coordinator.on(() => changed()),
-        submit: (text, id, files, authorized, source) => coordinator.send(text, 'telegram', id, [], authorized, files, [], telegramThread(), source),
-        reply: async (text, id, reference, authorized, files, source) => { await coordinator.reply(text, id, reference, authorized, files, reference.thread ?? telegramThread(), source) },
-        pause: async () => { await coordinator.pause() },
-        resume: async () => { await coordinator.resume() },
-        status: (speech) => telegram?.view().account?.team === undefined ? managerTelegramStatus(view, speech) : (() => { const own = view.threads?.find((one) => one.id === telegramThread()); return `Manager: ${view.state === 'off' || view.state === 'paused' ? view.state : own?.state ?? 'idle'}. ${String(own?.owns.length ?? 0)} team workers. ${String(coordinator.telegramReplies(telegramThread()).filter((one) => one.state === 'uncertain').length)} uncertain replies.${own?.error === undefined ? '' : ` ${own.error}`}` })(),
-        language: telegramLanguage,
-        enabled: () => coordinator.enabled(),
-        decisions: () => view.decisions.filter(forTelegram),
-        hasDecision: (id) => view.decisions.some((item) => item.id === id && forTelegram(item)),
-        answer: async (id, choice, authorized) => {
-          const decision = view.decisions.find((item) => item.id === id && forTelegram(item))
-          if (telegram?.view().account?.team !== undefined && decision === undefined) throw new Error('This decision belongs to another thread.')
-          if (decision === undefined || decision.kind === 'native' || decision.choices.some((item) => item.value === choice)) return (await coordinator.answer(id, choice, authorized)).answer
-          else await coordinator.send(`Reply to Manager decision ${id} (${decision.title}): ${choice}`, 'telegram', undefined, [], authorized, [], [], telegramThread())
+        submit: (text, id, files, authorized, source) => coordinator.send(text, 'telegram', id, [], authorized, files, [], thread(), source),
+        reply: async (text, id, reference, authorized, files, source) => { await coordinator.reply(text, id, reference, authorized, files, reference.thread ?? thread(), source) },
+        pause: async () => { await coordinator.pause() }, resume: async () => { await coordinator.resume() },
+        status: (speech) => {
+          if (!restricted) return managerTelegramStatus(view, speech)
+          const own = view.threads?.find((one) => one.id === thread())
+          const workers = all.filter((one) => own?.owns.includes(one.id))
+          return `Manager: ${view.state === 'off' || view.state === 'paused' ? view.state : own?.state ?? 'idle'}. ${coordinator.telegramPending(thread()).length} requests waiting for Manager. ${workers.filter((one) => (one.queued?.length ?? 0) > 0).length} workers waiting for a free slot. ${view.decisions.filter((one) => one.thread === thread()).length} decisions waiting for approval. ${coordinator.telegramReplies(thread()).filter((one) => one.state === 'uncertain').length} unconfirmed replies.${own?.error === undefined ? '' : ` ${own.error}`}`
         },
+        language: () => view.threads?.find((one) => one.id === thread())?.language,
+        enabled: () => coordinator.enabled(), decisions: () => view.decisions.filter(permitted), hasDecision: (id) => view.decisions.some((one) => one.id === id && permitted(one)),
+        answer: async (id, choice, authorized) => { const decision = view.decisions.find((one) => one.id === id && permitted(one)); if (restricted && decision === undefined) throw new Error('This decision belongs to another route'); if (!restricted && decision !== undefined && decision.kind !== 'native' && !decision.choices.some((one) => one.value === choice)) { await coordinator.send(`Reply to Manager decision ${id} (${decision.title}): ${choice}`, 'telegram', undefined, [], authorized, [], [], thread()); return }; return (await coordinator.answer(id, choice, authorized)).answer },
+      }
+    }
+    const forTelegram = (decision: ManagerDecision): boolean => bridge.accounts().some((account) => managerFor(account).hasDecision?.(decision.id))
+    // The legacy facade is resolved on each call; member facades capture an immutable route.
+    const currentManager = (): TelegramManager => { const account = telegram?.view().account; if (account === undefined) throw new Error('Telegram is not connected'); return managerFor(account) }
+    const bridge = new ManagerTelegram({
+      directory, shares, attachments,
+      vault: options.vault ?? { available: () => false, encrypt: () => { throw new Error('Secure storage is unavailable.') }, decrypt: () => { throw new Error('Secure storage is unavailable.') } },
+      managerFor, projects: () => managerProjects(getSettings()),
+      revoked: (account) => coordinator.revokeTelegramThread(telegramThread(account)),
+      manager: {
+        thread: () => currentManager().thread!(), capacity: () => currentManager().capacity?.() !== false, accepted: (id) => coordinator.accepted(id),
+        historyBoundary: (chat) => telegram?.view().account === undefined ? coordinator.historyBoundaryFor('telegram', String(chat)) : currentManager().historyBoundary?.(chat),
+        replyActive: (origin) => telegram?.view().account !== undefined && currentManager().replyActive?.(origin) === true,
+        originCurrent: (origin) => telegram?.view().account !== undefined && currentManager().originCurrent?.(origin) !== false,
+        pending: () => coordinator.telegramPending(), onPending: (changed) => coordinator.on(() => changed()), typingAllowed: () => telegram?.view().account !== undefined && currentManager().typingAllowed?.() !== false,
+        submit: (...args) => currentManager().submit(...args), reply: (...args) => currentManager().reply!(...args),
+        pause: async () => { await coordinator.pause() }, resume: async () => { await coordinator.resume() },
+        status: (speech) => currentManager().status(speech), language: telegramLanguage, enabled: () => coordinator.enabled(),
+        decisions: () => telegram?.view().account === undefined ? [] : currentManager().decisions?.() ?? [], hasDecision: (id) => telegram?.view().account !== undefined && currentManager().hasDecision?.(id) === true,
+        answer: (...args) => currentManager().answer!(...args),
       },
       changed: (changed) => {
         events.emit('telegram:view', changed)
-        const channel = changed.account === undefined || changed.state !== 'connected' ? '' : `${String(changed.bot?.id)}:${telegramThreadKey(changed.account)}`
+        const channel = changed.account === undefined || changed.state !== 'connected' ? '' : `${String(changed.bot?.id)}:${telegramThreadKey(changed.account)}:${(changed.members?.people ?? []).filter((one) => one.active).map((one) => one.id).join(',')}`
         if (channel !== '' && channel !== deliveryChannel) {
           deliveryChannel = channel
           decisions.clear()
           notifyDecisions(view)
-          if (changed.account?.team !== undefined) queueMicrotask(() => { if (bridge.view().state === 'connected') { coordinator.channelReady(telegramThread()); deliverTeamReplies() } })
+          if (changed.account?.team !== undefined) queueMicrotask(() => { if (bridge.view().state === 'connected') { for (const account of bridge.accounts()) coordinator.channelReady(telegramThread(account)); started.again(); deliverTeamReplies() } })
         }
         if (changed.state === 'disconnected') deliveryChannel = ''
         coordinator.close('telegram', changed.state === 'connected' && changed.account !== undefined ? undefined : 'Telegram is not connected. Connect it in Settings, Channels to reply in this thread.')
@@ -272,7 +296,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     telegram = bridge
     const deliverTeamReplies = (): void => {
       if (bridge.view().state !== 'connected' || bridge.view().account?.team === undefined) return
-      void coordinator.deliverTelegramReplies(telegramThread(), (text, origin, beforeSend) => bridge.deliver(text, origin, beforeSend)).catch((error: Error) => console.warn('Could not persist Telegram reply delivery', error.message))
+      for (const account of bridge.accounts().filter((one) => one.team !== undefined)) void coordinator.deliverTelegramReplies(telegramThread(account), (text, origin, beforeSend) => bridge.deliver(text, origin, beforeSend)).catch((error: Error) => console.warn('Could not persist Telegram reply delivery', error.message))
     }
     const notifyDecisions = (changed: ManagerView): void => {
       if (bridge.view().account === undefined) return
@@ -292,7 +316,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       managerView = changed
       events.emit('manager:view', changed)
       notifyDecisions(changed)
-      telegramProgress(bridge, changed)
+      for (const route of bridge.routeBridges()) telegramProgress(route, changed)
       deliverTeamReplies()
     })
     coordinator.onItems((items) => events.emit('manager:items', items))
