@@ -28,6 +28,6 @@ export function telegramActionAccess(manager: Pick<Manager, 'enabled'>, telegram
 }
 
 export function phoneTelegramView(view: TelegramView): TelegramView {
-  const { pairing: _pairing, candidate: _candidate, links: _links, members: _members, ...safe } = view
+  const { pairing: _pairing, candidate: _candidate, links: _links, ...safe } = view
   return safe
 }

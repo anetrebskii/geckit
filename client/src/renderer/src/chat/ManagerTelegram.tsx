@@ -1,5 +1,4 @@
-import { TelegramMembers } from './TelegramMembers'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { endsIn } from '../../../shared/share'
 import type { SharedLink } from '../../../shared/share'
@@ -105,7 +104,7 @@ export function ManagerTelegram({ view, onView, done }: { readonly view: Telegra
       else entry.current?.focus()
     }
   }, [setup, pairing])
-  const action = useCallback(async (next: TelegramAction): Promise<void> => {
+  const action = async (next: TelegramAction): Promise<void> => {
     const attempt = ++generation.current
     setBusy(true); setError('')
     if (next.kind === 'cancel-pairing') restoring.current = true
@@ -117,7 +116,7 @@ export function ManagerTelegram({ view, onView, done }: { readonly view: Telegra
       setDisconnecting(false)
     } catch (caught) { if (generation.current === attempt) setError(caught instanceof Error ? caught.message : String(caught)) }
     finally { if (generation.current === attempt) setBusy(false) }
-  }, [onView])
+  }
   const cancel = (): void => {
     if (busy || pairing) { void action({ kind: 'cancel-pairing' }); return }
     generation.current++; restoring.current = true; setSetup(undefined); setToken(''); setError('')
@@ -173,7 +172,6 @@ export function ManagerTelegram({ view, onView, done }: { readonly view: Telegra
         {view.pairing === undefined || view.state === 'confirming' ? null : <div className="manager-pairing">{view.pairing.command === undefined ? <p>Open your bot in Telegram and press <strong>Start</strong>. Then return here to confirm your account.</p> : <><p>Send this one-time command in the topic, then confirm it here:</p><p><code>{view.pairing.command}</code></p><p>Keep bot privacy enabled. Use addressed commands or replies to this bot; standalone messages may not arrive.</p></>}<div className="manager-actions">{view.state === 'pairing' ? <button type="button" className="primary" onClick={() => window.geckit.chat.openLink(view.pairing?.url ?? '')}>Open Telegram</button> : <button type="button" className="primary" disabled={busy} onClick={() => { void action({ kind: 'retry' }) }}>Try again</button>}<button type="button" className="quiet" disabled={busy} onClick={cancel}>Cancel</button></div><p>Pairing link expires in ten minutes.</p></div>}
         {view.candidate === undefined || view.state !== 'confirming' ? null : <div className="manager-candidate"><p>{view.candidate.team === undefined ? 'Is this your Telegram account?' : 'Connect this team topic?'}</p>{view.candidate.team === undefined ? null : <p>{view.candidate.team.title} / Group {String(view.candidate.chatId)} / Topic {String(view.candidate.team.topicId)}</p>}<strong>{view.candidate.name}{view.candidate.username === undefined ? '' : ` · @${view.candidate.username}`}</strong><p>Account ID: {String(view.candidate.id)}</p><div className="manager-actions"><button type="button" className="quiet" disabled={busy} onClick={cancel}>This is not me</button><button type="button" className="primary" disabled={busy} onClick={() => { const candidate = view.candidate; if (candidate !== undefined) void action({ kind: 'confirm', userId: candidate.id, chatId: candidate.chatId }) }}>{view.candidate.team === undefined ? 'Connect account' : 'Connect topic'}</button></div></div>}
       </div>}
-      {view.state === 'connected' && !pairing && setup === undefined ? <TelegramMembers view={view} action={action} busy={busy} /> : null}
       {view.pendingLate === 0 ? null : <p role="status">{String(view.pendingLate)} delayed requests need confirmation in Telegram.</p>}
       <div hidden={setup !== undefined || pairing}>{view.state === 'disconnected' ? <div className="manager-actions"><button ref={entry} type="button" className="primary" onClick={(event) => begin('create', event.currentTarget)}>Connect Telegram</button><button type="button" className="quiet" onClick={(event) => begin('token', event.currentTarget)}>I already have a bot</button>{done}</div> : <div className="manager-actions">{view.state === 'connected' ? null : <button type="button" className="quiet" disabled={busy} onClick={() => { void action({ kind: 'retry' }) }}>Try again</button>}{view.state === 'connected' ? <button ref={entry} type="button" className="quiet" onClick={(event) => begin('token', event.currentTarget)}>Change connection</button> : null}{view.state === 'revoked' || view.state === 'storage-error' ? <button ref={entry} type="button" className="quiet" onClick={(event) => begin('token', event.currentTarget)}>Replace token</button> : null}<button type="button" className="quiet danger" onClick={() => setDisconnecting(true)}>Disconnect</button>{done}</div>}</div>
       {!disconnecting ? null : <div className="manager-candidate"><p>Disconnect Telegram? This account loses access. Workers continue; Manager settings and history are kept.</p><div className="manager-actions"><button type="button" className="quiet" onClick={() => setDisconnecting(false)}>Cancel</button><button type="button" className="quiet danger" disabled={busy} onClick={() => { void action({ kind: 'disconnect' }) }}>Disconnect Telegram</button></div></div>}

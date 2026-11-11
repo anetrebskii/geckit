@@ -94,10 +94,7 @@ export class TelegramAttachments {
     this.cleanup()
     let total = 0
     let count = 0
-    let scopedCount = 0
-    let scopedBytes = 0
-    for (const entry of readdirSync(this.directory, { withFileTypes: true })) if (entry.isDirectory() && validId(entry.name)) { const asset = this.metadata(entry.name); total += asset.size; count++; if (scope !== undefined && asset.scope === scope) { scopedCount++; scopedBytes += asset.size } }
-    if (scope?.startsWith('telegram:team:') === true && (scopedCount >= 32 || scopedBytes + bytes.length > 40 * 1024 * 1024)) throw new TelegramAttachmentFailure('Route attachment storage is full (32 files / 40 MiB).')
+    for (const entry of readdirSync(this.directory, { withFileTypes: true })) if (entry.isDirectory() && validId(entry.name)) { total += this.metadata(entry.name).size; count++ }
     if (count >= TELEGRAM_CACHE_FILES) throw new TelegramAttachmentFailure('Attachment storage is full (256 files). Finish queued tasks or wait for expired files to clear, then resend.')
     if (total + bytes.length > TELEGRAM_CACHE_LIMIT) throw new TelegramAttachmentFailure('Attachment storage is full (200 MiB). Finish queued tasks or wait for expired files to clear, then resend.')
     const image = telegramImage(bytes)
