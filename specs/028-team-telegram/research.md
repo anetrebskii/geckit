@@ -1,0 +1,5 @@
+# Research
+Decision: add optional team metadata to existing account, with immutable random generation. Rationale: old account files stay private; re-pairing never reuses remote authority. Alternative: chat/topic-only identity rejected because old output could reach a new connection.
+Decision: persist raw in-flight update before advancing offset and recover through native Manager stable IDs. Rationale: current offset-first code can lose input. Alternative: replay all started actions rejected; uncertain control decisions are held rather than replayed.
+Decision: tools use team-thread ownership checks and a narrow domain allowlist. Rationale: thread-separated model history alone is no data boundary. Personal settings, memory, global control and other channels are unavailable.
+Decision: named sender for tasks, verified membership plus owner policy for approvals. Rationale: Telegram membership for others is only guaranteed with bot administration; failure denies approvals, not tasks.

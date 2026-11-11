@@ -164,7 +164,19 @@ export interface ProjectAssistant {
 
 export const managerProjects = (settings: Pick<Settings, 'projects' | 'profiles'>): readonly string[] => [...new Set([...settings.projects, ...settings.profiles.flatMap((profile) => profile.projects)])]
 
+export interface ManagerTelegramSource {
+  readonly id: string
+  readonly bot: number
+  readonly chatId: number
+  readonly topicId: number
+  readonly generation: string
+  readonly actor: number
+  readonly messageId: number
+}
+
 export type ManagerReplyOrigin = {
+  readonly telegramDelivery?: string
+  readonly request?: ManagerTelegramSource
   readonly thread?: ManagerThread['id']
   readonly session: ChatSession['id']
   readonly workers: readonly ChatSession['id'][]

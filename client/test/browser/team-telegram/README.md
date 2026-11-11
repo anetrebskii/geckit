@@ -1,0 +1,2 @@
+# Team Telegram renderer fixture
+Run npm exec vite -- --config test/browser/team-telegram/vite.config.ts from client. Open /test/browser/team-telegram/?theme=light or theme=dark, with state=confirming for owner confirmation. The real component uses a fake IPC contract; no tokens, network bot or provider calls. Validate at 1280x900 and 390x844: select Team topic, enter approver IDs, keyboard focus, Escape cancellation, command and candidate display.

@@ -1,3 +1,4 @@
+import type { ManagerTelegramSource } from '../../shared/manager'
 import { assertProviderAvailable, prepareProvider, providerPreparing } from '../provider-changes'
 import { mergeTasks, taskTerminal } from '../../shared/background-tasks'
 import type { Employee, EmployeeConversation } from '../../shared/employees'
@@ -120,6 +121,7 @@ export interface SessionNote {
   readonly managerOwner?: string
   /** The one Manager thread that tracks it and gets its updates, GeckIt's own when absent. */
   readonly managerThread?: string
+  readonly managerTelegramSource?: ManagerTelegramSource
   /** Its tracking thread let it go, so no thread gets its updates until one follows it. */
   readonly managerUntracked?: true
   /** What the channel that started it says about it. */
@@ -737,7 +739,7 @@ export class Sessions {
     this.#note(id, { managerPrompt: prompt })
   }
 
-  async startManaged(message: SessionMessage, owner: string, operation: string, parent = owner, authorized: () => boolean = () => true): Promise<string> {
+  async startManaged(message: SessionMessage, owner: string, operation: string, parent = owner, authorized: () => boolean = () => true, ownership?: Pick<SessionNote, 'managerThread' | 'managerTelegramSource' | 'labels'>): Promise<string> {
     const found = Object.entries(this.#deps.notes.all()).find(([, note]) => note.managerOwner === owner && note.managerOperation === operation)
     if (found !== undefined) return found[0]
     if (message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
@@ -750,7 +752,7 @@ export class Sessions {
       throw new Error('The originating request changed. No worker message was sent.')
     }
     this.#fresh(id, message.root, firstLine(message.text, 80), message.mode)
-    this.#note(id, { here: true, parent, managerOwner: owner, managerOperation: operation, ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), unborn: message.root, title: firstLine(message.text, 80) })
+    this.#note(id, { ...ownership, here: true, parent, managerOwner: owner, managerOperation: operation, ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), unborn: message.root, title: firstLine(message.text, 80) })
     return this.send({ ...message, session: id })
   }
 
@@ -3409,7 +3411,7 @@ export class Sessions {
         }
         gone.push(id)
         this.#rows.delete(id)
-        const { prepared: _prepared, unborn: _unborn, managerOwner: _owner, managerThread: _thread, managerUntracked: _untracked, managerOperation: _operation, ...kept } = this.#deps.notes.all()[id] ?? {}
+        const { prepared: _prepared, unborn: _unborn, managerOwner: _owner, managerThread: _thread, managerTelegramSource: _telegramSource, managerUntracked: _untracked, managerOperation: _operation, ...kept } = this.#deps.notes.all()[id] ?? {}
         try { this.#deps.notes.set(id, { ...kept, hidden: true }) } catch (error) {
           this.#changed()
           throw new Error('The provider confirmed deletion, but local cleanup could not be saved. Do not repeat deletion; inspect the host notes store.', { cause: error })

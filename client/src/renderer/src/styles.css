@@ -13152,6 +13152,19 @@ button.manager-step-head:hover > svg {
   outline-offset: 2px;
 }
 
+.manager-token .manager-team-policy {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.manager-token input[type='checkbox'] {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 3px 0 0;
+}
+
 .manager-token p {
   margin-block: 0;
   font-size: 12px;
