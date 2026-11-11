@@ -109,7 +109,7 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
   cleanups.push(async () => { current.manager?.dispose(); sessions.dispose(); await rm(directory, { recursive: true, force: true }) })
   const finish = (id: string, text: string): void => hearings.get(id)?.({ items: [{ kind: 'theirs', id: `answer:${sent.length}`, text }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
   const command = (id: string, args: readonly string[]): string => `I will coordinate that.\n\n\`\`\`geckit\n${JSON.stringify({ id, args })}\n\`\`\``
-  return { manager: active, sessions, root, directory, notes, made, sent, fanned, answers, cli, finish, hear: (id: string, heard: Heard) => hearings.get(id)?.(heard), command, setCli: (run: ManagerDeps['cli'] | undefined) => { callCli = run }, reload: () => { current.manager?.dispose(); const next = new Manager(deps); current.manager = next; return next }, settings: () => settings, set: (change: Partial<Settings>) => { settings = { ...settings, ...change } } }
+  return { manager: active, sessions, root, directory, notes, made, sent, fanned, answers, cli, finish, hear: (id: string, heard: Heard) => hearings.get(id)?.(heard), command, setCli: (run: ManagerDeps['cli'] | undefined) => { callCli = run }, reload: (over: Partial<ManagerDeps> = {}) => { current.manager?.dispose(); const next = new Manager({ ...deps, ...over }); current.manager = next; return next }, settings: () => settings, set: (change: Partial<Settings>) => { settings = { ...settings, ...change } } }
 }
 
 describe('Manager selected thread history', () => {
@@ -2806,4 +2806,189 @@ describe('Manager built-in channel attachments', () => {
     await expect(operations.run(['attachments', 'send', '--attachment', input.id, '--id', worker, '--text', 'Wrong thread'], 'wrong-input-thread')).rejects.toThrow('different Manager threads')
     expect(sender).toHaveBeenCalledTimes(1)
   })
+})
+
+
+describe('team topic tools enforce ownership', () => {
+  it('filters worker lists and refuses personal history, mutations, global controls and installation preferences', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:example-generation' })
+    const managerSession = await f.manager.open(thread)
+    const own = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Team work' }, 'manager', 'team-worker')
+    const foreign = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Personal work' }, 'manager', 'private-worker')
+    f.notes.set(own, { ...f.notes.all()[own], managerThread: thread })
+    const ops = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => ({ ...f.settings(), ...change }), owner: 'manager', managed: (id) => f.manager.manages(id), managerSession: () => managerSession, managerThread: () => thread, authorized: () => true })
+    const listed = await ops.run(['sessions', 'list'], 'list-team')
+    expect(listed).toContain(own)
+    expect(listed).not.toContain(foreign)
+    for (const command of ['show', 'stop', 'send', 'retry', 'delete', 'attach', 'follow', 'mark']) await expect(ops.run(['sessions', command, '--id', foreign], `foreign-${command}`)).rejects.toThrow()
+    for (const args of [['manager', 'pause'], ['sessions', 'history'], ['sessions', 'assign'], ['settings', 'show'], ['settings', 'manager-edit'], ['employees', 'memory', 'someone'], ['channels', 'list'], ['files', 'read', '--project', f.root, '--path', 'private.txt']]) await expect(ops.run(args, `denied-${args[0]}`)).rejects.toThrow('Team topics')
+    await expect(ops.run(['sessions', 'stop', '--id', own], 'stop-team')).resolves.toContain('stopRequested')
+  })
+})
+
+
+it('restores the team queue only after its channel generation is verified', async () => {
+  const f = await fixture()
+  await f.manager.configure({ enabled: true })
+  const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:restore-generation' })
+  await f.manager.pause()
+  await f.manager.send('Retained team task', 'telegram', 'retained-team-task', [], () => true, [], [], thread)
+  let allowed = false
+  const again = f.reload({ threadAllowed: (selected) => selected !== thread || allowed })
+  await again.resume()
+  expect(f.sent.some((one) => one.text.includes('Retained team task'))).toBe(false)
+  again.channelReady(thread)
+  expect(f.sent.some((one) => one.text.includes('Retained team task'))).toBe(false)
+  allowed = true
+  again.channelReady(thread)
+  await vi.waitFor(() => expect(f.sent.filter((one) => one.text.includes('Retained team task'))).toHaveLength(1))
+  again.channelReady(thread)
+  expect(f.sent.filter((one) => one.text.includes('Retained team task'))).toHaveLength(1)
+})
+
+it('team regression: approved team operation retains request provenance', async () => {
+  const f = await fixture()
+  await f.manager.configure({ enabled: true, delegation: 'approve' })
+  const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:review-generation' })
+  const source = { id: 'review-input', bot: 1, chatId: -10081, topicId: 42, generation: 'review-generation', actor: 81, messageId: 2 }
+  const session = await f.manager.send('Delegate team work', 'telegram', source.id, [], () => true, [], [], thread, source)
+  await teamSettle()
+  f.finish(session, f.command('review-start', ['sessions', 'start', '--project', f.root, '--text', 'Team task', '--goal', 'Verified']))
+  await teamSettle()
+  await vi.waitFor(async () => expect((await f.manager.view()).decisions.some((one) => one.thread === thread)).toBe(true))
+  const decision = (await f.manager.view()).decisions.find((one) => one.thread === thread)
+  if (decision === undefined) throw new Error('Missing decision')
+  await f.manager.answer(decision.id, 'allow')
+  const worker = Object.values(f.notes.all()).find((one) => one.managerOperation === 'review-start')
+  expect(worker?.managerThread).toBe(thread)
+  expect(worker?.managerTelegramSource).toEqual(source)
+})
+
+it('team regression: completed response remains durable before Telegram delivery', async () => {
+  const f = await fixture()
+  await f.manager.configure({ enabled: true })
+  const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:review-generation' })
+  const source = { id: 'review-input', bot: 1, chatId: -10081, topicId: 42, generation: 'review-generation', actor: 81, messageId: 2 }
+  const session = await f.manager.send('Calculate answer', 'telegram', source.id, [], () => true, [], [], thread, source)
+  await teamSettle()
+  let delivered = false
+  f.manager.onResponse(() => { delivered = true })
+  f.finish(session, 'unique-result-not-delivered-to-Telegram-123')
+  await teamSettle()
+  expect(delivered).toBe(true)
+  const stored = await readFile(join(f.directory, 'manager.json'), 'utf8')
+  expect(JSON.parse(stored).inbox.find((one: { id: string }) => one.id === source.id).completed).toBe(true)
+  expect(stored).toContain('unique-result-not-delivered-to-Telegram-123')
+})
+
+async function teamSettle(): Promise<void> { for (let index = 0; index < 30; index++) await new Promise<void>((done) => setImmediate(done)) }
+
+
+it.each(['before-send', 'during-send'] as const)('team durable reply recovers %s without duplicating uncertain delivery', async (crash) => {
+  const f = await fixture()
+  await f.manager.configure({ enabled: true })
+  const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:delivery-generation' })
+  const source = { id: 'delivery-input', bot: 1, chatId: -10081, topicId: 42, generation: 'delivery-generation', actor: 82, messageId: 7 }
+  const session = await f.manager.send('Keep my answer', 'telegram', source.id, [], () => true, [], [], thread, source)
+  await teamSettle()
+  f.finish(session, 'Durable result')
+  await vi.waitFor(() => expect(f.manager.telegramReplies(thread)).toHaveLength(1))
+  if (crash === 'during-send') await f.manager.deliverTelegramReplies(thread, async (_text, _origin, beforeSend) => { beforeSend(); f.manager.dispose() })
+  const again = f.reload()
+  const deliver = vi.fn(async (_text: string, _origin: ManagerReplyOrigin, beforeSend: () => void) => { beforeSend() })
+  await again.deliverTelegramReplies(thread, deliver)
+  if (crash === 'before-send') {
+    expect(deliver).toHaveBeenCalledTimes(1)
+    expect(deliver.mock.calls[0]?.slice(0, 2)).toEqual(['Durable result', expect.objectContaining({ thread, request: source })])
+    expect(again.telegramReplies(thread)).toEqual([])
+    await again.deliverTelegramReplies(thread, deliver)
+    expect(deliver).toHaveBeenCalledTimes(1)
+  } else {
+    expect(deliver).not.toHaveBeenCalled()
+    expect(again.telegramReplies(thread)[0]?.state).toBe('uncertain')
+  }
+})
+
+it('team regression: new replies arriving during delivery are drained', async () => {
+  const f = await fixture()
+  await f.manager.configure({ enabled: true })
+  const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:independent' })
+  const session = await f.manager.send('First', 'telegram', 'independent-first', [], () => true, [], [], thread)
+  await teamSettle()
+  f.finish(session, 'First result')
+  await vi.waitFor(() => expect(f.manager.telegramReplies(thread)).toHaveLength(1))
+  let release: (() => void) | undefined
+  const delivered: string[] = []
+  const sending = f.manager.deliverTelegramReplies(thread, async (text, _origin, beforeSend) => {
+    beforeSend(); delivered.push(text)
+    if (text === 'First result') await new Promise<void>((done) => { release = done })
+  })
+  await vi.waitFor(() => expect(release).toBeDefined())
+  await f.manager.send('Second', 'telegram', 'independent-second', [], () => true, [], [], thread)
+  await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('Second'))).toBe(true))
+  f.finish(session, 'Second result')
+  await vi.waitFor(() => expect(f.manager.telegramReplies(thread)).toHaveLength(2))
+  release?.(); await sending
+  expect(delivered).toEqual(['First result', 'Second result'])
+  expect(f.manager.telegramReplies(thread)).toEqual([])
+})
+
+it('team regression: worker is scoped before a crash after native creation', async () => {
+  const f = await fixture()
+  await f.manager.configure({ enabled: true })
+  const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:independent' })
+  const source = { id: 'independent-start', bot: 1, chatId: -10081, topicId: 42, generation: 'independent', actor: 82, messageId: 7 }
+  const session = await f.manager.send('Start worker', 'telegram', source.id, [], () => true, [], [], thread, source)
+  await teamSettle()
+  const original = f.sessions.startManaged.bind(f.sessions)
+  vi.spyOn(f.sessions, 'startManaged').mockImplementation(async (...args) => { await original(...args); throw new Error('Crash after native start') })
+  f.finish(session, f.command('independent-worker-start', ['sessions', 'start', '--project', f.root, '--text', 'Team worker', '--goal', 'Verified']))
+  await vi.waitFor(() => expect(Object.values(f.notes.all()).some((one) => one.managerOperation === 'independent-worker-start')).toBe(true))
+  const worker = Object.values(f.notes.all()).find((one) => one.managerOperation === 'independent-worker-start')
+  expect(worker?.managerThread).toBe(thread)
+  expect(worker?.managerTelegramSource).toEqual(source)
+})
+
+
+it('team regression: uncertain first reply does not strand a distinct queued reply', async () => {
+  const f = await fixture()
+  await f.manager.configure({ enabled: true })
+  const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:independent' })
+  const session = await f.manager.send('First', 'telegram', 'independent-first', [], () => true, [], [], thread)
+  await teamSettle()
+  f.finish(session, 'First result')
+  await vi.waitFor(() => expect(f.manager.telegramReplies(thread)).toHaveLength(1))
+  let release: (() => void) | undefined
+  const delivered: string[] = []
+  const sending = f.manager.deliverTelegramReplies(thread, async (text, _origin, beforeSend) => {
+    beforeSend(); delivered.push(text)
+    if (text === 'First result') { await new Promise<void>((done) => { release = done }); throw new Error('Network outcome unknown') }
+  })
+  await vi.waitFor(() => expect(release).toBeDefined())
+  await f.manager.send('Second', 'telegram', 'independent-second', [], () => true, [], [], thread)
+  await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('Second'))).toBe(true))
+  f.finish(session, 'Second result')
+  await vi.waitFor(() => expect(f.manager.telegramReplies(thread)).toHaveLength(2))
+  release?.(); await sending
+  expect(delivered).toEqual(['First result', 'Second result'])
+  expect(f.manager.telegramReplies(thread).map((one) => one.state)).toEqual(['uncertain'])
+})
+
+it('team regression: replaced backing session does not block later replies', async () => {
+  const f = await fixture()
+  await f.manager.configure({ enabled: true })
+  const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:independent' })
+  const session = await f.manager.send('First', 'telegram', 'independent-first', [], () => true, [], [], thread)
+  await teamSettle(); f.finish(session, 'First result')
+  await vi.waitFor(() => expect(f.manager.telegramReplies(thread)).toHaveLength(1))
+  await f.manager.restart(thread)
+  const next = (await f.manager.view()).threads?.find((one) => one.id === thread)?.session ?? ''
+  expect(next).not.toBe(session)
+  await teamSettle(); f.finish(next, 'New session result')
+  await vi.waitFor(() => expect(f.manager.telegramReplies(thread)).toHaveLength(2))
+  const delivered: string[] = []
+  await f.manager.deliverTelegramReplies(thread, async (text, _origin, beforeSend) => { beforeSend(); delivered.push(text) })
+  expect(delivered).toContain('New session result')
 })

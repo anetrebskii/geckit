@@ -20,6 +20,10 @@ export interface TelegramMessage {
   readonly date: number
   readonly chatId: number
   readonly private: boolean
+  readonly chatType?: string
+  readonly chatTitle?: string
+  readonly topicId?: number
+  readonly anonymous?: boolean
   readonly from?: TelegramAccount
   readonly text?: string
   readonly file?: TelegramFile
@@ -71,7 +75,7 @@ function messageOf(value: Json | undefined): TelegramMessage | undefined {
   const replyChat = jsonObject(replied?.['chat'])?.['id']
   const replyBot = jsonObject(replied?.['from'])
   const referenced = replied !== undefined || message['external_reply'] !== undefined || message['quote'] !== undefined
-  return { id: message['message_id'], date: message['date'], chatId: chat['id'], private: chat['type'] === 'private', ...(from === undefined ? {} : { from }), ...(typeof message['text'] === 'string' ? { text: message['text'] } : typeof message['caption'] === 'string' ? { text: message['caption'] } : {}), ...(file === undefined ? message['document'] !== undefined || message['photo'] !== undefined ? { unsupportedFile: true } : {} : { file }), ...(typeof message['media_group_id'] === 'string' ? { mediaGroup: message['media_group_id'] } : {}), ...(integer(reply) ? { replyTo: reply } : {}), ...(referenced ? { reference: { external: message['external_reply'] !== undefined || replied === undefined || replyBot !== undefined && replyBot['is_bot'] !== true, ...(integer(replyChat) ? { chatId: replyChat } : {}), ...(replyBot?.['is_bot'] === true && integer(replyBot['id']) ? { botId: replyBot['id'] } : {}) } } : {}) }
+  return { id: message['message_id'], date: message['date'], chatId: chat['id'], private: chat['type'] === 'private', ...(typeof chat['type'] === 'string' ? { chatType: chat['type'] } : {}), ...(typeof chat['title'] === 'string' ? { chatTitle: chat['title'] } : {}), ...(integer(message['message_thread_id']) ? { topicId: message['message_thread_id'] } : {}), ...(message['sender_chat'] !== undefined ? { anonymous: true } : {}), ...(from === undefined ? {} : { from }), ...(typeof message['text'] === 'string' ? { text: message['text'] } : typeof message['caption'] === 'string' ? { text: message['caption'] } : {}), ...(file === undefined ? message['document'] !== undefined || message['photo'] !== undefined ? { unsupportedFile: true } : {} : { file }), ...(typeof message['media_group_id'] === 'string' ? { mediaGroup: message['media_group_id'] } : {}), ...(integer(reply) ? { replyTo: reply } : {}), ...(referenced ? { reference: { external: message['external_reply'] !== undefined || replied === undefined || replyBot !== undefined && replyBot['is_bot'] !== true, ...(integer(replyChat) ? { chatId: replyChat } : {}), ...(replyBot?.['is_bot'] === true && integer(replyBot['id']) ? { botId: replyBot['id'] } : {}) } } : {}) }
 }
 
 export function telegramUpdate(value: Json): TelegramUpdate | undefined {
@@ -131,11 +135,12 @@ export class TelegramBotClient {
     } catch { throw new TelegramAttachmentFailure('Telegram file download failed or exceeded 20 MiB. Check the connection and resend a smaller file.') }
   }
 
-  async upload(chatId: number, bytes: Buffer, name: string, media: string, caption: string, as: 'photo' | 'document', signal: AbortSignal): Promise<number> {
+  async upload(chatId: number, bytes: Buffer, name: string, media: string, caption: string, as: 'photo' | 'document', signal: AbortSignal, topicId?: number): Promise<number> {
     if (bytes.length === 0 || bytes.length > (as === 'photo' ? 10 : 50) * 1024 * 1024) throw new Error(`Telegram ${as} uploads must be between 1 byte and ${as === 'photo' ? 10 : 50} MiB.`)
     if ([...caption].length > 1024) throw new Error('Telegram captions are limited to 1024 characters. Shorten the caption.')
     const body = new FormData()
     body.set('chat_id', String(chatId))
+    if (topicId !== undefined) body.set('message_thread_id', String(topicId))
     body.set(as, new Blob([new Uint8Array(bytes)], { type: media }), name)
     if (caption !== '') body.set('caption', caption)
     try {

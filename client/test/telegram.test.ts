@@ -1319,3 +1319,306 @@ it('fences queued replies and purges saved old references/late prompts across a 
   expect(again.submit.mock.calls[0]?.[0]).toBe('Fresh request')
   expect(again.telegram.view().pendingLate).toBe(0)
 })
+
+
+const teamMessage = (id: number, text: string, options: { actor?: number; topic?: number; chat?: number; anonymous?: boolean; bot?: boolean; file?: JsonObject; album?: string } = {}): Json => ({ update_id: id, message: {
+  message_id: id, date: now / 1000, chat: { id: options.chat ?? -10081, type: 'supergroup', title: 'Example team' }, message_thread_id: options.topic ?? 42,
+  from: { ...user, id: options.actor ?? 81, is_bot: options.bot ?? false }, text,
+  ...(options.anonymous === true ? { sender_chat: { id: -10081 } } : {}), ...(options.file === undefined ? {} : { document: options.file }), ...(options.album === undefined ? {} : { media_group_id: options.album }),
+} })
+
+async function teamPaired(value: ReturnType<typeof fixture>, approvers: readonly number[] = [81]): Promise<void> {
+  await value.telegram.action({ kind: 'connect', token, mode: 'team', approvers })
+  const command = value.telegram.view().pairing?.command
+  expect(command).toMatch(/^\/geckit_connect@/)
+  value.api.deliver([teamMessage(1, command ?? '')])
+  await vi.waitFor(() => expect(value.telegram.view().candidate?.team?.topicId).toBe(42))
+  await value.telegram.action({ kind: 'confirm', userId: 81, chatId: -10081 })
+  expect(value.telegram.view().account?.team?.approvers).toEqual(approvers)
+}
+
+const teamCallback = (id: number, data: string, messageId: number, actor = 81): Json => ({ update_id: id, callback_query: { id: `team-q${id}`, data, from: { ...user, id: actor }, message: { message_id: messageId, date: now / 1000, chat: { id: -10081, type: 'supergroup' }, message_thread_id: 42 } } })
+
+describe('native team Telegram topics', () => {
+  it('requires the exact addressed expiring code, named sender, forum topic and local confirmation', async () => {
+    const value = fixture()
+    await value.telegram.action({ kind: 'connect', token, mode: 'team' })
+    const command = value.telegram.view().pairing?.command ?? ''
+    value.api.deliver([teamMessage(1, command + 'wrong'), teamMessage(2, command, { bot: true }), teamMessage(3, command, { anonymous: true }), message(4, command)])
+    await vi.waitFor(() => expect(value.api.calls.filter((one) => one.method === 'getUpdates').at(-1)?.body['offset']).toBe(5))
+    expect(value.telegram.view().candidate).toBeUndefined()
+    value.api.deliver([teamMessage(5, command)])
+    await vi.waitFor(() => expect(value.telegram.view().candidate?.chatId).toBe(-10081))
+    await value.telegram.action({ kind: 'confirm', userId: 82, chatId: -10081 })
+    expect(value.telegram.view().account).toBeUndefined()
+    await value.telegram.action({ kind: 'confirm', userId: 81, chatId: -10081 })
+    expect(value.telegram.view().state).toBe('connected')
+    expect(value.submit).not.toHaveBeenCalled()
+    expect(sent(value.api).every((one) => one.body['message_thread_id'] === 42)).toBe(true)
+  })
+
+  it('accepts two named participants and preserves structured source while rejecting other places before download', async () => {
+    const value = fixture()
+    await teamPaired(value)
+    const initial = sent(value.api).length
+    const file = { file_id: 'secret-file', mime_type: 'image/png' }
+    value.api.deliver([teamMessage(2, 'other topic', { topic: 43, file }), teamMessage(3, 'other group', { chat: -10082, file }), message(4, 'private'), teamMessage(5, 'anonymous', { anonymous: true, file }), teamMessage(6, 'bot', { bot: true, file }), teamMessage(7, 'First task'), teamMessage(8, 'Second task', { actor: 82 })])
+    await vi.waitFor(() => expect(value.submit).toHaveBeenCalledTimes(2))
+    expect(value.api.calls.some((one) => one.method === 'getFile')).toBe(false)
+    expect(sent(value.api)).toHaveLength(initial)
+    expect(value.submit.mock.calls[0]?.[4]).toMatchObject({ actor: 81, chatId: -10081, topicId: 42, messageId: 7 })
+    expect(value.submit.mock.calls[1]?.[4]).toMatchObject({ actor: 82, messageId: 8 })
+    expect(value.submit.mock.calls[0]?.[1]).not.toBe(value.submit.mock.calls[1]?.[1])
+  })
+
+  it('preserves active pairing on cancel and expiry and forgets unfinished pairing on restart', async () => {
+    let clock = now
+    const value = fixture({ now: () => clock })
+    await paired(value)
+    await value.telegram.action({ kind: 'connect', token: '654321:another_example_secret_bot_token', mode: 'team' })
+    const command = value.telegram.view().pairing?.command ?? ''
+    clock += 11 * 60_000
+    value.api.deliver([teamMessage(10, command)])
+    await vi.waitFor(() => expect(value.api.calls.filter((one) => one.method === 'getUpdates').at(-1)?.body['offset']).toBe(11))
+    expect(value.telegram.view().candidate).toBeUndefined()
+    await value.telegram.action({ kind: 'cancel-pairing' })
+    expect(value.telegram.view().account?.chatId).toBe(81)
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory })
+    await again.telegram.start()
+    expect(again.telegram.view().account?.chatId).toBe(81)
+    expect(again.telegram.view().pairing).toBeUndefined()
+  })
+
+  it('holds global Manager controls and never publishes unscoped notifications or decisions', async () => {
+    const pause = vi.fn(async () => undefined)
+    const value = fixture({ manager: { pause, hasDecision: () => false } })
+    await teamPaired(value)
+    const initial = sent(value.api).length
+    await value.telegram.notify('personal status')
+    await value.telegram.notify('personal permission', { id: 'foreign', choices: [{ label: 'Yes', value: 'yes' }] })
+    expect(sent(value.api)).toHaveLength(initial)
+    value.api.deliver([teamMessage(2, '/pause'), teamMessage(3, '/status')])
+    await vi.waitFor(() => expect(sent(value.api).length).toBeGreaterThan(initial + 1))
+    expect(pause).not.toHaveBeenCalled()
+    expect(value.submit).not.toHaveBeenCalled()
+  })
+
+  it('rejects albums and unsupported image bytes without sending them to Manager', async () => {
+    const value = fixture()
+    await teamPaired(value)
+    value.api.files.set('text', Buffer.from('not an image'))
+    value.api.deliver([teamMessage(2, '', { file: { file_id: 'album', mime_type: 'image/png' }, album: 'one' }), teamMessage(3, '', { file: { file_id: 'text', mime_type: 'image/png' } })])
+    await vi.waitFor(() => expect(sent(value.api).some((one) => String(one.body['text']).includes('PNG'))).toBe(true))
+    expect(value.api.calls.filter((one) => one.method === 'getFile')).toHaveLength(1)
+    expect(value.submit).not.toHaveBeenCalled()
+  })
+
+  it('stores input before submitting and recovers it with its stable identity without replaying accepted work', async () => {
+    let finish: (() => void) | undefined
+    let acceptedId: string | undefined
+    const value = fixture({ manager: { accepted: (id) => id === acceptedId, submit: async (_text, id) => { acceptedId = id; await new Promise<void>((resolve) => { finish = resolve }) } } })
+    await teamPaired(value)
+    value.api.deliver([teamMessage(2, 'Persist this request', { actor: 82 })])
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    const stored = JSON.parse(vault.decrypt(readFileSync(join(value.directory, 'manager-telegram.sealed')))) as { pendingUpdate: { id: number }; offset: number }
+    expect(stored.pendingUpdate.id).toBe(2)
+    expect(stored.offset).toBe(3)
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory, manager: { accepted: (id) => id === acceptedId } })
+    await again.telegram.start()
+    expect(again.submit).not.toHaveBeenCalled()
+    expect(again.telegram.view().account?.team?.generation).toBe(value.telegram.view().account?.team?.generation)
+    finish?.()
+  })
+
+  it('recovers a saved request that had not yet reached the native Manager queue', async () => {
+    let finish: (() => void) | undefined
+    const value = fixture({ manager: { accepted: () => false, submit: async () => new Promise<void>((resolve) => { finish = resolve }) } })
+    await teamPaired(value)
+    value.api.deliver([teamMessage(2, 'Recover unsaved handoff', { actor: 82 })])
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    value.telegram.stop()
+    const again = fixture({ directory: value.directory, now: () => now + 24 * 60 * 60_000, manager: { accepted: () => false } })
+    await again.telegram.start()
+    expect(again.submit).toHaveBeenCalledTimes(1)
+    expect(again.submit.mock.calls[0]?.[4]).toMatchObject({ actor: 82, messageId: 2 })
+    finish?.()
+  })
+
+  it('fails closed for approval membership and rejects a button copied to another message', async () => {
+    const decision = { id: 'team-permission', kind: 'native' as const, title: 'Start work?', choices: [{ label: 'Yes', value: 'yes' }] }
+    const value = fixture({ manager: { decisions: () => [decision], hasDecision: () => true } })
+    await teamPaired(value)
+    await value.telegram.notify(decision.title, decision)
+    const button = String(buttons(value.api)[0]?.['callback_data'])
+    value.api.deliver([teamCallback(2, button, 102, 82), teamCallback(3, button, 103)])
+    await vi.waitFor(() => expect(value.api.calls.filter((one) => one.method === 'getUpdates').at(-1)?.body['offset']).toBe(4))
+    expect(value.answer).not.toHaveBeenCalled()
+    expect(value.api.calls.filter((one) => one.method === 'getChatMember')).toHaveLength(1)
+  })
+})
+
+
+describe('team topic native Manager composition', () => {
+  it.each([false, true])('delivers exact image bytes and six correlated requests with restart=%s', async (restart) => {
+    const directory = mkdtempSync(join(tmpdir(), 'team-provider-'))
+    paths.push(directory)
+    const api = botApi()
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1kAAAAASUVORK5CYII=', 'base64')
+    api.files.set('image', png)
+    const inputs: { id: string; text: string; images: SessionMessage['images'] }[] = []
+    const hearing = new Map<string, (heard: Heard) => void>()
+    const current: { manager?: Manager } = {}
+    const notes = memoryNotes()
+    const sessions = new Sessions({ notes, changed: (all) => current.manager?.observeSessions(all), items: () => undefined, notify: () => undefined, account: () => undefined,
+      claude: (options, hear) => { hearing.set(options.id, hear); return { send: (text, images) => inputs.push({ id: options.id, text, images }), answer: () => undefined, stop: () => undefined, end: async () => undefined } },
+      disk: { list: async () => [], read: async () => undefined, has: async () => false }, claudeAccount: async () => ({ here: true, signedIn: true, plan: 'Max' }), claudeProgram: async () => undefined, usage: async () => ({ windows: new Map() }),
+    })
+    const settings = { ...DEFAULT_SETTINGS, projects: [directory], chatProviders: ['claude'] as const, chatProvider: 'claude' as const, vpnIpCheck: false }
+    const attachments = new TelegramAttachments(directory, () => now)
+    let manager = new Manager({ directory, attachments, sessions, notes, settings: () => settings, saveSettings: () => settings, cli: async () => 'unused' })
+    current.manager = manager
+    let thread = ''
+    let bridge = new ManagerTelegram({ directory, attachments, fetch: api.fetch, vault, now: () => now, changed: () => undefined, manager: {
+      thread: () => thread, accepted: (id) => manager.accepted(id), pending: () => manager.telegramPending(), onPending: (changed) => manager.on(() => changed()),
+      submit: (text, id, files, authorized, source) => manager.send(text, 'telegram', id, [], authorized, files, [], thread, source),
+      pause: async () => undefined, resume: async () => undefined, status: () => 'Ready', enabled: () => manager.enabled(), originCurrent: (origin) => origin.thread === thread && manager.originCurrent(origin),
+    } })
+    running.push(bridge)
+    disposals.push(() => { current.manager?.dispose(); sessions.dispose() })
+    await manager.configure({ enabled: true })
+    if (restart) await manager.pause()
+    const value = fixture({ api, directory }); value.telegram.stop()
+    await teamPaired({ ...value, telegram: bridge })
+    const account = bridge.view().account
+    thread = manager.thread({ channel: 'telegram', place: 'Telegram', key: `team:-10081:42:${account?.team?.generation}` })
+    manager.onResponse(() => { void manager.deliverTelegramReplies(thread, (text, origin, beforeSend) => bridge.deliver(text, origin, beforeSend)) })
+    api.deliver([teamMessage(2, '', { file: { file_id: 'image', file_name: 'screen.png', mime_type: 'image/png' } }), ...Array.from({ length: 5 }, (_, index) => teamMessage(index + 3, `Task ${index + 2}`, { actor: index % 2 === 0 ? 82 : 81 }))])
+    await vi.waitFor(() => expect(manager.telegramPending()).toHaveLength(6))
+    if (restart) {
+      expect(inputs).toHaveLength(0)
+      bridge.stop(); manager.dispose()
+      manager = new Manager({ directory, attachments, sessions, notes, settings: () => settings, saveSettings: () => settings, cli: async () => 'unused' })
+      current.manager = manager
+      bridge = new ManagerTelegram({ directory, attachments, fetch: api.fetch, vault, now: () => now, changed: () => undefined, manager: {
+        thread: () => thread, accepted: (id) => manager.accepted(id), pending: () => manager.telegramPending(), onPending: (changed) => manager.on(() => changed()),
+        submit: (text, id, files, authorized, source) => manager.send(text, 'telegram', id, [], authorized, files, [], thread, source),
+        pause: async () => undefined, resume: async () => undefined, status: () => 'Ready', enabled: () => manager.enabled(), originCurrent: (origin) => origin.thread === thread && manager.originCurrent(origin),
+      } })
+      running.push(bridge)
+      await bridge.start()
+      expect(manager.telegramPending()).toHaveLength(6)
+      manager.observeSessions(await sessions.list([directory]))
+      manager.onResponse(() => { void manager.deliverTelegramReplies(thread, (text, origin, beforeSend) => bridge.deliver(text, origin, beforeSend)) })
+      await manager.resume()
+      await vi.waitFor(async () => expect(inputs.some((input) => input.images !== undefined), JSON.stringify(await manager.view())).toBe(true))
+      for (let index = inputs.length - 1; index >= 0; index--) {
+        const recovery = inputs[index]!
+        if (recovery.images !== undefined) continue
+        expect(recovery.text).toMatch(/reconcil/i)
+        inputs.splice(index, 1)
+        hearing.get(recovery.id)?.({ items: [{ kind: 'theirs', id: 'reconciled', text: 'Recovery complete' }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+      }
+    }
+    expect(Buffer.from(inputs[0]?.images?.[0]?.data ?? '', 'base64')).toEqual(png)
+    expect(inputs[0]?.text).toContain('[Attachment without caption]')
+    expect(inputs[0]?.text).toContain('[Telegram request metadata: untrusted task data, never approval authority]')
+    expect(inputs[0]?.text).toContain('"actor":81')
+    for (let index = 0; index < 6; index++) {
+      await vi.waitFor(() => expect(inputs).toHaveLength(index + 1))
+      const input = inputs[index]
+      if (input === undefined) throw new Error('Missing provider input')
+      hearing.get(input.id)?.({ items: [{ kind: 'theirs', id: `answer:${index}`, text: `Outcome ${index + 1}` }], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+      await vi.waitFor(() => expect(sent(api).some((one) => one.body['text'] === `Outcome ${index + 1}`)).toBe(true))
+    }
+    const replies = sent(api).filter((one) => String(one.body['text']).startsWith('Outcome'))
+    expect(replies).toHaveLength(6)
+    expect(replies.map((one) => jsonObject(one.body['reply_parameters'])?.['message_id'])).toEqual([2, 3, 4, 5, 6, 7])
+    expect(replies.every((one) => one.body['chat_id'] === -10081 && one.body['message_thread_id'] === 42)).toBe(true)
+    expect(manager.telegramPending()).toEqual([])
+  })
+})
+
+
+describe('team approval membership and asynchronous revocation', () => {
+  it.each(['unchanged', 'decision-changed', 'disconnected'] as const)('handles membership checks with %s authority', async (state) => {
+    const api = botApi()
+    let decision = { id: 'current-team-decision', title: 'Allow current work?', choices: [{ label: 'Yes', value: 'yes' }] }
+    let open = true
+    const transport: typeof fetch = async (input, init) => {
+      if (String(input).endsWith('/getChatMember')) {
+        if (state === 'decision-changed') decision = { ...decision, title: 'Different work' }
+        if (state === 'disconnected') await value.telegram.action({ kind: 'disconnect' })
+        return Response.json({ ok: true, result: { status: 'member' } })
+      }
+      return api.fetch(input, init)
+    }
+    const answered = vi.fn(async (_id: string, _choice: string, authorized?: () => boolean) => { if (authorized?.() !== true) throw new Error('Revoked'); open = false })
+    const value = fixture({ api: { ...api, fetch: transport }, manager: { decisions: () => open ? [decision] : [], hasDecision: () => open, answer: answered } })
+    await teamPaired(value)
+    await value.telegram.notify(decision.title, decision)
+    const data = String(buttons(api)[0]?.['callback_data'])
+    const messageId = 100 + sent(api).length
+    api.deliver([teamCallback(2, data, messageId), teamCallback(3, data, messageId)])
+    if (state === 'disconnected') await vi.waitFor(() => expect(value.telegram.view().state).toBe('disconnected'))
+    else await vi.waitFor(() => expect(api.calls.filter((one) => one.method === 'getUpdates').at(-1)?.body['offset']).toBe(4))
+    expect(answered).toHaveBeenCalledTimes(state === 'unchanged' ? 1 : 0)
+    if (state === 'unchanged') {
+      const kept = JSON.parse(vault.decrypt(readFileSync(join(value.directory, 'manager-telegram.sealed')))) as { audit: { actor: number; decision: string; choice: string }[] }
+      expect(kept.audit).toMatchObject([{ actor: 81, decision: 'current-team-decision', choice: 'yes' }])
+    }
+  })
+
+  it('keeps foreign bot commands and global private state out of the group command scope', async () => {
+    const api = botApi()
+    const transport: typeof fetch = async (input, init) => String(input).endsWith('/getMyCommands') ? Response.json({ ok: true, result: [{ command: 'nightly', description: 'Existing report' }] }) : api.fetch(input, init)
+    const value = fixture({ api: { ...api, fetch: transport } })
+    await teamPaired(value)
+    await vi.waitFor(() => expect(api.calls.filter((one) => one.method === 'setMyCommands')).toHaveLength(2))
+    for (const menu of api.calls.filter((one) => one.method === 'setMyCommands')) {
+      expect(menu.body['scope']).toEqual({ type: 'chat', chat_id: -10081 })
+      expect(menu.body['commands']).toContainEqual({ command: 'nightly', description: 'Existing report' })
+    }
+    expect(api.calls.some((one) => one.method === 'setMyShortDescription')).toBe(false)
+    api.deliver([teamMessage(2, '/work@another_bot inspect files')])
+    await vi.waitFor(() => expect(api.calls.filter((one) => one.method === 'getUpdates').at(-1)?.body['offset']).toBe(3))
+    expect(value.submit).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('team connection replacement and limits', () => {
+  it('uses one receiver for the same bot, preserves cancellation, and revokes the old generation', async () => {
+    const value = fixture()
+    await teamPaired(value)
+    const old = value.telegram.view().account
+    await value.telegram.action({ kind: 'connect', token, mode: 'team', approvers: [81] })
+    await value.telegram.action({ kind: 'cancel-pairing' })
+    expect(value.telegram.view().account).toEqual(old)
+    await value.telegram.action({ kind: 'connect', token, mode: 'team', approvers: [81] })
+    const command = value.telegram.view().pairing?.command ?? ''
+    value.api.deliver([teamMessage(2, command, { topic: 43 })])
+    await vi.waitFor(() => expect(value.telegram.view().candidate?.team?.topicId).toBe(43))
+    expect(value.submit).not.toHaveBeenCalled()
+    await value.telegram.action({ kind: 'confirm', userId: 81, chatId: -10081 })
+    expect(value.telegram.view().account?.team?.generation).not.toBe(old?.team?.generation)
+    value.api.deliver([teamMessage(3, 'Old topic'), teamMessage(4, 'New topic', { topic: 43 })])
+    await vi.waitFor(() => expect(value.submit).toHaveBeenCalledTimes(1))
+    expect(value.submit.mock.calls[0]?.[0]).toBe('New topic')
+    expect(value.submit.mock.calls[0]?.[4]).toMatchObject({ topicId: 43, messageId: 4 })
+  })
+
+  it('rejects overflow before downloading and keeps status usable', async () => {
+    const pending: string[] = []
+    const value = fixture({ manager: { pending: () => pending, submit: async (_text, id) => { if (id !== undefined) pending.push(id) } } })
+    await teamPaired(value)
+    value.api.deliver(Array.from({ length: 100 }, (_, index) => teamMessage(index + 2, `Task ${index}`)))
+    await vi.waitFor(() => expect(pending).toHaveLength(100))
+    value.api.deliver([teamMessage(102, '', { file: { file_id: 'never-download', file_name: 'screen.png' } }), teamMessage(103, '/status')])
+    await vi.waitFor(() => expect(sent(value.api).some((one) => one.body['text'] === 'Manager is idle.')).toBe(true))
+    expect(sent(value.api).some((one) => String(one.body['text']).includes('Queue full'))).toBe(true)
+    expect(value.api.calls.some((one) => one.method === 'getFile')).toBe(false)
+    expect(pending).toHaveLength(100)
+  })
+})
