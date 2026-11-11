@@ -492,7 +492,7 @@ export class ManagerOperations {
       if (manager === undefined) throw new Error('The originating Manager session is unavailable.')
       await currentFileWorker()
       const request = this.#deps.managerRequest?.()
-      const receipt = await sender(bytes, basename(path), image ?? 'application/octet-stream', caption, format, { session: manager, workers: [worker.id], ...(request === undefined ? {} : { request }), ...(domain === 'channels' || team ? { thread } : {}) }, currentFileWorker)
+      const receipt = await sender(bytes, basename(path), image ?? 'application/octet-stream', caption, format, { session: manager, workers: [worker.id], ...(request === undefined ? {} : { request }), thread }, currentFileWorker)
       return JSON.stringify({ id: worker.id, ...(typeof receipt === 'number' ? { messageId: receipt } : receipt), path, sent: true, as: format, bytes: bytes.length, notice: `${place} accepted the selected file; user download is not confirmed.` })
     }
     if (domain === 'sessions') {

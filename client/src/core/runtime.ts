@@ -215,9 +215,9 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       if (!thread.startsWith('telegram:team:')) return undefined
       const account = telegram?.accounts().find((one) => `telegram:${telegramThreadKey(one)}` === thread)
       if (account === undefined) return []
-      const allowed = account.team?.member?.projects ?? telegram?.view().members?.projects
+      if (account.team?.member === undefined) return undefined
       const registered = managerProjects(getSettings())
-      return allowed?.filter((root) => registered.includes(root))
+      return account.team.member.projects.filter((root) => registered.includes(root))
     }, threadAllowed: (thread) => !thread.startsWith('telegram:team:') || telegram?.view().state === 'connected' && telegram.accounts().some((one) => coordinator.threadRecord(thread)?.key === telegramThreadKey(one)), syncInstructions, attachments, intake: {
       pairing: () => { const state = telegram?.view(); return state?.state === 'connected' && state.account !== undefined && state.bot !== undefined ? `${String(state.bot.id)}:${String(state.account.id)}:${String(state.account.chatId)}` : undefined },
       adapters: () => (view.config.intake ?? DEFAULT_MANAGER_INTAKE).sources.filter((source) => source.enabled).map((source) => { const key = JSON.stringify(source); let adapter = sources.get(key); if (adapter === undefined) { adapter = new VoiceMemosSource(source, { transcribe: transcribeInstalledFile, transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }); sources.set(key, adapter) }; return adapter }),

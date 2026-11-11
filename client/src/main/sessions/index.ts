@@ -1324,7 +1324,7 @@ export class Sessions {
     const thread = note?.managerThread
     if (thread?.startsWith('telegram:team:') !== true) return true
     if (!this.#may() && !this.#routeStarting.has(id) && !this.#live.get(id)?.question) return false
-    if (this.#telegramAuthority?.(thread, this.#live.get(id)?.root ?? this.#listed().find((one) => one.id === id)?.root) === false) return false
+    if (this.#telegramAuthority?.(thread, this.#listed().find((one) => one.id === id)?.project ?? this.#live.get(id)?.root ?? this.#listed().find((one) => one.id === id)?.root) === false) return false
     const active = new Set([...this.#standing(this.#listed()).filter((one) => one.state === 'working').map((one) => one.id), ...this.#routeStarting].filter((other) => this.#deps.notes.all()[other]?.managerThread === thread && other !== id)).size
     return active < (thread.startsWith('telegram:team:dm:') ? 2 : 4)
   }
@@ -2497,7 +2497,7 @@ export class Sessions {
     if (live.driver === undefined) throw new Error('The assistant disconnected before dispatch.')
     try {
       const route = this.#deps.notes.all()[live.id]?.managerThread
-      if (route?.startsWith('telegram:team:') === true && this.#telegramAuthority?.(route, live.root) === false) throw new Error('Telegram route authority was revoked')
+      if (route?.startsWith('telegram:team:') === true && this.#telegramAuthority?.(route, this.#listed().find((one) => one.id === live.id)?.project ?? live.root) === false) throw new Error('Telegram route authority was revoked')
       live.driver.send(managerPrompt === undefined ? saying.text : managerContext(managerPrompt, saying.text), saying.images, told.flatMap((one) => one.blocks))
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)

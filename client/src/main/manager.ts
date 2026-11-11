@@ -592,7 +592,7 @@ export class Manager {
     const interrupting = !config.enabled || providerChanged
     let inbox = this.#record.inbox
     if (interrupting) for (const thread of this.#threadIds()) { const session = this.#state(thread).sessionId; if (session !== undefined) inbox = this.#interrupt(session, inbox) }
-    if (interrupting) for (const thread of this.#threadIds()) { const live = this.#l(thread); live.awaitingOutput = false; live.activeInput = undefined; live.activeTelegram = [] }
+    if (interrupting) for (const thread of this.#threadIds()) { const live = this.#l(thread); live.awaitingOutput = false; this.#telegramTurns.delete(thread); live.activeInput = undefined; live.activeTelegram = [] }
     const previous = providerChanged ? this.#record.sessionId : undefined
     this.#save({ config, inbox, error: undefined, ...(providerChanged ? { sessionId: undefined, previousSessions: previous === undefined ? this.#record.previousSessions : [...this.#record.previousSessions, previous], threads: this.#record.threads.map((thread) => ({ ...thread, sessionId: undefined, error: undefined, previousSessions: thread.sessionId === undefined ? thread.previousSessions : [...thread.previousSessions, thread.sessionId] })) } : { threads: this.#record.threads.map((thread) => ({ ...thread, error: undefined })) }) })
     if (providerChanged && previous !== undefined) this.#reconcile('Manager provider changed. Restore durable worker ownership and pending decisions, then reconcile fresh CLI state before queued requests. An interrupted request may already have been delivered. Reconcile current task state without replaying its CLI effects. Do not replay prior commands or interrupted messages.')
@@ -1001,7 +1001,7 @@ export class Manager {
     this.#generation += 1
     this.#save({ paused: true, pauseReason: 'user' })
     let inbox = this.#record.inbox
-    for (const thread of this.#threadIds()) { const session = this.#state(thread).sessionId; if (session !== undefined) inbox = this.#interrupt(session, inbox); this.#l(thread).awaitingOutput = false }
+    for (const thread of this.#threadIds()) { const session = this.#state(thread).sessionId; if (session !== undefined) inbox = this.#interrupt(session, inbox); this.#l(thread).awaitingOutput = false; this.#telegramTurns.delete(thread) }
     this.#save({ inbox })
     return this.view()
   }
@@ -1021,7 +1021,7 @@ export class Manager {
     for (const thread of this.#threadIds()) this.#cancelRecovery(thread)
     const generation = ++this.#generation
     const lookupHeld = this.#vpnLookupHeld(MAIN)
-    for (const thread of this.#threadIds()) this.#l(thread).awaitingOutput = false
+    for (const thread of this.#threadIds()) { this.#l(thread).awaitingOutput = false; this.#telegramTurns.delete(thread) }
     this.#save({ paused: false, pauseReason: undefined, error: lookupHeld ? this.#record.error : undefined, inbox: this.#record.inbox.map((one) => one.state === 'sending' ? { ...one, state: 'sent' } : one), threads: this.#record.threads.map((thread) => ({ ...thread, error: undefined })) })
     try { await this.open() } catch (error) { if (generation === this.#generation) this.#fail(MAIN, error instanceof Error ? error.message : String(error)); throw error }
     if (generation !== this.#generation || this.#stopped) return this.view()
@@ -1042,7 +1042,7 @@ export class Manager {
     this.#cancelRecovery(thread)
     const live = this.#l(thread)
     live.generation += 1
-    live.awaitingOutput = false
+    live.awaitingOutput = false; this.#telegramTurns.delete(thread)
     this.#saveThread(thread, { error: undefined, manualRecovery: false }, { inbox: this.#record.inbox.map((one) => one.state === 'sending' && this.#threadOf(one) === thread ? { ...one, state: 'sent' } : one) })
     this.#reconcile('Reconcile this thread\'s work using CLI status before processing its queued messages. An interrupted message may already have been delivered. Do not replay past operations.', thread)
     return this.view()
@@ -1060,7 +1060,7 @@ export class Manager {
     const inbox = previous === undefined ? this.#record.inbox : this.#interrupt(previous)
     this.#saveThread(thread, { sessionId: undefined, previousSessions: previous === undefined ? this.#state(thread).previousSessions : [...this.#state(thread).previousSessions, previous], error: undefined }, { inbox })
     await this.open(thread)
-    live.awaitingOutput = false
+    live.awaitingOutput = false; this.#telegramTurns.delete(thread)
     this.#reconcile(`Backing session replaced. Restore coordination from this durable record, then check current CLI state: ${JSON.stringify({ operations: this.#record.operations.filter((one) => (one.thread ?? MAIN) === thread).slice(-30), decisions: this.#record.decisions.filter((one) => (one.thread ?? MAIN) === thread), workers: this.#sessions.filter((one) => this.manages(one.id) && this.#ownerThread(one.id) === thread) })}`, thread)
     return this.view()
   }
@@ -1092,7 +1092,7 @@ export class Manager {
       const boundary: HistoryBoundary = { action: request.action, id: thread, at: Date.now(), revision: randomUUID(), ...(record === undefined ? {} : { channel: record.channel, key: record.key }) }
       const live = this.#l(thread)
       live.generation += 1
-      live.activeInput = undefined; live.activeTelegram = []; live.awaitingOutput = false
+      live.activeInput = undefined; live.activeTelegram = []; live.awaitingOutput = false; this.#telegramTurns.delete(thread)
       this.#cancelRecovery(thread)
       this.#saveThread(thread, { sessionId: undefined, previousSessions: [], responseOrigin: undefined, error: 'History cleanup is incomplete. Retry the conversation action before sending a new message.', manualRecovery: true }, {
         historyBoundaries: [...this.#record.historyBoundaries.filter((one) => one.id !== thread), boundary], historyPurges: [...this.#record.historyPurges, purge],
