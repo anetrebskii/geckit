@@ -119,14 +119,41 @@ describe('StatusMessage', () => {
     status.update(free([fix('finished', false), { id: 'w2', line: '• Never active: finished', active: false }]))
     await settle()
     expect(calls).toEqual([
-      'post While I wait, here is what is going on:\n• Fix: working\nUpdated 14:32 UTC',
-      'edit 1 While I wait, here is what is going on:\n• Fix: still working\nUpdated 14:32 UTC',
-      'edit 1 Done.\n• Fix: finished\nUpdated 14:32 UTC',
+      'post While I wait, here is what is going on:\n• Fix: working',
+      'edit 1 While I wait, here is what is going on:\n• Fix: still working',
+      'edit 1 Done.\n• Fix: finished',
     ])
     expect(waits).toEqual([3000, 3000])
     status.update(free([fix('working')]))
     await settle()
-    expect(calls.at(-1)).toBe('post While I wait, here is what is going on:\n• Fix: working\nUpdated 14:32 UTC')
+    expect(calls.slice(-2)).toEqual(['remove 1', 'post While I wait, here is what is going on:\n• Fix: working'])
+  })
+
+  it('deletes the ending once Manager sends something or the person writes', async () => {
+    const { calls, poster: send } = poster()
+    const status = new StatusMessage(send, { gap: 0 })
+    status.update(free([fix('working')]))
+    await settle()
+    status.update(free([fix('finished', false)]))
+    await settle()
+    expect(calls.at(-1)).toBe('edit 1 Done.\n• Fix: finished')
+    status.update(free([fix('finished', false)]))
+    await settle()
+    expect(calls).toHaveLength(2)
+    status.after(Promise.resolve())
+    await settle()
+    expect(calls.at(-1)).toBe('remove 1')
+    status.update(free([fix('working')]))
+    await settle()
+    status.update(free([fix('finished', false)]))
+    await settle()
+    status.update(busy())
+    await settle()
+    expect(calls.slice(-2)).toEqual(['edit 2 Done.\n• Fix: finished', 'remove 2'])
+    status.after(Promise.resolve())
+    status.update(busy())
+    await settle()
+    expect(calls).toHaveLength(6)
   })
 
   it('goes away while Manager works on a message and comes back below what Manager sends', async () => {
@@ -136,7 +163,7 @@ describe('StatusMessage', () => {
     await settle()
     status.update(busy([fix('working')]))
     await settle()
-    expect(calls).toEqual(['post While I wait, here is what is going on:\n• Fix: working\nUpdated 14:32 UTC', 'remove 1'])
+    expect(calls).toEqual(['post While I wait, here is what is going on:\n• Fix: working', 'remove 1'])
     let sent = (): void => undefined
     status.after(new Promise<void>((resolve) => { sent = resolve }))
     status.update(free([fix('working')]))
@@ -144,10 +171,10 @@ describe('StatusMessage', () => {
     expect(calls).toHaveLength(2)
     sent()
     await settle()
-    expect(calls.at(-1)).toBe('post While I wait, here is what is going on:\n• Fix: working\nUpdated 14:32 UTC')
+    expect(calls.at(-1)).toBe('post While I wait, here is what is going on:\n• Fix: working')
     status.after(Promise.resolve())
     await settle()
-    expect(calls.slice(-2)).toEqual(['remove 2', 'post While I wait, here is what is going on:\n• Fix: working\nUpdated 14:32 UTC'])
+    expect(calls.slice(-2)).toEqual(['remove 2', 'post While I wait, here is what is going on:\n• Fix: working'])
     status.update(busy([fix('finished', false)]))
     status.update(free([fix('finished', false)]))
     await settle()
@@ -160,7 +187,7 @@ describe('StatusMessage', () => {
     const workers = Array.from({ length: 10 }, (_, at) => ({ id: `w${String(at)}`, line: `• W${String(at)}: working`, active: true }))
     status.update(free(workers))
     await settle()
-    expect(calls[0]?.split('\n').slice(-3, -1)).toEqual(['• W7: working', 'and 2 more'])
+    expect(calls[0]?.split('\n').slice(-2)).toEqual(['• W7: working', 'and 2 more'])
     status.update({ manager: 'Waiting for your answer above.', ending: 'Waiting for your answer above.', active: false, workers: [] })
     await settle()
     expect(calls.at(-1)).toMatch(/^edit 1 Waiting for your answer above\.\n/)
@@ -176,13 +203,13 @@ describe('StatusMessage', () => {
     expect(calls).toEqual([])
     status.update(free([fix('still')]))
     await settle()
-    expect(calls).toEqual(['post While I wait, here is what is going on:\n• Fix: still\nUpdated 14:32 UTC'])
+    expect(calls).toEqual(['post While I wait, here is what is going on:\n• Fix: still'])
     fail.edit = true
     status.update(free([fix('again')]))
     await settle()
     status.update(free([fix('later')]))
     await settle()
-    expect(calls.at(-1)).toBe('edit 1 While I wait, here is what is going on:\n• Fix: later\nUpdated 14:32 UTC')
+    expect(calls.at(-1)).toBe('edit 1 While I wait, here is what is going on:\n• Fix: later')
     expect(failures).toHaveLength(2)
   })
 })

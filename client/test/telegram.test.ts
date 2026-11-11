@@ -1197,7 +1197,7 @@ describe('Telegram status message', () => {
     value.telegram.progress(working)
     value.telegram.progress(working)
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 1))
-    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, text: expect.stringMatching(/^While I wait, here is what is going on:\n• Fix: working\nUpdated \d\d:\d\d UTC$/), disable_notification: true })
+    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, text: expect.stringMatching(/^While I wait, here is what is going on:\n• Fix: working$/), disable_notification: true })
     await value.telegram.notify('Still on it.')
     await vi.waitFor(() => expect(value.api.calls.filter((call) => call.method === 'deleteMessage')).toHaveLength(1))
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 3))
@@ -1212,7 +1212,7 @@ describe('Telegram status message', () => {
     const view = { state: 'idle', config: {}, workers: [worker], activity: [], providers: [], decisions: [], queued: 0, threads: [thread] } as unknown as ManagerView
     value.telegram.progress(threadActivity(view, 'telegram:81'))
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 1))
-    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, disable_notification: true, text: expect.stringMatching(/^Пока жду, вот что сейчас идёт:\n• Ответы менеджера: запускает тесты\nОбновлено в \d\d:\d\d UTC$/) })
+    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, disable_notification: true, text: expect.stringMatching(/^Пока жду, вот что сейчас идёт:\n• Ответы менеджера: запускает тесты$/) })
     expect(String(sent(value.api).at(-1)?.body['text'])).not.toContain('vitest')
   })
 })
@@ -1264,7 +1264,7 @@ describe('runtime: Telegram status from Manager views', () => {
     await vi.waitFor(() => expect(statuses()).toHaveLength(1))
     const first = statuses()[0]
     expect(first?.body).toMatchObject({ chat_id: 81, disable_notification: true })
-    expect(String(first?.body['text'])).toMatch(/^Пока жду, вот что сейчас идёт:\n• Почини тесты логина: запускает тесты\nОбновлено в \d\d:\d\d UTC$/)
+    expect(String(first?.body['text'])).toMatch(/^Пока жду, вот что сейчас идёт:\n• Почини тесты логина: запускает тесты$/)
 
     const calls = progress.mock.calls.length
     for (let at = 0; at < 3; at += 1) telegramProgress(value.telegram, view)
