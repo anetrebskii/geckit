@@ -65,6 +65,9 @@ jobs:
       - name: Install both Mac service addons
         if: matrix.platform == 'mac'
         run: node scripts/prepare-mac-service-addons.cjs
+      - name: Verify Windows service recovery
+        if: matrix.platform == 'win'
+        run: npx vitest run test/service-recovery.test.ts test/desktop-service-client.test.ts test/rpc.test.ts --maxWorkers=2
       - run: npm run build
       - name: Package unsigned
         run: |
