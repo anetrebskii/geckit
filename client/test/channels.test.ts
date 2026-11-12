@@ -284,7 +284,7 @@ class FakeSocket {
   emit(envelope: object): void { this.listeners.message?.({ data: JSON.stringify(envelope) }) }
 }
 
-function slackHarness(manager = true, history: { ts: string; user?: string; text: string; files?: { name: string; permalink: string }[] }[] = []) {
+function slackHarness(manager = true, history: { ts: string; user?: string; text: string; files?: { name: string; permalink: string }[] }[] = [], allow: readonly string[] = ['U1', 'U2'], people: { readonly [user: string]: object } = {}) {
   const posted: { channel: string; thread_ts?: string; text: string }[] = []
   const updated: { channel: string; ts?: string; text: string }[] = []
   const deleted: { channel: string; ts: string }[] = []
@@ -297,7 +297,7 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
   const context = {
     id: 'channel:slack',
     log: { path: '', write: () => undefined },
-    config: () => ({ allow: ['U1', 'U2'], checkSecrets: true }),
+    config: () => ({ allow, checkSecrets: true }),
     secret: (key: string) => ({ botToken: 'xoxb-test', appToken: 'xapp-test' } as { readonly [key: string]: string })[key],
     store: { get: (key: string) => store.get(key), set: (key: string, value: unknown) => { if (value === undefined) store.delete(key); else store.set(key, value) } },
     status: () => undefined,
@@ -326,7 +326,7 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
     if (method === 'chat.update') updated.push(body)
     if (method === 'chat.delete') deleted.push({ channel: body.channel, ts: body.ts ?? '' })
     if (method === 'reactions.add' || method === 'reactions.remove') reactions.push([method, body as unknown as { channel: string; timestamp: string; name: string }])
-    const reply = method === 'auth.test' ? { ok: true, user_id: 'B1' } : method === 'conversations.replies' ? { ok: true, messages: history.filter((one) => body.oldest === undefined || !after(body.oldest, one.ts)) } : method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : method === 'chat.postMessage' ? { ok: true, ts: `9.${String(posted.length)}` } : { ok: true }
+    const reply = method === 'auth.test' ? { ok: true, user_id: 'B1', team_id: 'T1' } : method === 'conversations.replies' ? { ok: true, messages: history.filter((one) => body.oldest === undefined || !after(body.oldest, one.ts)) } : method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { team_id: 'T1', ...people[body.user ?? ''], profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : method === 'chat.postMessage' ? { ok: true, ts: `9.${String(posted.length)}` } : { ok: true }
     return { json: async () => reply }
   }) as unknown as typeof globalThis.fetch
   const channel = createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] })
@@ -334,6 +334,24 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
   return { channel, context, makeChannel: () => createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] }), event, settle, posted, updated, deleted, reactions, sent, answered, opened, watchers, store }
 }
+
+it('Slack: with nobody listed, answers every full member of its workspace and no guest, outsider or bot', async () => {
+  const run = slackHarness(true, [], [], { U3: { is_restricted: true }, U4: { is_ultra_restricted: true }, U5: { team_id: 'T2' }, U6: { is_bot: true }, U7: { deleted: true } })
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U2', channel: 'C1', ts: '3.0', text: '<@B1> hey' })
+  await vi.waitFor(() => expect(run.sent.map(([id]) => id)).toEqual(['channel:slack:C1:3.0']))
+  for (const [index, user] of ['U3', 'U4', 'U5', 'U6', 'U7'].entries()) run.event({ type: 'app_mention', user, channel: 'C1', ts: `${String(4 + index)}.0`, text: '<@B1> hey' })
+  await vi.waitFor(() => expect(run.posted.filter((one) => one.text.includes('GeckIt lets me work for'))).toHaveLength(5))
+  expect(run.sent).toHaveLength(1)
+})
+
+it('Slack: with people listed, answers only them', async () => {
+  const run = slackHarness(true, [], ['U1'])
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U2', channel: 'C1', ts: '3.0', text: '<@B1> hey' })
+  await vi.waitFor(() => expect(run.posted.at(-1)?.text).toContain('GeckIt lets me work for'))
+  expect(run.sent).toEqual([])
+})
 
 it('Slack: one message says what Manager does while it prepares an answer, edited in place and deleted when the answer comes', async () => {
   const run = slackHarness()
