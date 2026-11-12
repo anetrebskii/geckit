@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -153,6 +154,13 @@ const accessSetup = async () => {
   await tick()
   return { ...setupResult, driver }
 }
+
+it('lists and finds nothing, without failing, where Codex is not installed', async () => {
+  const codex = new CodexSessions(() => spawn('geckit-test-no-such-codex', [], { stdio: 'pipe' }))
+  await expect(codex.list(['/tmp/project'])).resolves.toEqual([])
+  await expect(codex.search(['/tmp/project'], 'login')).resolves.toEqual([])
+  codex.dispose()
+})
 
 describe('conversation Computer Use access', () => {
   it.each(['accept', 'decline', 'cancel'] as const)('keeps ordinary %s one-time in Auto mode', async (action) => {

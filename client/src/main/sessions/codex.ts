@@ -37,6 +37,9 @@ interface Asked {
   rememberKey?: string
 }
 
+/** Whether Codex could not be started because its program is not on this computer. */
+export const codexMissing = (error: unknown): boolean => error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT' && error.message.startsWith('spawn ')
+
 export class CodexSessions {
   readonly #launch: () => Held
   readonly #changed: ((account: ClaudeAccount) => void) | undefined
@@ -215,7 +218,14 @@ export class CodexSessions {
 
   async list(roots: readonly string[]): Promise<(Found & { root: string; created?: number; importedFrom?: string; actualReasoning?: ReasoningEffort })[]> {
     if (roots.length === 0) return []
-    const rpc = await this.#connection()
+    let rpc: CodexRpc
+    try {
+      rpc = await this.#connection()
+    } catch (error) {
+      // Codex not installed on this computer has no conversations, not a failure.
+      if (codexMissing(error)) return []
+      throw error
+    }
     const rows: (Found & { root: string; created?: number; importedFrom?: string; actualReasoning?: ReasoningEffort })[] = []
     const imports = await readFile(join(process.env['CODEX_HOME'] ?? join(homedir(), '.codex'), 'external_agent_session_imports.json'), 'utf8').then((text) => JSON.parse(text) as { records: { source_path: string; imported_thread_id: string }[] }).catch(() => undefined)
     const imported = new Map((imports?.records ?? []).filter((one) => one.source_path.includes('/.claude/projects/')).map((one) => [one.imported_thread_id, basename(one.source_path, '.jsonl')]))
