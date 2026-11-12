@@ -21,7 +21,6 @@ export function testAccount(name: string, folder = defaultFolder()): TestAccount
 export function saveTestAccount(name: string, note: string, folder = defaultFolder()): TestAccount {
   if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(name)) throw new Error('Name the profile with lowercase letters, digits and hyphens, such as github-work.')
   const trimmed = note.trim().replace(/\s+/g, ' ').slice(0, 120)
-  if (trimmed === '') throw new Error('Say which account the profile is for, such as --note "GitHub as alex".')
   const account: TestAccount = { name, note: trimmed, at: testAccount(name, folder)?.at ?? Date.now() }
   mkdirSync(join(browserStateFolder(folder), 'accounts'), { recursive: true, mode: 0o700 })
   const file = accountFile(name, folder)

@@ -1,0 +1,1 @@
+{"extends":"../../../tsconfig.web.json","compilerOptions":{"composite":false,"types":["node"]},"include":["./*.ts","./*.tsx","../../../src/renderer/src/geckit.d.ts","../../../src/renderer/src/remote/Computer.tsx"]}

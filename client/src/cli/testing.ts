@@ -1,23 +1,27 @@
 import { spawn } from 'node:child_process'
-import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
+import { closeSync, createWriteStream, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
-import type { TestBrowsersState, ViewInput } from '../shared/api'
+import type { TestBrowsersState, ViewFrame, ViewInput } from '../shared/api'
 import background from '../../extension/background.js?raw'
 import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browser'
 import { signInLink } from './live-view'
-import { acquireTestLock, browserConversation, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TestTabOwners } from './browser-lifecycle'
+import { cursorPath, type CursorPoint } from './cursor'
+import { acquireTestLock, browserConversation, browserStateFolder, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TestTabOwners } from './browser-lifecycle'
 
 /** Where test browsers live: Chrome for Testing itself under chrome/, each profile under profiles/<name>/. */
 export const testingFolder = (root: string = homedir()): string => join(root, '.geckit', 'chrome-for-testing')
-const profilesFolder = (root?: string): string => join(testingFolder(root), 'profiles')
+export const profilesFolder = (root?: string): string => join(testingFolder(root), 'profiles')
 const chromeFolder = (root?: string): string => join(testingFolder(root), 'chrome')
 const downloadFile = (root?: string): string => join(testingFolder(root), 'download.json')
 export const testLog = (name: string, root?: string): string => join(testingFolder(root), `${name}.log`)
 
-export const TEST_PREFIX = 'test:'
-export const testName = (label: string): string | undefined => label.startsWith(TEST_PREFIX) ? label.slice(TEST_PREFIX.length) : undefined
+export const TEST_PREFIX = 'geckit:'
+export const TEST_BROWSER = 'geckit'
+/** The earlier spelling, test and test:<name>, still accepted wherever a profile is named. */
+export const currentProfile = (value: string): string => value === 'test' ? TEST_BROWSER : value.startsWith('test:') ? `${TEST_PREFIX}${value.slice(5)}` : value
+export const testName = (label: string): string | undefined => { const current = currentProfile(label); return current.startsWith(TEST_PREFIX) ? current.slice(TEST_PREFIX.length) : undefined }
 export const validTestName = (name: string): boolean => /^[a-z0-9][a-z0-9-]{0,39}$/.test(name)
 
 const LIST = 'https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json'
@@ -269,6 +273,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   const sessions = new Map<string, string>()
   const worlds = new Map<string, number>()
   const held = new Map<number, Record<string, unknown>>()
+  const positions = new Map<string, CursorPoint>()
   cdp.on(({ method, params }) => {
     if (method === 'Target.targetCreated' || method === 'Target.targetInfoChanged') { track(params['targetInfo'] as TargetInfo); say() }
     if (method === 'Target.targetDestroyed') {
@@ -277,6 +282,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       owners.tabs.delete(params['targetId'] as string)
       sessions.delete(params['targetId'] as string)
       worlds.delete(params['targetId'] as string)
+      positions.delete(params['targetId'] as string)
       say()
     }
     if (method === 'Target.detachedFromTarget' && typeof params['targetId'] === 'string') { sessions.delete(params['targetId']); worlds.delete(params['targetId']) }
@@ -363,6 +369,29 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     if (!click) return
     for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 1 })
   }
+  const moveTo = async (id: number | undefined, ref: string | undefined, kind: 'click' | 'hover' | 'type' | 'scroll'): Promise<string> => {
+    const target = targetOf(id)
+    const at = await inPage(id, 'pageCenter', ref) as CursorPoint & { label: string }
+    const viewport = await evaluate(target, () => `({ width: Math.min(innerWidth, document.documentElement.clientWidth), height: Math.min(innerHeight, document.documentElement.clientHeight), reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches })`) as Pick<ViewFrame, 'width' | 'height'> & { reducedMotion: boolean }
+    const previous = positions.get(target) ?? { x: 0, y: 0 }
+    const from = { x: Math.max(0, Math.min(viewport.width - 1, previous.x)), y: Math.max(0, Math.min(viewport.height - 1, previous.y)) }
+    const to = { x: Math.max(0, Math.min(viewport.width - 1, at.x)), y: Math.max(0, Math.min(viewport.height - 1, at.y)) }
+    const path = viewport.reducedMotion ? [{ ...to, ms: 0 }] : cursorPath(from, to, viewport)
+    const send = await sender(id)
+    await inPage(id, 'pagePointer', ref, 'move', from)
+    await send('Emulation.setFocusEmulationEnabled', { enabled: true })
+    const started = performance.now()
+    for (const point of path) {
+      const remaining = point.ms - (performance.now() - started)
+      if (remaining > 0) await wait(remaining)
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y })
+      positions.set(target, { x: point.x, y: point.y })
+    }
+    const end = positions.get(target) ?? at
+    await inPage(id, 'pagePointer', ref, kind, end)
+    if (kind === 'click') for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: end.x, y: end.y, button: 'left', clickCount: 1 })
+    return at.label
+  }
   const withoutPointer = async <T>(id: number | undefined, keep: boolean | undefined, steps: () => Promise<T>): Promise<T> => {
     if (!keep) await inPage(id, 'pageOverlay', false)
     try { return await steps() } finally { if (!keep) await inPage(id, 'pageOverlay', true).catch(() => undefined) }
@@ -395,20 +424,16 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       case 'read': return inPage(id, 'pageRead')
       case 'style': return inPage(id, 'pageStyle', request.ref)
       case 'click': {
-        await inPage(id, 'pagePointer', request.ref, 'click')
-        if (!request.real) return inPage(id, 'pageClick', request.ref)
-        const at = await inPage(id, 'pageCenter', request.ref) as { x: number; y: number; label: string }
-        await mouse(await sender(id), at, true)
-        return { clicked: at.label }
+        return { clicked: await moveTo(id, request.ref ?? undefined, 'click') }
       }
       case 'hover': {
-        await inPage(id, 'pagePointer', request.ref, 'hover')
-        const at = await inPage(id, 'pageCenter', request.ref) as { x: number; y: number; label: string }
-        await mouse(await sender(id), at, false)
-        return { hovered: at.label }
+        return { hovered: await moveTo(id, request.ref ?? undefined, 'hover') }
       }
-      case 'type': await inPage(id, 'pagePointer', request.ref, 'type'); return inPage(id, 'pageType', request.ref, request.text)
-      case 'scroll': await inPage(id, 'pagePointer', request.ref ?? null, 'scroll'); return inPage(id, 'pageScroll', request.ref ?? null, request.by)
+      case 'type': await moveTo(id, request.ref ?? undefined, 'type'); return inPage(id, 'pageType', request.ref, request.text)
+      case 'scroll':
+        if (request.ref != null) await moveTo(id, request.ref, 'scroll')
+        else await inPage(id, 'pagePointer', null, 'scroll')
+        return inPage(id, 'pageScroll', request.ref ?? null, request.by)
       case 'key': await inPage(id, 'pagePointer', null, 'key'); return { pressed: await press(await sender(id), request.key ?? '') }
       case 'eval': {
         const done = await (await sender(id))('Runtime.evaluate', { expression: request.code, awaitPromise: true, returnByValue: true, userGesture: true }) as { result: { value?: unknown; type: string }; exceptionDetails?: { text: string; exception?: { description?: string } } }
@@ -590,9 +615,9 @@ export function serveTestLaunches(executable: string, script: string, folder: st
     for (const file of files.filter((one) => one.endsWith('.account'))) {
       const source = join(folder, file)
       try {
-        const asked = JSON.parse(readFileSync(source, 'utf8')) as { name: string; note: string }
+        const asked = JSON.parse(readFileSync(source, 'utf8')) as { name: string; note: string; create?: boolean }
         let error: string | undefined
-        try { makeTestAccount(asked.name, asked.note, root) } catch (failed) { error = failed instanceof Error ? failed.message : String(failed) }
+        try { makeTestAccount(asked.name, asked.note, root, asked.create === true) } catch (failed) { error = failed instanceof Error ? failed.message : String(failed) }
         tell(source, error === undefined ? { ok: true } : { ok: false, error })
       } catch { /* A request left half written is read again next time. */ continue }
       rmSync(source, { force: true })
@@ -651,21 +676,40 @@ export function testBrowsersState(root?: string): TestBrowsersState {
     supported: platformName() !== undefined,
     ...(chrome === undefined ? {} : { version: chrome.version }),
     ...(fetching === undefined ? {} : { download: { received: fetching.received, total: fetching.total, ...(fetching.error === undefined ? {} : { error: fetching.error }) } }),
-    profiles: names.sort().map((name) => { const note = testAccount(name)?.note; return { name, open: open.has(name), ...(note === undefined ? {} : { note }) } }),
+    profiles: names.sort().map((name) => { const note = testAccount(name, join(root ?? homedir(), '.geckit', 'browser'))?.note; return { name, open: open.has(name), ...(note === undefined || note === '' ? {} : { note }) } }),
   }
 }
 
 /** Throws away a test profile's folder, its sign-ins with it; the browser must be closed first. */
 export function deleteTestProfile(name: string, root?: string): void {
   if (!validTestName(name)) return
-  rmSync(join(profilesFolder(root), name), { recursive: true, force: true })
-  rmSync(testLog(name, root), { force: true })
-  forgetTestAccount(name)
+  const folder = join(root ?? homedir(), '.geckit', 'browser')
+  const unlock = acquireTestLock(name, folder)
+  if (unlock === undefined) throw new Error(`${TEST_PREFIX}${name} is in use. Close its browser and try again.`)
+  try {
+    rmSync(join(profilesFolder(root), name), { recursive: true, force: true })
+    rmSync(testLog(name, root), { force: true })
+    forgetTestAccount(name, folder)
+  } finally { unlock() }
 }
 
 /** Makes a test profile for one account, or changes what its note says; the browser opens only when asked. */
-export function makeTestAccount(name: string, note: string, root?: string): void {
+export function makeTestAccount(name: string, note: string, root?: string, create = false): void {
   if (!validTestName(name)) throw new Error('Name the profile with lowercase letters, digits and hyphens, such as github-work.')
-  saveTestAccount(name, note)
-  mkdirSync(join(profilesFolder(root), name), { recursive: true })
+  const folder = join(root ?? homedir(), '.geckit', 'browser')
+  const unlock = acquireTestLock(name, folder)
+  if (unlock === undefined) throw new Error(`${TEST_PREFIX}${name} is in use. Close its browser and try again.`)
+  const directory = join(profilesFolder(root), name)
+  let created = false
+  try {
+    const present = (path: string): boolean => { try { lstatSync(path); return true } catch (error) { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false; throw error } }
+    const exists = present(directory)
+    if (create && (exists || present(join(browserStateFolder(folder), 'accounts', `${name}.json`)))) throw new Error(`A profile named ${name} already exists. Choose another name.`)
+    if (exists && !lstatSync(directory).isDirectory()) throw new Error('The profile path is not a directory.')
+    if (!exists) { mkdirSync(profilesFolder(root), { recursive: true, mode: 0o700 }); mkdirSync(directory, { mode: 0o700 }); created = true }
+    saveTestAccount(name, note, folder)
+  } catch (error) {
+    if (created) rmSync(directory, { recursive: true, force: true })
+    throw error
+  } finally { unlock() }
 }

@@ -12,8 +12,8 @@ A test browser is Chrome for Testing that GeckIt starts and drives itself. The n
 
 ### Path to a result
 
-- **Entry and result:** ask a conversation to check a page; it runs `geckit browser start test`, then `open <url> --profile test`. GeckIt chooses the registered project profile. The command returns a tab owned by that conversation.
-- **No ordinary profile:** when `browser profiles` reports no ordinary Chrome profiles or none has GeckIt Browser, the assistant runs `start test` and then `open <url> --profile test`, without asking for manual Chrome or extension installation. On macOS and Linux, GeckIt downloads Chrome for Testing on first use if needed and reuses the cached copy. A closed ordinary profile with the extension can be opened with `start <profile>`. An unavailable integration, pause or permission denial still stops the affected action; missing profiles alone do not. A fresh test profile has no account sign-ins; account work follows the named-profile sign-in flow in [remote-browser-profiles.md](remote-browser-profiles.md).
+- **Entry and result:** ask a conversation to check a page; it runs `geckit browser start geckit`, then `open <url> --profile geckit`. GeckIt chooses the registered project profile. The command returns a tab owned by that conversation.
+- **No ordinary profile:** when `browser profiles` reports no ordinary Chrome profiles or none has GeckIt Browser, the assistant runs `start geckit` and then `open <url> --profile geckit`, without asking for manual Chrome or extension installation. On macOS and Linux, GeckIt downloads Chrome for Testing on first use if needed and reuses the cached copy. A closed ordinary profile with the extension can be opened with `start <profile>`. An unavailable integration, pause or permission denial still stops the affected action; missing profiles alone do not. A fresh test profile has no account sign-ins; account work follows the named-profile sign-in flow in [remote-browser-profiles.md](remote-browser-profiles.md).
 - **Readiness:** Chrome through GeckIt is enabled and Chrome for Testing is available or downloads successfully. A launch request alone is not a ready browser: readiness is a responding driver and a returned owned tab.
 - **Choices:** ordinary project tests need no name. A person can explicitly configure named profiles for separate accounts in `~/.geckit/browser-state/test-project-profiles.json`, mapping a registered project folder to an array of allowed profile names (a single string also overrides that project's default); this remains an exception, not a naming decision delegated to the assistant.
 - **Shape:** existing conversation commands and the existing Done action form the whole path. No new screen or setup wizard is needed because project registration already supplies the default.
@@ -28,11 +28,11 @@ sequenceDiagram
   participant S as GeckIt service
   participant D as Test browser driver
   participant B as Chrome for Testing
-  C->>F: start test (registered project, .launch file)
+  C->>F: start geckit (registered project, .launch file)
   S->>D: starts it, outside any sandbox
   D->>B: downloads it once, starts it on a pipe
   D->>F: hosts/<pid>.json, persistent project label
-  C->>F: open <url> --profile test (owned .ask file)
+  C->>F: open <url> --profile geckit (owned .ask file)
   D->>B: the command over the debugging protocol
   D->>F: the answer (.told)
 ```
@@ -43,8 +43,8 @@ The conversation never starts Chrome itself: Codex runs with the network off, an
 
 | Surface | What appears |
 | --- | --- |
-| `geckit browser profiles` | test profiles under the Chrome ones: `test:<name>   Chrome for Testing   open, 2 tabs` or `closed: start opens it` |
-| `geckit browser start test` | atomically starts or reuses this registered project's browser; simultaneous requests share one launch |
+| `geckit browser profiles` | test profiles under the Chrome ones: `geckit:<name>   Chrome for Testing   open, 2 tabs` or `closed: start opens it` |
+| `geckit browser start geckit` | atomically starts or reuses this registered project's browser; simultaneous requests share one launch |
 | `geckit browser stop test` in a conversation | explains that moving its card to Done releases its tabs; it cannot close another owner's browser |
 | Conversation card moves to Done | automatically releases its owned test tabs, without another assistant decision |
 | Explicit named profile configuration | keeps separate account profiles possible; ordinary project commands need no name |
@@ -94,7 +94,7 @@ stateDiagram-v2
 
 | From | Event | To | What the person sees |
 | --- | --- | --- | --- |
-| Closed | conversation runs `start test` | Starting | one project window opens; a download may be reported |
+| Closed | conversation runs `start geckit` | Starting | one project window opens; a download may be reported |
 | Starting | another conversation in the same project requests a test, automatically | Starting | nothing extra; one launch is in progress |
 | Starting | driver responds, automatically | Owned | commands return owned tabs |
 | Starting | final owning card moves to Done, automatically | Closed | pending ownership is cancelled; no browser is left running for a completed task |
@@ -111,7 +111,7 @@ stateDiagram-v2
 
 ## What stays silent
 
-- Project identity, ownership records and launch locks live in `~/.geckit/browser-state`, outside the conversation-writable request folder: backend policy, not choices for the assistant. `--profile test` resolves the conversation's registered project; the current working directory and assistant-invented names do not select another project. Ordinary Chrome remains the default when it is connected.
+- Project identity, ownership records and launch locks live in `~/.geckit/browser-state`, outside the conversation-writable request folder: backend policy, not choices for the assistant. `--profile geckit` resolves the conversation's registered project; the current working directory and assistant-invented names do not select another project. Ordinary Chrome remains the default when it is connected.
 - Releasing one owner while others remain: no notification; closing only that owner's tabs is sufficient feedback.
 - Old profiles without ownership: no migration or inferred owner; automatic cleanup cannot safely decide whose window to close.
 - Tab groups and the green dot: a test browser is all GeckIt's, nothing in it needs marking.
@@ -129,16 +129,16 @@ stateDiagram-v2
 
 - Settings heading: "Test browsers"
 - Settings line: "Chrome for Testing, started and driven by GeckIt, for pages Chrome closes to extensions and for work away from your own tabs. Each profile keeps its sign-ins."
-- Normal command: "geckit browser start test".
-- Normal page command: "geckit browser open <url> --profile test".
-- Ready: "test:<project-profile> is open. Use open <url> --profile test; GeckIt closes your tabs when this card reaches Done."
-- Foreign conversation tab: "This tab belongs to another conversation. Open a separate tab with --profile test."
+- Normal command: "geckit browser start geckit".
+- Normal page command: "geckit browser open <url> --profile geckit".
+- Ready: "geckit:<project-profile> is open. Use open <url> --profile geckit; GeckIt closes your tabs when this card reaches Done."
+- Foreign conversation tab: "This tab belongs to another conversation. Open a separate tab with --profile geckit."
 - Foreign project or unowned legacy tab: "This test tab belongs to another project or an unowned legacy browser."
 - Completed conversation: "This conversation is Done. Move its card back to In progress before using test browsers."
 - Conversation missing from registry: "This conversation is not registered with GeckIt. Open its project in GeckIt before starting a test browser."
 - Shared stop request: "Move this conversation card to Done to release its test tabs; other conversations keep their browser."
 - Download and startup failures retain their existing reason text; no new board notification is added.
-- Delete confirmation: "Delete test:<name>? Its sign-ins and history go with it."
+- Delete confirmation: "Delete geckit:<name>? Its sign-ins and history go with it."
 
 ## Edges
 
@@ -165,7 +165,7 @@ stateDiagram-v2
 ## Decisions
 
 - Driver in the CLI process, started by the service: chosen over the CLI starting Chrome itself, which fails inside Codex's sandbox.
-- **2026-11-05 reversal:** assistant-chosen `test:<name>` was the default and created Dock clutter. `test` now means the backend-selected persistent project profile. Explicit user-controlled named account profiles remain available; arbitrary new assistant-chosen profiles are not the normal path.
+- **2026-11-05 reversal:** assistant-chosen `geckit:<name>` was the default and created Dock clutter. `test` now means the backend-selected persistent project profile. Explicit user-controlled named account profiles remain available; arbitrary new assistant-chosen profiles are not the normal path.
 - Shared project browser over one browser per conversation: fewer windows while per-conversation tab ownership prevents cross-task control.
 - Done triggers cleanup over asking the assistant to stop: the board is the lifecycle authority.
 - Keep existing unknown windows over inferred migration: preserves running sessions and sign-ins.
@@ -195,6 +195,10 @@ This updates the existing test-browser feature rather than adding a new screen. 
 - **Unavailable in the running copy:** installed service, currently active conversations and existing test drivers still run their loaded code and instructions. No restart, publication or deployment was performed. The lifecycle applies when a later authorized app/service load picks up this source.
 
 No library entry matched this backend lifecycle task.
+
+## Browser profile management update - 2026-11-12
+
+The current working-tree Settings section is renamed "Web Browser". Profile management leads the page; Chrome extension connection/setup follows below. The approved replacement profile flow and verification scope are in [browser-profile-management.md](browser-profile-management.md). Earlier Integrations references above describe the original design.
 
 ## Test-browser launch update - 2026-11-12
 

@@ -77,6 +77,7 @@ export async function nodeDial(pairing: RemoteSignal): Promise<RemoteChannel> {
       channel.onClosed(() => fail(new Error('Connection closed.')))
       setTimeout(() => fail(new Error('The computer did not answer.')), 45_000).unref()
     })
+    opened.catch(() => undefined)
     await gathered
     const offer = peer.localDescription()?.sdp
     if (offer === undefined) throw new Error('No connection offer.')

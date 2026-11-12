@@ -137,7 +137,7 @@ describe('what Claude Code is told about GeckIt', () => {
       'browser profiles` reports no ordinary Chrome profiles, or none has GeckIt Browser',
       'Missing Chrome profiles do not block this fallback on macOS or Linux.',
       'GeckIt automatically downloads Chrome for Testing on first use if needed and reuses it afterward',
-      'open <url> --profile test',
+      'open <url> --profile geckit',
       'Native provider permissions still apply.',
       'do not bypass a denial, change permissions, extract credentials or switch profiles to evade a restriction.',
     ]

@@ -743,7 +743,7 @@ function pageScroll(ref, by) {
   return { y: Math.round(window.scrollY), height: document.documentElement.scrollHeight, viewport: window.innerHeight }
 }
 
-async function pagePointer(ref, kind) {
+async function pagePointer(ref, kind, position) {
   const SETTLE = 180
   const TRAVEL = 360
   const REST = 3000
@@ -759,7 +759,7 @@ async function pagePointer(ref, kind) {
       .pointer { position: fixed; left: 0; top: 0; width: 20px; height: 24px; margin: -2px 0 0 -2px; opacity: 0; transition: transform var(--travel) var(--ease), opacity var(--settle) var(--ease); }
       .ring { position: fixed; left: 0; top: 0; width: 28px; height: 28px; margin: -14px 0 0 -14px; border: 2px solid var(--accent); border-radius: 50%; opacity: 0; }
       .on { opacity: 1; }
-      :host(.still) .pointer { transition: opacity var(--settle) var(--ease); }
+      :host(.still) .pointer, :host(.native) .pointer { transition: opacity var(--settle) var(--ease); }
       @keyframes ring { from { opacity: 0.9; transform: var(--at) scale(0.4); } to { opacity: 0; transform: var(--at) scale(1.4); } }
       @keyframes ring-still { from { opacity: 0.9; transform: var(--at); } to { opacity: 0; transform: var(--at); } }
     </style>
@@ -768,15 +768,37 @@ async function pagePointer(ref, kind) {
     document.documentElement.append(host)
     overlay = { host, root, x: innerWidth / 2, y: innerHeight - 40, timer: 0 }
     window.geckitPointer = overlay
+    document.addEventListener('mousemove', (event) => {
+      if (!overlay.tracking || !overlay.host.isConnected) return
+      overlay.x = event.clientX
+      overlay.y = event.clientY
+      root.querySelector('.pointer').style.transform = `translate(${overlay.x}px, ${overlay.y}px)`
+    }, { capture: true, passive: true })
   }
   const { root } = overlay
   root.host.classList.toggle('still', still)
+  root.host.classList.toggle('native', position !== undefined)
+  overlay.tracking = position !== undefined
   const edge = root.querySelector('.edge')
   const pointer = root.querySelector('.pointer')
   const ring = root.querySelector('.ring')
   clearTimeout(overlay.timer)
   edge.classList.add('on')
   const rest = () => { overlay.timer = setTimeout(() => { edge.classList.remove('on'); pointer.classList.remove('on') }, REST) }
+  if (position !== undefined) {
+    overlay.x = position.x
+    overlay.y = position.y
+    pointer.classList.add('on')
+    pointer.style.transform = `translate(${position.x}px, ${position.y}px)`
+    if (kind === 'click') {
+      ring.style.setProperty('--at', `translate(${position.x}px, ${position.y}px)`)
+      ring.style.animation = 'none'
+      ring.getBoundingClientRect()
+      ring.style.animation = `${still ? 'ring-still' : 'ring'} ${SETTLE}ms cubic-bezier(0.2, 0.8, 0.3, 1)`
+    }
+    rest()
+    return {}
+  }
   if (ref == null) { rest(); return {} }
   const find = (where) => {
     const hit = where.querySelector(`[data-geckit-ref="${ref}"]`)

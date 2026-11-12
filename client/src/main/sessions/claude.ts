@@ -13,6 +13,7 @@ import type { Driver, Heard, Signal } from './heard'
 import { questionsFromClaude } from './wording'
 import { browserBridgeOn } from '../../cli/browser'
 import { browserPluginFolder } from '../guide'
+import { fill, PROMPTS } from '../../prompts/prompts'
 
 /**
  * One conversation with Claude Code, held by one process.
@@ -66,7 +67,7 @@ export function sourceArgs(): string[] {
   const command = process.env['GECKIT_SOURCE_CLI']
   if (command === undefined) return []
   const guide = process.env['GECKIT_SOURCE_GUIDE']
-  return ['--append-system-prompt', `This conversation runs in GeckIt started from its source, not the installed app. Wherever GECKIT.md names ${command.replace(/-local$/, '')}, use ${command} instead: the other one reaches only the installed GeckIt.${guide === undefined ? '' : ` Read ${guide} for this copy's current GeckIt instructions and employee lookup rules.`}`]
+  return ['--append-system-prompt', `${fill(PROMPTS.source.claude, { installed: command.replace(/-local$/, ''), command })}${guide === undefined ? '' : ` ${fill(PROMPTS.source.guide, { guide })}`}`]
 }
 
 const userContent = (text: string, images: NonNullable<SessionMessage['images']> = [], before: readonly string[] = []) =>

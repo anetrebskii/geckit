@@ -18,7 +18,9 @@ describe('account profiles', () => {
   it('keeps a note per profile and lets any registered conversation use it by name', () => {
     const folder = temporary()
     registerBrowserConversation('a', '/shop', false, folder)
-    expect(() => saveTestAccount('github-work', '   ', folder)).toThrow(/which account/)
+    saveTestAccount('plain', '   ', folder)
+    expect(testAccount('plain', folder)?.note).toBe('')
+    expect(conversationTestName('a', folder, 'plain')).toBe('plain')
     expect(() => saveTestAccount('GitHub', 'GitHub as alex', folder)).toThrow(/lowercase/)
     const before = conversationTestName('a', folder, 'github-work')
     expect(before).not.toBe('github-work')

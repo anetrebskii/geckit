@@ -7,7 +7,7 @@ import { readPreferences } from '../core/configuration'
 import { service } from './service'
 import { readSettings } from './settings'
 import { readEmployees } from './employees'
-import { APP_BUILD_GUIDE, PROVIDER_BUILD_GUIDE } from '../shared/provider-build-guide'
+import { PROMPTS } from '../prompts/prompts'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { connect } from 'node:net'
 import { basename, join } from 'node:path'
@@ -401,8 +401,8 @@ export async function run(args: readonly string[]): Promise<string> {
     if (what === 'employees') return (await readEmployees(rest, data())).said
     if (what === 'browser') return (await browser(rest)).said
     if (what === 'instructions') {
-      if (rest[0] === undefined || rest[0] === 'providers') return PROVIDER_BUILD_GUIDE
-      if (rest[0] === 'app') return APP_BUILD_GUIDE
+      if (rest[0] === undefined || rest[0] === 'providers') return `${PROMPTS.build.provider}\n`
+      if (rest[0] === 'app') return `${PROMPTS.build.app}\n`
       throw new Error('Use geckit instructions providers or geckit instructions app.')
     }
     if (what === 'sessions') return await sessions(rest)

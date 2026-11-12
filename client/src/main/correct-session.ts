@@ -1,5 +1,6 @@
 import type { Answered } from '../shared/api'
 import type { Held } from './sessions/claude'
+import { PROMPTS } from '../prompts/prompts'
 
 /**
  * One `claude` holding every correction of a day, so a correction does not pay
@@ -14,8 +15,7 @@ export const PATIENCE = 90_000
 /** The model the session runs on when the Correct footer says Default. */
 export const CORRECT_MODEL = 'haiku'
 
-export const ALONE =
-  'Every message is a separate piece of text with its own instruction. Handle each one on its own, as if it were the first. Never refer to, compare with or draw on any earlier message or answer.'
+export const ALONE = PROMPTS.correct.alone
 
 export function correctArgs(model: string): string[] {
   return [

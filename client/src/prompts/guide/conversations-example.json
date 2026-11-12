@@ -1,0 +1,8 @@
+[
+  {
+    "project": "web",
+    "title": "Checkout button stays disabled after a failed payment",
+    "text": "In src/checkout/PayButton.tsx the button is disabled while a payment runs and never enabled again when the payment fails, so the buyer has to reload the page. Found while fixing the coupon field in another conversation; the failure can be forced with the card 4000 0000 0000 0002 on the test server. Enable the button again on failure and add a test beside PayButton.test.tsx. Done when that test passes and npm test is green.",
+    "goal": "a failed payment leaves the pay button enabled, and npm test passes"
+  }
+]

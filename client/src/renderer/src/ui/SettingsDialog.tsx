@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 
 import { ANYWHERE, BROWSER_STORE_URL, UPDATE_CHANNELS, appName, assistantsIn, channelLabel, profileOf } from '../../../shared/api'
 import { independentProviderInfo, instructionsFor, llmProviderInfo } from '../../../shared/providers'
@@ -13,8 +13,7 @@ import extensionIcon from '../../../../extension/icons/128.png'
 import { Picker } from './Menu'
 import { MOD, said } from './Shortcuts'
 import { Version } from './UpdateNotice'
-import { LiveView } from '../chat/LiveView'
-import type { LiveViewApi } from '../chat/LiveView'
+import { BrowserProfiles } from './BrowserProfiles'
 import { AddAssistantButton, AddLibrary, FailedLibraryRow, LibraryActions, LibraryUpdates, useLibraries } from './Libraries'
 import { Channels } from './Channels'
 import { VpnIpSettings } from './VpnIpSettings'
@@ -54,7 +53,7 @@ const SECTIONS: readonly { readonly value: Section; readonly label: string }[] =
   { value: 'general', label: 'General' },
   { value: 'vpn', label: 'VPN IP check' },
   { value: 'assistants', label: 'Assistants' },
-  { value: 'integrations', label: 'Integrations' },
+  { value: 'integrations', label: 'Web Browser' },
   { value: 'channels', label: 'Channels' },
   { value: 'profiles', label: 'Profiles' },
   { value: 'hosts', label: 'Hosts' },
@@ -114,7 +113,7 @@ export function SettingsDialog({
 
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') close()
+      if (event.key === 'Escape' && !event.defaultPrevented) close()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
@@ -257,7 +256,7 @@ function Assistants({ settings, change, assistantChat }: Part & { readonly assis
 function Integrations({ settings, change }: Part): React.JSX.Element {
   return (
     <section className="assistant-settings" aria-labelledby="integration-settings-title">
-      <h3 id="integration-settings-title">Integrations</h3>
+      <h3 id="integration-settings-title">Web Browser</h3>
       <ChromeBridge settings={settings} change={change} />
     </section>
   )
@@ -266,84 +265,18 @@ function Integrations({ settings, change }: Part): React.JSX.Element {
 
 const GB = (bytes: number): string => (bytes / 1e9).toFixed(1)
 
-const liveApi: LiveViewApi = {
-  start: (name, url, token) => window.geckit.browser.viewStart(name, url, token),
-  frame: (name) => window.geckit.browser.viewFrame(name),
-  input: (name, input) => window.geckit.browser.viewInput(name, input),
-  end: (name) => window.geckit.browser.viewEnd(name),
-}
-
-/** Test browsers: Chrome for Testing that GeckIt starts and drives, each profile kept by name with its sign-ins. */
-function TestBrowsers({ testing }: { readonly testing: BrowserBridgeState['testing'] | undefined }): React.JSX.Element | null {
-  const [asking, setAsking] = useState<string>()
-  const [busy, setBusy] = useState<string>()
-  const [signing, setSigning] = useState<string>()
-  const [making, setMaking] = useState(false)
-  const [name, setName] = useState('')
-  const [note, setNote] = useState('')
-  const [problem, setProblem] = useState('')
-  if (testing === undefined || !testing.supported) return null
-  const download = testing.download
-  const act = (name: string, run: () => Promise<void>): void => { setBusy(name); void run().finally(() => { setBusy(undefined); setAsking(undefined) }) }
-  return (
-    <div className="test-browsers">
-      <p className="test-browsers-title">Test browsers</p>
-      <p>Chrome for Testing, started and driven by GeckIt, for pages Chrome closes to extensions and for work away from your own tabs. Each profile keeps its sign-ins.</p>
-      {download?.error !== undefined ? <p>Chrome for Testing did not download: {download.error.replace(/\.$/, '')}.</p>
-        : download !== undefined ? (
-          <div>
-            <p>Downloading Chrome for Testing, {Math.round(download.received / 1e6)} of {Math.round(download.total / 1e6)} MB.</p>
-            <div className="progress"><span style={{ width: `${download.total === 0 ? 0 : Math.round((download.received / download.total) * 100)}%` }} /></div>
-          </div>
-        ) : testing.version === undefined ? <p>Chrome for Testing downloads the first time a test browser starts, about 200 MB.</p> : null}
-      {testing.profiles.length === 0 ? <p>None yet. An assistant makes one for an account with geckit browser profiles create &lt;name&gt;.</p> : (
-        <ul className="test-browsers-list">
-          {testing.profiles.map((one) => (
-            <li key={one.name} className="chrome-bridge-row">
-              {asking === one.name ? (
-                <>
-                  <span>Delete test:{one.name}? Its sign-ins and history go with it.</span>
-                  <span className="test-browsers-actions">
-                    <button type="button" className="quiet" onClick={() => setAsking(undefined)}>Cancel</button>
-                    <button type="button" className="quiet danger" disabled={busy === one.name} onClick={() => act(one.name, () => window.geckit.browser.deleteTest(one.name))}>Delete</button>
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span><code>test:{one.name}</code>{one.note === undefined ? null : <span className="test-browsers-note"> {one.note}</span>} {one.open ? 'open' : 'closed'}</span>
-                  <span className="test-browsers-actions">
-                    <button type="button" className="quiet" onClick={() => setSigning(one.name)}>Sign in</button>
-                    {one.open ? null : <button type="button" className="quiet" disabled={busy === one.name} onClick={() => act(one.name, () => window.geckit.browser.openTest(one.name))}>{busy === one.name ? 'Opening' : 'Open'}</button>}
-                    <button type="button" className="quiet" onClick={() => setAsking(one.name)}>Delete</button>
-                  </span>
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {making ? (
-        <form className="test-browsers-new" onSubmit={(event) => { event.preventDefault(); setProblem(''); void window.geckit.browser.account(name.trim(), note).then(() => { setMaking(false); setName(''); setNote('') }, (error: Error) => setProblem(error.message)) }}>
-          <input type="text" aria-label="Profile name" placeholder="Name, such as github-work" value={name} autoCapitalize="off" spellCheck={false} onChange={(event) => setName(event.target.value.toLowerCase())} />
-          <input type="text" aria-label="Account" placeholder="Account, such as GitHub as alex" value={note} onChange={(event) => setNote(event.target.value)} />
-          <button type="button" className="quiet" onClick={() => { setMaking(false); setProblem('') }}>Cancel</button>
-          <button type="submit" className="quiet" disabled={!/^[a-z0-9][a-z0-9-]{0,39}$/.test(name.trim()) || note.trim() === ''}>Create</button>
-        </form>
-      ) : <span><button type="button" className="quiet" onClick={() => setMaking(true)}>New account profile</button></span>}
-      {problem === '' ? null : <p role="alert">{problem}</p>}
-      {signing === undefined ? null : <LiveView name={signing} api={liveApi} {...(window.geckitRemoteComputer === undefined ? {} : { computer: window.geckitRemoteComputer.server.name })} onClose={() => setSigning(undefined)} />}
-    </div>
-  )
-}
-
-/** Chrome through GeckIt: the switch, and under it only what is not ready yet. */
 function ChromeBridge({ settings, change }: Part): React.JSX.Element {
   const [state, setState] = useState<BrowserBridgeState>()
   const [deleted, setDeleted] = useState(false)
+  const [stateProblem, setStateProblem] = useState('')
   const on = settings.chromeBridge
+  const refresh = useCallback(async (): Promise<void> => {
+    try { setState(await window.geckit.browser.state()); setStateProblem('') }
+    catch (error) { setStateProblem(error instanceof Error ? error.message : String(error)) }
+  }, [])
   useEffect(() => {
     let live = true
-    const look = (): void => { void window.geckit.browser.state().then((next) => { if (live) setState(next) }) }
+    const look = (): void => { void window.geckit.browser.state().then((next) => { if (live) { setState(next); setStateProblem('') } }, (error: Error) => { if (live) setStateProblem(error.message) }) }
     look()
     const timer = setInterval(look, 2_000)
     return () => { live = false; clearInterval(timer) }
@@ -356,53 +289,59 @@ function ChromeBridge({ settings, change }: Part): React.JSX.Element {
   const model = state?.model
   const remove = (): void => { void window.geckit.browser.deleteModel().then(() => { setDeleted(true); return window.geckit.browser.state() }).then(setState) }
   return (
-    <div className="assistant-options chrome-bridge">
-      <label className="assistant-option">
-        <span className="assistant-option-copy">
-          <span className="assistant-option-name"><Icon name="globe" size={14} /> Chrome through GeckIt</span>
-          <span className="assistant-option-description">{state?.supported === false ? 'Not on Windows yet.' : 'Codex and Claude work in your own Chrome, in the profiles and tabs you are signed in to, through the GeckIt Browser extension. On, their instructions say to use it for every Chrome task; off, that and the bridge are removed.'}</span>
-        </span>
-        <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Chrome through GeckIt" checked={on} disabled={!on && state?.supported === false} onChange={(event) => change({ chromeBridge: event.target.checked })} />
-      </label>
-      {state === undefined || !state.supported ? null : on ? (
-        <div className="chrome-bridge-status" aria-live="polite">
-          <div className="chrome-extension">
-            <img className="chrome-extension-icon" src={extensionIcon} alt="" width={28} height={28} />
-            <span className="chrome-extension-copy">
-              <span className="chrome-extension-name">GeckIt Browser</span>
-              <span className="chrome-extension-state"><span className={state.connected ? 'host-dot' : 'host-dot idle'} />{state.connected ? 'Connected to Chrome' : 'Not added to Chrome yet'}</span>
+    <div className="chrome-bridge">
+      <BrowserProfiles testing={state?.testing} refresh={refresh} enabled={on} />
+      {stateProblem === '' ? null : <p className="browser-profile-error" role="alert">{stateProblem}</p>}
+      <section className="browser-connection" aria-labelledby="browser-connection-title">
+        <h4 id="browser-connection-title">Browser connection</h4>
+        <div className="assistant-options">
+          <label className="assistant-option">
+            <span className="assistant-option-copy">
+              <span className="assistant-option-name"><Icon name="globe" size={14} /> Chrome through GeckIt</span>
+              <span className="assistant-option-description">{state?.supported === false ? 'Not on Windows yet.' : 'Codex and Claude work in your own Chrome, in the profiles and tabs you are signed in to, through the GeckIt Browser extension. On, their instructions say to use it for every Chrome task; off, that and the bridge are removed.'}</span>
             </span>
-            <a className="quiet" href={BROWSER_STORE_URL} target="_blank" rel="noreferrer">{state.connected ? 'Add to another profile' : 'Add to Chrome'}</a>
-          </div>
-          {state.connected ? null : (
-            <details className="chrome-extension-folder">
-              <summary>Install from a folder instead</summary>
-              <p>Open chrome://extensions, turn on Developer mode, press Load unpacked and choose this folder.</p>
-              <div className="chrome-bridge-folder">
-                <code title={state.folder}>{state.folder}</code>
-                <button type="button" className="quiet" onClick={() => { void window.geckit.browser.openFolder() }}>Open folder</button>
+            <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Chrome through GeckIt" checked={on} disabled={!on && state?.supported === false} onChange={(event) => change({ chromeBridge: event.target.checked })} />
+          </label>
+          {state === undefined || !state.supported ? null : on ? (
+            <div className="chrome-bridge-status" aria-live="polite">
+              <div className="chrome-extension">
+                <img className="chrome-extension-icon" src={extensionIcon} alt="" width={28} height={28} />
+                <span className="chrome-extension-copy">
+                  <span className="chrome-extension-name">GeckIt Browser</span>
+                  <span className="chrome-extension-state"><span className={state.connected ? 'host-dot' : 'host-dot idle'} />{state.connected ? 'Connected to Chrome' : 'Not added to Chrome yet'}</span>
+                </span>
+                <a className="quiet" href={BROWSER_STORE_URL} target="_blank" rel="noreferrer">{state.connected ? 'Add to another profile' : 'Add to Chrome'}</a>
               </div>
-            </details>
-          )}
-          {!state.modelServer ? <p>find matches words: this build has no search model.</p>
-            : model?.state === 'ready' ? <p>Search model ready.</p>
-            : model?.state === 'failed' ? (
-              <p className="chrome-bridge-row">The search model did not download: {model.error?.replace(/\.$/, "")}.<button type="button" className="quiet" onClick={() => { void window.geckit.browser.fetchModel() }}>Try again</button></p>
-            ) : model === undefined ? null : (
-              <div>
-                <p>Downloading the search model, {GB(model.received)} of {GB(model.total)} GB. Until it is here, find matches words.</p>
-                <div className="progress"><span style={{ width: `${model.total === 0 ? 0 : Math.round((model.received / model.total) * 100)}%` }} /></div>
-              </div>
-            )}
-          <TestBrowsers testing={state.testing} />
+              {state.connected ? null : (
+                <details className="chrome-extension-folder">
+                  <summary>Install from a folder instead</summary>
+                  <p>Open chrome://extensions, turn on Developer mode, press Load unpacked and choose this folder.</p>
+                  <div className="chrome-bridge-folder">
+                    <code title={state.folder}>{state.folder}</code>
+                    <button type="button" className="quiet" onClick={() => { void window.geckit.browser.openFolder() }}>Open folder</button>
+                  </div>
+                </details>
+              )}
+              {!state.modelServer ? <p>find matches words: this build has no search model.</p>
+                : model?.state === 'ready' ? <p>Search model ready.</p>
+                : model?.state === 'failed' ? (
+                  <p className="chrome-bridge-row">The search model did not download: {model.error?.replace(/\.$/, "")}.<button type="button" className="quiet" onClick={() => { void window.geckit.browser.fetchModel() }}>Try again</button></p>
+                ) : model === undefined ? null : (
+                  <div>
+                    <p>Downloading the search model, {GB(model.received)} of {GB(model.total)} GB. Until it is here, find matches words.</p>
+                    <div className="progress"><span style={{ width: `${model.total === 0 ? 0 : Math.round((model.received / model.total) * 100)}%` }} /></div>
+                  </div>
+                )}
+            </div>
+          ) : deleted ? (
+            <div className="chrome-bridge-status" aria-live="polite"><p>Search model deleted.</p></div>
+          ) : model?.state === 'ready' ? (
+            <div className="chrome-bridge-status">
+              <p className="chrome-bridge-row">The search model stays on this computer, {GB(model.total)} GB.<button type="button" className="quiet" onClick={remove}>Delete model</button></p>
+            </div>
+          ) : null}
         </div>
-      ) : deleted ? (
-        <div className="chrome-bridge-status" aria-live="polite"><p>Search model deleted.</p></div>
-      ) : model?.state === 'ready' ? (
-        <div className="chrome-bridge-status">
-          <p className="chrome-bridge-row">The search model stays on this computer, {GB(model.total)} GB.<button type="button" className="quiet" onClick={remove}>Delete model</button></p>
-        </div>
-      ) : null}
+      </section>
     </div>
   )
 }

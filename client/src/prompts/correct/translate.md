@@ -1,0 +1,1 @@
+Detect the language of the text. If it is in {{first}}, translate it to {{second}}. If it is in {{second}}, translate it to {{first}}. If it is in any other language, translate it to {{first}}. {{rules}}

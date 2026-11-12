@@ -18,10 +18,10 @@ An assistant can work on a site behind a sign-in, on this computer or a paired o
 | --- | --- |
 | `geckit computers` | The paired computers, by name. |
 | `geckit <command> --computer <name>` | Whatever the command says on that computer. |
-| `geckit browser profiles create <name> --note "<account>"` | `Made test:<name> for <account>. It is signed in to nothing yet: geckit browser signin <name> gives the person a link to sign in.` |
-| `geckit browser profiles note <name> "<account>"` | `test:<name> is now noted as <account>.` |
-| `geckit browser signin <name>` | The link, then: `Give the person this link. It opens in GeckIt paired with this computer, once, within 15 minutes, and shows test:<name> live so they sign in themselves. When they say they are done, run geckit browser signin <name> --done.` |
-| `geckit browser signin <name> --done` | `test:<name> is saved with its sign-in on this computer. Use it with --profile test:<name>.` |
+| `geckit browser profiles create <name> --note "<account>"` | `Made geckit:<name> for <account>. It is signed in to nothing yet: geckit browser signin <name> gives the person a link to sign in.` |
+| `geckit browser profiles note <name> "<account>"` | `geckit:<name> is now noted as <account>.` |
+| `geckit browser signin <name>` | The link, then: `Give the person this link. It opens in GeckIt paired with this computer, once, within 15 minutes, and shows geckit:<name> live so they sign in themselves. When they say they are done, run geckit browser signin <name> --done.` |
+| `geckit browser signin <name> --done` | `geckit:<name> is saved with its sign-in on this computer. Use it with --profile geckit:<name>.` |
 
 Only the person pairs: `geckit computers add <code>` and `geckit computers forget <name>` are refused to assistants, as `geckit pair` is.
 
@@ -29,7 +29,7 @@ Only the person pairs: `geckit computers add <code>` and `geckit computers forge
 
 A sheet over the window, the same on the desktop and the phone.
 
-- Title: `Sign in: test:<name>`, with the computer's name under it when it is not this one.
+- Title: `Sign in: geckit:<name>`, with the computer's name under it when it is not this one.
 - An address row: Back, the page's address (editable; Return opens it), and Done.
 - The picture of the page, at its own width, scaled to fit; on the phone it pinches to zoom.
 - A Keyboard button on the phone, which raises the keyboard. On the desktop, typing goes to the page once it has been clicked.
@@ -38,7 +38,7 @@ States:
 
 | State | Shows |
 | --- | --- |
-| Opening | `Opening test:<name>…` and a spinner. If Chrome for Testing is still downloading on that computer, the view moves to Failed with the computer's own words, such as `Downloading Chrome for Testing, 40%.`, and Try again. |
+| Opening | `Opening geckit:<name>…` and a spinner. If Chrome for Testing is still downloading on that computer, the view moves to Failed with the computer's own words, such as `Downloading Chrome for Testing, 40%.`, and Try again. |
 | Live | The picture, refreshed about five times a second and right after each click or key. |
 | Failed | The computer's own message, with Try again and Close. A dropped connection lands here too; the last picture stays, dimmed. |
 | Done | The sheet closes. The browser on the computer closes too, unless a conversation is using it; the sign-in is kept either way. |
@@ -58,9 +58,13 @@ What crosses to the viewing device is the picture and the person's clicks and ke
 
 Settings > Integrations > Test browsers, on whichever computer the window is showing (the toolbar's computer menu chooses):
 
-- Each profile: `test:<name>`, its note, open or closed; Sign in, Open, Delete.
+- Each profile: `geckit:<name>`, its note, open or closed; Sign in, Open, Delete.
 - `New account profile`: name and account, Create. The same naming rule as the command.
 
 ## Out of scope
 
 Copying a profile from one computer to another (the browser keeps sign-ins under a key of the computer's own); links that open in a plain web browser.
+
+## Browser profile management update - 2026-11-12
+
+The current working-tree Settings section is renamed "Web Browser". Profile management leads the page; Chrome extension connection/setup follows below. The approved replacement profile flow and verification scope are in [browser-profile-management.md](browser-profile-management.md). Earlier Integrations references above describe the original design.

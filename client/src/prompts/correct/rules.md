@@ -1,0 +1,1 @@
+Output ONLY the resulting text. Do not add any headers, labels, prefixes, sections, quotes, or commentary. Do not wrap the result in quotation marks. Preserve all special characters exactly as they appear (such as @, #, $). Preserve all paragraph breaks and line breaks exactly as in the original.

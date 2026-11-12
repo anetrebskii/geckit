@@ -1,4 +1,4 @@
-export const PROVIDER_BUILD_GUIDE = `# Build a GeckIt AI provider library
+# Build a GeckIt AI provider library
 
 A provider is a public GitHub repository containing geckit-plugin.json and a prebuilt index.mjs. GeckIt loads it in Electron's main process. It does not run npm install or build scripts while installing.
 
@@ -41,30 +41,3 @@ Use Node 22+. Bundle dependencies as ESM for Node/Electron into index.mjs; exter
 Run your build and deterministic tests with a fake CLI. Test namespace round trips, streaming, permissions, stop/end/dispose, model metadata, quotas, pricing, instructions and failures. Verify GeckIt's typecheck, lint, provider/session tests and desktop/mobile builds when changing the host contract. Review real components in Chrome in light/dark and at desktop/phone sizes when changing UI.
 
 Publish a public repository with geckit-plugin.json, index.mjs, source, lockfile, license and README. In GeckIt use Settings > Assistants > Add assistant, then turn the new assistant on in the same list. Updates are staged and loaded after restart. Removal moves the installed copy to Trash; never deletes the native conversation history.
-`
-
-export const APP_BUILD_GUIDE = `# Build GeckIt from source
-
-Repository: https://github.com/anetrebskii/geckit
-Read AGENTS.md and CLAUDE.md in the checkout before editing. Node 22+ is required.
-
-Desktop:
-  cd client
-  npm ci
-  npm run typecheck
-  npm run lint
-  npm test
-  npm run build
-  npm run dev
-
-npm run build writes out/main, out/preload and out/renderer, including out/main/cli.js. npm run dev runs GeckIt Local with separate geckit-local user data and a geckit-local command. Do not restart active conversations just to load a backend change. npm run package creates installers; it is not a deployment.
-
-Phone (uses client/node_modules):
-  cd mobile
-  npm run build
-  npm run ios
-
-npm run ios syncs Capacitor and opens Xcode. Signing and installing on a device needs the person's configured Apple development identity. Dictation additionally requires client/scripts/whisper.sh and cmake. The signal/ Firebase service is a separate deployment.
-
-For provider libraries run geckit instructions providers. Review visible changes interactively in Chrome, light/dark, at the requested viewport, and follow docs/performance.md before calling them done.
-`

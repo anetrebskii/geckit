@@ -10,6 +10,7 @@ import { pipeline } from 'node:stream/promises'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { ReadableStream } from 'node:stream/web'
 import type { FindModelState } from '../shared/api'
+import { PROMPTS } from '../prompts/prompts'
 
 const NAME = 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
 const FROM = `https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/${NAME}`
@@ -131,7 +132,7 @@ async function started(): Promise<number> {
   return current.port
 }
 
-const ASK = `You find elements on a web page. You get the page as lines: headings start with #, every element that can be clicked or typed into starts with its ref in brackets, [ref] role "name". A line --- item N --- starts the Nth post, card or entry on the page and the lines after it belong to it. Headings and the order of lines show where an element sits on the page. Answer with the refs of the elements that match the request, best first, at most 8, and an empty list when nothing matches. Answer only with JSON.`
+const ASK = PROMPTS.findElements
 
 /** The refs a small local model picks from the page's lines for what was asked. */
 export async function pickRefs(query: string, lines: readonly string[]): Promise<number[]> {

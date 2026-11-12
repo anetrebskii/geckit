@@ -69,13 +69,13 @@ export function LiveView({ name, api, computer, token, onClose }: LiveViewProps)
 
   return createPortal(
     <div className="dialog-scrim live-view-scrim">
-      <section className="live-view" role="dialog" aria-label={`Sign in: test:${name}`} onKeyDown={(event) => event.stopPropagation()}>
+      <section className="live-view" role="dialog" aria-label={`Sign in: geckit:${name}`} onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Escape' && event.target !== keys.current) { event.preventDefault(); done() } }}>
         <header className="live-view-head">
           <div className="live-view-title">
-            <strong>Sign in: test:{name}</strong>
+            <strong>Sign in: geckit:{name}</strong>
             {computer === undefined ? null : <small>{computer}</small>}
           </div>
-          <button type="button" className="remote-button primary" onClick={done}>Done</button>
+          <button type="button" className="remote-button primary" autoFocus onClick={done}>Done</button>
         </header>
         <form className="live-view-address" onSubmit={(event) => { event.preventDefault(); const url = (draft ?? '').trim(); setDraft(undefined); if (url !== '') send({ type: 'go', url }) }}>
           <button type="button" className="icon-button" aria-label="Back" title="Back" disabled={state !== 'live'} onClick={() => send({ type: 'back' })}><Icon name="left" /></button>
@@ -83,7 +83,7 @@ export function LiveView({ name, api, computer, token, onClose }: LiveViewProps)
           {phone() ? <button type="button" className="icon-button" aria-label="Keyboard" title="Keyboard" disabled={state !== 'live'} onClick={() => keys.current?.focus()}><Icon name="keyboard" /></button> : null}
         </form>
         <div className="live-view-screen">
-          {state === 'opening' ? <p className="live-view-note" role="status"><span className="spinner-turn"><Icon name="spinner" /></span> Opening test:{name}…</p> : null}
+          {state === 'opening' ? <p className="live-view-note" role="status"><span className="spinner-turn"><Icon name="spinner" /></span> Opening geckit:{name}…</p> : null}
           {state === 'failed' ? (
             <div className="live-view-note" role="alert">
               <p>{problem}</p>
@@ -94,7 +94,7 @@ export function LiveView({ name, api, computer, token, onClose }: LiveViewProps)
             <img
               className={state === 'live' ? 'live-view-picture' : 'live-view-picture dim'}
               src={`data:image/jpeg;base64,${frame.jpeg}`}
-              alt={frame.title === '' ? `test:${name}` : frame.title}
+              alt={frame.title === '' ? `geckit:${name}` : frame.title}
               width={frame.width}
               height={frame.height}
               draggable={false}

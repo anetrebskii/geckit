@@ -207,3 +207,7 @@ stateDiagram-v2
 ## Развилка: включено по умолчанию
 
 Сначала переключатель был выключен по умолчанию: Chrome с аккаунтами человека открывали агентам только по его решению. Алекс 2026-11-04: «убедись, что расширение geckit включено в geckit по-умолчанию». Вердикт: включено по умолчанию. Мост, правило в инструкциях, скилл и загрузка модели поиска (2.5 ГБ) появляются при первом запуске; расширение в Chrome всё равно ставит сам человек через Load unpacked, так что без его шага агенты в Chrome не попадут. Настройки, сохранённые, пока переключатель был выключен по умолчанию, включаются один раз (`chromeBridgeDefault`), дальше выбор человека сохраняется.
+
+## Browser profile management update - 2026-11-12
+
+The current working-tree Settings section is renamed "Web Browser". Profile management leads the page; Chrome extension connection/setup follows below. The approved replacement profile flow and verification scope are in [browser-profile-management.md](browser-profile-management.md). Earlier Integrations references above describe the original design.

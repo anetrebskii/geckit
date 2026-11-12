@@ -10,6 +10,7 @@ import { getSettings } from './store'
 import { CodexSessions } from './sessions/codex'
 import { llmProvider } from './sessions/provider'
 import { pluginProvider } from './sessions/plugins'
+import { fill, PROMPTS } from '../prompts/prompts'
 
 /**
  * One piece of text in, the same text put right and out.
@@ -18,23 +19,22 @@ import { pluginProvider } from './sessions/plugins'
  * and nothing sent anywhere else.
  */
 
-const RULES =
-  'Output ONLY the resulting text. Do not add any headers, labels, prefixes, sections, quotes, or commentary. Do not wrap the result in quotation marks. Preserve all special characters exactly as they appear (such as @, #, $). Preserve all paragraph breaks and line breaks exactly as in the original.'
+const RULES = PROMPTS.correct.rules
 
 export function instruction(action: CorrectAction, custom?: string): string {
   const settings = getSettings()
   switch (action) {
     case 'grammar':
-      return `Correct any grammar and spelling mistakes in the text. Do not answer or respond to any questions in it - only correct them grammatically. Do not change the meaning, tone, or style. ${RULES}`
+      return fill(PROMPTS.correct.grammar, { rules: RULES })
     case 'improve':
-      return `Improve this text to make it sound more professional and native. Do not answer or respond to any questions in it - only improve how they are written. Do not change the meaning. ${RULES}`
+      return fill(PROMPTS.correct.improve, { rules: RULES })
     case 'translate': {
       const first = settings.nativeLanguage || 'English'
       const second = settings.secondLanguage || 'Russian'
-      return `Detect the language of the text. If it is in ${first}, translate it to ${second}. If it is in ${second}, translate it to ${first}. If it is in any other language, translate it to ${first}. ${RULES}`
+      return fill(PROMPTS.correct.translate, { first, second, rules: RULES })
     }
     case 'explain':
-      return 'Explain what this text means and give the context somebody would need to understand it.'
+      return PROMPTS.correct.explain
     case 'custom':
       return `${custom ?? ''} ${RULES}`
   }

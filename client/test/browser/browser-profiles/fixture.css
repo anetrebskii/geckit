@@ -1,0 +1,6 @@
+.profile-fixture-controls { position: fixed; inset-block-start: 0; inset-inline: 0; z-index: 1000; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 12px; background: var(--bg); border-block-end: 1px solid var(--border); font-size: 12px; }
+.profile-fixture-controls label { display: flex; gap: 4px; align-items: center; }
+.profile-fixture-controls a { color: var(--accent); }
+.profile-fixture-evidence { position: fixed; inset-block-end: 0; inset-inline: 0; z-index: 1000; max-block-size: 22vh; overflow: auto; padding: 6px 12px; background: var(--bg); border-block-start: 1px solid var(--border); font-size: 11px; }
+.profile-fixture-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.profile-fixture-launch { margin: 72px 24px; }

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { pickProfile } from '../src/cli/browser'
-import { deleteTestProfile, extensionSource, pageScript, serveTestLaunches, testBrowsersState, validTestName } from '../src/cli/testing'
+import { deleteTestProfile, extensionSource, makeTestAccount, pageScript, serveTestLaunches, testBrowsersState, validTestName } from '../src/cli/testing'
 
 describe('test browsers', () => {
   it('runs the extension own page functions, read out of background.js', () => {
@@ -21,13 +21,20 @@ describe('test browsers', () => {
 
   it('reaches a test browser only by its label, and never by default while a Chrome profile is there', () => {
     const own = { pid: 1, label: 'aleks@example.com', tabs: [10], focused: 0, t: 0 }
-    const store = { pid: 2, label: 'test:store', tabs: [900_000_001], focused: 0, t: 0 }
-    const staging = { pid: 3, label: 'test:store-staging', tabs: [], focused: 0, t: 0 }
+    const store = { pid: 2, label: 'geckit:store', tabs: [900_000_001], focused: 0, t: 0 }
+    const staging = { pid: 3, label: 'geckit:store-staging', tabs: [], focused: 0, t: 0 }
     expect(pickProfile([store, own], {})).toBe(own)
     expect(pickProfile([store], {})).toBe(store)
+    expect(pickProfile([own, store, staging], {}, 'geckit:store')).toBe(store)
     expect(pickProfile([own, store, staging], {}, 'test:store')).toBe(store)
     expect(pickProfile([own, store], { tab: 900_000_001 })).toBe(store)
-    expect(pickProfile([own], {}, 'test:gone')).toBe('test:gone is not open. Run geckit browser start test:gone.')
+    expect(pickProfile([own], {}, 'geckit:gone')).toBe('geckit:gone is not open. Run geckit browser start geckit:gone.')
+  })
+
+  it('makes a profile without a description', () => {
+    const root = mkdtempSync(join(tmpdir(), 'geckit-testing-'))
+    makeTestAccount('plain', '  ', root, true)
+    expect(testBrowsersState(root).profiles).toEqual([{ name: 'plain', open: false }])
   })
 
   it('lists kept profiles and deletes one with its folder', () => {

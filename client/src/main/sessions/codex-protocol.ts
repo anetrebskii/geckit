@@ -3,6 +3,7 @@ import type { CodexRateLimit, ReasoningEffort, SessionItem, SessionMode } from '
 export type RpcId = string | number
 export type { Json } from '../../shared/elicitation'
 import type { Elicitation, Json } from '../../shared/elicitation'
+import { fill, PROMPTS } from '../../prompts/prompts'
 
 export type CodexElicitationParams = Pick<RpcParams['turn/interrupt'], 'threadId'> & Pick<Elicitation, 'serverName' | 'message'> & { turnId: string | null; _meta: Json | null } & (
   | { mode: 'form' | 'openai/form' | 'openaiForm'; requestedSchema: Json }
@@ -67,7 +68,7 @@ export function codexOptions(root: string, mode: SessionMode, model?: string, so
   const guide = sourceInstructions ? process.env['GECKIT_SOURCE_CODEX_GUIDE'] : undefined
   return {
     cwd: root,
-    ...(guide === undefined ? {} : { developerInstructions: guide === '' ? '' : `Read ${JSON.stringify(guide)} for this copy's current GeckIt instructions and employee lookup rules.` }),
+    ...(guide === undefined ? {} : { developerInstructions: guide === '' ? '' : fill(PROMPTS.source.guide, { guide: JSON.stringify(guide) }) }),
     ...(model === undefined ? {} : { model }),
     modelProvider: 'openai',
     approvalPolicy: mode === 'manual' ? 'untrusted' : 'on-request',

@@ -38,6 +38,7 @@ export class ServiceCompatibilityError extends Error {
 }
 
 const STARTUP_TIMEOUT = 20_000
+const LAUNCHED_TIMEOUT = 120_000
 const STARTUP_RETRY = 100
 const RECONNECT_RETRY = 1_000
 
@@ -53,6 +54,7 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
   let launchExit: string | undefined
   let connectionError: Error | undefined
   let launched = false
+  let alive = false
   let shutdownPromise: Promise<void> | undefined
   let importing: string | undefined
 
@@ -72,7 +74,9 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
       for (const key of ['CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDECODE', 'GECKIT_MANAGER_SESSION', 'GECKIT_MANAGER_TOKEN', 'GECKIT_MANAGER_OPERATION']) Reflect.deleteProperty(env, key)
       const child = spawn(options.executable, [options.script, ...options.args ?? [], '--data', options.directory], { env, detached: true, stdio: ['ignore', output, output], windowsHide: true })
       child.once('error', () => { launchError = new Error(`GeckIt service could not start. Check its executable and ${logFile}.`) })
+      alive = true
       child.once('exit', (code, signal) => {
+        alive = false
         launchExit = `GeckIt service exited before desktop connected (${signal ?? String(code)}). Check ${logFile}.`
         if (process.platform !== 'win32' && current === undefined && !closed) launchError = new Error(launchExit)
       })
@@ -143,8 +147,9 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
 
   const started = Date.now()
   let failure = 'The service is not ready.'
-  while (Date.now() - started < STARTUP_TIMEOUT) {
-    try { await attach(Math.max(1, STARTUP_TIMEOUT - (Date.now() - started))); break }
+  const budget = (): number => (alive ? LAUNCHED_TIMEOUT : STARTUP_TIMEOUT) - (Date.now() - started)
+  while (budget() > 0) {
+    try { await attach(Math.max(1, budget())); break }
     catch (error) {
       if (error instanceof ServiceCompatibilityError) { closed = true; throw error }
       failure = error instanceof Error ? error.message : String(error)

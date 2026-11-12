@@ -26,13 +26,13 @@ it('routes ordinary Chrome commands without requiring test registration, even wi
     state.conversation = id
     if (id === 'done') registerBrowserConversation(id, '/shop', true)
     const reply = await browser(['read', '10', '--profile', 'person@example.com'])
-    expect(reply.said).toBe('Chrome through GeckIt is off. Turn it on in GeckIt Settings > Integrations.')
+    expect(reply.said).toBe('Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.')
   }
 })
 
 it('keeps explicit manually named profiles routable outside conversations', async () => {
   const reply = await browser(['pages', '--profile', 'test:legacy'])
-  expect(reply.said).toBe('Chrome through GeckIt is off. Turn it on in GeckIt Settings > Integrations.')
+  expect(reply.said).toBe('Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.')
 })
 
 it('refuses foreign test tabs before sending a request', async () => {
