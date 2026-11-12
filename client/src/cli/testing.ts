@@ -7,6 +7,7 @@ import type { TestBrowsersState, ViewFrame, ViewInput } from '../shared/api'
 import background from '../../extension/background.js?raw'
 import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browser'
 import { signInLink } from './live-view'
+import { unzip } from './unzip'
 import { cursorPath, type CursorPoint } from './cursor'
 import { acquireTestLock, browserConversation, browserStateFolder, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TestTabOwners } from './browser-lifecycle'
 
@@ -120,7 +121,7 @@ async function fetchChrome(): Promise<{ readonly path: string; readonly version:
     const unpacked = join(chromeFolder(), `${version}.part`)
     rmSync(unpacked, { recursive: true, force: true })
     if (process.platform === 'darwin') await run('ditto', ['-x', '-k', zip, unpacked])
-    else await run('unzip', ['-q', zip, '-d', unpacked])
+    else await unzip(zip, unpacked)
     rmSync(zip, { force: true })
     renameSync(unpacked, join(chromeFolder(), version))
     rmSync(downloadFile(), { force: true })
