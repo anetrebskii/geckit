@@ -163,7 +163,7 @@ describe('Manager exact-session deletion', () => {
     expect(operations.confirmation(args, policy)).toContain('exact-worker-id')
     expect(managerReadOnly(args)).toBe(false)
     expect(MANAGER_INSTRUCTIONS).toContain('Check the deleted field')
-    expect(MANAGER_INSTRUCTIONS).toContain('sessions mark --status done in the same turn')
+    expect(MANAGER_INSTRUCTIONS).toContain('move that worker to Done yourself with sessions mark --status done')
   })
 
   it('rejects partial, unknown, unmanaged, Manager, question and unregistered targets without deleting', async () => {

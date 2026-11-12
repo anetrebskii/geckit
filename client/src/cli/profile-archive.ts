@@ -186,21 +186,24 @@ export async function importTestProfile(input: string, name: string, options: Ar
       remaining = record.size
       if (remaining === 0) { await output.close(); output = undefined }
     }
+    let refused: unknown
     await pipeline(createReadStream(resolve(input)), createGunzip(), async (source: AsyncIterable<Buffer>) => {
-      let held = Buffer.alloc(0)
-      for await (const chunk of source) {
-        held = Buffer.concat([held, chunk])
-        let end = held.indexOf(10)
-        while (end >= 0) {
-          if (end > MAX_RECORD_BYTES) throw invalid()
-          await accept(parseRecord(held.subarray(0, end).toString('utf8')))
-          held = held.subarray(end + 1)
-          end = held.indexOf(10)
+      try {
+        let held = Buffer.alloc(0)
+        for await (const chunk of source) {
+          held = Buffer.concat([held, chunk])
+          let end = held.indexOf(10)
+          while (end >= 0) {
+            if (end > MAX_RECORD_BYTES) throw invalid()
+            await accept(parseRecord(held.subarray(0, end).toString('utf8')))
+            held = held.subarray(end + 1)
+            end = held.indexOf(10)
+          }
+          if (held.length > MAX_RECORD_BYTES) throw invalid()
         }
-        if (held.length > MAX_RECORD_BYTES) throw invalid()
-      }
-      if (held.length !== 0 || !ended || header === undefined || output !== undefined) throw invalid()
-    })
+        if (held.length !== 0 || !ended || header === undefined || output !== undefined) throw invalid()
+      } catch (error) { refused = error; throw error }
+    }).catch((error: unknown) => { throw refused ?? error })
     if (header === undefined) throw invalid()
     if (present(destination) || present(account)) throw new Error(`geckit:${name} already exists. Import with a different --name.`)
     renameSync(stage, destination)
