@@ -1712,9 +1712,30 @@ describe('Manager session', () => {
       { kind: 'theirs', id: 'empty', text: ' \n\n ' },
       { kind: 'theirs', id: 'reply', text: `First.\n\n${f.command('discover-gaps', ['capabilities'])}\n\n\nLast.\n\n\n` },
     ], gone: [], signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('discover-gaps'))).toBe(true))
+    expect(replies).toEqual([])
+    f.finish(id, '')
     await vi.waitFor(() => expect(replies).toHaveLength(1))
     expect(replies[0]).toBe('First.\n\nI will coordinate that.\n\nLast.')
     expect(managerMessage('```ts\n  first\n\n\n  second\n```')).toBe('```ts\n  first\n\n\n  second\n```')
+  })
+
+  it('posts what Manager wrote alongside commands once, when the chain of command results ends', async () => {
+    const f = await fixture()
+    const replies: string[] = []
+    f.manager.onResponse((text) => replies.push(text))
+    await f.manager.configure({ enabled: true })
+    const id = await f.manager.send('Open a PR with the app icon')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    f.finish(id, `Which app is it?\n\n${f.command('ask-employees', ['employees', 'list'])}`)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('ask-employees'))).toBe(true))
+    f.finish(id, `Which app is it, the desktop one?\n\n${f.command('ask-projects', ['projects', 'list'])}`)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.text.includes('ask-projects'))).toBe(true))
+    expect(replies).toEqual([])
+    f.finish(id, '')
+    await vi.waitFor(() => expect(replies).toEqual(['Which app is it, the desktop one?\n\nI will coordinate that.']))
+    f.finish(id, 'Done.')
+    await vi.waitFor(() => expect(replies).toEqual(['Which app is it, the desktop one?\n\nI will coordinate that.']))
   })
 
   it('hides status blocks from the answer and shows the last one in the thread until Manager answers', async () => {

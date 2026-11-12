@@ -128,6 +128,8 @@ interface Live {
   /** What Manager last said in a status block while it works on a message, and since when it has worked on it. */
   note?: string | undefined
   since?: number | undefined
+  /** What Manager wrote in a turn that also ran commands, posted once the chain of command results ends. */
+  held?: { readonly text: string; readonly origin: ManagerReplyOrigin } | undefined
 }
 
 export interface ManagerCliContext {
@@ -723,22 +725,41 @@ export class Manager {
     const commands = managerCommands(text)
     const origin = this.#state(thread).responseOrigin ?? { ...(thread === MAIN ? {} : { thread }), session, workers: [] }
     const visible = managerMessage(text)
-    const delivery = randomUUID()
-    const telegramReplies: readonly TelegramReply[] = !teamThread(thread) || this.#deps.threadAllowed?.(thread) === false || visible === '' ? this.#record.telegramReplies : [...this.#record.telegramReplies, { id: delivery, text: visible.slice(0, 32_768), origin: { ...origin, telegramDelivery: delivery }, state: 'queued' }]
-    this.#saveThread(thread, { ...(this.#canRecover(thread) ? { error: undefined } : {}), responseOrigin: undefined }, { telegramReplies, inbox: this.#record.inbox.map((message) => this.#threadOf(message) === thread && (message.state === 'sending' || message.state === 'sent') ? { ...message, state: 'sent', completed: true } : message) })
-    if (visible !== '' || commands.length === 0) { live.note = undefined; live.since = undefined }
-    if (visible !== '') for (const listener of this.#responses) listener(visible, origin)
+    const said = commands.length > 0 ? undefined : visible !== '' ? { text: visible, origin } : live.held
+    if (commands.length === 0) live.held = undefined
+    else if (visible !== '') live.held = { text: visible, origin }
+    this.#saveThread(thread, { ...(this.#canRecover(thread) ? { error: undefined } : {}), responseOrigin: undefined }, { inbox: this.#record.inbox.map((message) => this.#threadOf(message) === thread && (message.state === 'sending' || message.state === 'sent') ? { ...message, state: 'sent', completed: true } : message) })
+    if (said !== undefined || commands.length === 0) { live.note = undefined; live.since = undefined }
+    if (said !== undefined) this.#say(thread, said.text, said.origin)
     try {
       if (this.#record.paused || !this.#record.config.enabled || teamThread(thread) && this.#deps.threadAllowed?.(thread) === false) return
       for (const command of commands) {
         if (this.#record.paused || this.#state(thread).error !== undefined || !this.#record.config.enabled || session !== this.#state(thread).sessionId) break
         await this.#execute(command, false, requests, thread, input)
       }
+      if (live.held !== undefined && !this.#record.inbox.some((message) => this.#threadOf(message) === thread && (message.state === 'queued' || message.state === 'sending'))) this.#release(thread)
     } finally {
       live.activeInput = undefined; live.activeTelegram = []
       this.#emit()
     }
     void this.#dispatch(thread)
+  }
+
+  #say(thread: string, text: string, origin: ManagerReplyOrigin): void {
+    if (teamThread(thread) && this.#deps.threadAllowed?.(thread) !== false) {
+      const delivery = randomUUID()
+      this.#save({ telegramReplies: [...this.#record.telegramReplies, { id: delivery, text: text.slice(0, 32_768), origin: { ...origin, telegramDelivery: delivery }, state: 'queued' }] })
+    }
+    for (const listener of this.#responses) listener(text, origin)
+  }
+
+  #release(thread: string): void {
+    const live = this.#l(thread)
+    const held = live.held
+    live.held = undefined
+    live.note = undefined
+    live.since = undefined
+    if (held !== undefined) this.#say(thread, held.text, held.origin)
   }
 
   #satisfiedAttach(command: ManagerCommand): boolean {
@@ -1025,6 +1046,7 @@ export class Manager {
     this.#cancelRecovery(thread)
     if (thread === MAIN) this.#generation += 1
     else live.generation += 1
+    live.held = undefined
     const previous = this.#state(thread).sessionId
     const inbox = previous === undefined ? this.#record.inbox : this.#interrupt(previous)
     this.#saveThread(thread, { sessionId: undefined, previousSessions: previous === undefined ? this.#state(thread).previousSessions : [...this.#state(thread).previousSessions, previous], error: undefined }, { inbox })
@@ -1061,7 +1083,7 @@ export class Manager {
       const boundary: HistoryBoundary = { action: request.action, id: thread, at: Date.now(), revision: randomUUID(), ...(record === undefined ? {} : { channel: record.channel, key: record.key }) }
       const live = this.#l(thread)
       live.generation += 1
-      live.activeInput = undefined; live.activeTelegram = []; live.awaitingOutput = false
+      live.activeInput = undefined; live.activeTelegram = []; live.awaitingOutput = false; live.held = undefined
       this.#cancelRecovery(thread)
       this.#saveThread(thread, { sessionId: undefined, previousSessions: [], responseOrigin: undefined, error: 'History cleanup is incomplete. Retry the conversation action before sending a new message.', manualRecovery: true }, {
         historyBoundaries: [...this.#record.historyBoundaries.filter((one) => one.id !== thread), boundary], historyPurges: [...this.#record.historyPurges, purge],
@@ -1166,6 +1188,7 @@ export class Manager {
 
   #fail(thread: string, error: string): void {
     if (!this.#exists(thread) || this.#record.historyPurges.some((one) => one.request.id === thread)) return
+    this.#release(thread)
     this.#l(thread).note = undefined
     this.#l(thread).since = undefined
     const id = this.#state(thread).sessionId
