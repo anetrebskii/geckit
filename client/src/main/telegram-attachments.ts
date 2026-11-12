@@ -112,7 +112,7 @@ export class TelegramAttachments {
     this.cleanup()
     try {
       const attachment = this.metadata(id)
-      if (attachment.scope === undefined && scope?.startsWith('channel:') === true || attachment.scope !== undefined && attachment.scope !== scope) throw new TelegramAttachmentFailure('This attachment belongs to another Manager thread.')
+      if (attachment.scope === undefined && (scope?.startsWith('channel:') === true || scope?.startsWith('telegram:team:') === true) || attachment.scope !== undefined && attachment.scope !== scope) throw new TelegramAttachmentFailure('This attachment belongs to another Manager thread.')
       const path = join(realpathSync(this.directory), id, contentName(attachment.name))
       if (realpathSync(path) !== path) throw new TelegramAttachmentFailure('Changed attachment location')
       const file = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)

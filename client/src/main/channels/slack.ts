@@ -15,9 +15,9 @@ export const SLACK_INFO: ChannelInfo = {
   icon: 'chat',
   description: 'Each Slack thread with the bot is a Manager thread of its own.',
   fields: [
-    { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, users:read, files:read, files:write.' },
+    { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, users:read, files:read, files:write, reactions:write.' },
     { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write, for Socket Mode.' },
-    { key: 'allow', label: 'People who may write', type: 'list', required: true, help: 'Slack user IDs, such as U012ABC. Nobody else is answered.' },
+    { key: 'allow', label: 'People who may write', type: 'list', help: 'Slack user IDs, such as U012ABC. Nobody else is answered. Empty: every member of the bot\'s workspace, but not guests, people from other workspaces or bots.' },
     { key: 'checkSecrets', label: 'Refuse messages that contain a token or key', type: 'boolean', default: true },
   ],
 }
@@ -75,6 +75,9 @@ export const after = (a: string, b: string): boolean => {
 
 const stamp = (ts: string): string => new Date(Number(ts.split('.')[0]) * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
 
+/** How long what Slack said about a person is trusted, so someone who leaves or becomes a guest stops being answered. */
+const MEMBER_TTL = 10 * 60_000
+
 interface SlackReply {
   readonly file?: SlackFile
   readonly file_id?: string
@@ -85,11 +88,25 @@ interface SlackReply {
   readonly url?: string
   readonly permalink?: string
   readonly user_id?: string
+  readonly team_id?: string
   readonly ts?: string
   readonly messages?: readonly SlackMessage[]
   readonly has_more?: boolean
   readonly response_metadata?: { readonly next_cursor?: string }
-  readonly user?: { readonly real_name?: string; readonly name?: string; readonly profile?: { readonly display_name?: string; readonly real_name?: string } }
+  readonly user?: SlackUser
+}
+
+interface SlackUser {
+  readonly real_name?: string
+  readonly name?: string
+  readonly profile?: { readonly display_name?: string; readonly real_name?: string }
+  readonly team_id?: string
+  readonly is_bot?: boolean
+  readonly deleted?: boolean
+  /** A multi-channel guest. */
+  readonly is_restricted?: boolean
+  /** A single-channel guest. */
+  readonly is_ultra_restricted?: boolean
 }
 
 interface SlackSocket {
@@ -111,7 +128,9 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   let retry: ReturnType<typeof setTimeout> | undefined
   const watching = new Map<string, () => void>()
   const names = new Map<string, string>()
+  const members = new Map<string, { readonly user: SlackUser; readonly at: number }>()
   let me: string | undefined
+  let team: string | undefined
   let chain: Promise<void> = Promise.resolve()
 
   const slack = async (method: string, body: object = {}, token = context.secret('botToken')): Promise<SlackReply> => {
@@ -128,14 +147,50 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   const post = (channel: string, thread: string, text: string): Promise<SlackReply> => slack('chat.postMessage', { channel, thread_ts: thread, text: text.slice(0, 39_000) })
   const said = (error: unknown): string => error instanceof Error ? error.message : String(error)
   const posted = (channel: string, thread: string, text: string): Promise<unknown> => { const sent = post(channel, thread, text); sent.catch((error: unknown) => context.log.write('warn', 'slack.post.failed', { reason: said(error) })); return sent }
+  // An :eyes: reaction on each message Manager took, until it answers or finishes, so the thread shows the bot is on it.
+  const marked = new Map<string, { readonly channel: string; readonly ts: string }[]>()
+  const react = (method: 'reactions.add' | 'reactions.remove', channel: string, ts: string): void => {
+    slack(method, { channel, timestamp: ts, name: 'eyes' }).catch((error: unknown) => context.log.write('warn', 'slack.reaction.failed', { method, reason: said(error) }))
+  }
+  const mark = (thread: string, channel: string, ts: string): void => {
+    marked.set(thread, [...(marked.get(thread) ?? []), { channel, ts }])
+    react('reactions.add', channel, ts)
+  }
+  const unmark = (thread: string): void => {
+    for (const one of marked.get(thread) ?? []) react('reactions.remove', one.channel, one.ts)
+    marked.delete(thread)
+  }
+
+  /** Who Slack says a user is, asked again after MEMBER_TTL; nothing when the call fails. */
+  const member = async (user: string): Promise<SlackUser | undefined> => {
+    const known = members.get(user)
+    if (known !== undefined && Date.now() - known.at < MEMBER_TTL) return known.user
+    const found = (await slack('users.info', { user }).catch(() => undefined))?.user
+    if (found !== undefined) members.set(user, { user: found, at: Date.now() })
+    return found
+  }
 
   const person = async (user: string): Promise<string> => {
     const known = names.get(user)
     if (known !== undefined) return known
-    const found = await slack('users.info', { user }).catch(() => undefined)
-    const name = found?.user?.profile?.display_name || found?.user?.real_name || found?.user?.profile?.real_name || found?.user?.name || user
+    const found = await member(user)
+    const name = found?.profile?.display_name || found?.real_name || found?.profile?.real_name || found?.name || user
     names.set(user, name)
     return name
+  }
+
+  const listed = (): readonly unknown[] => { const allow = context.config()['allow']; return Array.isArray(allow) ? allow.filter((one) => typeof one === 'string' && one.trim() !== '') : [] }
+
+  /** Whether a person may write, from what is already known: on the list when there is one, otherwise a full member of the bot's own workspace. */
+  const allowedNow = (user: string): boolean => {
+    if (listed().length > 0) return listed().includes(user)
+    const found = members.get(user)?.user
+    return team !== undefined && found?.team_id === team && found.is_bot !== true && found.deleted !== true && found.is_restricted !== true && found.is_ultra_restricted !== true
+  }
+
+  const allowed = async (user: string): Promise<boolean> => {
+    if (listed().length === 0) await member(user)
+    return allowedNow(user)
   }
 
   /** The text with the bot's own mention taken out and everyone else's shown by name. */
@@ -222,10 +277,11 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     const upload: ChannelFileSender = async (bytes, name, media, caption, _format, _origin, beforeSend) => {
       const validate = (): void => {
         const writer = context.store.get(`writer:${key}`)
-        const allow = context.config()['allow']
-        if (!current() || typeof writer !== 'string' || !Array.isArray(allow) || !allow.includes(writer)) throw new Error('The originating Slack conversation is no longer authorized.')
+        if (!current() || typeof writer !== 'string' || !allowedNow(writer)) throw new Error('The originating Slack conversation is no longer authorized.')
         if (context.config()['checkSecrets'] !== false && (containsSecret(caption) || containsSecret(bytes.toString('utf8')))) throw new Error('The selected file or caption appears to contain a token or key.')
       }
+      const writer = context.store.get(`writer:${key}`)
+      if (typeof writer === 'string') await allowed(writer)
       validate()
       await beforeSend?.()
       validate()
@@ -253,6 +309,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     }
     context.files?.bind(thread, upload)
     const shown = new Set(pending(key).map((one) => one.id))
+    let busy = false
     const plain = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
     const status = new StatusMessage({
       post: async (text) => {
@@ -280,8 +337,12 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
         return
       }
       if (!current()) return
-      if (event.kind === 'status') status.update(event.activity)
-      if (event.kind === 'answer') status.after(posted(channel, ts, event.text))
+      if (event.kind === 'status') {
+        if (event.activity?.active === true) busy = true
+        else if (busy) { busy = false; unmark(thread) }
+        status.update(event.activity)
+      }
+      if (event.kind === 'answer') { unmark(thread); status.after(posted(channel, ts, event.text)) }
       if (event.kind === 'decisions') {
         context.store.set(`decisions:${key}`, event.decisions.map((one) => ({ id: one.id, values: one.choices.map((choice) => choice.value) })))
         for (const decision of event.decisions) {
@@ -300,7 +361,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     const ts = event.thread_ts ?? event.ts
     const key = keyOf(event.channel, ts)
     const revision = boundary(key)
-    const current = (): boolean => { const allow = context.config()['allow']; return revision === boundary(key) && !stopped && Array.isArray(allow) && allow.includes(event.user ?? '') }
+    const current = (): boolean => revision === boundary(key) && !stopped && allowedNow(event.user ?? '')
     const cutoffAt = cutoff(key)
     if (cutoffAt !== undefined && !after(event.ts, cutoffAt)) return
     const known = context.store.get(`thread:${key}`) === true
@@ -309,8 +370,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     const seenAt = typeof seen === 'string' ? seen : undefined
     const last = cutoffAt !== undefined && (seenAt === undefined || after(cutoffAt, seenAt)) ? cutoffAt : seenAt
     if (last !== undefined && !after(event.ts, last)) return
-    const allow = context.config()['allow']
-    if (!Array.isArray(allow) || !allow.includes(event.user)) {
+    if (!await allowed(event.user)) {
       if (mention || direct) await post(event.channel, ts, say(speechOf(event.text ?? '')).notAllowed)
       return
     }
@@ -339,6 +399,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     try { attachments = await receive(event, thread, event.channel, ts, current) } catch (error) { await post(event.channel, ts, `Could not receive this attachment: ${said(error)}. Correct the issue and resend.`); return }
     if (!current()) return
     const request = text === '' ? attachments.length > 0 ? 'They sent attachments.' : 'They mentioned you without a message. Read the thread above and help with it.' : text
+    mark(thread, event.channel, event.ts)
     await context.conversations.send(thread, { text: before === '' ? request : `${before}\n\nMessage to you:\n${request}`, from, ...(attachments.length === 0 ? {} : { attachments, authorized: current }) })
     context.store.set(`seen:${key}`, event.ts)
   }
@@ -369,7 +430,9 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   return {
     start: async () => {
       context.status('starting', 'Connecting to Slack')
-      me = (await slack('auth.test')).user_id
+      const auth = await slack('auth.test')
+      me = auth.user_id
+      team = auth.team_id
       for (const place of places()) {
         const reset = context.conversations.historyBoundary?.(place.key)
         if (reset?.action === 'delete') { context.store.set(`thread:${place.key}`, undefined); continue }

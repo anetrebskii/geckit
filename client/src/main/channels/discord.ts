@@ -242,6 +242,11 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     return next
   }
   const posted = (channel: string, text: string): Promise<unknown> => { const sent = post(channel, text); sent.catch(warn('discord.post.failed')); return sent }
+  // A 👀 reaction on each message Manager took, until it answers or finishes, so the conversation shows the bot is on it.
+  const marked = new Map<string, { readonly channel: string; readonly id: string }[]>()
+  const react = (method: 'PUT' | 'DELETE', channel: string, id: string): void => { api(method, `/channels/${channel}/messages/${id}/reactions/${encodeURIComponent('👀')}/@me`).catch(warn('discord.reaction.failed')) }
+  const mark = (thread: string, channel: string, id: string): void => { marked.set(thread, [...(marked.get(thread) ?? []), { channel, id }]); react('PUT', channel, id) }
+  const unmark = (thread: string): void => { for (const one of marked.get(thread) ?? []) react('DELETE', one.channel, one.id); marked.delete(thread) }
 
   const channelInfo = async (id: string): Promise<DiscordChannelInfo | undefined> => {
     const known = channels.get(id)
@@ -299,6 +304,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     if (watching.has(thread)) return
     const revision = boundary(key)
     const current = (): boolean => !stopped && revision === boundary(key)
+    let busy = false
     const upload: ChannelFileSender = async (bytes, name, media, caption, _format, _origin, beforeSend) => {
       const validate = async (): Promise<void> => {
         const info = await channelInfo(channel)
@@ -358,8 +364,12 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         return
       }
       if (!current()) return
-      if (event.kind === 'status') status.update(event.activity)
-      if (event.kind === 'answer') status.after(posted(channel, event.text))
+      if (event.kind === 'status') {
+        if (event.activity?.active === true) busy = true
+        else if (busy) { busy = false; unmark(thread) }
+        status.update(event.activity)
+      }
+      if (event.kind === 'answer') { unmark(thread); status.after(posted(channel, event.text)) }
       if (event.kind === 'decisions') {
         context.store.set(`decisions:${key}`, event.decisions.map((one) => ({ id: one.id, title: one.title.slice(0, 1_500), values: one.choices.map((choice) => choice.value), labels: one.choices.map((choice) => choice.label) })))
         const open = new Set(event.decisions.map((one) => one.id))
@@ -461,6 +471,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       }
     } catch (error) { await post(channel, `Could not receive this attachment: ${said(error)}. Correct the issue and resend.`); return }
     const request = `${text === '' ? attached === '' ? 'They mentioned you without a message. Read the thread above and help with it.' : 'They sent only files.' : text}${attached}`
+    mark(thread, message.channel_id, message.id)
     await context.conversations.send(thread, { text: before === '' ? request : `${before}\n\nMessage to you:\n${request}`, from, ...(attachments.length === 0 ? {} : { attachments, authorized: current }) })
     context.store.set(`seen:${key}`, message.id)
 

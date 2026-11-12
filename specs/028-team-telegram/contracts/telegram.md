@@ -1,0 +1,4 @@
+# Telegram IPC and authorization
+connect accepts optional mode team and approver policy. confirm binds displayed sender/chat/topic. Default mode private. Pairing exposes addressed command plus expiry; account/candidate expose group/topic metadata. Setup mutations remain desktop-only.
+Telegram target scope is checked before file/API/model operations. Every team request and reply binds immutable generation. Team decisions must belong to the active team thread; private mode retains historical global decision behavior.
+Task members cannot pause Manager globally or clear history. Team tools can coordinate only team-owned workers and scoped attachments, never inspect personal/channel sessions or mutate installation settings. Membership checks are fail-closed for approvals.

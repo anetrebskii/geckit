@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -153,6 +154,13 @@ const accessSetup = async () => {
   await tick()
   return { ...setupResult, driver }
 }
+
+it('lists and finds nothing, without failing, where Codex is not installed', async () => {
+  const codex = new CodexSessions(() => spawn('geckit-test-no-such-codex', [], { stdio: 'pipe' }))
+  await expect(codex.list(['/tmp/project'])).resolves.toEqual([])
+  await expect(codex.search(['/tmp/project'], 'login')).resolves.toEqual([])
+  codex.dispose()
+})
 
 describe('conversation Computer Use access', () => {
   it.each(['accept', 'decline', 'cancel'] as const)('keeps ordinary %s one-time in Auto mode', async (action) => {
@@ -348,6 +356,34 @@ describe('conversation Computer Use access', () => {
 })
 
 describe('Codex app-server', () => {
+  it.each(['\u2028', '\u2029'])('reopens history containing a Unicode separator %j', async (separator) => {
+    const { server, codex } = setup()
+    const text = `Before${separator}После 🦎`
+    server.history = [{ id: 'old', startedAt: 100, status: 'completed', error: null, items: [{ type: 'agentMessage', id: 'answer', text }] }]
+    expect((await codex.read(ROOT, 'codex:terminal'))?.items).toContainEqual({ kind: 'theirs', id: 'codex:answer', text })
+  })
+
+  it('preserves Unicode in fragmented replies and batched streaming events', async () => {
+    const { server, codex, heard } = setup()
+    server.reply = (id, result) => {
+      const bytes = Buffer.from(`${JSON.stringify({ id, result })}\r\n`)
+      for (let at = 0; at < bytes.length; at++) server.stdout.write(bytes.subarray(at, at + 1))
+    }
+    const text = 'Before\u2028После\u2029🦎'
+    server.history = [{ id: 'old', startedAt: 100, status: 'completed', error: null, items: [{ type: 'agentMessage', id: 'answer', text }] }]
+    expect((await codex.read(ROOT, 'codex:terminal'))?.items).toContainEqual({ kind: 'theirs', id: 'codex:answer', text })
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Continue')
+    await tick()
+    const events: CodexEvent[] = [
+      { method: 'item/agentMessage/delta', params: { threadId: 'terminal', itemId: 'reply', delta: text } },
+      { method: 'item/agentMessage/delta', params: { threadId: 'terminal', itemId: 'reply', delta: ' Done' } },
+    ]
+    server.stdout.write(events.map((event) => JSON.stringify(event)).join('\n') + '\n')
+    expect(heard.flatMap((one) => one.items)).toContainEqual({ kind: 'theirs', id: 'codex:reply', text: `${text} Done` })
+    await driver.end()
+  })
+
   it('delivers MCP screenshots during a live turn and again when history is reopened', async () => {
     const { server, heard, driver, codex } = await accessSetup()
     const item = { type: 'mcpToolCall' as const, id: 'screenshot', server: 'playwright', tool: 'screenshot', arguments: {}, result: { content: [{ type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' }] }, status: 'completed', error: null }

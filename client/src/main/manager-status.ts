@@ -16,6 +16,8 @@ export interface ThreadActivity {
   readonly ending: string
   readonly active: boolean
   readonly workers: readonly ThreadWorker[]
+  /** What Manager itself is doing while it prepares an answer, in words; absent while it is not working on a message. */
+  readonly answering?: string
   /** The language the lines are in, so the status message words its own lines the same way. */
   readonly language?: Speech
 }
@@ -56,7 +58,7 @@ function workerLine(worker: ChatSession, speech?: Speech): string {
   return lines.join('\n')
 }
 
-export function threadActivity(view: ManagerView, id: ManagerThread['id']): ThreadActivity | undefined {
+export function threadActivity(view: ManagerView, id: ManagerThread['id'], now = Date.now()): ThreadActivity | undefined {
   const thread = view.threads?.find((one) => one.id === id)
   if (thread === undefined || thread.closed !== undefined) return undefined
   const reason = (thread.error ?? '').split('\n')[0]?.slice(0, REASON) ?? ''
@@ -70,7 +72,12 @@ export function threadActivity(view: ManagerView, id: ManagerThread['id']): Thre
     const found = view.workers.find((one) => one.id === worker)
     return found === undefined ? [] : [{ id: worker, line: workerLine(found, speech), active: workerSaid(found).active }]
   })
-  return { manager, ending, active: !failed && thread.manager !== undefined, workers, ...(speech === undefined ? {} : { language: speech }) }
+  const active = !failed && thread.manager !== undefined
+  const doing = thread.manager === 'received' ? words.doing.starting : thread.note ?? workerDoing(thread.conversation?.stands.split('\n')[0] ?? '', speech) ?? words.doing.thinking
+  const line = containsSecret(doing) ? words.doing.thinking : clip(doing, STANDS)
+  const minutes = thread.since === undefined ? 0 : Math.max(0, Math.floor((now - thread.since) / 60_000))
+  const answering = active ? words.answering(minutes, `${line.charAt(0).toUpperCase()}${line.slice(1)}`) : undefined
+  return { manager, ending, active, workers, ...(answering === undefined ? {} : { answering }), ...(speech === undefined ? {} : { language: speech }) }
 }
 
 export interface StatusPoster {
@@ -80,7 +87,7 @@ export interface StatusPoster {
 }
 
 /**
- * The status message of a channel conversation, docs/ux/channel-status.md: shown while Manager is free and the thread's workers run, edited as they change at most once per `gap`, taken away while Manager works on a message and posted again below what it sends, and left with its ending when the work is over until Manager sends something or the person writes, which deletes it.
+ * The status message of a channel conversation, docs/ux/channel-status.md: shown while Manager is free and the thread's workers run, edited as they change at most once per `gap`, saying what Manager does while it works on a message and taken away when it sends something, then posted again below it, and left with its ending when the work is over until Manager sends something or the person writes, which deletes it.
  */
 export class StatusMessage {
   readonly #poster: StatusPoster
@@ -97,6 +104,8 @@ export class StatusMessage {
   #want: string | undefined
   #closing = false
   #lower = false
+  /** What is wanted is the line saying what Manager does while it prepares an answer. */
+  #answering = false
   #after: Promise<unknown> = Promise.resolve()
   #flushing = false
   #edited = 0
@@ -112,9 +121,13 @@ export class StatusMessage {
   update(activity: ThreadActivity | undefined): void {
     if (activity === undefined) { this.#stretch = false; this.#id = undefined; this.#shown = ''; this.#want = undefined; this.#closing = false; return }
     if (activity.active) this.#drop()
+    const answering = activity.active ? activity.answering : undefined
     const working = activity.workers.some((one) => one.active)
     if (!this.#stretch) {
-      if (!working) return
+      if (!working) {
+        if (answering !== undefined || this.#answering) { this.#answering = answering !== undefined; this.#closing = false; this.#want = answering; void this.#flush() }
+        return
+      }
       this.#stretch = true
       this.#seen.length = 0
       this.#lines.clear()
@@ -124,7 +137,10 @@ export class StatusMessage {
       if (worker.active && !this.#seen.includes(worker.id)) this.#seen.push(worker.id)
       if (this.#seen.includes(worker.id)) this.#lines.set(worker.id, worker.line)
     }
-    if (activity.active) this.#want = undefined
+    // Manager's turn is over: its line goes, and the workers' status comes back below what it sent.
+    if (this.#answering && answering === undefined && this.#id !== undefined) this.#lower = true
+    this.#answering = answering !== undefined
+    if (activity.active) this.#want = answering
     else if (working) this.#want = this.#text(activity.manager, activity.language)
     else {
       this.#stretch = false
@@ -138,6 +154,7 @@ export class StatusMessage {
   /** Something Manager sends is on its way: the status goes below it once it is there. */
   after(sent: Promise<unknown>): void {
     this.#after = Promise.all([this.#after, sent.catch(() => undefined)])
+    if (this.#answering) { this.#answering = false; this.#want = undefined }
     this.#drop()
     if (this.#id !== undefined && !this.#closing) { this.#lower = true; void this.#flush() }
   }

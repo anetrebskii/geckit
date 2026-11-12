@@ -5,7 +5,19 @@ export interface TelegramAccount {
   readonly chatId: number
   readonly name: string
   readonly username?: string
+  readonly team?: TelegramTeam
 }
+
+export interface TelegramTeam {
+  readonly topicId: number
+  readonly title: string
+  readonly generation: string
+  readonly approvers: readonly number[]
+  readonly allMembers: boolean
+}
+
+export const telegramThreadKey = (account: TelegramAccount): string => account.team === undefined ? String(account.chatId) : `team:${String(account.chatId)}:${String(account.team.topicId)}:${account.team.generation}`
+
 
 export interface TelegramBot {
   readonly id: number
@@ -15,7 +27,7 @@ export interface TelegramBot {
 export interface TelegramView {
   readonly state: 'disconnected' | 'pairing' | 'confirming' | 'connected' | 'offline' | 'revoked' | 'conflict' | 'storage-error'
   readonly bot?: TelegramBot
-  readonly pairing?: { readonly url: string; readonly expiresAt: number }
+  readonly pairing?: { readonly url: string; readonly expiresAt: number; readonly command?: string }
   readonly candidate?: TelegramAccount
   readonly account?: TelegramAccount
   readonly detail?: string
@@ -25,7 +37,7 @@ export interface TelegramView {
 }
 
 export type TelegramAction =
-  | { readonly kind: 'connect'; readonly token: string }
+  | { readonly kind: 'connect'; readonly token: string; readonly mode?: 'private' | 'team'; readonly approvers?: readonly number[]; readonly allMembers?: boolean }
   | { readonly kind: 'confirm'; readonly userId: TelegramAccount['id']; readonly chatId: TelegramAccount['chatId'] }
   | { readonly kind: 'cancel-pairing' }
   | { readonly kind: 'retry' }

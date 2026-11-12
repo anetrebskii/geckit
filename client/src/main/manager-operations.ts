@@ -1,3 +1,4 @@
+import { teamThread } from './telegram-team'
 import type { ChannelFileSender } from './channels/channel-files'
 import { productCommand, PRODUCT_COMMANDS } from '../shared/product-cli'
 import { computerArg } from '../cli/computer'
@@ -16,7 +17,7 @@ import type { ChatSession, StatusAttribution, ManagerLabels, SessionMessage, Ses
 import { isRemote } from '../shared/hosts'
 import { isCodexProvider, llmProviderInfo, providerModel } from '../shared/providers'
 import { managerProjects } from '../shared/manager'
-import type { ManagerConfig, ManagerInstructionsResult } from '../shared/manager'
+import type { ManagerConfig, ManagerInstructionsResult, ManagerTelegramSource } from '../shared/manager'
 import type { ManagerThreadName } from '../shared/api'
 import { withColors } from '../shared/project-color'
 import { requestedProvider } from '../cli/start'
@@ -47,6 +48,7 @@ interface OperationDeps {
   readonly managed: (id: string) => boolean
   readonly managerSession: () => string | undefined
   /** The Manager thread the operation came from. */
+  readonly managerRequest?: () => ManagerTelegramSource | undefined
   readonly managerThread?: () => string
   /** The one thread that tracks a worker, or none after it let it go. */
   readonly trackedBy?: (id: string) => ManagerThreadName | undefined
@@ -266,6 +268,8 @@ export class ManagerOperations {
   async #worker(id: string, allowUnmanaged = false): Promise<ChatSession> {
     const projects = managerProjects(this.#deps.settings())
     const worker = (await this.#deps.sessions.list(projects)).find((one) => one.id === id)
+    const thread = this.#deps.managerThread?.() ?? 'main'
+    if (teamThread(thread) && (this.#deps.notes.all()[id]?.managerThread !== thread || this.#deps.authorized?.() === false)) throw new Error('This worker belongs to another Manager thread.')
     const currentProjects = managerProjects(this.#deps.settings())
     if (worker === undefined || worker.manager === true || worker.question === true || worker.id === this.#deps.managerSession() || !currentProjects.includes(worker.project ?? worker.root)) throw new Error('That worker is not in a currently registered project.')
     if (!allowUnmanaged && !this.#deps.managed(id)) throw new Error('This conversation is not managed here. Attach it with sessions attach first.')
@@ -281,9 +285,11 @@ export class ManagerOperations {
   #own(id: string): void {
     const thread = this.#deps.managerThread?.() ?? 'main'
     const note = this.#deps.notes.all()[id] ?? {}
+    const request = this.#deps.managerRequest?.()
+    if (request !== undefined && teamThread(thread)) this.#deps.notes.set(id, { ...note, managerThread: thread, managerTelegramSource: request })
     if (thread === 'main' || note.managerThread !== undefined) return
     const labels = this.#deps.threadLabels?.() ?? {}
-    this.#deps.notes.set(id, { ...note, managerThread: thread, ...(Object.keys(labels).length === 0 ? {} : { labels: { ...labels, ...note.labels } }) })
+    this.#deps.notes.set(id, { ...note, managerThread: thread, ...(request === undefined ? {} : { managerTelegramSource: request }), ...(Object.keys(labels).length === 0 ? {} : { labels: { ...labels, ...note.labels } }) })
   }
 
   async run(args: readonly string[], operation: string): Promise<string> {
@@ -291,6 +297,8 @@ export class ManagerOperations {
     const selected = typeof parsed === 'string' ? parsed : { ...parsed, args: parsed.args.includes('--help') || parsed.args[0] === 'help' ? ['capabilities'] : parsed.args }
     if (typeof selected === 'string') throw new Error(selected)
     if (this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
+    const team = teamThread(this.#deps.managerThread?.() ?? 'main')
+    if (team && (selected.computer !== undefined || !(['capabilities', 'sessions', 'attachments', 'telegram'].includes(selected.args[0] ?? '') || selected.args[0] === 'projects' && selected.args[1] === 'list' || selected.args[0] === 'providers' && ['list', 'models'].includes(selected.args[1] ?? '')) || selected.args[0] === 'sessions' && (!['list', 'show', 'start', 'send', 'retry', 'steer', 'stop', 'mark', 'answer'].includes(selected.args[1] ?? '') || selected.args.includes('--employee')))) throw new Error('Team topics can coordinate their own workers only. Use GeckIt for history, settings, other channels and global Manager controls.')
     if (selected.computer !== undefined) {
       if (this.#deps.target === undefined) throw new Error('Host targeting is unavailable on this GeckIt. No command ran locally.')
       if (!managerReadOnly(selected.args) && !this.#deps.computers?.().some((one) => one.id === selected.computer)) throw new Error('Remote changes require the immutable computer ID from computers list. Read the target capabilities and request confirmation with that ID.')
@@ -306,6 +314,7 @@ export class ManagerOperations {
     if (domain === 'computers' && command === 'list' && args.length === 2) return JSON.stringify(this.#deps.computers?.() ?? [])
     if (domain === 'capabilities') {
       if (args.length !== 1) throw new Error('capabilities takes no arguments.')
+      if (team) return JSON.stringify({ interface: MANAGER_CAPABILITIES.interface, commands: MANAGER_CAPABILITIES.commands.filter((one) => one.startsWith('sessions ') && !/^sessions (attach|assign|follow|unfollow|delete)/.test(one) || one.startsWith('attachments ') || one.startsWith('telegram ')), limitations: 'Team-owned workers and attachments only. Global controls, history, settings, employee memory and other channels require the installation owner in GeckIt.' })
       return JSON.stringify({ ...MANAGER_CAPABILITIES, configurationCommands: PRODUCT_COMMANDS.filter((one) => !one.startsWith('sessions ') && !one.startsWith('employees ')), configuration: this.#deps.product === undefined ? undefined : JSON.parse(await this.#deps.product(['capabilities'])) as Json, target: 'local', computers: this.#deps.computers?.() ?? [] })
     }
     if (!(domain === 'channels' && command === 'send-file') && (['hosts', 'channels', 'manager', 'shortcuts', 'devices', 'access', 'speech', 'browser-config'].includes(domain ?? '') || domain === 'computers') && this.#deps.product !== undefined) return this.#deps.product(args)
@@ -413,7 +422,7 @@ export class ManagerOperations {
       if (domain === 'channels' && this.#deps.notes.all()[worker.id]?.managerThread !== thread) throw new Error('This deliverable belongs to another Manager thread. Send it from the thread that tracks its worker.')
       if (isRemote(worker.root)) throw new Error('Channel file transfer to or from SSH workers is unavailable. Use a local worker or an explicitly authorized host transfer; no local fallback was used.')
       if (!settings.chatProviders.includes(providerOf(worker.id))) throw new Error('This worker provider is disabled. Enable it in GeckIt before handing off files.')
-      let isolated = domain === 'channels'
+      let isolated = domain === 'channels' || team
       const currentFileWorker = async (): Promise<void> => {
         await this.#currentWorker(worker, managerSession)
         if (isolated && this.#deps.notes.all()[worker.id]?.managerThread !== thread) throw new Error('The worker belongs to another Manager thread.')
@@ -476,15 +485,18 @@ export class ManagerOperations {
       const manager = this.#deps.managerSession()
       if (manager === undefined) throw new Error('The originating Manager session is unavailable.')
       await currentFileWorker()
-      const receipt = await sender(bytes, basename(path), image ?? 'application/octet-stream', caption, format, { session: manager, workers: [worker.id], ...(domain === 'channels' ? { thread } : {}) }, currentFileWorker)
+      const request = this.#deps.managerRequest?.()
+      const receipt = await sender(bytes, basename(path), image ?? 'application/octet-stream', caption, format, { session: manager, workers: [worker.id], ...(request === undefined ? {} : { request }), thread }, currentFileWorker)
       return JSON.stringify({ id: worker.id, ...(typeof receipt === 'number' ? { messageId: receipt } : receipt), path, sent: true, as: format, bytes: bytes.length, notice: `${place} accepted the selected file; user download is not confirmed.` })
     }
     if (domain === 'sessions') {
       if (command === 'list') {
-        const all = (await this.#deps.sessions.list(managerProjects(settings))).filter((one) => one.question !== true && (!flags.has('--managed') || this.#deps.managed(one.id)))
+        const all = (await this.#deps.sessions.list(managerProjects(settings))).filter((one) => one.question !== true && (!flags.has('--managed') || this.#deps.managed(one.id)) && (!team || this.#deps.notes.all()[one.id]?.managerThread === this.#deps.managerThread?.()))
         return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, tasks: one.tasks, canStopTasks: one.canStopTasks === true, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0 })))
       }
       if (command === 'start') {
+        const bindingsAvailable = (): boolean => !team || Object.values(this.#deps.notes.all()).filter((note) => note.managerTelegramSource !== undefined).length < 2048
+        if (!bindingsAvailable()) throw new Error('Team worker links are full (2048). Remove finished team conversations in GeckIt before starting more workers.')
         const root = this.#project(required(flags, '--project'))
         const explicit = flags.get('--provider')
         const provider = explicit === undefined ? undefined : requestedProvider(explicit)
@@ -505,7 +517,9 @@ export class ManagerOperations {
         }
         const message: SessionMessage = { root, ...(employeeId === undefined ? {} : { employeeId }), provider: resolved.provider, mode: settings.chatMode, text, goal, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
         const manager = this.#deps.managerSession()
-        const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, manager, () => manager === this.#deps.managerSession() && this.#deps.authorized?.() !== false)
+        const request = this.#deps.managerRequest?.()
+        const ownership = team ? { managerThread: this.#deps.managerThread?.() ?? 'main', ...(request === undefined ? {} : { managerTelegramSource: request }), labels: this.#deps.threadLabels?.() ?? {} } : undefined
+        const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, manager, () => manager === this.#deps.managerSession() && this.#deps.authorized?.() !== false && bindingsAvailable(), ownership)
         this.#own(id)
         if (flags.has('--title')) this.#deps.sessions.rename(id, required(flags, '--title'))
         const worker = await this.#worker(id)
@@ -551,6 +565,7 @@ export class ManagerOperations {
         if (!settings.chatProviders.includes(providerOf(id))) throw new Error('This worker provider is disabled. No replacement was selected.')
         return JSON.stringify(command === 'retry' ? await this.#deps.sessions.retryWithReceipt(id, operation) : await this.#deps.sessions.steer(id, required(flags, '--text'), operation))
       }
+      if (command === 'send' && team) this.#own(id)
       if (command === 'send') {
         const provider = providerOf(id)
         if (!settings.chatProviders.includes(provider)) throw new Error(`Worker provider ${provider} is disabled. No replacement was selected.`)

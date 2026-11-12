@@ -64,6 +64,16 @@ describe('threadActivity', () => {
     for (const text of said) expect(text).not.toMatch(/Manager (is|has|stopped)/)
   })
 
+  it('shows what Manager last wrote in a status block and the minutes it has worked, the way FormulaBot does', () => {
+    const at = Date.UTC(2026, 10, 12, 1, 0)
+    const working = (extra: Partial<ManagerThread>, now = at): string | undefined => threadActivity(view([thread({ manager: 'working', since: at, ...extra })]), 'slack:C1:3.0', now)?.answering
+    expect(working({})).toBe('⏳ Working on it\nThinking it through')
+    expect(working({ note: 'Checking what the login fix has done so far.' }, at + 3 * 60_000 + 5_000)).toBe('⏳ Working on it · 3 min\nChecking what the login fix has done so far.')
+    expect(working({ note: 'Смотрю, что уже сделано.', language: 'ru' }, at + 61_000)).toBe('⏳ Готовлю ответ · 1 мин\nСмотрю, что уже сделано.')
+    expect(working({ note: 'Using token xoxb-1234567890-abcdefghij' })).toBe('⏳ Working on it\nThinking it through')
+    expect(working({ manager: 'received', note: 'Old note.' })).toBe('⏳ Working on it\nStarting on the message')
+  })
+
   it('keeps a worker active while its background tasks run, and lists them', () => {
     const task = (id: string, what: string, status: 'running' | 'asks' | 'completed'): NonNullable<ChatSession['tasks']>[number] => ({ id, kind: 'monitor', what, status, started: 0 })
     const watching = worker('w1', 'Watch CI', { tasks: [task('a', 'CI run 42', 'running'), task('b', 'Old build', 'completed'), task('c', 'Deploy check', 'asks'), task('d', 'D', 'running'), task('e', 'E', 'running')] })
@@ -179,6 +189,32 @@ describe('StatusMessage', () => {
     status.update(free([fix('finished', false)]))
     await settle()
     expect(calls.at(-1)).toBe('remove 3')
+  })
+
+  it('says what Manager does while it prepares an answer, edits it in place and takes it away when Manager sends something', async () => {
+    const { calls, poster: send } = poster()
+    const status = new StatusMessage(send, { gap: 0, now: () => Date.UTC(2026, 10, 12, 1, 0) })
+    const answering = (doing: string, workers: ThreadActivity['workers'] = []): ThreadActivity => ({ ...busy(workers), answering: `Preparing the answer: ${doing}` })
+    status.update(answering('thinking it through'))
+    await settle()
+    status.update(answering('reading brain/slack'))
+    await settle()
+    expect(calls).toEqual(['post Preparing the answer: thinking it through', 'edit 1 Preparing the answer: reading brain/slack'])
+    status.after(Promise.resolve())
+    await settle()
+    expect(calls.at(-1)).toBe('remove 1')
+    status.update(answering('running a command', [fix('working')]))
+    await settle()
+    expect(calls.at(-1)).toBe('post Preparing the answer: running a command')
+    status.update(free([fix('working')]))
+    await settle()
+    expect(calls.slice(-2)).toEqual(['remove 2', 'post While I wait, here is what is going on:\n• Fix: working'])
+    status.update(busy([fix('working')]))
+    status.update(answering('thinking it through'))
+    await settle()
+    status.update(free())
+    await settle()
+    expect(calls.slice(-4)).toEqual(['remove 3', 'post Preparing the answer: thinking it through', 'remove 4', 'post Done.\n• Fix: working'])
   })
 
   it('caps the worker lines and keeps an ending for a stretch that waits for an answer', async () => {

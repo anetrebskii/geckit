@@ -1,8 +1,9 @@
+import type { ManagerTelegramSource } from '../../shared/manager'
 import { assertProviderAvailable, prepareProvider, providerPreparing } from '../provider-changes'
 import { mergeTasks, taskTerminal } from '../../shared/background-tasks'
 import type { Employee, EmployeeConversation } from '../../shared/employees'
 import { createHash, randomUUID } from 'node:crypto'
-import { managerContext, managerHistoryItem, managerVisibleItem } from '../manager-protocol'
+import { managerContext, managerHistoryItem, managerNote, managerVisibleItem } from '../manager-protocol'
 import { MANAGER_CHAT_GUIDANCE } from '../../shared/manager'
 import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -120,6 +121,7 @@ export interface SessionNote {
   readonly managerOwner?: string
   /** The one Manager thread that tracks it and gets its updates, GeckIt's own when absent. */
   readonly managerThread?: string
+  readonly managerTelegramSource?: ManagerTelegramSource
   /** Its tracking thread let it go, so no thread gets its updates until one follows it. */
   readonly managerUntracked?: true
   /** What the channel that started it says about it. */
@@ -538,7 +540,7 @@ export function startsConversations(command: string): boolean {
 const conversations = (count: number): string => (count === 1 ? 'a conversation' : `${String(count)} conversations`)
 
 export class Sessions {
-  #managerItems: ((items: SessionItems) => void) | undefined
+  #managerItems: ((items: SessionItems, note: string | undefined) => void) | undefined
   #managerOutput: ((id: string, text: string) => void) | undefined
   #managerSend: ((message: SessionMessage) => Promise<string>) | undefined
   readonly #managerMessages = new WeakSet<SessionMessage>()
@@ -672,7 +674,7 @@ export class Sessions {
     this.#managerSend = send
   }
 
-  managerItems(heard: (items: SessionItems) => void): void { this.#managerItems = heard }
+  managerItems(heard: (items: SessionItems, note: string | undefined) => void): void { this.#managerItems = heard }
 
   managerThreads(name: (thread: string) => ManagerThreadName | undefined): void { this.#threadName = name }
 
@@ -683,7 +685,7 @@ export class Sessions {
   }
 
   #tellItems(items: SessionItems): void {
-    if (this.isManager(items.id)) this.#managerItems?.({ ...items, items: items.items.map((item) => managerVisibleItem(managerHistoryItem(item))) })
+    if (this.isManager(items.id)) this.#managerItems?.({ ...items, items: items.items.map((item) => managerVisibleItem(managerHistoryItem(item))) }, items.items.flatMap((item) => item.kind === 'theirs' ? [managerNote(item.text)] : []).filter((note) => note !== undefined).at(-1))
     else this.#deps.items(items)
   }
 
@@ -737,7 +739,7 @@ export class Sessions {
     this.#note(id, { managerPrompt: prompt })
   }
 
-  async startManaged(message: SessionMessage, owner: string, operation: string, parent = owner, authorized: () => boolean = () => true): Promise<string> {
+  async startManaged(message: SessionMessage, owner: string, operation: string, parent = owner, authorized: () => boolean = () => true, ownership?: Pick<SessionNote, 'managerThread' | 'managerTelegramSource' | 'labels'>): Promise<string> {
     const found = Object.entries(this.#deps.notes.all()).find(([, note]) => note.managerOwner === owner && note.managerOperation === operation)
     if (found !== undefined) return found[0]
     if (message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
@@ -750,7 +752,7 @@ export class Sessions {
       throw new Error('The originating request changed. No worker message was sent.')
     }
     this.#fresh(id, message.root, firstLine(message.text, 80), message.mode)
-    this.#note(id, { here: true, parent, managerOwner: owner, managerOperation: operation, ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), unborn: message.root, title: firstLine(message.text, 80) })
+    this.#note(id, { ...ownership, here: true, parent, managerOwner: owner, managerOperation: operation, ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), unborn: message.root, title: firstLine(message.text, 80) })
     return this.send({ ...message, session: id })
   }
 
@@ -3409,7 +3411,7 @@ export class Sessions {
         }
         gone.push(id)
         this.#rows.delete(id)
-        const { prepared: _prepared, unborn: _unborn, managerOwner: _owner, managerThread: _thread, managerUntracked: _untracked, managerOperation: _operation, ...kept } = this.#deps.notes.all()[id] ?? {}
+        const { prepared: _prepared, unborn: _unborn, managerOwner: _owner, managerThread: _thread, managerTelegramSource: _telegramSource, managerUntracked: _untracked, managerOperation: _operation, ...kept } = this.#deps.notes.all()[id] ?? {}
         try { this.#deps.notes.set(id, { ...kept, hidden: true }) } catch (error) {
           this.#changed()
           throw new Error('The provider confirmed deletion, but local cleanup could not be saved. Do not repeat deletion; inspect the host notes store.', { cause: error })
@@ -3622,7 +3624,7 @@ export class Sessions {
     // working would trade places in the list every second. A message sent, a
     // turn begun or over, and a card put up are what move a row.
     if (items.length > 0 || heard.gone.length > 0) {
-      this.#tellItems({ id: live.id, items: this.#deps.notes.all()[live.id]?.managerPrompt === undefined ? items : items.map(managerVisibleItem), ...(heard.gone.length > 0 ? { gone: heard.gone } : {}) })
+      this.#tellItems({ id: live.id, items, ...(heard.gone.length > 0 ? { gone: heard.gone } : {}) })
     }
     for (const signal of heard.signals) this.#signal(live, signal)
     if (this.#deps.notes.all()[live.id]?.managerPrompt !== undefined && heard.signals.some((signal) => signal.kind === 'ended' && signal.how === 'done')) {

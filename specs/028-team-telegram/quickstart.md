@@ -1,0 +1,5 @@
+# Validation
+Use existing client dependencies, without running the application or reading real credentials. Run npm run typecheck; npm run lint; npm test; npm run build from client. Telegram tests inject fetch and fake vault; Sessions inject a test provider.
+Expected: private fixtures unchanged, rejected scopes produce no download/model/output, correct image bytes reach native input, stable IDs prevent replay, unknown send remains uncertain. Use separate temp data per test.
+Live topic setup, two actual members, real restart, provider integration and packaged Electron acceptance require a separately authorized session. Do not restore old adapter offset after native intake; see docs/ux/team-telegram-transition.md.
+Browser fixture: see client/test/browser/team-telegram/README.md. Lint passed. Standard tests, typecheck and build currently have environment/baseline failures reproduced on the unchanged base; they are not claimed green. Detailed command logs are retained outside the checkout in the task work report.

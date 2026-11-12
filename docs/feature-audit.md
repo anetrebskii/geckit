@@ -718,3 +718,7 @@ Integration checks: 69 focused Telegram tests passed; full serial suite 1,735 pa
 ### Unified local and registered-host CLI configuration - 2026-11-07 (working tree)
 
 Alex explicitly requested this implementation. The existing Agent settings and shortcuts entry now includes ordinary CLI target selection, dedicated entity commands and guarded provider disable. Full method/field coverage, evidence and limits: [CLI audit](feature-audit-cli.md). No real providers, credentials, grants or remote computers were changed during verification. Not released.
+
+
+### Native team Telegram topic (working tree, unreleased)
+Specification and workflow: `specs/028-team-telegram/`. Owner setup in `client/src/renderer/src/chat/ManagerTelegram.tsx`; native parser/controller in `client/src/main/telegram-bot.ts`, `telegram.ts`, `telegram-team.ts`; provenance, inbox and operation isolation in Manager/runtime; native attachment scopes and pins reused. Tests in `client/test/telegram.test.ts` and `manager.test.ts` inject Telegram fetch and a free in-memory provider. Browser fixture uses actual component/styles. Covers same-bot replacement, durable handoff, queue reconstruction with six requests and exact image bytes, scope refusal before downloads, callbacks and async revocation, queue capacity and private compatibility. Transition/rollback in `docs/ux/team-telegram-transition.md`. Standard checks remain constrained by reproduced baseline/dependency failures; see the external task validation report. No installed app changes or live Telegram acceptance.

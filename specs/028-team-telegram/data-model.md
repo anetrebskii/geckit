@@ -1,0 +1,4 @@
+# Data model
+TelegramAccount.team: topicId positive integer, title string, generation random ID, approvers positive numeric IDs (maximum 100), allMembers boolean. Account.id is the pairing sender, not the only task submitter. chatId is a negative forum supergroup ID.
+Team thread key: team:<chat>:<topic>:<generation>. Structured input provenance retains generation, bot, chat, topic, actor, source message and request ID; replies preserve thread/request identity. Old generation threads cannot execute tools after replacement.
+Sealed in-flight update is saved before acknowledging getUpdates. Recovery reuses stable Manager request identity, never recreates an answered decision. Queue limit 100; reply links 2048; callbacks 256; questions 128; audit 512. Cache existing limits/pins remain authoritative.
