@@ -200,6 +200,7 @@ return {
     deleteTest: (name: string): Promise<void> => rendererTransport.invoke('browser:deleteTest', name),
     /** Makes a test profile for one account, or changes which account its note names. */
     account: (name: string, note: string): Promise<void> => rendererTransport.invoke('browser:account', name, note),
+    updateTest: (name: string, next: string, note: string): Promise<void> => rendererTransport.invoke('browser:updateTest', name, next, note),
     viewStart: (name: string, url?: string, token?: string): Promise<{ readonly width: number; readonly height: number }> => rendererTransport.invoke('browser:viewStart', name, url, token),
     viewFrame: (name: string): Promise<ViewFrame> => rendererTransport.invoke('browser:viewFrame', name),
     viewInput: (name: string, input: ViewInput): Promise<void> => rendererTransport.invoke('browser:viewInput', name, input),

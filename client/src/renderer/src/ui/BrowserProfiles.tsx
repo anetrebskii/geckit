@@ -17,7 +17,9 @@ type ProfileRowProps = Pick<Profile, 'name' | 'note' | 'open'> & Pick<BrowserPro
   readonly focusOpen: boolean
   readonly onFocused: () => void
   readonly onDeleted: () => void
+  readonly onRenamed: (name: Profile['name']) => void
 }
+const NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 const liveApi: LiveViewApi = {
   start: (name, url, token) => window.geckit.browser.viewStart(name, url, token),
   frame: (name) => window.geckit.browser.viewFrame(name),
@@ -26,9 +28,14 @@ const liveApi: LiveViewApi = {
 }
 const tint = (name: string): string => `var(--project-${[...name].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 8})`
 
-const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled, signIn, focusOpen, onFocused, onDeleted }: ProfileRowProps): React.JSX.Element {
+const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled, signIn, focusOpen, onFocused, onDeleted, onRenamed }: ProfileRowProps): React.JSX.Element {
   const [asking, setAsking] = useState(false)
-  const [busy, setBusy] = useState<'open' | 'delete'>()
+  const [busy, setBusy] = useState<'open' | 'delete' | 'save'>()
+  const [editing, setEditing] = useState(false)
+  const [draftName, setDraftName] = useState(name)
+  const [draftNote, setDraftNote] = useState('')
+  const nameField = useRef<HTMLInputElement>(null)
+  const noteField = useRef<HTMLInputElement>(null)
   const [problem, setProblem] = useState('')
   const [more, setMore] = useState<DOMRect>()
   const running = useRef(false)
@@ -44,6 +51,29 @@ const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled
     if (asking) cancelButton.current?.focus()
     else if (restoreMore.current) { moreButton.current?.focus(); restoreMore.current = false }
   }, [asking])
+  useEffect(() => {
+    if (editing) (open ? noteField : nameField).current?.focus()
+    else if (restoreMore.current) { moreButton.current?.focus(); restoreMore.current = false }
+  }, [editing, open])
+  const next = draftName.trim()
+  const changed = next !== name || draftNote.trim() !== (note ?? '')
+  const stopEditing = (): void => { if (running.current) return; setProblem(''); restoreMore.current = true; setEditing(false) }
+  const save = async (): Promise<void> => {
+    if (running.current || !NAME.test(next) || !changed) return
+    running.current = true
+    setBusy('save')
+    setProblem('')
+    try {
+      await window.geckit.browser.updateTest(name, next, draftNote)
+      await refresh()
+      if (next === name) { restoreMore.current = true; setEditing(false) } else onRenamed(next)
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : String(error))
+    } finally {
+      running.current = false
+      setBusy(undefined)
+    }
+  }
   const cancel = (): void => { if (running.current) return; restoreMore.current = true; setAsking(false) }
   const act = async (action: 'open' | 'delete'): Promise<void> => {
     if (running.current) return
@@ -65,6 +95,7 @@ const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled
     }
   }
   const choices: readonly Choice[] = [
+    { value: 'edit', label: 'Edit', icon: 'pencil' },
     { value: 'sign-in', label: 'Sign in', icon: 'display', ...(enabled ? {} : { disabled: true }) },
     { value: 'delete', label: 'Delete', icon: 'trash', danger: true },
   ]
@@ -72,7 +103,22 @@ const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled
     setMore(undefined)
     setProblem('')
     if (value === 'sign-in') signIn(name, moreButton.current)
+    else if (value === 'edit') { setDraftName(name); setDraftNote(note ?? ''); setEditing(true) }
     else setAsking(true)
+  }
+  if (editing) {
+    const nameId = `browser-profile-${name}-name`
+    const noteId = `browser-profile-${name}-note`
+    return <li className="browser-profile asking editing">
+      <form className="browser-profiles-form" aria-label={`Edit geckit:${name}`} onSubmit={(event) => { event.preventDefault(); void save() }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); stopEditing() } }}>
+        <label htmlFor={nameId}>Profile name</label>
+        <div className="browser-profiles-field"><input ref={nameField} id={nameId} type="text" value={draftName} autoCapitalize="off" autoCorrect="off" spellCheck={false} maxLength={40} required disabled={open || busy !== undefined} aria-describedby={`${nameId}-hint`} onChange={(event) => { setDraftName(event.target.value.toLowerCase()); setProblem('') }} /><span id={`${nameId}-hint`} className="browser-profiles-hint">{open ? 'Close its browser to rename it.' : 'Lowercase letters, numbers and hyphens. Conversations and settings that use the old name need the new one.'}</span></div>
+        <label htmlFor={noteId}>Description</label>
+        <div className="browser-profiles-field"><input ref={noteField} id={noteId} type="text" value={draftNote} maxLength={120} placeholder="GitHub as alex@example.com" disabled={busy !== undefined} aria-describedby={`${noteId}-hint`} onChange={(event) => { setDraftNote(event.target.value); setProblem('') }} /><span id={`${noteId}-hint`} className="browser-profiles-hint">Optional. Assistants read it to pick the right profile for a task.</span></div>
+        {problem === '' ? null : <p className="browser-profile-error browser-profiles-form-wide" role="alert">{problem}</p>}
+        <div className="browser-profiles-form-actions browser-profiles-form-wide"><button type="button" className="quiet" disabled={busy !== undefined} onClick={stopEditing}>Cancel</button><button type="submit" className="primary" disabled={!NAME.test(next) || !changed || busy !== undefined}>{busy === 'save' ? 'Saving...' : 'Save'}</button></div>
+      </form>
+    </li>
   }
   return <li className={`browser-profile${asking ? ' asking' : ''}`} onKeyDown={(event) => { if (event.key === 'Escape' && asking) { event.preventDefault(); event.stopPropagation(); cancel() } }}>
     <div className="browser-profile-main">
@@ -117,12 +163,13 @@ export function BrowserProfiles({ testing, refresh, enabled }: BrowserProfilesPr
   }, [making])
   const onFocused = useCallback((): void => setCreated(undefined), [])
   const onDeleted = useCallback((): void => newButton.current?.focus(), [])
+  const onRenamed = useCallback((profile: Profile['name']): void => setCreated(profile), [])
   const signIn = useCallback((profile: Profile['name'], opener: HTMLButtonElement | null): void => { signInOpener.current = opener; setSigning(profile) }, [])
   if (testing === undefined || !testing.supported) return null
   const trimmed = name.trim()
   const duplicate = testing.profiles.some((one) => one.name === trimmed)
   const duplicateProblem = duplicate ? `A profile named ${trimmed} already exists. Choose another name.` : ''
-  const valid = /^[a-z0-9][a-z0-9-]{0,39}$/.test(trimmed) && !duplicate
+  const valid = NAME.test(trimmed) && !duplicate
   const download = testing.download
   const cancel = (): void => { if (running.current) return; setName(''); setNote(''); setProblem(''); restoreNew.current = true; setMaking(false) }
   const create = async (): Promise<void> => {
@@ -167,7 +214,7 @@ export function BrowserProfiles({ testing, refresh, enabled }: BrowserProfilesPr
         <div className="browser-profiles-form-actions browser-profiles-form-wide"><button type="button" className="quiet" disabled={creating} onClick={cancel}>Cancel</button><button type="submit" className="primary" disabled={!valid || creating}>{creating ? 'Creating...' : 'Create profile'}</button></div>
       </form> : null}
       {empty ? (making ? null : <p className="browser-profiles-empty">No browser profiles yet. Create one, then open it to sign in.</p>)
-        : <ul className="browser-profiles-list">{testing.profiles.map((one) => <ProfileRow key={one.name} {...one} refresh={refresh} enabled={enabled} signIn={signIn} focusOpen={created === one.name} onFocused={onFocused} onDeleted={onDeleted} />)}</ul>}
+        : <ul className="browser-profiles-list">{testing.profiles.map((one) => <ProfileRow key={one.name} {...one} refresh={refresh} enabled={enabled} signIn={signIn} focusOpen={created === one.name} onFocused={onFocused} onDeleted={onDeleted} onRenamed={onRenamed} />)}</ul>}
     </div>
     {signing === undefined ? null : <LiveView name={signing} api={liveApi} {...(window.geckitRemoteComputer === undefined ? {} : { computer: window.geckitRemoteComputer.server.name })} onClose={() => { setSigning(undefined); signInOpener.current?.focus() }} />}
   </section>

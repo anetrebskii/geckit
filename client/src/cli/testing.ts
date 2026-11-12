@@ -693,6 +693,27 @@ export function deleteTestProfile(name: string, root?: string): void {
   } finally { unlock() }
 }
 
+/** Changes a test profile's description and, with its browser closed, its name; sign-ins stay with the profile. */
+export function updateTestProfile(name: string, next: string, note: string, root?: string): void {
+  if (!validTestName(name) || !validTestName(next)) throw new Error('Name the profile with lowercase letters, digits and hyphens, such as github-work.')
+  const folder = join(root ?? homedir(), '.geckit', 'browser')
+  if (!existsSync(join(profilesFolder(root), name))) throw new Error(`There is no ${TEST_PREFIX}${name}.`)
+  if (next === name) { saveTestAccount(name, note, folder); return }
+  const unlock = acquireTestLock(name, folder)
+  if (unlock === undefined) throw new Error(`Close ${TEST_PREFIX}${name} before renaming it.`)
+  try {
+    const unlockNext = acquireTestLock(next, folder)
+    if (unlockNext === undefined) throw new Error(`A profile named ${next} already exists. Choose another name.`)
+    try {
+      if (existsSync(join(profilesFolder(root), next)) || testAccount(next, folder) !== undefined) throw new Error(`A profile named ${next} already exists. Choose another name.`)
+      renameSync(join(profilesFolder(root), name), join(profilesFolder(root), next))
+      saveTestAccount(next, note, folder)
+      forgetTestAccount(name, folder)
+      if (existsSync(testLog(name, root))) renameSync(testLog(name, root), testLog(next, root))
+    } finally { unlockNext() }
+  } finally { unlock() }
+}
+
 /** Makes a test profile for one account, or changes what its note says; the browser opens only when asked. */
 export function makeTestAccount(name: string, note: string, root?: string, create = false): void {
   if (!validTestName(name)) throw new Error('Name the profile with lowercase letters, digits and hyphens, such as github-work.')

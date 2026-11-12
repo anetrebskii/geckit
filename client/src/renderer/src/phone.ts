@@ -541,6 +541,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       openFolder: () => Promise.resolve(),
       openTest: () => Promise.resolve(),
       deleteTest: () => Promise.resolve(),
+      updateTest: () => Promise.resolve(),
       account: () => Promise.resolve(),
       viewStart: () => Promise.reject(new Error('Open the live view from Servers on the phone.')),
       viewFrame: () => Promise.reject(new Error('Open the live view from Servers on the phone.')),

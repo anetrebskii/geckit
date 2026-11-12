@@ -7,7 +7,7 @@ import '../../../src/renderer/src/styles.css'
 import './fixture.css'
 
 type Profile = TestBrowsersState['profiles'][number]
-type ProfileCall = Pick<Profile, 'name'> & { readonly action: 'create' | 'open' | 'delete' | 'sign-in' | 'end-view'; readonly note?: Profile['note'] }
+type ProfileCall = Pick<Profile, 'name'> & { readonly action: 'create' | 'open' | 'update' | 'delete' | 'sign-in' | 'end-view'; readonly note?: Profile['note'] }
 const params = new URLSearchParams(location.search)
 const initial: Profile[] = [
   { name: 'cws-publisher', note: 'Chrome Web Store developer dashboard as alex.netrebskiy@gmail.com', open: false },
@@ -33,6 +33,7 @@ const browser: Geckit['browser'] = {
   openFolder: async () => undefined,
   account: async (name, note) => { fixture.calls.push({ action: 'create', name, note }); await wait(); if (fixture.failCreate) throw new Error('Fixture create failed: profile directory is not writable.'); if (profiles.some((one) => one.name === name)) throw new Error(`A profile named ${name} already exists. Choose another name.`); profiles = [...profiles, { name, note, open: false }] },
   openTest: async (name) => { fixture.calls.push({ action: 'open', name }); await wait(); if (fixture.failOpen) throw new Error('Fixture open failed: Chrome could not start.'); profiles = profiles.map((one) => one.name === name ? { ...one, open: true } : one) },
+  updateTest: async (name, next, note) => { fixture.calls.push({ action: 'update', name, note }); await wait(); if (profiles.some((one) => one.name === name && one.open) && next !== name) throw new Error(`Close geckit:${name} before renaming it.`); if (next !== name && profiles.some((one) => one.name === next)) throw new Error(`A profile named ${next} already exists. Choose another name.`); profiles = profiles.map((one) => one.name === name ? { name: next, open: one.open, ...(note.trim() === '' ? {} : { note: note.trim() }) } : one) },
   deleteTest: async (name) => { fixture.calls.push({ action: 'delete', name }); await wait(); if (fixture.failDelete) throw new Error('Fixture delete refused: another conversation owns this browser.'); profiles = profiles.filter((one) => one.name !== name) },
   viewStart: async (name) => { fixture.calls.push({ action: 'sign-in', name }); await wait(); if (fixture.failView) throw new Error('Fixture live view failed: browser unavailable.'); return { width: 640, height: 360 } },
   viewFrame: async () => ({ jpeg: canvas.toDataURL('image/jpeg').split(',')[1] ?? '', width: 640, height: 360, url: 'https://fixture.example/sign-in', title: 'Fixture sign-in page' }),

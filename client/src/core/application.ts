@@ -29,7 +29,7 @@ import { keepToken, pushTo } from '../main/push'
 import type { SessionNotice } from '../shared/api'
 import { localFetch } from '../main/local-page'
 import { browserBridgeOn, browserBridgeState, openTest, stopTest } from '../cli/browser'
-import { deleteTestProfile, makeTestAccount } from '../cli/testing'
+import { deleteTestProfile, makeTestAccount, updateTestProfile } from '../cli/testing'
 import { signInLink, viewEnd, viewFrame, viewInput, viewStart } from '../cli/live-view'
 import { runCli } from './cli-run'
 import { deleteFindModel, fetchFindModel, findModelServer } from '../cli/find-model'
@@ -208,6 +208,7 @@ export function application(runtime: CoreRuntime) {
     'browser:openTest': async (name: string) => { if (!browserBridgeOn()) throw new Error('Chrome through GeckIt is off. Turn it on in Settings > Web Browser.'); const result = await openTest(name); if (!result.ok) throw new Error(result.said) },
     'browser:deleteTest': async (name: string) => { const stopped = await stopTest(name); if (!stopped.ok) throw new Error(stopped.said); deleteTestProfile(name) },
     'browser:account': (name: string, note: string) => makeTestAccount(name, note, undefined, true),
+    'browser:updateTest': (name: string, next: string, note: string) => updateTestProfile(name, next, note),
     'browser:signInLink': (name: string) => signInLink(name),
     'browser:viewStart': (name: string, url?: string, token?: string) => viewStart(name, url, token),
     'browser:viewFrame': (name: string) => viewFrame(name),

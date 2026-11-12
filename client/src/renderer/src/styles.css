@@ -16042,6 +16042,8 @@ html.phone .live-view {
 .chrome-bridge .browser-profile > p.browser-profile-error { margin-inline-start: 44px; }
 .browser-profiles-form { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 10px 14px; padding: 14px; background: var(--bg-sunken); border-block-end: 1px solid var(--border); animation: pop var(--settle) var(--ease) both; }
 .browser-profiles-form:last-child { border-block-end: 0; }
+.browser-profile.editing { padding: 0; }
+.browser-profile.editing .browser-profiles-form { border-block-end: 0; }
 .browser-profiles-form label { color: var(--text); font-size: 12px; text-align: end; }
 .browser-profiles-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .browser-profiles-field input { width: 100%; min-width: 0; padding: 5px 8px; color: var(--text); background: var(--field); border-radius: var(--radius); }

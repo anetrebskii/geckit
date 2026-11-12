@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { pickProfile } from '../src/cli/browser'
-import { deleteTestProfile, extensionSource, makeTestAccount, pageScript, serveTestLaunches, testBrowsersState, validTestName } from '../src/cli/testing'
+import { deleteTestProfile, extensionSource, makeTestAccount, pageScript, updateTestProfile, serveTestLaunches, testBrowsersState, validTestName } from '../src/cli/testing'
 
 describe('test browsers', () => {
   it('runs the extension own page functions, read out of background.js', () => {
@@ -35,6 +35,19 @@ describe('test browsers', () => {
     const root = mkdtempSync(join(tmpdir(), 'geckit-testing-'))
     makeTestAccount('plain', '  ', root, true)
     expect(testBrowsersState(root).profiles).toEqual([{ name: 'plain', open: false }])
+  })
+
+  it('renames a profile and changes its description, keeping its files', () => {
+    const root = mkdtempSync(join(tmpdir(), 'geckit-testing-'))
+    makeTestAccount('old', 'GitHub as alex', root, true)
+    writeFileSync(join(root, '.geckit', 'chrome-for-testing', 'profiles', 'old', 'Cookies'), 'kept')
+    makeTestAccount('taken', '', root, true)
+    updateTestProfile('old', 'old', 'GitHub as work', root)
+    expect(testBrowsersState(root).profiles.find((one) => one.name === 'old')?.note).toBe('GitHub as work')
+    expect(() => updateTestProfile('old', 'taken', '', root)).toThrow('already exists')
+    updateTestProfile('old', 'github-work', 'GitHub as work', root)
+    expect(testBrowsersState(root).profiles).toEqual([{ name: 'github-work', open: false, note: 'GitHub as work' }, { name: 'taken', open: false }])
+    expect(readFileSync(join(root, '.geckit', 'chrome-for-testing', 'profiles', 'github-work', 'Cookies'), 'utf8')).toBe('kept')
   })
 
   it('lists kept profiles and deletes one with its folder', () => {
