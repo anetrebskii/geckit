@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   process.env['GECKIT_DATA'] = directory
   if (appHome !== undefined) process.env['GECKIT_APP_HOME'] = appHome
   log.transports.file.level = false
-  const release = ownDataDirectory(directory)
+  const release = await ownDataDirectory(directory)
   const tokenPath = join(directory, 'operator-token')
   const token = randomBytes(32).toString('hex')
   let runtime: Awaited<ReturnType<typeof createRuntime>> | undefined
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
     native.dispose()
     unsubscribe?.()
     try { await Promise.all([listener?.close(), rpc?.close()]); await activation }
-    finally { try { await runtime?.dispose() } finally { rmSync(tokenPath, { force: true }); release() } }
+    finally { try { await runtime?.dispose() } finally { try { rmSync(tokenPath, { force: true }) } finally { await release() } } }
   })()
   let started = false
   let requested = false

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { version as bundledVersion } from '../../package.json'
 import { askedEndpoint, endpointOnDisk } from '../cli/endpoint'
 import { connectRpc, rpcEndpoint } from '../core/rpc'
+import { canStartService } from '../core/ownership'
 import type { RpcClient, RpcEvent } from '../core/rpc'
 import type { ServiceEvents, ServiceMethods } from '../service/application'
 
@@ -49,6 +50,7 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
   let closed = false
   let retry: NodeJS.Timeout | undefined
   let launchError: Error | undefined
+  let launchExit: string | undefined
   let connectionError: Error | undefined
   let launched = false
   let shutdownPromise: Promise<void> | undefined
@@ -70,7 +72,10 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
       for (const key of ['CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDECODE', 'GECKIT_MANAGER_SESSION', 'GECKIT_MANAGER_TOKEN', 'GECKIT_MANAGER_OPERATION']) Reflect.deleteProperty(env, key)
       const child = spawn(options.executable, [options.script, ...options.args ?? [], '--data', options.directory], { env, detached: true, stdio: ['ignore', output, output], windowsHide: true })
       child.once('error', () => { launchError = new Error(`GeckIt service could not start. Check its executable and ${logFile}.`) })
-      child.once('exit', (code, signal) => { if (current === undefined && !closed) launchError = new Error(`GeckIt service exited before desktop connected (${signal ?? String(code)}). Check ${logFile}.`) })
+      child.once('exit', (code, signal) => {
+        launchExit = `GeckIt service exited before desktop connected (${signal ?? String(code)}). Check ${logFile}.`
+        if (process.platform !== 'win32' && current === undefined && !closed) launchError = new Error(launchExit)
+      })
       child.unref()
       launched = true
     } finally { closeSync(output) }
@@ -146,16 +151,16 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
       if (launchError !== undefined) throw launchError
       const control = existsSync(rpcEndpoint(options.directory))
       const token = existsSync(tokenFile)
-      const owner = existsSync(ownerFile)
       const legacy = endpointOnDisk() && existsSync(askedEndpoint(options.directory))
       if (legacy && !control && !token) throw new Error('This data directory is owned by a GeckIt version without service control. Quit that instance before starting desktop. No socket was removed.', { cause: error })
-      if (!launched && !control && !token && !owner) launch()
+      // A competing launcher may win ownership; keep attaching even if our child exits.
+      if (!launched && (process.platform === 'win32' || (!control && !token)) && canStartService(options.directory)) launch()
       await new Promise<void>((resolve) => setTimeout(resolve, STARTUP_RETRY))
     }
   }
   if (current === undefined || snapshot === undefined) {
     closed = true
-    throw new Error(`Could not connect desktop to the GeckIt service: ${failure} Check ${logFile} and the process owning ${ownerFile}; verify that it has stopped before removing stale files.`)
+    throw new Error(`Could not connect desktop to the GeckIt service: ${launchExit ?? failure} Check ${logFile} and the process owning ${ownerFile}; verify that it has stopped before removing stale files.`)
   }
   const shutdown = (text?: string): Promise<void> => {
     if (shutdownPromise !== undefined) return importing === text ? shutdownPromise : Promise.reject(new Error('GeckIt is already restarting. Wait for it to reopen, then try again.'))
