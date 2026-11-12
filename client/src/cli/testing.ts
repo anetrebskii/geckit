@@ -243,7 +243,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   if (owners.managed && owners.conversations.size === 0) { unlock(); return }
   const dir = join(profilesFolder(root), name)
   mkdirSync(dir, { recursive: true })
-  const child = spawn(chrome.path, [`--user-data-dir=${dir}`, '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', ...chromeFlags(), 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
+  const child = spawn(chrome.path, [`--user-data-dir=${dir}`, '--remote-debugging-pipe', '--disable-blink-features=AutomationControlled', '--no-first-run', '--no-default-browser-check', ...chromeFlags(), 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] })
   child.stderr?.resume()
   const cdp = new Cdp(child.stdio[3] as Writable, child.stdio[4] as Readable)
   mkdirSync(join(folder, 'hosts'), { recursive: true })

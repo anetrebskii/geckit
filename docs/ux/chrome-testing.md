@@ -195,3 +195,7 @@ This updates the existing test-browser feature rather than adding a new screen. 
 - **Unavailable in the running copy:** installed service, currently active conversations and existing test drivers still run their loaded code and instructions. No restart, publication or deployment was performed. The lifecycle applies when a later authorized app/service load picks up this source.
 
 No library entry matched this backend lifecycle task.
+
+## Test-browser launch update - 2026-11-12
+
+Alex chose to keep Chrome for Testing and enable `--disable-blink-features=AutomationControlled` for every new test-browser process, with `navigator.webdriver` expected to be `false`. Reusing an already running browser does not change its launch arguments; the flag takes effect on its next launch. Persistent profiles continue to be reused. This does not establish that websites cannot detect automation. The decision, Camoufox alternative and verification evidence are recorded in [the browser automation note](../reports/browser-automation.md).
