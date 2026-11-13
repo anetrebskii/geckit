@@ -45,7 +45,6 @@
         ]
       },
       {
-        "source": "/secret.html",
         "headers": [
           {
             "key": "Content-Security-Policy",
@@ -55,7 +54,8 @@
             "key": "Cache-Control",
             "value": "no-cache"
           }
-        ]
+        ],
+        "regex": "^/(s/?|secret\\.html)$"
       }
     ],
     "rewrites": [
