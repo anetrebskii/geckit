@@ -70,7 +70,7 @@ export async function secrets(rest: readonly string[]): Promise<SecretsAnswer> {
       if (!told.ok) return refused(told.error)
       if (typeof told['link'] !== 'string') return { ok: true, said: `${name} is already saved (${String(told['kept'])}); nothing was sent. Add --replace to send a link anyway.` }
       const minutes = Math.max(1, Math.round((Number(told['expiresAt']) - Date.now()) / 60_000))
-      return { ok: true, said: `${told['link']}\nGive the person this link as it is. It works for ${minutes} minutes, once; they type the secret there. Then run geckit secrets wait ${name}. You never see the value: use it by name with geckit secrets run or geckit browser type --secret.` }
+      return { ok: true, said: `${told['link']}\nPut this link, as it is, in your final reply to the person in this turn, not only in a note between steps, which the chat folds away. It works for ${minutes} minutes, once; they type the secret there. Then run geckit secrets wait ${name}. You never see the value: use it by name with geckit secrets run or geckit browser type --secret.` }
     }
     case 'wait': {
       const name = words[0]
