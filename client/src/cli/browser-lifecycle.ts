@@ -31,22 +31,38 @@ export function saveTestAccount(name: string, note: string, folder = defaultFold
 
 export const forgetTestAccount = (name: string, folder = defaultFolder()): void => { rmSync(accountFile(name, folder), { force: true }) }
 
-export function browserConversation(id: string, folder = defaultFolder()): BrowserConversation | undefined {
+const savedConversation = (id: string, folder: string): BrowserConversation | undefined => {
   try { const saved = JSON.parse(readFileSync(conversationFile(id, folder), 'utf8')) as BrowserConversation; return saved.id === id ? saved : undefined } catch { return undefined }
 }
+const threadOf = (id: string): string | undefined => /^plugin:[^:]+:(.+)$/.exec(id)?.[1]
+const threadAlias = (thread: string): string => `thread:${thread}`
 
-export function registerBrowserConversation(id: string, root: string, done: boolean, folder = defaultFolder()): void {
-  const previous = browserConversation(id, folder)
-  if (previous?.root === root && previous.done === done) return
+/** A conversation by the id the CLI knows it by: a plugin conversation is registered as plugin:<name>:<thread>, while its CLI sees only the bare Claude session or codex:<thread>. */
+export function browserConversation(id: string, folder = defaultFolder()): BrowserConversation | undefined {
+  const own = savedConversation(id, folder)
+  if (own !== undefined || id.startsWith('plugin:')) return own
+  const alias = savedConversation(threadAlias(id.startsWith('codex:') ? id.slice('codex:'.length) : id), folder)
+  return alias === undefined ? undefined : savedConversation(alias.root, folder)
+}
+
+const writeConversation = (conversation: BrowserConversation, folder: string): void => {
   mkdirSync(join(browserStateFolder(folder), 'conversations'), { recursive: true, mode: 0o700 })
-  const file = conversationFile(id, folder)
+  const file = conversationFile(conversation.id, folder)
   const part = `${file}.${randomUUID()}.part`
-  writeFileSync(part, JSON.stringify({ id, root, done } satisfies BrowserConversation))
+  writeFileSync(part, JSON.stringify(conversation))
   renameSync(part, file)
 }
 
+export function registerBrowserConversation(id: string, root: string, done: boolean, folder = defaultFolder()): void {
+  const thread = threadOf(id)
+  if (thread !== undefined && savedConversation(threadAlias(thread), folder)?.root !== id) writeConversation({ id: threadAlias(thread), root: id, done: false }, folder)
+  const previous = savedConversation(id, folder)
+  if (previous?.root === root && previous.done === done) return
+  writeConversation({ id, root, done }, folder)
+}
+
 export function setBrowserConversationDone(id: string, done: boolean): void {
-  const previous = browserConversation(id)
+  const previous = savedConversation(id, defaultFolder())
   if (previous !== undefined) registerBrowserConversation(id, previous.root, done)
 }
 

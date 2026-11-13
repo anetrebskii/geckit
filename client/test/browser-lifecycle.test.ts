@@ -27,6 +27,20 @@ describe('project test browser policy', () => {
     expect(() => conversationTestName('unregistered', folder)).toThrow('not registered')
   })
 
+  it('finds a plugin conversation by the bare session or Codex thread its CLI knows', () => {
+    const folder = temporary()
+    registerProjectBrowserConversation({ id: 'plugin:claude-tmux:8a73', root: '/skills', status: 'todo' }, ['/skills'], folder)
+    registerBrowserConversation('plugin:codex-tmux:t1', '/shop', false, folder)
+    expect(browserConversation('8a73', folder)?.id).toBe('plugin:claude-tmux:8a73')
+    expect(conversationTestName('8a73', folder)).toBe(projectTestName('/skills'))
+    expect(browserConversation('codex:t1', folder)?.root).toBe('/shop')
+    expect(browserConversation('plugin:other:8a73', folder)).toBeUndefined()
+    registerBrowserConversation('plugin:claude-tmux:8a73', '/skills', true, folder)
+    expect(() => conversationTestName('8a73', folder)).toThrow('Done')
+    registerBrowserConversation('8a73', '/native', false, folder)
+    expect(browserConversation('8a73', folder)?.root).toBe('/native')
+  })
+
   it('canonicalizes symlinked folders so one physical project keeps one persistent profile', () => {
     const folder = temporary()
     mkdirSync(join(folder, 'project'))
