@@ -2,6 +2,16 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { createRendererApi } from '../shared/renderer-api'
 import type { RendererArgument, RendererTransport } from '../shared/renderer-api'
 import type { Pairing } from '../shared/pairing'
+import type { ConnectionStorage } from '../shared/remote/storage'
+
+const connectionStorage: ConnectionStorage = {
+  publicKey: () => ipcRenderer.invoke('remote:storage', 'publicKey'),
+  sign: (text) => ipcRenderer.invoke('remote:storage', 'sign', text),
+  list: () => ipcRenderer.invoke('remote:storage', 'list'),
+  remember: (trust) => ipcRenderer.invoke('remote:storage', 'remember', trust),
+  forget: (id) => ipcRenderer.invoke('remote:storage', 'forget', id),
+  name: (id, label) => ipcRenderer.invoke('remote:storage', 'name', id, label),
+}
 
 const transport: RendererTransport = {
   invoke: <Result>(channel: string, ...args: readonly RendererArgument[]): Promise<Result> => ipcRenderer.invoke(channel, ...args) as Promise<Result>,
@@ -14,6 +24,7 @@ const transport: RendererTransport = {
 }
 
 const geckit = {
+  connectionStorage,
   ...createRendererApi(transport, {
     platform: process.platform,
     home: process.env['HOME'] ?? '',
@@ -44,4 +55,4 @@ const geckit = {
 
 contextBridge.exposeInMainWorld('geckit', geckit)
 
-export type Geckit = typeof geckit
+export type Geckit = Omit<typeof geckit, 'connectionStorage'> & Partial<Pick<typeof geckit, 'connectionStorage'>>

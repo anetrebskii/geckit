@@ -69,3 +69,6 @@ Alex rejected both the narrow page with numbered steps and a full-window list: a
 
 ## Naming while connecting
 The optional name belongs to the submitted connection attempt. Typing or clearing it does not restart an existing saved connection, and clearing the form after successful pairing does not close the newly opened workspace. The name stays on this device across reconnects.
+
+## Original desktop connection storage, 2026-11-13 correction
+The desktop development window reads and updates the same original file-origin connection store as the built app in its data directory. Existing saved computers, labels and the device's signing identity remain available without pairing again. Opening the computer selector shows those saved computers; Manage computers opens their existing rows. Signing, saving, renaming and forgetting use that same store, so reopening the window or switching between development and built renderers retains the result. Browser and phone clients keep their own origin-local storage. This recovery adds no screen, message or permission step. Alex authorized reading the original storage after all three saved connections were found there.

@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { connectRemote } from '../src/renderer/src/remote/client'
 import { remoteDial } from '../src/renderer/src/remote/transport'
-import { deviceIdentity, rememberServer } from '../src/renderer/src/remote/storage'
-import { identity, sign, transcript, trustProof } from '../src/shared/remote/identity'
+import { devicePublicKey, rememberServer, signDevice } from '../src/renderer/src/remote/storage'
+import { identity, sign, transcript, trustProof, verify } from '../src/shared/remote/identity'
 import { stringifyRemote } from '../src/shared/remote/codec'
 import { REMOTE_PROTOCOL, requestOf } from '../src/shared/remote/protocol'
 import type { RemoteChannel, RemoteIdentity, RemoteRequest, RemoteResponse, RemoteTrust } from '../src/shared/remote/protocol'
 
 vi.mock('../src/renderer/src/remote/transport', () => ({ remoteDial: vi.fn() }))
-vi.mock('../src/renderer/src/remote/storage', () => ({ deviceIdentity: vi.fn(), rememberServer: vi.fn(async () => undefined) }))
+vi.mock('../src/renderer/src/remote/storage', () => ({ devicePublicKey: vi.fn(), signDevice: vi.fn(), rememberServer: vi.fn(async () => undefined) }))
 
 function channel() {
   const requests: RemoteRequest[] = []
@@ -32,6 +32,7 @@ async function authenticate(link: ReturnType<typeof channel>, server: RemoteIden
   const hello = link.requests.find((request) => request.type === 'hello')
   if (hello?.type !== 'hello') throw new Error('Client did not authenticate')
   const proof = transcript(trust.server.id, 'server challenge', hello.publicKey, hello.nonce, link.binding)
+  expect(await verify(hello.publicKey, proof, hello.proof)).toBe(true)
   link.deliver({ type: 'trusted', trust, proof: await sign(server, trustProof(proof, trust)) })
   await vi.waitFor(() => expect(link.requests.some((request) => request.type === 'snapshot')).toBe(true))
   link.deliver({ type: 'snapshot', id: 1, snapshot: { server: trust.server, epoch: 'epoch', seq: 1, projects: [], sessions: [], manager: { state: 'off', queued: 0, threads: [] } } })
@@ -43,7 +44,8 @@ describe('remote workspace calls', () => {
   it('rejects an uncertain action on disconnect and never replays it after reconnecting', async () => {
     const server = await identity()
     const keys = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
-    vi.mocked(deviceIdentity).mockResolvedValue({ publicKey: btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey('spki', keys.publicKey)))), privateKey: keys.privateKey, wrapping: await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']), servers: [] })
+    vi.mocked(devicePublicKey).mockResolvedValue(btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey('spki', keys.publicKey)))))
+    vi.mocked(signDevice).mockImplementation(async (text) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keys.privateKey, new TextEncoder().encode(text))))))
     const trust: RemoteTrust = { server: { id: 'server', name: 'Server', publicKey: server.publicKey }, device: 'device', key: 'a'.repeat(43), signal: 'http://127.0.0.1:47932', projects: [], manager: true, full: true }
     const first = channel()
     const second = channel()

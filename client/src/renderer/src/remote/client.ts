@@ -6,7 +6,7 @@ import type { CoreMethods } from '../../../core/application'
 import type { CoreEvent } from '../../../core/events'
 import type { RemoteCall, RemoteChannel, RemoteHistory, RemoteRequest, RemoteResponse, RemoteResult, RemoteSignal, RemoteSnapshot, RemoteTrust } from '../../../shared/remote/protocol'
 import { remoteDial } from './transport'
-import { deviceIdentity, rememberServer } from './storage'
+import { devicePublicKey, rememberServer, signDevice } from './storage'
 export type ConnectionState = 'connecting' | 'pending' | 'connected' | 'reconnecting' | 'disconnected' | 'expired' | 'reused' | 'revoked' | 'incompatible' | 'error'
 export interface RemoteView { readonly state: ConnectionState; readonly message: string; readonly snapshot?: RemoteSnapshot; readonly history?: RemoteHistory; readonly trust?: RemoteTrust }
 export function connectRemote(pairing: RemoteSignal, name: string, change: (view: RemoteView) => void, saved?: RemoteTrust) {
@@ -33,7 +33,7 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
     if (stopped) return
     change({ state: trust === undefined ? 'connecting' : 'reconnecting', message: trust === undefined ? 'Connecting…' : 'Reconnecting…' })
     try {
-      const device = await deviceIdentity()
+      const publicKey = await devicePublicKey()
       if (stopped) return
       const link = await remoteDial(trust ?? pairing, abort.signal)
       if (stopped) { link.close(); return }
@@ -54,9 +54,8 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
             if (response.expires !== 0 && Date.now() >= response.expires) { fail('expired', 'Code expired. Create a new code on the server.'); return }
             serverKey = response.server.publicKey; serverId = response.server.id
             const nonce = newKey()
-            proofText = transcript(serverId, response.nonce, device.publicKey, nonce, await link.binding)
-            const signature = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, device.privateKey, new TextEncoder().encode(proofText))
-            send({ type: 'hello', protocol: REMOTE_PROTOCOL, publicKey: device.publicKey, name: name.trim().slice(0, 80) || 'GeckIt client', nonce, proof: btoa(String.fromCharCode(...new Uint8Array(signature))) }); return
+            proofText = transcript(serverId, response.nonce, publicKey, nonce, await link.binding)
+            send({ type: 'hello', protocol: REMOTE_PROTOCOL, publicKey, name: name.trim().slice(0, 80) || 'GeckIt client', nonce, proof: await signDevice(proofText) }); return
           }
           if (response.type === 'pending') { change({ state: 'pending', message: `Confirm this device on the server\n${response.phrase}` }); return }
           if (response.type === 'trusted') {

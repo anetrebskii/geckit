@@ -35,6 +35,8 @@ import { geckoListens, startGecko, tellGecko } from './gecko'
 import { checkForUpdates, follow, restartToUpdate, startUpdates, updateView } from './updates'
 import { chatListening, chatWindow, closePeer, closeVoice, everyWindow, openChat, panelWindow, peerWindow, personWindows, shownChat, shownPeer, listeningVoice, sizeVoice, tellChat, voiceWindow, watchingChat } from './windows'
 import { badgeIcon } from './overlay'
+import { connectionStorage } from './connection-storage'
+import type { ConnectionStorage } from '../shared/remote/storage'
 
 log.transports.file.level = 'info'
 const primary = app.requestSingleInstanceLock()
@@ -508,6 +510,11 @@ function registerCore<K extends typeof CORE_CHANNELS[number]>(channel: K): void 
   ipcMain.on(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => send(channel, ...args))
 }
 function wire(): void {
+  const storedConnections = connectionStorage()
+  ipcMain.handle('remote:storage', (event, method: keyof ConnectionStorage, ...args: Parameters<ConnectionStorage[typeof method]>) => {
+    if (event.sender !== shownChat()?.webContents) throw new Error('Connection storage is only available in Chat.')
+    return storedConnections(method, ...args)
+  })
   const configuration = configurationActions({
     directory: app.getPath('userData'),
     chooseExport: async () => {
