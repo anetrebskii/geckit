@@ -78,16 +78,35 @@ function send(socket: Socket, value: Frame, flushed?: () => void): boolean {
 }
 
 function receive(socket: Socket, accept: (message: Frame) => void): void {
-  let rest: Buffer = Buffer.alloc(0)
+  const header = Buffer.alloc(4)
+  let headerBytes = 0
+  let length = 0
+  let received = 0
+  let parts: Buffer[] = []
   socket.on('data', (part: Buffer) => {
-    rest = rest.length ? Buffer.concat([rest, part]) : part
     try {
-      while (rest.length >= 4 && !socket.destroyed) {
-        const length = rest.readUInt32BE()
-        if (length === 0 || length > MAX_FRAME) throw new Error('Invalid GeckIt service frame size.')
-        if (rest.length < length + 4) break
-        const body = rest.subarray(4, length + 4)
-        rest = rest.subarray(length + 4)
+      let at = 0
+      while (at < part.length && !socket.destroyed) {
+        if (length === 0) {
+          const count = Math.min(header.length - headerBytes, part.length - at)
+          part.copy(header, headerBytes, at, at + count)
+          headerBytes += count
+          at += count
+          if (headerBytes < header.length) break
+          length = header.readUInt32BE()
+          headerBytes = 0
+          if (length === 0 || length > MAX_FRAME) throw new Error('Invalid GeckIt service frame size.')
+          if (at === part.length) break
+        }
+        const count = Math.min(length - received, part.length - at)
+        parts.push(part.subarray(at, at + count))
+        received += count
+        at += count
+        if (received < length) continue
+        const body = parts.length === 1 ? parts[0]! : Buffer.concat(parts, length)
+        parts = []
+        length = 0
+        received = 0
         accept(frame(body))
       }
     } catch (error) {

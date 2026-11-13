@@ -4,9 +4,10 @@ import { connect } from 'node:net'
 import type { Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { setImmediate } from 'node:timers/promises'
 import { serialize } from 'node:v8'
 
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 
 import { connectRpc, listenRpc, rpcEndpoint } from '../src/core/rpc'
 import type { RpcEvent } from '../src/core/rpc'
@@ -70,6 +71,24 @@ it('authenticates a private persistent socket and preserves bytes, typed events 
   await expect.poll(() => events).toEqual([{ name: 'changed', args: [{ count: 2, extra: undefined }] }])
 })
 
+it('round-trips large fragmented frames without repeatedly copying the accumulated payload', async () => {
+  const path = await directory()
+  const server = listenRpc<Methods, Events>(path, 'secret', methods())
+  cleanup.push(server.close)
+  await server.ready
+  const client = await connectRpc<Methods, Events>(path, 'secret')
+  cleanup.push(async () => { client.close(); await client.closed })
+  const value: Parameters<Methods['echo']>[0] = { bytes: Buffer.alloc(8 * 1024 * 1024, 123), view: new Uint8Array([7, 9]), absent: undefined }
+  const concat = vi.spyOn(Buffer, 'concat')
+  try {
+    const result = await client.call('echo', value)
+    const copied = concat.mock.calls.reduce((total, [buffers]) => total + buffers.reduce((sum, bytes) => sum + bytes.byteLength, 0), 0)
+    expect(result).toEqual(value)
+    expect(copied).toBeLessThan(value.bytes.length * 6)
+    expect(await client.call('increment')).toBe(1)
+  } finally { concat.mockRestore() }
+})
+
 it('rejects wrong credentials, incompatible versions and prototype methods without affecting the owner', async () => {
   const path = await directory()
   const server = listenRpc<Methods, Events>(path, 'secret', methods())
@@ -90,6 +109,38 @@ it('rejects wrong credentials, incompatible versions and prototype methods witho
   await expect(duplicate.ready).rejects.toMatchObject({ code: 'EADDRINUSE' })
   await duplicate.close()
   expect(await client.call('increment')).toBe(2)
+})
+
+it('accepts byte-split headers and bodies followed by multiple frames in one packet', async () => {
+  const path = await directory()
+  const table = methods()
+  const increment = vi.spyOn(table, 'increment')
+  const server = listenRpc<Methods, Events>(path, 'secret', table)
+  cleanup.push(server.close)
+  await server.ready
+  const socket = connect(rpcEndpoint(path))
+  socket.on('error', () => undefined)
+  await once(socket, 'connect')
+  const hello = serialize({ kind: 'hello', version: 1, token: 'secret' })
+  const header = Buffer.alloc(4)
+  header.writeUInt32BE(hello.length)
+  const accepted = once(socket, 'data')
+  for (const byte of Buffer.concat([header, hello])) {
+    socket.write(Buffer.from([byte]))
+    await setImmediate()
+  }
+  await accepted
+  const requests = [1, 2].map((id) => {
+    const body = serialize({ kind: 'request', id, name: 'increment', args: [] })
+    const size = Buffer.alloc(4)
+    size.writeUInt32BE(body.length)
+    return Buffer.concat([size, body])
+  })
+  socket.write(Buffer.concat(requests))
+  await expect.poll(() => increment.mock.calls.length).toBe(2)
+  expect(increment).toHaveLastReturnedWith(2)
+  socket.destroy()
+  await once(socket, 'close')
 })
 
 it('rejects pending calls on disconnect without replaying them after reconnect', async () => {

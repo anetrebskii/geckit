@@ -1,0 +1,13 @@
+# GeckIt interface freeze investigation, 2026-11-13
+
+Local patch in `client/src/core/rpc.ts`: retain incoming message fragments and assemble each completed message once. Previously, every new fragment copied the entire unfinished message again. Authentication, frame limits, ordering and the wire format stay the same. Regression tests cover large binary round trips with bounded copying, byte-split headers and bodies, and multiple frames arriving together.
+
+Passive measurements of the running source app captured two desktop timer delays of 2.35 and 2.43 seconds. The renderer's longest recorded frame in that interval was 478 ms. The desktop had received 13.68 GB through its service connection since startup. A separate 20-second capture received 23.89 MB: ten conversation lists totaling 11.35 MB and ten Manager views totaling 12.50 MB, plus smaller events. Buffer allocation and concatenation were substantial desktop CPU costs. These measurements establish unnecessary transport work; they do not conclusively attribute every reported freeze to it.
+
+An isolated benchmark bundled the original receiver from Git HEAD and the patched receiver, then sent identical synthetic data through real local sockets. Five 8 MB binary round trips took 3,336 ms before and 58 ms after. Counted buffer copying fell from 43,159,307,250 bytes to 167,773,130 bytes. These are transport benchmark results, not a measurement of post-fix UI responsiveness. Benchmark and raw profiles are retained under `/private/tmp/geckit-freeze-*`.
+
+Verification: `npm test -- --maxWorkers=1` passed 1,970 tests, with 22 skipped; typecheck and lint passed. Service and desktop builds passed with output isolated under `/private/tmp/geckit-freeze-build/`. Default parallel tests exposed an existing shared-build race between `headless-service.test.ts` and `core-application.test.ts`; both rebuild `client/out/service` while another test may copy or launch its files. The affected four-suite retry passed 25 tests. A separate GeckIt task subsequently fixed the race locally and reported 1,970 tests passing with default parallel execution; those test-build changes are outside this RPC patch.
+
+The active desktop and service were not restarted. Post-restart verification of the reported freezes remains outstanding. Renderer debuggers were detached and the task's temporary Node inspector was closed. Alex authorized direct delivery to main. No release or temporary worktree was created. Other sessions' changes were preserved.
+
+Assigned-engineer memory pagination finished: 105 pages, 111 source conversations, three unavailable provider sources. Missing history was not inferred. No audience-content type standard matched this internal engineering report.
