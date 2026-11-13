@@ -48,6 +48,7 @@ class Server extends EventEmitter implements Held {
   readonly goals = new Map<string, CodexGoal>()
   pauseResume = false
   turnErrors: string[] = []
+  resumeErrors: string[] = []
   steerError: string | undefined
   effort: ReasoningEffort = 'high'
   model = 'first'
@@ -76,7 +77,11 @@ class Server extends EventEmitter implements Held {
       case 'model/list': this.reply(id, request.params?.cursor === 'next' ? { data: [{ model: 'second', displayName: 'Second', description: 'Another model', hidden: false, supportedReasoningEfforts: this.correctionEfforts.map((reasoningEffort) => ({ reasoningEffort, description: reasoningEffort })) }], nextCursor: null } : { data: [{ model: 'first', displayName: 'First', description: 'First model', hidden: false, defaultReasoningEffort: 'low' }, { model: 'hidden', hidden: true }], nextCursor: 'next' }); return
       case 'thread/start':
       case 'thread/fork': this.model = this.resolvedModel ?? request.params?.model ?? this.model; this.reply(id, { thread: { id: `thread-${String(++this.next)}` }, model: this.model, reasoningEffort: this.effort }); return
-      case 'thread/resume': if (!this.pauseResume) { this.model = this.resolvedModel ?? request.params?.model ?? this.model; this.reply(id, { thread: { id: request.params?.threadId }, model: this.model, reasoningEffort: this.effort }) } return
+      case 'thread/resume': {
+        const error = this.resumeErrors.shift()
+        if (error !== undefined) { this.stdout.write(`${JSON.stringify({ id, error: { code: -32600, message: error } })}\n`); return }
+      }
+      if (!this.pauseResume) { this.model = this.resolvedModel ?? request.params?.model ?? this.model; this.reply(id, { thread: { id: request.params?.threadId }, model: this.model, reasoningEffort: this.effort }) } return
       case 'thread/list': this.reply(id, { data: [{ id: 'terminal', cwd: ROOT, preview: this.preview, name: this.name, model: 'first', reasoningEffort: this.effort, updatedAt: 100 }], nextCursor: null }); return
       case 'thread/read': this.reply(id, { thread: { id: request.params?.threadId, model: this.model, reasoningEffort: this.effort } }); return
       case 'thread/goal/get': this.reply(id, { goal: this.goals.get(request.params?.threadId ?? '') ?? null }); return
@@ -578,6 +583,30 @@ describe('Codex app-server', () => {
     server.complete('terminal')
     expect(heard.flatMap((one) => one.signals).filter((one) => one.kind === 'ended')).toEqual([{ kind: 'ended', how: 'done' }, { kind: 'ended', how: 'done' }])
     await driver.end()
+  })
+
+  it('waits while another Codex still holds the thread, then sends the message', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const { server, codex, heard } = setup()
+      server.resumeErrors.push('thread terminal already has an active writer', 'thread terminal already has an active writer')
+      const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+      driver.send('Continue')
+      for (let round = 0; round < 3; round += 1) {
+        for (let wait = 0; wait < 10; wait += 1) await tick()
+        await vi.advanceTimersByTimeAsync(2_000)
+      }
+      for (let wait = 0; wait < 10; wait += 1) await tick()
+      expect(server.requests.filter((one) => one.method === 'thread/resume')).toHaveLength(3)
+      expect(server.requests.filter((one) => one.method === 'turn/start')).toHaveLength(1)
+      const signals = heard.flatMap((one) => one.signals)
+      expect(signals).toContainEqual({ kind: 'retry', text: 'Another Codex still has this conversation open. Waiting for it to let go.' })
+      expect(signals).toContainEqual({ kind: 'retry', text: undefined })
+      expect(signals.some((one) => one.kind === 'ended')).toBe(false)
+      await driver.end()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each(['thread not found: another-thread', 'Model failed'])('does not retry a turn rejected with "%s"', async (error) => {

@@ -24,6 +24,7 @@ import { PROMPTS } from '../../prompts/prompts'
 const native = (id: string): string => id.slice('codex:'.length)
 const shownGoal = (goal: CodexGoal | null): SessionGoal | undefined => goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
 const isDraining = (message?: string): boolean => message?.toLowerCase().includes('server is draining') ?? false
+const hasOtherWriter = (message: string): boolean => message.endsWith('already has an active writer')
 
 interface Listener {
   event: (event: CodexEvent) => void
@@ -330,6 +331,21 @@ export class CodexSessions {
       retrying = false
       signals({ kind: 'retry', text: undefined })
     }
+    const resume = async (connection: CodexRpc): Promise<RpcResults['thread/resume']> => {
+      const until = Date.now() + 90_000
+      for (;;) {
+        try {
+          const resumed = await connection.request('thread/resume', { ...await this.#options(connection, options.root, options.mode, options.model), threadId, excludeTurns: true })
+          clearRetry()
+          return resumed
+        } catch (error) {
+          if (!(error instanceof Error) || !hasOtherWriter(error.message) || over || stopped || Date.now() > until) throw error
+          retrying = true
+          signals({ kind: 'retry', text: 'Another Codex still has this conversation open. Waiting for it to let go.' })
+          await new Promise((done) => setTimeout(done, 2_000))
+        }
+      }
+    }
     const ended = (how: 'done' | 'stopped' | 'failed', text?: string): void => {
       clearRetry()
       clearRequests()
@@ -493,7 +509,7 @@ export class CodexSessions {
       const { account } = await rpc.request('account/read', { refreshToken: false })
       if (account?.type !== 'chatgpt') throw new Error('Sign in with your ChatGPT plan: run codex login in a terminal.')
       const started = this.#new.get(threadId) ?? (options.resume
-        ? await rpc.request('thread/resume', { ...await this.#options(rpc, options.root, options.mode, options.model), threadId, excludeTurns: true })
+        ? await resume(rpc)
         : await rpc.request('thread/start', await this.#options(rpc, options.root, options.mode, options.model)))
       if (started.thread.id !== threadId) {
         const listener = this.#listeners.get(threadId)
@@ -529,7 +545,7 @@ export class CodexSessions {
           if (connection !== previous) {
             remembered.clear()
             rpc = connection
-            await connection.request('thread/resume', { ...await this.#options(connection, options.root, options.mode, options.model), threadId, excludeTurns: true })
+            await resume(connection)
           }
           if (text.trim() === '/compact') {
             await rpc?.request('thread/compact/start', { threadId })
@@ -569,7 +585,7 @@ export class CodexSessions {
             if (isDraining(error.message)) this.#discardConnection(rpc)
             if (error.message !== `thread not found: ${threadId}`) throw error
             if (over || stopped) { ended('stopped'); return }
-            await rpc?.request('thread/resume', { ...await this.#options(rpc, options.root, options.mode, options.model), threadId, excludeTurns: true })
+            if (rpc !== undefined) await resume(rpc)
             if (over || stopped) { ended('stopped'); return }
             return rpc?.request('turn/start', params)
           })

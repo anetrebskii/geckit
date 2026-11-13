@@ -20,7 +20,7 @@ func TestCommandValueComesBackCleaned(t *testing.T) {
 	var out, errOut strings.Builder
 	code, err := Run(context.Background(), m, Request{
 		Env:  []string{"DB=secret:db", "API=secret:api"},
-		Argv: []string{"sh", "-c", `echo "db=$DB api=$API"; echo "$DB" | base64 >&2; test -n "$HTTPS_PROXY"`},
+		Argv: []string{"sh", "-c", `echo "db=$DB api=$API"; echo "$DB" | base64 >&2; test -n "${HTTPS_PROXY:-$https_proxy}"`},
 	}, func(stream string, data []byte) {
 		if stream == "out" {
 			out.Write(data)
