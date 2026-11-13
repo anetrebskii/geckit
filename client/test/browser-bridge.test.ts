@@ -59,7 +59,7 @@ describe('browser bridge install', () => {
     expect(description.length).toBeLessThanOrEqual(1024)
     expect(skill.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(750)
     const references = Object.keys(files).filter((path) => path !== 'SKILL.md')
-    expect(references).toEqual(['references/test-browsers.md', 'references/design-checks.md'])
+    expect(references.sort()).toEqual(['references/design-checks.md', 'references/test-browsers.md'])
     for (const path of references) expect(skill).toContain(`](${path})`)
     expect(skill).toContain('`geckit-use-secrets` skill')
     expect(BROWSER_SKILL('/bin/geckit', 'use-browser')).toContain('`geckit:use-secrets` skill')

@@ -1,10 +1,6 @@
-import browserHow from './browser/how.md?raw'
-import browserLoadSkill from './browser/load-skill.md?raw'
-import browserDesignChecks from './browser/references/design-checks.md?raw'
-import browserTestBrowsers from './browser/references/test-browsers.md?raw'
-import browserRules from './browser/rules.md?raw'
-import browserSection from './browser/section.md?raw'
-import browserSkill from './browser/skill.md?raw'
+import browserDesignChecks from '../../../skills/use-browser/references/design-checks.md?raw'
+import browserTestBrowsers from '../../../skills/use-browser/references/test-browsers.md?raw'
+import browserSection from '../../../profiles/browser-section.md?raw'
 import buildApp from './build/app.md?raw'
 import buildProvider from './build/provider.md?raw'
 import correctAlone from './correct/alone.md?raw'
@@ -15,29 +11,35 @@ import correctImprove from './correct/improve.md?raw'
 import correctRules from './correct/rules.md?raw'
 import correctTranslate from './correct/translate.md?raw'
 import findElements from './find-elements.md?raw'
-import guideBrowsers from './guide/browsers.md?raw'
-import guideClaude from './guide/claude.md?raw'
-import guideCommand from './guide/command.md?raw'
-import guideExample from './guide/conversations-example.json?raw'
-import guideEmployees from './guide/employees.md?raw'
-import guideExactForm from './guide/exact-form.md?raw'
-import guideHeadless from './guide/headless.md?raw'
-import guideManager from './guide/manager.md?raw'
-import guideOtherComputers from './guide/other-computers.md?raw'
-import guideSendFile from './guide/send-file.md?raw'
-import guideSendHeredoc from './guide/send-heredoc.md?raw'
+import guideBrowsers from '../../../profiles/browsers.md?raw'
+import guideClaude from '../../../profiles/claude.md?raw'
+import guideCommand from '../../../profiles/command.md?raw'
+import guideExample from '../../../skills/manage-conversations/references/conversations-example.json?raw'
+import guideEmployees from '../../../profiles/employees.md?raw'
+import guideExactForm from '../../../skills/manage-conversations/references/exact-form.md?raw'
+import guideHeadless from '../../../profiles/headless.md?raw'
+import guideManager from '../../../profiles/manager.md?raw'
+import guideManagerWorkflows from '../../../profiles/manager-workflows.md?raw'
+import guideOtherComputers from '../../../skills/manage-conversations/references/other-computers.md?raw'
+import guideSendFile from '../../../skills/manage-conversations/references/send-file.md?raw'
+import guideSendHeredoc from '../../../skills/manage-conversations/references/send-heredoc.md?raw'
 import managerInstructions from './manager/instructions.md?raw'
 import managerRole from './manager/role.md?raw'
-import secretsHow from './secrets/how.md?raw'
-import secretsLoadSkill from './secrets/load-skill.md?raw'
-import secretsSection from './secrets/section.md?raw'
-import secretsSkill from './secrets/skill.md?raw'
+import secretsSection from '../../../profiles/secrets-section.md?raw'
 import sourceClaude from './source/claude.md?raw'
 import sourceGuide from './source/guide.md?raw'
 
+export const SKILL_TEMPLATES = import.meta.glob<string>('../../../skills/**/*.{md,json}', { query: '?raw', import: 'default', eager: true })
+
+const browserSkill = SKILL_TEMPLATES['../../../skills/use-browser/SKILL.md'] ?? ''
+const browserRules = browserSkill.slice(browserSkill.indexOf('## Browser boundary') + '## Browser boundary'.length, browserSkill.indexOf('## Purpose')).trim()
+const browserHow = browserSkill.slice(browserSkill.indexOf('## Purpose'))
+const secretsSkill = SKILL_TEMPLATES['../../../skills/use-secrets/SKILL.md'] ?? ''
+const secretsHow = secretsSkill.slice(secretsSkill.indexOf('Never ask'))
+
 export const PROMPTS = {
   browser: {
-    how: browserHow.trim(), loadSkill: browserLoadSkill.trim(), rules: browserRules.trim(), section: browserSection.trim(), skill: browserSkill.trim(),
+    how: browserHow.trim(), rules: browserRules.trim(), section: browserSection.trim(), skill: browserSkill.trim(),
     references: { 'test-browsers': browserTestBrowsers.trim(), 'design-checks': browserDesignChecks.trim() },
   },
   build: { app: buildApp.trim(), provider: buildProvider.trim() },
@@ -45,10 +47,10 @@ export const PROMPTS = {
   findElements: findElements.trim(),
   guide: {
     browsers: guideBrowsers.trim(), claude: guideClaude.trim(), command: guideCommand.trim(), example: guideExample.trim(), employees: guideEmployees.trim(), exactForm: guideExactForm.trim(),
-    headless: guideHeadless.trim(), manager: guideManager.trim(), otherComputers: guideOtherComputers.trim(), sendFile: guideSendFile.trim(), sendHeredoc: guideSendHeredoc.trim(),
+    headless: guideHeadless.trim(), manager: guideManager.trim(), managerWorkflows: guideManagerWorkflows.trim(), otherComputers: guideOtherComputers.trim(), sendFile: guideSendFile.trim(), sendHeredoc: guideSendHeredoc.trim(),
   },
   manager: { instructions: managerInstructions.trim(), role: managerRole.trim() },
-  secrets: { how: secretsHow.trim(), loadSkill: secretsLoadSkill.trim(), section: secretsSection.trim(), skill: secretsSkill.trim() },
+  secrets: { how: secretsHow.trim(), section: secretsSection.trim(), skill: secretsSkill.trim() },
   source: { claude: sourceClaude.trim(), guide: sourceGuide.trim() },
 }
 

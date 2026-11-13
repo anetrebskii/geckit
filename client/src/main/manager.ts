@@ -13,6 +13,8 @@ import { configuration, setConfiguration, writeJson } from '../core/configuratio
 
 import type { ChatSession, StatusAttribution, ManagerLabels, ManagerThreadName, SessionItems, Settings, Shortcut } from '../shared/api'
 import { providerOf } from '../shared/api'
+import { isCodexProvider } from '../shared/providers'
+import { MANAGER_WORKFLOWS } from './guide'
 import { VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError } from '../shared/vpn-ip'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE, MANAGER_MAIN_THREAD, managerLabels, managerProjects, managerThreadSaid } from '../shared/manager'
 import type { ManagerActivity, ManagerAnswerRequest, ManagerAnswerResult, ManagerCliAnswered, ManagerCliAsked, ManagerConfig, ManagerDecision, ManagerDecisionOutcome, ManagerView, ManagerReplyOrigin, ManagerRequestReceipt, ManagerSendRequest, ManagerTelegramReply, ManagerThread, ManagerThreadOpen } from '../shared/manager'
@@ -640,7 +642,7 @@ export class Manager {
     return { instructions: this.instructions() }
   }
 
-  #instructions(): string { return `${MANAGER_INSTRUCTIONS}\nUser preferences for coordination:\n${this.#record.config.instructions}` }
+  #instructions(): string { return `${MANAGER_INSTRUCTIONS}\n${MANAGER_WORKFLOWS(!isCodexProvider(this.#record.config.provider))}\nUser preferences for coordination:\n${this.#record.config.instructions}` }
 
   async send(text: string, source: Message['source'] = 'desktop', id: string = randomUUID(), workers: ManagerReplyOrigin['workers'] = [], authorized: () => boolean = () => true, attachments: readonly TelegramAttachment['id'][] = [], telegramRequests: readonly Message['id'][] = [], thread: string = MAIN, request?: ManagerTelegramSource): Promise<string> {
     this.#assertEnabled()

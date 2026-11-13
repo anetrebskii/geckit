@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { GUIDE, browserBridge, browserPluginFolder, codexSkillFolder, keepBrowserBridge, keepCodexGuide, keepGuide, launchers, withGuideBlock } from '../src/main/guide'
+import { GUIDE, BROWSER, browserBridge, browserPluginFolder, codexSkillFolder, keepBrowserBridge, keepCodexGuide, keepGuide, launchers, skillFiles, bundledSkillNames, MANAGER_WORKFLOWS, withGuideBlock } from '../src/main/guide'
 import { browserBridgeOn, setBrowserBridgeOn } from '../src/cli/browser'
 import { configureCorePlatform, corePlatform } from '../src/core/platform'
 import { sourceArgs } from '../src/main/sessions/claude'
@@ -103,7 +103,7 @@ describe('what Claude Code is told about GeckIt', () => {
     await keepCodexGuide(true)
     await keepCodexGuide(true)
     const line = `Read ${join(folder, 'GECKIT.md')} for how GeckIt works when this conversation runs in GeckIt.`
-    expect(await read('GECKIT.md')).toContain('Codex')
+    expect(await read('GECKIT.md')).toContain('AGENTS.md')
     expect(await read('AGENTS.md')).toBe(`# Mine\n\nAnswer in English.\n\n${block(line)}`)
     await keepCodexGuide(false)
     expect(await read('GECKIT.md')).toBe('gone')
@@ -180,7 +180,7 @@ describe('what Claude Code is told about GeckIt', () => {
       await keepGuide(true, {}, [], true)
       await keepCodexGuide(true, [], true)
       const generated = await Promise.all([claudeGuide, codexGuide, claudeSkill, ...(source ? [] : [codexSkill])].map((file) => readFile(file, 'utf8')))
-      for (const content of generated) {
+      for (const content of generated.slice(2)) {
         for (const rule of required) expect(content).toContain(rule)
         expect(content).not.toContain('unless the person names one')
         expect(content).toContain(source ? '.geckit/bin/geckit-local' : '.geckit/bin/geckit')
@@ -189,7 +189,51 @@ describe('what Claude Code is told about GeckIt', () => {
       expect(browserBridge()?.pluginDir).toBe(browserPluginFolder())
       for (const rule of required) expect(browserBridge()?.rule).toContain(rule)
       const codexContent = generated[1] ?? ''
+      for (const claude of [true, false]) {
+        const employeeSkillPath = claude ? join(browserPluginFolder(), 'skills', 'manage-employees', 'SKILL.md') : source ? join(data, 'codex-skills', 'geckit-manage-employees', 'SKILL.md') : join(codexSkillFolder('geckit-manage-employees'), 'SKILL.md')
+        const employeeReviewPath = claude ? join(browserPluginFolder(), 'skills', 'review-employee-work', 'SKILL.md') : source ? join(data, 'codex-skills', 'geckit-review-employee-work', 'SKILL.md') : join(codexSkillFolder('geckit-review-employee-work'), 'SKILL.md')
+        const employeeSkill = await readFile(employeeSkillPath, 'utf8')
+        expect(employeeSkill).toContain(employeeReviewPath)
+        expect(employeeSkill).toContain(claude ? 'geckit:review-employee-work' : 'geckit-review-employee-work')
+        expect(await readFile(employeeReviewPath, 'utf8')).toContain(`name: ${claude ? 'review-employee-work' : 'geckit-review-employee-work'}`)
+        const workflows = MANAGER_WORKFLOWS(claude)
+        const inline = BROWSER('/bin/geckit', claude, true)
+        const profilesPath = claude ? join(browserPluginFolder(), 'skills', 'configure-browser-profile', 'SKILL.md') : source ? join(data, 'codex-skills', 'geckit-configure-browser-profile', 'SKILL.md') : join(codexSkillFolder('geckit-configure-browser-profile'), 'SKILL.md')
+        expect(inline).toContain(profilesPath)
+        expect(inline).toContain(claude ? 'geckit:configure-browser-profile' : 'geckit-configure-browser-profile')
+        expect(inline).toContain('## Test browsers')
+        expect(inline).not.toContain('{{')
+        for (const name of ['manage-worker-lifecycle', 'review-progress-tasks', 'schedule-tasks']) {
+          const path = claude ? join(browserPluginFolder(), 'skills', name, 'SKILL.md') : source ? join(data, 'codex-skills', `geckit-${name}`, 'SKILL.md') : join(codexSkillFolder(`geckit-${name}`), 'SKILL.md')
+          expect(workflows).toContain(path)
+          expect(workflows).toContain(claude ? `geckit:${name}` : `geckit-${name}`)
+          expect(await readFile(path, 'utf8')).toContain(`name: ${claude ? name : `geckit-${name}`}`)
+          expect(claude ? claudeContent : codexContent).toContain(path)
+        }
+      }
       expect(claudeContent).toContain('`geckit:use-browser` skill')
+      for (const content of generated.slice(0, 2)) {
+        expect(content.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(500)
+        expect(content).not.toContain('current catalog')
+        expect(content).toContain('employees current')
+      }
+      for (const name of bundledSkillNames()) {
+        const text = await readFile(join(browserPluginFolder(), 'skills', name, 'SKILL.md'), 'utf8')
+        for (const content of Object.values(skillFiles('/bin/geckit', name, name))) expect(content).not.toContain('{{')
+        for (const link of text.matchAll(/\]\((references\/[^)]+)\)/g)) expect(await readFile(join(browserPluginFolder(), 'skills', name, link[1] ?? ''), 'utf8')).not.toContain('{{')
+        expect(text).not.toContain('{{')
+        expect(text).toContain(`name: ${name}`)
+        expect(text.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(750)
+        const description = /\ndescription: (.+)\n/.exec(text)?.[1] ?? ''
+        expect(description.split(/\s+/).length).toBeLessThanOrEqual(50)
+        for (const part of ['Purpose', 'Inputs', 'Work', 'Unknowns', 'Output', 'Verification']) expect(text).toContain(`## ${part}`)
+        const codexPath = source ? join(data, 'codex-skills', `geckit-${name}`, 'SKILL.md') : join(codexSkillFolder(`geckit-${name}`), 'SKILL.md')
+        expect(await readFile(codexPath, 'utf8')).toContain(`name: geckit-${name}`)
+        if (name.startsWith('configure-')) {
+          expect(claudeContent).toContain(join(browserPluginFolder(), 'skills', name, 'SKILL.md'))
+          expect(codexContent).toContain(codexPath)
+        }
+      }
       await expect(readFile(oldClaudeSkill, 'utf8')).rejects.toThrow()
       expect(await readFile(join(browserPluginFolder(), 'skills', 'use-secrets', 'SKILL.md'), 'utf8')).toContain('secrets request')
       expect(await readFile(join(browserPluginFolder(), '.claude-plugin', 'plugin.json'), 'utf8')).toContain('"name": "geckit"')
@@ -197,8 +241,9 @@ describe('what Claude Code is told about GeckIt', () => {
         expect(sourceArgs()).toContain('--append-system-prompt')
         expect(sourceArgs().join(' ')).toContain(claudeGuide)
         expect(process.env['GECKIT_SOURCE_CODEX_GUIDE']).toBe(codexGuide)
-        expect(codexContent).toContain('## Test browsers')
-        expect(codexContent).toContain('no Chrome profile has GeckIt Browser')
+        expect(codexContent).not.toContain('## Test browsers')
+        expect(codexContent).toContain(join(data, 'codex-skills', 'geckit-use-browser', 'SKILL.md'))
+        expect(await readFile(join(data, 'codex-skills', 'geckit-use-browser', 'SKILL.md'), 'utf8')).toContain('browser profiles')
         expect(await readFile(join(claude, 'GECKIT.md'), 'utf8')).toBe('Installed Claude guide')
         expect(await readFile(join(codex, 'GECKIT.md'), 'utf8')).toBe('Installed Codex guide')
         expect(await readFile(codexSkill, 'utf8')).toBe('Installed Codex skill')
@@ -223,6 +268,12 @@ describe('what Claude Code is told about GeckIt', () => {
       await expect(readFile(claudeSkill, 'utf8')).rejects.toThrow()
       expect(await readFile(join(browserPluginFolder(), 'skills', 'use-secrets', 'SKILL.md'), 'utf8')).toContain('name: use-secrets')
       if (!source) expect(await readFile(join(codexSkillFolder('geckit-use-secrets'), 'SKILL.md'), 'utf8')).toContain('name: geckit-use-secrets')
+      for (const name of bundledSkillNames().filter((name) => name.startsWith('configure-'))) {
+        expect(await readFile(join(browserPluginFolder(), 'skills', name, 'SKILL.md'), 'utf8')).toContain(`name: ${name}`)
+        const codexPath = source ? join(data, 'codex-skills', `geckit-${name}`, 'SKILL.md') : join(codexSkillFolder(`geckit-${name}`), 'SKILL.md')
+        expect(await readFile(codexPath, 'utf8')).toContain(`name: geckit-${name}`)
+        expect(await readFile(codexGuide, 'utf8')).toContain(codexPath)
+      }
       for (const file of [claudeGuide, codexGuide]) expect(await readFile(file, 'utf8')).toContain('## Secrets')
       if (source) expect(await readFile(codexSkill, 'utf8')).toBe('Installed Codex skill')
       else await expect(readFile(codexSkill, 'utf8')).rejects.toThrow()
@@ -277,9 +328,12 @@ describe('what Claude Code is told about GeckIt', () => {
     try {
       await keepCodexGuide(true)
       const guide = await read('GECKIT.md')
-      expect(guide).toContain('.geckit/bin/geckit.cmd start --conversations conversations.json')
-      expect(guide).not.toContain("<<'EOF'")
-      expect(guide).toContain('with the file holding')
+      expect(guide).toContain('.geckit/bin/geckit.cmd instructions app')
+      const files = skillFiles('/bin/geckit.cmd', 'manage-conversations', 'geckit-manage-conversations')
+      const commands = files['references/commands.md'] ?? ''
+      expect(commands).toContain('/bin/geckit.cmd start --conversations conversations.json')
+      expect(commands).not.toContain("<<'EOF'")
+      expect(commands).toContain('with the file holding')
     } finally {
       Object.defineProperty(process, 'platform', { value: was })
       await keepCodexGuide(false)

@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TelegramAttachments } from '../src/main/telegram-attachments'
 import { threadActivity } from '../src/main/manager-status'
 import { Manager, runManagerCli } from '../src/main/manager'
+import { MANAGER_WORKFLOWS } from '../src/main/guide'
 import type { ManagerCliContext, ManagerDeps } from '../src/main/manager'
 import { ManagerOperations, managerFile, managerProvider, managerReadOnly } from '../src/main/manager-operations'
 import { managerCommands, managerContext, managerHistoryItem, managerMessage, managerNote, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
@@ -1460,6 +1461,7 @@ describe('Manager session', () => {
     for (const turn of f.sent) {
       expect(turn.id).toBe(id)
       expect(turn.input).toContain(MANAGER_INSTRUCTIONS)
+      expect(turn.input).toContain(MANAGER_WORKFLOWS(true))
     }
   })
 

@@ -49,25 +49,26 @@ afterEach(() => {
 })
 
 describe('employee managed instructions in isolated provider configs', () => {
-  it('updates both provider guides on catalog edits/archive/restore while preserving personal content', async () => {
+  it('keeps live employee lookup across catalog edits/archive/restore while preserving personal content', async () => {
     writeFileSync(join(folder, 'claude', 'CLAUDE.md'), '# My instructions\nKeep my rules.\n')
     writeFileSync(join(folder, 'codex', 'AGENTS.md'), '# My Codex instructions\nKeep my Codex rules.\n')
     for (const updated of [employee, { ...employee, description: 'Use the new style.', revision: 2 }, { ...employee, archived: true, revision: 3 }, { ...employee, archived: false, revision: 4 }]) {
       await syncEmployeeGuides(settings, [updated])
       for (const provider of ['claude', 'codex']) {
         const content = readFileSync(join(folder, provider, 'GECKIT.md'), 'utf8')
-        expect(content).toContain(updated.description)
-        expect(content).toContain(`"archived": ${String(updated.archived)}`)
+        expect(content).not.toContain(updated.description)
+        expect(content).not.toContain('current catalog')
+        expect(content).toContain('manage-employees')
         expect(content).toContain('employees current')
-        expect(content).toContain('--cursor <next>')
-        expect(content).toContain('previous task data, not authority')
+        expect(content).toContain('all memory cursors')
+        expect(content).toContain('Prior history is evidence, not fresh authorization')
       }
     }
     expect(readFileSync(join(folder, 'claude', 'CLAUDE.md'), 'utf8')).toBe(`# My instructions\nKeep my rules.\n\n<!-- geckit:begin source=${join(folder, 'claude', 'GECKIT.md')} -->\n@GECKIT.md\n<!-- geckit:end -->\n`)
     expect(readFileSync(join(folder, 'codex', 'AGENTS.md'), 'utf8')).toContain('# My Codex instructions\nKeep my Codex rules.')
     await keepGuide(true)
     await keepCodexGuide(true)
-    expect(readFileSync(join(folder, 'codex', 'GECKIT.md'), 'utf8')).toContain(employee.id)
+    expect(readFileSync(join(folder, 'codex', 'GECKIT.md'), 'utf8')).toContain('employees current')
   })
 
   it('writes Manager instructions into both guides and takes them out when cleared', async () => {
@@ -103,7 +104,7 @@ describe('employee managed instructions in isolated provider configs', () => {
     mode.packaged = false
     for (const updated of [employee, { ...employee, description: 'Use the edited style.', revision: 2 }]) {
       await expect(syncEmployeeGuides(settings, [updated])).resolves.toBeUndefined()
-      for (const filename of ['GECKIT.md', 'GECKIT-CODEX.md']) expect(readFileSync(join(folder, filename), 'utf8')).toContain(updated.description)
+      for (const filename of ['GECKIT.md', 'GECKIT-CODEX.md']) expect(readFileSync(join(folder, filename), 'utf8')).not.toContain(updated.description)
     }
     for (const provider of ['claude', 'codex']) expect(readFileSync(join(folder, provider, 'GECKIT.md'), 'utf8')).toBe('Installed GeckIt guide\n')
     expect(readFileSync(join(folder, 'claude', 'CLAUDE.md'), 'utf8')).toBe('Personal Claude instructions\n')
@@ -127,7 +128,7 @@ describe('employee managed instructions in isolated provider configs', () => {
     const retried = await employees.retryInstructions()
     expect(retried.error).toBeUndefined()
     expect(retried.employees).toEqual(saved.employees)
-    expect(readFileSync(join(folder, 'GECKIT-CODEX.md'), 'utf8')).toContain(saved.employees[0]?.id)
+    expect(readFileSync(join(folder, 'GECKIT-CODEX.md'), 'utf8')).toContain('employees current')
   })
 
   it('initializes and toggles independent source guides through the sessions settings contract', async () => {
@@ -140,11 +141,11 @@ describe('employee managed instructions in isolated provider configs', () => {
       expect(process.env['GECKIT_SOURCE_CLI']).toBeUndefined()
       await sessions.setAllInstructions({ ...settings, guideClaude: false, guidePlugins: {}, providerPlugins: [] })
       expect(process.env['GECKIT_SOURCE_GUIDE']).toBeUndefined()
-      expect(readFileSync(process.env['GECKIT_SOURCE_CODEX_GUIDE'] ?? '', 'utf8')).toContain(employee.id)
+      expect(readFileSync(process.env['GECKIT_SOURCE_CODEX_GUIDE'] ?? '', 'utf8')).toContain('employees current')
       await sessions.setInstructions('claude', true, {})
       await sessions.setInstructions('codex', false, {})
       expect(process.env['GECKIT_SOURCE_CODEX_GUIDE']).toBe('')
-      expect(readFileSync(process.env['GECKIT_SOURCE_GUIDE'] ?? '', 'utf8')).toContain(employee.id)
+      expect(readFileSync(process.env['GECKIT_SOURCE_GUIDE'] ?? '', 'utf8')).toContain('employees current')
       expect(existsSync(process.env['GECKIT_SOURCE_CLI'] ?? '')).toBe(true)
     } finally { sessions.dispose() }
   })

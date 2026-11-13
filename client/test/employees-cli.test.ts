@@ -8,6 +8,8 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { SKILL_TEMPLATES } from '../src/prompts/prompts'
+
 import { readEmployees } from '../src/cli/employees'
 import { askedEndpoint } from '../src/cli/endpoint'
 import { Employees } from '../src/main/employees'
@@ -43,7 +45,7 @@ describe('read-only employee CLI over the native application socket', () => {
       expect(employees.get(assigned).archived).toBe(false)
       await symlink(join(process.cwd(), 'node_modules'), join(directory, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
       const script = join(directory, 'employee-cli.mjs')
-      await build({ entryPoints: [join(process.cwd(), 'src', 'cli', 'index.ts')], outfile: script, bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'silent', plugins: [{ name: 'raw', setup: (on) => { on.onResolve({ filter: /\?raw$/ }, (asked) => ({ path: join(asked.resolveDir, asked.path.slice(0, -4)), namespace: 'raw' })); on.onLoad({ filter: /.*/, namespace: 'raw' }, async (file) => ({ contents: await readFile(file.path, 'utf8'), loader: 'text' })); on.onResolve({ filter: /\?inline$/ }, (asked) => ({ path: join(asked.resolveDir, asked.path.slice(0, -7)), namespace: 'inline' })); on.onLoad({ filter: /.*/, namespace: 'inline' }, async (file) => ({ contents: await readFile(file.path), loader: 'dataurl' })) } }] })
+      await build({ entryPoints: [join(process.cwd(), 'src', 'cli', 'index.ts')], outfile: script, bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'silent', plugins: [{ name: 'raw', setup: (on) => { on.onLoad({ filter: /[/\\]prompts[/\\]prompts\.ts$/ }, async (file) => ({ contents: (await readFile(file.path, 'utf8')).replace(/import\.meta\.glob<string>\([^\n]+\)/, () => JSON.stringify(SKILL_TEMPLATES)), loader: 'ts' })); on.onResolve({ filter: /\?raw$/ }, (asked) => ({ path: join(asked.resolveDir, asked.path.slice(0, -4)), namespace: 'raw' })); on.onLoad({ filter: /.*/, namespace: 'raw' }, async (file) => ({ contents: await readFile(file.path, 'utf8'), loader: 'text' })); on.onResolve({ filter: /\?inline$/ }, (asked) => ({ path: join(asked.resolveDir, asked.path.slice(0, -7)), namespace: 'inline' })); on.onLoad({ filter: /.*/, namespace: 'inline' }, async (file) => ({ contents: await readFile(file.path), loader: 'dataurl' })) } }] })
       const executableScript = await realpath(script)
       const execute = promisify(execFile)
       const env = { ...process.env, GECKIT_DATA: directory }
