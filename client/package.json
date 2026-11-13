@@ -21,6 +21,7 @@
   "scripts": {
     "postinstall": "node node_modules/electron/install.js && node scripts/dev-bundle.js",
     "dev": "npm run build:service && electron-vite dev",
+    "dev:secrets": "scripts/dev-secrets.sh",
     "build": "npm run build:service && electron-vite build",
     "start": "electron-vite preview",
     "package": "node scripts/prepare-mac-service-addons.cjs && npm run build && electron-builder --publish never",
