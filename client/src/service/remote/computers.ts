@@ -96,7 +96,7 @@ export function remoteComputers(directory: string, security: ServiceSecurity) {
               idle: undefined,
               call: (method, ...args) => new Promise((done, refuse) => {
                 const id = ++next
-                const waiting = setTimeout(() => { pending.delete(id); refuse(new Error('Delivery is uncertain: the computer timed out after dispatch. Read target state before retrying.')) }, 120_000)
+                const waiting = setTimeout(() => { pending.delete(id); refuse(new Error('Delivery is uncertain: the computer timed out after dispatch. Read target state before retrying.')) }, method === 'browser:openTest' || method === 'browser:viewStart' ? 16 * 60_000 : 120_000)
                 pending.set(id, { resolve: (value) => done(value as never), reject: refuse, timer: waiting })
                 try { send({ type: 'core-call', id, call: { method, args } as RemoteCall }) }
                 catch { pending.delete(id); clearTimeout(waiting); refuse(new Error('Delivery is uncertain: sending to the computer failed. Read target state before retrying.')) }

@@ -5,7 +5,7 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   resolve: { alias: { 'electron-log': 'electron-log/node' } },
-  ssr: { noExternal: true, external: ['node-datachannel'] },
+  ssr: { noExternal: true, external: ['node-datachannel', 'playwright-core'] },
   plugins: [{
     name: 'no-electron-runtime',
     resolveId(id) { if (id === 'electron' || id.startsWith('electron/')) throw new Error(`Headless runtime must not import ${id}.`) },
@@ -13,18 +13,18 @@ export default defineConfig({
       for (const entry of Object.values(bundle)) {
         if (entry.type !== 'chunk') continue
         for (const dependency of [...entry.imports, ...entry.dynamicImports]) {
-          if (!isBuiltin(dependency) && dependency !== 'node-datachannel' && bundle[dependency] === undefined) throw new Error(`Unexpected headless runtime dependency: ${dependency}`)
+          if (!isBuiltin(dependency) && dependency !== 'node-datachannel' && dependency !== 'playwright-core' && bundle[dependency] === undefined) throw new Error(`Unexpected headless runtime dependency: ${dependency}`)
         }
       }
       this.emitFile({ type: 'asset', fileName: 'package.json', source: JSON.stringify({ name: 'geckit-headless', private: true, type: 'module', engines: { node: '>=22' }, scripts: { start: 'node service.js' } }, undefined, 2) })
     },
-    writeBundle() {
+    writeBundle(options) {
       const require = createRequire(import.meta.url)
-      const target = resolve(import.meta.dirname, 'out/service/node_modules')
+      const target = resolve(options.dir ?? resolve(import.meta.dirname, 'out/service'), 'node_modules')
       mkdirSync(target, { recursive: true })
       const native = resolve(import.meta.dirname, 'node_modules/@node-datachannel')
       const packages = readdirSync(native).map((name) => `@node-datachannel/${name}`)
-      for (const name of ['node-datachannel', 'detect-libc', ...packages]) {
+      for (const name of ['node-datachannel', 'detect-libc', 'playwright-core', ...packages]) {
         const folder = name === 'node-datachannel' ? resolve(require.resolve(name), '../../../..') : resolve(require.resolve(`${name}/package.json`), '..')
         cpSync(folder, resolve(target, name), { recursive: true })
       }

@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises'
 import { createInflateRaw } from 'node:zlib'
 
 /** Unpacks a zip with Node alone, keeping each file's mode and symlinks, since a computer reached over SSH may have no unzip. */
-export async function unzip(zip: string, into: string): Promise<void> {
+export async function unzip(zip: string, into: string, include: (name: string) => boolean = () => true): Promise<void> {
   const root = resolve(into)
   const file = await open(zip, 'r')
   try {
@@ -37,6 +37,7 @@ export async function unzip(zip: string, into: string): Promise<void> {
       at += 46 + skip
       const target = resolve(root, name)
       if (target !== root && !target.startsWith(root + sep)) throw new Error(`the zip names a file outside it: ${name}`)
+      if (!include(name)) continue
       if (name.endsWith('/')) { mkdirSync(target, { recursive: true }); continue }
       mkdirSync(dirname(target), { recursive: true })
       const header = Buffer.alloc(30)

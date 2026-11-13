@@ -108,7 +108,7 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
     call: <K extends keyof CoreMethods>(method: K, ...args: Parameters<CoreMethods[K]>): Promise<Awaited<ReturnType<CoreMethods[K]>>> => new Promise((resolve, reject) => {
       if (!ready || !trust?.full || channel === undefined) { reject(new Error('Connect to this server before using its workspace.')); return }
       const id = ++next
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error('Server did not answer. Check the server before retrying this action.')) }, 120_000)
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error('Server did not answer. Check the server before retrying this action.')) }, method === 'browser:openTest' || method === 'browser:viewStart' ? 16 * 60_000 : 120_000)
       pending.set(id, { resolve: (value) => resolve(value as Awaited<ReturnType<CoreMethods[K]>>), reject, timer })
       try { send({ type: 'core-call', id, call: { method, args } as RemoteCall }) } catch (error) { clearTimeout(timer); pending.delete(id); reject(error) }
     }),

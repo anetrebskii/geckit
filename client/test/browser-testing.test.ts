@@ -40,19 +40,19 @@ describe('test browsers', () => {
   it('renames a profile and changes its description, keeping its files', () => {
     const root = mkdtempSync(join(tmpdir(), 'geckit-testing-'))
     makeTestAccount('old', 'GitHub as alex', root, true)
-    writeFileSync(join(root, '.geckit', 'chrome-for-testing', 'profiles', 'old', 'Cookies'), 'kept')
+    writeFileSync(join(root, '.geckit', 'camoufox', 'profiles', 'old', 'Cookies'), 'kept')
     makeTestAccount('taken', '', root, true)
     updateTestProfile('old', 'old', 'GitHub as work', root)
     expect(testBrowsersState(root).profiles.find((one) => one.name === 'old')?.note).toBe('GitHub as work')
     expect(() => updateTestProfile('old', 'taken', '', root)).toThrow('already exists')
     updateTestProfile('old', 'github-work', 'GitHub as work', root)
     expect(testBrowsersState(root).profiles).toEqual([{ name: 'github-work', open: false, note: 'GitHub as work' }, { name: 'taken', open: false }])
-    expect(readFileSync(join(root, '.geckit', 'chrome-for-testing', 'profiles', 'github-work', 'Cookies'), 'utf8')).toBe('kept')
+    expect(readFileSync(join(root, '.geckit', 'camoufox', 'profiles', 'github-work', 'Cookies'), 'utf8')).toBe('kept')
   })
 
   it('lists kept profiles and deletes one with its folder', () => {
     const root = mkdtempSync(join(tmpdir(), 'geckit-testing-'))
-    for (const one of ['store', 'staging', 'Not Valid']) mkdirSync(join(root, '.geckit', 'chrome-for-testing', 'profiles', one), { recursive: true })
+    for (const one of ['store', 'staging', 'Not Valid']) mkdirSync(join(root, '.geckit', 'camoufox', 'profiles', one), { recursive: true })
     expect(testBrowsersState(root).profiles).toEqual([{ name: 'staging', open: false }, { name: 'store', open: false }])
     deleteTestProfile('store', root)
     expect(testBrowsersState(root).profiles).toEqual([{ name: 'staging', open: false }])

@@ -12,7 +12,7 @@ const roots: string[] = []
 const temporary = (): string => { const root = mkdtempSync(join(tmpdir(), 'geckit-profile-archive-')); roots.push(root); return root }
 const bridge = (root: string): string => join(root, '.geckit', 'browser')
 const profile = (root: string, name = 'source'): string => { const directory = join(profilesFolder(root), name); mkdirSync(directory, { recursive: true }); return directory }
-const header = { type: 'profile', format: 'geckit-browser-profile', version: 1, profile: { name: 'source', note: 'GitHub as alex' }, source: { platform: 'linux' }, createdAt: 1 }
+const header = { type: 'profile', format: 'geckit-browser-profile', version: 2, profile: { name: 'source', note: 'GitHub as alex' }, source: { browser: 'camoufox', platform: 'linux' }, createdAt: 1 }
 const archive = (root: string, records: readonly object[]): string => { const path = join(root, 'input.geckit-profile.gz'); writeFileSync(path, gzipSync(records.map((record) => JSON.stringify(record)).join('\n') + '\n')); return path }
 const end = { type: 'end', entries: 0, bytes: 0 }
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -55,6 +55,13 @@ describe('profile archive round trip', () => {
 })
 
 describe('profile archive refusal', () => {
+  it('refuses a Chrome archive instead of opening it as Firefox data', async () => {
+    const root = temporary()
+    const input = archive(root, [{ ...header, version: 1, source: { platform: 'darwin', chromeVersion: '158' } }, end])
+    await expect(importTestProfile(input, 'restored', { root })).rejects.toThrow('Chrome profile')
+    expect(existsSync(join(profilesFolder(root), 'restored'))).toBe(false)
+  })
+
   it('preserves existing output and refuses an output inside the source', async () => {
     const root = temporary()
     const directory = profile(root)
@@ -151,7 +158,7 @@ describe('profile archive refusal', () => {
     [header, { type: 'chunk', data: 'eA==' }, end],
     [header, end, { type: 'directory', path: 'later' }],
     [{ ...header, profile: { name: '../invalid' } }, end],
-    [{ ...header, version: 2 }, end],
+    [{ ...header, version: 3 }, end],
     [header],
   ])('rejects malformed records and removes incomplete imports (%#)', async (...records) => {
     const root = temporary()

@@ -203,3 +203,76 @@ Feature 025 excluded all profile copying. This proposal changes that scope for e
 | FR-008, FR-010 | Transfer wording, exclusions and CLI help |
 
 **Missing from the request:** Exact archive format and file-size limits belong to the implementation plan. Whether the user intends automatic remote file transfer is unspecified; this proposal uses manual transfer. Live authentication on a second machine remains a separate integration check and cannot be inferred from a synthetic round trip.
+
+## Camoufox migration (2026-11-13)
+
+This section supersedes the Chrome for Testing backend and download wording in the original profile-management specification above.
+
+### 1. Result and journey
+
+Settings > Web Browser keeps the existing create, Open, More > Edit, Sign in and Delete paths. A named profile now opens Camoufox. Create saves a profile without downloading the browser; the first Open or Sign in installs Camoufox and then completes the requested action. A saved profile is not proof of a website login.
+
+### 2. Surfaces
+
+BrowserProfiles names Camoufox and explains that it uses system fonts. First-use downloads use version-pinned font-free GeckIt repacks from a separate public GitHub Releases repository, with a pinned checksum per platform. The repacks retain the upstream browser files, modes and license notices; only font directories are removed. The managed browser driver and profile archive use Firefox profiles; personal Chrome profiles retain their extension integration. Existing Chrome profile names and notes appear as fresh Camoufox profiles once, while original Chrome folders remain untouched.
+
+### 3. States
+
+Absent: explain the first-use download. Downloading: show received and total bytes. Installing: show installation while fonts are excluded. Failed: show the error and let Open or Sign in retry. Ready: show the installed version and the normal profile actions. Migrated: explain that previous Chrome accounts need another sign-in. A closed profile may be renamed; an open profile may only change its description.
+
+### 4. Transitions
+
+```mermaid
+stateDiagram-v2
+  Absent --> Downloading: Open or Sign in
+  Downloading --> Installing: download verified
+  Installing --> Ready: publish installation
+  Downloading --> Failed: network or checksum error
+  Installing --> Failed: extraction error
+  Failed --> Downloading: retry action
+  Ready --> Open: requested action resumes automatically
+  Open --> Ready: browser closes
+```
+
+| From | Event | To | What the user sees |
+|---|---|---|---|
+| Absent | Press Open or Sign in | Downloading | Download progress; requested action remains pending |
+| Downloading | Download finishes, automatically | Installing | "Installing Camoufox without bundled fonts..." |
+| Installing | Installation finishes, automatically | Open | Browser window or sign-in view |
+| Downloading or Installing | Operation fails | Failed | "Camoufox could not be installed: {error}. Try Open or Sign in again." |
+| Failed | Press Open or Sign in | Downloading | A fresh attempt |
+| Open | Close the window | Ready | Open and rename are available again |
+| Closed | Save a new name | Closed | The same Firefox data and note under the new name |
+| Sign in | Close the sign-in view | Ready | Sign-in tab closes; cookies and storage stay in the profile |
+
+### 5. Silent state
+
+Do not show individual archive entries, font filenames or native driver messages during a successful install. Do not claim an account is authenticated from opening or closing its sign-in view.
+
+### 6. Thresholds
+
+Allow up to 15 minutes for first-use installation, and 16 minutes for a remote Open or Sign in so the remote transport does not time out first. Keep the existing two-second Settings refresh and 15-minute sign-in link lifetime. Download progress remains live during verification and extraction. Profiles use the host's fonts; a Linux host must have system fonts installed.
+
+### 7. Wording
+
+"Separate Camoufox profiles for your accounts. Create a profile, open its browser and sign in yourself. Sign-ins stay on this computer."
+
+"Camoufox downloads on first use, about 150-180 MB. This font-free build uses the fonts installed on this computer."
+
+"Previous Chrome profiles need a new sign-in in Camoufox. Their original Chrome data is preserved."
+
+### 8. Edge cases
+
+Concurrent first opens wait for one installation. Interrupted or failed installs never become ready and can be retried. Creating, editing and deleting closed profiles works without a browser binary. Live view remains person-only and uses the same persistent profile as Open. Closing live view does not log out or close other tabs. Imports of older Chrome archives are refused with an explanation; Camoufox archives carry their browser engine. Only the requested profile can be renamed or deleted, and neither action touches the preserved Chrome data.
+
+### 9. Deliberately absent
+
+No automatic conversion of Chrome cookies or passwords to Firefox. No promise that transferred sessions remain accepted by websites. No Chrome-only privileged-page support in Camoufox. No automatic download of font bundles or browser add-ons.
+
+### 10. Decision
+
+Replace the former Chrome for Testing backend with Camoufox using its native cursor movement and a persistent Firefox context. Use the existing settings workflow rather than adding a second browser chooser. Keep the Node runtime self-contained, without requiring a Python installation.
+
+### 11. Requirements
+
+The user's requested migration covers download and installation without fonts, Open, person-controlled Sign in, rename and retained profiles. Existing tab ownership and conversation release rules remain in force. Real website login is a manual account check, separate from local persistence verification.

@@ -2,6 +2,12 @@
 
 This is the supporting audit. The concise, user-approved feature list is [docs/features.md](features.md).
 
+## Managed browser moves to Camoufox - 2026-11-13 (main, not released)
+
+Alex requested replacement of Chrome for Testing with Camoufox without bundled fonts, retaining Settings login, Open, Rename and installation/download behavior, with local changes only. `client/src/cli/camoufox.ts` installs checksum-pinned font-free repacks of upstream browser files; `testing.ts` drives persistent Firefox profiles with native cursor movement; `profile-archive.ts` distinguishes Camoufox archives from old Chrome data. Existing personal Chrome extension access remains. BrowserProfiles and generated browser instructions describe the new backend and first-use installation. Old Chrome data is preserved separately and requires a fresh Camoufox sign-in.
+
+Actual macOS clean install and browser acceptance passed, including local test-server login persistence through restart/rename, live-view controls, website downloads, profile archive transfer and conversation tab ownership. Settings create/edit/Open/Sign in/focus were verified in the real renderer with a synthetic native boundary. Isolated direct-main delivery suite: 1,958 passed, 20 skipped; final opt-in real browser and installer rerun: 5 passed. Typecheck, lint and build passed. Real accounts, paired devices and Linux/Windows runtime remain unverified. Five font-free archives (157-181 MB) are published separately in [geckit-browser-assets](https://github.com/anetrebskii/geckit-browser-assets/releases/tag/camoufox-158.0.1-beta.41-no-fonts.1), with upstream source, licenses, reproducible packaging script and SHA256 manifest. The local GeckIt installer uses those pinned assets; direct-main delivery of the GeckIt migration was subsequently authorized; app release availability remains separate from source delivery. See [verification and distribution evidence](reports/camoufox-migration.md).
+
 ## Chrome through GeckIt's own extension - 2026-11-04 (main, not released)
 
 Alex asked for Codex to work with Chrome without MCP, without an Allow prompt each time, with filtering as economical as Claude in Chrome, a local model for `find` (bundled llama.cpp chosen) and a visible cursor; he approved the list entry on 2026-11-04 ("Да") and kept Qwen3 4B over a smaller model for quality. It replaces the MCP-based Codex Chrome bundle of f9aabbc, which was reverted.

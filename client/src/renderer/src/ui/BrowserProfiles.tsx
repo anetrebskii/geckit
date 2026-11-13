@@ -196,14 +196,15 @@ export function BrowserProfiles({ testing, refresh, enabled }: BrowserProfilesPr
     <header className="browser-profiles-header">
       <div className="browser-profiles-heading">
         <h4 id="browser-profiles-title">Browser profiles</h4>
-        <p>Separate Chrome for Testing profiles for your accounts. Create a profile, open its browser and sign in yourself. Sign-ins stay on this computer.</p>
+        <p>Separate Camoufox profiles for your accounts. Create a profile, open its browser and sign in yourself. Sign-ins stay on this computer.</p>
       </div>
       <button ref={newButton} type="button" className="quiet browser-profiles-new" disabled={making} onClick={() => { setProblem(''); setMaking(true) }}><Icon name="plus" size={14} />New profile</button>
     </header>
     {enabled ? null : <p className="browser-profiles-notice">Turn on Chrome through GeckIt below to open a browser or sign in.</p>}
-    {download?.error !== undefined ? <p className="browser-profiles-notice">Chrome for Testing did not download: {download.error.replace(/\.$/, '')}.</p>
-      : download !== undefined ? <div className="browser-profiles-notice"><p>Downloading Chrome for Testing, {Math.round(download.received / 1e6)} of {Math.round(download.total / 1e6)} MB.</p><div className="progress"><span style={{ width: `${download.total === 0 ? 0 : Math.round((download.received / download.total) * 100)}%` }} /></div></div>
-      : testing.version === undefined ? <p className="browser-profiles-notice">Chrome for Testing downloads the first time a test browser starts, about 200 MB.</p> : null}
+    {download?.error !== undefined ? <p className="browser-profiles-notice">Camoufox could not be installed: {download.error.replace(/\.$/, '')}. Try Open or Sign in again.</p>
+      : download !== undefined ? <div className="browser-profiles-notice"><p>{download.phase === 'installing' ? 'Installing Camoufox without bundled fonts...' : <>Downloading Camoufox, {Math.round(download.received / 1e6)} of {Math.round(download.total / 1e6)} MB.</>}</p><div className="progress"><span style={{ width: `${download.total === 0 ? 0 : Math.round((download.received / download.total) * 100)}%` }} /></div></div>
+      : testing.version === undefined ? <p className="browser-profiles-notice">Camoufox downloads on first use, about 150-180 MB. This font-free build uses the fonts installed on this computer.</p> : null}
+    {testing.migrated ? <p className="browser-profiles-notice">Previous Chrome profiles need a new sign-in in Camoufox. Their original Chrome data is preserved.</p> : null}
     <div className="browser-profiles-group">
       {making ? <form className="browser-profiles-form" onSubmit={(event) => { event.preventDefault(); void create() }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() } }}>
         <label htmlFor="browser-profile-name">Profile name</label>

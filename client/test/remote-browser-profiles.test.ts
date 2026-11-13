@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { conversationTestName, registerBrowserConversation, saveTestAccount, testAccount, forgetTestAccount } from '../src/cli/browser-lifecycle'
 import { computerArg } from '../src/cli/computer'
 import { claimSignIn, setLiveServer, signInLink } from '../src/cli/live-view'
-import { chromeFlags } from '../src/cli/testing'
+import { camoufoxHeadless } from '../src/cli/testing'
 import { refusedCli } from '../src/core/cli-run'
 import { computerNamed } from '../src/service/remote/computers'
 import { readSignIn } from '../src/shared/live-view'
@@ -79,9 +79,9 @@ describe('sign-in links', () => {
 })
 
 describe('test browsers on Linux', () => {
-  it('keep sign-ins with their own key, and run without a window where there is no screen', () => {
-    expect(chromeFlags('darwin', {})).toEqual([])
-    expect(chromeFlags('linux', { DISPLAY: ':0' })).toEqual(['--password-store=basic'])
-    expect(chromeFlags('linux', {})).toEqual(['--password-store=basic', '--headless=new', '--window-size=1280,800'])
+  it('run without a window where there is no screen', () => {
+    expect(camoufoxHeadless('darwin', {})).toBe(false)
+    expect(camoufoxHeadless('linux', { DISPLAY: ':0' })).toBe(false)
+    expect(camoufoxHeadless('linux', {})).toBe(true)
   })
 })

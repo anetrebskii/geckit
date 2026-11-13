@@ -7,17 +7,17 @@ import { pipeline } from 'node:stream/promises'
 import { createGunzip, createGzip } from 'node:zlib'
 import { acquireTestLock, browserStateFolder, forgetTestAccount, saveTestAccount, testAccount, type TestAccount } from './browser-lifecycle'
 import { profiles } from './browser'
-import { profilesFolder, testingChrome, testName, validTestName } from './testing'
+import { profilesFolder, testingCamoufox, testName, validTestName } from './testing'
 
 const MAX_ENTRIES = 100_000
 const MAX_BYTES = 10 * 1024 ** 3
 const CHUNK_BYTES = 64 * 1024
 const MAX_RECORD_BYTES = 128 * 1024
-const CACHES = new Set(['Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'GrShaderCache', 'ShaderCache', 'BrowserMetrics', 'Crashpad', 'component_crx_cache'])
-const SINGLETONS = new Set(['SingletonLock', 'SingletonSocket', 'SingletonCookie', 'DevToolsActivePort'])
+const CACHES = new Set(['Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'GrShaderCache', 'ShaderCache', 'cache2', 'startupCache', 'shader-cache', 'BrowserMetrics', 'Crashpad', 'component_crx_cache'])
+const SINGLETONS = new Set(['SingletonLock', 'SingletonSocket', 'SingletonCookie', 'DevToolsActivePort', 'parent.lock', '.parentlock', 'lock'])
 
 type ProfileMetadata = Pick<TestAccount, 'name'> & Partial<Pick<TestAccount, 'note'>>
-interface ArchiveHeader { readonly type: 'profile'; readonly format: 'geckit-browser-profile'; readonly version: 1; readonly profile: ProfileMetadata; readonly source: { readonly platform: string; readonly chromeVersion?: string }; readonly createdAt: number }
+interface ArchiveHeader { readonly type: 'profile'; readonly format: 'geckit-browser-profile'; readonly version: 2; readonly profile: ProfileMetadata; readonly source: { readonly platform: string; readonly browser: 'camoufox'; readonly browserVersion?: string }; readonly createdAt: number }
 interface DirectoryRecord { readonly type: 'directory'; readonly path: string }
 type FileRecord = Omit<DirectoryRecord, 'type'> & { readonly type: 'file'; readonly size: number }
 interface ChunkRecord { readonly type: 'chunk'; readonly data: string }
@@ -33,7 +33,7 @@ const busy = (name: string): Error => new Error(`Close geckit:${name} before exp
 
 function checkIdle(name: string, folder: string, directory: string): void {
   if (profiles(folder).some((one) => one.label === `geckit:${name}` && alive(one.pid))) throw busy(name)
-  if ([...SINGLETONS].some((one) => present(join(directory, one)))) throw busy(name)
+  if ([...SINGLETONS].some((one) => one !== '.parentlock' && one !== 'parent.lock' && present(join(directory, one)))) throw busy(name)
   if (!existsSync(folder)) return
   for (const file of readdirSync(folder).filter((one) => one.endsWith('.launch'))) {
     let value: unknown
@@ -50,12 +50,13 @@ function safePath(path: string): string {
 function parseRecord(line: string): ArchiveRecord {
   const value: unknown = JSON.parse(line)
   if (typeof value !== 'object' || value === null || !('type' in value)) throw invalid()
-  if (value.type === 'profile' && 'format' in value && value.format === 'geckit-browser-profile' && 'version' in value && value.version === 1 && 'profile' in value && typeof value.profile === 'object' && value.profile !== null && 'name' in value.profile && typeof value.profile.name === 'string' && validTestName(value.profile.name) && 'source' in value && typeof value.source === 'object' && value.source !== null && 'platform' in value.source && typeof value.source.platform === 'string' && value.source.platform.length <= 40 && 'createdAt' in value && typeof value.createdAt === 'number' && Number.isFinite(value.createdAt)) {
+  if (value.type === 'profile' && 'version' in value && value.version === 1) throw new Error('This archive contains a Chrome profile. Camoufox requires a Firefox profile; create a new profile and sign in again.')
+  if (value.type === 'profile' && 'format' in value && value.format === 'geckit-browser-profile' && 'version' in value && value.version === 2 && 'profile' in value && typeof value.profile === 'object' && value.profile !== null && 'name' in value.profile && typeof value.profile.name === 'string' && validTestName(value.profile.name) && 'source' in value && typeof value.source === 'object' && value.source !== null && 'browser' in value.source && value.source.browser === 'camoufox' && 'platform' in value.source && typeof value.source.platform === 'string' && value.source.platform.length <= 40 && 'createdAt' in value && typeof value.createdAt === 'number' && Number.isFinite(value.createdAt)) {
     const note = 'note' in value.profile ? value.profile.note : undefined
-    const chromeVersion = 'chromeVersion' in value.source ? value.source.chromeVersion : undefined
+    const browserVersion = 'browserVersion' in value.source ? value.source.browserVersion : undefined
     if (note !== undefined && (typeof note !== 'string' || note.length === 0 || note.length > 120 || note.trim().replace(/\s+/g, ' ') !== note)) throw invalid()
-    if (chromeVersion !== undefined && (typeof chromeVersion !== 'string' || chromeVersion.length > 100)) throw invalid()
-    return { type: 'profile', format: value.format, version: value.version, profile: { name: value.profile.name, ...(typeof note === 'string' ? { note } : {}) }, source: { platform: value.source.platform, ...(typeof chromeVersion === 'string' ? { chromeVersion } : {}) }, createdAt: value.createdAt }
+    if (browserVersion !== undefined && (typeof browserVersion !== 'string' || browserVersion.length > 100)) throw invalid()
+    return { type: 'profile', format: value.format, version: value.version, profile: { name: value.profile.name, ...(typeof note === 'string' ? { note } : {}) }, source: { browser: 'camoufox', platform: value.source.platform, ...(typeof browserVersion === 'string' ? { browserVersion } : {}) }, createdAt: value.createdAt }
   }
   if ((value.type === 'directory' || value.type === 'file') && 'path' in value && typeof value.path === 'string') {
     const path = safePath(value.path)
@@ -85,8 +86,8 @@ export async function exportTestProfile(name: string, output: string, options: A
     if (parent === source || parent.startsWith(`${source}${sep}`)) throw new Error('Choose an output path outside the profile being exported.')
     if (present(target)) throw new Error('The output file already exists. Choose another --output path.')
     const account = testAccount(name, folder)
-    const chrome = testingChrome(root)
-    const header: ArchiveHeader = { type: 'profile', format: 'geckit-browser-profile', version: 1, profile: { name, ...(account === undefined ? {} : { note: account.note }) }, source: { platform: process.platform, ...(chrome === undefined ? {} : { chromeVersion: chrome.version }) }, createdAt: Date.now() }
+    const camoufox = testingCamoufox(root)
+    const header: ArchiveHeader = { type: 'profile', format: 'geckit-browser-profile', version: 2, profile: { name, ...(account === undefined ? {} : { note: account.note }) }, source: { browser: 'camoufox', platform: process.platform, ...(camoufox === undefined ? {} : { browserVersion: camoufox.version }) }, createdAt: Date.now() }
     let entries = 0
     let bytes = 0
     const seen = new Set<string>()

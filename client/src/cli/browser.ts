@@ -218,7 +218,7 @@ async function startTest(name: string, folder: string = browserFolder(), convers
     writeFileSync(`${launch}.part`, JSON.stringify({ name, ...(conversation === undefined ? {} : { conversation }) }))
     renameSync(`${launch}.part`, launch)
   } catch { return { ok: false, said: `This sandbox may not write to ${folder}. GeckIt's own conversations may; elsewhere ask the person to allow writing there.` } }
-  for (let waited = 0; waited < 60_000; waited += 500) {
+  for (let waited = 0; waited < 15 * 60_000; waited += 500) {
     await new Promise((done) => setTimeout(done, 500))
     if (conversation !== undefined) {
       try { conversationTestName(conversation, folder, name) } catch (error) { rmSync(launch, { force: true }); return { ok: false, said: error instanceof Error ? error.message : String(error) } }
@@ -232,19 +232,22 @@ async function startTest(name: string, folder: string = browserFolder(), convers
       renameSync(`${launch}.part`, launch)
     }
     const fetching = downloading()
-    if (fetching?.error !== undefined) return { ok: false, said: `Chrome for Testing did not download: ${fetching.error}.` }
+    if (waited >= 60_000 && fetching === undefined) break
+    if (fetching?.error !== undefined && waited > 2_000) return { ok: false, said: `Camoufox did not download: ${fetching.error}.` }
   }
   const fetching = downloading()
-  if (fetching !== undefined) return { ok: true, said: `Downloading Chrome for Testing, ${percent(fetching.received, fetching.total)}%. ${label} opens by itself when it is done; geckit browser profiles says when.` }
+  if (fetching !== undefined) return { ok: true, said: `Downloading Camoufox, ${percent(fetching.received, fetching.total)}%. ${label} opens by itself when it is done; geckit browser profiles says when.` }
   let log: string
   try { log = readFileSync(testLog(name), 'utf8').trim().split('\n').at(-1) ?? '' } catch { log = '' }
-  return { ok: false, said: `${label} did not start within a minute${log === '' ? '.' : `: ${log}`}` }
+  return { ok: false, said: `${label} could not start${log === '' ? '.' : `: ${log}`}` }
 }
 
 async function claimTest(name: string, folder: string, conversation?: string): Promise<{ readonly ok: boolean; readonly said: string }> {
   const label = `${TEST_PREFIX}${name}`
   const host = profiles(folder).find((one) => one.label === label)
   if (host === undefined) return { ok: false, said: `${label} is not open.` }
+  const status = await ask({ cmd: 'ping' }, folder, host.pid)
+  if (status.ok && !(status.result as { version?: string } | undefined)?.version?.startsWith('Camoufox')) return { ok: false, said: `Close ${label}'s old Chrome for Testing window before opening its new Camoufox profile. Its Chrome data will be preserved.` }
   if (conversation !== undefined) {
     const reply = await ask({ cmd: 'acquire', conversation }, folder, host.pid)
     if (!reply.ok) return { ok: false, said: reply.error ?? 'The test browser refused ownership.' }
@@ -342,7 +345,7 @@ function listProfiles(): string {
   const testing = testBrowsersState()
   const tests = testing.profiles.map((one) => {
     const open = known.find((host) => host.label === `${TEST_PREFIX}${one.name}`)
-    return `${`${TEST_PREFIX}${one.name}`.padEnd(34)} ${'Chrome for Testing'.padEnd(20)} ${open !== undefined ? `open, ${open.tabs.length} tabs` : 'closed: start opens it'}${one.note === undefined ? '' : `, ${one.note}`}`
+    return `${`${TEST_PREFIX}${one.name}`.padEnd(34)} ${'Camoufox'.padEnd(20)} ${open !== undefined ? `open, ${open.tabs.length} tabs` : 'closed: start opens it'}${one.note === undefined ? '' : `, ${one.note}`}`
   })
   return [...lines, ...unnamed, ...tests].join('\n') || 'No Chrome profile found.'
 }
@@ -452,7 +455,7 @@ async function ask(request: object, folder: string = browserFolder(), to?: numbe
   return { ok: false, error: 'The GeckIt Browser bridge did not answer within 70 seconds.' }
 }
 
-export const BROWSER_HELP = `geckit browser: the person's own Chrome, through the GeckIt Browser extension, and test browsers, Chrome for Testing driven by GeckIt.
+export const BROWSER_HELP = `geckit browser: the person's own Chrome, through the GeckIt Browser extension, and test browsers, Camoufox driven by GeckIt.
 
   profiles                      the Chrome profiles here: email, name, whether GeckIt Browser is in it and open, which was used last;
                                 then the test profiles, geckit:<name>, with their descriptions
@@ -620,7 +623,7 @@ interface Page { readonly title: string; readonly url: string }
 
 function shown(what: string, args: readonly string[], words: readonly string[], result: unknown): string {
   switch (what) {
-    case 'status': { const known = profiles(); const version = (result as { version: string }).version; return `Connected, ${version.startsWith('Chrome for Testing') ? version : `extension ${version}`}${known.length > 1 ? `, in ${known.length} Chrome profiles: ${known.map((one) => one.label).join(', ')}` : ''}.` }
+    case 'status': { const known = profiles(); const version = (result as { version: string }).version; return `Connected, ${version.startsWith('Camoufox') ? version : `extension ${version}`}${known.length > 1 ? `, in ${known.length} Chrome profiles: ${known.map((one) => one.label).join(', ')}` : ''}.` }
     case 'pages': return (result as (Page & { id: number; active: boolean })[]).map((one) => `${one.active ? '*' : ' '} ${String(one.id).padEnd(10)} ${one.title.slice(0, 70)}  ${one.url}`).join('\n')
     case 'open': case 'go': { const page = result as Page & { id: number }; return `${page.id}  ${page.title}  ${page.url}` }
     case 'close': return 'Closed.'

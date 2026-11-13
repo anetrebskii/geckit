@@ -891,12 +891,13 @@ export type ViewInput =
 /** One picture of the sign-in tab, a JPEG in base64, with the page it shows. */
 export interface ViewFrame { readonly jpeg: string; readonly width: number; readonly height: number; readonly url: string; readonly title: string }
 
-/** Test browsers: Chrome for Testing driven by GeckIt, each profile kept by name. */
+/** Test browsers: Camoufox driven by GeckIt, each profile kept by name. */
 export interface TestBrowsersState {
   readonly supported: boolean
-  /** The Chrome for Testing a test browser starts, when there is one. */
+  /** The Camoufox version a test browser starts, when there is one. */
   readonly version?: string
-  readonly download?: { readonly received: number; readonly total: number; readonly error?: string }
+  readonly migrated?: boolean
+  readonly download?: { readonly received: number; readonly total: number; readonly phase?: 'downloading' | 'installing'; readonly error?: string }
   /** note: which account a profile made for one account is signed in to. */
   readonly profiles: readonly { readonly name: string; readonly open: boolean; readonly note?: string }[]
 }
