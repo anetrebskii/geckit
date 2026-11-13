@@ -51,7 +51,7 @@ let stopLaunches: (() => void) | undefined
 export function keepBrowserBridge(on: boolean): void {
   setBrowserBridgeOn(on)
   try {
-    keepBrowserSkills(on)
+    keepSkills(on)
     if (!on) { stopLaunches?.(); stopLaunches = undefined; removeBrowserBridge(); return }
     const launcher = corePlatform().launcher?.()
     if (launcher !== undefined) installBrowserBridge(launcher.executable, launcher.script)
@@ -63,35 +63,48 @@ export function keepBrowserBridge(on: boolean): void {
 /** The browser skill's name: `geckit:use-browser` in GeckIt's Claude plugin, `geckit-use-browser` among Codex's skills. */
 export const BROWSER_SKILL_NAME = 'use-browser'
 
+/** The secrets skill's name, installed whether or not Chrome through GeckIt is on, since secrets serve commands, HTTP and SSH too. */
+export const SECRETS_SKILL_NAME = 'use-secrets'
+
 const codexSkillName = `geckit-${BROWSER_SKILL_NAME}`
+const codexSecretsName = `geckit-${SECRETS_SKILL_NAME}`
+
+/** How a skill is named where a conversation is told to load it. */
+const skillSaid = (name: string, claude: boolean): string => claude ? `geckit:${name}` : `geckit-${name}`
 
 /** Where Codex finds the person's own skills, as ai-skills installs them. */
-export const codexSkillFolder = (): string => join(homedir(), '.agents', 'skills', codexSkillName)
+export const codexSkillFolder = (name: string = codexSkillName): string => join(homedir(), '.agents', 'skills', name)
 
 /** Where earlier versions put the Codex skill, taken away when the installed GeckIt starts. */
 const legacyCodexSkill = (): string => join(codexWhere(), 'skills', 'geckit-browser')
 
-function writeSkill(folder: string, name: string): void {
+function writeSkill(folder: string, files: Readonly<Record<string, string>>): void {
   rmSync(folder, { recursive: true, force: true })
-  mkdirSync(join(folder, 'references'), { recursive: true })
-  for (const [path, content] of Object.entries(browserSkillFiles(cliPath(), name))) writeFileSync(join(folder, path), content)
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(join(folder, path, '..'), { recursive: true })
+    writeFileSync(join(folder, path), content)
+  }
 }
 
-/** The browser skill: in GeckIt's own Claude plugin for its Claude sessions, and among Codex's skills for the installed GeckIt. Written whole at every start, so an older name or file does not stay behind. */
-function keepBrowserSkills(on: boolean): void {
+/**
+ * The skills: in GeckIt's own Claude plugin for its Claude sessions, and among
+ * Codex's skills for the installed GeckIt. The secrets skill is always there,
+ * the browser skill while Chrome through GeckIt is on. Written whole at every
+ * start, so an older name or file does not stay behind.
+ */
+function keepSkills(browser: boolean): void {
   const plugin = browserPluginFolder()
-  if (!fromSource()) rmSync(legacyCodexSkill(), { recursive: true, force: true })
-  if (!on) {
-    rmSync(plugin, { recursive: true, force: true })
-    if (!fromSource()) rmSync(codexSkillFolder(), { recursive: true, force: true })
-    return
-  }
+  const installed = !fromSource()
+  if (installed) rmSync(legacyCodexSkill(), { recursive: true, force: true })
   mkdirSync(join(plugin, '.claude-plugin'), { recursive: true })
   writeFileSync(join(plugin, '.claude-plugin', 'plugin.json'), `${JSON.stringify({ name: 'geckit', version: '1.0.0', description: 'What GeckIt gives the Claude conversations it runs.' }, undefined, 2)}\n`)
   rmSync(join(plugin, 'skills'), { recursive: true, force: true })
-  writeSkill(join(plugin, 'skills', BROWSER_SKILL_NAME), BROWSER_SKILL_NAME)
-  if (fromSource()) return
-  writeSkill(codexSkillFolder(), codexSkillName)
+  writeSkill(join(plugin, 'skills', SECRETS_SKILL_NAME), secretsSkillFiles(cliPath(), SECRETS_SKILL_NAME))
+  if (browser) writeSkill(join(plugin, 'skills', BROWSER_SKILL_NAME), browserSkillFiles(cliPath(), BROWSER_SKILL_NAME))
+  if (!installed) return
+  writeSkill(codexSkillFolder(codexSecretsName), secretsSkillFiles(cliPath(), codexSecretsName))
+  if (browser) writeSkill(codexSkillFolder(), browserSkillFiles(cliPath(), codexSkillName))
+  else rmSync(codexSkillFolder(), { recursive: true, force: true })
 }
 
 const guideWrite = async (file: string, content: string, strict: boolean): Promise<void> => {
@@ -277,7 +290,7 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
     }
     if (await writeLaunchers(command)) {
       process.env['GECKIT_SOURCE_CLI'] = command
-      await guideWrite(localGuide, `${currentGuide()}${BROWSERS(browsers)}${COMMAND(command)}${BROWSER(command, true)}${EMPLOYEES(employees, command)}${MANAGER()}`, strict)
+      await guideWrite(localGuide, `${currentGuide()}${BROWSERS(browsers)}${COMMAND(command)}${BROWSER(command, true)}${SECRETS(command, true)}${EMPLOYEES(employees, command)}${MANAGER()}`, strict)
       process.env['GECKIT_SOURCE_GUIDE'] = localGuide
     } else if (strict) throw new Error('The source GeckIt command could not be updated.')
     return
@@ -291,7 +304,7 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
   await mkdir(folder, { recursive: true }).catch(() => undefined)
   const told = await writeLaunchers(command)
   if (strict && !told) throw new Error('The GeckIt command could not be updated.')
-  await guideWrite(guide, `${currentGuide()}${BROWSERS(browsers)}${told ? COMMAND(command) + BROWSER(command, true) + EMPLOYEES(employees, command) : ''}${MANAGER()}`, strict)
+  await guideWrite(guide, `${currentGuide()}${BROWSERS(browsers)}${told ? COMMAND(command) + BROWSER(command, true) + SECRETS(command, true) + EMPLOYEES(employees, command) : ''}${MANAGER()}`, strict)
   await keepGuideBlock(claude, guide, IMPORT, IMPORT, strict)
 }
 
@@ -330,24 +343,25 @@ export async function keepCodexGuide(wanted: boolean, employees: readonly Employ
   await keepGuideBlock(agents, guide, importLine, importLine, strict)
 }
 
-/** The Claude plugin GeckIt hands its own local Claude sessions with --plugin-dir, holding the browser skill while Chrome through GeckIt is on. */
+/** The Claude plugin GeckIt hands its own local Claude sessions with --plugin-dir: the secrets skill, and the browser skill while Chrome through GeckIt is on. */
 export const browserPluginFolder = (): string => join(dataDirectory(), 'claude-plugin')
 
 const browserRules = (said: string): string => fill(PROMPTS.browser.rules, { said })
 
 type Reference = keyof typeof PROMPTS.browser.references
 
-const REFERENCES: Readonly<Record<string, Reference>> = { testBrowsers: 'test-browsers', designChecks: 'design-checks', secrets: 'secrets' }
+const REFERENCES: Readonly<Record<string, Reference>> = { testBrowsers: 'test-browsers', designChecks: 'design-checks' }
 
 const referenceTitle = (text: string): string => text.split('\n')[0]?.replace(/^#+\s*/, '') ?? ''
 
 /** The skill's main text; inline, as in a guide where no skill can be given, its references follow it and are named as sections below. */
-const browserHow = (said: string, inline = false): string => {
+const browserHow = (said: string, inline = false, claude = true): string => {
   const named = Object.fromEntries(Object.entries(REFERENCES).map(([key, file]) => {
     const title = referenceTitle(PROMPTS.browser.references[file])
     return [key, inline ? `the ${title} section below` : `[${title.toLowerCase()}](references/${file}.md)`]
   }))
-  const how = fill(PROMPTS.browser.how, { said, ...named })
+  const secrets = inline ? 'the Secrets section of this guide' : `the \`${skillSaid(SECRETS_SKILL_NAME, claude)}\` skill`
+  const how = fill(PROMPTS.browser.how, { said, ...named, secrets })
   if (!inline) return how
   return [how, ...Object.values(PROMPTS.browser.references).map((text) => fill(text, { said }))].join('\n\n')
 }
@@ -355,7 +369,7 @@ const browserHow = (said: string, inline = false): string => {
 /** The skill that holds how to work in Chrome, loaded only when a conversation needs it. */
 export const BROWSER_SKILL = (command: string, name: string): string => {
   const said = command.includes(' ') ? `"${command}"` : command
-  return `${fill(PROMPTS.browser.skill, { name, rules: browserRules(said), how: browserHow(said) })}\n`
+  return `${fill(PROMPTS.browser.skill, { name, rules: browserRules(said), how: browserHow(said, false, name === BROWSER_SKILL_NAME) })}\n`
 }
 
 /** Every file of the skill by its path in the skill's folder: SKILL.md and the references it links. */
@@ -365,6 +379,19 @@ export const browserSkillFiles = (command: string, name: string): Readonly<Recor
     'SKILL.md': BROWSER_SKILL(command, name),
     ...Object.fromEntries(Object.entries(PROMPTS.browser.references).map(([file, text]) => [`references/${file}.md`, `${fill(text, { said })}\n`])),
   }
+}
+
+/** The secrets skill: SKILL.md alone, since all of it applies whenever a credential is needed. */
+export const secretsSkillFiles = (command: string, name: string): Readonly<Record<string, string>> => {
+  const said = command.includes(' ') ? `"${command}"` : command
+  return { 'SKILL.md': `${fill(PROMPTS.secrets.skill, { name, how: fill(PROMPTS.secrets.how, { said }) })}\n` }
+}
+
+/** What every guide says about secrets: the rule, and the skill that says how, or the whole of it where no skill can be given. */
+export const SECRETS = (command: string, claude = false, inline = false): string => {
+  const said = command.includes(' ') ? `"${command}"` : command
+  const how = inline ? `\n\n${fill(PROMPTS.secrets.how, { said }).replace(/^## /gm, '### ')}` : fill(PROMPTS.secrets.loadSkill, { skill: skillSaid(SECRETS_SKILL_NAME, claude), said })
+  return `\n${fill(PROMPTS.secrets.section, { how })}\n`
 }
 
 /** What a provider library is handed while Chrome through GeckIt is on, to start Claude with the skill and the rule and without Claude in Chrome. */
@@ -383,5 +410,6 @@ const codexGuide = (employees: readonly Employee[]): string => {
   const command = (process.platform === 'win32' ? COMMAND(`${cliPath()}.cmd`, 'file', false) : COMMAND(cliPath(), 'heredoc', false))
     .replaceAll('Claude Code', 'Codex')
     .replaceAll('Claude', 'Codex')
-  return currentGuide('AGENTS.md') + command + BROWSER(process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath(), false, fromSource()) + EMPLOYEES(employees, process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()) + MANAGER()
+  const said = process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()
+  return currentGuide('AGENTS.md') + command + BROWSER(said, false, fromSource()) + SECRETS(said, false, fromSource()) + EMPLOYEES(employees, process.platform === 'win32' ? `${cliPath()}.cmd` : cliPath()) + MANAGER()
 }

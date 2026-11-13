@@ -136,7 +136,8 @@ export function holdClaude(
   let over = false
   let last = ''
 
-  const args = options.launch === undefined && browserBridgeOn() && existsSync(browserPluginFolder()) ? [...claudeArgs(options).filter((one) => one !== '--chrome'), '--plugin-dir', browserPluginFolder()] : claudeArgs(options)
+  const plugin = options.launch === undefined && existsSync(browserPluginFolder())
+  const args = plugin ? [...claudeArgs(options).filter((one) => !browserBridgeOn() || one !== '--chrome'), '--plugin-dir', browserPluginFolder()] : claudeArgs(options)
   const child: Held =
     options.launch?.(args) ?? spawn(claudeCommand(), args, { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true })
   const closed = new Promise<void>((resolve) => {

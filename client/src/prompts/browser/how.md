@@ -24,7 +24,7 @@ Do what the person asked on a website. Post, send, buy or delete nothing they di
 - Start with `find`: it returns only the matching `[ref] role "name"` lines, picked by a model on this computer. `read` lists every heading and control, with `--- item N ---` at each post or card; use it when `find` misses.
 - One command per call, nothing chained. `text` is the main text; `shot` saves a PNG and prints its path. `{{said}} browser help` lists open, go, close, key, scroll and eval.
 - Refs hold until the page reloads; after a click that changes the page, read again.
-- For a design, layout or animation check, read {{designChecks}}. When the work needs a password, API key or SSH key, read {{secrets}}.
+- For a design, layout or animation check, read {{designChecks}}. When the work needs a password, API key or SSH key, use {{secrets}}.
 
 ## Unknowns
 

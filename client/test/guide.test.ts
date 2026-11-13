@@ -191,7 +191,7 @@ describe('what Claude Code is told about GeckIt', () => {
       const codexContent = generated[1] ?? ''
       expect(claudeContent).toContain('`geckit:use-browser` skill')
       await expect(readFile(oldClaudeSkill, 'utf8')).rejects.toThrow()
-      expect(await readFile(join(browserPluginFolder(), 'skills', 'use-browser', 'references', 'secrets.md'), 'utf8')).toContain('secrets request')
+      expect(await readFile(join(browserPluginFolder(), 'skills', 'use-secrets', 'SKILL.md'), 'utf8')).toContain('secrets request')
       expect(await readFile(join(browserPluginFolder(), '.claude-plugin', 'plugin.json'), 'utf8')).toContain('"name": "geckit"')
       if (source) {
         expect(sourceArgs()).toContain('--append-system-prompt')
@@ -221,6 +221,9 @@ describe('what Claude Code is told about GeckIt', () => {
         for (const rule of required) expect(content).not.toContain(rule)
       }
       await expect(readFile(claudeSkill, 'utf8')).rejects.toThrow()
+      expect(await readFile(join(browserPluginFolder(), 'skills', 'use-secrets', 'SKILL.md'), 'utf8')).toContain('name: use-secrets')
+      if (!source) expect(await readFile(join(codexSkillFolder('geckit-use-secrets'), 'SKILL.md'), 'utf8')).toContain('name: geckit-use-secrets')
+      for (const file of [claudeGuide, codexGuide]) expect(await readFile(file, 'utf8')).toContain('## Secrets')
       if (source) expect(await readFile(codexSkill, 'utf8')).toBe('Installed Codex skill')
       else await expect(readFile(codexSkill, 'utf8')).rejects.toThrow()
     } finally {
