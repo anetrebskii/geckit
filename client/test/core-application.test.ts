@@ -19,7 +19,6 @@ const exec = promisify(execFile)
 const clientDirectory = resolve(import.meta.dirname, '..')
 
 it('bootstraps persisted projects before listing, shares events across desktop clients, and keeps running when they detach', async () => {
-  await exec(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--config', 'service.vite.config.ts'], { cwd: clientDirectory, timeout: 30_000 })
   const folder = await mkdtemp(join(tmpdir(), 'geckit-core-app-'))
   const directory = join(folder, 'data')
   const firstProject = join(folder, 'first')
@@ -31,6 +30,7 @@ it('bootstraps persisted projects before listing, shares events across desktop c
   let other: DesktopServiceClient | undefined
   let control: Awaited<ReturnType<typeof connectRpc<ServiceMethods, ServiceEvents>>> | undefined
   try {
+    await exec(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--config', 'service.vite.config.ts', '--outDir', join(folder, 'service')], { cwd: clientDirectory, timeout: 30_000 })
     const plugin = join(directory, 'provider-plugins', 'plugin-fixture')
     await cp(join(import.meta.dirname, 'fixtures', 'headless'), plugin, { recursive: true })
     const providerPath = join(plugin, 'index.mjs')
@@ -44,7 +44,7 @@ it('bootstraps persisted projects before listing, shares events across desktop c
       { id: secondId, root: secondProject, title: 'Second persisted conversation', at: 101, stands: '', driven: false, items: [] },
     ]))
     const options = {
-      directory, executable: process.execPath, script: join(clientDirectory, 'out', 'service', 'service.js'),
+      directory, executable: process.execPath, script: join(folder, 'service', 'service.js'),
       env: { GECKIT_VAULT_KEY: Buffer.alloc(32, 19).toString('base64'), HOME: join(folder, 'home'), CODEX_HOME: join(folder, 'codex'), CLAUDE_CONFIG_DIR: join(folder, 'claude') },
       onEvent: (event: RpcEvent<ServiceEvents>) => { events.push(event) },
     }

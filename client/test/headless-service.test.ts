@@ -75,9 +75,8 @@ async function raw(ask: ServiceAsked): Promise<OperatorAnswered> {
 }
 
 beforeAll(async () => {
-  await exec(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--config', 'service.vite.config.ts'], { cwd: client, timeout: 30_000 })
   folder = await mkdtemp(join(tmpdir(), 'geckit-headless-'))
-  await cp(join(client, 'out', 'service'), join(folder, 'service'), { recursive: true })
+  await exec(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--config', 'service.vite.config.ts', '--outDir', join(folder, 'service')], { cwd: client, timeout: 30_000 })
   directory = join(folder, 'data')
   project = join(folder, 'project')
   await mkdir(project)
