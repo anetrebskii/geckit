@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { GUIDE, browserBridge, browserPluginFolder, keepBrowserBridge, keepCodexGuide, keepGuide, launchers } from '../src/main/guide'
+import { GUIDE, browserBridge, browserPluginFolder, codexSkillFolder, keepBrowserBridge, keepCodexGuide, keepGuide, launchers, withGuideBlock } from '../src/main/guide'
 import { browserBridgeOn, setBrowserBridgeOn } from '../src/cli/browser'
 import { configureCorePlatform, corePlatform } from '../src/core/platform'
 import { sourceArgs } from '../src/main/sessions/claude'
@@ -40,16 +40,37 @@ describe('what Claude Code is told about GeckIt', () => {
     else process.env['USERPROFILE'] = profile
   })
 
-  it('writes the file and one line that reads it, leaving what was there', async () => {
+  const block = (body: string, source = join(folder, 'GECKIT.md')): string => `<!-- geckit:begin source=${source} -->\n${body}\n<!-- geckit:end -->\n`
+
+  it('writes the file and a marked block that reads it, leaving what was there', async () => {
     await writeFile(join(folder, 'CLAUDE.md'), '# Mine\n\nAnswer in English.\n')
     await keepGuide(true)
     expect(await read('GECKIT.md')).toContain(GUIDE)
-    expect(await read('CLAUDE.md')).toBe('# Mine\n\nAnswer in English.\n\n@GECKIT.md\n')
+    expect(await read('CLAUDE.md')).toBe(`# Mine\n\nAnswer in English.\n\n${block('@GECKIT.md')}`)
   })
 
   it('starts the file where the tool has none', async () => {
     await keepGuide(true)
-    expect(await read('CLAUDE.md')).toBe('@GECKIT.md\n')
+    expect(await read('CLAUDE.md')).toBe(block('@GECKIT.md'))
+  })
+
+  it('turns the bare line of an earlier version into the block where it stands', async () => {
+    await writeFile(join(folder, 'CLAUDE.md'), '<!-- personal:begin -->\n@mine.md\n<!-- personal:end -->\n\n@GECKIT.md\n\n@RTK.md\n')
+    await keepGuide(true)
+    await keepGuide(true)
+    expect(await read('CLAUDE.md')).toBe(`<!-- personal:begin -->\n@mine.md\n<!-- personal:end -->\n\n${block('@GECKIT.md')}\n@RTK.md\n`)
+  })
+
+  it('leaves a file with a broken block alone', () => {
+    const broken = '# Mine\n<!-- geckit:begin source=x -->\n@GECKIT.md\n'
+    expect(withGuideBlock(broken, 'x', '@GECKIT.md', '@GECKIT.md')).toBeUndefined()
+    expect(withGuideBlock(`${broken}<!-- geckit:end -->\n<!-- geckit:end -->\n`, 'x', '@GECKIT.md', '@GECKIT.md')).toBeUndefined()
+  })
+
+  it('refreshes the block when its source moves, keeping one', () => {
+    const was = `# Mine\n\n<!-- geckit:begin source=/old/GECKIT.md -->\n@GECKIT.md\n<!-- geckit:end -->\n\n# After\n`
+    expect(withGuideBlock(was, '/new/GECKIT.md', '@GECKIT.md', '@GECKIT.md')).toBe('# Mine\n\n<!-- geckit:begin source=/new/GECKIT.md -->\n@GECKIT.md\n<!-- geckit:end -->\n\n# After\n')
+    expect(withGuideBlock(was, '/new/GECKIT.md', undefined, '@GECKIT.md')).toBe('# Mine\n\n# After\n')
   })
 
   it('says it once, however often it starts', async () => {
@@ -83,7 +104,7 @@ describe('what Claude Code is told about GeckIt', () => {
     await keepCodexGuide(true)
     const line = `Read ${join(folder, 'GECKIT.md')} for how GeckIt works when this conversation runs in GeckIt.`
     expect(await read('GECKIT.md')).toContain('Codex')
-    expect(await read('AGENTS.md')).toBe(`# Mine\n\nAnswer in English.\n\n${line}\n`)
+    expect(await read('AGENTS.md')).toBe(`# Mine\n\nAnswer in English.\n\n${block(line)}`)
     await keepCodexGuide(false)
     expect(await read('GECKIT.md')).toBe('gone')
     expect(await read('AGENTS.md')).toBe('# Mine\n\nAnswer in English.\n')
@@ -124,8 +145,10 @@ describe('what Claude Code is told about GeckIt', () => {
     configureCorePlatform({ directory: () => data, source: () => source })
     const claudeGuide = join(source ? data : claude, 'GECKIT.md')
     const codexGuide = join(source ? data : codex, source ? 'GECKIT-CODEX.md' : 'GECKIT.md')
-    const claudeSkill = join(browserPluginFolder(), 'skills', 'browser', 'SKILL.md')
-    const codexSkill = join(codex, 'skills', 'geckit-browser', 'SKILL.md')
+    const claudeSkill = join(browserPluginFolder(), 'skills', 'use-browser', 'SKILL.md')
+    const codexSkill = join(codexSkillFolder(), 'SKILL.md')
+    const legacyCodexSkill = join(codex, 'skills', 'geckit-browser', 'SKILL.md')
+    const oldClaudeSkill = join(browserPluginFolder(), 'skills', 'browser', 'SKILL.md')
     const required = [
       'for all browser actions and page reading',
       'tab the person named or a new background tab you open for this task',
@@ -136,7 +159,7 @@ describe('what Claude Code is told about GeckIt', () => {
       "GeckIt's documented test browser is not a way around a refusal or permission denial.",
       'browser profiles` reports no ordinary Chrome profiles, or none has GeckIt Browser',
       'Missing Chrome profiles do not block this fallback on macOS or Linux.',
-      'GeckIt automatically downloads Camoufox on first use if needed and reuses it afterward',
+      'GeckIt automatically downloads Camoufox on first use when it is missing and reuses it afterward',
       'open <url> --profile geckit',
       'Native provider permissions still apply.',
       'do not bypass a denial, change permissions, extract credentials or switch profiles to evade a restriction.',
@@ -145,9 +168,13 @@ describe('what Claude Code is told about GeckIt', () => {
       if (source) {
         await writeFile(join(claude, 'GECKIT.md'), 'Installed Claude guide')
         await writeFile(join(codex, 'GECKIT.md'), 'Installed Codex guide')
-        await mkdir(join(codex, 'skills', 'geckit-browser'), { recursive: true })
+        await mkdir(join(codexSkillFolder()), { recursive: true })
         await writeFile(codexSkill, 'Installed Codex skill')
       }
+      await mkdir(join(codex, 'skills', 'geckit-browser'), { recursive: true })
+      await writeFile(legacyCodexSkill, 'Earlier Codex skill')
+      await mkdir(join(browserPluginFolder(), 'skills', 'browser'), { recursive: true })
+      await writeFile(oldClaudeSkill, 'Earlier Claude skill')
       keepBrowserBridge(true)
       configureCorePlatform({ ...corePlatform(), launcher: () => ({ executable: process.execPath, script: join(data, 'cli.js') }) })
       await keepGuide(true, {}, [], true)
@@ -162,7 +189,9 @@ describe('what Claude Code is told about GeckIt', () => {
       expect(browserBridge()?.pluginDir).toBe(browserPluginFolder())
       for (const rule of required) expect(browserBridge()?.rule).toContain(rule)
       const codexContent = generated[1] ?? ''
-      expect(claudeContent).toContain('`geckit:browser` skill')
+      expect(claudeContent).toContain('`geckit:use-browser` skill')
+      await expect(readFile(oldClaudeSkill, 'utf8')).rejects.toThrow()
+      expect(await readFile(join(browserPluginFolder(), 'skills', 'use-browser', 'references', 'secrets.md'), 'utf8')).toContain('secrets request')
       expect(await readFile(join(browserPluginFolder(), '.claude-plugin', 'plugin.json'), 'utf8')).toContain('"name": "geckit"')
       if (source) {
         expect(sourceArgs()).toContain('--append-system-prompt')
@@ -173,10 +202,13 @@ describe('what Claude Code is told about GeckIt', () => {
         expect(await readFile(join(claude, 'GECKIT.md'), 'utf8')).toBe('Installed Claude guide')
         expect(await readFile(join(codex, 'GECKIT.md'), 'utf8')).toBe('Installed Codex guide')
         expect(await readFile(codexSkill, 'utf8')).toBe('Installed Codex skill')
+        expect(await readFile(legacyCodexSkill, 'utf8')).toBe('Earlier Codex skill')
       } else {
-        expect(await readFile(join(claude, 'CLAUDE.md'), 'utf8')).toBe('@GECKIT.md\n')
+        expect(await readFile(join(claude, 'CLAUDE.md'), 'utf8')).toBe(`<!-- geckit:begin source=${claudeGuide} -->\n@GECKIT.md\n<!-- geckit:end -->\n`)
         expect(await readFile(join(codex, 'AGENTS.md'), 'utf8')).toContain(`Read ${codexGuide}`)
-        expect(codexContent).toContain('`geckit-browser` skill')
+        expect(codexContent).toContain('`geckit-use-browser` skill')
+        expect(await readFile(join(codexSkillFolder(), 'references', 'test-browsers.md'), 'utf8')).toContain('## Test browsers')
+        await expect(readFile(legacyCodexSkill, 'utf8')).rejects.toThrow()
       }
       keepBrowserBridge(false)
       expect(browserBridge()).toBeUndefined()

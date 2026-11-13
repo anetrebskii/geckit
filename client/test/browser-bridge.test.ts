@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { EXTENSION_ID, installBrowserBridge, removeBrowserBridge, setBrowserBridgeOn } from '../src/cli/browser'
-import { BROWSER, BROWSER_SKILL } from '../src/main/guide'
+import { BROWSER, BROWSER_SKILL, browserSkillFiles } from '../src/main/guide'
 
 describe('browser bridge install', () => {
   it('writes the extension, the host program and Chrome\'s host manifest for the installed browsers only', () => {
@@ -39,15 +39,40 @@ describe('browser bridge install', () => {
     expect(BROWSER('/bin/geckit')).toBe('')
     setBrowserBridgeOn(true)
     expect(BROWSER('/bin/geckit')).toContain('## Chrome through GeckIt')
-    expect(BROWSER('/bin/geckit', true)).toContain('`geckit:browser` skill')
+    expect(BROWSER('/bin/geckit', true)).toContain('`geckit:use-browser` skill')
     expect(BROWSER('/bin/geckit', false, true)).toContain('browser profiles')
     setBrowserBridgeOn(false)
   })
 
   it('gives the skill its name, when to use it, and how to pick a profile', () => {
-    const skill = BROWSER_SKILL('/bin/geckit', 'geckit-browser')
-    expect(skill).toMatch(/^---\nname: geckit-browser\ndescription: .+\n---\n/)
+    const skill = BROWSER_SKILL('/bin/geckit', 'geckit-use-browser')
+    expect(skill).toMatch(/^---\nname: geckit-use-browser\ndescription: .+\n---\n/)
     expect(skill).toContain('/bin/geckit browser profiles')
     expect(skill).toContain('--profile <email or name>')
+  })
+
+  it('keeps the skill within the skill format and links each reference it ships', () => {
+    const files = browserSkillFiles('/bin/geckit', 'geckit-use-browser')
+    const skill = files['SKILL.md'] ?? ''
+    const description = /\ndescription: (.+)\n/.exec(skill)?.[1] ?? ''
+    expect(description.split(/\s+/).length).toBeLessThanOrEqual(50)
+    expect(description.length).toBeLessThanOrEqual(1024)
+    expect(skill.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(750)
+    const references = Object.keys(files).filter((path) => path !== 'SKILL.md')
+    expect(references).toEqual(['references/test-browsers.md', 'references/design-checks.md', 'references/secrets.md'])
+    for (const path of references) expect(skill).toContain(`](${path})`)
+    expect(files['references/secrets.md']).toContain('/bin/geckit secrets request')
+    expect(Object.values(files).join('')).not.toContain('{{')
+  })
+
+  it('puts the references into the guide as sections where no skill can be given', () => {
+    setBrowserBridgeOn(true)
+    const inline = BROWSER('/bin/geckit', false, true)
+    expect(inline).toContain('## Test browsers')
+    expect(inline).toContain('## Design checks')
+    expect(inline).toContain('## Secrets')
+    expect(inline).toContain('the Test browsers section below')
+    expect(inline).not.toContain('references/')
+    setBrowserBridgeOn(false)
   })
 })

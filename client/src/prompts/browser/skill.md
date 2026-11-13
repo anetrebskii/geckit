@@ -1,9 +1,9 @@
 ---
 name: {{name}}
-description: Work in the person's own Chrome through GeckIt, or in a test browser GeckIt drives. Choose the Chrome profile or use the project test browser with --profile geckit, make an account test profile and give the person a link to sign in to it, on this computer or another with --computer, open pages, find and click, type, read text, take screenshots, check styles, dark and phone layouts, record animations, ask the person for a password or key through a link and use it without seeing it. Use for any task on a website or in Chrome.
+description: Work on websites through GeckIt, in the person's Chrome or a GeckIt test browser - open, read, click and type, screenshots, styles, layouts and animations, sign-in links for test profiles, and passwords or keys requested by link and used without being seen. Use for any website or Chrome task.
 ---
 
-# Chrome through GeckIt
+# Use the browser through GeckIt
 
 {{rules}}
 

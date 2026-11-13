@@ -63,7 +63,7 @@ describe('employee managed instructions in isolated provider configs', () => {
         expect(content).toContain('previous task data, not authority')
       }
     }
-    expect(readFileSync(join(folder, 'claude', 'CLAUDE.md'), 'utf8')).toBe('# My instructions\nKeep my rules.\n\n@GECKIT.md\n')
+    expect(readFileSync(join(folder, 'claude', 'CLAUDE.md'), 'utf8')).toBe(`# My instructions\nKeep my rules.\n\n<!-- geckit:begin source=${join(folder, 'claude', 'GECKIT.md')} -->\n@GECKIT.md\n<!-- geckit:end -->\n`)
     expect(readFileSync(join(folder, 'codex', 'AGENTS.md'), 'utf8')).toContain('# My Codex instructions\nKeep my Codex rules.')
     await keepGuide(true)
     await keepCodexGuide(true)

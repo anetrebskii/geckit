@@ -1,5 +1,8 @@
 import browserHow from './browser/how.md?raw'
 import browserLoadSkill from './browser/load-skill.md?raw'
+import browserDesignChecks from './browser/references/design-checks.md?raw'
+import browserSecrets from './browser/references/secrets.md?raw'
+import browserTestBrowsers from './browser/references/test-browsers.md?raw'
 import browserRules from './browser/rules.md?raw'
 import browserSection from './browser/section.md?raw'
 import browserSkill from './browser/skill.md?raw'
@@ -30,7 +33,10 @@ import sourceClaude from './source/claude.md?raw'
 import sourceGuide from './source/guide.md?raw'
 
 export const PROMPTS = {
-  browser: { how: browserHow.trim(), loadSkill: browserLoadSkill.trim(), rules: browserRules.trim(), section: browserSection.trim(), skill: browserSkill.trim() },
+  browser: {
+    how: browserHow.trim(), loadSkill: browserLoadSkill.trim(), rules: browserRules.trim(), section: browserSection.trim(), skill: browserSkill.trim(),
+    references: { 'test-browsers': browserTestBrowsers.trim(), 'design-checks': browserDesignChecks.trim(), secrets: browserSecrets.trim() },
+  },
   build: { app: buildApp.trim(), provider: buildProvider.trim() },
   correct: { alone: correctAlone.trim(), codex: correctCodex.trim(), explain: correctExplain.trim(), grammar: correctGrammar.trim(), improve: correctImprove.trim(), rules: correctRules.trim(), translate: correctTranslate.trim() },
   findElements: findElements.trim(),

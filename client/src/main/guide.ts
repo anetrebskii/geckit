@@ -21,8 +21,8 @@ import { fill, PROMPTS } from '../prompts/prompts'
  * A conversation here answers into a window with a board behind it, and none
  * of that is in the tool's own instructions: the person who installs GeckIt
  * would have to write it themselves, and most of them never will. GeckIt keeps
- * `GECKIT.md` beside the tool's own `CLAUDE.md` and one line in `CLAUDE.md`
- * that reads it, and leaves everything else in that file alone.
+ * `GECKIT.md` beside the tool's own `CLAUDE.md` and a marked block in
+ * `CLAUDE.md` that reads it, and leaves everything else in that file alone.
  */
 
 let guideEmployees: readonly Employee[] = []
@@ -60,22 +60,38 @@ export function keepBrowserBridge(on: boolean): void {
   } catch { /* the bridge is worth having when it can be written and nothing when it cannot */ }
 }
 
-/** The browser skill: in GeckIt's own Claude plugin for its Claude sessions, and among Codex's skills for the installed GeckIt. */
+/** The browser skill's name: `geckit:use-browser` in GeckIt's Claude plugin, `geckit-use-browser` among Codex's skills. */
+export const BROWSER_SKILL_NAME = 'use-browser'
+
+const codexSkillName = `geckit-${BROWSER_SKILL_NAME}`
+
+/** Where Codex finds the person's own skills, as ai-skills installs them. */
+export const codexSkillFolder = (): string => join(homedir(), '.agents', 'skills', codexSkillName)
+
+/** Where earlier versions put the Codex skill, taken away when the installed GeckIt starts. */
+const legacyCodexSkill = (): string => join(codexWhere(), 'skills', 'geckit-browser')
+
+function writeSkill(folder: string, name: string): void {
+  rmSync(folder, { recursive: true, force: true })
+  mkdirSync(join(folder, 'references'), { recursive: true })
+  for (const [path, content] of Object.entries(browserSkillFiles(cliPath(), name))) writeFileSync(join(folder, path), content)
+}
+
+/** The browser skill: in GeckIt's own Claude plugin for its Claude sessions, and among Codex's skills for the installed GeckIt. Written whole at every start, so an older name or file does not stay behind. */
 function keepBrowserSkills(on: boolean): void {
   const plugin = browserPluginFolder()
-  const codex = join(codexWhere(), 'skills', 'geckit-browser')
+  if (!fromSource()) rmSync(legacyCodexSkill(), { recursive: true, force: true })
   if (!on) {
     rmSync(plugin, { recursive: true, force: true })
-    if (!fromSource()) rmSync(codex, { recursive: true, force: true })
+    if (!fromSource()) rmSync(codexSkillFolder(), { recursive: true, force: true })
     return
   }
   mkdirSync(join(plugin, '.claude-plugin'), { recursive: true })
   writeFileSync(join(plugin, '.claude-plugin', 'plugin.json'), `${JSON.stringify({ name: 'geckit', version: '1.0.0', description: 'What GeckIt gives the Claude conversations it runs.' }, undefined, 2)}\n`)
-  mkdirSync(join(plugin, 'skills', 'browser'), { recursive: true })
-  writeFileSync(join(plugin, 'skills', 'browser', 'SKILL.md'), BROWSER_SKILL(cliPath(), 'browser'))
+  rmSync(join(plugin, 'skills'), { recursive: true, force: true })
+  writeSkill(join(plugin, 'skills', BROWSER_SKILL_NAME), BROWSER_SKILL_NAME)
   if (fromSource()) return
-  mkdirSync(codex, { recursive: true })
-  writeFileSync(join(codex, 'SKILL.md'), BROWSER_SKILL(cliPath(), 'geckit-browser'))
+  writeSkill(codexSkillFolder(), codexSkillName)
 }
 
 const guideWrite = async (file: string, content: string, strict: boolean): Promise<void> => {
@@ -89,6 +105,54 @@ export async function syncEmployeeGuides(settings: Pick<Settings, 'guideClaude' 
 }
 
 const IMPORT = '@GECKIT.md'
+
+const BEGIN = '<!-- geckit:begin'
+const END = '<!-- geckit:end -->'
+const HERE = '\u0000'
+
+/**
+ * The person's instructions file with GeckIt's block put in, refreshed in
+ * place or taken out, the way ai-skills keeps its profiles: a marked block
+ * naming its source, and nothing outside it touched. A bare line left by an
+ * earlier version is turned into the block where it stands. Undefined when
+ * the markers are broken, so the file is left as it is.
+ */
+export function withGuideBlock(was: string, source: string, body: string | undefined, legacy: string): string | undefined {
+  const lines = was.split('\n')
+  const begins = lines.filter((line) => line.startsWith(BEGIN)).length
+  const ends = lines.filter((line) => line.trim() === END).length
+  const start = lines.findIndex((line) => line.startsWith(BEGIN))
+  const end = lines.findIndex((line) => line.trim() === END)
+  if (begins !== ends || begins > 1 || end < start) return undefined
+  let kept = begins === 1 ? [...lines.slice(0, start), HERE, ...lines.slice(end + 1)] : lines
+  let placed = kept.includes(HERE)
+  kept = kept.flatMap((line) => {
+    if (line.trim() !== legacy) return [line]
+    if (placed) return []
+    placed = true
+    return [HERE]
+  })
+  const block = body === undefined ? [] : [`${BEGIN} source=${source} -->`, body, END]
+  if (placed) kept = kept.flatMap((line) => line === HERE ? block : [line])
+  else if (body !== undefined) {
+    while (kept.length > 0 && kept[kept.length - 1]?.trim() === '') kept.pop()
+    kept = [...kept, ...(kept.length > 0 ? [''] : []), ...block]
+  }
+  const text = kept.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '').replace(/\s*$/, '\n')
+  return text.trim() === '' ? '' : text
+}
+
+/** Puts the block in or takes it out, writing only when that changes the file; a broken block is reported where it has to be and otherwise left. */
+async function keepGuideBlock(file: string, source: string, body: string | undefined, legacy: string, strict: boolean): Promise<void> {
+  const was = await readFile(file, 'utf8').catch(() => '')
+  const next = withGuideBlock(was, source, body, legacy)
+  if (next === undefined) {
+    if (strict) throw new Error(`GeckIt's block in ${file} has a missing or repeated marker; the file was left unchanged.`)
+    return
+  }
+  if (next === was) return
+  await guideWrite(file, next, strict)
+}
 
 const where = (): string => process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude')
 const codexWhere = (): string => process.env['CODEX_HOME'] ?? join(homedir(), '.codex')
@@ -190,7 +254,7 @@ export const BROWSERS = (names: Readonly<Record<string, string>>): string => {
 }
 
 /**
- * Writes the file and the one line in `CLAUDE.md` that reads it, or takes both
+ * Writes the file and the marked block in `CLAUDE.md` that reads it, or takes both
  * away again. Anything that cannot be written is left: this is worth doing when
  * it works and worth nothing at all when it does not.
  */
@@ -199,8 +263,6 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
   const guide = join(folder, 'GECKIT.md')
   const command = cliPath()
   const claude = join(folder, 'CLAUDE.md')
-  const was = await readFile(claude, 'utf8').catch(() => '')
-  const linked = was.split('\n').some((line) => line.trim() === IMPORT)
   // Source uses its own guide and command while preserving the installed global files.
   if (fromSource()) {
     const localGuide = join(dataDirectory(), 'GECKIT.md')
@@ -223,23 +285,14 @@ export async function keepGuide(wanted: boolean, browsers: Readonly<Record<strin
   if (!wanted) {
     await rm(guide, { force: true }).catch(() => undefined)
     await removeLaunchers(command)
-    if (!linked) return
-    const without = was
-      .split('\n')
-      .filter((line) => line.trim() !== IMPORT)
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/\s*$/, '\n')
-    await writeFile(claude, without).catch(() => undefined)
+    await keepGuideBlock(claude, guide, undefined, IMPORT, false)
     return
   }
   await mkdir(folder, { recursive: true }).catch(() => undefined)
   const told = await writeLaunchers(command)
   if (strict && !told) throw new Error('The GeckIt command could not be updated.')
   await guideWrite(guide, `${currentGuide()}${BROWSERS(browsers)}${told ? COMMAND(command) + BROWSER(command, true) + EMPLOYEES(employees, command) : ''}${MANAGER()}`, strict)
-  if (linked) return
-  const next = was.trim() === '' ? `${IMPORT}\n` : `${was.replace(/\s*$/, '')}\n\n${IMPORT}\n`
-  await guideWrite(claude, next, strict)
+  await keepGuideBlock(claude, guide, IMPORT, IMPORT, strict)
 }
 
 /** Keep Codex's global instructions linked to GeckIt's guide without changing the person's other instructions. */
@@ -267,21 +320,14 @@ export async function keepCodexGuide(wanted: boolean, employees: readonly Employ
   const guide = join(folder, 'GECKIT.md')
   const agents = join(folder, 'AGENTS.md')
   const importLine = `Read ${guide} for how GeckIt works when this conversation runs in GeckIt.`
-  const was = await readFile(agents, 'utf8').catch(() => '')
-  const linked = was.split('\n').some((line) => line.trim() === importLine)
   if (!wanted) {
     await rm(guide, { force: true }).catch(() => undefined)
-    if (!linked) return
-    const without = was.split('\n').filter((line) => line.trim() !== importLine).join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s*$/, '\n')
-    await writeFile(agents, without).catch(() => undefined)
+    await keepGuideBlock(agents, guide, undefined, importLine, false)
     return
   }
   await mkdir(folder, { recursive: true }).catch(() => undefined)
-  const content = codexGuide(employees)
-  await guideWrite(guide, content, strict)
-  if (linked) return
-  const next = was.trim() === '' ? `${importLine}\n` : `${was.replace(/\s*$/, '')}\n\n${importLine}\n`
-  await guideWrite(agents, next, strict)
+  await guideWrite(guide, codexGuide(employees), strict)
+  await keepGuideBlock(agents, guide, importLine, importLine, strict)
 }
 
 /** The Claude plugin GeckIt hands its own local Claude sessions with --plugin-dir, holding the browser skill while Chrome through GeckIt is on. */
@@ -289,12 +335,36 @@ export const browserPluginFolder = (): string => join(dataDirectory(), 'claude-p
 
 const browserRules = (said: string): string => fill(PROMPTS.browser.rules, { said })
 
-const browserHow = (said: string): string => `${fill(PROMPTS.browser.how, { said })}\n`
+type Reference = keyof typeof PROMPTS.browser.references
+
+const REFERENCES: Readonly<Record<string, Reference>> = { testBrowsers: 'test-browsers', designChecks: 'design-checks', secrets: 'secrets' }
+
+const referenceTitle = (text: string): string => text.split('\n')[0]?.replace(/^#+\s*/, '') ?? ''
+
+/** The skill's main text; inline, as in a guide where no skill can be given, its references follow it and are named as sections below. */
+const browserHow = (said: string, inline = false): string => {
+  const named = Object.fromEntries(Object.entries(REFERENCES).map(([key, file]) => {
+    const title = referenceTitle(PROMPTS.browser.references[file])
+    return [key, inline ? `the ${title} section below` : `[${title.toLowerCase()}](references/${file}.md)`]
+  }))
+  const how = fill(PROMPTS.browser.how, { said, ...named })
+  if (!inline) return how
+  return [how, ...Object.values(PROMPTS.browser.references).map((text) => fill(text, { said }))].join('\n\n')
+}
 
 /** The skill that holds how to work in Chrome, loaded only when a conversation needs it. */
 export const BROWSER_SKILL = (command: string, name: string): string => {
   const said = command.includes(' ') ? `"${command}"` : command
-  return `${fill(PROMPTS.browser.skill, { name, rules: browserRules(said), how: fill(PROMPTS.browser.how, { said }) })}\n`
+  return `${fill(PROMPTS.browser.skill, { name, rules: browserRules(said), how: browserHow(said) })}\n`
+}
+
+/** Every file of the skill by its path in the skill's folder: SKILL.md and the references it links. */
+export const browserSkillFiles = (command: string, name: string): Readonly<Record<string, string>> => {
+  const said = command.includes(' ') ? `"${command}"` : command
+  return {
+    'SKILL.md': BROWSER_SKILL(command, name),
+    ...Object.fromEntries(Object.entries(PROMPTS.browser.references).map(([file, text]) => [`references/${file}.md`, `${fill(text, { said })}\n`])),
+  }
 }
 
 /** What a provider library is handed while Chrome through GeckIt is on, to start Claude with the skill and the rule and without Claude in Chrome. */
@@ -305,7 +375,7 @@ export const browserBridge = (): BrowserBridge | undefined =>
 export const BROWSER = (command: string, claude = false, inline = false): string => {
   if (!browserBridgeOn()) return ''
   const said = command.includes(' ') ? `"${command}"` : command
-  const how = inline ? `\n${browserHow(said)}` : ` ${fill(PROMPTS.browser.loadSkill, { skill: claude ? 'geckit:browser' : 'geckit-browser' })}\n`
+  const how = inline ? `\n${browserHow(said, true)}\n` : ` ${fill(PROMPTS.browser.loadSkill, { skill: claude ? `geckit:${BROWSER_SKILL_NAME}` : codexSkillName })}\n`
   return `\n${fill(PROMPTS.browser.section, { rules: browserRules(said) })}${how}`
 }
 
