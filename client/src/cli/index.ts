@@ -27,7 +27,7 @@ import { migrate } from './migrate'
 import { manage, managerCommand } from './manage'
 import { browser, browserHost } from './browser'
 import { secrets } from './secrets'
-import { testBrowser } from './testing'
+import { launchFailure, testBrowser } from './testing'
 import { computerArg, onComputer } from './computer'
 
 interface Row extends Found {
@@ -432,7 +432,7 @@ if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync
   } else if (what === 'browser-host') {
     browserHost()
   } else if (what === 'browser-test') {
-    await testBrowser(rest[0] ?? '').catch((error: unknown) => { process.stdout.write(`${error instanceof Error ? error.message : String(error)}\n`); process.exit(1) })
+    await testBrowser(rest[0] ?? '').catch((error: unknown) => { const message = error instanceof Error ? error.message : String(error); process.stdout.write(`${message}\n${launchFailure(message)}\n`); process.exit(1) })
   } else if (what === 'browser') {
     const answer = await browser(rest)
     process.stdout.write(`${answer.said}\n`)

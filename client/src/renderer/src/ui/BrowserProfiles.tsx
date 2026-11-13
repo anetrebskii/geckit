@@ -94,9 +94,10 @@ const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled
       setBusy(undefined)
     }
   }
+  const remote = window.geckitRemoteComputer !== undefined
   const choices: readonly Choice[] = [
     { value: 'edit', label: 'Edit', icon: 'pencil' },
-    { value: 'sign-in', label: 'Sign in', icon: 'display', ...(enabled ? {} : { disabled: true }) },
+    ...(remote ? [] : [{ value: 'sign-in', label: 'Sign in', icon: 'display', ...(enabled ? {} : { disabled: true }) }]),
     { value: 'delete', label: 'Delete', icon: 'trash', danger: true },
   ]
   const pick = (value: string): void => {
@@ -131,7 +132,7 @@ const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled
         {note === undefined || note === '' ? null : <p className="browser-profile-note" title={note}>{note}</p>}
       </div>
       {asking ? null : <div className="browser-profile-actions">
-        <button ref={openButton} type="button" className="quiet browser-profile-open" disabled={!enabled || busy !== undefined} onClick={() => void act('open')}>{busy === 'open' ? 'Opening...' : 'Open browser'}</button>
+        <button ref={openButton} type="button" className="quiet browser-profile-open" disabled={!enabled || busy !== undefined} onClick={() => { if (remote) signIn(name, openButton.current); else void act('open') }}>{busy === 'open' ? 'Opening...' : 'Open browser'}</button>
         <button ref={moreButton} type="button" className="icon-button" aria-label={`More for geckit:${name}`} aria-haspopup="menu" aria-expanded={more !== undefined} disabled={busy !== undefined} onClick={(event) => { const box = event.currentTarget.getBoundingClientRect(); setMore((was) => was === undefined ? box : undefined) }}><Icon name="more" size={16} /></button>
       </div>}
     </div>
@@ -217,6 +218,6 @@ export function BrowserProfiles({ testing, refresh, enabled }: BrowserProfilesPr
       {empty ? (making ? null : <p className="browser-profiles-empty">No browser profiles yet. Create one, then open it to sign in.</p>)
         : <ul className="browser-profiles-list">{testing.profiles.map((one) => <ProfileRow key={one.name} {...one} refresh={refresh} enabled={enabled} signIn={signIn} focusOpen={created === one.name} onFocused={onFocused} onDeleted={onDeleted} onRenamed={onRenamed} />)}</ul>}
     </div>
-    {signing === undefined ? null : <LiveView name={signing} api={liveApi} {...(window.geckitRemoteComputer === undefined ? {} : { computer: window.geckitRemoteComputer.server.name })} onClose={() => { setSigning(undefined); signInOpener.current?.focus() }} />}
+    {signing === undefined ? null : <LiveView name={signing} api={liveApi} {...(window.geckitRemoteComputer === undefined ? {} : { computer: window.geckitRemoteComputer.server.name, title: `geckit:${signing}` })} onClose={() => { setSigning(undefined); signInOpener.current?.focus() }} />}
   </section>
 }

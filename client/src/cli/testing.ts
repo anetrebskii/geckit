@@ -10,7 +10,7 @@ import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browse
 import { signInLink } from './live-view'
 import { serveSecretFiles } from './secrets-serve'
 import { receiver, type SealedValue } from '../shared/secret-seal'
-import { alive, camoufoxHeadless, camoufoxSupported, downloading, fetchCamoufox, migrateChromeProfiles, profilesFolder, testingCamoufox, testingFolder } from './camoufox'
+import { alive, camoufoxHeadless, camoufoxLibraries, camoufoxSupported, downloading, fetchCamoufox, migrateChromeProfiles, profilesFolder, testingCamoufox, testingFolder } from './camoufox'
 import { acquireTestLock, browserConversation, browserStateFolder, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TestTabOwners } from './browser-lifecycle'
 
 export { profilesFolder, testingFolder, testingCamoufox, camoufoxHeadless, downloading } from './camoufox'
@@ -55,6 +55,15 @@ type Box = Omit<Center, 'label'> & { readonly width: number; readonly height: nu
 const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
 export const VIEW_SIZE = { width: 1280, height: 800 } as const
 
+/** Playwright's launch error ends with its call log; the cause is in the browser's own error lines and exit. */
+export function launchFailure(message: string): string {
+  const lines = message.split('\n').map((one) => one.trim())
+  const head = (lines[0] ?? '').replace(/^browserType\.\w+:\s*/, '')
+  const said = lines.filter((one) => /^\[pid=\d+\]\[err\]/.test(one)).map((one) => one.replace(/^\[pid=\d+\]\[err\]\s*/, '')).filter((one) => one !== '')
+  const exit = lines.map((one) => /<process did exit: (.+)>/.exec(one)?.[1]).find((one) => one !== undefined)
+  return [head, ...said.slice(-3), ...(exit === undefined ? [] : [`exited with ${exit}`])].filter((one) => one !== '').join(' / ')
+}
+
 export async function testBrowser(name: string, folder: string = browserFolder(), root: string = homedir(), initialConversation: string | undefined = process.env['GECKIT_TEST_CONVERSATION']): Promise<void> {
   if (!validTestName(name)) throw new Error(`${name} is not a test profile name: lowercase letters, digits and hyphens.`)
   migrateChromeProfiles(root)
@@ -83,12 +92,13 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   if (owners.managed && owners.conversations.size === 0) { unlock(); return }
   const dir = join(profilesFolder(root), name)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const libraries = camoufoxLibraries(binary.path, root)
   const { firefox } = await import('playwright-core')
   const context = await firefox.launchPersistentContext(dir, {
     executablePath: binary.path,
     headless: camoufoxHeadless(),
     viewport: null,
-    env: { ...process.env, CAMOU_CONFIG_1: JSON.stringify({ humanize: true, 'humanize:maxTime': 1.5, allowMainWorld: true }), CAMOU_PREFS_1: JSON.stringify({ 'gfx.bundled-fonts.activate': 0 }) },
+    env: { ...process.env, ...(libraries.length === 0 ? {} : { LD_LIBRARY_PATH: [...libraries, process.env['LD_LIBRARY_PATH'] ?? ''].filter((one) => one !== '').join(':') }), CAMOU_CONFIG_1: JSON.stringify({ humanize: true, 'humanize:maxTime': 1.5, allowMainWorld: true }), CAMOU_PREFS_1: JSON.stringify({ 'gfx.bundled-fonts.activate': 0 }) },
     firefoxUserPrefs: { 'gfx.bundled-fonts.activate': 0 },
     timeout: 30_000,
   })

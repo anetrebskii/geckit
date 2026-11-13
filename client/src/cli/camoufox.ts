@@ -1,7 +1,8 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { Transform } from 'node:stream'
 import { unzip } from './unzip'
@@ -117,4 +118,88 @@ export function migrateChromeProfiles(root: string = homedir()): boolean {
   writeFileSync(`${migrated}.${process.pid}.part`, JSON.stringify(names))
   renameSync(`${migrated}.${process.pid}.part`, migrated)
   return names.length > 0
+}
+
+const librariesFolder = (root?: string): string => join(testingFolder(root), 'libraries')
+const LINUX_PACKAGES: readonly (readonly string[])[] = [['libgtk-3-0t64', 'libgtk-3-0'], ['libdbus-glib-1-2'], ['libxtst6'], ['libxcursor1'], ['libasound2t64', 'libasound2']]
+
+/** Folders holding shared libraries in a tree unpacked from packages. */
+export function libraryFolders(folder: string): string[] {
+  if (!existsSync(folder)) return []
+  const found = new Set<string>()
+  const walk = (at: string): void => {
+    for (const one of readdirSync(at, { withFileTypes: true })) {
+      if (one.isDirectory()) walk(join(at, one.name))
+      else if (/^lib.*\.so(\.\d+)*$/.test(one.name) && /^(lib|lib64|[\w]+-linux-gnu\w*)$/.test(basename(at))) found.add(at)
+    }
+  }
+  walk(folder)
+  return [...found]
+}
+
+/** Libraries the dynamic linker cannot find, read from ldd's "not found" lines. */
+export function missingLibraries(said: string): string[] {
+  return [...new Set(said.split('\n').map((line) => /^\s*(\S+)\s+=>\s+not found/.exec(line)?.[1]).filter((one): one is string => one !== undefined))].sort()
+}
+
+const run = (program: string, args: readonly string[], options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv } = {}): string => execFileSync(program, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10 * 60_000, ...options })
+const has = (program: string): boolean => { try { run('sh', ['-c', `command -v ${program}`]); return true } catch { return false } }
+
+function stillMissing(binary: string, extra: readonly string[]): string[] {
+  const folder = dirname(binary)
+  const env = { ...process.env, LD_LIBRARY_PATH: [folder, ...extra, process.env['LD_LIBRARY_PATH'] ?? ''].filter((one) => one !== '').join(':') }
+  const files = ['libxul.so', 'libmozgtk.so'].map((one) => join(folder, one)).filter((one) => existsSync(one))
+  if (files.length === 0) return []
+  let said: string
+  try { said = run('ldd', files, { env }) } catch (error) { said = error instanceof Error && 'stdout' in error ? String(error.stdout) : '' }
+  return missingLibraries(said)
+}
+
+/** Debian package names differ between releases, such as libgtk-3-0t64 and libgtk-3-0; the first one apt knows is used. */
+function packagesFor(): string[] {
+  return LINUX_PACKAGES.map((names) => names.find((name) => { try { return run('apt-cache', ['show', '--no-all-versions', name]).includes('Package:') } catch { return false } })).filter((one): one is string => one !== undefined)
+}
+
+function unpackPackages(roots: readonly string[], into: string): void {
+  const depends = run('apt-cache', ['depends', '--recurse', '--no-recommends', '--no-suggests', '--no-conflicts', '--no-breaks', '--no-replaces', '--no-enhances', ...roots])
+  const wanted = [...new Set(depends.split('\n').filter((line) => /^lib[\w.+-]+$/.test(line)))].filter((name) => { try { return !run('dpkg-query', ['-W', '-f=${Status}', name]).includes('install ok installed') } catch { return true } })
+  if (wanted.length === 0) return
+  const scratch = mkdtempSync(join(testingFolder(), 'libraries-'))
+  try {
+    run('apt-get', ['download', ...wanted], { cwd: scratch })
+    const unpacked = `${into}.part`
+    rmSync(unpacked, { recursive: true, force: true })
+    for (const deb of readdirSync(scratch).filter((one) => one.endsWith('.deb'))) run('dpkg-deb', ['-x', join(scratch, deb), unpacked])
+    rmSync(into, { recursive: true, force: true })
+    renameSync(unpacked, into)
+  } finally { rmSync(scratch, { recursive: true, force: true }) }
+}
+
+/**
+ * On Linux Camoufox needs GTK and a few X libraries a server often lacks. They are installed with apt when GeckIt may (root or
+ * passwordless sudo); otherwise on Debian and Ubuntu they are downloaded and unpacked into GeckIt's own folder, without root.
+ * Returns the folders to add to LD_LIBRARY_PATH.
+ */
+export function camoufoxLibraries(binary: string, root: string = homedir()): string[] {
+  if (process.platform !== 'linux' || !has('ldd')) return []
+  const folder = librariesFolder(root)
+  let extra = libraryFolders(folder)
+  let missing = stillMissing(binary, extra)
+  if (missing.length === 0) return extra
+  const apt = has('apt-get') && has('apt-cache') && has('dpkg-deb')
+  if (!apt) throw new Error(`Camoufox needs libraries this computer does not have: ${missing.join(', ')}. Install the GTK 3 libraries with the system package manager (on Fedora: sudo dnf install gtk3 dbus-glib libXtst), then try again.`)
+  const roots = packagesFor()
+  const root0 = process.getuid?.() === 0
+  const sudo = !root0 && (() => { try { run('sudo', ['-n', 'true']); return true } catch { return false } })()
+  try {
+    if (root0 || sudo) run(root0 ? 'apt-get' : 'sudo', [...(root0 ? [] : ['-n', 'apt-get']), 'install', '-y', '--no-install-recommends', ...roots], { env: { ...process.env, DEBIAN_FRONTEND: 'noninteractive' } })
+    else unpackPackages(roots, folder)
+  } catch (error) {
+    const said = error instanceof Error && 'stderr' in error ? String(error.stderr).trim().split('\n').at(-1) ?? '' : error instanceof Error ? error.message : String(error)
+    throw new Error(`Camoufox needs ${missing.join(', ')}, and GeckIt could not install them${said === '' ? '' : `: ${said}`}. Run: sudo apt-get install ${roots.join(' ')}`, { cause: error })
+  }
+  extra = libraryFolders(folder)
+  missing = stillMissing(binary, extra)
+  if (missing.length > 0) throw new Error(`Camoufox still lacks ${missing.join(', ')} after installing ${roots.join(', ')}. Run: sudo apt-get install ${roots.join(' ')}`)
+  return extra
 }

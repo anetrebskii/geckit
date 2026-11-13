@@ -15,6 +15,7 @@ interface LiveViewProps {
   readonly api: LiveViewApi
   readonly computer?: string
   readonly token?: string
+  readonly title?: string
   readonly onClose: () => void
 }
 
@@ -22,7 +23,7 @@ const KEYS = new Set(['Enter', 'Tab', 'Escape', 'Backspace', 'Delete', 'ArrowUp'
 const phone = (): boolean => document.documentElement.classList.contains('phone')
 
 /** A test browser shown live, so the person signs in to a site themselves. */
-export function LiveView({ name, api, computer, token, onClose }: LiveViewProps): React.JSX.Element {
+export function LiveView({ name, api, computer, token, title = `Sign in: geckit:${name}`, onClose }: LiveViewProps): React.JSX.Element {
   const [state, setState] = useState<'opening' | 'live' | 'failed'>('opening')
   const [problem, setProblem] = useState('')
   const [frame, setFrame] = useState<ViewFrame>()
@@ -69,17 +70,17 @@ export function LiveView({ name, api, computer, token, onClose }: LiveViewProps)
 
   return createPortal(
     <div className="dialog-scrim live-view-scrim">
-      <section className="live-view" role="dialog" aria-label={`Sign in: geckit:${name}`} onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Escape' && event.target !== keys.current) { event.preventDefault(); done() } }}>
+      <section className="live-view" role="dialog" aria-label={title} onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Escape' && event.target !== keys.current) { event.preventDefault(); done() } }}>
         <header className="live-view-head">
           <div className="live-view-title">
-            <strong>Sign in: geckit:{name}</strong>
+            <strong>{title}</strong>
             {computer === undefined ? null : <small>{computer}</small>}
           </div>
           <button type="button" className="remote-button primary" autoFocus onClick={done}>Done</button>
         </header>
         <form className="live-view-address" onSubmit={(event) => { event.preventDefault(); const url = (draft ?? '').trim(); setDraft(undefined); if (url !== '') send({ type: 'go', url }) }}>
           <button type="button" className="icon-button" aria-label="Back" title="Back" disabled={state !== 'live'} onClick={() => send({ type: 'back' })}><Icon name="left" /></button>
-          <input type="url" aria-label="Address" placeholder="Address of the sign-in page" value={draft ?? shown} disabled={state !== 'live'} autoCapitalize="off" autoCorrect="off" spellCheck={false} onFocus={() => setDraft(shown)} onBlur={() => setDraft(undefined)} onChange={(event) => setDraft(event.target.value)} />
+          <input type="url" aria-label="Address" placeholder="Address" value={draft ?? shown} disabled={state !== 'live'} autoCapitalize="off" autoCorrect="off" spellCheck={false} onFocus={() => setDraft(shown)} onBlur={() => setDraft(undefined)} onChange={(event) => setDraft(event.target.value)} />
           {phone() ? <button type="button" className="icon-button" aria-label="Keyboard" title="Keyboard" disabled={state !== 'live'} onClick={() => keys.current?.focus()}><Icon name="keyboard" /></button> : null}
         </form>
         <div className="live-view-screen">

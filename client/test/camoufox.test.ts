@@ -3,8 +3,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bundledFont, CAMOUFOX_VERSION, downloading, fetchCamoufox, installCamoufoxArchive, migrateChromeProfiles, profilesFolder, testingCamoufox, testingFolder } from '../src/cli/camoufox'
-import { deleteTestProfile, testBrowsersState, updateTestProfile } from '../src/cli/testing'
+import { bundledFont, CAMOUFOX_VERSION, downloading, fetchCamoufox, installCamoufoxArchive, libraryFolders, migrateChromeProfiles, missingLibraries, profilesFolder, testingCamoufox, testingFolder } from '../src/cli/camoufox'
+import { deleteTestProfile, launchFailure, testBrowsersState, updateTestProfile } from '../src/cli/testing'
 import { saveTestAccount } from '../src/cli/browser-lifecycle'
 
 const roots: string[] = []
@@ -72,5 +72,30 @@ describe('Chrome profile preservation', () => {
     deleteTestProfile('renamed', root)
     expect(testBrowsersState(root).profiles).toEqual([])
     expect(readFileSync(join(old, 'Cookies'), 'utf8')).toBe('keep old encrypted Chrome data')
+  })
+})
+
+describe('launchFailure', () => {
+  it('names the browser error and exit, not the closing line', () => {
+    const message = 'browserType.launchPersistentContext: Target page, context or browser has been closed\nBrowser logs:\n\n<launching> /x/camoufox -no-remote\n<launched> pid=71372\n[pid=71372][err] Error: no DISPLAY environment variable specified\n[pid=71372] <process did exit: exitCode=1, signal=null>\n[pid=71372] starting temporary directories cleanup\n- [pid=71372] <gracefully close end>'
+    expect(launchFailure(message)).toBe('Target page, context or browser has been closed / Error: no DISPLAY environment variable specified / exited with exitCode=1, signal=null')
+  })
+})
+
+describe('Linux libraries', () => {
+  it('reads what ldd could not find', () => {
+    const said = './libxul.so:\n\tlibgtk-3.so.0 => not found\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x7f)\n./libmozgtk.so:\n\tlibgtk-3.so.0 => not found\n\tlibXcursor.so.1 => not found\n'
+    expect(missingLibraries(said)).toEqual(['libXcursor.so.1', 'libgtk-3.so.0'])
+  })
+  it('finds the folders of unpacked libraries', () => {
+    const root = temporary()
+    mkdirSync(join(root, 'usr', 'lib', 'x86_64-linux-gnu'), { recursive: true })
+    mkdirSync(join(root, 'usr', 'share', 'doc'), { recursive: true })
+    writeFileSync(join(root, 'usr', 'lib', 'x86_64-linux-gnu', 'libgtk-3.so.0.2409.32'), '')
+    writeFileSync(join(root, 'usr', 'share', 'doc', 'copyright'), '')
+    mkdirSync(join(root, 'usr', 'lib', 'x86_64-linux-gnu', 'gtk-3.0', 'immodules'), { recursive: true })
+    writeFileSync(join(root, 'usr', 'lib', 'x86_64-linux-gnu', 'gtk-3.0', 'immodules', 'im-ipa.so'), '')
+    expect(libraryFolders(root)).toEqual([join(root, 'usr', 'lib', 'x86_64-linux-gnu')])
+    expect(libraryFolders(join(root, 'none'))).toEqual([])
   })
 })
