@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bundledFont, CAMOUFOX_VERSION, downloading, fetchCamoufox, installCamoufoxArchive, libraryFolders, migrateChromeProfiles, missingLibraries, profilesFolder, testingCamoufox, testingFolder } from '../src/cli/camoufox'
+import { bundledFont, CAMOUFOX_VERSION, downloading, fetchCamoufox, installCamoufoxArchive, libraryFolders, migrateChromeProfiles, missingLibraries, prepareCamoufox, profilesFolder, testingCamoufox, testingFolder } from '../src/cli/camoufox'
 import { deleteTestProfile, launchFailure, testBrowsersState, updateTestProfile } from '../src/cli/testing'
 import { saveTestAccount } from '../src/cli/browser-lifecycle'
 
@@ -54,6 +54,38 @@ describe('Camoufox installation', () => {
     mkdirSync(testingFolder(root), { recursive: true })
     writeFileSync(join(testingFolder(root), 'download.json'), JSON.stringify({ pid: 2147483647, t: Date.now(), received: 40, total: 100, phase: 'installing' }))
     expect(downloading(root)?.error).toBe('The installation was interrupted.')
+  })
+
+  it('prepares an installed browser without launching or creating a profile', async () => {
+    const root = temporary()
+    const into = join(testingFolder(root), 'browser', CAMOUFOX_VERSION)
+    const executable = process.platform === 'darwin' ? 'Camoufox.app/Contents/MacOS/camoufox' : process.platform === 'win32' ? 'camoufox.exe' : 'camoufox'
+    mkdirSync(join(into, executable, '..'), { recursive: true })
+    writeFileSync(join(into, executable), '')
+    writeFileSync(join(into, 'installed.json'), '{}')
+    const request = vi.spyOn(globalThis, 'fetch')
+    await expect(prepareCamoufox(root)).resolves.toEqual({ path: join(into, executable), version: CAMOUFOX_VERSION })
+    expect(request).not.toHaveBeenCalled()
+    expect(existsSync(profilesFolder(root))).toBe(false)
+    expect(downloading(root)).toBeUndefined()
+  })
+
+  it('retains background preparation failures for Settings and retries on demand', async () => {
+    const root = temporary()
+    const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 503 }))
+    await expect(prepareCamoufox(root)).rejects.toThrow('503')
+    expect(downloading(root)?.error).toContain('503')
+    request.mockResolvedValue(new Response('', { status: 502 }))
+    await expect(prepareCamoufox(root)).rejects.toThrow('502')
+    expect(downloading(root)?.error).toContain('502')
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps live dependency installation visible while its worker is busy', () => {
+    const root = temporary()
+    mkdirSync(testingFolder(root), { recursive: true })
+    writeFileSync(join(testingFolder(root), 'download.json'), JSON.stringify({ pid: process.pid, t: Date.now() - 60_000, received: 0, total: 0, phase: 'installing' }))
+    expect(downloading(root)?.error).toBeUndefined()
   })
 })
 

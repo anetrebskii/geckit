@@ -8,6 +8,7 @@ import { corePlatform, dataDirectory } from '../core/platform'
 import { forwardSlashes } from '../cli/endpoint'
 import { browserBridgeOn, installBrowserBridge, removeBrowserBridge, setBrowserBridgeOn } from '../cli/browser'
 import { serveTestLaunches } from '../cli/testing'
+import { startCamoufoxPreparation, stopCamoufoxPreparation } from '../cli/camoufox'
 import { knownComputers } from '../cli/computer'
 import { fetchFindModel, findModelServer } from '../cli/find-model'
 import type { Employee } from '../shared/employees'
@@ -51,10 +52,11 @@ export function keepBrowserBridge(on: boolean): void {
   setBrowserBridgeOn(on)
   try {
     keepSkills(on)
-    if (!on) { stopLaunches?.(); stopLaunches = undefined; removeBrowserBridge(); return }
+    if (!on) { stopLaunches?.(); stopLaunches = undefined; void stopCamoufoxPreparation(); removeBrowserBridge(); return }
     const launcher = corePlatform().launcher?.()
     if (launcher !== undefined) installBrowserBridge(launcher.executable, launcher.script)
     if (launcher !== undefined && stopLaunches === undefined) stopLaunches = serveTestLaunches(launcher.executable, launcher.script)
+    if (launcher !== undefined) startCamoufoxPreparation(launcher.executable, launcher.script)
     if (findModelServer()) void fetchFindModel()
   } catch { /* the bridge is worth having when it can be written and nothing when it cannot */ }
 }

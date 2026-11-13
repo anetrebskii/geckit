@@ -10,7 +10,7 @@ import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browse
 import { signInLink } from './live-view'
 import { serveSecretFiles } from './secrets-serve'
 import { receiver, type SealedValue } from '../shared/secret-seal'
-import { alive, camoufoxHeadless, camoufoxLibraries, camoufoxSupported, downloading, fetchCamoufox, migrateChromeProfiles, profilesFolder, testingCamoufox, testingFolder } from './camoufox'
+import { alive, camoufoxHeadless, camoufoxLibraries, camoufoxSupported, downloading, migrateChromeProfiles, prepareCamoufox, profilesFolder, testingCamoufox, testingFolder } from './camoufox'
 import { acquireTestLock, browserConversation, browserStateFolder, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TestTabOwners } from './browser-lifecycle'
 
 export { profilesFolder, testingFolder, testingCamoufox, camoufoxHeadless, downloading } from './camoufox'
@@ -86,7 +86,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     }
   }
   acquirePending()
-  const binary = testingCamoufox(root) ?? await fetchCamoufox(root)
+  const binary = await prepareCamoufox(root)
   acquirePending()
   owners.released()
   if (owners.managed && owners.conversations.size === 0) { unlock(); return }

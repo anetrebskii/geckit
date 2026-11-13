@@ -34,6 +34,7 @@ import { Channels } from '../main/channels/channels'
 import { Employees } from '../main/employees'
 import { keepBrowserBridge, setGuideEmployees, setGuideManager, syncEmployeeGuides } from '../main/guide'
 import { browserBridgeOn } from '../cli/browser'
+import { stopCamoufoxPreparation } from '../cli/camoufox'
 import { Manager, runManagerCli } from '../main/manager'
 import { projectSaid } from '../main/orders'
 import { removeShortcut, resumeOwned, runShortcut, saveShortcut, startShortcuts } from '../main/shortcuts'
@@ -172,7 +173,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     sessions?.dispose()
     routes.forwards.dispose()
     routes.hosts.dispose()
-    await Promise.all([routes.runs.flush(), guideWrites, stopFindModelDownload()])
+    await Promise.all([routes.runs.flush(), guideWrites, stopFindModelDownload(), stopCamoufoxPreparation()])
   }
   try {
     setGuideEmployees(employees.list().employees)

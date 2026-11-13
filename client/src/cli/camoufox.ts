@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -44,7 +45,7 @@ export function downloading(root?: string): CamoufoxDownload | undefined {
   try {
     const state = JSON.parse(readFileSync(downloadFile(root), 'utf8')) as CamoufoxDownload
     if (state.error !== undefined) return state
-    if (alive(state.pid) && Date.now() - state.t < 30_000) return state
+    if (alive(state.pid) && (state.phase === 'installing' || Date.now() - state.t < 30_000)) return state
     return { ...state, error: 'The installation was interrupted.' }
   } catch { return undefined }
 }
@@ -105,6 +106,67 @@ export async function fetchCamoufox(root: string = homedir()): Promise<{ readonl
     rmSync(unpacked, { recursive: true, force: true })
     unlock()
   }
+}
+
+export async function prepareCamoufox(root: string = homedir()): Promise<NonNullable<ReturnType<typeof testingCamoufox>>> {
+  mkdirSync(testingFolder(root), { recursive: true })
+  let unlock: (() => void) | undefined
+  while ((unlock = acquireTestLock('configuration', testingFolder(root))) === undefined) await new Promise((done) => setTimeout(done, 1_000))
+  let state: CamoufoxDownload = { pid: process.pid, t: Date.now(), received: 0, total: 0, phase: 'installing' }
+  try {
+    const binary = testingCamoufox(root) ?? await fetchCamoufox(root)
+    noteDownload(root, state)
+    camoufoxLibraries(binary.path, root)
+    rmSync(downloadFile(root), { force: true })
+    return binary
+  } catch (error) {
+    state = { ...(downloading(root) ?? state), pid: process.pid, t: Date.now(), error: error instanceof Error ? error.message : String(error) }
+    noteDownload(root, state)
+    throw error
+  } finally { unlock() }
+}
+
+let preparation: ChildProcess | undefined
+let preparationDone = Promise.resolve()
+let preparationStopping = false
+let restartPreparation: (() => void) | undefined
+
+export function startCamoufoxPreparation(executable: string, script: string): void {
+  if (!camoufoxSupported()) return
+  if (preparation !== undefined) {
+    if (preparationStopping) restartPreparation = () => startCamoufoxPreparation(executable, script)
+    return
+  }
+  const child = spawn(executable, [script, 'browser-prepare'], { detached: true, stdio: 'ignore', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } })
+  preparation = child
+  preparationDone = new Promise((done) => {
+    const finished = (): void => {
+      if (preparation !== child) return
+      preparation = undefined
+      preparationStopping = false
+      const restart = restartPreparation
+      restartPreparation = undefined
+      done()
+      restart?.()
+    }
+    child.once('error', (error) => { console.warn('Could not prepare Camoufox:', error.message); finished() })
+    child.once('exit', finished)
+  })
+  child.unref()
+}
+
+export async function stopCamoufoxPreparation(): Promise<void> {
+  restartPreparation = undefined
+  const child = preparation
+  if (child === undefined) return
+  preparationStopping = true
+  const finished = preparationDone
+  child.ref()
+  try {
+    if (process.platform !== 'win32' && child.pid !== undefined) process.kill(-child.pid, 'SIGTERM')
+    else child.kill('SIGTERM')
+  } catch { child.kill('SIGTERM') }
+  await finished
 }
 
 export function migrateChromeProfiles(root: string = homedir()): boolean {

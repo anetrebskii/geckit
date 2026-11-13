@@ -276,3 +276,59 @@ Replace the former Chrome for Testing backend with Camoufox using its native cur
 ### 11. Requirements
 
 The user's requested migration covers download and installation without fonts, Open, person-controlled Sign in, rename and retained profiles. Existing tab ownership and conversation release rules remain in force. Real website login is a manual account check, separate from local persistence verification.
+
+## Background browser preparation (2026-11-13)
+
+Alex requested background installation and configuration while GeckIt is running, without waiting for Settings, in Codex session 01a1d56f-1988-7b83-a895-891840ff9774. This supersedes first-use-only installation above; it uses the existing states and screen, with no prototype or new visual surface.
+
+### 1. Result and journey
+
+Starting the service with browser access enabled starts preparing Camoufox in the background. Enabling browser access later starts the same preparation. Normal app use and conversations do not wait for the download or platform dependencies. Readiness means the browser binary and required libraries are prepared; it does not mean a profile is open or an account is signed in. Open and Sign in remain explicit actions and join an existing installation when needed.
+
+### 2. Surfaces
+
+Settings > Web Browser continues to show existing download progress, installation errors and installed version when opened. Settings does not trigger preparation. No new window or notification appears.
+
+### 3. States
+
+The existing absent, downloading, installing, failed and ready states remain. Browser access off does not start preparation. A failed automatic attempt leaves normal work available; explicit Open or Sign in retries setup.
+
+### 4. Transitions
+
+| From | Event | To | What the user sees |
+|---|---|---|---|
+| Absent | Service starts or browser access is enabled, automatically | Downloading | Nothing outside Settings; existing progress when Settings is opened |
+| Downloading | Archive verified, automatically | Installing | Existing installation progress in Settings |
+| Installing | Browser and platform dependencies prepared, automatically | Ready | Installed browser state when Settings is opened; no browser window |
+| Downloading or installing | Preparation fails, automatically | Failed | Existing failure state in Settings; normal app use continues |
+| Failed | Open or Sign in pressed | Downloading or installing | Existing progress; requested action waits and then resumes |
+| Ready | Service restarts, automatically | Ready | No browser window; installed files reused |
+| Access off | Service starts, automatically | Access off | Nothing; no preparation starts |
+
+### 5. What stays silent
+
+Successful background preparation has no toast, automatic profile launch or account inspection. Ordinary work does not depend on readiness.
+
+### 6. Thresholds and time
+
+Retain existing installer and transport timeouts. Do not introduce periodic retries or additional Settings polling. Concurrent callers reuse the existing installation lock.
+
+### 7. Wording
+
+Existing progress and error wording remains. First-use-only documentation is superseded by background startup preparation; no new UI wording is required for this backend change.
+
+### 8. Edge cases
+
+An unsupported platform skips preparation. Existing installations are reused. Turning browser access off cancels background preparation. Service shutdown also stops its worker and waits for it to exit, preventing further installation writes after shutdown. A later enabled startup or explicit browser action can retry an interrupted installation. Offline startup records failure without failing the service. Subsequent explicit browser actions may retry. Platform library installation runs outside the service process so synchronous package tools cannot block conversations.
+
+### 9. What is deliberately absent
+
+No automatic browser window, account sign-in, profile creation, system font download or Settings navigation. No forced restart of the running service to apply this source change.
+
+### 10. Decision
+
+Prepare during enabled service startup and when access is enabled, instead of waiting for Settings or the first browser action, as explicitly requested. Keep browser actions responsible for opening profiles.
+
+### 11. Requirements
+
+Covers the request to install and configure in the background without waiting for Settings. A real fresh installation and platform dependency checks must be distinguished from mocked startup orchestration tests.
