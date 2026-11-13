@@ -51,6 +51,14 @@ block-beta
 
 The card line and Session info do not depend on the window and come with the core. The window layout is built on top of spec 021's header and transcript. The list appears once a channel thread exists; until then the window is unchanged. The composer keeps one draft for all threads: text typed in one thread stays in the field when another is opened, and the line under it says where Manager's answer goes.
 
+### Reply formatting skills (2026-11-13)
+
+Before composing a channel reply, Manager reads the skill for the thread's destination: `send-slack-reply`, `send-telegram-reply` or `send-discord-reply`. Opening that thread in GeckIt does not change its destination. Employee creation and configuration load `manage-employees`, including its setup reference.
+
+Slack receives native `mrkdwn`, including single-asterisk bold and Slack links. Telegram receives the Markdown supported by GeckIt's HTML renderer; the assistant does not send raw HTML or MarkdownV2 escapes. Discord receives native Markdown and keeps replies within its message limit, with balanced formatting inside each message. Replies lead with the result, blocker or question. Each paragraph has one subject and each list item has one point; tables become labeled entries. Code fences enclose literal code only.
+
+These skills guide generated text and do not change channel transport, routing, permissions or the GeckIt transcript renderer. No new notification or setup state appears. GeckIt's own Manager chat keeps ordinary Markdown. An authorized live message is required to verify final channel rendering; installation and renderer fixtures alone do not establish it.
+
 ### The model
 
 Manager stays one: one assistant, one model, one set of instructions, one Pause, one list of decisions and one pool of conversations it manages. A thread is one of its conversations with the outside world, with its own context, its own queue of messages and its own place where answers go.

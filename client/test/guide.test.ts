@@ -210,6 +210,13 @@ describe('what Claude Code is told about GeckIt', () => {
           expect(await readFile(path, 'utf8')).toContain(`name: ${claude ? name : `geckit-${name}`}`)
           expect(claude ? claudeContent : codexContent).toContain(path)
         }
+        for (const name of ['manage-employees', 'send-slack-reply', 'send-telegram-reply', 'send-discord-reply']) {
+          const path = claude ? join(browserPluginFolder(), 'skills', name, 'SKILL.md') : source ? join(data, 'codex-skills', `geckit-${name}`, 'SKILL.md') : join(codexSkillFolder(`geckit-${name}`), 'SKILL.md')
+          expect(workflows).toContain(path)
+          expect(workflows).toContain(claude ? `geckit:${name}` : `geckit-${name}`)
+          expect(await readFile(path, 'utf8')).toContain(`name: ${claude ? name : `geckit-${name}`}`)
+        }
+        expect(workflows).not.toContain('{{')
       }
       expect(claudeContent).toContain('`geckit:use-browser` skill')
       for (const content of generated.slice(0, 2)) {
@@ -268,11 +275,11 @@ describe('what Claude Code is told about GeckIt', () => {
       await expect(readFile(claudeSkill, 'utf8')).rejects.toThrow()
       expect(await readFile(join(browserPluginFolder(), 'skills', 'use-secrets', 'SKILL.md'), 'utf8')).toContain('name: use-secrets')
       if (!source) expect(await readFile(join(codexSkillFolder('geckit-use-secrets'), 'SKILL.md'), 'utf8')).toContain('name: geckit-use-secrets')
-      for (const name of bundledSkillNames().filter((name) => name.startsWith('configure-'))) {
+      for (const name of bundledSkillNames().filter((name) => name !== 'use-browser')) {
         expect(await readFile(join(browserPluginFolder(), 'skills', name, 'SKILL.md'), 'utf8')).toContain(`name: ${name}`)
         const codexPath = source ? join(data, 'codex-skills', `geckit-${name}`, 'SKILL.md') : join(codexSkillFolder(`geckit-${name}`), 'SKILL.md')
         expect(await readFile(codexPath, 'utf8')).toContain(`name: geckit-${name}`)
-        expect(await readFile(codexGuide, 'utf8')).toContain(codexPath)
+        if (name.startsWith('configure-')) expect(await readFile(codexGuide, 'utf8')).toContain(codexPath)
       }
       for (const file of [claudeGuide, codexGuide]) expect(await readFile(file, 'utf8')).toContain('## Secrets')
       if (source) expect(await readFile(codexSkill, 'utf8')).toBe('Installed Codex skill')
