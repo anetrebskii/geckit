@@ -52,6 +52,7 @@ import type {
 import type { GeckoAction, GeckoHanded, GeckoItem, GeckoRing, GeckoView } from './gecko'
 import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from './hosts'
 import type { Link } from './links'
+import type { SecretMetadata, SecretUse } from './secrets'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from './providers'
 import { pieceOf } from './pairing'
 import type { Piece } from './pairing'
@@ -372,6 +373,14 @@ return {
   lineup: {
     state: (): Promise<Lineup | undefined> => rendererTransport.invoke('lineup:state'),
     onChanged: (said: (lineup: Lineup) => void): (() => void) => rendererTransport.listen('lineup:changed', said),
+  },
+
+  /** Secrets the broker keeps: what they are for and their uses, never a value. */
+  secrets: {
+    list: (): Promise<SecretMetadata[]> => rendererTransport.invoke('secrets:list'),
+    history: (name: string): Promise<SecretUse[]> => rendererTransport.invoke('secrets:history', name),
+    revoke: (name: string): Promise<number> => rendererTransport.invoke('secrets:revoke', name),
+    status: (): Promise<{ readonly store?: string; readonly locked?: boolean; readonly problem?: string }> => rendererTransport.invoke('secrets:status'),
   },
 
   /** Other computers conversations run on, reached over SSH. */

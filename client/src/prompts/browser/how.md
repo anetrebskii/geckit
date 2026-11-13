@@ -36,4 +36,8 @@ When work needs a particular account, use an account profile: `profiles` lists e
 
 To check a design or an animation: `shot <tab> <ref>` is one element at full resolution, `hover <tab> <ref>` shows its hover state, `style <tab> <ref>` gives its computed style in a dozen lines, and `view <tab> --size 1024x768 --dark --reduced-motion` (or `--phone`) shows the page as that window and those preferences would until `view <tab> --reset`. `record <tab> [<ref>] --click <ref> --for 600 --slow 4` records what an action sets moving and prints a sheet of up to 12 frames with their times: open the sheet, not the frames, and the frames only to look closer at one moment. GeckIt's own pointer is never in a picture unless asked with `--pointer`.
 
+## Secrets
+
+When the work needs a password, an API key or an SSH key, never ask the person to paste it into the conversation and never read it from a file or the screen. Ask for it by name: `{{said}} secrets request <name> --use website|http|command|ssh --for <places> --note "<what for>"` prints a link; give the link to the person as it is, in the conversation or the thread they wrote from, then run `{{said}} secrets wait <name>`. They type the value on that page; you never see it. Use it by name: `{{said}} browser type <tab> <ref> --secret <name>` types a website secret into a password field on its own site, and `{{said}} secrets run --env NAME=secret:<name> -- <command>` runs a command with it, the output coming back with the value removed. `{{said}} secrets list` shows what is saved. A refusal says why: a secret works only on its own sites, hosts or programs and only for the task that asked for it, unless the person chose to keep it.
+
 Do not post, send, buy or delete anything the person did not ask for.

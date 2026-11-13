@@ -749,6 +749,12 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onChanged: (said) => listen('lineup:changed', said),
     },
     // Hosts are reached through the Mac; adding, editing and removing one, and a terminal, are for the Mac itself.
+    secrets: {
+      list: () => Promise.reject(new Error('Manage secrets on the computer.')),
+      history: () => Promise.reject(new Error('Manage secrets on the computer.')),
+      revoke: () => Promise.reject(new Error('Manage secrets on the computer.')),
+      status: () => Promise.resolve({ problem: 'secrets are managed on the computer' }),
+    },
     hosts: {
       list: () => call('hosts.list'),
       onChanged: (said) => listen('hosts:changed', said),

@@ -1,5 +1,6 @@
 import type { Download, Page } from 'playwright-core'
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, extname, join } from 'node:path'
@@ -7,6 +8,8 @@ import type { TestBrowsersState, ViewFrame, ViewInput } from '../shared/api'
 import background from '../../extension/background.js?raw'
 import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browser'
 import { signInLink } from './live-view'
+import { serveSecretFiles } from './secrets-serve'
+import { receiver, type SealedValue } from '../shared/secret-seal'
 import { alive, camoufoxHeadless, camoufoxSupported, downloading, fetchCamoufox, migrateChromeProfiles, profilesFolder, testingCamoufox, testingFolder } from './camoufox'
 import { acquireTestLock, browserConversation, browserStateFolder, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TestTabOwners } from './browser-lifecycle'
 
@@ -18,7 +21,7 @@ export const currentProfile = (value: string): string => value === 'test' ? TEST
 export const testName = (label: string): string | undefined => { const current = currentProfile(label); return current.startsWith(TEST_PREFIX) ? current.slice(TEST_PREFIX.length) : undefined }
 export const validTestName = (name: string): boolean => /^[a-z0-9][a-z0-9-]{0,39}$/.test(name)
 
-const PAGE_FUNCTIONS = ['pageSlow', 'pageOverlay', 'pageBox', 'pageStyle', 'pageText', 'pageRead', 'pageCenter', 'pageClick', 'pageType', 'pageScroll', 'pagePointer'] as const
+const PAGE_FUNCTIONS = ['pageSlow', 'pageOverlay', 'pageBox', 'pageStyle', 'pageText', 'pageRead', 'pageCenter', 'pageClick', 'pageType', 'pageScroll', 'pagePointer', 'pageSecrets', 'pageSecretField', 'pageTypeSecret'] as const
 const MEDIA_FUNCTIONS = ['base64', 'bitmaps', 'contactSheet', 'animation', 'lzw'] as const
 const MEDIA_LINES = ['bytesOf', 'LZW_CODES', 'LZW_STAMPS', 'lzwGeneration'] as const
 
@@ -38,8 +41,15 @@ export const pageScript = (): string => `var geckitPage = (() => {\n${PAGE_FUNCT
 const mediaScript = (): string => `var geckitMedia = (() => {\n${[...MEDIA_LINES, ...MEDIA_FUNCTIONS].map((one) => extensionSource(one)).join('\n')}\nreturn { contactSheet, animation }\n})()`
 
 type PageValue = string | number | boolean | null | PageValue[] | { [key: string]: PageValue }
+
+export function scrubSecrets(value: PageValue, secrets: readonly string[]): PageValue {
+  if (secrets.length === 0) return value
+  let text = JSON.stringify(value)
+  for (const one of secrets) text = text.split(JSON.stringify(one).slice(1, -1)).join('[secret]')
+  return JSON.parse(text) as PageValue
+}
 interface ViewSettings { readonly width?: number; readonly height?: number; readonly phone?: boolean; readonly scheme?: 'light' | 'dark'; readonly motion?: 'reduce' | 'no-preference' }
-interface Request { readonly conversation?: string; readonly cmd: string; readonly tab?: number; readonly url?: string; readonly ref?: string | null; readonly real?: boolean; readonly text?: string; readonly by?: number; readonly key?: string; readonly code?: string; readonly pointer?: boolean; readonly reset?: boolean; readonly set?: ViewSettings; readonly ms?: number; readonly slow?: number; readonly then?: { readonly cmd: string; readonly ref?: string; readonly key?: string }; readonly query?: string; readonly input?: ViewInput }
+interface Request { readonly conversation?: string; readonly cmd: string; readonly tab?: number; readonly url?: string; readonly ref?: string | null; readonly real?: boolean; readonly text?: string; readonly by?: number; readonly key?: string; readonly code?: string; readonly pointer?: boolean; readonly reset?: boolean; readonly set?: ViewSettings; readonly ms?: number; readonly slow?: number; readonly then?: { readonly cmd: string; readonly ref?: string; readonly key?: string }; readonly query?: string; readonly input?: ViewInput; readonly keyId?: string; readonly sealed?: SealedValue }
 type Center = { readonly x: number; readonly y: number; readonly label: string }
 type Box = Omit<Center, 'label'> & { readonly width: number; readonly height: number; readonly scrollX: number; readonly scrollY: number }
 const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
@@ -127,6 +137,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   context.on('page', track)
   for (const page of context.pages()) track(page)
   say()
+  const secretKeys = new Map<string, (sealed: SealedValue, info: string) => Promise<string>>()
   let activeConversation: string | undefined
   let closing = false
   const targetOf = (id: number | undefined): Page => {
@@ -154,7 +165,11 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   }
   const withoutPointer = async <T>(id: number | undefined, keep: boolean | undefined, steps: () => Promise<T>): Promise<T> => {
     if (!keep) await inPage(id, 'pageOverlay', false)
-    try { return await steps() } finally { if (!keep) await inPage(id, 'pageOverlay', true).catch(() => undefined) }
+    await inPage(id, 'pageSecrets', 'hide').catch(() => undefined)
+    try { return await steps() } finally {
+      if (!keep) await inPage(id, 'pageOverlay', true).catch(() => undefined)
+      await inPage(id, 'pageSecrets', 'show').catch(() => undefined)
+    }
   }
   let viewPage: Page | undefined
   const viewTarget = (): Page => { if (viewPage === undefined || viewPage.isClosed()) throw new Error('The sign-in tab is closed. Start the sign-in again.'); return viewPage }
@@ -194,9 +209,28 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       case 'click': return { clicked: await moveTo(id, request.ref ?? undefined, 'click') }
       case 'hover': return { hovered: await moveTo(id, request.ref ?? undefined, 'hover') }
       case 'type': await moveTo(id, request.ref ?? undefined, 'type'); return inPage(id, 'pageType', request.ref, request.text)
+      case 'secret-key': {
+        const field = await inPage(id, 'pageSecretField', request.ref) as Record<string, PageValue>
+        const key = await receiver()
+        const keyId = randomUUID()
+        secretKeys.set(keyId, key.open)
+        setTimeout(() => secretKeys.delete(keyId), 60_000).unref()
+        return { ...field, keyId, endpointKey: key.publicKey }
+      }
+      case 'type-secret': {
+        const open = secretKeys.get(String(request.keyId))
+        secretKeys.delete(String(request.keyId))
+        if (open === undefined) throw new Error('The secret took too long to arrive. Try again.')
+        await moveTo(id, request.ref ?? undefined, 'type')
+        return inPage(id, 'pageTypeSecret', request.ref, await open(request.sealed ?? { epk: '', iv: '', data: '' }, 'geckit-fill-v1'))
+      }
       case 'scroll': if (request.ref != null) await moveTo(id, request.ref, 'scroll'); else await inPage(id, 'pagePointer', null, 'scroll'); return inPage(id, 'pageScroll', request.ref ?? null, request.by)
       case 'key': await inPage(id, 'pagePointer', null, 'key'); return { pressed: await press(targetOf(id), request.key ?? '') }
-      case 'eval': { const value = await targetOf(id).evaluate<PageValue>(`mw:${request.code ?? 'undefined'}`); return { value: value ?? null, type: typeof value } }
+      case 'eval': {
+        const value = await targetOf(id).evaluate<PageValue>(`mw:${request.code ?? 'undefined'}`)
+        const { values } = await inPage(id, 'pageSecrets', 'values') as { values: string[] }
+        return { value: scrubSecrets(value ?? null, values), type: typeof value }
+      }
       case 'shot': return withoutPointer(id, request.pointer, async () => {
         const page = targetOf(id)
         const box = request.ref == null ? undefined : await inPage(id, 'pageBox', request.ref, 8) as Box
@@ -308,6 +342,7 @@ export function serveTestLaunches(executable: string, script: string, folder: st
       } catch { /* A request left half written is read again next time. */ continue }
       rmSync(source, { force: true })
     }
+    serveSecretFiles(folder, files)
     for (const file of files.filter((one) => one.endsWith('.signin'))) {
       const source = join(folder, file)
       let name: string

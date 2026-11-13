@@ -14,6 +14,7 @@ import { questionsFromClaude } from './wording'
 import { browserBridgeOn } from '../../cli/browser'
 import { browserPluginFolder } from '../guide'
 import { fill, PROMPTS } from '../../prompts/prompts'
+import { brokerFolder } from '../../core/broker'
 
 /**
  * One conversation with Claude Code, held by one process.
@@ -96,6 +97,8 @@ export function claudeArgs(options: Pick<ClaudeOptions, 'id' | 'resume' | 'mode'
     // here would have none of the tools a terminal one has. Without the
     // extension the server simply does not connect.
     '--chrome',
+    '--settings',
+    JSON.stringify({ permissions: { deny: [true, false].map((source) => `Read(/${brokerFolder(source).replaceAll('\\', '/')}/**)`) } }),
     ...sourceArgs(),
     ...(options.model === undefined ? [] : ['--model', options.model]),
     ...(options.resume ? ['--resume', options.id] : ['--session-id', options.id]),

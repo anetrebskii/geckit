@@ -10,6 +10,8 @@ on:
       - 'client/scripts/whisper.sh'
       - 'client/scripts/llama.sh'
       - '.github/workflows/whisper.yml'
+      - 'client/scripts/broker.sh'
+      - 'broker/**'
 
 jobs:
   build:
@@ -102,4 +104,22 @@ jobs:
         with:
           name: llama-server-${{ matrix.os }}-${{ matrix.arch }}
           path: client/llama/bin/${{ matrix.os }}-${{ matrix.arch }}
+          if-no-files-found: error
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: broker/go.mod
+          cache-dependency-path: broker/go.sum
+
+      - name: Test the secrets broker
+        working-directory: broker
+        run: go vet ./... && go test ./...
+
+      - name: Build the secrets broker
+        run: scripts/broker.sh ${{ matrix.os }} ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: geckit-broker-${{ matrix.os }}-${{ matrix.arch }}
+          path: client/broker/bin/${{ matrix.os }}-${{ matrix.arch }}
           if-no-files-found: error

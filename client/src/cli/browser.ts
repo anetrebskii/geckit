@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { requestingSession } from './start'
+import { askSecrets } from './secrets'
 import { conversationTestName } from './browser-lifecycle'
 import { profileArchiveCommand } from './profile-archive'
 import { findModelServer, findModelState, findModelUsable, pickRefs } from './find-model'
@@ -513,7 +514,7 @@ function refOf(word: string | undefined): string {
   return word
 }
 
-const VALUED = ['--max', '-o', '--size', '--click', '--hover', '--key', '--for', '--slow', '--profile', '--note']
+const VALUED = ['--max', '-o', '--size', '--click', '--hover', '--key', '--for', '--slow', '--profile', '--note', '--secret']
 
 function option(args: readonly string[], name: string): string | undefined {
   const at = args.indexOf(name)
@@ -553,7 +554,12 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
         case 'read': return { cmd: 'read', tab: tabOf(words[0]) }
         case 'find': if (words.length < 2) throw new Error('Give the tab and what to find, in words.'); return { cmd: 'find', tab: tabOf(words[0]), query: words.slice(1).join(' ') }
         case 'click': return { cmd: 'click', tab: tabOf(words[0]), ref: refOf(words[1]), real: rest.includes('--real') }
-        case 'type': if (words.length < 3) throw new Error('Give the tab, the ref and the text.'); return { cmd: 'type', tab: tabOf(words[0]), ref: refOf(words[1]), text: words.slice(2).join(' ') }
+        case 'type': {
+          const secret = option(rest, '--secret')
+          if (secret !== undefined) { if (words.length < 2) throw new Error('Give the tab and the ref of the password field.'); return { cmd: 'secret-key', tab: tabOf(words[0]), ref: refOf(words[1]), secret } }
+          if (words.length < 3) throw new Error('Give the tab, the ref and the text.')
+          return { cmd: 'type', tab: tabOf(words[0]), ref: refOf(words[1]), text: words.slice(2).join(' ') }
+        }
         case 'key': if (words[1] === undefined) throw new Error('Give the tab and the key.'); return { cmd: 'key', tab: tabOf(words[0]), key: words[1] }
         case 'scroll': {
           const where = words[1] ?? 'down'
@@ -615,6 +621,14 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
     if (typeof target === 'string') return { ok: false, said: target }
     const reply = await ask(asked, browserFolder(), target?.pid)
     if (!reply.ok) return { ok: false, said: reply.error ?? 'Chrome refused.' }
+    if (asked.cmd === 'secret-key') {
+      const field = reply.result as { origin: string; field: string; password: boolean; endpointKey: string; keyId: string }
+      const sealed = await askSecrets({ op: 'fill', name: option(rest, '--secret'), origin: field.origin, field: field.field, password: field.password, endpointKey: field.endpointKey })
+      if (!sealed.ok) return { ok: false, said: sealed.error ?? 'The secrets broker refused.' }
+      const typed = await ask({ cmd: 'type-secret', tab: asked.tab, ref: (asked as { ref?: string }).ref, keyId: field.keyId, sealed: sealed['sealed'], ...(conversation === undefined ? {} : { conversation }) }, browserFolder(), target?.pid)
+      if (!typed.ok) return { ok: false, said: typed.error ?? 'Chrome refused.' }
+      return { ok: true, said: `Typed ${option(rest, '--secret') ?? 'the secret'} into the field. Its value is not shown to you.` }
+    }
     return { ok: true, said: shown(what, rest, words, reply.result) }
   } catch (error) { return { ok: false, said: error instanceof Error ? error.message : String(error) } }
 }

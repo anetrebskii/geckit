@@ -18,6 +18,14 @@ import { startWindowError } from '../shared/schedule'
 import { carriedOver } from './carry-over'
 import { withMoves } from './sessions'
 import { setBrowserConversationDone } from '../cli/browser-lifecycle'
+
+const doneListeners = new Set<(id: string) => void>()
+/** Called when a conversation's card moves to Done, for what ends with its task. */
+export function onConversationDone(listener: (id: string) => void): () => void { doneListeners.add(listener); return () => { doneListeners.delete(listener) } }
+const conversationMoved = (id: string, done: boolean): void => {
+  setBrowserConversationDone(id, done)
+  if (done) for (const listener of doneListeners) { try { listener(id) } catch { /* a listener's failure does not stop the move */ } }
+}
 import type { NotesStore, SessionNote } from './sessions'
 
 const folder = (): string => {
@@ -254,7 +262,7 @@ export function notesStore(): NotesStore {
     all: () => notes,
     set: (id, note, attribution) => {
       const next = { ...notes, [id]: withMoves(notes[id], note, Date.now(), attribution) }
-      if (note.status !== notes[id]?.status) setBrowserConversationDone(id, note.status === 'done')
+      if (note.status !== notes[id]?.status) conversationMoved(id, note.status === 'done')
       clearTimeout(soon)
       if (note.status !== notes[id]?.status || note.employeeId !== notes[id]?.employeeId || note.employeeRoot !== notes[id]?.employeeRoot || note.hidden !== notes[id]?.hidden || note.managerPrompt !== undefined || note.managerPrompt !== notes[id]?.managerPrompt || note.managerOwner !== undefined || note.managerOwner !== notes[id]?.managerOwner || (note.prepared !== undefined && notes[id] === undefined)) {
         const path = join(folder(), NOTES)
@@ -268,7 +276,7 @@ export function notesStore(): NotesStore {
     },
     replace: (next) => {
       clearTimeout(soon)
-      for (const [id, note] of Object.entries(next)) if (note.status !== notes[id]?.status) setBrowserConversationDone(id, note.status === 'done')
+      for (const [id, note] of Object.entries(next)) if (note.status !== notes[id]?.status) conversationMoved(id, note.status === 'done')
       notes = { ...next }
       write(NOTES, notes)
     },

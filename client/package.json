@@ -105,7 +105,10 @@
       "entitlementsInherit": "assets/entitlements.mac.plist",
       "gatekeeperAssess": false,
       "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "notarize": false
+      "notarize": false,
+      "signIgnore": [
+        "Contents/Resources/broker/geckit-broker$"
+      ]
     },
     "dmg": {
       "contents": [
@@ -145,6 +148,10 @@
       {
         "from": "llama/bin/${os}-${arch}",
         "to": "llama"
+      },
+      {
+        "from": "broker/bin/${os}-${arch}",
+        "to": "broker"
       }
     ],
     "publish": {
@@ -155,6 +162,6 @@
     "asarUnpack": [
       "out/service/node_modules/@node-datachannel/**"
     ],
-    "afterPack": "./scripts/check-asar-native.cjs"
+    "afterPack": "./scripts/after-pack.cjs"
   }
 }

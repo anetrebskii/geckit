@@ -6,11 +6,12 @@ import type { ChatSession, ConversationContinuation, ConversationExport, Convers
 import { conversationMarkdown, conversationOverview } from '../shared/conversation-export'
 import { isRemote } from '../shared/hosts'
 import { selectableProviders } from '../shared/providers'
+import { cleanText } from '../core/clean'
 
 export async function writeConversationExport(snapshot: ConversationSnapshot, directory: string): Promise<ConversationExport> {
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const path = join(directory, `conversation-${snapshot.at}-${randomUUID()}.md`)
-  await writeFile(path, conversationMarkdown(snapshot), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+  await writeFile(path, await cleanText(conversationMarkdown(snapshot)), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
   return { path, at: snapshot.at, count: snapshot.items.length }
 }
 

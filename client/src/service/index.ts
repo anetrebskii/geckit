@@ -20,6 +20,7 @@ import { serveLocal } from '../core/socket'
 import { listenRpc } from '../core/rpc'
 import type { RpcServer } from '../core/rpc'
 import { nativeRequests, serviceApplication, serviceSecurity } from './application'
+import { serveSecrets } from './secrets'
 import type { ServiceEvents, ServiceMethods } from './application'
 
 async function main(): Promise<void> {
@@ -58,9 +59,11 @@ async function main(): Promise<void> {
   let remote: RemoteAccess | undefined
   let computers: RemoteComputers | undefined
   let stopComputers: (() => void) | undefined
+  let stopSecrets: (() => void) | undefined
   let stopping: Promise<void> | undefined
   const stop = (): Promise<void> => stopping ??= (async () => {
     remote?.dispose()
+    stopSecrets?.()
     stopComputers?.()
     computers?.dispose()
     native.dispose()
@@ -98,6 +101,13 @@ async function main(): Promise<void> {
       throw new Error('Pairing and authentication require the user on the target; registry supports list/forget, devices list/revoke, access status/disable.')
     }, run: (name, args, authorized) => paired.product(name, args, authorized, 'manager'), list: () => paired.list() })
     stopComputers = computers.serve()
+    const secretsRuntime = runtime
+    stopSecrets = serveSecrets({
+      source: fromSource,
+      sessions: () => secretsRuntime.current().sessions,
+      notice: (session, title, body) => { secretsRuntime.emit('chat:notice', { session, title, subtitle: '', body, asks: false }) },
+      log: (line) => { console.log(line) },
+    })
     listener = serveLocal(directory, serviceHandler(runtime, token, shutdown))
     rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native, remote, computers), undefined, (method) => {
       if ((method === 'service:shutdownForUpdate' || method === 'service:importConfiguration') && runtime?.sessions.working().length === 0) shutdown()

@@ -16061,6 +16061,29 @@ html.phone .browser-profiles-form-wide { grid-column: 1; }
   .browser-profiles-header { flex-direction: column; }
 }
 
+.secrets-section { display: flex; flex-direction: column; gap: 10px; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+.secrets-section p { margin: 0; }
+.secrets-heading { display: flex; flex-direction: column; gap: 2px; }
+.secrets-heading h4 { margin: 0; color: var(--text); font-size: 13px; font-weight: 600; }
+.secrets-heading h4:focus { outline: none; }
+.secrets-heading p { max-width: 60ch; color: var(--text-faint); }
+.secrets-problem { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.secrets-problem button { padding: 3px 10px; font-size: 12px; }
+.secrets-empty { padding: 20px 16px; color: var(--text-faint); text-align: center; }
+.secrets-foot { color: var(--text-faint); font-size: 11px; }
+.secret-row-icon { display: grid; flex: none; place-items: center; width: 32px; height: 32px; color: var(--text-dim); background: var(--fill); border-radius: 50%; }
+.secret-row .browser-profile-title strong { font-family: var(--font-code); font-weight: 500; }
+.secret-row-line { overflow: hidden; color: var(--text-dim); text-overflow: ellipsis; white-space: nowrap; }
+.secret-row-line.faint { color: var(--text-faint); }
+.secret-badge { flex: none; padding: 0 6px; color: var(--text-dim); font-size: 11px; background: var(--fill); border-radius: var(--radius); }
+.secret-badge.warn { color: var(--warning-text); background: var(--warning-bg); }
+.secret-history { margin-inline-start: 44px; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+.secret-history th { padding: 2px 12px 2px 0; color: var(--text-faint); font-weight: 500; text-align: start; }
+.secret-history td { padding: 2px 12px 2px 0; color: var(--text-dim); vertical-align: top; }
+.secret-history td:first-child, .secret-history td:nth-child(3) { white-space: nowrap; }
+.secrets-section .secret-history-empty, .secrets-section .secret-error { margin-inline-start: 44px; color: var(--text-faint); }
+.secrets-section .secret-error { color: var(--danger); overflow-wrap: anywhere; }
+
 /* Inline screenshots keep their aspect ratio and open in the transcript's image viewer. */
 .prose-picture { display: inline-block; max-width: 100%; }
 .prose-picture-open { display: inline-flex; padding: 0; border: 0; background: none; cursor: zoom-in; max-width: min(100%, 320px); }

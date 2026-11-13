@@ -4,6 +4,7 @@ import { ANYWHERE, BROWSER_STORE_URL, UPDATE_CHANNELS, appName, assistantsIn, ch
 import { independentProviderInfo, instructionsFor, llmProviderInfo } from '../../../shared/providers'
 import type { Anywhere, NoticeWhen, OpenRule, BrowserBridgeState, PhoneView, ProjectProfile, SessionProvider, Settings, Theme, UpdateChannel } from '../../../shared/api'
 import { HostsSection } from '../chat/Hosts'
+import { SecretsSection } from './Secrets'
 import { AssistantStatus } from '../chat/AssistantStatus'
 import type { AssistantStatusChat } from '../chat/AssistantStatus'
 import { hostOf } from '../../../shared/hosts'
@@ -47,13 +48,14 @@ export const LANGUAGES = [
   'Japanese',
 ]
 
-export type Section = 'general' | 'vpn' | 'assistants' | 'integrations' | 'channels' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
+export type Section = 'general' | 'vpn' | 'assistants' | 'integrations' | 'secrets' | 'channels' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
   { value: 'vpn', label: 'VPN IP check' },
   { value: 'assistants', label: 'Assistants' },
   { value: 'integrations', label: 'Web Browser' },
+  { value: 'secrets', label: 'Secrets' },
   { value: 'channels', label: 'Channels' },
   { value: 'profiles', label: 'Profiles' },
   { value: 'hosts', label: 'Hosts' },
@@ -125,7 +127,7 @@ export function SettingsDialog({
         <h2>Settings</h2>
         <div className="settings-body">
           <nav ref={navigation} className="settings-nav" aria-label="Sections">
-            {SECTIONS.filter((one) => !onPhone || (one.value !== 'phone' && one.value !== 'channels' && one.value !== 'integrations')).map((one) => (
+            {SECTIONS.filter((one) => !onPhone || (one.value !== 'phone' && one.value !== 'channels' && one.value !== 'integrations' && one.value !== 'secrets')).map((one) => (
               <button
                 key={one.value}
                 type="button"
@@ -152,6 +154,7 @@ export function SettingsDialog({
             {section === 'vpn' ? <VpnIpSettings settings={settings} /> : null}
             {section === 'assistants' ? <Assistants settings={settings} change={change} assistantChat={assistantChat} /> : null}
             {section === 'integrations' ? <Integrations settings={settings} change={change} /> : null}
+            {section === 'secrets' ? <SecretsSection /> : null}
             {section === 'channels' ? <Channels settings={settings} change={change} /> : null}
             {section === 'hosts' ? <HostsSection /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}

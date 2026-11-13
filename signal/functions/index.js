@@ -122,3 +122,5 @@ export const push = onRequest({ region: 'europe-west1', maxInstances: 5 }, async
     response.status(502).json({ sent: false, gone: false, reason: String(error) })
   }
 })
+
+export { secret, secretCleanup } from './secrets.js'

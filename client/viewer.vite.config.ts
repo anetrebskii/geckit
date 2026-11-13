@@ -12,7 +12,7 @@ export default defineConfig({
     outDir: resolve(here, '../signal/public'),
     emptyOutDir: true,
     rollupOptions: {
-      input: { index: resolve(here, 'src/viewer/index.html'), 404: resolve(here, 'src/viewer/404.html'), sw: resolve(here, 'src/viewer/sw.ts') },
+      input: { index: resolve(here, 'src/viewer/index.html'), 404: resolve(here, 'src/viewer/404.html'), secret: resolve(here, 'src/viewer/secret.html'), sw: resolve(here, 'src/viewer/sw.ts') },
       output: { entryFileNames: (chunk) => (chunk.name === 'sw' ? 'sw.js' : 'assets/[name]-[hash].js') },
     },
   },

@@ -118,9 +118,23 @@ jobs:
           name: llama-server-mac-arm64
           path: client/llama/bin/mac-arm64
 
+      - name: Take the secrets broker
+        uses: actions/download-artifact@v8
+        with:
+          name: geckit-broker-${{ matrix.platform }}-x64
+          path: client/broker/bin/${{ matrix.platform }}-x64
+
+      - name: Take the Apple Silicon secrets broker
+        if: matrix.platform == 'mac'
+        uses: actions/download-artifact@v8
+        with:
+          name: geckit-broker-mac-arm64
+          path: client/broker/bin/mac-arm64
+
       - name: Install and build
         run: |
           chmod +x whisper/bin/*/whisper-cli*
+          chmod +x broker/bin/*/geckit-broker* 2>/dev/null || true
           mkdir -p llama/bin/${{ matrix.platform }}-x64
           chmod +x llama/bin/*/llama-server* 2>/dev/null || true
           ls -lR whisper/bin

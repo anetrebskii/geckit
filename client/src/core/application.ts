@@ -50,6 +50,7 @@ import { instructionsFor, registerProviderInfo } from '../shared/providers'
 import type { SessionProvider } from '../shared/api'
 import type { CoreRuntime } from './runtime'
 import { dataDirectory } from './platform'
+import { runningSecrets } from './secrets'
 
 export function uninstallProvider(runtime: Pick<CoreRuntime, 'managerView'> & { readonly sessions: Pick<Sessions, 'providerInUse' | 'setInstructions' | 'refresh'> }, id: string, safe = false): Promise<void> {
   const { sessions } = runtime
@@ -280,6 +281,10 @@ export function application(runtime: CoreRuntime) {
     'share:about': (id: string) => shares.about(id),
     'share:fetch': (id: string, asked: LocalAsk) => shares.fetch(id, asked),
     'share:read': (id: string, path: string) => shares.read(id, path),
+    'secrets:list': async () => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return (await secrets.list()).secrets },
+    'secrets:history': async (name: string) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); const key = (id: string): string => id.split(':').pop() ?? id; const titles = new Map(runtime.current().sessions.map((one) => [key(one.id), one.title])); return (await secrets.history(name, 20)).records.map((one) => one.taskId === undefined ? one : { ...one, taskId: titles.get(key(one.taskId)) ?? 'a finished conversation' }) },
+    'secrets:revoke': async (name: string) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return (await secrets.revoke(name)).removed },
+    'secrets:status': async (): Promise<{ readonly store?: string; readonly locked?: boolean; readonly problem?: string }> => { const secrets = runningSecrets(); if (secrets === undefined) return { problem: 'the secrets broker has not started' }; try { const status = await secrets.status(); return { store: status.store, locked: status.locked } } catch (error) { return { problem: (error as Error).message } } },
     'hosts:list': () => routes.hosts.views(),
     'hosts:known': () => routes.hosts.known(),
     'hosts:check': (draft: HostDraft) => routes.hosts.check(draft),

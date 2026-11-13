@@ -124,6 +124,40 @@ async function tab(id) {
   return chrome.tabs.get(id)
 }
 
+const secretKeys = new Map()
+const fromB64url = (text) => Uint8Array.from(atob(text.replaceAll('-', '+').replaceAll('_', '/')), (one) => one.charCodeAt(0))
+const toB64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
+
+// A one-time key the broker seals a secret to, so only this extension and the page ever hold the value in clear.
+async function secretKey() {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits'])
+  const keyId = crypto.randomUUID()
+  secretKeys.set(keyId, pair.privateKey)
+  setTimeout(() => secretKeys.delete(keyId), 60_000)
+  return { keyId, endpointKey: toB64url(await crypto.subtle.exportKey('raw', pair.publicKey)) }
+}
+
+async function openSecret(keyId, sealed) {
+  const privateKey = secretKeys.get(keyId)
+  secretKeys.delete(keyId)
+  if (privateKey === undefined) throw new Error('The secret took too long to arrive. Try again.')
+  const sender = await crypto.subtle.importKey('raw', fromB64url(sealed.epk), { name: 'ECDH', namedCurve: 'P-256' }, false, [])
+  const shared = await crypto.subtle.deriveBits({ name: 'ECDH', public: sender }, privateKey, 256)
+  const base = await crypto.subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey'])
+  const key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: new TextEncoder().encode('geckit-fill-v1') }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt'])
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64url(sealed.iv) }, key, fromB64url(sealed.data)))
+}
+
+function scrubSecrets(value, secrets) {
+  if (secrets.length === 0 || value === undefined) return value
+  let text = JSON.stringify(value)
+  for (const one of secrets) {
+    const quoted = JSON.stringify(one).slice(1, -1)
+    text = text.split(quoted).join('[secret]')
+  }
+  return JSON.parse(text)
+}
+
 async function inPage(id, func, ...args) {
   const target = await tab(id)
   if (!/^(https?|file):/.test(target.url ?? '')) throw new Error(`Tab ${id} shows ${target.url}, which Chrome does not let extensions read.`)
@@ -158,11 +192,16 @@ async function readable(id) {
   return /^(https?|file):/.test((await tab(id)).url ?? '')
 }
 
-// Hides GeckIt's own pointer while a picture is taken, so a design check sees the page alone.
+// Hides GeckIt's own pointer and any secret field while a picture is taken.
 async function withoutPointer(id, keep, steps) {
-  const hide = !keep && await readable(id)
+  const page = await readable(id)
+  const hide = !keep && page
   if (hide) await inPage(id, pageOverlay, false)
-  try { return await steps() } finally { if (hide) await inPage(id, pageOverlay, true).catch(() => undefined) }
+  if (page) await inPage(id, pageSecrets, 'hide').catch(() => undefined)
+  try { return await steps() } finally {
+    if (hide) await inPage(id, pageOverlay, true).catch(() => undefined)
+    if (page) await inPage(id, pageSecrets, 'show').catch(() => undefined)
+  }
 }
 
 function base64(bytes) {
@@ -267,6 +306,14 @@ async function answer(request) {
       return debug(id, async (send) => { await mouse(send, at, false); return { hovered: at.label } })
     }
     case 'type': await inPage(id, pagePointer, request.ref, 'type'); return inPage(id, pageType, request.ref, request.text)
+    case 'secret-key': {
+      const field = await inPage(id, pageSecretField, request.ref)
+      return { ...field, ...await secretKey() }
+    }
+    case 'type-secret': {
+      await inPage(id, pagePointer, request.ref, 'type')
+      return inPage(id, pageTypeSecret, request.ref, await openSecret(request.keyId, request.sealed))
+    }
     case 'scroll': await inPage(id, pagePointer, request.ref ?? null, 'scroll'); return inPage(id, pageScroll, request.ref ?? null, request.by)
     case 'key': {
       await inPage(id, pagePointer, null, 'key')
@@ -274,8 +321,9 @@ async function answer(request) {
     }
     case 'eval': return debug(id, async (send) => {
       const done = await send('Runtime.evaluate', { expression: request.code, awaitPromise: true, returnByValue: true, userGesture: true })
-      if (done.exceptionDetails) throw new Error(done.exceptionDetails.exception?.description ?? done.exceptionDetails.text)
-      return { value: done.result.value ?? null, type: done.result.type }
+      const { values } = await inPage(id, pageSecrets, 'values')
+      if (done.exceptionDetails) throw new Error(scrubSecrets(done.exceptionDetails.exception?.description ?? done.exceptionDetails.text, values))
+      return { value: scrubSecrets(done.result.value ?? null, values), type: done.result.type }
     })
     case 'shot': return withoutPointer(id, request.pointer, async () => {
       const target = await tab(id)
@@ -652,7 +700,9 @@ function pageRead() {
     if (kind.startsWith('h')) { if (said) lines.push(`${'#'.repeat(Number(kind[1]))} ${said}`); continue }
     if (el.dataset.geckitRef === undefined) el.dataset.geckitRef = String(next++)
     const extra = []
-    if ('value' in el && el.value && kind === 'textbox') extra.push(`value="${clean(el.value).slice(0, 60)}"`)
+    const secret = el.type === 'password' || el.dataset.geckitSecret !== undefined
+    if (secret && kind === 'textbox') extra.push(el.value ? 'secret, filled' : 'secret')
+    else if ('value' in el && el.value && kind === 'textbox') extra.push(`value="${clean(el.value).slice(0, 60)}"`)
     if (el.isContentEditable && clean(el.innerText)) { extra.push(`text="${clean(el.innerText).slice(0, 60)}"`); said = clean(el.getAttribute('aria-label')) || clean(el.getAttribute('aria-placeholder')) }
     if (el.checked) extra.push('checked')
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') extra.push('disabled')
@@ -719,11 +769,64 @@ function pageType(ref, text) {
     return { typed: el.innerText.replace(/\s+/g, ' ').trim().slice(0, 100) }
   }
   if (!('value' in el)) return { error: `Element ${ref} is not a field you can type into.` }
+  delete el.dataset.geckitSecret
   const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
   Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, text)
   el.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
   el.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
-  return { typed: String(el.value).slice(0, 100) }
+  return { typed: el.type === 'password' ? (el.value ? 'secret, filled' : '') : String(el.value).slice(0, 100) }
+}
+
+function pageSecretField(ref) {
+  const find = (root) => {
+    const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
+    if (hit) return hit
+    for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
+    return null
+  }
+  const el = find(document)
+  if (!el) return { error: `No element ${ref} on this page now. Run geckit browser read again.` }
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return { error: `Element ${ref} is not a field a secret can be typed into.` }
+  const clean = (text) => (text ?? '').replace(/\s+/g, ' ').trim()
+  const field = clean(el.getAttribute('aria-label')) || clean(el.labels?.[0]?.innerText) || clean(el.getAttribute('placeholder')) || clean(el.getAttribute('name'))
+  return { origin: location.origin, password: el.type === 'password', field: el.type === 'password' ? 'password' : field }
+}
+
+function pageTypeSecret(ref, value) {
+  const find = (root) => {
+    const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
+    if (hit) return hit
+    for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
+    return null
+  }
+  const el = find(document)
+  if (!el) return { error: `No element ${ref} on this page now. Run geckit browser read again.` }
+  el.focus()
+  el.dataset.geckitSecret = ''
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value)
+  el.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+  return { typed: 'secret, filled' }
+}
+
+function pageSecrets(mode) {
+  const found = []
+  const walk = (root) => {
+    for (const one of root.querySelectorAll('input[type="password"], [data-geckit-secret]')) found.push(one)
+    for (const host of root.querySelectorAll('*')) if (host.shadowRoot) walk(host.shadowRoot)
+  }
+  walk(document)
+  if (mode === 'values') return { values: found.map((el) => ('value' in el ? String(el.value) : el.innerText ?? '')).filter((one) => one.length >= 4) }
+  const old = document.getElementById('geckit-secret-hide')
+  if (mode === 'show') { old?.remove(); return {} }
+  if (old === null && found.length > 0) {
+    const style = document.createElement('style')
+    style.id = 'geckit-secret-hide'
+    style.textContent = '[data-geckit-secret], input[type="password"] { color: transparent !important; text-shadow: none !important; -webkit-text-security: disc !important; }'
+    document.documentElement.append(style)
+  }
+  return {}
 }
 
 function pageScroll(ref, by) {

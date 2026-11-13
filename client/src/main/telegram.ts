@@ -23,6 +23,7 @@ import { StatusMessage } from './manager-status'
 import { heard, say } from './manager-voice'
 import type { Speech } from './manager-voice'
 import type { ThreadActivity } from './manager-status'
+import { cleanText } from '../core/clean'
 
 export interface TelegramVault {
   available(): boolean
@@ -317,7 +318,8 @@ export class ManagerTelegram {
     return this.view()
   }
 
-  async deliver(text: string, origin: ManagerReplyOrigin, beforeSend: () => void): Promise<void> {
+  async deliver(said: string, origin: ManagerReplyOrigin, beforeSend: () => void): Promise<void> {
+    const text = await cleanText(said)
     const connection = this.active
     let started = false
     await this.notify(text, undefined, origin, () => { beforeSend(); started = true })

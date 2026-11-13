@@ -26,6 +26,7 @@ import type { Answer } from './start'
 import { migrate } from './migrate'
 import { manage, managerCommand } from './manage'
 import { browser, browserHost } from './browser'
+import { secrets } from './secrets'
 import { testBrowser } from './testing'
 import { computerArg, onComputer } from './computer'
 
@@ -176,6 +177,9 @@ const HELP = `geckit service - control a running headless service (run service h
 
   geckit browser <command>
       The person's own Chrome through the GeckIt Browser extension: tabs, page text, clicks, typing, screenshots. geckit browser help lists the commands.
+
+  geckit secrets <command>
+      Keys and passwords a conversation asks the person for through a link and uses without seeing them. geckit secrets help lists the commands.
 
   geckit sessions [--today] [--since 2d] [--project <name>] [--provider claude|codex] [--status todo|blocked|done|archived] [--favorites] [--json]
       The conversations, the newest first: a * for a favorite, id, when it last changed, project, how it stands, title.
@@ -400,6 +404,7 @@ export async function run(args: readonly string[]): Promise<string> {
     if (what === 'settings') return (await readSettings(rest, data())).said
     if (what === 'employees') return (await readEmployees(rest, data())).said
     if (what === 'browser') return (await browser(rest)).said
+    if (what === 'secrets') return (await secrets(rest)).said
     if (what === 'instructions') {
       if (rest[0] === undefined || rest[0] === 'providers') return `${PROMPTS.build.provider}\n`
       if (rest[0] === 'app') return `${PROMPTS.build.app}\n`
@@ -432,6 +437,10 @@ if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync
     const answer = await browser(rest)
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
+  } else if (what === 'secrets') {
+    const answer = await secrets(rest)
+    if (answer.said !== '') process.stdout.write(`${answer.said}\n`)
+    process.exitCode = answer.code ?? (answer.ok ? 0 : 1)
   } else if (managerCommand(args)) {
     const answer = await manage(args, data())
     process.stdout.write(`${answer.said}\n`)

@@ -1,19 +1,78 @@
 {
-  "firestore": { "rules": "firestore.rules" },
-  "functions": [{ "source": "functions", "runtime": "nodejs22" }],
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "runtime": "nodejs22"
+    }
+  ],
   "hosting": {
     "public": "public",
-    "predeploy": ["npm --prefix \"$PROJECT_DIR/../client\" run viewer"],
-    "ignore": ["firebase.json", "**/.*"],
+    "predeploy": [
+      "npm --prefix \"$PROJECT_DIR/../client\" run viewer"
+    ],
+    "ignore": [
+      "firebase.json",
+      "**/.*"
+    ],
     "headers": [
-      { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+      {
+        "source": "/sw.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
       {
         "source": "**",
         "headers": [
-          { "key": "Referrer-Policy", "value": "no-referrer" },
-          { "key": "X-Content-Type-Options", "value": "nosniff" },
-          { "key": "Content-Security-Policy", "value": "frame-ancestors 'self'" }
+          {
+            "key": "Referrer-Policy",
+            "value": "no-referrer"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Content-Security-Policy",
+            "value": "frame-ancestors 'self'"
+          }
         ]
+      },
+      {
+        "source": "/secret.html",
+        "headers": [
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/api/secret",
+        "function": {
+          "functionId": "secret",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/s",
+        "destination": "/secret.html"
+      },
+      {
+        "source": "/s/",
+        "destination": "/secret.html"
       }
     ]
   }

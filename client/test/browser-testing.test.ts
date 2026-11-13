@@ -3,12 +3,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { pickProfile } from '../src/cli/browser'
-import { deleteTestProfile, extensionSource, makeTestAccount, pageScript, updateTestProfile, serveTestLaunches, testBrowsersState, validTestName } from '../src/cli/testing'
+import { deleteTestProfile, extensionSource, makeTestAccount, pageScript, scrubSecrets, updateTestProfile, serveTestLaunches, testBrowsersState, validTestName } from '../src/cli/testing'
 
 describe('test browsers', () => {
+  it('replaces filled secret values in what eval returns', () => {
+    expect(scrubSecrets({ token: 'pw-12345', nested: ['x pw-12345 y', 'a"b\\c'] }, ['pw-12345', 'a"b\\c'])).toEqual({ token: '[secret]', nested: ['x [secret] y', '[secret]'] })
+    expect(scrubSecrets('nothing', [])).toBe('nothing')
+  })
   it('runs the extension own page functions, read out of background.js', () => {
     const scope = new Function(`${pageScript()}; return geckitPage`)() as Record<string, unknown>
-    expect(Object.keys(scope).sort()).toEqual(['pageBox', 'pageCenter', 'pageClick', 'pageOverlay', 'pagePointer', 'pageRead', 'pageScroll', 'pageSlow', 'pageStyle', 'pageText', 'pageType'])
+    expect(Object.keys(scope).sort()).toEqual(['pageBox', 'pageCenter', 'pageClick', 'pageOverlay', 'pagePointer', 'pageRead', 'pageScroll', 'pageSecretField', 'pageSecrets', 'pageSlow', 'pageStyle', 'pageText', 'pageType', 'pageTypeSecret'])
     expect(extensionSource('lzw')).toMatch(/^function lzw\(indexes\) \{[\s\S]*\n\}$/)
     expect(extensionSource('LZW_CODES')).toBe('const LZW_CODES = new Int32Array(4096 * 256)')
     expect(() => extensionSource('nothingLikeThis')).toThrow('background.js has no nothingLikeThis')

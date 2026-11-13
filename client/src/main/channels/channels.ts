@@ -18,6 +18,8 @@ import type { LoadedChannel } from './libraries'
 import { installChannel, installedChannels, removeChannelLibrary, updateChannel } from './libraries'
 import { SLACK_INFO, SLACK_MODULE } from './slack'
 import { DISCORD_INFO, DISCORD_MODULE } from './discord'
+import { cleanJson } from '../../core/clean'
+import { runningSecrets } from '../../core/secrets'
 
 /** Channels that come with GeckIt: turned on and set up like a library, never removed or updated from GitHub. */
 const BUILT_IN: readonly LoadedChannel[] = [{ info: SLACK_INFO, path: 'built-in', module: SLACK_MODULE }, { info: DISCORD_INFO, path: 'built-in', module: DISCORD_MODULE }]
@@ -97,6 +99,8 @@ export class Channels {
   #stopped = false
   #unsubscribe: (() => void) | undefined
   readonly #listeners = new Map<string, Set<(event: ChannelEvent) => void>>()
+  #cleaning: Promise<void> = Promise.resolve()
+  #queued = 0
   readonly #shown = new Map<string, string>()
   readonly #decisions = new Map<string, string>()
   readonly #statuses = new Map<string, string>()
@@ -392,9 +396,9 @@ export class Channels {
         list: () => { live(); return this.#state(id).conversations.flatMap((one) => this.#conversation(one) ?? []) },
         items: async (conversation) => {
           reach(conversation)
-          if (!isManager(conversation)) return this.#deps.sessions.items(conversation)
+          if (!isManager(conversation)) return cleanJson(await this.#deps.sessions.items(conversation))
           if (this.#deps.managerView()?.threads?.find((one) => one.id === conversation)?.session === undefined) return []
-          return (await this.#deps.manager.inspect(conversation)).items
+          return cleanJson((await this.#deps.manager.inspect(conversation)).items)
         },
         watch: (conversation, listener) => {
           reach(conversation)
@@ -423,6 +427,13 @@ export class Channels {
   }
 
   #tell(conversation: string, event: ChannelEvent): void {
+    if (!this.#listeners.has(conversation)) return
+    if (this.#queued === 0 && runningSecrets() === undefined) { this.#told(conversation, event); return }
+    this.#queued++
+    this.#cleaning = this.#cleaning.then(async () => { try { this.#told(conversation, await cleanJson(event)) } finally { this.#queued-- } })
+  }
+
+  #told(conversation: string, event: ChannelEvent): void {
     for (const listener of this.#listeners.get(conversation) ?? []) {
       try { listener(event) } catch { /* A channel's own failure stays in that channel. */ }
     }

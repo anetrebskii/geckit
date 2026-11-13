@@ -80,3 +80,18 @@ geckit browser-config status --host <id>
 Target paths belong to the target filesystem. Employee `--description-file`, `--role-file` and other existing `*-file` inputs are read on the source before dispatch; their text is sent through the typed contract. Settings maps merge named entries; arrays replace. Entity contracts validate nonempty expected subsets or entire prior drafts as described by schemas. Read back after every mutation.
 
 A timeout or disconnect after dispatch can lose the reply after saving. **Delivery is uncertain** means inspect the same target's state before any retry; the CLI never replays a mutation. An unsupported older target requires an explicit application update outside active work, not a shell fallback. Revoking the connection used by a command can itself lose the response.
+
+## Secrets
+
+`geckit secrets` lets a conversation use a password or key it never sees. The values stay with the secrets broker on the computer that asked.
+
+```bash
+geckit secrets request openai-key --use http --for api.openai.com --note "cover images"
+geckit secrets wait openai-key
+geckit secrets run --env OPENAI_API_KEY=secret:openai-key -- sh -c 'curl -s https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"'
+geckit browser type <tab> <ref> --secret github-login
+geckit secrets list
+geckit secrets revoke openai-key
+```
+
+`request` prints a link for the person; `wait` returns when they saved it. Exit codes: 2 refused (wrong place, program or task, expired), 3 broker unavailable. `--host` is not supported for secrets.
