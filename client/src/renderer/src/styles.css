@@ -15956,9 +15956,11 @@ html.phone.remote-workspace-page #root { flex: 1; min-block-size: 0; block-size:
   cursor: pointer;
 }
 
-.live-view-tool:hover:not(:disabled) {
-  color: var(--text);
-  background: var(--bg-hover);
+@media (hover: hover) {
+  .live-view-tool:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--bg-hover);
+  }
 }
 
 .live-view-tool:disabled {
@@ -15986,8 +15988,10 @@ html.phone.remote-workspace-page #root { flex: 1; min-block-size: 0; block-size:
   transition: background var(--quick) var(--ease), border-color var(--quick) var(--ease);
 }
 
-.live-view-field:hover {
-  background: var(--fill-strong);
+@media (hover: hover) {
+  .live-view-field:hover {
+    background: var(--fill-strong);
+  }
 }
 
 .live-view-field.editing {
@@ -16055,8 +16059,10 @@ html.phone.remote-workspace-page #root { flex: 1; min-block-size: 0; block-size:
   transition: background var(--quick) var(--ease);
 }
 
-.live-view-done:hover {
-  background: var(--accent-soft);
+@media (hover: hover) {
+  .live-view-done:hover {
+    background: var(--accent-soft);
+  }
 }
 
 .live-view-done:active {
@@ -16259,7 +16265,77 @@ html.phone .live-view {
 
 html.phone .live-view-bar {
   grid-template-columns: minmax(0, 1fr) auto;
-  padding: calc(env(safe-area-inset-top) + 8px) 12px 10px;
+  row-gap: 10px;
+  padding: calc(env(safe-area-inset-top) + 6px) 16px 10px;
+}
+
+html.phone .live-view-who {
+  gap: 12px;
+}
+
+html.phone .live-view-who .live-view-badge {
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  border-radius: 10px;
+}
+
+html.phone .live-view-who-lines {
+  gap: 1px;
+}
+
+html.phone .live-view-who-lines strong {
+  font-size: 17px;
+}
+
+html.phone .live-view-who-lines small {
+  font-size: 13px;
+}
+
+html.phone .live-view-dot {
+  width: 7px;
+  height: 7px;
+}
+
+html.phone .live-view-done {
+  height: 44px;
+  padding: 0 4px 0 12px;
+  font-size: 17px;
+}
+
+html.phone .live-view-address {
+  gap: 6px;
+  margin-inline: -6px;
+}
+
+html.phone .live-view-tool {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+html.phone .live-view-tool.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+html.phone .live-view-field {
+  height: 42px;
+  padding-inline: 12px;
+  border-radius: 12px;
+}
+
+html.phone .live-view-field input,
+html.phone .live-view-url {
+  font-size: 17px;
+}
+
+html.phone .live-view-url {
+  inset: 0 12px 0 38px;
+}
+
+html.phone .live-view-scheme {
+  margin-inline-end: 10px;
 }
 
 html.phone .live-view-address {
@@ -16281,7 +16357,7 @@ html.phone .live-view-screen {
 
 html.phone .live-view-page {
   flex: none;
-  margin: auto;
+  margin: 0 auto auto;
 }
 
 html.phone .live-view-picture {

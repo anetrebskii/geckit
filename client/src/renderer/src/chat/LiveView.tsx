@@ -170,13 +170,13 @@ export function LiveView({ name, api, computer, token, title = `Sign in: geckit:
             </span>
           </div>
           <form className="live-view-address" onSubmit={(event) => { event.preventDefault(); const url = addressOf(draft ?? ''); setDraft(undefined); if (url !== '') send({ type: 'go', url }); keys.current?.focus({ preventScroll: true }) }}>
-            <button type="button" className="live-view-tool" aria-label="Back" title="Back" disabled={state !== 'live'} onClick={() => send({ type: 'back' })}><Icon name="left" size={16} /></button>
+            <button type="button" className="live-view-tool" aria-label="Back" title="Back" disabled={state !== 'live'} onClick={() => send({ type: 'back' })}><Icon name="left" size={phone() ? 22 : 16} /></button>
             <label className={`live-view-field${draft === undefined ? '' : ' editing'}`}>
-              <span className={`live-view-scheme${address.secure ? ' secure' : ''}`} aria-hidden="true"><Icon name={address.secure ? 'check' : 'globe'} size={12} /></span>
+              <span className={`live-view-scheme${address.secure ? ' secure' : ''}`} aria-hidden="true"><Icon name={address.secure ? 'check' : 'globe'} size={phone() ? 14 : 12} /></span>
               <input type="text" inputMode="url" enterKeyHint="go" aria-label="Address" placeholder={state === 'live' ? 'Search or enter address' : ''} value={draft ?? shown} disabled={state !== 'live'} autoCapitalize="off" autoCorrect="off" spellCheck={false} onFocus={(event) => { setDraft(shown); const field = event.currentTarget; requestAnimationFrame(() => field.select()) }} onBlur={() => setDraft(undefined)} onChange={(event) => setDraft(event.target.value)} />
               {draft !== undefined || shown === '' ? null : <span className="live-view-url" aria-hidden="true"><b>{address.host}</b>{address.rest}</span>}
             </label>
-            {phone() ? <button type="button" className="live-view-tool" aria-label="Keyboard" title="Keyboard" disabled={state !== 'live'} onClick={() => keys.current?.focus()}><Icon name="keyboard" size={16} /></button> : null}
+            {phone() ? <button type="button" className={`live-view-tool${typing ? ' on' : ''}`} aria-label={typing ? 'Hide keyboard' : 'Keyboard'} aria-pressed={typing} disabled={state !== 'live'} onMouseDown={(event) => event.preventDefault()} onClick={() => { if (typing) keys.current?.blur(); else keys.current?.focus() }}><Icon name="keyboard" size={20} /></button> : null}
           </form>
           <button type="button" className="live-view-done" onClick={done}>Done</button>
         </header>
@@ -203,7 +203,13 @@ export function LiveView({ name, api, computer, token, title = `Sign in: geckit:
                   height={frame.height}
                   draggable={false}
                   onLoad={(event) => { const screen = event.currentTarget.closest('.live-view-screen'); if (phone() && screen !== null && !centered.current) { centered.current = true; screen.scrollLeft = (screen.scrollWidth - screen.clientWidth) / 2 } }}
-                  onClick={(event) => { const point = at(event); if (point !== undefined) send({ type: 'click', ...point }); keys.current?.focus({ preventScroll: true }) }}
+                  onClick={(event) => {
+                    const point = at(event)
+                    if (point !== undefined) send({ type: 'click', ...point })
+                    const field = point === undefined || frame?.fields === undefined || frame.fields.some((one) => point.x >= one.x && point.x <= one.x + one.width && point.y >= one.y && point.y <= one.y + one.height)
+                    if (!phone() || field) keys.current?.focus({ preventScroll: true })
+                    else keys.current?.blur()
+                  }}
                   onWheel={(event) => { const point = at(event); if (point !== undefined) send({ type: 'wheel', ...point, dy: Math.round(event.deltaY) }) }}
                 />
                 {typing && state === 'live' && frame.caret !== undefined ? <span

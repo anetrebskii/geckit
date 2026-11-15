@@ -9,7 +9,7 @@ import { makeTestAccount, profilesFolder, updateTestProfile } from '../src/cli/t
 import { exportTestProfile, importTestProfile } from '../src/cli/profile-archive'
 import { registerBrowserConversation } from '../src/cli/browser-lifecycle'
 
-interface Reply { readonly ok: boolean; readonly error?: string; readonly result?: { readonly id?: number; readonly title?: string; readonly lines?: string[]; readonly text?: string; readonly jpeg?: string; readonly png?: string; readonly gif?: string; readonly sheet?: string; readonly value?: { readonly cookie?: string; readonly stored?: string; readonly moves?: number; readonly trusted?: boolean; readonly webdriver?: boolean }; readonly url?: string; readonly width?: number; readonly height?: number; readonly dark?: boolean; readonly still?: boolean; readonly caret?: { readonly x: number; readonly y: number; readonly height: number; readonly color?: string } } }
+interface Reply { readonly ok: boolean; readonly error?: string; readonly result?: { readonly id?: number; readonly title?: string; readonly lines?: string[]; readonly text?: string; readonly jpeg?: string; readonly png?: string; readonly gif?: string; readonly sheet?: string; readonly value?: { readonly cookie?: string; readonly stored?: string; readonly moves?: number; readonly trusted?: boolean; readonly webdriver?: boolean }; readonly url?: string; readonly width?: number; readonly height?: number; readonly dark?: boolean; readonly still?: boolean; readonly caret?: { readonly x: number; readonly y: number; readonly height: number; readonly color?: string }; readonly fields?: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[] } }
 const wait = (ms = 50): Promise<void> => new Promise((done) => setTimeout(done, ms))
 const roots: string[] = []
 let child: ChildProcess | undefined
@@ -104,7 +104,10 @@ it.skipIf(process.env['GECKIT_CAMOUFOX_INTEGRATION'] !== '1')('runs persistent p
   await ask(first, { cmd: 'view-input', input: { type: 'click', x: 10, y: 10 } })
   await shown('/start')
   await ask(first, { cmd: 'view-input', input: { type: 'click', x: 140, y: 155 } })
-  const empty = (await ask(first, { cmd: 'view-frame' })).result?.caret
+  const focused = (await ask(first, { cmd: 'view-frame' })).result
+  expect(focused?.fields?.some((one) => 140 >= one.x && 140 <= one.x + one.width && 155 >= one.y && 155 <= one.y + one.height)).toBe(true)
+  expect(focused?.fields?.some((one) => 600 >= one.x && 600 <= one.x + one.width && 600 >= one.y && 600 <= one.y + one.height)).toBe(false)
+  const empty = focused?.caret
   expect(empty).toMatchObject({ height: expect.any(Number), color: 'rgb(0, 0, 0)' })
   await ask(first, { cmd: 'view-input', input: { type: 'text', text: 'abc' } })
   const typed = (await ask(first, { cmd: 'view-frame' })).result?.caret

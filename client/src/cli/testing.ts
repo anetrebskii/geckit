@@ -98,6 +98,24 @@ export const CARET_SCRIPT = `(() => {
   return done({ left: box.left + left, top: box.top + top, width: 0, height }, height)
 })()`
 
+/** Where the page's text fields are, so the phone raises its keyboard only for a tap on one. */
+export const FIELDS_SCRIPT = `(() => {
+  const kinds = new Set(['', 'text', 'search', 'url', 'tel', 'email', 'password', 'number'])
+  const found = []
+  const look = (doc, dx, dy) => {
+    for (const one of doc.querySelectorAll('input, textarea, [contenteditable=""], [contenteditable="true"], iframe')) {
+      if (found.length >= 80) return
+      const box = one.getBoundingClientRect()
+      if (box.width <= 0 || box.height <= 0 || box.bottom + dy < 0 || box.top + dy > innerHeight || box.right + dx < 0 || box.left + dx > innerWidth) continue
+      if (one.tagName === 'IFRAME') { try { if (one.contentDocument) look(one.contentDocument, dx + box.left, dy + box.top) } catch {} continue }
+      if (one.disabled || one.readOnly || (one.tagName === 'INPUT' && !kinds.has(one.type))) continue
+      found.push({ x: Math.round(dx + box.left), y: Math.round(dy + box.top), width: Math.round(box.width), height: Math.round(box.height) })
+    }
+  }
+  look(document, 0, 0)
+  return found
+})()`
+
 /** Playwright's launch error ends with its call log; the cause is in the browser's own error lines and exit. */
 export function launchFailure(message: string): string {
   const lines = message.split('\n').map((one) => one.trim())
@@ -318,7 +336,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       }
       case 'record': return record(request)
       case 'view-open': if (viewPage === undefined || viewPage.isClosed()) { viewOpeners.length = 0; viewPage = await context.newPage(); follow(viewPage) } await viewPage.setViewportSize(VIEW_SIZE); await viewPage.bringToFront(); if (request.url) await navigate(viewPage, request.url); return { ...VIEW_SIZE }
-      case 'view-frame': { const page = viewTarget(); return { jpeg: (await page.screenshot({ type: 'jpeg', quality: 60 })).toString('base64'), ...(page.viewportSize() ?? VIEW_SIZE), url: page.url(), title: await page.title(), ...await page.evaluate(CARET_SCRIPT).then((caret) => caret === null || caret === undefined ? {} : { caret: caret as NonNullable<ViewFrame['caret']> }, () => ({})) } satisfies ViewFrame }
+      case 'view-frame': { const page = viewTarget(); return { jpeg: (await page.screenshot({ type: 'jpeg', quality: 60 })).toString('base64'), ...(page.viewportSize() ?? VIEW_SIZE), url: page.url(), title: await page.title(), ...await page.evaluate(CARET_SCRIPT).then((caret) => caret === null || caret === undefined ? {} : { caret: caret as NonNullable<ViewFrame['caret']> }, () => ({})), ...await page.evaluate(FIELDS_SCRIPT).then((fields) => ({ fields: fields as NonNullable<ViewFrame['fields']> }), () => ({})) } satisfies ViewFrame }
       case 'view-input': return viewInput(request.input)
       case 'view-close': { const pages = [...viewOpeners, ...(viewPage === undefined ? [] : [viewPage])]; viewPage = undefined; viewOpeners.length = 0; for (const page of pages) if (!page.isClosed()) await page.close(); return {} }
       default: throw new Error(`Unknown command ${request.cmd}.`)
