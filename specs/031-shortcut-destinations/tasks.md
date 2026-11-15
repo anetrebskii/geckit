@@ -44,8 +44,10 @@ Delivery: draft [PR #87](https://github.com/anetrebskii/geckit/pull/87), impleme
 
 Alex approved test threads in the originating Discord #general on 2026-11-15. Existing T010 is compositional fixture proof, not live acceptance. Read-only discovery was attempted, but this worker received operator-access refusal and could not read the supplied Manager session. No external write was made.
 
-- [ ] T016 Resolve verified guild ID and parent #general stable ID for source thread 1571525680355606641 through authorized native/Manager read-only access; never select by name alone.
+- [x] T016 Record authenticated Manager attribution supplied by Alex: guild 1571159930566742077, parent 1571159931384762520, thread 1571525680355606641, starter 1410142426273943622; parent attribution is resolved.
 - [ ] T017 Establish an operator-provisioned isolated runtime for this branch with real provider and connected Discord/broker, without restarting the working GeckIt or duplicating its bot gateway consumer.
 - [ ] T018 Complete two real runs, preserve native receipts/links, obtain real Alex replies in their threads, and verify original-worker Manager continuation and cross-run isolation.
 
-Blocked details and exact missing parent URL/runtime preparation are in the report. Test publication is authorized; destination attribution and runtime access remain unresolved. Entire live acceptance is not complete.
+- [ ] T019 Before any write, verify the name general for the established guild/parent through authenticated Discord Set up / native inspect, without bypassing worker Operator refusal.
+
+Concrete operator installation commands and runtime preparation are in the report. Test publication is authorized; parent attribution is resolved; independent runtime provisioning and channel-name verification remain open. Entire live acceptance is not complete.
