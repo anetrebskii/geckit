@@ -15,13 +15,14 @@ export async function discordSettings(context: ChannelSettingsContext, request: 
   if (action === 'forget') await context.configure({ secrets: { botToken: null } })
   let found: DiscordSetupView | undefined
   if (action === 'connect' || action === 'check') {
-    if (action === 'connect' && (typeof token !== 'string' || token.trim() === '')) throw new Error('Enter your bot token.')
+    const entered = typeof token === 'string' ? token.trim() : ''
+    if (entered === '' && context.secret('botToken') === undefined) throw new Error('Enter your bot token.')
     const allow = context.config()['allow']
-    found = await context.inspect({ ...(typeof token === 'string' && action === 'connect' ? { token: token.trim() } : {}), people: Array.isArray(allow) ? allow : [] }) as DiscordSetupView
+    found = await context.inspect({ ...(entered === '' ? {} : { token: entered }), people: Array.isArray(allow) ? allow : [] }) as DiscordSetupView
     if (found.token === 'refused') throw new Error('Discord did not accept this token. Reset it in the Developer Portal and paste the new one.')
-    if (found.token === 'ok' && action === 'connect' && typeof token === 'string') await context.configure({ secrets: { botToken: token.trim() } })
+    if (found.token === 'ok' && entered !== '') await context.configure({ secrets: { botToken: entered } })
   } else if (action !== 'forget' && request.state !== null && typeof request.state === 'object' && !Array.isArray(request.state) && 'token' in request.state) found = request.state as DiscordSetupView
-  sections.push({ fields: [{ key: 'token', label: context.secret('botToken') === undefined ? 'Bot token' : 'Replace bot token', type: 'secret' }], actions: [{ label: 'Check and save token', action: 'connect', primary: true }, { label: 'Check saved setup', action: 'check' }, ...(context.secret('botToken') === undefined ? [] : [{ label: 'Forget token', action: 'forget', confirm: 'Forget the saved bot token? Discord will stop until a token is saved.' }])] })
+  sections.push({ fields: [{ key: 'token', label: context.secret('botToken') === undefined ? 'Bot token' : 'Replace bot token', type: 'secret', ...(context.secret('botToken') === undefined ? {} : { help: 'Leave empty to check the saved token. A new one is saved once Discord accepts it.' }) }], actions: [{ label: context.secret('botToken') === undefined ? 'Check and save token' : 'Check connection', action: 'connect', primary: true }, ...(context.secret('botToken') === undefined ? [] : [{ label: 'Forget token', action: 'forget', confirm: 'Forget the saved bot token? Discord will stop until a token is saved.' }])] })
   if (found?.token === 'ok') {
     sections.push({ title: found.bot.name, text: ['Token checked', found.messageContent ? 'Message Content Intent is on.' : 'Message Content Intent is off. Enable it under Bot, Privileged Gateway Intents.'], actions: [{ label: 'Open Bot settings', href: `${DISCORD_PORTAL}/${found.application}/bot` }, { label: 'Add to server', href: found.invite }] })
     sections.push({ title: 'Servers and channels', text: found.servers.length === 0 ? ['The bot is not in a server yet. Add it to one you manage.'] : found.servers.flatMap((server) => [server.name, ...(server.unreadable === true ? ['Cannot list its channels.'] : server.channels.map((channel) => `#${channel.name} / ${channel.id}`))]) })

@@ -931,8 +931,8 @@ textarea {
 .dialog.settings-dialog {
   display: flex;
   flex-direction: column;
-  width: min(760px, 94vw);
-  height: min(560px, 94vh);
+  width: min(920px, 94vw);
+  height: min(760px, 90vh);
   max-height: none;
   overflow: hidden;
 }
@@ -1669,12 +1669,34 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
   font-size: 11px;
 }
 
-.channel-on {
+.channel-auto-update {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
   color: var(--text-dim);
   font-size: 11px;
+  cursor: pointer;
+}
+
+.channel-auto-update .channel-switch {
+  margin-inline-start: 0;
+}
+
+/* The switch sits at the row's trailing edge, as in the Assistants list. */
+.channel-switch {
+  margin-inline-start: 4px;
+  cursor: pointer;
+  transition: background var(--quick) var(--ease), border-color var(--quick) var(--ease);
+}
+
+.channel-switch::before {
+  transition: transform var(--quick) var(--ease);
+}
+
+.channel-switch:focus-visible,
+.channel-row .provider-library-remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* The line under a channel's name leads with a dot in its state's colour. */
@@ -1706,7 +1728,6 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
 .channel-state.connected > i {
   background: var(--success-text);
   opacity: 1;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success-text) 22%, transparent);
 }
 
 .channel-state.starting > i,
@@ -1767,8 +1788,7 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
-  animation: pop 160ms var(--ease);
+  animation: pop var(--settle) var(--ease);
 }
 
 .channel-panel .field:last-of-type {
@@ -1815,7 +1835,7 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
 
 .channel-screen .channel-screen-section h4 {
   margin: 0 0 6px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
 }
 

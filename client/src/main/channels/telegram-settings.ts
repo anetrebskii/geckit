@@ -53,8 +53,9 @@ export async function telegramSettings(context: ChannelSettingsContext, request:
   } else if (current.pairing !== undefined) {
     sections.push({ title: 'Connect in Telegram', text: current.pairing.command === undefined ? ['Open your bot in Telegram and press Start. Then return here to confirm your account.', 'Pairing link expires in ten minutes.'] : ['Send this one-time command in the topic, then confirm it here:', current.pairing.command, 'Keep bot privacy enabled. Use addressed commands or replies to this bot.', 'Pairing link expires in ten minutes.'], actions: [{ label: 'Open Telegram', href: current.pairing.url }, action('Try again', 'retry'), action('Cancel', 'cancel')] })
   } else {
-    actions.push(action(current.state === 'disconnected' ? 'Connect Telegram' : 'Change connection', 'create', true), action('I already have a bot', 'private'), action('Team topic', 'team'))
-    if (current.state !== 'disconnected') actions.push(action('Try again', 'retry'), { label: 'Disconnect', action: 'disconnect', confirm: 'Disconnect Telegram? This account loses access. Workers continue; Manager settings and history are kept.' })
+    actions.push(action(current.state === 'disconnected' ? 'Connect Telegram' : 'Change connection', 'create', current.state !== 'connected'))
+    if (current.state !== 'disconnected' && current.state !== 'connected') actions.unshift(action('Try again', 'retry', true))
+    if (current.state !== 'disconnected') actions.push({ label: 'Disconnect', action: 'disconnect', confirm: 'Disconnect Telegram? This account loses access. Workers continue; Manager settings and history are kept.' })
   }
   if (current.pendingLate > 0) details.push(`${String(current.pendingLate)} delayed requests need confirmation in Telegram.`)
   for (const link of current.links ?? []) sections.push({ title: link.title, text: [`Shared until ${new Date(link.expiresAt).toISOString()}`], actions: [{ label: 'Stop sharing', action: `stop:${link.id}`, confirm: `Stop sharing ${link.title}?` }] })

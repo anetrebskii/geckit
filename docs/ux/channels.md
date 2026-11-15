@@ -10,7 +10,7 @@ Settings, Channels, after Integrations. Assistant libraries are added in Assista
 
 - Heading "Channels", with "Add channel" at its right, as Assistants has "Add assistant".
 - Under it one line: "Places outside GeckIt where people write to your conversations and Manager. Telegram, Slack and Discord come with GeckIt; add others from GitHub."
-- Telegram, Slack and Discord use the same row with On and Set up. Bundled rows cannot be removed. Their module-owned connection screens use the same declarative contract available to installed libraries.
+- Telegram, Slack and Discord use the same row with Set up and the on switch. Bundled rows cannot be removed. Their module-owned connection screens use the same declarative contract available to installed libraries.
 - Telegram's module supplies bot creation, pairing, private/team setup, disconnect and shared links. Telegram controls do not appear in Manager.
 - Slack uses manifest fields for bot token and app token. Each Slack thread is its own Manager thread (see [Manager threads](manager-threads.md)).
 - Discord's module supplies token checks and configuration through the generic settings hook (see [Discord channel](discord-channel.md)).
@@ -24,7 +24,7 @@ Until the service answers, the list shows three placeholder rows in the shape of
 
 ## A channel's row
 
-Icon, name and the line below, with its repository shown on hover; then a tick "On", "Set up" and "Remove".
+Icon, name and the line below, with its repository shown on hover; then "Set up", "Remove" and, at the trailing edge, a switch that turns the channel on and off (the same switch as in Assistants). "Update channels automatically" is a switch too.
 
 The line under the name says where it stands, in its library's words where it gave any:
 

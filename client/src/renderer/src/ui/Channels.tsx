@@ -109,9 +109,9 @@ function ChannelRow({ setting, view, api }: {
         <strong>{setting.info.name}</strong>
         <span className={`channel-state ${view.state}`} title={setting.info.source}><i aria-hidden="true" /><span>{stateLine(view)}</span></span>
       </span>
-      <label className="check channel-on"><input type="checkbox" checked={setting.enabled} onChange={(event) => toggle(event.target.checked)} />On</label>
       <button ref={setUpButton} type="button" className="quiet provider-library-remove" aria-expanded={open} onClick={() => open ? close() : setOpen(true)}>Set up<Icon name="down" size={12} /></button>
       {view.builtIn === true ? null : <button ref={removeButton} type="button" className="quiet provider-library-remove" aria-label={`Remove ${setting.info.name}`} aria-expanded={confirming} disabled={busy} onClick={() => setConfirming((current) => !current)}>Remove</button>}
+      <input className="assistant-toggle channel-switch" type="checkbox" role="switch" aria-label={`Use ${setting.info.name}`} title={setting.enabled ? 'On' : 'Off'} checked={setting.enabled} onChange={(event) => toggle(event.target.checked)} />
       {error === '' ? null : <p className="provider-library-failure-reason" role="alert">{error}</p>}
       {confirming ? <div className="provider-library-confirm">
         <span>Remove {setting.info.name}? It stops, its copy moves to Trash, and GeckIt forgets its settings and secrets. Conversations it started stay.</span>
@@ -190,7 +190,7 @@ export function Channels({ settings, change, api = window.geckit.channels }: { r
       {adding ? <p className="provider-library-trust">Channel code runs on this computer and reaches the conversations you allow it. Add a repository you trust.</p> : null}
       {message === '' ? null : <span role="status">{message}</span>}
       <div className="provider-library-updates">
-        <label className="check"><input type="checkbox" checked={settings.channelAutoUpdate} onChange={(event) => change({ channelAutoUpdate: event.target.checked })} />Update channels automatically</label>
+        <label className="channel-auto-update"><input className="assistant-toggle channel-switch" type="checkbox" role="switch" checked={settings.channelAutoUpdate} onChange={(event) => change({ channelAutoUpdate: event.target.checked })} />Update channels automatically</label>
         {rows.length === 0 ? null : <button type="button" className="quiet" disabled={checking} onClick={() => {
           setChecking(true)
           setMessage('')
