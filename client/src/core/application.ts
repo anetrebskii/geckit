@@ -51,6 +51,8 @@ import type { SessionProvider } from '../shared/api'
 import type { CoreRuntime } from './runtime'
 import { dataDirectory } from './platform'
 import { runningSecrets } from './secrets'
+import type { SecretEntry, SecretLifetime } from '../shared/secrets'
+import type { SealedValue } from '../shared/secret-seal'
 
 export function uninstallProvider(runtime: Pick<CoreRuntime, 'managerView'> & { readonly sessions: Pick<Sessions, 'providerInUse' | 'setInstructions' | 'refresh'> }, id: string, safe = false): Promise<void> {
   const { sessions } = runtime
@@ -189,9 +191,9 @@ export function application(runtime: CoreRuntime) {
     'manager:receipt': (...args: Parameters<typeof manager.receipt>) => manager.receipt(...args),
     'manager:answerApp': (...args: Parameters<typeof manager.answerApp>) => manager.answerApp(...args),
     'manager:answerCard': (...args: Parameters<typeof manager.answerCard>) => manager.answerCard(...args),
+    'manager:unfollow': (...args: Parameters<typeof manager.unfollow>) => manager.unfollow(...args),
     'manager:voice-memos': () => voiceMemosConnection({ transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }, manager.voiceMemosDirectory()),
     'channels:view': () => channels.view(),
-    'manager:unfollow': (...args: Parameters<typeof manager.unfollow>) => manager.unfollow(...args),
     'channels:install': (url: string) => channels.install(url),
     'channels:configure': (id: ChannelId, change: ChannelChange) => channels.configure(id, change),
     'channels:remove': (id: ChannelId) => channels.remove(id),
@@ -284,6 +286,9 @@ export function application(runtime: CoreRuntime) {
     'secrets:list': async () => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return (await secrets.list()).secrets },
     'secrets:history': async (name: string) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); const key = (id: string): string => id.split(':').pop() ?? id; const titles = new Map(runtime.current().sessions.map((one) => [key(one.id), one.title])); return (await secrets.history(name, 20)).records.map((one) => one.taskId === undefined ? one : { ...one, taskId: titles.get(key(one.taskId)) ?? 'a finished conversation' }) },
     'secrets:revoke': async (name: string) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return (await secrets.revoke(name)).removed },
+    'secrets:prepare': async (entry: SecretEntry) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return secrets.prepareEntry(entry) },
+    'secrets:save': async (requestId: string, ciphertext: SealedValue, lifetime: SecretLifetime) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return (await secrets.saveEntry(requestId, ciphertext, lifetime)).name },
+    'secrets:update': async (entry: SecretEntry) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return (await secrets.updateEntry(entry)).name },
     'secrets:status': async (): Promise<{ readonly store?: string; readonly locked?: boolean; readonly problem?: string }> => { const secrets = runningSecrets(); if (secrets === undefined) return { problem: 'the secrets broker has not started' }; try { const status = await secrets.status(); return { store: status.store, locked: status.locked } } catch (error) { return { problem: (error as Error).message } } },
     'hosts:list': () => routes.hosts.views(),
     'hosts:known': () => routes.hosts.known(),

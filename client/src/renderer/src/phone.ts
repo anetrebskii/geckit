@@ -753,6 +753,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       history: () => Promise.reject(new Error('Manage secrets on the computer.')),
       revoke: () => Promise.reject(new Error('Manage secrets on the computer.')),
       status: () => Promise.resolve({ problem: 'secrets are managed on the computer' }),
+      prepare: () => Promise.reject(new Error('Manage secrets on the computer.')),
+      save: () => Promise.reject(new Error('Manage secrets on the computer.')),
+      update: () => Promise.reject(new Error('Manage secrets on the computer.')),
     },
     hosts: {
       list: () => call('hosts.list'),

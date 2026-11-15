@@ -13,6 +13,8 @@ import { telegramSettings } from '../../main/channels/telegram-settings'
 import { discordSettings } from '../../main/channels/discord-settings'
 import type { ChannelScreenRequest } from '../../shared/channel-ui'
 import type { Json } from '../../main/channels/channel-api'
+import type { SecretEntry, SecretMetadata } from '../../shared/secrets'
+import type { SealedValue } from '../../shared/secret-seal'
 import './styles.css'
 import './chat/phone-home.css'
 
@@ -145,6 +147,45 @@ Object.assign(window.geckit, { channels: {
   on: (said: (view: ChannelsView) => void) => { channelListeners.add(said); return () => channelListeners.delete(said) },
 } })
 
+const { receiver } = await import('../../shared/secret-seal')
+let previewSecrets: SecretMetadata[] = query.has('noSecrets') ? [] : [
+  { name: 'timeweb-cloud-key', kind: 'http', places: ['timeweb.cloud', '*.timeweb.cloud'], lifetime: 'keep', cleaned: true, createdAt: Date.now() - 86_400_000 },
+  { name: 'github-password', kind: 'website', places: ['https://github.com'], user: 'alex@example.com', lifetime: '1d', expiresAt: Date.now() + 5 * 3_600_000, cleaned: true, createdAt: Date.now() - 3_600_000, lastUsedAt: Date.now() - 120_000 },
+]
+const previewPending = new Map<string, { entry: SecretEntry; open: Awaited<ReturnType<typeof receiver>>['open'] }>()
+const previewWait = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, query.has('secretSlow') ? 1500 : 300))
+const previewKeep = (entry: SecretEntry, at = Date.now()): void => {
+  const was = previewSecrets.find((one) => one.name === entry.name)
+  const hours: Record<string, number> = { '15m': 0.25, '1h': 1, '1d': 24 }
+  const next: SecretMetadata = { ...(was ?? { cleaned: true, createdAt: at }), name: entry.name, kind: entry.kind, places: [...entry.places], ...(entry.note === '' ? {} : { note: entry.note }), ...(entry.user === '' ? {} : { user: entry.user }), lifetime: entry.lifetime, ...(hours[entry.lifetime] === undefined ? {} : { expiresAt: at + (hours[entry.lifetime] ?? 0) * 3_600_000 }) }
+  if (entry.note === '') delete (next as { note?: string }).note
+  if (entry.user === '') delete (next as { user?: string }).user
+  if (hours[entry.lifetime] === undefined) delete (next as { expiresAt?: number }).expiresAt
+  previewSecrets = [...previewSecrets.filter((one) => one.name !== entry.name), next].sort((a, b) => a.name.localeCompare(b.name))
+}
+Object.assign(window.geckit, { secrets: {
+  status: async () => query.has('secretsDown') ? { problem: 'The secrets broker is not reachable: connect ENOENT' } : { store: 'keychain', locked: false },
+  list: async () => previewSecrets,
+  history: async () => [],
+  revoke: async (name: string) => { previewSecrets = previewSecrets.filter((one) => one.name !== name); return 1 },
+  prepare: async (entry: SecretEntry) => {
+    await previewWait()
+    if (query.has('secretLocked')) throw new Error('The credential store is locked; unlock it and try again.')
+    const keys = await receiver()
+    const requestId = crypto.randomUUID()
+    previewPending.set(requestId, { entry, open: keys.open })
+    return { requestId, brokerKey: keys.publicKey }
+  },
+  save: async (requestId: string, sealed: SealedValue) => {
+    const pending = previewPending.get(requestId)
+    if (pending === undefined) throw new Error('The request is unknown, expired or the value could not be opened.')
+    const value = await pending.open(sealed, 'geckit-secret-v1')
+    console.info(`preview broker opened ${String(value.length)} characters for ${pending.entry.name}`)
+    previewKeep(pending.entry)
+    return pending.entry.name
+  },
+  update: async (entry: SecretEntry) => { await previewWait(); if (query.has('secretLocked')) throw new Error('The credential store is locked; unlock it and try again.'); previewKeep(entry); return entry.name },
+} })
 const { SettingsDialog } = await import('./ui/SettingsDialog')
 const { PhoneVpnSettings } = await import('./ui/VpnIpSettings')
 const { Cell, Page } = await import('./chat/PhoneKit')
@@ -204,7 +245,7 @@ function Preview(): React.JSX.Element {
   if (query.has('phone')) return open ? <PhoneVpnSettings settings={settings} save={save} back="Settings" onBack={() => setOpen(false)} /> : <Page title="Settings"><div className="phone-group"><Cell label="VPN IP check" value={settings.vpnIpCheck ? 'On' : 'Off'} onPress={() => setOpen(true)} /></div></Page>
   return <>
     <header className="board-head"><h1>GeckIt</h1><button ref={trigger} type="button" className="quiet" onClick={() => setOpen(true)}>Settings</button></header>
-    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : query.get('section') === 'integrations' ? 'integrations' : query.get('section') === 'channels' ? 'channels' : 'assistants'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
+    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : query.get('section') === 'integrations' ? 'integrations' : query.get('section') === 'channels' ? 'channels' : query.get('section') === 'secrets' ? 'secrets' : 'assistants'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
   </>
 }
 

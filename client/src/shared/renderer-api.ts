@@ -52,7 +52,8 @@ import type {
 import type { GeckoAction, GeckoHanded, GeckoItem, GeckoRing, GeckoView } from './gecko'
 import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from './hosts'
 import type { Link } from './links'
-import type { SecretMetadata, SecretUse } from './secrets'
+import type { SecretEntry, SecretLifetime, SecretMetadata, SecretUse } from './secrets'
+import type { SealedValue } from './secret-seal'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from './providers'
 import { pieceOf } from './pairing'
 import type { Piece } from './pairing'
@@ -115,8 +116,8 @@ return {
     receipt: (id: ManagerSendRequest['id']): Promise<ManagerRequestReceipt | undefined> => rendererTransport.invoke('manager:receipt', id),
     answer: (request: ManagerAnswerRequest): Promise<ManagerAnswerResult> => rendererTransport.invoke('manager:answerApp', request),
     answerCard: (session: string, card: string, answer: string): Promise<boolean> => rendererTransport.invoke('manager:answerCard', session, card, answer),
-    onItems: (said: (items: SessionItems) => void): (() => void) => rendererTransport.listen('manager:items', said),
     unfollow: (thread: string, worker: string): Promise<ManagerView> => rendererTransport.invoke('manager:unfollow', thread, worker),
+    onItems: (said: (items: SessionItems) => void): (() => void) => rendererTransport.listen('manager:items', said),
     configure: (change: Partial<ManagerConfig>): Promise<ManagerView> => rendererTransport.invoke('manager:configure', change),
     pause: (): Promise<ManagerView> => rendererTransport.invoke('manager:pause'),
     resume: (): Promise<ManagerView> => rendererTransport.invoke('manager:resume'),
@@ -380,6 +381,9 @@ return {
     history: (name: string): Promise<SecretUse[]> => rendererTransport.invoke('secrets:history', name),
     revoke: (name: string): Promise<number> => rendererTransport.invoke('secrets:revoke', name),
     status: (): Promise<{ readonly store?: string; readonly locked?: boolean; readonly problem?: string }> => rendererTransport.invoke('secrets:status'),
+    prepare: (entry: SecretEntry): Promise<{ readonly requestId: string; readonly brokerKey: string }> => rendererTransport.invoke('secrets:prepare', entry),
+    save: (requestId: string, ciphertext: SealedValue, lifetime: SecretLifetime): Promise<string> => rendererTransport.invoke('secrets:save', requestId, ciphertext, lifetime),
+    update: (entry: SecretEntry): Promise<string> => rendererTransport.invoke('secrets:update', entry),
   },
 
   /** Other computers conversations run on, reached over SSH. */

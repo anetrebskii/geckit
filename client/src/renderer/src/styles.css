@@ -16023,6 +16023,21 @@ html.phone .browser-profiles-form-wide { grid-column: 1; }
 .secret-history td:first-child, .secret-history td:nth-child(3) { white-space: nowrap; }
 .secrets-section .secret-history-empty, .secrets-section .secret-error { margin-inline-start: 44px; color: var(--text-faint); }
 .secrets-section .secret-error { color: var(--danger); overflow-wrap: anywhere; }
+.secrets-section .browser-profiles-header .secrets-heading { min-width: 0; }
+.secret-form .secret-form-label { color: var(--text); font-size: 12px; text-align: end; }
+.secret-form-fixed { color: var(--text); font-size: 12px; overflow-wrap: anywhere; user-select: text; }
+.secret-form .secret-form-name { font-family: var(--font-code); }
+.secret-form .secret-segments { align-self: flex-start; flex-wrap: wrap; max-width: 100%; }
+.secret-value { position: relative; display: flex; min-width: 0; }
+.secret-value .secret-value-eye { position: absolute; inset-block-start: 50%; inset-inline-end: 3px; translate: 0 -50%; }
+.secret-value.multiline .secret-value-eye { inset-block-start: 3px; translate: none; }
+.secret-value input, .secret-value textarea { flex: 1; width: 100%; min-width: 0; padding: 5px 32px 5px 8px; color: var(--text); font-family: var(--font-code); background: var(--field); border-radius: var(--radius); }
+.secret-value textarea { min-height: 76px; resize: vertical; line-height: 1.4; }
+.secret-value textarea.masked { -webkit-text-security: disc; }
+.secret-value input::placeholder, .secret-value textarea::placeholder { font-family: var(--font-ui); }
+.secrets-section .secret-form-error { color: var(--danger); overflow-wrap: anywhere; user-select: text; }
+html.phone .secret-form .secret-form-label { text-align: start; }
+@media (max-width: 520px) { .secret-form .secret-form-label { text-align: start; } }
 
 /* Inline screenshots keep their aspect ratio and open in the transcript's image viewer. */
 .prose-picture { display: inline-block; max-width: 100%; }
