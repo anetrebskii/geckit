@@ -38,3 +38,14 @@
 T003 precedes T004-T006/T008/T009. T004/T008/T009 precede T010/T011. T007 waits for UX approval; T012 follows it. T013-T015 follow implementation. T009 can run alongside lifecycle work after contract agreement. US1 is independently tested by save/reload, US2 by two completions and continuations, US3 by refusal/restart/uncertainty fixtures. Full objective remains all stories; no reduced MVP substitutes for requested scope.
 
 Delivery: draft [PR #87](https://github.com/anetrebskii/geckit/pull/87), implementation commit b3b4cea. No task temporary worktree existed; permanent checkout and unrelated edits retained. Live channel checks remain unverified with their exact required safe destination documented in the report.
+
+
+## Authorized live follow-up
+
+Alex approved test threads in the originating Discord #general on 2026-11-15. Existing T010 is compositional fixture proof, not live acceptance. Read-only discovery was attempted, but this worker received operator-access refusal and could not read the supplied Manager session. No external write was made.
+
+- [ ] T016 Resolve verified guild ID and parent #general stable ID for source thread 1571525680355606641 through authorized native/Manager read-only access; never select by name alone.
+- [ ] T017 Establish an operator-provisioned isolated runtime for this branch with real provider and connected Discord/broker, without restarting the working GeckIt or duplicating its bot gateway consumer.
+- [ ] T018 Complete two real runs, preserve native receipts/links, obtain real Alex replies in their threads, and verify original-worker Manager continuation and cross-run isolation.
+
+Blocked details and exact missing parent URL/runtime preparation are in the report. Test publication is authorized; destination attribution and runtime access remain unresolved. Entire live acceptance is not complete.

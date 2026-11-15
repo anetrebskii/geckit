@@ -72,9 +72,33 @@ Eight other checklist items are untouched: memo callback policy (no new memo cal
 
 ## Real-channel verification
 
-No project-designated safe Discord destination was found in the repository's existing verification instructions. Historical channel tests do not authorize a new post. Consequently native Discord/Slack delivery and a real user's reply remain unverified.
+### Authorized follow-up on 2026-11-15
 
-To complete the live Discord check, Alex must identify an explicitly disposable server text channel that the configured bot can view, create public threads in, and send to, plus the authorized account that will reply. Use an isolated one-shot manual shortcut with a harmless unique marker and the confirmed destination. Complete it twice, verify two distinct native thread links and matching stored run receipts, reply without a mention in each, verify the original Manager/source identity and cross-run isolation, then remove only the test shortcut if authorized. Also check a controlled permission refusal or deleted test destination. Do not edit any existing real schedule or post in `#general` solely because it was the request's example.
+Alex explicitly answered "Да, создавай" to permission to create test threads in Discord #general and reply in them. That authorization is now recorded and is not being requested again. It applies only to the #general parent of the originating thread, not a namesake on another server. Host attribution supplied by the user: `channel:discord:1571525680355606641`, Manager session `codex:01a1df83-d3d4-7691-8fc8-8a5b8446c695`. These identify a source thread/session, not its guild or parent destination. No guild ID or parent channel ID was inferred from the snowflake.
+
+Read-only discovery through the installed `/Users/alex/.geckit/bin/geckit-local` was attempted at about 11:49 America/New_York. Sandbox initially blocked the local socket; the same supported CLI was then run with approved socket access. This is distinct from GeckIt's own authority refusals below.
+
+| Supported operation | Observed result |
+|---|---|
+| `employees current` | Current source session and unchanged assigned engineer confirmed. |
+| `capabilities` | `Operator access denied. Use authenticated Manager commands for product changes; native permissions remain user-controlled.` |
+| `shortcuts destinations` | Same operator-access refusal; no destination list returned. |
+| `channels list` | Same operator-access refusal; no connected-channel metadata returned. |
+| `manager view` | Same operator-access refusal; native source link and thread metadata unavailable. |
+| `service methods` | `Operator access denied. Use the conversation commands to request changes.` |
+| `show codex:01a1df83-d3d4-7691-8fc8-8a5b8446c695 --last 12 --json` | `No conversation starts with codex:01a1df83-d3d4-7691-8fc8-8a5b8446c695.` The supported ordinary conversation reader cannot expose that Manager session here. |
+
+No attempt was made to remove assistant identity, borrow Manager credentials, read provider transcripts/channel state files, extract tokens, call Discord directly or bypass native approvals. The denied product operations were not retried through another access path.
+
+### Exact blockers and remaining live procedure
+
+Destination is unresolved: need the originating thread's verified `guild_id` plus `parent_id` for #general, or the exact parent link `https://discord.com/channels/<guild_id>/<general_channel_id>`. The supplied `1571525680355606641` is the source thread ID, not an established parent channel ID. An authenticated Manager or the person can provide that attribution through an authorized native surface. A name-only #general match is insufficient.
+
+The repository has an isolated headless test runtime (`client/test/headless-service.test.ts`) and the staged service build, but its fixture uses a controlled provider, synthetic vault and fake channel transport. It is not provisioned with the connected Discord channel or real provider account and is not a live verification path. Installed `service help` advertises standalone `service run --data`, but supported runtime/capability inspection was denied to this worker, so the active host's loaded feature version and an authorized separate live-connected runtime remain unknown. Launching another gateway consumer against the working bot, copying its settings/vault or stripping identity would not establish a safe runtime. None was done. The concrete runtime blocker is an operator-provisioned isolated runtime for this branch, with an authenticated provider and Discord/broker connection, or an authenticated Manager exposing an already available safe runtime. Provisioning must preserve the running service and its active work; no restart is authorized.
+
+After both blockers are resolved, use a new manual-only test shortcut with harmless unique run markers, without editing existing schedules. Complete it twice, preserve each native receipt and thread URL, then send Alex the first real thread link and ask him to reply without a bot mention, for example: "Продолжи этот запуск: добавь строку CONTINUED-A к результату." Request a distinct `CONTINUED-B` reply in the second thread. Verify human author identity through the existing allow list, unchanged source worker/Manager backing session and no cross-run routing; a bot self-message is never human continuation evidence. Remove only the test shortcut if authorized. Controlled permission/deletion tests remain fixture evidence unless separately safe to perform; authorization to publish test threads does not authorize changing real channel permissions or deleting #general.
+
+Live result of this attempt: zero test shortcuts created, zero runs started, zero Discord threads/messages sent, zero native receipts/links and zero human continuation observations. Native Discord/Slack delivery and two-run isolation remain unverified. Existing mock, store and renderer evidence is unchanged. The feature is delivered for review, but the requested live task is blocked and is not claimed complete.
 
 ## Delivery
 
@@ -89,6 +113,6 @@ Changed implementation files are grouped below; unrelated `Package.resolved` and
 - Tests: new `shortcut-channel-destinations.test.ts`, `shortcut-destination-hub.test.ts`, `shortcut-product.test.ts`, `shortcut-runs.test.ts`; existing `employees-team.test.ts`, `manager.test.ts`, `shortcut-persistence.test.ts`, `shortcut-save.test.ts`.
 - Handoff: `docs/ux/shortcut-destinations.md`, this report and `specs/031-shortcut-destinations/`.
 
-UX approval is recorded in the canonical document. FR-001 through FR-012 and SC-001 through SC-004 are mapped above: saved configuration, contract parity, immutable admission, fresh native identity, Manager continuation, true completion, transport semantics, recovery, legacy, cleaning, live safety and renderer evidence. SC-002 has controlled compositional proof; live-native proof is explicitly outstanding. The exact live procedure and missing authorization are above, satisfying the requested permitted blocker-report path. Compilation, a fake receipt and a screenshot are not counted as live delivery.
+UX approval is recorded in the canonical document. FR-001 through FR-012 and SC-001 through SC-004 are mapped above: saved configuration, contract parity, immutable admission, fresh native identity, Manager continuation, true completion, transport semantics, recovery, legacy, cleaning, live safety and renderer evidence. SC-002 has controlled compositional proof; live-native proof is explicitly outstanding. The exact live procedure and remaining attribution/runtime blockers are above; publication authorization is recorded but live acceptance is still open. Compilation, a fake receipt and a screenshot are not counted as live delivery.
 
 The proposed canonical `docs/features.md` addition was presented to Alex separately and has not been approved; that file remains unchanged. The day-plan validator has an unrelated pre-existing `Done:` format violation; no other session's record was rewritten to repair it. No matching audience-production type standard applies to this internal engineering change.
